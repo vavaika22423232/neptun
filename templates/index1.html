@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Тривоги України</title>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --main-bg: #181c23;
+      --panel-bg: #23272f;
+      --accent: #e53935;
+      --accent2: #fbc02d;
+      --text: #f4f6fa;
+      --text2: #cbd5e1;
+      --border: #31343b;
+      --shadow: #0008;
+    }
+    .header {
+      width: 100vw;
+      background: linear-gradient(90deg, var(--accent) 0%, #b71c1c 100%);
+      color: var(--text);
+      font-weight: 700;
+      font-size: 2.2rem;
+      letter-spacing: 2px;
+      text-align: center;
+      padding: 18px 0 10px 0;
+      box-shadow: 0 2px 16px var(--shadow);
+      text-shadow: 0 2px 8px #000a;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      border-radius: 0 0 18px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 32px;
+    }
+    .header .alert-icons {
+      display: flex;
+      gap: 18px;
+      align-items: center;
+      margin-left: 32px;
+    }
+    .header .alert-icon {
+      width: 38px;
+      height: 38px;
+      filter: drop-shadow(0 2px 8px #fff8) brightness(1.1);
+      animation: blink 1.2s infinite alternate;
+      background: #23272f44;
+      border-radius: 50%;
+      padding: 2px;
+    }
+    @keyframes blink {
+      0% { opacity: 1; }
+      60% { opacity: 1; }
+      100% { opacity: 0.3; }
+    }
+    .last-events-panel {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      width: 340px;
+      max-height: 60vh;
+      background: rgba(35,39,47,0.92);
+      border-radius: 18px;
+      box-shadow: 0 8px 32px #000a;
+      border: none;
+      overflow-y: auto;
+      z-index: 20;
+      padding: 12px 0 8px 0;
+      font-family: 'Montserrat', Arial, sans-serif;
+      font-size: 1.01rem;
+      color: var(--text2);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.4s;
+    }
+    .last-events-panel.active {
+      display: block;
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .last-event {
+      padding: 8px 18px 8px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .last-event:last-child { border-bottom: none; }
+    .last-event .event-icon {
+      width: 28px;
+      height: 28px;
+      margin-top: 2px;
+    }
+    .last-event .event-info {
+      flex: 1;
+    }
+    body {
+      margin: 0;
+      font-family: 'Montserrat', Arial, sans-serif;
+      background: linear-gradient(135deg, #181c23 0%, #23272f 100%);
+      color: var(--text);
+    }
+    h3 {
+      margin-top: 0;
+      padding: 28px 0 12px 0;
+      font-weight: 700;
+      font-size: 2.1rem;
+      letter-spacing: 1px;
+      background: linear-gradient(90deg, #f4f6fa 0%, #e9ecf3 100%);
+      color: #23272f;
+      border-bottom: 2px solid #cbd5e1;
+      box-shadow: 0 2px 12px #e9ecf311;
+      border-radius: 0 0 18px 18px;
+      text-align: center;
+      text-transform: uppercase;
+      text-shadow: 0 2px 8px #cbd5e144;
+    }
+    .filters {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 16px;
+      background: rgba(35,39,47,0.92);
+      border-radius: 14px;
+      box-shadow: 0 4px 18px #0008;
+      padding: 12px 18px;
+      margin: 16px auto 12px auto;
+      max-width: 900px;
+      border: none;
+    }
+    .filters label {
+      font-size: 1.05rem;
+      font-weight: 500;
+      color: var(--text2);
+      letter-spacing: 0.5px;
+    }
+    .filters input, .filters select {
+      border: 1.5px solid var(--border);
+      border-radius: 6px;
+      padding: 5px 12px;
+      font-size: 1.02rem;
+      margin-left: 6px;
+      background: #23272f;
+      color: var(--text);
+      transition: border 0.2s, box-shadow 0.2s;
+      box-shadow: 0 1px 4px #0004;
+    }
+    .filters input:focus, .filters select:focus {
+      border: 2px solid var(--accent2);
+      outline: none;
+      box-shadow: 0 0 0 2px #fbc02d44;
+    }
+    .filters button {
+      background: linear-gradient(90deg, var(--accent2) 0%, var(--accent) 100%);
+      color: #181c23;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 24px;
+      font-size: 1.05rem;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 2px 8px #0004;
+      transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .filters button:hover {
+      background: linear-gradient(90deg, var(--accent) 0%, var(--accent2) 100%);
+      color: var(--text);
+      box-shadow: 0 4px 16px #0006;
+    }
+    #map {
+      height: 80vh;
+      width: 100vw;
+      border-radius: 18px;
+      box-shadow: 0 8px 32px #000a;
+      margin: 0 auto 20px auto;
+      max-width: 1200px;
+      min-height: 400px;
+      background: #23272f;
+      border: none;
+    }
+    .gm-style-iw {
+      font-family: 'Montserrat', Arial, sans-serif !important;
+      font-size: 1.02rem !important;
+      color: var(--text2) !important;
+      border-radius: 8px !important;
+      background: #23272f !important;
+      border: 1.5px solid var(--border) !important;
+      box-shadow: 0 2px 12px #0008 !important;
+    }
+    .hide-btn {
+      background: linear-gradient(90deg, var(--accent2) 0%, var(--accent) 100%);
+      color: #181c23;
+      border: none;
+      border-radius: 6px;
+      padding: 6px 18px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 10px;
+      transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      box-shadow: 0 2px 8px #0004;
+    }
+    .hide-btn:hover {
+      background: linear-gradient(90deg, var(--accent) 0%, var(--accent2) 100%);
+      color: var(--text);
+      box-shadow: 0 4px 16px #0006;
+    }
+  </style>
+</head>
+<body>
+    <div class="header">
+      <img src="/static/raketa.png" class="alert-icon" title="Ракетна загроза">
+      <img src="/static/shahed.png" class="alert-icon" title="Шахед/дрон">
+      <svg class="alert-icon" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="16" fill="#fbc02d"/><path d="M8 24l8-16 8 16H8z" fill="#fff"/></svg>
+      <span style="font-size:2.1rem;font-weight:700;letter-spacing:2px;margin-left:18px;text-shadow:0 2px 8px #000a;">Тривоги України</span>
+    </div>
+    <div class="filters">
+      <label>Часовий діапазон (хв): <input type="number" id="timeRange" value="20" min="1" max="120"></label>
+      <label>Достовірність ≥ <input type="number" id="confRange" value="0" min="0" max="1" step="0.01"></label>
+      <label>Джерело:
+        <select id="sourceSelect"><option value="">Всі</option></select>
+      </label>
+      <label>Тип загрози:
+        <select id="threatTypeSelect"><option value="">Всі</option><option value="shahed">Шахед/дрон</option><option value="raketa">Ракета</option><option value="avia">Авиация</option></select>
+      </label>
+      <button onclick="updateMarkers()">Застосувати фільтри</button>
+    </div>
+    <div class="last-events-panel" id="lastEventsPanel"></div>
+    <div id="map"></div>
+    <!-- <div id="manual-geo">
+      <h4>Неопределённые топонимы</h4>
+      <ul id="notfound-list"></ul>
+    </div> -->
+
+  <script>
+    let map;
+    let polylines = [];
+    let prevTimeRange = null;
+    let markerData = [];
+
+    function clearPolylines() {
+      polylines.forEach(line => line.setMap(null));
+      polylines = [];
+    }
+
+    function updateMarkerVisibility(confRange, sourceVal) {
+      const minConf = parseFloat(confRange)||0;
+      window.markers.forEach((marker, idx) => {
+        const p = markerData[idx];
+        const visible = (!sourceVal || p.source === sourceVal) && (!p.confidence || p.confidence >= minConf);
+        marker.setVisible(visible);
+      });
+    }
+
+    // SVG-цель больше не используется, теперь метка по умолчанию — shahed.png
+    // Карта иконок по типу угрозы
+    const ICONS = {
+      shahed: '/static/shahed.png',
+      raketa: '/static/raketa.png',
+      avia: 'data:image/svg+xml;utf8,<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="16" fill="%23fbc02d"/><path d="M8 24l8-16 8 16H8z" fill="%23fff"/></svg>',
+      default: '/static/shahed.png'
+    };
+
+
+
+    async function updateMarkers() {
+      const timeRange = document.getElementById('timeRange').value || 20;
+      const confRange = document.getElementById('confRange').value || 0;
+      let sourceVal = document.getElementById('sourceSelect').value;
+      let threatType = document.getElementById('threatTypeSelect').value;
+      const params = new URLSearchParams({
+        timeRange: timeRange,
+        confRange: confRange,
+        source: sourceVal
+      });
+      const res = await fetch(`/data?${params.toString()}`);
+      const data = await res.json();
+      // Фильтруем только валидные точки с lat и lng
+      let points = (data.tracks || []).filter(p => typeof p.lat === 'number' && typeof p.lng === 'number');
+      const allSources = data.all_sources || [];
+      const sourceSelect = document.getElementById('sourceSelect');
+      if (sourceSelect && sourceSelect.options.length < 2) {
+        sourceSelect.innerHTML = '<option value="">Всі</option>';
+        allSources.forEach(src => {
+          const opt = document.createElement('option');
+          opt.value = src;
+          opt.textContent = src;
+          sourceSelect.appendChild(opt);
+        });
+      }
+      // Фильтрация по типу угрозы
+      if (threatType) {
+        points = points.filter(p => (p.threat_type || '').toLowerCase() === threatType);
+      }
+      // Если временной диапазон изменился, пересоздаем маркеры
+      if (prevTimeRange !== timeRange) {
+        if (window.markers) window.markers.forEach(m => m.setMap(null));
+        window.markers = [];
+        clearPolylines();
+        markerData = [];
+        const minTime = Date.now()/1000 - (parseInt(timeRange)||20)*60;
+        const minConf = parseFloat(confRange)||0;
+        // Фильтруем точки по времени, confidence и источнику
+        const filteredPoints = points.filter(p => {
+          // Преобразуем p.date в timestamp, если p.time отсутствует
+          let pointTime = p.time;
+          if (!pointTime && p.date) {
+            // Ожидается формат 'YYYY-MM-DD HH:MM:SS'
+            const dt = p.date.replace(' ', 'T') + 'Z';
+            pointTime = Date.parse(dt) / 1000;
+          }
+          return (!sourceVal || p.source === sourceVal) && (!pointTime || pointTime >= minTime) && (!p.confidence || p.confidence >= minConf);
+        });
+        // Рисуем маркеры
+        filteredPoints.forEach((p, idx) => {
+          let iconUrl = ICONS[p.threat_type] || ICONS.default;
+          const marker = new google.maps.Marker({
+            position: { lat: p.lat, lng: p.lng },
+            map,
+            title: p.text,
+            icon: { url: iconUrl, scaledSize: new google.maps.Size(32, 28) },
+            opacity: 0
+          });
+          window.markers.push(marker);
+          markerData.push(p);
+          setTimeout(() => { marker.setOpacity(1); }, 80 + idx * 40);
+          const safeText = encodeURIComponent(String(p.text ?? ''));
+          const safeSource = encodeURIComponent(String(p.source ?? ''));
+          const hideBtn = `<button class='hide-btn' onclick=\"hideMarker(${p.lat},${p.lng},'${safeText}','${safeSource}')\">Сховати</button>`;
+          const infowindow = new google.maps.InfoWindow({
+            content: `<b>Повідомлення:</b><br>${p.text}<br><b>Час:</b> ${p.date ? p.date : ''}<br>${hideBtn}`
+          });
+          marker.addListener('click', () => {
+            infowindow.open(map, marker);
+          });
+        });
+        prevTimeRange = timeRange;
+        // Обновляем панель последних тревог
+        updateLastEventsPanel(filteredPoints);
+      } else {
+        updateMarkerVisibility(confRange, sourceVal);
+      }
+    }
+
+    function updateLastEventsPanel(points) {
+      const panel = document.getElementById('lastEventsPanel');
+      if (!panel) return;
+      if (!points || !points.length) {
+        panel.classList.remove('active');
+        panel.innerHTML = '';
+        return;
+      }
+      panel.classList.add('active');
+      // Сортируем по времени (новые сверху)
+      const sorted = points.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      panel.innerHTML = sorted.slice(0, 12).map(ev => {
+        let iconUrl = ICONS[ev.threat_type] || ICONS.default;
+        return `<div class='last-event'><img class='event-icon' src='${iconUrl}'><div class='event-info'><b>${ev.place || ''}</b><br>${ev.text || ''}<br><span style='font-size:0.93em;color:#888;'>${ev.date || ''}</span></div></div>`;
+      }).join('');
+    }
+
+    async function initMap() {
+      const darkStyle = [
+        { elementType: 'geometry', stylers: [{ color: '#181c23' }] },
+        { elementType: 'labels.text.stroke', stylers: [{ color: '#181c23' }] },
+        { elementType: 'labels.text.fill', stylers: [{ color: '#cbd5e1' }] },
+        { featureType: 'administrative', elementType: 'geometry', stylers: [{ color: '#31343b' }] },
+        { featureType: 'poi', elementType: 'geometry', stylers: [{ color: '#23272f' }] },
+        { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#23272f' }] },
+        { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#23272f' }] },
+        { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#31343b' }] },
+        { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#181c23' }] },
+        { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#181c23' }] }
+      ];
+      map = new google.maps.Map(document.getElementById("map"), {
+        zoom: 6,
+        center: { lat: 48.3794, lng: 31.1656 }, // Центр України
+        styles: darkStyle
+      });
+      window.markers = [];
+      await updateMarkers();
+      setInterval(updateMarkers, 10000); // обновлять каждые 10 секунд
+    }
+    // Получение нераспознанных топонимов и ручной ввод координат
+    async function fetchNotFound() {
+      const res = await fetch('/notfound');
+      const list = await res.json();
+      const ul = document.getElementById('notfound-list');
+      ul.innerHTML = '';
+      list.forEach(place => {
+        const li = document.createElement('li');
+        li.innerHTML = `${place} <input type='text' placeholder='lat,lng' id='coord_${place}'> <button onclick='submitCoord("${place}")'>Зберегти</button>`;
+        ul.appendChild(li);
+      });
+    }
+    async function submitCoord(place) {
+      const val = document.getElementById('coord_' + place).value;
+      if (!val.match(/^\s*\d{2,3}\.\d+\s*,\s*\d{2,3}\.\d+\s*$/)) return alert('lat,lng формат!');
+      await fetch('/notfound', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ place, coord: val })
+      });
+      fetchNotFound();
+    }
+    // Добавляем функцию для скрытия метки
+    // Обновляем функцию hideMarker для передачи текста и source
+    async function hideMarker(lat, lng, text, source) {
+      // Округляем координаты до 3 знаков, чтобы совпадал hash
+      lat = Math.round(lat * 1000) / 1000;
+      lng = Math.round(lng * 1000) / 1000;
+      await fetch('/hide_marker', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lat, lng, text: decodeURIComponent(text), source: decodeURIComponent(source) })
+      });
+      prevTimeRange = null;
+      await updateMarkers();
+    }
+    // --- Воздушные тревоги по регионам ---
+    let airAlarmLayer = null;
+    async function fetchAirAlarms() {
+      // Пример: получаем тревоги с alerts.in.ua API (или свой backend)
+      // Здесь можно заменить на свой источник или проксировать через backend
+      try {
+        const res = await fetch('https://alerts.com.ua/api/states');
+        const data = await res.json();
+        // data.regions: { UA-XX: { alert: true/false, ... } }
+        return data.regions || {};
+      } catch (e) { return {}; }
+    }
+
+    async function showAirAlarmsOnMap() {
+      if (airAlarmLayer) airAlarmLayer.setMap(null);
+      const regions = await fetchAirAlarms();
+      // Границы регионов (GeoJSON) можно хранить локально или подгружать
+      // Для примера — подсвечиваем области с тревогой
+      fetch('https://alerts.com.ua/static/geo/ukraine_regions.json')
+        .then(r => r.json())
+        .then(geo => {
+          airAlarmLayer = new google.maps.Data();
+          airAlarmLayer.addGeoJson(geo);
+          airAlarmLayer.setStyle(f => {
+            // В geojson id: UA-XX, а в API может быть UA-XX или ua-xx
+            let code = f.getProperty('id');
+            if (!code && f.getProperty('ISO_3166_2')) code = f.getProperty('ISO_3166_2');
+            if (code) code = code.toUpperCase();
+            let alarm = false;
+            if (code && regions[code]) alarm = regions[code].alert;
+            // Иногда в API ключи в нижнем регистре
+            if (!alarm && code && regions[code.toLowerCase()]) alarm = regions[code.toLowerCase()].alert;
+            return {
+              fillColor: alarm ? '#e53935' : '#23272f',
+              fillOpacity: alarm ? 0.45 : 0.08,
+              strokeColor: alarm ? '#e53935' : '#888',
+              strokeWeight: 2,
+              zIndex: alarm ? 10 : 1
+            };
+          });
+          airAlarmLayer.setMap(map);
+        });
+    }
+
+    window.onload = () => {
+      setTimeout(showAirAlarmsOnMap, 1200);
+      setInterval(showAirAlarmsOnMap, 30000);
+    };
+  </script>
+
+  <script async
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCNvHPPImGhTBA7NyOL7kNvfFe4bTIRpGs&callback=initMap&language=uk">
+  </script>
+</body>
+</html>

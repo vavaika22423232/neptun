@@ -1,0 +1,5 @@
+spacy
+uk_core_news_sm
+openai
+sentence-transformers
+scikit-learn
