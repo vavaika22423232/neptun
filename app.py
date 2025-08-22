@@ -2,6 +2,12 @@ import os, re, json, asyncio, threading, logging, pytz
 from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify, request
 from telethon import TelegramClient
+from telethon.errors import (
+    AuthKeyDuplicatedError,
+    AuthKeyUnregisteredError,
+    FloodWaitError,
+    RpcError
+)
 from telethon.sessions import StringSession
 
 # Basic minimal subset for Render deployment. Heavy ML parts stripped for now.
@@ -187,16 +193,33 @@ async def fetch_loop():
     if not client:
         log.warning('Telegram client not configured; skipping fetch loop.')
         return
-    try:
-        await client.connect()
-        if not await client.is_user_authorized():
-            log.error('Telegram client NOT authorized. Provide TELEGRAM_SESSION env var (string session) or pre-authorize locally.')
-            # Don't hammer; wait and retry
-            await asyncio.sleep(120)
-            return
-    except Exception as e:
-        log.error(f'Failed to connect/authorize Telegram client: {e}')
-        await asyncio.sleep(120)
+    async def ensure_connected():
+        if client.is_connected():
+            return True
+        try:
+            await client.connect()
+            if not await client.is_user_authorized():
+                log.error('Telegram client NOT authorized. Provide TELEGRAM_SESSION env var or re-generate session.')
+                return False
+            return True
+        except AuthKeyDuplicatedError:
+            log.error('AuthKeyDuplicatedError: The TELEGRAM_SESSION is in use elsewhere or duplicated. Generate a NEW session string and redeploy. Stopping fetch loop.')
+            return False
+        except AuthKeyUnregisteredError:
+            log.error('AuthKeyUnregisteredError: Session invalid/expired. Generate new TELEGRAM_SESSION.')
+            return False
+        except FloodWaitError as fe:
+            wait = int(getattr(fe, 'seconds', 60))
+            log.warning(f'FloodWait: sleeping {wait}s before reconnect.')
+            await asyncio.sleep(wait)
+            return False
+        except Exception as e:
+            log.warning(f'ensure_connected error: {e}')
+            return False
+
+    if not await ensure_connected():
+        # Give user time to fix session
+        await asyncio.sleep(180)
         return
     tz = pytz.timezone('Europe/Kyiv')
     processed = {m.get('id') for m in load_messages()}
@@ -216,6 +239,9 @@ async def fetch_loop():
                 continue
             fetched = 0
             try:
+                if not await ensure_connected():
+                    log.warning('Disconnected during backfill; aborting backfill early.')
+                    break
                 async for msg in client.iter_messages(ch_strip, limit=400):  # cap to avoid huge history
                     if not msg.text:
                         continue
@@ -247,6 +273,11 @@ async def fetch_loop():
             if not ch:
                 continue
             try:
+                if not await ensure_connected():
+                    # If session invalid we stop loop gracefully
+                    if not client.is_connected():
+                        log.error('Stopping live loop due to lost/invalid session.')
+                        return
                 async for msg in client.iter_messages(ch, limit=20):
                     if msg.id in processed or not msg.text:
                         continue
@@ -260,6 +291,15 @@ async def fetch_loop():
                         log.info(f'Added track from {ch} #{msg.id}')
                     else:
                         log.debug(f'Live skip (no geo): {ch} #{msg.id} {msg.text[:80]!r}')
+            except AuthKeyDuplicatedError:
+                log.error('AuthKeyDuplicatedError during live fetch. Ending loop until session replaced.')
+                return
+            except FloodWaitError as fe:
+                wait = int(getattr(fe, 'seconds', 60))
+                log.warning(f'FloodWait while reading {ch}: sleep {wait}s')
+                await asyncio.sleep(wait)
+            except RpcError as re:
+                log.warning(f'RPC error reading {ch}: {re}')
             except Exception as e:
                 log.warning(f'Error reading {ch}: {e}')
         if new_tracks:
