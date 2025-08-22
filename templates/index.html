@@ -881,7 +881,10 @@
       map = new google.maps.Map(document.getElementById("map"), {
         zoom: 6,
         center: { lat: 48.3794, lng: 31.1656 },
-        styles: lightStyle
+  styles: lightStyle,
+  mapTypeControl: false,
+  streetViewControl: false,
+  fullscreenControl: false
       });
 
       // ---- Presence (active users) ----
