@@ -194,6 +194,7 @@ OBLAST_CENTERS = {
     , 'дніпропетровська обл.': (48.4500, 34.9830), 'днепропетровская обл.': (48.4500, 34.9830)
     , 'чернігівська обл.': (51.4982, 31.2893), 'черниговская обл.': (51.4982, 31.2893)
     , 'харківська обл.': (49.9935, 36.2304), 'харьковская обл.': (49.9935, 36.2304)
+    , 'сумщина': (50.9077, 34.7981), 'сумщини': (50.9077, 34.7981), 'сумська область': (50.9077, 34.7981), 'сумська обл.': (50.9077, 34.7981), 'сумская обл.': (50.9077, 34.7981)
 }
 
 # Район (district) fallback centers (можно расширять). Ключи в нижнем регистре без слова 'район'.
@@ -351,6 +352,10 @@ def process_message(text, mid, date_str, channel):
     original_text = text
     # Санитизация: убираем точную фразу "Повітряна тривога" (реквест пользователя)
     text = text.replace('Повітряна тривога', '').replace('повітряна тривога','').strip()
+    # Убираем markdown * _ ` и базовые эмодзи-иконки в начале строк
+    text = re.sub(r'[\*`_]+', '', text)
+    # Удаляем ведущие эмодзи/иконки перед словами
+    text = re.sub(r'^[\W_]+', '', text)
     # Если сообщение по сути только про тревогу (без упоминаний угроз) — пропускаем (не строим маркер)
     low_orig = original_text.lower()
     if 'повітряна тривога' in low_orig and not any(k in low_orig for k in ['бпла','дрон','шахед','shahed','geran','ракета','missile','iskander','s-300','s300','артил','града','смерч','ураган','mlrs']):
@@ -394,18 +399,20 @@ def process_message(text, mid, date_str, channel):
     if bracket_city:
         raw_city = bracket_city.group(1).strip().lower()
         raw_inside = bracket_city.group(2).lower()
-        norm_city = UA_CITY_NORMALIZE.get(raw_city, raw_city)
-        coords = CITY_COORDS.get(norm_city)
-        if not coords and OPENCAGE_API_KEY:
-            coords = geocode_opencage(norm_city)
-        if coords:
-            lat,lng = coords
-            threat_type, icon = classify(text)
-            return [{
-                'id': str(mid), 'place': norm_city.title(), 'lat': lat, 'lng': lng,
-                'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                'marker_icon': icon, 'source_match': 'bracket_city'
-            }]
+        # Не интерпретировать 'район' как город
+        if raw_city != 'район':
+            norm_city = UA_CITY_NORMALIZE.get(raw_city, raw_city)
+            coords = CITY_COORDS.get(norm_city)
+            if not coords and OPENCAGE_API_KEY:
+                coords = geocode_opencage(norm_city)
+            if coords:
+                lat,lng = coords
+                threat_type, icon = classify(text)
+                return [{
+                    'id': str(mid), 'place': norm_city.title(), 'lat': lat, 'lng': lng,
+                    'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': 'bracket_city'
+                }]
 
     # --- Multi-segment / enumerated lines (1. 2. 3.) region extraction ---
     # Разбиваем по переносам, собираем упоминания нескольких областей; создаём отдельные маркеры
@@ -496,6 +503,7 @@ def process_message(text, mid, date_str, channel):
                 'marker_icon': icon, 'source_match': 'raion'
             })
         if tracks:
+            log.debug(f"RAION_MATCH mid={mid} -> {[t['place'] for t in tracks]}")
             return tracks
 
     # Region boundary logic (fallback single or midpoint for exactly two)
