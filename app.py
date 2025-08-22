@@ -321,19 +321,25 @@ def process_message(text, mid, date_str, channel):
     # direct coordinates pattern
     def classify(th: str):
         l = th.lower()
+        # PRIORITY: drones first (частая путаница). Если присутствуют слова шахед/бпла/дрон -> это shahed
+        if any(k in l for k in ['shahed','шахед','шахеді','шахедів','geran','герань','дрон','дрони','бпла','uav']):
+            return 'shahed', 'shahed.png'
         # KAB (guided bomb) treat as raketa per user request
         if 'каб' in l:
             return 'raketa', 'raketa.png'
-        if any(k in l for k in ['ракета','ракети','ракетний','ракетная','ракетный','missile','iskander','крылат','крилат','кр','s-300','s300']):
+        # Missiles / rockets
+        if any(k in l for k in ['ракета','ракети','ракетний','ракетная','ракетный','missile','iskander','крылат','крилат','кр ','s-300','s300']):
             return 'raketa', 'raketa.png'
+        # Aviation
         if any(k in l for k in ['avia','авіа','авиа','літак','самолет','бомба','бомби','бомбаки']):
             return 'avia', 'avia.png'
+        # Air defense mention
         if any(k in l for k in ['пво','зеніт','зенит']):
             return 'pvo', 'rozved.png'
+        # Artillery / MLRS
         if any(k in l for k in ['артил', 'mlrs','града','градів','смерч','ураган']):
             return 'artillery', 'artillery.png'
-        if any(k in l for k in ['shahed','шахед','шахеді','шахедів','geran','герань','дрон','дрони','бпла','uav']):
-            return 'shahed', 'shahed.png'
+        # default assume shahed (консервативно)
         return 'shahed', 'shahed.png'
     m = re.search(r'(\d{1,2}\.\d+),(\d{1,3}\.\d+)', text)
     if m:
@@ -345,9 +351,40 @@ def process_message(text, mid, date_str, channel):
             'marker_icon': icon
         }]
     lower = text.lower()
-    # --- Settlement matching using external dataset (if provided) ---
-    if SETTLEMENTS_INDEX:
-        # Quick scan: iterate shorter names first to reduce substring collisions? (optional)
+
+    # --- Multi-segment / enumerated lines (1. 2. 3.) region extraction ---
+    # Разбиваем по переносам, собираем упоминания нескольких областей; создаём отдельные маркеры
+    region_hits = []  # list of (display_name, (lat,lng), snippet)
+    lines = [ln.strip() for ln in text.split('\n') if ln.strip()]
+    for ln in lines:
+        ln_low = ln.lower()
+        local_regions = []
+        for name, coords in OBLAST_CENTERS.items():
+            if name in ln_low:
+                local_regions.append((name, coords))
+        # если в строке более 1— сохраняем все, иначе одну
+        for (rn, rc) in local_regions:
+            region_hits.append((rn.title(), rc, ln[:180]))
+    # Если нашли >=2 региональных маркеров в разных пунктах списка — формируем множественные треки
+    if len(region_hits) >= 2:
+        threat_type, icon = classify(text)
+        tracks = []
+        # deduplicate by name
+        seen_names = set()
+        for idx, (rname, (lat,lng), snippet) in enumerate(region_hits, 1):
+            if rname in seen_names:
+                continue
+            seen_names.add(rname)
+            tracks.append({
+                'id': f"{mid}_{idx}", 'place': rname, 'lat': lat, 'lng': lng,
+                'threat_type': threat_type, 'text': snippet[:500], 'date': date_str, 'channel': channel,
+                'marker_icon': icon, 'source_match': 'region_multi'
+            })
+        if tracks:
+            return tracks
+
+    # --- Settlement matching using external dataset (if provided) (single first match) ---
+    if SETTLEMENTS_INDEX and not region_hits:
         for name in SETTLEMENTS_ORDERED:
             if name in lower:
                 lat, lng = SETTLEMENTS_INDEX[name]
@@ -358,7 +395,8 @@ def process_message(text, mid, date_str, channel):
                     'marker_icon': icon,
                     'source_match': 'settlement'
                 }]
-    # Region boundary logic
+
+    # Region boundary logic (fallback single or midpoint for exactly two)
     matched_regions = []
     for name, coords in OBLAST_CENTERS.items():
         if name in lower:
@@ -374,13 +412,20 @@ def process_message(text, mid, date_str, channel):
                 'marker_icon': icon
             }]
         else:
-            n1,(lat,lng) = matched_regions[0]
             threat_type, icon = classify(text)
-            return [{
-                'id': str(mid), 'place': n1.title(), 'lat': lat, 'lng': lng,
-                'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                'marker_icon': icon
-            }]
+            tracks = []
+            seen = set()
+            for idx,(n1,(lat,lng)) in enumerate(matched_regions,1):
+                base = n1.split()[0].title()
+                if base in seen: continue
+                seen.add(base)
+                tracks.append({
+                    'id': f"{mid}_r{idx}", 'place': base, 'lat': lat, 'lng': lng,
+                    'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': 'region_multi_simple'
+                })
+            if tracks:
+                return tracks
     for city in UA_CITIES:
         if city in lower:
             norm = UA_CITY_NORMALIZE.get(city, city)
