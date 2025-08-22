@@ -948,8 +948,8 @@
     }
   function openWarn(){const o=document.getElementById('warnModal'); if(o) o.style.display='flex';}
   function closeWarn(){const o=document.getElementById('warnModal'); if(o) o.style.display='none';}
-  function ackWarn(){localStorage.setItem('warn_ack','1'); closeWarn();}
-  window.onload = () => { preloadIcons(); initMap(); if(!localStorage.getItem('warn_ack')) openWarn(); };
+  function ackWarn(){ closeWarn(); }
+  window.onload = () => { preloadIcons(); initMap(); openWarn(); };
   </script>
   <script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCNvHPPImGhTBA7NyOL7kNvfFe4bTIRpGs&callback=initMap&language=uk"></script>
 </body>
