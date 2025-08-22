@@ -370,13 +370,13 @@
       }
     }
     
-    /* Темная тема для карты */
+    /* Темна тема для карти */
     [class*="copyrights-pane"] {
       background-color: var(--panel-bg) !important;
       color: var(--text) !important;
     }
     
-    /* Анимации */
+    /* Анимації */
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: translateY(0); }
@@ -465,7 +465,7 @@
         <label>
           Період моніторингу
           <div class="input-group">
-            <input type="number" id="timeRange" value="20" min="1" max="120">
+            <input type="number" id="timeRange" value="50" min="1" max="120">
             <span class="input-suffix">хв</span>
           </div>
         </label>
@@ -537,7 +537,10 @@
       artillery: '/static/artillery.png',
       default: '/static/default.png'
     };
-    
+    // Fallback tiny red dot if icon 404
+    function preloadIcons(){
+      Object.keys(ICONS).forEach(k=>{const url=ICONS[k]; const img=new Image(); img.onload=()=>{}; img.onerror=()=>{ICONS[k]='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA4AAAAOCAYAAAAfSC3RAAAALElEQVQokWP8////fwY0wAgjGJgGLABWMMRAFEg0gGE0GoBmGuwmCkYBAGmxD/dzJvLRwAAAABJRU5ErkJggg==';}; img.src=url;});
+    }
     // Состояние приложения
     let map;
     let markers = [];
@@ -922,7 +925,7 @@
       prevTimeRange = null;
       await updateMarkers();
     }
-    window.onload = () => { initMap(); };
+    window.onload = () => { preloadIcons(); initMap(); };
   </script>
   <script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCNvHPPImGhTBA7NyOL7kNvfFe4bTIRpGs&callback=initMap&language=uk"></script>
 </body>

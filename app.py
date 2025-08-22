@@ -160,7 +160,7 @@ def geocode_opencage(place: str):
 def process_message(text, mid, date_str, channel):
     """Extract coordinates or try simple city geocoding (lightweight)."""
     # direct coordinates pattern
-    m = re.search(r'(\d{2}\.\d+),(\d{2}\.\d+)', text)
+    m = re.search(r'(\d{1,2}\.\d+),(\d{1,3}\.\d+)', text)
     if m:
         lat = float(m.group(1)); lng = float(m.group(2))
         return [{
@@ -209,6 +209,7 @@ async def fetch_loop():
     backfill_cutoff = datetime.now(tz) - timedelta(minutes=backfill_minutes)
     if backfill_minutes > 0:
         log.info(f'Starting backfill for last {backfill_minutes} minutes...')
+        total_backfilled = 0
         for ch in CHANNELS:
             ch_strip = ch.strip()
             if not ch_strip:
@@ -228,18 +229,23 @@ async def fetch_loop():
                         all_data.extend(tracks)
                         processed.add(msg.id)
                         fetched += 1
+                    else:
+                        log.debug(f'Backfill skip (no geo): {ch_strip} #{msg.id} {msg.text[:80]!r}')
                 if fetched:
+                    total_backfilled += fetched
                     log.info(f'Backfilled {fetched} messages from {ch_strip}')
             except Exception as e:
                 log.warning(f'Backfill error {ch_strip}: {e}')
-        if fetched:
+        if total_backfilled:
             save_messages(all_data)
+            log.info(f'Backfill saved: {total_backfilled} new messages with geo')
         log.info('Backfill completed.')
     while True:
         new_tracks = []
         for ch in CHANNELS:
             ch = ch.strip()
-            if not ch: continue
+            if not ch:
+                continue
             try:
                 async for msg in client.iter_messages(ch, limit=20):
                     if msg.id in processed or not msg.text:
@@ -253,7 +259,7 @@ async def fetch_loop():
                         processed.add(msg.id)
                         log.info(f'Added track from {ch} #{msg.id}')
                     else:
-                        log.debug(f'No coordinates pattern in message {ch} #{msg.id}')
+                        log.debug(f'Live skip (no geo): {ch} #{msg.id} {msg.text[:80]!r}')
             except Exception as e:
                 log.warning(f'Error reading {ch}: {e}')
         if new_tracks:
@@ -278,8 +284,8 @@ def index():
 @app.route('/data')
 def data():
     try:
-        time_range = int(request.args.get('timeRange', 20))
-    except Exception: time_range = 20
+        time_range = int(request.args.get('timeRange', 50))
+    except Exception: time_range = 50
     messages = load_messages()
     tz = pytz.timezone('Europe/Kyiv')
     now = datetime.now(tz).replace(tzinfo=None)
