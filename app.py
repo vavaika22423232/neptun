@@ -148,6 +148,7 @@ UA_CITY_NORMALIZE = {
 }
 
 # Static fallback coordinates (approximate city centers) to avoid relying solely on OpenCage.
+# Minimal fallback city coords (will be superseded if full settlements file present)
 CITY_COORDS = {
     'київ': (50.4501, 30.5234),
     'харків': (49.9935, 36.2304),
@@ -185,6 +186,38 @@ OBLAST_CENTERS = {
     'чернігівщина': (51.4982, 31.2893), 'чернігівщини': (51.4982, 31.2893),
     'харківщина': (49.9935, 36.2304), 'харківщини': (49.9935, 36.2304)
 }
+
+SETTLEMENTS_FILE = os.getenv('SETTLEMENTS_FILE', 'settlements_ua.json')
+SETTLEMENTS_INDEX = {}
+SETTLEMENTS_ORDERED = []
+
+def _load_settlements():
+    global SETTLEMENTS_INDEX, SETTLEMENTS_ORDERED
+    if not os.path.exists(SETTLEMENTS_FILE):
+        return
+    try:
+        with open(SETTLEMENTS_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        # Expect list of dicts with keys: name, lat, lng (or lon)
+        for item in data:
+            try:
+                name = item.get('name') or item.get('n')
+                if not name:
+                    continue
+                lat = float(item.get('lat'))
+                lng = float(item.get('lng') or item.get('lon'))
+                key = name.strip().lower()
+                if key and key not in SETTLEMENTS_INDEX:
+                    SETTLEMENTS_INDEX[key] = (lat, lng)
+            except Exception:
+                continue
+        # Order names by length descending to match longer first (avoids partial overshadowing)
+        SETTLEMENTS_ORDERED = sorted(SETTLEMENTS_INDEX.keys(), key=len, reverse=True)[:50000]  # hard cap
+        log.info(f'Loaded settlements: {len(SETTLEMENTS_INDEX)} (using top {len(SETTLEMENTS_ORDERED)})')
+    except Exception as e:
+        log.warning(f'Failed to load settlements file {SETTLEMENTS_FILE}: {e}')
+
+_load_settlements()
 
 def geocode_opencage(place: str):
     if not OPENCAGE_API_KEY:
@@ -251,6 +284,19 @@ def process_message(text, mid, date_str, channel):
             'marker_icon': icon
         }]
     lower = text.lower()
+    # --- Settlement matching using external dataset (if provided) ---
+    if SETTLEMENTS_INDEX:
+        # Quick scan: iterate shorter names first to reduce substring collisions? (optional)
+        for name in SETTLEMENTS_ORDERED:
+            if name in lower:
+                lat, lng = SETTLEMENTS_INDEX[name]
+                threat_type, icon = classify(text)
+                return [{
+                    'id': str(mid), 'place': name.title(), 'lat': lat, 'lng': lng,
+                    'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon,
+                    'source_match': 'settlement'
+                }]
     # Region boundary logic
     matched_regions = []
     for name, coords in OBLAST_CENTERS.items():
