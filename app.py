@@ -1430,7 +1430,7 @@ def process_message(text, mid, date_str, channel):
     return None
 
 # ----------------------- Deferred initialization hooks -----------------------
-@app.before_first_request
+@app.before_request
 def _init_background():
     global INIT_ONCE
     if INIT_ONCE:
