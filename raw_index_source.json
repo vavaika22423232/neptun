@@ -1,0 +1,5 @@
+{
+  "css": "/* place original large CSS here later */",
+  "body": "<div style='padding:2rem'><h1>Тривоги України</h1><p>Інтерфейс ще не перенесено.</p></div>",
+  "script": "function initMap(){console.log('Map init placeholder');}"
+}

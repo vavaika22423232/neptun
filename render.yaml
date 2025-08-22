@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: neptun-alerts
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      - key: TELEGRAM_API_ID
+        sync: false
+      - key: TELEGRAM_API_HASH
+        sync: false
+      - key: TELEGRAM_CHANNELS
+        value: UkraineAlarmSignal,war_monitor
+      - key: GOOGLE_MAPS_KEY
+        sync: false

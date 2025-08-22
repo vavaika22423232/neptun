@@ -532,7 +532,10 @@
       raketa: '/static/raketa.png',
       avia: '/static/avia.png',
       pvo: '/static/rozved.png',
-      default: '/static/shahed.png'
+      explosion: '/static/explosion.png',
+      mlrs: '/static/mlrs.png',
+      artillery: '/static/artillery.png',
+      default: '/static/default.png'
     };
     
     // Состояние приложения
@@ -659,12 +662,43 @@
             lng3 = lng2 + dLng / norm * (dist_km / (111 * Math.cos(lat2 * Math.PI / 180)));
           }
           // --- Маркер ---
+          // Формируем информацию о количестве БПЛА для отображения
+          let countInfo = '';
+          if (p.count && p.count > 1) {
+            countInfo = `<div style="text-align: center; font-weight: bold; font-size: 14px; color: #e53935; background: rgba(0,0,0,0.7); padding: 3px 6px; border-radius: 4px; margin-top: 3px;">${p.count}× БПЛА</div>`;
+          }
+
           marker = new google.maps.Marker({
             position: { lat: lat1, lng: lng1 },
             map,
             title: p.text,
             icon: { url: iconUrl, scaledSize: new google.maps.Size(32, 28) },
-            opacity: 1
+            opacity: 1,
+            label: p.count > 1 ? {
+              text: p.count.toString(),
+              color: '#ffffff',
+              fontSize: '12px',
+              fontWeight: 'bold'
+            } : null
+          });
+
+          // Создаем информационное окно с количеством БПЛА
+          const infowindow = new google.maps.InfoWindow({
+            content: `<div style="color: black;">${p.place}${countInfo}</div>`,
+            pixelOffset: new google.maps.Size(0, -15)
+          });
+
+          // Показываем информационное окно сразу для меток с количеством > 1
+          if (p.count > 1) {
+            infowindow.open(map, marker);
+          }
+
+          // При наведении показываем/скрываем информационное окно
+          marker.addListener('mouseover', () => infowindow.open(map, marker));
+          marker.addListener('mouseout', () => {
+            if (p.count <= 1) { // Оставляем открытым для множественных БПЛА
+              infowindow.close();
+            }
           });
           // --- Линия движения ---
           line = new google.maps.Polyline({
