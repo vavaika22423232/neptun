@@ -51,6 +51,7 @@ API_HASH = os.getenv('TELEGRAM_API_HASH', '')
 CHANNELS = os.getenv('TELEGRAM_CHANNELS', 'UkraineAlarmSignal,war_monitor,kpszsu,napramok,kudy_letyt,AerisRimor').split(',')
 GOOGLE_MAPS_KEY = os.getenv('GOOGLE_MAPS_KEY', '')
 OPENCAGE_API_KEY = os.getenv('OPENCAGE_API_KEY', '')  # optional geocoding
+ALWAYS_STORE_RAW = os.getenv('ALWAYS_STORE_RAW', '1') not in ('0','false','False')
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 log = logging.getLogger(__name__)
@@ -311,6 +312,7 @@ async def fetch_loop():
     if backfill_minutes > 0:
         log.info(f'Starting backfill for last {backfill_minutes} minutes...')
         total_backfilled = 0
+        total_raw = 0
         for ch in CHANNELS:
             ch_strip = ch.strip()
             if not ch_strip:
@@ -334,6 +336,20 @@ async def fetch_loop():
                         processed.add(msg.id)
                         fetched += 1
                     else:
+                        if ALWAYS_STORE_RAW:
+                            all_data.append({
+                                'id': str(msg.id),
+                                'place': None,
+                                'lat': None,
+                                'lng': None,
+                                'threat_type': None,
+                                'text': msg.text[:500],
+                                'date': dt.strftime('%Y-%m-%d %H:%M:%S'),
+                                'channel': ch_strip,
+                                'pending_geo': True
+                            })
+                            processed.add(msg.id)
+                            total_raw += 1
                         log.debug(f'Backfill skip (no geo): {ch_strip} #{msg.id} {msg.text[:80]!r}')
                 if fetched:
                     total_backfilled += fetched
@@ -341,9 +357,9 @@ async def fetch_loop():
             except Exception as e:
                 log.warning(f'Backfill error {ch_strip}: {e}')
     if backfill_minutes > 0:
-        if total_backfilled:
+        if total_backfilled or (ALWAYS_STORE_RAW and 'total_raw' in locals() and total_raw):
             save_messages(all_data)
-            log.info(f'Backfill saved: {total_backfilled} new messages with geo')
+            log.info(f'Backfill saved: {total_backfilled} geo, {locals().get("total_raw",0)} raw')
         log.info('Backfill completed.')
     while True:
         new_tracks = []
