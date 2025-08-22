@@ -225,6 +225,9 @@ GIT_SYNC_TOKEN = os.getenv('GIT_SYNC_TOKEN')  # GitHub PAT (classic or fine-grai
 GIT_COMMIT_INTERVAL = int(os.getenv('GIT_COMMIT_INTERVAL', '180'))  # seconds between commits
 _last_git_commit = 0
 
+# Delay before first Telegram connect (helps избежать пересечения старого и нового инстанса при деплое)
+FETCH_START_DELAY = int(os.getenv('FETCH_START_DELAY', '0'))  # seconds
+
 def maybe_git_autocommit():
     """If enabled, commit & push updated messages.json back to GitHub.
     Requirements:
@@ -352,7 +355,7 @@ def process_message(text, mid, date_str, channel):
         if 'каб' in l:
             return 'raketa', 'raketa.png'
         # Missiles / rockets
-        if any(k in l for k in ['ракета','ракети','ракетний','ракетная','ракетный','missile','iskander','крылат','крилат','кр ','s-300','s300']):
+        if any(k in l for k in ['ракета','ракети','ракетний','ракетная','ракетный','missile','iskander','крылат','крилат','кр ','s-300','s300','КАБ']):
             return 'raketa', 'raketa.png'
         # Aviation
         if any(k in l for k in ['avia','авіа','авиа','літак','самолет','бомба','бомби','бомбаки']):
@@ -659,6 +662,9 @@ def start_fetch_thread():
     FETCH_THREAD_STARTED = True
     loop = asyncio.new_event_loop()
     def runner():
+        if FETCH_START_DELAY > 0:
+            log.info(f'Delaying Telegram fetch start for {FETCH_START_DELAY}s (FETCH_START_DELAY).')
+            time.sleep(FETCH_START_DELAY)
         asyncio.set_event_loop(loop)
         try:
             loop.run_until_complete(fetch_loop())
