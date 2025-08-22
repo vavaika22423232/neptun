@@ -178,6 +178,14 @@ CITY_COORDS = {
     'бердянськ': (46.7553, 36.7885)
 }
 
+OBLAST_CENTERS = {
+    'донеччина': (48.0433, 37.7974), 'донеччини': (48.0433, 37.7974), 'донецька область': (48.0433, 37.7974),
+    'дніпропетровщина': (48.4500, 34.9830), 'дніпропетровщини': (48.4500, 34.9830), 'дніпропетровська область': (48.4500, 34.9830),
+    'днепропетровщина': (48.4500, 34.9830), 'днепропетровщины': (48.4500, 34.9830),
+    'чернігівщина': (51.4982, 31.2893), 'чернігівщини': (51.4982, 31.2893),
+    'харківщина': (49.9935, 36.2304), 'харківщини': (49.9935, 36.2304)
+}
+
 def geocode_opencage(place: str):
     if not OPENCAGE_API_KEY:
         return None
@@ -243,6 +251,29 @@ def process_message(text, mid, date_str, channel):
             'marker_icon': icon
         }]
     lower = text.lower()
+    # Region boundary logic
+    matched_regions = []
+    for name, coords in OBLAST_CENTERS.items():
+        if name in lower:
+            matched_regions.append((name, coords))
+    if matched_regions:
+        if len(matched_regions) == 2 and any(w in lower for w in ['межі','межу','межа','между','границі','граница']):
+            (n1,(a1,b1)), (n2,(a2,b2)) = matched_regions
+            lat = (a1+a2)/2; lng = (b1+b2)/2
+            threat_type, icon = classify(text)
+            return [{
+                'id': str(mid), 'place': f"Межа {n1.split()[0].title()}/{n2.split()[0].title()}", 'lat': lat, 'lng': lng,
+                'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                'marker_icon': icon
+            }]
+        else:
+            n1,(lat,lng) = matched_regions[0]
+            threat_type, icon = classify(text)
+            return [{
+                'id': str(mid), 'place': n1.title(), 'lat': lat, 'lng': lng,
+                'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                'marker_icon': icon
+            }]
     for city in UA_CITIES:
         if city in lower:
             norm = UA_CITY_NORMALIZE.get(city, city)
