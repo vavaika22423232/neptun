@@ -300,6 +300,18 @@
       background: var(--border);
       transform: translateY(-1px);
     }
+  /* Custom fullscreen button (bottom-right) */
+  .map-card { position: relative; }
+  .map-fs-btn {position:absolute;bottom:1rem;right:1rem;background:linear-gradient(135deg,#1e293b,#0f172a);border:1px solid #223042;color:#e2e8f0;padding:.65rem;border-radius:.75rem;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px -6px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.05);transition:.18s;z-index:5;}
+  .map-fs-btn:hover{background:#243243;}
+  .map-fs-btn:active{transform:translateY(1px);}
+  .map-fs-btn i{font-size:22px;}
+  @media (max-width:700px){.map-fs-btn{bottom:.85rem;right:.85rem;padding:.55rem;border-radius:.65rem;}}
+  @supports(padding:max(0px)){ .map-fs-btn{bottom:calc(1rem + env(safe-area-inset-bottom)); right:calc(1rem + env(safe-area-inset-right));} }
+  /* Fullscreen fallback classes (for iOS Safari where requestFullscreen often blocked) */
+  .map-card.fullscreen, #map.fullscreen {position:fixed !important;inset:0 !important;width:100vw !important;height:100vh !important;z-index:120 !important;border-radius:0 !important;box-shadow:none !important;}
+  body.fullscreen-active {overflow:hidden;touch-action:none;}
+  .hide-on-fs {display:none !important;}
     @media (max-width: 1100px) {
       .main-content {
         grid-template-columns: 1fr;
@@ -523,6 +535,7 @@
         </button>
       </div>
       <div id="map"></div>
+  <button class="map-fs-btn" id="fsToggleBtn" type="button" onclick="toggleFullScreen()" title="Повноекранний режим"><i class="material-icons" id="fsIcon">fullscreen</i></button>
     </div>
   </div>
   <script>
@@ -869,7 +882,8 @@
       map = new google.maps.Map(document.getElementById("map"), {
         zoom: 6,
         center: { lat: 48.3794, lng: 31.1656 },
-        styles: lightStyle
+  styles: lightStyle,
+  fullscreenControl: false
       });
 
       // ---- Presence (active users) ----
@@ -946,6 +960,39 @@
   function openWarn(){const o=document.getElementById('warnModal'); if(o) o.style.display='flex';}
   function closeWarn(){const o=document.getElementById('warnModal'); if(o) o.style.display='none';}
   function ackWarn(){ closeWarn(); }
+  // ----- Fullscreen logic -----
+  function _applyFsUI(){
+    const card=document.querySelector('.map-card'); const mapEl=document.getElementById('map');
+    if(card && mapEl){card.classList.add('fullscreen'); mapEl.classList.add('fullscreen'); document.body.classList.add('fullscreen-active');}
+    const fsIcon=document.getElementById('fsIcon'); if(fsIcon) fsIcon.textContent='fullscreen_exit';
+    // hide panels on very small screens to maximize map
+    if(window.innerWidth < 800){ const events=document.getElementById('events'); if(events) events.classList.add('hide-on-fs'); }
+  }
+  function _removeFsUI(){
+    const card=document.querySelector('.map-card'); const mapEl=document.getElementById('map');
+    if(card && mapEl){card.classList.remove('fullscreen'); mapEl.classList.remove('fullscreen'); document.body.classList.remove('fullscreen-active');}
+    const fsIcon=document.getElementById('fsIcon'); if(fsIcon) fsIcon.textContent='fullscreen';
+    const events=document.getElementById('events'); if(events) events.classList.remove('hide-on-fs');
+  }
+  function toggleFullScreen(){
+    const elem=document.getElementById('map');
+    if(!elem) return;
+    const nativeActive=document.fullscreenElement || document.webkitFullscreenElement;
+    if(!nativeActive){
+      let attempted=false;
+      try{ if(elem.requestFullscreen){elem.requestFullscreen(); attempted=true;} else if(elem.webkitRequestFullscreen){elem.webkitRequestFullscreen(); attempted=true;} }catch(e){attempted=false;}
+      if(!attempted){ // fallback
+        _applyFsUI();
+      }
+    } else {
+      try{ if(document.exitFullscreen) document.exitFullscreen(); else if(document.webkitExitFullscreen) document.webkitExitFullscreen(); }catch(e){}
+      _removeFsUI();
+    }
+  }
+  document.addEventListener('fullscreenchange',()=>{
+    const active=document.fullscreenElement || document.webkitFullscreenElement;
+    if(active) _applyFsUI(); else _removeFsUI();
+  });
   window.onload = () => { preloadIcons(); initMap(); openWarn(); };
   </script>
   <script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCNvHPPImGhTBA7NyOL7kNvfFe4bTIRpGs&callback=initMap&language=uk"></script>
