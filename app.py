@@ -57,6 +57,9 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(mess
 log = logging.getLogger(__name__)
 
 app = Flask(__name__)
+ACTIVE_VISITORS = {}
+ACTIVE_LOCK = threading.Lock()
+ACTIVE_TTL = 70  # seconds of inactivity before a visitor is dropped
 client = None
 session_str = os.getenv('TELEGRAM_SESSION')  # Telethon string session (recommended for Render)
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')  # optional bot token fallback
@@ -841,7 +844,29 @@ def hide_marker():
 
 @app.route('/health')
 def health():
-    return jsonify({'status':'ok','messages':len(load_messages()), 'auth': AUTH_STATUS})
+    # Clean visitors
+    now = time.time()
+    with ACTIVE_LOCK:
+        to_del = [k for k,v in ACTIVE_VISITORS.items() if now - v > ACTIVE_TTL]
+        for k in to_del: del ACTIVE_VISITORS[k]
+        visitors = len(ACTIVE_VISITORS)
+    return jsonify({'status':'ok','messages':len(load_messages()), 'auth': AUTH_STATUS, 'visitors': visitors})
+
+@app.route('/presence', methods=['POST'])
+def presence():
+    # Client sends a generated uuid every ~30s
+    data = request.get_json(silent=True) or {}
+    vid = data.get('id')
+    if not vid:
+        return jsonify({'status':'error','error':'id required'}), 400
+    now = time.time()
+    with ACTIVE_LOCK:
+        ACTIVE_VISITORS[vid] = now
+        # prune
+        stale = [k for k,v in ACTIVE_VISITORS.items() if now - v > ACTIVE_TTL]
+        for k in stale: del ACTIVE_VISITORS[k]
+        count = len(ACTIVE_VISITORS)
+    return jsonify({'status':'ok','visitors':count})
 
 # ---------- Simple interactive auth endpoints (semi-automatic) ----------
 # Use only with a secret: set AUTH_SECRET env var. These allow supplying a code
