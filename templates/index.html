@@ -483,6 +483,23 @@
   </div>
 
   <div class="main-content">
+    <!-- Map moved to top so it appears first on mobile -->
+    <div class="map-card">
+      <div class="map-controls">
+        <button class="map-control-btn" onclick="map.setZoom(map.getZoom() + 1)">
+          <i class="material-icons">add</i>
+        </button>
+        <button class="map-control-btn" onclick="map.setZoom(map.getZoom() - 1)">
+          <i class="material-icons">remove</i>
+        </button>
+        <button class="map-control-btn" onclick="map.setCenter({lat: 48.3794, lng: 31.1656})">
+          <i class="material-icons">center_focus_strong</i>
+        </button>
+      </div>
+      <div id="map">
+        <button class="map-fs-btn" id="fsToggleBtn" type="button" onclick="toggleFullScreen()" title="Повноекранний режим"><i class="material-icons" id="fsIcon">fullscreen</i></button>
+      </div>
+    </div>
     <div class="card" id="events">
       <h2>Останні події</h2>
       <div class="filters">
@@ -533,22 +550,6 @@
       </div>
     </div>
 
-    <div class="map-card">
-      <div class="map-controls">
-        <button class="map-control-btn" onclick="map.setZoom(map.getZoom() + 1)">
-          <i class="material-icons">add</i>
-        </button>
-        <button class="map-control-btn" onclick="map.setZoom(map.getZoom() - 1)">
-          <i class="material-icons">remove</i>
-        </button>
-        <button class="map-control-btn" onclick="map.setCenter({lat: 48.3794, lng: 31.1656})">
-          <i class="material-icons">center_focus_strong</i>
-        </button>
-      </div>
-      <div id="map">
-        <button class="map-fs-btn" id="fsToggleBtn" type="button" onclick="toggleFullScreen()" title="Повноекранний режим"><i class="material-icons" id="fsIcon">fullscreen</i></button>
-      </div>
-    </div>
   </div>
   <script>
     // Константы и настройки
