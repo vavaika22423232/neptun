@@ -340,6 +340,8 @@ def geocode_opencage(place: str):
 
 def process_message(text, mid, date_str, channel):
     """Extract coordinates or try simple city geocoding (lightweight)."""
+    # Санитизация: убираем точную фразу "Повітряна тривога" (реквест пользователя)
+    text = text.replace('Повітряна тривога', '').replace('повітряна тривога','').strip()
     # direct coordinates pattern
     def classify(th: str):
         l = th.lower()
