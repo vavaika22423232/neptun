@@ -185,13 +185,30 @@ def geocode_opencage(place: str):
 def process_message(text, mid, date_str, channel):
     """Extract coordinates or try simple city geocoding (lightweight)."""
     # direct coordinates pattern
+    def classify(th: str):
+        l = th.lower()
+        # KAB (guided bomb) treat as raketa per user request
+        if 'каб' in l:
+            return 'raketa', 'raketa.png'
+        if any(k in l for k in ['ракета','ракети','ракетний','ракетная','ракетный','missile','iskander','крылат','крилат','кр','s-300','s300']):
+            return 'raketa', 'raketa.png'
+        if any(k in l for k in ['avia','авіа','авиа','літак','самолет','бомба','бомби','бомбаки']):
+            return 'avia', 'avia.png'
+        if any(k in l for k in ['пво','зеніт','зенит']):
+            return 'pvo', 'rozved.png'
+        if any(k in l for k in ['артил', 'mlrs','града','градів','смерч','ураган']):
+            return 'artillery', 'artillery.png'
+        if any(k in l for k in ['shahed','шахед','шахеді','шахедів','geran','герань','дрон','дрони','бпла','uav']):
+            return 'shahed', 'shahed.png'
+        return 'shahed', 'shahed.png'
     m = re.search(r'(\d{1,2}\.\d+),(\d{1,3}\.\d+)', text)
     if m:
         lat = float(m.group(1)); lng = float(m.group(2))
+        threat_type, icon = classify(text)
         return [{
             'id': str(mid), 'place': 'Unknown', 'lat': lat, 'lng': lng,
-            'threat_type': 'shahed', 'text': text[:500], 'date': date_str, 'channel': channel,
-            'marker_icon': 'shahed.png'
+            'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+            'marker_icon': icon
         }]
     lower = text.lower()
     for city in UA_CITIES:
@@ -200,10 +217,11 @@ def process_message(text, mid, date_str, channel):
             coords = geocode_opencage(norm)
             if coords:
                 lat, lng = coords
+                threat_type, icon = classify(text)
                 return [{
                     'id': str(mid), 'place': norm.title(), 'lat': lat, 'lng': lng,
-                    'threat_type': 'shahed', 'text': text[:500], 'date': date_str, 'channel': channel,
-                    'marker_icon': 'shahed.png'
+                    'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon
                 }]
             break
     return None
