@@ -1,9 +1,4 @@
 __pycache__/
 *.pyc
 *.log
-.venv/
-.env
-messages.json
-hidden_markers.json
-geocoding_cache.json
-opencage_cache.json
+
