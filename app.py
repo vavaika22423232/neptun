@@ -1,4 +1,4 @@
-import os, re, json, asyncio, threading, logging, pytz
+import os, re, json, asyncio, threading, logging, pytz, time, subprocess
 from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify, request
 from telethon import TelegramClient
@@ -92,6 +92,11 @@ def load_messages():
 def save_messages(data):
     with open(MESSAGES_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+    # After each save attempt optional git auto-commit
+    try:
+        maybe_git_autocommit()
+    except Exception as e:
+        log.debug(f'git auto-commit skipped: {e}')
 
 def load_hidden():
     if os.path.exists(HIDDEN_FILE):
@@ -190,6 +195,62 @@ OBLAST_CENTERS = {
 SETTLEMENTS_FILE = os.getenv('SETTLEMENTS_FILE', 'settlements_ua.json')
 SETTLEMENTS_INDEX = {}
 SETTLEMENTS_ORDERED = []
+
+# --------------- Optional Git auto-commit settings ---------------
+GIT_AUTO_COMMIT = os.getenv('GIT_AUTO_COMMIT', '0') not in ('0','false','False','')
+GIT_REPO_SLUG = os.getenv('GIT_REPO_SLUG')  # e.g. 'vavaika22423232/neptun'
+GIT_SYNC_TOKEN = os.getenv('GIT_SYNC_TOKEN')  # GitHub PAT (classic or fine-grained) with repo write
+GIT_COMMIT_INTERVAL = int(os.getenv('GIT_COMMIT_INTERVAL', '180'))  # seconds between commits
+_last_git_commit = 0
+
+def maybe_git_autocommit():
+    """If enabled, commit & push updated messages.json back to GitHub.
+    Requirements:
+      - Set GIT_AUTO_COMMIT=1
+      - Provide GIT_REPO_SLUG (owner/repo)
+      - Provide GIT_SYNC_TOKEN (PAT with repo write)
+    The container build must include git (Render base images do).
+    Commits throttled by GIT_COMMIT_INTERVAL seconds.
+    """
+    global _last_git_commit
+    if not GIT_AUTO_COMMIT or not GIT_REPO_SLUG or not GIT_SYNC_TOKEN:
+        return
+    now = time.time()
+    if now - _last_git_commit < GIT_COMMIT_INTERVAL:
+        return
+    if not os.path.isdir('.git'):
+        raise RuntimeError('Not a git repo')
+    # Configure user (once)
+    def run(cmd):
+        return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    run('git config user.email "bot@local"')
+    run('git config user.name "Auto Sync Bot"')
+    # Set remote URL embedding token (avoid logging token!)
+    safe_remote = f'https://x-access-token:{GIT_SYNC_TOKEN}@github.com/{GIT_REPO_SLUG}.git'
+    # Do not print safe_remote (contains secret)
+    # Update origin only if needed
+    remotes = run('git remote -v').stdout
+    if 'origin' not in remotes or GIT_REPO_SLUG not in remotes:
+        run('git remote remove origin')
+        run(f'git remote add origin "{safe_remote}"')
+    # Stage & commit if there is a change
+    run(f'git add {MESSAGES_FILE}')
+    status = run('git status --porcelain').stdout
+    if MESSAGES_FILE not in status:
+        return  # no actual diff
+    commit_msg = f'Update {MESSAGES_FILE} (auto)'  # no secrets
+    run(f'git commit -m "{commit_msg}"')
+    push_res = run('git push origin HEAD:main')
+    if push_res.returncode == 0:
+        _last_git_commit = now
+    else:
+        # If push fails (e.g., diverged), attempt pull+rebase then push
+        run('git fetch origin')
+        run('git rebase origin/main || git rebase --abort')
+        push_res2 = run('git push origin HEAD:main')
+        if push_res2.returncode == 0:
+            _last_git_commit = now
+        # else: give up silently to avoid spamming logs
 
 def _load_settlements():
     global SETTLEMENTS_INDEX, SETTLEMENTS_ORDERED
@@ -517,6 +578,40 @@ def replace_client(new_session: str):
         AUTH_STATUS.update({'authorized': True, 'reason': 'replaced_session'})
         start_fetch_thread()
 
+# ----------------- Session watcher (auto reload new_session.txt) -----------------
+SESSION_WATCH_FILE = os.getenv('SESSION_WATCH_FILE', 'new_session.txt')
+SESSION_WATCH_INTERVAL = int(os.getenv('SESSION_WATCH_INTERVAL', '20'))
+_watch_thread_started = False
+_last_session_file_mtime = 0
+
+def start_session_watcher():
+    global _watch_thread_started, _last_session_file_mtime
+    if _watch_thread_started:
+        return
+    _watch_thread_started = True
+    def _watch():
+        global _last_session_file_mtime, session_str
+        while True:
+            try:
+                if os.path.exists(SESSION_WATCH_FILE):
+                    mt = os.path.getmtime(SESSION_WATCH_FILE)
+                    if mt != _last_session_file_mtime:
+                        _last_session_file_mtime = mt
+                        with open(SESSION_WATCH_FILE,'r',encoding='utf-8') as f:
+                            new_s = f.read().strip()
+                        if new_s and new_s != session_str:
+                            log.info('Session watcher: detected updated session file, reloading...')
+                            replace_client(new_s)
+                # If we are unauthorized due to duplicate key, keep looking for replacement
+                if AUTH_STATUS.get('reason','').startswith('authkey_duplicated') and not client.is_connected():
+                    # just a hint in logs every few cycles
+                    if int(time.time()) % (SESSION_WATCH_INTERVAL*3) == 0:
+                        log.info('Waiting for new session (AuthKeyDuplicatedError). Generate via /auth endpoints.')
+            except Exception as e:
+                log.debug(f'Session watcher error: {e}')
+            time.sleep(SESSION_WATCH_INTERVAL)
+    threading.Thread(target=_watch, daemon=True).start()
+
 @app.route('/')
 def index():
     return render_template('index.html', google_maps_key=GOOGLE_MAPS_KEY)
@@ -671,4 +766,5 @@ def auth_status():
 
 if __name__ == '__main__':
     start_fetch_thread()
+    start_session_watcher()
     app.run(host='0.0.0.0', port=int(os.getenv('PORT','8080')))

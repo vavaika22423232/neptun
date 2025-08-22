@@ -1,4 +1,23 @@
 __pycache__/
 *.pyc
 *.log
+# Secrets / env (do NOT commit real credentials)
+.env
+.env.*
+
+# Telegram session artifacts
+new_session.txt
+*session*
+
+# Caches (keep messages.json tracked intentionally)
+opencage_cache.json
+hidden_markers.json
+
+# Virtual environments
+venv/
+.venv/
+
+# OS junk
+Thumbs.db
+.DS_Store
 
