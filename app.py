@@ -201,6 +201,40 @@ async def fetch_loop():
     tz = pytz.timezone('Europe/Kyiv')
     processed = {m.get('id') for m in load_messages()}
     all_data = load_messages()
+    # -------- Initial backfill (last BACKFILL_MINUTES, default 50) --------
+    try:
+        backfill_minutes = int(os.getenv('BACKFILL_MINUTES', '50'))
+    except ValueError:
+        backfill_minutes = 50
+    backfill_cutoff = datetime.now(tz) - timedelta(minutes=backfill_minutes)
+    if backfill_minutes > 0:
+        log.info(f'Starting backfill for last {backfill_minutes} minutes...')
+        for ch in CHANNELS:
+            ch_strip = ch.strip()
+            if not ch_strip:
+                continue
+            fetched = 0
+            try:
+                async for msg in client.iter_messages(ch_strip, limit=400):  # cap to avoid huge history
+                    if not msg.text:
+                        continue
+                    dt = msg.date.astimezone(tz)
+                    if dt < backfill_cutoff:
+                        break  # older than needed
+                    if msg.id in processed:
+                        continue
+                    tracks = process_message(msg.text, msg.id, dt.strftime('%Y-%m-%d %H:%M:%S'), ch_strip)
+                    if tracks:
+                        all_data.extend(tracks)
+                        processed.add(msg.id)
+                        fetched += 1
+                if fetched:
+                    log.info(f'Backfilled {fetched} messages from {ch_strip}')
+            except Exception as e:
+                log.warning(f'Backfill error {ch_strip}: {e}')
+        if fetched:
+            save_messages(all_data)
+        log.info('Backfill completed.')
     while True:
         new_tracks = []
         for ch in CHANNELS:
