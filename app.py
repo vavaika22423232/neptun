@@ -360,6 +360,11 @@ def process_message(text, mid, date_str, channel):
     low_orig = original_text.lower()
     if 'повітряна тривога' in low_orig and not any(k in low_orig for k in ['бпла','дрон','шахед','shahed','geran','ракета','missile','iskander','s-300','s300','артил','града','смерч','ураган','mlrs']):
         return None
+    # Общий набор ключевых слов угроз
+    THREAT_KEYS = ['бпла','дрон','шахед','shahed','geran','ракета','ракети','missile','iskander','s-300','s300','каб','артил','града','смерч','ураган','mlrs','avia','авіа','авиа','бомба']
+    def has_threat(txt: str):
+        l = txt.lower()
+        return any(k in l for k in THREAT_KEYS)
     # direct coordinates pattern
     def classify(th: str):
         l = th.lower()
@@ -429,6 +434,9 @@ def process_message(text, mid, date_str, channel):
             region_hits.append((rn.title(), rc, ln[:180]))
     # Если нашли >=2 региональных маркеров в разных пунктах списка — формируем множественные треки
     if len(region_hits) >= 2:
+        # Пропускаем если нет ни одного упоминания угрозы вообще
+        if not has_threat(text):
+            return None
         threat_type, icon = classify(text)
         tracks = []
         # deduplicate by name
@@ -512,6 +520,13 @@ def process_message(text, mid, date_str, channel):
         if name in lower:
             matched_regions.append((name, coords))
     if matched_regions:
+        # Если только области упомянуты и нет ключей угроз, пропускаем
+        if not has_threat(text):
+            return None
+        # Если упомянута ровно одна область и нет города/района — не ставим маркер (избегаем центра города)
+        if len(matched_regions) == 1 and not raion_matches:
+            # Можно в будущем включить через ENV
+            return None
         if len(matched_regions) == 2 and any(w in lower for w in ['межі','межу','межа','между','границі','граница']):
             (n1,(a1,b1)), (n2,(a2,b2)) = matched_regions
             lat = (a1+a2)/2; lng = (b1+b2)/2
