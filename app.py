@@ -211,7 +211,12 @@ RAION_FALLBACK = {
     'одеський': (46.4825, 30.7233),
     'одесский': (46.4825, 30.7233),
     'харківський': (49.9935, 36.2304),
-    'харьковский': (49.9935, 36.2304)
+    'харьковский': (49.9935, 36.2304),
+    # Новые районы для многократных сообщений
+    'конотопський': (51.2375, 33.2020), 'конотопский': (51.2375, 33.2020),
+    'сумський': (50.9077, 34.7981), 'сумский': (50.9077, 34.7981),
+    'новгород-сіверський': (51.9874, 33.2620), 'новгород-северский': (51.9874, 33.2620),
+    'чугуївський': (49.8353, 36.6880), 'чугевский': (49.8353, 36.6880), 'чугевський': (49.8353, 36.6880), 'чугуевский': (49.8353, 36.6880)
 }
 
 SETTLEMENTS_FILE = os.getenv('SETTLEMENTS_FILE', 'settlements_ua.json')
@@ -343,8 +348,13 @@ def geocode_opencage(place: str):
 
 def process_message(text, mid, date_str, channel):
     """Extract coordinates or try simple city geocoding (lightweight)."""
+    original_text = text
     # Санитизация: убираем точную фразу "Повітряна тривога" (реквест пользователя)
     text = text.replace('Повітряна тривога', '').replace('повітряна тривога','').strip()
+    # Если сообщение по сути только про тревогу (без упоминаний угроз) — пропускаем (не строим маркер)
+    low_orig = original_text.lower()
+    if 'повітряна тривога' in low_orig and not any(k in low_orig for k in ['бпла','дрон','шахед','shahed','geran','ракета','missile','iskander','s-300','s300','артил','града','смерч','ураган','mlrs']):
+        return None
     # direct coordinates pattern
     def classify(th: str):
         l = th.lower()
@@ -442,11 +452,34 @@ def process_message(text, mid, date_str, channel):
                 }]
 
     # --- Raion (district) detection ---
-    # Ищем конструкции вида "Покровський район" или просто "Покровський район" в тексте.
+    # Ищем конструкции вида "Покровський район", а также множественные "Конотопський та Сумський райони".
+    def norm_raion(token: str):
+        t = token.lower().strip('- ')
+        # унификация дефисов
+        t = t.replace('–','-')
+        # морфологические окончания -> базовая форма -ський
+        t = re.sub(r'(ському|ского|ського|ский|ськiй|ськой|ським|ском)$','ський', t)
+        return t
     raion_matches = []
+    # множественное 'райони'
+    plural_pattern = re.compile(r'([А-ЯA-ZЇІЄҐЁа-яa-zїієґё,\-\s]{4,}?)райони', re.IGNORECASE)
+    for pm in plural_pattern.finditer(text):
+        segment = pm.group(1)
+        # разделяем по 'та' или запятым
+        parts = re.split(r'\s+та\s+|,', segment)
+        for p in parts:
+            cand = p.strip()
+            if not cand:
+                continue
+            # берём последнее слово (Конотопський)
+            last = cand.split()[-1]
+            base = norm_raion(last)
+            if base in RAION_FALLBACK:
+                raion_matches.append((base, RAION_FALLBACK[base]))
+    # одиночное 'район'
     raion_pattern = re.compile(r'([А-ЯA-ZЇІЄҐЁа-яa-zїієґё\-]{4,})\s+район', re.IGNORECASE)
     for m_r in raion_pattern.finditer(text):
-        base = m_r.group(1).strip().lower()
+        base = norm_raion(m_r.group(1))
         if base in RAION_FALLBACK:
             raion_matches.append((base, RAION_FALLBACK[base]))
     if raion_matches:
