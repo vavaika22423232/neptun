@@ -47,10 +47,16 @@ log = logging.getLogger(__name__)
 app = Flask(__name__)
 client = None
 session_str = os.getenv('TELEGRAM_SESSION')  # Telethon string session (recommended for Render)
+BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')  # optional bot token fallback
+AUTH_SECRET = os.getenv('AUTH_SECRET')  # simple shared secret to protect /auth endpoints
 if API_ID and API_HASH:
     if session_str:
         log.info('Initializing Telegram client with TELEGRAM_SESSION string.')
         client = TelegramClient(StringSession(session_str), API_ID, API_HASH)
+    elif BOT_TOKEN:
+        log.info('Initializing Telegram client with BOT token (limited access).')
+        # Bot sessions auto-authorize on start
+        client = TelegramClient(StringSession(), API_ID, API_HASH)
     else:
         log.info('Initializing Telegram client with local session file (may not persist on Render).')
         client = TelegramClient('anon', API_ID, API_HASH)
@@ -198,15 +204,21 @@ async def fetch_loop():
             return True
         try:
             await client.connect()
+            # If bot token provided and not authorized yet, try bot login
+            if BOT_TOKEN and not await client.is_user_authorized():
+                try:
+                    await client.start(bot_token=BOT_TOKEN)
+                except Exception as be:
+                    log.error(f'Bot start failed: {be}')
             if not await client.is_user_authorized():
-                log.error('Telegram client NOT authorized. Provide TELEGRAM_SESSION env var or re-generate session.')
+                log.error('Not authorized. Use /auth/start & /auth/complete to login or set TELEGRAM_SESSION.')
                 return False
             return True
         except AuthKeyDuplicatedError:
-            log.error('AuthKeyDuplicatedError: The TELEGRAM_SESSION is in use elsewhere or duplicated. Generate a NEW session string and redeploy. Stopping fetch loop.')
+            log.error('AuthKeyDuplicatedError: duplicate session. Provide new TELEGRAM_SESSION or re-auth.')
             return False
         except AuthKeyUnregisteredError:
-            log.error('AuthKeyUnregisteredError: Session invalid/expired. Generate new TELEGRAM_SESSION.')
+            log.error('AuthKeyUnregisteredError: Session invalid/expired. Re-auth needed.')
             return False
         except FloodWaitError as fe:
             wait = int(getattr(fe, 'seconds', 60))
@@ -374,6 +386,90 @@ def hide_marker():
 @app.route('/health')
 def health():
     return jsonify({'status':'ok','messages':len(load_messages())})
+
+# ---------- Simple interactive auth endpoints (semi-automatic) ----------
+# Use only with a secret: set AUTH_SECRET env var. These allow supplying a code
+# without opening a shell. DO NOT expose without secret: anyone could take over session.
+auth_state = {}
+auth_lock = threading.Lock()
+
+def _check_secret():
+    if not AUTH_SECRET:
+        return True  # if not set, allow (not recommended)
+    provided = request.args.get('auth') or request.headers.get('X-Auth-Secret') or (request.json or {}).get('auth') if request.is_json else None
+    return provided == AUTH_SECRET
+
+@app.route('/auth/start', methods=['POST'])
+def auth_start():
+    if not _check_secret():
+        return jsonify({'status':'forbidden'}), 403
+    if not API_ID or not API_HASH:
+        return jsonify({'status':'error','error':'API credentials missing'}), 400
+    phone = (request.json or {}).get('phone') if request.is_json else None
+    if not phone:
+        return jsonify({'status':'error','error':'phone required'}), 400
+    if not client:
+        return jsonify({'status':'error','error':'client not initialized'}), 500
+    async def _send():
+        async with client:
+            await client.connect()
+            sent = await client.send_code_request(phone)
+            with auth_lock:
+                auth_state['phone'] = phone
+                auth_state['phone_code_hash'] = sent.phone_code_hash
+    loop = asyncio.get_event_loop()
+    if loop.is_running():
+        asyncio.ensure_future(_send())
+    else:
+        loop.run_until_complete(_send())
+    return jsonify({'status':'ok','message':'code sent (check Telegram/SMS)'})
+
+@app.route('/auth/complete', methods=['POST'])
+def auth_complete():
+    if not _check_secret():
+        return jsonify({'status':'forbidden'}), 403
+    payload = request.json or {}
+    code = payload.get('code')
+    phone = payload.get('phone') or auth_state.get('phone')
+    if not (code and phone):
+        return jsonify({'status':'error','error':'phone and code required'}), 400
+    pch = auth_state.get('phone_code_hash')
+    if not pch:
+        return jsonify({'status':'error','error':'start auth first'}), 400
+    async def _sign_in():
+        async with client:
+            await client.connect()
+            try:
+                await client.sign_in(phone=phone, code=code, phone_code_hash=pch)
+            except SessionPasswordNeededError:  # 2FA enabled
+                return {'status':'error','error':'2FA password needed (not implemented)'}
+            # produce new string session
+            new_session = StringSession.save(client.session)
+            return {'status':'ok','session': new_session}
+    # Need import for exception
+    from telethon.errors import SessionPasswordNeededError
+    loop = asyncio.get_event_loop()
+    if loop.is_running():
+        fut = asyncio.ensure_future(_sign_in())
+        # Can't await directly in sync route; simple busy wait (short)
+        import time
+        for _ in range(100):
+            if fut.done(): break
+            time.sleep(0.05)
+        if not fut.done():
+            return jsonify({'status':'error','error':'timeout'}), 500
+        res = fut.result()
+    else:
+        res = loop.run_until_complete(_sign_in())
+    if res.get('status')=='ok':
+        # persist? we only log and return; user should set TELEGRAM_SESSION
+        try:
+            with open('new_session.txt','w',encoding='utf-8') as f:
+                f.write(res['session'])
+        except Exception:
+            pass
+        log.info('New TELEGRAM_SESSION generated. Update environment and redeploy for persistence.')
+    return jsonify(res)
 
  # (Dynamic asset loader removed since template now static)
 
