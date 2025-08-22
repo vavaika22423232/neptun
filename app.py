@@ -2,12 +2,23 @@ import os, re, json, asyncio, threading, logging, pytz
 from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify, request
 from telethon import TelegramClient
-from telethon.errors import (
-    AuthKeyDuplicatedError,
-    AuthKeyUnregisteredError,
-    FloodWaitError,
-    RpcError
-)
+try:
+    from telethon.errors import (
+        AuthKeyDuplicatedError,
+        AuthKeyUnregisteredError,
+        FloodWaitError,
+        SessionPasswordNeededError
+    )
+except ImportError:
+    # Fallback dummies if some names not present in current Telethon version
+    class AuthKeyDuplicatedError(Exception):
+        pass
+    class AuthKeyUnregisteredError(Exception):
+        pass
+    class FloodWaitError(Exception):
+        def __init__(self, seconds=60): self.seconds = seconds
+    class SessionPasswordNeededError(Exception):
+        pass
 from telethon.sessions import StringSession
 
 # Basic minimal subset for Render deployment. Heavy ML parts stripped for now.
@@ -310,8 +321,7 @@ async def fetch_loop():
                 wait = int(getattr(fe, 'seconds', 60))
                 log.warning(f'FloodWait while reading {ch}: sleep {wait}s')
                 await asyncio.sleep(wait)
-            except RpcError as re:
-                log.warning(f'RPC error reading {ch}: {re}')
+            # Generic RPC errors will be caught by broad Exception if specific class not available
             except Exception as e:
                 log.warning(f'Error reading {ch}: {e}')
         if new_tracks:
