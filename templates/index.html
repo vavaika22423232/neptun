@@ -301,17 +301,28 @@
       transform: translateY(-1px);
     }
   /* Custom fullscreen button (bottom-right) */
-  .map-card { position: relative; }
-  .map-fs-btn {position:absolute;bottom:1rem;right:1rem;background:linear-gradient(135deg,#1e293b,#0f172a);border:1px solid #223042;color:#e2e8f0;padding:.65rem;border-radius:.75rem;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px -6px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.05);transition:.18s;z-index:5;}
+    .map-card { position: relative; }
+    .map-fs-btn {position:absolute;bottom:1rem;right:1rem;background:linear-gradient(135deg,#1e293b,#0f172a);border:1px solid #223042;color:#e2e8f0;padding:.65rem;border-radius:.75rem;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px -6px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.05);transition:.18s;z-index:15;}
   .map-fs-btn:hover{background:#243243;}
   .map-fs-btn:active{transform:translateY(1px);}
   .map-fs-btn i{font-size:22px;}
-  @media (max-width:700px){.map-fs-btn{bottom:.85rem;right:.85rem;padding:.55rem;border-radius:.65rem;}}
+    @media (max-width:700px){.map-fs-btn{bottom:.85rem;right:.85rem;padding:.55rem;border-radius:.65rem;} }
   @supports(padding:max(0px)){ .map-fs-btn{bottom:calc(1rem + env(safe-area-inset-bottom)); right:calc(1rem + env(safe-area-inset-right));} }
   /* Fullscreen fallback classes (for iOS Safari where requestFullscreen often blocked) */
-  .map-card.fullscreen, #map.fullscreen {position:fixed !important;inset:0 !important;width:100vw !important;height:100vh !important;z-index:120 !important;border-radius:0 !important;box-shadow:none !important;}
+    .map-card.fullscreen {position:fixed !important;inset:0 !important;width:100vw !important;height:100vh !important;z-index:120 !important;border-radius:0 !important;box-shadow:none !important;background:var(--panel-bg);} 
+    .map-card.fullscreen #map {height:100% !important;width:100% !important;border-radius:0 !important;}
+    .map-card.fullscreen .map-fs-btn {bottom:1rem;right:1rem;}
   body.fullscreen-active {overflow:hidden;touch-action:none;}
   .hide-on-fs {display:none !important;}
+    /* Extra small / phone layout overrides */
+    @media (max-width:820px){
+      .main-content{display:block;max-width:100%;padding:0;margin:0;}
+      .map-card{width:100%;border-radius:0;border:0;}
+      #map{height:calc(100vh - 3.2rem);border-radius:0;}
+    }
+    @media (max-width:520px){
+      #map{height:calc(100vh - 3.2rem);} 
+    }
     @media (max-width: 1100px) {
       .main-content {
         grid-template-columns: 1fr;
@@ -534,8 +545,9 @@
           <i class="material-icons">center_focus_strong</i>
         </button>
       </div>
-      <div id="map"></div>
-  <button class="map-fs-btn" id="fsToggleBtn" type="button" onclick="toggleFullScreen()" title="Повноекранний режим"><i class="material-icons" id="fsIcon">fullscreen</i></button>
+      <div id="map">
+        <button class="map-fs-btn" id="fsToggleBtn" type="button" onclick="toggleFullScreen()" title="Повноекранний режим"><i class="material-icons" id="fsIcon">fullscreen</i></button>
+      </div>
     </div>
   </div>
   <script>
@@ -879,7 +891,7 @@
         { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#e3f2fd' }] },
         { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#ffffff' }] }
       ];
-      map = new google.maps.Map(document.getElementById("map"), {
+  map = new google.maps.Map(document.getElementById("map"), {
         zoom: 6,
         center: { lat: 48.3794, lng: 31.1656 },
   styles: lightStyle,
@@ -960,6 +972,30 @@
   function openWarn(){const o=document.getElementById('warnModal'); if(o) o.style.display='flex';}
   function closeWarn(){const o=document.getElementById('warnModal'); if(o) o.style.display='none';}
   function ackWarn(){ closeWarn(); }
+  // Fullscreen logic (request container for native so button remains visible)
+  function _applyFsUI(){
+    const card=document.querySelector('.map-card');
+    if(card){card.classList.add('fullscreen'); document.body.classList.add('fullscreen-active');}
+    const ic=document.getElementById('fsIcon'); if(ic) ic.textContent='fullscreen_exit';
+  }
+  function _removeFsUI(){
+    const card=document.querySelector('.map-card');
+    if(card){card.classList.remove('fullscreen'); document.body.classList.remove('fullscreen-active');}
+    const ic=document.getElementById('fsIcon'); if(ic) ic.textContent='fullscreen';
+  }
+  function toggleFullScreen(){
+    const card=document.querySelector('.map-card'); if(!card) return;
+    const nativeActive=document.fullscreenElement || document.webkitFullscreenElement;
+    if(!nativeActive){
+      let attempted=false;
+      try{ if(card.requestFullscreen){card.requestFullscreen(); attempted=true;} else if(card.webkitRequestFullscreen){card.webkitRequestFullscreen(); attempted=true;} }catch(e){attempted=false;}
+      if(!attempted){ _applyFsUI(); }
+    } else {
+      try{ if(document.exitFullscreen) document.exitFullscreen(); else if(document.webkitExitFullscreen) document.webkitExitFullscreen(); }catch(e){}
+      _removeFsUI();
+    }
+  }
+  document.addEventListener('fullscreenchange',()=>{ const active=document.fullscreenElement || document.webkitFullscreenElement; if(active) _applyFsUI(); else _removeFsUI(); });
   // ----- Fullscreen logic -----
   function _applyFsUI(){
     const card=document.querySelector('.map-card'); const mapEl=document.getElementById('map');
