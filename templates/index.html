@@ -33,23 +33,7 @@
       line-height: 1.5;
     }
     
-    .navbar {
-      width: 100%;
-      background: var(--panel-bg);
-      color: var(--text);
-      font-weight: 600;
-      font-size: 1.25rem;
-      padding: 1rem 2rem;
-      box-shadow: 0 4px 20px var(--shadow);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      border-bottom: 1px solid var(--border);
-      position: sticky;
-      top: 0;
-      z-index: 50;
-      backdrop-filter: blur(12px);
-    }
+  .navbar {width:100%;background:var(--panel-bg);color:var(--text);font-weight:600;font-size:1.15rem;padding:.7rem 1.1rem;box-shadow:0 4px 20px var(--shadow);display:flex;align-items:center;gap:1.5rem;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);}    
     .navbar .logo {
       display: flex;
       align-items: center;
@@ -69,31 +53,15 @@
       transform: scale(1.05);
     }
 
-        .live-users {
-          display:flex;align-items:center;gap:.45rem;padding:.4rem .8rem;
-          background:linear-gradient(135deg,#1e293b,#0f172a 60%);
-          border:1px solid #1f2b3a;border-radius:999px;font-size:.8rem;font-weight:600;
-          letter-spacing:.5px;position:relative;box-shadow:0 0 0 1px rgba(59,130,246,.15),0 4px 12px -2px rgba(0,0,0,.4);
-        }
+  .live-users {display:inline-flex;align-items:center;gap:.3rem;padding:.32rem .65rem;background:linear-gradient(135deg,#1e293b,#0f172a 60%);border:1px solid #1f2b3a;border-radius:999px;font-size:.68rem;font-weight:600;letter-spacing:.4px;position:relative;box-shadow:0 0 0 1px rgba(59,130,246,.15),0 4px 10px -2px rgba(0,0,0,.45);margin-left:auto;white-space:nowrap;}
         .live-users:before {content:"";width:10px;height:10px;background:radial-gradient(circle at 30% 30%,#34d399,#059669);border-radius:50%;box-shadow:0 0 8px 2px rgba(16,185,129,.6);animation:pulse 2.2s ease-in-out infinite;}
         @keyframes pulse {0%{box-shadow:0 0 0 0 rgba(16,185,129,.6);transform:scale(1);}50%{box-shadow:0 0 0 6px rgba(16,185,129,0);transform:scale(1.08);}100%{box-shadow:0 0 0 0 rgba(16,185,129,0);transform:scale(1);}}
         .live-users span{color:#e2e8f0}
         .live-users strong{color:#34d399;font-weight:700}
     
-    .navbar .nav-links {
-      display: flex;
-      gap: 2rem;
-      font-size: 1rem;
-    }
+  .navbar .nav-links {display:flex;gap:.75rem;font-size:.85rem;flex-wrap:wrap;align-items:center;}
     
-    .navbar .nav-links a {
-      color: var(--text2);
-      text-decoration: none;
-      font-weight: 500;
-      transition: all 0.2s;
-      padding: 0.5rem 1rem;
-      border-radius: 0.5rem;
-    }
+  .navbar .nav-links a {color:var(--text2);text-decoration:none;font-weight:500;transition:all .2s;padding:.45rem .75rem;border-radius:.5rem;line-height:1;display:flex;align-items:center;gap:.25rem;}
     
     .navbar .nav-links a:hover {
       color: var(--text);
@@ -467,7 +435,7 @@
       <a href="#events"><i class="material-icons">notifications</i> Події</a>
       <a href="#about"><i class="material-icons">info</i> Інфо</a>
     </div>
-  <div class="live-users" id="liveUsers" title="Активні відвідувачі"><span>online</span><strong>0</strong></div>
+  <div class="live-users" id="liveUsers" title="Активні відвідувачі"><span>онлайн</span><strong>0</strong></div>
   </div>
 
   <div class="main-content">
