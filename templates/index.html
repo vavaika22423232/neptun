@@ -53,7 +53,7 @@
       transform: scale(1.05);
     }
 
-  .live-users {display:inline-flex;align-items:center;gap:.3rem;padding:.32rem .65rem;background:linear-gradient(135deg,#1e293b,#0f172a 60%);border:1px solid #1f2b3a;border-radius:999px;font-size:.68rem;font-weight:600;letter-spacing:.4px;position:relative;box-shadow:0 0 0 1px rgba(59,130,246,.15),0 4px 10px -2px rgba(0,0,0,.45);margin-left:auto;white-space:nowrap;}
+  .live-users {display:inline-flex;align-items:center;gap:.3rem;padding:.32rem .65rem;background:linear-gradient(135deg,#1e293b,#0f172a 60%);border:1px solid #1f2b3a;border-radius:999px;font-size:.68rem;font-weight:600;letter-spacing:.4px;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);box-shadow:0 0 0 1px rgba(59,130,246,.15),0 4px 10px -2px rgba(0,0,0,.45);white-space:nowrap;}
         .live-users:before {content:"";width:10px;height:10px;background:radial-gradient(circle at 30% 30%,#34d399,#059669);border-radius:50%;box-shadow:0 0 8px 2px rgba(16,185,129,.6);animation:pulse 2.2s ease-in-out infinite;}
         @keyframes pulse {0%{box-shadow:0 0 0 0 rgba(16,185,129,.6);transform:scale(1);}50%{box-shadow:0 0 0 6px rgba(16,185,129,0);transform:scale(1.08);}100%{box-shadow:0 0 0 0 rgba(16,185,129,0);transform:scale(1);}}
         .live-users span{color:#e2e8f0}
@@ -454,6 +454,7 @@
       <h3 id="warnTitle">Попередження!</h3>
       <p>Мапу <strong>не можна використовувати</strong> в прямих трансляціях TikTok та інших соцмережах.</p>
       <p>Використання <strong>тільки в інформативних цілях.</strong></p>
+  <p style="margin-top:.6rem;color:#fca5a5;"><strong>Увага:</strong> В разі виявлення порушення ваш тікток акаунт буде заблокований модераторами.</p>
       <button onclick="ackWarn()">Зрозуміло</button>
     </div>
   </div>
