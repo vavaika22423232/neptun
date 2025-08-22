@@ -585,9 +585,62 @@ def process_message(text, mid, date_str, channel):
         # Если только области упомянуты и нет ключей угроз, пропускаем
         if not has_threat(text):
             return None
-        # Если упомянута ровно одна область и нет города/района — не ставим маркер (избегаем центра города)
+        # --- Направления внутри области (північно-західний / південно-західний и т.п.) ---
+        def detect_direction(lower_txt: str):
+            # порядок важен: сначала составные
+            if 'північно-захід' in lower_txt: return 'nw'
+            if 'південно-захід' in lower_txt: return 'sw'
+            if 'північно-схід' in lower_txt: return 'ne'
+            if 'південно-схід' in lower_txt: return 'se'
+            # одиночные стороны света (избегаем ложных с составными за счёт предыдущих проверок)
+            # "північ" north, "південь" south, "схід" east, "захід" west
+            # избегаем совпадения внутри составных уже обработанных
+            if ' північ' in lower_txt or lower_txt.startswith('північ'):
+                return 'n'
+            if ' південь' in lower_txt or lower_txt.startswith('південь'):
+                return 's'
+            if ' схід' in lower_txt or lower_txt.startswith('схід'):
+                return 'e'
+            if ' захід' in lower_txt or lower_txt.startswith('захід'):
+                return 'w'
+            return None
+        direction_code = None
         if len(matched_regions) == 1 and not raion_matches:
-            # Можно в будущем включить через ENV
+            direction_code = detect_direction(lower)
+            if direction_code:
+                (reg_name, (base_lat, base_lng)) = matched_regions[0]
+                # смещение ~50-70 км в сторону указанного направления
+                def offset(lat, lng, code):
+                    # базовые дельты в градусах (широта ~111 км, долгота * cos(lat))
+                    lat_step = 0.55
+                    lng_step = 0.85 / max(0.2, abs(math.cos(math.radians(lat))))
+                    if code == 'n': return lat+lat_step, lng
+                    if code == 's': return lat-lat_step, lng
+                    if code == 'e': return lat, lng+lng_step
+                    if code == 'w': return lat, lng-lng_step
+                    # диагонали немного меньше по каждой оси
+                    lat_diag = lat_step * 0.8
+                    lng_diag = lng_step * 0.8
+                    if code == 'ne': return lat+lat_diag, lng+lng_diag
+                    if code == 'nw': return lat+lat_diag, lng-lng_diag
+                    if code == 'se': return lat-lat_diag, lng+lng_diag
+                    if code == 'sw': return lat-lat_diag, lng-lng_diag
+                    return lat, lng
+                lat_o, lng_o = offset(base_lat, base_lng, direction_code)
+                threat_type, icon = classify(text)
+                dir_label_map = {
+                    'n':'північна частина', 's':'південна частина', 'e':'східна частина', 'w':'західна частина',
+                    'ne':'північно-східна частина', 'nw':'північно-західна частина',
+                    'se':'південно-східна частина', 'sw':'південно-західна частина'
+                }
+                dir_phrase = dir_label_map.get(direction_code, 'частина')
+                base_disp = reg_name.split()[0].title()
+                return [{
+                    'id': str(mid), 'place': f"{base_disp} ({dir_phrase})", 'lat': lat_o, 'lng': lng_o,
+                    'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': 'region_direction'
+                }]
+            # иначе (нет направления) избегаем центра города
             return None
         if len(matched_regions) == 2 and any(w in lower for w in ['межі','межу','межа','между','границі','граница']):
             (n1,(a1,b1)), (n2,(a2,b2)) = matched_regions
@@ -1384,9 +1437,54 @@ def process_message(text, mid, date_str, channel):
         # Если только области упомянуты и нет ключей угроз, пропускаем
         if not has_threat(text):
             return None
-        # Если упомянута ровно одна область и нет города/района — не ставим маркер (избегаем центра города)
+        # --- Направления внутри области ---
+        def detect_direction(lower_txt: str):
+            if 'північно-захід' in lower_txt: return 'nw'
+            if 'південно-захід' in lower_txt: return 'sw'
+            if 'північно-схід' in lower_txt: return 'ne'
+            if 'південно-схід' in lower_txt: return 'se'
+            if ' північ' in lower_txt or lower_txt.startswith('північ'):
+                return 'n'
+            if ' південь' in lower_txt or lower_txt.startswith('південь'):
+                return 's'
+            if ' схід' in lower_txt or lower_txt.startswith('схід'):
+                return 'e'
+            if ' захід' in lower_txt or lower_txt.startswith('захід'):
+                return 'w'
+            return None
+        direction_code = None
         if len(matched_regions) == 1 and not raion_matches:
-            # Можно в будущем включить через ENV
+            direction_code = detect_direction(lower)
+            if direction_code:
+                (reg_name, (base_lat, base_lng)) = matched_regions[0]
+                def offset(lat, lng, code):
+                    lat_step = 0.55
+                    lng_step = 0.85 / max(0.2, abs(math.cos(math.radians(lat))))
+                    if code == 'n': return lat+lat_step, lng
+                    if code == 's': return lat-lat_step, lng
+                    if code == 'e': return lat, lng+lng_step
+                    if code == 'w': return lat, lng-lng_step
+                    lat_diag = lat_step * 0.8
+                    lng_diag = lng_step * 0.8
+                    if code == 'ne': return lat+lat_diag, lng+lng_diag
+                    if code == 'nw': return lat+lat_diag, lng-lng_diag
+                    if code == 'se': return lat-lat_diag, lng+lng_diag
+                    if code == 'sw': return lat-lat_diag, lng-lng_diag
+                    return lat, lng
+                lat_o, lng_o = offset(base_lat, base_lng, direction_code)
+                threat_type, icon = classify(text)
+                dir_label_map = {
+                    'n':'північна частина', 's':'південна частина', 'e':'східна частина', 'w':'західна частина',
+                    'ne':'північно-східна частина', 'nw':'північно-західна частина',
+                    'se':'південно-східна частина', 'sw':'південно-західна частина'
+                }
+                dir_phrase = dir_label_map.get(direction_code, 'частина')
+                base_disp = reg_name.split()[0].title()
+                return [{
+                    'id': str(mid), 'place': f"{base_disp} ({dir_phrase})", 'lat': lat_o, 'lng': lng_o,
+                    'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': 'region_direction'
+                }]
             return None
         if len(matched_regions) == 2 and any(w in lower for w in ['межі','межу','межа','между','границі','граница','граніца','границю']):
             (n1,(a1,b1)), (n2,(a2,b2)) = matched_regions
