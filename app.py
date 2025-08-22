@@ -146,6 +146,37 @@ UA_CITY_NORMALIZE = {
     'чернигов':'чернігів'
 }
 
+# Static fallback coordinates (approximate city centers) to avoid relying solely on OpenCage.
+CITY_COORDS = {
+    'київ': (50.4501, 30.5234),
+    'харків': (49.9935, 36.2304),
+    'одеса': (46.4825, 30.7233),
+    'дніпро': (48.4647, 35.0462),
+    'львів': (49.8397, 24.0297),
+    'запоріжжя': (47.8388, 35.1396),
+    'вінниця': (49.2331, 28.4682),
+    'миколаїв': (46.9750, 31.9946),
+    'маріуполь': (47.0971, 37.5434),
+    'полтава': (49.5883, 34.5514),
+    'чернігів': (51.4982, 31.2893),
+    'черкаси': (49.4444, 32.0598),
+    'житомир': (50.2547, 28.6587),
+    'суми': (50.9077, 34.7981),
+    'хмельницький': (49.4229, 26.9871),
+    'чернівці': (48.2921, 25.9358),
+    'рівне': (50.6199, 26.2516),
+    'івано-франківськ': (48.9226, 24.7111),
+    'луцьк': (50.7472, 25.3254),
+    'тернопіль': (49.5535, 25.5948),
+    'ужгород': (48.6208, 22.2879),
+    'кропивницький': (48.5079, 32.2623),
+    'кременчук': (49.0670, 33.4204),
+    'краматорськ': (48.7389, 37.5848),
+    'біла церква': (49.7950, 30.1310),
+    'мелітополь': (46.8489, 35.3650),
+    'бердянськ': (46.7553, 36.7885)
+}
+
 def geocode_opencage(place: str):
     if not OPENCAGE_API_KEY:
         return None
@@ -215,6 +246,8 @@ def process_message(text, mid, date_str, channel):
         if city in lower:
             norm = UA_CITY_NORMALIZE.get(city, city)
             coords = geocode_opencage(norm)
+            if not coords:
+                coords = CITY_COORDS.get(norm)
             if coords:
                 lat, lng = coords
                 threat_type, icon = classify(text)
@@ -223,7 +256,7 @@ def process_message(text, mid, date_str, channel):
                     'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
                     'marker_icon': icon
                 }]
-            break
+            # if city found but no coords even in fallback, continue scanning others (no break)
     return None
 
 async def fetch_loop():
