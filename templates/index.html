@@ -940,6 +940,10 @@
       setInterval(showAirAlarmsOnMap, 20000);
 
       await updateMarkers();
+      try {
+        const es = new EventSource('/stream');
+        es.onmessage = ev => { try { const p = JSON.parse(ev.data); if (p.tracks && p.tracks.length) { updateMarkers(); } } catch(e){} };
+      } catch(e) {}
       setInterval(updateMarkers, 10000);
     }
     async function hideMarker(lat, lng, text, source) {
