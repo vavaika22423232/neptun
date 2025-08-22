@@ -60,6 +60,8 @@ client = None
 session_str = os.getenv('TELEGRAM_SESSION')  # Telethon string session (recommended for Render)
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')  # optional bot token fallback
 AUTH_SECRET = os.getenv('AUTH_SECRET')  # simple shared secret to protect /auth endpoints
+FETCH_THREAD_STARTED = False
+AUTH_STATUS = {'authorized': False, 'reason': 'init'}
 if API_ID and API_HASH:
     if session_str:
         log.info('Initializing Telegram client with TELEGRAM_SESSION string.')
@@ -241,9 +243,11 @@ async def fetch_loop():
             return False
 
     if not await ensure_connected():
-        # Give user time to fix session
+        AUTH_STATUS.update({'authorized': False, 'reason': 'not_authorized_initial'})
         await asyncio.sleep(180)
         return
+    else:
+        AUTH_STATUS.update({'authorized': True, 'reason': 'ok'})
     tz = pytz.timezone('Europe/Kyiv')
     processed = {m.get('id') for m in load_messages()}
     all_data = load_messages()
@@ -285,6 +289,7 @@ async def fetch_loop():
                     log.info(f'Backfilled {fetched} messages from {ch_strip}')
             except Exception as e:
                 log.warning(f'Backfill error {ch_strip}: {e}')
+    if backfill_minutes > 0:
         if total_backfilled:
             save_messages(all_data)
             log.info(f'Backfill saved: {total_backfilled} new messages with geo')
@@ -300,6 +305,7 @@ async def fetch_loop():
                     # If session invalid we stop loop gracefully
                     if not client.is_connected():
                         log.error('Stopping live loop due to lost/invalid session.')
+                        AUTH_STATUS.update({'authorized': False, 'reason': 'lost_session'})
                         return
                 async for msg in client.iter_messages(ch, limit=20):
                     if msg.id in processed or not msg.text:
@@ -316,6 +322,7 @@ async def fetch_loop():
                         log.debug(f'Live skip (no geo): {ch} #{msg.id} {msg.text[:80]!r}')
             except AuthKeyDuplicatedError:
                 log.error('AuthKeyDuplicatedError during live fetch. Ending loop until session replaced.')
+                AUTH_STATUS.update({'authorized': False, 'reason': 'authkey_duplicated'})
                 return
             except FloodWaitError as fe:
                 wait = int(getattr(fe, 'seconds', 60))
@@ -330,14 +337,41 @@ async def fetch_loop():
         await asyncio.sleep(60)
 
 def start_fetch_thread():
-    if not client: return
+    global FETCH_THREAD_STARTED
+    if not client or FETCH_THREAD_STARTED:
+        return
+    FETCH_THREAD_STARTED = True
     loop = asyncio.new_event_loop()
     def runner():
         asyncio.set_event_loop(loop)
-        with client:
+        try:
             loop.run_until_complete(fetch_loop())
-    t = threading.Thread(target=runner, daemon=True)
-    t.start()
+        except AuthKeyDuplicatedError:
+            AUTH_STATUS.update({'authorized': False, 'reason': 'authkey_duplicated_runner'})
+            log.error('Fetch loop stopped: duplicated auth key.')
+        except Exception as e:
+            AUTH_STATUS.update({'authorized': False, 'reason': f'crash:{e.__class__.__name__}'})
+            log.error(f'Fetch loop crashed: {e}')
+        finally:
+            FETCH_THREAD_STARTED = False
+    threading.Thread(target=runner, daemon=True).start()
+
+def replace_client(new_session: str):
+    global client, session_str
+    session_str = new_session
+    try:
+        if client:
+            try:
+                # Telethon has disconnect
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(client.disconnect())
+            except Exception:
+                pass
+    finally:
+        client = TelegramClient(StringSession(new_session), API_ID, API_HASH)
+        AUTH_STATUS.update({'authorized': True, 'reason': 'replaced_session'})
+        start_fetch_thread()
 
 @app.route('/')
 def index():
@@ -395,13 +429,14 @@ def hide_marker():
 
 @app.route('/health')
 def health():
-    return jsonify({'status':'ok','messages':len(load_messages())})
+    return jsonify({'status':'ok','messages':len(load_messages()), 'auth': AUTH_STATUS})
 
 # ---------- Simple interactive auth endpoints (semi-automatic) ----------
 # Use only with a secret: set AUTH_SECRET env var. These allow supplying a code
 # without opening a shell. DO NOT expose without secret: anyone could take over session.
 auth_state = {}
 auth_lock = threading.Lock()
+auth_sessions = {}
 
 def _check_secret():
     if not AUTH_SECRET:
@@ -471,15 +506,22 @@ def auth_complete():
         res = fut.result()
     else:
         res = loop.run_until_complete(_sign_in())
-    if res.get('status')=='ok':
-        # persist? we only log and return; user should set TELEGRAM_SESSION
+    if res.get('status')=='ok' and res.get('session'):
         try:
             with open('new_session.txt','w',encoding='utf-8') as f:
                 f.write(res['session'])
         except Exception:
             pass
-        log.info('New TELEGRAM_SESSION generated. Update environment and redeploy for persistence.')
+        # hot swap client for current runtime (will not persist after redeploy unless env updated)
+        replace_client(res['session'])
+        log.info('Session hot-swapped. Set TELEGRAM_SESSION env + redeploy for persistence.')
     return jsonify(res)
+
+@app.route('/auth/status')
+def auth_status():
+    if not _check_secret():
+        return jsonify({'status':'forbidden'}), 403
+    return jsonify({'status':'ok','auth': AUTH_STATUS})
 
  # (Dynamic asset loader removed since template now static)
 
