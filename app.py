@@ -1,4 +1,4 @@
-import os, re, json, asyncio, threading, logging, pytz, time, subprocess, queue
+import os, re, json, asyncio, threading, logging, pytz, time, subprocess, queue, sys, platform, traceback
 from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify, request, Response
 from telethon import TelegramClient
@@ -67,6 +67,7 @@ AUTH_SECRET = os.getenv('AUTH_SECRET')  # simple shared secret to protect /auth 
 FETCH_THREAD_STARTED = False
 AUTH_STATUS = {'authorized': False, 'reason': 'init'}
 SUBSCRIBERS = set()  # queues for SSE clients
+INIT_ONCE = False  # guard to ensure background startup once
 if API_ID and API_HASH:
     if session_str:
         log.info('Initializing Telegram client with TELEGRAM_SESSION string.')
@@ -83,6 +84,58 @@ MESSAGES_FILE = 'messages.json'
 HIDDEN_FILE = 'hidden_markers.json'
 OPENCAGE_CACHE_FILE = 'opencage_cache.json'
 OPENCAGE_TTL = 60 * 60 * 24 * 30  # 30 days
+MESSAGES_RETENTION_MINUTES = int(os.getenv('MESSAGES_RETENTION_MINUTES', '0'))  # 0 = keep forever
+MESSAGES_MAX_COUNT = int(os.getenv('MESSAGES_MAX_COUNT', '0'))  # 0 = unlimited
+
+def _startup_diagnostics():
+    """Log one-time startup diagnostics to help investigate early exit issues on hosting platforms."""
+    try:
+        log.info('--- Startup diagnostics begin ---')
+        log.info(f'Python: {sys.version.split()[0]} Platform: {platform.platform()} PID: {os.getpid()}')
+        log.info(f'Flask version: {getattr(sys.modules.get("flask"), "__version__", "?")} Telethon version: {getattr(sys.modules.get("telethon"), "__version__", "?")}')
+        log.info(f'Configured channels ({len(CHANNELS)}): {CHANNELS}')
+        log.info(f'API_ID set: {bool(API_ID)} HASH set: {bool(API_HASH)} SESSION len: {len(session_str) if session_str else 0}')
+        log.info(f'GOOGLE_MAPS_KEY set: {bool(GOOGLE_MAPS_KEY)} OPENCAGE_API_KEY set: {bool(OPENCAGE_API_KEY)}')
+        if os.path.exists(MESSAGES_FILE):
+            try:
+                sz = os.path.getsize(MESSAGES_FILE)
+                log.info(f'{MESSAGES_FILE} exists size={sz} bytes')
+            except Exception:
+                pass
+        else:
+            log.info(f'{MESSAGES_FILE} not present yet.')
+        log.info(f'Retention minutes: {MESSAGES_RETENTION_MINUTES} Max count: {MESSAGES_MAX_COUNT}')
+        log.info(f'FETCH_START_DELAY={os.getenv("FETCH_START_DELAY", "0")}')
+        log.info('--- Startup diagnostics end ---')
+    except Exception as e:
+        log.warning(f'Diagnostics error: {e}')
+
+def _prune_messages(data):
+    """Apply retention policies (time / count). Mutates and returns list."""
+    if not data:
+        return data
+    # Time based pruning
+    if MESSAGES_RETENTION_MINUTES > 0:
+        cutoff = datetime.utcnow() - timedelta(minutes=MESSAGES_RETENTION_MINUTES)
+        pruned = []
+        for m in data:
+            try:
+                dt = datetime.strptime(m.get('date',''), '%Y-%m-%d %H:%M:%S')
+            except Exception:
+                # keep malformed to avoid data loss
+                pruned.append(m)
+                continue
+            if dt.replace(tzinfo=None) >= cutoff:
+                pruned.append(m)
+        data = pruned
+    # Count based pruning (keep newest by date)
+    if MESSAGES_MAX_COUNT > 0 and len(data) > MESSAGES_MAX_COUNT:
+        try:
+            data_sorted = sorted(data, key=lambda x: x.get('date',''))
+            data = data_sorted[-MESSAGES_MAX_COUNT:]
+        except Exception:
+            data = data[-MESSAGES_MAX_COUNT:]
+    return data
 
 def load_messages():
     if os.path.exists(MESSAGES_FILE):
@@ -94,6 +147,11 @@ def load_messages():
     return []
 
 def save_messages(data):
+    # Apply retention before persistence
+    try:
+        data = _prune_messages(data)
+    except Exception as e:
+        log.debug(f'Retention prune error: {e}')
     with open(MESSAGES_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     # After each save attempt optional git auto-commit
@@ -1370,3 +1428,61 @@ def process_message(text, mid, date_str, channel):
                 }]
             # if city found but no coords even in fallback, continue scanning others
     return None
+
+# ----------------------- Deferred initialization hooks -----------------------
+@app.before_first_request
+def _init_background():
+    global INIT_ONCE
+    if INIT_ONCE:
+        return
+    INIT_ONCE = True
+    _startup_diagnostics()
+    # Start background workers
+    try:
+        start_fetch_thread()
+    except Exception as e:
+        log.error(f'Failed to start fetch thread: {e}\n{traceback.format_exc()}')
+    try:
+        start_session_watcher()
+    except Exception as e:
+        log.error(f'Failed to start session watcher: {e}\n{traceback.format_exc()}')
+
+@app.route('/startup_diag')
+def startup_diag():
+    """Expose current diagnostic snapshot (no secrets)."""
+    try:
+        info = {
+            'pid': os.getpid(),
+            'python': sys.version.split()[0],
+            'platform': platform.platform(),
+            'channels': CHANNELS,
+            'authorized': AUTH_STATUS,
+            'messages_file_exists': os.path.exists(MESSAGES_FILE),
+            'messages_count': len(load_messages()),
+            'fetch_thread_started': FETCH_THREAD_STARTED,
+            'session_present': bool(session_str),
+            'retention_minutes': MESSAGES_RETENTION_MINUTES,
+            'retention_max_count': MESSAGES_MAX_COUNT,
+            'subscribers': len(SUBSCRIBERS)
+        }
+        return jsonify(info)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# Manual trigger (idempotent) if needed before first page hit
+@app.route('/startup_init', methods=['POST'])
+def startup_init():
+    _init_background()
+    return jsonify({'status': 'ok'})
+
+if __name__ == '__main__':
+    # Local / container direct run (not needed if a WSGI server like gunicorn is used)
+    port = int(os.getenv('PORT', '5000'))
+    host = os.getenv('HOST', '0.0.0.0')
+    log.info(f'Launching Flask app on {host}:{port}')
+    # Eager start (still guarded) so that fetch begins even without first HTTP request locally
+    try:
+        _init_background()
+    except Exception:
+        pass
+    app.run(host=host, port=port, debug=False)
