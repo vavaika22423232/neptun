@@ -31,9 +31,6 @@
       min-height: 100vh;
       overflow-x: hidden;
       line-height: 1.5;
-  -webkit-tap-highlight-color: rgba(0,0,0,0);
-  touch-action: manipulation;
-  -webkit-text-size-adjust: 100%;
     }
     
   .navbar {width:100%;background:var(--panel-bg);color:var(--text);font-weight:600;font-size:1.15rem;padding:.7rem 1.1rem;box-shadow:0 4px 20px var(--shadow);display:flex;align-items:center;gap:1.5rem;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);}    
@@ -303,11 +300,6 @@
       background: var(--border);
       transform: translateY(-1px);
     }
-  /* Fullscreen fallback styles */
-  .map-card.fullscreen, #map.fullscreen {position:fixed !important;inset:0 !important;width:100vw !important;height:100vh !important;z-index:160 !important;border-radius:0 !important;box-shadow:none !important;}
-  body.fullscreen-active {overflow:hidden;}
-  .hiddenDuringFs {display:none !important;}
-  @supports(padding:max(0px)){ .navbar{padding-top:calc(.7rem + env(safe-area-inset-top));} }
     @media (max-width: 1100px) {
       .main-content {
         grid-template-columns: 1fr;
@@ -356,27 +348,6 @@
         grid-template-columns: 1fr;
       }
     }
-    /* Extra small phone adaptations */
-    @media (max-width:520px){
-      .main-content{display:block;padding:.4rem;}
-      .map-card{height:calc(100vh - 4.2rem);margin:0;}
-      #map{height:100%;}
-      /* Events panel becomes overlay */
-      #events{position:fixed;left:0;right:0;bottom:0;max-height:55vh;height:55vh;z-index:120;margin:0;border-radius:1rem 1rem 0 0;box-shadow:0 -4px 20px rgba(0,0,0,.45);background:rgba(17,24,39,.97);backdrop-filter:blur(10px);transition:transform .3s ease, opacity .25s ease;}
-      #events.collapsed{transform:translateY(calc(100% - 3.2rem));opacity:.9;}
-      #events h2{font-size:1.15rem;margin-bottom:.75rem;}
-      #events .event-list{max-height:calc(55vh - 110px);} 
-      #about{margin-top:1rem;}
-      .event{margin-bottom:.65rem;padding:.75rem;}
-      .event .event-icon{width:2rem;height:2rem;padding:.35rem;}
-      .navbar span{font-size:1.05rem;}
-      .live-users{transform:translate(-50%,-50%) scale(.9);}
-      #mobileToggleEvents{display:flex;}
-    }
-    /* Mobile toggle button */
-    #mobileToggleEvents{position:fixed;bottom:1rem;right:1rem;background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;border:0;border-radius:999px;padding:.75rem 1.05rem;font-weight:600;font-size:.9rem;box-shadow:0 6px 18px -4px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.08);cursor:pointer;display:none;align-items:center;gap:.4rem;z-index:130;}
-    #mobileToggleEvents:active{transform:translateY(1px);} 
-    #mobileToggleEvents.open{background:linear-gradient(135deg,#1e293b,#0f172a);}
     
     /* Темна тема для карти */
     [class*="copyrights-pane"] {
@@ -475,7 +446,6 @@
     </div>
   <div class="live-users" id="liveUsers" title="Активні відвідувачі"><span>онлайн</span><strong>0</strong></div>
   </div>
-  <button id="mobileToggleEvents" onclick="toggleEvents()"><i class="material-icons" style="font-size:18px;">list</i><span id="mobEvLabel">Події</span></button>
 
   <!-- Warning Modal -->
   <div class="modal-overlay" id="warnModal" style="display:none;">
@@ -542,7 +512,6 @@
 
     <div class="map-card">
       <div class="map-controls">
-  <button class="map-control-btn" id="fsToggleBtn" onclick="toggleFullScreen()" title="Повноекранний режим"><i class="material-icons">fullscreen</i></button>
         <button class="map-control-btn" onclick="map.setZoom(map.getZoom() + 1)">
           <i class="material-icons">add</i>
         </button>
@@ -578,8 +547,6 @@
     let markers = [];
     let circles = [];
     let markerData = [];
-  let isSmallMobile = window.matchMedia('(max-width:520px)').matches;
-  window.addEventListener('resize',()=>{isSmallMobile = window.matchMedia('(max-width:520px)').matches;});
     async function updateMarkers() {
       const timeRange = document.getElementById('timeRange').value || 20;
       let threatType = document.getElementById('threatTypeSelect').value;
@@ -652,13 +619,12 @@
         }
         let marker, line, animationId;
         // --- Радиус покрытия по типу угрозы ---
-  let radius = 0;
+        let radius = 0;
         let color = '#e53935';
         let fillOpacity = 0.18;
-  if (p.threat_type === 'shahed') { radius = 10000; color = '#e53935'; fillOpacity = 0.18; }
-  else if (p.threat_type === 'raketa') { radius = 20000; color = '#1976d2'; fillOpacity = 0.13; }
-  else if (p.threat_type === 'avia') { radius = 30000; color = '#fbc02d'; fillOpacity = 0.10; }
-  if (isSmallMobile) { radius *= 0.65; }
+        if (p.threat_type === 'shahed') { radius = 10000; color = '#e53935'; fillOpacity = 0.18; }
+        else if (p.threat_type === 'raketa') { radius = 20000; color = '#1976d2'; fillOpacity = 0.13; }
+        else if (p.threat_type === 'avia') { radius = 30000; color = '#fbc02d'; fillOpacity = 0.10; }
 
         // --- Анимированный пульсирующий круг (эффект радара) ---
         const pulseCircle = new google.maps.Circle({
@@ -903,8 +869,7 @@
       map = new google.maps.Map(document.getElementById("map"), {
         zoom: 6,
         center: { lat: 48.3794, lng: 31.1656 },
-  styles: lightStyle,
-  fullscreenControl: false
+        styles: lightStyle
       });
 
       // ---- Presence (active users) ----
@@ -981,75 +946,6 @@
   function openWarn(){const o=document.getElementById('warnModal'); if(o) o.style.display='flex';}
   function closeWarn(){const o=document.getElementById('warnModal'); if(o) o.style.display='none';}
   function ackWarn(){ closeWarn(); }
-  function toggleEvents(){
-    const panel = document.getElementById('events');
-    if(!panel) return;
-    const btn = document.getElementById('mobileToggleEvents');
-    const label = document.getElementById('mobEvLabel');
-    const collapsed = panel.classList.toggle('collapsed');
-    if(collapsed){ btn.classList.remove('open'); label.textContent='Події'; }
-    else { btn.classList.add('open'); label.textContent='Закрити'; }
-  }
-  // ----- Custom fullscreen handling (desktop + mobile fallback) -----
-  function addFsUI(){
-    const mapCard = document.querySelector('.map-card');
-    const mapEl = document.getElementById('map');
-    if(mapCard && mapEl){
-      mapCard.classList.add('fullscreen');
-      mapEl.classList.add('fullscreen');
-      document.body.classList.add('fullscreen-active');
-    }
-    const evPanel = document.getElementById('events');
-    if(evPanel) evPanel.classList.add('hiddenDuringFs');
-    const mobBtn = document.getElementById('mobileToggleEvents');
-    if(mobBtn) mobBtn.classList.add('hiddenDuringFs');
-    const fsBtnIcon = document.querySelector('#fsToggleBtn i');
-    if(fsBtnIcon) fsBtnIcon.textContent = 'fullscreen_exit';
-  }
-  function removeFsUI(){
-    const mapCard = document.querySelector('.map-card');
-    const mapEl = document.getElementById('map');
-    if(mapCard && mapEl){
-      mapCard.classList.remove('fullscreen');
-      mapEl.classList.remove('fullscreen');
-      document.body.classList.remove('fullscreen-active');
-    }
-    const evPanel = document.getElementById('events');
-    if(evPanel) evPanel.classList.remove('hiddenDuringFs');
-    const mobBtn = document.getElementById('mobileToggleEvents');
-    if(mobBtn) mobBtn.classList.remove('hiddenDuringFs');
-    const fsBtnIcon = document.querySelector('#fsToggleBtn i');
-    if(fsBtnIcon) fsBtnIcon.textContent = 'fullscreen';
-  }
-  function toggleFullScreen(){
-    const mapEl = document.getElementById('map');
-    if(!mapEl) return;
-    const isFsDoc = document.fullscreenElement || document.webkitFullscreenElement;
-    if(!isFsDoc){
-      // Try native
-      let requested = false;
-      try {
-        if(mapEl.requestFullscreen){ mapEl.requestFullscreen(); requested = true; }
-        else if(mapEl.webkitRequestFullscreen){ mapEl.webkitRequestFullscreen(); requested = true; }
-      } catch(e){ requested = false; }
-      // If native not available, fallback classes immediately
-      if(!requested){ addFsUI(); }
-    } else {
-      try {
-        if(document.exitFullscreen) document.exitFullscreen();
-        else if(document.webkitExitFullscreen) document.webkitExitFullscreen();
-      } catch(e) { /* ignore */ }
-      removeFsUI();
-    }
-  }
-  document.addEventListener('fullscreenchange', ()=>{
-    if(!(document.fullscreenElement || document.webkitFullscreenElement)){
-      // Exited
-      removeFsUI();
-    } else {
-      addFsUI();
-    }
-  });
   window.onload = () => { preloadIcons(); initMap(); openWarn(); };
   </script>
   <script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCNvHPPImGhTBA7NyOL7kNvfFe4bTIRpGs&callback=initMap&language=uk"></script>
