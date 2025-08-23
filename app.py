@@ -699,8 +699,23 @@ def process_message(text, mid, date_str, channel):
         if raw_city != 'район':
             norm_city = UA_CITY_NORMALIZE.get(raw_city, raw_city)
             coords = CITY_COORDS.get(norm_city)
+            # If region specified in parentheses (e.g. "(сумська обл.)") try disambiguated geocode
+            region_hint = None
+            if any(tok in raw_inside for tok in ['обл', 'область']):
+                # extract first word containing letters before 'обл'
+                region_hint = raw_inside.strip()
+            # Attempt geocode with city alone if not in baseline
             if not coords and OPENCAGE_API_KEY:
                 coords = geocode_opencage(norm_city)
+            # If we have a region hint and either no coords yet OR city known ambiguous like миколаївка, try city+region geocode to refine
+            if region_hint and OPENCAGE_API_KEY and (not coords or norm_city in ['миколаївка','николаевка','миколаївка','миколаевка']):
+                combo_query = f"{norm_city} {region_hint}".replace('  ',' ').strip()
+                try:
+                    refined = geocode_opencage(combo_query)
+                    if refined:
+                        coords = refined
+                except Exception:
+                    pass
             if coords:
                 lat,lng = coords
                 threat_type, icon = classify(text)
