@@ -306,6 +306,8 @@ CITY_COORDS = {
     ,'петриківка': (48.7330, 34.6300)
     ,'підгородне': (48.5747, 35.1482)
     ,'самар': (48.6500, 35.4200)
+    ,'верхньодніпровськ': (48.6535, 34.3372)
+    ,'горішні плавні': (49.0123, 33.6450)
 }
 
 OBLAST_CENTERS = {
@@ -862,6 +864,40 @@ def process_message(text, mid, date_str, channel):
                 })
             if tracks:
                 return tracks
+
+    # --- "повз <city>" (passing near) with optional direction target "у напрямку <city>" ---
+    lower_pass = text.lower()
+    if 'повз ' in lower_pass and ('бпла' in lower_pass or 'дрон' in lower_pass):
+        pass_match = re.search(r'повз\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,})', lower_pass)
+        dir_match = re.search(r'напрямку\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,})', lower_pass)
+        places = []
+        def norm_c(s: str):
+            if not s: return None
+            s = s.strip().lower().strip(".,:;()!?")
+            return UA_CITY_NORMALIZE.get(s, s)
+        if pass_match:
+            c1 = norm_c(pass_match.group(1))
+            if c1:
+                coords1 = CITY_COORDS.get(c1) or (SETTLEMENTS_INDEX.get(c1) if SETTLEMENTS_INDEX else None)
+                if coords1:
+                    places.append((c1.title(), coords1, 'pass_near'))
+        if dir_match:
+            c2 = norm_c(dir_match.group(1))
+            if c2 and c2 != (places[0][0].lower() if places else None):
+                coords2 = CITY_COORDS.get(c2) or (SETTLEMENTS_INDEX.get(c2) if SETTLEMENTS_INDEX else None)
+                if coords2:
+                    places.append((c2.title(), coords2, 'direction_target'))
+        if places:
+            threat_type, icon = classify(text)
+            out_tracks = []
+            for idx,(nm,(lat,lng),tag) in enumerate(places,1):
+                out_tracks.append({
+                    'id': f"{mid}_pv{idx}", 'place': nm, 'lat': lat, 'lng': lng,
+                    'threat_type': threat_type, 'text': text[:500], 'date': date_str,
+                    'channel': channel, 'marker_icon': icon, 'source_match': tag
+                })
+            if out_tracks:
+                return out_tracks
 
     # --- Comma separated settlements followed by threat keyword (e.g. "Обухівка, Курилівка, Петриківка увага БПЛА") ---
     lower_commas = text.lower()
