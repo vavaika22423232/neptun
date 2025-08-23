@@ -830,6 +830,34 @@ def process_message(text, mid, date_str, channel):
             log.debug(f"RAION_MATCH mid={mid} -> {[t['place'] for t in tracks]}")
             return tracks
 
+    # --- Slash separated settlements PRIORITY (moved earlier so it can't be overridden by region logic) ---
+    lower_full_for_slash = text.lower()
+    if '/' in lower_full_for_slash and ('бпла' in lower_full_for_slash or 'дрон' in lower_full_for_slash) and any(x in lower_full_for_slash for x in ['х бпла','x бпла',' бпла']):
+        # take portion before first dash (— or -) which usually separates counts/other text
+        left_part = re.split(r'[—-]', lower_full_for_slash, 1)[0]
+        parts = [p.strip() for p in re.split(r'/|\\', left_part) if p.strip()]
+        found = []
+        for p in parts:
+            base = UA_CITY_NORMALIZE.get(p, p)
+            coords = CITY_COORDS.get(base)
+            if not coords and SETTLEMENTS_INDEX:
+                coords = SETTLEMENTS_INDEX.get(base)
+            if coords:
+                found.append((base.title(), coords))
+        if found:
+            threat_type, icon = classify(text)
+            tracks = []
+            for idx,(nm,(lat,lng)) in enumerate(found,1):
+                if 'курс захід' in lower_full_for_slash:
+                    lng -= 0.4
+                tracks.append({
+                    'id': f"{mid}_s{idx}", 'place': nm, 'lat': lat, 'lng': lng,
+                    'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': 'slash_combo'
+                })
+            if tracks:
+                return tracks
+
     # Region boundary logic (fallback single or midpoint for exactly two)
     matched_regions = []
     for name, coords in OBLAST_CENTERS.items():
@@ -860,7 +888,11 @@ def process_message(text, mid, date_str, channel):
         direction_code = None
         if len(matched_regions) == 1 and not raion_matches:
             direction_code = detect_direction(lower)
-            if direction_code:
+            # If message also contains course info referencing cities/slash – skip region-level marker to allow city parsing later
+            course_words = (' курс ' in lower or lower.startswith('курс '))
+            has_city_token = any(c in lower for c in CITY_COORDS.keys())
+            has_slash_combo = '/' in lower
+            if direction_code and not (course_words and (has_city_token or has_slash_combo)):
                 # ---- Special: sector course pattern inside region directional message ----
                 # e.g. "курс(ом) в бік сектору перещепине - губиниха"
                 sector_match = re.search(r'курс(?:ом)?\s+в\s+бік\s+сектору\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,})(?:\s*[-–]\s*([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,}))?', lower)
