@@ -1080,35 +1080,19 @@ def hide_marker():
 
 @app.route('/health')
 def health():
-    msgs = load_messages()
-    hidden = set(load_hidden())
-    tracks = []
-    events = []
+    # Basic stats + prune visitors
     now = time.time()
-    # Build events (latest first) including list_only alarm entries (limit 200)
-    for m in reversed(msgs):
-        if m.get('list_only') or (m.get('lat') is not None and m.get('lng') is not None):
-            events.append(m)
-            if len(events) >= 200:
-                break
-    events.reverse()  # chronological
-    # Build map markers from geo messages only
-    for m in msgs:
-        if m.get('list_only'):
-            continue
-        if m.get('lat') is None or m.get('lng') is None:
-            continue
-        mk = f"{round(m['lat'],3)},{round(m['lng'],3)}|{m.get('text','')[:40]}|{m.get('channel','')}"
-        if mk in hidden:
-            continue
-        try:
-            dt = datetime.strptime(m.get('date',''), '%Y-%m-%d %H:%M:%S')
-            if (datetime.utcnow() - dt).total_seconds() > 6*3600:
-                continue
-        except Exception:
-            pass
-        tracks.append(m)
-    resp = jsonify({'tracks': tracks, 'events': events, 'all_sources': CHANNELS, 'trajectories': []})
+    with ACTIVE_LOCK:
+        for vid, meta in list(ACTIVE_VISITORS.items()):
+            ts = meta if isinstance(meta,(int,float)) else meta.get('ts',0)
+            if now - ts > ACTIVE_TTL:
+                del ACTIVE_VISITORS[vid]
+        visitors = len(ACTIVE_VISITORS)
+    return jsonify({'status':'ok','messages':len(load_messages()), 'auth': AUTH_STATUS, 'visitors': visitors})
+
+@app.route('/presence', methods=['POST'])
+def presence():
+    data = request.get_json(silent=True) or {}
     vid = data.get('id')
     if not vid:
         return jsonify({'status':'error','error':'id required'}), 400
@@ -1118,6 +1102,16 @@ def health():
         return jsonify({'status':'blocked'})
     remote_ip = request.headers.get('X-Forwarded-For', request.remote_addr or '')
     ua = request.headers.get('User-Agent', '')[:300]
+    with ACTIVE_LOCK:
+        prev = ACTIVE_VISITORS.get(vid) if isinstance(ACTIVE_VISITORS.get(vid), dict) else {}
+        ACTIVE_VISITORS[vid] = {'ts': now, 'ip': remote_ip, 'ua': prev.get('ua') or ua}
+        # prune
+        for k, meta in list(ACTIVE_VISITORS.items()):
+            ts = meta if isinstance(meta,(int,float)) else meta.get('ts',0)
+            if now - ts > ACTIVE_TTL:
+                del ACTIVE_VISITORS[k]
+        count = len(ACTIVE_VISITORS)
+    return jsonify({'status':'ok','visitors': count})
     with ACTIVE_LOCK:
         prev = ACTIVE_VISITORS.get(vid) if isinstance(ACTIVE_VISITORS.get(vid), dict) else {}
         ACTIVE_VISITORS[vid] = {'ts': now, 'ip': remote_ip, 'ua': prev.get('ua') or ua}
