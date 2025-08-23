@@ -899,6 +899,40 @@ def process_message(text, mid, date_str, channel):
             if out_tracks:
                 return out_tracks
 
+    # --- Pattern: "рухалися на <city1>, змінили курс на <city2>" ---
+    lower_course_change = text.lower()
+    if 'змінили курс на' in lower_course_change and ('рухал' in lower_course_change or 'рухались' in lower_course_change or 'рухалися' in lower_course_change):
+        m_to = re.search(r'змінили\s+курс\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,})', lower_course_change)
+        m_from = re.search(r'рухал(?:ися|ись|и|ась)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,})', lower_course_change)
+        places = []
+        def norm_simple(s):
+            if not s: return None
+            s = s.strip().lower().strip(".,:;()!")
+            return UA_CITY_NORMALIZE.get(s, s)
+        if m_from:
+            c_from = norm_simple(m_from.group(1))
+            coords_from = CITY_COORDS.get(c_from) or (SETTLEMENTS_INDEX.get(c_from) if SETTLEMENTS_INDEX else None)
+            if coords_from:
+                places.append((c_from.title(), coords_from, 'course_from'))
+        if m_to:
+            c_to = norm_simple(m_to.group(1))
+            coords_to = CITY_COORDS.get(c_to) or (SETTLEMENTS_INDEX.get(c_to) if SETTLEMENTS_INDEX else None)
+            if coords_to:
+                # avoid duplicate if same
+                if not any(p[0].lower()==c_to for p in places):
+                    places.append((c_to.title(), coords_to, 'course_changed_to'))
+        if places:
+            threat_type, icon = classify(text)
+            out = []
+            for idx,(name,(lat,lng),tag) in enumerate(places,1):
+                out.append({
+                    'id': f"{mid}_cc{idx}", 'place': name, 'lat': lat, 'lng': lng,
+                    'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': tag
+                })
+            if out:
+                return out
+
     # --- Comma separated settlements followed by threat keyword (e.g. "Обухівка, Курилівка, Петриківка увага БПЛА") ---
     lower_commas = text.lower()
     if 'бпла' in lower_commas and ',' in lower_commas:
