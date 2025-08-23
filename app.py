@@ -548,6 +548,9 @@ def process_message(text, mid, date_str, channel):
     # direct coordinates pattern
     def classify(th: str):
         l = th.lower()
+        # Recon / розвід дрони -> use pvo icon (rozved.png) per user request
+        if 'розвід' in l or 'развед' in l:
+            return 'pvo', 'rozved.png'
         # PRIORITY: drones first (частая путаница). Если присутствуют слова шахед/бпла/дрон -> это shahed
         if any(k in l for k in ['shahed','шахед','шахеді','шахедів','geran','герань','дрон','дрони','бпла','uav']):
             return 'shahed', 'shahed.png'
