@@ -293,6 +293,7 @@ CITY_COORDS = {
     ,'шостка': (51.8667, 33.4833)
     ,'короп': (51.5667, 32.9667)
     ,'кролевець': (51.5481, 33.3847)
+    ,'новгород-сіверський': (51.9874, 33.2620)
     ,'сосниця': (51.5236, 32.4953)
     ,'олишівка': (51.1042, 31.6817)
 }
@@ -689,8 +690,15 @@ def process_message(text, mid, date_str, channel):
     # --- Settlement matching using external dataset (if provided) (single first match) ---
     if not region_hits:
         # 1) Multi-list form: "Новгород-сіверський, Шостка, Короп, Кролевець - уважно по БПЛА"
-        if ('уважно' in lower or 'по бпла' in lower or 'бпла' in lower) and (',' in lower) and '-' in lower:
-            left, right = lower.split('-',1)
+        # support both hyphen - and en dash – between list and tail
+        dash_idx = None
+        for dch in [' - ', ' – ', '- ', '– ']:
+            if dch in lower:
+                dash_idx = lower.index(dch)
+                break
+        if ('уважно' in lower or 'по бпла' in lower or 'бпла' in lower) and (',' in lower) and dash_idx is not None:
+            left = lower[:dash_idx]
+            right = lower[dash_idx+1:]
             if any(k in right for k in ['бпла','дрон','шахед','uav']):
                 raw_places = [p.strip() for p in left.split(',') if p.strip()]
                 tracks = []
