@@ -562,9 +562,11 @@
       raketa: '/static/raketa.png',
       avia: '/static/avia.png',
       pvo: '/static/rozved.png',
-      explosion: '/static/explosion.png',
-      mlrs: '/static/mlrs.png',
-      artillery: '/static/artillery.png',
+  vibuh: '/static/vibuh.png',
+  alarm: '/static/alarm.png',
+  alarm_cancel: '/static/vidboi.png',
+  mlrs: '/static/mlrs.png',
+  artillery: '/static/artillery.png',
       default: '/static/default.png'
     };
     // Fallback tiny red dot if icon 404
@@ -599,7 +601,7 @@
         return true;
       });
       // --- Траектории ---
-      if (window.trajectories) window.trajectories.forEach(line => line.setMap(null));
+  if (window.trajectories) window.trajectories.forEach(line => line.setMap(null));
       window.trajectories = [];
       // Очистить круги покрытия
       if (circles.length) circles.forEach(c => c.setMap(null));
@@ -636,9 +638,7 @@
       markers = [];
       markerData = points;
       // Добавить маркеры
-      points.forEach((p, idx) => {
-        // --- Фильтр: не отображать "відбій"/"отбой" тревоги ---
-        if (/відбій|отбой/i.test(p.text)) return;
+  points.forEach((p, idx) => {
         let iconUrl = ICONS[p.threat_type] || ICONS.default;
         if (p.marker_icon) {
           if (p.marker_icon.startsWith('http') || p.marker_icon.startsWith('/')) {
@@ -867,7 +867,7 @@
         });
       });
   // Обновить список событий (используем events из ответа, включающие тревоги без гео)
-  updateEventList(data.events || points);
+  updateEventList(data.events || []);
     }
     function updateEventList(points) {
       const el = document.getElementById('eventList');
@@ -886,8 +886,9 @@
           }
         }
         const isCancel = ev.threat_type === 'alarm_cancel';
+  const isAlarm = ev.threat_type === 'alarm';
         const placeLine = (ev.place && !isCancel) ? `<b>${ev.place}</b><br>` : '';
-        return `<div class='event'><img class='event-icon' src='${iconUrl}'><div class='event-info'>${placeLine}${ev.text || ''}<div class='event-time'>${ev.date || ''}</div></div></div>`;
+  return `<div class='event'><img class='event-icon' src='${iconUrl}' alt='${ev.threat_type || ''}'><div class='event-info'>${placeLine}${ev.text || ''}<div class='event-time'>${ev.date || ''}</div></div></div>`;
       }).join('');
     }
     async function initMap() {

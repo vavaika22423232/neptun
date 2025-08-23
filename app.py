@@ -538,8 +538,8 @@ def process_message(text, mid, date_str, channel):
                 'threat_type': None, 'text': original_text[:500], 'date': date_str, 'channel': channel,
                 'list_only': True, 'suppress': True, 'suppress_reason': 'imprecise_direction_only'
             }]
-    # Санитизация: убираем точную фразу "Повітряна тривога" (реквест пользователя)
-    text = text.replace('Повітряна тривога', '').replace('повітряна тривога','').strip()
+    # Не удаляем полностью "Повітряна тривога" теперь: нужно показывать в списке событий.
+    # Сохраняем текст как есть для event list.
     # Убираем markdown * _ ` и базовые эмодзи-иконки в начале строк
     text = re.sub(r'[\*`_]+', '', text)
     # Удаляем ведущие эмодзи/иконки перед словами
@@ -547,19 +547,14 @@ def process_message(text, mid, date_str, channel):
     # Если сообщение по сути только про тревогу (без упоминаний угроз) — пропускаем (не строим маркер)
     low_orig = original_text.lower()
     if 'повітряна тривога' in low_orig and not any(k in low_orig for k in ['бпла','дрон','шахед','shahed','geran','ракета','missile','iskander','s-300','s300','артил','града','смерч','ураган','mlrs']):
-        # Make an event-only record (no map marker)
+        # Always event-only record (list), user wants always displayed in updateEventList
         place = None
         low = low_orig.lower()
-        # Try find oblast name
         for name in OBLAST_CENTERS.keys():
             if name in low:
                 place = name.title()
                 break
-        # Try bracket pattern (e.g. "Синельниківський район (Дніпропетровська обл.)")
-        if not place:
-            mbl = re.search(r'([A-Za-zА-Яа-яЇїІіЄєҐґ\'`’ʼ-]{3,})\s*\(([^)]+обл[^)]*)\)', text)
-            if mbl:
-                place = mbl.group(1).strip() + ' / ' + mbl.group(2).strip()
+        # Keep original text
         return [{
             'id': str(mid), 'place': place, 'lat': None, 'lng': None,
             'threat_type': 'alarm', 'text': original_text[:500], 'date': date_str, 'channel': channel,
@@ -661,15 +656,13 @@ def process_message(text, mid, date_str, channel):
             'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
             'marker_icon': icon
         }]
-    # Alarm cancellation (відбій) list-only handling: if classified as alarm_cancel, output list-only record w/o geo
-    if 'відбій' in original_text.lower() or 'отбой' in original_text.lower():
-        tt, ic = classify(original_text)
-        if tt == 'alarm_cancel':
-            return [{
-                'id': str(mid), 'place': None, 'lat': None, 'lng': None,
-                'threat_type': tt, 'text': original_text[:500], 'date': date_str, 'channel': channel,
-                'marker_icon': ic, 'list_only': True
-            }]
+    # Alarm cancellation always list-only
+    if re.search(r'відбій\s+тривог|отбой\s+тревог', original_text.lower()):
+        return [{
+            'id': str(mid), 'place': None, 'lat': None, 'lng': None,
+            'threat_type': 'alarm_cancel', 'text': original_text[:500], 'date': date_str, 'channel': channel,
+            'marker_icon': 'vidboi.png', 'list_only': True
+        }]
     lower = text.lower()
     # Extract drone / shahed count pattern (e.g. "7х бпла", "6x дронів", "10 х бпла") early so later branches can reuse
     drone_count = None
@@ -1580,19 +1573,25 @@ def data():
     now = datetime.now(tz).replace(tzinfo=None)
     min_time = now - timedelta(minutes=time_range)
     hidden = set(load_hidden())
-    out = []
+    out = []  # geo tracks
+    events = []  # list-only (alarms, cancellations, other non-geo informational)
     for m in messages:
         try:
             dt = datetime.strptime(m.get('date',''), '%Y-%m-%d %H:%M:%S')
         except Exception:
             continue
         if dt >= min_time:
+            # list-only (no coordinates) -> push into events list if not suppressed
+            if m.get('list_only'):
+                if not m.get('suppress'):
+                    events.append(m)
+                continue  # skip trying to interpret as marker
             # build marker key similar to frontend hide logic (rounded lat/lng + text + source/channel)
             try:
                 lat = round(float(m.get('lat')), 3)
                 lng = round(float(m.get('lng')), 3)
             except Exception:
-                continue
+                continue  # not a proper geo marker
             text = (m.get('text') or '')
             source = m.get('source') or m.get('channel') or ''
             marker_key = f"{lat},{lng}|{text}|{source}"
@@ -1603,7 +1602,12 @@ def data():
             if m.get('source_match','').startswith('region') and not any(k in low_txt for k in ['бпла','дрон','шахед','shahed','geran','ракета','ракети','missile','iskander','s-300','s300','каб','артил','града','смерч','ураган','mlrs','avia','авіа','авиа','бомба']):
                 continue
             out.append(m)
-    resp = jsonify({'tracks': out, 'all_sources': CHANNELS, 'trajectories': []})
+    # Sort events by time desc (latest first) like markers implicitly (messages stored chronological)
+    try:
+        events.sort(key=lambda x: x.get('date',''), reverse=True)
+    except Exception:
+        pass
+    resp = jsonify({'tracks': out, 'events': events, 'all_sources': CHANNELS, 'trajectories': []})
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     resp.headers['Pragma'] = 'no-cache'
     return resp
