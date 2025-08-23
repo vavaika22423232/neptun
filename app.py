@@ -60,6 +60,7 @@ app = Flask(__name__)
 ACTIVE_VISITORS = {}
 ACTIVE_LOCK = threading.Lock()
 ACTIVE_TTL = 70  # seconds of inactivity before a visitor is dropped
+BLOCKED_FILE = 'blocked_ids.json'
 client = None
 session_str = os.getenv('TELEGRAM_SESSION')  # Telethon string session (recommended for Render)
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')  # optional bot token fallback
@@ -172,6 +173,22 @@ def load_hidden():
 def save_hidden(data):
     with open(HIDDEN_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
+def load_blocked():
+    if os.path.exists(BLOCKED_FILE):
+        try:
+            with open(BLOCKED_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
+
+def save_blocked(blocked):
+    try:
+        with open(BLOCKED_FILE, 'w', encoding='utf-8') as f:
+            json.dump(blocked, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log.warning(f'Failed saving {BLOCKED_FILE}: {e}')
 
 # Simplified message processor placeholder
 import math
@@ -1011,9 +1028,9 @@ def health():
     # Clean visitors
     now = time.time()
     with ACTIVE_LOCK:
-        to_del = [k for k,v in ACTIVE_VISITORS.items() if now - v > ACTIVE_TTL]
-        for k in to_del: del ACTIVE_VISITORS[k]
-        visitors = len(ACTIVE_VISITORS)
+    to_del = [k for k,v in ACTIVE_VISITORS.items() if now - (v if isinstance(v,(int,float)) else v.get('ts',0)) > ACTIVE_TTL]
+    for k in to_del: del ACTIVE_VISITORS[k]
+    visitors = len(ACTIVE_VISITORS)
     return jsonify({'status':'ok','messages':len(load_messages()), 'auth': AUTH_STATUS, 'visitors': visitors})
 
 @app.route('/presence', methods=['POST'])
@@ -1024,10 +1041,13 @@ def presence():
     if not vid:
         return jsonify({'status':'error','error':'id required'}), 400
     now = time.time()
+    blocked = set(load_blocked())
+    if vid in blocked:
+        return jsonify({'status':'blocked'})
+    remote_ip = request.headers.get('X-Forwarded-For', request.remote_addr or '')
     with ACTIVE_LOCK:
-        ACTIVE_VISITORS[vid] = now
-        # prune
-        stale = [k for k,v in ACTIVE_VISITORS.items() if now - v > ACTIVE_TTL]
+        ACTIVE_VISITORS[vid] = {'ts': now, 'ip': remote_ip}
+        stale = [k for k,v in ACTIVE_VISITORS.items() if now - (v if isinstance(v,(int,float)) else v.get('ts',0)) > ACTIVE_TTL]
         for k in stale: del ACTIVE_VISITORS[k]
         count = len(ACTIVE_VISITORS)
     return jsonify({'status':'ok','visitors':count})
@@ -1074,6 +1094,56 @@ def broadcast_new(tracks):
             dead.append(q)
     for d in dead:
         SUBSCRIBERS.discard(d)
+
+# ---------------- Admin & blocking endpoints -----------------
+def _require_secret(req):
+    if not AUTH_SECRET:
+        return True
+    supplied = req.args.get('secret') or req.headers.get('X-Auth-Secret') or req.form.get('secret')
+    return supplied and supplied == AUTH_SECRET
+
+@app.route('/admin')
+def admin_panel():
+    if not _require_secret(request):
+        return Response('Forbidden', status=403)
+    now = time.time()
+    with ACTIVE_LOCK:
+        visitors = []
+        for vid, meta in ACTIVE_VISITORS.items():
+            if isinstance(meta,(int,float)):
+                visitors.append({'id':vid,'ip':'','age':int(now-meta)})
+            else:
+                visitors.append({'id':vid,'ip':meta.get('ip',''),'age':int(now-meta.get('ts',0))})
+    blocked = load_blocked()
+    return render_template('admin.html', visitors=visitors, blocked=blocked, secret=(request.args.get('secret') or ''))
+
+@app.route('/block', methods=['POST'])
+def block_id():
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    payload = request.get_json(silent=True) or request.form
+    vid = (payload or {}).get('id')
+    if not vid:
+        return jsonify({'status':'error','error':'id required'}), 400
+    blocked = load_blocked()
+    if vid not in blocked:
+        blocked.append(vid)
+        save_blocked(blocked)
+    return jsonify({'status':'ok','blocked':blocked})
+
+@app.route('/unblock', methods=['POST'])
+def unblock_id():
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    payload = request.get_json(silent=True) or request.form
+    vid = (payload or {}).get('id')
+    if not vid:
+        return jsonify({'status':'error','error':'id required'}), 400
+    blocked = load_blocked()
+    if vid in blocked:
+        blocked.remove(vid)
+        save_blocked(blocked)
+    return jsonify({'status':'ok','blocked':blocked})
 
 def _load_opencage_cache():
     global _opencage_cache

@@ -916,6 +916,14 @@
         try {
           const r = await fetch('/presence', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id:uid})});
           const j = await r.json();
+          if(j.status === 'blocked'){
+            // Show overlay and stop further updates
+            const ov = document.createElement('div');
+            ov.style.cssText='position:fixed;inset:0;background:#0a0f1f;display:flex;align-items:center;justify-content:center;z-index:9999;font-family:Inter,sans-serif;color:#fff;padding:2rem;text-align:center;';
+            ov.innerHTML='<div style="max-width:480px;">Ваш доступ тимчасово обмежено.</div>';
+            document.body.appendChild(ov);
+            return;
+          }
           if(j.visitors !== undefined){
             const el = document.getElementById('liveUsers');
             if(el){ el.querySelector('strong').textContent = j.visitors; }

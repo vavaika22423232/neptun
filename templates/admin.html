@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8" />
+<title>Admin Panel</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+ body{font-family:Arial,system-ui,sans-serif;background:#0f172a;color:#f1f5f9;margin:0;padding:1.5rem;}
+ h1{margin:0 0 1rem;font-size:1.4rem;}
+ table{width:100%;border-collapse:collapse;margin-top:1rem;font-size:0.85rem;}
+ th,td{padding:8px 10px;border:1px solid #1e293b;text-align:left;}
+ th{background:#1e293b;} tr:nth-child(even){background:#162132;}
+ .blocked-list{margin-top:2rem;}
+ button{background:#2563eb;color:#fff;border:0;padding:6px 10px;border-radius:5px;cursor:pointer;font-weight:600;font-size:.75rem;}
+ button:hover{background:#1d4ed8;}
+ .danger{background:#dc2626;} .danger:hover{background:#b91c1c;}
+ .ok{background:#16a34a;} .ok:hover{background:#15803d;}
+ .topbar{display:flex;gap:1rem;align-items:center;flex-wrap:wrap;}
+ input[type=text]{background:#0f1d33;border:1px solid #1e2f43;color:#fff;padding:6px 8px;border-radius:5px;}
+ .badge{display:inline-block;background:#334155;padding:2px 6px;border-radius:4px;font-size:.65rem;margin-left:6px;}
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <h1>Admin</h1>
+    {% if secret %}<span class="badge">auth ok</span>{% else %}<span class="badge" style="background:#991b1b">no secret</span>{% endif %}
+    <form method="get" action="/admin" style="display:flex;gap:.5rem;align-items:center;">
+      <input type="text" name="secret" placeholder="secret" value="{{ secret }}" />
+      <button type="submit">Reload</button>
+    </form>
+  </div>
+  <h2 style="margin-top:1.2rem;font-size:1rem">Active Visitors ({{ visitors|length }})</h2>
+  <table>
+    <thead><tr><th>ID</th><th>IP</th><th>Age(s)</th><th>Action</th></tr></thead>
+    <tbody>
+      {% for v in visitors %}
+      <tr>
+        <td style="max-width:220px;overflow-wrap:anywhere;">{{ v.id }}</td>
+        <td>{{ v.ip }}</td>
+        <td>{{ v.age }}</td>
+        <td><button class="danger" onclick="blockId('{{ v.id }}')">Block</button></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="blocked-list">
+    <h2 style="font-size:1rem">Blocked ({{ blocked|length }})</h2>
+    <table>
+      <thead><tr><th>ID</th><th>Action</th></tr></thead>
+      <tbody>
+        {% for b in blocked %}
+        <tr>
+          <td style="max-width:240px;overflow-wrap:anywhere;">{{ b }}</td>
+          <td><button class="ok" onclick="unblockId('{{ b }}')">Unblock</button></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+<script>
+async function blockId(id){
+  const secret = new URLSearchParams(location.search).get('secret')||'';
+  const r = await fetch('/block?secret='+encodeURIComponent(secret), {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+  if(r.ok) location.reload();
+}
+async function unblockId(id){
+  const secret = new URLSearchParams(location.search).get('secret')||'';
+  const r = await fetch('/unblock?secret='+encodeURIComponent(secret), {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+  if(r.ok) location.reload();
+}
+</script>
+</body>
+</html>
