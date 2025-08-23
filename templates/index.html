@@ -852,12 +852,9 @@
           markers.push(marker);
           setTimeout(() => { marker.setOpacity(1); }, 80 + idx * 40);
         }
-        const safeText = encodeURIComponent(String(p.text ?? ''));
-        const safeSource = encodeURIComponent(String(p.source ?? ''));
-        const hideBtn = `<button class='hide-btn' onclick=\"hideMarker(${p.lat},${p.lng},'${safeText}','${safeSource}')\">Сховати</button>`;
         const infowindow = new google.maps.InfoWindow({
           content: `<div style=\"background:#23272f; color:#f4f6fa; border-radius:10px; padding:10px 8px; min-width:220px; max-width:340px; font-size:1.04rem; box-shadow:0 2px 12px #0008; border:1.5px solid #31343b;\">`
-            + `<b>Повідомлення:</b><br>${p.text}<br><b>Час:</b> ${p.date ? p.date : ''}<br>${hideBtn}`
+            + `<b>Повідомлення:</b><br>${p.text}<br><b>Час:</b> ${p.date ? p.date : ''}`
             + `</div>`
         });
         marker.addListener('click', () => {
@@ -990,17 +987,6 @@
         };
       } catch(e) {}
       setInterval(updateMarkers, 10000);
-    }
-    async function hideMarker(lat, lng, text, source) {
-      lat = Math.round(lat * 1000) / 1000;
-      lng = Math.round(lng * 1000) / 1000;
-      await fetch('/hide_marker', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lat, lng, text: decodeURIComponent(text), source: decodeURIComponent(source) })
-      });
-      prevTimeRange = null;
-      await updateMarkers();
     }
   function openWarn(){const o=document.getElementById('warnModal'); if(o) o.style.display='flex';}
   function closeWarn(){const o=document.getElementById('warnModal'); if(o) o.style.display='none';}
