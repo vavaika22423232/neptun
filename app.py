@@ -464,6 +464,17 @@ def geocode_opencage(place: str):
 def process_message(text, mid, date_str, channel):
     """Extract coordinates or try simple city geocoding (lightweight)."""
     original_text = text
+    # ---- Fundraising / donation solicitation filter (do not display on public site) ----
+    low_full = original_text.lower()
+    if any(k in low_full for k in [
+        'монобанк','monobank','mono.bank','privat24','приват24','реквізит','реквизит','донат','donat','iban','paypal','patreon','send.monobank.ua','jar/','банка: http','карта(','карта(monobank)','карта(privat24)'
+    ]) or re.search(r'\b\d{16}\b', low_full):
+        # Return a suppressed entry (not geo, not shown on map); prevents raw storing duplication
+        return [{
+            'id': str(mid), 'place': None, 'lat': None, 'lng': None,
+            'threat_type': None, 'text': original_text[:500], 'date': date_str, 'channel': channel,
+            'list_only': True, 'suppress': True
+        }]
     # Санитизация: убираем точную фразу "Повітряна тривога" (реквест пользователя)
     text = text.replace('Повітряна тривога', '').replace('повітряна тривога','').strip()
     # Убираем markdown * _ ` и базовые эмодзи-иконки в начале строк
