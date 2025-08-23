@@ -902,7 +902,9 @@
   styles: lightStyle,
   mapTypeControl: false,
   streetViewControl: false,
-  fullscreenControl: false
+  fullscreenControl: false,
+  gestureHandling: 'greedy', /* allow single-finger drag on mobile */
+  zoomControl: false /* hide default zoom (we have custom) */
       });
 
       // ---- Presence (active users) ----
@@ -989,6 +991,7 @@
       body.classList.remove('map-expanded');
       if(btn){ btn.title='Розгорнути карту'; btn.setAttribute('aria-label','Розгорнути карту'); }
       if(icon){ icon.textContent='fullscreen'; }
+  if(mapCard){ mapCard.style.height=''; }
       // restore map size
       setTimeout(()=>{ if(map){ google.maps.event.trigger(map,'resize'); } },150);
     } else {
