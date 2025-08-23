@@ -558,7 +558,7 @@ def process_message(text, mid, date_str, channel):
         return [{
             'id': str(mid), 'place': place, 'lat': None, 'lng': None,
             'threat_type': 'alarm', 'text': original_text[:500], 'date': date_str, 'channel': channel,
-            'marker_icon': 'alarm.png', 'list_only': True
+            'marker_icon': 'trivoga.png', 'list_only': True
         }]
     # Общий набор ключевых слов угроз
     THREAT_KEYS = ['бпла','дрон','шахед','shahed','geran','ракета','ракети','missile','iskander','s-300','s300','каб','артил','града','смерч','ураган','mlrs','avia','авіа','авиа','бомба']
