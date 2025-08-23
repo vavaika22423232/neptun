@@ -441,7 +441,24 @@ def process_message(text, mid, date_str, channel):
     # Если сообщение по сути только про тревогу (без упоминаний угроз) — пропускаем (не строим маркер)
     low_orig = original_text.lower()
     if 'повітряна тривога' in low_orig and not any(k in low_orig for k in ['бпла','дрон','шахед','shahed','geran','ракета','missile','iskander','s-300','s300','артил','града','смерч','ураган','mlrs']):
-        return None
+        # Make an event-only record (no map marker)
+        place = None
+        low = low_orig.lower()
+        # Try find oblast name
+        for name in OBLAST_CENTERS.keys():
+            if name in low:
+                place = name.title()
+                break
+        # Try bracket pattern (e.g. "Синельниківський район (Дніпропетровська обл.)")
+        if not place:
+            mbl = re.search(r'([A-Za-zА-Яа-яЇїІіЄєҐґ\'`’ʼ-]{3,})\s*\(([^)]+обл[^)]*)\)', text)
+            if mbl:
+                place = mbl.group(1).strip() + ' / ' + mbl.group(2).strip()
+        return [{
+            'id': str(mid), 'place': place, 'lat': None, 'lng': None,
+            'threat_type': 'alarm', 'text': original_text[:500], 'date': date_str, 'channel': channel,
+            'marker_icon': 'alarm.png', 'list_only': True
+        }]
     # Общий набор ключевых слов угроз
     THREAT_KEYS = ['бпла','дрон','шахед','shahed','geran','ракета','ракети','missile','iskander','s-300','s300','каб','артил','града','смерч','ураган','mlrs','avia','авіа','авиа','бомба']
     def has_threat(txt: str):
@@ -1028,26 +1045,35 @@ def hide_marker():
 
 @app.route('/health')
 def health():
-    """Health & basic stats; also prunes stale presence entries."""
+    msgs = load_messages()
+    hidden = set(load_hidden())
+    tracks = []
+    events = []
     now = time.time()
-    with ACTIVE_LOCK:
-        # Iterate explicitly to avoid comprehension indentation edge cases on some environments
-        for vid, meta in list(ACTIVE_VISITORS.items()):
-            ts = meta if isinstance(meta, (int, float)) else meta.get('ts', 0)
-            if now - ts > ACTIVE_TTL:
-                del ACTIVE_VISITORS[vid]
-        visitors = len(ACTIVE_VISITORS)
-    return jsonify({
-        'status': 'ok',
-        'messages': len(load_messages()),
-        'auth': AUTH_STATUS,
-        'visitors': visitors
-    })
-
-@app.route('/presence', methods=['POST'])
-def presence():
-    # Client sends a generated uuid every ~30s
-    data = request.get_json(silent=True) or {}
+    # Build events (latest first) including list_only alarm entries (limit 200)
+    for m in reversed(msgs):
+        if m.get('list_only') or (m.get('lat') is not None and m.get('lng') is not None):
+            events.append(m)
+            if len(events) >= 200:
+                break
+    events.reverse()  # chronological
+    # Build map markers from geo messages only
+    for m in msgs:
+        if m.get('list_only'):
+            continue
+        if m.get('lat') is None or m.get('lng') is None:
+            continue
+        mk = f"{round(m['lat'],3)},{round(m['lng'],3)}|{m.get('text','')[:40]}|{m.get('channel','')}"
+        if mk in hidden:
+            continue
+        try:
+            dt = datetime.strptime(m.get('date',''), '%Y-%m-%d %H:%M:%S')
+            if (datetime.utcnow() - dt).total_seconds() > 6*3600:
+                continue
+        except Exception:
+            pass
+        tracks.append(m)
+    resp = jsonify({'tracks': tracks, 'events': events, 'all_sources': CHANNELS, 'trajectories': []})
     vid = data.get('id')
     if not vid:
         return jsonify({'status':'error','error':'id required'}), 400

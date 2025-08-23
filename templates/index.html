@@ -864,8 +864,8 @@
           infowindow.open(map, marker);
         });
       });
-      // Обновить список событий
-      updateEventList(points);
+  // Обновить список событий (используем events из ответа, включающие тревоги без гео)
+  updateEventList(data.events || points);
     }
     function updateEventList(points) {
       const el = document.getElementById('eventList');
