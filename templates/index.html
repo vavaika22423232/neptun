@@ -454,6 +454,8 @@
     }
     /* Ensure controls stay above map in fullscreen */
     body.map-expanded .map-controls { z-index:600; top:0.75rem; right:0.75rem; }
+  /* Force-hide any default Google fullscreen control if Google re-injects it */
+  .gm-fullscreen-control { display:none !important; }
   </style>
 </head>
 <body>
