@@ -885,7 +885,9 @@
             iconUrl = '/static/' + ev.marker_icon;
           }
         }
-        return `<div class='event'><img class='event-icon' src='${iconUrl}'><div class='event-info'><b>${ev.place || ''}</b><br>${ev.text || ''}<div class='event-time'>${ev.date || ''}</div></div></div>`;
+        const isCancel = ev.threat_type === 'alarm_cancel';
+        const placeLine = (ev.place && !isCancel) ? `<b>${ev.place}</b><br>` : '';
+        return `<div class='event'><img class='event-icon' src='${iconUrl}'><div class='event-info'>${placeLine}${ev.text || ''}<div class='event-time'>${ev.date || ''}</div></div></div>`;
       }).join('');
     }
     async function initMap() {

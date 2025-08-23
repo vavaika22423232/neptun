@@ -661,6 +661,15 @@ def process_message(text, mid, date_str, channel):
             'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
             'marker_icon': icon
         }]
+    # Alarm cancellation (відбій) list-only handling: if classified as alarm_cancel, output list-only record w/o geo
+    if 'відбій' in original_text.lower() or 'отбой' in original_text.lower():
+        tt, ic = classify(original_text)
+        if tt == 'alarm_cancel':
+            return [{
+                'id': str(mid), 'place': None, 'lat': None, 'lng': None,
+                'threat_type': tt, 'text': original_text[:500], 'date': date_str, 'channel': channel,
+                'marker_icon': ic, 'list_only': True
+            }]
     lower = text.lower()
     # Extract drone / shahed count pattern (e.g. "7х бпла", "6x дронів", "10 х бпла") early so later branches can reuse
     drone_count = None
