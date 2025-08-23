@@ -300,6 +300,7 @@ RAION_FALLBACK = {
     'сумський': (50.9077, 34.7981), 'сумский': (50.9077, 34.7981),
     'новгород-сіверський': (51.9874, 33.2620), 'новгород-северский': (51.9874, 33.2620),
     'чугуївський': (49.8353, 36.6880), 'чугевский': (49.8353, 36.6880), 'чугевський': (49.8353, 36.6880), 'чугуевский': (49.8353, 36.6880)
+    , 'синельниківський': (48.3167, 36.5000), 'синельниковский': (48.3167, 36.5000)
 }
 
 SETTLEMENTS_FILE = os.getenv('SETTLEMENTS_FILE', 'settlements_ua.json')
@@ -497,6 +498,20 @@ def process_message(text, mid, date_str, channel):
             'marker_icon': icon
         }]
     lower = text.lower()
+    # Normalize some genitive forms ("дніпропетровської" -> base) to capture multiple oblasts in one message
+    GENITIVE_NORMALIZE = {
+        'дніпропетровської': 'дніпропетровська область',
+        'днепропетровской': 'дніпропетровська область',
+        'чернігівської': 'чернігівська обл.',
+        'черниговской': 'чернігівська обл.',
+        'сумської': 'сумська область',
+        'сумской': 'сумська область',
+        'харківської': 'харківська обл.',
+        'харьковской': 'харківська обл.'
+    }
+    for gform, base_form in GENITIVE_NORMALIZE.items():
+        if gform in lower:
+            lower = lower.replace(gform, base_form)
     # Normalize some accusative oblast forms to nominative for matching
     lower = lower.replace('донеччину','донеччина').replace('сумщину','сумщина')
     text = lower  # downstream logic mostly uses lower-case comparisons
