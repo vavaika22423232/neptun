@@ -625,8 +625,9 @@ def process_message(text, mid, date_str, channel):
         # Recon / розвід дрони -> use pvo icon (rozved.png) per user request
         if 'розвід' in l or 'развед' in l:
             return 'pvo', 'rozved.png'
-        # Explosions reporting -> vibuh icon
-        if 'повідомляють про вибух' in l or re.search(r'\bвибух(и|ів)?\b', l):
+        # Explosions reporting -> vibuh icon (cover broader fixation phrases)
+        if ('повідомляють про вибух' in l or 'повідомлено про вибух' in l or 'зафіксовано вибух' in l or 'зафіксовано вибухи' in l
+            or 'фіксація вибух' in l or 'фіксують вибух' in l or re.search(r'\b(вибух|вибухи|вибухів)\b', l)):
             return 'vibuh', 'vibuh.png'
         # PRIORITY: drones first (частая путаница). Если присутствуют слова шахед/бпла/дрон -> это shahed
         if any(k in l for k in ['shahed','шахед','шахеді','шахедів','geran','герань','дрон','дрони','бпла','uav']):
