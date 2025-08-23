@@ -245,6 +245,9 @@ CITY_COORDS = {
     'мелітополь': (46.8489, 35.3650),
     'бердянськ': (46.7553, 36.7885)
     ,'павлоград': (48.5350, 35.8700)
+    ,'ніжин': (51.0480, 31.8860)
+    ,'сосниця': (51.5236, 32.4953)
+    ,'олишівка': (51.1042, 31.6817)
 }
 
 OBLAST_CENTERS = {
@@ -640,8 +643,7 @@ def process_message(text, mid, date_str, channel):
                     'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
                     'marker_icon': icon, 'source_match': 'region_direction'
                 }]
-            # иначе (нет направления) избегаем центра города
-            return None
+            # если нет направления — продолжаем анализ (ищем конкретные цели типа "курс на <місто>")
         if len(matched_regions) == 2 and any(w in lower for w in ['межі','межу','межа','между','границі','граница']):
             (n1,(a1,b1)), (n2,(a2,b2)) = matched_regions
             lat = (a1+a2)/2; lng = (b1+b2)/2
@@ -681,6 +683,49 @@ def process_message(text, mid, date_str, channel):
                     'marker_icon': icon
                 }]
             # if city found but no coords even in fallback, continue scanning others (no break)
+    # --- Drone course target parsing (e.g. "БпЛА курсом на Ніжин") ---
+    def _normalize_course_city(w: str):
+        w = w.strip('.,:;"'"'"" ).-" ).lower()
+        w = re.sub(r'[^a-zа-яїієґё\-]', '', w)
+        # простая нормализация украинских женских окончаний винительного падежа
+        if w.endswith(('у','ю')) and len(w) > 4:
+            w = w[:-1] + 'а'
+        return w
+    course_matches = []
+    # Ищем каждую строку с шаблоном
+    for line in text.split('\n'):
+        line_low = line.lower()
+        if 'бпла' in line_low and 'курс' in line_low and (' на ' in line_low or ' в ' in line_low or ' у ' in line_low):
+            m = re.search(r'курс(?:ом)?\s+(?:на|в|у)\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,})', line, flags=re.IGNORECASE)
+            if m:
+                raw_city = m.group(1)
+                norm_city = _normalize_course_city(raw_city)
+                if norm_city:
+                    # пытаемся найти координаты в приоритетном порядке
+                    coords = CITY_COORDS.get(norm_city)
+                    if not coords and SETTLEMENTS_INDEX:
+                        coords = SETTLEMENTS_INDEX.get(norm_city)
+                    if not coords and OPENCAGE_API_KEY:
+                        try:
+                            coords = geocode_opencage(norm_city)
+                        except Exception:
+                            coords = None
+                    if coords:
+                        course_matches.append((norm_city.title(), coords, line[:200]))
+    if course_matches:
+        threat_type, icon = classify(text)
+        tracks = []
+        seen_places = set()
+        for idx,(name,(lat,lng),snippet) in enumerate(course_matches,1):
+            if name in seen_places: continue
+            seen_places.add(name)
+            tracks.append({
+                'id': f"{mid}_c{idx}", 'place': name, 'lat': lat, 'lng': lng,
+                'threat_type': threat_type, 'text': snippet[:500], 'date': date_str, 'channel': channel,
+                'marker_icon': icon, 'source_match': 'course_target'
+            })
+        if tracks:
+            return tracks
     return None
 
 async def fetch_loop():
