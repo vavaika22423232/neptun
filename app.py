@@ -300,6 +300,7 @@ CITY_COORDS = {
     ,'зачепилівка': (49.1717, 35.2742)
     ,'сахновщина': (49.1544, 35.1460)
     ,'губиниха': (48.7437, 35.2960)
+    ,'перещепине': (48.6260, 35.3580)
 }
 
 OBLAST_CENTERS = {
@@ -832,6 +833,35 @@ def process_message(text, mid, date_str, channel):
         if len(matched_regions) == 1 and not raion_matches:
             direction_code = detect_direction(lower)
             if direction_code:
+                # ---- Special: sector course pattern inside region directional message ----
+                # e.g. "курс(ом) в бік сектору перещепине - губиниха"
+                sector_match = re.search(r'курс(?:ом)?\s+в\s+бік\s+сектору\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,})(?:\s*[-–]\s*([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,}))?', lower)
+                if sector_match:
+                    c1 = sector_match.group(1)
+                    c2 = sector_match.group(2)
+                    def norm_city(n):
+                        if not n: return None
+                        n = n.strip().lower()
+                        n = re.sub(r'["`ʼ’\'.,:;()]+', '', n)
+                        return UA_CITY_NORMALIZE.get(n, n)
+                    c1n = norm_city(c1)
+                    c2n = norm_city(c2) if c2 else None
+                    coords1 = CITY_COORDS.get(c1n) or (SETTLEMENTS_INDEX.get(c1n) if SETTLEMENTS_INDEX else None)
+                    coords2 = CITY_COORDS.get(c2n) or (SETTLEMENTS_INDEX.get(c2n) if (c2n and SETTLEMENTS_INDEX) else None)
+                    if coords1 or coords2:
+                        if coords1 and coords2:
+                            lat_o = (coords1[0]+coords2[0])/2
+                            lng_o = (coords1[1]+coords2[1])/2
+                            place_label = f"{c1n.title()} - {c2n.title()} (сектор)"
+                        else:
+                            (lat_o,lng_o) = coords1 or coords2
+                            place_label = (c1n or c2n).title()
+                        threat_type, icon = classify(text)
+                        return [{
+                            'id': str(mid), 'place': place_label, 'lat': lat_o, 'lng': lng_o,
+                            'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                            'marker_icon': icon, 'source_match': 'course_sector'
+                        }]
                 (reg_name, (base_lat, base_lng)) = matched_regions[0]
                 # смещение ~50-70 км в сторону указанного направления
                 def offset(lat, lng, code):
