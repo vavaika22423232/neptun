@@ -867,6 +867,28 @@ def process_message(text, mid, date_str, channel):
             if tracks:
                 return tracks
 
+    # --- Black Sea aquatory: place marker in sea, not on target city (e.g. "в акваторії чорного моря, курсом на одесу") ---
+    lower_sea = text.lower()
+    if ('акватор' in lower_sea or 'акваторії' in lower_sea) and ('чорного моря' in lower_sea or 'чорне море' in lower_sea) and ('бпла' in lower_sea or 'дрон' in lower_sea):
+        # Attempt to capture target city (optional)
+        m_target = re.search(r'курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,})', lower_sea)
+        target_city = None
+        if m_target:
+            tc = m_target.group(1).lower()
+            tc = UA_CITY_NORMALIZE.get(tc, tc)
+            target_city = tc.title()
+        threat_type, icon = classify(text)
+        # Approx northern Black Sea central coords (between Odesa & Crimea offshore)
+        sea_lat, sea_lng = 45.3, 30.7
+        place_label = 'Акваторія Чорного моря'
+        if target_city:
+            place_label += f' (курс на {target_city})'
+        return [{
+            'id': str(mid), 'place': place_label, 'lat': sea_lat, 'lng': sea_lng,
+            'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+            'marker_icon': icon, 'source_match': 'black_sea_course'
+        }]
+
     # --- "повз <city>" (passing near) with optional direction target "у напрямку <city>" ---
     lower_pass = text.lower()
     if 'повз ' in lower_pass and ('бпла' in lower_pass or 'дрон' in lower_pass):
