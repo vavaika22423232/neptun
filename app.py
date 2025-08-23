@@ -61,6 +61,8 @@ ACTIVE_VISITORS = {}
 ACTIVE_LOCK = threading.Lock()
 ACTIVE_TTL = 70  # seconds of inactivity before a visitor is dropped
 BLOCKED_FILE = 'blocked_ids.json'
+STATS_FILE = 'visits_stats.json'  # persistent first-seen timestamps per visitor id
+VISIT_STATS = None  # lazy-loaded dict: {id: first_seen_epoch}
 client = None
 session_str = os.getenv('TELEGRAM_SESSION')  # Telethon string session (recommended for Render)
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')  # optional bot token fallback
@@ -215,6 +217,45 @@ def save_blocked(blocked):
             json.dump(blocked, f, ensure_ascii=False, indent=2)
     except Exception as e:
         log.warning(f'Failed saving {BLOCKED_FILE}: {e}')
+
+def _load_visit_stats():
+    global VISIT_STATS
+    if VISIT_STATS is not None:
+        return VISIT_STATS
+    if os.path.exists(STATS_FILE):
+        try:
+            with open(STATS_FILE,'r',encoding='utf-8') as f:
+                VISIT_STATS = json.load(f)
+        except Exception:
+            VISIT_STATS = {}
+    else:
+        VISIT_STATS = {}
+    return VISIT_STATS
+
+def _save_visit_stats():
+    if VISIT_STATS is None:
+        return
+    try:
+        with open(STATS_FILE,'w',encoding='utf-8') as f:
+            json.dump(VISIT_STATS, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log.warning(f'Failed saving {STATS_FILE}: {e}')
+
+def _prune_visit_stats(days:int=45):
+    # remove entries older than N days to limit file growth
+    if VISIT_STATS is None:
+        return
+    cutoff = time.time() - days*86400
+    removed = 0
+    for vid, ts in list(VISIT_STATS.items()):
+        try:
+            if float(ts) < cutoff:
+                del VISIT_STATS[vid]
+                removed += 1
+        except Exception:
+            continue
+    if removed:
+        _save_visit_stats()
 
 # Simplified message processor placeholder
 import math
@@ -1670,6 +1711,14 @@ def presence():
         return jsonify({'status':'blocked'})
     remote_ip = request.headers.get('X-Forwarded-For', request.remote_addr or '')
     ua = request.headers.get('User-Agent', '')[:300]
+    # Load stats and register first-seen if new
+    stats = _load_visit_stats()
+    if vid not in stats:
+        stats[vid] = now
+        # prune occasionally (1/200 probability)
+        if int(now) % 200 == 0:
+            _prune_visit_stats()
+        _save_visit_stats()
     with ACTIVE_LOCK:
         prev = ACTIVE_VISITORS.get(vid) if isinstance(ACTIVE_VISITORS.get(vid), dict) else {}
         ACTIVE_VISITORS[vid] = {'ts': now, 'ip': remote_ip, 'ua': prev.get('ua') or ua}
@@ -1777,6 +1826,24 @@ def admin_panel():
     raw_msgs = [m for m in reversed(all_msgs) if m.get('pending_geo')][:100]  # latest 100
     # Collect last N geo markers (exclude pending geo) for hide management
     recent_markers = [m for m in reversed(all_msgs) if m.get('lat') and m.get('lng') and not m.get('pending_geo')][:120]
+    # --- Visit stats aggregation ---
+    stats = _load_visit_stats()
+    tz = pytz.timezone('Europe/Kyiv')
+    now_dt = datetime.now(tz)
+    today_str = now_dt.strftime('%Y-%m-%d')
+    week_cut = now_dt - timedelta(days=7)
+    daily_unique = 0
+    week_unique = 0
+    for vid, ts in stats.items():
+        try:
+            tsf = float(ts)
+        except Exception:
+            continue
+        dt = datetime.fromtimestamp(tsf, tz)
+        if dt.strftime('%Y-%m-%d') == today_str:
+            daily_unique += 1
+        if dt >= week_cut:
+            week_unique += 1
     return render_template(
         'admin.html',
         visitors=visitors,
@@ -1785,7 +1852,9 @@ def admin_panel():
         raw_count=len([m for m in all_msgs if m.get('pending_geo')]),
         secret=(request.args.get('secret') or ''),
         monitor_period=MONITOR_PERIOD_MINUTES,
-        markers=recent_markers
+        markers=recent_markers,
+        daily_unique=daily_unique,
+        week_unique=week_unique
     )
 
 @app.route('/admin/set_monitor_period', methods=['POST'])

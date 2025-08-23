@@ -24,6 +24,8 @@
   <div class="topbar">
     <h1>Admin</h1>
     {% if secret %}<span class="badge">auth ok</span>{% else %}<span class="badge" style="background:#991b1b">no secret</span>{% endif %}
+  <span class="badge" title="Унікальні відвідувачі за сьогодні">Day: {{ daily_unique }}</span>
+  <span class="badge" title="Унікальні відвідувачі за 7 днів">Week: {{ week_unique }}</span>
     <form method="get" action="/admin" style="display:flex;gap:.5rem;align-items:center;">
       <input type="text" name="secret" placeholder="secret" value="{{ secret }}" />
       <button type="submit">Reload</button>
