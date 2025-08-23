@@ -1053,8 +1053,10 @@ def presence():
     if vid in blocked:
         return jsonify({'status':'blocked'})
     remote_ip = request.headers.get('X-Forwarded-For', request.remote_addr or '')
+    ua = request.headers.get('User-Agent', '')[:300]
     with ACTIVE_LOCK:
-        ACTIVE_VISITORS[vid] = {'ts': now, 'ip': remote_ip}
+        prev = ACTIVE_VISITORS.get(vid) if isinstance(ACTIVE_VISITORS.get(vid), dict) else {}
+        ACTIVE_VISITORS[vid] = {'ts': now, 'ip': remote_ip, 'ua': prev.get('ua') or ua}
         stale = [k for k,v in ACTIVE_VISITORS.items() if now - (v if isinstance(v,(int,float)) else v.get('ts',0)) > ACTIVE_TTL]
         for k in stale: del ACTIVE_VISITORS[k]
         count = len(ACTIVE_VISITORS)
@@ -1120,10 +1122,18 @@ def admin_panel():
         for vid, meta in ACTIVE_VISITORS.items():
             if isinstance(meta,(int,float)):
                 age = int(now - meta)
-                visitors.append({'id':vid,'ip':'','age':age,'age_fmt':_fmt_age(age)})
+                visitors.append({'id':vid,'ip':'','age':age,'age_fmt':_fmt_age(age),'ua':'','ua_short':''})
             else:
                 age = int(now - meta.get('ts',0))
-                visitors.append({'id':vid,'ip':meta.get('ip',''),'age':age,'age_fmt':_fmt_age(age)})
+                ua = meta.get('ua','')
+                visitors.append({
+                    'id':vid,
+                    'ip':meta.get('ip',''),
+                    'age':age,
+                    'age_fmt':_fmt_age(age),
+                    'ua': ua,
+                    'ua_short': _ua_label(ua)
+                })
     blocked = load_blocked()
     return render_template('admin.html', visitors=visitors, blocked=blocked, secret=(request.args.get('secret') or ''))
 
@@ -1163,6 +1173,38 @@ def _fmt_age(age_seconds:int)->str:
     h, rem = divmod(age_seconds, 3600)
     m, s = divmod(rem, 60)
     return f"{h}:{m:02d}:{s:02d}"
+
+def _ua_label(ua:str)->str:
+    u = ua.lower()
+    # Simple detection heuristics
+    if 'android' in u:
+        if 'wv' in u or 'version/' in u:
+            base = 'Android WebView'
+        else:
+            base = 'Android'
+    elif 'iphone' in u or 'ipad' in u or 'ipod' in u:
+        base = 'iOS'
+    elif 'mac os x' in u and 'mobile' not in u:
+        base = 'macOS'
+    elif 'windows nt' in u:
+        base = 'Windows'
+    elif 'linux' in u:
+        base = 'Linux'
+    else:
+        base = 'Other'
+    # Browser
+    browser = 'Browser'
+    if 'chrome/' in u and 'edg/' not in u and 'opr/' not in u:
+        browser = 'Chrome'
+    elif 'edg/' in u:
+        browser = 'Edge'
+    elif 'firefox/' in u:
+        browser = 'Firefox'
+    elif 'safari/' in u and 'chrome/' not in u:
+        browser = 'Safari'
+    elif 'opr/' in u or 'opera' in u:
+        browser = 'Opera'
+    return f"{base} {browser}"
 
 def _load_opencage_cache():
     global _opencage_cache

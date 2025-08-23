@@ -31,12 +31,13 @@
   </div>
   <h2 style="margin-top:1.2rem;font-size:1rem">Active Visitors ({{ visitors|length }})</h2>
   <table>
-  <thead><tr><th>ID</th><th>IP</th><th>Time</th><th>Action</th></tr></thead>
+  <thead><tr><th>ID</th><th>IP</th><th>Device</th><th>Time</th><th>Action</th></tr></thead>
     <tbody>
       {% for v in visitors %}
       <tr>
         <td style="max-width:220px;overflow-wrap:anywhere;">{{ v.id }}</td>
         <td>{{ v.ip }}</td>
+  <td title="{{ v.ua }}" style="max-width:140px;overflow-wrap:anywhere;">{{ v.ua_short }}</td>
   <td title="{{ v.age }}s">{{ v.age_fmt }}</td>
         <td><button class="danger" onclick="blockId('{{ v.id }}')">Block</button></td>
       </tr>
