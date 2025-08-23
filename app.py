@@ -88,26 +88,6 @@ OPENCAGE_TTL = 60 * 60 * 24 * 30  # 30 days
 MESSAGES_RETENTION_MINUTES = int(os.getenv('MESSAGES_RETENTION_MINUTES', '0'))  # 0 = keep forever
 MESSAGES_MAX_COUNT = int(os.getenv('MESSAGES_MAX_COUNT', '0'))  # 0 = unlimited
 
-# Global monitoring period (minutes) configurable from admin panel
-MONITOR_CONFIG_FILE = 'monitor_config.json'
-DEFAULT_MONITOR_TIME_RANGE = 40  # minutes
-try:
-    if os.path.exists(MONITOR_CONFIG_FILE):
-        with open(MONITOR_CONFIG_FILE, 'r', encoding='utf-8') as _cf:
-            _cfg = json.load(_cf)
-            MONITOR_TIME_RANGE_MINUTES = int(_cfg.get('time_range', DEFAULT_MONITOR_TIME_RANGE))
-    else:
-        MONITOR_TIME_RANGE_MINUTES = DEFAULT_MONITOR_TIME_RANGE
-except Exception:
-    MONITOR_TIME_RANGE_MINUTES = DEFAULT_MONITOR_TIME_RANGE
-
-def save_monitor_time_range():
-    try:
-        with open(MONITOR_CONFIG_FILE, 'w', encoding='utf-8') as f:
-            json.dump({'time_range': MONITOR_TIME_RANGE_MINUTES}, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        log.warning(f'Failed saving {MONITOR_CONFIG_FILE}: {e}')
-
 def _startup_diagnostics():
     """Log one-time startup diagnostics to help investigate early exit issues on hosting platforms."""
     try:
@@ -1047,9 +1027,9 @@ def index():
 
 @app.route('/data')
 def data():
-    # Always use global configured monitoring period (ignore client supplied value)
-    global MONITOR_TIME_RANGE_MINUTES
-    time_range = MONITOR_TIME_RANGE_MINUTES
+    try:
+        time_range = int(request.args.get('timeRange', 50))
+    except Exception: time_range = 50
     messages = load_messages()
     tz = pytz.timezone('Europe/Kyiv')
     now = datetime.now(tz).replace(tzinfo=None)
@@ -1229,7 +1209,7 @@ def admin_panel():
     # Load raw (pending geo) messages
     all_msgs = load_messages()
     raw_msgs = [m for m in reversed(all_msgs) if m.get('pending_geo')][:100]  # latest 100
-    return render_template('admin.html', visitors=visitors, blocked=blocked, raw_msgs=raw_msgs, raw_count=len([m for m in all_msgs if m.get('pending_geo')]), secret=(request.args.get('secret') or ''), monitor_time_range=MONITOR_TIME_RANGE_MINUTES)
+    return render_template('admin.html', visitors=visitors, blocked=blocked, raw_msgs=raw_msgs, raw_count=len([m for m in all_msgs if m.get('pending_geo')]), secret=(request.args.get('secret') or ''))
 
 @app.route('/block', methods=['POST'])
 def block_id():
@@ -1260,24 +1240,6 @@ def unblock_id():
         blocked.remove(vid)
         save_blocked(blocked)
     return jsonify({'status':'ok','blocked':blocked})
-
-@app.route('/set_monitor_time_range', methods=['POST'])
-def set_monitor_time_range():
-    if not _require_secret(request):
-        return jsonify({'status':'forbidden'}), 403
-    payload = request.get_json(silent=True) or request.form
-    try:
-        minutes = int((payload or {}).get('minutes'))
-    except Exception:
-        return jsonify({'status':'error','error':'invalid minutes'}), 400
-    if minutes < 1 or minutes > 120:
-        return jsonify({'status':'error','error':'range 1-120'}), 400
-    global MONITOR_TIME_RANGE_MINUTES
-    MONITOR_TIME_RANGE_MINUTES = minutes
-    save_monitor_time_range()
-    # Broadcast control event so clients refresh
-    broadcast_control({'type':'time_range','value': minutes})
-    return jsonify({'status':'ok','minutes': minutes})
 
 def _fmt_age(age_seconds:int)->str:
     # Format seconds to H:MM:SS (or M:SS if <1h)

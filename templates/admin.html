@@ -74,14 +74,6 @@
       </tbody>
     </table>
   </div>
-  <div style="margin-top:1.5rem;padding:1rem;background:#162132;border:1px solid #1e293b;border-radius:8px;max-width:340px;">
-    <h2 style="margin:0 0 .5rem;font-size:1rem;">Monitoring Period</h2>
-    <form id="monitorForm" onsubmit="return saveMonitor(event)" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
-      <input type="number" min="1" max="120" id="monitorMinutes" value="{{ monitor_time_range }}" style="width:90px;background:#0f1d33;border:1px solid #1e2f43;color:#fff;padding:6px 8px;border-radius:5px;" />
-      <button type="submit">Save</button>
-    </form>
-    <div style="font-size:.7rem;color:#94a3b8;margin-top:.4rem;">Applies to all users instantly.</div>
-  </div>
 <script>
 async function blockId(id){
   const secret = new URLSearchParams(location.search).get('secret')||'';
@@ -92,15 +84,6 @@ async function unblockId(id){
   const secret = new URLSearchParams(location.search).get('secret')||'';
   const r = await fetch('/unblock?secret='+encodeURIComponent(secret), {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
   if(r.ok) location.reload();
-}
-async function saveMonitor(e){
-  e.preventDefault();
-  const minutes = parseInt(document.getElementById('monitorMinutes').value,10);
-  if(isNaN(minutes)||minutes<1||minutes>120){alert('1-120');return false;}
-  const secret = new URLSearchParams(location.search).get('secret')||'';
-  const r = await fetch('/set_monitor_time_range?secret='+encodeURIComponent(secret), {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({minutes})});
-  if(r.ok){ alert('Updated'); } else { alert('Error'); }
-  return false;
 }
 </script>
 </body>
