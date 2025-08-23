@@ -555,6 +555,41 @@ def process_message(text, mid, date_str, channel):
         if tracks:
             return tracks
 
+    # --- Single border oblast KAB launch: place marker at predefined border point ---
+    if len(region_hits) == 1 and 'каб' in lower and ('пуск' in lower or 'пуски' in lower):
+        rname, (olat, olng), snippet = region_hits[0]
+        # базовые ключи для соответствия
+        key = rname.lower()
+        BORDER_POINTS = {
+            'донеччина': (48.20, 37.90),
+            'донецька область': (48.20, 37.90),
+            'сумщина': (51.30, 34.40),
+            'сумська область': (51.30, 34.40),
+            'чернігівщина': (51.75, 31.60),
+            'чернігівська обл.': (51.75, 31.60),
+            'харківщина': (50.25, 36.85),
+            'харківська обл.': (50.25, 36.85),
+            'луганщина': (48.90, 39.40),
+            'луганська область': (48.90, 39.40),
+            'запорізька обл.': (47.55, 35.60),
+            'херсонська обл.': (46.65, 32.60)
+        }
+        # нормализация ключа (удаляем регистр / лишние пробелы)
+        k_simple = key.replace('’','').replace("'",'').strip()
+        # попытка прямого поиска
+        coord = None
+        for bk, bcoord in BORDER_POINTS.items():
+            if bk in k_simple:
+                coord = bcoord
+                break
+        if coord:
+            threat_type, icon = classify(text)
+            return [{
+                'id': str(mid), 'place': rname + ' (кордон)', 'lat': coord[0], 'lng': coord[1],
+                'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                'marker_icon': icon, 'source_match': 'border_kab'
+            }]
+
     # --- Settlement matching using external dataset (if provided) (single first match) ---
     if SETTLEMENTS_INDEX and not region_hits:
         for name in SETTLEMENTS_ORDERED:
