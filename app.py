@@ -491,6 +491,55 @@ def process_message(text, mid, date_str, channel):
     def has_threat(txt: str):
         l = txt.lower()
         return any(k in l for k in THREAT_KEYS)
+    # --- Trajectory phrase pattern: "з дніпропетровщини через харківщину у напрямку полтавщини" ---
+    # We map region stems to canonical OBLAST_CENTERS keys (simplistic stem matching).
+    lower_full = text.lower()
+    if has_threat(lower_full) and ' через ' in lower_full and (' у напрямку ' in lower_full or ' напрямку ' in lower_full or ' в напрямку ' in lower_full):
+        # Extract sequence tokens after prepositions з/із/від -> start, через -> middle(s), напрямку -> target
+        # Very heuristic; splits by key words.
+        try:
+            # Normalize spacing
+            norm = re.sub(r'\s+', ' ', lower_full)
+            # Replace variants
+            norm = norm.replace('із ', 'з ').replace('від ', 'з ')
+            # Identify segments
+            # split at ' через '
+            front, after = norm.split(' через ', 1)
+            start_token = front.split(' з ')[-1].strip()
+            # target part
+            target_part = None
+            for marker in [' у напрямку ', ' в напрямку ', ' напрямку ']:
+                if marker in after:
+                    mid_part, target_part = after.split(marker, 1)
+                    break
+            if target_part:
+                mid_token = mid_part.strip().split('.')[0]
+                target_token = target_part.strip().split('.')[0]
+                def region_center(token:str):
+                    for k,(lat,lng) in OBLAST_CENTERS.items():
+                        if token.startswith(k.split()[0][:6]) or token in k:
+                            return (k, (lat,lng))
+                    return None
+                seq = []
+                for tk in [start_token, mid_token, target_token]:
+                    rc = region_center(tk)
+                    if rc:
+                        # avoid duplicates in order
+                        if not seq or seq[-1][0] != rc[0]:
+                            seq.append(rc)
+                if len(seq) >= 2:
+                    threat_type, icon = classify(text)
+                    tracks = []
+                    for idx,(name,(lat,lng)) in enumerate(seq,1):
+                        base = name.split()[0].title()
+                        tracks.append({
+                            'id': f"{mid}_t{idx}", 'place': base, 'lat': lat, 'lng': lng,
+                            'threat_type': threat_type, 'text': original_text[:500], 'date': date_str, 'channel': channel,
+                            'marker_icon': icon, 'source_match': 'trajectory_phrase'
+                        })
+                    return tracks
+        except Exception:
+            pass
     # direct coordinates pattern
     def classify(th: str):
         l = th.lower()
@@ -1421,6 +1470,7 @@ OBLAST_CENTERS = {
     , 'чернігівська обл.': (51.4982, 31.2893), 'черниговская обл.': (51.4982, 31.2893)
     , 'харківська обл.': (49.9935, 36.2304), 'харьковская обл.': (49.9935, 36.2304)
     , 'сумщина': (50.9077, 34.7981), 'сумщини': (50.9077, 34.7981), 'сумська область': (50.9077, 34.7981), 'сумська обл.': (50.9077, 34.7981), 'сумская обл.': (50.9077, 34.7981)
+    , 'полтавщина': (49.5883, 34.5514), 'полтавщини': (49.5883, 34.5514), 'полтавська обл.': (49.5883, 34.5514), 'полтавська область': (49.5883, 34.5514)
 }
 
 # Район (district) fallback centers (можно расширять). Ключи в нижнем регистре без слова 'район'.
