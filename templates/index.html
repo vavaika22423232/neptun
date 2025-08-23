@@ -439,6 +439,20 @@
       .map-card, .card { width:100vw; max-width:100vw; margin:0 !important; border-radius:0; }
       #map { width:100%; max-width:100%; border-radius:0; }
     }
+    /* --- Fullscreen map (custom) --- */
+    body.map-expanded { overflow:hidden; }
+    body.map-expanded .navbar { display:none; }
+    body.map-expanded .main-content { padding:0 !important; margin:0 !important; }
+    body.map-expanded .map-card { position:fixed; inset:0; z-index:500; width:100vw !important; height:100vh !important; border-radius:0 !important; }
+    body.map-expanded #map { height:100vh !important; width:100vw !important; border-radius:0 !important; }
+    body.map-expanded .card:not(.map-card) { display:none !important; }
+    /* Dynamic viewport height for mobile browsers supporting dvh */
+    @supports (height: 100dvh) {
+      body.map-expanded .map-card { height:100dvh !important; }
+      body.map-expanded #map { height:100dvh !important; }
+    }
+    /* Ensure controls stay above map in fullscreen */
+    body.map-expanded .map-controls { z-index:600; top:0.75rem; right:0.75rem; }
   </style>
 </head>
 <body>
@@ -479,6 +493,9 @@
         </button>
         <button class="map-control-btn" onclick="map.setCenter({lat: 48.3794, lng: 31.1656})">
           <i class="material-icons">center_focus_strong</i>
+        </button>
+        <button class="map-control-btn" id="expandBtn" onclick="toggleMapExpand()" title="Розгорнути карту" aria-label="Розгорнути карту">
+          <i class="material-icons" id="expandIcon">fullscreen</i>
         </button>
       </div>
       <div id="map"></div>
@@ -961,6 +978,30 @@
   function openWarn(){const o=document.getElementById('warnModal'); if(o) o.style.display='flex';}
   function closeWarn(){const o=document.getElementById('warnModal'); if(o) o.style.display='none';}
   function ackWarn(){ closeWarn(); }
+  function toggleMapExpand(){
+    const body = document.body;
+    const btn = document.getElementById('expandBtn');
+    const icon = document.getElementById('expandIcon');
+    const mapCard = document.querySelector('.map-card');
+    const wasExpanded = body.classList.contains('map-expanded');
+    if(wasExpanded){
+      body.classList.remove('map-expanded');
+      if(btn){ btn.title='Розгорнути карту'; btn.setAttribute('aria-label','Розгорнути карту'); }
+      if(icon){ icon.textContent='fullscreen'; }
+      // restore map size
+      setTimeout(()=>{ if(map){ google.maps.event.trigger(map,'resize'); } },150);
+    } else {
+      body.classList.add('map-expanded');
+      if(btn){ btn.title='Згорнути карту'; btn.setAttribute('aria-label','Згорнути карту'); }
+      if(icon){ icon.textContent='fullscreen_exit'; }
+      // Set explicit height for iOS Safari dynamic bars
+      if(mapCard){ mapCard.style.height= window.innerHeight + 'px'; }
+      setTimeout(()=>{ if(map){ google.maps.event.trigger(map,'resize'); map.setCenter(UKRAINE_CENTER); } },200);
+    }
+  }
+  // Adjust fullscreen height on orientation / resize for mobile
+  window.addEventListener('orientationchange', ()=>{ if(document.body.classList.contains('map-expanded')){ const mapCard=document.querySelector('.map-card'); if(mapCard){ mapCard.style.height=window.innerHeight+'px'; if(map){ google.maps.event.trigger(map,'resize'); } } } });
+  window.addEventListener('resize', ()=>{ if(document.body.classList.contains('map-expanded')){ const mapCard=document.querySelector('.map-card'); if(mapCard){ mapCard.style.height=window.innerHeight+'px'; if(map){ google.maps.event.trigger(map,'resize'); } } } });
   window.onload = () => { preloadIcons(); initMap(); openWarn(); };
   </script>
   <script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCNvHPPImGhTBA7NyOL7kNvfFe4bTIRpGs&callback=initMap&language=uk"></script>
