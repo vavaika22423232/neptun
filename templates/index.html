@@ -548,81 +548,62 @@
 
   </div>
   <script>
-    // Константы и настройки
+    // Константи та налаштування
     const UKRAINE_CENTER = { lat: 48.3794, lng: 31.1656 };
-    const ICONS = {
-      shahed: '/static/shahed.png',
-      raketa: '/static/raketa.png',
-      avia: '/static/avia.png',
-      pvo: '/static/rozved.png',
-      explosion: '/static/explosion.png',
-      mlrs: '/static/mlrs.png',
-      artillery: '/static/artillery.png',
-      default: '/static/default.png'
-    };
-    // Fallback tiny red dot if icon 404
-    function preloadIcons(){
-      Object.keys(ICONS).forEach(k=>{const url=ICONS[k]; const img=new Image(); img.onload=()=>{}; img.onerror=()=>{ICONS[k]='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA4AAAAOCAYAAAAfSC3RAAAALElEQVQokWP8////fwY0wAgjGJgGLABWMMRAFEg0gGE0GoBmGuwmCkYBAGmxD/dzJvLRwAAAABJRU5ErkJggg==';}; img.src=url;});
-    }
-    // Состояние приложения
-    let map;
-    let markers = [];
-    let circles = [];
-    let markerData = [];
-    async function updateMarkers() {
+    const ICONS = { shahed:'/static/shahed.png', raketa:'/static/raketa.png', avia:'/static/avia.png', pvo:'/static/rozved.png', explosion:'/static/explosion.png', mlrs:'/static/mlrs.png', artillery:'/static/artillery.png', default:'/static/default.png' };
+    function preloadIcons(){ Object.keys(ICONS).forEach(k=>{const url=ICONS[k]; const img=new Image(); img.onerror=()=>{ICONS[k]='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA4AAAAOCAYAAAAfSC3RAAAALElEQVQokWP8////fwY0wAgjGJgGLABWMMRAFEg0gGE0GoBmGuwmCkYBAGmxD/dzJvLRwAAAABJRU5ErkJggg==';}; img.src=url;}); }
+    let map, markers=[], circles=[]; let markerData=[];
+    function clearMap(){ markers.forEach(m=>m.setMap && m.setMap(null)); markers=[]; circles.forEach(c=>c.setMap(null)); circles=[]; }
+    async function updateMarkers(){
       let threatType = document.getElementById('threatTypeSelect').value;
-      const params = new URLSearchParams({ confRange: 0 });
-      const res = await fetch(`/data?${params.toString()}`);
+      const res = await fetch('/data?confRange=0');
       const data = await res.json();
-      let points = (data.tracks || []).filter(p => {
-        // Проверка координат
-        if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return false;
-        if (isNaN(p.lat) || isNaN(p.lng)) return false;
-        // Исключаем "нулевые" и явно ошибочные координаты
-        if (Math.abs(p.lat) < 1 && Math.abs(p.lng) < 1) return false;
-        // Грубая фильтрация: только Украина
-        if (p.lat < 43 || p.lat > 53.5 || p.lng < 21 || p.lng > 41) return false;
-        
-        // Проверяем наличие конкретного места
-        const vague_locations = ['схід', 'захід', 'північ', 'південь', 'восток', 'запад', 'север', 'юг'];
-        if (!p.place || vague_locations.includes(p.place.toLowerCase())) return false;
-        
-        return true;
-      });
-      if (threatType) points = points.filter(p => (p.threat_type || '').toLowerCase() === threatType);
-      // reuse rest of original implementation by calling a helper
+      let points = (data.tracks||[]).filter(p=>{
+        if(typeof p.lat!== 'number'|| typeof p.lng!== 'number') return false;
+        if(isNaN(p.lat)||isNaN(p.lng)) return false;
+        if(Math.abs(p.lat)<1 && Math.abs(p.lng)<1) return false;
+        if(p.lat<43||p.lat>53.5||p.lng<21||p.lng>41) return false;
+        const vague=['схід','захід','північ','південь','восток','запад','север','юг'];
+        if(!p.place || vague.includes((p.place||'').toLowerCase())) return false;
+        return true; });
+      if(threatType) points = points.filter(p=> (p.threat_type||'').toLowerCase()===threatType);
       renderMarkers(points, data);
     }
-    // Override updateMarkers to drop local timeRange input
-    async function updateMarkers() {
-      let threatType = document.getElementById('threatTypeSelect').value;
-      const params = new URLSearchParams({ confRange: 0 });
-      const res = await fetch(`/data?${params.toString()}`);
-      const data = await res.json();
-      let points = (data.tracks || []).filter(p => {
-        // Проверка координат
-        if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return false;
-        if (isNaN(p.lat) || isNaN(p.lng)) return false;
-        // Исключаем "нулевые" и явно ошибочные координаты
-        if (Math.abs(p.lat) < 1 && Math.abs(p.lng) < 1) return false;
-        // Грубая фильтрация: только Украина
-        if (p.lat < 43 || p.lat > 53.5 || p.lng < 21 || p.lng > 41) return false;
-        
-        // Проверяем наличие конкретного места
-        const vague_locations = ['схід', 'захід', 'північ', 'південь', 'восток', 'запад', 'север', 'юг'];
-        if (!p.place || vague_locations.includes(p.place.toLowerCase())) return false;
-        
-        return true;
+    function renderMarkers(points,data){
+      clearMap(); markerData=points;
+      points.forEach((p,idx)=>{
+        if(/відбій|отбой/i.test(p.text||'')) return;
+        let iconUrl = ICONS[p.threat_type]||ICONS.default;
+        if(p.marker_icon){ iconUrl = p.marker_icon.startsWith('http')||p.marker_icon.startsWith('/')? p.marker_icon: '/static/'+p.marker_icon; }
+        let radius=0,color='#e53935'; if(p.threat_type==='shahed'){radius=10000;} else if(p.threat_type==='raketa'){radius=20000;color='#1976d2';} else if(p.threat_type==='avia'){radius=30000;color='#fbc02d';}
+        const pulseCircle = new google.maps.Circle({strokeColor:'#00ffe7',strokeOpacity:0.7,strokeWeight:2,fillColor:color,fillOpacity:0.38,map,center:{lat:p.lat,lng:p.lng},radius: radius*0.7,zIndex:0});
+        circles.push(pulseCircle); let start=Date.now()+idx*200; function anim(){const t=((Date.now()-start)%1600)/1600; pulseCircle.setRadius(radius*(0.7+0.7*t)); pulseCircle.setOptions({fillOpacity:0.38*(1-t)}); if(pulseCircle.getMap()) requestAnimationFrame(anim);} if(radius>0) anim();
+        let marker = new google.maps.Marker({position:{lat:p.lat,lng:p.lng}, map, title:p.text, icon:{url:iconUrl, scaledSize:new google.maps.Size(32,28)}, opacity:0}); markers.push(marker); setTimeout(()=>marker.setOpacity(1),80+idx*40);
+        const info = new google.maps.InfoWindow({content:`<div style="background:#23272f;color:#f4f6fa;border-radius:10px;padding:10px 8px;min-width:220px;max-width:340px;font-size:1.04rem;box-shadow:0 2px 12px #0008;border:1.5px solid #31343b;">`+`<b>Повідомлення:</b><br>${p.text||''}<br><b>Час:</b> ${p.date||''}</div>`});
+        marker.addListener('click',()=>info.open(map,marker));
       });
-      if (threatType) points = points.filter(p => (p.threat_type || '').toLowerCase() === threatType);
-      // reuse rest of original implementation by calling a helper
-      renderMarkers(points, data);
+      updateEventList((data&&data.events)||points);
     }
-  </script>
-  <script>
-    // Patch existing SSE handler reaction (assumes es variable earlier)
-    // This snippet appended; actual handler in earlier code will see control event
-    // If not modifying earlier code directly, we rely on existing logic plus below listener pattern.
+    function updateEventList(points){ const el=document.getElementById('eventList'); if(!el) return; if(!points||!points.length){ el.innerHTML='<div style="color:#888;padding:12px;">Загроз на данний час немає</div>'; return;} el.innerHTML=points.slice(0,20).map(ev=>{let iconUrl=ICONS[ev.threat_type]||ICONS.default; if(ev.marker_icon){ iconUrl= ev.marker_icon.startsWith('http')||ev.marker_icon.startsWith('/')? ev.marker_icon: '/static/'+ev.marker_icon;} return `<div class='event'><img class='event-icon' src='${iconUrl}'><div class='event-info'><b>${ev.place||''}</b><br>${ev.text||''}<div class='event-time'>${ev.date||''}</div></div></div>`;}).join(''); }
+    async function initMap(){
+      map = new google.maps.Map(document.getElementById('map'), {zoom:6, center:UKRAINE_CENTER, mapTypeControl:false, streetViewControl:false, fullscreenControl:false, gestureHandling:'greedy', zoomControl:false});
+      // Presence
+      const uid = localStorage.getItem('presence_id') || (self.crypto?.randomUUID? crypto.randomUUID(): (Date.now()+''+Math.random()).replace(/\D/g,''));
+      localStorage.setItem('presence_id', uid);
+      async function pingPresence(){ try{ const r= await fetch('/presence',{method:'POST',headers:{'Content-Type':'application/json'}, body: JSON.stringify({id:uid})}); const j= await r.json(); if(j.status==='blocked'){ blockOverlay(); return;} if(j.visitors!==undefined){ const el=document.getElementById('liveUsers'); if(el) el.querySelector('strong').textContent=j.visitors; } }catch(e){} }
+      function blockOverlay(){ const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;background:#0a0f1f;display:flex;align-items:center;justify-content:center;z-index:9999;font-family:Inter,sans-serif;color:#fff;padding:2rem;text-align:center;'; ov.innerHTML='<div style="max-width:480px;">Ваш доступ тимчасово обмежено.</div>'; document.body.appendChild(ov); }
+      pingPresence(); setInterval(pingPresence,5000);
+      await updateMarkers();
+      try{ const es=new EventSource('/stream'); es.onmessage = ev=>{ try{ const p=JSON.parse(ev.data); if(p.tracks && p.tracks.length) updateMarkers(); if(p.control){ if(p.control.type==='block'){ const my=localStorage.getItem('presence_id'); if(p.control.id && my && p.control.id===my){ blockOverlay(); try{es.close();}catch(e){} } } if(p.control.type==='time_range'){ updateMarkers(); } } }catch(e){} } }catch(e){}
+      setInterval(updateMarkers,10000);
+    }
+    function openWarn(){ const o=document.getElementById('warnModal'); if(o) o.style.display='flex'; }
+    function closeWarn(){ const o=document.getElementById('warnModal'); if(o) o.style.display='none'; }
+    function ackWarn(){ closeWarn(); }
+    function toggleMapExpand(){ const body=document.body; const btn=document.getElementById('expandBtn'); const icon=document.getElementById('expandIcon'); const mapCard=document.querySelector('.map-card'); const was=body.classList.contains('map-expanded'); if(was){ body.classList.remove('map-expanded'); if(btn){ btn.title='Розгорнути карту'; btn.setAttribute('aria-label','Розгорнути карту'); } if(icon){ icon.textContent='fullscreen'; } if(mapCard){ mapCard.style.height=''; } setTimeout(()=>{ if(map){ google.maps.event.trigger(map,'resize'); } },150); } else { body.classList.add('map-expanded'); if(btn){ btn.title='Згорнути карту'; btn.setAttribute('aria-label','Згорнути карту'); } if(icon){ icon.textContent='fullscreen_exit'; } if(mapCard){ mapCard.style.height=window.innerHeight+'px'; } setTimeout(()=>{ if(map){ google.maps.event.trigger(map,'resize'); map.setCenter(UKRAINE_CENTER);} },200);} }
+    window.addEventListener('orientationchange',()=>{ if(document.body.classList.contains('map-expanded')){ const mc=document.querySelector('.map-card'); if(mc){ mc.style.height=window.innerHeight+'px'; if(map){ google.maps.event.trigger(map,'resize'); } } } });
+    window.addEventListener('resize',()=>{ if(document.body.classList.contains('map-expanded')){ const mc=document.querySelector('.map-card'); if(mc){ mc.style.height=window.innerHeight+'px'; if(map){ google.maps.event.trigger(map,'resize'); } } } });
+    window.onload=()=>{ preloadIcons(); initMap(); openWarn(); };
   </script>
   <script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCNvHPPImGhTBA7NyOL7kNvfFe4bTIRpGs&callback=initMap&language=uk"></script>
 </body>
