@@ -871,7 +871,7 @@
       const el = document.getElementById('eventList');
       if (!el) return;
       if (!points || !points.length) {
-        el.innerHTML = '<div style="color:#888;padding:12px;">Подій не знайдено</div>';
+        el.innerHTML = '<div style="color:#888;padding:12px;">Загроз на данний час немає</div>';
         return;
       }
       el.innerHTML = points.slice(0, 20).map(ev => {
