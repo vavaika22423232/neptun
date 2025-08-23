@@ -301,6 +301,11 @@ CITY_COORDS = {
     ,'сахновщина': (49.1544, 35.1460)
     ,'губиниха': (48.7437, 35.2960)
     ,'перещепине': (48.6260, 35.3580)
+    ,'обухівка': (48.6035, 34.8530)
+    ,'курилівка': (48.6715, 34.8740)
+    ,'петриківка': (48.7330, 34.6300)
+    ,'підгородне': (48.5747, 35.1482)
+    ,'самар': (48.6500, 35.4200)
 }
 
 OBLAST_CENTERS = {
@@ -857,6 +862,48 @@ def process_message(text, mid, date_str, channel):
                 })
             if tracks:
                 return tracks
+
+    # --- Comma separated settlements followed by threat keyword (e.g. "Обухівка, Курилівка, Петриківка увага БПЛА") ---
+    lower_commas = text.lower()
+    if 'бпла' in lower_commas and ',' in lower_commas:
+        # Identify first threat keyword position
+        threat_kw_idx = None
+        for kw in ['увага','проліт','пролёт','уважно','уважно.','уважно,']:
+            pos = lower_commas.find(kw)
+            if pos != -1:
+                threat_kw_idx = pos
+                break
+        if threat_kw_idx is not None:
+            left_seg = lower_commas[:threat_kw_idx]
+            # quick guard to ensure segment not too long
+            if 3 <= len(left_seg) <= 180:
+                cand_parts = [p.strip() for p in left_seg.split(',') if p.strip()]
+                found = []
+                for cand in cand_parts:
+                    # normalize basic endings (remove trailing punctuation)
+                    base = cand.strip(" .!?:;()[]'`’ʼ")
+                    if len(base) < 3:
+                        continue
+                    norm = UA_CITY_NORMALIZE.get(base, base)
+                    coords = CITY_COORDS.get(norm)
+                    if not coords and SETTLEMENTS_INDEX:
+                        coords = SETTLEMENTS_INDEX.get(norm)
+                    if coords:
+                        found.append((norm.title(), coords))
+                if found:
+                    threat_type, icon = classify(text)
+                    tracks = []
+                    seenp = set()
+                    for idx,(nm,(lat,lng)) in enumerate(found,1):
+                        if nm in seenp: continue
+                        seenp.add(nm)
+                        tracks.append({
+                            'id': f"{mid}_m{idx}", 'place': nm, 'lat': lat, 'lng': lng,
+                            'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                            'marker_icon': icon, 'source_match': 'multi_settlement_comma'
+                        })
+                    if tracks:
+                        return tracks
 
     # Region boundary logic (fallback single or midpoint for exactly two)
     matched_regions = []
