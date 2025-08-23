@@ -340,6 +340,8 @@ RAION_FALLBACK = {
 }
 
 SETTLEMENTS_FILE = os.getenv('SETTLEMENTS_FILE', 'settlements_ua.json')
+SETTLEMENTS_URL = os.getenv('SETTLEMENTS_URL')  # optional remote JSON (list of {name,lat,lng})
+SETTLEMENTS_MAX = int(os.getenv('SETTLEMENTS_MAX', '150000'))  # safety cap
 SETTLEMENTS_INDEX = {}
 SETTLEMENTS_ORDERED = []
 
@@ -402,29 +404,55 @@ def maybe_git_autocommit():
             _last_git_commit = now
         # else: give up silently to avoid spamming logs
 
+def _download_settlements():
+    if not SETTLEMENTS_URL or os.path.exists(SETTLEMENTS_FILE):
+        return False
+    try:
+        import requests
+        r = requests.get(SETTLEMENTS_URL, timeout=30)
+        if r.status_code == 200:
+            with open(SETTLEMENTS_FILE, 'wb') as f:
+                f.write(r.content)
+            log.info(f'Downloaded settlements file from {SETTLEMENTS_URL}')
+            return True
+        else:
+            log.warning(f'Failed to download settlements ({r.status_code}) from {SETTLEMENTS_URL}')
+    except Exception as e:
+        log.warning(f'Error downloading settlements: {e}')
+    return False
+
 def _load_settlements():
     global SETTLEMENTS_INDEX, SETTLEMENTS_ORDERED
     if not os.path.exists(SETTLEMENTS_FILE):
+        _download_settlements()
+    if not os.path.exists(SETTLEMENTS_FILE):
+        log.info('No settlements file present; only basic CITY_COORDS will be used.')
         return
     try:
         with open(SETTLEMENTS_FILE, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        # Expect list of dicts with keys: name, lat, lng (or lon)
+        count = 0
         for item in data:
+            if count >= SETTLEMENTS_MAX:
+                break
             try:
                 name = item.get('name') or item.get('n')
                 if not name:
                     continue
-                lat = float(item.get('lat'))
-                lng = float(item.get('lng') or item.get('lon'))
+                lat_raw = item.get('lat')
+                lng_raw = item.get('lng') or item.get('lon')
+                if lat_raw is None or lng_raw is None:
+                    continue
+                lat = float(lat_raw)
+                lng = float(lng_raw)
                 key = name.strip().lower()
                 if key and key not in SETTLEMENTS_INDEX:
                     SETTLEMENTS_INDEX[key] = (lat, lng)
+                    count += 1
             except Exception:
                 continue
-        # Order names by length descending to match longer first (avoids partial overshadowing)
-        SETTLEMENTS_ORDERED = sorted(SETTLEMENTS_INDEX.keys(), key=len, reverse=True)[:50000]  # hard cap
-        log.info(f'Loaded settlements: {len(SETTLEMENTS_INDEX)} (using top {len(SETTLEMENTS_ORDERED)})')
+        SETTLEMENTS_ORDERED = sorted(SETTLEMENTS_INDEX.keys(), key=len, reverse=True)[:SETTLEMENTS_MAX]
+        log.info(f'Loaded settlements: {len(SETTLEMENTS_INDEX)} (cap {SETTLEMENTS_MAX})')
     except Exception as e:
         log.warning(f'Failed to load settlements file {SETTLEMENTS_FILE}: {e}')
 
