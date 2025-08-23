@@ -28,6 +28,14 @@
       <input type="text" name="secret" placeholder="secret" value="{{ secret }}" />
       <button type="submit">Reload</button>
     </form>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;">
+      <label style="font-size:.7rem;display:flex;flex-direction:column;gap:4px;">
+        <span style="opacity:.7;">Період моніторингу (хв)</span>
+        <input type="number" id="monPeriod" value="{{ monitor_period }}" min="1" max="360" style="width:90px;">
+      </label>
+      <button type="button" class="ok" onclick="saveMonPeriod()">Зберегти</button>
+      <span id="monStatus" style="font-size:.65rem;color:#94a3b8;"></span>
+    </div>
   </div>
   <h2 style="margin-top:1.2rem;font-size:1rem">Active Visitors ({{ visitors|length }})</h2>
   <table>
@@ -84,6 +92,26 @@ async function unblockId(id){
   const secret = new URLSearchParams(location.search).get('secret')||'';
   const r = await fetch('/unblock?secret='+encodeURIComponent(secret), {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
   if(r.ok) location.reload();
+}
+async function saveMonPeriod(){
+  const secret = new URLSearchParams(location.search).get('secret')||'';
+  const val = document.getElementById('monPeriod').value;
+  const statusEl = document.getElementById('monStatus');
+  statusEl.textContent='Saving...';
+  try{
+    const r = await fetch('/admin/set_monitor_period?secret='+encodeURIComponent(secret), {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:val})});
+    const js = await r.json();
+    if(js.status==='ok'){
+      statusEl.textContent='OK ('+js.monitor_period+')';
+      statusEl.style.color='#10b981';
+    }else{
+      statusEl.textContent='Error';
+      statusEl.style.color='#dc2626';
+    }
+  }catch(e){
+    statusEl.textContent='Error';
+    statusEl.style.color='#dc2626';
+  }
 }
 </script>
 </body>

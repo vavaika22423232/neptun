@@ -509,7 +509,7 @@
         <label>
           Період моніторингу
           <div class="input-group">
-            <input type="number" id="timeRange" value="30" min="1" max="120">
+            <input type="number" id="timeRange" value="50" readonly disabled style="opacity:.6;cursor:not-allowed;" title="Фіксовано адміністратором">
             <span class="input-suffix">хв</span>
           </div>
         </label>
@@ -577,7 +577,8 @@
     let circles = [];
     let markerData = [];
     async function updateMarkers() {
-      const timeRange = document.getElementById('timeRange').value || 20;
+  // timeRange fixed by server/admin; UI input is disabled and always 50 (server authoritative)
+  const timeRange = 50;
       let threatType = document.getElementById('threatTypeSelect').value;
       const params = new URLSearchParams({ timeRange, confRange: 0 });
       const res = await fetch(`/data?${params.toString()}`);

@@ -69,6 +69,32 @@ FETCH_THREAD_STARTED = False
 AUTH_STATUS = {'authorized': False, 'reason': 'init'}
 SUBSCRIBERS = set()  # queues for SSE clients
 INIT_ONCE = False  # guard to ensure background startup once
+# ---------------- Monitoring period global config (admin editable) ----------------
+CONFIG_FILE = 'config.json'
+MONITOR_PERIOD_MINUTES = 50  # default; editable only via admin panel
+
+def load_config():
+    """Load persisted configuration (currently only monitor period)."""
+    global MONITOR_PERIOD_MINUTES
+    try:
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                cfg = json.load(f)
+            # Validate range 1..360 else ignore
+            mp = int(cfg.get('monitor_period', MONITOR_PERIOD_MINUTES))
+            if 1 <= mp <= 360:
+                MONITOR_PERIOD_MINUTES = mp
+    except Exception as e:
+        log.warning(f'Failed loading {CONFIG_FILE}: {e}')
+
+def save_config():
+    try:
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump({'monitor_period': MONITOR_PERIOD_MINUTES}, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log.warning(f'Failed saving {CONFIG_FILE}: {e}')
+
+load_config()
 if API_ID and API_HASH:
     if session_str:
         log.info('Initializing Telegram client with TELEGRAM_SESSION string.')
@@ -1038,9 +1064,8 @@ def index():
 
 @app.route('/data')
 def data():
-    try:
-        time_range = int(request.args.get('timeRange', 50))
-    except Exception: time_range = 50
+    # Ignore user-provided timeRange; use global configured MONITOR_PERIOD_MINUTES
+    time_range = MONITOR_PERIOD_MINUTES
     messages = load_messages()
     tz = pytz.timezone('Europe/Kyiv')
     now = datetime.now(tz).replace(tzinfo=None)
@@ -1220,7 +1245,31 @@ def admin_panel():
     # Load raw (pending geo) messages
     all_msgs = load_messages()
     raw_msgs = [m for m in reversed(all_msgs) if m.get('pending_geo')][:100]  # latest 100
-    return render_template('admin.html', visitors=visitors, blocked=blocked, raw_msgs=raw_msgs, raw_count=len([m for m in all_msgs if m.get('pending_geo')]), secret=(request.args.get('secret') or ''))
+    return render_template(
+        'admin.html',
+        visitors=visitors,
+        blocked=blocked,
+        raw_msgs=raw_msgs,
+        raw_count=len([m for m in all_msgs if m.get('pending_geo')]),
+        secret=(request.args.get('secret') or ''),
+        monitor_period=MONITOR_PERIOD_MINUTES
+    )
+
+@app.route('/admin/set_monitor_period', methods=['POST'])
+def set_monitor_period():
+    if not _require_secret(request):
+        return jsonify({'status': 'forbidden'}), 403
+    global MONITOR_PERIOD_MINUTES
+    payload = request.get_json(silent=True) or request.form
+    try:
+        val = int(payload.get('value'))
+        if not (1 <= val <= 360):
+            raise ValueError('out of range')
+        MONITOR_PERIOD_MINUTES = val
+        save_config()
+        return jsonify({'status':'ok','monitor_period':MONITOR_PERIOD_MINUTES})
+    except Exception as e:
+        return jsonify({'status':'error','error':str(e)}), 400
 
 @app.route('/block', methods=['POST'])
 def block_id():
