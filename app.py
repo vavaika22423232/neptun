@@ -1025,13 +1025,21 @@ def hide_marker():
 
 @app.route('/health')
 def health():
-    # Clean visitors
+    """Health & basic stats; also prunes stale presence entries."""
     now = time.time()
     with ACTIVE_LOCK:
-    to_del = [k for k,v in ACTIVE_VISITORS.items() if now - (v if isinstance(v,(int,float)) else v.get('ts',0)) > ACTIVE_TTL]
-    for k in to_del: del ACTIVE_VISITORS[k]
-    visitors = len(ACTIVE_VISITORS)
-    return jsonify({'status':'ok','messages':len(load_messages()), 'auth': AUTH_STATUS, 'visitors': visitors})
+        # Iterate explicitly to avoid comprehension indentation edge cases on some environments
+        for vid, meta in list(ACTIVE_VISITORS.items()):
+            ts = meta if isinstance(meta, (int, float)) else meta.get('ts', 0)
+            if now - ts > ACTIVE_TTL:
+                del ACTIVE_VISITORS[vid]
+        visitors = len(ACTIVE_VISITORS)
+    return jsonify({
+        'status': 'ok',
+        'messages': len(load_messages()),
+        'auth': AUTH_STATUS,
+        'visitors': visitors
+    })
 
 @app.route('/presence', methods=['POST'])
 def presence():
