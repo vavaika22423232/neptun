@@ -308,6 +308,8 @@ CITY_COORDS = {
     ,'самар': (48.6500, 35.4200)
     ,'верхньодніпровськ': (48.6535, 34.3372)
     ,'горішні плавні': (49.0123, 33.6450)
+    ,"кам'янське": (48.5110, 34.6021)
+    ,'камянське': (48.5110, 34.6021)
 }
 
 OBLAST_CENTERS = {
@@ -932,6 +934,70 @@ def process_message(text, mid, date_str, channel):
                 })
             if out:
                 return out
+
+    # --- Relative direction near a city: "північніше кам'янського у напрямку кременчука" ---
+    rel_dir_lower = text.lower()
+    if any(k in rel_dir_lower for k in ['північніше','південніше','східніше','західніше']) and ('бпла' in rel_dir_lower or 'дрон' in rel_dir_lower):
+        # Allow letters plus apostrophes/hyphen
+        m_rel = re.search(r"(північніше|південніше|східніше|західніше)\s+([A-Za-zА-Яа-яЇїІіЄєҐґ'`’ʼ\-]{4,})", rel_dir_lower)
+        target_dir = re.search(r'напрямку\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,})', rel_dir_lower)
+        if m_rel:
+            dir_word = m_rel.group(1)
+            raw_city = m_rel.group(2).strip(".,:;()!?")
+            def norm_rel_city(s):
+                s = s.lower()
+                # нормализация окончаний родительного падежа '-ського' -> 'ське'
+                if s.endswith('ського'):
+                    s = s[:-6] + 'ське'
+                if s.endswith('ого') and len(s) > 5:
+                    s = s[:-3] + 'о'
+                return UA_CITY_NORMALIZE.get(s, s)
+            base_city = norm_rel_city(raw_city)
+            coords_base = CITY_COORDS.get(base_city) or (SETTLEMENTS_INDEX.get(base_city) if SETTLEMENTS_INDEX else None)
+            coords_target = None
+            target_name = None
+            if target_dir:
+                tn = target_dir.group(1).lower().strip('.:,;()!?')
+                tn = UA_CITY_NORMALIZE.get(tn, tn)
+                coords_target = CITY_COORDS.get(tn) or (SETTLEMENTS_INDEX.get(tn) if SETTLEMENTS_INDEX else None)
+                target_name = tn
+            if coords_base:
+                lat_b, lng_b = coords_base
+                # offset ~0.35 deg lat/long depending on direction
+                lat_off, lng_off = 0,0
+                if 'північ' in dir_word: lat_off = 0.35
+                elif 'півден' in dir_word: lat_off = -0.35
+                elif 'східн' in dir_word: lng_off = 0.55
+                elif 'західн' in dir_word: lng_off = -0.55
+                rel_lat, rel_lng = lat_b + lat_off, lng_b + lng_off
+                threat_type, icon = classify(text)
+                tracks = [{
+                    'id': f"{mid}_rel1", 'place': base_city.title(), 'lat': rel_lat, 'lng': rel_lng,
+                    'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': 'relative_dir'
+                }]
+                if coords_target:
+                    tracks.append({
+                        'id': f"{mid}_rel2", 'place': target_name.title(), 'lat': coords_target[0], 'lng': coords_target[1],
+                        'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                        'marker_icon': icon, 'source_match': 'direction_target'
+                    })
+                return tracks
+
+    # --- Parenthetical course city e.g. "курс західний (кременчук)" ---
+    if 'курс' in lower and '(' in lower and ')' in lower and ('бпла' in lower or 'дрон' in lower):
+        m_par = re.search(r'курс[^()]{0,30}\(([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,})\)', lower)
+        if m_par:
+            pc = m_par.group(1).lower()
+            pc = UA_CITY_NORMALIZE.get(pc, pc)
+            coords = CITY_COORDS.get(pc) or (SETTLEMENTS_INDEX.get(pc) if SETTLEMENTS_INDEX else None)
+            if coords:
+                threat_type, icon = classify(text)
+                return [{
+                    'id': f"{mid}_pc", 'place': pc.title(), 'lat': coords[0], 'lng': coords[1],
+                    'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': 'course_parenthetical'
+                }]
 
     # --- Comma separated settlements followed by threat keyword (e.g. "Обухівка, Курилівка, Петриківка увага БПЛА") ---
     lower_commas = text.lower()
