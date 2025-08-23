@@ -539,7 +539,9 @@ def process_message(text, mid, date_str, channel):
     # --- Multi-segment / enumerated lines (1. 2. 3.) region extraction ---
     # Разбиваем по переносам, собираем упоминания нескольких областей; создаём отдельные маркеры
     region_hits = []  # list of (display_name, (lat,lng), snippet)
-    lines = [ln.strip() for ln in text.split('\n') if ln.strip()]
+    # Treat semicolons as separators like newlines for multi-segment parsing
+    seg_text = text.replace(';', '\n')
+    lines = [ln.strip() for ln in seg_text.split('\n') if ln.strip()]
     for ln in lines:
         ln_low = ln.lower()
         local_regions = []
@@ -677,22 +679,16 @@ def process_message(text, mid, date_str, channel):
             return None
         # --- Направления внутри области (північно-західний / південно-західний и т.п.) ---
         def detect_direction(lower_txt: str):
-            # порядок важен: сначала составные
+            # Support full adjectives with endings (-ний / -ня / -ньому) by searching stems
             if 'північно-захід' in lower_txt: return 'nw'
             if 'південно-захід' in lower_txt: return 'sw'
             if 'північно-схід' in lower_txt: return 'ne'
             if 'південно-схід' in lower_txt: return 'se'
-            # одиночные стороны света (избегаем ложных с составными за счёт предыдущих проверок)
-            # "північ" north, "південь" south, "схід" east, "захід" west
-            # избегаем совпадения внутри составных уже обработанных
-            if ' північ' in lower_txt or lower_txt.startswith('північ'):
-                return 'n'
-            if ' південь' in lower_txt or lower_txt.startswith('південь'):
-                return 's'
-            if ' схід' in lower_txt or lower_txt.startswith('схід'):
-                return 'e'
-            if ' захід' in lower_txt or lower_txt.startswith('захід'):
-                return 'w'
+            # Single directions (allow stems 'північн', 'південн')
+            if re.search(r'\bпівніч(?!о-с)(?:н\w*)?\b', lower_txt): return 'n'
+            if re.search(r'\bпівденн?\w*\b', lower_txt): return 's'
+            if re.search(r'\bсхідн?\w*\b', lower_txt): return 'e'
+            if re.search(r'\bзахідн?\w*\b', lower_txt): return 'w'
             return None
         direction_code = None
         if len(matched_regions) == 1 and not raion_matches:
@@ -1673,7 +1669,7 @@ def process_message(text, mid, date_str, channel):
             if base in RAION_FALLBACK:
                 raion_matches.append((base, RAION_FALLBACK[base]))
     # одиночное 'район'
-    raion_pattern = re.compile(r'([А-ЯA-ZЇІЄҐЁа-яa-zїієґё\-]{4,})\s+район', re.IGNORECASE)
+    raion_pattern = re.compile(r'([А-ЯA-ZЇІЄҐЁа-яa-zїієґё\-]{4,})\s+район(?:і|у|е|ом)?', re.IGNORECASE)
     for m_r in raion_pattern.finditer(text):
         base = norm_raion(m_r.group(1))
         if base in RAION_FALLBACK:
