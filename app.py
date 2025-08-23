@@ -246,6 +246,7 @@ def _save_opencage_cache():
 
 UA_CITIES = [
     'київ','харків','одеса','одесса','дніпро','дніпропетровськ','львів','запоріжжя','запорожье','вінниця','миколаїв','николаев','маріуполь','полтава','чернігів','чернигов','черкаси','житомир','суми','хмельницький','чернівці','рівне','івано-франківськ','луцьк','тернопіль','ужгород','кропивницький','кіровоград','кременчук','краматорськ','біла церква','мелітополь','бердянськ','павлоград'
+    ,'ніжин','шостка','короп','кролевець'
 ]
 UA_CITY_NORMALIZE = {
     'одесса':'одеса',
@@ -289,6 +290,9 @@ CITY_COORDS = {
     'бердянськ': (46.7553, 36.7885)
     ,'павлоград': (48.5350, 35.8700)
     ,'ніжин': (51.0480, 31.8860)
+    ,'шостка': (51.8667, 33.4833)
+    ,'короп': (51.5667, 32.9667)
+    ,'кролевець': (51.5481, 33.3847)
     ,'сосниця': (51.5236, 32.4953)
     ,'олишівка': (51.1042, 31.6817)
 }
@@ -683,17 +687,45 @@ def process_message(text, mid, date_str, channel):
             }]
 
     # --- Settlement matching using external dataset (if provided) (single first match) ---
-    if SETTLEMENTS_INDEX and not region_hits:
-        for name in SETTLEMENTS_ORDERED:
-            if name in lower:
-                lat, lng = SETTLEMENTS_INDEX[name]
+    if not region_hits:
+        # 1) Multi-list form: "Новгород-сіверський, Шостка, Короп, Кролевець - уважно по БПЛА"
+        if ('уважно' in lower or 'по бпла' in lower or 'бпла' in lower) and (',' in lower) and '-' in lower:
+            left, right = lower.split('-',1)
+            if any(k in right for k in ['бпла','дрон','шахед','uav']):
+                raw_places = [p.strip() for p in left.split(',') if p.strip()]
+                tracks = []
                 threat_type, icon = classify(text)
-                return [{
-                    'id': str(mid), 'place': name.title(), 'lat': lat, 'lng': lng,
-                    'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                    'marker_icon': icon,
-                    'source_match': 'settlement'
-                }]
+                seen = set()
+                for idx, rp in enumerate(raw_places,1):
+                    key = rp
+                    # normalize endings (simple)
+                    key = key.replace('й,','й').strip()
+                    # direct city coords
+                    coords = CITY_COORDS.get(key)
+                    if not coords and SETTLEMENTS_INDEX:
+                        coords = SETTLEMENTS_INDEX.get(key)
+                    if coords and key not in seen:
+                        seen.add(key)
+                        lat,lng = coords
+                        tracks.append({
+                            'id': f"{mid}_m{idx}", 'place': key.title(), 'lat': lat, 'lng': lng,
+                            'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                            'marker_icon': icon, 'source_match': 'multi_settlement'
+                        })
+                if tracks:
+                    return tracks
+        # 2) Single settlement search (fallback)
+        if SETTLEMENTS_INDEX:
+            for name in SETTLEMENTS_ORDERED:
+                if name in lower:
+                    lat, lng = SETTLEMENTS_INDEX[name]
+                    threat_type, icon = classify(text)
+                    return [{
+                        'id': str(mid), 'place': name.title(), 'lat': lat, 'lng': lng,
+                        'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                        'marker_icon': icon,
+                        'source_match': 'settlement'
+                    }]
 
     # --- Raion (district) detection ---
     # Ищем конструкции вида "Покровський район", а также множественные "Конотопський та Сумський районы".
