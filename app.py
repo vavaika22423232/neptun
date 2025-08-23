@@ -895,6 +895,39 @@ def process_message(text, mid, date_str, channel):
                     'marker_icon': icon
                 }]
             # if city found but no coords even in fallback, continue scanning others (no break)
+    # --- Slash separated settlements with drone count (e.g. "дніпро / самар — 6х бпла ... курс західний") ---
+    if '/' in lower and ('бпла' in lower or 'дрон' in lower) and any(x in lower for x in ['х бпла','x бпла',' бпла']):
+        left_part = lower.split('—')[0].split('-',1)[0]
+        parts = [p.strip() for p in re.split(r'/|\\', left_part) if p.strip()]
+        found = []
+        for p in parts:
+            if p in CITY_COORDS:
+                found.append((p.title(), CITY_COORDS[p]))
+        if found:
+            threat_type, icon = classify(text)
+            tracks = []
+            for idx,(nm,(lat,lng)) in enumerate(found,1):
+                # If course west mentioned, offset west a bit
+                if 'курс захід' in lower or 'курс запад' in lower:
+                    lng -= 0.4
+                tracks.append({
+                    'id': f"{mid}_s{idx}", 'place': nm, 'lat': lat, 'lng': lng,
+                    'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': 'slash_combo'
+                })
+            if tracks:
+                return tracks
+    # --- Single city with westward course ("курс західний") adjust marker to west to avoid mistaken northern region offsets ---
+    if 'курс захід' in lower and 'бпла' in lower:
+        for c in CITY_COORDS.keys():
+            if c in lower:
+                lat,lng = CITY_COORDS[c]
+                threat_type, icon = classify(text)
+                return [{
+                    'id': str(mid), 'place': c.title(), 'lat': lat, 'lng': lng - 0.4,
+                    'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': 'course_west'
+                }]
     # --- Drone course target parsing (e.g. "БпЛА курсом на Ніжин") ---
     def _normalize_course_city(w: str):
         w = w.strip('.,:;"'"'"" ).-" ).lower()
