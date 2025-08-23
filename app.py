@@ -1326,6 +1326,8 @@ def admin_panel():
     # Load raw (pending geo) messages
     all_msgs = load_messages()
     raw_msgs = [m for m in reversed(all_msgs) if m.get('pending_geo')][:100]  # latest 100
+    # Collect last N geo markers (exclude pending geo) for hide management
+    recent_markers = [m for m in reversed(all_msgs) if m.get('lat') and m.get('lng') and not m.get('pending_geo')][:120]
     return render_template(
         'admin.html',
         visitors=visitors,
@@ -1333,7 +1335,8 @@ def admin_panel():
         raw_msgs=raw_msgs,
         raw_count=len([m for m in all_msgs if m.get('pending_geo')]),
         secret=(request.args.get('secret') or ''),
-        monitor_period=MONITOR_PERIOD_MINUTES
+        monitor_period=MONITOR_PERIOD_MINUTES,
+        markers=recent_markers
     )
 
 @app.route('/admin/set_monitor_period', methods=['POST'])

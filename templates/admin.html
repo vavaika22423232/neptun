@@ -82,6 +82,30 @@
       </tbody>
     </table>
   </div>
+  <div class="blocked-list" style="margin-top:2rem;">
+    <h2 style="font-size:1rem">Markers (last {{ markers|length }})</h2>
+    <table>
+      <thead><tr><th>Time</th><th>Type</th><th>Place</th><th>Excerpt</th><th>Action</th></tr></thead>
+      <tbody>
+        {% for m in markers %}
+        <tr>
+          <td style="white-space:nowrap;">{{ m.date }}</td>
+          <td style="white-space:nowrap;">{{ m.threat_type }}</td>
+          <td style="white-space:nowrap;">{{ m.place }}</td>
+          <td style="max-width:340px;overflow-wrap:anywhere;">{{ m.text }}</td>
+          <td>
+            <button class="danger" 
+              data-lat="{{ m.lat }}" 
+              data-lng="{{ m.lng }}" 
+              data-text="{{ (m.text or '')|truncate(140)|e }}" 
+              data-source="{{ (m.channel or m.source)|e }}"
+              onclick="hideMarker(this.dataset.lat,this.dataset.lng,this.dataset.text,this.dataset.source)">Hide</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 <script>
 async function blockId(id){
   const secret = new URLSearchParams(location.search).get('secret')||'';
@@ -112,6 +136,14 @@ async function saveMonPeriod(){
     statusEl.textContent='Error';
     statusEl.style.color='#dc2626';
   }
+}
+async function hideMarker(lat,lng,text,source){
+  const secret = new URLSearchParams(location.search).get('secret')||'';
+  // Server hide endpoint does not need secret, but we keep secret param for possible future auth
+  try{
+    const r = await fetch('/hide_marker?secret='+encodeURIComponent(secret), {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,text,source})});
+    if(r.ok){ location.reload(); }
+  }catch(e){}
 }
 </script>
 </body>
