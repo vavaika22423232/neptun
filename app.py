@@ -658,6 +658,14 @@ def process_message(text, mid, date_str, channel):
             'marker_icon': icon
         }]
     lower = text.lower()
+    # Extract drone / shahed count pattern (e.g. "7х бпла", "6x дронів", "10 х бпла") early so later branches can reuse
+    drone_count = None
+    m_count = re.search(r'(\b\d{1,3})\s*[xх]\s*(?:бпла|дрон|дрони|шахед|шахеди|шахедів)', lower)
+    if m_count:
+        try:
+            drone_count = int(m_count.group(1))
+        except ValueError:
+            drone_count = None
     # Normalize some genitive forms ("дніпропетровської" -> base) to capture multiple oblasts in one message
     GENITIVE_NORMALIZE = {
         'дніпропетровської': 'дніпропетровська область',
@@ -886,7 +894,7 @@ def process_message(text, mid, date_str, channel):
                 tracks.append({
                     'id': f"{mid}_s{idx}", 'place': nm, 'lat': lat, 'lng': lng,
                     'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                    'marker_icon': icon, 'source_match': 'slash_combo'
+                    'marker_icon': icon, 'source_match': 'slash_combo', 'count': drone_count
                 })
             if tracks:
                 return tracks
@@ -953,7 +961,7 @@ def process_message(text, mid, date_str, channel):
                 out_tracks.append({
                     'id': f"{mid}_pv{idx}", 'place': nm, 'lat': lat, 'lng': lng,
                     'threat_type': threat_type, 'text': text[:500], 'date': date_str,
-                    'channel': channel, 'marker_icon': icon, 'source_match': tag
+                    'channel': channel, 'marker_icon': icon, 'source_match': tag, 'count': drone_count
                 })
             if out_tracks:
                 pass_near_detected = True
@@ -1094,7 +1102,7 @@ def process_message(text, mid, date_str, channel):
                         tracks.append({
                             'id': f"{mid}_m{idx}", 'place': nm, 'lat': lat, 'lng': lng,
                             'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                            'marker_icon': icon, 'source_match': 'multi_settlement_comma'
+                            'marker_icon': icon, 'source_match': 'multi_settlement_comma', 'count': drone_count
                         })
                     if tracks:
                         return tracks
@@ -1161,7 +1169,7 @@ def process_message(text, mid, date_str, channel):
                         return [{
                             'id': str(mid), 'place': place_label, 'lat': lat_o, 'lng': lng_o,
                             'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                            'marker_icon': icon, 'source_match': 'course_sector'
+                            'marker_icon': icon, 'source_match': 'course_sector', 'count': drone_count
                         }]
                 (reg_name, (base_lat, base_lng)) = matched_regions[0]
                 # смещение ~50-70 км в сторону указанного направления
@@ -1193,7 +1201,7 @@ def process_message(text, mid, date_str, channel):
                 return [{
                     'id': str(mid), 'place': f"{base_disp} ({dir_phrase})", 'lat': lat_o, 'lng': lng_o,
                     'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                    'marker_icon': icon, 'source_match': 'region_direction'
+                    'marker_icon': icon, 'source_match': 'region_direction', 'count': drone_count
                 }]
             # если нет направления — продолжаем анализ (ищем конкретные цели типа "курс на <місто>")
     if len(matched_regions) == 2 and any(w in lower for w in ['межі','межу','межа','между','границі','граница']):
@@ -1203,7 +1211,7 @@ def process_message(text, mid, date_str, channel):
             return [{
                 'id': str(mid), 'place': f"Межа {n1.split()[0].title()}/{n2.split()[0].title()}" , 'lat': lat, 'lng': lng,
                 'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                'marker_icon': icon
+                'marker_icon': icon, 'count': drone_count
             }]
     else:
             # If message contains explicit course targets (parsed later), don't emit plain region markers
@@ -1224,7 +1232,7 @@ def process_message(text, mid, date_str, channel):
                     tracks.append({
                         'id': f"{mid}_r{idx}", 'place': base, 'lat': lat, 'lng': lng,
                         'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                        'marker_icon': icon, 'source_match': 'region_multi_simple'
+                        'marker_icon': icon, 'source_match': 'region_multi_simple', 'count': drone_count
                     })
                 if tracks:
                     return tracks
@@ -1241,7 +1249,7 @@ def process_message(text, mid, date_str, channel):
                 return [{
                     'id': str(mid), 'place': norm.title(), 'lat': lat, 'lng': lng,
                     'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                    'marker_icon': icon
+                    'marker_icon': icon, 'count': drone_count
                 }]
             # if city found but no coords even in fallback, continue scanning others (no break)
     # --- Slash separated settlements with drone count (e.g. "дніпро / самар — 6х бпла ... курс західний") ---
@@ -1701,8 +1709,6 @@ def broadcast_control(event:dict):
             q.put_nowait(payload)
         except Exception:
             dead.append(q)
-    for d in dead:
-        SUBSCRIBERS.discard(d)
 
 # ---------------- Admin & blocking endpoints -----------------
 def _require_secret(req):
