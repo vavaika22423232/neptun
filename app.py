@@ -296,6 +296,10 @@ CITY_COORDS = {
     ,'новгород-сіверський': (51.9874, 33.2620)
     ,'сосниця': (51.5236, 32.4953)
     ,'олишівка': (51.1042, 31.6817)
+    # Additional smaller settlements for course-target parsing
+    ,'зачепилівка': (49.1717, 35.2742)
+    ,'сахновщина': (49.1544, 35.1460)
+    ,'губиниха': (48.7437, 35.2960)
 }
 
 OBLAST_CENTERS = {
@@ -803,9 +807,14 @@ def process_message(text, mid, date_str, channel):
         if name in lower:
             matched_regions.append((name, coords))
     if matched_regions:
-        # Если только области упомянуты и нет ключей угроз, пропускаем
+        # Если только области упомянуты и нет ключей угроз, пропускаем.
+        # Дополнительная защита: иногда в messages.json могли сохраниться старые записи без угроз.
         if not has_threat(text):
-            return None
+            # чистый список областей? (только названия + двоеточия/пробелы/переводы строк)
+            stripped = re.sub(r'[\s:]+', ' ', text.lower()).strip()
+            only_regions = all(rn in OBLAST_CENTERS for rn in stripped.split() if rn)
+            if only_regions or len(text) < 120:
+                return None
         # --- Направления внутри области (північно-західний / південно-західний и т.п.) ---
         def detect_direction(lower_txt: str):
             # Support full adjectives with endings (-ний / -ня / -ньому) by searching stems
@@ -866,20 +875,28 @@ def process_message(text, mid, date_str, channel):
                 'marker_icon': icon
             }]
         else:
-            threat_type, icon = classify(text)
-            tracks = []
-            seen = set()
-            for idx,(n1,(lat,lng)) in enumerate(matched_regions,1):
-                base = n1.split()[0].title()
-                if base in seen: continue
-                seen.add(base)
-                tracks.append({
-                    'id': f"{mid}_r{idx}", 'place': base, 'lat': lat, 'lng': lng,
-                    'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                    'marker_icon': icon, 'source_match': 'region_multi_simple'
-                })
-            if tracks:
-                return tracks
+            # If message contains explicit course targets (parsed later), don't emit plain region markers
+            course_target_hint = False
+            for ln in text.split('\n'):
+                ll = ln.lower()
+                if 'бпла' in ll and 'курс' in ll and re.search(r'курс(?:ом)?\s+(?:на|в|у)\s+[A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,}', ll):
+                    course_target_hint = True
+                    break
+            if not course_target_hint:
+                threat_type, icon = classify(text)
+                tracks = []
+                seen = set()
+                for idx,(n1,(lat,lng)) in enumerate(matched_regions,1):
+                    base = n1.split()[0].title()
+                    if base in seen: continue
+                    seen.add(base)
+                    tracks.append({
+                        'id': f"{mid}_r{idx}", 'place': base, 'lat': lat, 'lng': lng,
+                        'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                        'marker_icon': icon, 'source_match': 'region_multi_simple'
+                    })
+                if tracks:
+                    return tracks
     for city in UA_CITIES:
         if city in lower:
             norm = UA_CITY_NORMALIZE.get(city, city)
@@ -930,9 +947,12 @@ def process_message(text, mid, date_str, channel):
                 }]
     # --- Drone course target parsing (e.g. "БпЛА курсом на Ніжин") ---
     def _normalize_course_city(w: str):
-        w = w.strip('.,:;"'"'"" ).-" ).lower()
+        # Clean punctuation/spaces
+        w = w.strip().lower()
+        # Remove common punctuation including various apostrophes
+        w = re.sub(r'["`ʼ’\'.,:;()]+', '', w)
         w = re.sub(r'[^a-zа-яїієґё\-]', '', w)
-        # простая нормализация украинских женских окончаний винительного падежа
+        # Simple accusative to nominative heuristic for feminine (у/ю -> а)
         if w.endswith(('у','ю')) and len(w) > 4:
             w = w[:-1] + 'а'
         return w
@@ -1224,6 +1244,10 @@ def data():
             source = m.get('source') or m.get('channel') or ''
             marker_key = f"{lat},{lng}|{text}|{source}"
             if marker_key in hidden:
+                continue
+            # Фильтр: удаляем региональные метки без явных слов угроз (могли сохраниться старыми версиями логики)
+            low_txt = text.lower()
+            if m.get('source_match','').startswith('region') and not any(k in low_txt for k in ['бпла','дрон','шахед','shahed','geran','ракета','ракети','missile','iskander','s-300','s300','каб','артил','града','смерч','ураган','mlrs','avia','авіа','авиа','бомба']):
                 continue
             out.append(m)
     resp = jsonify({'tracks': out, 'all_sources': CHANNELS, 'trajectories': []})
