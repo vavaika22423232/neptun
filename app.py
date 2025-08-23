@@ -517,6 +517,27 @@ def process_message(text, mid, date_str, channel):
             'threat_type': None, 'text': original_text[:500], 'date': date_str, 'channel': channel,
             'list_only': True, 'suppress': True
         }]
+    # ---- Imprecise directional-only messages (no exact city location) suppression ----
+    # User request: messages that only state relative / directional movement without a clear city position
+    # Examples: "групи ... рухаються північніше X у напрямку Y"; "... курс західний (місто)"; region-only with direction
+    # Allow cases with explicit target form "курс на <city>" (precise intent) or patterns we already map like 'повз <city>' or multi-city slash/comma lists.
+    def _has_threat_local(txt: str):
+        l = txt.lower()
+        return any(k in l for k in ['бпла','дрон','шахед','shahed','geran','ракета','ракети','missile'])
+    lower_all = original_text.lower()
+    if _has_threat_local(lower_all):
+        directional_course = 'курс' in lower_all and any(w in lower_all for w in ['північ','півден','схід','захід']) and not re.search(r'курс(?:ом)?\s+на\s+[A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,}', lower_all)
+        relative_dir_tokens = any(tok in lower_all for tok in ['північніше','південніше','східніше','західніше'])
+        # Multi-city list heuristic (comma or slash separated multiple city tokens at start)
+        multi_city_pattern = r"^[^\n]{0,120}?([A-Za-zА-Яа-яЇїІіЄєҐґ'`’ʼ\-]{3,}\s*,\s*){1,}[A-Za-zА-Яа-яЇїІіЄєҐґ'`’ʼ\-]{3,}"
+        multi_city_enumeration = bool(re.match(multi_city_pattern, lower_all)) or ('/' in lower_all)
+        has_pass_near = 'повз ' in lower_all
+        if (directional_course or relative_dir_tokens) and not has_pass_near and not multi_city_enumeration:
+            return [{
+                'id': str(mid), 'place': None, 'lat': None, 'lng': None,
+                'threat_type': None, 'text': original_text[:500], 'date': date_str, 'channel': channel,
+                'list_only': True, 'suppress': True, 'suppress_reason': 'imprecise_direction_only'
+            }]
     # Санитизация: убираем точную фразу "Повітряна тривога" (реквест пользователя)
     text = text.replace('Повітряна тривога', '').replace('повітряна тривога','').strip()
     # Убираем markdown * _ ` и базовые эмодзи-иконки в начале строк
@@ -604,6 +625,9 @@ def process_message(text, mid, date_str, channel):
         # Recon / розвід дрони -> use pvo icon (rozved.png) per user request
         if 'розвід' in l or 'развед' in l:
             return 'pvo', 'rozved.png'
+        # Explosions reporting -> vibuh icon
+        if 'повідомляють про вибух' in l or re.search(r'\bвибух(и|ів)?\b', l):
+            return 'vibuh', 'vibuh.png'
         # PRIORITY: drones first (частая путаница). Если присутствуют слова шахед/бпла/дрон -> это shahed
         if any(k in l for k in ['shahed','шахед','шахеді','шахедів','geran','герань','дрон','дрони','бпла','uav']):
             return 'shahed', 'shahed.png'
@@ -891,9 +915,10 @@ def process_message(text, mid, date_str, channel):
 
     # --- "повз <city>" (passing near) with optional direction target "у напрямку <city>" ---
     lower_pass = text.lower()
+    pass_near_detected = False
     if 'повз ' in lower_pass and ('бпла' in lower_pass or 'дрон' in lower_pass):
-        pass_match = re.search(r'повз\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,})', lower_pass)
-        dir_match = re.search(r'напрямку\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,})', lower_pass)
+        pass_match = re.search(r"повз\s+([A-Za-zА-Яа-яЇїІіЄєҐґ'’ʼ`\-]{3,})", lower_pass)
+        dir_match = re.search(r"напрямку\s+([A-Za-zА-Яа-яЇїІіЄєҐґ'’ʼ`\-]{3,})(?:\s+([A-Za-zА-Яа-яЇїІіЄєҐґ'’ʼ`\-]{3,}))?", lower_pass)
         places = []
         def norm_c(s: str):
             if not s: return None
@@ -906,11 +931,21 @@ def process_message(text, mid, date_str, channel):
                 if coords1:
                     places.append((c1.title(), coords1, 'pass_near'))
         if dir_match:
-            c2 = norm_c(dir_match.group(1))
-            if c2 and c2 != (places[0][0].lower() if places else None):
-                coords2 = CITY_COORDS.get(c2) or (SETTLEMENTS_INDEX.get(c2) if SETTLEMENTS_INDEX else None)
+            c2_first = norm_c(dir_match.group(1))
+            c2_second_raw = dir_match.group(2)
+            full_phrase = None
+            if c2_first and c2_second_raw:
+                c2_second = norm_c(c2_second_raw)
+                cand_phrase = f"{c2_first} {c2_second}".strip()
+                if cand_phrase in CITY_COORDS or (SETTLEMENTS_INDEX and cand_phrase in SETTLEMENTS_INDEX):
+                    full_phrase = cand_phrase
+            c2_key = full_phrase or c2_first
+            if c2_key and c2_key != (places[0][0].lower() if places else None):
+                coords2 = CITY_COORDS.get(c2_key)
+                if not coords2 and SETTLEMENTS_INDEX:
+                    coords2 = SETTLEMENTS_INDEX.get(c2_key)
                 if coords2:
-                    places.append((c2.title(), coords2, 'direction_target'))
+                    places.append((c2_key.title(), coords2, 'direction_target'))
         if places:
             threat_type, icon = classify(text)
             out_tracks = []
@@ -921,6 +956,7 @@ def process_message(text, mid, date_str, channel):
                     'channel': channel, 'marker_icon': icon, 'source_match': tag
                 })
             if out_tracks:
+                pass_near_detected = True
                 return out_tracks
 
     # --- Pattern: "рухалися на <city1>, змінили курс на <city2>" ---
@@ -1091,7 +1127,7 @@ def process_message(text, mid, date_str, channel):
             if re.search(r'\bзахідн?\w*\b', lower_txt): return 'w'
             return None
         direction_code = None
-        if len(matched_regions) == 1 and not raion_matches:
+    if len(matched_regions) == 1 and not raion_matches and not pass_near_detected:
             direction_code = detect_direction(lower)
             # If message also contains course info referencing cities/slash – skip region-level marker to allow city parsing later
             course_words = (' курс ' in lower or lower.startswith('курс '))
@@ -1160,16 +1196,16 @@ def process_message(text, mid, date_str, channel):
                     'marker_icon': icon, 'source_match': 'region_direction'
                 }]
             # если нет направления — продолжаем анализ (ищем конкретные цели типа "курс на <місто>")
-        if len(matched_regions) == 2 and any(w in lower for w in ['межі','межу','межа','между','границі','граница']):
+    if len(matched_regions) == 2 and any(w in lower for w in ['межі','межу','межа','между','границі','граница']):
             (n1,(a1,b1)), (n2,(a2,b2)) = matched_regions
             lat = (a1+a2)/2; lng = (b1+b2)/2
             threat_type, icon = classify(text)
             return [{
-                'id': str(mid), 'place': f"Межа {n1.split()[0].title()}/{n2.split()[0].title()}", 'lat': lat, 'lng': lng,
+                'id': str(mid), 'place': f"Межа {n1.split()[0].title()}/{n2.split()[0].title()}" , 'lat': lat, 'lng': lng,
                 'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
                 'marker_icon': icon
             }]
-        else:
+    else:
             # If message contains explicit course targets (parsed later), don't emit plain region markers
             course_target_hint = False
             for ln in text.split('\n'):
