@@ -1104,6 +1104,19 @@ def broadcast_new(tracks):
             dead.append(q)
     for d in dead:
         SUBSCRIBERS.discard(d)
+def broadcast_control(event:dict):
+    try:
+        payload = json.dumps({'control': event}, ensure_ascii=False)
+    except Exception:
+        return
+    dead = []
+    for q in list(SUBSCRIBERS):
+        try:
+            q.put_nowait(payload)
+        except Exception:
+            dead.append(q)
+    for d in dead:
+        SUBSCRIBERS.discard(d)
 
 # ---------------- Admin & blocking endpoints -----------------
 def _require_secret(req):
@@ -1149,6 +1162,8 @@ def block_id():
     if vid not in blocked:
         blocked.append(vid)
         save_blocked(blocked)
+    # push control event so client can self-block immediately
+    broadcast_control({'type':'block','id':vid})
     return jsonify({'status':'ok','blocked':blocked})
 
 @app.route('/unblock', methods=['POST'])

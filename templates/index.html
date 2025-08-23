@@ -931,7 +931,7 @@
         } catch(e){}
       }
       pingPresence();
-      setInterval(pingPresence, 30000);
+  setInterval(pingPresence, 5000);
 
       // --- Интеграция с alerts.in.ua ---
       let airAlarmLayer = null;
@@ -973,7 +973,21 @@
       await updateMarkers();
       try {
         const es = new EventSource('/stream');
-        es.onmessage = ev => { try { const p = JSON.parse(ev.data); if (p.tracks && p.tracks.length) { updateMarkers(); } } catch(e){} };
+        const uid = localStorage.getItem('presence_id');
+        es.onmessage = ev => {
+          try {
+            const p = JSON.parse(ev.data);
+            if (p.tracks && p.tracks.length) { updateMarkers(); }
+            if (p.control && p.control.type === 'block' && p.control.id && uid && p.control.id === uid) {
+               // show block overlay instantly
+               const ov = document.createElement('div');
+               ov.style.cssText='position:fixed;inset:0;background:#0a0f1f;display:flex;align-items:center;justify-content:center;z-index:9999;font-family:Inter,sans-serif;color:#fff;padding:2rem;text-align:center;';
+               ov.innerHTML='<div style="max-width:480px;">Ваш доступ тимчасово обмежено.</div>';
+               document.body.appendChild(ov);
+               try { es.close(); } catch(e){}
+            }
+          } catch(e){}
+        };
       } catch(e) {}
       setInterval(updateMarkers, 10000);
     }
