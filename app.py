@@ -1104,8 +1104,9 @@ def process_message(text, mid, date_str, channel):
                     })
                 if tracks:
                     return tracks
+    # City fallback scan (ensure whole-word style match to avoid false hits inside oblast words, e.g. 'дніпро' in 'дніпропетровщина')
     for city in UA_CITIES:
-        if city in lower:
+        if re.search(r'(?<![a-zа-яїієґ])' + re.escape(city) + r'(?![a-zа-яїієґ])', lower):
             norm = UA_CITY_NORMALIZE.get(city, city)
             coords = geocode_opencage(norm)
             if not coords:
