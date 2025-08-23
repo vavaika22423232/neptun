@@ -1119,9 +1119,11 @@ def admin_panel():
         visitors = []
         for vid, meta in ACTIVE_VISITORS.items():
             if isinstance(meta,(int,float)):
-                visitors.append({'id':vid,'ip':'','age':int(now-meta)})
+                age = int(now - meta)
+                visitors.append({'id':vid,'ip':'','age':age,'age_fmt':_fmt_age(age)})
             else:
-                visitors.append({'id':vid,'ip':meta.get('ip',''),'age':int(now-meta.get('ts',0))})
+                age = int(now - meta.get('ts',0))
+                visitors.append({'id':vid,'ip':meta.get('ip',''),'age':age,'age_fmt':_fmt_age(age)})
     blocked = load_blocked()
     return render_template('admin.html', visitors=visitors, blocked=blocked, secret=(request.args.get('secret') or ''))
 
@@ -1152,6 +1154,15 @@ def unblock_id():
         blocked.remove(vid)
         save_blocked(blocked)
     return jsonify({'status':'ok','blocked':blocked})
+
+def _fmt_age(age_seconds:int)->str:
+    # Format seconds to H:MM:SS (or M:SS if <1h)
+    if age_seconds < 3600:
+        m, s = divmod(age_seconds, 60)
+        return f"{m}:{s:02d}"
+    h, rem = divmod(age_seconds, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h}:{m:02d}:{s:02d}"
 
 def _load_opencage_cache():
     global _opencage_cache
