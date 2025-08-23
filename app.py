@@ -1151,7 +1151,10 @@ def admin_panel():
                     'ua_short': _ua_label(ua)
                 })
     blocked = load_blocked()
-    return render_template('admin.html', visitors=visitors, blocked=blocked, secret=(request.args.get('secret') or ''))
+    # Load raw (pending geo) messages
+    all_msgs = load_messages()
+    raw_msgs = [m for m in reversed(all_msgs) if m.get('pending_geo')][:100]  # latest 100
+    return render_template('admin.html', visitors=visitors, blocked=blocked, raw_msgs=raw_msgs, raw_count=len([m for m in all_msgs if m.get('pending_geo')]), secret=(request.args.get('secret') or ''))
 
 @app.route('/block', methods=['POST'])
 def block_id():

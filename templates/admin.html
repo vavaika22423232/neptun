@@ -59,6 +59,21 @@
       </tbody>
     </table>
   </div>
+  <div class="blocked-list" style="margin-top:2rem;">
+    <h2 style="font-size:1rem">Raw (pending geo) {{ raw_count }}</h2>
+    <table>
+      <thead><tr><th>Time</th><th>Channel</th><th>Text</th></tr></thead>
+      <tbody>
+        {% for r in raw_msgs %}
+        <tr>
+          <td style="white-space:nowrap;">{{ r.date }}</td>
+          <td style="white-space:nowrap;">{{ r.channel }}</td>
+          <td style="max-width:420px;overflow-wrap:anywhere;">{{ r.text }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 <script>
 async function blockId(id){
   const secret = new URLSearchParams(location.search).get('secret')||'';
