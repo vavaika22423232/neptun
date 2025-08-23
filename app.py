@@ -629,6 +629,9 @@ def process_message(text, mid, date_str, channel):
         if ('повідомляють про вибух' in l or 'повідомлено про вибух' in l or 'зафіксовано вибух' in l or 'зафіксовано вибухи' in l
             or 'фіксація вибух' in l or 'фіксують вибух' in l or re.search(r'\b(вибух|вибухи|вибухів)\b', l)):
             return 'vibuh', 'vibuh.png'
+        # Alarm cancellation (відбій тривоги / отбой тревоги)
+        if ('відбій' in l and 'тривог' in l) or ('отбой' in l and 'тревог' in l):
+            return 'alarm_cancel', 'vidboi.png'
         # PRIORITY: drones first (частая путаница). Если присутствуют слова шахед/бпла/дрон -> это shahed
         if any(k in l for k in ['shahed','шахед','шахеді','шахедів','geran','герань','дрон','дрони','бпла','uav']):
             return 'shahed', 'shahed.png'
