@@ -6,6 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <!-- Leaflet (OpenStreetMap) CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   <style>
     :root {
       --main-bg: #0a0f1c;
@@ -554,6 +556,8 @@
     </div>
 
   </div>
+  <!-- Leaflet (OpenStreetMap) JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     // Константы и настройки
     const UKRAINE_CENTER = { lat: 48.3794, lng: 31.1656 };
@@ -575,299 +579,46 @@
     }
     // Состояние приложения
     let map;
+    let markerLayer = null;
     let markers = [];
-    let circles = [];
-    let markerData = [];
     async function updateMarkers() {
-  // timeRange fixed by server/admin; UI input is disabled and always 50 (server authoritative)
-  const timeRange = 50;
-      let threatType = document.getElementById('threatTypeSelect').value;
+      const timeRange = 50; // fixed
+      const threatType = document.getElementById('threatTypeSelect').value;
       const params = new URLSearchParams({ timeRange, confRange: 0 });
       const res = await fetch(`/data?${params.toString()}`);
       const data = await res.json();
       let points = (data.tracks || []).filter(p => {
-        // Проверка координат
         if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return false;
         if (isNaN(p.lat) || isNaN(p.lng)) return false;
-        // Исключаем "нулевые" и явно ошибочные координаты
         if (Math.abs(p.lat) < 1 && Math.abs(p.lng) < 1) return false;
-        // Грубая фильтрация: только Украина
         if (p.lat < 43 || p.lat > 53.5 || p.lng < 21 || p.lng > 41) return false;
-        
-        // Проверяем наличие конкретного места
-        const vague_locations = ['схід', 'захід', 'північ', 'південь', 'восток', 'запад', 'север', 'юг'];
-        if (!p.place || vague_locations.includes(p.place.toLowerCase())) return false;
-        
+        const vague = ['схід','захід','північ','південь','восток','запад','север','юг'];
+        if (!p.place || vague.includes(p.place.toLowerCase())) return false;
         return true;
       });
-      // --- Траектории ---
-  if (window.trajectories) window.trajectories.forEach(line => line.setMap(null));
-      window.trajectories = [];
-      // Очистить круги покрытия
-      if (circles.length) circles.forEach(c => c.setMap(null));
-      circles = [];
-      if (Array.isArray(data.trajectories)) {
-        data.trajectories.forEach(traj => {
-          if (traj.length > 1) {
-            const path = traj.map(([lat, lng]) => ({ lat, lng }));
-            const poly = new google.maps.Polyline({
-              path,
-              geodesic: true,
-              strokeColor: '#e53935',
-              strokeOpacity: 0.5,
-              strokeWeight: 2,
-              icons: [{
-                icon: {
-                  path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                  scale: 2.5,
-                  strokeColor: '#e53935',
-                  fillColor: '#e53935',
-                  fillOpacity: 1
-                },
-                offset: '100%'
-              }]
-            });
-            poly.setMap(map);
-            window.trajectories.push(poly);
-          }
-        });
-      }
       if (threatType) points = points.filter(p => (p.threat_type || '').toLowerCase() === threatType);
-      // Очистить карту
-      markers.forEach(m => m.setMap(null));
+      if (markerLayer) { markerLayer.clearLayers(); }
+      else { markerLayer = L.layerGroup().addTo(map); }
       markers = [];
-      markerData = points;
-      // Добавить маркеры
-  points.forEach((p, idx) => {
+      points.forEach(p => {
         let iconUrl = ICONS[p.threat_type] || ICONS.default;
         if (p.marker_icon) {
-          if (p.marker_icon.startsWith('http') || p.marker_icon.startsWith('/')) {
-            iconUrl = p.marker_icon;
-          } else {
-            iconUrl = '/static/' + p.marker_icon;
-          }
+          iconUrl = (p.marker_icon.startsWith('http') || p.marker_icon.startsWith('/')) ? p.marker_icon : '/static/' + p.marker_icon;
         }
-        let marker, line, animationId;
-        // --- Радиус покрытия по типу угрозы ---
-        let radius = 0;
-        let color = '#e53935';
-        let fillOpacity = 0.18;
-        if (p.threat_type === 'shahed') { radius = 10000; color = '#e53935'; fillOpacity = 0.18; }
-        else if (p.threat_type === 'raketa') { radius = 20000; color = '#1976d2'; fillOpacity = 0.13; }
-        else if (p.threat_type === 'avia') { radius = 30000; color = '#fbc02d'; fillOpacity = 0.10; }
-
-        // --- Анимированный пульсирующий круг (эффект радара) ---
-        const pulseCircle = new google.maps.Circle({
-          strokeColor: '#00ffe7',
-          strokeOpacity: 0.7,
-          strokeWeight: 2,
-          fillColor: color,
-          fillOpacity: 0.38,
-          map,
-          center: { lat: p.lat, lng: p.lng },
-          radius: radius * 0.7,
-          zIndex: 0
-        });
-        circles.push(pulseCircle);
-        let pulseStart = Date.now() + idx * 200;
-        function animatePulse() {
-          const t = ((Date.now() - pulseStart) % 1600) / 1600;
-          const r = radius * (0.7 + 0.7 * t);
-          const op = 0.38 * (1 - t);
-          pulseCircle.setRadius(r);
-          pulseCircle.setOptions({ fillOpacity: op });
-          if (pulseCircle.getMap()) requestAnimationFrame(animatePulse);
-        }
-        if (radius > 0) animatePulse();
-        // --- Анимация и прогноз траектории для шахедов с направлением ---
-        if (p.threat_type === 'shahed') {
-          // Если нет lat2/lng2 — двигаем на запад
-          let lat1 = p.lat, lng1 = p.lng;
-          let lat2 = (typeof p.lat2 === 'number') ? p.lat2 : lat1;
-          let lng2 = (typeof p.lng2 === 'number') ? p.lng2 : (lng1 - 0.5); // 0.5 градуса ≈ 35-40 км
-          // Прогнозируем точку на 50 км вперед
-          const dLat = lat2 - lat1;
-          const dLng = lng2 - lng1;
-          const dist_km = 50;
-          const norm = Math.sqrt(dLat * dLat + dLng * dLng);
-          let lat3 = lat2, lng3 = lng2;
-          if (norm > 0.00001) {
-            lat3 = lat2 + dLat / norm * (dist_km / 111);
-            lng3 = lng2 + dLng / norm * (dist_km / (111 * Math.cos(lat2 * Math.PI / 180)));
-          }
-          // --- Маркер ---
-          // Формируем информацию о количестве БПЛА для отображения
-          let countInfo = '';
-          if (p.count && p.count > 1) {
-            countInfo = `<div style="text-align: center; font-weight: bold; font-size: 14px; color: #e53935; background: rgba(0,0,0,0.7); padding: 3px 6px; border-radius: 4px; margin-top: 3px;">${p.count}× БПЛА</div>`;
-          }
-
-          marker = new google.maps.Marker({
-            position: { lat: lat1, lng: lng1 },
-            map,
-            title: p.text,
-            icon: { url: iconUrl, scaledSize: new google.maps.Size(32, 28) },
-            opacity: 1,
-            label: p.count > 1 ? {
-              text: p.count.toString(),
-              color: '#ffffff',
-              fontSize: '12px',
-              fontWeight: 'bold'
-            } : null
-          });
-
-          // Создаем информационное окно с количеством БПЛА
-          const infowindow = new google.maps.InfoWindow({
-            content: `<div style="color: black;">${p.place}${countInfo}</div>`,
-            pixelOffset: new google.maps.Size(0, -15)
-          });
-
-          // Показываем информационное окно сразу для меток с количеством > 1
-          if (p.count > 1) {
-            infowindow.open(map, marker);
-          }
-
-          // При наведении показываем/скрываем информационное окно
-          marker.addListener('mouseover', () => infowindow.open(map, marker));
-          marker.addListener('mouseout', () => {
-            if (p.count <= 1) { // Оставляем открытым для множественных БПЛА
-              infowindow.close();
-            }
-          });
-          // --- Линия движения ---
-          line = new google.maps.Polyline({
-            path: [ { lat: lat1, lng: lng1 }, { lat: lat1, lng: lng1 } ],
-            geodesic: true,
-            strokeColor: '#e53935',
-            strokeOpacity: 0.9,
-            strokeWeight: 3,
-            icons: [{
-              icon: {
-                path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                scale: 3,
-                strokeColor: '#e53935',
-                fillColor: '#e53935',
-                fillOpacity: 1
-              },
-              offset: '100%'
-            }]
-          });
-          line.setMap(map);
-          markers.push(marker);
-          markers.push(line);
-            // --- Анимация движения маркера по двум сегментам ---
-            (function() {
-                let t = 0;
-                const steps1 = 100000; // кадров для первого сегмента (очень медленно)
-                const steps2 = 100000; // кадров для прогноза (очень медленно)
-                function animateShahedMove() {
-                    t++;
-                    if (t <= steps1) {
-                        // Движение от начальной к второй точке
-                        const frac = t / steps1;
-                        const lat = lat1 + (lat2 - lat1) * frac;
-                        const lng = lng1 + (lng2 - lng1) * frac;
-                        marker.setPosition({ lat, lng });
-                        line.setPath([ { lat: lat1, lng: lng1 }, { lat, lng } ]);
-                        requestAnimationFrame(animateShahedMove);
-                    } else if (t <= steps1 + steps2) {
-                        // Движение по прогнозу
-                        const frac = (t - steps1) / steps2;
-                        const lat = lat2 + (lat3 - lat2) * frac;
-                        const lng = lng2 + (lng3 - lng2) * frac;
-                        marker.setPosition({ lat, lng });
-                        line.setPath([ { lat: lat1, lng: lng1 }, { lat: lat2, lng: lng2 }, { lat, lng } ]);
-                        requestAnimationFrame(animateShahedMove);
-                    } else {
-                        // Остановить на прогнозной точке
-                        marker.setPosition({ lat: lat3, lng: lng3 });
-                        line.setPath([ { lat: lat1, lng: lng1 }, { lat: lat2, lng: lng2 }, { lat: lat3, lng: lng3 } ]);
-                    }
-                }
-                setTimeout(() => { animateShahedMove(); }, 100 + idx * 40);
-            })();
-          // --- Анимация движения маркера по двум сегментам ---
-          let t = 0;
-          const steps1 = 100000; // кадров для первого сегмента
-          const steps2 = 100000; // кадров для прогноза
-          function animateShahedMove() {
-            t++;
-            if (t <= steps1) {
-              // Движение от начальной к второй точке
-              const frac = t / steps1;
-              const lat = lat1 + (lat2 - lat1) * frac;
-              const lng = lng1 + (lng2 - lng1) * frac;
-              marker.setPosition({ lat, lng });
-              line.setPath([ { lat: lat1, lng: lng1 }, { lat, lng } ]);
-              requestAnimationFrame(animateShahedMove);
-            } else if (t <= steps1 + steps2) {
-              // Движение по прогнозу
-              const frac = (t - steps1) / steps2;
-              const lat = lat2 + (lat3 - lat2) * frac;
-              const lng = lng2 + (lng3 - lng2) * frac;
-              marker.setPosition({ lat, lng });
-              line.setPath([ { lat: lat1, lng: lng1 }, { lat: lat2, lng: lng2 }, { lat, lng } ]);
-              requestAnimationFrame(animateShahedMove);
-            } else {
-              // Остановить на прогнозной точке
-              marker.setPosition({ lat: lat3, lng: lng3 });
-              line.setPath([ { lat: lat1, lng: lng1 }, { lat: lat2, lng: lng2 }, { lat: lat3, lng: lng3 } ]);
-            }
-          }
-          setTimeout(() => { animateShahedMove(); }, 100 + idx * 40);
-        // --- Анимация и прогноз траектории для ракет с направлением ---
-        } else if (p.threat_type === 'raketa' && typeof p.lat2 === 'number' && typeof p.lng2 === 'number') {
-          let t = 0;
-          const steps = 60;
-          const duration = 3000;
-          const lat1 = p.lat, lng1 = p.lng, lat2 = p.lat2, lng2 = p.lng2;
-          marker = new google.maps.Marker({
-            position: { lat: lat1, lng: lng1 },
-            map,
-            title: p.text,
-            icon: { url: iconUrl, scaledSize: new google.maps.Size(32, 28) },
-            opacity: 0
-          });
-          // blue raketa line removed
-          markers.push(marker);
-          setTimeout(() => { marker.setOpacity(1); }, 80 + idx * 40);
-          function animateRaketa() {
-            t++;
-            const frac = Math.min(1, t / steps);
-            const lat = lat1 + (lat2 - lat1) * frac;
-            const lng = lng1 + (lng2 - lng1) * frac;
-            marker.setPosition({ lat, lng });
-            if (frac < 1) {
-              animationId = requestAnimationFrame(animateRaketa);
-            }
-          }
-          setTimeout(() => { animateRaketa(); }, 100 + idx * 40);
-        } else {
-          marker = new google.maps.Marker({
-            position: { lat: p.lat, lng: p.lng },
-            map,
-            title: p.text,
-            icon: { url: iconUrl, scaledSize: new google.maps.Size(32, 28) },
-            opacity: 0,
-            label: (p.count && p.count > 1) ? { text: p.count.toString() + '×', color:'#ffffff', fontSize:'11px', fontWeight:'600' } : undefined
-          });
-          markers.push(marker);
-          setTimeout(() => { marker.setOpacity(1); }, 80 + idx * 40);
-        }
-        const infowindow = new google.maps.InfoWindow({
-          content: `<div style=\"background:#23272f; color:#f4f6fa; border-radius:10px; padding:10px 8px; min-width:220px; max-width:360px; font-size:.88rem; box-shadow:0 2px 12px #0008; border:1.5px solid #31343b; line-height:1.35;\">`
-            + (p.place ? `<div style='font-size:1rem;font-weight:600;margin-bottom:4px;'>${p.place}</div>` : '')
-            + (p.count ? `<div style='margin-bottom:6px;font-weight:600;color:#f87171;'>Кількість: ${p.count}× БПЛА</div>` : '')
-            + `<div style='white-space:pre-wrap;'>${p.text}</div>`
-            + `<div style='margin-top:6px;font-size:.65rem;opacity:.65;'>${p.date ? p.date : ''}</div>`
-            + `</div>`
-        });
-        marker.addListener('click', () => {
-          infowindow.open(map, marker);
-        });
+        const icon = L.icon({ iconUrl, iconSize:[32,28], iconAnchor:[16,14], popupAnchor:[0,-12] });
+        const m = L.marker([p.lat, p.lng], { icon });
+        const popupHtml = `<div style="background:#23272f;color:#f4f6fa;border-radius:10px;padding:10px 8px;min-width:180px;font-size:.78rem;line-height:1.3;">`
+          + (p.place ? `<div style='font-size:.9rem;font-weight:600;margin-bottom:4px;'>${p.place}</div>` : '')
+          + (p.count ? `<div style='margin-bottom:4px;font-weight:600;color:#f87171;'>Кількість: ${p.count}×</div>` : '')
+          + `<div style='white-space:pre-wrap;'>${p.text || ''}</div>`
+          + `<div style='margin-top:6px;font-size:.6rem;opacity:.6;'>${p.date || ''}</div>`
+          + `</div>`;
+        m.bindPopup(popupHtml, { closeButton:false, autoPan:true });
+        if (p.count && p.count > 1) { m.openPopup(); }
+        markerLayer.addLayer(m);
+        markers.push(m);
       });
-  // Обновить список событий (используем events из ответа, включающие тревоги без гео)
-  updateEventList(data.events || []);
+      updateEventList(data.events || []);
     }
     function updateEventList(points) {
       const el = document.getElementById('eventList');
@@ -892,28 +643,12 @@
       }).join('');
     }
     async function initMap() {
-      const lightStyle = [
-        { elementType: 'geometry', stylers: [{ color: '#ffffff' }] },
-        { elementType: 'labels.text.stroke', stylers: [{ color: '#ffffff' }] },
-        { elementType: 'labels.text.fill', stylers: [{ color: '#23272f' }] },
-        { featureType: 'administrative', elementType: 'geometry', stylers: [{ color: '#e0e4ea' }] },
-        { featureType: 'poi', elementType: 'geometry', stylers: [{ color: '#ffffff' }] },
-        { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#e0e4ea' }] },
-        { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#fbc02d' }] },
-        { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#e3f2fd' }] },
-        { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#ffffff' }] }
-      ];
-      map = new google.maps.Map(document.getElementById("map"), {
-        zoom: 6,
-        center: { lat: 48.3794, lng: 31.1656 },
-  styles: lightStyle,
-  mapTypeControl: false,
-  streetViewControl: false,
-  fullscreenControl: false,
-  gestureHandling: 'greedy', /* allow single-finger drag on mobile */
-  zoomControl: false /* hide default zoom (we have custom) */
-      });
-
+      map = L.map('map', { zoomControl:false, attributionControl:false }).setView([48.3794,31.1656], 6);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 18,
+        tileSize: 256,
+        crossOrigin:true
+      }).addTo(map);
       // ---- Presence (active users) ----
       const uid = localStorage.getItem('presence_id') || (self.crypto?.randomUUID ? crypto.randomUUID() : (Date.now()+""+Math.random()).replace(/\D/g,''));
       localStorage.setItem('presence_id', uid);
@@ -940,50 +675,42 @@
 
       // --- Интеграция с alerts.in.ua ---
       let airAlarmLayer = null;
-      async function fetchAirAlarms() {
-        try {
-          const res = await fetch('https://alerts.com.ua/api/states');
-          const data = await res.json();
-          return data.regions || {};
-        } catch (e) { return {}; }
+      async function fetchAirAlarms(){
+        try { const r = await fetch('https://alerts.com.ua/api/states'); const j = await r.json(); return j.regions || {}; } catch(e){ return {}; }
       }
-      async function showAirAlarmsOnMap() {
-        if (airAlarmLayer) airAlarmLayer.setMap(null);
+      async function showAirAlarmsOnMap(){
         const regions = await fetchAirAlarms();
-        // Границы регионов (GeoJSON)
         const geoRes = await fetch('https://alerts.com.ua/static/geo/ukraine_regions.json');
         const geo = await geoRes.json();
-        airAlarmLayer = new google.maps.Data();
-        airAlarmLayer.addGeoJson(geo);
-        airAlarmLayer.setStyle(f => {
-          let code = f.getProperty('id');
-          if (!code && f.getProperty('ISO_3166_2')) code = f.getProperty('ISO_3166_2');
-          if (code) code = code.toUpperCase();
-          let alarm = false;
-          if (code && regions[code]) alarm = regions[code].alert;
-          if (!alarm && code && regions[code.toLowerCase()]) alarm = regions[code.toLowerCase()].alert;
-          return {
-            fillColor: alarm ? '#ffe082' : '#e0e4ea',
-            fillOpacity: alarm ? 0.55 : 0.12,
-            strokeColor: alarm ? '#e53935' : '#bdbdbd',
-            strokeWeight: alarm ? 2 : 1,
-            zIndex: alarm ? 2 : 1
-          };
-        });
-        airAlarmLayer.setMap(map);
+        if (airAlarmLayer) { airAlarmLayer.remove(); }
+        airAlarmLayer = L.geoJSON(geo, {
+          style: feature => {
+            let code = feature.properties.id || feature.properties.ISO_3166_2;
+            if (code) code = code.toUpperCase();
+            let alarm = false;
+            if (code && regions[code]) alarm = regions[code].alert;
+            if (!alarm && code && regions[code.toLowerCase()]) alarm = regions[code.toLowerCase()].alert;
+            return {
+              color: alarm ? '#e53935' : '#bdbdbd',
+              weight: alarm ? 2 : 1,
+              fillColor: alarm ? '#ffe082' : '#e0e4ea',
+              fillOpacity: alarm ? 0.55 : 0.12
+            };
+          }
+        }).addTo(map);
       }
       showAirAlarmsOnMap();
       setInterval(showAirAlarmsOnMap, 20000);
 
       await updateMarkers();
       try {
-        const es = new EventSource('/stream');
-        const uid = localStorage.getItem('presence_id');
-        es.onmessage = ev => {
+    const es = new EventSource('/stream');
+    const uid2 = localStorage.getItem('presence_id');
+    es.onmessage = ev => {
           try {
             const p = JSON.parse(ev.data);
-            if (p.tracks && p.tracks.length) { updateMarkers(); }
-            if (p.control && p.control.type === 'block' && p.control.id && uid && p.control.id === uid) {
+      if (p.tracks && p.tracks.length) { updateMarkers(); }
+      if (p.control && p.control.type === 'block' && p.control.id && uid2 && p.control.id === uid2) {
                // show block overlay instantly
                const ov = document.createElement('div');
                ov.style.cssText='position:fixed;inset:0;background:#0a0f1f;display:flex;align-items:center;justify-content:center;z-index:9999;font-family:Inter,sans-serif;color:#fff;padding:2rem;text-align:center;';
@@ -1011,21 +738,21 @@
       if(icon){ icon.textContent='fullscreen'; }
   if(mapCard){ mapCard.style.height=''; }
       // restore map size
-      setTimeout(()=>{ if(map){ google.maps.event.trigger(map,'resize'); } },150);
+  setTimeout(()=>{ if(map){ map.invalidateSize(); } },150);
     } else {
       body.classList.add('map-expanded');
       if(btn){ btn.title='Згорнути карту'; btn.setAttribute('aria-label','Згорнути карту'); }
       if(icon){ icon.textContent='fullscreen_exit'; }
       // Set explicit height for iOS Safari dynamic bars
       if(mapCard){ mapCard.style.height= window.innerHeight + 'px'; }
-      setTimeout(()=>{ if(map){ google.maps.event.trigger(map,'resize'); map.setCenter(UKRAINE_CENTER); } },200);
+  setTimeout(()=>{ if(map){ map.invalidateSize(); map.setView([UKRAINE_CENTER.lat, UKRAINE_CENTER.lng]); } },200);
     }
   }
   // Adjust fullscreen height on orientation / resize for mobile
-  window.addEventListener('orientationchange', ()=>{ if(document.body.classList.contains('map-expanded')){ const mapCard=document.querySelector('.map-card'); if(mapCard){ mapCard.style.height=window.innerHeight+'px'; if(map){ google.maps.event.trigger(map,'resize'); } } } });
-  window.addEventListener('resize', ()=>{ if(document.body.classList.contains('map-expanded')){ const mapCard=document.querySelector('.map-card'); if(mapCard){ mapCard.style.height=window.innerHeight+'px'; if(map){ google.maps.event.trigger(map,'resize'); } } } });
+  window.addEventListener('orientationchange', ()=>{ if(document.body.classList.contains('map-expanded')){ const mapCard=document.querySelector('.map-card'); if(mapCard){ mapCard.style.height=window.innerHeight+'px'; if(map){ map.invalidateSize(); } } } });
+  window.addEventListener('resize', ()=>{ if(document.body.classList.contains('map-expanded')){ const mapCard=document.querySelector('.map-card'); if(mapCard){ mapCard.style.height=window.innerHeight+'px'; if(map){ map.invalidateSize(); } } } });
   window.onload = () => { preloadIcons(); initMap(); openWarn(); };
   </script>
-  <script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCNvHPPImGhTBA7NyOL7kNvfFe4bTIRpGs&callback=initMap&language=uk"></script>
+  <!-- Google Maps script removed after migration to Leaflet / OpenStreetMap -->
 </body>
 </html>
