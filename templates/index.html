@@ -949,29 +949,28 @@
         } catch (e) { return {}; }
       }
       async function showAirAlarmsOnMap() {
-        if (airAlarmLayer) airAlarmLayer.setMap(null);
+        // Leaflet GeoJSON overlay
+        if (airAlarmLayer) { map.removeLayer(airAlarmLayer); airAlarmLayer = null; }
         const regions = await fetchAirAlarms();
-        // Границы регионов (GeoJSON)
-        const geoRes = await fetch('https://alerts.com.ua/static/geo/ukraine_regions.json');
-        const geo = await geoRes.json();
-        airAlarmLayer = new google.maps.Data();
-        airAlarmLayer.addGeoJson(geo);
-        airAlarmLayer.setStyle(f => {
-          let code = f.getProperty('id');
-          if (!code && f.getProperty('ISO_3166_2')) code = f.getProperty('ISO_3166_2');
-          if (code) code = code.toUpperCase();
-          let alarm = false;
-          if (code && regions[code]) alarm = regions[code].alert;
-          if (!alarm && code && regions[code.toLowerCase()]) alarm = regions[code.toLowerCase()].alert;
-          return {
-            fillColor: alarm ? '#ffe082' : '#e0e4ea',
-            fillOpacity: alarm ? 0.55 : 0.12,
-            strokeColor: alarm ? '#e53935' : '#bdbdbd',
-            strokeWeight: alarm ? 2 : 1,
-            zIndex: alarm ? 2 : 1
-          };
-        });
-        airAlarmLayer.setMap(map);
+        try {
+          const geoRes = await fetch('https://alerts.com.ua/static/geo/ukraine_regions.json');
+          const geo = await geoRes.json();
+          airAlarmLayer = L.geoJSON(geo, {
+            style: f => {
+              let code = (f.properties && (f.properties.id || f.properties.ISO_3166_2)) || '';
+              code = (code || '').toUpperCase();
+              let alarm = false;
+              if (code && regions[code]) alarm = regions[code].alert;
+              if (!alarm && code && regions[code.toLowerCase()]) alarm = regions[code.toLowerCase()].alert;
+              return {
+                color: alarm ? '#e53935' : '#bdbdbd',
+                weight: alarm ? 2 : 1,
+                fillColor: alarm ? '#ffe082' : '#e0e4ea',
+                fillOpacity: alarm ? 0.55 : 0.12
+              };
+            }
+          }).addTo(map);
+        } catch(e) {}
       }
       showAirAlarmsOnMap();
       setInterval(showAirAlarmsOnMap, 20000);
@@ -1012,21 +1011,21 @@
       if(icon){ icon.textContent='fullscreen'; }
   if(mapCard){ mapCard.style.height=''; }
       // restore map size
-      setTimeout(()=>{ if(map){ google.maps.event.trigger(map,'resize'); } },150);
+  setTimeout(()=>{ if(map){ map.invalidateSize(); } },150);
     } else {
       body.classList.add('map-expanded');
       if(btn){ btn.title='Згорнути карту'; btn.setAttribute('aria-label','Згорнути карту'); }
       if(icon){ icon.textContent='fullscreen_exit'; }
       // Set explicit height for iOS Safari dynamic bars
       if(mapCard){ mapCard.style.height= window.innerHeight + 'px'; }
-      setTimeout(()=>{ if(map){ google.maps.event.trigger(map,'resize'); map.setCenter(UKRAINE_CENTER); } },200);
+  setTimeout(()=>{ if(map){ map.invalidateSize(); map.setView([UKRAINE_CENTER.lat, UKRAINE_CENTER.lng]); } },200);
     }
   }
   // Adjust fullscreen height on orientation / resize for mobile
-  window.addEventListener('orientationchange', ()=>{ if(document.body.classList.contains('map-expanded')){ const mapCard=document.querySelector('.map-card'); if(mapCard){ mapCard.style.height=window.innerHeight+'px'; if(map){ google.maps.event.trigger(map,'resize'); } } } });
-  window.addEventListener('resize', ()=>{ if(document.body.classList.contains('map-expanded')){ const mapCard=document.querySelector('.map-card'); if(mapCard){ mapCard.style.height=window.innerHeight+'px'; if(map){ google.maps.event.trigger(map,'resize'); } } } });
+  window.addEventListener('orientationchange', ()=>{ if(document.body.classList.contains('map-expanded')){ const mapCard=document.querySelector('.map-card'); if(mapCard){ mapCard.style.height=window.innerHeight+'px'; if(map){ map.invalidateSize(); } } } });
+  window.addEventListener('resize', ()=>{ if(document.body.classList.contains('map-expanded')){ const mapCard=document.querySelector('.map-card'); if(mapCard){ mapCard.style.height=window.innerHeight+'px'; if(map){ map.invalidateSize(); } } } });
   window.onload = () => { preloadIcons(); initMap(); openWarn(); };
   </script>
-  <script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCNvHPPImGhTBA7NyOL7kNvfFe4bTIRpGs&callback=initMap&language=uk"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 </body>
 </html>
