@@ -1688,7 +1688,8 @@ def start_session_watcher():
 
 @app.route('/')
 def index():
-    return render_template('index.html', google_maps_key=GOOGLE_MAPS_KEY)
+    # Leaflet version of frontend no longer needs Google Maps key
+    return render_template('index.html')
 
 @app.route('/data')
 def data():
