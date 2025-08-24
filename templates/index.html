@@ -495,7 +495,7 @@
         <button class="map-control-btn" onclick="map.setZoom(map.getZoom() - 1)">
           <i class="material-icons">remove</i>
         </button>
-  <button class="map-control-btn" onclick="centerUkraine()">
+        <button class="map-control-btn" onclick="map.setCenter({lat: 48.3794, lng: 31.1656})">
           <i class="material-icons">center_focus_strong</i>
         </button>
         <button class="map-control-btn" id="expandBtn" onclick="toggleMapExpand()" title="Розгорнути карту" aria-label="Розгорнути карту">
@@ -569,7 +569,6 @@
   alarm_cancel: '/static/vidboi.png',
   mlrs: '/static/mlrs.png',
   artillery: '/static/artillery.png',
-  obstril: '/static/obstril.png',
       default: '/static/default.png'
     };
     // Fallback tiny red dot if icon 404
@@ -579,58 +578,46 @@
     // Состояние приложения
     let map;
     let markers = [];
+    let circles = [];
     let markerData = [];
-    async function updateMarkers() {
-      const timeRange = 50; // fixed by server/admin
+    async function updateMarkers(){
+      const timeRange = 50; // fixed server window
       const threatType = document.getElementById('threatTypeSelect').value;
-      const params = new URLSearchParams({ timeRange, confRange: 0 });
-      const res = await fetch(`/data?${params.toString()}`);
+      const res = await fetch(`/data?${new URLSearchParams({timeRange,confRange:0}).toString()}`);
       const data = await res.json();
-      let points = (data.tracks || []).filter(p => {
-        if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return false;
-        if (isNaN(p.lat) || isNaN(p.lng)) return false;
-        if (Math.abs(p.lat) < 1 && Math.abs(p.lng) < 1) return false;
-        if (p.lat < 43 || p.lat > 53.5 || p.lng < 21 || p.lng > 41) return false;
-        const vague = ['схід','захід','північ','південь','восток','запад','север','юг'];
-        if (!p.place || vague.includes(p.place.toLowerCase())) return false;
+      let points = (data.tracks||[]).filter(p=>{
+        if(typeof p.lat!== 'number'||typeof p.lng!=='number'||isNaN(p.lat)||isNaN(p.lng)) return false;
+        if(Math.abs(p.lat)<1 && Math.abs(p.lng)<1) return false;
+        if(p.lat<43||p.lat>53.5||p.lng<21||p.lng>41) return false;
+        const vague=['схід','захід','північ','південь','восток','запад','север','юг'];
+        if(!p.place||vague.includes(p.place.toLowerCase())) return false;
         return true;
       });
-      if (threatType) points = points.filter(p => (p.threat_type || '').toLowerCase() === threatType);
-      // clear existing markers
-      markers.forEach(m => { try { map.removeLayer(m); } catch(e){} });
-      markers = [];
-      markerData = points;
-      points.forEach(p => {
-        let iconUrl = ICONS[p.threat_type] || ICONS.default;
-        if (p.marker_icon) {
-          if (p.marker_icon.startsWith('http') || p.marker_icon.startsWith('/')) iconUrl = p.marker_icon;
-          else iconUrl = '/static/' + p.marker_icon;
+      if(threatType) points = points.filter(p=>(p.threat_type||'').toLowerCase()===threatType);
+      markers.forEach(m=>{ try{ map.removeLayer(m);}catch(e){} });
+      markers=[]; markerData=points;
+      points.forEach(p=>{
+        let iconUrl = ICONS[p.threat_type]||ICONS.default;
+        if(p.marker_icon){ iconUrl = p.marker_icon.startsWith('http')||p.marker_icon.startsWith('/')? p.marker_icon : '/static/'+p.marker_icon; }
+        let icon = L.icon({iconUrl, iconSize:[32,32], iconAnchor:[16,16]});
+        if(p.count && p.count>1){
+          icon = L.divIcon({className:'count-marker', html:`<div style="position:relative;width:44px;height:44px;">
+            <img src='${iconUrl}' style="width:44px;height:44px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6))"/>
+            <span style="position:absolute;top:-6px;right:-6px;background:#e53935;color:#fff;font-weight:700;font-size:12px;padding:2px 6px;border-radius:14px;">${p.count}</span>
+          </div>`, iconSize:[44,44], iconAnchor:[22,22]});
         }
-        let leafletIcon = L.icon({ iconUrl, iconSize:[32,32], iconAnchor:[16,16] });
-        if (p.count && p.count > 1) {
-          leafletIcon = L.divIcon({
-            className: 'count-marker',
-            html: `<div style="position:relative;width:44px;height:44px;">`+
-                  `<img src='${iconUrl}' style="width:44px;height:44px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6))"/>`+
-                  `<span style="position:absolute;top:-6px;right:-6px;background:#e53935;color:#fff;font-weight:700;font-size:12px;padding:2px 6px;border-radius:14px;">${p.count}</span>`+
-                  `</div>`,
-            iconSize:[44,44],
-            iconAnchor:[22,22]
-          });
-        }
-        const marker = L.marker([p.lat, p.lng], { icon: leafletIcon }).addTo(map);
-        markers.push(marker);
-        const popupHtml = `<div style='font-size:.80rem;line-height:1.35;max-width:300px;'>`+
-          (p.place ? `<div style='font-size:1rem;font-weight:600;margin-bottom:4px;'>${p.place}</div>` : '')+
-          (p.count ? `<div style='margin-bottom:6px;font-weight:600;color:#f87171;'>Кількість: ${p.count}× БПЛА</div>` : '')+
-          `<div style='white-space:pre-wrap;'>${p.text}</div>`+
-          `<div style='margin-top:6px;font-size:.65rem;opacity:.65;'>${p.date ? p.date : ''}</div>`+
+        const m = L.marker([p.lat,p.lng],{icon}).addTo(map);
+        markers.push(m);
+        const popup = `<div style='font-size:.80rem;line-height:1.35;max-width:300px;'>`+
+          (p.place?`<div style='font-size:1rem;font-weight:600;margin-bottom:4px;'>${p.place}</div>`:'')+
+          (p.count?`<div style='margin-bottom:6px;font-weight:600;color:#f87171;'>Кількість: ${p.count}× БПЛА</div>`:'')+
+          `<div style='white-space:pre-wrap;'>${p.text||''}</div>`+
+          `<div style='margin-top:6px;font-size:.65rem;opacity:.65;'>${p.date||''}</div>`+
           `</div>`;
-        marker.bindPopup(popupHtml);
+        m.bindPopup(popup);
       });
-      updateEventList(data.events || []);
+      updateEventList(data.events||[]);
     }
-    function centerUkraine(){ if(map){ map.setView([UKRAINE_CENTER.lat, UKRAINE_CENTER.lng], map.getZoom()); } }
     function updateEventList(points) {
       const el = document.getElementById('eventList');
       if (!el) return;
@@ -653,8 +640,8 @@
   return `<div class='event'><img class='event-icon' src='${iconUrl}' alt='${ev.threat_type || ''}'><div class='event-info'>${placeLine}${ev.text || ''}<div class='event-time'>${ev.date || ''}</div></div></div>`;
       }).join('');
     }
-    async function initMap() {
-      map = L.map('map', { zoomControl: false }).setView([48.3794,31.1656], 6);
+    async function initMap(){
+      map = L.map('map', { zoomControl:false }).setView([UKRAINE_CENTER.lat, UKRAINE_CENTER.lng], 6);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, attribution:'&copy; OpenStreetMap' }).addTo(map);
 
       // ---- Presence (active users) ----
@@ -682,40 +669,32 @@
   setInterval(pingPresence, 5000);
 
       // --- Интеграция с alerts.in.ua ---
-      let airAlarmLayer = null;
-      async function fetchAirAlarms() {
-        try {
-          const res = await fetch('https://alerts.com.ua/api/states');
-          const data = await res.json();
-          return data.regions || {};
-        } catch (e) { return {}; }
+      let airAlarmLayer=null;
+      async function fetchAirAlarms(){
+        try{ const r=await fetch('https://alerts.com.ua/api/states'); const j=await r.json(); return j.regions||{}; }catch(e){ return {}; }
       }
-      async function showAirAlarmsOnMap() {
-        // Leaflet GeoJSON overlay
-        if (airAlarmLayer) { map.removeLayer(airAlarmLayer); airAlarmLayer = null; }
+      async function showAirAlarms(){
+        if(airAlarmLayer){ map.removeLayer(airAlarmLayer); airAlarmLayer=null; }
         const regions = await fetchAirAlarms();
         try {
-          const geoRes = await fetch('https://alerts.com.ua/static/geo/ukraine_regions.json');
-          const geo = await geoRes.json();
-          airAlarmLayer = L.geoJSON(geo, {
-            style: f => {
-              let code = (f.properties && (f.properties.id || f.properties.ISO_3166_2)) || '';
-              code = (code || '').toUpperCase();
-              let alarm = false;
-              if (code && regions[code]) alarm = regions[code].alert;
-              if (!alarm && code && regions[code.toLowerCase()]) alarm = regions[code.toLowerCase()].alert;
-              return {
-                color: alarm ? '#e53935' : '#bdbdbd',
-                weight: alarm ? 2 : 1,
-                fillColor: alarm ? '#ffe082' : '#e0e4ea',
-                fillOpacity: alarm ? 0.55 : 0.12
-              };
-            }
-          }).addTo(map);
-        } catch(e) {}
+          const geo = await (await fetch('https://alerts.com.ua/static/geo/ukraine_regions.json')).json();
+          airAlarmLayer = L.geoJSON(geo, { style: f => {
+            let code = (f.properties && (f.properties.id || f.properties.ISO_3166_2)) || '';
+            code = code.toUpperCase();
+            let alarm = false;
+            if(code && regions[code]) alarm = regions[code].alert;
+            if(!alarm && code && regions[code.toLowerCase()]) alarm = regions[code.toLowerCase()].alert;
+            return {
+              fillColor: alarm ? '#ffe082' : '#e0e4ea',
+              fillOpacity: alarm ? 0.55 : 0.12,
+              color: alarm ? '#e53935' : '#bdbdbd',
+              weight: alarm ? 2 : 1
+            };
+          }}).addTo(map);
+        } catch(e){}
       }
-      showAirAlarmsOnMap();
-      setInterval(showAirAlarmsOnMap, 20000);
+      showAirAlarms();
+      setInterval(showAirAlarms, 20000);
 
       await updateMarkers();
       try {
@@ -768,5 +747,6 @@
   window.addEventListener('resize', ()=>{ if(document.body.classList.contains('map-expanded')){ const mapCard=document.querySelector('.map-card'); if(mapCard){ mapCard.style.height=window.innerHeight+'px'; if(map){ map.invalidateSize(); } } } });
   window.onload = () => { preloadIcons(); initMap(); openWarn(); };
   </script>
+  <!-- Google Maps script removed after migration to Leaflet -->
 </body>
 </html>
