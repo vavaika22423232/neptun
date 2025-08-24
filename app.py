@@ -708,6 +708,9 @@ def process_message(text, mid, date_str, channel):
         # Recon / розвід дрони -> use pvo icon (rozved.png) per user request
         if 'розвід' in l or 'развед' in l:
             return 'pvo', 'rozved.png'
+        # Artillery shelling threat alert phrase ('загроза обстрілу') -> obstril icon
+        if 'загроза обстрілу' in l or 'загроза обстрелов' in l or 'угроза обстрела' in l:
+            return 'obstril', 'obstril.png'
         # Explosions reporting -> vibuh icon (cover broader fixation phrases)
         if ('повідомляють про вибух' in l or 'повідомлено про вибух' in l or 'зафіксовано вибух' in l or 'зафіксовано вибухи' in l
             or 'фіксація вибух' in l or 'фіксують вибух' in l or re.search(r'\b(вибух|вибухи|вибухів)\b', l)):
