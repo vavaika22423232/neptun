@@ -589,6 +589,52 @@
     let map;
     let markerLayer = null;
     let markers = [];
+    // Проста мапа транслітерації/перекладу російських / застарілих назв на українські
+    const PLACE_UA_MAP = (()=>{
+      const m = new Map([
+        ['киев','Київ'],['київ','Київ'],['kiev','Київ'],
+        ['одесса','Одеса'],['odesa','Одеса'],
+        ['харьков','Харків'],['kharkov','Харків'],['харків','Харків'],
+        ['днепропетровск','Дніпро'],['дніпропетровськ','Дніпро'],['днепр','Дніпро'],['дніпр','Дніпро'],['dnipro','Дніпро'],
+        ['чернигов','Чернігів'],['чернигів','Чернігів'],
+        ['запорожье','Запоріжжя'],['запорожье','Запоріжжя'],['запоріжье','Запоріжжя'],['запоріжжя','Запоріжжя'],
+        ['николаев','Миколаїв'],['миколаев','Миколаїв'],['миколаїв','Миколаїв'],
+        ['житомир','Житомир'],
+        ['полтава','Полтава'],
+        ['херсон','Херсон'],
+        ['луганск','Луганськ'],['луганськ','Луганськ'],
+        ['донецк','Донецьк'],['донецьк','Донецьк'],
+        ['суми','Суми'],['сумы','Суми'],
+        ['черкассы','Черкаси'],['черкасі','Черкаси'],
+        ['черновцы','Чернівці'],['чернівці','Чернівці'],
+        ['ивано-франковск','Івано-Франківськ'],['івано-франківськ','Івано-Франківськ'],
+        ['львов','Львів'],['львів','Львів'],
+        ['ужгород','Ужгород'],
+        ['тернополь','Тернопіль'],['тернопіль','Тернопіль'],
+        ['винница','Вінниця'],['вінниця','Вінниця'],
+        ['ровно','Рівне'],['ровне','Рівне'],['рівне','Рівне'],
+        ['кропивницкий','Кропивницький'],['кропивницький','Кропивницький'],
+        ['севастополь','Севастополь'],
+        ['симферополь','Сімферополь'],
+        ['мариуполь','Маріуполь'],['маріуполь','Маріуполь'],
+        ['горловка','Горлівка'],['горлівка','Горлівка'],
+        ['алчевск','Алчевськ'],['алчевськ','Алчевськ']
+      ]);
+      return m;
+    })();
+    function normalizeKey(s){ return s.toLowerCase().replace(/\s+/g,' ').trim(); }
+    function translatePlace(name){
+      if(!name || typeof name !== 'string') return name;
+      const key = normalizeKey(name);
+      if(PLACE_UA_MAP.has(key)) return PLACE_UA_MAP.get(key);
+      // Якщо вже містить українські специфічні літери – залишаємо
+      if(/[іїєґ]/i.test(name)) return name;
+      // Легка заміна рос. літер на укр. приблизно
+      let t = name
+        .replace(/ё/g,'йо').replace(/ы/g,'и').replace(/э/g,'е')
+        .replace(/ъ/g,'ʼ');
+      return t;
+    }
     async function updateMarkers() {
       const timeRange = 50; // fixed
       const threatType = document.getElementById('threatTypeSelect').value;
@@ -615,8 +661,9 @@
         }
         const icon = L.icon({ iconUrl, iconSize:[32,28], iconAnchor:[16,14], popupAnchor:[0,-12] });
         const m = L.marker([p.lat, p.lng], { icon });
+        const placeUA = translatePlace(p.place);
         const popupHtml = `<div style=\"background:#ffffff;color:#1e293b;border:1px solid #d7dde3;border-radius:12px;padding:10px 10px;min-width:190px;font-size:.8rem;line-height:1.35;box-shadow:0 4px 14px -4px rgba(0,0,0,.18);\">`
-          + (p.place ? `<div style='font-size:.9rem;font-weight:600;margin-bottom:4px;'>${p.place}</div>` : '')
+          + (placeUA ? `<div style='font-size:.9rem;font-weight:600;margin-bottom:4px;'>${placeUA}</div>` : '')
           + (p.count ? `<div style='margin-bottom:4px;font-weight:600;color:#b91c1c;'>Кількість: ${p.count}×</div>` : '')
           + `<div style='white-space:pre-wrap;'>${p.text || ''}</div>`
           + `<div style='margin-top:6px;font-size:.6rem;opacity:.55;'>${p.date || ''}</div>`
@@ -646,7 +693,7 @@
         }
         const isCancel = ev.threat_type === 'alarm_cancel';
   const isAlarm = ev.threat_type === 'alarm';
-        const placeLine = (ev.place && !isCancel) ? `<b>${ev.place}</b><br>` : '';
+        const placeLine = (ev.place && !isCancel) ? `<b>${translatePlace(ev.place)}</b><br>` : '';
   return `<div class='event'><img class='event-icon' src='${iconUrl}' alt='${ev.threat_type || ''}'><div class='event-info'>${placeLine}${ev.text || ''}<div class='event-time'>${ev.date || ''}</div></div></div>`;
       }).join('');
     }
