@@ -24,8 +24,6 @@
       --danger: #ef4444;
       --warning: #f59e0b;
       --success: #10b981;
-  --glow1: #2563eb;
-  --glow2: #0ea5e9;
     }
     body {
       margin: 0;
@@ -279,11 +277,7 @@
       height: calc(100vh - 4rem);
       width: 100%;
       border-radius: 1rem;
-      box-shadow: inset 0 0 25px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,0.03);
-      background:
-        radial-gradient(circle at 25% 20%, rgba(37,99,235,0.12), transparent 55%),
-        radial-gradient(circle at 80% 70%, rgba(14,165,233,0.10), transparent 60%),
-        linear-gradient(145deg,#0b1220,#0d1526 60%,#0b1220);
+      box-shadow: inset 0 0 20px var(--shadow);
     }
     
     .map-controls {
@@ -303,41 +297,12 @@
       color: var(--text);
       cursor: pointer;
       transition: all 0.2s;
-      display:flex;align-items:center;justify-content:center;min-width:38px;min-height:38px;position:relative;overflow:hidden;
     }
     
     .map-control-btn:hover {
-      background: linear-gradient(135deg,#1e293b,#162132);
-      transform: translateY(-2px);
-      box-shadow:0 4px 14px -4px rgba(0,0,0,.6),0 0 0 1px rgba(59,130,246,.25);
+      background: var(--border);
+      transform: translateY(-1px);
     }
-    .map-control-btn:active { transform:translateY(0); }
-    .map-control-btn::after {content:"";position:absolute;inset:0;background:radial-gradient(circle at 30% 30%,rgba(59,130,246,.18),transparent 70%);opacity:0;transition:.35s;}
-    .map-control-btn:hover::after{opacity:1;}
-    .map-control-btn.active{border-color:#2563eb;background:linear-gradient(135deg,#1e3a8a,#1e293b);}
-
-    /* Map legend */
-    .map-legend{position:absolute;left:1rem;bottom:1rem;z-index:140;background:rgba(17,24,39,.88);backdrop-filter:blur(10px);border:1px solid var(--border);padding:.75rem .9rem;border-radius:.85rem;min-width:150px;font-size:.7rem;line-height:1.25;display:grid;gap:.4rem;box-shadow:0 6px 22px -6px rgba(0,0,0,.6);}
-    .map-legend h4{margin:0 0 .35rem;font-size:.7rem;letter-spacing:.5px;font-weight:600;text-transform:uppercase;color:var(--text-muted);}
-    .map-legend-item{display:flex;align-items:center;gap:.45rem;}
-    .map-legend-item img{width:20px;height:17px;object-fit:contain;filter:drop-shadow(0 0 4px rgba(0,0,0,.6));}
-    .map-legend-item span{color:var(--text2);font-size:.7rem;font-weight:500;}
-
-    /* Fancy border glow around map card */
-    .map-card{position:relative;}
-  .map-card::before{content:"";position:absolute;inset:0;padding:1px;border-radius:1rem;background:linear-gradient(130deg,var(--glow1),var(--glow2),transparent 70%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:.35;pointer-events:none;transition:.5s;}
-    .map-card:hover::before{opacity:.6;filter:blur(.4px);}    
-
-    /* Marker enhancements */
-    .leaflet-marker-icon{filter:drop-shadow(0 0 6px rgba(59,130,246,.35)) drop-shadow(0 4px 6px rgba(0,0,0,.6));transition:transform .25s cubic-bezier(.4,0,.2,1),filter .4s;}
-    .leaflet-marker-icon:hover{transform:scale(1.08);filter:drop-shadow(0 0 10px rgba(59,130,246,.75)) drop-shadow(0 4px 10px rgba(0,0,0,.75));z-index:500 !important;}
-    .leaflet-popup-content-wrapper{background:#111c2b;color:#f1f5f9;border-radius:.85rem;border:1px solid #1f2b3a;box-shadow:0 10px 28px -8px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.04);}
-    .leaflet-popup-tip{background:#111c2b;border:1px solid #1f2b3a;}
-    .leaflet-container a{color:#60a5fa;}
-    .leaflet-control-scale{background:rgba(17,24,39,.75);backdrop-filter:blur(8px);border:1px solid var(--border);padding:2px 6px;border-radius:6px;box-shadow:0 4px 14px -6px rgba(0,0,0,.6);}    
-
-    /* Subtle grid overlay */
-    #map::after{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px);background-size:120px 120px,120px 120px;mix-blend-mode:overlay;pointer-events:none;opacity:.25;}
     @media (max-width: 1100px) {
       .main-content {
         grid-template-columns: 1fr;
@@ -492,12 +457,6 @@
     }
     /* Ensure controls stay above map in fullscreen */
     body.map-expanded .map-controls { z-index:600; top:0.75rem; right:0.75rem; }
-  body.map-expanded .map-legend { z-index:610; }
-  /* Light theme adjustments when toggled */
-  html[data-theme='light'] body { color:#111827; }
-  html[data-theme='light'] .navbar { background:#ffffffcc; color:#1e293b; }
-  html[data-theme='light'] .card { background:rgba(255,255,255,0.92); color:#111827; }
-  html[data-theme='light'] #map::after { opacity:.12; }
   /* Force-hide any default Google fullscreen control if Google re-injects it */
   .gm-fullscreen-control { display:none !important; }
   </style>
@@ -541,21 +500,11 @@
         <button class="map-control-btn" onclick="map.setCenter({lat: 48.3794, lng: 31.1656})">
           <i class="material-icons">center_focus_strong</i>
         </button>
-        <button class="map-control-btn" id="tileToggleBtn" onclick="toggleBaseMap()" title="Перемкнути тему карти" aria-label="Перемкнути тему карти">
-          <i class="material-icons" id="tileToggleIcon">dark_mode</i>
-        </button>
         <button class="map-control-btn" id="expandBtn" onclick="toggleMapExpand()" title="Розгорнути карту" aria-label="Розгорнути карту">
           <i class="material-icons" id="expandIcon">fullscreen</i>
         </button>
       </div>
       <div id="map"></div>
-      <div class="map-legend" id="mapLegend" aria-label="Легенда карти">
-        <h4>Легенда</h4>
-        <div class="map-legend-item"><img src="/static/shahed.png" alt="Шахед"><span>Шахед / БпЛА</span></div>
-        <div class="map-legend-item"><img src="/static/raketa.png" alt="Ракета"><span>Ракета</span></div>
-        <div class="map-legend-item"><img src="/static/avia.png" alt="Авіація"><span>Авіація</span></div>
-        <div class="map-legend-item"><img src="/static/rozved.png" alt="ППО"><span>ППО / Розвідка</span></div>
-      </div>
     </div>
     <div class="card" id="events">
       <h2>Останні події</h2>
@@ -696,42 +645,11 @@
     }
     async function initMap() {
       map = L.map('map', { zoomControl:false, attributionControl:false }).setView([48.3794,31.1656], 6);
-      // Base layers (light & dark) with subtle styling differences
-      const lightTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 18,
         tileSize: 256,
         crossOrigin:true
-      });
-      const darkTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        maxZoom: 20,
-        attribution: '',
-        tileSize: 256,
-        crossOrigin:true
-      });
-      let currentTheme = 'dark';
-      darkTiles.addTo(map);
-      function applyTheme(){
-        if(currentTheme==='dark'){
-          if(map.hasLayer(lightTiles)){ map.removeLayer(lightTiles); }
-          if(!map.hasLayer(darkTiles)){ darkTiles.addTo(map); }
-          document.documentElement.style.setProperty('--panel-bg','#111827');
-          document.documentElement.style.setProperty('--main-bg','#0a0f1c');
-        } else {
-          if(map.hasLayer(darkTiles)){ map.removeLayer(darkTiles); }
-            if(!map.hasLayer(lightTiles)){ lightTiles.addTo(map); }
-          document.documentElement.style.setProperty('--panel-bg','#f3f4f6');
-          document.documentElement.style.setProperty('--main-bg','#e5e7eb');
-        }
-        setTimeout(()=>map.invalidateSize(),120);
-      }
-      window.toggleBaseMap = function(){
-        currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
-        const iconEl = document.getElementById('tileToggleIcon');
-        if(iconEl){ iconEl.textContent = currentTheme==='dark' ? 'dark_mode' : 'light_mode'; }
-        applyTheme();
-      }
-      // Add a scale control for orientation
-      L.control.scale({position:'bottomright', imperial:false}).addTo(map);
+      }).addTo(map);
       // ---- Presence (active users) ----
       const uid = localStorage.getItem('presence_id') || (self.crypto?.randomUUID ? crypto.randomUUID() : (Date.now()+""+Math.random()).replace(/\D/g,''));
       localStorage.setItem('presence_id', uid);
