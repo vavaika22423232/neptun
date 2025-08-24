@@ -875,24 +875,33 @@ def process_message(text, mid, date_str, channel):
             region_hits.append((rn.title(), rc, ln[:180]))
     # Если нашли >=2 региональных маркеров в разных пунктах списка — формируем множественные треки
     if len(region_hits) >= 2:
-        # Пропускаем если нет ни одного упоминания угрозы вообще
-        if not has_threat(text):
-            return None
-        threat_type, icon = classify(text)
-        tracks = []
-        # deduplicate by name
-        seen_names = set()
-        for idx, (rname, (lat,lng), snippet) in enumerate(region_hits, 1):
-            if rname in seen_names:
-                continue
-            seen_names.add(rname)
-            tracks.append({
-                'id': f"{mid}_{idx}", 'place': rname, 'lat': lat, 'lng': lng,
-                'threat_type': threat_type, 'text': snippet[:500], 'date': date_str, 'channel': channel,
-                'marker_icon': icon, 'source_match': 'region_multi'
-            })
-        if tracks:
-            return tracks
+        # Если присутствуют построчные указания курса на конкретные города ("БпЛА курсом на <місто>") –
+        # не возвращаем обобщённые областные маркеры, даём исполниться более детальному парсингу ниже.
+        course_line_present = any(
+            ('курс' in ln.lower()) and
+            ((' на ' in ln.lower()) or (' в ' in ln.lower()) or (' у ' in ln.lower())) and
+            (('бпла' in ln.lower()) or ('дрон' in ln.lower()))
+            for ln in lines
+        )
+        if not course_line_present:
+            # Пропускаем если нет ни одного упоминания угрозы вообще
+            if not has_threat(text):
+                return None
+            threat_type, icon = classify(text)
+            tracks = []
+            # deduplicate by name
+            seen_names = set()
+            for idx, (rname, (lat,lng), snippet) in enumerate(region_hits, 1):
+                if rname in seen_names:
+                    continue
+                seen_names.add(rname)
+                tracks.append({
+                    'id': f"{mid}_{idx}", 'place': rname, 'lat': lat, 'lng': lng,
+                    'threat_type': threat_type, 'text': snippet[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': 'region_multi'
+                })
+            if tracks:
+                return tracks
 
     # --- Single border oblast KAB launch: place marker at predefined border point ---
     if len(region_hits) == 1 and 'каб' in lower and ('пуск' in lower or 'пуски' in lower):
@@ -1470,21 +1479,28 @@ def process_message(text, mid, date_str, channel):
                 raw_city = m.group(1)
                 norm_city = _normalize_course_city(raw_city)
                 if norm_city:
-                    # пытаемся найти координаты в приоритетном порядке
                     coords = region_enhanced_coords(norm_city)
                     if coords:
-                        course_matches.append((norm_city.title(), coords, line[:200]))
+                        # Extract line-specific drone count if present (e.g. "4х БпЛА")
+                        line_count = None
+                        m_lc = re.search(r'(\b\d{1,3})\s*[xх]\s*бпла', line_low)
+                        if m_lc:
+                            try:
+                                line_count = int(m_lc.group(1))
+                            except Exception:
+                                line_count = None
+                        course_matches.append((norm_city.title(), coords, line[:200], line_count))
     if course_matches:
         threat_type, icon = classify(text)
         tracks = []
         seen_places = set()
-        for idx,(name,(lat,lng),snippet) in enumerate(course_matches,1):
+        for idx,(name,(lat,lng),snippet,line_count) in enumerate(course_matches,1):
             if name in seen_places: continue
             seen_places.add(name)
             tracks.append({
                 'id': f"{mid}_c{idx}", 'place': name, 'lat': lat, 'lng': lng,
                 'threat_type': threat_type, 'text': snippet[:500], 'date': date_str, 'channel': channel,
-                'marker_icon': icon, 'source_match': 'course_target'
+                'marker_icon': icon, 'source_match': 'course_target', 'count': line_count if line_count else drone_count
             })
         if tracks:
             return tracks
