@@ -296,7 +296,8 @@ UA_CITY_NORMALIZE = {
     'кировоград':'кропивницький',
     'кіровоград':'кропивницький',
     'николаев':'миколаїв',
-    'чернигов':'чернігів'
+    'чернигов':'чернігів',
+    'липову долину':'липова долина'
 }
 
 # Static fallback coordinates (approximate city centers) to avoid relying solely on OpenCage.
@@ -351,6 +352,7 @@ CITY_COORDS = {
     ,'горішні плавні': (49.0123, 33.6450)
     ,"кам'янське": (48.5110, 34.6021)
     ,'камянське': (48.5110, 34.6021)
+    ,'липова долина': (50.5700, 33.7900)
 }
 
 OBLAST_CENTERS = {
@@ -1473,21 +1475,28 @@ def process_message(text, mid, date_str, channel):
                 }]
     # --- Drone course target parsing (e.g. "БпЛА курсом на Ніжин") ---
     def _normalize_course_city(w: str):
-        # Clean punctuation/spaces
-        w = w.strip().lower()
-        # Remove common punctuation including various apostrophes
+        # Preserve internal single space for multi-word (e.g. "липова долина") before stripping punctuation
+        w = re.sub(r'\s+', ' ', w.strip().lower())
+        # Remove punctuation but keep spaces and hyphen
         w = re.sub(r'["`ʼ’\'.,:;()]+', '', w)
-        w = re.sub(r'[^a-zа-яїієґё\-]', '', w)
-        # Simple accusative to nominative heuristic for feminine (у/ю -> а)
-        if w.endswith(('у','ю')) and len(w) > 4:
-            w = w[:-1] + 'а'
+        # Allow letters, spaces, hyphen
+        w = re.sub(r'[^a-zа-яїієґё\- ]', '', w)
+        # Accusative to nominative heuristic for last word only
+        parts = w.split(' ')
+        if parts:
+            last = parts[-1]
+            if last.endswith(('у','ю')) and len(last) > 4:
+                last = last[:-1] + 'а'
+            parts[-1] = last
+            w = ' '.join(parts)
         return w
     course_matches = []
     # Ищем каждую строку с шаблоном
     for line in text.split('\n'):
         line_low = line.lower()
         if 'бпла' in line_low and 'курс' in line_low and (' на ' in line_low or ' в ' in line_low or ' у ' in line_low):
-            m = re.search(r'курс(?:ом)?\s+(?:на|в|у)\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,})', line, flags=re.IGNORECASE)
+            # Capture one or two words as target, allowing hyphens and apostrophes
+            m = re.search(r'курс(?:ом)?\s+(?:на|в|у)\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,}(?:\s+[A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,})?)', line, flags=re.IGNORECASE)
             if m:
                 raw_city = m.group(1)
                 norm_city = _normalize_course_city(raw_city)
