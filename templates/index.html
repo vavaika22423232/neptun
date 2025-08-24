@@ -368,7 +368,8 @@
       animation: fadeIn 0.3s ease-out;
     }
   /* Warning modal */
-  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:200;animation:fadeIn .25s ease;}
+  /* Increased z-index to sit above Leaflet panes (popup pane ~700) */
+  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:10000;animation:fadeIn .25s ease;}
   .modal{background:#111c2b;border:1px solid #1f2b3a;border-radius:1rem;padding:1.75rem;max-width:520px;width:92%;box-shadow:0 10px 40px -5px rgba(0,0,0,.6),0 0 0 1px rgba(59,130,246,.15);font-size:.95rem;line-height:1.55;position:relative;font-weight:500;}
   .modal h3{margin:0 0 1rem;font-size:1.35rem;letter-spacing:.5px;background:linear-gradient(90deg,#3b82f6,#06b6d4);-webkit-background-clip:text;background-clip:text;color:transparent;}
   .modal p{margin:.35rem 0;color:#e5e7eb;}
