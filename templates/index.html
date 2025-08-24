@@ -13,17 +13,18 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
   <style>
     :root {
-      --main-bg: #0a0f1c;
-      --panel-bg: #111827;
+      /* Lightened palette (slightly brighter than previous dark theme) */
+      --main-bg: #122133; /* was #0a0f1c */
+      --panel-bg: #162436; /* was #111827 */
       --accent: #3b82f6;
       --accent2: #10b981;
-      --text: #f3f4f6;
-      --text2: #d1d5db;
-      --text-muted: #9ca3af;
-      --border: #1f2937;
-      --shadow: rgba(0, 0, 0, 0.25);
-      --card-bg: rgba(17, 24, 39, 0.95);
-      --card-blur: blur(12px);
+      --text: #f5f7fa;
+      --text2: #d8dde3;
+      --text-muted: #a5afbb;
+      --border: #25374b; /* lightened */
+      --shadow: rgba(0, 0, 0, 0.28);
+      --card-bg: rgba(22, 36, 54, 0.92);
+      --card-blur: blur(10px);
       --danger: #ef4444;
       --warning: #f59e0b;
       --success: #10b981;
@@ -280,17 +281,19 @@
       height: calc(100vh - 4rem);
       width: 100%;
       border-radius: 1rem;
-      box-shadow: inset 0 0 20px var(--shadow);
+      box-shadow: inset 0 0 16px rgba(0,0,0,.5);
       position: relative;
-      background: radial-gradient(circle at 55% 45%, #162132 0%, #0a0f1c 70%);
+      /* Lightened radial background */
+      background: radial-gradient(circle at 55% 45%, #1d314b 0%, #122133 70%);
     }
     /* Subtle grid + glow overlay */
     #map:before { content:""; position:absolute; inset:0; pointer-events:none; background-image:
       repeating-linear-gradient(0deg, rgba(255,255,255,0.025) 0, rgba(255,255,255,0.025) 1px, transparent 1px, transparent 24px),
       repeating-linear-gradient(90deg, rgba(255,255,255,0.02) 0, rgba(255,255,255,0.02) 1px, transparent 1px, transparent 24px); mix-blend-mode:overlay; }
     #map:after { content:""; position:absolute; inset:0; pointer-events:none; background:
-      radial-gradient(circle at 60% 40%, rgba(59,130,246,0.20), rgba(59,130,246,0) 60%),
-      radial-gradient(circle at 30% 70%, rgba(16,185,129,0.18), rgba(16,185,129,0) 55%);
+      radial-gradient(circle at 60% 40%, rgba(59,130,246,0.18), rgba(59,130,246,0) 60%),
+      radial-gradient(circle at 30% 70%, rgba(16,185,129,0.16), rgba(16,185,129,0) 55%),
+      radial-gradient(circle at 75% 80%, rgba(250,204,21,0.10), rgba(250,204,21,0) 60%);
       mix-blend-mode:screen; }
     
     .map-controls {
@@ -473,9 +476,9 @@
   /* Force-hide any default Google fullscreen control if Google re-injects it */
   .gm-fullscreen-control { display:none !important; }
   /* --- Modern Threat Marker Styles (DivIcons) --- */
-  .threat-marker { width:40px; height:40px; position:relative; display:flex; align-items:center; justify-content:center; border-radius:14px; background:linear-gradient(145deg,#1e293b,#0f172a); box-shadow:0 4px 14px -2px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,0.04),0 0 0 2px rgba(59,130,246,0.15); overflow:visible; }
+  .threat-marker { width:40px; height:40px; position:relative; display:flex; align-items:center; justify-content:center; border-radius:14px; background:linear-gradient(145deg,#263b55,#1a2c42); box-shadow:0 4px 14px -2px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,0.05),0 0 0 2px rgba(59,130,246,0.18); overflow:visible; }
   .threat-marker img { width:60%; height:60%; object-fit:contain; filter:drop-shadow(0 2px 4px rgba(0,0,0,.6)); }
-  .threat-marker:before { content:""; position:absolute; inset:-2px; border-radius:16px; padding:2px; background:linear-gradient(120deg,var(--c,#3b82f6),#0ea5e9,#3b82f6); /* Standard + webkit masks for hollow glowing border */ mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite:exclude; -webkit-mask-composite:xor; animation:borderShift 6s linear infinite; opacity:.85; }
+  .threat-marker:before { content:""; position:absolute; inset:-2px; border-radius:16px; padding:2px; background:linear-gradient(120deg,var(--c,#3b82f6),#0ea5e9,#3b82f6); /* Standard + webkit masks for hollow glowing border */ mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite:exclude; -webkit-mask-composite:xor; animation:borderShift 6s linear infinite; opacity:.78; }
   .threat-marker:after { content:""; position:absolute; width:54px; height:54px; border-radius:50%; background:radial-gradient(circle at 50% 55%, var(--c,#3b82f6), rgba(0,0,0,0) 70%); filter:blur(12px); opacity:.55; z-index:-1; animation:pulseGlow 3.2s ease-in-out infinite; }
   @keyframes pulseGlow { 0%,100%{ transform:scale(.85); opacity:.55;} 50%{ transform:scale(1); opacity:.85;} }
   @keyframes borderShift { 0%{ filter:hue-rotate(0deg);} 100%{ filter:hue-rotate(360deg);} }
@@ -491,16 +494,8 @@
   .tm-alarm{ --c:#ef4444; }
   .tm-alarm_cancel{ --c:#10b981; }
   /* Cluster styling */
-  .cluster-icon { background:transparent; }
-  .cluster-outer { position:relative; width:52px; height:52px; border-radius:50%; display:flex; align-items:center; justify-content:center; animation:clusterPulse 4.5s ease-in-out infinite; }
-  .cluster-inner { width:44px; height:44px; border-radius:50%; background:linear-gradient(135deg,#1e293b,#0f172a); display:flex; align-items:center; justify-content:center; font-size:.85rem; font-weight:600; color:#fff; letter-spacing:.5px; box-shadow:0 4px 14px -2px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,0.06),0 0 0 4px rgba(59,130,246,0.25); }
-  .cluster-outer:before { content:""; position:absolute; inset:0; border-radius:50%; background:conic-gradient(from 0deg, #3b82f6, #0ea5e9, #10b981, #3b82f6); filter:blur(6px); opacity:.55; animation:spin 14s linear infinite; }
-  .cluster-outer.sm .cluster-inner{ box-shadow:0 0 0 4px rgba(59,130,246,.25);} /* base */
-  .cluster-outer.md .cluster-inner{ box-shadow:0 0 0 5px rgba(16,185,129,.35);} 
-  .cluster-outer.lg .cluster-inner{ box-shadow:0 0 0 6px rgba(234,179,8,.35);} 
-  .cluster-outer.xlg .cluster-inner{ box-shadow:0 0 0 7px rgba(239,68,68,.4);} 
-  @keyframes spin { to { transform:rotate(360deg);} }
-  @keyframes clusterPulse { 0%,100%{ transform:scale(.9);} 50%{ transform:scale(1);} }
+  /* Cluster styles removed (individual markers only now) */
+  .cluster-icon, .cluster-outer, .cluster-inner { display:none; }
   /* Reposition & style Leaflet controls */
   .leaflet-control-layers { background:rgba(17,24,39,.92); backdrop-filter:blur(10px); border:1px solid #1f2937; border-radius:.85rem; box-shadow:0 4px 18px -4px rgba(0,0,0,.55); color:#e5e7eb; overflow:hidden; }
   .leaflet-control-layers-expanded { padding:.6rem .75rem .55rem; }
@@ -634,8 +629,19 @@
     }
     // Состояние приложения
     let map;
-    let clusterLayer = null;
     let markers = [];
+    // Ukrainian localization mapping for common Russian variants -> Ukrainian
+    const UA_PLACE_MAP = {
+      'киев':'Київ','київ':'Київ','киевская область':'Київська область','одесса':'Одеса','одеса':'Одеса',
+      'харьков':'Харків','харьків':'Харків','чернигов':'Чернігів','чернигів':'Чернігів','львов':'Львів','львів':'Львів',
+      'днепр':'Дніпро','дніпр':'Дніпро','днепропетровск':'Дніпро','дніпропетровськ':'Дніпро','запорожье':'Запоріжжя','запоріжжя':'Запоріжжя',
+      'николаев':'Миколаїв','миколаїв':'Миколаїв','одесская область':'Одеська область','полтава':'Полтава','винница':'Вінниця','вінниця':'Вінниця',
+      'житомир':'Житомир','ужгород':'Ужгород','суми':'Суми','черкассы':'Черкаси','черкаси':'Черкаси','черновцы':'Чернівці','чернівці':'Чернівці',
+      'херсон':'Херсон','тернополь':'Тернопіль','тернопіль':'Тернопіль','луцк':'Луцьк','луцьк':'Луцьк','ивано-франковск':'Івано-Франківськ','івано-франківськ':'Івано-Франківськ',
+      'кропивницкий':'Кропивницький','кропивницький':'Кропивницький','рівне':'Рівне','ровно':'Рівне','маріуполь':'Маріуполь','мариуполь':'Маріуполь',
+      'лиман':'Лиман','лиман (донецкая область)':'Лиман','славянск':'Слов’янськ','словянськ':'Слов’янськ','бахмут':'Бахмут','артемовск':'Бахмут'
+    };
+    function toUA(name){ if(!name) return name; const k=name.trim(); const low=k.toLowerCase(); if(UA_PLACE_MAP[low]) return UA_PLACE_MAP[low]; return k; }
     const TYPE_COLORS = { shahed:'#f87171', raketa:'#fb923c', avia:'#38bdf8', pvo:'#a78bfa', vibuh:'#eab308', alarm:'#ef4444', alarm_cancel:'#10b981', mlrs:'#fbbf24', artillery:'#facc15', default:'#3b82f6' };
     function createDivIcon(p, iconUrl){
       const type = (p.threat_type||'default').toLowerCase();
@@ -660,21 +666,12 @@
         return true;
       });
       if (threatType) points = points.filter(p => (p.threat_type || '').toLowerCase() === threatType);
-      if (clusterLayer) { clusterLayer.clearLayers(); }
-      else {
-        clusterLayer = L.markerClusterGroup({
-          maxClusterRadius:52,
-          spiderfyOnMaxZoom:true,
-          showCoverageOnHover:false,
-          iconCreateFunction: cluster => {
-            const count = cluster.getChildCount();
-            const scale = count>50?'xlg':count>25?'lg':count>10?'md':'sm';
-            return L.divIcon({ html:`<div class="cluster-outer ${scale}"><div class="cluster-inner">${count}</div></div>`, className:'cluster-icon', iconSize:[52,52] });
-          }
-        }).addTo(map);
-      }
+  // Clear previous markers from map
+  if(markers.length){ markers.forEach(m=>{ try{ map.removeLayer(m);}catch(e){} }); }
       markers = [];
       points.forEach(p => {
+        // Localize place name to Ukrainian
+        if(p.place){ p.place = toUA(p.place); }
         let iconUrl = ICONS[p.threat_type] || ICONS.default;
         if (p.marker_icon) {
           iconUrl = (p.marker_icon.startsWith('http') || p.marker_icon.startsWith('/')) ? p.marker_icon : '/static/' + p.marker_icon;
@@ -689,8 +686,8 @@
           + `</div>`;
         m.bindPopup(popupHtml, { closeButton:false, autoPan:true });
         if (p.count && p.count > 1) { m.openPopup(); }
-  clusterLayer.addLayer(m);
-        markers.push(m);
+  m.addTo(map);
+  markers.push(m);
       });
       updateEventList(data.events || []);
     }
@@ -712,14 +709,15 @@
         }
         const isCancel = ev.threat_type === 'alarm_cancel';
   const isAlarm = ev.threat_type === 'alarm';
-        const placeLine = (ev.place && !isCancel) ? `<b>${ev.place}</b><br>` : '';
+        const placeLine = (ev.place && !isCancel) ? `<b>${toUA(ev.place)}</b><br>` : '';
   return `<div class='event'><img class='event-icon' src='${iconUrl}' alt='${ev.threat_type || ''}'><div class='event-info'>${placeLine}${ev.text || ''}<div class='event-time'>${ev.date || ''}</div></div></div>`;
       }).join('');
     }
     async function initMap() {
   map = L.map('map', { zoomControl:false, attributionControl:true }).setView([48.3794,31.1656], 6);
   const light = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, attribution:'&copy; OpenStreetMap contributors'});
-  const dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom:19, attribution:'&copy; OpenStreetMap &copy; CARTO'});
+  // Slightly brighter dark layer alternative
+  const dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', { maxZoom:19, attribution:'&copy; OpenStreetMap &copy; CARTO'});
   const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:19, attribution:'Tiles &copy; Esri' });
   dark.addTo(map);
   const baseLayers = { 'Dark': dark, 'Light': light, 'Satellite': sat };
