@@ -8,26 +8,24 @@
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
   <!-- Leaflet (OpenStreetMap) CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
-  <!-- MarkerCluster CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
   <style>
     :root {
-      /* Lightened palette (slightly brighter than previous dark theme) */
-      --main-bg: #122133; /* was #0a0f1c */
-      --panel-bg: #162436; /* was #111827 */
+      --main-bg: #0a0f1c;
+      --panel-bg: #111827;
       --accent: #3b82f6;
       --accent2: #10b981;
-      --text: #f5f7fa;
-      --text2: #d8dde3;
-      --text-muted: #a5afbb;
-      --border: #25374b; /* lightened */
-      --shadow: rgba(0, 0, 0, 0.28);
-      --card-bg: rgba(22, 36, 54, 0.92);
-      --card-blur: blur(10px);
+      --text: #f3f4f6;
+      --text2: #d1d5db;
+      --text-muted: #9ca3af;
+      --border: #1f2937;
+      --shadow: rgba(0, 0, 0, 0.25);
+      --card-bg: rgba(17, 24, 39, 0.95);
+      --card-blur: blur(12px);
       --danger: #ef4444;
       --warning: #f59e0b;
       --success: #10b981;
+  --glow1: #2563eb;
+  --glow2: #0ea5e9;
     }
     body {
       margin: 0;
@@ -281,20 +279,12 @@
       height: calc(100vh - 4rem);
       width: 100%;
       border-radius: 1rem;
-      box-shadow: inset 0 0 16px rgba(0,0,0,.5);
-      position: relative;
-      /* Lightened radial background */
-      background: radial-gradient(circle at 55% 45%, #1d314b 0%, #122133 70%);
+      box-shadow: inset 0 0 25px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,0.03);
+      background:
+        radial-gradient(circle at 25% 20%, rgba(37,99,235,0.12), transparent 55%),
+        radial-gradient(circle at 80% 70%, rgba(14,165,233,0.10), transparent 60%),
+        linear-gradient(145deg,#0b1220,#0d1526 60%,#0b1220);
     }
-    /* Subtle grid + glow overlay */
-    #map:before { content:""; position:absolute; inset:0; pointer-events:none; background-image:
-      repeating-linear-gradient(0deg, rgba(255,255,255,0.025) 0, rgba(255,255,255,0.025) 1px, transparent 1px, transparent 24px),
-      repeating-linear-gradient(90deg, rgba(255,255,255,0.02) 0, rgba(255,255,255,0.02) 1px, transparent 1px, transparent 24px); mix-blend-mode:overlay; }
-    #map:after { content:""; position:absolute; inset:0; pointer-events:none; background:
-      radial-gradient(circle at 60% 40%, rgba(59,130,246,0.18), rgba(59,130,246,0) 60%),
-      radial-gradient(circle at 30% 70%, rgba(16,185,129,0.16), rgba(16,185,129,0) 55%),
-      radial-gradient(circle at 75% 80%, rgba(250,204,21,0.10), rgba(250,204,21,0) 60%);
-      mix-blend-mode:screen; }
     
     .map-controls {
       position: absolute;
@@ -313,12 +303,41 @@
       color: var(--text);
       cursor: pointer;
       transition: all 0.2s;
+      display:flex;align-items:center;justify-content:center;min-width:38px;min-height:38px;position:relative;overflow:hidden;
     }
     
     .map-control-btn:hover {
-      background: var(--border);
-      transform: translateY(-1px);
+      background: linear-gradient(135deg,#1e293b,#162132);
+      transform: translateY(-2px);
+      box-shadow:0 4px 14px -4px rgba(0,0,0,.6),0 0 0 1px rgba(59,130,246,.25);
     }
+    .map-control-btn:active { transform:translateY(0); }
+    .map-control-btn::after {content:"";position:absolute;inset:0;background:radial-gradient(circle at 30% 30%,rgba(59,130,246,.18),transparent 70%);opacity:0;transition:.35s;}
+    .map-control-btn:hover::after{opacity:1;}
+    .map-control-btn.active{border-color:#2563eb;background:linear-gradient(135deg,#1e3a8a,#1e293b);}
+
+    /* Map legend */
+    .map-legend{position:absolute;left:1rem;bottom:1rem;z-index:140;background:rgba(17,24,39,.88);backdrop-filter:blur(10px);border:1px solid var(--border);padding:.75rem .9rem;border-radius:.85rem;min-width:150px;font-size:.7rem;line-height:1.25;display:grid;gap:.4rem;box-shadow:0 6px 22px -6px rgba(0,0,0,.6);}
+    .map-legend h4{margin:0 0 .35rem;font-size:.7rem;letter-spacing:.5px;font-weight:600;text-transform:uppercase;color:var(--text-muted);}
+    .map-legend-item{display:flex;align-items:center;gap:.45rem;}
+    .map-legend-item img{width:20px;height:17px;object-fit:contain;filter:drop-shadow(0 0 4px rgba(0,0,0,.6));}
+    .map-legend-item span{color:var(--text2);font-size:.7rem;font-weight:500;}
+
+    /* Fancy border glow around map card */
+    .map-card{position:relative;}
+  .map-card::before{content:"";position:absolute;inset:0;padding:1px;border-radius:1rem;background:linear-gradient(130deg,var(--glow1),var(--glow2),transparent 70%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:.35;pointer-events:none;transition:.5s;}
+    .map-card:hover::before{opacity:.6;filter:blur(.4px);}    
+
+    /* Marker enhancements */
+    .leaflet-marker-icon{filter:drop-shadow(0 0 6px rgba(59,130,246,.35)) drop-shadow(0 4px 6px rgba(0,0,0,.6));transition:transform .25s cubic-bezier(.4,0,.2,1),filter .4s;}
+    .leaflet-marker-icon:hover{transform:scale(1.08);filter:drop-shadow(0 0 10px rgba(59,130,246,.75)) drop-shadow(0 4px 10px rgba(0,0,0,.75));z-index:500 !important;}
+    .leaflet-popup-content-wrapper{background:#111c2b;color:#f1f5f9;border-radius:.85rem;border:1px solid #1f2b3a;box-shadow:0 10px 28px -8px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.04);}
+    .leaflet-popup-tip{background:#111c2b;border:1px solid #1f2b3a;}
+    .leaflet-container a{color:#60a5fa;}
+    .leaflet-control-scale{background:rgba(17,24,39,.75);backdrop-filter:blur(8px);border:1px solid var(--border);padding:2px 6px;border-radius:6px;box-shadow:0 4px 14px -6px rgba(0,0,0,.6);}    
+
+    /* Subtle grid overlay */
+    #map::after{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px);background-size:120px 120px,120px 120px;mix-blend-mode:overlay;pointer-events:none;opacity:.25;}
     @media (max-width: 1100px) {
       .main-content {
         grid-template-columns: 1fr;
@@ -473,39 +492,14 @@
     }
     /* Ensure controls stay above map in fullscreen */
     body.map-expanded .map-controls { z-index:600; top:0.75rem; right:0.75rem; }
+  body.map-expanded .map-legend { z-index:610; }
+  /* Light theme adjustments when toggled */
+  html[data-theme='light'] body { color:#111827; }
+  html[data-theme='light'] .navbar { background:#ffffffcc; color:#1e293b; }
+  html[data-theme='light'] .card { background:rgba(255,255,255,0.92); color:#111827; }
+  html[data-theme='light'] #map::after { opacity:.12; }
   /* Force-hide any default Google fullscreen control if Google re-injects it */
   .gm-fullscreen-control { display:none !important; }
-  /* --- Modern Threat Marker Styles (DivIcons) --- */
-  .threat-marker { width:40px; height:40px; position:relative; display:flex; align-items:center; justify-content:center; border-radius:14px; background:linear-gradient(145deg,#263b55,#1a2c42); box-shadow:0 4px 14px -2px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,0.05),0 0 0 2px rgba(59,130,246,0.18); overflow:visible; }
-  .threat-marker img { width:60%; height:60%; object-fit:contain; filter:drop-shadow(0 2px 4px rgba(0,0,0,.6)); }
-  .threat-marker:before { content:""; position:absolute; inset:-2px; border-radius:16px; padding:2px; background:linear-gradient(120deg,var(--c,#3b82f6),#0ea5e9,#3b82f6); /* Standard + webkit masks for hollow glowing border */ mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite:exclude; -webkit-mask-composite:xor; animation:borderShift 6s linear infinite; opacity:.78; }
-  .threat-marker:after { content:""; position:absolute; width:54px; height:54px; border-radius:50%; background:radial-gradient(circle at 50% 55%, var(--c,#3b82f6), rgba(0,0,0,0) 70%); filter:blur(12px); opacity:.55; z-index:-1; animation:pulseGlow 3.2s ease-in-out infinite; }
-  @keyframes pulseGlow { 0%,100%{ transform:scale(.85); opacity:.55;} 50%{ transform:scale(1); opacity:.85;} }
-  @keyframes borderShift { 0%{ filter:hue-rotate(0deg);} 100%{ filter:hue-rotate(360deg);} }
-  .tm-badge { position:absolute; top:-7px; right:-6px; background:var(--c,#3b82f6); color:#fff; font-size:.68rem; font-weight:700; padding:2px 6px 3px; border-radius:10px; box-shadow:0 2px 6px -1px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.15); letter-spacing:.3px; }
-  /* Per-type accent overrides */
-  .tm-raketa{ --c:#fb923c; }
-  .tm-shahed{ --c:#f87171; }
-  .tm-avia{ --c:#38bdf8; }
-  .tm-pvo{ --c:#a78bfa; }
-  .tm-artillery{ --c:#facc15; }
-  .tm-mlrs{ --c:#fbbf24; }
-  .tm-vibuh{ --c:#eab308; }
-  .tm-alarm{ --c:#ef4444; }
-  .tm-alarm_cancel{ --c:#10b981; }
-  /* Cluster styling */
-  /* Cluster styles removed (individual markers only now) */
-  .cluster-icon, .cluster-outer, .cluster-inner { display:none; }
-  /* Reposition & style Leaflet controls */
-  .leaflet-control-layers { background:rgba(17,24,39,.92); backdrop-filter:blur(10px); border:1px solid #1f2937; border-radius:.85rem; box-shadow:0 4px 18px -4px rgba(0,0,0,.55); color:#e5e7eb; overflow:hidden; }
-  .leaflet-control-layers-expanded { padding:.6rem .75rem .55rem; }
-  .leaflet-control-layers-toggle { background:#1e293b !important; width:34px; height:34px; }
-  .leaflet-control-attribution { background:rgba(17,24,39,.8); color:#94a3b8; font-size:.6rem; padding:.3rem .55rem; border-radius:.5rem; backdrop-filter:blur(6px); }
-  .leaflet-container a { color:#38bdf8; }
-  /* Center control fix styling */
-  .map-control-btn.center-btn { position:relative; }
-  .map-control-btn.center-btn:after { content:""; position:absolute; inset:0; border-radius:.5rem; box-shadow:0 0 0 2px rgba(59,130,246,.35),0 0 12px -2px rgba(59,130,246,.55); opacity:0; transition:.25s; }
-  .map-control-btn.center-btn:hover:after { opacity:1; }
   </style>
 </head>
 <body>
@@ -544,14 +538,24 @@
         <button class="map-control-btn" onclick="map.setZoom(map.getZoom() - 1)">
           <i class="material-icons">remove</i>
         </button>
-  <button class="map-control-btn center-btn" onclick="centerMap()" title="Центр України">
+        <button class="map-control-btn" onclick="map.setCenter({lat: 48.3794, lng: 31.1656})">
           <i class="material-icons">center_focus_strong</i>
+        </button>
+        <button class="map-control-btn" id="tileToggleBtn" onclick="toggleBaseMap()" title="Перемкнути тему карти" aria-label="Перемкнути тему карти">
+          <i class="material-icons" id="tileToggleIcon">dark_mode</i>
         </button>
         <button class="map-control-btn" id="expandBtn" onclick="toggleMapExpand()" title="Розгорнути карту" aria-label="Розгорнути карту">
           <i class="material-icons" id="expandIcon">fullscreen</i>
         </button>
       </div>
       <div id="map"></div>
+      <div class="map-legend" id="mapLegend" aria-label="Легенда карти">
+        <h4>Легенда</h4>
+        <div class="map-legend-item"><img src="/static/shahed.png" alt="Шахед"><span>Шахед / БпЛА</span></div>
+        <div class="map-legend-item"><img src="/static/raketa.png" alt="Ракета"><span>Ракета</span></div>
+        <div class="map-legend-item"><img src="/static/avia.png" alt="Авіація"><span>Авіація</span></div>
+        <div class="map-legend-item"><img src="/static/rozved.png" alt="ППО"><span>ППО / Розвідка</span></div>
+      </div>
     </div>
     <div class="card" id="events">
       <h2>Останні події</h2>
@@ -606,8 +610,6 @@
   </div>
   <!-- Leaflet (OpenStreetMap) JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <!-- MarkerCluster JS -->
-  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
   <script>
     // Константы и настройки
     const UKRAINE_CENTER = { lat: 48.3794, lng: 31.1656 };
@@ -629,27 +631,8 @@
     }
     // Состояние приложения
     let map;
+    let markerLayer = null;
     let markers = [];
-    // Ukrainian localization mapping for common Russian variants -> Ukrainian
-    const UA_PLACE_MAP = {
-      'киев':'Київ','київ':'Київ','киевская область':'Київська область','одесса':'Одеса','одеса':'Одеса',
-      'харьков':'Харків','харьків':'Харків','чернигов':'Чернігів','чернигів':'Чернігів','львов':'Львів','львів':'Львів',
-      'днепр':'Дніпро','дніпр':'Дніпро','днепропетровск':'Дніпро','дніпропетровськ':'Дніпро','запорожье':'Запоріжжя','запоріжжя':'Запоріжжя',
-      'николаев':'Миколаїв','миколаїв':'Миколаїв','одесская область':'Одеська область','полтава':'Полтава','винница':'Вінниця','вінниця':'Вінниця',
-      'житомир':'Житомир','ужгород':'Ужгород','суми':'Суми','черкассы':'Черкаси','черкаси':'Черкаси','черновцы':'Чернівці','чернівці':'Чернівці',
-      'херсон':'Херсон','тернополь':'Тернопіль','тернопіль':'Тернопіль','луцк':'Луцьк','луцьк':'Луцьк','ивано-франковск':'Івано-Франківськ','івано-франківськ':'Івано-Франківськ',
-      'кропивницкий':'Кропивницький','кропивницький':'Кропивницький','рівне':'Рівне','ровно':'Рівне','маріуполь':'Маріуполь','мариуполь':'Маріуполь',
-      'лиман':'Лиман','лиман (донецкая область)':'Лиман','славянск':'Слов’янськ','словянськ':'Слов’янськ','бахмут':'Бахмут','артемовск':'Бахмут'
-    };
-    function toUA(name){ if(!name) return name; const k=name.trim(); const low=k.toLowerCase(); if(UA_PLACE_MAP[low]) return UA_PLACE_MAP[low]; return k; }
-    const TYPE_COLORS = { shahed:'#f87171', raketa:'#fb923c', avia:'#38bdf8', pvo:'#a78bfa', vibuh:'#eab308', alarm:'#ef4444', alarm_cancel:'#10b981', mlrs:'#fbbf24', artillery:'#facc15', default:'#3b82f6' };
-    function createDivIcon(p, iconUrl){
-      const type = (p.threat_type||'default').toLowerCase();
-      const color = TYPE_COLORS[type] || TYPE_COLORS.default;
-      const badge = (p.count && p.count>1) ? `<div class='tm-badge'>${p.count}</div>` : '';
-      const html = `<div class="threat-marker tm-${type}" style="--c:${color}">${badge}${iconUrl?`<img src='${iconUrl}' alt=''>`:''}</div>`;
-      return L.divIcon({ html, className:'', iconSize:[40,40], iconAnchor:[20,20], popupAnchor:[0,-18] });
-    }
     async function updateMarkers() {
       const timeRange = 50; // fixed
       const threatType = document.getElementById('threatTypeSelect').value;
@@ -666,18 +649,16 @@
         return true;
       });
       if (threatType) points = points.filter(p => (p.threat_type || '').toLowerCase() === threatType);
-  // Clear previous markers from map
-  if(markers.length){ markers.forEach(m=>{ try{ map.removeLayer(m);}catch(e){} }); }
+      if (markerLayer) { markerLayer.clearLayers(); }
+      else { markerLayer = L.layerGroup().addTo(map); }
       markers = [];
       points.forEach(p => {
-        // Localize place name to Ukrainian
-        if(p.place){ p.place = toUA(p.place); }
         let iconUrl = ICONS[p.threat_type] || ICONS.default;
         if (p.marker_icon) {
           iconUrl = (p.marker_icon.startsWith('http') || p.marker_icon.startsWith('/')) ? p.marker_icon : '/static/' + p.marker_icon;
         }
-  const icon = createDivIcon(p, iconUrl);
-  const m = L.marker([p.lat, p.lng], { icon });
+        const icon = L.icon({ iconUrl, iconSize:[32,28], iconAnchor:[16,14], popupAnchor:[0,-12] });
+        const m = L.marker([p.lat, p.lng], { icon });
         const popupHtml = `<div style="background:#23272f;color:#f4f6fa;border-radius:10px;padding:10px 8px;min-width:180px;font-size:.78rem;line-height:1.3;">`
           + (p.place ? `<div style='font-size:.9rem;font-weight:600;margin-bottom:4px;'>${p.place}</div>` : '')
           + (p.count ? `<div style='margin-bottom:4px;font-weight:600;color:#f87171;'>Кількість: ${p.count}×</div>` : '')
@@ -686,8 +667,8 @@
           + `</div>`;
         m.bindPopup(popupHtml, { closeButton:false, autoPan:true });
         if (p.count && p.count > 1) { m.openPopup(); }
-  m.addTo(map);
-  markers.push(m);
+        markerLayer.addLayer(m);
+        markers.push(m);
       });
       updateEventList(data.events || []);
     }
@@ -709,19 +690,48 @@
         }
         const isCancel = ev.threat_type === 'alarm_cancel';
   const isAlarm = ev.threat_type === 'alarm';
-        const placeLine = (ev.place && !isCancel) ? `<b>${toUA(ev.place)}</b><br>` : '';
+        const placeLine = (ev.place && !isCancel) ? `<b>${ev.place}</b><br>` : '';
   return `<div class='event'><img class='event-icon' src='${iconUrl}' alt='${ev.threat_type || ''}'><div class='event-info'>${placeLine}${ev.text || ''}<div class='event-time'>${ev.date || ''}</div></div></div>`;
       }).join('');
     }
     async function initMap() {
-  map = L.map('map', { zoomControl:false, attributionControl:true }).setView([48.3794,31.1656], 6);
-  const light = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, attribution:'&copy; OpenStreetMap contributors'});
-  // Slightly brighter dark layer alternative
-  const dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', { maxZoom:19, attribution:'&copy; OpenStreetMap &copy; CARTO'});
-  const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:19, attribution:'Tiles &copy; Esri' });
-  dark.addTo(map);
-  const baseLayers = { 'Dark': dark, 'Light': light, 'Satellite': sat };
-  const layerControl = L.control.layers(baseLayers, {}, { position:'bottomleft' }).addTo(map);
+      map = L.map('map', { zoomControl:false, attributionControl:false }).setView([48.3794,31.1656], 6);
+      // Base layers (light & dark) with subtle styling differences
+      const lightTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        tileSize: 256,
+        crossOrigin:true
+      });
+      const darkTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 20,
+        attribution: '',
+        tileSize: 256,
+        crossOrigin:true
+      });
+      let currentTheme = 'dark';
+      darkTiles.addTo(map);
+      function applyTheme(){
+        if(currentTheme==='dark'){
+          if(map.hasLayer(lightTiles)){ map.removeLayer(lightTiles); }
+          if(!map.hasLayer(darkTiles)){ darkTiles.addTo(map); }
+          document.documentElement.style.setProperty('--panel-bg','#111827');
+          document.documentElement.style.setProperty('--main-bg','#0a0f1c');
+        } else {
+          if(map.hasLayer(darkTiles)){ map.removeLayer(darkTiles); }
+            if(!map.hasLayer(lightTiles)){ lightTiles.addTo(map); }
+          document.documentElement.style.setProperty('--panel-bg','#f3f4f6');
+          document.documentElement.style.setProperty('--main-bg','#e5e7eb');
+        }
+        setTimeout(()=>map.invalidateSize(),120);
+      }
+      window.toggleBaseMap = function(){
+        currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        const iconEl = document.getElementById('tileToggleIcon');
+        if(iconEl){ iconEl.textContent = currentTheme==='dark' ? 'dark_mode' : 'light_mode'; }
+        applyTheme();
+      }
+      // Add a scale control for orientation
+      L.control.scale({position:'bottomright', imperial:false}).addTo(map);
       // ---- Presence (active users) ----
       const uid = localStorage.getItem('presence_id') || (self.crypto?.randomUUID ? crypto.randomUUID() : (Date.now()+""+Math.random()).replace(/\D/g,''));
       localStorage.setItem('presence_id', uid);
@@ -821,7 +831,6 @@
   setTimeout(()=>{ if(map){ map.invalidateSize(); map.setView([UKRAINE_CENTER.lat, UKRAINE_CENTER.lng]); } },200);
     }
   }
-  function centerMap(){ if(map){ map.setView([UKRAINE_CENTER.lat, UKRAINE_CENTER.lng], 6, { animate:true }); } }
   // Adjust fullscreen height on orientation / resize for mobile
   window.addEventListener('orientationchange', ()=>{ if(document.body.classList.contains('map-expanded')){ const mapCard=document.querySelector('.map-card'); if(mapCard){ mapCard.style.height=window.innerHeight+'px'; if(map){ map.invalidateSize(); } } } });
   window.addEventListener('resize', ()=>{ if(document.body.classList.contains('map-expanded')){ const mapCard=document.querySelector('.map-card'); if(mapCard){ mapCard.style.height=window.innerHeight+'px'; if(map){ map.invalidateSize(); } } } });
