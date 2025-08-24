@@ -1055,7 +1055,23 @@ def process_message(text, mid, date_str, channel):
         def norm_c(s: str):
             if not s: return None
             s = s.strip().lower().strip(".,:;()!?")
-            return UA_CITY_NORMALIZE.get(s, s)
+            s = UA_CITY_NORMALIZE.get(s, s)
+            # Morphological heuristics: convert common Ukrainian/Russian case endings to nominative
+            candidates = [s]
+            if s.endswith('у') and len(s) > 4:
+                candidates.append(s[:-1] + 'а')
+            if s.endswith('ю') and len(s) > 4:
+                candidates.append(s[:-1] + 'я')
+            if s.endswith('и') and len(s) > 4:
+                candidates.append(s[:-1] + 'а')
+            if s.endswith('ої') and len(s) > 5:
+                candidates.append(s[:-2] + 'а')
+            if s.endswith('оїї') and len(s) > 6:
+                candidates.append(s[:-3] + 'а')
+            for cand in candidates:
+                if region_enhanced_coords(cand):
+                    return cand
+            return s
         if pass_match:
             c1 = norm_c(pass_match.group(1))
             if c1:
