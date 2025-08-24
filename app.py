@@ -356,6 +356,36 @@ CITY_COORDS = {
     ,'липова долина': (50.5700, 33.7900)
 }
 
+# Mapping city -> oblast stem (lowercase stems used earlier) for disambiguation when region already detected.
+# Minimal subset; extend as needed.
+CITY_TO_OBLAST = {
+    'павлоград': 'дніпропетров',
+    'дніпро': 'дніпропетров',
+    'кривий ріг': 'дніпропетров',
+    'львів': 'львів',
+    'стрий': 'львів',
+    'дробобич': 'львів',
+    'київ': 'київ',
+    'біла церква': 'київ',
+    'бориспіль': 'київ',
+    'полтава': 'полтав',
+    'кременчук': 'полтав',
+    'житомир': 'житом',
+    'черкаси': 'черка',
+    'чернігів': 'черніг',
+    'суми': 'сум',
+    'одеса': 'одес',
+    'миколаїв': 'микола',
+    'чернівці': 'чернівц',
+    'рівне': 'рівн',
+    'тернопіль': 'терноп',
+    'ужгород': 'ужгород',
+    'луцьк': 'волин',
+    'запоріжжя': 'запор',
+    'харків': 'харків',
+    'ахтирка': 'сум',
+}
+
 OBLAST_CENTERS = {
     'донеччина': (48.0433, 37.7974), 'донеччини': (48.0433, 37.7974), 'донеччину': (48.0433, 37.7974), 'донецька область': (48.0433, 37.7974),
     'дніпропетровщина': (48.4500, 34.9830), 'дніпропетровщини': (48.4500, 34.9830), 'дніпропетровська область': (48.4500, 34.9830),
@@ -800,6 +830,8 @@ def process_message(text, mid, date_str, channel):
     # Normalize some accusative oblast forms to nominative for matching
     lower = lower.replace('донеччину','донеччина').replace('сумщину','сумщина')
     text = lower  # downstream logic mostly uses lower-case comparisons
+    # Санітизація дублювань типу "область області" -> залишаємо один раз
+    text = re.sub(r'(область|обл\.)\s+област[іи]', r'\1', text)
 
     # --- Pattern: City (Oblast ...) e.g. "Павлоград (Дніпропетровська обл.)" ---
     bracket_city = re.search(r'([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,})\s*\(([^)]+)\)', text)
@@ -1027,6 +1059,12 @@ def process_message(text, mid, date_str, channel):
     raion_pattern = re.compile(r'([А-ЯA-ZЇІЄҐЁа-яa-zїієґё\-]{4,})\s+район', re.IGNORECASE)
     for m_r in raion_pattern.finditer(text):
         base = norm_raion(m_r.group(1))
+        if base in RAION_FALLBACK:
+            raion_matches.append((base, RAION_FALLBACK[base]))
+    # Аббревиатура "р-н" (у т.ч. варианты "р-н.", "рн", "р-н," )
+    raion_abbrev_pattern = re.compile(r'([А-ЯA-ZЇІЄҐЁа-яa-zїієґё\-]{4,})\s+р\s*[-–]?\s*н\.?', re.IGNORECASE)
+    for m_ra in raion_abbrev_pattern.finditer(text):
+        base = norm_raion(m_ra.group(1))
         if base in RAION_FALLBACK:
             raion_matches.append((base, RAION_FALLBACK[base]))
     if raion_matches:
@@ -1433,6 +1471,17 @@ def process_message(text, mid, date_str, channel):
                 coords = geocode_opencage(f"{norm} {region_hint_global}")
             if not coords:
                 coords = region_enhanced_coords(norm)
+            # If областной контекст уже определён (matched_regions) ограничим города той же области
+            if matched_regions:
+                # берем первый stem области
+                stem = None
+                for (rn, _c) in matched_regions:
+                    for s in ['харків','львів','київ','дніпропетров','полтав','сум','черніг','волин','запор','одес','микола','черка','житом','хмельниць','рівн','івано','терноп','ужгород','кропив','луган','донець','чернівц']:
+                        if s in rn:
+                            stem = s; break
+                    if stem: break
+                if stem and norm in CITY_TO_OBLAST and CITY_TO_OBLAST[norm] != stem:
+                    continue
             if coords:
                 lat, lng = coords
                 threat_type, icon = classify(text)
