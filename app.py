@@ -365,6 +365,12 @@ OBLAST_CENTERS = {
     , 'сумщина': (50.9077, 34.7981), 'сумщини': (50.9077, 34.7981), 'сумщину': (50.9077, 34.7981), 'сумська область': (50.9077, 34.7981), 'сумська обл.': (50.9077, 34.7981), 'сумская обл.': (50.9077, 34.7981)
 }
 
+# Explicit (city, oblast form) overrides to disambiguate duplicate settlement names across oblasts.
+# Key: (normalized_city, normalized_region_hint as appears in message)
+OBLAST_CITY_OVERRIDES = {
+    ('борова', 'харківська обл.'): (49.3743, 37.6179),  # Борова (Ізюмський р-н, Харківська)
+}
+
 # Район (district) fallback centers (можно расширять). Ключи в нижнем регистре без слова 'район'.
 RAION_FALLBACK = {
     'покровський': (48.2767, 37.1763),  # Покровськ (Донецька)
@@ -786,23 +792,42 @@ def process_message(text, mid, date_str, channel):
         # Не интерпретировать 'район' как город
         if raw_city != 'район':
             norm_city = UA_CITY_NORMALIZE.get(raw_city, raw_city)
-            # keep existing bracket logic; initial local attempt
+            # Initial local attempt (static minimal list)
             coords = CITY_COORDS.get(norm_city)
-            # If region specified in parentheses (e.g. "(сумська обл.)") try disambiguated geocode
+            # Region hint extraction
             region_hint = None
             if any(tok in raw_inside for tok in ['обл', 'область']):
-                # extract first word containing letters before 'обл'
                 region_hint = raw_inside.strip()
-            # Attempt geocode with city alone if not in baseline
-            if not coords and OPENCAGE_API_KEY:
-                coords = geocode_opencage(norm_city)
-            # If we have a region hint and either no coords yet OR city known ambiguous like миколаївка, try city+region geocode to refine
-            if region_hint and OPENCAGE_API_KEY and (not coords or norm_city in ['миколаївка','николаевка','миколаївка','миколаевка']):
+            # 1) Explicit override for (city, region) if provided
+            if region_hint:
+                override_key = (norm_city, region_hint)
+                if override_key in OBLAST_CITY_OVERRIDES:
+                    coords = OBLAST_CITY_OVERRIDES[override_key]
+            # 2) If we have region hint and NO coords yet, attempt region-qualified geocode first (priority to enforce oblast binding)
+            region_combo_tried = False
+            if not coords and region_hint and OPENCAGE_API_KEY:
                 combo_query = f"{norm_city} {region_hint}".replace('  ',' ').strip()
                 try:
                     refined = geocode_opencage(combo_query)
                     if refined:
                         coords = refined
+                    region_combo_tried = True
+                except Exception:
+                    pass
+            # 3) Attempt city alone geocode only if still no coords
+            if not coords and OPENCAGE_API_KEY:
+                try:
+                    coords = geocode_opencage(norm_city)
+                except Exception:
+                    pass
+            # 4) If region hint exists and we got coords from plain city geocode but city is potentially duplicated across oblasts,
+            # try region-qualified geocode as refinement (unless already tried).
+            if region_hint and OPENCAGE_API_KEY and not region_combo_tried and coords and norm_city in ['борова','миколаївка','николаевка']:
+                try:
+                    combo_query = f"{norm_city} {region_hint}".replace('  ',' ').strip()
+                    refined2 = geocode_opencage(combo_query)
+                    if refined2:
+                        coords = refined2
                 except Exception:
                     pass
             # Ambiguous manual mapping fallback (if still no coords or mismatch with region)
