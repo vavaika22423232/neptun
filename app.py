@@ -547,6 +547,53 @@ def geocode_opencage(place: str):
 def process_message(text, mid, date_str, channel):
     """Extract coordinates or try simple city geocoding (lightweight)."""
     original_text = text
+    # ---------------- Global region (oblast) hint detection for universal settlement binding ----------------
+    region_hint_global = None
+    try:
+        low_rt = original_text.lower()
+        for obl_name in OBLAST_CENTERS.keys():
+            if obl_name in low_rt:
+                region_hint_global = obl_name  # first hit
+                break
+    except Exception:
+        region_hint_global = None
+
+    def region_enhanced_coords(base_name: str):
+        """Resolve coordinates for a settlement name using (in order): static list, settlements dataset,
+        region-qualified OpenCage (city + region), then plain OpenCage.
+        This enforces the user requirement to bind every settlement to the oblast mentioned in the message text.
+        base_name should already be lower-case / normalized.
+        """
+        if not base_name:
+            return None
+        name = UA_CITY_NORMALIZE.get(base_name, base_name).strip().lower()
+        # Static minimal city coords first
+        coord = CITY_COORDS.get(name)
+        if coord:
+            return coord
+        # Settlements dataset
+        if SETTLEMENTS_INDEX:
+            coord = SETTLEMENTS_INDEX.get(name)
+            if coord:
+                return coord
+        # Region-qualified remote geocode
+        if region_hint_global and OPENCAGE_API_KEY:
+            try:
+                combo = f"{name} {region_hint_global}".replace('  ', ' ').strip()
+                combo_c = geocode_opencage(combo)
+                if combo_c:
+                    return combo_c
+            except Exception:
+                pass
+        # Plain remote geocode fallback
+        if OPENCAGE_API_KEY:
+            try:
+                plain_c = geocode_opencage(name)
+                if plain_c:
+                    return plain_c
+            except Exception:
+                pass
+        return None
     # ---- Fundraising / donation solicitation filter (do not display on public site) ----
     low_full = original_text.lower()
     if any(k in low_full for k in [
@@ -739,6 +786,7 @@ def process_message(text, mid, date_str, channel):
         # Не интерпретировать 'район' как город
         if raw_city != 'район':
             norm_city = UA_CITY_NORMALIZE.get(raw_city, raw_city)
+            # keep existing bracket logic; initial local attempt
             coords = CITY_COORDS.get(norm_city)
             # If region specified in parentheses (e.g. "(сумська обл.)") try disambiguated geocode
             region_hint = None
@@ -874,13 +922,8 @@ def process_message(text, mid, date_str, channel):
                 threat_type, icon = classify(text)
                 seen = set()
                 for idx, rp in enumerate(raw_places,1):
-                    key = rp
-                    # normalize endings (simple)
-                    key = key.replace('й,','й').strip()
-                    # direct city coords
-                    coords = CITY_COORDS.get(key)
-                    if not coords and SETTLEMENTS_INDEX:
-                        coords = SETTLEMENTS_INDEX.get(key)
+                    key = rp.replace('й,','й').strip()
+                    coords = region_enhanced_coords(key)
                     if coords and key not in seen:
                         seen.add(key)
                         lat,lng = coords
@@ -1016,7 +1059,7 @@ def process_message(text, mid, date_str, channel):
         if pass_match:
             c1 = norm_c(pass_match.group(1))
             if c1:
-                coords1 = CITY_COORDS.get(c1) or (SETTLEMENTS_INDEX.get(c1) if SETTLEMENTS_INDEX else None)
+                coords1 = region_enhanced_coords(c1)
                 if coords1:
                     places.append((c1.title(), coords1, 'pass_near'))
         if dir_match:
@@ -1030,9 +1073,7 @@ def process_message(text, mid, date_str, channel):
                     full_phrase = cand_phrase
             c2_key = full_phrase or c2_first
             if c2_key and c2_key != (places[0][0].lower() if places else None):
-                coords2 = CITY_COORDS.get(c2_key)
-                if not coords2 and SETTLEMENTS_INDEX:
-                    coords2 = SETTLEMENTS_INDEX.get(c2_key)
+                coords2 = region_enhanced_coords(c2_key)
                 if coords2:
                     places.append((c2_key.title(), coords2, 'direction_target'))
         if places:
@@ -1060,12 +1101,12 @@ def process_message(text, mid, date_str, channel):
             return UA_CITY_NORMALIZE.get(s, s)
         if m_from:
             c_from = norm_simple(m_from.group(1))
-            coords_from = CITY_COORDS.get(c_from) or (SETTLEMENTS_INDEX.get(c_from) if SETTLEMENTS_INDEX else None)
+            coords_from = region_enhanced_coords(c_from)
             if coords_from:
                 places.append((c_from.title(), coords_from, 'course_from'))
         if m_to:
             c_to = norm_simple(m_to.group(1))
-            coords_to = CITY_COORDS.get(c_to) or (SETTLEMENTS_INDEX.get(c_to) if SETTLEMENTS_INDEX else None)
+            coords_to = region_enhanced_coords(c_to)
             if coords_to:
                 # avoid duplicate if same
                 if not any(p[0].lower()==c_to for p in places):
@@ -1100,13 +1141,13 @@ def process_message(text, mid, date_str, channel):
                     s = s[:-3] + 'о'
                 return UA_CITY_NORMALIZE.get(s, s)
             base_city = norm_rel_city(raw_city)
-            coords_base = CITY_COORDS.get(base_city) or (SETTLEMENTS_INDEX.get(base_city) if SETTLEMENTS_INDEX else None)
+            coords_base = region_enhanced_coords(base_city)
             coords_target = None
             target_name = None
             if target_dir:
                 tn = target_dir.group(1).lower().strip('.:,;()!?')
                 tn = UA_CITY_NORMALIZE.get(tn, tn)
-                coords_target = CITY_COORDS.get(tn) or (SETTLEMENTS_INDEX.get(tn) if SETTLEMENTS_INDEX else None)
+                coords_target = region_enhanced_coords(tn)
                 target_name = tn
             if coords_base:
                 lat_b, lng_b = coords_base
@@ -1137,7 +1178,7 @@ def process_message(text, mid, date_str, channel):
         if m_par:
             pc = m_par.group(1).lower()
             pc = UA_CITY_NORMALIZE.get(pc, pc)
-            coords = CITY_COORDS.get(pc) or (SETTLEMENTS_INDEX.get(pc) if SETTLEMENTS_INDEX else None)
+            coords = region_enhanced_coords(pc)
             if coords:
                 threat_type, icon = classify(text)
                 return [{
@@ -1168,9 +1209,7 @@ def process_message(text, mid, date_str, channel):
                     if len(base) < 3:
                         continue
                     norm = UA_CITY_NORMALIZE.get(base, base)
-                    coords = CITY_COORDS.get(norm)
-                    if not coords and SETTLEMENTS_INDEX:
-                        coords = SETTLEMENTS_INDEX.get(norm)
+                    coords = region_enhanced_coords(norm)
                     if coords:
                         found.append((norm.title(), coords))
                 if found:
@@ -1321,9 +1360,12 @@ def process_message(text, mid, date_str, channel):
     for city in UA_CITIES:
         if re.search(r'(?<![a-zа-яїієґ])' + re.escape(city) + r'(?![a-zа-яїієґ])', lower):
             norm = UA_CITY_NORMALIZE.get(city, city)
-            coords = geocode_opencage(norm)
+            # City fallback: attempt region-qualified first
+            coords = None
+            if region_hint_global and OPENCAGE_API_KEY:
+                coords = geocode_opencage(f"{norm} {region_hint_global}")
             if not coords:
-                coords = CITY_COORDS.get(norm)
+                coords = region_enhanced_coords(norm)
             if coords:
                 lat, lng = coords
                 threat_type, icon = classify(text)
@@ -1388,14 +1430,7 @@ def process_message(text, mid, date_str, channel):
                 norm_city = _normalize_course_city(raw_city)
                 if norm_city:
                     # пытаемся найти координаты в приоритетном порядке
-                    coords = CITY_COORDS.get(norm_city)
-                    if not coords and SETTLEMENTS_INDEX:
-                        coords = SETTLEMENTS_INDEX.get(norm_city)
-                    if not coords and OPENCAGE_API_KEY:
-                        try:
-                            coords = geocode_opencage(norm_city)
-                        except Exception:
-                            coords = None
+                    coords = region_enhanced_coords(norm_city)
                     if coords:
                         course_matches.append((norm_city.title(), coords, line[:200]))
     if course_matches:
