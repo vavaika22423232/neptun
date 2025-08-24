@@ -621,10 +621,11 @@ def process_message(text, mid, date_str, channel):
         if hdr in low_full:
             bullet_headers += 1
     if re.search(r'ситуац[ія][яi]\s+станом', low_full) or re.search(r'ситуац[ия]\s+на\s+\d{1,2}:\d{2}', low_full) or bullet_headers >= 2:
+        # User clarified: completely skip (no site display at all)
         return [{
             'id': str(mid), 'place': None, 'lat': None, 'lng': None,
-            'threat_type': None, 'text': original_text[:1000], 'date': date_str, 'channel': channel,
-            'list_only': True, 'summary': True  # keep in events list, no marker
+            'threat_type': None, 'text': original_text[:800], 'date': date_str, 'channel': channel,
+            'list_only': True, 'summary': True, 'suppress': True
         }]
     # ---- Imprecise directional-only messages (no exact city location) suppression ----
     # User request: messages that only state relative / directional movement without a clear city position
