@@ -579,6 +579,7 @@
   alarm_cancel: '/static/vidboi.png',
   mlrs: '/static/mlrs.png',
   artillery: '/static/artillery.png',
+  fpv: '/static/fpv.png',
       default: '/static/default.png'
     };
     // Fallback tiny red dot if icon 404
@@ -586,7 +587,7 @@
       Object.keys(ICONS).forEach(k=>{const url=ICONS[k]; const img=new Image(); img.onload=()=>{}; img.onerror=()=>{ICONS[k]='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA4AAAAOCAYAAAAfSC3RAAAALElEQVQokWP8////fwY0wAgjGJgGLABWMMRAFEg0gGE0GoBmGuwmCkYBAGmxD/dzJvLRwAAAABJRU5ErkJggg==';}; img.src=url;});
     }
     // Состояние приложения
-    let map;
+  let map;
     let markerLayer = null;
     let markers = [];
     // Проста мапа транслітерації/перекладу російських / застарілих назв на українські
@@ -635,6 +636,17 @@
         .replace(/ъ/g,'ʼ');
       return t;
     }
+    // Цільові міста для відображення спеціальної іконки FPV при загрозі БПЛА
+    const FPV_CITIES = ['херсон','білозерка','марганець','нікополь'];
+    function isFPVThreat(place, text, threatType){
+      const combined = (place ? place + ' ' : '') + (text || '');
+      const lower = combined.toLowerCase();
+      if(!FPV_CITIES.some(c => lower.includes(c))) return false;
+      const tt = (threatType||'').toLowerCase();
+      if (tt === 'shahed') return true;
+      if (/бпла|fpv/i.test(text || '')) return true;
+      return false;
+    }
     async function updateMarkers() {
       const timeRange = 50; // fixed
       const threatType = document.getElementById('threatTypeSelect').value;
@@ -658,6 +670,10 @@
         let iconUrl = ICONS[p.threat_type] || ICONS.default;
         if (p.marker_icon) {
           iconUrl = (p.marker_icon.startsWith('http') || p.marker_icon.startsWith('/')) ? p.marker_icon : '/static/' + p.marker_icon;
+        }
+        // Override for FPV targeted settlements
+        if (isFPVThreat(p.place, p.text, p.threat_type)) {
+          iconUrl = ICONS.fpv || iconUrl;
         }
         const icon = L.icon({ iconUrl, iconSize:[32,28], iconAnchor:[16,14], popupAnchor:[0,-12] });
         const m = L.marker([p.lat, p.lng], { icon });
@@ -690,6 +706,9 @@
           } else {
             iconUrl = '/static/' + ev.marker_icon;
           }
+        }
+        if (isFPVThreat(ev.place, ev.text, ev.threat_type)) {
+          iconUrl = ICONS.fpv || iconUrl;
         }
         const isCancel = ev.threat_type === 'alarm_cancel';
   const isAlarm = ev.threat_type === 'alarm';
