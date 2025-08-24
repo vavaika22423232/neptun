@@ -757,6 +757,25 @@ def process_message(text, mid, date_str, channel):
                         coords = refined
                 except Exception:
                     pass
+            # Ambiguous manual mapping fallback (if still no coords or mismatch with region)
+            if region_hint:
+                # derive stem like 'харківськ', 'львівськ'
+                rh_low = region_hint.lower()
+                # choose first word containing 'харків' etc
+                region_key = None
+                for stem in ['харків','львів','київ','дніпропетров','полтав','сум','черніг','волин','запор','одес','микола','черка','житом','хмельниць','рівн','івано','терноп','ужгород','кропив','луган','донець','чернівц']:
+                    if stem in rh_low:
+                        region_key = stem
+                        break
+                AMBIGUOUS_CITY_REGION = {
+                    ('золочів','харків'): (50.2788, 36.3644),  # Zolochiv Kharkiv oblast
+                    ('золочів','львів'): (49.8078, 24.9002),   # Zolochiv Lviv oblast
+                }
+                if region_key:
+                    key = (norm_city, region_key)
+                    mapped = AMBIGUOUS_CITY_REGION.get(key)
+                    if mapped:
+                        coords = mapped
             if coords:
                 lat,lng = coords
                 threat_type, icon = classify(text)
