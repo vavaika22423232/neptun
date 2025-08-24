@@ -838,8 +838,21 @@ def process_message(text, mid, date_str, channel):
     if bracket_city:
         raw_city = bracket_city.group(1).strip().lower()
         raw_inside = bracket_city.group(2).lower()
-        # Не интерпретировать 'район' как город
-        if raw_city != 'район':
+        # Особый случай: "дніпропетровська область (павлоградський р-н)" -> ставим Павлоград
+        if ('область' in raw_city or 'обл' in raw_city) and ('павлоград' in raw_inside):
+            pav_key = 'павлоградський'
+            if pav_key in RAION_FALLBACK:
+                lat,lng = RAION_FALLBACK[pav_key]
+                threat_type, icon = classify(text)
+                return [{
+                    'id': str(mid), 'place': 'Павлоградський район', 'lat': lat, 'lng': lng,
+                    'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': 'oblast_raion_combo'
+                }]
+        # Пропускаем случаи вида "<область> (<район ...>)" чтобы не трактовать слово 'область' как город
+        if raw_city in {'область','обл','обл.'} or raw_city.endswith('область'):
+            bracket_city = None
+    if bracket_city and raw_city != 'район':
             norm_city = UA_CITY_NORMALIZE.get(raw_city, raw_city)
             # Initial local attempt (static minimal list)
             coords = CITY_COORDS.get(norm_city)
