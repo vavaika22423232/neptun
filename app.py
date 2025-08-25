@@ -293,24 +293,56 @@ def _prune_visit_stats(days:int=45):
 def _load_recent_visits():
     try:
         if os.path.exists(RECENT_VISITS_FILE):
-            with open(RECENT_VISITS_FILE, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                # basic structure validation
-                if not isinstance(data, dict):
+            # Guard against oversized/corrupted file (e.g. concurrent writes producing concatenated JSON objects)
+            try:
+                raw = open(RECENT_VISITS_FILE, 'r', encoding='utf-8').read()
+            except Exception as e_read:
+                log.warning(f"Failed reading {RECENT_VISITS_FILE}: {e_read}")
+                return {}
+            # Quick heuristic: if multiple top-level JSON objects concatenated, keep first valid
+            data = None
+            if raw.strip():
+                try:
+                    data = json.loads(raw)
+                except json.JSONDecodeError as je:
+                    # Try to split by newlines and stitch until first valid JSON object
+                    fragments = raw.splitlines()
+                    buf = ''
+                    for line in fragments:
+                        buf += line.strip() + '\n'
+                        try:
+                            data = json.loads(buf)
+                            log.warning(f"Recovered first valid JSON segment from {RECENT_VISITS_FILE} after decode error: {je}")
+                            break
+                        except Exception:
+                            continue
+                    if data is None:
+                        log.warning(f"Unable to repair {RECENT_VISITS_FILE}: {je}")
+                        return {}
+                except Exception as e_generic:
+                    log.warning(f"Generic JSON load failure {RECENT_VISITS_FILE}: {e_generic}")
                     return {}
-                data.setdefault('day', '')
-                data.setdefault('week_start', '')
-                data.setdefault('today_ids', [])
-                data.setdefault('week_ids', [])
-                return data
+            else:
+                return {}
+            if not isinstance(data, dict):
+                log.warning(f"Unexpected structure in {RECENT_VISITS_FILE}, resetting")
+                return {}
+            data.setdefault('day', '')
+            data.setdefault('week_start', '')
+            data.setdefault('today_ids', [])
+            data.setdefault('week_ids', [])
+            return data
     except Exception as e:
         log.warning(f"Failed loading {RECENT_VISITS_FILE}: {e}")
     return {}
 
 def _save_recent_visits(data:dict):
     try:
-        with open(RECENT_VISITS_FILE, 'w', encoding='utf-8') as f:
+        tmp = RECENT_VISITS_FILE + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+        # atomic replace
+        os.replace(tmp, RECENT_VISITS_FILE)
     except Exception as e:
         log.warning(f"Failed saving {RECENT_VISITS_FILE}: {e}")
 
@@ -1029,6 +1061,28 @@ def process_message(text, mid, date_str, channel):
     text = lower  # downstream logic mostly uses lower-case comparisons
     # Санітизація дублювань типу "область області" -> залишаємо один раз
     text = re.sub(r'(область|обл\.)\s+област[іи]', r'\1', text)
+
+    # --- Simple sanitization of formatting noise (bold asterisks, stray stars) ---
+    # Keeps Ukrainian characters while removing leading/trailing markup like ** or * around segments
+    if '**' in text or '*' in text:
+        # remove isolated asterisks not part of words
+        text = re.sub(r'\*+', '', text)
+
+    # --- Early explicit pattern: "<RaionName> район (<Oblast ...>)" (e.g. "Запорізький район (Запорізька обл.)") ---
+    # Sometimes such messages were slipping through as raw because the pre-parenthesis token ended with 'район'.
+    m_raion_oblast = re.search(r'([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{4,})\s+район\s*\(([^)]*обл[^)]*)\)', text)
+    if m_raion_oblast:
+        raion_token = m_raion_oblast.group(1).strip().lower()
+        # Normalize morphological endings similar to later norm_raion logic
+        raion_base = re.sub(r'(ському|ского|ського|ский|ськiй|ськой|ським|ском)$', 'ський', raion_token)
+        if raion_base in RAION_FALLBACK:
+            lat, lng = RAION_FALLBACK[raion_base]
+            threat_type, icon = classify(original_text if 'original_text' in locals() else text)
+            return [{
+                'id': str(mid), 'place': f"{raion_base.title()} район", 'lat': lat, 'lng': lng,
+                'threat_type': threat_type, 'text': (original_text if 'original_text' in locals() else text)[:500],
+                'date': date_str, 'channel': channel, 'marker_icon': icon, 'source_match': 'raion_oblast_combo'
+            }]
 
     # --- Aggregate / statistical summary suppression ---
     def _is_aggregate_summary(t: str) -> bool:
