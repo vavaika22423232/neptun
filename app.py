@@ -2094,6 +2094,49 @@ def hide_marker():
         log.warning(f"hide_marker error: {e}")
         return jsonify({'status':'error','error':str(e)}), 400
 
+@app.route('/unhide_marker', methods=['POST'])
+def unhide_marker():
+    """Remove previously hidden marker by key or by lat,lng plus text/source prefix match."""
+    try:
+        payload = request.get_json(force=True) or {}
+        key = (payload.get('key') or '').strip()
+        hidden = load_hidden()
+        changed = False
+        if key and key in hidden:
+            hidden.remove(key)
+            changed = True
+        else:
+            lat = payload.get('lat')
+            lng = payload.get('lng')
+            text = (payload.get('text') or '').strip()
+            source = (payload.get('source') or '').strip()
+            if lat is not None and lng is not None:
+                try:
+                    lat_r = round(float(lat),3)
+                    lng_r = round(float(lng),3)
+                except Exception:
+                    lat_r = lng_r = None
+                base_prefix = f"{lat_r},{lng_r}|" if lat_r is not None else None
+                if base_prefix:
+                    for h in list(hidden):
+                        if not h.startswith(base_prefix):
+                            continue
+                        try:
+                            _, htext, hsource = h.split('|',2)
+                        except ValueError:
+                            continue
+                        if source and hsource != source:
+                            continue
+                        if not text or htext.startswith(text) or text.startswith(htext):
+                            hidden.remove(h)
+                            changed = True
+        if changed:
+            save_hidden(hidden)
+        return jsonify({'status':'ok','removed':changed,'remaining':len(hidden)})
+    except Exception as e:
+        log.warning(f"unhide_marker error: {e}")
+        return jsonify({'status':'error','error':str(e)}), 400
+
 @app.route('/health')
 def health():
     # Basic stats + prune visitors
@@ -2259,6 +2302,15 @@ def admin_panel():
                 daily_unique += 1
             if dt >= week_cut:
                 week_unique += 1
+    hidden_keys = load_hidden()
+    parsed_hidden = []
+    for hk in hidden_keys:
+        try:
+            coord_part, text_part, source_part = hk.split('|',2)
+            lat_str, lng_str = coord_part.split(',',1)
+            parsed_hidden.append({'lat':lat_str,'lng':lng_str,'text':text_part,'source':source_part,'key':hk})
+        except Exception:
+            continue
     return render_template(
         'admin.html',
         visitors=visitors,
@@ -2269,7 +2321,8 @@ def admin_panel():
         monitor_period=MONITOR_PERIOD_MINUTES,
         markers=recent_markers,
         daily_unique=daily_unique,
-        week_unique=week_unique
+        week_unique=week_unique,
+        hidden_markers=parsed_hidden
     )
 
 @app.route('/admin/set_monitor_period', methods=['POST'])
