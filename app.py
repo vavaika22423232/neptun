@@ -342,10 +342,18 @@ def _load_recent_visits():
 def _save_recent_visits(data:dict):
     try:
         tmp = RECENT_VISITS_FILE + '.tmp'
+        # Ensure directory exists (in case path was changed to subfolder later); here file in CWD so skip
         with open(tmp, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        # atomic replace
-        os.replace(tmp, RECENT_VISITS_FILE)
+        try:
+            os.replace(tmp, RECENT_VISITS_FILE)
+        except FileNotFoundError:
+            # Rare race on some FS / AV scanners: fall back to simple write
+            try:
+                with open(RECENT_VISITS_FILE, 'w', encoding='utf-8') as f2:
+                    json.dump(data, f2, ensure_ascii=False, indent=2)
+            except Exception as e2:
+                log.warning(f"Fallback direct save failed {RECENT_VISITS_FILE}: {e2}")
     except Exception as e:
         log.warning(f"Failed saving {RECENT_VISITS_FILE}: {e}")
 
