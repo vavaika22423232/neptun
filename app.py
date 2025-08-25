@@ -836,6 +836,27 @@ def process_message(text, mid, date_str, channel):
     # Санітизація дублювань типу "область області" -> залишаємо один раз
     text = re.sub(r'(область|обл\.)\s+област[іи]', r'\1', text)
 
+    # --- Aggregate / statistical summary suppression ---
+    def _is_aggregate_summary(t: str) -> bool:
+        # Do not suppress if explicit real-time warning words present
+        if any(w in t for w in ['загроза','перейдіть в укриття','укриття!']):
+            return False
+        verbs = ['збито/подавлено','збито / подавлено','збито-подавлено','збито','подавлено','знищено']
+        context = ['станом на','за попередніми даними','у ніч на','повітряний напад','протиповітряною обороною','протиповітряна оборона','підрозділи реб','мобільні вогневі групи']
+        objects_re = re.compile(r'\b\d{1,3}[\-–]?(ма|)?\s*(ворожих|)\s*(бпла|shahed|дрон(?:ів|и)?|ракет|ракети)')
+        verb_hit = any(v in t for v in verbs)
+        ctx_hits = sum(1 for c in context if c in t)
+        obj_hit = bool(objects_re.search(t))
+        # Strong aggregate if all three categories present OR multiple context + objects
+        if (verb_hit and obj_hit and ctx_hits >= 1) or (ctx_hits >= 2 and obj_hit):
+            return True
+        # Long multiline with origins list and many commas plus 'типу shahed'
+        if 'типу shahed' in t and t.count('\n') >= 2 and obj_hit:
+            return True
+        return False
+    if _is_aggregate_summary(text):
+        return None
+
     # --- Pattern: City (Oblast ...) e.g. "Павлоград (Дніпропетровська обл.)" ---
     bracket_city = re.search(r'([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,})\s*\(([^)]+)\)', text)
     if bracket_city:
