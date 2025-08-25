@@ -765,6 +765,9 @@ def process_message(text, mid, date_str, channel):
         if ('повідомляють про вибух' in l or 'повідомлено про вибух' in l or 'зафіксовано вибух' in l or 'зафіксовано вибухи' in l
             or 'фіксація вибух' in l or 'фіксують вибух' in l or re.search(r'\b(вибух|вибухи|вибухів)\b', l)):
             return 'vibuh', 'vibuh.png'
+        # Artillery shelling warning (обстріл) -> use obstril.png
+        if 'обстріл' in l or 'обстрел' in l:
+            return 'artillery', 'obstril.png'
         # Alarm cancellation (відбій тривоги / отбой тревоги)
         if ('відбій' in l and 'тривог' in l) or ('отбой' in l and 'тревог' in l):
             return 'alarm_cancel', 'vidboi.png'
