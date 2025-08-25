@@ -586,6 +586,8 @@
   </div>
   <!-- Leaflet (OpenStreetMap) JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <!-- Turf.js for geometry operations -->
+  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
   <script>
     // Константы и настройки
     const UKRAINE_CENTER = { lat: 48.3794, lng: 31.1656 };
@@ -782,6 +784,7 @@
 
       // --- Интеграция с alerts.in.ua ---
       let airAlarmLayer = null;
+      let ukrBorderLayer = null;
       async function fetchAirAlarms(){
         try { const r = await fetch('https://alerts.com.ua/api/states'); const j = await r.json(); return j.regions || {}; } catch(e){ return {}; }
       }
@@ -805,6 +808,23 @@
             };
           }
         }).addTo(map);
+        // Draw a clear national border outline (union of all regions)
+        try {
+          if (turf && geo && geo.features && geo.features.length){
+            let unionGeom = null;
+            for(const f of geo.features){
+              unionGeom = unionGeom ? turf.union(unionGeom, f) : f;
+            }
+            if (ukrBorderLayer) { ukrBorderLayer.remove(); }
+            if (unionGeom){
+              // Outer glow effect: two strokes
+              const outer = L.geoJSON(unionGeom, { style:{ color:'rgba(17,24,39,0.55)', weight:8, opacity:0.7, fill:false } });
+              const inner = L.geoJSON(unionGeom, { style:{ color:'#111827', weight:3, opacity:0.95, fill:false } });
+              ukrBorderLayer = L.layerGroup([outer, inner]).addTo(map);
+              ukrBorderLayer.bringToFront();
+            }
+          }
+        } catch(e){}
       }
       showAirAlarmsOnMap();
       setInterval(showAirAlarmsOnMap, 20000);
