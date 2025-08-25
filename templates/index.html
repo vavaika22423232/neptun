@@ -657,6 +657,15 @@
         .replace(/ъ/g,'ʼ');
       return t;
     }
+    // Удаляем лишние звездочки / markdown-звезды из текста
+    function cleanMessage(t){
+      if(!t) return t;
+      // убрать тройные/двойные звездочки и одиночные вокруг эмодзи/слов
+      let s = t.replace(/\*{2,}/g,'');
+      // убрать звездочки, прилегающие к началу/концу строки
+      s = s.replace(/^\*+/,'').replace(/\*+$/,'');
+      return s.trim();
+    }
     // Цільові міста для відображення спеціальної іконки FPV при загрозі БПЛА
     const FPV_CITIES = ['херсон','білозерка','марганець','нікополь'];
     function isFPVThreat(place, text, threatType){
@@ -705,7 +714,7 @@
         const popupHtml = `<div style=\"background:#ffffff;color:#1e293b;border:1px solid #d7dde3;border-radius:12px;padding:10px 10px;min-width:190px;font-size:.8rem;line-height:1.35;box-shadow:0 4px 14px -4px rgba(0,0,0,.18);\">`
           + (placeUA ? `<div style='font-size:.9rem;font-weight:600;margin-bottom:4px;'>${placeUA}</div>` : '')
           + (p.count ? `<div style='margin-bottom:4px;font-weight:600;color:#b91c1c;'>Кількість: ${p.count}×</div>` : '')
-          + `<div style='white-space:pre-wrap;'>${p.text || ''}</div>`
+          + `<div style='white-space:pre-wrap;'>${cleanMessage(p.text||'')}</div>`
           + `<div style='margin-top:6px;font-size:.6rem;opacity:.55;'>${p.date || ''}</div>`
           + `</div>`;
         m.bindPopup(popupHtml, { closeButton:false, autoPan:true });
@@ -736,7 +745,7 @@
         }
   const isCancel = ev.threat_type === 'alarm_cancel';
   const placeLine = (ev.place && !isCancel) ? `<b>${translatePlace(ev.place)}</b><br>` : '';
-  return `<div class='event'><img class='event-icon' src='${iconUrl}' alt='${ev.threat_type || ''}'><div class='event-info'>${placeLine}${ev.text || ''}<div class='event-time'>${ev.date || ''}</div></div></div>`;
+  return `<div class='event'><img class='event-icon' src='${iconUrl}' alt='${ev.threat_type || ''}'><div class='event-info'>${placeLine}${cleanMessage(ev.text||'')}<div class='event-time'>${ev.date || ''}</div></div></div>`;
       }).join('');
     }
     async function initMap() {
