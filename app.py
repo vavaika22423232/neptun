@@ -1502,6 +1502,25 @@ def process_message(text, mid, date_str, channel):
                     'marker_icon': icon, 'source_match': 'region_direction', 'count': drone_count
                 }]
             # если нет направления — продолжаем анализ (ищем конкретные цели типа "курс на <місто>")
+    # Midpoint for explicit course between two regions (e.g. "... на запоріжжі курсом на дніпропетровщину")
+    if len(matched_regions) == 2 and ('курс' in lower or '➡' in lower or '→' in lower) and (' на ' in lower):
+            # ensure we really reference both regions in a course sense: one mentioned before 'курс' and the other after 'курс' / arrow
+            parts_course = re.split(r'курс|➡|→', lower, 1)
+            if len(parts_course) == 2:
+                before, after_part = parts_course
+                r1, r2 = matched_regions[0], matched_regions[1]
+                bnames = [r1[0].split()[0].lower(), r2[0].split()[0].lower()]
+                # If both region stems appear across the split segments, build midpoint
+                if any(n[:5] in before for n in bnames) and any(n[:5] in after_part for n in bnames):
+                    (n1,(a1,b1)), (n2,(a2,b2)) = matched_regions
+                    lat = (a1+a2)/2; lng = (b1+b2)/2
+                    threat_type, icon = classify(text)
+                    return [{
+                        'id': str(mid), 'place': f"Між {n1.split()[0].title()} та {n2.split()[0].title()} (курс)", 'lat': lat, 'lng': lng,
+                        'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                        'marker_icon': icon, 'source_match': 'region_course_midpoint', 'count': drone_count
+                    }]
+
     if len(matched_regions) == 2 and any(w in lower for w in ['межі','межу','межа','между','границі','граница']):
             (n1,(a1,b1)), (n2,(a2,b2)) = matched_regions
             lat = (a1+a2)/2; lng = (b1+b2)/2
