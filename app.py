@@ -871,7 +871,7 @@ def process_message(text, mid, date_str, channel):
         if any(w in t for w in ['загроза','перейдіть в укриття','укриття!']):
             return False
         verbs = ['збито/подавлено','збито / подавлено','збито-подавлено','збито','подавлено','знищено']
-        context = ['станом на','за попередніми даними','у ніч на','повітряний напад','протиповітряною обороною','протиповітряна оборона','підрозділи реб','мобільні вогневі групи']
+        context = ['станом на','за попередніми даними','у ніч на','повітряний напад','протиповітряною обороною','протиповітряна оборона','підрозділи реб','мобільні вогневі групи','обстановка']
         objects_re = re.compile(r'\b\d{1,3}[\-–]?(ма|)?\s*(ворожих|)\s*(бпла|shahed|дрон(?:ів|и)?|ракет|ракети)')
         verb_hit = any(v in t for v in verbs)
         ctx_hits = sum(1 for c in context if c in t)
@@ -882,6 +882,11 @@ def process_message(text, mid, date_str, channel):
         # Long multiline with origins list and many commas plus 'типу shahed'
         if 'типу shahed' in t and t.count('\n') >= 2 and obj_hit:
             return True
+        # Situation report structure: starts with 'обстановка станом на' or begins with 'обстановка' and multiple category lines (— стратегічна авіація, — бпла, — флот)
+        if t.startswith('обстановка'):
+            dash_lines = sum(1 for line in t.split('\n') if line.strip().startswith('—'))
+            if dash_lines >= 2:
+                return True
         return False
     if _is_aggregate_summary(text):
         return None
