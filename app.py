@@ -64,6 +64,7 @@ ACTIVE_LOCK = threading.Lock()
 ACTIVE_TTL = 70  # seconds of inactivity before a visitor is dropped
 BLOCKED_FILE = 'blocked_ids.json'
 STATS_FILE = 'visits_stats.json'  # persistent first-seen timestamps per visitor id
+RECENT_VISITS_FILE = 'visits_recent.json'  # stores rolling today/week visitor id sets for fast counts
 VISIT_STATS = None  # lazy-loaded dict: {id: first_seen_epoch}
 client = None
 session_str = os.getenv('TELEGRAM_SESSION')  # Telethon string session (recommended for Render)
@@ -287,6 +288,73 @@ def _prune_visit_stats(days:int=45):
             continue
     if removed:
         _save_visit_stats()
+
+# ---- Rolling daily / weekly visit tracking (for persistence of counts across deploys) ----
+def _load_recent_visits():
+    try:
+        if os.path.exists(RECENT_VISITS_FILE):
+            with open(RECENT_VISITS_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                # basic structure validation
+                if not isinstance(data, dict):
+                    return {}
+                data.setdefault('day', '')
+                data.setdefault('week_start', '')
+                data.setdefault('today_ids', [])
+                data.setdefault('week_ids', [])
+                return data
+    except Exception as e:
+        log.warning(f"Failed loading {RECENT_VISITS_FILE}: {e}")
+    return {}
+
+def _save_recent_visits(data:dict):
+    try:
+        with open(RECENT_VISITS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log.warning(f"Failed saving {RECENT_VISITS_FILE}: {e}")
+
+def _update_recent_visits(vid:str):
+    """Update rolling daily/week sets with visitor id. Uses Europe/Kyiv timezone.
+    This offers stable daily/week unique counts even if the broader first-seen file is lost on redeploy."""
+    if not vid:
+        return
+    data = _load_recent_visits() or {}
+    tz = pytz.timezone('Europe/Kyiv')
+    now_dt = datetime.now(tz)
+    today = now_dt.strftime('%Y-%m-%d')
+    # ISO week (Monday start) anchor date for 7-day rolling window (not strictly calendar week) -> we store date 6 days prior cutoff
+    # We'll implement simple 7-day rolling: if stored week_start older than 7 days, reset week_ids
+    stored_week_start = data.get('week_start') or today
+    try:
+        sw_dt = datetime.strptime(stored_week_start, '%Y-%m-%d')
+    except Exception:
+        sw_dt = now_dt
+    if (now_dt - sw_dt).days >= 7:
+        # reset week window
+        stored_week_start = today
+        data['week_ids'] = []
+    # day rollover
+    if data.get('day') != today:
+        data['day'] = today
+        data['today_ids'] = []
+    # ensure lists
+    if 'today_ids' not in data or not isinstance(data['today_ids'], list):
+        data['today_ids'] = []
+    if 'week_ids' not in data or not isinstance(data['week_ids'], list):
+        data['week_ids'] = []
+    if vid not in data['today_ids']:
+        data['today_ids'].append(vid)
+    if vid not in data['week_ids']:
+        data['week_ids'].append(vid)
+    data['week_start'] = stored_week_start
+    _save_recent_visits(data)
+
+def _recent_counts():
+    data = _load_recent_visits()
+    if not data:
+        return None, None
+    return len(set(data.get('today_ids', []))), len(set(data.get('week_ids', [])))
 
 # Simplified message processor placeholder
 import math
@@ -1513,9 +1581,21 @@ def process_message(text, mid, date_str, channel):
                 r1, r2 = matched_regions[0], matched_regions[1]
                 bnames = [r1[0].split()[0].lower(), r2[0].split()[0].lower()]
                 # If both region stems appear across the split segments, build midpoint
-                if any(n[:5] in before for n in bnames) and any(n[:5] in after_part for n in bnames):
+                cond_split = (any(n[:5] in before for n in bnames) and any(n[:5] in after_part for n in bnames))
+                # Fallback heuristic: pattern 'на <region1>' earlier then arrow/"курс" then 'на <region2>'
+                if not cond_split:
+                    # Extract simple region stems from OBLAST_CENTERS keys
+                    stems = ['запоріж','запор', 'дніпропетров','дніпропет']
+                    if any(st in lower for st in stems):
+                        if re.search(r'на\s+запоріж', lower) and re.search(r'на\s+дніпропетров', lower):
+                            cond_split = True
+                if cond_split:
                     (n1,(a1,b1)), (n2,(a2,b2)) = matched_regions
                     lat = (a1+a2)/2; lng = (b1+b2)/2
+                    # Slight bias toward destination (second region) if arrow or 'курс' present
+                    if 'курс' in lower or '➡' in lower or '→' in lower:
+                        lat = (a1*0.45 + a2*0.55)
+                        lng = (b1*0.45 + b2*0.55)
                     threat_type, icon = classify(text)
                     return [{
                         'id': str(mid), 'place': f"Між {n1.split()[0].title()} та {n2.split()[0].title()} (курс)", 'lat': lat, 'lng': lng,
@@ -2027,6 +2107,11 @@ def presence():
         if int(now) % 200 == 0:
             _prune_visit_stats()
         _save_visit_stats()
+    # Update rolling today/week stats (independent persistence)
+    try:
+        _update_recent_visits(vid)
+    except Exception as e:
+        log.warning(f"recent visits update failed: {e}")
     with ACTIVE_LOCK:
         prev = ACTIVE_VISITORS.get(vid) if isinstance(ACTIVE_VISITORS.get(vid), dict) else {}
         ACTIVE_VISITORS[vid] = {'ts': now, 'ip': remote_ip, 'ua': prev.get('ua') or ua}
@@ -2135,23 +2220,26 @@ def admin_panel():
     # Collect last N geo markers (exclude pending geo) for hide management
     recent_markers = [m for m in reversed(all_msgs) if m.get('lat') and m.get('lng') and not m.get('pending_geo')][:120]
     # --- Visit stats aggregation ---
-    stats = _load_visit_stats()
-    tz = pytz.timezone('Europe/Kyiv')
-    now_dt = datetime.now(tz)
-    today_str = now_dt.strftime('%Y-%m-%d')
-    week_cut = now_dt - timedelta(days=7)
-    daily_unique = 0
-    week_unique = 0
-    for vid, ts in stats.items():
-        try:
-            tsf = float(ts)
-        except Exception:
-            continue
-        dt = datetime.fromtimestamp(tsf, tz)
-        if dt.strftime('%Y-%m-%d') == today_str:
-            daily_unique += 1
-        if dt >= week_cut:
-            week_unique += 1
+    # Prefer rolling sets for stability across deploy
+    daily_unique, week_unique = _recent_counts()
+    if daily_unique is None:  # fallback to first-seen stats if rolling file absent
+        stats = _load_visit_stats()
+        tz = pytz.timezone('Europe/Kyiv')
+        now_dt = datetime.now(tz)
+        today_str = now_dt.strftime('%Y-%m-%d')
+        week_cut = now_dt - timedelta(days=7)
+        daily_unique = 0
+        week_unique = 0
+        for vid, ts in stats.items():
+            try:
+                tsf = float(ts)
+            except Exception:
+                continue
+            dt = datetime.fromtimestamp(tsf, tz)
+            if dt.strftime('%Y-%m-%d') == today_str:
+                daily_unique += 1
+            if dt >= week_cut:
+                week_unique += 1
     return render_template(
         'admin.html',
         visitors=visitors,
