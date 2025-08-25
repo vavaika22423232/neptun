@@ -71,6 +71,35 @@ FETCH_THREAD_STARTED = False
 AUTH_STATUS = {'authorized': False, 'reason': 'init'}
 SUBSCRIBERS = set()  # queues for SSE clients
 INIT_ONCE = False  # guard to ensure background startup once
+# Persistent dynamic channels file
+CHANNELS_FILE = 'channels_dynamic.json'
+
+def load_dynamic_channels():
+    try:
+        if os.path.exists(CHANNELS_FILE):
+            with open(CHANNELS_FILE,'r',encoding='utf-8') as f:
+                dyn = json.load(f)
+            if isinstance(dyn, list):
+                return [str(x).strip() for x in dyn if x]
+    except Exception as e:
+        log.warning(f'Failed loading {CHANNELS_FILE}: {e}')
+    return []
+
+def save_dynamic_channels(extra):
+    try:
+        with open(CHANNELS_FILE,'w',encoding='utf-8') as f:
+            json.dump(extra, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log.warning(f'Failed saving {CHANNELS_FILE}: {e}')
+
+_dyn = load_dynamic_channels()
+if _dyn:
+    # Merge without duplicates
+    base = [c.strip() for c in CHANNELS if c.strip()]
+    for d in _dyn:
+        if d not in base:
+            base.append(d)
+    CHANNELS = base
 # ---------------- Monitoring period global config (admin editable) ----------------
 CONFIG_FILE = 'config.json'
 MONITOR_PERIOD_MINUTES = 50  # default; editable only via admin panel
@@ -1889,6 +1918,35 @@ def data():
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     resp.headers['Pragma'] = 'no-cache'
     return resp
+
+@app.route('/add_channel', methods=['POST'])
+def add_channel():
+    """Add a channel username or numeric ID at runtime.
+    Body JSON: {"id": "-1001234567890", "secret": "..."}
+    Requires AUTH_SECRET match if set.
+    Persists into channels_dynamic.json and updates global list.
+    """
+    if AUTH_SECRET and request.json.get('secret') != AUTH_SECRET:
+        return jsonify({'status':'error','error':'unauthorized'}), 403
+    cid = str(request.json.get('id','')).strip()
+    if not cid:
+        return jsonify({'status':'error','error':'empty_id'}), 400
+    global CHANNELS
+    # Normalize removing leading @ or https link wrappers
+    cid = cid.replace('https://t.me/','').replace('t.me/','')
+    # Remove joinchat pattern if present (cannot directly fetch by invite hash)
+    if cid.startswith('+'):
+        # Cannot use invite hash directly; require numeric ID user already joined from session
+        return jsonify({'status':'error','error':'invite_link_not_supported_use_numeric_id'}), 400
+    if cid not in CHANNELS:
+        CHANNELS.append(cid)
+        # Persist dynamic list excluding originals from env for clarity
+        orig_env = os.getenv('TELEGRAM_CHANNELS', '').split(',') if os.getenv('TELEGRAM_CHANNELS') else []
+        dynamic_part = [c for c in CHANNELS if c.strip() and c.strip() not in orig_env]
+        save_dynamic_channels(dynamic_part)
+        log.info(f'Added channel {cid}. Total now {len(CHANNELS)}')
+        return jsonify({'status':'ok','added':cid,'total':len(CHANNELS)})
+    return jsonify({'status':'ok','added':False,'message':'exists','total':len(CHANNELS)})
 
 @app.route('/hide_marker', methods=['POST'])
 def hide_marker():
