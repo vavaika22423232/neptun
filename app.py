@@ -2012,6 +2012,25 @@ def data():
             marker_key = f"{lat},{lng}|{text}|{source}"
             if marker_key in hidden:
                 continue
+            # Backward compatibility: allow prefix match (text truncated when stored) for same lat,lng,source
+            base_prefix = f"{lat},{lng}|"
+            if not any(h.startswith(base_prefix) for h in hidden if '|' in h):
+                pass
+            else:
+                # iterate candidates with same coords and source, compare text prefix
+                skip = False
+                for h in hidden:
+                    if not h.startswith(base_prefix):
+                        continue
+                    try:
+                        _, htext, hsource = h.split('|',2)
+                    except ValueError:
+                        continue
+                    if hsource == source and text.startswith(htext):
+                        skip = True
+                        break
+                if skip:
+                    continue
             # Фильтр: удаляем региональные метки без явных слов угроз (могли сохраниться старыми версиями логики)
             low_txt = text.lower()
             if m.get('source_match','').startswith('region') and not any(k in low_txt for k in ['бпла','дрон','шахед','shahed','geran','ракета','ракети','missile','iskander','s-300','s300','каб','артил','града','смерч','ураган','mlrs','avia','авіа','авиа','бомба']):

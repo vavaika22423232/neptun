@@ -99,7 +99,7 @@
             <button class="danger" 
               data-lat="{{ m.lat }}" 
               data-lng="{{ m.lng }}" 
-              data-text="{{ (m.text or '')|truncate(140)|e }}" 
+              data-text="{{ (m.text or '')|e }}" 
               data-source="{{ (m.channel or m.source)|e }}"
               onclick="hideMarker(this.dataset.lat,this.dataset.lng,this.dataset.text,this.dataset.source)">Hide</button>
           </td>
