@@ -635,11 +635,9 @@ def record_visit_sql(id_:str, now_ts:float):
         return
     try:
         with _visits_db_conn() as conn:
-            cur = conn.execute("SELECT id FROM visits WHERE id=?", (id_,))
-            if cur.fetchone():
-                conn.execute("UPDATE visits SET last_seen=? WHERE id=?", (now_ts, id_))
-            else:
-                conn.execute("INSERT INTO visits (id,first_seen,last_seen) VALUES (?,?,?)", (id_, now_ts, now_ts))
+            # Use upsert pattern to avoid race between SELECT and INSERT under concurrent requests
+            conn.execute("INSERT OR IGNORE INTO visits (id,first_seen,last_seen) VALUES (?,?,?)", (id_, now_ts, now_ts))
+            conn.execute("UPDATE visits SET last_seen=? WHERE id=?", (now_ts, id_))
     except Exception as e:
         log.warning(f"record_visit_sql failed: {e}")
 
