@@ -1454,6 +1454,21 @@ def process_message(text, mid, date_str, channel):
             'marker_icon': icon, 'source_match': 'black_sea_course'
         }]
 
+    # --- Bilhorod-Dnistrovskyi coastal UAV patrol ("вздовж узбережжя Білгород-Дністровського району") ---
+    if (('узбереж' in lower_sea or 'вздовж узбереж' in lower_sea) and
+        ('білгород-дністровського' in lower_sea or 'белгород-днестровского' in lower_sea) and
+        ('бпла' in lower_sea or 'дрон' in lower_sea)):
+        # Base approximate city coordinate; push 0.22° south into sea
+        city_lat, city_lng = 46.186, 30.345
+        lat = city_lat - 0.22
+        lng = city_lng
+        threat_type, icon = classify(text)
+        return [{
+            'id': str(mid), 'place': 'Узбережжя Білгород-Дністровського р-ну', 'lat': lat, 'lng': lng,
+            'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+            'marker_icon': icon, 'source_match': 'bilhorod_dnistrovskyi_coast'
+        }]
+
     # --- "повз <city>" (passing near) with optional direction target "у напрямку <city>" ---
     lower_pass = text.lower()
     pass_near_detected = False
