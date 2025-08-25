@@ -311,6 +311,25 @@
     .leaflet-popup-content-wrapper{background:#ffffff;border:1px solid #d7dde3;border-radius:.9rem;box-shadow:0 6px 22px -6px rgba(0,0,0,.25);} 
     .leaflet-popup-tip{background:#ffffff;border:1px solid #d7dde3;}
     .leaflet-container a{color:#2563eb;}
+  /* --- Custom sharper markers --- */
+  .threat-marker{position:relative;}
+  .threat-marker .tm-core{--c:var(--c,#334155);width:38px;height:38px;border-radius:50%;background:radial-gradient(circle at 35% 30%,rgba(255,255,255,.9),rgba(255,255,255,.15)),linear-gradient(145deg,var(--c),color-mix(in srgb,var(--c) 75%,#000));border:2px solid #fff;box-shadow:0 4px 10px -2px rgba(0,0,0,.4),0 0 0 1px rgba(0,0,0,.15);display:flex;align-items:center;justify-content:center;position:relative;backdrop-filter:blur(2px);}
+  .threat-marker .tm-core:after{content:"";position:absolute;bottom:-8px;left:50%;width:14px;height:14px;background:linear-gradient(145deg,var(--c),color-mix(in srgb,var(--c) 70%,#000));transform:translateX(-50%) rotate(45deg);border:2px solid #fff;border-top:none;border-left:none;border-bottom-right-radius:3px;box-shadow:0 4px 6px -2px rgba(0,0,0,.35);}
+  .threat-marker img{width:60%;height:60%;object-fit:contain;filter:drop-shadow(0 1px 2px rgba(0,0,0,.4));}
+  .threat-marker .tm-badge{position:absolute;top:-4px;right:-4px;background:#fff;color:#111827;font-size:.6rem;font-weight:700;padding:2px 4px;border-radius:10px;border:1px solid rgba(0,0,0,.1);box-shadow:0 2px 4px -1px rgba(0,0,0,.35);}
+  .threat-marker .tm-core.alarm{--c:#fbbf24;}
+  .threat-marker .tm-core.alarm_cancel{--c:#64748b;}
+  .threat-marker .tm-core.shahed{--c:#2563eb;}
+  .threat-marker .tm-core.fpv{--c:#4338ca;}
+  .threat-marker .tm-core.raketa{--c:#dc2626;}
+  .threat-marker .tm-core.avia{--c:#f59e0b;}
+  .threat-marker .tm-core.pvo{--c:#059669;}
+  .threat-marker .tm-core.vibuh{--c:#6d28d9;}
+  .threat-marker .tm-core.artillery{--c:#b45309;}
+  .threat-marker .tm-core.obstril{--c:#b91c1c;}
+  .threat-marker .tm-core.mlrs{--c:#9d174d;}
+  @media (prefers-reduced-motion:no-preference){.threat-marker .tm-core{animation:popIn .25s ease;}}
+  @keyframes popIn{from{transform:scale(.5);opacity:0;}to{transform:scale(1);opacity:1;}}
     @media (max-width: 1100px) {
       .main-content {
         grid-template-columns: 1fr;
@@ -580,6 +599,7 @@
   alarm_cancel: '/static/vidboi.png',
   mlrs: '/static/mlrs.png',
   artillery: '/static/artillery.png',
+  obstril: '/static/obstril.png',
   fpv: '/static/fpv.png',
       default: '/static/default.png'
     };
@@ -676,8 +696,11 @@
         if (isFPVThreat(p.place, p.text, p.threat_type)) {
           iconUrl = ICONS.fpv || iconUrl;
         }
-        const icon = L.icon({ iconUrl, iconSize:[32,28], iconAnchor:[16,14], popupAnchor:[0,-12] });
-        const m = L.marker([p.lat, p.lng], { icon });
+  const threatClass = (p.threat_type||'default').toLowerCase();
+  const countBadge = p.count && p.count>1 ? `<div class="tm-badge">${p.count}×</div>` : '';
+  const html = `<div class='threat-marker'><div class='tm-core ${threatClass}'><img src='${iconUrl}' alt=''></div>${countBadge}</div>`;
+  const icon = L.divIcon({ html, className:'', iconSize:[38,50], iconAnchor:[19,46], popupAnchor:[0,-44] });
+  const m = L.marker([p.lat, p.lng], { icon, riseOnHover:true });
         const placeUA = translatePlace(p.place);
         const popupHtml = `<div style=\"background:#ffffff;color:#1e293b;border:1px solid #d7dde3;border-radius:12px;padding:10px 10px;min-width:190px;font-size:.8rem;line-height:1.35;box-shadow:0 4px 14px -4px rgba(0,0,0,.18);\">`
           + (placeUA ? `<div style='font-size:.9rem;font-weight:600;margin-bottom:4px;'>${placeUA}</div>` : '')
@@ -686,7 +709,7 @@
           + `<div style='margin-top:6px;font-size:.6rem;opacity:.55;'>${p.date || ''}</div>`
           + `</div>`;
         m.bindPopup(popupHtml, { closeButton:false, autoPan:true });
-        if (p.count && p.count > 1) { m.openPopup(); }
+  if (p.count && p.count > 1) { m.openPopup(); }
         markerLayer.addLayer(m);
         markers.push(m);
       });
@@ -711,9 +734,8 @@
         if (isFPVThreat(ev.place, ev.text, ev.threat_type)) {
           iconUrl = ICONS.fpv || iconUrl;
         }
-        const isCancel = ev.threat_type === 'alarm_cancel';
-  const isAlarm = ev.threat_type === 'alarm';
-        const placeLine = (ev.place && !isCancel) ? `<b>${translatePlace(ev.place)}</b><br>` : '';
+  const isCancel = ev.threat_type === 'alarm_cancel';
+  const placeLine = (ev.place && !isCancel) ? `<b>${translatePlace(ev.place)}</b><br>` : '';
   return `<div class='event'><img class='event-icon' src='${iconUrl}' alt='${ev.threat_type || ''}'><div class='event-info'>${placeLine}${ev.text || ''}<div class='event-time'>${ev.date || ''}</div></div></div>`;
       }).join('');
     }
