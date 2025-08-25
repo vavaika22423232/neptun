@@ -869,8 +869,10 @@ def process_message(text, mid, date_str, channel):
 
     # --- Aggregate / statistical summary suppression ---
     def _is_aggregate_summary(t: str) -> bool:
-        # Do not suppress if explicit real-time warning words present
-        if any(w in t for w in ['загроза','перейдіть в укриття','укриття!']):
+        # Situation report override: if starts with 'обстановка' we evaluate full logic first (word 'загроза' inside shouldn't unblock)
+        starts_obst = t.startswith('обстановка')
+        # Do not suppress if explicit real-time warning words present (unless it's a structured situation report)
+        if not starts_obst and any(w in t for w in ['загроза','перейдіть в укриття','укриття!']):
             return False
         verbs = ['збито/подавлено','збито / подавлено','збито-подавлено','збито','подавлено','знищено']
         context = ['станом на','за попередніми даними','у ніч на','повітряний напад','протиповітряною обороною','протиповітряна оборона','підрозділи реб','мобільні вогневі групи','обстановка']
@@ -885,7 +887,7 @@ def process_message(text, mid, date_str, channel):
         if 'типу shahed' in t and t.count('\n') >= 2 and obj_hit:
             return True
         # Situation report structure: starts with 'обстановка станом на' or begins with 'обстановка' and multiple category lines (— стратегічна авіація, — бпла, — флот)
-        if t.startswith('обстановка'):
+        if starts_obst:
             dash_lines = sum(1 for line in t.split('\n') if line.strip().startswith('—'))
             if dash_lines >= 2:
                 return True
