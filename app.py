@@ -527,6 +527,7 @@ RAION_FALLBACK = {
     'новгород-сіверський': (51.9874, 33.2620), 'новгород-северский': (51.9874, 33.2620),
     'чугуївський': (49.8353, 36.6880), 'чугевский': (49.8353, 36.6880), 'чугевський': (49.8353, 36.6880), 'чугуевский': (49.8353, 36.6880)
     , 'синельниківський': (48.3167, 36.5000), 'синельниковский': (48.3167, 36.5000)
+    , 'запорізький': (47.8388, 35.1396), 'запорожский': (47.8388, 35.1396)
 }
 
 SETTLEMENTS_FILE = os.getenv('SETTLEMENTS_FILE', 'settlements_ua.json')
@@ -866,8 +867,8 @@ def process_message(text, mid, date_str, channel):
         if ('повідомляють про вибух' in l or 'повідомлено про вибух' in l or 'зафіксовано вибух' in l or 'зафіксовано вибухи' in l
             or 'фіксація вибух' in l or 'фіксують вибух' in l or re.search(r'\b(вибух|вибухи|вибухів)\b', l)):
             return 'vibuh', 'vibuh.png'
-        # Artillery shelling warning (обстріл) -> use obstril.png
-        if 'обстріл' in l or 'обстрел' in l:
+        # Artillery shelling warning (обстріл / загроза обстрілу) -> use obstril.png
+        if 'обстріл' in l or 'обстрел' in l or 'загроза обстрілу' in l or 'угроза обстрела' in l:
             return 'artillery', 'obstril.png'
         # Alarm cancellation (відбій тривоги / отбой тревоги)
         if ('відбій' in l and 'тривог' in l) or ('отбой' in l and 'тревог' in l):
