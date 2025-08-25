@@ -12,6 +12,7 @@ new_session.txt
 # Caches (keep messages.json tracked intentionally)
 opencage_cache.json
 hidden_markers.json
+# Allow committing visits_recent.json per user request
 
 # Virtual environments
 venv/
