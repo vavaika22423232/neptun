@@ -360,6 +360,7 @@ def _recent_counts():
 
 # Simplified message processor placeholder
 import math
+import sqlite3
 
 _opencage_cache = None
 
@@ -583,6 +584,53 @@ def ensure_ua_place(name: str) -> str:
             return ''.join(p.capitalize() if i%2==0 else p for i,p in enumerate(parts))
         return cap_tokens(out)
     return n
+
+# -------- Persistent visit tracking (SQLite) to survive redeploys --------
+VISITS_DB = os.getenv('VISITS_DB','visits.db')
+def _visits_db_conn():
+    return sqlite3.connect(VISITS_DB, timeout=5)
+
+def init_visits_db():
+    try:
+        with _visits_db_conn() as conn:
+            conn.execute("CREATE TABLE IF NOT EXISTS visits (id TEXT PRIMARY KEY, first_seen REAL, last_seen REAL)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_visits_first ON visits(first_seen)")
+    except Exception as e:
+        log.warning(f"visits db init failed: {e}")
+
+def record_visit_sql(id_:str, now_ts:float):
+    if not id_:
+        return
+    try:
+        with _visits_db_conn() as conn:
+            cur = conn.execute("SELECT id FROM visits WHERE id=?", (id_,))
+            if cur.fetchone():
+                conn.execute("UPDATE visits SET last_seen=? WHERE id=?", (now_ts, id_))
+            else:
+                conn.execute("INSERT INTO visits (id,first_seen,last_seen) VALUES (?,?,?)", (id_, now_ts, now_ts))
+    except Exception as e:
+        log.warning(f"record_visit_sql failed: {e}")
+
+def sql_unique_counts():
+    try:
+        with _visits_db_conn() as conn:
+            tz = pytz.timezone('Europe/Kyiv')
+            now_dt = datetime.now(tz)
+            today_start = tz.localize(datetime.strptime(now_dt.strftime('%Y-%m-%d'), '%Y-%m-%d'))
+            week_start = now_dt - timedelta(days=7)
+            today_ts = today_start.timestamp()
+            week_ts = week_start.timestamp()
+            cur1 = conn.execute("SELECT COUNT(*) FROM visits WHERE last_seen >= ?", (today_ts,))
+            day = cur1.fetchone()[0]
+            cur2 = conn.execute("SELECT COUNT(*) FROM visits WHERE last_seen >= ?", (week_ts,))
+            week = cur2.fetchone()[0]
+            return day, week
+    except Exception as e:
+        log.warning(f"sql_unique_counts failed: {e}")
+    return None, None
+
+# Initialize DB at import
+init_visits_db()
 GIT_SYNC_TOKEN = os.getenv('GIT_SYNC_TOKEN')  # GitHub PAT (classic or fine-grained) with repo write
 GIT_COMMIT_INTERVAL = int(os.getenv('GIT_COMMIT_INTERVAL', '180'))  # seconds between commits
 _last_git_commit = 0
@@ -2227,6 +2275,11 @@ def presence():
         _update_recent_visits(vid)
     except Exception as e:
         log.warning(f"recent visits update failed: {e}")
+    # Record in SQLite persistent store
+    try:
+        record_visit_sql(vid, now)
+    except Exception:
+        pass
     with ACTIVE_LOCK:
         prev = ACTIVE_VISITORS.get(vid) if isinstance(ACTIVE_VISITORS.get(vid), dict) else {}
         ACTIVE_VISITORS[vid] = {'ts': now, 'ip': remote_ip, 'ua': prev.get('ua') or ua}
@@ -2337,7 +2390,9 @@ def admin_panel():
     # --- Visit stats aggregation ---
     # Prefer rolling sets for stability across deploy
     daily_unique, week_unique = _recent_counts()
-    if daily_unique is None:  # fallback to first-seen stats if rolling file absent
+    if daily_unique is None:
+        daily_unique, week_unique = sql_unique_counts()
+    if daily_unique is None:  # final fallback to json stats
         stats = _load_visit_stats()
         tz = pytz.timezone('Europe/Kyiv')
         now_dt = datetime.now(tz)
