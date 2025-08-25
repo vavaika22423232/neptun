@@ -540,6 +540,49 @@ SETTLEMENTS_ORDERED = []
 # --------------- Optional Git auto-commit settings ---------------
 GIT_AUTO_COMMIT = os.getenv('GIT_AUTO_COMMIT', '0') not in ('0','false','False','')
 GIT_REPO_SLUG = os.getenv('GIT_REPO_SLUG')  # e.g. 'vavaika22423232/neptun'
+
+# ----------- Ukrainian place name normalization (force Ukrainian display) -----------
+EN_UA_PLACE_MAP = {k.lower(): v for k,v in [
+    ('kyiv','Київ'),('kiev','Київ'),('kharkiv','Харків'),('kharkov','Харків'),('odesa','Одеса'),('odessa','Одеса'),
+    ('lviv','Львів'),('dnipro','Дніпро'),('zaporizhzhia','Запоріжжя'),('zaporizhia','Запоріжжя'),('mykolaiv','Миколаїв'),('nikolaev','Миколаїв'),
+    ('chernihiv','Чернігів'),('poltava','Полтава'),('sumy','Суми'),('kherson','Херсон'),('rivne','Рівне'),('ternopil','Тернопіль'),
+    ('ivano-frankivsk','Івано-Франківськ'),('chernivtsi','Чернівці'),('uzhhorod','Ужгород'),('kropyvnytskyi','Кропивницький'),
+    ('kryvyi rih','Кривий Ріг'),('kryvyi-rih','Кривий Ріг'),('sloviansk','Словʼянськ'),('slavyansk','Словʼянськ'),
+    ('bakhmut','Бахмут'),('mariupol','Маріуполь'),('berdyansk','Бердянськ'),('melitopol','Мелітополь'),
+    ('pavlohrad','Павлоград'),('pavlograd','Павлоград'),('pokrovsk','Покровськ'),('sevastopol','Севастополь'),('simferopol','Сімферополь')
+]}
+
+def ensure_ua_place(name: str) -> str:
+    if not name or not isinstance(name,str):
+        return name
+    n = name.strip()
+    # Already contains Ukrainian-specific letters
+    if re.search(r'[іїєґʼІЇЄҐ]', n):
+        return n
+    low = n.lower()
+    if low in EN_UA_PLACE_MAP:
+        return EN_UA_PLACE_MAP[low]
+    # Basic transliteration fallback for ascii-only names
+    if re.fullmatch(r'[a-zA-Z\-\s]+', n):
+        s = low
+        # multi-char sequences first
+        repl = [
+            ('shch','щ'),('sch','щ'),('kh','х'),('ch','ч'),('sh','ш'),('ya','я'),('yu','ю'),('ye','є'),('yi','ї'),('zh','ж'),('ii','ії'),
+            ('ie','є'),('jo','йо'),('yo','йо')
+        ]
+        for a,b in repl:
+            s = re.sub(a,b,s)
+        single = {
+            'a':'а','b':'б','c':'к','d':'д','e':'е','f':'ф','g':'г','h':'г','i':'і','j':'й','k':'к','l':'л','m':'м','n':'н','o':'о','p':'п',
+            'q':'к','r':'р','s':'с','t':'т','u':'у','v':'в','w':'в','x':'кс','y':'и','z':'з','ʼ':'ʼ','-':'-',' ':' '
+        }
+        out = ''.join(single.get(ch,ch) for ch in s)
+        # Capitalize first letter and letters after dash/space
+        def cap_tokens(txt):
+            parts = re.split('([-\s])', txt)
+            return ''.join(p.capitalize() if i%2==0 else p for i,p in enumerate(parts))
+        return cap_tokens(out)
+    return n
 GIT_SYNC_TOKEN = os.getenv('GIT_SYNC_TOKEN')  # GitHub PAT (classic or fine-grained) with repo write
 GIT_COMMIT_INTERVAL = int(os.getenv('GIT_COMMIT_INTERVAL', '180'))  # seconds between commits
 _last_git_commit = 0
@@ -1829,6 +1872,9 @@ async def fetch_loop():
                         continue
                     tracks = process_message(msg.text, msg.id, dt.strftime('%Y-%m-%d %H:%M:%S'), ch_strip)
                     if tracks:
+                        for t in tracks:
+                            if t.get('place'):
+                                t['place'] = ensure_ua_place(t['place'])
                         all_data.extend(tracks)
                         processed.add(msg.id)
                         fetched += 1
@@ -1879,6 +1925,9 @@ async def fetch_loop():
                         continue
                     tracks = process_message(msg.text, msg.id, dt.strftime('%Y-%m-%d %H:%M:%S'), ch)
                     if tracks:
+                        for t in tracks:
+                            if t.get('place'):
+                                t['place'] = ensure_ua_place(t['place'])
                         new_tracks.extend(tracks)
                         processed.add(msg.id)
                         log.info(f'Added track from {ch} #{msg.id}')
