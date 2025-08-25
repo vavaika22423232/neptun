@@ -48,7 +48,9 @@ _load_local_env()
 
 API_ID = int(os.getenv('TELEGRAM_API_ID', '0') or '0')
 API_HASH = os.getenv('TELEGRAM_API_HASH', '')
-CHANNELS = os.getenv('TELEGRAM_CHANNELS', 'UkraineAlarmSignal, kpszsu, war_monitor').split(',')
+_DEFAULT_CHANNELS = 'UkraineAlarmSignal,kpszsu,war_monitor,-1002783917373'
+# TELEGRAM_CHANNELS env var (comma-separated) overrides; fallback includes numeric channel ID.
+CHANNELS = [c.strip() for c in os.getenv('TELEGRAM_CHANNELS', _DEFAULT_CHANNELS).split(',') if c.strip()]
 GOOGLE_MAPS_KEY = os.getenv('GOOGLE_MAPS_KEY', '')
 OPENCAGE_API_KEY = os.getenv('OPENCAGE_API_KEY', '')  # optional geocoding
 ALWAYS_STORE_RAW = os.getenv('ALWAYS_STORE_RAW', '1') not in ('0','false','False')
