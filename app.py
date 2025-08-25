@@ -328,6 +328,8 @@ def _update_recent_visits(vid:str):
     stored_week_start = data.get('week_start') or today
     try:
         sw_dt = datetime.strptime(stored_week_start, '%Y-%m-%d')
+        # make tz-aware in same timezone
+        sw_dt = tz.localize(sw_dt)
     except Exception:
         sw_dt = now_dt
     if (now_dt - sw_dt).days >= 7:
