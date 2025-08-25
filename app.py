@@ -51,6 +51,9 @@ API_HASH = os.getenv('TELEGRAM_API_HASH', '')
 _DEFAULT_CHANNELS = 'UkraineAlarmSignal,kpszsu,war_monitor,-1002783917373'
 # TELEGRAM_CHANNELS env var (comma-separated) overrides; fallback includes numeric channel ID.
 CHANNELS = [c.strip() for c in os.getenv('TELEGRAM_CHANNELS', _DEFAULT_CHANNELS).split(',') if c.strip()]
+
+# Channels which failed resolution (entity not found / access denied) to avoid repeated spam
+INVALID_CHANNELS = set()
 GOOGLE_MAPS_KEY = os.getenv('GOOGLE_MAPS_KEY', '')
 OPENCAGE_API_KEY = os.getenv('OPENCAGE_API_KEY', '')  # optional geocoding
 ALWAYS_STORE_RAW = os.getenv('ALWAYS_STORE_RAW', '1') not in ('0','false','False')
@@ -2029,6 +2032,8 @@ async def fetch_loop():
             ch = ch.strip()
             if not ch:
                 continue
+            if ch in INVALID_CHANNELS:
+                continue
             try:
                 if not await ensure_connected():
                     # If session invalid we stop loop gracefully
@@ -2062,7 +2067,13 @@ async def fetch_loop():
                 await asyncio.sleep(wait)
             # Generic RPC errors will be caught by broad Exception if specific class not available
             except Exception as e:
-                log.warning(f'Error reading {ch}: {e}')
+                msg = str(e)
+                log.warning(f'Error reading {ch}: {msg}')
+                # Auto-mark invalid entity errors to skip future attempts this runtime
+                markers = ['Cannot find any entity', 'CHANNEL_PRIVATE', 'USERNAME_NOT_OCCUPIED', 'TOPIC_DELETED']
+                if any(mk in msg for mk in markers):
+                    INVALID_CHANNELS.add(ch)
+                    log.warning(f'Marking channel {ch} as invalid; will skip further reads this session.')
         if new_tracks:
             all_data.extend(new_tracks)
             save_messages(all_data)
@@ -2217,6 +2228,10 @@ def data():
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     resp.headers['Pragma'] = 'no-cache'
     return resp
+
+@app.route('/channels')
+def list_channels():
+    return jsonify({'channels': CHANNELS, 'invalid': list(INVALID_CHANNELS)})
 
 @app.route('/add_channel', methods=['POST'])
 def add_channel():
