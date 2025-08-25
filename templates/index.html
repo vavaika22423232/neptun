@@ -785,6 +785,7 @@
       // --- Интеграция с alerts.in.ua ---
       let airAlarmLayer = null;
       let ukrBorderLayer = null;
+  let raionAlarmLayer = null;
       async function fetchAirAlarms(){
         try { const r = await fetch('https://alerts.com.ua/api/states'); const j = await r.json(); return j.regions || {}; } catch(e){ return {}; }
       }
@@ -828,6 +829,33 @@
       }
       showAirAlarmsOnMap();
       setInterval(showAirAlarmsOnMap, 20000);
+
+      // ---- Dynamic raion alarm overlay (district-level) ----
+      async function fetchRaionAlarms(){
+        try { const r = await fetch('/raion_alarms'); return (await r.json()).alarms || []; } catch(e){ return []; }
+      }
+      async function updateRaionAlarms(){
+        const alarms = await fetchRaionAlarms();
+        if (raionAlarmLayer){ raionAlarmLayer.remove(); raionAlarmLayer = null; }
+        if(!alarms.length) return;
+        // Build circle-ish polygons (approx) or simple circles since we lack exact raion geometry right now
+        const feats = alarms.map(a=>({
+          type:'Feature', properties:{ raion:a.raion, place:a.place, since:a.since },
+          geometry:{ type:'Point', coordinates:[a.lng, a.lat] }
+        }));
+        raionAlarmLayer = L.layerGroup();
+        feats.forEach(f=>{
+          const lat = f.geometry.coordinates[1];
+          const lng = f.geometry.coordinates[0];
+          // Represent district area with a translucent red circle (radius ~20km) placeholder
+            const circle = L.circle([lat,lng], { radius: 20000, color:'#b91c1c', weight:1, fillColor:'#dc2626', fillOpacity:0.25 });
+            circle.bindPopup(`<b>${f.properties.place}</b><br>Повітряна тривога (район)`);
+            circle.addTo(raionAlarmLayer);
+        });
+        raionAlarmLayer.addTo(map);
+      }
+      updateRaionAlarms();
+      setInterval(updateRaionAlarms, 15000);
 
       await updateMarkers();
       try {

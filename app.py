@@ -564,6 +564,9 @@ RAION_FALLBACK = {
     , 'запорізький': (47.9000, 35.2500), 'запорожский': (47.9000, 35.2500)
 }
 
+# Active raion (district) air alarms: raion_base -> dict(place, lat, lng, since)
+RAION_ALARMS = {}
+
 SETTLEMENTS_FILE = os.getenv('SETTLEMENTS_FILE', 'settlements_ua.json')
 SETTLEMENTS_URL = os.getenv('SETTLEMENTS_URL')  # optional remote JSON (list of {name,lat,lng})
 SETTLEMENTS_MAX = int(os.getenv('SETTLEMENTS_MAX', '150000'))  # safety cap
@@ -985,6 +988,12 @@ def process_message(text, mid, date_str, channel):
         # Recon / розвід дрони -> use pvo icon (rozved.png) per user request
         if 'розвід' in l or 'развед' in l:
             return 'pvo', 'rozved.png'
+        # Air alarm start
+        if ('повітряна тривога' in l or 'повітряна тривога.' in l or ('тривога' in l and 'повітр' in l)) and not ('відбій' in l or 'отбой' in l):
+            return 'alarm', 'trivoga.png'
+        # Air alarm cancellation
+        if ('відбій тривоги' in l) or ('отбой тревоги' in l):
+            return 'alarm_cancel', 'vidboi.png'
         # Explosions reporting -> vibuh icon (cover broader fixation phrases)
         if ('повідомляють про вибух' in l or 'повідомлено про вибух' in l or 'зафіксовано вибух' in l or 'зафіксовано вибухи' in l
             or 'фіксація вибух' in l or 'фіксують вибух' in l or re.search(r'\b(вибух|вибухи|вибухів)\b', l)):
@@ -1076,6 +1085,11 @@ def process_message(text, mid, date_str, channel):
         if raion_base in RAION_FALLBACK:
             lat, lng = RAION_FALLBACK[raion_base]
             threat_type, icon = classify(original_text if 'original_text' in locals() else text)
+            # Maintain active raion alarm state
+            if threat_type == 'alarm':
+                RAION_ALARMS[raion_base] = {'place': f"{raion_base.title()} район", 'lat': lat, 'lng': lng, 'since': time.time()}
+            elif threat_type == 'alarm_cancel':
+                RAION_ALARMS.pop(raion_base, None)
             return [{
                 'id': str(mid), 'place': f"{raion_base.title()} район", 'lat': lat, 'lng': lng,
                 'threat_type': threat_type, 'text': (original_text if 'original_text' in locals() else text)[:500],
@@ -1365,6 +1379,11 @@ def process_message(text, mid, date_str, channel):
             title = f"{name.title()} район"
             if title in seen: continue
             seen.add(title)
+            # Maintain alarm overlay state
+            if threat_type == 'alarm':
+                RAION_ALARMS[name] = {'place': title, 'lat': lat, 'lng': lng, 'since': time.time()}
+            elif threat_type == 'alarm_cancel':
+                RAION_ALARMS.pop(name, None)
             tracks.append({
                 'id': f"{mid}_d{idx}", 'place': title, 'lat': lat, 'lng': lng,
                 'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
@@ -2342,6 +2361,25 @@ def presence():
                 del ACTIVE_VISITORS[k]
         count = len(ACTIVE_VISITORS)
     return jsonify({'status':'ok','visitors': count})
+
+@app.route('/raion_alarms')
+def raion_alarms():
+    # Expose current active district air alarms
+    out = []
+    now = time.time()
+    for key, info in list(RAION_ALARMS.items()):
+        # Optional expiry cleanup (e.g., 3h stale auto-clear)
+        if now - info.get('since', now) > 3*3600:
+            RAION_ALARMS.pop(key, None)
+            continue
+        out.append({
+            'raion': key,
+            'place': info['place'],
+            'lat': info['lat'],
+            'lng': info['lng'],
+            'since': info['since']
+        })
+    return jsonify({'alarms': out, 'count': len(out)})
     with ACTIVE_LOCK:
         prev = ACTIVE_VISITORS.get(vid) if isinstance(ACTIVE_VISITORS.get(vid), dict) else {}
         ACTIVE_VISITORS[vid] = {'ts': now, 'ip': remote_ip, 'ua': prev.get('ua') or ua}
