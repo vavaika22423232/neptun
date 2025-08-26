@@ -1710,6 +1710,8 @@ def process_message(text, mid, date_str, channel):
     if '/' in lower_full_for_slash and ('бпла' in lower_full_for_slash or 'дрон' in lower_full_for_slash) and any(x in lower_full_for_slash for x in ['х бпла','x бпла',' бпла']):
         # take portion before first dash (— or -) which usually separates counts/other text
         left_part = re.split(r'[—-]', lower_full_for_slash, 1)[0]
+        # Remove trailing count token like "5х бпла" from left part to isolate pure settlements
+        left_part = re.sub(r'\b\d+[xх]\s*бпла.*$', '', left_part).strip()
         parts = [p.strip() for p in re.split(r'/|\\', left_part) if p.strip()]
         found = []
         for p in parts:
@@ -1717,6 +1719,11 @@ def process_message(text, mid, date_str, channel):
             coords = CITY_COORDS.get(base)
             if not coords and SETTLEMENTS_INDEX:
                 coords = SETTLEMENTS_INDEX.get(base)
+            if not coords:
+                try:
+                    coords = region_enhanced_coords(base)
+                except Exception:
+                    coords = None
             if coords:
                 found.append((base.title(), coords))
         if found:
@@ -1730,6 +1737,11 @@ def process_message(text, mid, date_str, channel):
                     'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
                     'marker_icon': icon, 'source_match': 'slash_combo', 'count': drone_count
                 })
+            if tracks:
+                try:
+                    log.debug(f"SLASH_COMBO mid={mid} parts={parts} tracks={[(t['place'], t['lat'], t['lng']) for t in tracks]}")
+                except Exception:
+                    pass
             if tracks:
                 return tracks
 
