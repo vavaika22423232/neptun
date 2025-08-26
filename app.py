@@ -580,6 +580,11 @@ RAION_FALLBACK = {
 # Active raion (district) air alarms: raion_base -> dict(place, lat, lng, since)
 RAION_ALARMS = {}
 
+# Territorial hromada fallback centers (selected). Keys lower-case without word 'територіальна громада'.
+HROMADA_FALLBACK = {
+    'хотінська': (51.0825, 34.5860),  # Хотінська громада (approx center, Sumy raion near border)
+}
+
 SETTLEMENTS_FILE = os.getenv('SETTLEMENTS_FILE', 'settlements_ua.json')
 SETTLEMENTS_URL = os.getenv('SETTLEMENTS_URL')  # optional remote JSON (list of {name,lat,lng})
 SETTLEMENTS_MAX = int(os.getenv('SETTLEMENTS_MAX', '150000'))  # safety cap
@@ -1372,8 +1377,8 @@ def process_message(text, mid, date_str, channel):
             base = norm_raion(last)
             if base in RAION_FALLBACK:
                 raion_matches.append((base, RAION_FALLBACK[base]))
-    # одиночное 'район'
-    raion_pattern = re.compile(r'([А-ЯA-ZЇІЄҐЁа-яa-zїієґё\-]{4,})\s+район', re.IGNORECASE)
+    # одиночное 'район' (любой падеж: район, району, районом, района)
+    raion_pattern = re.compile(r'([А-ЯA-ZЇІЄҐЁа-яa-zїієґё\-]{4,})\s+район(?:у|ом|а)?', re.IGNORECASE)
     for m_r in raion_pattern.finditer(text):
         base = norm_raion(m_r.group(1))
         if base in RAION_FALLBACK:
@@ -1404,6 +1409,31 @@ def process_message(text, mid, date_str, channel):
             })
         if tracks:
             log.debug(f"RAION_MATCH mid={mid} -> {[t['place'] for t in tracks]}")
+            return tracks
+
+    # --- Hromada detection (e.g., "Хотінська територіальна громада") ---
+    hromada_pattern = re.compile(r'([А-ЯA-ZЇІЄҐЁа-яa-zїієґё\-]{4,})\s+територіал(?:ьна|ьної)?\s+громада', re.IGNORECASE)
+    hromada_matches = []
+    for m_h in hromada_pattern.finditer(text):
+        token = m_h.group(1).lower()
+        # normalize adjective endings to 'ська'
+        base = re.sub(r'(ської|ской|ська|ской)$', 'ська', token)
+        if base in HROMADA_FALLBACK:
+            hromada_matches.append((base, HROMADA_FALLBACK[base]))
+    if hromada_matches:
+        threat_type, icon = classify(text)
+        tracks = []
+        seen = set()
+        for idx,(name,(lat,lng)) in enumerate(hromada_matches,1):
+            title = f"{name.title()} територіальна громада"
+            if title in seen: continue
+            seen.add(title)
+            tracks.append({
+                'id': f"{mid}_h{idx}", 'place': title, 'lat': lat, 'lng': lng,
+                'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                'marker_icon': icon, 'source_match': 'hromada'
+            })
+        if tracks:
             return tracks
 
     # --- Slash separated settlements PRIORITY (moved earlier so it can't be overridden by region logic) ---
