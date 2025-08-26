@@ -48,7 +48,7 @@ _load_local_env()
 
 API_ID = int(os.getenv('TELEGRAM_API_ID', '0') or '0')
 API_HASH = os.getenv('TELEGRAM_API_HASH', '')
-_DEFAULT_CHANNELS = 'UkraineAlarmSignal,kpszsu,war_monitor,-1002783917373'
+_DEFAULT_CHANNELS = 'UkraineAlarmSignal,kpszsu,war_monitor,monitorofukraine'
 # TELEGRAM_CHANNELS env var (comma-separated) overrides; fallback includes numeric channel ID.
 CHANNELS = [c.strip() for c in os.getenv('TELEGRAM_CHANNELS', _DEFAULT_CHANNELS).split(',') if c.strip()]
 
@@ -2312,9 +2312,15 @@ def unhide_marker():
         key = (payload.get('key') or '').strip()
         hidden = load_hidden()
         changed = False
-        if key and key in hidden:
-            hidden.remove(key)
-            changed = True
+        if key:
+            if key.isdigit():
+                idx = int(key)
+                if 0 <= idx < len(hidden):
+                    del hidden[idx]
+                    changed = True
+            elif key in hidden:
+                hidden.remove(key)
+                changed = True
         else:
             lat = payload.get('lat')
             lng = payload.get('lng')
@@ -2322,8 +2328,8 @@ def unhide_marker():
             source = (payload.get('source') or '').strip()
             if lat is not None and lng is not None:
                 try:
-                    lat_r = round(float(lat),3)
-                    lng_r = round(float(lng),3)
+                    lat_r = round(float(lat), 3)
+                    lng_r = round(float(lng), 3)
                 except Exception:
                     lat_r = lng_r = None
                 base_prefix = f"{lat_r},{lng_r}|" if lat_r is not None else None
@@ -2332,7 +2338,7 @@ def unhide_marker():
                         if not h.startswith(base_prefix):
                             continue
                         try:
-                            _, htext, hsource = h.split('|',2)
+                            _, htext, hsource = h.split('|', 2)
                         except ValueError:
                             continue
                         if source and hsource != source:
@@ -2342,10 +2348,12 @@ def unhide_marker():
                             changed = True
         if changed:
             save_hidden(hidden)
-        return jsonify({'status':'ok','removed':changed,'remaining':len(hidden)})
+        else:
+            log.info(f"unhide_marker: no change for key='{key}' payload={payload}")
+        return jsonify({'status': 'ok', 'removed': changed, 'remaining': len(hidden)})
     except Exception as e:
         log.warning(f"unhide_marker error: {e}")
-        return jsonify({'status':'error','error':str(e)}), 400
+        return jsonify({'status': 'error', 'error': str(e)}), 400
 
 @app.route('/health')
 def health():
