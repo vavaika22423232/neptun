@@ -1279,12 +1279,37 @@ def process_message(text, mid, date_str, channel):
             tracks = []
             # deduplicate by name
             seen_names = set()
+            # Directional offset helper
+            def directional_offset(rlabel: str, lat: float, lng: float):
+                base = rlabel.lower().split()[0]
+                full = text  # already lower
+                # detect "на схід <base>", "схід <base>", etc., but ignore origins "з південного сходу" for that base
+                # We only tag if phrase contains base key AFTER direction (targeting side), not originating "з <dir> ..." alone.
+                directions = [
+                    ('схід', 'east', (0.0, 0.9)),
+                    ('захід', 'west', (0.0, -0.9)),
+                    ('північ', 'north', (0.7, 0.0)),
+                    ('південь', 'south', (-0.7, 0.0))
+                ]
+                applied = None
+                for word, code, (dlat, dlng) in directions:
+                    patterns = [f"на {word} {base}", f" {word} {base}"]
+                    if any(pat in full for pat in patterns) and f"з {word}" not in full:
+                        applied = (code, dlat, dlng)
+                        break
+                if not applied:
+                    return lat, lng, rlabel
+                _, dlat, dlng = applied
+                nlat = max(43.0, min(53.5, lat + dlat))
+                nlng = max(21.0, min(41.0, lng + dlng))
+                human = {'east':'схід','west':'захід','north':'північ','south':'південь'}[applied[0]]
+                return nlat, nlng, f"{rlabel} ({human})"
             for idx, (rname, (lat,lng), snippet) in enumerate(region_hits, 1):
-                if rname in seen_names:
-                    continue
+                if rname in seen_names: continue
                 seen_names.add(rname)
+                adj_lat, adj_lng, adj_label = directional_offset(rname, lat, lng)
                 tracks.append({
-                    'id': f"{mid}_{idx}", 'place': rname, 'lat': lat, 'lng': lng,
+                    'id': f"{mid}_{idx}", 'place': adj_label, 'lat': adj_lat, 'lng': adj_lng,
                     'threat_type': threat_type, 'text': snippet[:500], 'date': date_str, 'channel': channel,
                     'marker_icon': icon, 'source_match': 'region_multi'
                 })
