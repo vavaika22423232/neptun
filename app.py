@@ -1042,6 +1042,16 @@ def process_message(text, mid, date_str, channel):
             return 'artillery', 'artillery.png'
         # default assume shahed (консервативно)
         return 'shahed', 'shahed.png'
+    # Southeast-wide tactical aviation activity (no specific settlement): place a synthetic marker off SE border.
+    se_phrase = lower if 'lower' in locals() else original_text.lower()
+    if ('тактичн' in se_phrase or 'авіаці' in se_phrase or 'авиац' in se_phrase) and ('південно-східн' in se_phrase or 'південно східн' in se_phrase or 'юго-восточ' in se_phrase or 'південного-сходу' in se_phrase):
+        # Approx point in Azov Sea off SE (between Mariupol & Berdyansk) to avoid implying exact impact
+        lat, lng = 46.5, 37.5
+        return [{
+            'id': f"{mid}_se", 'place': 'Південно-східний напрямок', 'lat': lat, 'lng': lng,
+            'threat_type': 'avia', 'text': original_text[:500], 'date': date_str, 'channel': channel,
+            'marker_icon': 'avia.png', 'source_match': 'southeast_aviation'
+        }]
     m = re.search(r'(\d{1,2}\.\d+),(\d{1,3}\.\d+)', text)
     if m:
         lat = float(m.group(1)); lng = float(m.group(2))
