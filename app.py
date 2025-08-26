@@ -442,7 +442,12 @@ UA_CITY_NORMALIZE = {
     'кіровоград':'кропивницький',
     'николаев':'миколаїв',
     'чернигов':'чернігів',
-    'липову долину':'липова долина'
+    'липову долину':'липова долина',
+    'улянівку':'улянівка',
+    'уляновку':'улянівка',
+    'великий багачку':'велика багачка',
+    'велику багачу':'велика багачка',
+    'велику багачку':'велика багачка'
 }
 
 # Static fallback coordinates (approximate city centers) to avoid relying solely on OpenCage.
@@ -505,6 +510,7 @@ CITY_COORDS = {
     # --- Added fallbacks for frequent course targets ---
     ,'тростянець': (50.4833, 34.9667)  # Trostyanets (Sumy oblast)
     ,'лебедин': (50.5872, 34.4912)  # Lebedyn (Sumy oblast)
+    ,'улянівка': (50.8530, 34.3170)  # Ulyanivka (Sumy oblast) fallback to prevent misplacement
     ,'богодухів': (50.1646, 35.5279)  # Bohodukhiv (Kharkiv oblast)
     ,'валки': (49.8427, 35.6150)  # Valky (Kharkiv oblast)
     ,'кегичівка': (49.5440, 35.7760)  # Kehychivka (Kharkiv oblast)
@@ -527,10 +533,16 @@ CITY_TO_OBLAST = {
     'бориспіль': 'київ',
     'полтава': 'полтав',
     'кременчук': 'полтав',
+    'велика багачка': 'полтав',
+    'гадяч': 'полтав',
     'житомир': 'житом',
     'черкаси': 'черка',
     'чернігів': 'черніг',
     'суми': 'сум',
+    'липова долина': 'сум',
+    'тростянець': 'сум',
+    'лебедин': 'сум',
+    'улянівка': 'сум',
     'одеса': 'одес',
     'миколаїв': 'микола',
     'чернівці': 'чернівц',
@@ -2280,6 +2292,26 @@ def process_message(text, mid, date_str, channel):
                 norm_city = _normalize_course_city(raw_city)
                 if norm_city:
                     coords = region_enhanced_coords(norm_city)
+                    # Oblast stem disambiguation: if global hint exists and known expected stem differs, re-query with region-qualified geocode
+                    if coords and region_hint_global and norm_city in CITY_TO_OBLAST:
+                        expected_stem = CITY_TO_OBLAST[norm_city]
+                        if expected_stem != region_hint_global[:len(expected_stem)]:
+                            # attempt region-qualified geocode with expected stem to refine
+                            if OPENCAGE_API_KEY:
+                                try:
+                                    region_phrase = None
+                                    # derive full oblast phrase from stem heuristically (simple mapping subset)
+                                    stem_map = {
+                                        'сум': 'сумська область', 'полтав': 'полтавська область', 'дніпропетров': 'дніпропетровська область',
+                                        'харків': 'харківська область'
+                                    }
+                                    region_phrase = stem_map.get(expected_stem)
+                                    if region_phrase:
+                                        refined = geocode_opencage(f"{norm_city} {region_phrase}")
+                                        if refined:
+                                            coords = refined
+                                except Exception:
+                                    pass
                     if coords:
                         # Extract line-specific drone count if present (e.g. "4х БпЛА")
                         line_count = None
