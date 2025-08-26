@@ -447,7 +447,9 @@ UA_CITY_NORMALIZE = {
     'уляновку':'улянівка',
     'великий багачку':'велика багачка',
     'велику багачу':'велика багачка',
-    'велику багачку':'велика багачка'
+    'велику багачку':'велика багачка',
+    'липову долина':'липова долина',
+    'велику багачка':'велика багачка'
 }
 
 # Static fallback coordinates (approximate city centers) to avoid relying solely on OpenCage.
@@ -511,12 +513,17 @@ CITY_COORDS = {
     ,'тростянець': (50.4833, 34.9667)  # Trostyanets (Sumy oblast)
     ,'лебедин': (50.5872, 34.4912)  # Lebedyn (Sumy oblast)
     ,'улянівка': (50.8530, 34.3170)  # Ulyanivka (Sumy oblast) fallback to prevent misplacement
+    ,'уляновка': (50.8530, 34.3170)  # Russian variant
     ,'богодухів': (50.1646, 35.5279)  # Bohodukhiv (Kharkiv oblast)
     ,'валки': (49.8427, 35.6150)  # Valky (Kharkiv oblast)
     ,'кегичівка': (49.5440, 35.7760)  # Kehychivka (Kharkiv oblast)
     ,'бірки': (49.7517, 36.1025)  # Birky (Kharkiv oblast, ambiguous fallback)
     ,'велика багачка': (50.1946, 33.7894)  # Velyka Bahachka (Poltava oblast)
+    ,'велику багачку': (50.1946, 33.7894)  # Accusative form
+    ,'велику багачу': (50.1946, 33.7894)  # Accusative alternate
     ,'гадяч': (50.3713, 34.0109)  # Hadiach (Poltava oblast)
+    ,'липова долина': (50.5700, 33.7900)  # ensure duplicate consistent
+    ,'липову долину': (50.5700, 33.7900)  # Accusative form
 }
 
 # Mapping city -> oblast stem (lowercase stems used earlier) for disambiguation when region already detected.
@@ -815,6 +822,75 @@ def _load_settlements():
         log.warning(f'Failed to load settlements file {SETTLEMENTS_FILE}: {e}')
 
 _load_settlements()
+
+# ---- External comprehensive cities/settlements file merge (user-provided) ----
+# You supplied an external file with full coordinates of Ukrainian cities / settlements.
+# Set EXT_CITIES_FILE env var (default 'city_ukraine.json') and place the file in the app working directory.
+# Accepted JSON shapes:
+#   1) List[ { name|city|settlement: str, lat|latitude: float, lng|lon|long|longitude: float } ]
+#   2) List[ [ name, lat, lon ] ]
+#   3) Dict[str, { lat: x, lng: y }] or Dict[str, [lat, lon]]
+# Fields may also appear in Ukrainian/Russian ("назва","широта","довгота","долгота").
+EXT_CITIES_FILE = os.getenv('EXT_CITIES_FILE', 'city_ukraine.json')
+
+def _load_external_cities():
+    global CITY_COORDS, SETTLEMENTS_INDEX, SETTLEMENTS_ORDERED
+    path = EXT_CITIES_FILE
+    if not path or not os.path.exists(path):
+        return
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception as e:
+        log.warning(f"Failed reading {path}: {e}")
+        return
+    added = 0
+    def add_entry(name_raw, lat_raw, lon_raw):
+        nonlocal added
+        try:
+            if name_raw is None: return
+            name = str(name_raw).strip().lower()
+            if not name or len(name) < 2: return
+            lat = float(lat_raw); lon = float(lon_raw)
+            # Basic sanity bounds for Ukraine region (approx) to skip corrupt rows
+            if not (43.0 <= lat <= 53.5 and 21.0 <= lon <= 41.5):
+                return
+            if name not in CITY_COORDS:
+                CITY_COORDS[name] = (lat, lon)
+            if name not in SETTLEMENTS_INDEX:
+                SETTLEMENTS_INDEX[name] = (lat, lon)
+                added += 1
+        except Exception:
+            return
+    if isinstance(data, dict):
+        # Expect mapping name -> {lat,lng} or name -> [lat,lon]
+        for k,v in data.items():
+            if isinstance(v, dict):
+                lat = v.get('lat') or v.get('latitude') or v.get('широта')
+                lon = v.get('lng') or v.get('lon') or v.get('long') or v.get('longitude') or v.get('довгота') or v.get('долгота')
+                add_entry(k, lat, lon)
+            elif isinstance(v, (list, tuple)) and len(v) >= 2:
+                add_entry(k, v[0], v[1])
+    elif isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict):
+                name = item.get('name') or item.get('city') or item.get('settlement') or item.get('населенный пункт') or item.get('населений пункт') or item.get('назва')
+                lat = item.get('lat') or item.get('latitude') or item.get('широта')
+                lon = item.get('lng') or item.get('lon') or item.get('long') or item.get('longitude') or item.get('довгота') or item.get('долгота')
+                add_entry(name, lat, lon)
+            elif isinstance(item, (list, tuple)) and len(item) >= 3:
+                add_entry(item[0], item[1], item[2])
+    # Rebuild ordered list (largest names first to prefer longer multi-word matches)
+    if added:
+        try:
+            SETTLEMENTS_ORDERED = sorted(SETTLEMENTS_INDEX.keys(), key=len, reverse=True)[:SETTLEMENTS_MAX]
+        except Exception:
+            pass
+        log.info(f"Merged external cities file {path}: +{added} settlements (total {len(SETTLEMENTS_INDEX)})")
+    else:
+        log.info(f"External cities file {path} parsed; no new settlements added (maybe already present)")
+
+_load_external_cities()
 
 def geocode_opencage(place: str):
     if not OPENCAGE_API_KEY:
@@ -2280,14 +2356,22 @@ def process_message(text, mid, date_str, channel):
         w = re.sub(r'["`ʼ’\'.,:;()]+', '', w)
         # Allow letters, spaces, hyphen
         w = re.sub(r'[^a-zа-яїієґё\- ]', '', w)
-        # Accusative to nominative heuristic for last word only
-        parts = w.split(' ')
-        if parts:
-            last = parts[-1]
-            if last.endswith(('у','ю')) and len(last) > 4:
-                last = last[:-1] + 'а'
-            parts[-1] = last
-            w = ' '.join(parts)
+        # Accusative to nominative heuristic for each word (handles phrases like 'велику багачку', 'липову долину')
+        parts = [p for p in w.split(' ') if p]
+        norm_parts = []
+        for p in parts:
+            base = p
+            # Common feminine accusative endings -> nominative
+            if len(base) > 4 and base.endswith(('у','ю')):
+                base = base[:-1] + 'а'
+            # Handle '-у/ю' endings for multi-word second element 'долину' -> 'долина'
+            if len(base) > 5 and base.endswith('ину'):
+                base = base[:-2] + 'на'
+            norm_parts.append(base)
+        w = ' '.join(norm_parts)
+        # Apply explicit manual normalization map last (covers irregular)
+        if w in UA_CITY_NORMALIZE:
+            w = UA_CITY_NORMALIZE[w]
         return w
     course_matches = []
     # Ищем каждую строку с шаблоном
@@ -2301,6 +2385,8 @@ def process_message(text, mid, date_str, channel):
                 norm_city = _normalize_course_city(raw_city)
                 if norm_city:
                     coords = region_enhanced_coords(norm_city)
+                    if not coords:
+                        log.debug(f'course_target_lookup miss city={norm_city} mid={mid} line={line.strip()[:120]!r} region_hint={region_hint_global}')
                     # Oblast stem disambiguation: if global hint exists and known expected stem differs, re-query with region-qualified geocode
                     if coords and region_hint_global and norm_city in CITY_TO_OBLAST:
                         expected_stem = CITY_TO_OBLAST[norm_city]
@@ -2321,6 +2407,8 @@ def process_message(text, mid, date_str, channel):
                                             coords = refined
                                 except Exception:
                                     pass
+                    if coords:
+                        log.debug(f'course_target_match city={norm_city} coords={coords} region_hint={region_hint_global} mid={mid}')
                     # If still no coords AND we have a region hint + OpenCage, try region-qualified query directly for multi-word ambiguous city
                     if not coords and region_hint_global and OPENCAGE_API_KEY:
                         try:
