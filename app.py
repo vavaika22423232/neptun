@@ -486,6 +486,9 @@ CITY_COORDS = {
     ,'березна': (51.5756, 31.7431)
     # Additional smaller settlements for course-target parsing
     ,'зачепилівка': (49.1717, 35.2742)
+    ,'близнюки': (48.8520, 36.5440)
+    ,'нова водолага': (49.7270, 35.8570)
+    ,'златопіль': (48.3640, 38.1500)
     ,'сахновщина': (49.1544, 35.1460)
     ,'губиниха': (48.7437, 35.2960)
     ,'перещепине': (48.6260, 35.3580)
@@ -1472,6 +1475,10 @@ def process_message(text, mid, date_str, channel):
             elif t.endswith('ову'): t = t[:-3] + 'ова'
             elif t.endswith('ю'): t = t[:-1] + 'я'
             elif t.endswith('у'): t = t[:-1] + 'а'
+            # specific pattern: "нову водолагу" -> "нова водолага"
+            if t.startswith('нову '):
+                t = 'нова ' + t[5:]
+            t = t.replace('водолагу','водолага')
             return t
         for ln in line_candidates:
             ln_low = ln.lower()
