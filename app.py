@@ -1363,17 +1363,50 @@ def process_message(text, mid, date_str, channel):
             }]
 
     # --- Pattern: multiple shaheds with counts / directions / near-pass ("повз") ---
-    # Examples: "14 шахедів ... 3 на Покровське з півдня, 9 на Петропавлівку з південного-сходу, 2 на Шахтарське з півдня"
-    #           "16 шахедів ... 2 повз Терентівку на північ, 6 на Юріївку з півдня, 7 повз Межову північний-захід" etc.
+    # Handles composite direction phrases (південного сходу -> південний схід, північно-захід тощо)
+    # Examples: "14 шахедів ... 3 на Покровське з півдня, 9 на Петропавлівку з південного сходу, 2 на Шахтарське з півдня"
+    #           "16 шахедів ... 2 повз Терентівку на північ, 6 на Юріївку з півдня, 7 повз Межову північно-захід" etc.
     if 'шахед' in lower and ((' на ' in lower) or (' повз ' in lower)):
-        segs = re.split(r'[\n,⚠]+', lower)
+        segs = re.split(r'[\n,⚠;]+', lower)
         found = []
-        pat_on = re.compile(r'(\d{1,2})\s+на\s+([a-zа-яіїєґ\-ʼ\']{3,})(?:у|а|е)?(?:\s+(з\s+[a-zа-яіїєґ\-\s]+))?')
-        pat_povz = re.compile(r'(\d{1,2})\s+повз\s+([a-zа-яіїєґ\-ʼ\']{3,})(?:у|а|е)?(?:\s+(?:на\s+)?([a-zа-яіїєґ\-]+(?:\s*[a-zа-яіїєґ\-]+)*))?')
-        DIR_CLEAN = lambda d: d.replace('з','').replace('на','').strip() if d else ''
+        # Direction phrases may appear after 'з', 'зі', 'із', 'на'. Capture full tail then normalize.
+        pat_on = re.compile(r'(\d{1,2})\s+на\s+([a-zа-яіїєґ\-ʼ\']{3,})(?:у|а|е)?(?:\s+((?:з|зі|із|на)\s+[a-zа-яіїєґ\-\s]+))?')
+        pat_povz = re.compile(r'(\d{1,2})\s+повз\s+([a-zа-яіїєґ\-ʼ\']{3,})(?:у|а|е)?(?:\s+(?:на\s+)?([a-zа-яіїєґ\-\s]+))?')
+        def normalize_direction(raw_dir: str) -> str:
+            if not raw_dir:
+                return ''
+            d = raw_dir.lower().strip()
+            # remove leading prepositions
+            d = re.sub(r'^(з|зі|із|на|від)\s+', '', d)
+            d = d.replace('–','-')
+            # unify hyphen variants to space-separated tokens
+            d = d.replace('-', ' ')
+            d = re.sub(r'\s+', ' ', d).strip()
+            # morphological endings -> base cardinal forms
+            repl = [
+                (r'південного сходу', 'південний схід'),
+                (r'північного сходу', 'північний схід'),
+                (r'південного заходу', 'південний захід'),
+                (r'північного заходу', 'північний захід'),
+                (r'півдня', 'південь'),
+                (r'півночі', 'північ'),
+                (r'сходу', 'схід'),
+                (r'заходу', 'захід')
+            ]
+            for pat, rep in repl:
+                d = re.sub(pat, rep, d)
+            # collapse duplicate words
+            parts = []
+            seen = set()
+            for tok in d.split():
+                if tok in seen:
+                    continue
+                seen.add(tok)
+                parts.append(tok)
+            return ' '.join(parts)
         for seg in segs:
-            s = seg.strip()
-            if not s:
+            s = seg.strip(':; \/')
+            if not s or s.isdigit():
                 continue
             matches = []
             matches.extend(list(pat_on.finditer(s)))
@@ -1381,10 +1414,11 @@ def process_message(text, mid, date_str, channel):
             for m in matches:
                 cnt = int(m.group(1))
                 place_token = (m.group(2) or '').strip("-'ʼ")
-                direction = ''
-                # pat_on has direction in group(3); pat_povz in group(3) too (after optional 'на')
+                raw_dir = ''
+                # pat_on group(3); pat_povz group(3)
                 if len(m.groups()) >= 3:
-                    direction = (m.group(3) or '').strip()
+                    raw_dir = (m.group(3) or '').strip()
+                direction = normalize_direction(raw_dir)
                 place_token = place_token.replace('ʼ',"'")
                 variants = {place_token}
                 # heuristic nominative recovery
@@ -1396,14 +1430,13 @@ def process_message(text, mid, date_str, channel):
                 if place_token.endswith('у'): variants.add(place_token[:-1]+'а')
                 if place_token.endswith('ому'):
                     variants.add(place_token[:-3]+'е'); variants.add(place_token[:-3])
-                # attempt base match
                 matched_coord = None; matched_name = None
                 for var in variants:
                     if var in CITY_COORDS:
                         matched_coord = CITY_COORDS[var]; matched_name = var; break
                 if matched_coord:
                     plat, plng = matched_coord
-                    found.append((matched_name, plat, plng, cnt, DIR_CLEAN(direction), s[:160]))
+                    found.append((matched_name, plat, plng, cnt, direction, s[:160]))
         if found:
             threat_type, icon = classify(text)
             tracks = []
@@ -1421,6 +1454,63 @@ def process_message(text, mid, date_str, channel):
             if tracks:
                 log.debug(f"multi_shah_ed tracks mid={mid} -> {[t['place'] for t in tracks]}")
                 return tracks
+
+    # --- Per-line UAV course / area city targeting ("БпЛА курсом на <місто>", "8х БпЛА в районі <міста>") ---
+    # Triggered when region multi list suppressed earlier due to presence of course lines.
+    if 'бпла' in lower and ('курс' in lower or 'в районі' in lower):
+        line_candidates = [ln.strip() for ln in re.split(r'[\n;]+', text) if ln.strip()]
+        course_tracks = []
+        pat_count_course = re.compile(r'^(\d+)[xх]?\s*бпла.*?курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`]{3,})', re.IGNORECASE)
+        pat_course = re.compile(r'бпла.*?курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`]{3,})', re.IGNORECASE)
+        pat_area = re.compile(r'(\d+)?[xх]?\s*бпла\s+в\s+районі\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`]{3,})', re.IGNORECASE)
+        def norm_city_token(tok: str) -> str:
+            t = tok.lower().strip(" .,'’ʼ`-:")
+            t = t.replace('’',"'")
+            # Accusative endings -> nominative
+            if t.endswith('ку'): t = t[:-2] + 'ка'
+            elif t.endswith('ву'): t = t[:-2] + 'ва'
+            elif t.endswith('ову'): t = t[:-3] + 'ова'
+            elif t.endswith('ю'): t = t[:-1] + 'я'
+            elif t.endswith('у'): t = t[:-1] + 'а'
+            return t
+        for ln in line_candidates:
+            ln_low = ln.lower()
+            if 'бпла' not in ln_low:
+                continue
+            count = None; city = None
+            m1 = pat_count_course.search(ln_low)
+            if m1:
+                count = int(m1.group(1)); city = m1.group(2)
+            else:
+                m2 = pat_area.search(ln_low)
+                if m2:
+                    if m2.group(1): count = int(m2.group(1))
+                    city = m2.group(2)
+                else:
+                    m3 = pat_course.search(ln_low)
+                    if m3:
+                        city = m3.group(1)
+            if not city:
+                continue
+            base = norm_city_token(city)
+            coords = CITY_COORDS.get(base)
+            # Try extended settlements index if loaded
+            if not coords and SETTLEMENTS_INDEX:
+                coords = SETTLEMENTS_INDEX.get(base)
+            if not coords:
+                continue
+            lat,lng = coords
+            threat_type, icon = classify(text)
+            label = base.title()
+            if count:
+                label += f" ({count})"
+            course_tracks.append({
+                'id': f"{mid}_c{len(course_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
+                'threat_type': threat_type, 'text': ln[:500], 'date': date_str, 'channel': channel,
+                'marker_icon': icon, 'source_match': 'course_city', 'count': count or 1
+            })
+        if course_tracks:
+            return course_tracks
 
     # --- Settlement matching using external dataset (if provided) (single first match) ---
     if not region_hits:
@@ -2871,6 +2961,14 @@ CITY_COORDS = {
     ,'покровське': (48.1180, 36.2470)  # Pokrovske (Dnipro oblast approximate)
     ,'петропавлівка': (48.5000, 36.4500)  # Petropavlivka (approx)
     ,'шахтарське': (47.9500, 36.0500)  # Shakhtarske (approx, adjust if needed)
+    # Additional smaller settlements for course parsing
+    ,'миколаївка': (49.1667, 36.2333)  # example (adjust if needed per oblast)
+    ,'низи': (50.7435, 34.9860)  # Nizy (Sumy raion approx)
+    ,'зачепилівка': (49.2070, 35.9150)  # Zachepylivka (Kharkiv oblast)
+    ,'близнюки': (48.8520, 36.5440)  # Blyzniuky (Kharkiv oblast)
+    ,'златопіль': (48.3640, 38.1500)  # Zlatopil (approx placeholder)
+    ,'царичанка': (48.9333, 34.4833)  # Tsarychanka (Dnipro oblast)
+    ,'добропілля': (48.4667, 37.0833)  # Dobropillia (Donetsk oblast)
 }
 
 OBLAST_CENTERS = {
