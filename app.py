@@ -1329,25 +1329,49 @@ def process_message(text, mid, date_str, channel):
     # --- Pattern: multiple shaheds counts to settlements with direction e.g.
     # "14 шахедів ... 3 на Покровське з півдня, 9 на Петропавлівку з південного-сходу, 2 на Шахтарське з півдня"
     if 'шахед' in lower and (' на ' in lower):
-        # Split by line breaks and commas to capture segments
-        segs = re.split(r'[\n,]+', lower)
-        dir_words = ['з півдня','з півночі','з заходу','зі сходу','з південного-сходу','з південного заходу','з північного сходу','з північного-заходу','з північного заходу']
+        # Split message into candidate segments by newline or comma or '⚠'
+        segs = re.split(r'[\n,⚠]+', lower)
         found = []
+        # pattern: "<n> на <place>(у|а|е)? (з <direction>)" capturing optional direction phrase
+        # allow compound names with hyphen and apostrophes
+        seg_pattern = re.compile(r'(\d{1,2})\s+на\s+([a-zа-яіїєґ\-ʼ\']{3,})(?:у|а|е)?(?:\s+(з\s+[a-zа-яіїєґ\-\s]+))?')
         for seg in segs:
-            m = re.search(r'(\d{1,2})\s+на\s+([а-яіїєґ\-]+)', seg.strip())
-            if m:
+            seg = seg.strip()
+            if not seg:
+                continue
+            for m in seg_pattern.finditer(seg):
                 cnt = int(m.group(1))
-                place_token = m.group(2)
-                # check if token in city coords
-                if place_token in CITY_COORDS:
-                    plat, plng = CITY_COORDS[place_token]
-                    found.append((place_token, plat, plng, cnt, seg[:160]))
+                place_token = m.group(2).strip("-'ʼ")
+                direction = (m.group(3) or '').strip()
+                # normalize apostrophes
+                place_token = place_token.replace('ʼ',"'")
+                # try direct match; also try replace endings like 'ське' -> 'ське'
+                variants = {place_token}
+                if place_token.endswith('ому'):
+                    variants.add(place_token[:-3]+'е')
+                if place_token.endswith('ому'):
+                    variants.add(place_token[:-3])
+                if place_token.endswith('е'):
+                    variants.add(place_token[:-1]+'е')
+                matched_coord = None
+                matched_name = None
+                for var in variants:
+                    if var in CITY_COORDS:
+                        matched_coord = CITY_COORDS[var]
+                        matched_name = var
+                        break
+                if matched_coord:
+                    plat, plng = matched_coord
+                    found.append((matched_name, plat, plng, cnt, direction, seg[:160]))
         if found:
             threat_type, icon = classify(text)
             tracks = []
-            for idx,(p, plat, plng, cnt, snippet) in enumerate(found,1):
+            for idx,(p, plat, plng, cnt, direction, snippet) in enumerate(found,1):
+                label = f"{p.title()} ({cnt})"
+                if direction:
+                    label += f" ←{direction.replace('з','').strip()}"
                 tracks.append({
-                    'id': f"{mid}_s{idx}", 'place': p.title(), 'lat': plat, 'lng': plng,
+                    'id': f"{mid}_s{idx}", 'place': label, 'lat': plat, 'lng': plng,
                     'threat_type': threat_type, 'text': snippet[:500], 'date': date_str, 'channel': channel,
                     'marker_icon': icon, 'source_match': 'multi_shah_ed'
                 })
