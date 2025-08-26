@@ -1512,6 +1512,42 @@ def process_message(text, mid, date_str, channel):
         if course_tracks:
             return course_tracks
 
+    # --- Generic multi-line UAV near-pass counts (e.g. "5х бпла повз Барвінкове") ---
+    if 'бпла' in lower and 'повз' in lower and re.search(r'\d+[xх]\s*бпла', lower):
+        lines_near = [ln.strip() for ln in lower.split('\n') if ln.strip()]
+        near_tracks = []
+        pat_near = re.compile(r'(\d+)[xх]\s*бпла[^\n]*?повз\s+([a-zа-яіїєґ\-ʼ\']{3,})')
+        for ln in lines_near:
+            m = pat_near.search(ln)
+            if not m:
+                continue
+            cnt = int(m.group(1))
+            place = (m.group(2) or '').strip("-'ʼ")
+            variants = {place}
+            if place.endswith('е'): variants.add(place[:-1])
+            if place.endswith('ю'):
+                variants.add(place[:-1]+'я'); variants.add(place[:-1]+'а')
+            if place.endswith('у'):
+                variants.add(place[:-1]+'а')
+            if place.endswith('ому'):
+                variants.add(place[:-3])
+            if place.endswith('ове'):
+                variants.add(place[:-2]+'’я')  # crude alt
+            matched=None; mname=None
+            for v in variants:
+                if v in CITY_COORDS:
+                    matched=CITY_COORDS[v]; mname=v; break
+            if matched:
+                lat,lng = matched
+                threat_type, icon = classify(text)
+                near_tracks.append({
+                    'id': f"{mid}_n{len(near_tracks)+1}", 'place': f"{mname.title()} ({cnt})", 'lat': lat, 'lng': lng,
+                    'threat_type': threat_type, 'text': ln[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': 'uav_near_pass', 'count': cnt
+                })
+        if near_tracks:
+            return near_tracks
+
     # --- Settlement matching using external dataset (if provided) (single first match) ---
     if not region_hits:
         # 1) Multi-list form: "Новгород-сіверський, Шостка, Короп, Кролевець - уважно по БПЛА"
@@ -2969,6 +3005,9 @@ CITY_COORDS = {
     ,'златопіль': (48.3640, 38.1500)  # Zlatopil (approx placeholder)
     ,'царичанка': (48.9333, 34.4833)  # Tsarychanka (Dnipro oblast)
     ,'добропілля': (48.4667, 37.0833)  # Dobropillia (Donetsk oblast)
+    ,'барвінкове': (48.9000, 37.0167)  # Barvinkove (Kharkiv oblast)
+    ,'пісочин': (49.9500, 36.1330)  # Pisochyn (near Kharkiv)
+    ,'берестове': (49.3500, 37.0000)  # Placeholder for Berestove / Berestynske context
 }
 
 OBLAST_CENTERS = {
