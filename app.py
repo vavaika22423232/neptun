@@ -2400,7 +2400,11 @@ async def fetch_loop():
             if not ch:
                 continue
             if ch in INVALID_CHANNELS:
+                log.debug(f'Skip invalid channel {ch}')
                 continue
+            msgs_seen = 0
+            msgs_recent_window = 0
+            geo_added = 0
             try:
                 if not await ensure_connected():
                     # If session invalid we stop loop gracefully
@@ -2408,18 +2412,25 @@ async def fetch_loop():
                         log.error('Stopping live loop due to lost/invalid session.')
                         AUTH_STATUS.update({'authorized': False, 'reason': 'lost_session'})
                         return
+                log.debug(f'Polling channel {ch} (last processed count={len(processed)})')
                 async for msg in client.iter_messages(ch, limit=20):
-                    if msg.id in processed or not msg.text:
+                    msgs_seen += 1
+                    if not msg.text:
+                        continue
+                    if msg.id in processed:
                         continue
                     dt = msg.date.astimezone(tz)
                     if dt < datetime.now(tz) - timedelta(minutes=30):
+                        # Older than live window
                         continue
+                    msgs_recent_window += 1
                     tracks = process_message(msg.text, msg.id, dt.strftime('%Y-%m-%d %H:%M:%S'), ch)
                     if tracks:
                         for t in tracks:
                             if t.get('place'):
                                 t['place'] = ensure_ua_place(t['place'])
                         new_tracks.extend(tracks)
+                        geo_added += 1
                         processed.add(msg.id)
                         log.info(f'Added track from {ch} #{msg.id}')
                     else:
@@ -2441,6 +2452,17 @@ async def fetch_loop():
                 if any(mk in msg for mk in markers):
                     INVALID_CHANNELS.add(ch)
                     log.warning(f'Marking channel {ch} as invalid; will skip further reads this session.')
+            finally:
+                # Post-channel diagnostics to help debug silent channels like 'napramok'
+                log.debug(
+                    f'Channel diag {ch}: iter_messages_seen={msgs_seen}, recent_window={msgs_recent_window}, geo_added={geo_added}, invalid={ch in INVALID_CHANNELS}'
+                )
+                if msgs_seen == 0:
+                    log.warning(f'Channel {ch} returned no messages this cycle (possible resolution/access issue).')
+                elif msgs_recent_window == 0:
+                    log.debug(f'Channel {ch} had messages but none within last 30m window.')
+                elif geo_added == 0:
+                    log.debug(f'Channel {ch} had {msgs_recent_window} recent messages but none produced geo tracks.')
         if new_tracks:
             all_data.extend(new_tracks)
             save_messages(all_data)
