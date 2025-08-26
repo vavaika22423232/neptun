@@ -1714,16 +1714,38 @@ def process_message(text, mid, date_str, channel):
         left_part = re.sub(r'\b\d+[xх]\s*бпла.*$', '', left_part).strip()
         parts = [p.strip() for p in re.split(r'/|\\', left_part) if p.strip()]
         found = []
+        # Derive a region stem from any well-known city token to bias geocoding of other parts
+        inferred_region = None
+        for p in parts:
+            base_inf = UA_CITY_NORMALIZE.get(p, p)
+            if base_inf in CITY_TO_OBLAST:
+                inferred_region = CITY_TO_OBLAST[base_inf]
+                break
         for p in parts:
             base = UA_CITY_NORMALIZE.get(p, p)
             coords = CITY_COORDS.get(base)
             if not coords and SETTLEMENTS_INDEX:
                 coords = SETTLEMENTS_INDEX.get(base)
             if not coords:
-                try:
-                    coords = region_enhanced_coords(base)
-                except Exception:
-                    coords = None
+                # If we have inferred region stem, attempt region-qualified geocode first
+                if inferred_region and OPENCAGE_API_KEY:
+                    oblast_variants = [
+                        f"{base} {inferred_region}щина",
+                        f"{base} {inferred_region}ська область",
+                        f"{base} {inferred_region}ская область"
+                    ]
+                    for q in oblast_variants:
+                        try:
+                            coords = geocode_opencage(q)
+                            if coords:
+                                break
+                        except Exception:
+                            pass
+                if not coords:
+                    try:
+                        coords = region_enhanced_coords(base)
+                    except Exception:
+                        coords = None
             if coords:
                 found.append((base.title(), coords))
         if found:
