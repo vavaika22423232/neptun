@@ -502,6 +502,15 @@ CITY_COORDS = {
     ,"кам'янське": (48.5110, 34.6021)
     ,'камянське': (48.5110, 34.6021)
     ,'липова долина': (50.5700, 33.7900)
+    # --- Added fallbacks for frequent course targets ---
+    ,'тростянець': (50.4833, 34.9667)  # Trostyanets (Sumy oblast)
+    ,'лебедин': (50.5872, 34.4912)  # Lebedyn (Sumy oblast)
+    ,'богодухів': (50.1646, 35.5279)  # Bohodukhiv (Kharkiv oblast)
+    ,'валки': (49.8427, 35.6150)  # Valky (Kharkiv oblast)
+    ,'кегичівка': (49.5440, 35.7760)  # Kehychivka (Kharkiv oblast)
+    ,'бірки': (49.7517, 36.1025)  # Birky (Kharkiv oblast, ambiguous fallback)
+    ,'велика багачка': (50.1946, 33.7894)  # Velyka Bahachka (Poltava oblast)
+    ,'гадяч': (50.3713, 34.0109)  # Hadiach (Poltava oblast)
 }
 
 # Mapping city -> oblast stem (lowercase stems used earlier) for disambiguation when region already detected.
