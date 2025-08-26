@@ -1326,52 +1326,57 @@ def process_message(text, mid, date_str, channel):
                 'marker_icon': icon, 'source_match': 'border_kab'
             }]
 
-    # --- Pattern: multiple shaheds counts to settlements with direction e.g.
-    # "14 шахедів ... 3 на Покровське з півдня, 9 на Петропавлівку з південного-сходу, 2 на Шахтарське з півдня"
-    if 'шахед' in lower and (' на ' in lower):
-        # Split message into candidate segments by newline or comma or '⚠'
+    # --- Pattern: multiple shaheds with counts / directions / near-pass ("повз") ---
+    # Examples: "14 шахедів ... 3 на Покровське з півдня, 9 на Петропавлівку з південного-сходу, 2 на Шахтарське з півдня"
+    #           "16 шахедів ... 2 повз Терентівку на північ, 6 на Юріївку з півдня, 7 повз Межову північний-захід" etc.
+    if 'шахед' in lower and ((' на ' in lower) or (' повз ' in lower)):
         segs = re.split(r'[\n,⚠]+', lower)
         found = []
-        # pattern: "<n> на <place>(у|а|е)? (з <direction>)" capturing optional direction phrase
-        # allow compound names with hyphen and apostrophes
-        seg_pattern = re.compile(r'(\d{1,2})\s+на\s+([a-zа-яіїєґ\-ʼ\']{3,})(?:у|а|е)?(?:\s+(з\s+[a-zа-яіїєґ\-\s]+))?')
+        pat_on = re.compile(r'(\d{1,2})\s+на\s+([a-zа-яіїєґ\-ʼ\']{3,})(?:у|а|е)?(?:\s+(з\s+[a-zа-яіїєґ\-\s]+))?')
+        pat_povz = re.compile(r'(\d{1,2})\s+повз\s+([a-zа-яіїєґ\-ʼ\']{3,})(?:у|а|е)?(?:\s+(?:на\s+)?([a-zа-яіїєґ\-]+(?:\s*[a-zа-яіїєґ\-]+)*))?')
+        DIR_CLEAN = lambda d: d.replace('з','').replace('на','').strip() if d else ''
         for seg in segs:
-            seg = seg.strip()
-            if not seg:
+            s = seg.strip()
+            if not s:
                 continue
-            for m in seg_pattern.finditer(seg):
+            matches = []
+            matches.extend(list(pat_on.finditer(s)))
+            matches.extend(list(pat_povz.finditer(s)))
+            for m in matches:
                 cnt = int(m.group(1))
-                place_token = m.group(2).strip("-'ʼ")
-                direction = (m.group(3) or '').strip()
-                # normalize apostrophes
+                place_token = (m.group(2) or '').strip("-'ʼ")
+                direction = ''
+                # pat_on has direction in group(3); pat_povz in group(3) too (after optional 'на')
+                if len(m.groups()) >= 3:
+                    direction = (m.group(3) or '').strip()
                 place_token = place_token.replace('ʼ',"'")
-                # try direct match; also try replace endings like 'ське' -> 'ське'
                 variants = {place_token}
+                # heuristic nominative recovery
+                if place_token.endswith('ку'): variants.add(place_token[:-2]+'ка')
+                if place_token.endswith('ву'): variants.add(place_token[:-2]+'ва')
+                if place_token.endswith('ову'): variants.add(place_token[:-3]+'ова')
+                if place_token.endswith('ю'):
+                    variants.add(place_token[:-1]+'я'); variants.add(place_token[:-1]+'а')
+                if place_token.endswith('у'): variants.add(place_token[:-1]+'а')
                 if place_token.endswith('ому'):
-                    variants.add(place_token[:-3]+'е')
-                if place_token.endswith('ому'):
-                    variants.add(place_token[:-3])
-                if place_token.endswith('е'):
-                    variants.add(place_token[:-1]+'е')
-                matched_coord = None
-                matched_name = None
+                    variants.add(place_token[:-3]+'е'); variants.add(place_token[:-3])
+                # attempt base match
+                matched_coord = None; matched_name = None
                 for var in variants:
                     if var in CITY_COORDS:
-                        matched_coord = CITY_COORDS[var]
-                        matched_name = var
-                        break
+                        matched_coord = CITY_COORDS[var]; matched_name = var; break
                 if matched_coord:
                     plat, plng = matched_coord
-                    found.append((matched_name, plat, plng, cnt, direction, seg[:160]))
+                    found.append((matched_name, plat, plng, cnt, DIR_CLEAN(direction), s[:160]))
         if found:
             threat_type, icon = classify(text)
             tracks = []
             for idx,(p, plat, plng, cnt, direction, snippet) in enumerate(found,1):
-                label = f"{p.title()} ({cnt})"
+                base_label = f"{p.title()} ({cnt})"
                 if direction:
-                    label += f" ←{direction.replace('з','').strip()}"
+                    base_label += f" ←{direction}"
                 tracks.append({
-                    'id': f"{mid}_s{idx}", 'place': label, 'lat': plat, 'lng': plng,
+                    'id': f"{mid}_s{idx}", 'place': base_label, 'lat': plat, 'lng': plng,
                     'threat_type': threat_type, 'text': snippet[:500], 'date': date_str, 'channel': channel,
                     'marker_icon': icon, 'source_match': 'multi_shah_ed'
                 })
