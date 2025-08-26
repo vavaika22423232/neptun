@@ -3008,6 +3008,7 @@ CITY_COORDS = {
     ,'барвінкове': (48.9000, 37.0167)  # Barvinkove (Kharkiv oblast)
     ,'пісочин': (49.9500, 36.1330)  # Pisochyn (near Kharkiv)
     ,'берестове': (49.3500, 37.0000)  # Placeholder for Berestove / Berestynske context
+    ,'кобеляки': (49.1500, 34.2000)  # Kobelyaky (Poltava oblast)
 }
 
 OBLAST_CENTERS = {
