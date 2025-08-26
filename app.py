@@ -1326,6 +1326,34 @@ def process_message(text, mid, date_str, channel):
                 'marker_icon': icon, 'source_match': 'border_kab'
             }]
 
+    # --- Pattern: multiple shaheds counts to settlements with direction e.g.
+    # "14 шахедів ... 3 на Покровське з півдня, 9 на Петропавлівку з південного-сходу, 2 на Шахтарське з півдня"
+    if 'шахед' in lower and (' на ' in lower):
+        # Split by line breaks and commas to capture segments
+        segs = re.split(r'[\n,]+', lower)
+        dir_words = ['з півдня','з півночі','з заходу','зі сходу','з південного-сходу','з південного заходу','з північного сходу','з північного-заходу','з північного заходу']
+        found = []
+        for seg in segs:
+            m = re.search(r'(\d{1,2})\s+на\s+([а-яіїєґ\-]+)', seg.strip())
+            if m:
+                cnt = int(m.group(1))
+                place_token = m.group(2)
+                # check if token in city coords
+                if place_token in CITY_COORDS:
+                    plat, plng = CITY_COORDS[place_token]
+                    found.append((place_token, plat, plng, cnt, seg[:160]))
+        if found:
+            threat_type, icon = classify(text)
+            tracks = []
+            for idx,(p, plat, plng, cnt, snippet) in enumerate(found,1):
+                tracks.append({
+                    'id': f"{mid}_s{idx}", 'place': p.title(), 'lat': plat, 'lng': plng,
+                    'threat_type': threat_type, 'text': snippet[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': 'multi_shah_ed'
+                })
+            if tracks:
+                return tracks
+
     # --- Settlement matching using external dataset (if provided) (single first match) ---
     if not region_hits:
         # 1) Multi-list form: "Новгород-сіверський, Шостка, Короп, Кролевець - уважно по БПЛА"
@@ -2772,6 +2800,9 @@ CITY_COORDS = {
     'мелітополь': (46.8489, 35.3650),
     'бердянськ': (46.7553, 36.7885)
     ,'павлоград': (48.5350, 35.8700)
+    ,'покровське': (48.1180, 36.2470)  # Pokrovske (Dnipro oblast approximate)
+    ,'петропавлівка': (48.5000, 36.4500)  # Petropavlivka (approx)
+    ,'шахтарське': (47.9500, 36.0500)  # Shakhtarske (approx, adjust if needed)
 }
 
 OBLAST_CENTERS = {
