@@ -951,7 +951,7 @@ def process_message(text, mid, date_str, channel):
                     region_hint_global = base
                     break
 
-    def region_enhanced_coords(base_name: str):
+    def region_enhanced_coords(base_name: str, region_hint_override: str = None):
         """Resolve coordinates for a settlement name using (in order): static list, settlements dataset,
         region-qualified OpenCage (city + region), then plain OpenCage.
         This enforces the user requirement to bind every settlement to the oblast mentioned in the message text.
@@ -970,9 +970,10 @@ def process_message(text, mid, date_str, channel):
             if coord:
                 return coord
         # Region-qualified remote geocode
-        if region_hint_global and OPENCAGE_API_KEY:
+        region_for_query = region_hint_override or region_hint_global
+        if region_for_query and OPENCAGE_API_KEY:
             try:
-                combo = f"{name} {region_hint_global}".replace('  ', ' ').strip()
+                combo = f"{name} {region_for_query}".replace('  ', ' ').strip()
                 combo_c = geocode_opencage(combo)
                 if combo_c:
                     return combo_c
@@ -1584,7 +1585,21 @@ def process_message(text, mid, date_str, channel):
     # --- Per-line UAV course / area city targeting ("БпЛА курсом на <місто>", "8х БпЛА в районі <міста>") ---
     # Triggered when region multi list suppressed earlier due to presence of course lines.
     if 'бпла' in lower and ('курс' in lower or 'в районі' in lower):
-        line_candidates = [ln.strip() for ln in re.split(r'[\n;]+', text) if ln.strip()]
+        lines_with_region = []
+        current_region_hdr = None
+        for raw_ln in original_text.splitlines():
+            ln_stripped = raw_ln.strip()
+            if not ln_stripped:
+                continue
+            low_ln = ln_stripped.lower()
+            if low_ln.endswith(':'):
+                base_hdr = low_ln[:-1]
+                if base_hdr in OBLAST_CENTERS:
+                    current_region_hdr = base_hdr
+                continue
+            subparts = [p.strip() for p in re.split(r'[;]+', ln_stripped) if p.strip()]
+            for part in subparts:
+                lines_with_region.append((part, current_region_hdr))
         course_tracks = []
         pat_count_course = re.compile(r'^(\d+)[xх]?\s*бпла.*?курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`]{3,})', re.IGNORECASE)
         pat_course = re.compile(r'бпла.*?курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`]{3,})', re.IGNORECASE)
@@ -1592,18 +1607,16 @@ def process_message(text, mid, date_str, channel):
         def norm_city_token(tok: str) -> str:
             t = tok.lower().strip(" .,'’ʼ`-:")
             t = t.replace('’',"'")
-            # Accusative endings -> nominative
             if t.endswith('ку'): t = t[:-2] + 'ка'
             elif t.endswith('ву'): t = t[:-2] + 'ва'
             elif t.endswith('ову'): t = t[:-3] + 'ова'
             elif t.endswith('ю'): t = t[:-1] + 'я'
             elif t.endswith('у'): t = t[:-1] + 'а'
-            # specific pattern: "нову водолагу" -> "нова водолага"
             if t.startswith('нову '):
                 t = 'нова ' + t[5:]
             t = t.replace('водолагу','водолага')
             return t
-        for ln in line_candidates:
+        for ln, region_hdr in lines_with_region:
             ln_low = ln.lower()
             if 'бпла' not in ln_low:
                 continue
@@ -1614,7 +1627,8 @@ def process_message(text, mid, date_str, channel):
             else:
                 m2 = pat_area.search(ln_low)
                 if m2:
-                    if m2.group(1): count = int(m2.group(1))
+                    if m2.group(1):
+                        count = int(m2.group(1))
                     city = m2.group(2)
                 else:
                     m3 = pat_course.search(ln_low)
@@ -1626,22 +1640,22 @@ def process_message(text, mid, date_str, channel):
             coords = CITY_COORDS.get(base)
             if not coords and SETTLEMENTS_INDEX:
                 coords = SETTLEMENTS_INDEX.get(base)
-            # OpenCage fallback (region-qualified then plain) to avoid manual additions
             if not coords:
                 try:
-                    coords = region_enhanced_coords(base)
+                    coords = region_enhanced_coords(base, region_hint_override=region_hdr)
                 except Exception:
                     coords = None
             if not coords:
                 continue
-            # Cache dynamically for later faster matches (do not overwrite existing explicit entries)
             if base not in CITY_COORDS:
                 CITY_COORDS[base] = coords
-            lat,lng = coords
+            lat, lng = coords
             threat_type, icon = classify(text)
             label = base.title()
             if count:
                 label += f" ({count})"
+            if region_hdr and region_hdr not in label.lower():
+                label += f" [{region_hdr.title()}]"
             course_tracks.append({
                 'id': f"{mid}_c{len(course_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
                 'threat_type': threat_type, 'text': ln[:500], 'date': date_str, 'channel': channel,
