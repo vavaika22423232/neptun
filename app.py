@@ -1091,6 +1091,17 @@ def process_message(text, mid, date_str, channel):
     for gform, base_form in GENITIVE_NORMALIZE.items():
         if gform in lower:
             lower = lower.replace(gform, base_form)
+    # Locative / prepositional oblast & region endings -> base ("дніпропетровщині" -> "дніпропетровщина")
+    LOCATIVE_NORMALIZE = {
+        'дніпропетровщині': 'дніпропетровщина',
+        'донеччині': 'донеччина',
+        'сумщині': 'сумщина',
+        'харківщині': 'харківщина',
+        'чернігівщині': 'чернігівщина'
+    }
+    for lform, base_form in LOCATIVE_NORMALIZE.items():
+        if lform in lower:
+            lower = lower.replace(lform, base_form)
     # City genitive -> nominative (subset) for settlement detection
     CITY_GENITIVE = [
         ('харкова','харків'), ('києва','київ'), ('львова','львів'), ('одеси','одеса'), ('дніпра','дніпро')
@@ -1403,9 +1414,12 @@ def process_message(text, mid, date_str, channel):
                 tracks.append({
                     'id': f"{mid}_s{idx}", 'place': base_label, 'lat': plat, 'lng': plng,
                     'threat_type': threat_type, 'text': snippet[:500], 'date': date_str, 'channel': channel,
-                    'marker_icon': icon, 'source_match': 'multi_shah_ed'
+                    'marker_icon': icon, 'source_match': 'multi_shah_ed', 'count': cnt
                 })
+            if found and not tracks:
+                log.debug(f"multi_shah_ed matched segments but no tracks mid={mid} raw={found}")
             if tracks:
+                log.debug(f"multi_shah_ed tracks mid={mid} -> {[t['place'] for t in tracks]}")
                 return tracks
 
     # --- Settlement matching using external dataset (if provided) (single first match) ---
