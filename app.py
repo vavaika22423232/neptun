@@ -890,17 +890,34 @@ def process_message(text, mid, date_str, channel):
             except Exception:
                 pass
         return None
-    # ---- Fundraising / donation solicitation filter (do not display on public site) ----
+    # ---- Fundraising / donation solicitation handling ----
+    # Previous behavior: fully suppressed entire message if donation links found (blocked napramok multi-line threat posts with footer links)
+    # New behavior: If donation lines present BUT the message also contains threat indicators, strip only the donation lines and continue parsing.
     low_full = original_text.lower()
-    if any(k in low_full for k in [
+    DONATION_KEYS = [
         'монобанк','monobank','mono.bank','privat24','приват24','реквізит','реквизит','донат','donat','iban','paypal','patreon','send.monobank.ua','jar/','банка: http','карта(','карта(monobank)','карта(privat24)'
-    ]) or re.search(r'\b\d{16}\b', low_full):
-        # Return a suppressed entry (not geo, not shown on map); prevents raw storing duplication
-        return [{
-            'id': str(mid), 'place': None, 'lat': None, 'lng': None,
-            'threat_type': None, 'text': original_text[:500], 'date': date_str, 'channel': channel,
-            'list_only': True, 'suppress': True
-        }]
+    ]
+    donation_present = any(k in low_full for k in DONATION_KEYS) or re.search(r'\b\d{16}\b', low_full)
+    if donation_present:
+        # Threat keyword heuristic (lightweight; don't rely on later THREAT_KEYS definition yet)
+        threat_tokens = ['бпла','дрон','шахед','shahed','geran','ракета','ракети','missile','iskander','s-300','s300','каб','артил','града','смерч','ураган','mlrs']
+        has_threat_word = any(tok in low_full for tok in threat_tokens)
+        if has_threat_word:
+            # Remove lines containing donation keywords to salvage threat content
+            kept_lines = []
+            for ln in original_text.splitlines():
+                ll = ln.lower()
+                if any(k in ll for k in DONATION_KEYS) or re.search(r'\b\d{16}\b', ll):
+                    continue
+                kept_lines.append(ln)
+            text = '\n'.join(kept_lines)
+            original_text = text  # treat stripped version as canonical for later stages
+        else:
+            return [{
+                'id': str(mid), 'place': None, 'lat': None, 'lng': None,
+                'threat_type': None, 'text': original_text[:500], 'date': date_str, 'channel': channel,
+                'list_only': True, 'suppress': True, 'suppress_reason': 'donation_only'
+            }]
     # ---- Daily / periodic situation summary ("ситуація станом на HH:MM" + sectional bullets) ----
     # User request: do NOT create map markers for such aggregated status reports.
     # Heuristics: phrase "ситуація станом" (uk) or "ситуация на" (ru), OR presence of 2+ bullet headers like "• авіація", "• бпла", "• флот" in same message.
@@ -2434,6 +2451,14 @@ async def fetch_loop():
                         processed.add(msg.id)
                         log.info(f'Added track from {ch} #{msg.id}')
                     else:
+                        # Store raw if enabled to allow later reprocessing / debugging (e.g., napramok multi-line posts)
+                        if ALWAYS_STORE_RAW:
+                            all_data.append({
+                                'id': str(msg.id), 'place': None, 'lat': None, 'lng': None,
+                                'threat_type': None, 'text': msg.text[:800], 'date': dt.strftime('%Y-%m-%d %H:%M:%S'),
+                                'channel': ch, 'pending_geo': True
+                            })
+                            processed.add(msg.id)
                         log.debug(f'Live skip (no geo): {ch} #{msg.id} {msg.text[:80]!r}')
             except AuthKeyDuplicatedError:
                 log.error('AuthKeyDuplicatedError during live fetch. Ending loop until session replaced.')
