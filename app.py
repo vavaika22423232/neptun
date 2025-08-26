@@ -581,6 +581,7 @@ OBLAST_CENTERS = {
     , 'херсонщина': (46.6354, 32.6169), 'херсонщини': (46.6354, 32.6169), 'херсонську': (46.6354, 32.6169), 'херсонська область': (46.6354, 32.6169), 'херсонська обл.': (46.6354, 32.6169)
     , 'миколаївщина': (46.9750, 31.9946), 'миколаївщини': (46.9750, 31.9946), 'миколаївську': (46.9750, 31.9946), 'миколаївська область': (46.9750, 31.9946), 'миколаївська обл.': (46.9750, 31.9946)
     , 'одесщина': (46.4825, 30.7233), 'одесьчина': (46.4825, 30.7233), 'одесьщини': (46.4825, 30.7233), 'одеську': (46.4825, 30.7233), 'одеська область': (46.4825, 30.7233), 'одеська обл.': (46.4825, 30.7233)
+    , 'одещина': (46.4825, 30.7233), 'одещини': (46.4825, 30.7233), 'одещину': (46.4825, 30.7233)
     , 'волинь': (50.7472, 25.3254), 'волинська область': (50.7472, 25.3254), 'волинська обл.': (50.7472, 25.3254)
     , 'рівненщина': (50.6199, 26.2516), 'рівненщини': (50.6199, 26.2516), 'рівненщину': (50.6199, 26.2516), 'рівненська область': (50.6199, 26.2516), 'рівненська обл.': (50.6199, 26.2516)
     , 'тернопільщина': (49.5535, 25.5948), 'тернопільщини': (49.5535, 25.5948), 'тернопільщину': (49.5535, 25.5948), 'тернопільська область': (49.5535, 25.5948), 'тернопільська обл.': (49.5535, 25.5948)
@@ -634,7 +635,7 @@ RAION_FALLBACK = {
     , 'синельниківський': (48.3167, 36.5000), 'синельниковский': (48.3167, 36.5000)
     # Zaporizkyi raion (shifted off exact city center to represent wider district)
     , 'запорізький': (47.9000, 35.2500), 'запорожский': (47.9000, 35.2500)
-    , 'білгород-дністровський': (46.1871, 30.3410), 'білгород-дністровского': (46.1871, 30.3410)
+    , 'білгород-дністровський': (46.1871, 30.3410), 'білгород-дністровского': (46.1871, 30.3410), 'білгород-дністровського': (46.1871, 30.3410)
 }
 
 # Active raion (district) air alarms: raion_base -> dict(place, lat, lng, since)
@@ -1770,6 +1771,23 @@ def process_message(text, mid, date_str, channel):
                 })
         if near_tracks:
             return near_tracks
+
+    # --- Late parenthetical specific settlement fallback (e.g. direction to oblast but (затока)) ---
+    if has_threat(original_text.lower()) and '(' in original_text and ')' in original_text:
+        p_tokens = re.findall(r'\(([A-Za-zА-Яа-яЇїІіЄєҐґ\-\s]{3,})\)', original_text.lower())
+        if p_tokens:
+            cand = p_tokens[-1].strip()
+            cand = re.sub(r'^(смт|с\.|м\.|місто|селище)\s+','', cand)
+            base_cand = UA_CITY_NORMALIZE.get(cand, cand)
+            coords = CITY_COORDS.get(base_cand) or SETTLEMENTS_INDEX.get(base_cand)
+            if coords:
+                lat,lng = coords
+                threat_type, icon = classify(original_text)
+                return [{
+                    'id': str(mid), 'place': base_cand.title(), 'lat': lat, 'lng': lng,
+                    'threat_type': threat_type, 'text': original_text[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': 'late_parenthetical'
+                }]
 
     # --- Settlement matching using external dataset (if provided) (single first match) ---
     if not region_hits:
