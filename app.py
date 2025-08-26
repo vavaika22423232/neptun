@@ -1004,7 +1004,7 @@ def process_message(text, mid, date_str, channel):
     def classify(th: str):
         l = th.lower()
         # Recon / розвід дрони -> use pvo icon (rozved.png) per user request
-        if 'розвід' in l or 'развед' in l:
+        if 'розвід' in l or 'розвідуваль' in l or 'развед' in l:
             return 'pvo', 'rozved.png'
         # Air alarm start
         if ('повітряна тривога' in l or 'повітряна тривога.' in l or ('тривога' in l and 'повітр' in l)) and not ('відбій' in l or 'отбой' in l):
@@ -1091,6 +1091,13 @@ def process_message(text, mid, date_str, channel):
     for gform, base_form in GENITIVE_NORMALIZE.items():
         if gform in lower:
             lower = lower.replace(gform, base_form)
+    # City genitive -> nominative (subset) for settlement detection
+    CITY_GENITIVE = [
+        ('харкова','харків'), ('києва','київ'), ('львова','львів'), ('одеси','одеса'), ('дніпра','дніпро')
+    ]
+    for gform, base in CITY_GENITIVE:
+        if gform in lower:
+            lower = lower.replace(gform, base)
     # Normalize some accusative oblast forms to nominative for matching
     lower = lower.replace('донеччину','донеччина').replace('сумщину','сумщина')
     text = lower  # downstream logic mostly uses lower-case comparisons
