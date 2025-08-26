@@ -1175,6 +1175,7 @@ def process_message(text, mid, date_str, channel):
                 coords = CITY_COORDS.get(norm)
                 if not coords and SETTLEMENTS_INDEX:
                     coords = SETTLEMENTS_INDEX.get(norm)
+                log.debug(f"parenthetical_dir detect mid={mid} candidate={candidate} norm={norm} found={bool(coords)}")
                 if coords:
                     lat,lng = coords
                     threat_type, icon = classify(text)
@@ -1780,6 +1781,7 @@ def process_message(text, mid, date_str, channel):
             cand = re.sub(r'^(смт|с\.|м\.|місто|селище)\s+','', cand)
             base_cand = UA_CITY_NORMALIZE.get(cand, cand)
             coords = CITY_COORDS.get(base_cand) or SETTLEMENTS_INDEX.get(base_cand)
+            log.debug(f"late_parenthetical mid={mid} cand={cand} base={base_cand} found={bool(coords)}")
             if coords:
                 lat,lng = coords
                 threat_type, icon = classify(original_text)
