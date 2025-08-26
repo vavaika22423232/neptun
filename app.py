@@ -1501,11 +1501,19 @@ def process_message(text, mid, date_str, channel):
                 continue
             base = norm_city_token(city)
             coords = CITY_COORDS.get(base)
-            # Try extended settlements index if loaded
             if not coords and SETTLEMENTS_INDEX:
                 coords = SETTLEMENTS_INDEX.get(base)
+            # OpenCage fallback (region-qualified then plain) to avoid manual additions
+            if not coords:
+                try:
+                    coords = region_enhanced_coords(base)
+                except Exception:
+                    coords = None
             if not coords:
                 continue
+            # Cache dynamically for later faster matches (do not overwrite existing explicit entries)
+            if base not in CITY_COORDS:
+                CITY_COORDS[base] = coords
             lat,lng = coords
             threat_type, icon = classify(text)
             label = base.title()
@@ -1544,7 +1552,22 @@ def process_message(text, mid, date_str, channel):
             for v in variants:
                 if v in CITY_COORDS:
                     matched=CITY_COORDS[v]; mname=v; break
+            if not matched and SETTLEMENTS_INDEX:
+                for v in variants:
+                    if v in SETTLEMENTS_INDEX:
+                        matched=SETTLEMENTS_INDEX[v]; mname=v; break
+            if not matched:
+                # OpenCage fallback
+                try:
+                    for v in variants:
+                        oc = region_enhanced_coords(v)
+                        if oc:
+                            matched=oc; mname=v; break
+                except Exception:
+                    matched=None
             if matched:
+                if mname not in CITY_COORDS:
+                    CITY_COORDS[mname]=matched
                 lat,lng = matched
                 threat_type, icon = classify(text)
                 near_tracks.append({
