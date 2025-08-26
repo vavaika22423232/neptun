@@ -865,6 +865,15 @@ def process_message(text, mid, date_str, channel):
                 break
     except Exception:
         region_hint_global = None
+    # Additional: detect section headers like "Сумщина:" "Полтавщина:" at line starts to set region hint
+    if not region_hint_global:
+        for line in original_text.split('\n'):
+            l = line.strip().lower()
+            if l.endswith(':'):
+                base = l[:-1]
+                if base in OBLAST_CENTERS:
+                    region_hint_global = base
+                    break
 
     def region_enhanced_coords(base_name: str):
         """Resolve coordinates for a settlement name using (in order): static list, settlements dataset,
@@ -2312,6 +2321,14 @@ def process_message(text, mid, date_str, channel):
                                             coords = refined
                                 except Exception:
                                     pass
+                    # If still no coords AND we have a region hint + OpenCage, try region-qualified query directly for multi-word ambiguous city
+                    if not coords and region_hint_global and OPENCAGE_API_KEY:
+                        try:
+                            refined2 = geocode_opencage(f"{norm_city} {region_hint_global}")
+                            if refined2:
+                                coords = refined2
+                        except Exception:
+                            pass
                     if coords:
                         # Extract line-specific drone count if present (e.g. "4х БпЛА")
                         line_count = None
