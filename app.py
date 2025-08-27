@@ -48,7 +48,7 @@ _load_local_env()
 
 API_ID = int(os.getenv('TELEGRAM_API_ID', '0') or '0')
 API_HASH = os.getenv('TELEGRAM_API_HASH', '')
-_DEFAULT_CHANNELS = 'UkraineAlarmSignal,kpszsu,war_monitor,napramok'
+_DEFAULT_CHANNELS = 'UkraineAlarmSignal,kpszsu,war_monitor,napramok,raketa_trevoga'
 # TELEGRAM_CHANNELS env var (comma-separated) overrides; fallback includes numeric channel ID.
 CHANNELS = [c.strip() for c in os.getenv('TELEGRAM_CHANNELS', _DEFAULT_CHANNELS).split(',') if c.strip()]
 
@@ -786,6 +786,9 @@ RAION_FALLBACK = {
     # Zaporizkyi raion (shifted off exact city center to represent wider district)
     , 'запорізький': (47.9000, 35.2500), 'запорожский': (47.9000, 35.2500)
     , 'білгород-дністровський': (46.1871, 30.3410), 'білгород-дністровского': (46.1871, 30.3410), 'білгород-дністровського': (46.1871, 30.3410)
+    # Dnipro oblast & Dnipro city internal districts (to avoid fallback to generic city center)
+    , 'дніпровський': (48.4500, 35.1000), 'днепровский': (48.4500, 35.1000)  # Dnipro Raion (approx centroid)
+    , 'самарський': (48.5380, 35.1500), 'самарский': (48.5380, 35.1500), 'самарівський': (48.5380, 35.1500)  # Samarskyi (approx east bank)
 }
 
 # Active raion (district) air alarms: raion_base -> dict(place, lat, lng, since)
@@ -3643,34 +3646,10 @@ OBLAST_CENTERS = {
     , 'полтавщина': (49.5883, 34.5514), 'полтавщини': (49.5883, 34.5514), 'полтавська обл.': (49.5883, 34.5514), 'полтавська область': (49.5883, 34.5514)
 }
 
-# Район (district) fallback centers (можно расширять). Ключи в нижнем регистре без слова 'район'.
-RAION_FALLBACK = {
-    'покровський': (48.2767, 37.1763),  # Покровськ (Донецька)
-    'покровский': (48.2767, 37.1763),
-    'павлоградський': (48.5350, 35.8700),  # Павлоград
-    'павлоградский': (48.5350, 35.8700),
-    'пологівський': (47.4840, 36.2536),  # Пологи (approx center of Polohivskyi raion)
-    'пологовский': (47.4840, 36.2536),
-    'краматорський': (48.7389, 37.5848),
-    'краматорский': (48.7389, 37.5848),
-    'бахмутський': (48.5941, 38.0021),
-    'бахмутский': (48.5941, 38.0021),
-    'черкаський': (49.4444, 32.0598),
-    'черкасский': (49.4444, 32.0598),
-    'одеський': (46.4825, 30.7233),
-    'одесский': (46.4825, 30.7233),
-    'харківський': (49.9935, 36.2304),
-    'харьковский': (49.9935, 36.2304),
-    # Новые районы для многократных сообщений
-    'конотопський': (51.2375, 33.2020), 'конотопский': (51.2375, 33.2020),
-    'сумський': (50.9077, 34.7981), 'сумский': (50.9077, 34.7981),
-    'новгород-сіверський': (51.9874, 33.2620), 'новгород-северский': (51.9874, 33.2620),
-    'чугуївський': (49.8353, 36.6880), 'чугевский': (49.8353, 36.6880), 'чугевський': (49.8353, 36.6880), 'чугуевский': (49.8353, 36.6880)
-}
 
 SETTLEMENTS_FILE = os.getenv('SETTLEMENTS_FILE', 'settlements_ua.json')
 SETTLEMENTS_INDEX = {}
-SETTLEMENTS_ORDERED = []
+SETTLEMENTS_ORDERED = []  # (RAION_FALLBACK consolidated earlier; duplicate definition removed)
 
 # --------------- Optional Git auto-commit settings ---------------
 GIT_AUTO_COMMIT = os.getenv('GIT_AUTO_COMMIT', '0') not in ('0','false','False','')
