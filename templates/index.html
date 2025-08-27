@@ -319,8 +319,8 @@
     .leaflet-container a{color:#2563eb;}
   /* --- Custom sharper markers --- */
   .threat-marker{position:relative;}
-  .threat-marker .tm-core{--c:var(--c,#334155);width:38px;height:38px;border-radius:50%;background:radial-gradient(circle at 35% 30%,rgba(255,255,255,.92),rgba(255,255,255,.15)),linear-gradient(145deg,var(--c),color-mix(in srgb,var(--c) 78%,#000));border:2px solid #fff;box-shadow:0 6px 14px -3px rgba(0,0,0,.45),0 0 0 1px rgba(0,0,0,.12);display:flex;align-items:center;justify-content:center;position:relative;backdrop-filter:blur(3px) saturate(1.2);}
-  .threat-marker .tm-core:after{content:"";position:absolute;bottom:-8px;left:50%;width:14px;height:14px;background:linear-gradient(145deg,var(--c),color-mix(in srgb,var(--c) 70%,#000));transform:translateX(-50%) rotate(45deg);border:2px solid #fff;border-top:none;border-left:none;border-bottom-right-radius:3px;box-shadow:0 4px 6px -2px rgba(0,0,0,.35);}
+  .threat-marker .tm-core{--c:var(--c,#334155);width:38px;height:38px;border-radius:50%;background:radial-gradient(circle at 35% 30%,rgba(255,255,255,.92),rgba(255,255,255,.15)),linear-gradient(145deg,var(--c),color-mix(in srgb,var(--c) 78%,#000));/* border removed */box-shadow:0 6px 14px -3px rgba(0,0,0,.45),0 0 0 1px rgba(0,0,0,.12);display:flex;align-items:center;justify-content:center;position:relative;backdrop-filter:blur(3px) saturate(1.2);}
+  .threat-marker .tm-core:after{content:"";position:absolute;bottom:-8px;left:50%;width:14px;height:14px;background:linear-gradient(145deg,var(--c),color-mix(in srgb,var(--c) 70%,#000));transform:translateX(-50%) rotate(45deg);/* border removed */border-bottom-right-radius:3px;box-shadow:0 4px 6px -2px rgba(0,0,0,.35);}
   .threat-marker img{width:60%;height:60%;object-fit:contain;filter:drop-shadow(0 1px 2px rgba(0,0,0,.45));transition:transform .25s ease;}
   .threat-marker:hover .tm-core{box-shadow:0 10px 24px -6px rgba(0,0,0,.5),0 0 0 1px rgba(0,0,0,.15);}
   .threat-marker:hover img{transform:scale(1.08);}
