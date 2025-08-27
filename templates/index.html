@@ -396,7 +396,7 @@
       color: var(--text) !important;
     }
     
-    /* Анимації */
+    /* Анімації */
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: translateY(0); }
@@ -937,23 +937,45 @@
         if (!p.border_shelling && p.threat_type && p.threat_type.toLowerCase()==='raketa' && /каб/i.test(p.text||'')) {
           try {
             const centerLat = p.lat; const centerLng = p.lng;
-            // West-facing semi-circle (threat from east/RF toward Ukraine) bearings 180°..360° (SW through W to NW)
-            let startBearing = 180; let endBearing = 360;
-            const baseRadius = 70; // km
-            const segments = 90;
-            const layers = [
-              { r: baseRadius, cls:'kab-zone', fill:'#dc2626', fillOpacity:0.10 },
-              { r: baseRadius*0.68, cls:'kab-zone-layer2', fill:'#ef4444', fillOpacity:0.14 },
-              { r: baseRadius*0.42, cls:'kab-zone-layer3', fill:'#f87171', fillOpacity:0.18 }
+            // West-facing semi-circle (threat from east -> projecting toward Ukraine)
+            const startBearing = 180, endBearing = 360;
+            const OUTER = 50; // km outer radius (reduced)
+            const segments = 96;
+            // Ensure SVG gradients exist once
+            (function ensureKabGrad(){
+              const mapPane = document.querySelector('.leaflet-overlay-pane svg');
+              if(!mapPane) return;
+              if(mapPane.querySelector('#kabGradOuter')) return;
+              const defs = mapPane.querySelector('defs') || (function(){ const d=document.createElementNS('http://www.w3.org/2000/svg','defs'); mapPane.insertBefore(d,mapPane.firstChild); return d; })();
+              const gOuter = document.createElementNS('http://www.w3.org/2000/svg','radialGradient');
+              gOuter.id='kabGradOuter'; gOuter.setAttribute('fx','35%'); gOuter.setAttribute('fy','30%');
+              [['0%','#ff7b6f'],['65%','rgba(255,59,48,0.55)'],['100%','rgba(255,59,48,0)']].forEach(([o,c])=>{ const stop=document.createElementNS('http://www.w3.org/2000/svg','stop'); stop.setAttribute('offset',o); stop.setAttribute('stop-color',c); defs.appendChild(gOuter); gOuter.appendChild(stop); });
+              const gMid = document.createElementNS('http://www.w3.org/2000/svg','radialGradient');
+              gMid.id='kabGradMid'; gMid.setAttribute('fx','40%'); gMid.setAttribute('fy','35%');
+              [['0%','#ffb4ab'],['60%','rgba(255,107,94,.65)'],['100%','rgba(255,107,94,0)']].forEach(([o,c])=>{ const stop=document.createElementNS('http://www.w3.org/2000/svg','stop'); stop.setAttribute('offset',o); stop.setAttribute('stop-color',c); defs.appendChild(gMid); gMid.appendChild(stop); });
+            })();
+            const layerDefs = [
+              {r:OUTER, cls:'kab-zone-outer'},
+              {r:OUTER*0.66, cls:'kab-zone-mid'},
+              {r:OUTER*0.38, cls:'kab-zone-inner'}
             ];
-            layers.forEach(def => {
-              const pts = buildSemiCircle(centerLat, centerLng, startBearing, endBearing, def.r, segments);
-              const poly = L.polygon(pts, {color:def.fill, weight:0.8, fillColor:def.fill, fillOpacity:def.fillOpacity, stroke:true, interactive:false}).addTo(markerLayer);
-              setTimeout(()=>{ try { poly._path.classList.add(def.cls); } catch(e){} }, 0);
+            layerDefs.forEach(ld=>{
+              const pts = buildSemiCircle(centerLat, centerLng, startBearing, endBearing, ld.r, segments);
+              const poly = L.polygon(pts, {className:ld.cls, color:'#ff3b30', weight:0.6, fillOpacity:0.22, stroke:true}).addTo(markerLayer);
             });
-            const innerPts = buildSemiCircle(centerLat, centerLng, startBearing, endBearing, baseRadius*0.9, segments);
-            const outline = L.polygon(innerPts, {color:'#fee2e2', weight:1, fill:false, dashArray:'8 6', opacity:0.7, interactive:false}).addTo(markerLayer);
-            setTimeout(()=>{ try { outline._path.classList.add('kab-zone'); } catch(e){} },0);
+            // Scanning arc (outline only)
+            const scanPts = buildSemiCircle(centerLat, centerLng, startBearing, endBearing, OUTER*0.92, segments);
+            L.polygon(scanPts, {className:'kab-zone-scan', color:'#ffe0dc', weight:1, fill:false}).addTo(markerLayer);
+            // Center glow & label using a divIcon
+            const centerDiv = L.divIcon({ html:`<div class='kab-center-glow'></div>`, className:'', iconSize:[36,36] });
+            L.marker([centerLat, centerLng], {icon:centerDiv, interactive:false}).addTo(markerLayer);
+            // Label placed at midpoint of arc (bearing 270°)
+            const midBearing = 270 * Math.PI/180; const R=6371; const d= (OUTER*0.62)/R; const toRad=x=>x*Math.PI/180; const toDeg=r=>r*180/Math.PI;
+            const lat1=toRad(centerLat); const lon1=toRad(centerLng);
+            const lat2 = Math.asin(Math.sin(lat1)*Math.cos(d)+Math.cos(lat1)*Math.sin(d)*Math.cos(midBearing));
+            const lon2 = lon1 + Math.atan2(Math.sin(midBearing)*Math.sin(d)*Math.cos(lat1), Math.cos(d)-Math.sin(lat1)*Math.sin(lat2));
+            const labelDiv = L.divIcon({ html:`<div class='kab-label'>КАБ<br><span style='font-weight:400;opacity:.8'>~${OUTER}км</span></div>`, className:'', iconSize:[1,1] });
+            L.marker([toDeg(lat2), ((toDeg(lon2)+540)%360)-180], {icon:labelDiv, interactive:false}).addTo(markerLayer);
           } catch(e){}
         }
       });
@@ -1028,6 +1050,7 @@
         const geo = await geoRes.json();
         if (airAlarmLayer) { airAlarmLayer.remove(); }
         airAlarmLayer = L.geoJSON(geo, {
+         
           style: feature => {
             let code = feature.properties.id || feature.properties.ISO_3166_2;
             if (code) code = code.toUpperCase();
