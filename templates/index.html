@@ -517,6 +517,11 @@
   .traj-tail { stroke:#ff9d7b !important; stroke-width:3.4; stroke-linecap:round; opacity:.5; animation:tailFade 9s ease-out forwards; }
   .traj-arc.drone { stroke:#00b3ff !important; filter:drop-shadow(0 0 6px rgba(0,179,255,.55)); }
   .traj-tail.drone { stroke:#41c9ff !important; }
+  /* KAB scan rotating line */
+  .kab-rotor-line { stroke:#ffe0dc; stroke-width:2.2; stroke-linecap:round; filter:drop-shadow(0 0 4px rgba(255,224,220,.9)); }
+  .kab-rotor-tail { stroke:url(#kabRotorGrad); stroke-width:5; stroke-linecap:round; opacity:.85; }
+  @keyframes kabRotate { to { transform:rotate(360deg); } }
+  .kab-rotor-group { transform-origin:center center; animation:kabRotate 18s linear infinite; }
   </style>
 </head>
 <body>
@@ -1003,7 +1008,9 @@
             });
             // Scanning arc (outline only)
             const scanPts = buildSemiCircle(centerLat, centerLng, startBearing, endBearing, OUTER*0.92, segments);
-            L.polygon(scanPts, {className:'kab-zone-scan', color:'#ffe0dc', weight:1, fill:false}).addTo(markerLayer);
+            const scan = L.polygon(scanPts, {className:'kab-zone-scan', color:'#ffe0dc', weight:1, fill:false});
+            scan.addTo(markerLayer);
+            try { addKabRotor(centerLat, centerLng, OUTER*0.92); } catch(e){}
             // Center glow & label using a divIcon
             const centerDiv = L.divIcon({ html:`<div class='kab-center-glow'></div>`, className:'', iconSize:[36,36] });
             L.marker([centerLat, centerLng], {icon:centerDiv, interactive:false}).addTo(markerLayer);
@@ -1049,6 +1056,58 @@
       // Fading thicker tail (static path that fades out)
       L.polyline(pts, {color: isDrone? '#41c9ff':'#ff9d7b', weight:3.4, opacity:0.5, className:'traj-tail'+(isDrone?' drone':'')}).addTo(markerLayer);
     }
+    // --- KAB rotating scan line (single per map instance concurrently) ---
+    function addKabRotor(lat, lng, radiusKm){
+      // Access overlay pane SVG
+      const pane = document.querySelector('.leaflet-overlay-pane svg');
+      if(!pane) return;
+      // Gradient for tail if not present
+      let defs = pane.querySelector('defs');
+      if(!defs){ defs=document.createElementNS('http://www.w3.org/2000/svg','defs'); pane.insertBefore(defs,pane.firstChild); }
+      if(!pane.querySelector('#kabRotorGrad')){
+        const lg=document.createElementNS('http://www.w3.org/2000/svg','linearGradient');
+        lg.id='kabRotorGrad'; lg.setAttribute('x1','0%'); lg.setAttribute('y1','50%'); lg.setAttribute('x2','100%'); lg.setAttribute('y2','50%');
+        [['0%','rgba(255,224,220,0)'],['35%','rgba(255,224,220,0.05)'],['65%','rgba(255,150,130,0.55)'],['100%','rgba(255,120,100,0.95)']].forEach(([o,c])=>{ const st=document.createElementNS('http://www.w3.org/2000/svg','stop'); st.setAttribute('offset',o); st.setAttribute('stop-color',c); lg.appendChild(st); });
+        defs.appendChild(lg);
+      }
+      // Build a group with a short line from center to arc
+      const g=document.createElementNS('http://www.w3.org/2000/svg','g');
+      g.setAttribute('class','kab-rotor-group');
+      // Convert lat/lng to projected points using Leaflet internal projection
+      const mapPointCenter = map.latLngToLayerPoint([lat,lng]);
+      // pick an initial angle (random for slight variation)
+      const angle = Math.random()*Math.PI*2;
+      const edgeLatLng = destinationPoint(lat,lng,angle,radiusKm);
+      const edgePoint = map.latLngToLayerPoint(edgeLatLng);
+      const line=document.createElementNS('http://www.w3.org/2000/svg','line');
+      line.setAttribute('x1',mapPointCenter.x); line.setAttribute('y1',mapPointCenter.y);
+      line.setAttribute('x2',edgePoint.x); line.setAttribute('y2',edgePoint.y);
+      line.setAttribute('class','kab-rotor-line');
+      // Tail (shorter) offset slightly behind main line
+      const tail=document.createElementNS('http://www.w3.org/2000/svg','line');
+      tail.setAttribute('x1',mapPointCenter.x); tail.setAttribute('y1',mapPointCenter.y);
+      tail.setAttribute('x2', (mapPointCenter.x+edgePoint.x)/2); tail.setAttribute('y2',(mapPointCenter.y+edgePoint.y)/2);
+      tail.setAttribute('class','kab-rotor-tail');
+      g.appendChild(tail); g.appendChild(line); pane.appendChild(g);
+      // Recenter transform origin to center (SVG group rotates around 0,0 with applied translate)
+      g.style.transformOrigin = `${mapPointCenter.x}px ${mapPointCenter.y}px`;
+      // Helper to update geometry on zoom/pan
+      function refresh(){
+        const centerP = map.latLngToLayerPoint([lat,lng]);
+        const edgeLatLng2 = destinationPoint(lat,lng,angle, radiusKm);
+        const edgeP = map.latLngToLayerPoint(edgeLatLng2);
+        line.setAttribute('x1',centerP.x); line.setAttribute('y1',centerP.y);
+        line.setAttribute('x2',edgeP.x); line.setAttribute('y2',edgeP.y);
+        tail.setAttribute('x1',centerP.x); tail.setAttribute('y1',centerP.y);
+        tail.setAttribute('x2',(centerP.x+edgeP.x)/2); tail.setAttribute('y2',(centerP.y+edgeP.y)/2);
+        g.style.transformOrigin = `${centerP.x}px ${centerP.y}px`;
+      }
+      map.on('zoom move', refresh);
+      // Cleanup when layer group cleared
+      if(markerLayer){ markerLayer.on('remove', ()=>{ try{ g.remove(); }catch(e){} map.off('zoom',refresh); map.off('move',refresh); }); }
+    }
+    function destinationPoint(lat,lng,bearingRad,distKm){
+      const R=6371; const δ=distKm/R; const φ1=lat*Math.PI/180; const λ1=lng*Math.PI/180; const θ=bearingRad; const sinφ1=Math.sin(φ1), cosφ1=Math.cos(φ1), sinδ=Math.sin(δ), cosδ=Math.cos(δ); const sinφ2 = sinφ1*cosδ + cosφ1*sinδ*Math.cos(θ); const φ2 = Math.asin(sinφ2); const y = Math.sin(θ)*sinδ*cosφ1; const x = cosδ - sinφ1*sinφ2; const λ2 = λ1 + Math.atan2(y,x); return [ (φ2*180/Math.PI), ((λ2*180/Math.PI)+540)%360-180 ]; }
     function updateEventList(points) {
       const el = document.getElementById('eventList');
       if (!el) return;
