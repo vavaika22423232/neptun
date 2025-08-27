@@ -23,6 +23,12 @@
 .neg-cache{margin-top:2rem;}
 .neg-cache table td{font-size:.7rem;}
 </style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-sA+e2atTHQnE0vJM0C2FZ9E1Cyan36H5v9g3rGm3o0k=" crossorigin=""/>
+<style>
+  #pickMap{height:320px;margin-top:.6rem;border:1px solid #1e293b;border-radius:8px;display:none;overflow:hidden;}
+  #pickMap.active{display:block;}
+  .pick-hint{font-size:.6rem;opacity:.6;margin-top:.25rem;}
+</style>
 </head>
 <body>
   <div class="topbar">
@@ -160,6 +166,11 @@
       <summary style="cursor:pointer;font-size:.75rem;opacity:.9;">Як користуватись (інтерактивне вибирання координат)</summary>
       <p style="font-size:.65rem;line-height:1.4;opacity:.8;">Відкрийте основну карту у вкладці, натисніть правою кнопкою (або довгий тап) у місці події, оберіть «Копіювати координати», вставте у поля Lat/Lng. (Можна додати окремий режим кліку прямо тут у майбутньому).</p>
     </details>
+    <div style="margin-top:.8rem;display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;">
+      <button type="button" class="ok" onclick="togglePickMap()" id="pickBtn">Обрати на мапі</button>
+      <span class="pick-hint">Клік по мапі вставить координати. Правий клік / довгий тап теж працює. Повторний клік по кнопці сховає мапу.</span>
+    </div>
+    <div id="pickMap"></div>
   </div>
   <div class="hidden-box">
     <h2 style="font-size:1rem">Hidden Markers ({{ hidden_markers|length }})</h2>
@@ -293,6 +304,30 @@ async function addManualMarker(ev){
   }
   return false;
 }
+
+// --- Coordinate picker map ---
+let pickMapInstance=null; let pickMarker=null;
+function togglePickMap(){
+  const box=document.getElementById('pickMap');
+  const btn=document.getElementById('pickBtn');
+  if(box.classList.contains('active')){ box.classList.remove('active'); btn.textContent='Обрати на мапі'; return; }
+  box.classList.add('active'); btn.textContent='Сховати мапу';
+  // lazy init
+  if(!pickMapInstance){
+    pickMapInstance = L.map('pickMap',{attributionControl:false,zoomControl:true}).setView([48.9,32.0],6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:11}).addTo(pickMapInstance);
+    const placeMarker = (latlng)=>{
+      const lat = latlng.lat.toFixed(5); const lng = latlng.lng.toFixed(5);
+      document.getElementById('mmLat').value=lat; document.getElementById('mmLng').value=lng;
+      if(!pickMarker){ pickMarker = L.marker(latlng,{draggable:true}).addTo(pickMapInstance); pickMarker.on('dragend',e=>{const ll=e.target.getLatLng(); document.getElementById('mmLat').value=ll.lat.toFixed(5); document.getElementById('mmLng').value=ll.lng.toFixed(5);}); }
+      else { pickMarker.setLatLng(latlng); }
+    };
+    pickMapInstance.on('click', e=>placeMarker(e.latlng));
+    pickMapInstance.on('contextmenu', e=>{placeMarker(e.latlng);});
+  }
+  setTimeout(()=>{try{pickMapInstance.invalidateSize();}catch(e){}},220);
+}
 </script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-o9N1j7kGStb6g2JbHb3bWbW7Z6nLqgG1R2GZ8Z8li2M=" crossorigin=""></script>
 </body>
 </html>
