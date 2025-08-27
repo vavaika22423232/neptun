@@ -1228,6 +1228,30 @@ def process_message(text, mid, date_str, channel):
                 'threat_type': None, 'text': original_text[:500], 'date': date_str, 'channel': channel,
                 'list_only': True, 'suppress': True, 'suppress_reason': 'donation_only'
             }]
+    # --- Universal link stripping (any clickable invite / http) ---
+    def _strip_links(s: str) -> str:
+        if not s:
+            return s
+        # markdown links [text](url)
+        s = re.sub(r'\[([^\]]{0,80})\]\((https?://|t\.me/)[^\)]+\)', lambda m: (m.group(1) or '').strip(), s, flags=re.IGNORECASE)
+        # bare urls
+        s = re.sub(r'(https?://\S+|t\.me/\S+)', '', s, flags=re.IGNORECASE)
+        # collapse whitespace and drop empty lines
+        cleaned = []
+        for ln in s.splitlines():
+            ln2 = ln.strip()
+            if not ln2:
+                continue
+            if re.fullmatch(r'[>➡→\-\s·•]*', ln2):
+                continue
+            cleaned.append(ln2)
+        return '\n'.join(cleaned)
+    new_text = _strip_links(text)
+    if new_text != text:
+        text = new_text
+    new_orig = _strip_links(original_text)
+    if new_orig != original_text:
+        original_text = new_orig
     # ---- Daily / periodic situation summary ("ситуація станом на HH:MM" + sectional bullets) ----
     # User request: do NOT create map markers for such aggregated status reports.
     # Heuristics: phrase "ситуація станом" (uk) or "ситуация на" (ru), OR presence of 2+ bullet headers like "• авіація", "• бпла", "• флот" in same message.
