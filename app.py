@@ -1202,6 +1202,12 @@ def process_message(text, mid, date_str, channel):
         'монобанк','monobank','mono.bank','privat24','приват24','реквізит','реквизит','донат','donat','iban','paypal','patreon','send.monobank.ua','jar/','банка: http','карта(','карта(monobank)','карта(privat24)'
     ]
     donation_present = any(k in low_full for k in DONATION_KEYS) or re.search(r'\b\d{16}\b', low_full)
+    # Pure subscription / invite promo suppression (no threats, mostly t.me invite links + short call to action)
+    if not any(w in low_full for w in ['бпла','дрон','шахед','shahed','ракета','каб','артил','града','смерч','ураган','mlrs','iskander','s-300','s300','border','trivoga','тривога','повітряна тривога']) and \
+       low_full.count('t.me/') >= 1 and len(re.sub(r'\s+',' ', low_full)) < 260 and \
+       len([ln for ln in low_full.splitlines() if ln.strip()]) <= 6:
+        if all(tok not in low_full for tok in ['загроза','укритт','alert','launch','start','вильот','вихід','пуски','air','strike']):
+            return None
     if donation_present:
         # Threat keyword heuristic (lightweight; don't rely on later THREAT_KEYS definition yet)
         threat_tokens = ['бпла','дрон','шахед','shahed','geran','ракета','ракети','missile','iskander','s-300','s300','каб','артил','града','смерч','ураган','mlrs']
