@@ -20,6 +20,8 @@
  .badge{display:inline-block;background:#334155;padding:2px 6px;border-radius:4px;font-size:.65rem;margin-left:6px;}
 .hidden-box{margin-top:2rem;}
 .hidden-box table td{font-size:.7rem;}
+.neg-cache{margin-top:2rem;}
+.neg-cache table td{font-size:.7rem;}
 </style>
 </head>
 <body>
@@ -133,6 +135,27 @@
       <button style="margin-top:.75rem;" class="danger" onclick="bulkUnhide()">Unhide ALL</button>
     {% endif %}
   </div>
+  <div class="neg-cache">
+    <h2 style="font-size:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;">Negative Geocode Cache ({{ neg_geocode|length }})
+      <button class="danger" style="margin-left:auto;" onclick="clearNegCache()">Clear All</button>
+    </h2>
+    <table>
+      <thead><tr><th>Query</th><th>When</th><th>Reason</th><th>Action</th></tr></thead>
+      <tbody>
+      {% for key, meta in neg_geocode %}
+        <tr>
+          <td style="max-width:220px;overflow-wrap:anywhere;">{{ key }}</td>
+          <td style="white-space:nowrap;">{{ meta.ts | datetime if meta.ts else meta.ts }}</td>
+          <td style="white-space:nowrap;">{{ meta.reason }}</td>
+          <td><button class="ok" onclick="delNeg('{{ key }}')">Remove</button></td>
+        </tr>
+      {% endfor %}
+      {% if not neg_geocode %}
+        <tr><td colspan="4" style="opacity:.6;">Empty</td></tr>
+      {% endif %}
+      </tbody>
+    </table>
+  </div>
 <script>
 async function blockId(id){
   const secret = new URLSearchParams(location.search).get('secret')||'';
@@ -186,6 +209,15 @@ async function bulkUnhide(){
     try{ await fetch('/unhide_marker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key})}); }catch(e){}
   }
   location.reload();
+}
+async function clearNegCache(){
+  const secret = new URLSearchParams(location.search).get('secret')||'';
+  if(!confirm('Clear all negative geocode entries?')) return;
+  try{ const r=await fetch('/admin/neg_geocode_clear?secret='+encodeURIComponent(secret),{method:'POST'}); if(r.ok) location.reload(); }catch(e){}
+}
+async function delNeg(name){
+  const secret = new URLSearchParams(location.search).get('secret')||'';
+  try{ const r=await fetch('/admin/neg_geocode_delete?secret='+encodeURIComponent(secret),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})}); if(r.ok) location.reload(); }catch(e){}
 }
 </script>
 </body>

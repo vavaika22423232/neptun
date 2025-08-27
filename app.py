@@ -148,6 +148,8 @@ MESSAGES_FILE = 'messages.json'
 HIDDEN_FILE = 'hidden_markers.json'
 OPENCAGE_CACHE_FILE = 'opencage_cache.json'
 OPENCAGE_TTL = 60 * 60 * 24 * 30  # 30 days
+NEG_GEOCODE_FILE = 'negative_geocode_cache.json'
+NEG_GEOCODE_TTL = 60 * 60 * 24 * 3  # 3 days for 'not found' entries
 MESSAGES_RETENTION_MINUTES = int(os.getenv('MESSAGES_RETENTION_MINUTES', '0'))  # 0 = keep forever
 MESSAGES_MAX_COUNT = int(os.getenv('MESSAGES_MAX_COUNT', '0'))  # 0 = unlimited
 
@@ -406,6 +408,7 @@ import math
 import sqlite3
 
 _opencage_cache = None
+_neg_geocode_cache = None
 
 def _load_opencage_cache():
     global _opencage_cache
@@ -429,6 +432,52 @@ def _save_opencage_cache():
             json.dump(_opencage_cache, f, ensure_ascii=False, indent=2)
     except Exception as e:
         log.warning(f"Failed saving OpenCage cache: {e}")
+
+def _load_neg_geocode_cache():
+    global _neg_geocode_cache
+    if _neg_geocode_cache is not None:
+        return _neg_geocode_cache
+    if os.path.exists(NEG_GEOCODE_FILE):
+        try:
+            with open(NEG_GEOCODE_FILE,'r',encoding='utf-8') as f:
+                _neg_geocode_cache = json.load(f)
+        except Exception:
+            _neg_geocode_cache = {}
+    else:
+        _neg_geocode_cache = {}
+    return _neg_geocode_cache
+
+def _save_neg_geocode_cache():
+    if _neg_geocode_cache is None:
+        return
+    try:
+        with open(NEG_GEOCODE_FILE,'w',encoding='utf-8') as f:
+            json.dump(_neg_geocode_cache,f,ensure_ascii=False,indent=2)
+    except Exception as e:
+        log.warning(f"Failed saving negative geocode cache: {e}")
+
+def neg_geocode_check(name:str):
+    if not name:
+        return False
+    cache = _load_neg_geocode_cache()
+    key = name.strip().lower()
+    entry = cache.get(key)
+    if not entry:
+        return False
+    # expire
+    if int(time.time()) - entry.get('ts',0) > NEG_GEOCODE_TTL:
+        try: del cache[key]; _save_neg_geocode_cache()
+        except Exception: pass
+        return False
+    return True
+
+def neg_geocode_add(name:str, reason:str='not_found'):
+    if not name:
+        return
+    cache = _load_neg_geocode_cache()
+    key = name.strip().lower()
+    cache[key] = {'ts': int(time.time()), 'reason': reason}
+    _save_neg_geocode_cache()
 
 UA_CITIES = [
     'київ','харків','одеса','одесса','дніпро','дніпропетровськ','львів','запоріжжя','запорожье','вінниця','миколаїв','николаев','маріуполь','полтава','чернігів','чернигов','черкаси','житомир','суми','хмельницький','чернівці','рівне','івано-франківськ','луцьк','тернопіль','ужгород','кропивницький','кіровоград','кременчук','краматорськ','біла церква','мелітополь','бердянськ','павлоград'
@@ -938,6 +987,9 @@ _load_external_cities()
 def geocode_opencage(place: str):
     if not OPENCAGE_API_KEY:
         return None
+    # Skip if known negative
+    if neg_geocode_check(place):
+        return None
     cache = _load_opencage_cache()
     key = place.strip().lower()
     now = int(datetime.utcnow().timestamp())
@@ -962,13 +1014,14 @@ def geocode_opencage(place: str):
                 cache[key] = {'ts': now, 'coords': coords}
                 _save_opencage_cache()
                 return coords
+        # negative (no results or non-200)
         cache[key] = {'ts': now, 'coords': None}
-        _save_opencage_cache()
+        _save_opencage_cache(); neg_geocode_add(place,'nocode')
         return None
     except Exception as e:
         log.warning(f"OpenCage error for '{place}': {e}")
         cache[key] = {'ts': now, 'coords': None}
-        _save_opencage_cache()
+        _save_opencage_cache(); neg_geocode_add(place,'error')
         return None
 
 def process_message(text, mid, date_str, channel):
@@ -3252,7 +3305,8 @@ def admin_panel():
         markers=recent_markers,
         daily_unique=daily_unique,
         week_unique=week_unique,
-        hidden_markers=parsed_hidden
+    hidden_markers=parsed_hidden,
+    neg_geocode=list(_load_neg_geocode_cache().items())[:150]
     )
 
 @app.route('/admin/set_monitor_period', methods=['POST'])
@@ -3270,6 +3324,30 @@ def set_monitor_period():
         return jsonify({'status':'ok','monitor_period':MONITOR_PERIOD_MINUTES})
     except Exception as e:
         return jsonify({'status':'error','error':str(e)}), 400
+
+@app.route('/admin/neg_geocode_clear', methods=['POST'])
+def admin_neg_geocode_clear():
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    global _neg_geocode_cache
+    _neg_geocode_cache = {}
+    _save_neg_geocode_cache()
+    return jsonify({'status':'ok','cleared':True})
+
+@app.route('/admin/neg_geocode_delete', methods=['POST'])
+def admin_neg_geocode_delete():
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    payload = request.get_json(silent=True) or {}
+    name = (payload.get('name') or '').strip().lower()
+    if not name:
+        return jsonify({'status':'error','error':'name required'}),400
+    cache = _load_neg_geocode_cache()
+    if name in cache:
+        del cache[name]
+        _save_neg_geocode_cache()
+        return jsonify({'status':'ok','removed':name})
+    return jsonify({'status':'ok','removed':None})
 
 @app.route('/block', methods=['POST'])
 def block_id():
