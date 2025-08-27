@@ -791,6 +791,24 @@ RAION_FALLBACK = {
     , 'самарський': (48.5380, 35.1500), 'самарский': (48.5380, 35.1500), 'самарівський': (48.5380, 35.1500)  # Samarskyi (approx east bank)
 }
 
+# Known external launch / airfield / training ground coordinates for Shahed (and similar) launch detection
+# Keys are normalized (lowercase, hyphen instead of spaces). Approximate coordinates.
+LAUNCH_SITES = {
+    'навля': (52.8300, 34.4900),              # Navlya (Bryansk Oblast training area approx)
+    'полігон навля': (52.8300, 34.4900),
+    'полигон навля': (52.8300, 34.4900),
+    'шаталово': (54.0500, 32.2900),            # Shatalovo (Smolensk Oblast)
+    'орел-південний': (52.9340, 36.0020),      # Orel South (Oryol Yuzhny)
+    'орёл-южный': (52.9340, 36.0020),
+    'орел-южный': (52.9340, 36.0020),
+    'орёл южный': (52.9340, 36.0020),
+    'орел южный': (52.9340, 36.0020),
+    'приморськ-ахтарськ': (46.0420, 38.1700),  # Primorsko-Akhtarsk (Krasnodar Krai)
+    'приморск-ахтарск': (46.0420, 38.1700),
+    'халіно': (51.7500, 36.2950),              # Khalino (Kursk)
+    'халино': (51.7500, 36.2950),
+}
+
 # Active raion (district) air alarms: raion_base -> dict(place, lat, lng, since)
 RAION_ALARMS = {}
 
@@ -1258,6 +1276,45 @@ def process_message(text, mid, date_str, channel):
     new_orig = _strip_links(original_text)
     if new_orig != original_text:
         original_text = new_orig
+    # --- Explicit launch site detection (multi-line). Create one marker per detected launch location.
+    low_work = text.lower()
+    if ('пуск' in low_work or 'пуски' in low_work) and any(k in low_work for k in ['shahed','шахед','бпла','uav','дрон']):
+        # find quoted or dash-separated site tokens: «Name», "Name", or after 'з ' preposition
+        sites_found = set()
+        # Quoted tokens
+        for m in re.findall(r'«([^»]{2,40})»', text):
+            sites_found.add(m.strip().lower())
+        for m in re.findall(r'"([^"\n]{2,40})"', text):
+            sites_found.add(m.strip().lower())
+        # Phrases after 'з ' (from) up to comma
+        for m in re.findall(r'з\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{2,40})', low_work):
+            sites_found.add(m.strip().lower())
+        tracks = []
+        threat_type = 'pusk'
+        icon = 'pusk.png'
+        idx = 0
+        for raw_site in sites_found:
+            norm_key = raw_site.replace(' — ','-').replace(' – ','-').replace('—','-').replace('–','-')
+            norm_key = norm_key.replace('  ',' ').strip()
+            base_variants = [norm_key, norm_key.replace('полігон ','').replace('полигон ','')]
+            coord = None
+            chosen_name = raw_site
+            for bv in base_variants:
+                if bv in LAUNCH_SITES:
+                    coord = LAUNCH_SITES[bv]
+                    chosen_name = bv
+                    break
+            if not coord:
+                continue
+            idx += 1
+            lat,lng = coord
+            tracks.append({
+                'id': f"{mid}_l{idx}", 'place': chosen_name.title(), 'lat': lat, 'lng': lng,
+                'threat_type': threat_type, 'text': original_text[:500], 'date': date_str, 'channel': channel,
+                'marker_icon': icon, 'source_match': 'launch_site'
+            })
+        if tracks:
+            return tracks
     # ---- Daily / periodic situation summary ("ситуація станом на HH:MM" + sectional bullets) ----
     # User request: do NOT create map markers for such aggregated status reports.
     # Heuristics: phrase "ситуація станом" (uk) or "ситуация на" (ru), OR presence of 2+ bullet headers like "• авіація", "• бпла", "• флот" in same message.
