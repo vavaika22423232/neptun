@@ -895,6 +895,57 @@
       if (markerLayer) { markerLayer.clearLayers(); }
       else { markerLayer = L.layerGroup().addTo(map); }
       markers = [];
+      // --------- Performance adaptive mode ---------
+      const MAX_DIRECT_MARKERS = 650; // threshold where we switch to clustered fast mode
+      const useFastMode = points.length > MAX_DIRECT_MARKERS;
+      if (useFastMode) {
+        const z = map.getZoom();
+        // cell size (degrees) shrinks with zoom to gradually reveal more detail
+        let cell = 0.55;
+        if (z >= 7) cell = 0.32; if (z >= 8) cell = 0.18; if (z >= 9) cell = 0.11; if (z >= 10) cell = 0.06;
+        const keyFn = p => `${Math.floor(p.lat / cell)}_${Math.floor(p.lng / cell)}`;
+        const buckets = new Map();
+        for (const p of points){
+          const k = keyFn(p);
+            let b = buckets.get(k);
+            if(!b){ b = { items:[], latSum:0, lngSum:0, types: new Map(), latest:0 }; buckets.set(k,b); }
+            b.items.push(p); b.latSum += p.lat; b.lngSum += p.lng; 
+            const tt=(p.threat_type||'').toLowerCase(); b.types.set(tt, (b.types.get(tt)||0)+1);
+            const ts = Date.parse((p.date||'').replace(/-/g,'/')) || 0; if(ts> b.latest) b.latest = ts;
+        }
+        buckets.forEach(b => {
+          const lat = b.latSum / b.items.length;
+          const lng = b.lngSum / b.items.length;
+          // choose dominant threat type for icon (fallback default)
+          let dominant = 'default'; let maxc=0;
+          b.types.forEach((c,t)=>{ if(c>maxc){ maxc=c; dominant=t; } });
+          let iconUrl = ICONS[dominant] || ICONS.default;
+          const count = b.items.length;
+          const ageMin = (Date.now()-b.latest)/60000;
+          const freshness = ageMin < 8 ? 'fresh' : ageMin < 20 ? 'stale' : 'old';
+          const html = `<div class='cluster cluster-${freshness}'><img src='${iconUrl}' alt=''><b>${count}</b></div>`;
+          const icon = L.divIcon({ html, className:'', iconSize:[44,52], iconAnchor:[22,48] });
+          const m = L.marker([lat,lng], {icon});
+          // Popup summary
+          const typeLines = [...b.types.entries()].sort((a,b)=>b[1]-a[1]).slice(0,6).map(([t,c])=>`<div>${t||'—'}: ${c}</div>`).join('');
+          m.bindPopup(`<div style='font-size:.7rem;line-height:1.25;'><b>${count}</b> подій<br>${typeLines}<div style='margin-top:4px;opacity:.55;'>кластер (деталі при збільшенні)</div></div>`);
+          m.addTo(markerLayer); markers.push(m);
+        });
+        // Style inject (once)
+        if(!document.getElementById('clusterStyles')){
+          const st=document.createElement('style'); st.id='clusterStyles'; st.textContent=`
+            .cluster{position:relative;display:flex;align-items:center;justify-content:center;background:linear-gradient(145deg,#1e293b,#0f172a);border:2px solid #334155;border-radius:18px;padding:4px 6px 6px;box-shadow:0 4px 12px -3px rgba(0,0,0,.4);} 
+            .cluster img{width:26px;height:26px;object-fit:contain;filter:drop-shadow(0 0 4px rgba(0,0,0,.5));margin-right:2px;} 
+            .cluster b{font-size:.8rem;font-family:Inter,system-ui,sans-serif;color:#fff;text-shadow:0 1px 2px #000;} 
+            .cluster-fresh{background:linear-gradient(160deg,#164e63,#0f2d40);border-color:#155e75;} 
+            .cluster-stale{background:linear-gradient(160deg,#3f3f46,#27272a);border-color:#52525b;} 
+            .cluster-old{background:linear-gradient(160deg,#1e1b4b,#0f172a);border-color:#312e81;opacity:.72;} 
+          `; document.head.appendChild(st); }
+        // Update event list but skip detailed marker render heavy stuff
+        updateEventList(data.events || []);
+        try { document.dispatchEvent(new CustomEvent('markersUpdated', {detail: data})); } catch(e){}
+        return; // exit early in fast mode
+      }
   // Container for border-shelling overlays (semi-circles)
   let borderShellingDrawn = false;
       points.forEach(p => {
