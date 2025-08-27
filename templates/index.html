@@ -599,7 +599,7 @@
       <!-- Mode buttons (legend, heatmap, clusters) -->
       <div class="map-mode-bar">
         <button id="legendToggle" class="mode-btn" aria-pressed="false">Легенда</button>
-        <button id="clusterToggle" class="mode-btn" aria-pressed="true">Кластери</button>
+  <button id="clusterToggle" class="mode-btn" aria-pressed="true">Кластери A</button>
         <button id="heatToggle" class="mode-btn" aria-pressed="false">Теплова</button>
       </div>
       <div id="legendPanel" class="map-overlay-panel" aria-label="Легенда">
@@ -704,7 +704,9 @@
   let map;
   let markerLayer = null; // standard layer group or cluster layer
   let heatLayer = null;
-  let clusterEnabled = true;
+  // clusterMode: 'auto' | 'on' | 'off'
+  let clusterMode = 'auto';
+  const clusterThreshold = 60; // auto-enable clusters if >= this many markers
   let heatEnabled = false;
   let legendVisible = false;
   let markers = [];
@@ -800,11 +802,26 @@
       grid.dataset.built = '1';
     }
     function toggleLegend(){ legendVisible = !legendVisible; const p=document.getElementById('legendPanel'); if(p){ p.classList.toggle('active', legendVisible); } const btn=document.getElementById('legendToggle'); if(btn){ btn.classList.toggle('active', legendVisible); btn.setAttribute('aria-pressed', legendVisible); } }
-    function toggleCluster(){ clusterEnabled = !clusterEnabled; const btn=document.getElementById('clusterToggle'); if(btn){ btn.classList.toggle('active', clusterEnabled); btn.setAttribute('aria-pressed', clusterEnabled); } updateMarkers(); }
+    function cycleClusterMode(){
+      if(clusterMode==='auto') clusterMode='on'; else if(clusterMode==='on') clusterMode='off'; else clusterMode='auto';
+      updateClusterButtonLabel();
+      updateMarkers();
+    }
+    function updateClusterButtonLabel(){
+      const btn=document.getElementById('clusterToggle'); if(!btn) return;
+      let label='Кластери';
+      if(clusterMode==='auto'){ label+=' A'; btn.classList.add('active'); }
+      else if(clusterMode==='on'){ label+=' ✓'; btn.classList.add('active'); }
+      else { label+=' –'; btn.classList.remove('active'); }
+      btn.textContent = label;
+      btn.setAttribute('aria-pressed', clusterMode!=='off');
+    }
+    function toggleCluster(){ cycleClusterMode(); }
     function toggleHeat(){ heatEnabled = !heatEnabled; const btn=document.getElementById('heatToggle'); if(btn){ btn.classList.toggle('active', heatEnabled); btn.setAttribute('aria-pressed', heatEnabled); } const hl=document.getElementById('heatLegend'); if(hl){ hl.style.display = heatEnabled ? 'block':'none'; } updateMarkers(); }
     document.addEventListener('DOMContentLoaded', ()=>{
       const lbtn=document.getElementById('legendToggle'); if(lbtn) lbtn.addEventListener('click', ()=>{ ensureLegend(); toggleLegend(); });
-      const cbtn=document.getElementById('clusterToggle'); if(cbtn) cbtn.addEventListener('click', toggleCluster);
+  const cbtn=document.getElementById('clusterToggle'); if(cbtn) cbtn.addEventListener('click', toggleCluster);
+  updateClusterButtonLabel();
       const hbtn=document.getElementById('heatToggle'); if(hbtn) hbtn.addEventListener('click', toggleHeat);
     });
     function parseUtcDate(str){ if(!str) return null; // expecting '%Y-%m-%d %H:%M:%S'
@@ -831,10 +848,27 @@
       lastDataPoints = points.slice();
       if (markerLayer) { markerLayer.clearLayers(); }
       // Recreate markerLayer if switching modes
-      if(clusterEnabled){
+      const effectiveCluster = (clusterMode==='on') || (clusterMode==='auto' && points.length >= clusterThreshold);
+      if(effectiveCluster){
         if(!markerLayer || !(markerLayer instanceof L.MarkerClusterGroup)){
           if(markerLayer) map.removeLayer(markerLayer);
-          markerLayer = L.markerClusterGroup({ disableClusteringAtZoom: 9, spiderfyOnMaxZoom:false, maxClusterRadius:60 });
+          markerLayer = L.markerClusterGroup({
+            disableClusteringAtZoom: 9,
+            spiderfyOnMaxZoom:false,
+            maxClusterRadius: (zoom)=> zoom>=8?40:60,
+            iconCreateFunction: function(cluster){
+              const children = cluster.getAllChildMarkers();
+              const counts = {};
+              children.forEach(m=>{ try { const html = m.options?.icon?.options?.html || ''; const match = html.match(/tm-core ([a-z_]+)/); if(match && match[1]){ counts[match[1]] = (counts[match[1]]||0)+1; } } catch(e){} });
+              let dominant=null, maxC=-1; Object.keys(counts).forEach(k=>{ if(counts[k]>maxC){ maxC=counts[k]; dominant=k; }});
+              const colorMap = { raketa:'#dc2626', shahed:'#2563eb', avia:'#f59e0b', pvo:'#059669', vibuh:'#6d28d9', artillery:'#b45309', obstril:'#b91c1c', mlrs:'#9d174d', alarm:'#fbbf24', alarm_cancel:'#64748b', fpv:'#4338ca'};
+              const color = colorMap[dominant] || '#2563eb';
+              const total = children.length;
+              const minor = Object.keys(counts).length>1 ? (Object.keys(counts).length-1) : 0;
+              const html = `<div class="cluster-badge" style="--c:${color}" title="${total} подій"><span>${total}</span>${minor?`<small>+${minor}</small>`:''}</div>`;
+              return L.divIcon({ html, className:'', iconSize:[44,54], iconAnchor:[22,52] });
+            }
+          });
           map.addLayer(markerLayer);
         }
       } else {
