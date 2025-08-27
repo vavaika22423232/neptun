@@ -618,6 +618,8 @@ RAION_FALLBACK = {
     'пологівський': (47.4840, 36.2536),  # Пологи (approx center of Polohivskyi raion)
     'пологовский': (47.4840, 36.2536),
     'краматорський': (48.7389, 37.5848),
+    'миколаївський': (46.9750, 31.9946),  # Mykolaivskyi raion (approx Mykolaiv city center)
+    'николаевский': (46.9750, 31.9946),
     'краматорский': (48.7389, 37.5848),
     'бахмутський': (48.5941, 38.0021),
     'бахмутский': (48.5941, 38.0021),
@@ -1238,6 +1240,7 @@ def process_message(text, mid, date_str, channel):
             for reg_key in OBLAST_CENTERS.keys():
                 if reg_key in lower_full:
                     region_hit = reg_key
+                    log.debug(f"region_shelling candidate mid={mid} match={reg_key}")
                     break
             if region_hit:
                 # Only emit if we haven't already returned a more specific structure earlier (heuristic: continue)
@@ -1247,6 +1250,7 @@ def process_message(text, mid, date_str, channel):
                 place_label = region_hit
                 if border_shell:
                     place_label += ' (прикордоння)'
+                log.debug(f"region_shelling emit mid={mid} region={region_hit} border={border_shell}")
                 return [{
                     'id': f"{mid}_region_shell", 'place': place_label, 'lat': lat, 'lng': lng,
                     'threat_type': threat_type, 'text': original_text[:500], 'date': date_str, 'channel': channel,
