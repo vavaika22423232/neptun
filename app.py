@@ -76,6 +76,10 @@ AUTH_SECRET = os.getenv('AUTH_SECRET')  # simple shared secret to protect /auth 
 FETCH_THREAD_STARTED = False
 AUTH_STATUS = {'authorized': False, 'reason': 'init'}
 SUBSCRIBERS = set()  # queues for SSE clients
+MAX_SSE_CLIENTS = int(os.getenv('MAX_SSE_CLIENTS','250'))  # soft cap to prevent overload
+LAST_DATA_CALLS = []  # sliding timestamps for simple global rate limiting
+DATA_RATE_WINDOW = 5  # seconds
+DATA_MAX_CALLS = int(os.getenv('DATA_MAX_CALLS','220'))  # per window across all users
 INIT_ONCE = False  # guard to ensure background startup once
 # Persistent dynamic channels file
 CHANNELS_FILE = 'channels_dynamic.json'
@@ -3190,8 +3194,26 @@ def index():
     # Leaflet version of frontend no longer needs Google Maps key
     return render_template('index.html')
 
+@app.route('/health')
+def health():
+    # Fast health probe (no file IO except minimal stats)
+    try:
+        auth_ok = AUTH_STATUS.get('authorized')
+        return jsonify({'ok': True, 'auth': bool(auth_ok), 'active_visitors': len(ACTIVE_VISITORS), 'sse_clients': len(SUBSCRIBERS)}), 200
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
 @app.route('/data')
 def data():
+    # Global lightweight rate limiter (best-effort; avoids heavy 502 cascades)
+    now_ts = time.time()
+    # prune old timestamps
+    while LAST_DATA_CALLS and now_ts - LAST_DATA_CALLS[0] > DATA_RATE_WINDOW:
+        LAST_DATA_CALLS.pop(0)
+    if len(LAST_DATA_CALLS) >= DATA_MAX_CALLS:
+        # Return minimal stale-ok response to shed load
+        return jsonify({'tracks': [], 'events': [], 'rate_limited': True}), 429
+    LAST_DATA_CALLS.append(now_ts)
     # Ignore user-provided timeRange; use global configured MONITOR_PERIOD_MINUTES
     time_range = MONITOR_PERIOD_MINUTES
     messages = load_messages()
@@ -3501,7 +3523,11 @@ def raion_alarms():
 @app.route('/stream')
 def stream():
     def gen():
-        q = queue.Queue()
+        if len(SUBSCRIBERS) >= MAX_SSE_CLIENTS:
+            # Immediately close by yielding comment then exit
+            yield ': overload\n\n'
+            return
+        q = queue.Queue(maxsize=200)
         SUBSCRIBERS.add(q)
         last_ping = time.time()
         try:
