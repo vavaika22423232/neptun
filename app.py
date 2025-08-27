@@ -1230,6 +1230,30 @@ def process_message(text, mid, date_str, channel):
             return 'artillery', 'artillery.png'
         # default assume shahed (консервативно)
         return 'shahed', 'shahed.png'
+    # --- Region-level shelling threat (e.g. "Харківська обл. Загроза обстрілу прикордонних територій") ---
+    try:
+        if re.search(r'(загроза обстрілу|угроза обстрела)', lower_full):
+            # attempt to match any oblast token present
+            region_hit = None
+            for reg_key in OBLAST_CENTERS.keys():
+                if reg_key in lower_full:
+                    region_hit = reg_key
+                    break
+            if region_hit:
+                # Only emit if we haven't already returned a more specific structure earlier (heuristic: continue)
+                lat, lng = OBLAST_CENTERS[region_hit]
+                threat_type, icon = classify(text)
+                border_shell = bool(re.search(r'прикордон|пригранич', lower_full))
+                place_label = region_hit
+                if border_shell:
+                    place_label += ' (прикордоння)'
+                return [{
+                    'id': f"{mid}_region_shell", 'place': place_label, 'lat': lat, 'lng': lng,
+                    'threat_type': threat_type, 'text': original_text[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': 'region_shelling', 'border_shelling': border_shell
+                }]
+    except Exception:
+        pass
     # Southeast-wide tactical aviation activity (no specific settlement): place a synthetic marker off SE border.
     se_phrase = lower if 'lower' in locals() else original_text.lower()
     if ('тактичн' in se_phrase or 'авіаці' in se_phrase or 'авиац' in se_phrase) and ('південно-східн' in se_phrase or 'південно східн' in se_phrase or 'юго-восточ' in se_phrase or 'південного-сходу' in se_phrase):
