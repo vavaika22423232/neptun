@@ -112,6 +112,55 @@
       </tbody>
     </table>
   </div>
+  <div class="blocked-list" style="margin-top:2rem;">
+    <h2 style="font-size:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;">Додати ручну мітку <span style="font-size:.65rem;opacity:.6;">(manual marker)</span></h2>
+    <form onsubmit="return addManualMarker(event)" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.6rem;align-items:end;max-width:880px;">
+      <label style="display:flex;flex-direction:column;font-size:.65rem;gap:4px;">
+        <span>Lat</span>
+        <input type="text" required id="mmLat" placeholder="48.45" />
+      </label>
+      <label style="display:flex;flex-direction:column;font-size:.65rem;gap:4px;">
+        <span>Lng</span>
+        <input type="text" required id="mmLng" placeholder="31.12" />
+      </label>
+      <label style="display:flex;flex-direction:column;font-size:.65rem;gap:4px;">
+        <span>Place</span>
+        <input type="text" id="mmPlace" placeholder="Київ" />
+      </label>
+      <label style="display:flex;flex-direction:column;font-size:.65rem;gap:4px;">
+        <span>Type</span>
+        <select id="mmType">
+          <option value="shahed">shahed</option>
+          <option value="raketa">raketa</option>
+          <option value="avia">avia</option>
+          <option value="pvo">pvo</option>
+          <option value="vibuh">vibuh</option>
+          <option value="mlrs">mlrs</option>
+          <option value="artillery">artillery</option>
+          <option value="obstril">obstril</option>
+          <option value="fpv">fpv</option>
+          <option value="pusk">pusk</option>
+          <option value="manual" selected>manual</option>
+        </select>
+      </label>
+      <label style="display:flex;flex-direction:column;font-size:.65rem;gap:4px;">
+        <span>Icon (optional)</span>
+        <input type="text" id="mmIcon" placeholder="custom.png" />
+      </label>
+      <label style="display:flex;flex-direction:column;font-size:.65rem;gap:4px;grid-column:1 / -1;">
+        <span>Text</span>
+        <textarea id="mmText" required placeholder="Опис події" style="min-height:60px;background:#0f1d33;border:1px solid #1e2f43;color:#fff;padding:6px 8px;border-radius:5px;font-family:inherit;font-size:.7rem;"></textarea>
+      </label>
+      <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;grid-column:1 / -1;">
+        <button type="submit" class="ok">Створити</button>
+        <span id="mmStatus" style="font-size:.65rem;opacity:.8;"></span>
+      </div>
+    </form>
+    <details style="margin-top:1rem;">
+      <summary style="cursor:pointer;font-size:.75rem;opacity:.9;">Як користуватись (інтерактивне вибирання координат)</summary>
+      <p style="font-size:.65rem;line-height:1.4;opacity:.8;">Відкрийте основну карту у вкладці, натисніть правою кнопкою (або довгий тап) у місці події, оберіть «Копіювати координати», вставте у поля Lat/Lng. (Можна додати окремий режим кліку прямо тут у майбутньому).</p>
+    </details>
+  </div>
   <div class="hidden-box">
     <h2 style="font-size:1rem">Hidden Markers ({{ hidden_markers|length }})</h2>
     <table>
@@ -218,6 +267,31 @@ async function clearNegCache(){
 async function delNeg(name){
   const secret = new URLSearchParams(location.search).get('secret')||'';
   try{ const r=await fetch('/admin/neg_geocode_delete?secret='+encodeURIComponent(secret),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})}); if(r.ok) location.reload(); }catch(e){}
+}
+async function addManualMarker(ev){
+  ev.preventDefault();
+  const secret = new URLSearchParams(location.search).get('secret')||'';
+  const lat = document.getElementById('mmLat').value.trim();
+  const lng = document.getElementById('mmLng').value.trim();
+  const place = document.getElementById('mmPlace').value.trim();
+  const type = document.getElementById('mmType').value;
+  const icon = document.getElementById('mmIcon').value.trim();
+  const text = document.getElementById('mmText').value.trim();
+  const status = document.getElementById('mmStatus');
+  status.textContent='Saving...'; status.style.color='#94a3b8';
+  try{
+    const r = await fetch('/admin/add_manual_marker?secret='+encodeURIComponent(secret),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,place,threat_type:type,text,icon})});
+    const js = await r.json();
+    if(js.status==='ok'){
+      status.textContent='OK'; status.style.color='#10b981';
+      setTimeout(()=>location.reload(),600);
+    } else {
+      status.textContent='ERR: '+js.error; status.style.color='#dc2626';
+    }
+  }catch(e){
+    status.textContent='ERR'; status.style.color='#dc2626';
+  }
+  return false;
 }
 </script>
 </body>

@@ -1,4 +1,4 @@
-import os, re, json, asyncio, threading, logging, pytz, time, subprocess, queue, sys, platform, traceback
+import os, re, json, asyncio, threading, logging, pytz, time, subprocess, queue, sys, platform, traceback, uuid
 from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify, request, Response
 from telethon import TelegramClient
@@ -3257,6 +3257,71 @@ def add_channel():
         log.info(f'Added channel {cid}. Total now {len(CHANNELS)}')
         return jsonify({'status':'ok','added':cid,'total':len(CHANNELS)})
     return jsonify({'status':'ok','added':False,'message':'exists','total':len(CHANNELS)})
+
+# ---------------- Manual marker management -----------------
+@app.route('/admin/add_manual_marker', methods=['POST'])
+def admin_add_manual_marker():
+    """Add a manual marker via admin panel.
+    JSON body: {"lat":..., "lng":..., "text":"...", "place":"...", "threat_type":"shahed", "icon":"optional.png"}
+    Requires secret if configured.
+    """
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    payload = request.get_json(silent=True) or {}
+    try:
+        lat = float(payload.get('lat'))
+        lng = float(payload.get('lng'))
+        if not (43 <= lat <= 53.8 and 21 <= lng <= 41.5):
+            raise ValueError('out_of_bounds')
+        text = (payload.get('text') or '').strip()
+        if not text:
+            raise ValueError('empty_text')
+        place = (payload.get('place') or '').strip()
+        threat_type = (payload.get('threat_type') or '').strip().lower() or 'manual'
+        allowed_types = {'shahed','raketa','avia','pvo','vibuh','alarm','alarm_cancel','mlrs','artillery','obstril','fpv','pusk','manual'}
+        if threat_type not in allowed_types:
+            threat_type = 'manual'
+        icon = (payload.get('icon') or '').strip()
+        now_dt = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        mid = 'manual-' + uuid.uuid4().hex[:12]
+        messages = load_messages()
+        # Build message dict similar to parsed messages
+        msg = {
+            'id': mid,
+            'date': now_dt,
+            'text': text,
+            'place': place,
+            'lat': round(lat, 6),
+            'lng': round(lng, 6),
+            'threat_type': threat_type,
+            'marker_icon': icon or None,
+            'manual': True,
+            'channel': 'manual',
+            'source': 'manual'
+        }
+        messages.append(msg)
+        save_messages(messages)
+        return jsonify({'status':'ok','id':mid})
+    except Exception as e:
+        return jsonify({'status':'error','error':str(e)}), 400
+
+@app.route('/admin/delete_manual_marker', methods=['POST'])
+def admin_delete_manual_marker():
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    payload = request.get_json(silent=True) or {}
+    mid = (payload.get('id') or '').strip()
+    if not mid:
+        return jsonify({'status':'error','error':'missing id'}), 400
+    try:
+        messages = load_messages()
+        new_list = [m for m in messages if not (m.get('manual') and m.get('id') == mid)]
+        if len(new_list) == len(messages):
+            return jsonify({'status':'ok','deleted':False})
+        save_messages(new_list)
+        return jsonify({'status':'ok','deleted':True})
+    except Exception as e:
+        return jsonify({'status':'error','error':str(e)}), 500
 
 @app.route('/hide_marker', methods=['POST'])
 def hide_marker():
