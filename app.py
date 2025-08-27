@@ -1396,6 +1396,9 @@ def process_message(text, mid, date_str, channel):
         # Recon / розвід дрони -> use pvo icon (rozved.png) per user request
         if 'розвід' in l or 'розвідуваль' in l or 'развед' in l:
             return 'pvo', 'rozved.png'
+        # Launch site detections for Shahed / UAV launches ("пуски" + origin phrases). User wants pusk.png marker.
+        if ('пуск' in l or 'пуски' in l) and any(k in l for k in ['shahed','шахед','шахеді','шахедів','бпла','uav','дрон']):
+            return 'pusk', 'pusk.png'
         # Air alarm start
         if ('повітряна тривога' in l or 'повітряна тривога.' in l or ('тривога' in l and 'повітр' in l)) and not ('відбій' in l or 'отбой' in l):
             return 'alarm', 'trivoga.png'
