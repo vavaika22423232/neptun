@@ -79,11 +79,11 @@
       </tbody>
     </table>
   </div>
-  <div class="blocked-list" style="margin-top:2rem;">
-    <h2 style="font-size:1rem">Raw (pending geo) {{ raw_count }}</h2>
+  <div class="blocked-list" style="margin-top:2rem;" id="raw-block">
+    <h2 style="font-size:1rem" id="raw-header">Raw (pending geo) {{ raw_count }}</h2>
     <table>
       <thead><tr><th>Time</th><th>Channel</th><th>Text</th></tr></thead>
-      <tbody>
+      <tbody id="raw-tbody">
         {% for r in raw_msgs %}
         <tr>
           <td style="white-space:nowrap;">{{ r.date }}</td>
@@ -217,6 +217,29 @@
     </table>
   </div>
 <script>
+// --- Real-time update for Raw (pending geo) ---
+async function updateRawSection() {
+  try {
+    const secret = new URLSearchParams(location.search).get('secret')||'';
+    const r = await fetch('/admin/raw_msgs?secret='+encodeURIComponent(secret));
+    if (!r.ok) return;
+    const js = await r.json();
+    // Update header
+    const header = document.getElementById('raw-header');
+    if(header && js.raw_count !== undefined) {
+      header.textContent = `Raw (pending geo) ${js.raw_count}`;
+    }
+    // Update table body
+    const tbody = document.getElementById('raw-tbody');
+    if(tbody && Array.isArray(js.raw_msgs)) {
+      tbody.innerHTML = js.raw_msgs.map(r =>
+        `<tr><td style='white-space:nowrap;'>${r.date}</td><td style='white-space:nowrap;'>${r.channel}</td><td style='max-width:420px;overflow-wrap:anywhere;'>${r.text}</td></tr>`
+      ).join('');
+    }
+  } catch(e) {}
+}
+setInterval(updateRawSection, 10000); // every 10 seconds
+document.addEventListener('DOMContentLoaded', () => { setTimeout(updateRawSection, 2000); });
 async function blockId(id){
   const secret = new URLSearchParams(location.search).get('secret')||'';
   const r = await fetch('/block?secret='+encodeURIComponent(secret), {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
