@@ -807,6 +807,8 @@ LAUNCH_SITES = {
     'приморск-ахтарск': (46.0420, 38.1700),
     'халіно': (51.7500, 36.2950),              # Khalino (Kursk)
     'халино': (51.7500, 36.2950),
+    'міллерово': (48.9250, 40.4000),           # Millerovo (Rostov Oblast) approximate airbase
+    'миллерово': (48.9250, 40.4000),
 }
 
 # Active raion (district) air alarms: raion_base -> dict(place, lat, lng, since)
@@ -1288,6 +1290,11 @@ def process_message(text, mid, date_str, channel):
             sites_found.add(m.strip().lower())
         # Phrases after 'з ' (from) up to comma
         for m in re.findall(r'з\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{2,40})', low_work):
+            sites_found.add(m.strip().lower())
+        # tokens after 'аеродрому' or 'аэродрома' inside quotes
+        for m in re.findall(r'аеродром[ау]\s+«([^»]{2,40})»', low_work):
+            sites_found.add(m.strip().lower())
+        for m in re.findall(r'аэродром[ау]\s+«([^»]{2,40})»', low_work):
             sites_found.add(m.strip().lower())
         tracks = []
         threat_type = 'pusk'
