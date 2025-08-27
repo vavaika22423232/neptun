@@ -598,6 +598,59 @@ UA_CITY_NORMALIZE = {
 # Static fallback coordinates (approximate city centers) to avoid relying solely on OpenCage.
 # Minimal fallback city coords (will be superseded if full settlements file present)
 CITY_COORDS = {
+    # --- Новые города и сёла для массовых сообщений ---
+    'глухів': (51.6781, 33.9169),
+    'кролевець': (51.5481, 33.3847),
+    'дубовʼязівка': (51.1833, 33.7833),
+    'тростянець': (50.4833, 34.9667),
+    'недригайлів': (50.8281, 33.8781),
+    'липова долина': (50.5700, 33.7900),
+    'ромни': (50.7497, 33.4746),
+    'парафіївка': (50.9833, 32.2833),
+    'срібне': (50.6650, 32.5731),
+    'борзна': (51.2542, 32.4192),
+    'бахмач': (51.1833, 32.8333),
+    'сновськ': (51.8100, 32.9422),
+    'сосниця': (51.5236, 32.4953),
+    'березна': (51.5756, 31.7431),
+    'макошине': (51.6275, 32.2731),
+    'гончарівське': (51.6272, 31.3192),
+    'десна': (51.0833, 30.9333),
+    'нова басань': (50.8133, 32.5833),
+    'гадяч': (50.3713, 34.0109),
+    'чорнухи': (50.2833, 33.0000),
+    'великі сорочинці': (50.0167, 33.9833),
+    'семенівка': (50.6633, 32.3933),
+    'лубни': (50.0186, 32.9931),
+    'шишаки': (49.8992, 34.0072),
+    'широке': (47.6833, 34.5667),
+    'зеленодольськ': (47.5667, 33.5333),
+    'нікополь': (47.5667, 34.4061),
+    'бабанка': (48.9833, 30.4167),
+    'новий буг': (47.6833, 32.5167),
+    'березнегувате': (47.3167, 32.8500),
+    'новоархангельськ': (48.6667, 30.8000),
+    'липняжка': (48.6167, 30.8667),
+    'голованівськ': (48.3772, 30.5322),
+    'бишів': (50.3167, 29.9833),
+    'обухів': (50.1072, 30.6211),
+    'гребінки': (50.2500, 30.2500),
+    'біла церква': (49.7950, 30.1310),
+    'сквира': (49.7333, 29.6667),
+    'чорнобиль': (51.2768, 30.2219),
+    'пулини': (50.4333, 28.4333),
+    'головине': (50.3833, 28.6667),
+    'радомишль': (50.4972, 29.2292),
+    'коростень': (50.9500, 28.6333),
+    'погребище': (49.4833, 29.2667),
+    'теплик': (48.6667, 29.6667),
+    'оратів': (48.9333, 29.5167),
+    'дашів': (48.9000, 29.4333),
+    'шаргород': (48.7333, 28.0833),
+    'бірки': (49.7517, 36.1025),
+    'златопіль': (48.3640, 38.1500),
+    'балаклія': (49.4622, 36.8572),
+    'берестин': (50.2000, 35.0000),
     'київ': (50.4501, 30.5234),
     'харків': (49.9935, 36.2304),
     'одеса': (46.4825, 30.7233),
@@ -1225,6 +1278,43 @@ def geocode_opencage(place: str):
         return None
 
 def process_message(text, mid, date_str, channel):
+    # --- Detect and split multiple city targets in one message ---
+    import re
+    multi_city_tracks = []
+    # 1. Patterns: 'на <город>', 'повз <город>'
+    city_patterns = re.findall(r'(?:на|повз)\s+([A-Za-zА-Яа-яЇїІіЄєҐґʼ`’\-]{3,})', text.lower())
+    # 2. Patterns: перечисление через запятую или слэш (например: "шишаки, глобине, ромодан" или "малин/гранітне")
+    # Только если в сообщении нет явного одного города в начале
+    city_enumerations = []
+    for part in re.split(r'[\n\|]', text.lower()):
+        # ищем перечисления через запятую
+        if ',' in part:
+            city_enumerations += [c.strip() for c in part.split(',') if len(c.strip()) > 2]
+        # ищем перечисления через слэш
+        if '/' in part:
+            city_enumerations += [c.strip() for c in part.split('/') if len(c.strip()) > 2]
+    # Объединяем все найденные города
+    all_cities = set(city_patterns + city_enumerations)
+    # Фильтруем по наличию в CITY_COORDS (или SETTLEMENTS_INDEX)
+    found_cities = []
+    for city in all_cities:
+        norm = city.strip().lower()
+        coords = CITY_COORDS.get(norm)
+        if not coords and 'settlements_index' in globals() and SETTLEMENTS_INDEX:
+            coords = SETTLEMENTS_INDEX.get(norm)
+        if coords:
+            found_cities.append((city, coords))
+    # Если найдено 2 и более города — создаём отдельный маркер для каждого
+    if len(found_cities) >= 2:
+        threat_type, icon = 'shahed', 'shahed.png'  # можно доработать auto-classify
+        for idx, (city, (lat, lng)) in enumerate(found_cities, 1):
+            multi_city_tracks.append({
+                'id': f"{mid}_mc{idx}", 'place': city.title(), 'lat': lat, 'lng': lng,
+                'threat_type': threat_type, 'text': original_text[:500], 'date': date_str, 'channel': channel,
+                'marker_icon': icon, 'source_match': 'multi_city_auto'
+            })
+        if multi_city_tracks:
+            return multi_city_tracks
     """Extract coordinates or try simple city geocoding (lightweight)."""
     original_text = text
     # ---------------- Global region (oblast) hint detection for universal settlement binding ----------------
