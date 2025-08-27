@@ -2015,6 +2015,17 @@ def process_message(text, mid, date_str, channel):
         pat_count_course = re.compile(r'^(\d+)[xх]?\s*бпла.*?курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`]{3,})', re.IGNORECASE)
         pat_course = re.compile(r'бпла.*?курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`]{3,})', re.IGNORECASE)
         pat_area = re.compile(r'(\d+)?[xх]?\s*бпла\s+в\s+районі\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`]{3,})', re.IGNORECASE)
+        # Direct hotfix: ensure 'курс(ом) на Кіпті' resolves to SETTLEMENT_FALLBACK coords
+        if re.search(r'бпла.*?курс(?:ом)?\s+на\s+кіпт[ії]', lower):
+            coords = SETTLEMENT_FALLBACK.get('кіпті')
+            if coords:
+                lat,lng = coords
+                threat_type, icon = classify(original_text)
+                return [{
+                    'id': f"{mid}_kipti_course", 'place': 'Кіпті', 'lat': lat, 'lng': lng,
+                    'threat_type': threat_type, 'text': original_text[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': 'course_kipti'
+                }]
         def norm_city_token(tok: str) -> str:
             t = tok.lower().strip(" .,'’ʼ`-:")
             t = t.replace('’',"'")
