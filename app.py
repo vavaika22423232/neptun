@@ -705,7 +705,8 @@ def ensure_ua_place(name: str) -> str:
         out = ''.join(single.get(ch,ch) for ch in s)
         # Capitalize first letter and letters after dash/space
         def cap_tokens(txt):
-            parts = re.split('([-\s])', txt)
+            # Use raw regex to avoid invalid escape sequence warning for \s
+            parts = re.split(r'([-\s])', txt)
             return ''.join(p.capitalize() if i%2==0 else p for i,p in enumerate(parts))
         return cap_tokens(out)
     return n
@@ -1633,7 +1634,8 @@ def process_message(text, mid, date_str, channel):
                 parts.append(tok)
             return ' '.join(parts)
         for seg in segs:
-            s = seg.strip(':; \/')
+            # Strip common trailing separators (colon, semicolon, space, slash, backslash)
+            s = seg.strip(':; /\\')
             if not s or s.isdigit():
                 continue
             matches = []
