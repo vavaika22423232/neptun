@@ -3496,13 +3496,6 @@ def raion_alarms():
             'since': info['since']
         })
     return jsonify({'alarms': out, 'count': len(out)})
-    with ACTIVE_LOCK:
-        prev = ACTIVE_VISITORS.get(vid) if isinstance(ACTIVE_VISITORS.get(vid), dict) else {}
-        ACTIVE_VISITORS[vid] = {'ts': now, 'ip': remote_ip, 'ua': prev.get('ua') or ua}
-        stale = [k for k,v in ACTIVE_VISITORS.items() if now - (v if isinstance(v,(int,float)) else v.get('ts',0)) > ACTIVE_TTL]
-        for k in stale: del ACTIVE_VISITORS[k]
-        count = len(ACTIVE_VISITORS)
-    return jsonify({'status':'ok','visitors':count})
 
 # SSE stream endpoint
 @app.route('/stream')
