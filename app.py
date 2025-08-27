@@ -1294,6 +1294,16 @@ def geocode_opencage(place: str):
         return None
 
 def process_message(text, mid, date_str, channel):
+    # --- Удалять строки с донатами/ссылками, но не подавлять всё сообщение ---
+    DONATION_KEYS = [
+        'монобанк','monobank','mono.bank','privat24','приват24','реквізит','реквизит','донат','donat','iban','paypal','patreon','send.monobank.ua','jar/','банка: http','карта(','карта(monobank)','карта(privat24)','t.me/','http','https://'
+    ]
+    def is_donation_line(ln):
+        ll = ln.lower()
+        return any(k in ll for k in DONATION_KEYS) or re.search(r'\b\d{16}\b', ll)
+    # Удаляем строки-донаты/ссылки
+    lines = [l for l in text.splitlines() if l.strip() and not is_donation_line(l)]
+    text = '\n'.join(lines)
     # --- Спец. обработка многострочных сообщений с заголовками-областями и списком городов ---
     import unicodedata
     def normalize_city_name(name):
