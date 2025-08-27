@@ -809,6 +809,13 @@ LAUNCH_SITES = {
     'халино': (51.7500, 36.2950),
     'міллерово': (48.9250, 40.4000),           # Millerovo (Rostov Oblast) approximate airbase
     'миллерово': (48.9250, 40.4000),
+    # Newly added occupied launch / training areas
+    'приморськ': (46.7306, 36.3456),           # Prymorsk (Zaporizhzhia oblast, occupied coastal area)
+    'полігон приморськ': (46.7306, 36.3456),
+    'полигон приморск': (46.7306, 36.3456),
+    'чауда': (45.0710, 36.1320),               # Chauda range (Crimea)
+    'полігон чауда': (45.0710, 36.1320),
+    'полигон чауда': (45.0710, 36.1320),
 }
 
 # Active raion (district) air alarms: raion_base -> dict(place, lat, lng, since)
