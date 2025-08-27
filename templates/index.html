@@ -937,10 +937,9 @@
         if (!p.border_shelling && p.threat_type && p.threat_type.toLowerCase()==='raketa' && /каб/i.test(p.text||'')) {
           try {
             const centerLat = p.lat; const centerLng = p.lng;
-            // Orientation heuristic
-            let startBearing = 300; let endBearing = 60; // NE focus
-            if (centerLng > 34.5) { startBearing = 270; endBearing = 90; }
-            const baseRadius = 70; // base outer radius km (larger than before)
+            // West-facing semi-circle (threat from east/RF toward Ukraine) bearings 180°..360° (SW through W to NW)
+            let startBearing = 180; let endBearing = 360;
+            const baseRadius = 70; // km
             const segments = 90;
             const layers = [
               { r: baseRadius, cls:'kab-zone', fill:'#dc2626', fillOpacity:0.10 },
@@ -950,10 +949,8 @@
             layers.forEach(def => {
               const pts = buildSemiCircle(centerLat, centerLng, startBearing, endBearing, def.r, segments);
               const poly = L.polygon(pts, {color:def.fill, weight:0.8, fillColor:def.fill, fillOpacity:def.fillOpacity, stroke:true, interactive:false}).addTo(markerLayer);
-              // Add CSS class for animation / glow after path is in DOM
               setTimeout(()=>{ try { poly._path.classList.add(def.cls); } catch(e){} }, 0);
             });
-            // Thin inner outline arc (no fill) emphasising direction
             const innerPts = buildSemiCircle(centerLat, centerLng, startBearing, endBearing, baseRadius*0.9, segments);
             const outline = L.polygon(innerPts, {color:'#fee2e2', weight:1, fill:false, dashArray:'8 6', opacity:0.7, interactive:false}).addTo(markerLayer);
             setTimeout(()=>{ try { outline._path.classList.add('kab-zone'); } catch(e){} },0);
