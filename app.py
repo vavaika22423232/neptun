@@ -819,6 +819,12 @@ HROMADA_FALLBACK = {
     'хотінська': (51.0825, 34.5860),  # Хотінська громада (approx center, Sumy raion near border)
 }
 
+# Specific settlement fallback for mis-localized parsing (e.g., 'Кіпті' message wrongly geocoded to Lviv oblast)
+SETTLEMENT_FALLBACK = {
+    'кіпті': (51.0925, 31.3190),  # Kiptsi (Chernihiv oblast, along M01/E95 near junction). Approx center.
+    'кипти': (51.0925, 31.3190),  # Russian / simplified spelling
+}
+
 SETTLEMENTS_FILE = os.getenv('SETTLEMENTS_FILE', 'settlements_ua.json')
 SETTLEMENTS_URL = os.getenv('SETTLEMENTS_URL')  # optional remote JSON (list of {name,lat,lng})
 SETTLEMENTS_MAX = int(os.getenv('SETTLEMENTS_MAX', '150000'))  # safety cap
@@ -1198,6 +1204,9 @@ def process_message(text, mid, date_str, channel):
         coord = CITY_COORDS.get(name_norm)
         if not coord and SETTLEMENTS_INDEX:
             coord = SETTLEMENTS_INDEX.get(name_norm)
+        # Explicit settlement fallback (manual corrections for mis-geocoded small places)
+        if not coord:
+            coord = SETTLEMENT_FALLBACK.get(name_norm)
         if coord:
             return coord
         # --- 3. Fuzzy approximate search (only if not found) ---
@@ -1447,6 +1456,8 @@ def process_message(text, mid, date_str, channel):
                 coords = CITY_COORDS.get(norm)
                 if not coords and SETTLEMENTS_INDEX:
                     coords = SETTLEMENTS_INDEX.get(norm)
+                if not coords:
+                    coords = SETTLEMENT_FALLBACK.get(norm)
                 log.debug(f"parenthetical_dir detect mid={mid} candidate={candidate} norm={norm} found={bool(coords)}")
                 if coords:
                     lat,lng = coords
