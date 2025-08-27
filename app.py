@@ -1,4 +1,11 @@
 import os, re, json, asyncio, threading, logging, pytz, time, subprocess, queue, sys, platform, traceback
+from dataclasses import dataclass, asdict
+try:
+    # Optional fuzzy matching library (added in improvements phase)
+    from rapidfuzz import process as _fuzz_process, fuzz as _fuzz
+except Exception:  # library may not be installed yet (cold start)
+    _fuzz_process = None
+    _fuzz = None
 from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify, request, Response
 from telethon import TelegramClient
@@ -60,6 +67,187 @@ ALWAYS_STORE_RAW = os.getenv('ALWAYS_STORE_RAW', '1') not in ('0','false','False
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 log = logging.getLogger(__name__)
+
+# ---------------- Runtime config / feature flags (initial extraction) ----------------
+APP_CONFIG = {
+    'fuzzy_enabled': True,          # allow fuzzy fallback for settlements
+    'fuzzy_min_score': 88,          # minimum RapidFuzz ratio
+    'negative_geo_ttl': 3600,       # seconds to keep negative geocode / fuzzy failures
+    'duplicate_window_sec': 120,    # collapse duplicates within this window
+    'confidence_defaults': {
+        'static': 0.93,
+        'settlement_index': 0.9,
+        'fuzzy': 0.78,
+        'geocode_region': 0.7,
+        'geocode_plain': 0.6,
+        'inferred': 0.55
+    },
+    # Threat icon priority (first matching in classify-like logic if multi-threat extraction added later)
+    'threat_priority': [
+        'alarm_cancel','alarm','vibuh','artillery','shahed','raketa','avia','pvo','rszv'
+    ]
+}
+
+# ---------------- Basic metrics (exposed at /metrics) ----------------
+METRICS = {
+    'messages_processed': 0,
+    'tracks_emitted': 0,
+    'geo_static_hits': 0,
+    'geo_settlement_hits': 0,
+    'geo_fuzzy_hits': 0,
+    'geo_opencage_region_hits': 0,
+    'geo_opencage_plain_hits': 0,
+    'geo_failures': 0,
+    'duplicate_collapsed': 0
+}
+
+# External rules config (keywords/priority) hot-load
+RULES_CONFIG_PATH = 'rules_config.json'
+RULES_CONFIG = {}
+_RULES_MTIME = 0
+def load_rules_config():
+    global RULES_CONFIG
+    try:
+        if os.path.exists(RULES_CONFIG_PATH):
+            mtime = os.path.getmtime(RULES_CONFIG_PATH)
+            global _RULES_MTIME
+            if mtime == _RULES_MTIME:
+                return False
+            with open(RULES_CONFIG_PATH,'r',encoding='utf-8') as f:
+                RULES_CONFIG = json.load(f)
+            _RULES_MTIME = mtime
+            if 'threat_priority' in RULES_CONFIG:
+                APP_CONFIG['threat_priority'] = RULES_CONFIG['threat_priority']
+            structured_log('rules_reloaded', mtime=mtime)
+            return True
+    except Exception as e:
+        log.warning(f"Failed loading rules_config.json: {e}")
+    return False
+load_rules_config()
+
+def structured_log(event: str, **fields):
+    try:
+        payload = {'evt': event, **fields}
+        log.info(json.dumps(payload, ensure_ascii=False))
+    except Exception:
+        log.info(f"{event} | {fields}")
+
+_RECENT_HASHES = []  # list of (ts, key) for duplicate collapse
+def _collapse_duplicate(track: dict) -> bool:
+    try:
+        ttl = APP_CONFIG['duplicate_window_sec']
+        now = time.time()
+        while _RECENT_HASHES and now - _RECENT_HASHES[0][0] > ttl:
+            _RECENT_HASHES.pop(0)
+        key = f"{track.get('place')}|{track.get('threat_type')}|{track.get('marker_icon')}"
+        for ts, k in _RECENT_HASHES:
+            if k == key:
+                METRICS['duplicate_collapsed'] += 1
+                return True
+        _RECENT_HASHES.append((now, key))
+    except Exception:
+        pass
+    return False
+
+_NEG_GEO = {}  # name -> ts of last failed geocode/fuzzy (negative cache)
+
+def _neg_geo_add(name: str):
+    if not name: return
+    _NEG_GEO[name] = time.time()
+
+def _neg_geo_allowed(name: str) -> bool:
+    if not name: return False
+    ttl = APP_CONFIG['negative_geo_ttl']
+    ts = _NEG_GEO.get(name)
+    if ts is None: return True
+    if time.time() - ts > ttl:
+        _NEG_GEO.pop(name, None)
+        return True
+    return False
+
+def _fuzzy_lookup(name: str):
+    """Fuzzy search a settlement name if direct lookup failed.
+    Returns (canonical_name, (lat,lng)) or (None, None)."""
+    if not APP_CONFIG.get('fuzzy_enabled') or not name or _fuzz_process is None:
+        return None, None
+    if not SETTLEMENTS_INDEX:
+        return None, None
+    # RapidFuzz expects an iterable of choices; we use keys view (fast C code inside lib)
+    try:
+        res = _fuzz_process.extractOne(name, SETTLEMENTS_INDEX.keys(), scorer=_fuzz.WRatio)
+    except Exception:
+        return None, None
+    if not res or len(res) < 2:
+        return None, None
+    cand, score = res[0], res[1]
+    if score >= APP_CONFIG['fuzzy_min_score']:
+        return cand, SETTLEMENTS_INDEX.get(cand)
+    return None, None
+
+@dataclass
+class Event:
+    id: str
+    place: str | None
+    lat: float | None
+    lng: float | None
+    threat_type: str | None
+    text: str
+    date: str
+    channel: str
+    marker_icon: str | None = None
+    list_only: bool | None = None
+    suppress: bool | None = None
+    source_match: str | None = None
+    count: int | None = None
+    border_shelling: bool | None = None
+    pending_geo: bool | None = None
+    confidence: float | None = None
+
+    def to_dict(self):
+        return {k: v for k, v in asdict(self).items() if v is not None}
+
+# --------- Unified эмиттер треков с учётом дубликатов, повторов и метрик ---------
+def emit_track(raw: dict, allow_duplicate=False, suppress=False):
+    """Приводит словарь к Event, проверяет дубликат, считает повтор, логирует.
+    raw может уже содержать confidence / source_match.
+    Возвращает список (или пустой) для совместимости со старыми return [{...}]."""
+    try:
+        if suppress or raw.get('suppress'):
+            raw['suppress'] = True
+        # Дедуп ключ
+        key = f"{raw.get('place')}|{raw.get('threat_type')}|{raw.get('marker_icon')}"
+        now = time.time()
+        # Поиск существующего события в глобальном кеше (пока простая линейная — TODO оптимизация)
+        existing = None
+        # (Позже можно держать глобальный индекс последней выдачи) — сейчас только дубликат коллапс
+        if not allow_duplicate and _collapse_duplicate(raw):
+            structured_log('duplicate_collapsed', key=key)
+            return []
+        ev = Event(
+            id=str(raw.get('id')),
+            place=raw.get('place'),
+            lat=raw.get('lat'),
+            lng=raw.get('lng'),
+            threat_type=raw.get('threat_type'),
+            text=raw.get('text','')[:800],
+            date=raw.get('date',''),
+            channel=raw.get('channel',''),
+            marker_icon=raw.get('marker_icon'),
+            list_only=raw.get('list_only'),
+            suppress=raw.get('suppress'),
+            source_match=raw.get('source_match'),
+            count=raw.get('count'),
+            border_shelling=raw.get('border_shelling'),
+            pending_geo=raw.get('pending_geo'),
+            confidence=raw.get('confidence')
+        )
+        d = ev.to_dict()
+        if not d.get('suppress'):
+            METRICS['tracks_emitted'] += 1
+        return [d]
+    except Exception as e:
+        structured_log('emit_error', error=str(e))
+        return []
 
 app = Flask(__name__)
 ACTIVE_VISITORS = {}
@@ -996,24 +1184,36 @@ def process_message(text, mid, date_str, channel):
                     break
 
     def region_enhanced_coords(base_name: str, region_hint_override: str = None):
-        """Resolve coordinates for a settlement name using (in order): static list, settlements dataset,
-        region-qualified OpenCage (city + region), then plain OpenCage.
-        This enforces the user requirement to bind every settlement to the oblast mentioned in the message text.
-        base_name should already be lower-case / normalized.
+        """Resolve coordinates for a settlement name using enriched pipeline with confidence scoring.
+        Returns (coords_tuple, confidence, source_label)
         """
         if not base_name:
             return None
         name = UA_CITY_NORMALIZE.get(base_name, base_name).strip().lower()
-        # Static minimal city coords first
+        if not _neg_geo_allowed(name):
+            return None
+        # 1. Static dictionary
         coord = CITY_COORDS.get(name)
         if coord:
-            return coord
-        # Settlements dataset
+            METRICS['geo_static_hits'] += 1
+            structured_log('geo_hit_static', name=name)
+            return coord, APP_CONFIG['confidence_defaults']['static'], 'static'
+        # 2. Settlements main index
         if SETTLEMENTS_INDEX:
             coord = SETTLEMENTS_INDEX.get(name)
             if coord:
-                return coord
-        # Region-qualified remote geocode
+                METRICS['geo_settlement_hits'] += 1
+                structured_log('geo_hit_index', name=name)
+                return coord, APP_CONFIG['confidence_defaults']['settlement_index'], 'settlement_index'
+        # 3. Fuzzy
+        cand = None
+        if APP_CONFIG.get('fuzzy_enabled') and _fuzz_process is not None:
+            cand, fcoord = _fuzzy_lookup(name)
+            if fcoord:
+                METRICS['geo_fuzzy_hits'] += 1
+                structured_log('geo_hit_fuzzy', name=cand, score='ok')
+                return fcoord, APP_CONFIG['confidence_defaults']['fuzzy'], f'fuzzy:{cand}'
+        # 4. Region-qualified geocode
         region_for_query = region_hint_override or region_hint_global
         if region_for_query:
             canon = REGION_GEOCODE_CANON.get(region_for_query, None)
@@ -1024,17 +1224,23 @@ def process_message(text, mid, date_str, channel):
                 combo = f"{name} {region_for_query}".replace('  ', ' ').strip()
                 combo_c = geocode_opencage(combo)
                 if combo_c:
-                    return combo_c
+                    METRICS['geo_opencage_region_hits'] += 1
+                    structured_log('geo_hit_region_geocode', name=name, query=combo)
+                    return combo_c, APP_CONFIG['confidence_defaults']['geocode_region'], 'geocode_region'
             except Exception:
                 pass
-        # Plain remote geocode fallback
+        # 5. Plain geocode
         if OPENCAGE_API_KEY:
             try:
                 plain_c = geocode_opencage(name)
                 if plain_c:
-                    return plain_c
+                    METRICS['geo_opencage_plain_hits'] += 1
+                    structured_log('geo_hit_plain_geocode', name=name)
+                    return plain_c, APP_CONFIG['confidence_defaults']['geocode_plain'], 'geocode_plain'
             except Exception:
                 pass
+        _neg_geo_add(name)
+        METRICS['geo_failures'] += 1
         return None
     # ---- Fundraising / donation solicitation handling ----
     # Previous behavior: fully suppressed entire message if donation links found (blocked napramok multi-line threat posts with footer links)
@@ -1058,12 +1264,12 @@ def process_message(text, mid, date_str, channel):
                 kept_lines.append(ln)
             text = '\n'.join(kept_lines)
             original_text = text  # treat stripped version as canonical for later stages
-        else:
-            return [{
-                'id': str(mid), 'place': None, 'lat': None, 'lng': None,
-                'threat_type': None, 'text': original_text[:500], 'date': date_str, 'channel': channel,
-                'list_only': True, 'suppress': True, 'suppress_reason': 'donation_only'
-            }]
+    else:
+        tr = {'id': str(mid), 'place': None, 'lat': None, 'lng': None,
+            'threat_type': None, 'text': original_text[:500], 'date': date_str, 'channel': channel,
+            'list_only': True, 'suppress': True, 'suppress_reason': 'donation_only'}
+        structured_log('suppress_donation', id=mid)
+        return [tr]
     # ---- Daily / periodic situation summary ("ситуація станом на HH:MM" + sectional bullets) ----
     # User request: do NOT create map markers for such aggregated status reports.
     # Heuristics: phrase "ситуація станом" (uk) or "ситуация на" (ru), OR presence of 2+ bullet headers like "• авіація", "• бпла", "• флот" in same message.
@@ -1073,11 +1279,11 @@ def process_message(text, mid, date_str, channel):
             bullet_headers += 1
     if re.search(r'ситуац[ія][яi]\s+станом', low_full) or re.search(r'ситуац[ия]\s+на\s+\d{1,2}:\d{2}', low_full) or bullet_headers >= 2:
         # User clarified: completely skip (no site display at all)
-        return [{
-            'id': str(mid), 'place': None, 'lat': None, 'lng': None,
-            'threat_type': None, 'text': original_text[:800], 'date': date_str, 'channel': channel,
-            'list_only': True, 'summary': True, 'suppress': True
-        }]
+        tr = {'id': str(mid), 'place': None, 'lat': None, 'lng': None,
+              'threat_type': None, 'text': original_text[:800], 'date': date_str, 'channel': channel,
+              'list_only': True, 'summary': True, 'suppress': True}
+        structured_log('suppress_summary', id=mid)
+        return [tr]
     # ---- Imprecise directional-only messages (no exact city location) suppression ----
     # User request: messages that only state relative / directional movement without a clear city position
     # Examples: "групи ... рухаються північніше X у напрямку Y"; "... курс західний (місто)"; region-only with direction
@@ -1093,12 +1299,12 @@ def process_message(text, mid, date_str, channel):
         multi_city_pattern = r"^[^\n]{0,120}?([A-Za-zА-Яа-яЇїІіЄєҐґ'`’ʼ\-]{3,}\s*,\s*){1,}[A-Za-zА-Яа-яЇїІіЄєҐґ'`’ʼ\-]{3,}"
         multi_city_enumeration = bool(re.match(multi_city_pattern, lower_all)) or ('/' in lower_all)
         has_pass_near = 'повз ' in lower_all
-        if (directional_course or relative_dir_tokens) and not has_pass_near and not multi_city_enumeration:
-            return [{
-                'id': str(mid), 'place': None, 'lat': None, 'lng': None,
-                'threat_type': None, 'text': original_text[:500], 'date': date_str, 'channel': channel,
-                'list_only': True, 'suppress': True, 'suppress_reason': 'imprecise_direction_only'
-            }]
+    if (directional_course or relative_dir_tokens) and not has_pass_near and not multi_city_enumeration:
+        tr = {'id': str(mid), 'place': None, 'lat': None, 'lng': None,
+            'threat_type': None, 'text': original_text[:500], 'date': date_str, 'channel': channel,
+            'list_only': True, 'suppress': True, 'suppress_reason': 'imprecise_direction_only'}
+        structured_log('suppress_imprecise_direction', id=mid)
+        return [tr]
     # Не удаляем полностью "Повітряна тривога" теперь: нужно показывать в списке событий.
     # Сохраняем текст как есть для event list.
     # Убираем markdown * _ ` и базовые эмодзи-иконки в начале строк
@@ -1116,11 +1322,13 @@ def process_message(text, mid, date_str, channel):
                 place = name.title()
                 break
         # Keep original text
-        return [{
+        return emit_track({
             'id': str(mid), 'place': place, 'lat': None, 'lng': None,
             'threat_type': 'alarm', 'text': original_text[:500], 'date': date_str, 'channel': channel,
-            'marker_icon': 'trivoga.png', 'list_only': True
-        }]
+            'marker_icon': 'trivoga.png', 'list_only': True,
+            'confidence': APP_CONFIG['confidence_defaults']['inferred'],
+            'source_match': 'alarm_text_only'
+        }, allow_duplicate=True)
     # Общий набор ключевых слов угроз
     THREAT_KEYS = ['бпла','дрон','шахед','shahed','geran','ракета','ракети','missile','iskander','s-300','s300','каб','артил','града','смерч','ураган','mlrs','avia','авіа','авиа','бомба','високошвидкісн']
     def has_threat(txt: str):
@@ -1193,57 +1401,103 @@ def process_message(text, mid, date_str, channel):
                 if coords:
                     lat,lng = coords
                     threat_type, icon = classify(text)
-                    return [{
+                    return emit_track({
                         'id': f"{mid}_dirp", 'place': norm.title(), 'lat': lat, 'lng': lng,
                         'threat_type': threat_type, 'text': original_text[:500], 'date': date_str, 'channel': channel,
-                        'marker_icon': icon, 'source_match': 'direction_parenthetical'
-                    }]
+                        'marker_icon': icon, 'source_match': 'direction_parenthetical',
+                        'confidence': APP_CONFIG['confidence_defaults']['inferred']
+                    })
         except Exception:
             pass
     def classify(th: str):
         l = th.lower()
+        if RULES_CONFIG.get('keywords'):
+            kw = RULES_CONFIG['keywords']
+            group_map = {
+                'recon': ('pvo','rozved.png'),
+                'alarm_start': ('alarm','trivoga.png'),
+                'alarm_cancel': ('alarm_cancel','vidboi.png'),
+                'explosion': ('vibuh','vibuh.png'),
+                'shelling': ('artillery','obstril.png'),
+                'drones': ('shahed','shahed.png'),
+                'kab': ('raketa','raketa.png'),
+                'high_speed': ('rszv','rszv.png'),
+                'missiles': ('raketa','raketa.png'),
+                'aviation': ('avia','avia.png'),
+                'air_defense': ('pvo','rozved.png'),
+                'artillery': ('artillery','artillery.png')
+            }
+            matched = []
+            for grp, words in kw.items():
+                if any(w in l for w in words):
+                    info = group_map.get(grp)
+                    if info:
+                        matched.append(info)
+            if matched:
+                pri = APP_CONFIG.get('threat_priority', [])
+                def pidx(t):
+                    try: return pri.index(t[0])
+                    except ValueError: return 999
+                matched.sort(key=pidx)
+                rt = matched[0]
+                structured_log('classify', rule='config', threat=rt[0])
+                return rt
         # Recon / розвід дрони -> use pvo icon (rozved.png) per user request
         if 'розвід' in l or 'розвідуваль' in l or 'развед' in l:
+            structured_log('classify', rule='recon')
             return 'pvo', 'rozved.png'
         # Air alarm start
         if ('повітряна тривога' in l or 'повітряна тривога.' in l or ('тривога' in l and 'повітр' in l)) and not ('відбій' in l or 'отбой' in l):
+            structured_log('classify', rule='alarm_start')
             return 'alarm', 'trivoga.png'
         # Air alarm cancellation
         if ('відбій тривоги' in l) or ('отбой тревоги' in l):
+            structured_log('classify', rule='alarm_cancel_phrase')
             return 'alarm_cancel', 'vidboi.png'
         # Explosions reporting -> vibuh icon (cover broader fixation phrases)
         if ('повідомляють про вибух' in l or 'повідомлено про вибух' in l or 'зафіксовано вибух' in l or 'зафіксовано вибухи' in l
             or 'фіксація вибух' in l or 'фіксують вибух' in l or re.search(r'\b(вибух|вибухи|вибухів)\b', l)):
+            structured_log('classify', rule='explosion')
             return 'vibuh', 'vibuh.png'
         # Artillery shelling warning (обстріл / загроза обстрілу) -> use obstril.png
         if 'обстріл' in l or 'обстрел' in l or 'загроза обстрілу' in l or 'угроза обстрела' in l:
+            structured_log('classify', rule='shelling')
             return 'artillery', 'obstril.png'
         # Alarm cancellation (відбій тривоги / отбой тревоги)
         if ('відбій' in l and 'тривог' in l) or ('отбой' in l and 'тревог' in l):
+            structured_log('classify', rule='alarm_cancel_alt')
             return 'alarm_cancel', 'vidboi.png'
         # PRIORITY: drones first (частая путаница). Если присутствуют слова шахед/бпла/дрон -> это shahed
         if any(k in l for k in ['shahed','шахед','шахеді','шахедів','geran','герань','дрон','дрони','бпла','uav']):
+            structured_log('classify', rule='drones')
             return 'shahed', 'shahed.png'
         # KAB (guided bomb) treat as raketa per user request
         if 'каб' in l:
+            structured_log('classify', rule='kab')
             return 'raketa', 'raketa.png'
         # High-speed targets explicit alert (custom icon)
         if 'високошвидкісн' in l:
+            structured_log('classify', rule='high_speed')
             return 'rszv', 'rszv.png'
         # Missiles / rockets
         if any(k in l for k in ['ракета','ракети','ракетний','ракетная','ракетный','missile','iskander','крылат','крилат','кр ','s-300','s300','КАБ']):
+            structured_log('classify', rule='missiles')
             return 'raketa', 'raketa.png'
         # Aviation
         if any(k in l for k in ['avia','авіа','авиа','літак','самолет','бомба','бомби','бомбаки']):
+            structured_log('classify', rule='aviation')
             return 'avia', 'avia.png'
         # Air defense mention
         if any(k in l for k in ['пво','зеніт','зенит']):
+            structured_log('classify', rule='air_defense')
             return 'pvo', 'rozved.png'
         # Artillery / MLRS
         if any(k in l for k in ['артил', 'mlrs','града','градів','смерч','ураган']):
+            structured_log('classify', rule='artillery')
             return 'artillery', 'artillery.png'
         # default assume shahed (консервативно)
-        return 'shahed', 'shahed.png'
+    structured_log('classify', rule='default_shahed')
+    return 'shahed', 'shahed.png'
     # --- Region-level shelling threat (e.g. "Харківська обл. Загроза обстрілу прикордонних територій") ---
     try:
         if re.search(r'(загроза обстрілу|угроза обстрела)', lower_full):
@@ -1266,11 +1520,12 @@ def process_message(text, mid, date_str, channel):
                 if border_shell:
                     place_label += ' (прикордоння)'
                 log.debug(f"region_shelling emit mid={mid} region={region_hit} border={border_shell}")
-                return [{
+                return emit_track({
                     'id': f"{mid}_region_shell", 'place': place_label, 'lat': lat, 'lng': lng,
                     'threat_type': threat_type, 'text': original_text[:500], 'date': date_str, 'channel': channel,
-                    'marker_icon': icon, 'source_match': 'region_shelling', 'border_shelling': border_shell
-                }]
+                    'marker_icon': icon, 'source_match': 'region_shelling', 'border_shelling': border_shell,
+                    'confidence': APP_CONFIG['confidence_defaults']['inferred']
+                })
     except Exception:
         pass
     # Southeast-wide tactical aviation activity (no specific settlement): place a synthetic marker off SE border.
@@ -1278,27 +1533,30 @@ def process_message(text, mid, date_str, channel):
     if ('тактичн' in se_phrase or 'авіаці' in se_phrase or 'авиац' in se_phrase) and ('південно-східн' in se_phrase or 'південно східн' in se_phrase or 'юго-восточ' in se_phrase or 'південного-сходу' in se_phrase):
         # Approx point in Azov Sea off SE (between Mariupol & Berdyansk) to avoid implying exact impact
         lat, lng = 46.5, 37.5
-        return [{
+        return emit_track({
             'id': f"{mid}_se", 'place': 'Південно-східний напрямок', 'lat': lat, 'lng': lng,
             'threat_type': 'avia', 'text': original_text[:500], 'date': date_str, 'channel': channel,
-            'marker_icon': 'avia.png', 'source_match': 'southeast_aviation'
-        }]
+            'marker_icon': 'avia.png', 'source_match': 'southeast_aviation',
+            'confidence': APP_CONFIG['confidence_defaults']['inferred']
+        })
     m = re.search(r'(\d{1,2}\.\d+),(\d{1,3}\.\d+)', text)
     if m:
         lat = float(m.group(1)); lng = float(m.group(2))
         threat_type, icon = classify(text)
-        return [{
-            'id': str(mid), 'place': 'Unknown', 'lat': lat, 'lng': lng,
+        return emit_track({
+            'id': f"{mid}_coord2", 'place': 'Unknown', 'lat': lat, 'lng': lng,
             'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-            'marker_icon': icon
-        }]
+            'marker_icon': icon, 'source_match': 'regex_coords',
+            'confidence': APP_CONFIG['confidence_defaults']['inferred']
+        })
     # Alarm cancellation always list-only
     if re.search(r'відбій\s+тривог|отбой\s+тревог', original_text.lower()):
-        return [{
-            'id': str(mid), 'place': None, 'lat': None, 'lng': None,
+        return emit_track({
+            'id': f"{mid}_cancel", 'place': None, 'lat': None, 'lng': None,
             'threat_type': 'alarm_cancel', 'text': original_text[:500], 'date': date_str, 'channel': channel,
-            'marker_icon': 'vidboi.png', 'list_only': True
-        }]
+            'marker_icon': 'vidboi.png', 'list_only': True,
+            'confidence': APP_CONFIG['confidence_defaults']['inferred'], 'source_match': 'alarm_cancel_text'
+        }, allow_duplicate=True)
     lower = text.lower()
     # Extract drone / shahed count pattern (e.g. "7х бпла", "6x дронів", "10 х бпла") early so later branches can reuse
     drone_count = None
@@ -1367,11 +1625,12 @@ def process_message(text, mid, date_str, channel):
                 RAION_ALARMS[raion_base] = {'place': f"{raion_base.title()} район", 'lat': lat, 'lng': lng, 'since': time.time()}
             elif threat_type == 'alarm_cancel':
                 RAION_ALARMS.pop(raion_base, None)
-            return [{
-                'id': str(mid), 'place': f"{raion_base.title()} район", 'lat': lat, 'lng': lng,
+            return emit_track({
+                'id': f"{mid}_raion", 'place': f"{raion_base.title()} район", 'lat': lat, 'lng': lng,
                 'threat_type': threat_type, 'text': (original_text if 'original_text' in locals() else text)[:500],
-                'date': date_str, 'channel': channel, 'marker_icon': icon, 'source_match': 'raion_oblast_combo'
-            }]
+                'date': date_str, 'channel': channel, 'marker_icon': icon, 'source_match': 'raion_oblast_combo',
+                'confidence': APP_CONFIG['confidence_defaults']['inferred']
+            })
         else:
             log.debug(f"raion_oblast primary matched token={raion_token} base={raion_base} no coords")
     else:
@@ -1385,11 +1644,12 @@ def process_message(text, mid, date_str, channel):
                     lat,lng = RAION_FALLBACK[cand_base]
                     threat_type, icon = classify(original_text if 'original_text' in locals() else text)
                     log.debug(f"raion_oblast secondary emit cand={cand} base={cand_base}")
-                    return [{
-                        'id': str(mid), 'place': f"{cand_base.title()} район", 'lat': lat, 'lng': lng,
+                    return emit_track({
+                        'id': f"{mid}_raion2", 'place': f"{cand_base.title()} район", 'lat': lat, 'lng': lng,
                         'threat_type': threat_type, 'text': (original_text if 'original_text' in locals() else text)[:500],
-                        'date': date_str, 'channel': channel, 'marker_icon': icon, 'source_match': 'raion_oblast_secondary'
-                    }]
+                        'date': date_str, 'channel': channel, 'marker_icon': icon, 'source_match': 'raion_oblast_secondary',
+                        'confidence': APP_CONFIG['confidence_defaults']['inferred']
+                    })
                 else:
                     log.debug(f"raion_oblast secondary no coords cand={cand} base={cand_base}")
             except Exception as _e:
@@ -1434,11 +1694,12 @@ def process_message(text, mid, date_str, channel):
             if pav_key in RAION_FALLBACK:
                 lat,lng = RAION_FALLBACK[pav_key]
                 threat_type, icon = classify(text)
-                return [{
-                    'id': str(mid), 'place': 'Павлоградський район', 'lat': lat, 'lng': lng,
+                return emit_track({
+                    'id': f"{mid}_pavraion", 'place': 'Павлоградський район', 'lat': lat, 'lng': lng,
                     'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                    'marker_icon': icon, 'source_match': 'oblast_raion_combo'
-                }]
+                    'marker_icon': icon, 'source_match': 'oblast_raion_combo',
+                    'confidence': APP_CONFIG['confidence_defaults']['inferred']
+                })
         # Пропускаем случаи вида "<область> (<район ...>)" чтобы не трактовать слово 'область' как город
         if raw_city in {'область','обл','обл.'} or raw_city.endswith('область'):
             bracket_city = None
@@ -1504,11 +1765,12 @@ def process_message(text, mid, date_str, channel):
             if coords:
                 lat,lng = coords
                 threat_type, icon = classify(text)
-                return [{
-                    'id': str(mid), 'place': norm_city.title(), 'lat': lat, 'lng': lng,
+                return emit_track({
+                    'id': f"{mid}_brack", 'place': norm_city.title(), 'lat': lat, 'lng': lng,
                     'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                    'marker_icon': icon, 'source_match': 'bracket_city'
-                }]
+                    'marker_icon': icon, 'source_match': 'bracket_city',
+                    'confidence': APP_CONFIG['confidence_defaults']['inferred']
+                })
 
     # --- Multi-segment / enumerated lines (1. 2. 3.) region extraction ---
     # Разбиваем по переносам, собираем упоминания нескольких областей; создаём отдельные маркеры
@@ -1609,11 +1871,12 @@ def process_message(text, mid, date_str, channel):
                 break
         if coord:
             threat_type, icon = classify(text)
-            return [{
-                'id': str(mid), 'place': rname + ' (кордон)', 'lat': coord[0], 'lng': coord[1],
+            return emit_track({
+                'id': f"{mid}_border", 'place': rname + ' (кордон)', 'lat': coord[0], 'lng': coord[1],
                 'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                'marker_icon': icon, 'source_match': 'border_kab'
-            }]
+                'marker_icon': icon, 'source_match': 'border_kab',
+                'confidence': APP_CONFIG['confidence_defaults']['inferred']
+            })
 
     # --- Pattern: multiple shaheds with counts / directions / near-pass ("повз") ---
     # Handles composite direction phrases (південного сходу -> південний схід, північно-захід тощо)
@@ -1769,7 +2032,11 @@ def process_message(text, mid, date_str, channel):
                 coords = SETTLEMENTS_INDEX.get(base)
             if not coords:
                 try:
-                    coords = region_enhanced_coords(base, region_hint_override=region_hdr)
+                    geo_res = region_enhanced_coords(base, region_hint_override=region_hdr)
+                    if isinstance(geo_res, tuple) and len(geo_res) == 3:
+                        coords, conf, src_lbl = geo_res
+                    else:
+                        coords = conf = src_lbl = None
                 except Exception:
                     coords = None
             if not coords:
@@ -1824,7 +2091,8 @@ def process_message(text, mid, date_str, channel):
                 # OpenCage fallback
                 try:
                     for v in variants:
-                        oc = region_enhanced_coords(v)
+                        oc_res = region_enhanced_coords(v)
+                        oc = oc_res[0] if (isinstance(oc_res, tuple) and len(oc_res)==3) else oc_res
                         if oc:
                             matched=oc; mname=v; break
                 except Exception:
@@ -1854,11 +2122,12 @@ def process_message(text, mid, date_str, channel):
             if coords:
                 lat,lng = coords
                 threat_type, icon = classify(original_text)
-                return [{
-                    'id': str(mid), 'place': base_cand.title(), 'lat': lat, 'lng': lng,
+                return emit_track({
+                    'id': f"{mid}_latep", 'place': base_cand.title(), 'lat': lat, 'lng': lng,
                     'threat_type': threat_type, 'text': original_text[:500], 'date': date_str, 'channel': channel,
-                    'marker_icon': icon, 'source_match': 'late_parenthetical'
-                }]
+                    'marker_icon': icon, 'source_match': 'late_parenthetical',
+                    'confidence': APP_CONFIG['confidence_defaults']['inferred']
+                })
 
     # --- Settlement matching using external dataset (if provided) (single first match) ---
     if not region_hits:
@@ -1879,15 +2148,23 @@ def process_message(text, mid, date_str, channel):
                 seen = set()
                 for idx, rp in enumerate(raw_places,1):
                     key = rp.replace('й,','й').strip()
-                    coords = region_enhanced_coords(key)
+                    geo_res2 = region_enhanced_coords(key)
+                    coords = None; conf=None; source=None
+                    if isinstance(geo_res2, tuple) and len(geo_res2)==3:
+                        coords, conf, source = geo_res2
+                    else:
+                        coords = geo_res2
                     if coords and key not in seen:
                         seen.add(key)
                         lat,lng = coords
-                        tracks.append({
+                        tr = emit_track({
                             'id': f"{mid}_m{idx}", 'place': key.title(), 'lat': lat, 'lng': lng,
                             'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                            'marker_icon': icon, 'source_match': 'multi_settlement'
+                            'marker_icon': icon, 'source_match': source or 'multi_settlement',
+                            'confidence': conf or APP_CONFIG['confidence_defaults']['inferred']
                         })
+                        if tr:
+                            tracks.extend(tr)
                 if tracks:
                     return tracks
         # 2) Single settlement search (fallback)
@@ -1896,12 +2173,12 @@ def process_message(text, mid, date_str, channel):
                 if name in lower:
                     lat, lng = SETTLEMENTS_INDEX[name]
                     threat_type, icon = classify(text)
-                    return [{
-                        'id': str(mid), 'place': name.title(), 'lat': lat, 'lng': lng,
+                    return emit_track({
+                        'id': f"{mid}_sett", 'place': name.title(), 'lat': lat, 'lng': lng,
                         'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                        'marker_icon': icon,
-                        'source_match': 'settlement'
-                    }]
+                        'marker_icon': icon, 'source_match': 'settlement',
+                        'confidence': APP_CONFIG['confidence_defaults']['settlement_index']
+                    })
 
     # --- Raion (district) detection ---
     # Ищем конструкции вида "Покровський район", а также множественные "Конотопський та Сумський районы".
@@ -2025,7 +2302,8 @@ def process_message(text, mid, date_str, channel):
                             pass
                 if not coords:
                     try:
-                        coords = region_enhanced_coords(base)
+                        geo_res3 = region_enhanced_coords(base)
+                        coords = geo_res3[0] if (isinstance(geo_res3, tuple) and len(geo_res3)==3) else geo_res3
                     except Exception:
                         coords = None
             if coords:
@@ -2065,11 +2343,12 @@ def process_message(text, mid, date_str, channel):
         place_label = 'Акваторія Чорного моря'
         if target_city:
             place_label += f' (курс на {target_city})'
-        return [{
-            'id': str(mid), 'place': place_label, 'lat': sea_lat, 'lng': sea_lng,
+        return emit_track({
+            'id': f"{mid}_sea", 'place': place_label, 'lat': sea_lat, 'lng': sea_lng,
             'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-            'marker_icon': icon, 'source_match': 'black_sea_course'
-        }]
+            'marker_icon': icon, 'source_match': 'black_sea_course',
+            'confidence': APP_CONFIG['confidence_defaults']['inferred']
+        })
 
     # --- Bilhorod-Dnistrovskyi coastal UAV patrol ("вздовж узбережжя Білгород-Дністровського району") ---
     if (('узбереж' in lower_sea or 'вздовж узбереж' in lower_sea) and
@@ -2080,11 +2359,12 @@ def process_message(text, mid, date_str, channel):
         lat = city_lat - 0.22
         lng = city_lng
         threat_type, icon = classify(text)
-        return [{
-            'id': str(mid), 'place': 'Узбережжя Білгород-Дністровського р-ну', 'lat': lat, 'lng': lng,
+        return emit_track({
+            'id': f"{mid}_bdr_coast", 'place': 'Узбережжя Білгород-Дністровського р-ну', 'lat': lat, 'lng': lng,
             'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-            'marker_icon': icon, 'source_match': 'bilhorod_dnistrovskyi_coast'
-        }]
+            'marker_icon': icon, 'source_match': 'bilhorod_dnistrovskyi_coast',
+            'confidence': APP_CONFIG['confidence_defaults']['inferred']
+        })
 
     # --- "повз <city>" (passing near) with optional direction target "у напрямку <city>" ---
     lower_pass = text.lower()
@@ -2110,13 +2390,14 @@ def process_message(text, mid, date_str, channel):
             if s.endswith('оїї') and len(s) > 6:
                 candidates.append(s[:-3] + 'а')
             for cand in candidates:
-                if region_enhanced_coords(cand):
+                if region_enhanced_coords(cand):  # truthy check still fine (function returns None or tuple)
                     return cand
             return s
         if pass_match:
             c1 = norm_c(pass_match.group(1))
             if c1:
-                coords1 = region_enhanced_coords(c1)
+                res_c1 = region_enhanced_coords(c1)
+                coords1 = res_c1[0] if (isinstance(res_c1, tuple) and len(res_c1)==3) else res_c1
                 if coords1:
                     places.append((c1.title(), coords1, 'pass_near'))
         if dir_match:
@@ -2130,7 +2411,8 @@ def process_message(text, mid, date_str, channel):
                     full_phrase = cand_phrase
             c2_key = full_phrase or c2_first
             if c2_key and c2_key != (places[0][0].lower() if places else None):
-                coords2 = region_enhanced_coords(c2_key)
+                res_c2 = region_enhanced_coords(c2_key)
+                coords2 = res_c2[0] if (isinstance(res_c2, tuple) and len(res_c2)==3) else res_c2
                 if coords2:
                     places.append((c2_key.title(), coords2, 'direction_target'))
         if places:
@@ -2158,12 +2440,14 @@ def process_message(text, mid, date_str, channel):
             return UA_CITY_NORMALIZE.get(s, s)
         if m_from:
             c_from = norm_simple(m_from.group(1))
-            coords_from = region_enhanced_coords(c_from)
+            res_from = region_enhanced_coords(c_from)
+            coords_from = res_from[0] if (isinstance(res_from, tuple) and len(res_from)==3) else res_from
             if coords_from:
                 places.append((c_from.title(), coords_from, 'course_from'))
         if m_to:
             c_to = norm_simple(m_to.group(1))
-            coords_to = region_enhanced_coords(c_to)
+            res_to = region_enhanced_coords(c_to)
+            coords_to = res_to[0] if (isinstance(res_to, tuple) and len(res_to)==3) else res_to
             if coords_to:
                 # avoid duplicate if same
                 if not any(p[0].lower()==c_to for p in places):
@@ -2198,13 +2482,15 @@ def process_message(text, mid, date_str, channel):
                     s = s[:-3] + 'о'
                 return UA_CITY_NORMALIZE.get(s, s)
             base_city = norm_rel_city(raw_city)
-            coords_base = region_enhanced_coords(base_city)
+            res_base = region_enhanced_coords(base_city)
+            coords_base = res_base[0] if (isinstance(res_base, tuple) and len(res_base)==3) else res_base
             coords_target = None
             target_name = None
             if target_dir:
                 tn = target_dir.group(1).lower().strip('.:,;()!?')
                 tn = UA_CITY_NORMALIZE.get(tn, tn)
-                coords_target = region_enhanced_coords(tn)
+                res_tn = region_enhanced_coords(tn)
+                coords_target = res_tn[0] if (isinstance(res_tn, tuple) and len(res_tn)==3) else res_tn
                 target_name = tn
             if coords_base:
                 lat_b, lng_b = coords_base
@@ -2216,17 +2502,20 @@ def process_message(text, mid, date_str, channel):
                 elif 'західн' in dir_word: lng_off = -0.55
                 rel_lat, rel_lng = lat_b + lat_off, lng_b + lng_off
                 threat_type, icon = classify(text)
-                tracks = [{
+                tracks = []
+                tracks.extend(emit_track({
                     'id': f"{mid}_rel1", 'place': base_city.title(), 'lat': rel_lat, 'lng': rel_lng,
                     'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                    'marker_icon': icon, 'source_match': 'relative_dir'
-                }]
+                    'marker_icon': icon, 'source_match': 'relative_dir',
+                    'confidence': APP_CONFIG['confidence_defaults']['inferred']
+                }))
                 if coords_target:
-                    tracks.append({
+                    tracks.extend(emit_track({
                         'id': f"{mid}_rel2", 'place': target_name.title(), 'lat': coords_target[0], 'lng': coords_target[1],
                         'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                        'marker_icon': icon, 'source_match': 'direction_target'
-                    })
+                        'marker_icon': icon, 'source_match': 'direction_target',
+                        'confidence': APP_CONFIG['confidence_defaults']['inferred']
+                    }))
                 return tracks
 
     # --- Parenthetical course city e.g. "курс західний (кременчук)" ---
@@ -2235,14 +2524,19 @@ def process_message(text, mid, date_str, channel):
         if m_par:
             pc = m_par.group(1).lower()
             pc = UA_CITY_NORMALIZE.get(pc, pc)
-            coords = region_enhanced_coords(pc)
+            res_pc = region_enhanced_coords(pc)
+            coords = res_pc[0] if (isinstance(res_pc, tuple) and len(res_pc)==3) else res_pc
             if coords:
                 threat_type, icon = classify(text)
-                return [{
+                conf=None; source=None
+                if isinstance(res_pc, tuple) and len(res_pc)==3:
+                    _,conf,source = res_pc
+                return emit_track({
                     'id': f"{mid}_pc", 'place': pc.title(), 'lat': coords[0], 'lng': coords[1],
                     'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                    'marker_icon': icon, 'source_match': 'course_parenthetical'
-                }]
+                    'marker_icon': icon, 'source_match': source or 'course_parenthetical',
+                    'confidence': conf or APP_CONFIG['confidence_defaults']['inferred']
+                })
 
     # --- Comma separated settlements followed by threat keyword (e.g. "Обухівка, Курилівка, Петриківка увага БПЛА") ---
     lower_commas = text.lower()
@@ -2266,7 +2560,8 @@ def process_message(text, mid, date_str, channel):
                     if len(base) < 3:
                         continue
                     norm = UA_CITY_NORMALIZE.get(base, base)
-                    coords = region_enhanced_coords(norm)
+                    res_norm = region_enhanced_coords(norm)
+                    coords = res_norm[0] if (isinstance(res_norm, tuple) and len(res_norm)==3) else res_norm
                     if coords:
                         found.append((norm.title(), coords))
                 if found:
@@ -2343,11 +2638,12 @@ def process_message(text, mid, date_str, channel):
                             (lat_o,lng_o) = coords1 or coords2
                             place_label = (c1n or c2n).title()
                         threat_type, icon = classify(text)
-                        return [{
-                            'id': str(mid), 'place': place_label, 'lat': lat_o, 'lng': lng_o,
+                        return emit_track({
+                            'id': f"{mid}_sector", 'place': place_label, 'lat': lat_o, 'lng': lng_o,
                             'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                            'marker_icon': icon, 'source_match': 'course_sector', 'count': drone_count
-                        }]
+                            'marker_icon': icon, 'source_match': 'course_sector', 'count': drone_count,
+                            'confidence': APP_CONFIG['confidence_defaults']['inferred']
+                        })
                 (reg_name, (base_lat, base_lng)) = matched_regions[0]
                 # смещение ~50-70 км в сторону указанного направления
                 def offset(lat, lng, code):
@@ -2375,11 +2671,12 @@ def process_message(text, mid, date_str, channel):
                 }
                 dir_phrase = dir_label_map.get(direction_code, 'частина')
                 base_disp = reg_name.split()[0].title()
-                return [{
-                    'id': str(mid), 'place': f"{base_disp} ({dir_phrase})", 'lat': lat_o, 'lng': lng_o,
+                return emit_track({
+                    'id': f"{mid}_regdir", 'place': f"{base_disp} ({dir_phrase})", 'lat': lat_o, 'lng': lng_o,
                     'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                    'marker_icon': icon, 'source_match': 'region_direction', 'count': drone_count
-                }]
+                    'marker_icon': icon, 'source_match': 'region_direction', 'count': drone_count,
+                    'confidence': APP_CONFIG['confidence_defaults']['inferred']
+                })
             # если нет направления — продолжаем анализ (ищем конкретные цели типа "курс на <місто>")
     # Midpoint for explicit course between two regions (e.g. "... на запоріжжі курсом на дніпропетровщину")
     if len(matched_regions) == 2 and ('курс' in lower or '➡' in lower or '→' in lower) and (' на ' in lower):
@@ -2406,21 +2703,23 @@ def process_message(text, mid, date_str, channel):
                         lat = (a1*0.45 + a2*0.55)
                         lng = (b1*0.45 + b2*0.55)
                     threat_type, icon = classify(text)
-                    return [{
-                        'id': str(mid), 'place': f"Між {n1.split()[0].title()} та {n2.split()[0].title()} (курс)", 'lat': lat, 'lng': lng,
+                    return emit_track({
+                        'id': f"{mid}_regmid", 'place': f"Між {n1.split()[0].title()} та {n2.split()[0].title()} (курс)", 'lat': lat, 'lng': lng,
                         'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                        'marker_icon': icon, 'source_match': 'region_course_midpoint', 'count': drone_count
-                    }]
+                        'marker_icon': icon, 'source_match': 'region_course_midpoint', 'count': drone_count,
+                        'confidence': APP_CONFIG['confidence_defaults']['inferred']
+                    })
 
     if len(matched_regions) == 2 and any(w in lower for w in ['межі','межу','межа','между','границі','граница']):
             (n1,(a1,b1)), (n2,(a2,b2)) = matched_regions
             lat = (a1+a2)/2; lng = (b1+b2)/2
             threat_type, icon = classify(text)
-            return [{
-                'id': str(mid), 'place': f"Межа {n1.split()[0].title()}/{n2.split()[0].title()}" , 'lat': lat, 'lng': lng,
+            return emit_track({
+                'id': f"{mid}_boundary", 'place': f"Межа {n1.split()[0].title()}/{n2.split()[0].title()}" , 'lat': lat, 'lng': lng,
                 'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                'marker_icon': icon, 'count': drone_count
-            }]
+                'marker_icon': icon, 'count': drone_count, 'source_match': 'region_boundary',
+                'confidence': APP_CONFIG['confidence_defaults']['inferred']
+            })
     else:
             # If message contains explicit course targets (parsed later), don't emit plain region markers
             course_target_hint = False
@@ -2453,7 +2752,8 @@ def process_message(text, mid, date_str, channel):
             if region_hint_global and OPENCAGE_API_KEY:
                 coords = geocode_opencage(f"{norm} {region_hint_global}")
             if not coords:
-                coords = region_enhanced_coords(norm)
+                res_norm2 = region_enhanced_coords(norm)
+                coords = res_norm2[0] if (isinstance(res_norm2, tuple) and len(res_norm2)==3) else res_norm2
             # If областной контекст уже определён (matched_regions) ограничим города той же области
             if matched_regions:
                 # берем первый stem области
@@ -2468,11 +2768,15 @@ def process_message(text, mid, date_str, channel):
             if coords:
                 lat, lng = coords
                 threat_type, icon = classify(text)
-                return [{
-                    'id': str(mid), 'place': norm.title(), 'lat': lat, 'lng': lng,
+                conf=None; source=None
+                if isinstance(res_norm2, tuple) and len(res_norm2)==3:
+                    _,conf,source = res_norm2
+                return emit_track({
+                    'id': f"{mid}_cityfb", 'place': norm.title(), 'lat': lat, 'lng': lng,
                     'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                    'marker_icon': icon, 'count': drone_count
-                }]
+                    'marker_icon': icon, 'count': drone_count, 'source_match': source or 'city_fallback',
+                    'confidence': conf or APP_CONFIG['confidence_defaults']['inferred']
+                })
             # if city found but no coords even in fallback, continue scanning others (no break)
     # --- Slash separated settlements with drone count (e.g. "дніпро / самар — 6х бпла ... курс західний") ---
     if '/' in lower and ('бпла' in lower or 'дрон' in lower) and any(x in lower for x in ['х бпла','x бпла',' бпла']):
@@ -2486,14 +2790,15 @@ def process_message(text, mid, date_str, channel):
             threat_type, icon = classify(text)
             tracks = []
             for idx,(nm,(lat,lng)) in enumerate(found,1):
-                # If course west mentioned, offset west a bit
+                adj_lng = lng
                 if 'курс захід' in lower or 'курс запад' in lower:
-                    lng -= 0.4
-                tracks.append({
-                    'id': f"{mid}_s{idx}", 'place': nm, 'lat': lat, 'lng': lng,
+                    adj_lng -= 0.4
+                tracks.extend(emit_track({
+                    'id': f"{mid}_s{idx}", 'place': nm, 'lat': lat, 'lng': adj_lng,
                     'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                    'marker_icon': icon, 'source_match': 'slash_combo'
-                })
+                    'marker_icon': icon, 'source_match': 'slash_combo',
+                    'confidence': APP_CONFIG['confidence_defaults']['inferred']
+                }))
             if tracks:
                 return tracks
     # --- Single city with westward course ("курс західний") adjust marker to west to avoid mistaken northern region offsets ---
@@ -2502,11 +2807,12 @@ def process_message(text, mid, date_str, channel):
             if c in lower:
                 lat,lng = CITY_COORDS[c]
                 threat_type, icon = classify(text)
-                return [{
-                    'id': str(mid), 'place': c.title(), 'lat': lat, 'lng': lng - 0.4,
+                return emit_track({
+                    'id': f"{mid}_west", 'place': c.title(), 'lat': lat, 'lng': lng - 0.4,
                     'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                    'marker_icon': icon, 'source_match': 'course_west'
-                }]
+                    'marker_icon': icon, 'source_match': 'course_west',
+                    'confidence': APP_CONFIG['confidence_defaults']['inferred']
+                })
     # --- Drone course target parsing (e.g. "БпЛА курсом на Ніжин") ---
     def _normalize_course_city(w: str):
         # Preserve internal single space for multi-word (e.g. "липова долина") before stripping punctuation
@@ -2543,7 +2849,8 @@ def process_message(text, mid, date_str, channel):
                 raw_city = m.group(1)
                 norm_city = _normalize_course_city(raw_city)
                 if norm_city:
-                    coords = region_enhanced_coords(norm_city)
+                    res_course = region_enhanced_coords(norm_city)
+                    coords = res_course[0] if (isinstance(res_course, tuple) and len(res_course)==3) else res_course
                     if not coords:
                         log.debug(f'course_target_lookup miss city={norm_city} mid={mid} line={line.strip()[:120]!r} region_hint={region_hint_global}')
                     # Oblast stem disambiguation: if global hint exists and known expected stem differs, re-query with region-qualified geocode
@@ -2672,12 +2979,14 @@ async def fetch_loop():
                         break  # older than needed
                     if msg.id in processed:
                         continue
+                    METRICS['messages_processed'] += 1
                     tracks = process_message(msg.text, msg.id, dt.strftime('%Y-%m-%d %H:%M:%S'), ch_strip)
                     if tracks:
                         for t in tracks:
                             if t.get('place'):
                                 t['place'] = ensure_ua_place(t['place'])
                         all_data.extend(tracks)
+                        METRICS['tracks_emitted'] += len(tracks)
                         processed.add(msg.id)
                         fetched += 1
                     else:
@@ -2737,12 +3046,14 @@ async def fetch_loop():
                         # Older than live window
                         continue
                     msgs_recent_window += 1
+                    METRICS['messages_processed'] += 1
                     tracks = process_message(msg.text, msg.id, dt.strftime('%Y-%m-%d %H:%M:%S'), ch)
                     if tracks:
                         for t in tracks:
                             if t.get('place'):
                                 t['place'] = ensure_ua_place(t['place'])
                         new_tracks.extend(tracks)
+                        METRICS['tracks_emitted'] += len(tracks)
                         geo_added += 1
                         processed.add(msg.id)
                         log.info(f'Added track from {ch} #{msg.id}')
@@ -3053,6 +3364,30 @@ def health():
                 del ACTIVE_VISITORS[vid]
         visitors = len(ACTIVE_VISITORS)
     return jsonify({'status':'ok','messages':len(load_messages()), 'auth': AUTH_STATUS, 'visitors': visitors})
+
+@app.route('/metrics')
+def metrics():
+    # Return lightweight metrics snapshot
+    # Note: no heavy locking; approximate counts acceptable
+    return jsonify({'metrics': METRICS, 'neg_geo_cache_size': len(_NEG_GEO)})
+
+@app.route('/metrics_prom')
+def metrics_prom():
+    # Prometheus plaintext exposition
+    lines = []
+    for k,v in METRICS.items():
+        try:
+            lines.append(f"neptun_{k} {int(v)}")
+        except Exception:
+            continue
+    lines.append(f"neptun_negative_geo_cache_size {len(_NEG_GEO)}")
+    body = "\n".join(lines) + "\n"
+    return Response(body, mimetype='text/plain; version=0.0.4')
+
+@app.route('/reload_rules', methods=['POST','GET'])
+def reload_rules():
+    changed = load_rules_config()
+    return jsonify({'status':'ok','reloaded': bool(changed), 'threat_priority': APP_CONFIG.get('threat_priority')})
 
 @app.route('/presence', methods=['POST'])
 def presence():
