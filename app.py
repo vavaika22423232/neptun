@@ -1278,13 +1278,54 @@ def geocode_opencage(place: str):
         return None
 
 def process_message(text, mid, date_str, channel):
+    # --- Явная обработка паттерна "курс(ом)? на <область>" для областей ---
+    oblast_course_pat = re.compile(r'курс(?:ом)? на ([A-Za-zА-Яа-яЇїІіЄєҐґʼ`’\-]{4,})', re.IGNORECASE)
+    oblast_match = oblast_course_pat.search(text)
+    if oblast_match:
+        oblast_token = oblast_match.group(1).strip().lower()
+        # Привести к базовой форме (например, полтавщина -> полтавська обл. или полтавська область)
+        OBLAST_ALIASES = {
+            'полтавщина': 'полтавська обл.',
+            'харківщина': 'харківська обл.',
+            'сумщина': 'сумська обл.',
+            'чернігівщина': 'чернігівська обл.',
+            'дніпропетровщина': 'дніпропетровська обл.',
+            'київщина': 'київська обл.',
+            'одещина': 'одеська обл.',
+            'львівщина': 'львівська обл.',
+            'волинь': 'волинська обл.',
+            'житомирщина': 'житомирська обл.',
+            'запоріжжя': 'запорізька обл.',
+            'миколаївщина': 'миколаївська обл.',
+            'черкащина': 'черкаська обл.',
+            'херсонщина': 'херсонська обл.',
+            'рівненщина': 'рівненська обл.',
+            'тернопільщина': 'тернопільська обл.',
+            'івано-франківщина': 'івано-франківська обл.',
+            'луганщина': 'луганська обл.',
+            'дончина': 'донецька обл.',
+            'донецька': 'донецька обл.'
+        }
+        oblast_norm = OBLAST_ALIASES.get(oblast_token, oblast_token)
+        # Найти совпадение в OBLAST_CENTERS
+        for oblast_key in OBLAST_CENTERS:
+            if oblast_norm in oblast_key or oblast_key in oblast_norm or oblast_token in oblast_key:
+                lat, lng = OBLAST_CENTERS[oblast_key]
+                threat_type, icon = 'shahed', 'shahed.png'
+                return [{
+                    'id': f"{mid}_oblast_course", 'place': oblast_key.title(), 'lat': lat, 'lng': lng,
+                    'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': 'oblast_course'
+                }]
     # --- Detect and split multiple city targets in one message ---
     import re
     multi_city_tracks = []
-    # 1. Patterns: 'на <город>', 'повз <город>'
+    original_text = text
+    # 1. Patterns: ищем все города после 'на' или 'повз', допускаем слова перед этим (например, '3х БпЛА курсом на <город>')
     city_patterns = re.findall(r'(?:на|повз)\s+([A-Za-zА-Яа-яЇїІіЄєҐґʼ`’\-]{3,})', text.lower())
+    # Также ищем конструкции вида '<число>х БпЛА курсом на <город>'
+    city_patterns += re.findall(r'(?:\d+х\s+)?бпла\s+курсом\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґʼ`’\-]{3,})', text.lower())
     # 2. Patterns: перечисление через запятую или слэш (например: "шишаки, глобине, ромодан" или "малин/гранітне")
-    # Только если в сообщении нет явного одного города в начале
     city_enumerations = []
     for part in re.split(r'[\n\|]', text.lower()):
         # ищем перечисления через запятую
@@ -1316,7 +1357,6 @@ def process_message(text, mid, date_str, channel):
         if multi_city_tracks:
             return multi_city_tracks
     """Extract coordinates or try simple city geocoding (lightweight)."""
-    original_text = text
     # ---------------- Global region (oblast) hint detection for universal settlement binding ----------------
     region_hint_global = None
     try:
