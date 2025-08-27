@@ -593,6 +593,15 @@ OBLAST_CENTERS = {
     , 'луганщина': (48.5740, 39.3078), 'луганщини': (48.5740, 39.3078), 'луганщину': (48.5740, 39.3078), 'луганська область': (48.5740, 39.3078), 'луганська обл.': (48.5740, 39.3078)
 }
 
+# Add no-dot variants for keys ending with ' обл.' (common source variation without the dot)
+_no_dot_variants = {}
+for _k,_v in list(OBLAST_CENTERS.items()):
+    if _k.endswith(' обл.'):
+        nd = _k[:-1]  # remove trailing '.' only
+        if nd not in OBLAST_CENTERS:
+            _no_dot_variants[nd] = _v
+OBLAST_CENTERS.update(_no_dot_variants)
+
 # Canonical forms for geocoding queries (region headers -> '<adj> область')
 REGION_GEOCODE_CANON = {
     'полтавщина':'полтавська область','київщина':'київська область','сумщина':'сумська область','харківщина':'харківська область',
@@ -1246,6 +1255,9 @@ def process_message(text, mid, date_str, channel):
                 # Only emit if we haven't already returned a more specific structure earlier (heuristic: continue)
                 lat, lng = OBLAST_CENTERS[region_hit]
                 threat_type, icon = classify(text)
+                # Enforce obstril icon for shelling phrasing even if classify changed in future
+                if re.search(r'(загроза обстрілу|угроза обстрела|обстріл|обстрел)', lower_full):
+                    threat_type = 'artillery'; icon = 'obstril.png'
                 border_shell = bool(re.search(r'прикордон|пригранич', lower_full))
                 place_label = region_hit
                 if border_shell:
