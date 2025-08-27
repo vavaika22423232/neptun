@@ -511,6 +511,30 @@
   </style>
 </head>
 <body>
+  <!-- Smart Mass Attack Warning Banner -->
+  <div id="massAttackBanner" class="mass-attack-banner hidden" role="alert" aria-live="assertive">
+    <div class="ma-icon">⚠️</div>
+    <div class="ma-content">
+      <div class="ma-title">Можлива масована комбінована атака</div>
+      <div class="ma-text" id="maDynamicText">Сьогодні очікується масована комбінована атака шахедів та ракет.</div>
+      <div class="ma-meta" id="maHeuristics"></div>
+    </div>
+    <button class="ma-close" id="maClose" aria-label="Закрити">×</button>
+  </div>
+  <style>
+    .mass-attack-banner{position:fixed;top:4.25rem;left:50%;transform:translateX(-50%);width:min(960px,92%);background:linear-gradient(135deg,#581c87,#1e3a8a 48%,#0f172a);border:1px solid rgba(168,85,247,.45);border-radius:1.1rem;padding:1.05rem 1.3rem;display:flex;gap:1rem;z-index:1400;box-shadow:0 20px 50px -12px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.07) inset,0 0 0 1px rgba(147,51,234,.35);color:#f1f5f9;backdrop-filter:blur(10px) saturate(1.3);animation:maSlide .55s cubic-bezier(.4,.0,.2,1);} 
+    .mass-attack-banner.hidden{display:none;}
+    .ma-icon{flex:0 0 auto;font-size:2rem;line-height:1;filter:drop-shadow(0 2px 6px rgba(0,0,0,.45));}
+    .ma-content{flex:1;min-width:0;}
+  .ma-title{font-size:1.05rem;font-weight:700;letter-spacing:.5px;margin-bottom:.4rem;background:linear-gradient(90deg,#fde68a,#fbcfe8 45%,#93c5fd);-webkit-background-clip:text;background-clip:text;color:transparent;}
+    .ma-text{font-size:.9rem;font-weight:500;line-height:1.45;}
+    .ma-meta{margin-top:.55rem;font-size:.65rem;letter-spacing:.5px;text-transform:uppercase;display:flex;flex-wrap:wrap;gap:.45rem;}
+    .ma-meta span{background:rgba(255,255,255,.08);padding:.25rem .55rem;border-radius:.5rem;border:1px solid rgba(255,255,255,.12);backdrop-filter:blur(4px);}
+    .ma-close{background:#1e293b;border:1px solid #334155;color:#cbd5e1;width:34px;height:34px;border-radius:.75rem;font-size:18px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-weight:600;transition:.18s;}
+    .ma-close:hover{background:#334155;color:#fff;}
+    @keyframes maSlide{from{opacity:0;transform:translate(-50%,-12px);}to{opacity:1;transform:translate(-50%,0);} }
+    @media(max-width:680px){.mass-attack-banner{top:3.6rem;padding:.85rem 1.05rem;border-radius:.9rem;} .ma-title{font-size:.95rem;} .ma-icon{font-size:1.6rem;} }
+  </style>
   <!-- Floating Support Button & Donation Modal -->
   <style>
     .support-fab{position:fixed;bottom:1.4rem;right:1.4rem;z-index:1300;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;border:none;border-radius:1.1rem;padding:.95rem 1.15rem;display:flex;align-items:center;gap:.55rem;font-weight:600;font-size:.85rem;cursor:pointer;letter-spacing:.5px;box-shadow:0 10px 28px -8px rgba(37,99,235,.55),0 0 0 1px rgba(255,255,255,.12) inset;transition:.25s;backdrop-filter:blur(6px) saturate(1.2);} 
@@ -1163,6 +1187,110 @@
   window.addEventListener('orientationchange', ()=>{ if(document.body.classList.contains('map-expanded')){ const mapCard=document.querySelector('.map-card'); if(mapCard){ mapCard.style.height=window.innerHeight+'px'; if(map){ map.invalidateSize(); } } } });
   window.addEventListener('resize', ()=>{ if(document.body.classList.contains('map-expanded')){ const mapCard=document.querySelector('.map-card'); if(mapCard){ mapCard.style.height=window.innerHeight+'px'; if(map){ map.invalidateSize(); } } } });
   window.onload = () => { preloadIcons(); initMap(); openWarn(); };
+  </script>
+    // Smart Mass Attack Banner Logic
+    (function(){
+      const banner = document.getElementById('massAttackBanner');
+      const closeBtn = document.getElementById('maClose');
+      const textEl = document.getElementById('maDynamicText');
+      const heurEl = document.getElementById('maHeuristics');
+      if(!banner) return;
+
+      const LS_KEY = 'maBannerDismissedAt';
+      const DISMISS_COOLDOWN_MIN = 90; // minutes user dismissal persists
+      const MAX_AGE_MIN = 180; // hide banner if last triggering event older
+
+      function minutesAgo(ts){
+        return (Date.now() - ts) / 60000;
+      }
+
+      function isDismissedRecent(){
+        try{ const raw = localStorage.getItem(LS_KEY); if(!raw) return false; const t = parseInt(raw,10); return minutesAgo(t) < DISMISS_COOLDOWN_MIN; }catch(e){ return false; }
+      }
+
+      function markDismissed(){
+        try{ localStorage.setItem(LS_KEY, Date.now().toString()); }catch(e){}
+      }
+
+      const heuristics = [];
+      let freshestTrigger = 0;
+
+      function qualifies(evt){
+        if(!evt || !evt.type || !evt.text) return false;
+        // Only consider missile / drone / pusk related events
+        const t = (evt.type||'').toLowerCase();
+        if(!(t.includes('shahed') || t.includes('raketa') || t.includes('pusk'))) return false;
+        const tx = (evt.text||'').toLowerCase();
+        // Heuristic keywords
+        const kw = [ 'мас', 'комбінован', 'комбінован', 'хвиля', 'залп', 'велика кількість', 'велика к-сть', 'загальний старт', 'масштаб' ];
+        if(kw.some(k=> tx.includes(k))){ heuristics.push('ключові слова'); return true; }
+        // Multi-launch density: count punctuation separators and numbers
+        const numLaunch = (tx.match(/(\b\d{1,3}\b\s*(пуск|злет|запуск))/g)||[]).length;
+        if(numLaunch >= 3){ heuristics.push('число пусків ≥3'); return true; }
+        return false;
+      }
+
+      function updateHeuristics(){
+        heurEl.innerHTML='';
+        [...new Set(heuristics)].forEach(h=>{
+          const span = document.createElement('span'); span.textContent = h; heurEl.appendChild(span);
+        });
+        if(freshestTrigger){
+          const age = Math.round(minutesAgo(freshestTrigger));
+          const span = document.createElement('span'); span.textContent = 'оновлено ' + age + ' хв тому'; heurEl.appendChild(span);
+        }
+      }
+
+      function showBanner(dynamicLine){
+        if(isDismissedRecent()) return;
+        if(dynamicLine){ textEl.textContent = dynamicLine; }
+        updateHeuristics();
+        banner.classList.remove('hidden');
+      }
+
+      closeBtn.addEventListener('click', ()=>{ banner.classList.add('hidden'); markDismissed(); });
+
+      // Integrate with existing SSE stream of events if available
+      function initSSE(){
+        try {
+          const es = new EventSource('/stream');
+          es.onmessage = (e)=>{
+            try{
+              const data = JSON.parse(e.data);
+              if(!data || !data.event) return;
+              const evt = data.event;
+              if(evt.timestamp){ freshestTrigger = Math.max(freshestTrigger, evt.timestamp*1000); }
+              if(evt.timestamp && minutesAgo(evt.timestamp*1000) > MAX_AGE_MIN) return; // too old
+              if(qualifies(evt)){
+                const line = (evt.text||'').split('\n').find(l=>/(мас|комбінован|масов|велика кількість|хвиля|залп)/i.test(l)) || textEl.textContent;
+                freshestTrigger = Date.now();
+                showBanner(line);
+              }
+            }catch(err){ /* ignore */ }
+          };
+        }catch(e){ /* SSE not essential */ }
+      }
+
+      // On load also scan existing DOM list items (historical) for triggers
+      function scanInitial(){
+        const items = document.querySelectorAll('#eventsList li');
+        let foundLine = null;
+        items.forEach(li=>{
+          const txt = li.textContent||'';
+          if(!freshestTrigger) freshestTrigger = Date.now();
+          if(/(мас|комбінован|масов|велика кількість|хвиля|залп)/i.test(txt)){
+            heuristics.push('ключові слова');
+            foundLine = foundLine || txt.trim().slice(0,220);
+          }
+        });
+        if(foundLine) showBanner(foundLine);
+      }
+
+      if(!isDismissedRecent()){
+        scanInitial();
+        initSSE();
+      }
+    })();
   </script>
   <!-- Google Maps script removed after migration to Leaflet / OpenStreetMap -->
 </body>
