@@ -1233,6 +1233,8 @@ def process_message(text, mid, date_str, channel):
         if not s:
             return s
         # markdown links [text](url)
+        # handle bold inside brackets [**Text**](url) by stripping ** first
+        s = re.sub(r'\*\*','', s)
         s = re.sub(r'\[([^\]]{0,80})\]\((https?://|t\.me/)[^\)]+\)', lambda m: (m.group(1) or '').strip(), s, flags=re.IGNORECASE)
         # bare urls
         s = re.sub(r'(https?://\S+|t\.me/\S+)', '', s, flags=re.IGNORECASE)
@@ -1245,7 +1247,8 @@ def process_message(text, mid, date_str, channel):
             # pure decoration (arrows, bullets) or subscribe call to action lines
             if re.fullmatch(r'[>➡→\-\s·•]*', ln2):
                 continue
-            if re.search(r'підписатись|підписатися|подписаться|subscribe', ln2, re.IGNORECASE):
+            # remove any line that is just a subscribe CTA or starts with arrow+subscribe
+            if re.search(r'(?:^|\s)(підписатись|підписатися|подписаться|subscribe)\b', ln2, re.IGNORECASE):
                 continue
             cleaned.append(ln2)
         return '\n'.join(cleaned)
@@ -1710,6 +1713,8 @@ def process_message(text, mid, date_str, channel):
     # Treat semicolons as separators like newlines for multi-segment parsing
     seg_text = text.replace(';', '\n')
     lines = [ln.strip() for ln in seg_text.split('\n') if ln.strip()]
+    # Pre-flag launch site style multi-line posts to avoid RAW fallback – treat each line with a launch phrase as separate pseudo-track (no coords yet)
+    launch_mode = any(ln.lower().startswith('відмічені пуски') or ln.lower().startswith('+ пуски') for ln in lines)
     for ln in lines:
         ln_low = ln.lower()
         local_regions = []
@@ -1720,7 +1725,7 @@ def process_message(text, mid, date_str, channel):
         for (rn, rc) in local_regions:
             region_hits.append((rn.title(), rc, ln[:180]))
     # Если нашли >=2 региональных маркеров в разных пунктах списка — формируем множественные треки
-    if len(region_hits) >= 2:
+    if len(region_hits) >= 2 and not launch_mode:
         # Если присутствуют построчные указания курса на конкретные города ("БпЛА курсом на <місто>") –
         # не возвращаем обобщённые областные маркеры, даём исполниться более детальному парсингу ниже.
         course_line_present = any(
