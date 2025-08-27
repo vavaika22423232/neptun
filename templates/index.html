@@ -613,17 +613,10 @@
       <div class="chip-bar" id="chipBar" aria-label="Швидкі фільтри"></div>
       <div class="filters">
         <label>
-          Період (хв)
+          Період моніторингу
           <div class="input-group">
-            <input type="number" id="timeRange" value="50" min="5" max="360" step="5" style="width:90px;" title="Хвилин назад" aria-label="Часове вікно (хв)">
+            <input type="number" id="timeRange" value="0" readonly disabled style="opacity:.6;cursor:not-allowed;" title="Фіксовано адміністратором">
             <span class="input-suffix">хв</span>
-          </div>
-          <input type="range" id="timeRangeSlider" min="5" max="360" step="5" value="50" style="width:100%;margin-top:.4rem;" aria-label="Слайдер часу">
-          <div style="display:flex;gap:.35rem;margin-top:.4rem;flex-wrap:wrap;">
-            <button type="button" class="mini-time" data-min="15">15</button>
-            <button type="button" class="mini-time" data-min="30">30</button>
-            <button type="button" class="mini-time" data-min="60">60</button>
-            <button type="button" class="mini-time" data-min="120">120</button>
           </div>
         </label>
         <label>
@@ -636,13 +629,7 @@
             <option value="pvo">ППО</option>
           </select>
         </label>
-        <label>
-          Область
-          <select id="regionSelect">
-            <option value="">Всі області</option>
-          </select>
-        </label>
-        <button onclick="updateMarkers()" type="button">
+        <button onclick="updateMarkers()">
           <i class="material-icons">refresh</i>
           Оновити дані
         </button>
@@ -725,9 +712,6 @@
   let markers = [];
   let lastDataPoints = [];
   const THREAT_ORDER = ['raketa','shahed','avia','pvo','vibuh','artillery','obstril','mlrs','alarm','alarm_cancel','fpv'];
-  let REGION_FEATURES = [];
-  let regionOptionsBuilt = false;
-  let regionHighlightLayer = null;
     // Проста мапа транслітерації/перекладу російських / застарілих назв на українські
     const PLACE_UA_MAP = (()=>{
       const m = new Map([
@@ -836,24 +820,15 @@
     function toggleHeat(){ heatEnabled = !heatEnabled; const btn=document.getElementById('heatToggle'); if(btn){ btn.classList.toggle('active', heatEnabled); btn.setAttribute('aria-pressed', heatEnabled); } const hl=document.getElementById('heatLegend'); if(hl){ hl.style.display = heatEnabled ? 'block':'none'; } updateMarkers(); }
     document.addEventListener('DOMContentLoaded', ()=>{
       const lbtn=document.getElementById('legendToggle'); if(lbtn) lbtn.addEventListener('click', ()=>{ ensureLegend(); toggleLegend(); });
-      const cbtn=document.getElementById('clusterToggle'); if(cbtn) cbtn.addEventListener('click', toggleCluster);
-      updateClusterButtonLabel();
+  const cbtn=document.getElementById('clusterToggle'); if(cbtn) cbtn.addEventListener('click', toggleCluster);
+  updateClusterButtonLabel();
       const hbtn=document.getElementById('heatToggle'); if(hbtn) hbtn.addEventListener('click', toggleHeat);
-      // Time and region controls
-      const trInput = document.getElementById('timeRange');
-      const trSlider = document.getElementById('timeRangeSlider');
-      function syncTime(val){ val = Math.min(360, Math.max(5, parseInt(val)||50)); trInput.value=val; trSlider.value=val; }
-      function timeChanged(){ syncTime(this.value); updateMarkers(); }
-      if(trInput) trInput.addEventListener('change', timeChanged);
-      if(trSlider) trSlider.addEventListener('input', timeChanged);
-      document.querySelectorAll('.mini-time').forEach(b=> b.addEventListener('click', e=>{ syncTime(e.target.dataset.min); updateMarkers(); }));
-      const regionSel = document.getElementById('regionSelect'); if(regionSel){ regionSel.addEventListener('change', ()=>updateMarkers()); }
     });
     function parseUtcDate(str){ if(!str) return null; // expecting '%Y-%m-%d %H:%M:%S'
       const m = str.match(/(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})/); if(!m) return null; return new Date(Date.UTC(+m[1], m[2]-1, +m[3], +m[4], +m[5], +m[6])); }
     function ageMinutes(d){ if(!d) return 9999; return (Date.now() - d.getTime())/60000; }
     async function updateMarkers() {
-      const timeRange = parseInt(document.getElementById('timeRange')?.value)||50;
+      const timeRange = 50; // fixed
       const threatType = document.getElementById('threatTypeSelect').value;
       const params = new URLSearchParams({ timeRange, confRange: 0 });
       const res = await fetch(`/data?${params.toString()}`);
@@ -870,36 +845,6 @@
       if (threatType) points = points.filter(p => (p.threat_type || '').toLowerCase() === threatType);
       const chipFilter = activeChipFilter();
       if(chipFilter){ points = points.filter(p => chipFilter.includes((p.threat_type||'').toLowerCase())); }
-      // Region assignment via polygon test (defer loading until first need)
-      function pointRegion(lat,lng){
-        if(!REGION_FEATURES.length || !window.turf) return null;
-        const pt = turf.point([lng,lat]);
-        for(const f of REGION_FEATURES){ try { if(turf.booleanPointInPolygon(pt, f)){ return f.properties.name || f.properties.NAME || f.properties.Name || f.properties.region || f.properties.text || f.properties.id || null; } } catch(e){} }
-        return null;
-      }
-      points.forEach(p=>{ if(typeof p.lat==='number' && typeof p.lng==='number' && !p._regionName){ p._regionName = pointRegion(p.lat,p.lng); }});
-      const regionSel = document.getElementById('regionSelect');
-      if(regionSel && !regionOptionsBuilt){
-        const names = Array.from(new Set(points.map(p=>p._regionName).filter(Boolean))).sort((a,b)=>a.localeCompare(b,'uk'));
-        if(names.length){ regionSel.innerHTML = '<option value="">Всі області</option>' + names.map(n=>`<option value="${n}">${n}</option>`).join(''); regionOptionsBuilt = true; }
-      }
-      const selectedRegion = (regionSel && regionSel.value) ? regionSel.value : '';
-      if(selectedRegion){ points = points.filter(p => (p._regionName||'') === selectedRegion); }
-      // Highlight selected region boundary
-      try {
-        if(regionHighlightLayer){ regionHighlightLayer.remove(); regionHighlightLayer = null; }
-        if(selectedRegion && REGION_FEATURES.length){
-          const feat = REGION_FEATURES.find(f => {
-            const nm = (f.properties.name||f.properties.NAME||f.properties.Name||f.properties.region||f.properties.text||f.properties.id||'');
-            return nm === selectedRegion;
-          });
-          if(feat){
-            regionHighlightLayer = L.geoJSON(feat, { style:{ color:'#2563eb', weight:3, fill:false, dashArray:'6 4', opacity:0.9 } });
-            regionHighlightLayer.addTo(map);
-            regionHighlightLayer.bringToFront();
-          }
-        }
-      } catch(e){ console.warn('region highlight error', e); }
       lastDataPoints = points.slice();
       if (markerLayer) { markerLayer.clearLayers(); }
       // Recreate markerLayer if switching modes
@@ -1223,27 +1168,6 @@
   window.addEventListener('orientationchange', ()=>{ if(document.body.classList.contains('map-expanded')){ const mapCard=document.querySelector('.map-card'); if(mapCard){ mapCard.style.height=window.innerHeight+'px'; if(map){ map.invalidateSize(); } } } });
   window.addEventListener('resize', ()=>{ if(document.body.classList.contains('map-expanded')){ const mapCard=document.querySelector('.map-card'); if(mapCard){ mapCard.style.height=window.innerHeight+'px'; if(map){ map.invalidateSize(); } } } });
   window.onload = () => { preloadIcons(); initMap(); openWarn(); };
-  // ---- Region polygons loader with cache ----
-  async function loadRegions(){
-    try {
-      if(REGION_FEATURES.length) return;
-      // localStorage cache
-      const cacheRaw = localStorage.getItem('regions_geojson_v1');
-      if(cacheRaw){
-        try { const parsed = JSON.parse(cacheRaw); if(parsed && parsed.features){ REGION_FEATURES = parsed.features; }
-        } catch(e){ localStorage.removeItem('regions_geojson_v1'); }
-      }
-      if(!REGION_FEATURES.length){
-        // Fallback public geojson (lightweight). You can host a trimmed file locally later.
-        const url = 'https://gist.githubusercontent.com/benmeadowcroft/28f0b9230e650ba9ee3f/raw/ukraine-oblasts.geojson';
-        const r = await fetch(url);
-        const gj = await r.json();
-        if(gj && gj.features){ REGION_FEATURES = gj.features; localStorage.setItem('regions_geojson_v1', JSON.stringify({features:REGION_FEATURES})); }
-      }
-    } catch(e){ console.warn('region load error', e); }
-  }
-  // Preload regions soon after load (non-blocking)
-  setTimeout(()=>{ loadRegions().then(()=>{ /* rebuild region options if user открыл фильтр позже */ regionOptionsBuilt=false; }); }, 1500);
   </script>
   <!-- Google Maps script removed after migration to Leaflet / OpenStreetMap -->
 </body>
