@@ -648,6 +648,7 @@ RAION_FALLBACK = {
     # Zaporizkyi raion (shifted off exact city center to represent wider district)
     , 'запорізький': (47.9000, 35.2500), 'запорожский': (47.9000, 35.2500)
     , 'білгород-дністровський': (46.1871, 30.3410), 'білгород-дністровского': (46.1871, 30.3410), 'білгород-дністровського': (46.1871, 30.3410)
+    , 'бериславський': (46.8417, 33.4261), 'бериславский': (46.8417, 33.4261)
 }
 
 # Active raion (district) air alarms: raion_base -> dict(place, lat, lng, since)
