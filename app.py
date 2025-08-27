@@ -598,6 +598,22 @@ UA_CITY_NORMALIZE = {
 # Static fallback coordinates (approximate city centers) to avoid relying solely on OpenCage.
 # Minimal fallback city coords (will be superseded if full settlements file present)
 CITY_COORDS = {
+    # --- Добавлены недостающие города для массовых сообщений ---
+    'котельва': (50.2333, 34.7667),  # Котельва, Полтавская обл.
+    'зіньків': (50.2067, 34.3692),   # Зіньків, Полтавская обл.
+    'нові санжари': (49.3381, 34.3761), # Нові Санжари, Полтавская обл.
+    'глобине': (49.3900, 33.2667),   # Глобине, Полтавская обл.
+    'козельщина': (49.2500, 33.7500), # Козельщина, Полтавская обл.
+    'згурівка': (50.5017, 31.6017),  # Згурівка, Киевская обл.
+    'яготин': (50.2797, 31.7631),    # Яготин, Киевская обл.
+    'іванків': (51.2092, 29.8942),   # Іванків, Киевская обл.
+    'переяслав': (50.0667, 31.4667), # Переяслав, Киевская обл.
+    'тальне': (48.8850, 30.6922),    # Тальне, Черкасская обл.
+    'шпола': (49.0061, 32.5211),     # Шпола, Черкасская обл.
+    'малин': (50.7744, 29.2417),     # Малин, Житомирская обл.
+    'калинівка': (49.4650, 28.5181), # Калинівка, Винницкая обл.
+    'корець': (50.6192, 27.1561),    # Корець, Ровенская обл.
+    'нова ушиця': (48.8131, 27.3281),# Нова Ушиця, Хмельницкая обл.
     # --- Новые города и сёла для массовых сообщений ---
     'глухів': (51.6781, 33.9169),
     'кролевець': (51.5481, 33.3847),
@@ -1278,6 +1294,59 @@ def geocode_opencage(place: str):
         return None
 
 def process_message(text, mid, date_str, channel):
+    # --- Спец. обработка многострочных сообщений с заголовками-областями и списком городов ---
+    import unicodedata
+    def normalize_city_name(name):
+        # Привести к нижнему регистру, заменить все апострофы на стандартный, убрать лишние пробелы
+        n = name.lower().strip()
+        n = n.replace('ʼ', "'").replace('’', "'").replace('`', "'")
+        n = unicodedata.normalize('NFC', n)
+        return n
+    # Если сообщение содержит несколько строк с заголовками-областями и городами
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    oblast_hdr = None
+    multi_city_tracks = []
+    for ln in lines:
+        # Если строка — это заголовок области (например, "Сумщина:")
+        if ln.endswith(':'):
+            oblast_hdr = ln[:-1].strip().lower()
+            continue
+        # Пытаемся найти город и количество (например, "2х БпЛА курсом на Десну")
+        import re
+        m = re.search(r'(\d+)[xх]?\s*бпла.*?курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`]{3,})', ln, re.IGNORECASE)
+        if m:
+            count = int(m.group(1))
+            city = m.group(2)
+        else:
+            m2 = re.search(r'бпла.*?курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`]{3,})', ln, re.IGNORECASE)
+            count = 1
+            city = m2.group(1) if m2 else None
+        if city:
+            base = normalize_city_name(city)
+            coords = CITY_COORDS.get(base)
+            if not coords and SETTLEMENTS_INDEX:
+                coords = SETTLEMENTS_INDEX.get(base)
+            # Если не найдено — пробуем добавить область к названию
+            if not coords and oblast_hdr:
+                combo = f"{base} {oblast_hdr}"
+                coords = CITY_COORDS.get(combo)
+                if not coords and SETTLEMENTS_INDEX:
+                    coords = SETTLEMENTS_INDEX.get(combo)
+            if coords:
+                lat, lng = coords
+                threat_type, icon = 'shahed', 'shahed.png'
+                label = city.title()
+                if count > 1:
+                    label += f" ({count})"
+                if oblast_hdr and oblast_hdr not in label.lower():
+                    label += f" [{oblast_hdr.title()}]"
+                multi_city_tracks.append({
+                    'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
+                    'threat_type': threat_type, 'text': ln[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': 'multiline_oblast_city', 'count': count
+                })
+    if multi_city_tracks:
+        return multi_city_tracks
     # --- Detect and split multiple city targets in one message ---
     import re
     multi_city_tracks = []
