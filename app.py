@@ -1242,7 +1242,10 @@ def process_message(text, mid, date_str, channel):
             ln2 = ln.strip()
             if not ln2:
                 continue
+            # pure decoration (arrows, bullets) or subscribe call to action lines
             if re.fullmatch(r'[>➡→\-\s·•]*', ln2):
+                continue
+            if re.search(r'підписатись|підписатися|подписаться|subscribe', ln2, re.IGNORECASE):
                 continue
             cleaned.append(ln2)
         return '\n'.join(cleaned)
