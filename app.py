@@ -226,6 +226,95 @@ def save_messages(data):
     except Exception as e:
         log.debug(f'git auto-commit skipped: {e}')
 
+# ---------------- Deduplication / merge of near-duplicate geo events -----------------
+# Two messages that refer to the same object coming almost back-to-back should not
+# produce two separate points: instead we update the earlier one (increment count, merge text).
+# Heuristics: same threat_type, within DEDUP_DIST_KM km, within DEDUP_TIME_MIN minutes.
+DEDUP_TIME_MIN = int(os.getenv('DEDUP_TIME_MIN', '5'))
+DEDUP_DIST_KM = float(os.getenv('DEDUP_DIST_KM', '7'))
+DEDUP_SCAN_BACK = int(os.getenv('DEDUP_SCAN_BACK', '400'))  # how many recent messages to scan
+
+def _parse_dt(s:str):
+    try:
+        return datetime.strptime(s, '%Y-%m-%d %H:%M:%S')
+    except Exception:
+        return None
+
+def _haversine_km(lat1, lon1, lat2, lon2):
+    try:
+        from math import radians, sin, cos, asin, sqrt
+        R = 6371.0
+        dlat = radians(lat2-lat1)
+        dlon = radians(lon2-lon1)
+        a = sin(dlat/2)**2 + cos(radians(lat1))*cos(radians(lat2))*sin(dlon/2)**2
+        c = 2*asin(sqrt(a))
+        return R*c
+    except Exception:
+        return 999999
+
+def maybe_merge_track(all_data:list, new_track:dict):
+    """Try to merge new_track into an existing recent track.
+    Returns tuple (merged: bool, track_ref: dict).
+    """
+    try:
+        if not all_data:
+            return False, new_track
+        tt = (new_track.get('threat_type') or '').lower()
+        if not tt:
+            return False, new_track
+        lat = new_track.get('lat'); lng = new_track.get('lng')
+        if not isinstance(lat, (int,float)) or not isinstance(lng, (int,float)):
+            return False, new_track
+        new_dt = _parse_dt(new_track.get('date','')) or datetime.utcnow()
+        # Scan recent slice only for performance
+        scan_slice = all_data[-DEDUP_SCAN_BACK:]
+        # Iterate reversed (newest first)
+        for existing in reversed(scan_slice):
+            if existing is new_track:  # shouldn't happen yet
+                continue
+            if (existing.get('threat_type') or '').lower() != tt:
+                continue
+            e_lat = existing.get('lat'); e_lng = existing.get('lng')
+            if not isinstance(e_lat,(int,float)) or not isinstance(e_lng,(int,float)):
+                continue
+            dist = _haversine_km(lat,lng,e_lat,e_lng)
+            if dist > DEDUP_DIST_KM:
+                continue
+            e_dt = _parse_dt(existing.get('date','')) or new_dt
+            dt_min = abs((new_dt - e_dt).total_seconds())/60.0
+            if dt_min > DEDUP_TIME_MIN:
+                continue
+            # Merge
+            # Increment count
+            existing['count'] = int(existing.get('count') or 1) + 1
+            # Merge text (avoid duplication / uncontrolled growth)
+            new_text = (new_track.get('text') or '').strip()
+            if new_text:
+                ex_text = existing.get('text') or ''
+                if new_text not in ex_text:
+                    combined = (ex_text + ' | ' + new_text).strip(' |') if ex_text else new_text
+                    if len(combined) > 800:
+                        combined = combined[:790] + '…'
+                    existing['text'] = combined
+            # Maintain list of merged ids
+            if 'merged_ids' not in existing:
+                existing['merged_ids'] = [existing.get('id')]
+            nid = new_track.get('id')
+            if nid and nid not in existing['merged_ids']:
+                existing['merged_ids'].append(nid)
+            # Update displayed date to the most recent
+            if new_dt >= e_dt:
+                existing['date'] = new_track.get('date') or existing.get('date')
+            # Optionally capture first occurrence time
+            if 'first_date' not in existing:
+                existing['first_date'] = e_dt.strftime('%Y-%m-%d %H:%M:%S')
+            existing['merged'] = True
+            return True, existing
+    except Exception as e:
+        log.debug(f'dedup merge error: {e}')
+    return False, new_track
+
+
 def load_hidden():
     if os.path.exists(HIDDEN_FILE):
         try:
@@ -2726,11 +2815,20 @@ async def fetch_loop():
                         continue
                     tracks = process_message(msg.text, msg.id, dt.strftime('%Y-%m-%d %H:%M:%S'), ch_strip)
                     if tracks:
+                        merged_any = False
+                        merged_refs = []
                         for t in tracks:
                             if t.get('place'):
                                 t['place'] = ensure_ua_place(t['place'])
-                        all_data.extend(tracks)
+                            merged, ref = maybe_merge_track(all_data, t)
+                            if merged:
+                                merged_any = True
+                                merged_refs.append(ref)
+                            else:
+                                all_data.append(t)
                         processed.add(msg.id)
+                        if merged_any:
+                            log.info(f'Merged track(s) for {ch_strip} #{msg.id} into existing point(s).')
                         fetched += 1
                     else:
                         if ALWAYS_STORE_RAW:
@@ -2791,13 +2889,23 @@ async def fetch_loop():
                     msgs_recent_window += 1
                     tracks = process_message(msg.text, msg.id, dt.strftime('%Y-%m-%d %H:%M:%S'), ch)
                     if tracks:
+                        merged_any = False
+                        appended = []
                         for t in tracks:
                             if t.get('place'):
                                 t['place'] = ensure_ua_place(t['place'])
-                        new_tracks.extend(tracks)
+                            merged, ref = maybe_merge_track(all_data, t)
+                            if merged:
+                                merged_any = True
+                            else:
+                                new_tracks.append(t)
+                                appended.append(t)
                         geo_added += 1
                         processed.add(msg.id)
-                        log.info(f'Added track from {ch} #{msg.id}')
+                        if merged_any and not appended:
+                            log.info(f'Merged live track(s) {ch} #{msg.id} (no new marker).')
+                        else:
+                            log.info(f'Added track from {ch} #{msg.id} (+{len(appended)} new, merged={merged_any})')
                     else:
                         # Store raw if enabled to allow later reprocessing / debugging (e.g., napramok multi-line posts)
                         if ALWAYS_STORE_RAW:
@@ -2837,12 +2945,16 @@ async def fetch_loop():
                 elif geo_added == 0:
                     log.debug(f'Channel {ch} had {msgs_recent_window} recent messages but none produced geo tracks.')
         if new_tracks:
+            # Append truly new tracks (merges already applied in-place)
             all_data.extend(new_tracks)
             save_messages(all_data)
             try:
                 broadcast_new(new_tracks)
             except Exception as e:
                 log.debug(f'SSE broadcast failed: {e}')
+        else:
+            # If only merges happened (no brand-new tracks), still persist periodically
+            save_messages(all_data)
         await asyncio.sleep(60)
 
 def start_fetch_thread():
