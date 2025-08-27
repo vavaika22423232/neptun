@@ -898,33 +898,54 @@
             const segments = 80; // smoothness
             // Bearing range depending on oblast heuristic
             let startBearing = 315; // NW
-            let endBearing = 135; // SE (draw counter-clockwise across north-east arc)
-            const pl = (p.place||'').toLowerCase();
-            if (pl.includes('сум') ) { startBearing = 300; endBearing = 120; }
-            if (pl.includes('черніг') ) { startBearing = 270; endBearing = 90; }
-            if (pl.includes('луган') || pl.includes('донец') ) { startBearing = 0; endBearing = 180; }
-            if (pl.includes('херсон') ) { startBearing = 30; endBearing = 210; }
-            function destPoint(lat, lng, brgDeg, distKm){
-              const R = 6371; const br = brgDeg * Math.PI/180; const d = distKm / R;
-              const φ1 = lat*Math.PI/180, λ1 = lng*Math.PI/180;
-              const φ2 = Math.asin( Math.sin(φ1)*Math.cos(d) + Math.cos(φ1)*Math.sin(d)*Math.cos(br) );
-              const λ2 = λ1 + Math.atan2(Math.sin(br)*Math.sin(d)*Math.cos(φ1), Math.cos(d)-Math.sin(φ1)*Math.sin(φ2));
-              return [φ2*180/Math.PI, ((λ2*180/Math.PI)+540)%360-180];
-            }
-            const latlngs = [];
-            latlngs.push([centerLat, centerLng]);
-            const step = (endBearing >= startBearing) ? (endBearing - startBearing)/segments : ((endBearing+360) - startBearing)/segments;
+            let endBearing = 135;  // SE
+            if (centerLng > 35) { startBearing = 290; endBearing = 110; }
+            const pts = [];
+            const R = 6371; // km
+            const toRad = d=>d*Math.PI/180; const toDeg = r=>r*180/Math.PI;
             for(let i=0;i<=segments;i++){
-              const br = (startBearing + i*step)%360;
-              latlngs.push(destPoint(centerLat, centerLng, br, spanKm));
+              const brg = startBearing + (endBearing-startBearing)* (i/segments);
+              const d = spanKm / R; // angular distance
+              const br = toRad(brg);
+              const lat1 = toRad(centerLat);
+              const lon1 = toRad(centerLng);
+              const lat2 = Math.asin(Math.sin(lat1)*Math.cos(d)+Math.cos(lat1)*Math.sin(d)*Math.cos(br));
+              const lon2 = lon1 + Math.atan2(Math.sin(br)*Math.sin(d)*Math.cos(lat1), Math.cos(d)-Math.sin(lat1)*Math.sin(lat2));
+              pts.push([toDeg(lat2), ((toDeg(lon2)+540)%360)-180]);
             }
-            latlngs.push([centerLat, centerLng]);
-            const poly = L.polygon(latlngs, {color:'#dc2626', weight:1, fillColor:'#dc2626', fillOpacity:0.18, stroke:true, dashArray:'4 3'});
+            pts.unshift([centerLat, centerLng]);
+            const poly = L.polygon(pts, {color:'#b91c1c', weight:1, fillColor:'#dc2626', fillOpacity:0.18, stroke:true});
             poly.addTo(markerLayer);
-            // Add pulsing outline ring for emphasis
-            const ring = L.circle([centerLat, centerLng], {radius: spanKm*1000*0.15, color:'#ef4444', weight:2, fill:false, opacity:0.9});
-            ring.addTo(markerLayer);
-          } catch(e) { console.warn('border shelling overlay error', e); }
+          } catch(e){}
+        }
+        // KAB guided bomb threat zone (semi-circle) for raketa markers whose text mentions 'каб'
+        if (!p.border_shelling && p.threat_type && p.threat_type.toLowerCase()==='raketa' && /каб/i.test(p.text||'')) {
+          try {
+            const centerLat = p.lat; const centerLng = p.lng;
+            const spanKm = 60; // smaller radius for localized KAB danger zone
+            const segments = 64;
+            // Orientation: aim semi-circle towards expected direction of approach (assume from north-east for Sumy region)
+            // Simplistic heuristic: if longitude < 34 -> approach from east (bearing arc 300..60), else generic 270..90
+            let startBearing = 300; let endBearing = 60;
+            if (centerLng > 34.5) { startBearing = 270; endBearing = 90; }
+            const pts = [];
+            const R = 6371; const toRad = d=>d*Math.PI/180; const toDeg = r=>r*180/Math.PI;
+            const lat1 = toRad(centerLat); const lon1 = toRad(centerLng); const d = spanKm / R;
+            for(let i=0;i<=segments;i++){
+              let frac = i/segments;
+              // normalize wrap crossing
+              let brg = startBearing + (endBearing - startBearing)*frac;
+              // If crossing 360 adjust
+              if (startBearing > endBearing && brg > 360) brg -= 360;
+              const br = toRad(brg);
+              const lat2 = Math.asin(Math.sin(lat1)*Math.cos(d)+Math.cos(lat1)*Math.sin(d)*Math.cos(br));
+              const lon2 = lon1 + Math.atan2(Math.sin(br)*Math.sin(d)*Math.cos(lat1), Math.cos(d)-Math.sin(lat1)*Math.sin(lat2));
+              pts.push([toDeg(lat2), ((toDeg(lon2)+540)%360)-180]);
+            }
+            pts.unshift([centerLat, centerLng]);
+            const poly = L.polygon(pts, {color:'#dc2626', weight:1, fillColor:'#ef4444', fillOpacity:0.12, dashArray:'6 4'}).addTo(markerLayer);
+            poly.bindPopup('<b>Зона можливої дії КАБ</b><br>'+ (p.place||''));
+          } catch(e){}
         }
       });
       updateEventList(data.events || []);
