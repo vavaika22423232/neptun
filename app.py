@@ -1280,7 +1280,7 @@ def process_message(text, mid, date_str, channel):
         original_text = new_orig
     # --- Explicit launch site detection (multi-line). Create one marker per detected launch location.
     low_work = text.lower()
-    if ('пуск' in low_work or 'пуски' in low_work) and any(k in low_work for k in ['shahed','шахед','бпла','uav','дрон']):
+    if ('пуск' in low_work or 'пуски' in low_work or '+ пуски' in low_work):
         # find quoted or dash-separated site tokens: «Name», "Name", or after 'з ' preposition
         sites_found = set()
         # Quoted tokens
@@ -1464,7 +1464,7 @@ def process_message(text, mid, date_str, channel):
         if 'розвід' in l or 'розвідуваль' in l or 'развед' in l:
             return 'pvo', 'rozved.png'
         # Launch site detections for Shahed / UAV launches ("пуски" + origin phrases). User wants pusk.png marker.
-        if ('пуск' in l or 'пуски' in l) and any(k in l for k in ['shahed','шахед','шахеді','шахедів','бпла','uav','дрон']):
+        if ('пуск' in l or 'пуски' in l) and (any(k in l for k in ['shahed','шахед','шахеді','шахедів','бпла','uav','дрон']) or ('аеродром' in l) or ('аэродром' in l)):
             return 'pusk', 'pusk.png'
         # Air alarm start
         if ('повітряна тривога' in l or 'повітряна тривога.' in l or ('тривога' in l and 'повітр' in l)) and not ('відбій' in l or 'отбой' in l):
