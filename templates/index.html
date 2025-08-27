@@ -8,6 +8,9 @@
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
   <!-- Leaflet (OpenStreetMap) CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <!-- MarkerCluster CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
   <style>
     :root {
       --main-bg: #0a0f1c;
@@ -339,6 +342,34 @@
   .threat-marker .tm-core.artillery{--c:#b45309;}
   .threat-marker .tm-core.obstril{--c:#b91c1c;}
   .threat-marker .tm-core.mlrs{--c:#9d174d;}
+  /* Age / recency glow modifiers */
+  .threat-marker .tm-core.age-fresh{box-shadow:0 0 0 0 rgba(59,130,246,.55),0 0 0 1px rgba(0,0,0,.12);animation:agePulse 8s ease-in-out infinite;}
+  .threat-marker .tm-core.age-hot{outline:2px solid rgba(255,255,255,.8);}
+  @keyframes agePulse{0%{box-shadow:0 0 0 0 rgba(59,130,246,.55);}60%{box-shadow:0 0 0 18px rgba(59,130,246,0);}100%{box-shadow:0 0 0 0 rgba(59,130,246,0);}}
+  /* Missile ripple */
+  .threat-marker .tm-core.raketa:before{content:"";position:absolute;width:100%;height:100%;left:0;top:0;border-radius:50%;box-shadow:0 0 0 0 rgba(220,38,38,.55);animation:raketaPulse 2.4s ease-in-out infinite;}
+  @keyframes raketaPulse{0%{transform:scale(1);opacity:1;}70%{transform:scale(1.9);opacity:0;}100%{transform:scale(1.9);opacity:0;}}
+  /* Legend & overlay panels */
+  .map-overlay-panel{position:absolute;bottom:0.75rem;left:0.75rem;z-index:1200;background:rgba(17,24,39,.88);backdrop-filter:blur(10px);border:1px solid #1f2937;border-radius:0.85rem;padding:.75rem .9rem;max-width:240px;font-size:.7rem;line-height:1.25;box-shadow:0 6px 24px -8px rgba(0,0,0,.55);display:none;}
+  .map-overlay-panel.active{display:block;}
+  .legend-grid{display:grid;grid-template-columns: repeat(2, 1fr);gap:.4rem .6rem;}
+  .legend-item{display:flex;align-items:center;gap:.4rem;font-weight:500;color:#e2e8f0;}
+  .legend-item img{width:20px;height:20px;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,.4));}
+  .legend-title{font-size:.65rem;text-transform:uppercase;letter-spacing:.9px;font-weight:700;color:#60a5fa;margin:0 0 .4rem 0;}
+  .chip-bar{display:flex;flex-wrap:wrap;gap:.4rem;margin:.5rem 0 1rem;}
+  .chip{background:#1e293b;color:#cbd5e1;border:1px solid #334155;padding:.35rem .65rem;font-size:.65rem;font-weight:600;border-radius:999px;cursor:pointer;letter-spacing:.4px;display:inline-flex;align-items:center;gap:.3rem;transition:.18s;}
+  .chip:hover{background:#243047;color:#fff;}
+  .chip.active{background:#2563eb;border-color:#2563eb;color:#fff;box-shadow:0 4px 14px -4px rgba(37,99,235,.6);}
+  .map-mode-bar{position:absolute;top:1rem;left:1rem;z-index:1200;display:flex;flex-direction:column;gap:.5rem;}
+  .mode-btn{background:rgba(17,24,39,.85);backdrop-filter:blur(8px);border:1px solid #1f2937;color:#e5e7eb;padding:.55rem .7rem;font-size:.65rem;font-weight:600;border-radius:.55rem;cursor:pointer;letter-spacing:.5px;display:inline-flex;align-items:center;gap:.4rem;transition:.18s;}
+  .mode-btn:hover{background:#1f2d3f;color:#fff;}
+  .mode-btn.active{background:#2563eb;border-color:#2563eb;color:#fff;box-shadow:0 4px 14px -4px rgba(37,99,235,.55);}
+  /* Cluster overrides */
+  .marker-cluster-small{background:rgba(59,130,246,.85);}
+  .marker-cluster-small div{background:#2563eb;color:#fff;font-weight:600;}
+  .marker-cluster-medium{background:rgba(220,38,38,.85);} .marker-cluster-medium div{background:#dc2626;color:#fff;}
+  .marker-cluster-large{background:rgba(16,185,129,.85);} .marker-cluster-large div{background:#059669;color:#fff;}
+  .heat-legend{margin-top:.5rem;font-size:.55rem;color:#94a3b8;}
   @media (prefers-reduced-motion:no-preference){.threat-marker .tm-core{animation:popIn .25s ease;}}
   @keyframes popIn{from{transform:scale(.5);opacity:0;}to{transform:scale(1);opacity:1;}}
     @media (max-width: 1100px) {
@@ -565,9 +596,21 @@
         </button>
       </div>
       <div id="map"></div>
+      <!-- Mode buttons (legend, heatmap, clusters) -->
+      <div class="map-mode-bar">
+        <button id="legendToggle" class="mode-btn" aria-pressed="false">Легенда</button>
+        <button id="clusterToggle" class="mode-btn" aria-pressed="true">Кластери</button>
+        <button id="heatToggle" class="mode-btn" aria-pressed="false">Теплова</button>
+      </div>
+      <div id="legendPanel" class="map-overlay-panel" aria-label="Легенда">
+        <h4 class="legend-title">Типи загроз</h4>
+        <div class="legend-grid" id="legendGrid"></div>
+        <div class="heat-legend" id="heatLegend" style="display:none;">Теплова карта: жовтий → червоний (концентрація подій)</div>
+      </div>
     </div>
     <div class="card" id="events">
       <h2>Останні події</h2>
+      <div class="chip-bar" id="chipBar" aria-label="Швидкі фільтри"></div>
       <div class="filters">
         <label>
           Період моніторингу
@@ -619,6 +662,8 @@
   </div>
   <!-- Leaflet (OpenStreetMap) JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
   <!-- Turf.js for geometry operations -->
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
   <script>
@@ -657,8 +702,14 @@
     }
     // Состояние приложения
   let map;
-    let markerLayer = null;
-    let markers = [];
+  let markerLayer = null; // standard layer group or cluster layer
+  let heatLayer = null;
+  let clusterEnabled = true;
+  let heatEnabled = false;
+  let legendVisible = false;
+  let markers = [];
+  let lastDataPoints = [];
+  const THREAT_ORDER = ['raketa','shahed','avia','pvo','vibuh','artillery','obstril','mlrs','alarm','alarm_cancel','fpv'];
     // Проста мапа транслітерації/перекладу російських / застарілих назв на українські
     const PLACE_UA_MAP = (()=>{
       const m = new Map([
@@ -725,6 +776,40 @@
       if (/бпла|fpv/i.test(text || '')) return true;
       return false;
     }
+    function buildChips(){
+      const bar = document.getElementById('chipBar');
+      if(!bar) return;
+      const types = Array.from(new Set(THREAT_ORDER));
+      bar.innerHTML = types.map(t=>`<div class="chip" data-type="${t}">${t.toUpperCase()}</div>`).join('');
+      bar.addEventListener('click', e=>{
+        const el = e.target.closest('.chip'); if(!el) return;
+        el.classList.toggle('active');
+        updateMarkers();
+      });
+    }
+    function activeChipFilter(){
+      const bar = document.getElementById('chipBar'); if(!bar) return null;
+      const act = Array.from(bar.querySelectorAll('.chip.active')).map(c=>c.dataset.type);
+      return act.length ? act : null; // null = no filter
+    }
+    function ensureLegend(){
+      const grid = document.getElementById('legendGrid'); if(!grid) return;
+      if(grid.dataset.built) return;
+      const entries = THREAT_ORDER.filter(k=>ICONS[k]).map(k=>({k, url:ICONS[k]}));
+      grid.innerHTML = entries.map(e=>`<div class="legend-item"><img src="${e.url}" alt=""> <span>${e.k}</span></div>`).join('');
+      grid.dataset.built = '1';
+    }
+    function toggleLegend(){ legendVisible = !legendVisible; const p=document.getElementById('legendPanel'); if(p){ p.classList.toggle('active', legendVisible); } const btn=document.getElementById('legendToggle'); if(btn){ btn.classList.toggle('active', legendVisible); btn.setAttribute('aria-pressed', legendVisible); } }
+    function toggleCluster(){ clusterEnabled = !clusterEnabled; const btn=document.getElementById('clusterToggle'); if(btn){ btn.classList.toggle('active', clusterEnabled); btn.setAttribute('aria-pressed', clusterEnabled); } updateMarkers(); }
+    function toggleHeat(){ heatEnabled = !heatEnabled; const btn=document.getElementById('heatToggle'); if(btn){ btn.classList.toggle('active', heatEnabled); btn.setAttribute('aria-pressed', heatEnabled); } const hl=document.getElementById('heatLegend'); if(hl){ hl.style.display = heatEnabled ? 'block':'none'; } updateMarkers(); }
+    document.addEventListener('DOMContentLoaded', ()=>{
+      const lbtn=document.getElementById('legendToggle'); if(lbtn) lbtn.addEventListener('click', ()=>{ ensureLegend(); toggleLegend(); });
+      const cbtn=document.getElementById('clusterToggle'); if(cbtn) cbtn.addEventListener('click', toggleCluster);
+      const hbtn=document.getElementById('heatToggle'); if(hbtn) hbtn.addEventListener('click', toggleHeat);
+    });
+    function parseUtcDate(str){ if(!str) return null; // expecting '%Y-%m-%d %H:%M:%S'
+      const m = str.match(/(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})/); if(!m) return null; return new Date(Date.UTC(+m[1], m[2]-1, +m[3], +m[4], +m[5], +m[6])); }
+    function ageMinutes(d){ if(!d) return 9999; return (Date.now() - d.getTime())/60000; }
     async function updateMarkers() {
       const timeRange = 50; // fixed
       const threatType = document.getElementById('threatTypeSelect').value;
@@ -741,11 +826,26 @@
         return true;
       });
       if (threatType) points = points.filter(p => (p.threat_type || '').toLowerCase() === threatType);
+      const chipFilter = activeChipFilter();
+      if(chipFilter){ points = points.filter(p => chipFilter.includes((p.threat_type||'').toLowerCase())); }
+      lastDataPoints = points.slice();
       if (markerLayer) { markerLayer.clearLayers(); }
-      else { markerLayer = L.layerGroup().addTo(map); }
+      // Recreate markerLayer if switching modes
+      if(clusterEnabled){
+        if(!markerLayer || !(markerLayer instanceof L.MarkerClusterGroup)){
+          if(markerLayer) map.removeLayer(markerLayer);
+          markerLayer = L.markerClusterGroup({ disableClusteringAtZoom: 9, spiderfyOnMaxZoom:false, maxClusterRadius:60 });
+          map.addLayer(markerLayer);
+        }
+      } else {
+        if(markerLayer && markerLayer instanceof L.MarkerClusterGroup){ map.removeLayer(markerLayer); markerLayer = null; }
+        if(!markerLayer){ markerLayer = L.layerGroup().addTo(map); }
+      }
+      if(heatLayer){ map.removeLayer(heatLayer); heatLayer = null; }
       markers = [];
-  // Container for border-shelling overlays (semi-circles)
-  let borderShellingDrawn = false;
+      // Container for border-shelling overlays (semi-circles)
+      let borderShellingDrawn = false;
+      const heatPoints = [];
       points.forEach(p => {
         let iconUrl = ICONS[p.threat_type] || ICONS.default;
         if (p.marker_icon) {
@@ -766,7 +866,12 @@
         }
   const threatClass = (p.threat_type||'default').toLowerCase();
   const countBadge = p.count && p.count>1 ? `<div class="tm-badge">${p.count}×</div>` : '';
-  const html = `<div class='threat-marker'><div class='tm-core ${threatClass}'><img src='${iconUrl}' alt=''></div>${countBadge}</div>`;
+    // Recency classification
+    const dObj = parseUtcDate(p.date);
+    const mins = ageMinutes(dObj);
+    let ageCls = '';
+    if(mins < 8) ageCls = 'age-fresh'; else if(mins < 20) ageCls = 'age-hot';
+  const html = `<div class='threat-marker'><div class='tm-core ${threatClass} ${ageCls}'><img src='${iconUrl}' alt=''></div>${countBadge}</div>`;
   const icon = L.divIcon({ html, className:'', iconSize:[38,50], iconAnchor:[19,46], popupAnchor:[0,-44] });
   const m = L.marker([p.lat, p.lng], { icon, riseOnHover:true });
         // Optional short polyline showing nominal approach direction (simple cardinal/ordinal mapping)
@@ -793,6 +898,14 @@
   if (p.count && p.count > 1) { m.openPopup(); }
         markerLayer.addLayer(m);
         markers.push(m);
+  // Heat accumulation (weight: recency + severity heuristic)
+  const baseW = 0.5;
+  let sev = 1;
+  const tt = (p.threat_type||'');
+  if(tt==='raketa') sev = 2.2; else if(tt==='shahed') sev = 1.6; else if(tt==='vibuh') sev = 2.0;
+  const rec = Math.max(0, 1 - Math.min(mins,60)/60); // 0..1
+  const weight = baseW + sev*0.4 + rec*0.8;
+  heatPoints.push([p.lat, p.lng, weight]);
 
         // Red semi-circle (sector) for border shelling alerts (visualizing incoming danger from external border)
         if (p.border_shelling && !borderShellingDrawn) {
@@ -833,6 +946,10 @@
           } catch(e) { console.warn('border shelling overlay error', e); }
         }
       });
+      if(heatEnabled && heatPoints.length){
+        heatLayer = L.heatLayer(heatPoints, { radius: 28, blur:16, maxZoom:8, minOpacity:0.25, gradient:{0.2:'#2563eb',0.4:'#3b82f6',0.6:'#f59e0b',0.8:'#dc2626',1:'#7f1d1d'} });
+        heatLayer.addTo(map);
+      }
       updateEventList(data.events || []);
     }
     function updateEventList(points) {
@@ -966,7 +1083,8 @@
       updateRaionAlarms();
       setInterval(updateRaionAlarms, 15000);
 
-      await updateMarkers();
+  buildChips();
+  await updateMarkers();
       try {
     const es = new EventSource('/stream');
     const uid2 = localStorage.getItem('presence_id');
