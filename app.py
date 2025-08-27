@@ -1108,7 +1108,7 @@ def process_message(text, mid, date_str, channel):
             'marker_icon': 'trivoga.png', 'list_only': True
         }]
     # Общий набор ключевых слов угроз
-    THREAT_KEYS = ['бпла','дрон','шахед','shahed','geran','ракета','ракети','missile','iskander','s-300','s300','каб','артил','града','смерч','ураган','mlrs','avia','авіа','авиа','бомба']
+    THREAT_KEYS = ['бпла','дрон','шахед','shahed','geran','ракета','ракети','missile','iskander','s-300','s300','каб','артил','града','смерч','ураган','mlrs','avia','авіа','авиа','бомба','високошвидкісн']
     def has_threat(txt: str):
         l = txt.lower()
         return any(k in l for k in THREAT_KEYS)
@@ -1213,6 +1213,9 @@ def process_message(text, mid, date_str, channel):
         # KAB (guided bomb) treat as raketa per user request
         if 'каб' in l:
             return 'raketa', 'raketa.png'
+        # High-speed targets explicit alert (custom icon)
+        if 'високошвидкісн' in l:
+            return 'rszv', 'rszv.png'
         # Missiles / rockets
         if any(k in l for k in ['ракета','ракети','ракетний','ракетная','ракетный','missile','iskander','крылат','крилат','кр ','s-300','s300','КАБ']):
             return 'raketa', 'raketa.png'
