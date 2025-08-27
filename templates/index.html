@@ -509,6 +509,15 @@
   .disclaimer-actions a:hover {background:#3b4b63;color:#fff;}
   @media (max-width:720px){.disclaimer-bar{flex-direction:row;align-items:flex-start;font-size:.72rem;padding:.75rem .85rem;} .disclaimer-icon{width:26px;height:26px;font-size:14px;} .disclaimer-close{width:26px;height:26px;font-size:12px;} }
   </style>
+  <style>
+  /* Animated trajectories (arcs + fading tails) */
+  @keyframes dashFlow { to { stroke-dashoffset:-260; } }
+  @keyframes tailFade { 0%{opacity:.55;} 70%{opacity:.18;} 100%{opacity:0;} }
+  .traj-arc { stroke:#ff784e !important; stroke-width:2.2; stroke-dasharray:8 12; stroke-linecap:round; animation:dashFlow 5.5s linear infinite; filter:drop-shadow(0 0 6px rgba(255,120,78,.55)); }
+  .traj-tail { stroke:#ff9d7b !important; stroke-width:3.4; stroke-linecap:round; opacity:.5; animation:tailFade 9s ease-out forwards; }
+  .traj-arc.drone { stroke:#00b3ff !important; filter:drop-shadow(0 0 6px rgba(0,179,255,.55)); }
+  .traj-tail.drone { stroke:#41c9ff !important; }
+  </style>
 </head>
 <body>
   <!-- Smart Mass Attack Warning Banner -->
@@ -906,13 +915,18 @@
         if (arrowDir) {
           const dir = arrowDir.toLowerCase();
           let dx=0, dy=0;
-          if (dir.includes('півд') ) dy = -0.25; // from south -> line ending at marker
+          if (dir.includes('півд')) dy = -0.25; // tail origin south of marker => movement northwards
           if (dir.includes('північ')) dy = 0.25;
-          if (dir.includes('сход')) dx = -0.25; // from east -> westwards line tail
+          if (dir.includes('сход')) dx = -0.25; // east origin => movement westwards
           if (dir.includes('зах')) dx = 0.25;
           if (dx !==0 || dy !==0) {
-            const line = L.polyline([[p.lat+dy, p.lng+dx],[p.lat, p.lng]], {color:'#f59e0b', weight:2, opacity:0.7, dashArray:'4 3'});
-            line.addTo(markerLayer);
+            const tailStart=[p.lat+dy, p.lng+dx];
+            // Simple static direction hint line
+            L.polyline([tailStart,[p.lat,p.lng]], {color:'#f59e0b', weight:2, opacity:0.55, dashArray:'4 3'}).addTo(markerLayer);
+            // Animated trajectory arc for missiles / drones
+            if (/(raketa|shahed|fpv|pusk)/i.test(p.threat_type||'')) {
+              try { addTrajectoryArc(p, dx, dy); } catch(e){}
+            }
           }
         }
         const placeUA = translatePlace(p.place);
@@ -1004,6 +1018,36 @@
         }
       });
       updateEventList(data.events || []);
+  // Notify listeners (banner heuristics etc.)
+  try { document.dispatchEvent(new CustomEvent('markersUpdated', {detail: data})); } catch(e){}
+    }
+    // Create a curved arc (quadratic bezier approximation) and fading tail
+    function addTrajectoryArc(p, dx, dy){
+      const isDrone = /(shahed|fpv)/i.test(p.threat_type||'');
+      const scale = isDrone ? 1.4 : 2.0; // longer for missiles
+      const latEnd = p.lat, lngEnd = p.lng;
+      const latStart = latEnd + dy*scale;
+      const lngStart = lngEnd + dx*scale;
+      // Perp vector for curvature
+      let perpX = -dy, perpY = dx;
+      const norm = Math.hypot(perpX, perpY)||1;
+      perpX/=norm; perpY/=norm;
+      const curveFactor = 0.35 * (isDrone?0.8:1); // subtler for drones
+      const controlLat = (latStart+latEnd)/2 + perpY*curveFactor;
+      const controlLng = (lngStart+lngEnd)/2 + perpX*curveFactor;
+      const steps = 24;
+      const pts = [];
+      for(let i=0;i<=steps;i++){
+        const t = i/steps; // quadratic bezier
+        const oneMinus = 1-t;
+        const lat = oneMinus*oneMinus*latStart + 2*oneMinus*t*controlLat + t*t*latEnd;
+        const lng = oneMinus*oneMinus*lngStart + 2*oneMinus*t*controlLng + t*t*lngEnd;
+        pts.push([lat,lng]);
+      }
+      // Animated dashed arc (continuous)
+      L.polyline(pts, {color: isDrone? '#00b3ff':'#ff784e', weight:2.2, opacity:0.8, className:'traj-arc'+(isDrone?' drone':'')}).addTo(markerLayer);
+      // Fading thicker tail (static path that fades out)
+      L.polyline(pts, {color: isDrone? '#41c9ff':'#ff9d7b', weight:3.4, opacity:0.5, className:'traj-tail'+(isDrone?' drone':'')}).addTo(markerLayer);
     }
     function updateEventList(points) {
       const el = document.getElementById('eventList');
@@ -1272,18 +1316,44 @@
 
       // On load also scan existing DOM list items (historical) for triggers
       function scanInitial(){
-        const items = document.querySelectorAll('#eventsList li');
+        const items = document.querySelectorAll('#eventList .event-info');
         let foundLine = null;
         items.forEach(li=>{
           const txt = li.textContent||'';
-          if(!freshestTrigger) freshestTrigger = Date.now();
           if(/(мас|комбінован|масов|велика кількість|хвиля|залп)/i.test(txt)){
             heuristics.push('ключові слова');
-            foundLine = foundLine || txt.trim().slice(0,220);
+            if(!foundLine) foundLine = txt.trim().slice(0,220);
           }
         });
-        if(foundLine) showBanner(foundLine);
+        if(foundLine){ freshestTrigger = Date.now(); showBanner(foundLine); }
       }
+
+      function evaluateDataset(ds){
+        if(!ds) return;
+        const events = ds.events||[];
+        for(const ev of events){
+          const t = (ev.text||'');
+            if(/(мас|комбінован|масов|велика кількість|хвиля|залп)/i.test(t)){
+              heuristics.push('ключові слова');
+              freshestTrigger = Date.now();
+              return showBanner(t.split('\n')[0].slice(0,220));
+            }
+        }
+        const tracks = ds.tracks||[];
+        const missiles = tracks.filter(x=>/(raketa|pusk)/i.test(x.threat_type||'')) .length;
+        const drones = tracks.filter(x=>/(shahed|fpv)/i.test(x.threat_type||'')) .length;
+        // If both missile and drone counts exceed thresholds, treat as combo risk
+        if(missiles >= 3 && drones >= 5){
+          heuristics.push('комбіновано (рахунок)');
+          freshestTrigger = Date.now();
+          showBanner(`Ознаки комбінованої активності: ракети ~${missiles}, БПЛА ~${drones}`);
+        }
+      }
+
+      document.addEventListener('markersUpdated', e=>{
+        if(isDismissedRecent()) return;
+        evaluateDataset(e.detail);
+      });
 
       if(!isDismissedRecent()){
         scanInitial();
