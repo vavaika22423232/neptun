@@ -1137,45 +1137,59 @@ def process_message(text, mid, date_str, channel):
                     break
 
     def region_enhanced_coords(base_name: str, region_hint_override: str = None):
-        """Resolve coordinates for a settlement name using (in order): static list, settlements dataset,
-        region-qualified OpenCage (city + region), then plain OpenCage.
-        This enforces the user requirement to bind every settlement to the oblast mentioned in the message text.
-        base_name should already be lower-case / normalized.
+        """Resolve coordinates for a settlement name by weighted order (remote first):
+        1) External geocode (region-qualified, then plain)
+        2) Exact local datasets (CITY_COORDS, SETTLEMENTS_INDEX)
+        3) Fuzzy approximate local match (Levenshtein-like via difflib)
+
+        Rationale (user requirement): prefer freshest external resolution, fall back to local known list,
+        and only then attempt approximate similarity mapping.
         """
         if not base_name:
             return None
-        name = UA_CITY_NORMALIZE.get(base_name, base_name).strip().lower()
-        # Static minimal city coords first
-        coord = CITY_COORDS.get(name)
-        if coord:
-            return coord
-        # Settlements dataset
-        if SETTLEMENTS_INDEX:
-            coord = SETTLEMENTS_INDEX.get(name)
-            if coord:
-                return coord
-        # Region-qualified remote geocode
+        name_norm = UA_CITY_NORMALIZE.get(base_name, base_name).strip().lower()
+        # --- 1. Remote geocode first ---
         region_for_query = region_hint_override or region_hint_global
         if region_for_query:
-            canon = REGION_GEOCODE_CANON.get(region_for_query, None)
+            canon = REGION_GEOCODE_CANON.get(region_for_query)
             if canon:
                 region_for_query = canon
-        if region_for_query and OPENCAGE_API_KEY:
+        # Region-qualified
+        if OPENCAGE_API_KEY and region_for_query:
             try:
-                combo = f"{name} {region_for_query}".replace('  ', ' ').strip()
-                combo_c = geocode_opencage(combo)
-                if combo_c:
-                    return combo_c
+                combo = f"{name_norm} {region_for_query}".replace('  ', ' ').strip()
+                c = geocode_opencage(combo)
+                if c and 43.0 <= c[0] <= 53.8 and 20.0 <= c[1] <= 42.0:
+                    return c
             except Exception:
                 pass
-        # Plain remote geocode fallback
+        # Plain name remote
         if OPENCAGE_API_KEY:
             try:
-                plain_c = geocode_opencage(name)
-                if plain_c:
-                    return plain_c
+                c = geocode_opencage(name_norm)
+                if c and 43.0 <= c[0] <= 53.8 and 20.0 <= c[1] <= 42.0:
+                    return c
             except Exception:
                 pass
+        # --- 2. Exact local datasets ---
+        coord = CITY_COORDS.get(name_norm)
+        if not coord and SETTLEMENTS_INDEX:
+            coord = SETTLEMENTS_INDEX.get(name_norm)
+        if coord:
+            return coord
+        # --- 3. Fuzzy approximate search (only if not found) ---
+        try:
+            if SETTLEMENTS_INDEX:
+                import difflib
+                # Choose candidate list limited for performance
+                names = list(SETTLEMENTS_INDEX.keys())
+                # High cutoff to avoid bad matches
+                best = difflib.get_close_matches(name_norm, names, n=1, cutoff=0.86)
+                if best:
+                    b = best[0]
+                    return SETTLEMENTS_INDEX.get(b)
+        except Exception:
+            pass
         return None
     # ---- Fundraising / donation solicitation handling ----
     # Previous behavior: fully suppressed entire message if donation links found (blocked napramok multi-line threat posts with footer links)
