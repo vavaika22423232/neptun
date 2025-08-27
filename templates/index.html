@@ -922,29 +922,26 @@
         if (!p.border_shelling && p.threat_type && p.threat_type.toLowerCase()==='raketa' && /каб/i.test(p.text||'')) {
           try {
             const centerLat = p.lat; const centerLng = p.lng;
-            const spanKm = 60; // smaller radius for localized KAB danger zone
-            const segments = 64;
-            // Orientation: aim semi-circle towards expected direction of approach (assume from north-east for Sumy region)
-            // Simplistic heuristic: if longitude < 34 -> approach from east (bearing arc 300..60), else generic 270..90
-            let startBearing = 300; let endBearing = 60;
+            // Orientation heuristic
+            let startBearing = 300; let endBearing = 60; // NE focus
             if (centerLng > 34.5) { startBearing = 270; endBearing = 90; }
-            const pts = [];
-            const R = 6371; const toRad = d=>d*Math.PI/180; const toDeg = r=>r*180/Math.PI;
-            const lat1 = toRad(centerLat); const lon1 = toRad(centerLng); const d = spanKm / R;
-            for(let i=0;i<=segments;i++){
-              let frac = i/segments;
-              // normalize wrap crossing
-              let brg = startBearing + (endBearing - startBearing)*frac;
-              // If crossing 360 adjust
-              if (startBearing > endBearing && brg > 360) brg -= 360;
-              const br = toRad(brg);
-              const lat2 = Math.asin(Math.sin(lat1)*Math.cos(d)+Math.cos(lat1)*Math.sin(d)*Math.cos(br));
-              const lon2 = lon1 + Math.atan2(Math.sin(br)*Math.sin(d)*Math.cos(lat1), Math.cos(d)-Math.sin(lat1)*Math.sin(lat2));
-              pts.push([toDeg(lat2), ((toDeg(lon2)+540)%360)-180]);
-            }
-            pts.unshift([centerLat, centerLng]);
-            const poly = L.polygon(pts, {color:'#dc2626', weight:1, fillColor:'#ef4444', fillOpacity:0.12, dashArray:'6 4'}).addTo(markerLayer);
-            poly.bindPopup('<b>Зона можливої дії КАБ</b><br>'+ (p.place||''));
+            const baseRadius = 70; // base outer radius km (larger than before)
+            const segments = 90;
+            const layers = [
+              { r: baseRadius, cls:'kab-zone', fill:'#dc2626', fillOpacity:0.10 },
+              { r: baseRadius*0.68, cls:'kab-zone-layer2', fill:'#ef4444', fillOpacity:0.14 },
+              { r: baseRadius*0.42, cls:'kab-zone-layer3', fill:'#f87171', fillOpacity:0.18 }
+            ];
+            layers.forEach(def => {
+              const pts = buildSemiCircle(centerLat, centerLng, startBearing, endBearing, def.r, segments);
+              const poly = L.polygon(pts, {color:def.fill, weight:0.8, fillColor:def.fill, fillOpacity:def.fillOpacity, stroke:true, interactive:false}).addTo(markerLayer);
+              // Add CSS class for animation / glow after path is in DOM
+              setTimeout(()=>{ try { poly._path.classList.add(def.cls); } catch(e){} }, 0);
+            });
+            // Thin inner outline arc (no fill) emphasising direction
+            const innerPts = buildSemiCircle(centerLat, centerLng, startBearing, endBearing, baseRadius*0.9, segments);
+            const outline = L.polygon(innerPts, {color:'#fee2e2', weight:1, fill:false, dashArray:'8 6', opacity:0.7, interactive:false}).addTo(markerLayer);
+            setTimeout(()=>{ try { outline._path.classList.add('kab-zone'); } catch(e){} },0);
           } catch(e){}
         }
       });
