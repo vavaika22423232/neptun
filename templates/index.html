@@ -819,6 +819,21 @@
       if (/бпла|fpv/i.test(text || '')) return true;
       return false;
     }
+    // Helper: build semi-circle polygon (returns array of [lat,lng])
+    function buildSemiCircle(lat, lng, startBearing, endBearing, radiusKm, segments){
+      const pts=[]; const R=6371; const toRad=d=>d*Math.PI/180; const toDeg=r=>r*180/Math.PI;
+      const lat1=toRad(lat); const lon1=toRad(lng); const angDist=radiusKm/R;
+      let span = (endBearing - startBearing); if (span < 0) span += 360;
+      for(let i=0;i<=segments;i++){
+        const brg = (startBearing + span*(i/segments)) % 360;
+        const br = toRad(brg);
+        const lat2 = Math.asin(Math.sin(lat1)*Math.cos(angDist)+Math.cos(lat1)*Math.sin(angDist)*Math.cos(br));
+        const lon2 = lon1 + Math.atan2(Math.sin(br)*Math.sin(angDist)*Math.cos(lat1), Math.cos(angDist)-Math.sin(lat1)*Math.sin(lat2));
+        pts.push([toDeg(lat2), ((toDeg(lon2)+540)%360)-180]);
+      }
+      pts.unshift([lat,lng]);
+      return pts;
+    }
     async function updateMarkers() {
       const timeRange = 50; // fixed
       const threatType = document.getElementById('threatTypeSelect').value;
