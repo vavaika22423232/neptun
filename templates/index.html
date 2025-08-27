@@ -511,6 +511,73 @@
   </style>
 </head>
 <body>
+  <!-- Floating Support Button & Donation Modal -->
+  <style>
+    .support-fab{position:fixed;bottom:1.4rem;right:1.4rem;z-index:1300;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;border:none;border-radius:1.1rem;padding:.95rem 1.15rem;display:flex;align-items:center;gap:.55rem;font-weight:600;font-size:.85rem;cursor:pointer;letter-spacing:.5px;box-shadow:0 10px 28px -8px rgba(37,99,235,.55),0 0 0 1px rgba(255,255,255,.12) inset;transition:.25s;backdrop-filter:blur(6px) saturate(1.2);} 
+    .support-fab i{font-size:18px;}
+    .support-fab:hover{transform:translateY(-4px) scale(1.03);box-shadow:0 14px 34px -8px rgba(37,99,235,.65),0 0 0 1px rgba(255,255,255,.18) inset;}
+    .support-fab:active{transform:translateY(0) scale(.98);}    
+    @media (max-width:700px){.support-fab{bottom:1rem;right:.9rem;padding:.8rem .95rem;border-radius:.9rem;font-size:.75rem;}}
+    .donate-modal-overlay{position:fixed;inset:0;background:radial-gradient(circle at 30% 30%,rgba(15,23,42,.92),rgba(2,6,23,.94));backdrop-filter:blur(14px) saturate(1.4);display:none;align-items:center;justify-content:center;z-index:1400;}
+    .donate-modal-overlay.active{display:flex;animation:fadeIn .35s ease;}
+    .donate-modal{width:min(600px,92vw);background:linear-gradient(145deg,#0f172a,#1e293b 55%,#0f172a);border:1px solid #233247;border-radius:1.35rem;padding:1.85rem 1.75rem 1.6rem;position:relative;box-shadow:0 18px 48px -12px rgba(0,0,0,.65),0 0 0 1px rgba(59,130,246,.25);font-family:inherit;color:#e2e8f0;}
+  .donate-modal:before{content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;background:linear-gradient(135deg,rgba(59,130,246,.65),rgba(147,51,234,.5),rgba(14,165,233,.45));-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;}
+  .donate-title{margin:0 0 .9rem;font-size:1.4rem;letter-spacing:.5px;font-weight:700;background:linear-gradient(90deg,#3b82f6,#8b5cf6 40%,#06b6d4);-webkit-background-clip:text;background-clip:text;color:transparent;display:flex;align-items:center;gap:.55rem;}
+    .donate-sub{margin:0 0 1.1rem;font-size:.85rem;color:#94a3b8;line-height:1.5;}
+    .donate-grid{display:grid;gap:.85rem;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));margin:0 0 1.15rem;}
+    .donate-card{position:relative;background:linear-gradient(160deg,rgba(30,41,59,.75),rgba(17,24,39,.85));border:1px solid #253447;border-radius:.95rem;padding:.9rem .95rem .95rem;display:flex;flex-direction:column;gap:.55rem;overflow:hidden;min-height:118px;}
+    .donate-card:before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 80% 15%,rgba(59,130,246,.35),rgba(59,130,246,0) 70%);pointer-events:none;opacity:.75;}
+    .donate-label{font-size:.65rem;text-transform:uppercase;letter-spacing:1.2px;font-weight:700;color:#60a5fa;}
+    .donate-value{font-family:'JetBrains Mono',monospace,Consolas,monospace;font-weight:600;font-size:.95rem;word-break:break-all;color:#f1f5f9;}
+    .donate-actions{margin-top:auto;display:flex;gap:.5rem;flex-wrap:wrap;}
+    .btn-mini{background:#1d4ed8;color:#fff;border:none;border-radius:.55rem;padding:.45rem .75rem;font-size:.65rem;font-weight:600;letter-spacing:.5px;cursor:pointer;display:inline-flex;align-items:center;gap:.35rem;box-shadow:0 4px 12px -4px rgba(29,78,216,.55);transition:.2s;}
+    .btn-mini.alt{background:#334155;box-shadow:none;}
+    .btn-mini:hover{background:#2563eb;}
+    .btn-mini.alt:hover{background:#3b4b63;}
+    .donate-close{position:absolute;top:.7rem;right:.7rem;width:40px;height:40px;background:#1e293b;border:1px solid #2a3a4d;border-radius:.85rem;display:flex;align-items:center;justify-content:center;color:#94a3b8;cursor:pointer;font-weight:600;font-size:15px;transition:.2s;}
+    .donate-close:hover{background:#243349;color:#fff;}
+    .jar-link-button{background:linear-gradient(90deg,#3b82f6,#8b5cf6);color:#fff;border:none;border-radius:.9rem;padding:.85rem 1.2rem;font-size:.8rem;font-weight:600;letter-spacing:.6px;display:inline-flex;align-items:center;gap:.5rem;margin-top:.5rem;cursor:pointer;box-shadow:0 6px 22px -8px rgba(59,130,246,.55);transition:.25s;}
+    .jar-link-button:hover{transform:translateY(-3px);box-shadow:0 10px 30px -8px rgba(59,130,246,.65);}    
+    .donate-footer{font-size:.6rem;color:#64748b;margin-top:.6rem;letter-spacing:.5px;}
+    .copy-toast{position:fixed;bottom:calc(1.4rem + 64px);right:1.4rem;background:#1e293b;border:1px solid #334155;color:#e2e8f0;padding:.6rem .85rem;border-radius:.7rem;font-size:.7rem;font-weight:600;letter-spacing:.5px;box-shadow:0 8px 24px -8px rgba(0,0,0,.55);display:none;z-index:1500;}
+    .copy-toast.show{display:block;animation:fadeIn .25s ease, fadeOut .4s linear 2.4s forwards;}
+    @keyframes fadeOut{to{opacity:0;transform:translateY(4px);}}
+  </style>
+  <button class="support-fab" id="supportFab" aria-haspopup="dialog" aria-controls="donateModal" onclick="toggleDonate()"><i class="material-icons">volunteer_activism</i><span>Підтримати</span></button>
+  <div class="donate-modal-overlay" id="donateModal" role="dialog" aria-labelledby="donateTitle" aria-modal="true">
+    <div class="donate-modal">
+      <button class="donate-close" aria-label="Закрити" onclick="toggleDonate(false)">×</button>
+      <h3 class="donate-title" id="donateTitle"><i class="material-icons" style="font-size:22px;">favorite</i>Підтримати розробку</h3>
+      <p class="donate-sub">Ваша допомога пришвидшує розвиток точності та функцій мапи. Кожна гривня = краща аналітика загроз.</p>
+      <div class="donate-grid">
+        <div class="donate-card">
+          <div class="donate-label">Моно (UAH)</div>
+          <div class="donate-value" data-val="4441111121107290">4441 1111 2110 7290</div>
+          <div class="donate-actions">
+            <button class="btn-mini" onclick="copyDonate('4441111121107290', this)"><i class="material-icons" style="font-size:14px;">content_copy</i>Копіювати</button>
+          </div>
+        </div>
+        <div class="donate-card">
+          <div class="donate-label">Приват (UAH)</div>
+          <div class="donate-value" data-val="5168745153133886">5168 7451 5313 3886</div>
+          <div class="donate-actions">
+            <button class="btn-mini" onclick="copyDonate('5168745153133886', this)"><i class="material-icons" style="font-size:14px;">content_copy</i>Копіювати</button>
+          </div>
+        </div>
+        <div class="donate-card">
+          <div class="donate-label">Monobank Банка</div>
+          <div class="donate-value" style="font-size:.8rem;line-height:1.25;word-break:break-word;">send.monobank.ua/jar/6Vi9TVzJZQ</div>
+          <div class="donate-actions">
+            <button class="btn-mini" onclick="openJar()"><i class="material-icons" style="font-size:14px;">open_in_new</i>Відкрити</button>
+            <button class="btn-mini alt" onclick="copyDonate('https://send.monobank.ua/jar/6Vi9TVzJZQ', this)"><i class="material-icons" style="font-size:14px;">content_copy</i>Лінк</button>
+          </div>
+        </div>
+      </div>
+      <button class="jar-link-button" onclick="openJar()"><i class="material-icons">rocket_launch</i><span>Задонатити зараз</span></button>
+      <div class="donate-footer">Фінансова підтримка не створює зобов'язань. Звіти й оновлення у спільноті Telegram.</div>
+    </div>
+  </div>
+  <div class="copy-toast" id="copyToast">Скопійовано</div>
   <div id="disclaimerBar" class="disclaimer-bar" role="note" aria-label="Важливе застереження" style="display:none;">
     <div class="disclaimer-icon">!</div>
     <div class="disclaimer-text">
@@ -635,6 +702,33 @@
       el.style.display='flex';
     }
     document.addEventListener('DOMContentLoaded', showDisclaimer);
+    // Donation modal logic
+    function toggleDonate(force){
+      const ov = document.getElementById('donateModal');
+      if(!ov) return;
+      let show;
+      if(typeof force === 'boolean') show = force; else show = !ov.classList.contains('active');
+      ov.classList.toggle('active', show);
+      if(show){
+        try { document.body.style.overflow='hidden'; } catch(e){}
+      } else {
+        try { document.body.style.overflow=''; } catch(e){}
+      }
+    }
+    function copyDonate(val, btn){
+      try { navigator.clipboard.writeText(val); } catch(e){
+        const ta=document.createElement('textarea'); ta.value=val; document.body.appendChild(ta); ta.select(); try{ document.execCommand('copy'); }catch(e2){} document.body.removeChild(ta);
+      }
+      const toast = document.getElementById('copyToast');
+      if(toast){ toast.classList.remove('show'); void toast.offsetWidth; toast.classList.add('show'); }
+      if(btn){
+        const orig = btn.innerHTML;
+        btn.innerHTML = '<i class="material-icons" style="font-size:14px;">check_circle</i>Готово';
+        setTimeout(()=>{ btn.innerHTML = orig; }, 2200);
+      }
+    }
+    function openJar(){ window.open('https://send.monobank.ua/jar/6Vi9TVzJZQ','_blank','noopener'); }
+    document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ toggleDonate(false); } });
     // Константы и настройки
     const UKRAINE_CENTER = { lat: 48.3794, lng: 31.1656 };
     const ICONS = {
