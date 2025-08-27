@@ -629,6 +629,7 @@ RAION_FALLBACK = {
     'краматорський': (48.7389, 37.5848),
     'миколаївський': (46.9750, 31.9946),  # Mykolaivskyi raion (approx Mykolaiv city center)
     'николаевский': (46.9750, 31.9946),
+    'миколаевский': (46.9750, 31.9946),
     'краматорский': (48.7389, 37.5848),
     'бахмутський': (48.5941, 38.0021),
     'бахмутский': (48.5941, 38.0021),
@@ -1370,6 +1371,28 @@ def process_message(text, mid, date_str, channel):
                 'threat_type': threat_type, 'text': (original_text if 'original_text' in locals() else text)[:500],
                 'date': date_str, 'channel': channel, 'marker_icon': icon, 'source_match': 'raion_oblast_combo'
             }]
+        else:
+            log.debug(f"raion_oblast primary matched token={raion_token} base={raion_base} no coords")
+    else:
+        # Secondary heuristic fallback if formatting (emoji / markup) broke regex
+        if 'район (' in text and ' обл' in text and has_threat(text):
+            try:
+                prefix = text.split('район (',1)[0]
+                cand = prefix.strip().split()[-1].lower()
+                cand_base = re.sub(r'(ському|ского|ського|ский|ськiй|ськой|ським|ском)$', 'ський', cand)
+                if cand_base in RAION_FALLBACK:
+                    lat,lng = RAION_FALLBACK[cand_base]
+                    threat_type, icon = classify(original_text if 'original_text' in locals() else text)
+                    log.debug(f"raion_oblast secondary emit cand={cand} base={cand_base}")
+                    return [{
+                        'id': str(mid), 'place': f"{cand_base.title()} район", 'lat': lat, 'lng': lng,
+                        'threat_type': threat_type, 'text': (original_text if 'original_text' in locals() else text)[:500],
+                        'date': date_str, 'channel': channel, 'marker_icon': icon, 'source_match': 'raion_oblast_secondary'
+                    }]
+                else:
+                    log.debug(f"raion_oblast secondary no coords cand={cand} base={cand_base}")
+            except Exception as _e:
+                log.debug(f"raion_oblast secondary error={_e}")
 
     # --- Aggregate / statistical summary suppression ---
     def _is_aggregate_summary(t: str) -> bool:
