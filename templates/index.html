@@ -1187,8 +1187,7 @@
   window.addEventListener('orientationchange', ()=>{ if(document.body.classList.contains('map-expanded')){ const mapCard=document.querySelector('.map-card'); if(mapCard){ mapCard.style.height=window.innerHeight+'px'; if(map){ map.invalidateSize(); } } } });
   window.addEventListener('resize', ()=>{ if(document.body.classList.contains('map-expanded')){ const mapCard=document.querySelector('.map-card'); if(mapCard){ mapCard.style.height=window.innerHeight+'px'; if(map){ map.invalidateSize(); } } } });
   window.onload = () => { preloadIcons(); initMap(); openWarn(); };
-  </script>
-    // Smart Mass Attack Banner Logic
+    // Smart Mass Attack Banner Logic (wrapped inside same script tag)
     (function(){
       const banner = document.getElementById('massAttackBanner');
       const closeBtn = document.getElementById('maClose');
