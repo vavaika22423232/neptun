@@ -939,7 +939,7 @@
             const centerLat = p.lat; const centerLng = p.lng;
             // West-facing semi-circle (threat from east -> projecting toward Ukraine)
             const startBearing = 180, endBearing = 360;
-            const OUTER = 50; // km outer radius (reduced)
+            const OUTER = 10; // km outer radius (reduced from 50)
             const segments = 96;
             // Ensure SVG gradients exist once
             (function ensureKabGrad(){
