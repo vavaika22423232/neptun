@@ -522,6 +522,10 @@
   .kab-rotor-tail { stroke:url(#kabRotorGrad); stroke-width:5; stroke-linecap:round; opacity:.85; }
   @keyframes kabRotate { to { transform:rotate(360deg); } }
   .kab-rotor-group { transform-origin:center center; animation:kabRotate 18s linear infinite; }
+  /* Raion alarm animated hatch */
+  @keyframes hatchShift { to { background-position: 40px 0, 40px 0; } }
+  .raion-alarm-anim { position:relative; }
+  .raion-alarm-anim::after { content:""; position:absolute; inset:0; background-image: repeating-linear-gradient(135deg, rgba(220,38,38,0.55) 0 8px, rgba(220,38,38,0) 8px 16px), repeating-linear-gradient(135deg, rgba(255,255,255,0.08) 0 8px, rgba(255,255,255,0) 8px 16px); background-size:32px 32px,32px 32px; mix-blend-mode:overlay; animation:hatchShift 2.2s linear infinite; pointer-events:none; border-radius:50%; filter:blur(0.4px) saturate(1.2); }
   </style>
 </head>
 <body>
@@ -1231,9 +1235,24 @@
           const lat = f.geometry.coordinates[1];
           const lng = f.geometry.coordinates[0];
           // Represent district area with a translucent red circle (radius ~20km) placeholder
-            const circle = L.circle([lat,lng], { radius: 20000, color:'#b91c1c', weight:1, fillColor:'#dc2626', fillOpacity:0.25 });
-            circle.bindPopup(`<b>${f.properties.place}</b><br>Повітряна тривога (район)`);
+            const circle = L.circle([lat,lng], { radius: 20000, color:'#b91c1c', weight:1, fillColor:'#dc2626', fillOpacity:0.2 });
             circle.addTo(raionAlarmLayer);
+            circle.bindPopup(`<b>${f.properties.place}</b><br>Повітряна тривога (район)`);
+            // Add animated hatch overlay using a custom divIcon centered
+            const Hatch = L.Marker.extend({ options:{ } });
+            const hatchSize = 20000; // we adapt via CSS scale after projection
+            const hatch = L.marker([lat,lng], { interactive:false, icon: L.divIcon({className:'', html:`<div class='raion-alarm-anim' style='width:300px;height:300px;transform:translate(-50%,-50%);'></div>`}) });
+            hatch.addTo(raionAlarmLayer);
+            // Adjust size on zoom (approximate meters to pixels)
+            function rescale(){
+              const pCenter = map.latLngToLayerPoint([lat,lng]);
+              const pEdge = map.latLngToLayerPoint([lat + (20000/111320), lng]); // rough lat meter conversion
+              const pxRadius = Math.abs(pEdge.y - pCenter.y);
+              const el = hatch.getElement()?.querySelector('.raion-alarm-anim');
+              if(el){ const d = pxRadius*2; el.style.width=d+'px'; el.style.height=d+'px'; }
+            }
+            map.on('zoom', rescale); map.on('move', rescale);
+            setTimeout(rescale,50);
         });
         raionAlarmLayer.addTo(map);
       }
