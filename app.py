@@ -1477,6 +1477,9 @@ def process_message(text, mid, date_str, channel):
         # Launch site detections for Shahed / UAV launches ("пуски" + origin phrases). User wants pusk.png marker.
         if ('пуск' in l or 'пуски' in l) and (any(k in l for k in ['shahed','шахед','шахеді','шахедів','бпла','uav','дрон']) or ('аеродром' in l) or ('аэродром' in l)):
             return 'pusk', 'pusk.png'
+        # Explicit launches from occupied Berdyansk airbase (Запорізька область) should also show as pusk (not avia)
+        if ('пуск' in l or 'пуски' in l) and 'бердян' in l and ('авіабаз' in l or 'аеродром' in l or 'авиабаз' in l):
+            return 'pusk', 'pusk.png'
         # Air alarm start
         if ('повітряна тривога' in l or 'повітряна тривога.' in l or ('тривога' in l and 'повітр' in l)) and not ('відбій' in l or 'отбой' in l):
             return 'alarm', 'trivoga.png'
