@@ -725,6 +725,9 @@
   let markers = [];
   let lastDataPoints = [];
   const THREAT_ORDER = ['raketa','shahed','avia','pvo','vibuh','artillery','obstril','mlrs','alarm','alarm_cancel','fpv'];
+  let REGION_FEATURES = [];
+  let regionOptionsBuilt = false;
+  let regionHighlightLayer = null;
     // Проста мапа транслітерації/перекладу російських / застарілих назв на українські
     const PLACE_UA_MAP = (()=>{
       const m = new Map([
@@ -882,6 +885,21 @@
       }
       const selectedRegion = (regionSel && regionSel.value) ? regionSel.value : '';
       if(selectedRegion){ points = points.filter(p => (p._regionName||'') === selectedRegion); }
+      // Highlight selected region boundary
+      try {
+        if(regionHighlightLayer){ regionHighlightLayer.remove(); regionHighlightLayer = null; }
+        if(selectedRegion && REGION_FEATURES.length){
+          const feat = REGION_FEATURES.find(f => {
+            const nm = (f.properties.name||f.properties.NAME||f.properties.Name||f.properties.region||f.properties.text||f.properties.id||'');
+            return nm === selectedRegion;
+          });
+          if(feat){
+            regionHighlightLayer = L.geoJSON(feat, { style:{ color:'#2563eb', weight:3, fill:false, dashArray:'6 4', opacity:0.9 } });
+            regionHighlightLayer.addTo(map);
+            regionHighlightLayer.bringToFront();
+          }
+        }
+      } catch(e){ console.warn('region highlight error', e); }
       lastDataPoints = points.slice();
       if (markerLayer) { markerLayer.clearLayers(); }
       // Recreate markerLayer if switching modes
@@ -1205,6 +1223,27 @@
   window.addEventListener('orientationchange', ()=>{ if(document.body.classList.contains('map-expanded')){ const mapCard=document.querySelector('.map-card'); if(mapCard){ mapCard.style.height=window.innerHeight+'px'; if(map){ map.invalidateSize(); } } } });
   window.addEventListener('resize', ()=>{ if(document.body.classList.contains('map-expanded')){ const mapCard=document.querySelector('.map-card'); if(mapCard){ mapCard.style.height=window.innerHeight+'px'; if(map){ map.invalidateSize(); } } } });
   window.onload = () => { preloadIcons(); initMap(); openWarn(); };
+  // ---- Region polygons loader with cache ----
+  async function loadRegions(){
+    try {
+      if(REGION_FEATURES.length) return;
+      // localStorage cache
+      const cacheRaw = localStorage.getItem('regions_geojson_v1');
+      if(cacheRaw){
+        try { const parsed = JSON.parse(cacheRaw); if(parsed && parsed.features){ REGION_FEATURES = parsed.features; }
+        } catch(e){ localStorage.removeItem('regions_geojson_v1'); }
+      }
+      if(!REGION_FEATURES.length){
+        // Fallback public geojson (lightweight). You can host a trimmed file locally later.
+        const url = 'https://gist.githubusercontent.com/benmeadowcroft/28f0b9230e650ba9ee3f/raw/ukraine-oblasts.geojson';
+        const r = await fetch(url);
+        const gj = await r.json();
+        if(gj && gj.features){ REGION_FEATURES = gj.features; localStorage.setItem('regions_geojson_v1', JSON.stringify({features:REGION_FEATURES})); }
+      }
+    } catch(e){ console.warn('region load error', e); }
+  }
+  // Preload regions soon after load (non-blocking)
+  setTimeout(()=>{ loadRegions().then(()=>{ /* rebuild region options if user открыл фильтр позже */ regionOptionsBuilt=false; }); }, 1500);
   </script>
   <!-- Google Maps script removed after migration to Leaflet / OpenStreetMap -->
 </body>
