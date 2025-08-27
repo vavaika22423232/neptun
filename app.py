@@ -1268,7 +1268,7 @@ def process_message(text, mid, date_str, channel):
             if re.fullmatch(r'[>➡→\-\s·•]*', ln2):
                 continue
             # remove any line that is just a subscribe CTA or starts with arrow+subscribe
-            if re.search(r'(?:^|\s)(підписатись|підписатися|подписаться|subscribe)\b', ln2, re.IGNORECASE):
+            if re.search(r'(підписатись|підписатися|підписатися|подписаться|подпишись|subscribe)', ln2, re.IGNORECASE):
                 continue
             cleaned.append(ln2)
         return '\n'.join(cleaned)
