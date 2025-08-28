@@ -4379,11 +4379,11 @@ def admin_panel():
     raw_msgs = [m for m in reversed(all_msgs) if m.get('pending_geo')][:100]  # latest 100
     # Collect last N geo markers (exclude pending geo) for hide management
     recent_markers = [m for m in reversed(all_msgs) if m.get('lat') and m.get('lng') and not m.get('pending_geo')][:120]
-    # --- Visit stats aggregation ---
-    # Prefer rolling sets for stability across deploy
-    daily_unique, week_unique = _recent_counts()
+    # --- Visit stats aggregation (prefer durable SQLite to survive redeploy) ---
+    daily_unique, week_unique = sql_unique_counts()
     if daily_unique is None:
-        daily_unique, week_unique = sql_unique_counts()
+        # fallback to rolling sets file if DB unavailable
+        daily_unique, week_unique = _recent_counts()
     if daily_unique is None:  # final fallback to json stats
         stats = _load_visit_stats()
         tz = pytz.timezone('Europe/Kyiv')
