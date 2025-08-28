@@ -1327,15 +1327,42 @@ def process_message(text, mid, date_str, channel):
     # Предварительно уберём чисто донатные/подписи строки из многострочного блока, чтобы они не мешали
     raw_lines = text.splitlines()
     cleaned_for_multiline = []
+    import re as _re_clean
+    donation_keys = ['монобанк','send.monobank','patreon','donat','донат','підтримати канал','підтримати','напрямок ракет','napramok']
     for l in raw_lines:
         ls = l.strip()
         if not ls:
             continue
+        # If line combines header and content ("Хмельниччина: Група КР ..." possibly with formatting ** **)
+        m_comb = _re_clean.match(r'^\**([A-Za-zА-Яа-яЇїІіЄєҐґ]+щина)\**:\s*(.+)$', ls)
+        if m_comb:
+            header_part = m_comb.group(1) + ':'
+            rest_part = m_comb.group(2).strip()
+            cleaned_for_multiline.append(header_part)
+            ls = rest_part  # continue processing rest_part below (could still contain links)
         low_ls = ls.lower()
-        if any(k in low_ls for k in ['монобанк','send.monobank','patreon','donat','донат','підтримати канал','підтримати','напрямок ракет','napramok']):
-            # пропускаем в контексте построения маркеров
-            continue
-        cleaned_for_multiline.append(ls)
+        # Strip markdown links / segments that are purely donation or service references, keep threat fragment
+        def _strip_bad_links(s: str):
+            # Remove any [text](url) where text or url contains donation_keys
+            def _repl(m):
+                inner_text = m.group(1).lower()
+                url = m.group(2).lower()
+                if any(k in inner_text or k in url for k in donation_keys):
+                    return ''
+                return m.group(0)
+            s2 = _re_clean.sub(r'\[([^\]]{0,60})\]\(([^) ]+?)\)', _repl, s)
+            return s2
+        ls_no_links = _strip_bad_links(ls)
+        low_no_links = ls_no_links.lower()
+        if any(k in low_no_links for k in donation_keys):
+            # If after stripping links still only donation noise and no threat keywords, skip.
+            if not any(t in low_no_links for t in ['бпла','курс','ракета','ракети','рупа','група','кр']):
+                continue
+            # Else remove the donation substrings explicitly.
+            for k in donation_keys:
+                low_no_links = low_no_links.replace(k,' ')
+            ls_no_links = ' '.join(low_no_links.split())
+        cleaned_for_multiline.append(ls_no_links.strip())
     lines = cleaned_for_multiline
     oblast_hdr = None
     multi_city_tracks = []
@@ -4323,6 +4350,9 @@ UA_CITY_NORMALIZE = {
     # Safety normalization for potential first-letter dropped glitches
     ,'убни':'лубни'
     ,'олми':'холми'
+    ,'летичів':'летичів'
+    ,'летичев':'летичів'
+    ,'летичеве':'летичів'
 }
 
 # Static fallback coordinates (approximate city centers) to avoid relying solely on OpenCage.
@@ -4401,6 +4431,7 @@ CITY_COORDS = {
     ,'канів': (49.7517, 31.4717)
     ,'чигирин': (49.0800, 32.6600)
     ,'прилуки': (50.5931, 32.3878)
+    ,'летичів': (49.3844, 27.6256)
 }
 
 OBLAST_CENTERS = {
@@ -4414,6 +4445,7 @@ OBLAST_CENTERS = {
     , 'харківська обл.': (49.9935, 36.2304), 'харьковская обл.': (49.9935, 36.2304)
     , 'сумщина': (50.9077, 34.7981), 'сумщини': (50.9077, 34.7981), 'сумська область': (50.9077, 34.7981), 'сумська обл.': (50.9077, 34.7981), 'сумская обл.': (50.9077, 34.7981)
     , 'полтавщина': (49.5883, 34.5514), 'полтавщини': (49.5883, 34.5514), 'полтавська обл.': (49.5883, 34.5514), 'полтавська область': (49.5883, 34.5514)
+    , 'хмельниччина': (49.4229, 26.9871), 'хмельниччини': (49.4229, 26.9871), 'хмельницька обл.': (49.4229, 26.9871), 'хмельницька область': (49.4229, 26.9871)
 }
 
 
