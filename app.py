@@ -1056,6 +1056,50 @@ VISITS_DB = os.getenv('VISITS_DB','visits.db')
 def _visits_db_conn():
     return sqlite3.connect(VISITS_DB, timeout=5)
 
+_RECENT_SEEDED = False
+def _seed_recent_from_sql():
+    """If rolling recent visits file missing/outdated or lost after redeploy, rebuild from SQLite so
+    Day / Week counts remain stable across deployments."""
+    global _RECENT_SEEDED
+    if _RECENT_SEEDED:
+        return
+    try:
+        data = _load_recent_visits() or {}
+        tz = pytz.timezone('Europe/Kyiv')
+        now_dt = datetime.now(tz)
+        today_str = now_dt.strftime('%Y-%m-%d')
+        week_cut = now_dt - timedelta(days=7)
+        today_start = tz.localize(datetime.strptime(today_str, '%Y-%m-%d')).timestamp()
+        week_start_ts = week_cut.timestamp()
+        with _visits_db_conn() as conn:
+            cur_day = conn.execute("SELECT id FROM visits WHERE last_seen >= ?", (today_start,))
+            day_ids = [r[0] for r in cur_day.fetchall()]
+            cur_week = conn.execute("SELECT id FROM visits WHERE last_seen >= ?", (week_start_ts,))
+            week_ids = [r[0] for r in cur_week.fetchall()]
+        need_seed = False
+        # Conditions to trigger seeding: empty/missing file, day mismatch, or counts smaller than SQL (lost state)
+        if not data:
+            need_seed = True
+        else:
+            if data.get('day') != today_str:
+                need_seed = True
+            elif len(set(data.get('today_ids', []))) < len(day_ids):
+                need_seed = True
+            elif len(set(data.get('week_ids', []))) < len(week_ids):
+                need_seed = True
+        if need_seed:
+            data = {
+                'day': today_str,
+                'today_ids': list(dict.fromkeys(day_ids)),  # preserve order unique
+                'week_ids': list(dict.fromkeys(week_ids)),
+                'week_start': week_cut.strftime('%Y-%m-%d')  # informational; rolling window logic tolerates
+            }
+            _save_recent_visits(data)
+            log.info(f"recent visits seeded from SQL: day={len(day_ids)} week={len(week_ids)}")
+        _RECENT_SEEDED = True
+    except Exception as e:
+        log.warning(f"recent visits seeding failed: {e}")
+
 def init_visits_db():
     try:
         with _visits_db_conn() as conn:
@@ -4155,6 +4199,11 @@ def _require_secret(req):
 def admin_panel():
     if not _require_secret(request):
         return Response('Forbidden', status=403)
+    # Ensure rolling recent visits file is seeded from durable SQLite (survives redeploy)
+    try:
+        _seed_recent_from_sql()
+    except Exception:
+        pass
     now = time.time()
     with ACTIVE_LOCK:
         visitors = []
