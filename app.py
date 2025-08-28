@@ -4106,7 +4106,8 @@ def presence():
         pass
     with ACTIVE_LOCK:
         prev = ACTIVE_VISITORS.get(vid) if isinstance(ACTIVE_VISITORS.get(vid), dict) else {}
-        ACTIVE_VISITORS[vid] = {'ts': now, 'ip': remote_ip, 'ua': prev.get('ua') or ua}
+        first_seen = prev.get('first') or stats.get(vid) or now
+        ACTIVE_VISITORS[vid] = {'ts': now, 'first': first_seen, 'ip': remote_ip, 'ua': prev.get('ua') or ua}
         # prune
         for k, meta in list(ACTIVE_VISITORS.items()):
             ts = meta if isinstance(meta,(int,float)) else meta.get('ts',0)
@@ -4209,18 +4210,24 @@ def admin_panel():
         visitors = []
         for vid, meta in ACTIVE_VISITORS.items():
             if isinstance(meta,(int,float)):
-                age = int(now - meta)
-                visitors.append({'id':vid,'ip':'','age':age,'age_fmt':_fmt_age(age),'ua':'','ua_short':''})
+                sess_age = int(now - meta)
+                visitors.append({'id':vid,'ip':'','age':sess_age,'age_fmt':_fmt_age(sess_age),'ua':'','ua_short':'','last_seen':_fmt_age(int(now - meta))})
             else:
-                age = int(now - meta.get('ts',0))
+                first_ts = meta.get('first') or meta.get('ts', now)
+                last_ts = meta.get('ts', first_ts)
+                if first_ts > last_ts:
+                    first_ts, last_ts = last_ts, first_ts
+                sess_age = int(now - first_ts)
+                idle_age = int(now - last_ts)
                 ua = meta.get('ua','')
                 visitors.append({
                     'id':vid,
                     'ip':meta.get('ip',''),
-                    'age':age,
-                    'age_fmt':_fmt_age(age),
+                    'age':sess_age,
+                    'age_fmt':_fmt_age(sess_age),
                     'ua': ua,
-                    'ua_short': _ua_label(ua)
+                    'ua_short': _ua_label(ua),
+                    'last_seen': _fmt_age(idle_age)
                 })
     blocked = load_blocked()
     # Load raw (pending geo) messages
