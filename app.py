@@ -609,7 +609,9 @@ UA_CITY_NORMALIZE = {
     'кегичівку':'кегичівка',
     'кегичевку':'кегичівка',
     'старому салтову':'старий салтів',
-    'старому салтові':'старий салтів'
+    'старому салтові':'старий салтів',
+    'карлівку':'карлівка',
+    'магдалинівку':'магдалинівка'
 }
 
 # Static fallback coordinates (approximate city centers) to avoid relying solely on OpenCage.
@@ -714,6 +716,8 @@ CITY_COORDS = {
     ,'сахновщина': (49.1544, 35.1460)
     ,'губиниха': (48.7437, 35.2960)
     ,'перещепине': (48.6260, 35.3580)
+    ,'карлівка': (49.4586, 35.1272)  # Карлівка, Полтавська обл.
+    ,'магдалинівка': (48.8836, 34.8669)  # Магдалинівка, Дніпропетровська обл.
     ,'обухівка': (48.6035, 34.8530)
     ,'курилівка': (48.6715, 34.8740)
     ,'петриківка': (48.7330, 34.6300)
@@ -1115,6 +1119,8 @@ def init_visits_db():
         with _visits_db_conn() as conn:
             conn.execute("CREATE TABLE IF NOT EXISTS visits (id TEXT PRIMARY KEY, first_seen REAL, last_seen REAL)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_visits_first ON visits(first_seen)")
+            # Helpful for fast lookups of currently active users by recent activity window
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_visits_last ON visits(last_seen)")
     except Exception as e:
         log.warning(f"visits db init failed: {e}")
 
@@ -1146,6 +1152,22 @@ def sql_unique_counts():
     except Exception as e:
         log.warning(f"sql_unique_counts failed: {e}")
     return None, None
+
+def _active_sessions_from_db(ttl:int)->list[dict]:
+    """Return list of active sessions (id, first_seen, last_seen) from persistent DB within ttl seconds."""
+    cutoff = time.time() - ttl
+    out = []
+    try:
+        with _visits_db_conn() as conn:
+            cur = conn.execute("SELECT id, first_seen, last_seen FROM visits WHERE last_seen >= ?", (cutoff,))
+            for row in cur.fetchall():
+                try:
+                    out.append({'id': row[0], 'first': float(row[1] or 0), 'last': float(row[2] or 0)})
+                except Exception:
+                    continue
+    except Exception as e:
+        log.warning(f"active sessions db query failed: {e}")
+    return out
 
 # Initialize DB at import
 init_visits_db()
@@ -1369,6 +1391,37 @@ def geocode_opencage(place: str):
         return None
 
 def process_message(text, mid, date_str, channel):
+    # --- Pre-split case: several bold oblast headers inside a single line (e.g. **Полтавщина:** ... **Дніпропетровщина:** ... ) ---
+    try:
+        import re as _pre_hdr_re
+        # Detect two or more bold oblast headers
+        hdr_pat = re.compile(r'(\*\*[A-Za-zА-Яа-яЇїІіЄєҐґ]+щина\*\*:)')
+        if text.count('**') >= 4:  # quick filter
+            matches = list(hdr_pat.finditer(text))
+            if len(matches) >= 2:
+                # Insert newline before each header (except first) if not already line-start
+                # Build new text chunk-wise
+                new_parts = []
+                last = 0
+                for i, m in enumerate(matches):
+                    start = m.start()
+                    if i == 0 and start > 0 and text[start-1] != '\n':
+                        # ensure header is at line start
+                        new_parts.append(text[last:start])
+                    elif i > 0:
+                        # append text before header ensuring newline separation
+                        segment = text[last:start]
+                        if not segment.endswith('\n'):
+                            segment += '\n'
+                        new_parts.append(segment)
+                    last = start
+                # append remaining
+                new_parts.append(text[last:])
+                new_text_joined = ''.join(new_parts)
+                if new_text_joined != text:
+                    text = new_text_joined
+    except Exception:
+        pass
     # --- Спец. обработка многострочных сообщений с заголовками-областями и списком городов ---
     import unicodedata
     def normalize_city_name(name):
@@ -4160,9 +4213,22 @@ def presence():
         record_visit_sql(vid, now)
     except Exception:
         pass
+    # Query DB for persistent first_seen to avoid resetting session on process restart
+    db_first = None
+    try:
+        with _visits_db_conn() as conn:
+            cur = conn.execute("SELECT first_seen FROM visits WHERE id=?", (vid,))
+            row = cur.fetchone()
+            if row and row[0]:
+                try:
+                    db_first = float(row[0])
+                except Exception:
+                    db_first = None
+    except Exception:
+        pass
     with ACTIVE_LOCK:
         prev = ACTIVE_VISITORS.get(vid) if isinstance(ACTIVE_VISITORS.get(vid), dict) else {}
-        first_seen = prev.get('first') or stats.get(vid) or now
+        first_seen = prev.get('first') or db_first or stats.get(vid) or now
         ACTIVE_VISITORS[vid] = {'ts': now, 'first': first_seen, 'ip': remote_ip, 'ua': prev.get('ua') or ua}
         # prune
         for k, meta in list(ACTIVE_VISITORS.items()):
@@ -4262,29 +4328,47 @@ def admin_panel():
     except Exception:
         pass
     now = time.time()
+    # Merge ACTIVE_VISITORS volatile data with persistent DB to avoid session age resets on restart
+    # Strategy: build dict from DB for active window; overlay runtime (for ip/ua freshness)
+    db_active = {s['id']: s for s in _active_sessions_from_db(ACTIVE_TTL)}
     with ACTIVE_LOCK:
         visitors = []
         for vid, meta in ACTIVE_VISITORS.items():
             if isinstance(meta,(int,float)):
-                sess_age = int(now - meta)
-                visitors.append({'id':vid,'ip':'','age':sess_age,'age_fmt':_fmt_age(sess_age),'ua':'','ua_short':'','last_seen':_fmt_age(int(now - meta))})
+                mem_first = meta
+                mem_last = meta
+                db_sess = db_active.get(vid)
+                if db_sess:
+                    first_ts = db_sess.get('first') or mem_first
+                    last_ts = db_sess.get('last') or mem_last
+                else:
+                    first_ts = mem_first
+                    last_ts = mem_last
             else:
-                first_ts = meta.get('first') or meta.get('ts', now)
-                last_ts = meta.get('ts', first_ts)
-                if first_ts > last_ts:
-                    first_ts, last_ts = last_ts, first_ts
-                sess_age = int(now - first_ts)
-                idle_age = int(now - last_ts)
-                ua = meta.get('ua','')
-                visitors.append({
-                    'id':vid,
-                    'ip':meta.get('ip',''),
-                    'age':sess_age,
-                    'age_fmt':_fmt_age(sess_age),
-                    'ua': ua,
-                    'ua_short': _ua_label(ua),
-                    'last_seen': _fmt_age(idle_age)
-                })
+                mem_first = meta.get('first') or meta.get('ts', now)
+                mem_last = meta.get('ts', mem_first)
+                db_sess = db_active.get(vid)
+                if db_sess:
+                    # Use earlier first (older session start) and later last (most recent activity)
+                    first_ts = min(mem_first, db_sess.get('first') or mem_first)
+                    last_ts = max(mem_last, db_sess.get('last') or mem_last)
+                else:
+                    first_ts, last_ts = mem_first, mem_last
+            if first_ts > last_ts:
+                first_ts, last_ts = last_ts, first_ts
+            sess_age = int(now - first_ts)
+            idle_age = int(now - last_ts)
+            ua = (meta.get('ua') if isinstance(meta, dict) else '') or ''
+            ip = (meta.get('ip') if isinstance(meta, dict) else '') or ''
+            visitors.append({
+                'id': vid,
+                'ip': ip,
+                'age': sess_age,
+                'age_fmt': _fmt_age(sess_age),
+                'ua': ua,
+                'ua_short': _ua_label(ua) if ua else '',
+                'last_seen': _fmt_age(idle_age)
+            })
     blocked = load_blocked()
     # Load raw (pending geo) messages
     all_msgs = load_messages()
