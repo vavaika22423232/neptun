@@ -1523,6 +1523,11 @@ def process_message(text, mid, date_str, channel):
                     if not coords_g and oblast_hdr:
                         combo_g = f"{base_g} {oblast_hdr}"
                         coords_g = CITY_COORDS.get(combo_g) or (SETTLEMENTS_INDEX.get(combo_g) if SETTLEMENTS_INDEX else None)
+                    # NEW: allow oblast center lookup if destination is a region (e.g. полтавщина / полтавщину)
+                    if not coords_g and base_g in OBLAST_CENTERS:
+                        coords_g = OBLAST_CENTERS[base_g]
+                        try: log.info(f"GENERIC_COURSE_REGION dest='{base_g}' -> oblast center")
+                        except Exception: pass
                     if not coords_g:
                         for pref in ['к','с','о','л','б','в','ж','т','я','у','р','н','п','г','ч']:
                             test = pref + base_g
@@ -2150,6 +2155,20 @@ def process_message(text, mid, date_str, channel):
             'marker_icon': 'vidboi.png', 'list_only': True
         }]
     lower = text.lower()
+    # Specialized single-line pattern: direction from one oblast toward another (e.g. 'бпла ... курсом на полтавщину')
+    import re as _re_one
+    m_dir_oblast = _re_one.search(r'бпла[^\n]*курс(?:ом)?\s+на\s+([a-zа-яїієґ\-]+щин[ауі])', lower)
+    if m_dir_oblast:
+        dest = m_dir_oblast.group(1)
+        # normalize accusative -> nominative
+        dest_norm = dest.replace('щину','щина').replace('щини','щина')
+        if dest_norm in OBLAST_CENTERS:
+            lat, lng = OBLAST_CENTERS[dest_norm]
+            return [{
+                'id': f"{mid}_dir_oblast", 'place': dest_norm.title(), 'lat': lat, 'lng': lng,
+                'threat_type': 'uav', 'text': original_text[:500], 'date': date_str, 'channel': channel,
+                'marker_icon': 'shahed.png', 'source_match': 'singleline_oblast_course'
+            }]
     # Extract drone / shahed count pattern (e.g. "7х бпла", "6x дронів", "10 х бпла") early so later branches can reuse
     drone_count = None
     m_count = re.search(r'(\b\d{1,3})\s*[xх]\s*(?:бпла|дрон|дрони|шахед|шахеди|шахедів)', lower)
