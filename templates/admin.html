@@ -29,6 +29,12 @@
   #pickMap.active{display:block;}
   .pick-hint{font-size:.6rem;opacity:.6;margin-top:.25rem;}
 </style>
+<style>
+  #adminMap{height:520px;margin-top:1.2rem;border:1px solid #1e293b;border-radius:12px;box-shadow:0 0 0 1px #1e293b,0 4px 18px -6px rgba(0,0,0,.55);background:#0f1d33;}
+  .admin-map-toolbar{display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.4rem;font-size:.65rem;align-items:center;}
+  .admin-map-toolbar button{font-size:.65rem;padding:4px 8px;}
+  .admin-map-badge{background:#1e293b;padding:2px 6px;border-radius:4px;font-size:.6rem;}
+</style>
 </head>
 <body>
   <div class="topbar">
@@ -48,6 +54,15 @@
       <button type="button" class="ok" onclick="saveMonPeriod()">Зберегти</button>
       <span id="monStatus" style="font-size:.65rem;color:#94a3b8;"></span>
     </div>
+  </div>
+  <!-- Admin live map -->
+  <h2 style="margin:.2rem 0 .4rem;font-size:1rem">Карта (оперативні мітки)</h2>
+  <div id="adminMap"></div>
+  <div class="admin-map-toolbar">
+    <button type="button" onclick="reloadAdminMarkers()">Оновити</button>
+    <button type="button" onclick="toggleAutoAdmin()" id="autoBtn">Авто: ON</button>
+    <span class="admin-map-badge" id="adminMapStats">—</span>
+    <span class="admin-map-badge" style="background:#334155;">Right click по мітці → Hide</span>
   </div>
   <h2 style="margin-top:1.2rem;font-size:1rem">Active Visitors ({{ visitors|length }})</h2>
   <table>
@@ -350,6 +365,61 @@ function togglePickMap(){
   }
   setTimeout(()=>{try{pickMapInstance.invalidateSize();}catch(e){}},220);
 }
+// -------- Live admin map with markers --------
+let adminMap=null; let adminMarkersLayer=null; let adminAuto=true; let lastAdminFetch=0; let adminMarkerIndex={};
+const ICON_MAP = {
+  shahed:'shahed.png', raketa:'raketa.png', avia:'avia.png', pvo:'rozved.png', vibuh:'vibuh.png', artillery:'obstril.png', obstril:'obstril.png', mlrs:'rszv.png', fpv:'fpv.png', pusk:'pusk.png', alarm:'trivoga.png', alarm_cancel:'vidboi.png', manual:'raketa.png'
+};
+function initAdminMap(){
+  if(adminMap) return;
+  adminMap = L.map('adminMap',{attributionControl:false,zoomControl:true}).setView([49.0,31.3],6);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:11}).addTo(adminMap);
+  adminMarkersLayer = L.layerGroup().addTo(adminMap);
+  adminMap.on('contextmenu', e=>{ /* placeholder for future */ });
+  reloadAdminMarkers();
+}
+function markerIconFor(t){
+  const fname = ICON_MAP[t] || 'shahed.png';
+  return L.icon({iconUrl:'/static/'+fname, iconSize:[34,34], iconAnchor:[17,17], popupAnchor:[0,-10], className:'plain-admin-ico'});
+}
+async function reloadAdminMarkers(){
+  try{
+    const r = await fetch('/data?ts='+(Date.now()));
+    if(!r.ok) return;
+    const js = await r.json();
+    lastAdminFetch = Date.now();
+    renderAdminMarkers(js.tracks||[]);
+  }catch(e){}
+}
+function renderAdminMarkers(tracks){
+  adminMarkersLayer.clearLayers();
+  adminMarkerIndex={};
+  let cnt=0;
+  tracks.forEach(t=>{
+    if(!t.lat || !t.lng) return;
+    const ico = markerIconFor(t.threat_type||'shahed');
+    const m = L.marker([t.lat,t.lng],{icon:ico}).addTo(adminMarkersLayer);
+    const safeText = (t.text||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const place = (t.place||'')
+    const time = t.date||'';
+    const source = t.channel || t.source || '';
+    m.bindPopup(`<div style='font-size:.7rem;max-width:220px;line-height:1.3;'><strong>${place}</strong><br>${safeText}<br><span style='opacity:.6;'>${time}</span><br><button style='margin-top:4px;font-size:.6rem;padding:3px 6px;' onclick="hideMarkerMap(${t.lat},${t.lng},'${encodeURIComponent((t.text||'').slice(0,190))}','${encodeURIComponent(source)}', this)">Hide</button></div>`);
+    m.on('contextmenu',()=>hideMarkerMap(t.lat,t.lng,encodeURIComponent((t.text||'').slice(0,190)),encodeURIComponent(source)));
+    cnt++;
+  });
+  const statEl=document.getElementById('adminMapStats'); if(statEl){ statEl.textContent = `Markers: ${cnt}`; }
+}
+async function hideMarkerMap(lat,lng,txtEnc,srcEnc, btn){
+  try{
+    const text = decodeURIComponent(txtEnc);
+    const source = decodeURIComponent(srcEnc);
+    const r = await fetch('/hide_marker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,text,source})});
+    if(r.ok){ if(btn){ btn.textContent='Hidden'; btn.disabled=true; } reloadAdminMarkers(); }
+  }catch(e){}
+}
+function toggleAutoAdmin(){ adminAuto=!adminAuto; document.getElementById('autoBtn').textContent='Авто: '+(adminAuto?'ON':'OFF'); }
+setInterval(()=>{ if(adminAuto && adminMap){ reloadAdminMarkers(); } }, 30000);
+document.addEventListener('DOMContentLoaded', ()=>{ initAdminMap(); });
 </script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-o9N1j7kGStb6g2JbHb3bWbW7Z6nLqgG1R2GZ8Z8li2M=" crossorigin=""></script>
 </body>

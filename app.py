@@ -592,7 +592,12 @@ UA_CITY_NORMALIZE = {
     'велику багачу':'велика багачка',
     'велику багачку':'велика багачка',
     'липову долина':'липова долина',
-    'велику багачка':'велика багачка'
+    'велику багачка':'велика багачка',
+    # Велика Димерка (разные падежные формы)
+    'велику димерку':'велика димерка',
+    'велика димерку':'велика димерка',
+    'великої димерки':'велика димерка',
+    'великій димерці':'велика димерка'
 }
 
 # Static fallback coordinates (approximate city centers) to avoid relying solely on OpenCage.
@@ -1364,7 +1369,8 @@ def process_message(text, mid, date_str, channel):
     import re
     multi_city_tracks = []
     # 1. Patterns: 'на <город>', 'повз <город>'
-    city_patterns = re.findall(r'(?:на|повз)\s+([A-Za-zА-Яа-яЇїІіЄєҐґʼ`’\-]{3,})', text.lower())
+    # Захватываем одно- или многословные названия после "на" / "повз" до знака препинания / конца строки
+    city_patterns = re.findall(r'(?:на|повз)\s+([A-Za-zА-Яа-яЇїІіЄєҐґʼ`’\-\s]{3,40}?)(?=[,\.\n;:!\?]|$)', text.lower())
     # 2. Patterns: перечисление через запятую или слэш (например: "шишаки, глобине, ромодан" или "малин/гранітне")
     # Только если в сообщении нет явного одного города в начале
     city_enumerations = []
@@ -1379,13 +1385,36 @@ def process_message(text, mid, date_str, channel):
     all_cities = set(city_patterns + city_enumerations)
     # Фильтруем по наличию в CITY_COORDS (или SETTLEMENTS_INDEX)
     found_cities = []
+    def _resolve_city_candidate(raw: str):
+        cand = raw.strip().lower()
+        cand = re.sub(r'["“”«»\(\)\[\]]','', cand)
+        cand = re.sub(r'\s+',' ', cand)
+        # Пробуем от длинного к короткому (до 3 слов достаточно для наших случаев)
+        words = cand.split()
+        if not words:
+            return None
+        for ln in range(min(3, len(words)), 0, -1):
+            sub = ' '.join(words[:ln])
+            base = UA_CITY_NORMALIZE.get(sub, sub)
+            if base in CITY_COORDS or (SETTLEMENTS_INDEX and base in SETTLEMENTS_INDEX):
+                return base
+            # Морфология окончания винительного/родительного последнего слова
+            sub_mod = re.sub(r'у\b','а', sub)
+            sub_mod = re.sub(r'ю\b','я', sub_mod)
+            sub_mod = re.sub(r'ої\b','а', sub_mod)
+            base2 = UA_CITY_NORMALIZE.get(sub_mod, sub_mod)
+            if base2 in CITY_COORDS or (SETTLEMENTS_INDEX and base2 in SETTLEMENTS_INDEX):
+                return base2
+        return UA_CITY_NORMALIZE.get(cand, cand)
     for city in all_cities:
-        norm = city.strip().lower()
+        norm = _resolve_city_candidate(city)
+        if not norm:
+            continue
         coords = CITY_COORDS.get(norm)
-        if not coords and 'settlements_index' in globals() and SETTLEMENTS_INDEX:
+        if not coords and SETTLEMENTS_INDEX:
             coords = SETTLEMENTS_INDEX.get(norm)
         if coords:
-            found_cities.append((city, coords))
+            found_cities.append((norm, coords))
     # Если найдено 2 и более города — создаём отдельный маркер для каждого
     if len(found_cities) >= 2:
         threat_type, icon = 'shahed', 'shahed.png'  # можно доработать auto-classify
@@ -2259,9 +2288,10 @@ def process_message(text, mid, date_str, channel):
             for part in subparts:
                 lines_with_region.append((part, current_region_hdr))
         course_tracks = []
-        pat_count_course = re.compile(r'^(\d+)[xх]?\s*бпла.*?курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`]{3,})', re.IGNORECASE)
-        pat_course = re.compile(r'бпла.*?курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`]{3,})', re.IGNORECASE)
-        pat_area = re.compile(r'(\d+)?[xх]?\s*бпла\s+в\s+районі\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`]{3,})', re.IGNORECASE)
+        # Многословные названия (до 3 слов) после "курс(ом) на" и "в районі"
+        pat_count_course = re.compile(r'^(\d+)[xх]?\s*бпла.*?курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
+        pat_course = re.compile(r'бпла.*?курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
+        pat_area = re.compile(r'(\d+)?[xх]?\s*бпла\s+в\s+районі\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         # Direct hotfix: ensure 'курс(ом) на Кіпті' resolves to SETTLEMENT_FALLBACK coords
         if re.search(r'бпла.*?курс(?:ом)?\s+на\s+кіпт[ії]', lower):
             coords = SETTLEMENT_FALLBACK.get('кіпті')
@@ -2305,7 +2335,9 @@ def process_message(text, mid, date_str, channel):
                         city = m3.group(1)
             if not city:
                 continue
-            base = norm_city_token(city)
+            # Попытка многословного разрешения
+            multi_norm = _resolve_city_candidate(city)
+            base = norm_city_token(multi_norm)
             coords = CITY_COORDS.get(base)
             if not coords and SETTLEMENTS_INDEX:
                 coords = SETTLEMENTS_INDEX.get(base)
