@@ -4594,6 +4594,8 @@ UA_CITY_NORMALIZE = {
     ,'жмеринку':'жмеринка'
     ,'лосинівку':'лосинівка'
     ,'ніжину':'ніжин'
+    ,'карлівку':'карлівка'
+    ,'магдалинівку':'магдалинівка'
 }
 
 # Static fallback coordinates (approximate city centers) to avoid relying solely on OpenCage.
@@ -4638,6 +4640,10 @@ CITY_COORDS = {
     ,'златопіль': (48.3640, 38.1500)  # Zlatopil (approx placeholder)
     ,'царичанка': (48.9333, 34.4833)  # Tsarychanka (Dnipro oblast)
     ,'добропілля': (48.4667, 37.0833)  # Dobropillia (Donetsk oblast)
+    ,'перещепине': (48.6260, 35.3580)
+    ,'карлівка': (49.4586, 35.1272)
+    ,'магдалинівка': (48.8836, 34.8669)
+    ,'чугуїв': (49.8376, 36.6881)
     ,'барвінкове': (48.9000, 37.0167)  # Barvinkove (Kharkiv oblast)
     ,'пісочин': (49.9500, 36.1330)  # Pisochyn (near Kharkiv)
     ,'берестове': (49.3500, 37.0000)  # Placeholder for Berestove / Berestynske context
