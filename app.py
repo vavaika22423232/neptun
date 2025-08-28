@@ -1345,10 +1345,210 @@ def process_message(text, mid, date_str, channel):
         import re
         if re.match(r'^[A-Za-zА-Яа-яЇїІіЄєҐґ\-ʼ`\s]+:\s*$', ln):
             oblast_hdr = ln.split(':')[0].strip().lower()
+            if oblast_hdr and oblast_hdr[0] in ('е','є') and oblast_hdr.endswith('гівщина'):
+                # восстановить черниговщина -> чернігівщина (fix dropped leading Ч)
+                oblast_hdr = 'чернігівщина'
             # header detected
             continue
+        try:
+            log.info(f"MLINE_LINE oblast={oblast_hdr} raw='{ln}'")
+        except Exception:
+            pass
         # Пытаемся найти город и количество (например, "2х БпЛА курсом на Десну")
         import re
+        # --- NEW: распознавание ракетных строк внутри многострочного блока ---
+        # Примеры: "1 ракета на Холми", "2 ракети на Лубни", "3 ракеты на Лубни", "ракета на <місто>"
+        rocket_city = None; rocket_count = 1
+        mr = re.search(r'(?:^|\b)(?:([0-9]+)\s*)?(ракета|ракети|ракет)\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{2,40})', ln, re.IGNORECASE)
+        if mr:
+            if mr.group(1):
+                try: rocket_count = int(mr.group(1))
+                except: rocket_count = 1
+            rocket_city = mr.group(3)
+        if rocket_city:
+            base_r = normalize_city_name(rocket_city)
+            base_r = UA_CITY_NORMALIZE.get(base_r, base_r)
+            coords_r = CITY_COORDS.get(base_r) or (SETTLEMENTS_INDEX.get(base_r) if SETTLEMENTS_INDEX else None)
+            if not coords_r and oblast_hdr:
+                combo_r = f"{base_r} {oblast_hdr}"
+                coords_r = CITY_COORDS.get(combo_r) or (SETTLEMENTS_INDEX.get(combo_r) if SETTLEMENTS_INDEX else None)
+            if coords_r:
+                lat, lng = coords_r
+                label = UA_CITY_NORMALIZE.get(base_r, base_r).title()
+                if rocket_count > 1:
+                    label += f" ({rocket_count})"
+                if oblast_hdr and oblast_hdr not in label.lower():
+                    label += f" [{oblast_hdr.title()}]"
+                multi_city_tracks.append({
+                    'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
+                    'threat_type': 'rszv', 'text': ln[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': 'rszv.png', 'source_match': 'multiline_oblast_city_rocket', 'count': rocket_count
+                })
+                continue  # переходим к следующей строке (не пытаемся распознать как БпЛА)
+        # --- NEW: группы крылатых ракет ("Група/Групи КР курсом на <город>") ---
+        kr_city = None; kr_count = 1
+        # Primary straightforward pattern for "Група/Групи КР курсом на <місто>"
+        mkr = re.search(r'(?:^|\b)(?:([0-9]+)[xх]?\s*)?груп[аи]\s+кр\b.*?курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\!\?;]|$)', ln, re.IGNORECASE)
+        if not mkr:
+            # Tolerant pattern allowing missing leading "г" or space glitches / lost letters
+            mkr = re.search(r'(?:^|\b)(?:([0-9]+)[xх]?\s*)?(?:г)?руп[аи]\s*(?:к)?р\b.*?курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\!\?;]|$)', ln, re.IGNORECASE)
+        if not mkr and 'груп' in ln.lower() and 'курс' in ln.lower() and ' на ' in ln.lower():
+            # Very loose fallback if 'КР' fragment dropped; capture after last 'на'
+            after = ln.rsplit('на',1)[-1].strip()
+            after = re.split(r'[,.!?:;]', after)[0].strip()
+            if len(after) >= 3:
+                class Dummy: pass
+                mkr = Dummy(); mkr.group = lambda i: None if i==1 else after
+        if mkr:
+            try:
+                log.info(f"KR_MATCH line='{ln}' groups={mkr.groups()}")
+            except Exception:
+                pass
+            if mkr.group(1):
+                try: kr_count = int(mkr.group(1))
+                except: kr_count = 1
+            kr_city = mkr.group(2)
+        if kr_city:
+            base_k = normalize_city_name(kr_city)
+            base_k = UA_CITY_NORMALIZE.get(base_k, base_k)
+            coords_k = CITY_COORDS.get(base_k) or (SETTLEMENTS_INDEX.get(base_k) if SETTLEMENTS_INDEX else None)
+            if not coords_k and oblast_hdr:
+                combo_k = f"{base_k} {oblast_hdr}"
+                coords_k = CITY_COORDS.get(combo_k) or (SETTLEMENTS_INDEX.get(combo_k) if SETTLEMENTS_INDEX else None)
+            if coords_k:
+                lat, lng = coords_k
+                label = UA_CITY_NORMALIZE.get(base_k, base_k).title()
+                if kr_count > 1:
+                    label += f" ({kr_count})"
+                if oblast_hdr and oblast_hdr not in label.lower():
+                    label += f" [{oblast_hdr.title()}]"
+                multi_city_tracks.append({
+                    'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
+                    'threat_type': 'raketa', 'text': ln[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': 'raketa.png', 'source_match': 'multiline_oblast_city_kr_group', 'count': kr_count
+                })
+                continue
+        # Universal KR fallback (handles degraded OCR lines like '3х рупи  курсом на рилуки')
+        low_ln = ln.lower()
+        if ('курс' in low_ln and ' на ' in low_ln and ('груп' in low_ln or ' кр' in low_ln)):
+            # Extract count if present at start or before 'груп'
+            mcnt = re.search(r'^(\d+)[xх]?\s*', low_ln)
+            count_guess = 1
+            if mcnt:
+                try: count_guess = int(mcnt.group(1))
+                except: pass
+            # Try after last 'на '
+            parts = low_ln.rsplit(' на ', 1)
+            if len(parts) == 2:
+                cand = parts[1]
+                cand = re.split(r'[\n,.!?:;]', cand)[0].strip()
+                # strip residual non-letter chars
+                cand_clean = re.sub(r"[^A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]", '', cand).strip()
+                if len(cand_clean) >= 3:
+                    base_f = normalize_city_name(cand_clean)
+                    base_f = UA_CITY_NORMALIZE.get(base_f, base_f)
+                    coords_f = CITY_COORDS.get(base_f) or (SETTLEMENTS_INDEX.get(base_f) if SETTLEMENTS_INDEX else None)
+                    if not coords_f and oblast_hdr:
+                        combo_f = f"{base_f} {oblast_hdr}"
+                        coords_f = CITY_COORDS.get(combo_f) or (SETTLEMENTS_INDEX.get(combo_f) if SETTLEMENTS_INDEX else None)
+                    # Fuzzy repair: if still not found, try restoring a potentially lost first letter
+                    if not coords_f:
+                        for pref in ['н','к','ч','п','г','с','в','б','д','м','т','л']:
+                            test_base = pref + base_f
+                            coords_try = CITY_COORDS.get(test_base) or (SETTLEMENTS_INDEX.get(test_base) if SETTLEMENTS_INDEX else None)
+                            if not coords_try and oblast_hdr:
+                                combo_try = f"{test_base} {oblast_hdr}"
+                                coords_try = CITY_COORDS.get(combo_try) or (SETTLEMENTS_INDEX.get(combo_try) if SETTLEMENTS_INDEX else None)
+                            if coords_try:
+                                base_f = test_base
+                                coords_f = coords_try
+                                try: log.info(f"KR_FUZZ_REPAIR first_letter pref='{pref}' -> {base_f}")
+                                except Exception: pass
+                                break
+                    if coords_f:
+                        lat, lng = coords_f
+                        label = UA_CITY_NORMALIZE.get(base_f, base_f).title()
+                        if count_guess > 1:
+                            label += f" ({count_guess})"
+                        if oblast_hdr and oblast_hdr not in label.lower():
+                            label += f" [{oblast_hdr.title()}]"
+                        multi_city_tracks.append({
+                            'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
+                            'threat_type': 'raketa', 'text': ln[:500], 'date': date_str, 'channel': channel,
+                            'marker_icon': 'raketa.png', 'source_match': 'multiline_oblast_city_kr_group_fallback2', 'count': count_guess
+                        })
+                        continue
+        # Generic course fallback (any remaining 'курс' + ' на ' line not yet matched)
+        if 'курс' in low_ln and ' на ' in low_ln and not any(tag in low_ln for tag in ['бпла','shahed']) and not any(mt['id'] == f"{mid}_mc{len(multi_city_tracks)+1}" for mt in multi_city_tracks):
+            parts = low_ln.rsplit(' на ',1)
+            if len(parts)==2:
+                cand = re.split(r'[\n,.!?:;]', parts[1])[0].strip()
+                cand = re.sub(r"[^A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]", '', cand)
+                if len(cand) >= 3:
+                    base_g = normalize_city_name(cand)
+                    base_g = UA_CITY_NORMALIZE.get(base_g, base_g)
+                    coords_g = CITY_COORDS.get(base_g) or (SETTLEMENTS_INDEX.get(base_g) if SETTLEMENTS_INDEX else None)
+                    if not coords_g and oblast_hdr:
+                        combo_g = f"{base_g} {oblast_hdr}"
+                        coords_g = CITY_COORDS.get(combo_g) or (SETTLEMENTS_INDEX.get(combo_g) if SETTLEMENTS_INDEX else None)
+                    if not coords_g:
+                        for pref in ['н','к','ч','п','г','с','в','б','д','м','т','л']:
+                            test_base = pref + base_g
+                            coords_try = CITY_COORDS.get(test_base) or (SETTLEMENTS_INDEX.get(test_base) if SETTLEMENTS_INDEX else None)
+                            if not coords_try and oblast_hdr:
+                                combo_try = f"{test_base} {oblast_hdr}"
+                                coords_try = CITY_COORDS.get(combo_try) or (SETTLEMENTS_INDEX.get(combo_try) if SETTLEMENTS_INDEX else None)
+                            if coords_try:
+                                base_g = test_base
+                                coords_g = coords_try
+                                try: log.info(f"GENERIC_COURSE_FUZZ pref='{pref}' -> {base_g}")
+                                except Exception: pass
+                                break
+                    if coords_g:
+                        lat, lng = coords_g
+                        label = UA_CITY_NORMALIZE.get(base_g, base_g).title()
+                        if oblast_hdr and oblast_hdr not in label.lower():
+                            label += f" [{oblast_hdr.title()}]"
+                        multi_city_tracks.append({
+                            'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
+                            'threat_type': 'raketa', 'text': ln[:500], 'date': date_str, 'channel': channel,
+                            'marker_icon': 'raketa.png', 'source_match': 'multiline_oblast_city_course_generic', 'count': 1
+                        })
+                        continue
+        # Fallback KR pattern if above failed but line mentions 'КР' and 'курс'
+        if 'кр' in ln.lower() and 'курс' in ln.lower() and ' на ' in f" {ln.lower()} ":
+            mkr2 = re.search(r'курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\!\?;]|$)', ln, re.IGNORECASE)
+            if mkr2:
+                base_k2 = normalize_city_name(mkr2.group(1))
+                base_k2 = UA_CITY_NORMALIZE.get(base_k2, base_k2)
+                coords_k2 = CITY_COORDS.get(base_k2) or (SETTLEMENTS_INDEX.get(base_k2) if SETTLEMENTS_INDEX else None)
+                if not coords_k2 and oblast_hdr:
+                    combo_k2 = f"{base_k2} {oblast_hdr}"
+                    coords_k2 = CITY_COORDS.get(combo_k2) or (SETTLEMENTS_INDEX.get(combo_k2) if SETTLEMENTS_INDEX else None)
+                if not coords_k2:
+                    for pref in ['н','к','ч','п','г','с','в','б','д','м','т','л']:
+                        test_base = pref + base_k2
+                        coords_try = CITY_COORDS.get(test_base) or (SETTLEMENTS_INDEX.get(test_base) if SETTLEMENTS_INDEX else None)
+                        if not coords_try and oblast_hdr:
+                            combo_try = f"{test_base} {oblast_hdr}"
+                            coords_try = CITY_COORDS.get(combo_try) or (SETTLEMENTS_INDEX.get(combo_try) if SETTLEMENTS_INDEX else None)
+                        if coords_try:
+                            base_k2 = test_base
+                            coords_k2 = coords_try
+                            try: log.info(f"KR_FALLBACK_FUZZ pref='{pref}' -> {base_k2}")
+                            except Exception: pass
+                            break
+                if coords_k2:
+                    lat, lng = coords_k2
+                    label = UA_CITY_NORMALIZE.get(base_k2, base_k2).title()
+                    if oblast_hdr and oblast_hdr not in label.lower():
+                        label += f" [{oblast_hdr.title()}]"
+                    multi_city_tracks.append({
+                        'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
+                        'threat_type': 'raketa', 'text': ln[:500], 'date': date_str, 'channel': channel,
+                        'marker_icon': 'raketa.png', 'source_match': 'multiline_oblast_city_kr_group_fallback', 'count': 1
+                    })
+                    continue
         # Разрешаем многословные названия (до 3 слов) до конца строки / знака препинания
         m = re.search(r'(\d+)[xх]?\s*бпла.*?курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\!\?;]|$)', ln, re.IGNORECASE)
         if m:
@@ -1400,7 +1600,7 @@ def process_message(text, mid, date_str, channel):
             if coords:
                 lat, lng = coords
                 threat_type, icon = 'shahed', 'shahed.png'
-                label = city.title()
+                label = UA_CITY_NORMALIZE.get(base, base).title()
                 if count > 1:
                     label += f" ({count})"
                 if oblast_hdr and oblast_hdr not in label.lower():
@@ -4120,6 +4320,9 @@ UA_CITY_NORMALIZE = {
     ,'баришівку':'баришівка'
     ,'сквиру':'сквира'
     ,'сосницю':'сосниця'
+    # Safety normalization for potential first-letter dropped glitches
+    ,'убни':'лубни'
+    ,'олми':'холми'
 }
 
 # Static fallback coordinates (approximate city centers) to avoid relying solely on OpenCage.
@@ -4192,6 +4395,12 @@ CITY_COORDS = {
     ,'димер': (50.7850, 30.3009)
     ,'бровари': (50.5110, 30.7909)
     ,'жашків': (49.2406, 30.0961)
+    ,'лубни': (50.0186, 32.9931)
+    ,'холми': (51.6272, 32.5531)
+    ,'новооржицьке': (49.9444, 32.9333)
+    ,'канів': (49.7517, 31.4717)
+    ,'чигирин': (49.0800, 32.6600)
+    ,'прилуки': (50.5931, 32.3878)
 }
 
 OBLAST_CENTERS = {
