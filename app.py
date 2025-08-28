@@ -1375,6 +1375,11 @@ def process_message(text, mid, date_str, channel):
             if oblast_hdr and oblast_hdr[0] in ('е','є') and oblast_hdr.endswith('гівщина'):
                 # восстановить черниговщина -> чернігівщина (fix dropped leading Ч)
                 oblast_hdr = 'чернігівщина'
+            # Доп. почин восстановлений первых букв для областей (потеря первой буквы)
+            if oblast_hdr and oblast_hdr.endswith('ївщина') and oblast_hdr != 'київщина':
+                oblast_hdr = 'київщина'
+            if oblast_hdr and oblast_hdr.endswith('нниччина') and oblast_hdr != 'вінниччина':
+                oblast_hdr = 'вінниччина'
             # header detected
             continue
         try:
@@ -1518,6 +1523,19 @@ def process_message(text, mid, date_str, channel):
                     if not coords_g and oblast_hdr:
                         combo_g = f"{base_g} {oblast_hdr}"
                         coords_g = CITY_COORDS.get(combo_g) or (SETTLEMENTS_INDEX.get(combo_g) if SETTLEMENTS_INDEX else None)
+                    if not coords_g:
+                        for pref in ['к','с','о','л','б','в','ж','т','я','у','р','н','п','г','ч']:
+                            test = pref + base_g
+                            coords_try = CITY_COORDS.get(test) or (SETTLEMENTS_INDEX.get(test) if SETTLEMENTS_INDEX else None)
+                            if not coords_try and oblast_hdr:
+                                combo_try = f"{test} {oblast_hdr}"
+                                coords_try = CITY_COORDS.get(combo_try) or (SETTLEMENTS_INDEX.get(combo_try) if SETTLEMENTS_INDEX else None)
+                            if coords_try:
+                                base_g = test
+                                coords_g = coords_try
+                                try: log.info(f"GENERIC_FUZZ_CITY pref='{pref}' -> {base_g}")
+                                except Exception: pass
+                                break
                     if not coords_g:
                         for pref in ['н','к','ч','п','г','с','в','б','д','м','т','л']:
                             test_base = pref + base_g
@@ -4356,6 +4374,11 @@ UA_CITY_NORMALIZE = {
     ,'деражню':'деражня'
     ,'деражне':'деражня'
     ,'деражні':'деражня'
+    ,'корюківку':'корюківка'
+    ,'борзну':'борзна'
+    ,'жмеринку':'жмеринка'
+    ,'лосинівку':'лосинівка'
+    ,'ніжину':'ніжин'
 }
 
 # Static fallback coordinates (approximate city centers) to avoid relying solely on OpenCage.
@@ -4436,6 +4459,14 @@ CITY_COORDS = {
     ,'прилуки': (50.5931, 32.3878)
     ,'летичів': (49.3844, 27.6256)
     ,'деражня': (49.2667, 27.4333)
+    ,'корюківка': (51.7711, 32.2739)
+    ,'борзна': (51.2559, 32.4168)
+    ,'славутич': (51.5226, 30.7206)
+    ,'ніжин': (51.0480, 31.8869)
+    ,'лосинівка': (50.9003, 31.4725)
+    ,'васильків': (50.1777, 30.3133)
+    ,'жмеринка': (49.0353, 28.1126)
+    ,'тульчин': (48.6783, 28.8486)
 }
 
 OBLAST_CENTERS = {
