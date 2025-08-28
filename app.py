@@ -604,7 +604,12 @@ UA_CITY_NORMALIZE = {
     'згурівку':'згурівка',
     'олишівку':'олишівка',
     'ставище':'ставище',
-    'ставищею':'ставище'
+    'ставищею':'ставище',
+    # Харківщина multi-line normalization forms
+    'кегичівку':'кегичівка',
+    'кегичевку':'кегичівка',
+    'старому салтову':'старий салтів',
+    'старому салтові':'старий салтів'
 }
 
 # Static fallback coordinates (approximate city centers) to avoid relying solely on OpenCage.
@@ -828,6 +833,9 @@ CITY_COORDS = {
     ,'олишівка': (51.0725, 31.3525)
     ,'узин': (49.8216, 30.4567)
     ,'бориспіль': (50.3527, 30.9550)
+    # Added for multi-line Shahed parsing (user example)
+    ,'старий салтів': (50.0847, 36.7424)
+    ,'борки': (49.9380, 36.1260)
 }
 
 # Mapping city -> oblast stem (lowercase stems used earlier) for disambiguation when region already detected.
@@ -1416,6 +1424,8 @@ def process_message(text, mid, date_str, channel):
         import re
         if re.match(r'^[A-Za-zА-Яа-яЇїІіЄєҐґ\-ʼ`\s]+:\s*$', ln):
             oblast_hdr = ln.split(':')[0].strip().lower()
+            if oblast_hdr.startswith('на '):  # handle 'на харківщина:' header variant
+                oblast_hdr = oblast_hdr[3:].strip()
             if oblast_hdr and oblast_hdr[0] in ('е','є') and oblast_hdr.endswith('гівщина'):
                 # восстановить черниговщина -> чернігівщина (fix dropped leading Ч)
                 oblast_hdr = 'чернігівщина'
@@ -1663,6 +1673,50 @@ def process_message(text, mid, date_str, channel):
                     m4 = re.search(r'бпла.*?повз\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\!\?;]|$)', ln, re.IGNORECASE)
                     count = 1
                     city = m4.group(1) if m4 else None
+        # --- NEW: Shahed lines inside multi-line block (e.g. '2 шахеди на Старий Салтів', '1 шахед на Мерефа / Борки') ---
+        if not city:
+            m_sha = re.search(r'^(?:([0-9]+)\s*[xх]?\s*)?шахед(?:и|ів)?\s+на\s+(.+)$', ln.strip(), re.IGNORECASE)
+            if m_sha:
+                try:
+                    scount = int(m_sha.group(1) or '1')
+                except Exception:
+                    scount = 1
+                cities_part = m_sha.group(2)
+                raw_parts = re.split(r'\s*/\s*|\s*,\s*|\s*;\s*|\s+і\s+|\s+та\s+', cities_part, flags=re.IGNORECASE)
+                for ci in raw_parts:
+                    c_raw = ci.strip().strip('.').strip()
+                    if not c_raw or len(c_raw) < 2:
+                        continue
+                    cbase = normalize_city_name(c_raw)
+                    cbase = UA_CITY_NORMALIZE.get(cbase, cbase)
+                    coords_s = CITY_COORDS.get(cbase) or (SETTLEMENTS_INDEX.get(cbase) if SETTLEMENTS_INDEX else None)
+                    if not coords_s and oblast_hdr:
+                        combo_s = f"{cbase} {oblast_hdr}"
+                        coords_s = CITY_COORDS.get(combo_s) or (SETTLEMENTS_INDEX.get(combo_s) if SETTLEMENTS_INDEX else None)
+                    if not coords_s:
+                        for pref in ['с','м','к','б','г','ч','н','п','т','в','л']:
+                            test = pref + cbase
+                            coords_try = CITY_COORDS.get(test) or (SETTLEMENTS_INDEX.get(test) if SETTLEMENTS_INDEX else None)
+                            if not coords_try and oblast_hdr:
+                                combo_try = f"{test} {oblast_hdr}"
+                                coords_try = CITY_COORDS.get(combo_try) or (SETTLEMENTS_INDEX.get(combo_try) if SETTLEMENTS_INDEX else None)
+                            if coords_try:
+                                cbase = test; coords_s = coords_try; break
+                    if not coords_s:
+                        continue
+                    lat, lng = coords_s
+                    label = UA_CITY_NORMALIZE.get(cbase, cbase).title()
+                    per_count = scount if len(raw_parts) == 1 else 1
+                    if per_count > 1:
+                        label += f" ({per_count})"
+                    if oblast_hdr and oblast_hdr not in label.lower():
+                        label += f" [{oblast_hdr.title()}]"
+                    multi_city_tracks.append({
+                        'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
+                        'threat_type': 'shahed', 'text': ln[:500], 'date': date_str, 'channel': channel,
+                        'marker_icon': 'shahed.png', 'source_match': 'multiline_oblast_city_shahed', 'count': per_count
+                    })
+                continue
         if city:
             base = normalize_city_name(city)
             # Простейшая нормализация винительного падежа -> именительный ("велику димерку" -> "велика димерка")
