@@ -679,7 +679,9 @@ CITY_COORDS = {
     'Сміла': (49.2226, 31.8687),
     'Дружківка': (48.6208, 37.5272),
     'Богуслав': (49.5672, 30.8706),  # Київська обл.
+    'Переяслав': (50.0667, 31.4450),  # Київська обл.
     'бердичів': (49.8981, 28.5746),  # Житомирська обл.
+    'переяслав': (50.0667, 31.4450),  # Київська обл.
     'кагарлик': (49.5217, 30.8192),  # Київська обл.
     'миронівка': (49.6631, 31.0100),  # Київська обл.
     'дубровиця': (51.5767, 26.5992),  # Рівненська обл.
@@ -2435,6 +2437,31 @@ def process_message(text, mid, date_str, channel):
     for gform, base in CITY_GENITIVE:
         if gform in lower:
             lower = lower.replace(gform, base)
+    # --- UkraineAlarmSignal single-city alert pattern (bold, emoji, city (Oblast) ---
+    # Examples: **🛸 Бердичів (Житомирська обл.)** Загроза застосування БПЛА...
+    #           **🛸 Переяслав (Київська обл.)** Загроза застосування БПЛА...
+    if channel == 'UkraineAlarmSignal':
+        import re as _re_uas
+        m_uas = _re_uas.search(r'^[*＿]*[\W]{0,4}\s*([A-Za-zА-Яа-яЇїІіЄєҐґ\-ʼ`’ ]{3,40})\s*\(([^)]+)\)', text)
+        if m_uas:
+            city_raw = m_uas.group(1).strip()
+            oblast_raw = m_uas.group(2).lower()
+            city_norm = normalize_city_name(city_raw)
+            city_norm = UA_CITY_NORMALIZE.get(city_norm, city_norm)
+            coords = CITY_COORDS.get(city_norm) or (SETTLEMENTS_INDEX.get(city_norm) if SETTLEMENTS_INDEX else None)
+            if not coords and oblast_raw:
+                # attempt region-qualified key
+                oblast_core = oblast_raw.split()[0]
+                combo = f"{city_norm} {oblast_core}"
+                coords = CITY_COORDS.get(combo) or (SETTLEMENTS_INDEX.get(combo) if SETTLEMENTS_INDEX else None)
+            if coords:
+                lat,lng = coords
+                threat_type, icon = classify(text)
+                return [{
+                    'id': str(mid), 'place': city_raw, 'lat': lat, 'lng': lng,
+                    'threat_type': threat_type, 'text': text[:500], 'date': date_str,
+                    'channel': channel, 'marker_icon': icon, 'source_match': 'uas_single_city'
+                }]
     # Normalize some accusative oblast forms to nominative for matching
     lower = lower.replace('донеччину','донеччина').replace('сумщину','сумщина')
     text = lower  # downstream logic mostly uses lower-case comparisons
