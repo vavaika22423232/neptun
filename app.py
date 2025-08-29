@@ -2447,10 +2447,11 @@ def process_message(text, mid, date_str, channel):
     #           **🛸 Переяслав (Київська обл.)** Загроза застосування БПЛА...
     if channel == 'UkraineAlarmSignal':
         import re as _re_uas
-        # Pattern: optional bold **, emoji (🛸 👁️ etc), city, (Область ... обл.) anything after ) is message
-        # Accept both original_text and current text; prefer original_text to keep capitalization
         scan_src = original_text
-        m_uas = _re_uas.search(r'^\**\s*(?:[🛸👁️🚀🔥⚠️✅❗🔴🟡🟢]{1,3}\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-ʼ`’ ]{3,40}?)\s*\(([^)]+обл\.?)[^)]*\)\**', scan_src)
+        # Flexible pattern (no start anchor): optional bold **, optional emojis, city, ( <область/обл.> )
+        # Capture area descriptor ending in обл / область (case-insensitive)
+        uas_pattern = r'\*{0,3}\s*(?:[🛸👁️🚀🔥⚠️✅❗🔴🟡🟢]{1,3}\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-ʼ`’ ]{3,40}?)\s*\(([^)]{3,60}?(?:обл\.?|область))\)\*{0,3}'
+        m_uas = _re_uas.search(uas_pattern, scan_src, flags=_re_uas.IGNORECASE)
         if m_uas:
             city_raw = m_uas.group(1).strip()
             oblast_raw = m_uas.group(2).lower()
@@ -2458,7 +2459,7 @@ def process_message(text, mid, date_str, channel):
             city_norm = UA_CITY_NORMALIZE.get(city_norm, city_norm)
             coords = CITY_COORDS.get(city_norm) or (SETTLEMENTS_INDEX.get(city_norm) if SETTLEMENTS_INDEX else None)
             if not coords and oblast_raw:
-                # attempt region-qualified key
+                # attempt region-qualified key: take first word of oblast descriptor
                 oblast_core = oblast_raw.split()[0]
                 combo = f"{city_norm} {oblast_core}"
                 coords = CITY_COORDS.get(combo) or (SETTLEMENTS_INDEX.get(combo) if SETTLEMENTS_INDEX else None)
@@ -2470,6 +2471,12 @@ def process_message(text, mid, date_str, channel):
                     'threat_type': threat_type, 'text': original_text[:500], 'date': date_str,
                     'channel': channel, 'marker_icon': icon, 'source_match': 'uas_single_city'
                 }]
+            else:
+                try: log.info(f"UAS_NO_COORDS city='{city_raw}' norm='{city_norm}' oblast='{oblast_raw}'")
+                except Exception: pass
+        else:
+            try: log.debug(f"UAS_PATTERN_NO_MATCH mid={mid}")
+            except Exception: pass
     # Normalize some accusative oblast forms to nominative for matching
     lower = lower.replace('донеччину','донеччина').replace('сумщину','сумщина')
     text = lower  # downstream logic mostly uses lower-case comparisons
