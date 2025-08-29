@@ -2477,6 +2477,38 @@ def process_message(text, mid, date_str, channel):
         else:
             try: log.debug(f"UAS_PATTERN_NO_MATCH mid={mid}")
             except Exception: pass
+    # --- Generic fallback for bold / parenthetical single-city alerts (works for any channel) ---
+    # Targets messages like: **🛸 Бердичів (Житомирська обл.)** Загроза застосування БПЛА...
+    # Or without bold/emojis: Бердичів (Житомирська обл.) Загроза застосування БПЛА...
+    try:
+        import re as _re_fb
+        if any(kw in original_text for kw in ['Загроза застосування БПЛА','Активність розвідувальних БПЛА','Активність розвідувальних бпла']):
+            # Two-step: first find 'City (Область ... обл/область)'
+            pat_city = _re_fb.compile(r'(?:\*{0,3}\s*(?:[🛸👁️🚀🔥⚠️✅❗🔴🟡🟢]{1,3}\s*)?)'  # optional emojis
+                                       r'([A-Za-zА-Яа-яЇїІіЄєҐґ\-ʼ`’ ]{3,40}?)\s*'  # city
+                                       r'\(([^)]{3,80}?(?:обл\.?|область))\)', flags=_re_fb.IGNORECASE)
+            m_fb = pat_city.search(original_text)
+            if m_fb:
+                city_raw2 = m_fb.group(1).strip()
+                city_norm2 = UA_CITY_NORMALIZE.get(normalize_city_name(city_raw2), normalize_city_name(city_raw2))
+                coords2 = CITY_COORDS.get(city_norm2) or (SETTLEMENTS_INDEX.get(city_norm2) if SETTLEMENTS_INDEX else None)
+                if coords2:
+                    lat2,lng2 = coords2
+                    ltext = original_text.lower()
+                    if 'розвід' in ltext:
+                        threat_type2, icon2 = 'pvo','rozved.png'
+                    else:
+                        threat_type2, icon2 = 'shahed','shahed.png'
+                    return [{
+                        'id': str(mid), 'place': city_raw2.title(), 'lat': lat2, 'lng': lng2,
+                        'threat_type': threat_type2, 'text': original_text[:500], 'date': date_str,
+                        'channel': channel, 'marker_icon': icon2, 'source_match': 'single_city_parenthetical_fallback'
+                    }]
+                else:
+                    try: log.info(f"GEN_FALLBACK_NO_COORDS city='{city_raw2}' norm='{city_norm2}'")
+                    except Exception: pass
+    except Exception:
+        pass
     # Normalize some accusative oblast forms to nominative for matching
     lower = lower.replace('донеччину','донеччина').replace('сумщину','сумщина')
     text = lower  # downstream logic mostly uses lower-case comparisons
