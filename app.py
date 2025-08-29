@@ -2430,6 +2430,11 @@ def process_message(text, mid, date_str, channel):
     for lform, base_form in LOCATIVE_NORMALIZE.items():
         if lform in lower:
             lower = lower.replace(lform, base_form)
+    # Ensure original_text captured very early for any channel-specific parsing before lower-case modifications
+    try:
+        original_text  # may already exist if set earlier
+    except NameError:
+        original_text = text
     # City genitive -> nominative (subset) for settlement detection
     CITY_GENITIVE = [
         ('харкова','харків'), ('києва','київ'), ('львова','львів'), ('одеси','одеса'), ('дніпра','дніпро')
@@ -2442,7 +2447,10 @@ def process_message(text, mid, date_str, channel):
     #           **🛸 Переяслав (Київська обл.)** Загроза застосування БПЛА...
     if channel == 'UkraineAlarmSignal':
         import re as _re_uas
-        m_uas = _re_uas.search(r'^[*＿]*[\W]{0,4}\s*([A-Za-zА-Яа-яЇїІіЄєҐґ\-ʼ`’ ]{3,40})\s*\(([^)]+)\)', text)
+        # Pattern: optional bold **, emoji (🛸 👁️ etc), city, (Область ... обл.) anything after ) is message
+        # Accept both original_text and current text; prefer original_text to keep capitalization
+        scan_src = original_text
+        m_uas = _re_uas.search(r'^\**\s*(?:[🛸👁️🚀🔥⚠️✅❗🔴🟡🟢]{1,3}\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-ʼ`’ ]{3,40}?)\s*\(([^)]+обл\.?)[^)]*\)\**', scan_src)
         if m_uas:
             city_raw = m_uas.group(1).strip()
             oblast_raw = m_uas.group(2).lower()
@@ -2458,8 +2466,8 @@ def process_message(text, mid, date_str, channel):
                 lat,lng = coords
                 threat_type, icon = classify(text)
                 return [{
-                    'id': str(mid), 'place': city_raw, 'lat': lat, 'lng': lng,
-                    'threat_type': threat_type, 'text': text[:500], 'date': date_str,
+                    'id': str(mid), 'place': city_raw.title(), 'lat': lat, 'lng': lng,
+                    'threat_type': threat_type, 'text': original_text[:500], 'date': date_str,
                     'channel': channel, 'marker_icon': icon, 'source_match': 'uas_single_city'
                 }]
     # Normalize some accusative oblast forms to nominative for matching
