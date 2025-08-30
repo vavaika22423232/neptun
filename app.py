@@ -2467,6 +2467,11 @@ def process_message(text, mid, date_str, channel):
         # Capture area descriptor ending in обл / область (case-insensitive)
         uas_pattern = r'\*{0,3}\s*(?:[🛸👁️🚀🔥⚠️✅❗🔴🟡🟢]{1,3}\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-ʼ`’ ]{3,40}?)\s*\(([^)]{3,60}?(?:обл\.?|область))\)\*{0,3}'
         m_uas = _re_uas.search(uas_pattern, scan_src, flags=_re_uas.IGNORECASE)
+        if not m_uas:
+            # Secondary attempt: strip bold asterisks globally (some messages have hidden formatting around both ends)
+            scan_sanitized = scan_src.replace('**', '').replace('*', '')
+            if scan_sanitized != scan_src:
+                m_uas = _re_uas.search(uas_pattern, scan_sanitized, flags=_re_uas.IGNORECASE)
         if m_uas:
             city_raw = m_uas.group(1).strip()
             oblast_raw = m_uas.group(2).lower()
@@ -2510,6 +2515,12 @@ def process_message(text, mid, date_str, channel):
                                        r'([A-Za-zА-Яа-яЇїІіЄєҐґ\-ʼ`’ ]{3,40}?)\s*'  # city
                                        r'\(([^)]{3,80}?(?:обл\.?|область))\)', flags=_re_fb.IGNORECASE)
             m_fb = pat_city.search(original_text)
+            if not m_fb:
+                # Try again on asterisk-stripped variant (handles bold-wrapped segment cases)
+                _orig2 = original_text
+                _sans = _orig2.replace('**','').replace('*','')
+                if _sans != _orig2:
+                    m_fb = pat_city.search(_sans)
             if m_fb:
                 city_raw2 = m_fb.group(1).strip()
                 city_norm2 = UA_CITY_NORMALIZE.get(normalize_city_name(city_raw2), normalize_city_name(city_raw2))
