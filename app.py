@@ -2468,8 +2468,15 @@ def process_message(text, mid, date_str, channel):
         uas_pattern = r'\*{0,3}\s*(?:[🛸👁️🚀🔥⚠️✅❗🔴🟡🟢]{1,3}\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-ʼ`’ ]{3,40}?)\s*\(([^)]{3,60}?(?:обл\.?|область))\)\*{0,3}'
         m_uas = _re_uas.search(uas_pattern, scan_src, flags=_re_uas.IGNORECASE)
         if not m_uas:
-            # Secondary attempt: strip bold asterisks globally (some messages have hidden formatting around both ends)
+            # Secondary attempt: strip bold asterisks + zero-width + NBSP globally (handles hidden formatting)
             scan_sanitized = scan_src.replace('**', '').replace('*', '')
+            for _zw in ('\u200b','\u200c','\u200d','\ufeff','\u2060','\u00a0'):
+                if _zw in scan_sanitized:
+                    scan_sanitized = scan_sanitized.replace(_zw, ' ')
+            # Collapse multiple spaces
+            if '  ' in scan_sanitized:
+                import re as _re_csp
+                scan_sanitized = _re_csp.sub(r'\s{2,}',' ', scan_sanitized)
             if scan_sanitized != scan_src:
                 m_uas = _re_uas.search(uas_pattern, scan_sanitized, flags=_re_uas.IGNORECASE)
         if m_uas:
@@ -2516,9 +2523,15 @@ def process_message(text, mid, date_str, channel):
                                        r'\(([^)]{3,80}?(?:обл\.?|область))\)', flags=_re_fb.IGNORECASE)
             m_fb = pat_city.search(original_text)
             if not m_fb:
-                # Try again on asterisk-stripped variant (handles bold-wrapped segment cases)
+                # Try again on asterisk / zero-width stripped variant (handles bold-wrapped + hidden chars cases)
                 _orig2 = original_text
                 _sans = _orig2.replace('**','').replace('*','')
+                for _zw in ('\u200b','\u200c','\u200d','\ufeff','\u2060','\u00a0'):
+                    if _zw in _sans:
+                      _sans = _sans.replace(_zw, ' ')
+                if '  ' in _sans:
+                    import re as _re_fbsp
+                    _sans = _re_fbsp.sub(r'\s{2,}',' ', _sans)
                 if _sans != _orig2:
                     m_fb = pat_city.search(_sans)
             if m_fb:
