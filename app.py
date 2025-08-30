@@ -2448,6 +2448,20 @@ def process_message(text, mid, date_str, channel):
     if channel == 'UkraineAlarmSignal':
         import re as _re_uas
         scan_src = original_text
+        # If message contains technical prefix with tabs (timestamp\tChannel\tMessage...), take the last segment as primary scan source
+        if '\t' in scan_src:
+            parts_tab = [p for p in scan_src.split('\t') if p.strip()]
+            if parts_tab:
+                scan_src_core = parts_tab[-1].strip()
+                # If core still lacks '(' and 'обл', keep original
+                if '(' in scan_src_core and ('обл' in scan_src_core.lower() or 'область' in scan_src_core.lower()):
+                    scan_src = scan_src_core
+        # Also trim any leading datetime stamp pattern before first '**'
+        if '**' in scan_src:
+            pre, _, tail = scan_src.partition('**')
+            # If pre looks like a datetime stamp (digits, dashes, colons, spaces), discard it and re-add the leading '**'
+            if pre and _re_uas.fullmatch(r'[0-9:\-\s]{8,}', pre):
+                scan_src = '**' + tail
         # Flexible pattern (no start anchor): optional bold **, optional emojis, city, ( <область/обл.> )
         # Capture area descriptor ending in обл / область (case-insensitive)
         uas_pattern = r'\*{0,3}\s*(?:[🛸👁️🚀🔥⚠️✅❗🔴🟡🟢]{1,3}\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-ʼ`’ ]{3,40}?)\s*\(([^)]{3,60}?(?:обл\.?|область))\)\*{0,3}'
