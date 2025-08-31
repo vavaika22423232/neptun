@@ -634,16 +634,15 @@ def _load_name_region_map():
 _load_name_region_map()
 
 def ensure_city_coords(name: str):
-    """Lazy attempt to enrich CITY_COORDS / SETTLEMENTS_INDEX for a settlement name using region hints + OpenCage.
-    If OpenCage unavailable, fallback to oblast center (approx) without storing (avoid polluting precise dict).
-    """
+    """Return (lat,lng,approx_bool) for settlement, performing lazy geocoding.
+    approx_bool True means we used oblast center fallback (low precision)."""
     if not name:
         return None
     n = name.strip().lower()
     if n in CITY_COORDS:
-        return CITY_COORDS[n]
+        lat,lng = CITY_COORDS[n]; return (lat,lng,False)
     if 'SETTLEMENTS_INDEX' in globals() and n in (globals().get('SETTLEMENTS_INDEX') or {}):
-        return globals()['SETTLEMENTS_INDEX'][n]
+        lat,lng = globals()['SETTLEMENTS_INDEX'][n]; return (lat,lng,False)
     region_hint = NAME_REGION_MAP.get(n)
     # Attempt precise geocode if API key
     if region_hint and OPENCAGE_API_KEY:
@@ -657,7 +656,7 @@ def ensure_city_coords(name: str):
                     globals()['SETTLEMENTS_INDEX'][n] = coords
             except Exception:
                 pass
-            return coords
+            return (coords[0], coords[1], False)
     # Fallback: try geocode without region if key exists
     if OPENCAGE_API_KEY:
         coords = geocode_opencage(f"{n} Україна")
@@ -668,13 +667,13 @@ def ensure_city_coords(name: str):
                     globals()['SETTLEMENTS_INDEX'][n] = coords
             except Exception:
                 pass
-            return coords
+            return (coords[0], coords[1], False)
     # Approximate fallback: oblast center (if region hint matches an oblast name substring)
     if region_hint:
         reg_low = region_hint.lower()
         for oblast_key, (olat, olng) in OBLAST_CENTERS.items():
             if oblast_key in reg_low:
-                return (olat, olng)
+                return (olat, olng, True)
     return None
 
 # Consolidated static fallback coordinates
@@ -1384,8 +1383,15 @@ def process_message(text, mid, date_str, channel):
                     if not coords and 'SETTLEMENTS_INDEX' in globals():
                         idx = globals().get('SETTLEMENTS_INDEX') or {}
                         coords = idx.get(norm)
+                    approx_flag = False
                     if not coords:
-                        coords = ensure_city_coords(norm)
+                        enriched = ensure_city_coords(norm)
+                        if enriched:
+                            if isinstance(enriched, tuple) and len(enriched) == 3:
+                                coords = (enriched[0], enriched[1])
+                                approx_flag = enriched[2]
+                            else:
+                                coords = enriched
                     if coords:
                         l = orig.lower()
                         if any(ph in l for ph in ['повідомляють про вибух','повідомлено про вибух','зафіксовано вибух','зафіксовано вибухи','фіксація вибух','фіксують вибух',' вибух.',' вибухи.']):
@@ -1399,11 +1405,14 @@ def process_message(text, mid, date_str, channel):
                         else:
                             threat, icon = classify(orig)
                         lat,lng = coords
-                        return [{
+                        track = {
                             'id': str(mid), 'place': city_candidate.title(), 'lat': lat, 'lng': lng,
                             'threat_type': threat, 'text': orig[:500], 'date': date_str, 'channel': channel,
                             'marker_icon': icon, 'source_match': 'single_city_simple_early'
-                        }]
+                        }
+                        if approx_flag:
+                            track['approx'] = True
+                        return [track]
     except Exception:
         pass
     # Directional multi-region (e.g. "група БпЛА на Донеччині курсом на Дніпропетровщину") -> list-only, no fixed marker
