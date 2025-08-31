@@ -1438,10 +1438,7 @@ def geocode_opencage(place: str):
 
 def process_message(text, mid, date_str, channel):
     # DEBUG TRACE START (temporary)
-    try:
-        print(f"[DBG] enter process_message mid={mid} ch={channel} txt_snip={text[:60]!r}")
-    except Exception:
-        pass
+    # (debug tracing removed)
     original_text = text
     # Simple early single-city pattern (emoji/bold tolerant)
     try:
@@ -1454,13 +1451,11 @@ def process_message(text, mid, date_str, channel):
             san = ' '.join(san.split())
             # remove leading non-letters (emojis/punct) except spaces
             san2 = _re_sc.sub(r'^[^A-Za-zА-Яа-яЇїІіЄєҐґ]+','', san)
-            try: print(f"[DBG] early_city head={head!r} san={san!r} san2={san2!r}")
-            except Exception: pass
+            # debug removed
             par = san2.find('(')
             if par>1:
                 city_candidate = san2[:par].strip()
-                try: print(f"[DBG] early_city cand={city_candidate!r} par={par}")
-                except Exception: pass
+                # debug removed
                 if 2 <= len(city_candidate) <= 40 and (' ' not in city_candidate or len(city_candidate.split())<=3):
                     base = city_candidate.lower().replace('ʼ',"'").replace('’',"'").replace('`',"'")
                     # use the local alias _re_sc to avoid NameError (re not imported in this scope)
@@ -1480,19 +1475,16 @@ def process_message(text, mid, date_str, channel):
                         else:
                             threat, icon = classify(original_text)
                         lat,lng = coords
-                        try: print(f"[DBG] early_city_return city={city_candidate!r} threat={threat} icon={icon} norm={norm}")
-                        except Exception: pass
+                        # debug removed
                         return [{
                             'id': str(mid), 'place': city_candidate.title(), 'lat': lat, 'lng': lng,
                             'threat_type': threat, 'text': original_text[:500], 'date': date_str,
                             'channel': channel, 'marker_icon': icon, 'source_match': 'single_city_simple_early'
                         }]
                     else:
-                        try: print(f"[DBG] early_city_no_coords norm={norm}")
-                        except Exception: pass
+                        pass
             else:
-                try: print(f"[DBG] early_city_no_par san2={san2!r}")
-                except Exception: pass
+                pass
     except Exception:
         pass
     # If test mode wants only this function, allow early return path after basic classification.
