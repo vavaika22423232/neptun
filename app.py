@@ -601,6 +601,13 @@ UA_CITY_NORMALIZE = {
     'ніжину':'ніжин','межову':'межова','святогірську':'святогірськ'
 }
 
+# Add accusative / genitive / variant forms for reported missing settlements
+UA_CITY_NORMALIZE.update({
+    'городню':'городня','городні':'городня','городне':'городня','городни':'городня',
+    'кролевця':'кролевець','кролевцу':'кролевець','кролевце':'кролевець',
+    'дубовʼязівку':'дубовʼязівка','дубовязівку':'дубовʼязівка','дубовязовку':'дубовʼязівка','дубовязовка':'дубовʼязівка'
+})
+
 # Donetsk front city normalization (latin/ukr vowel variants)
 UA_CITY_NORMALIZE['лиман'] = 'ліман'
 
@@ -730,6 +737,8 @@ CITY_COORDS = {
         'безлюдівка': (49.8872, 36.2731), 'рогань': (49.9342, 36.4942), 'савинці(харківщина)': (49.6272, 36.9781),
         'українка': (50.1447, 30.7381), 'царичанка': (48.9767, 34.3772), 'ріпки': (51.8122, 31.0817), 'михайло-коцюбинське': (51.5833, 31.1167),
         'макошине': (51.6275, 32.2731), 'парафіївка': (50.9833, 32.2833), 'дубовʼязівка': (51.1833, 33.7833), 'боромля': (50.7500, 34.9833),
+    # Newly added (missing in earlier dictionary lookups reported by user)
+    'городня': (51.8892, 31.6011),
         'жукин': (50.7800, 30.6820), 'велика димерка': (50.8140, 30.8080), 'велику димерку': (50.8140, 30.8080), 'вишгород': (50.5840, 30.4890),
         'ржищів': (49.9719, 31.0500), 'вишеньки': (50.2987, 30.6445), 'жуляни': (50.4017, 30.4519), 'троєщина': (50.5130, 30.6030),
         'троєщину': (50.5130, 30.6030), 'конча-заспа': (50.2650, 30.5760), 'любар': (50.0500, 27.7500), 'старий остропіль': (49.6503, 27.2291),
@@ -2111,6 +2120,38 @@ def process_message(text, mid, date_str, channel):
                             'id': str(mid), 'text': text[:600], 'date': date_str, 'channel': channel,
                             'list_only': True, 'source_match': 'region_direction_multi'
                         }]
+    except Exception:
+        pass
+    # Comparative directional relative to a city ("північніше Городні", "східніше Кролевця") -> use base city location
+    try:
+        import re as _re_rel
+        low_txt = text.lower()
+        # pattern captures direction word + city morph form
+        m_rel = _re_rel.search(r'(північніше|південніше|східніше|західніше)\s+([a-zа-яіїєґ\'ʼ’`\-]{3,40})', low_txt)
+        if m_rel:
+            raw_city = m_rel.group(2)
+            # normalize apostrophes
+            raw_city = raw_city.replace('\u02bc',"'").replace('ʼ',"'").replace('’',"'").replace('`',"'")
+            base = UA_CITY_NORMALIZE.get(raw_city, raw_city)
+            coords = CITY_COORDS.get(base)
+            if not coords and 'SETTLEMENTS_INDEX' in globals():
+                idx = globals().get('SETTLEMENTS_INDEX') or {}
+                coords = idx.get(base)
+            if not coords:
+                enriched = ensure_city_coords(base)
+                if enriched:
+                    if isinstance(enriched, tuple) and len(enriched)==3:
+                        coords = (enriched[0], enriched[1])
+                    else:
+                        coords = enriched
+            if coords:
+                lat,lng = coords
+                threat_type, icon = classify(text)
+                return [{
+                    'id': str(mid), 'place': base.title(), 'lat': lat, 'lng': lng,
+                    'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': 'relative_direction_city'
+                }]
     except Exception:
         pass
     # Region directional segments specifying part of oblast ("на сході Дніпропетровщини") possibly multiple in one line

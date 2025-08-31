@@ -1549,6 +1549,18 @@
         };
       } catch(e) {}
       setInterval(updateMarkers, 10000);
+      // --- Re-cluster / re-render markers on zoom (debounced) so fast-mode buckets follow zoom level ---
+      (function(){
+        let zoomRedrawTimer=null; let lastZoom=map.getZoom();
+        function onZoomEnd(){
+          const z = map.getZoom();
+            if(z===lastZoom) return; // no change
+            lastZoom = z;
+            if(zoomRedrawTimer){ clearTimeout(zoomRedrawTimer); }
+            zoomRedrawTimer = setTimeout(()=>{ try { updateMarkers(); } catch(e){} }, 180);
+        }
+        map.on('zoomend', onZoomEnd);
+      })();
     }
   function openWarn(){const o=document.getElementById('warnModal'); if(o) o.style.display='flex';}
   function closeWarn(){const o=document.getElementById('warnModal'); if(o) o.style.display='none';}
