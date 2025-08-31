@@ -1192,14 +1192,12 @@
         crossOrigin:true,
         attribution:''
       }).addTo(map);
-      // --- Darken all non-Ukraine territory (world mask with Ukraine hole) ---
-      try {
-        // Large world rectangle (outer ring)
-        const worldRing = [
-          [85,-180],[85,180],[-85,180],[-85,-180]
-        ];
-        // Simplified Ukraine border (inner ring / hole)
-        const ukraineRing = [
+      // --- Darken all non-Ukraine territory (dynamic mask loading precise border if available) ---
+      let worldMaskLayer = null;
+      async function initWorldMask(){
+        const worldRing = [ [85,-180],[85,180],[-85,180],[-85,-180] ];
+        // Fallback simplified Ukraine ring (used until precise GeoJSON loads)
+        const fallbackRing = [
           [52.37,23.60],[51.90,23.60],[51.90,24.00],[51.50,24.50],[51.90,25.30],
           [51.90,26.00],[51.60,26.60],[51.50,27.50],[51.60,28.20],[51.30,29.20],
           [51.60,30.60],[52.30,31.80],[52.10,32.70],[52.40,34.40],[52.30,35.90],
@@ -1209,21 +1207,49 @@
           [48.47,27.53],[48.27,26.86],[47.74,26.63],[47.85,24.96],[48.15,23.53],
           [48.62,22.57],[49.90,22.09],[51.94,22.93],[52.37,23.60]
         ];
-        // Polygon with a hole: outer world ring then inner Ukraine ring (hole)
-        const mask = L.polygon([worldRing, ukraineRing], {
-          stroke:false,
-          fill:true,
-          fillColor:'#0f172a',
-          fillOpacity:0.70,
-          interactive:false,
-          className:'world-mask'
-        }).addTo(map);
-        // Ensure mask stays beneath markers but above base tiles
-        if(mask && mask.getElement){
-          const el = mask.getElement();
-          if(el){ el.style.pointerEvents='none'; el.style.mixBlendMode='multiply'; }
+        function drawMask(rings){
+          if(worldMaskLayer){ worldMaskLayer.remove(); worldMaskLayer=null; }
+            worldMaskLayer = L.polygon([worldRing, ...rings], {
+              stroke:false,
+              fill:true,
+              fillColor:'#0f172a',
+              fillOpacity:0.70,
+              interactive:false,
+              className:'world-mask'
+            }).addTo(map);
+            const el = worldMaskLayer.getElement();
+            if(el){ el.style.pointerEvents='none'; el.style.mixBlendMode='multiply'; }
         }
-      } catch(e) { console.warn('Mask layer failed', e); }
+        // Initial quick mask
+        drawMask([fallbackRing]);
+        // Try precise GeoJSON (place file at /static/ukraine_border.geojson)
+        try {
+          const resp = await fetch('/static/geoBoundaries-UKR-ADM0_simplified.geojson');
+          if(resp.ok){
+            const gj = await resp.json();
+            // Expect first feature Polygon or MultiPolygon in lon/lat
+            const feats = (gj.features||[]);
+            if(feats.length){
+              const geom = feats[0].geometry;
+              let rings=[];
+              if(geom.type==='Polygon'){
+                rings = geom.coordinates.map(r=> r.map(([lng,lat])=>[lat,lng]));
+              } else if(geom.type==='MultiPolygon'){
+                // Merge outer boundaries; treat each outer ring as separate hole (rare) or pick largest
+                const polys = geom.coordinates.map(poly=> poly[0]); // first ring of each polygon
+                // Choose largest by number of points (likely mainland) and treat others as islands (append too)
+                polys.sort((a,b)=>b.length-a.length);
+                rings = polys.map(r=> r.map(([lng,lat])=>[lat,lng]));
+              }
+              if(rings.length){
+                // Use only first ring as hole if performance needed; or all rings
+                drawMask(rings.slice(0,3));
+              }
+            }
+          }
+        } catch(e){ console.warn('Precise border load failed, using fallback ring', e); }
+      }
+      initWorldMask();
       // ---- Presence (active users) ----
       const uid = localStorage.getItem('presence_id') || (self.crypto?.randomUUID ? crypto.randomUUID() : (Date.now()+""+Math.random()).replace(/\D/g,''));
       localStorage.setItem('presence_id', uid);
