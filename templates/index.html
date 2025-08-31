@@ -772,7 +772,12 @@
       #commentSubmit:hover{background:#1d4ed8;} #commentSubmit:active{transform:translateY(1px);} #commentSubmit:disabled{background:#334155;cursor:default;box-shadow:none;}
       .comment-hint{font-size:.55rem;opacity:.55;white-space:nowrap;}
       .comment-empty{padding:14px 6px;font-size:.65rem;opacity:.55;text-align:center;}
-  .comments-fab{position:fixed;bottom:16px;right:16px;width:56px;height:56px;border:none;border-radius:50%;background:#2563eb;color:#fff;font-size:24px;font-weight:600;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 8px 20px -6px rgba(37,99,235,.6);z-index:521;transition:background .25s, transform .18s;}
+  .comments-fab{position:fixed;bottom:90px;right:18px;width:56px;height:56px;border:none;border-radius:50%;background:#2563eb;color:#fff;font-size:24px;font-weight:600;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 8px 20px -6px rgba(37,99,235,.6);z-index:1299;transition:background .25s, transform .18s;}
+  /* On very wide screens keep separation; adjust for medium viewports */
+  @media (max-width:1400px){ .comments-fab{ bottom:92px; right:18px; } }
+  /* Mobile stacking already handled; ensure extra gap above support button */
+  @media (max-width:900px){ .comments-fab{ bottom:4.6rem; right:1rem; } }
+  @media (max-width:520px){ .comments-fab{ bottom:4.9rem; } }
   .comments-fab.hidden{display:none !important;}
   .comments-fab:hover{background:#1d4ed8;} .comments-fab:active{transform:translateY(1px);} .comments-fab:focus{outline:2px solid #93c5fd;outline-offset:2px;}
   @media (max-width:900px){ .comments-card{right:8px;left:auto;width:86%;max-width:420px;bottom:82px;max-height:55vh;} .comments-card.collapsed{display:none;} }
