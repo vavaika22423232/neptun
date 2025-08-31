@@ -601,6 +601,9 @@ UA_CITY_NORMALIZE = {
     'ніжину':'ніжин','межову':'межова','святогірську':'святогірськ'
 }
 
+# Donetsk front city normalization (latin/ukr vowel variants)
+UA_CITY_NORMALIZE['лиман'] = 'ліман'
+
 # ---------------- Dynamic settlement name → region map (from city_ukraine.json, no coords there) ---------------
 NAME_REGION_MAP = {}
 
