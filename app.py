@@ -601,6 +601,82 @@ UA_CITY_NORMALIZE = {
     'ніжину':'ніжин','межову':'межова'
 }
 
+# ---------------- Dynamic settlement name → region map (from city_ukraine.json, no coords there) ---------------
+NAME_REGION_MAP = {}
+
+def _load_name_region_map():
+    global NAME_REGION_MAP
+    if NAME_REGION_MAP:
+        return
+    path = 'city_ukraine.json'
+    if not os.path.exists(path):
+        return
+    try:
+        with open(path,'r',encoding='utf-8') as f:
+            data = json.load(f)
+        added = 0
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get('object_name') or '').strip().lower()
+            region = str(item.get('region') or '').strip().title()
+            if not name or len(name) < 2:
+                continue
+            # Skip obviously generic words
+            if name in NAME_REGION_MAP:
+                continue
+            NAME_REGION_MAP[name] = region
+            added += 1
+        log.info(f"Loaded NAME_REGION_MAP entries: {added}")
+    except Exception as e:
+        log.warning(f"Failed load city_ukraine.json names: {e}")
+
+_load_name_region_map()
+
+def ensure_city_coords(name: str):
+    """Lazy attempt to enrich CITY_COORDS / SETTLEMENTS_INDEX for a settlement name using region hints + OpenCage.
+    If OpenCage unavailable, fallback to oblast center (approx) without storing (avoid polluting precise dict).
+    """
+    if not name:
+        return None
+    n = name.strip().lower()
+    if n in CITY_COORDS:
+        return CITY_COORDS[n]
+    if 'SETTLEMENTS_INDEX' in globals() and n in (globals().get('SETTLEMENTS_INDEX') or {}):
+        return globals()['SETTLEMENTS_INDEX'][n]
+    region_hint = NAME_REGION_MAP.get(n)
+    # Attempt precise geocode if API key
+    if region_hint and OPENCAGE_API_KEY:
+        q = f"{n} {region_hint} Україна"
+        coords = geocode_opencage(q)
+        if coords:
+            # store in both for fast reuse
+            CITY_COORDS[n] = coords
+            try:
+                if 'SETTLEMENTS_INDEX' in globals():
+                    globals()['SETTLEMENTS_INDEX'][n] = coords
+            except Exception:
+                pass
+            return coords
+    # Fallback: try geocode without region if key exists
+    if OPENCAGE_API_KEY:
+        coords = geocode_opencage(f"{n} Україна")
+        if coords:
+            CITY_COORDS[n] = coords
+            try:
+                if 'SETTLEMENTS_INDEX' in globals():
+                    globals()['SETTLEMENTS_INDEX'][n] = coords
+            except Exception:
+                pass
+            return coords
+    # Approximate fallback: oblast center (if region hint matches an oblast name substring)
+    if region_hint:
+        reg_low = region_hint.lower()
+        for oblast_key, (olat, olng) in OBLAST_CENTERS.items():
+            if oblast_key in reg_low:
+                return (olat, olng)
+    return None
+
 # Consolidated static fallback coordinates
 CITY_COORDS = {
         # Core cities
@@ -1308,6 +1384,8 @@ def process_message(text, mid, date_str, channel):
                     if not coords and 'SETTLEMENTS_INDEX' in globals():
                         idx = globals().get('SETTLEMENTS_INDEX') or {}
                         coords = idx.get(norm)
+                    if not coords:
+                        coords = ensure_city_coords(norm)
                     if coords:
                         l = orig.lower()
                         if any(ph in l for ph in ['повідомляють про вибух','повідомлено про вибух','зафіксовано вибух','зафіксовано вибухи','фіксація вибух','фіксують вибух',' вибух.',' вибухи.']):
@@ -1845,6 +1923,8 @@ def process_message(text, mid, date_str, channel):
                 coords = CITY_COORDS.get(combo)
                 if not coords and SETTLEMENTS_INDEX:
                     coords = SETTLEMENTS_INDEX.get(combo)
+            if not coords:
+                coords = ensure_city_coords(base)
             if coords:
                 lat, lng = coords
                 threat_type, icon = 'shahed', 'shahed.png'
@@ -3654,6 +3734,7 @@ def process_message(text, mid, date_str, channel):
                     coords = region_enhanced_coords(norm_city)
                     if not coords:
                         log.debug(f'course_target_lookup miss city={norm_city} mid={mid} line={line.strip()[:120]!r} region_hint={region_hint_global}')
+                        coords = ensure_city_coords(norm_city)
                     # Oblast stem disambiguation: if global hint exists and known expected stem differs, re-query with region-qualified geocode
                     if coords and region_hint_global and norm_city in CITY_TO_OBLAST:
                         expected_stem = CITY_TO_OBLAST[norm_city]
