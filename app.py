@@ -815,6 +815,41 @@ KHARKIV_CITY_COORDS = {
 for _kh_name, _kh_coords in KHARKIV_CITY_COORDS.items():
     CITY_COORDS.setdefault(_kh_name, _kh_coords)
 
+# Chernihiv Oblast cities / key settlements (міста та важливі селища)
+# Many base ones already in CITY_COORDS (чернігів, ніжин, прилуки, новгород-сіверський, коростень (інша обл.), корюківка maybe missing).
+CHERNIHIV_CITY_COORDS = {
+    'ніжин': (51.0480, 31.8860),  # already present
+    'прилуки': (50.5931, 32.3878),  # already present
+    'новгород-сіверський': (51.9874, 33.2620),  # already present
+    'корюківка': (51.7725, 32.2494),
+    'борзна': (51.2542, 32.4192),  # already present
+    'батиївка?': (51.4982, 31.2893),  # placeholder if appears; else remove
+    'менa': (51.5211, 32.2147),  # variant with latin a? (typo guard)
+    'м ена': (51.5211, 32.2147),  # spacing anomaly fallback
+    'семенівка(чернігівщина)': (52.1833, 32.5833),  # north settlement (if referenced)
+    'семенівка чернігівська': (52.1833, 32.5833),
+    'семенівка': (52.1833, 32.5833),  # might conflict with Poltava one; context disambiguation may be needed
+    'сновськ': (51.8200, 31.9500),
+    'короп': (51.5667, 32.9667),
+    'іхня': (51.0722, 32.3931),  # misspelling variant of ічня
+    'ичня': (51.0722, 32.3931),  # alt transliteration
+    'глухів?': (51.6781, 33.9169),  # actually Sumy oblast; placeholder if mis-tag appears
+    'сосниця': (51.5236, 32.4953),  # already present
+    'конотоп?': (51.2417, 33.2022),  # Sumy oblast - guard only
+    'остер': (50.9481, 30.8831),  # already present
+    'ніжину': (51.0480, 31.8860),  # accusative
+    'борзні': (51.2542, 32.4192),
+    'коропі': (51.5667, 32.9667),
+    'корюківці': (51.7725, 32.2494),
+    'корюківку': (51.7725, 32.2494),
+    'сновську': (51.8200, 31.9500),
+    'семенівці': (52.1833, 32.5833),
+    'семенівку': (52.1833, 32.5833),
+}
+
+for _ch_name, _ch_coords in CHERNIHIV_CITY_COORDS.items():
+    CITY_COORDS.setdefault(_ch_name, _ch_coords)
+
 # Mapping city -> oblast stem (lowercase stems used earlier) for disambiguation when region already detected.
 # Minimal subset; extend as needed.
 CITY_TO_OBLAST = {
