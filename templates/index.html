@@ -716,12 +716,73 @@
       </div>
     </div>
 
+    <!-- Anonymous comments widget -->
+    <div class="comments-card" id="commentsCard" aria-label="Анонімні коментарі">
+      <div class="comments-header">Коментарі <span id="commentsCount" class="comments-count"></span></div>
+      <div class="comments-list" id="commentsList" role="list" aria-live="polite"></div>
+      <form id="commentForm" class="comment-form" autocomplete="off" novalidate>
+        <textarea id="commentText" maxlength="800" placeholder="Напишіть короткий коментар..." aria-label="Текст коментаря" required></textarea>
+        <div class="comment-actions">
+          <button type="submit" id="commentSubmit">Надіслати</button>
+          <div class="comment-hint" id="commentHint">Анонімно • без реєстрації</div>
+        </div>
+      </form>
+    </div>
+
   </div>
   <!-- Leaflet (OpenStreetMap) JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <!-- Turf.js for geometry operations -->
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
   <script>
+    // --- Comments UI styles inject ---
+    (function(){
+      if(document.getElementById('commentsStyles')) return;
+      const css = `
+      .comments-card{position:fixed;bottom:14px;right:14px;width:320px;max-height:60vh;display:flex;flex-direction:column;background:rgba(15,23,42,.88);backdrop-filter:blur(10px);border:1px solid #1e293b;border-radius:18px;box-shadow:0 12px 34px -10px rgba(0,0,0,.55);font-family:Inter,system-ui,sans-serif;color:#f1f5f9;z-index:520;}
+      .comments-header{padding:10px 14px;font-weight:600;font-size:.9rem;letter-spacing:.5px;display:flex;align-items:center;gap:6px;}
+      .comments-count{font-weight:500;font-size:.65rem;background:#334155;color:#e2e8f0;padding:2px 6px 3px;border-radius:12px;}
+      .comments-list{overflow-y:auto;padding:4px 10px 10px;scrollbar-width:thin;display:flex;flex-direction:column;gap:8px;}
+      .comments-list::-webkit-scrollbar{width:8px;} .comments-list::-webkit-scrollbar-track{background:transparent;} .comments-list::-webkit-scrollbar-thumb{background:#334155;border-radius:4px;}
+      .comment-item{background:#1e293b;border:1px solid #334155;border-radius:14px;padding:8px 10px;font-size:.72rem;line-height:1.3;position:relative;animation:fadeIn .4s ease both;white-space:pre-wrap;word-wrap:break-word;}
+      .comment-item:hover{border-color:#3b82f6;}
+      .comment-time{opacity:.55;font-size:.55rem;margin-top:4px;letter-spacing:.3px;}
+      @keyframes fadeIn{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:translateY(0);}}
+      .comment-form{border-top:1px solid #243045;padding:8px 10px 10px;display:flex;flex-direction:column;gap:6px;}
+      .comment-form textarea{resize:vertical;min-height:60px;max-height:180px;background:#0f172a;border:1px solid #334155;border-radius:12px;padding:8px 10px;font-size:.72rem;line-height:1.35;color:#f1f5f9;font-family:inherit;outline:none;box-shadow:0 0 0 0 rgba(59,130,246,0);transition:border-color .2s, box-shadow .2s;}
+      .comment-form textarea:focus{border-color:#3b82f6;box-shadow:0 0 0 2px rgba(59,130,246,.35);}
+      .comment-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+      #commentSubmit{background:#2563eb;border:none;color:#fff;font-weight:600;font-size:.7rem;padding:8px 16px;border-radius:12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;letter-spacing:.5px;box-shadow:0 6px 18px -6px rgba(37,99,235,.55);transition:background .2s, transform .15s;}
+      #commentSubmit:hover{background:#1d4ed8;} #commentSubmit:active{transform:translateY(1px);} #commentSubmit:disabled{background:#334155;cursor:default;box-shadow:none;}
+      .comment-hint{font-size:.55rem;opacity:.55;white-space:nowrap;}
+      .comment-empty{padding:14px 6px;font-size:.65rem;opacity:.55;text-align:center;}
+      @media (max-width:900px){ .comments-card{right:8px;left:8px;width:auto;bottom:8px;max-height:50vh;} }
+      `;
+      const st=document.createElement('style'); st.id='commentsStyles'; st.textContent=css; document.head.appendChild(st);
+    })();
+    // --- Comments logic ---
+    let commentsPolling=null; let commentsBusy=false;
+    async function fetchComments(){
+      try { const r= await fetch('/comments'); const j= await r.json(); if(!j.ok) return; renderComments(j.items||[]);} catch(e){}
+    }
+    function renderComments(arr){
+      const list = document.getElementById('commentsList'); const cnt=document.getElementById('commentsCount'); if(!list) return;
+      if(!arr.length){ list.innerHTML='<div class="comment-empty">Немає коментарів</div>'; if(cnt) cnt.textContent='0'; return; }
+      if(cnt) cnt.textContent=arr.length;
+      list.innerHTML = arr.map(c=>`<div class='comment-item' role='listitem'>${escapeHtml(c.text)}<div class='comment-time'>${c.ts}</div></div>`).join('');
+      list.scrollTop = list.scrollHeight;
+    }
+    function escapeHtml(s){ return s? s.replace(/[&<>"']/g, ch=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch])):''; }
+    function setupCommentForm(){
+      const form=document.getElementById('commentForm'); const ta=document.getElementById('commentText'); const btn=document.getElementById('commentSubmit'); if(!form) return;
+      form.addEventListener('submit', async e=>{
+        e.preventDefault(); if(commentsBusy) return; const text=(ta.value||'').trim(); if(!text) return; commentsBusy=true; btn.disabled=true; const orig=btn.textContent; btn.textContent='Надсилання…';
+        try { const r= await fetch('/comments',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text})}); const j= await r.json(); if(j.ok){ ta.value=''; fetchComments(); btn.textContent='Готово'; setTimeout(()=>{btn.textContent=orig;},1200);} else { btn.textContent='Помилка'; setTimeout(()=>{btn.textContent=orig;},1400);} }
+        catch(err){ btn.textContent='Збій'; setTimeout(()=>{btn.textContent=orig;},1400);} finally { commentsBusy=false; btn.disabled=false; }
+      });
+    }
+    function startComments(){ if(commentsPolling) return; fetchComments(); commentsPolling=setInterval(fetchComments, 10000); }
+    document.addEventListener('DOMContentLoaded', ()=>{ setupCommentForm(); startComments(); });
     // Disclaimer persistence
     function hideDisclaimer(){
       const el = document.getElementById('disclaimerBar');

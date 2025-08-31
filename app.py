@@ -67,6 +67,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(mess
 log = logging.getLogger(__name__)
 
 app = Flask(__name__)
+COMMENTS = []  # simple in-memory list of {'id':..., 'text':..., 'ts': iso}
+COMMENTS_MAX = 500
 ACTIVE_VISITORS = {}
 ACTIVE_LOCK = threading.Lock()
 ACTIVE_TTL = 70  # seconds of inactivity before a visitor is dropped
@@ -3783,6 +3785,39 @@ def start_session_watcher():
 def index():
     # Leaflet version of frontend no longer needs Google Maps key
     return render_template('index.html')
+
+def _prune_comments():
+    # keep only last COMMENTS_MAX comments
+    global COMMENTS
+    if len(COMMENTS) > COMMENTS_MAX:
+        COMMENTS = COMMENTS[-COMMENTS_MAX:]
+
+@app.route('/comments', methods=['GET','POST'])
+def comments_endpoint():
+    """GET returns recent anonymous comments. POST adds a new one (single 'text' field)."""
+    if request.method == 'POST':
+        try:
+            data = request.get_json(force=True, silent=True) or {}
+        except Exception:
+            data = {}
+        text = (data.get('text') or '').strip()
+        if not text:
+            return jsonify({'ok': False, 'error': 'empty'}), 400
+        # basic length clamp
+        if len(text) > 800:
+            text = text[:800]
+        item = {
+            'id': uuid.uuid4().hex[:10],
+            'text': text,
+            'ts': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        COMMENTS.append(item)
+        _prune_comments()
+        return jsonify({'ok': True, 'item': item})
+    # GET
+    limit = 80
+    out = COMMENTS[-limit:]
+    return jsonify({'ok': True, 'items': out})
 
 @app.route('/data')
 def data():
