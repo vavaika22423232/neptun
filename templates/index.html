@@ -1192,6 +1192,38 @@
         crossOrigin:true,
         attribution:''
       }).addTo(map);
+      // --- Darken all non-Ukraine territory (world mask with Ukraine hole) ---
+      try {
+        // Large world rectangle (outer ring)
+        const worldRing = [
+          [85,-180],[85,180],[-85,180],[-85,-180]
+        ];
+        // Simplified Ukraine border (inner ring / hole)
+        const ukraineRing = [
+          [52.37,23.60],[51.90,23.60],[51.90,24.00],[51.50,24.50],[51.90,25.30],
+          [51.90,26.00],[51.60,26.60],[51.50,27.50],[51.60,28.20],[51.30,29.20],
+          [51.60,30.60],[52.30,31.80],[52.10,32.70],[52.40,34.40],[52.30,35.90],
+          [52.00,37.40],[51.20,38.20],[50.30,39.70],[49.10,40.10],[48.30,39.70],
+          [47.10,38.50],[46.00,38.20],[45.35,37.40],[45.40,36.60],[45.20,34.90],
+          [45.35,33.30],[46.07,30.95],[46.58,30.06],[47.80,29.48],[48.37,28.05],
+          [48.47,27.53],[48.27,26.86],[47.74,26.63],[47.85,24.96],[48.15,23.53],
+          [48.62,22.57],[49.90,22.09],[51.94,22.93],[52.37,23.60]
+        ];
+        // Polygon with a hole: outer world ring then inner Ukraine ring (hole)
+        const mask = L.polygon([worldRing, ukraineRing], {
+          stroke:false,
+          fill:true,
+          fillColor:'#0f172a',
+          fillOpacity:0.70,
+          interactive:false,
+          className:'world-mask'
+        }).addTo(map);
+        // Ensure mask stays beneath markers but above base tiles
+        if(mask && mask.getElement){
+          const el = mask.getElement();
+          if(el){ el.style.pointerEvents='none'; el.style.mixBlendMode='multiply'; }
+        }
+      } catch(e) { console.warn('Mask layer failed', e); }
       // ---- Presence (active users) ----
       const uid = localStorage.getItem('presence_id') || (self.crypto?.randomUUID ? crypto.randomUUID() : (Date.now()+""+Math.random()).replace(/\D/g,''));
       localStorage.setItem('presence_id', uid);
