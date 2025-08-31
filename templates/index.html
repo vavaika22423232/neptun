@@ -718,7 +718,7 @@
 
     <!-- Anonymous comments widget -->
     <div class="comments-card" id="commentsCard" aria-label="Анонімні коментарі">
-      <div class="comments-header">Коментарі <span id="commentsCount" class="comments-count"></span></div>
+      <div class="comments-header"><span class="ch-left">Коментарі <span id="commentsCount" class="comments-count"></span></span><button type="button" class="comments-close" id="commentsCloseBtn" aria-label="Згорнути">×</button></div>
       <div class="comments-list" id="commentsList" role="list" aria-live="polite"></div>
       <form id="commentForm" class="comment-form" autocomplete="off" novalidate>
         <textarea id="commentText" maxlength="800" placeholder="Напишіть короткий коментар..." aria-label="Текст коментаря" required></textarea>
@@ -728,6 +728,7 @@
         </div>
       </form>
     </div>
+    <button id="commentsFab" class="comments-fab" aria-label="Відкрити коментарі" title="Коментарі">💬</button>
 
   </div>
   <!-- Leaflet (OpenStreetMap) JS -->
@@ -739,9 +740,11 @@
     (function(){
       if(document.getElementById('commentsStyles')) return;
       const css = `
-      .comments-card{position:fixed;bottom:14px;right:14px;width:320px;max-height:60vh;display:flex;flex-direction:column;background:rgba(15,23,42,.88);backdrop-filter:blur(10px);border:1px solid #1e293b;border-radius:18px;box-shadow:0 12px 34px -10px rgba(0,0,0,.55);font-family:Inter,system-ui,sans-serif;color:#f1f5f9;z-index:520;}
-      .comments-header{padding:10px 14px;font-weight:600;font-size:.9rem;letter-spacing:.5px;display:flex;align-items:center;gap:6px;}
+  .comments-card{position:fixed;bottom:14px;right:14px;width:320px;max-height:60vh;display:flex;flex-direction:column;background:rgba(15,23,42,.88);backdrop-filter:blur(10px);border:1px solid #1e293b;border-radius:18px;box-shadow:0 12px 34px -10px rgba(0,0,0,.55);font-family:Inter,system-ui,sans-serif;color:#f1f5f9;z-index:520;}
+  .comments-header{padding:10px 14px;font-weight:600;font-size:.9rem;letter-spacing:.5px;display:flex;align-items:center;justify-content:space-between;gap:6px;}
       .comments-count{font-weight:500;font-size:.65rem;background:#334155;color:#e2e8f0;padding:2px 6px 3px;border-radius:12px;}
+  .comments-close{background:transparent;border:none;color:#cbd5e1;font-size:18px;line-height:1;cursor:pointer;padding:4px 6px;border-radius:8px;transition:background .2s,color .2s;}
+  .comments-close:hover{background:#334155;color:#fff;}
       .comments-list{overflow-y:auto;padding:4px 10px 10px;scrollbar-width:thin;display:flex;flex-direction:column;gap:8px;}
       .comments-list::-webkit-scrollbar{width:8px;} .comments-list::-webkit-scrollbar-track{background:transparent;} .comments-list::-webkit-scrollbar-thumb{background:#334155;border-radius:4px;}
       .comment-item{background:#1e293b;border:1px solid #334155;border-radius:14px;padding:8px 10px;font-size:.72rem;line-height:1.3;position:relative;animation:fadeIn .4s ease both;white-space:pre-wrap;word-wrap:break-word;}
@@ -756,7 +759,9 @@
       #commentSubmit:hover{background:#1d4ed8;} #commentSubmit:active{transform:translateY(1px);} #commentSubmit:disabled{background:#334155;cursor:default;box-shadow:none;}
       .comment-hint{font-size:.55rem;opacity:.55;white-space:nowrap;}
       .comment-empty{padding:14px 6px;font-size:.65rem;opacity:.55;text-align:center;}
-      @media (max-width:900px){ .comments-card{right:8px;left:8px;width:auto;bottom:8px;max-height:50vh;} }
+  .comments-fab{position:fixed;bottom:16px;right:16px;width:56px;height:56px;border:none;border-radius:50%;background:#2563eb;color:#fff;font-size:24px;font-weight:600;display:none;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 8px 20px -6px rgba(37,99,235,.6);z-index:521;transition:background .25s, transform .18s;}
+  .comments-fab:hover{background:#1d4ed8;} .comments-fab:active{transform:translateY(1px);} .comments-fab:focus{outline:2px solid #93c5fd;outline-offset:2px;}
+  @media (max-width:900px){ .comments-card{right:8px;left:auto;width:86%;max-width:420px;bottom:82px;max-height:55vh;} .comments-card.collapsed{display:none;} .comments-fab{display:flex;} }
       `;
       const st=document.createElement('style'); st.id='commentsStyles'; st.textContent=css; document.head.appendChild(st);
     })();
@@ -782,7 +787,21 @@
       });
     }
     function startComments(){ if(commentsPolling) return; fetchComments(); commentsPolling=setInterval(fetchComments, 10000); }
-    document.addEventListener('DOMContentLoaded', ()=>{ setupCommentForm(); startComments(); });
+    function toggleComments(force){
+      const card=document.getElementById('commentsCard'); const fab=document.getElementById('commentsFab'); if(!card||!fab) return;
+      const isCollapsed = card.classList.contains('collapsed');
+      const expand = force!==undefined ? force : isCollapsed;
+      if(expand){ card.classList.remove('collapsed'); fab.setAttribute('aria-label','Згорнути коментарі'); fab.textContent='×'; }
+      else { card.classList.add('collapsed'); fab.setAttribute('aria-label','Відкрити коментарі'); fab.textContent='💬'; }
+    }
+    document.addEventListener('DOMContentLoaded', ()=>{
+      setupCommentForm(); startComments();
+      const fab=document.getElementById('commentsFab'); const closeBtn=document.getElementById('commentsCloseBtn'); const card=document.getElementById('commentsCard');
+      if(window.innerWidth < 900 && card){ card.classList.add('collapsed'); }
+      if(fab){ fab.addEventListener('click', ()=>toggleComments()); }
+      if(closeBtn){ closeBtn.addEventListener('click', ()=>toggleComments(false)); }
+      window.addEventListener('resize', ()=>{ if(window.innerWidth >= 900){ const c=document.getElementById('commentsCard'); if(c){ c.classList.remove('collapsed'); } const f=document.getElementById('commentsFab'); if(f){ f.textContent='💬'; f.setAttribute('aria-label','Відкрити коментарі'); } } else { const c=document.getElementById('commentsCard'); if(c && !c.classList.contains('collapsed')){ /* keep open if already */ } } });
+    });
     // Disclaimer persistence
     function hideDisclaimer(){
       const el = document.getElementById('disclaimerBar');
