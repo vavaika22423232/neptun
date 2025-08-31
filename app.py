@@ -787,6 +787,34 @@ DONETSK_CITY_COORDS = {
 for _dn_name, _dn_coords in DONETSK_CITY_COORDS.items():
     CITY_COORDS.setdefault(_dn_name, _dn_coords)
 
+# Kharkiv Oblast cities and key settlements (міста + важливі селища) per user request.
+# Many already present; using setdefault to avoid override. Includes normalized variants.
+KHARKIV_CITY_COORDS = {
+    'ізюм': (49.2103, 37.2483),
+    'куп\'янськ': (49.7106, 37.6156),
+    'купянськ': (49.7106, 37.6156),  # variant without apostrophe
+    'лозова': (48.8897, 36.3175),
+    'первомайський': (49.3914, 36.2147),
+    'вовчанськ': (50.3000, 36.9500),
+    'люботин': (49.9486, 35.9292),
+    'дергачі': (50.1061, 36.1217),
+    'зміїв': (49.6897, 36.3472),
+    'красноград': (49.3740, 35.4405),
+    'печеніги': (49.8667, 36.9667),
+    'золочів(харківщина)': (50.2744, 36.3592),
+    'золочів': (50.2744, 36.3592),  # may conflict with Львівська обл.; disambiguation via region context
+    'великий бурлук': (50.0514, 37.3903),
+    'південне': (49.8667, 36.0500),
+    'покотилівка': (49.9345, 36.0603),
+    'манченки': (49.9840, 35.9680),
+    'малинівка': (49.6550, 36.7060),
+    'коломак': (49.8422, 35.2761),
+    'створ населеного пункту балки?': (49.4627, 36.8586),  # placeholder example – remove/replace if noise
+}
+
+for _kh_name, _kh_coords in KHARKIV_CITY_COORDS.items():
+    CITY_COORDS.setdefault(_kh_name, _kh_coords)
+
 # Mapping city -> oblast stem (lowercase stems used earlier) for disambiguation when region already detected.
 # Minimal subset; extend as needed.
 CITY_TO_OBLAST = {
