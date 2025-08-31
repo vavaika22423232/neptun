@@ -1245,6 +1245,25 @@ def process_message(text, mid, date_str, channel):
                         }]
     except Exception:
         pass
+    # Directional multi-region (e.g. "група БпЛА на Донеччині курсом на Дніпропетровщину") -> list-only, no fixed marker
+    try:
+        lorig = text.lower()
+        if ('курс' in lorig or '➡' in lorig or '→' in lorig or 'напрям' in lorig) and ('бпла' in lorig or 'дрон' in lorig or 'група' in lorig):
+            present_regions = []
+            for reg_key in OBLAST_CENTERS.keys():
+                # match region stem ignoring diacritics 'обл'
+                if reg_key in lorig:
+                    present_regions.append(reg_key)
+                if len(present_regions) >= 3:
+                    break
+            # Require at least two distinct regions and no explicit parenthesized city pattern
+            if len({r.split()[0] for r in present_regions}) >= 2 and '(' not in lorig:
+                return [{
+                    'id': str(mid), 'text': text[:600], 'date': date_str, 'channel': channel,
+                    'list_only': True, 'source_match': 'region_direction'
+                }]
+    except Exception:
+        pass
     # --- Pre-split case: several bold oblast headers inside a single line (e.g. **Полтавщина:** ... **Дніпропетровщина:** ... ) ---
     try:
         import re as _pre_hdr_re
