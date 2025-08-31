@@ -4208,10 +4208,49 @@ def data():
     hidden = set(load_hidden())
     out = []  # geo tracks
     events = []  # list-only (alarms, cancellations, other non-geo informational)
+    def _parse_dt(raw: str):
+        if not raw:
+            return None
+        # Primary stored legacy format
+        for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M'):
+            try:
+                return datetime.strptime(raw, fmt)
+            except Exception:
+                pass
+        # ISO variants (with 'T', optional fractional seconds)
+        try:
+            base = raw.replace('Z','')
+            if 'T' in base:
+                base2 = base.replace('T',' ')
+            else:
+                base2 = base
+            # strip timezone offset if present (+HH:MM) for naive compare
+            if '+' in base2:
+                base2 = base2.split('+',1)[0]
+            if '.' in base2:
+                main, frac = base2.split('.',1)
+                # keep only first 6 digits for microseconds if needed
+                frac_digits = ''.join(ch for ch in frac if ch.isdigit())[:6]
+                base2 = main
+                if frac_digits:
+                    try:
+                        return datetime.strptime(main + '.' + frac_digits, '%Y-%m-%d %H:%M:%S.%f')
+                    except Exception:
+                        pass
+            # fallback without fractional
+            try:
+                return datetime.strptime(base2, '%Y-%m-%d %H:%M:%S')
+            except Exception:
+                pass
+        except Exception:
+            pass
+        return None
     for m in messages:
         try:
-            dt = datetime.strptime(m.get('date',''), '%Y-%m-%d %H:%M:%S')
+            dt = _parse_dt(m.get('date',''))
         except Exception:
+            dt = None
+        if not dt:
             continue
         if dt >= min_time:
             # list-only (no coordinates) -> push into events list if not suppressed
