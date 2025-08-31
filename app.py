@@ -3659,7 +3659,7 @@ def process_message(text, mid, date_str, channel):
                             'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
                             'marker_icon': icon, 'source_match': 'course_sector', 'count': drone_count
                         }]
-                (reg_name, (base_lat, base_lng)) = matched_regions[0]
+                reg_name, (base_lat, base_lng) = matched_regions[0]
                 # смещение ~50-70 км в сторону указанного направления
                 def offset(lat, lng, code):
                     # базовые дельты в градусах (широта ~111 км, долгота * cos(lat))
@@ -3732,29 +3732,28 @@ def process_message(text, mid, date_str, channel):
                 'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
                 'marker_icon': icon, 'count': drone_count
             }]
-    else:
-            # If message contains explicit course targets (parsed later), don't emit plain region markers
-            course_target_hint = False
-            for ln in text.split('\n'):
-                ll = ln.lower()
-                if 'бпла' in ll and 'курс' in ll and re.search(r'курс(?:ом)?\s+(?:на|в|у)\s+[A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,}', ll):
-                    course_target_hint = True
-                    break
-            if not course_target_hint:
-                threat_type, icon = classify(text)
-                tracks = []
-                seen = set()
-                for idx,(n1,(lat,lng)) in enumerate(matched_regions,1):
-                    base = n1.split()[0].title()
-                    if base in seen: continue
-                    seen.add(base)
-                    tracks.append({
-                        'id': f"{mid}_r{idx}", 'place': base, 'lat': lat, 'lng': lng,
-                        'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                        'marker_icon': icon, 'source_match': 'region_multi_simple', 'count': drone_count
-                    })
-                if tracks:
-                    return tracks
+    # If message contains explicit course targets (parsed later), don't emit plain region markers
+    course_target_hint = False
+    for ln in text.split('\n'):
+        ll = ln.lower()
+        if 'бпла' in ll and 'курс' in ll and re.search(r'курс(?:ом)?\s+(?:на|в|у)\s+[A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,}', ll):
+            course_target_hint = True
+            break
+    if not course_target_hint:
+        threat_type, icon = classify(text)
+        tracks = []
+        seen = set()
+        for idx,(n1,(lat,lng)) in enumerate(matched_regions,1):
+            base = n1.split()[0].title()
+            if base in seen: continue
+            seen.add(base)
+            tracks.append({
+                'id': f"{mid}_r{idx}", 'place': base, 'lat': lat, 'lng': lng,
+                'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                'marker_icon': icon, 'source_match': 'region_multi_simple', 'count': drone_count
+            })
+        if tracks:
+            return tracks
     # City fallback scan (ensure whole-word style match to avoid false hits inside oblast words, e.g. 'дніпро' in 'дніпропетровщина')
     for city in UA_CITIES:
         if re.search(r'(?<![a-zа-яїієґ])' + re.escape(city) + r'(?![a-zа-яїієґ])', lower):
