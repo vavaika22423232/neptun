@@ -932,8 +932,17 @@
       const lower = combined.toLowerCase();
       if(!FPV_CITIES.some(c => lower.includes(c))) return false;
       const tt = (threatType||'').toLowerCase();
+      const txt = (text||'').toLowerCase();
+      // Exclude reconnaissance / observation drone reports
+      if(/розвід|развед|спостереж/i.test(txt)) return false;
+      // Always treat shahed stream as threat
       if (tt === 'shahed') return true;
-      if (/бпла|fpv/i.test(text || '')) return true;
+      const hasFPV = /\bfpv\b/.test(txt);
+      const hasGenericUAV = /бпла/.test(txt);
+      // Attack / strike intent keywords
+      const attackCtx = /(удар|ата(к|ц)|прил(і|ы)т|мас(ов|ова)|загроз|пуск|запуск|зліт|виліт|вылет|злет)/.test(txt);
+      if (hasFPV) return true;
+      if (hasGenericUAV && attackCtx) return true;
       return false;
     }
     // Helper: build semi-circle polygon (returns array of [lat,lng])
