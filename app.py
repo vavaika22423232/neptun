@@ -63,6 +63,7 @@ INVALID_CHANNELS = set()
 GOOGLE_MAPS_KEY = os.getenv('GOOGLE_MAPS_KEY', '')
 OPENCAGE_API_KEY = os.getenv('OPENCAGE_API_KEY', '')  # optional geocoding
 ALWAYS_STORE_RAW = os.getenv('ALWAYS_STORE_RAW', '1') not in ('0','false','False')
+INJECT_TEST_ENABLED = os.getenv('ENABLE_TEST_INJECT','0') in ('1','true','True')
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 log = logging.getLogger(__name__)
@@ -4306,6 +4307,20 @@ def data():
 @app.route('/channels')
 def list_channels():
     return jsonify({'channels': CHANNELS, 'invalid': list(INVALID_CHANNELS)})
+
+@app.route('/inject_test', methods=['POST'])
+def inject_test():
+    if not INJECT_TEST_ENABLED:
+        return jsonify({'status':'disabled'}), 403
+    now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    samples = [
+        {'id': f'test_{int(time.time())}_1','place':'Херсон','lat':46.6350,'lng':32.6169,'threat_type':'shahed','text':'Тест Шахед Херсон','date': now,'channel':'Test','marker_icon':'shahed.png','source_match':'inject'},
+        {'id': f'test_{int(time.time())}_2','place':'Нікополь','lat':47.5667,'lng':34.4061,'threat_type':'alarm_cancel','text':'Тест відбій Нікополь','date': now,'channel':'Test','marker_icon':'vidboi.png','source_match':'inject'}
+    ]
+    messages = load_messages()
+    messages.extend(samples)
+    save_messages(messages)
+    return jsonify({'status':'ok','inserted':len(samples)})
 
 @app.route('/add_channel', methods=['POST'])
 def add_channel():
