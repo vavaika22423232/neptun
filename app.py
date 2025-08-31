@@ -67,7 +67,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(mess
 log = logging.getLogger(__name__)
 
 app = Flask(__name__)
-COMMENTS = []  # simple in-memory list of {'id':..., 'text':..., 'ts': iso}
+COMMENTS = []  # retained as a small in-memory cache (recent) but now persisted to SQLite
 COMMENTS_MAX = 500
 ACTIVE_VISITORS = {}
 ACTIVE_LOCK = threading.Lock()
@@ -936,6 +936,55 @@ def init_visits_db():
     except Exception as e:
         log.warning(f"visits db init failed: {e}")
 
+# --------------- Persistent comments (SQLite) ---------------
+def init_comments_db():
+    """Create comments table if missing. Uses same SQLite DB as visits for simplicity."""
+    try:
+        with _visits_db_conn() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS comments (
+                    id TEXT PRIMARY KEY,
+                    text TEXT,
+                    ts   TEXT,      -- ISO string
+                    epoch REAL,     -- float seconds for ordering
+                    reply_to TEXT   -- optional parent comment id
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_comments_epoch ON comments(epoch)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_comments_reply ON comments(reply_to)")
+            # Backward migration: add reply_to if old table exists without column
+            try:
+                cur = conn.execute("PRAGMA table_info(comments)")
+                cols = [r[1] for r in cur.fetchall()]
+                if 'reply_to' not in cols:
+                    conn.execute("ALTER TABLE comments ADD COLUMN reply_to TEXT")
+            except Exception:
+                pass
+    except Exception as e:
+        log.warning(f"comments db init failed: {e}")
+
+def save_comment_record(item:dict):
+    try:
+        with _visits_db_conn() as conn:
+            conn.execute("INSERT OR REPLACE INTO comments (id,text,ts,epoch,reply_to) VALUES (?,?,?,?,?)",
+                         (item.get('id'), item.get('text'), item.get('ts'), item.get('epoch'), item.get('reply_to')))
+    except Exception as e:
+        log.warning(f"save_comment_record failed: {e}")
+
+def load_recent_comments(limit:int=80)->list[dict]:
+    rows = []
+    try:
+        with _visits_db_conn() as conn:
+            cur = conn.execute("SELECT id,text,ts,reply_to FROM comments ORDER BY epoch DESC LIMIT ?", (limit,))
+            for rid, text, ts, reply_to in cur.fetchall():
+                d = {'id': rid, 'text': text, 'ts': ts}
+                if reply_to:
+                    d['reply_to'] = reply_to
+                rows.append(d)
+    except Exception as e:
+        log.warning(f"load_recent_comments failed: {e}")
+    return list(reversed(rows))  # reverse so oldest of the slice first
+
 def record_visit_sql(id_:str, now_ts:float):
     if not id_:
         return
@@ -983,6 +1032,12 @@ def _active_sessions_from_db(ttl:int)->list[dict]:
 
 # Initialize DB at import
 init_visits_db()
+init_comments_db()
+# Preload recent comments into in-memory cache so first GET can serve quickly without hitting DB again
+try:
+    COMMENTS = load_recent_comments(limit=COMMENTS_MAX)
+except Exception as _e:
+    log.debug(f'preload comments failed: {_e}')
 GIT_SYNC_TOKEN = os.getenv('GIT_SYNC_TOKEN')  # GitHub PAT (classic or fine-grained) with repo write
 GIT_COMMIT_INTERVAL = int(os.getenv('GIT_COMMIT_INTERVAL', '180'))  # seconds between commits
 _last_git_commit = 0
@@ -3814,7 +3869,13 @@ def _prune_comments():
 
 @app.route('/comments', methods=['GET','POST'])
 def comments_endpoint():
-    """GET returns recent anonymous comments. POST adds a new one (single 'text' field)."""
+    """GET returns recent anonymous comments. POST inserts a new one persistently.
+
+    Persistence strategy:
+      - Store each comment into SQLite (comments table) with epoch for ordering.
+      - Maintain small in-memory tail cache to avoid DB hit storms on rapid polling.
+      - On GET always fetch from DB (limit) for durability across redeploys.
+    """
     if request.method == 'POST':
         try:
             data = request.get_json(force=True, silent=True) or {}
@@ -3823,21 +3884,49 @@ def comments_endpoint():
         text = (data.get('text') or '').strip()
         if not text:
             return jsonify({'ok': False, 'error': 'empty'}), 400
+        reply_to = (data.get('reply_to') or '').strip() or None
+        if reply_to and not re.fullmatch(r'[0-9a-fA-F]{6,20}', reply_to):
+            reply_to = None  # sanitize unexpected format
+        # rudimentary spam / flooding throttles (per-IP simple memory window)
+        ip = request.headers.get('X-Forwarded-For', request.remote_addr) or 'unknown'
+        now_ts = time.time()
+        # simple rate tracker: store recent post times per IP in a module-level dict
+        rt = getattr(app, '_comment_rate', None)
+        if rt is None:
+            rt = {}
+            setattr(app, '_comment_rate', rt)
+        arr = rt.get(ip, [])
+        # drop entries older than 60s
+        arr = [t for t in arr if now_ts - t < 60]
+        if len(arr) >= 8:  # max 8 comments per minute per IP
+            return jsonify({'ok': False, 'error': 'rate_limited'}), 429
+        arr.append(now_ts)
+        rt[ip] = arr
         # basic length clamp
         if len(text) > 800:
             text = text[:800]
         item = {
             'id': uuid.uuid4().hex[:10],
             'text': text,
-            'ts': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+            'ts': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
+            'epoch': now_ts,
+            'reply_to': reply_to
         }
-        COMMENTS.append(item)
+        cache_item = {k: item[k] for k in ('id','text','ts')}
+        if reply_to:
+            cache_item['reply_to'] = reply_to
+        COMMENTS.append(cache_item)  # store subset in memory cache
         _prune_comments()
-        return jsonify({'ok': True, 'item': item})
+        # persist
+        save_comment_record(item)
+        resp_item = {k: item[k] for k in ('id','text','ts')}
+        if reply_to:
+            resp_item['reply_to'] = reply_to
+        return jsonify({'ok': True, 'item': resp_item})
     # GET
     limit = 80
-    out = COMMENTS[-limit:]
-    return jsonify({'ok': True, 'items': out})
+    rows = load_recent_comments(limit=limit)
+    return jsonify({'ok': True, 'items': rows})
 
 @app.route('/data')
 def data():
