@@ -3742,18 +3742,38 @@ def process_message(text, mid, date_str, channel):
                         })
                 if tracks:
                     return tracks
-        # 2) Single settlement search (fallback)
+        # 2) Single settlement search (fallback) with word-boundary and specificity prioritization
         if SETTLEMENTS_INDEX:
+            cand_hits = []
+            text_len = len(lower)
             for name in SETTLEMENTS_ORDERED:
-                if name in lower:
-                    lat, lng = SETTLEMENTS_INDEX[name]
-                    threat_type, icon = classify(text)
-                    return [{
-                        'id': str(mid), 'place': name.title(), 'lat': lat, 'lng': lng,
-                        'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                        'marker_icon': icon,
-                        'source_match': 'settlement'
-                    }]
+                start = 0
+                while True:
+                    idx = lower.find(name, start)
+                    if idx == -1:
+                        break
+                    before_ok = (idx == 0) or not lower[idx-1].isalnum()
+                    after_idx = idx + len(name)
+                    after_ok = (after_idx == text_len) or not lower[after_idx].isalnum()
+                    if before_ok and after_ok:
+                        cand_hits.append(name)
+                        break  # only need first occurrence
+                    start = idx + 1
+            if cand_hits:
+                # Prefer longer names; deprioritize generic oblast centers when more specific present
+                def score(n: str):
+                    base_penalty = -5 if n in ['суми'] and len(cand_hits) > 1 else 0
+                    return (len(n) + base_penalty)
+                cand_hits.sort(key=score, reverse=True)
+                chosen = cand_hits[0]
+                lat, lng = SETTLEMENTS_INDEX[chosen]
+                threat_type, icon = classify(text)
+                return [{
+                    'id': str(mid), 'place': chosen.title(), 'lat': lat, 'lng': lng,
+                    'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon,
+                    'source_match': 'settlement'
+                }]
 
     # --- Raion (district) detection ---
     # Ищем конструкции вида "Покровський район", а также множественные "Конотопський та Сумський районы".
