@@ -1303,22 +1303,106 @@ def process_message(text, mid, date_str, channel):
     # Directional multi-region (e.g. "група БпЛА на Донеччині курсом на Дніпропетровщину") -> list-only, no fixed marker
     try:
         lorig = text.lower()
-        if ('курс' in lorig or '➡' in lorig or '→' in lorig or 'напрям' in lorig) and ('бпла' in lorig or 'дрон' in lorig or 'група' in lorig):
-            present_regions = []
-            for reg_key in OBLAST_CENTERS.keys():
-                # match region stem ignoring diacritics 'обл'
-                if reg_key in lorig:
-                    present_regions.append(reg_key)
-                if len(present_regions) >= 3:
-                    break
-            # Require at least two distinct regions and no explicit parenthesized city pattern
-            if len({r.split()[0] for r in present_regions}) >= 2 and '(' not in lorig:
-                return [{
-                    'id': str(mid), 'text': text[:600], 'date': date_str, 'channel': channel,
-                    'list_only': True, 'source_match': 'region_direction'
-                }]
+        if ('курс' in lorig or '➡' in lorig or '→' in lorig or 'напрям' in lorig) and ('бпла' in lorig or 'дрон' in lorig or 'груп' in lorig):
+            # Quick reject if explicit single settlement in parentheses (handled elsewhere)
+            if '(' not in lorig:
+                present_regions = []
+                for reg_key in OBLAST_CENTERS.keys():
+                    if reg_key in lorig:
+                        present_regions.append(reg_key)
+                        if len(present_regions) >= 4:
+                            break
+                distinct = {r.split()[0] for r in present_regions}
+                # Accept patterns like "нова група ударних БпЛА на Донеччині курсом на Дніпропетровщину"
+                # even if only 2 region stems present
+                if len(distinct) >= 2:
+                    # Extra guard: if a well-known large city (e.g. дніпро, харків, київ) appears ONLY because it's substring of region
+                    # we still treat as region directional, not city marker
+                    return [{
+                        'id': str(mid), 'text': text[:600], 'date': date_str, 'channel': channel,
+                        'list_only': True, 'source_match': 'region_direction_multi'
+                    }]
     except Exception:
         pass
+    # Region directional segments specifying part of oblast ("на сході Дніпропетровщини") possibly multiple in one line
+    try:
+        import re as _re_seg
+        lower_full = text.lower()
+        pattern = _re_seg.compile(r'на\s+([\w\-\s/]+?)\s+(?:частині\s+)?([a-zа-яіїєґ]+щина|[a-zа-яіїєґ]+щини|[a-zа-яіїєґ]+щину)')
+        seg_matches = list(pattern.finditer(lower_full))
+        seg_tracks = []
+        used_spans = []
+        if seg_matches:
+            # Map Ukrainian directional forms to codes
+            dir_map_words = {
+                'північ':'n','південь':'s','схід':'e','захід':'w','сході':'e','заході':'w','півночі':'n','півдні':'s',
+                'північно-схід':'ne','північно-сход':'ne','північно схід':'ne','південно-схід':'se','південно схід':'se',
+                'північно-захід':'nw','північно захід':'nw','південно-захід':'sw','південно захід':'sw'
+            }
+            def direction_codes(raw:str):
+                parts = [p.strip() for p in raw.replace('–','-').split('/') if p.strip()]
+                out = []
+                for p in parts:
+                    # compress multiple spaces
+                    p2 = ' '.join(p.split())
+                    # find best match in dir_map_words by prefix
+                    code=None
+                    for k,v in dir_map_words.items():
+                        if k in p2:
+                            code=v; break
+                    if not code:
+                        # try simple endings
+                        if p2.startswith('схід'): code='e'
+                        elif p2.startswith('захід'): code='w'
+                    if code and code not in out:
+                        out.append(code)
+                return out or ['center']
+            for m in seg_matches:
+                dir_raw = m.group(1).strip()
+                region_raw = m.group(2).strip()
+                # Normalize region key to match OBLAST_CENTERS keys
+                region_key = None
+                for k in OBLAST_CENTERS.keys():
+                    if region_raw in k:
+                        region_key = k
+                        break
+                if not region_key:
+                    continue
+                base_lat, base_lng = OBLAST_CENTERS[region_key]
+                codes = direction_codes(dir_raw)
+                for idx, code in enumerate(codes,1):
+                    # offset placement (reuse logic similar to later region_direction block)
+                    def offset(lat,lng,code):
+                        lat_step = 0.55
+                        lng_step = 0.85 / max(0.2, abs(math.cos(math.radians(lat))))
+                        if code=='n': return lat+lat_step, lng
+                        if code=='s': return lat-lat_step, lng
+                        if code=='e': return lat, lng+lng_step
+                        if code=='w': return lat, lng-lng_step
+                        lat_diag=lat_step*0.8; lng_diag=lng_step*0.8
+                        if code=='ne': return lat+lat_diag, lng+lng_diag
+                        if code=='nw': return lat+lat_diag, lng-lng_diag
+                        if code=='se': return lat-lat_diag, lng+lng_diag
+                        if code=='sw': return lat-lat_diag, lng-lng_diag
+                        return lat, lng
+                    lat_o, lng_o = offset(base_lat, base_lng, code)
+                    label_region = region_key.split()[0].title()
+                    dir_label_map = {
+                        'n':'північна частина','s':'південна частина','e':'східна частина','w':'західна частина',
+                        'ne':'північно-східна частина','nw':'північно-західна частина','se':'південно-східна частина','sw':'південно-західна частина','center':'частина'
+                    }
+                    label = f"{label_region} ({dir_label_map.get(code,'частина')})"
+                    threat_type, icon = classify(text)
+                    seg_tracks.append({
+                        'id': f"{mid}_rd{len(seg_tracks)+1}", 'place': label, 'lat': lat_o, 'lng': lng_o,
+                        'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                        'marker_icon': icon, 'source_match': 'region_direction_segment'
+                    })
+            if seg_tracks:
+                return seg_tracks
+    except Exception as e:
+        try: log.debug(f'region_dir_segments error: {e}')
+        except: pass
     # --- Pre-split case: several bold oblast headers inside a single line (e.g. **Полтавщина:** ... **Дніпропетровщина:** ... ) ---
     try:
         import re as _pre_hdr_re
@@ -3282,7 +3366,15 @@ def process_message(text, mid, date_str, channel):
             direction_code = detect_direction(lower)
             # If message also contains course info referencing cities/slash – skip region-level marker to allow city parsing later
             course_words = (' курс ' in lower or lower.startswith('курс '))
-            has_city_token = any(c in lower for c in CITY_COORDS.keys())
+            # Treat city present only if it appears as a standalone word (to avoid 'дніпро' inside 'дніпропетровщини')
+            has_city_token = False
+            try:
+                import re as _re_ct
+                for c_name in CITY_COORDS.keys():
+                    if _re_ct.search(r'\b'+_re_ct.escape(c_name)+r'\b', lower):
+                        has_city_token = True; break
+            except Exception:
+                has_city_token = any(c in lower for c in CITY_COORDS.keys())
             has_slash_combo = '/' in lower
             if direction_code and not (course_words and (has_city_token or has_slash_combo)):
                 # ---- Special: sector course pattern inside region directional message ----
