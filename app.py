@@ -1342,10 +1342,15 @@ def process_message(text, mid, date_str, channel):
                 if len(distinct) >= 2:
                     # Extra guard: if a well-known large city (e.g. дніпро, харків, київ) appears ONLY because it's substring of region
                     # we still treat as region directional, not city marker
-                    return [{
-                        'id': str(mid), 'text': text[:600], 'date': date_str, 'channel': channel,
-                        'list_only': True, 'source_match': 'region_direction_multi'
-                    }]
+                    # But if message contains multiple explicit directional part-of-region clauses ("на сході <області>" ... "на сході <області>")
+                    # then we want to produce separate segment markers instead of a single list-only event.
+                    import re as _re_dd
+                    dir_clause_count = len(_re_dd.findall(r'на\s+(?:північ|півден|схід|заход|північно|південно)[^\.]{0,40}?(?:щина|щини|щину)', lorig))
+                    if dir_clause_count < 2:
+                        return [{
+                            'id': str(mid), 'text': text[:600], 'date': date_str, 'channel': channel,
+                            'list_only': True, 'source_match': 'region_direction_multi'
+                        }]
     except Exception:
         pass
     # Region directional segments specifying part of oblast ("на сході Дніпропетровщини") possibly multiple in one line
