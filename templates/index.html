@@ -744,6 +744,8 @@
       if(document.getElementById('commentsStyles')) return;
       const css = `
   .comments-card{position:fixed;bottom:6.2rem;right:14px;width:320px;max-height:60vh;display:flex;flex-direction:column;background:rgba(15,23,42,.88);backdrop-filter:blur(10px);border:1px solid #1e293b;border-radius:18px;box-shadow:0 12px 34px -10px rgba(0,0,0,.55);font-family:Inter,system-ui,sans-serif;color:#f1f5f9;z-index:520;}
+  /* Make collapse work on desktop too (previously only hidden in mobile media query) */
+  .comments-card.collapsed{display:none;}
   .comments-header{padding:10px 14px;font-weight:600;font-size:.9rem;letter-spacing:.5px;display:flex;align-items:center;justify-content:space-between;gap:6px;}
       .comments-count{font-weight:500;font-size:.65rem;background:#334155;color:#e2e8f0;padding:2px 6px 3px;border-radius:12px;}
   .comments-close{background:transparent;border:none;color:#cbd5e1;font-size:18px;line-height:1;cursor:pointer;padding:4px 6px;border-radius:8px;transition:background .2s,color .2s;}
