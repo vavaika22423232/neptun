@@ -3630,6 +3630,12 @@ def process_message(text, mid, date_str, channel):
                 raw_city = m.group(1)
                 norm_city = _normalize_course_city(raw_city)
                 if norm_city:
+                    # If the captured target looks like an oblast (region) name (e.g. 'дніпропетровщина', 'черкаська область'),
+                    # we intentionally SKIP adding a precise course target marker to avoid falsely placing it at the oblast's capital city.
+                    # User requirement: phrases like 'курс(ом) на Дніпропетровщину' must NOT create a marker right in 'Дніпро'.
+                    if re.search(r'(щина|область)$', norm_city):
+                        log.debug(f'skip course_target oblast_only={norm_city} mid={mid}')
+                        continue
                     coords = region_enhanced_coords(norm_city)
                     if not coords:
                         log.debug(f'course_target_lookup miss city={norm_city} mid={mid} line={line.strip()[:120]!r} region_hint={region_hint_global}')
