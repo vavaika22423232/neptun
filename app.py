@@ -2334,6 +2334,17 @@ def process_message(text, mid, date_str, channel):
             'threat_type': 'avia', 'text': original_text[:500], 'date': date_str, 'channel': channel,
             'marker_icon': 'avia.png', 'source_match': 'southeast_aviation'
         }]
+    # North-east tactical aviation activity (approx between Svatove & Kupiansk) -> avia marker
+    if ('тактичн' in se_phrase or 'авіаці' in se_phrase or 'авиац' in se_phrase) and (
+        'північно-східн' in se_phrase or 'північно східн' in se_phrase or 'северо-восточ' in se_phrase or 'північного-сходу' in se_phrase
+    ):
+        # Approximate midpoint NE front (lat near 49.7, lng 37.9)
+        lat, lng = 49.7, 37.9
+        return [{
+            'id': f"{mid}_ne", 'place': 'Північно-східний напрямок', 'lat': lat, 'lng': lng,
+            'threat_type': 'avia', 'text': original_text[:500], 'date': date_str, 'channel': channel,
+            'marker_icon': 'avia.png', 'source_match': 'northeast_aviation'
+        }]
     m = re.search(r'(\d{1,2}\.\d+),(\d{1,3}\.\d+)', text)
     if m:
         lat = float(m.group(1)); lng = float(m.group(2))
