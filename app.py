@@ -946,21 +946,28 @@ def init_comments_db():
                 CREATE TABLE IF NOT EXISTS comments (
                     id TEXT PRIMARY KEY,
                     text TEXT,
-                    ts   TEXT,      -- ISO string
-                    epoch REAL,     -- float seconds for ordering
-                    reply_to TEXT   -- optional parent comment id
+                    ts   TEXT,
+                    epoch REAL
                 )
             """)
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_comments_epoch ON comments(epoch)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_comments_reply ON comments(reply_to)")
-            # Backward migration: add reply_to if old table exists without column
-            try:
-                cur = conn.execute("PRAGMA table_info(comments)")
-                cols = [r[1] for r in cur.fetchall()]
-                if 'reply_to' not in cols:
+            # Migration: ensure reply_to column exists
+            cur = conn.execute("PRAGMA table_info(comments)")
+            cols = [r[1] for r in cur.fetchall()]
+            if 'reply_to' not in cols:
+                try:
                     conn.execute("ALTER TABLE comments ADD COLUMN reply_to TEXT")
-            except Exception:
-                pass
+                    log.info('comments table migrated: added reply_to column')
+                except Exception as me:
+                    log.warning(f'failed adding reply_to column: {me}')
+            # Create indexes (individually wrapped)
+            for idx_sql in [
+                "CREATE INDEX IF NOT EXISTS idx_comments_epoch ON comments(epoch)",
+                "CREATE INDEX IF NOT EXISTS idx_comments_reply ON comments(reply_to)"
+            ]:
+                try:
+                    conn.execute(idx_sql)
+                except Exception as ie:
+                    log.debug(f'index create skipped: {ie}')
     except Exception as e:
         log.warning(f"comments db init failed: {e}")
 
@@ -976,11 +983,27 @@ def load_recent_comments(limit:int=80)->list[dict]:
     rows = []
     try:
         with _visits_db_conn() as conn:
-            cur = conn.execute("SELECT id,text,ts,reply_to FROM comments ORDER BY epoch DESC LIMIT ?", (limit,))
-            for rid, text, ts, reply_to in cur.fetchall():
-                d = {'id': rid, 'text': text, 'ts': ts}
-                if reply_to:
-                    d['reply_to'] = reply_to
+            try:
+                cur = conn.execute("SELECT id,text,ts,reply_to FROM comments ORDER BY epoch DESC LIMIT ?", (limit,))
+                fetched = cur.fetchall()
+            except Exception as sel_err:
+                # Fallback legacy schema (no reply_to); try to migrate then retry
+                log.warning(f'comments select fallback (legacy schema): {sel_err}')
+                try:
+                    conn.execute("ALTER TABLE comments ADD COLUMN reply_to TEXT")
+                    cur = conn.execute("SELECT id,text,ts,reply_to FROM comments ORDER BY epoch DESC LIMIT ?", (limit,))
+                    fetched = cur.fetchall()
+                except Exception as mig_err:
+                    log.warning(f'comments migration select failed: {mig_err}')
+                    # Last resort: select without reply_to
+                    try:
+                        cur = conn.execute("SELECT id,text,ts FROM comments ORDER BY epoch DESC LIMIT ?", (limit,))
+                        fetched = [(*r, None) for r in cur.fetchall()]
+                    except Exception:
+                        fetched = []
+            for rid, text, ts, reply_to in fetched:
+                d={'id': rid, 'text': text, 'ts': ts}
+                if reply_to: d['reply_to']=reply_to
                 rows.append(d)
     except Exception as e:
         log.warning(f"load_recent_comments failed: {e}")
@@ -4019,6 +4042,8 @@ def comments_endpoint():
     # GET
     limit = 80
     rows = load_recent_comments(limit=limit)
+    if not rows and COMMENTS:  # fallback to cache if DB query unexpectedly empty
+        rows = COMMENTS[-limit:]
     return jsonify({'ok': True, 'items': rows})
 
 @app.route('/data')
