@@ -4,6 +4,7 @@
 # ...existing code...
 
 import os, re, json, asyncio, threading, logging, pytz, time, subprocess, queue, sys, platform, traceback, uuid
+print('APP IMPORT START')
 from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify, request, Response
 from telethon import TelegramClient
@@ -96,6 +97,45 @@ def load_dynamic_channels():
         log.warning(f'Failed loading {CHANNELS_FILE}: {e}')
     return []
 
+# Config persistence (monitor period) restored
+CONFIG_FILE = 'config.json'
+MONITOR_PERIOD_MINUTES = 50
+
+def load_config():
+    global MONITOR_PERIOD_MINUTES
+    try:
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE,'r',encoding='utf-8') as f:
+                cfg = json.load(f)
+            mp = int(cfg.get('monitor_period', MONITOR_PERIOD_MINUTES))
+            if 1 <= mp <= 360:
+                MONITOR_PERIOD_MINUTES = mp
+    except Exception as e:
+        log.warning(f'Failed loading {CONFIG_FILE}: {e}')
+
+def save_config():
+    try:
+        with open(CONFIG_FILE,'w',encoding='utf-8') as f:
+            json.dump({'monitor_period': MONITOR_PERIOD_MINUTES}, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log.warning(f'Failed saving {CONFIG_FILE}: {e}')
+
+def _startup_diagnostics():
+    try:
+        log.info('--- Startup diagnostics begin ---')
+        log.info(f'Python: {sys.version.split()[0]} Platform: {platform.platform()} PID: {os.getpid()}')
+        log.info(f'Configured channels ({len(CHANNELS)}): {CHANNELS}')
+        log.info(f'API_ID set: {bool(API_ID)} HASH set: {bool(API_HASH)}')
+        if os.path.exists(MESSAGES_FILE):
+            log.info(f'{MESSAGES_FILE} size={os.path.getsize(MESSAGES_FILE)}')
+        else:
+            log.info(f'{MESSAGES_FILE} not present')
+        log.info('--- Startup diagnostics end ---')
+    except Exception as e:
+        log.warning(f'Diagnostics error: {e}')
+
+load_config()
+
 def save_dynamic_channels(extra):
     try:
         with open(CHANNELS_FILE,'w',encoding='utf-8') as f:
@@ -105,87 +145,15 @@ def save_dynamic_channels(extra):
 
 _dyn = load_dynamic_channels()
 if _dyn:
-    # Merge without duplicates
     base = [c.strip() for c in CHANNELS if c.strip()]
     for d in _dyn:
         if d not in base:
             base.append(d)
     CHANNELS = base
-# ---------------- Monitoring period global config (admin editable) ----------------
-CONFIG_FILE = 'config.json'
-MONITOR_PERIOD_MINUTES = 50  # default; editable only via admin panel
-
-def load_config():
-    """Load persisted configuration (currently only monitor period)."""
-    global MONITOR_PERIOD_MINUTES
-    try:
-        if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-                cfg = json.load(f)
-            # Validate range 1..360 else ignore
-            mp = int(cfg.get('monitor_period', MONITOR_PERIOD_MINUTES))
-            if 1 <= mp <= 360:
-                MONITOR_PERIOD_MINUTES = mp
-    except Exception as e:
-        log.warning(f'Failed loading {CONFIG_FILE}: {e}')
-
-def save_config():
-    try:
-        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-            json.dump({'monitor_period': MONITOR_PERIOD_MINUTES}, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        log.warning(f'Failed saving {CONFIG_FILE}: {e}')
-
-load_config()
-if API_ID and API_HASH:
-    if session_str:
-        log.info('Initializing Telegram client with TELEGRAM_SESSION string.')
-        client = TelegramClient(StringSession(session_str), API_ID, API_HASH)
-    elif BOT_TOKEN:
-        log.info('Initializing Telegram client with BOT token (limited access).')
-        # Bot sessions auto-authorize on start
-        client = TelegramClient(StringSession(), API_ID, API_HASH)
-    else:
-        log.info('Initializing Telegram client with local session file (may not persist on Render).')
-        client = TelegramClient('anon', API_ID, API_HASH)
-
-MESSAGES_FILE = 'messages.json'
-HIDDEN_FILE = 'hidden_markers.json'
-OPENCAGE_CACHE_FILE = 'opencage_cache.json'
-OPENCAGE_TTL = 60 * 60 * 24 * 30  # 30 days
-NEG_GEOCODE_FILE = 'negative_geocode_cache.json'
-NEG_GEOCODE_TTL = 60 * 60 * 24 * 3  # 3 days for 'not found' entries
-MESSAGES_RETENTION_MINUTES = int(os.getenv('MESSAGES_RETENTION_MINUTES', '0'))  # 0 = keep forever
-MESSAGES_MAX_COUNT = int(os.getenv('MESSAGES_MAX_COUNT', '0'))  # 0 = unlimited
-
-def _startup_diagnostics():
-    """Log one-time startup diagnostics to help investigate early exit issues on hosting platforms."""
-    try:
-        log.info('--- Startup diagnostics begin ---')
-        log.info(f'Python: {sys.version.split()[0]} Platform: {platform.platform()} PID: {os.getpid()}')
-        log.info(f'Flask version: {getattr(sys.modules.get("flask"), "__version__", "?")} Telethon version: {getattr(sys.modules.get("telethon"), "__version__", "?")}')
-        log.info(f'Configured channels ({len(CHANNELS)}): {CHANNELS}')
-        log.info(f'API_ID set: {bool(API_ID)} HASH set: {bool(API_HASH)} SESSION len: {len(session_str) if session_str else 0}')
-        log.info(f'GOOGLE_MAPS_KEY set: {bool(GOOGLE_MAPS_KEY)} OPENCAGE_API_KEY set: {bool(OPENCAGE_API_KEY)}')
-        if os.path.exists(MESSAGES_FILE):
-            try:
-                sz = os.path.getsize(MESSAGES_FILE)
-                log.info(f'{MESSAGES_FILE} exists size={sz} bytes')
-            except Exception:
-                pass
-        else:
-            log.info(f'{MESSAGES_FILE} not present yet.')
-        log.info(f'Retention minutes: {MESSAGES_RETENTION_MINUTES} Max count: {MESSAGES_MAX_COUNT}')
-        log.info(f'FETCH_START_DELAY={os.getenv("FETCH_START_DELAY", "0")}')
-        log.info('--- Startup diagnostics end ---')
-    except Exception as e:
-        log.warning(f'Diagnostics error: {e}')
 
 def _prune_messages(data):
-    """Apply retention policies (time / count). Mutates and returns list."""
     if not data:
         return data
-    # Time based pruning
     if MESSAGES_RETENTION_MINUTES > 0:
         cutoff = datetime.utcnow() - timedelta(minutes=MESSAGES_RETENTION_MINUTES)
         pruned = []
@@ -193,13 +161,10 @@ def _prune_messages(data):
             try:
                 dt = datetime.strptime(m.get('date',''), '%Y-%m-%d %H:%M:%S')
             except Exception:
-                # keep malformed to avoid data loss
-                pruned.append(m)
-                continue
+                pruned.append(m); continue
             if dt.replace(tzinfo=None) >= cutoff:
                 pruned.append(m)
         data = pruned
-    # Count based pruning (keep newest by date)
     if MESSAGES_MAX_COUNT > 0 and len(data) > MESSAGES_MAX_COUNT:
         try:
             data_sorted = sorted(data, key=lambda x: x.get('date',''))
@@ -207,6 +172,16 @@ def _prune_messages(data):
         except Exception:
             data = data[-MESSAGES_MAX_COUNT:]
     return data
+
+# Message persistence related constants (restored after refactor)
+MESSAGES_FILE = 'messages.json'
+HIDDEN_FILE = 'hidden_markers.json'
+OPENCAGE_CACHE_FILE = 'opencage_cache.json'
+OPENCAGE_TTL = 60 * 60 * 24 * 30
+NEG_GEOCODE_FILE = 'negative_geocode_cache.json'
+NEG_GEOCODE_TTL = 60 * 60 * 24 * 3
+MESSAGES_RETENTION_MINUTES = int(os.getenv('MESSAGES_RETENTION_MINUTES', '0'))
+MESSAGES_MAX_COUNT = int(os.getenv('MESSAGES_MAX_COUNT', '0'))
 
 def load_messages():
     if os.path.exists(MESSAGES_FILE):
@@ -711,6 +686,7 @@ CITY_COORDS = {
     'широке': (47.6833, 34.5667),
     'зеленодольськ': (47.5667, 33.5333),
     'нікополь': (47.5667, 34.4061),
+    'марганець': (47.6433, 34.6289),  # Дніпропетровська обл.
     'бабанка': (48.9833, 30.4167),
     'новий буг': (47.6833, 32.5167),
     'березнегувате': (47.3167, 32.8500),
@@ -774,6 +750,7 @@ CITY_COORDS = {
     ,'сосниця': (51.5236, 32.4953)
     ,'олишівка': (51.1042, 31.6817)
     ,'березна': (51.5756, 31.7431)
+    ,'херсон': (46.6350, 32.6169)  # Херсон (добавлено для раннего single-city парсера)
     # Additional smaller settlements for course-target parsing
     ,'зачепилівка': (49.1717, 35.2742)
     ,'близнюки': (48.8520, 36.5440)
@@ -1460,6 +1437,65 @@ def geocode_opencage(place: str):
         return None
 
 def process_message(text, mid, date_str, channel):
+    # DEBUG TRACE START (temporary)
+    try:
+        print(f"[DBG] enter process_message mid={mid} ch={channel} txt_snip={text[:60]!r}")
+    except Exception:
+        pass
+    original_text = text
+    # Simple early single-city pattern (emoji/bold tolerant)
+    try:
+        if '(' in original_text and ('обл' in original_text.lower() or 'область' in original_text.lower()):
+            import re as _re_sc
+            head = original_text.split('\n',1)[0][:160]
+            san = head.replace('**','')
+            for _zw in ('\u200b','\u200c','\u200d','\ufeff','\u2060','\u00a0'):
+                if _zw in san: san = san.replace(_zw,' ')
+            san = ' '.join(san.split())
+            # remove leading non-letters (emojis/punct) except spaces
+            san2 = _re_sc.sub(r'^[^A-Za-zА-Яа-яЇїІіЄєҐґ]+','', san)
+            try: print(f"[DBG] early_city head={head!r} san={san!r} san2={san2!r}")
+            except Exception: pass
+            par = san2.find('(')
+            if par>1:
+                city_candidate = san2[:par].strip()
+                try: print(f"[DBG] early_city cand={city_candidate!r} par={par}")
+                except Exception: pass
+                if 2 <= len(city_candidate) <= 40 and (' ' not in city_candidate or len(city_candidate.split())<=3):
+                    base = city_candidate.lower().replace('ʼ',"'").replace('’',"'").replace('`',"'")
+                    # use the local alias _re_sc to avoid NameError (re not imported in this scope)
+                    base = _re_sc.sub(r'\s+',' ', base)
+                    norm = UA_CITY_NORMALIZE.get(base, base)
+                    coords = CITY_COORDS.get(norm) or (SETTLEMENTS_INDEX.get(norm) if 'SETTLEMENTS_INDEX' in globals() and SETTLEMENTS_INDEX else None)
+                    if coords:
+                        l = original_text.lower()
+                        if any(ph in l for ph in ['повідомляють про вибух','повідомлено про вибух','зафіксовано вибух','зафіксовано вибухи','фіксація вибух','фіксують вибух','вибухи.',' вибух.']):
+                            threat, icon = 'vibuh','vibuh.png'
+                        elif 'відбій загрози обстр' in l or 'відбій загрози застосування' in l or 'відбій загрози бпла' in l:
+                            threat, icon = 'alarm_cancel','vidboi.png'
+                        elif 'загроза застосування бпла' in l or 'загроза застосування безпілот' in l:
+                            threat, icon = 'shahed','shahed.png'
+                        elif 'загроза обстрілу' in l or 'загроза обстрела' in l:
+                            threat, icon = 'artillery','obstril.png'
+                        else:
+                            threat, icon = classify(original_text)
+                        lat,lng = coords
+                        try: print(f"[DBG] early_city_return city={city_candidate!r} threat={threat} icon={icon} norm={norm}")
+                        except Exception: pass
+                        return [{
+                            'id': str(mid), 'place': city_candidate.title(), 'lat': lat, 'lng': lng,
+                            'threat_type': threat, 'text': original_text[:500], 'date': date_str,
+                            'channel': channel, 'marker_icon': icon, 'source_match': 'single_city_simple_early'
+                        }]
+                    else:
+                        try: print(f"[DBG] early_city_no_coords norm={norm}")
+                        except Exception: pass
+            else:
+                try: print(f"[DBG] early_city_no_par san2={san2!r}")
+                except Exception: pass
+    except Exception:
+        pass
+    # If test mode wants only this function, allow early return path after basic classification.
     # --- Pre-split case: several bold oblast headers inside a single line (e.g. **Полтавщина:** ... **Дніпропетровщина:** ... ) ---
     try:
         import re as _pre_hdr_re
@@ -1553,6 +1589,10 @@ def process_message(text, mid, date_str, channel):
         # Если строка — это заголовок области (например, "Сумщина:")
         # Заголовок области: строка, заканчивающаяся на ':' (возможен пробел перед / после) или формой '<область>:' с лишними пробелами
         import re
+        # Early skip: if line matches standalone "**... City (Область ...)** ..." pattern, let later single-city logic handle it
+        if re.search(r'\*{0,3}\s*(?:[🛸👁️🚀🔥⚠️✅❗🔴🟡🟢]{1,4}\s*)?[A-Za-zА-Яа-яЇїІіЄєҐґ\-ʼ`’ ]{2,40}\s*\([^)]{3,80}?(?:обл\.?|область)\)\*{0,3}', ln):
+            # Not treating as multiline content; will process later
+            continue
         if re.match(r'^[A-Za-zА-Яа-яЇїІіЄєҐґ\-ʼ`\s]+:\s*$', ln):
             oblast_hdr = ln.split(':')[0].strip().lower()
             if oblast_hdr.startswith('на '):  # handle 'на харківщина:' header variant
@@ -2553,6 +2593,46 @@ def process_message(text, mid, date_str, channel):
                 else:
                     try: log.info(f"GEN_FALLBACK_NO_COORDS city='{city_raw2}' norm='{city_norm2}'")
                     except Exception: pass
+    except Exception:
+        pass
+    # --- Naive single-line City (Oblast) fallback (no specific keywords needed) ---
+    try:
+        if '(' in original_text and ('обл' in original_text.lower() or 'область' in original_text.lower()):
+            import re as _re_simple_city
+            head = original_text.split('\n',1)[0][:170]
+            san = head.replace('**','').strip()
+            for _zw in ('\u200b','\u200c','\u200d','\ufeff','\u2060','\u00a0'):
+                if _zw in san: san = san.replace(_zw,' ')
+            san = ' '.join(san.split())
+            m_simple = _re_simple_city.match(r'^[^A-Za-zА-Яа-яЇїІіЄєҐґ]*([A-Za-zА-Яа-яЇїІіЄєҐґ\-ʼ`’ ]{2,50}?)\s*\([^)]*(обл\.?|область)[^)]*\)')
+            if not m_simple:
+                # build pattern object first
+                pat_simple = _re_simple_city.compile(r'^[^A-Za-zА-Яа-яЇїІіЄєҐґ]*([A-Za-zА-Яа-яЇїІіЄєҐґ\-ʼ`’ ]{2,50}?)\s*\([^)]*(?:обл\.?|область)[^)]*\)')
+                m_simple = pat_simple.search(san)
+            if m_simple:
+                city_raw = m_simple.group(1).strip()
+                base = city_raw.lower().replace('ʼ',"'").replace('’',"'").replace('`',"'")
+                base = re.sub(r'\s+',' ', base)
+                city_norm = UA_CITY_NORMALIZE.get(base, base)
+                coords = CITY_COORDS.get(city_norm) or (SETTLEMENTS_INDEX.get(city_norm) if 'SETTLEMENTS_INDEX' in globals() and SETTLEMENTS_INDEX else None)
+                if coords:
+                    l = original_text.lower()
+                    if any(ph in l for ph in ['повідомляють про вибух','повідомлено про вибух','зафіксовано вибух','зафіксовано вибухи','фіксація вибух','фіксують вибух','вибухи.',' вибух.']):
+                        threat, icon = 'vibuh','vibuh.png'
+                    elif 'відбій загрози обстр' in l or 'відбій загрози застосування' in l or 'відбій загрози бпла' in l:
+                        threat, icon = 'alarm_cancel','vidboi.png'
+                    elif 'загроза застосування бпла' in l or 'загроза застосування безпілот' in l:
+                        threat, icon = 'shahed','shahed.png'
+                    elif 'загроза обстрілу' in l or 'загроза обстрела' in l:
+                        threat, icon = 'artillery','obstril.png'
+                    else:
+                        threat, icon = classify(original_text)
+                    lat,lng = coords
+                    return [{
+                        'id': str(mid), 'place': city_raw.title(), 'lat': lat, 'lng': lng,
+                        'threat_type': threat, 'text': original_text[:500], 'date': date_str,
+                        'channel': channel, 'marker_icon': icon, 'source_match': 'single_city_naive'
+                    }]
     except Exception:
         pass
     # Normalize some accusative oblast forms to nominative for matching
@@ -4792,100 +4872,6 @@ UA_CITY_NORMALIZE = {
     ,'балаклію':'балаклія'
 }
 
-# Static fallback coordinates (approximate city centers) to avoid relying solely on OpenCage.
-# Minimal fallback city coords (will be superseded if full settlements file present)
-CITY_COORDS = {
-    'київ': (50.4501, 30.5234),
-    'харків': (49.9935, 36.2304),
-    'одеса': (46.4825, 30.7233),
-    'дніпро': (48.4647, 35.0462),
-    'львів': (49.8397, 24.0297),
-    'запоріжжя': (47.8388, 35.1396),
-    'вінниця': (49.2331, 28.4682),
-    'миколаїв': (46.9750, 31.9946),
-    'маріуполь': (47.0971, 37.5434),
-    'полтава': (49.5883, 34.5514),
-    'чернігів': (51.4982, 31.2893),
-    'черкаси': (49.4444, 32.0598),
-    'житомир': (50.2547, 28.6587),
-    'суми': (50.9077, 34.7981),
-    'хмельницький': (49.4229, 26.9871),
-    'чернівці': (48.2921, 25.9358),
-    'рівне': (50.6199, 26.2516),
-    'івано-франківськ': (48.9226, 24.7111),
-    'луцьк': (50.7472, 25.3254),
-    'тернопіль': (49.5535, 25.5948),
-    'ужгород': (48.6208, 22.2879),
-    'кропивницький': (48.5079, 32.2623),
-    'кременчук': (49.0670, 33.4204),
-    'краматорськ': (48.7389, 37.5848),
-    'біла церква': (49.7950, 30.1310),
-    'мелітополь': (46.8489, 35.3650),
-    'бердянськ': (46.7553, 36.7885)
-    ,'павлоград': (48.5350, 35.8700)
-    ,'покровське': (48.1180, 36.2470)  # Pokrovske (Dnipro oblast approximate)
-    ,'петропавлівка': (48.5000, 36.4500)  # Petropavlivka (approx)
-    ,'шахтарське': (47.9500, 36.0500)  # Shakhtarske (approx, adjust if needed)
-    # Additional smaller settlements for course parsing
-    ,'миколаївка': (49.1667, 36.2333)  # example (adjust if needed per oblast)
-    ,'низи': (50.7435, 34.9860)  # Nizy (Sumy raion approx)
-    ,'зачепилівка': (49.2070, 35.9150)  # Zachepylivka (Kharkiv oblast)
-    ,'близнюки': (48.8520, 36.5440)  # Blyzniuky (Kharkiv oblast)
-    ,'златопіль': (48.3640, 38.1500)  # Zlatopil (approx placeholder)
-    ,'царичанка': (48.9333, 34.4833)  # Tsarychanka (Dnipro oblast)
-    ,'добропілля': (48.4667, 37.0833)  # Dobropillia (Donetsk oblast)
-    ,'перещепине': (48.6260, 35.3580)
-    ,'карлівка': (49.4586, 35.1272)
-    ,'магдалинівка': (48.8836, 34.8669)
-    ,'чугуїв': (49.8376, 36.6881)
-    ,'балаклія': (49.4627, 36.8586)
-    ,'савинці': (49.4365, 37.2981)
-    ,'шевченкове': (49.6996, 37.1770)
-    ,'барвінкове': (48.9000, 37.0167)  # Barvinkove (Kharkiv oblast)
-    ,'пісочин': (49.9500, 36.1330)  # Pisochyn (near Kharkiv)
-    ,'берестове': (49.3500, 37.0000)  # Placeholder for Berestove / Berestynske context
-    ,'кобеляки': (49.1500, 34.2000)  # Kobelyaky (Poltava oblast)
-    # --- Extended settlements appended (ensure final dict has them) ---
-    ,'олишівка': (51.0725, 31.3525)
-    ,'гончарівське': (51.6272, 31.3192)
-    ,'мала дівиця': (50.8240, 32.4700)
-    ,'згурівка': (50.4950, 31.7780)
-    ,'велика димерка': (50.8140, 30.8080)
-    ,'яготин': (50.2360, 31.7700)
-    ,'бориспіль': (50.3527, 30.9550)
-    ,'узин': (49.8216, 30.4567)
-    ,'ставище': (49.3958, 30.1875)
-    ,'березань': (50.3085, 31.4576)
-    ,'жуляни': (50.4017, 30.4519)
-    ,'бортничі': (50.3915, 30.6695)
-    ,'старокостянтинів': (49.7574, 27.2039)
-    ,'адампіль': (49.6500, 27.3000)
-    ,'старий остропіль': (49.6503, 27.2291)
-    ,'короп': (51.5686, 32.9586)
-    ,'сосниця': (51.5236, 32.4953)
-    ,'новгород-сіверський': (51.9875, 33.2625)
-    ,'баришівка': (50.3580, 31.3200)
-    ,'сквира': (49.7315, 29.6656)
-    ,'димер': (50.7850, 30.3009)
-    ,'бровари': (50.5110, 30.7909)
-    ,'жашків': (49.2406, 30.0961)
-    ,'лубни': (50.0186, 32.9931)
-    ,'холми': (51.6272, 32.5531)
-    ,'новооржицьке': (49.9444, 32.9333)
-    ,'канів': (49.7517, 31.4717)
-    ,'чигирин': (49.0800, 32.6600)
-    ,'прилуки': (50.5931, 32.3878)
-    ,'летичів': (49.3844, 27.6256)
-    ,'деражня': (49.2667, 27.4333)
-    ,'корюківка': (51.7711, 32.2739)
-    ,'борзна': (51.2559, 32.4168)
-    ,'славутич': (51.5226, 30.7206)
-    ,'ніжин': (51.0480, 31.8869)
-    ,'лосинівка': (50.9003, 31.4725)
-    ,'васильків': (50.1777, 30.3133)
-    ,'жмеринка': (49.0353, 28.1126)
-    ,'тульчин': (48.6783, 28.8486)
-}
 
 OBLAST_CENTERS = {
     'донеччина': (48.0433, 37.7974), 'донеччини': (48.0433, 37.7974), 'донецька область': (48.0433, 37.7974),
@@ -5083,8 +5069,9 @@ if __name__ == '__main__':
     host = os.getenv('HOST', '0.0.0.0')
     log.info(f'Launching Flask app on {host}:{port}')
     # Eager start (still guarded) so that fetch begins even without first HTTP request locally
-    try:
-        _init_background()
-    except Exception:
-        pass
+    if os.getenv('PARSER_TEST') != '1':
+        try:
+            _init_background()
+        except Exception:
+            pass
     app.run(host=host, port=port, debug=False)
