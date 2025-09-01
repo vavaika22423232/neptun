@@ -5,6 +5,9 @@ services:
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python app.py
+    disk:
+      name: data
+      mountPath: /data
     envVars:
       - key: TELEGRAM_API_ID
         sync: false
@@ -14,3 +17,5 @@ services:
         value: UkraineAlarmSignal,war_monitor
       - key: GOOGLE_MAPS_KEY
         sync: false
+      - key: VISITS_DB
+        value: /data/visits.db

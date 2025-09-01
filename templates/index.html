@@ -606,6 +606,7 @@
       </div>
       <button class="jar-link-button" onclick="openJar()"><i class="material-icons">rocket_launch</i><span>Задонатити зараз</span></button>
       <div class="donate-footer">Фінансова підтримка не створює зобов'язань. Звіти й оновлення у спільноті Telegram.</div>
+  <div class="donate-footer">Адмінмежі: OCHA FISS / SSPЕ «Картографія», COD-AB (оновл. січень 2025), CC BY-IGO. Можливі затримки перейменувань (реформа hromadas).</div>
     </div>
   </div>
   <div class="copy-toast" id="copyToast">Скопійовано</div>
@@ -1722,5 +1723,26 @@
     })();
   </script>
   <!-- Google Maps script removed after migration to Leaflet / OpenStreetMap -->
+  <script>
+    // Air alarm polygons (requires separately hosted adm1/adm2 geojson files placed under /static)
+    (function(){
+      let activeOblasts=new Set(); let activeRaions=new Set();
+      async function refreshAlarms(){
+        try{ const r=await fetch('/active_alarms'); if(!r.ok) return; const d=await r.json();
+          activeOblasts=new Set(d.oblasts.map(o=>o.name)); activeRaions=new Set(d.raions.map(o=>o.name));
+          if(window.adm1Layer){ window.adm1Layer.setStyle(styleAdm1); }
+          if(window.adm2Layer){ window.adm2Layer.setStyle(styleAdm2); }
+        }catch(e){}
+      }
+      function styleAdm1(f){ const n=((f.properties?.ADM1_UA||f.properties?.ADM1_UK||'')+'').toLowerCase(); const hit=[...activeOblasts].some(o=>n.includes(o.split(' ')[0])); return {color:'#444',weight:1,fillOpacity:hit?0.55:0.05,fillColor: hit?'#b30000':'#1e293b'}; }
+      function styleAdm2(f){ const n=(f.properties?.ADM2_UA||'').toLowerCase(); const hit=[...activeRaions].some(r=>n.startsWith(r.split(' ')[0])); return {color:'#333',weight:0.6,fillOpacity:hit?0.5:0,fillColor:hit?'#ff3b30':'#000'}; }
+      // Optional loaders (comment out if not ready)
+      async function loadAdm1(){ try{ const r=await fetch('/static/adm1.json'); if(!r.ok) return; const gj=await r.json(); window.adm1Layer = L.geoJSON(gj,{style:styleAdm1,interactive:false}).addTo(map); }catch(e){} }
+      async function loadAdm2(){ try{ const r=await fetch('/static/adm2.json'); if(!r.ok) return; const gj=await r.json(); window.adm2Layer = L.geoJSON(gj,{style:styleAdm2,interactive:false}).addTo(map); }catch(e){} }
+      // Kick off after map global is present
+      function init(){ if(typeof map==='undefined'){ return setTimeout(init,500); } loadAdm1(); /* loadAdm2(); */ refreshAlarms(); setInterval(refreshAlarms,15000); }
+      init();
+    })();
+  </script>
 </body>
 </html>

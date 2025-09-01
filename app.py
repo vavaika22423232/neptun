@@ -87,6 +87,117 @@ INIT_ONCE = False  # guard to ensure background startup once
 # Persistent dynamic channels file
 CHANNELS_FILE = 'channels_dynamic.json'
 
+# -------- Air alarm tracking (oblast / raion) --------
+APP_ALARM_TTL_MINUTES = 65  # auto-expire if no update ~1h
+ACTIVE_OBLAST_ALARMS = {}   # canonical oblast key -> {'since': epoch, 'last': epoch}
+ACTIVE_RAION_ALARMS = {}    # raion base (lowercase) -> {'since': epoch, 'last': epoch}
+
+# P-code mapping for ADM1 (області + special status cities)
+OBLAST_PCODE = {
+    'автономна республіка крим': 'UA01',
+    'вінницька область': 'UA05',
+    'волинська область': 'UA07',
+    'дніпропетровська область': 'UA12',
+    'донецька область': 'UA14',
+    'житомирська область': 'UA18',
+    'закарпатська область': 'UA21',
+    'запорізька область': 'UA23',
+    'івано-франківська область': 'UA26',
+    'київська область': 'UA32',
+    'кіровоградська область': 'UA35',
+    'луганська область': 'UA44',
+    'львівська область': 'UA46',
+    'миколаївська область': 'UA48',
+    'одеська область': 'UA51',
+    'полтавська область': 'UA53',
+    'рівненська область': 'UA56',
+    'сумська область': 'UA59',
+    'тернопільська область': 'UA61',
+    'харківська область': 'UA63',
+    'херсонська область': 'UA65',
+    'хмельницька область': 'UA68',
+    'черкаська область': 'UA71',
+    'чернівецька область': 'UA73',
+    'чернігівська область': 'UA74',
+    'київ': 'UA80',
+    'севастополь': 'UA85'
+}
+
+# ---- Alarm persistence (SQLite) ----
+def init_alarms_db():
+    try:
+        with _visits_db_conn() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS alarms (
+                    id TEXT PRIMARY KEY,
+                    level TEXT,
+                    name TEXT,
+                    since REAL,
+                    last REAL
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_alarms_level ON alarms(level)")
+    except Exception as e:
+        log.warning(f"alarms db init failed: {e}")
+
+def init_alarm_events_db():
+    try:
+        with _visits_db_conn() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS alarm_events (
+                    id TEXT PRIMARY KEY,
+                    level TEXT,
+                    name TEXT,
+                    event TEXT,
+                    ts REAL
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_alarm_events_time ON alarm_events(ts)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_alarm_events_name ON alarm_events(name)")
+    except Exception as e:
+        log.warning(f"alarm_events db init failed: {e}")
+
+def log_alarm_event(level:str, name:str, event:str, ts:float|None=None):
+    ts = ts or time.time()
+    try:
+        with _visits_db_conn() as conn:
+            conn.execute("INSERT INTO alarm_events (id,level,name,event,ts) VALUES (?,?,?,?,?)",
+                         (uuid.uuid4().hex[:12], level, name, event, ts))
+    except Exception as e:
+        log.debug(f"log_alarm_event failed: {e}")
+
+def _alarm_key(level:str, name:str)->str:
+    return f"{level}:{name}".lower()
+
+def persist_alarm(level:str, name:str, since:float, last:float):
+    try:
+        with _visits_db_conn() as conn:
+            conn.execute("INSERT OR REPLACE INTO alarms (id,level,name,since,last) VALUES (?,?,?,?,?)",
+                         (_alarm_key(level,name), level, name, since, last))
+    except Exception as e:
+        log.debug(f"persist_alarm failed: {e}")
+
+def remove_alarm(level:str, name:str):
+    try:
+        with _visits_db_conn() as conn:
+            conn.execute("DELETE FROM alarms WHERE id=?", (_alarm_key(level,name),))
+    except Exception as e:
+        log.debug(f"remove_alarm failed: {e}")
+
+def load_active_alarms(ttl_seconds:int):
+    out_obl = {}
+    out_raion = {}
+    cutoff = time.time() - ttl_seconds
+    try:
+        with _visits_db_conn() as conn:
+            cur = conn.execute("SELECT level,name,since,last FROM alarms WHERE last >= ?", (cutoff,))
+            for level,name,since,last in cur.fetchall():
+                if level == 'oblast': out_obl[name] = {'since': since, 'last': last}
+                elif level == 'raion': out_raion[name] = {'since': since, 'last': last}
+    except Exception as e:
+        log.debug(f"load_active_alarms failed: {e}")
+    return out_obl, out_raion
+
 def load_dynamic_channels():
     try:
         if os.path.exists(CHANNELS_FILE):
@@ -1549,6 +1660,26 @@ RAION_FALLBACK = {
     , 'самарський': (48.5380, 35.1500), 'самарский': (48.5380, 35.1500), 'самарівський': (48.5380, 35.1500)  # Samarskyi (approx east bank)
     , 'миргородський': (49.9640, 33.6121), 'миргородский': (49.9640, 33.6121)
     , 'бериславський': (46.8367, 33.4281), 'бериславский': (46.8367, 33.4281)
+    # Added batch (air alarm coverage) — approximate district administrative centers
+    , 'шепетівський': (50.1822, 27.0637), 'шепетовский': (50.1822, 27.0637)  # Shepetivka
+    , 'полтавський': (49.5883, 34.5514), 'полтавский': (49.5883, 34.5514)    # Poltava (raion)
+    , 'хмельницький': (49.4229, 26.9871), 'хмельницкий': (49.4229, 26.9871)  # Khmelnytskyi raion (city)
+    , 'роменський': (50.7515, 33.4746), 'роменский': (50.7515, 33.4746)      # Romny
+    , 'охтирський': (50.3103, 34.8988), 'ахтырский': (50.3103, 34.8988)      # Okhtyrka translit variant
+    , 'харківський': (49.9935, 36.2304), 'харьковский': (49.9935, 36.2304)   # ensure duplication above
+    , 'голованівський': (48.3833, 30.4500), 'голованевский': (48.3833, 30.4500) # Holovanivsk
+    , 'лубенський': (50.0165, 32.9969), 'лубенский': (50.0165, 32.9969)      # Lubny
+    , 'шосткинський': (51.8736, 33.4806), 'шосткинский': (51.8736, 33.4806)  # Shostka
+    , 'кременчуцький': (49.0631, 33.4030), 'кременчугский': (49.0631, 33.4030) # Kremenchuk
+    , "кам'янець-подільський": (48.6845, 26.5853), 'камянец-подольский': (48.6845, 26.5853)
+    , 'богодухівський': (50.1643, 35.5272), 'богодуховский': (50.1643, 35.5272) # Bohodukhiv
+    , 'кропивницький': (48.5079, 32.2623), 'кропивницкий': (48.5079, 32.2623)   # Kropyvnytskyi raion center
+    , 'сарненський': (51.3373, 26.6019), 'сарненский': (51.3373, 26.6019)       # Sarny
+    , 'лозівський': (48.8926, 36.3172), 'лозовский': (48.8926, 36.3172)         # Lozova
+    , 'новоукраїнський': (48.3174, 31.5167), 'новоукраинский': (48.3174, 31.5167) # Novoukrainka
+    , 'олександрійський': (48.6696, 33.1176), 'александрийский': (48.6696, 33.1176) # Oleksandriia
+    , 'охтирский': (50.3103, 34.8988)  # Russian variant explicit
+    # Potential typo in feed: 'берестинський' (if meant 'Бериславський' already covered). Placeholder guess -> skip precise to avoid misplot.
 }
 
 # Known external launch / airfield / training ground coordinates for Shahed (and similar) launch detection
@@ -1648,8 +1779,23 @@ def ensure_ua_place(name: str) -> str:
 
 # -------- Persistent visit tracking (SQLite) to survive redeploys --------
 VISITS_DB = os.getenv('VISITS_DB','visits.db')
+_SQLITE_PRAGMAS = [
+    "PRAGMA journal_mode=WAL;",
+    "PRAGMA synchronous=NORMAL;",
+    "PRAGMA foreign_keys=ON;"
+]
 def _visits_db_conn():
-    return sqlite3.connect(VISITS_DB, timeout=5)
+    conn = sqlite3.connect(VISITS_DB, timeout=5, check_same_thread=False)
+    try:
+        # Apply pragmas every time (cheap) to ensure durability/performance settings even after restart
+        for p in _SQLITE_PRAGMAS:
+            try:
+                conn.execute(p)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return conn
 
 _RECENT_SEEDED = False
 def _seed_recent_from_sql():
@@ -1825,6 +1971,15 @@ def _active_sessions_from_db(ttl:int)->list[dict]:
 # Initialize DB at import
 init_visits_db()
 init_comments_db()
+init_alarms_db()
+init_alarm_events_db()
+# Restore persisted active alarms
+try:
+    _obl,_r = load_active_alarms(APP_ALARM_TTL_MINUTES*60)
+    if _obl: ACTIVE_OBLAST_ALARMS.update(_obl)
+    if _r: ACTIVE_RAION_ALARMS.update(_r)
+except Exception as _e_rec:
+    log.debug(f'alarm restore failed: {_e_rec}')
 # Preload recent comments into in-memory cache so first GET can serve quickly without hitting DB again
 try:
     COMMENTS = load_recent_comments(limit=COMMENTS_MAX)
@@ -2072,6 +2227,79 @@ def process_message(text, mid, date_str, channel):
                         return []
     except Exception:
         pass
+    # Air alarm region/raion tracking (start / cancel) before other parsing
+    try:
+        low_full = (text or '').lower()
+        now_ep = time.time()
+        lines = [l.strip() for l in (text or '').split('\n') if l.strip()][:3]
+        if lines:
+            header = lines[0].lower()
+            header_norm = header.replace('область', 'обл.').replace('обл..','обл.')
+            # Oblast alarm start: contains '<adj> обл.' and body has 'повітряна тривога'
+            if ('повітр' in low_full or 'тривог' in low_full) and ' обл' in header_norm:
+                m_obl = re.search(r"([а-яіїєґ\-']+?)\s+обл\.?", header_norm)
+                if m_obl:
+                    stem = m_obl.group(1)
+                    # Match against OBLAST_CENTERS keys
+                    for k in OBLAST_CENTERS.keys():
+                        if k.startswith(stem):
+                            is_new = k not in ACTIVE_OBLAST_ALARMS
+                            rec = ACTIVE_OBLAST_ALARMS.setdefault(k, {'since': now_ep, 'last': now_ep})
+                            if rec['since'] > now_ep: rec['since'] = now_ep
+                            rec['last'] = now_ep
+                            persist_alarm('oblast', k, rec['since'], rec['last'])
+                            if is_new:
+                                log_alarm_event('oblast', k, 'start', now_ep)
+                            break
+            # Raion alarm start: '<name> район'
+            if ('повітр' in low_full or 'тривог' in low_full) and ' район' in header:
+                m_r = re.search(r"([а-яіїєґ\-']+?)\s+район", header)
+                if m_r:
+                    rb = m_r.group(1).replace('’',"'").replace('ʼ',"'")
+                    if rb in RAION_FALLBACK:
+                        is_new_r = rb not in ACTIVE_RAION_ALARMS
+                        rec = ACTIVE_RAION_ALARMS.setdefault(rb, {'since': now_ep, 'last': now_ep})
+                        if rec['since'] > now_ep: rec['since'] = now_ep
+                        rec['last'] = now_ep
+                        persist_alarm('raion', rb, rec['since'], rec['last'])
+                        if is_new_r:
+                            log_alarm_event('raion', rb, 'start', now_ep)
+        # Cancellation lines contain 'відбій тривоги' or 'отбой тревоги'
+        if ('відбій' in low_full or 'отбой' in low_full) and ('тривог' in low_full or 'тревог' in low_full):
+            # Precise: look for explicit oblast adjectives endings '-ська', '-цька', '-ницька', etc.
+            # Pattern: відбій тривоги у / в <word...> області OR '<adj> обл.'
+            m_cancel_obl = re.findall(r"(\b[а-яіїєґ\-']+?)(?:ська|цька|ницька|зька|жська)\s+обл(?:асть|\.|)", low_full)
+            removed_any = False
+            if m_cancel_obl:
+                for stem in m_cancel_obl:
+                    for k in list(ACTIVE_OBLAST_ALARMS.keys()):
+                        if k.startswith(stem):
+                            ACTIVE_OBLAST_ALARMS.pop(k, None); remove_alarm('oblast', k); log_alarm_event('oblast', k, 'cancel', now_ep); removed_any=True
+            # Raion precise cancel: "відбій тривоги у <name> районі" (locative: -ському / -івському)
+            m_cancel_r = re.findall(r"відбій[^\n]*?\b([а-яіїєґ\-']+?)(?:ському|івському|ському)\s+районі", low_full)
+            if m_cancel_r:
+                for stem in m_cancel_r:
+                    for r in list(ACTIVE_RAION_ALARMS.keys()):
+                        if r.startswith(stem):
+                            ACTIVE_RAION_ALARMS.pop(r, None); remove_alarm('raion', r); log_alarm_event('raion', r, 'cancel', now_ep); removed_any=True
+            # Fallback broad cancel if phrase generic and no explicit names matched
+            if not removed_any and re.search(r"відбій\s+тривог|отбой\s+тревог", low_full):
+                # remove all (global відбій)
+                for k in list(ACTIVE_OBLAST_ALARMS.keys()):
+                    ACTIVE_OBLAST_ALARMS.pop(k, None); remove_alarm('oblast', k); log_alarm_event('oblast', k, 'cancel', now_ep)
+                for r in list(ACTIVE_RAION_ALARMS.keys()):
+                    ACTIVE_RAION_ALARMS.pop(r, None); remove_alarm('raion', r); log_alarm_event('raion', r, 'cancel', now_ep)
+        # Expire stale
+        ttl_cut = now_ep - APP_ALARM_TTL_MINUTES*60
+        for dct in (ACTIVE_OBLAST_ALARMS, ACTIVE_RAION_ALARMS):
+            for k in list(dct.keys()):
+                if dct[k]['last'] < ttl_cut:
+                    level = 'oblast' if dct is ACTIVE_OBLAST_ALARMS else 'raion'
+                    dct.pop(k, None)
+                    remove_alarm(level, k)
+                    log_alarm_event(level, k, 'expire', now_ep)
+    except Exception as _e_alarm:
+        log.debug(f'alarm tracking block error: {_e_alarm}')
     # Early single-city (bold/emoji tolerant) parser
     try:
         orig = text
@@ -4954,6 +5182,57 @@ def comments_endpoint():
     if not rows and COMMENTS:  # fallback to cache if DB query unexpectedly empty
         rows = COMMENTS[-limit:]
     return jsonify({'ok': True, 'items': rows})
+
+@app.route('/active_alarms')
+def active_alarms_endpoint():
+    """Return current active oblast & raion air alarms (for polygon styling)."""
+    try:
+        now_ep = time.time()
+        cutoff = now_ep - APP_ALARM_TTL_MINUTES*60
+        for dct in (ACTIVE_OBLAST_ALARMS, ACTIVE_RAION_ALARMS):
+            for k in list(dct.keys()):
+                if dct[k]['last'] < cutoff:
+                    dct.pop(k, None)
+        obl_list = []
+        for k,v in ACTIVE_OBLAST_ALARMS.items():
+            base = k.lower()
+            pcode = OBLAST_PCODE.get(base)
+            obl_list.append({'name': k, 'since': v['since'], **({'pcode':pcode} if pcode else {})})
+        return jsonify({
+            'oblasts': obl_list,
+            'raions': [{'name': k, 'since': v['since']} for k,v in ACTIVE_RAION_ALARMS.items()],
+            'ttl_minutes': APP_ALARM_TTL_MINUTES
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/alarms_stats')
+def alarms_stats():
+    """Return recent alarm events history (start/cancel/expire) with optional query params:
+    ?level=oblast|raion  ?name=<substring>  ?minutes=<window>  ?limit=N
+    """
+    level_f = request.args.get('level')
+    name_sub = (request.args.get('name') or '').lower().strip()
+    minutes = int(request.args.get('minutes', '720'))  # default 12h
+    limit = int(request.args.get('limit','500'))
+    if limit > 2000: limit = 2000
+    cutoff = time.time() - minutes*60
+    rows = []
+    try:
+        with _visits_db_conn() as conn:
+            q = "SELECT level,name,event,ts FROM alarm_events WHERE ts >= ?"
+            params = [cutoff]
+            if level_f in ('oblast','raion'):
+                q += " AND level = ?"; params.append(level_f)
+            if name_sub:
+                q += " AND LOWER(name) LIKE ?"; params.append(f"%{name_sub}%")
+            q += " ORDER BY ts DESC LIMIT ?"; params.append(limit)
+            cur = conn.execute(q, tuple(params))
+            for level,name,event,tsv in cur.fetchall():
+                rows.append({'level': level, 'name': name, 'event': event, 'ts': tsv})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    return jsonify({'items': rows, 'count': len(rows), 'window_minutes': minutes})
 
 @app.route('/data')
 def data():
