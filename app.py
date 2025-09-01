@@ -2311,6 +2311,70 @@ def process_message(text, mid, date_str, channel):
                 cleaned = cleaned.replace(_zw,' ')
             cleaned = ' '.join(cleaned.split())
             cleaned = _re_early.sub(r'^[^A-Za-zА-Яа-яЇїІіЄєҐґ]+','', cleaned)
+            # NEW: if pipe '|' separates multiple city headers in one line, attempt multi-city extraction here
+            if '|' in cleaned:
+                parts = [p.strip() for p in cleaned.split('|') if p.strip()]
+                multi_tracks = []
+                for idx, part in enumerate(parts, start=1):
+                    if '(' not in part:
+                        continue
+                    par_pos = part.find('(')
+                    if par_pos <= 1:
+                        continue
+                    city_candidate = part[:par_pos].strip()
+                    if not (2 <= len(city_candidate) <= 40):
+                        continue
+                    try:
+                        base = city_candidate.lower().replace('\u02bc',"'").replace('ʼ',"'").replace('’',"'").replace('`',"'")
+                        base = _re_early.sub(r'\s+',' ', base)
+                        norm = UA_CITY_NORMALIZE.get(base, base)
+                        coords = CITY_COORDS.get(norm)
+                        if not coords and 'SETTLEMENTS_INDEX' in globals():
+                            idx_map = globals().get('SETTLEMENTS_INDEX') or {}
+                            coords = idx_map.get(norm)
+                        approx_flag = False
+                        if not coords:
+                            enriched = ensure_city_coords(norm)
+                            if enriched:
+                                if isinstance(enriched, tuple) and len(enriched) == 3:
+                                    coords = (enriched[0], enriched[1])
+                                    approx_flag = enriched[2]
+                                else:
+                                    coords = enriched
+                        if not coords:
+                            continue
+                        # classification per segment
+                        lseg = part.lower()
+                        if any(ph in lseg for ph in ['повідомляють про вибух','повідомлено про вибух','зафіксовано вибух','зафіксовано вибухи','фіксація вибух','фіксують вибух',' вибух.',' вибухи.']):
+                            threat, icon = 'vibuh','vibuh.png'
+                        elif 'відбій загрози обстр' in lseg or 'відбій загрози застосування' in lseg or 'відбій загрози бпла' in lseg:
+                            # treat as list-only cancellation fragment -> skip map marker for this part
+                            multi_tracks.append({
+                                'id': f"{mid}_p{idx}", 'text': part[:500], 'date': date_str, 'channel': channel,
+                                'list_only': True, 'threat_type': 'alarm_cancel', 'place': city_candidate.title()
+                            })
+                            continue
+                        elif 'загроза застосування бпла' in lseg or 'загроза застосування безпілот' in lseg:
+                            threat, icon = 'shahed','shahed.png'
+                        elif 'загроза обстрілу' in lseg or 'загроза обстрела' in lseg:
+                            threat, icon = 'artillery','obstril.png'
+                        else:
+                            threat, icon = classify(part)
+                        lat, lng = coords
+                        track = {
+                            'id': f"{mid}_p{idx}", 'place': city_candidate.title(), 'lat': lat, 'lng': lng,
+                            'threat_type': threat, 'text': part[:500], 'date': date_str, 'channel': channel,
+                            'marker_icon': icon, 'source_match': 'multi_city_pipe'
+                        }
+                        if approx_flag:
+                            track['approx'] = True
+                        multi_tracks.append(track)
+                    except Exception:
+                        continue
+                # Return only if 2+ actual geo tracks (ignore if we only produced one, fall back to single-city logic)
+                geo_count = sum(1 for t in multi_tracks if not t.get('list_only'))
+                if geo_count >= 2:
+                    return multi_tracks
             par = cleaned.find('(')
             if par > 1:
                 city_candidate = cleaned[:par].strip()
