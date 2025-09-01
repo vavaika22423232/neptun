@@ -605,7 +605,8 @@ UA_CITY_NORMALIZE = {
 UA_CITY_NORMALIZE.update({
     'городню':'городня','городні':'городня','городне':'городня','городни':'городня',
     'кролевця':'кролевець','кролевцу':'кролевець','кролевце':'кролевець',
-    'дубовʼязівку':'дубовʼязівка','дубовязівку':'дубовʼязівка','дубовязовку':'дубовʼязівка','дубовязовка':'дубовʼязівка'
+    'дубовʼязівку':'дубовʼязівка','дубовязівку':'дубовʼязівка','дубовязовку':'дубовʼязівка','дубовязовка':'дубовʼязівка',
+    'батурина':'батурин','батурині':'батурин','батурином':'батурин'
 })
 
 # Donetsk front city normalization (latin/ukr vowel variants)
@@ -701,6 +702,8 @@ CITY_COORDS = {
     'святогірськ': (49.0339, 37.5663),
     # Antonivka (Kherson urban-type settlement, user report for UAV threat)
     'антонівка': (46.6925, 32.7186),
+    # Baturyn (Chernihiv Obl.) for directional course reports
+    'батурин': (51.3450, 32.8761),
         'рівне': (50.6199, 26.2516), 'івано-франківськ': (48.9226, 24.7111), 'луцьк': (50.7472, 25.3254), 'тернопіль': (49.5535, 25.5948),
         'ужгород': (48.6208, 22.2879), 'кропивницький': (48.5079, 32.2623), 'кременчук': (49.0670, 33.4204), 'краматорськ': (48.7389, 37.5848),
         'мелітополь': (46.8489, 35.3650), 'бердянськ': (46.7553, 36.7885), 'павлоград': (48.5350, 35.8700), 'нікополь': (47.5667, 34.4061),
@@ -2153,6 +2156,36 @@ def process_message(text, mid, date_str, channel):
                     'id': str(mid), 'place': base.title(), 'lat': lat, 'lng': lng,
                     'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
                     'marker_icon': icon, 'source_match': 'relative_direction_city'
+                }]
+    except Exception:
+        pass
+    # Course towards single city ("курс(ом) на Батурин") -> place marker at that city
+    try:
+        import re as _re_course
+        low_txt2 = text.lower()
+        m_course = _re_course.search(r'курс(?:ом)?\s+на\s+([a-zа-яіїєґ\'ʼ’`\-]{3,40})', low_txt2)
+        if m_course:
+            raw_city = m_course.group(1)
+            raw_city = raw_city.replace('\u02bc',"'").replace('ʼ',"'").replace('’',"'").replace('`',"'")
+            base = UA_CITY_NORMALIZE.get(raw_city, raw_city)
+            coords = CITY_COORDS.get(base)
+            if not coords and 'SETTLEMENTS_INDEX' in globals():
+                idx = globals().get('SETTLEMENTS_INDEX') or {}
+                coords = idx.get(base)
+            if not coords:
+                enriched = ensure_city_coords(base)
+                if enriched:
+                    if isinstance(enriched, tuple) and len(enriched)==3:
+                        coords = (enriched[0], enriched[1])
+                    else:
+                        coords = enriched
+            if coords:
+                lat,lng = coords
+                threat_type, icon = classify(text)
+                return [{
+                    'id': str(mid), 'place': base.title(), 'lat': lat, 'lng': lng,
+                    'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': 'course_to_city'
                 }]
     except Exception:
         pass
