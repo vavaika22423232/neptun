@@ -1715,6 +1715,7 @@ RAION_ALARMS = {}
 # Territorial hromada fallback centers (selected). Keys lower-case without word 'територіальна громада'.
 HROMADA_FALLBACK = {
     'хотінська': (51.0825, 34.5860),  # Хотінська громада (approx center, Sumy raion near border)
+    'хотінь': (51.0825, 34.5860),  # с. Хотінь (explicit to avoid fallback to Суми center)
 }
 
 # Specific settlement fallback for mis-localized parsing (e.g., 'Кіпті' message wrongly geocoded to Lviv oblast)
