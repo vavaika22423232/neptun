@@ -1548,6 +1548,7 @@ RAION_FALLBACK = {
     , 'дніпровський': (48.4500, 35.1000), 'днепровский': (48.4500, 35.1000)  # Dnipro Raion (approx centroid)
     , 'самарський': (48.5380, 35.1500), 'самарский': (48.5380, 35.1500), 'самарівський': (48.5380, 35.1500)  # Samarskyi (approx east bank)
     , 'миргородський': (49.9640, 33.6121), 'миргородский': (49.9640, 33.6121)
+    , 'бериславський': (46.8367, 33.4281), 'бериславский': (46.8367, 33.4281)
 }
 
 # Known external launch / airfield / training ground coordinates for Shahed (and similar) launch detection
