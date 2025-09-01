@@ -2336,7 +2336,11 @@ def process_message(text, mid, date_str, channel):
                         if any(ph in l for ph in ['повідомляють про вибух','повідомлено про вибух','зафіксовано вибух','зафіксовано вибухи','фіксація вибух','фіксують вибух',' вибух.',' вибухи.']):
                             threat, icon = 'vibuh','vibuh.png'
                         elif 'відбій загрози обстр' in l or 'відбій загрози застосування' in l or 'відбій загрози бпла' in l:
-                            threat, icon = 'alarm_cancel','vidboi.png'
+                            # Treat city-level cancellation as list event, not a geo marker
+                            return [{
+                                'id': str(mid), 'text': orig[:500], 'date': date_str, 'channel': channel,
+                                'list_only': True, 'threat_type': 'alarm_cancel', 'place': city_candidate.title()
+                            }]
                         elif 'загроза застосування бпла' in l or 'загроза застосування безпілот' in l:
                             threat, icon = 'shahed','shahed.png'
                         elif 'загроза обстрілу' in l or 'загроза обстрела' in l:
