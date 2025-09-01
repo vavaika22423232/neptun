@@ -2048,6 +2048,28 @@ def geocode_opencage(place: str):
         return None
 
 def process_message(text, mid, date_str, channel):
+    # Early benign filter: city name + emojis / hearts without any threat keywords -> ignore
+    try:
+        lt = (text or '').lower().strip()
+        if lt:
+            # threat indicator tokens (broad stems)
+            threat_tokens = (
+                'шахед','shahed','бпла','дрон','ракет','каб','вибух','прил','удар','загроз','тривог',
+                'пуск','зліт','злет','avia','авіа','пво','обстр','mlrs','rszv','fpv','артил','зеніт','зенит'
+            )
+            if not any(t in lt for t in threat_tokens):
+                # strip emojis & symbols leaving letters, spaces and apostrophes
+                import re as _re_benign
+                core = _re_benign.sub(r"[^a-zа-яіїєґ'’ʼ`\s-]","", lt)
+                core = ' '.join(core.split())
+                # If core matches exactly a known city (or its normalized form) and original text length small -> benign
+                if 2 <= len(core) <= 30:
+                    base = UA_CITY_NORMALIZE.get(core, core)
+                    if base in CITY_COORDS or ('SETTLEMENTS_INDEX' in globals() and (globals().get('SETTLEMENTS_INDEX') or {}).get(base)):
+                        # Ignore this message (no tracks)
+                        return []
+    except Exception:
+        pass
     # Early single-city (bold/emoji tolerant) parser
     try:
         orig = text
