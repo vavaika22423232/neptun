@@ -5517,6 +5517,57 @@ def data():
 def list_channels():
     return jsonify({'channels': CHANNELS, 'invalid': list(INVALID_CHANNELS)})
 
+@app.route('/debug_parse', methods=['POST'])
+def debug_parse():
+    """Ad-hoc debugging endpoint to inspect parser output for a stored message or raw text.
+
+    POST JSON:
+      {"id": <message_id>}  -> reparse stored message text
+      or
+      {"text": "raw message text", "channel": "optional", "date": "YYYY-MM-DD HH:MM:SS"}
+
+    Response: { ok: bool, source: 'stored'|'raw', message: {...original message fields subset...}, tracks: [...], count: N }
+    """
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+    except Exception:
+        payload = {}
+    mid = payload.get('id')
+    raw_text = payload.get('text')
+    channel = payload.get('channel') or ''
+    date_str = payload.get('date') or datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    src = 'raw'
+    if mid and not raw_text:
+        # look up stored messages
+        try:
+            for m in load_messages():
+                if str(m.get('id')) == str(mid):
+                    raw_text = m.get('text') or ''
+                    channel = m.get('channel') or m.get('source') or channel
+                    date_str = m.get('date') or date_str
+                    src = 'stored'
+                    break
+        except Exception:
+            pass
+    if not raw_text:
+        return jsonify({'ok': False, 'error': 'no_text_provided'}), 400
+    try:
+        tracks = process_message(raw_text, str(mid) if mid else 'debug', date_str, channel)
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'parse_error: {e}'}), 500
+    return jsonify({
+        'ok': True,
+        'source': src,
+        'message': {
+            'id': mid,
+            'channel': channel,
+            'date': date_str,
+            'text': raw_text[:2000]
+        },
+        'count': len(tracks) if isinstance(tracks, list) else 0,
+        'tracks': tracks if isinstance(tracks, list) else []
+    })
+
 @app.route('/locate')
 def locate_place():
     """Locate a settlement or raion by name. Query param: q=<name>
