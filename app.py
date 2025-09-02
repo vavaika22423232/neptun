@@ -4217,7 +4217,18 @@ def process_message(text, mid, date_str, channel):
                 except Exception:
                     coords = None
             if not coords:
-                continue
+                # Fallback: if we have a region header, place placeholder near its oblast center with slight jitter
+                if region_hdr and region_hdr in OBLAST_CENTERS:
+                    rlat, rlng = OBLAST_CENTERS[region_hdr]
+                    # deterministic jitter based on hash of city token
+                    h = abs(hash(base)) % 1000 / 1000.0
+                    lat = max(43.0, min(53.5, rlat + (h - 0.5) * 0.4))
+                    lng = max(21.0, min(41.0, rlng + (h - 0.5) * 0.6))
+                    coords = (lat, lng)
+                    approx_flag = True
+                else:
+                    # skip completely if no region context
+                    continue
             if base not in CITY_COORDS:
                 CITY_COORDS[base] = coords
             lat, lng = coords
@@ -4230,6 +4241,8 @@ def process_message(text, mid, date_str, channel):
                     label += f" ({i}/{total})"
                 if region_hdr and region_hdr not in label.lower():
                     label += f" [{region_hdr.title()}]"
+                if 'approx_flag' in locals() and approx_flag:
+                    label += ' ~'
                 course_tracks.append({
                     'id': f"{mid}_c{len(course_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
                     'threat_type': threat_type, 'text': ln[:500], 'date': date_str, 'channel': channel,
