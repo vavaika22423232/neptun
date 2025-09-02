@@ -729,6 +729,7 @@ UA_CITY_NORMALIZE.update({
     ,'обухівського':'обухівський','обухівському':'обухівський','обухівський':'обухівський'
     ,'херсонського':'херсонський','херсонському':'херсонський','херсонський':'херсонський'
     ,'вінницького':'вінницький','вінницькому':'вінницький','вінницький':'вінницький'
+    ,'куцуруба':'куцуруб','воскресенку':'воскресенка','воскресенки':'воскресенка'
 })
 # Apostrophe-less fallback for Sloviansk
 UA_CITY_NORMALIZE['словянськ'] = "слов'янськ"
@@ -879,6 +880,7 @@ CITY_COORDS = {
         'покровське': (48.1180, 36.2470), 'петропавлівка': (48.5000, 36.4500), 'шахтарське': (47.9500, 36.0500), 'миколаївка': (49.1667, 36.2333),
         'низи': (50.7435, 34.9860), 'барвінкове': (48.9000, 37.0167), 'пісочин': (49.9500, 36.1330), 'берестове': (49.3500, 37.0000),
     'кобеляки': (49.1500, 34.2000), 'бердичів': (49.8942, 28.5986),
+    'куцуруб': (46.7906, 31.9222), 'воскресенка': (50.4850, 30.6090),
     # Newly added Kyiv & Odesa region settlements / raion centers for alerts
     'гостомель': (50.5853, 30.2617), 'боярка': (50.3301, 30.5201), 'макарів': (50.4645, 29.8114),
     'бородянка': (50.6447, 29.9202), 'кілія': (45.4553, 29.2640),
@@ -2482,6 +2484,39 @@ def process_message(text, mid, date_str, channel):
     try:
         import re as _re_rel
         low_txt = text.lower()
+        # NEW: pattern "<city> - до вас БпЛА" -> marker at city
+        m_dash = _re_rel.search(r"([a-zа-яіїєґ'ʼ’`\-]{3,40})\s*[-–—]\s*до вас\s+бпла", low_txt)
+        if m_dash:
+            raw_city = m_dash.group(1)
+            raw_city = raw_city.replace('\u02bc',"'").replace('ʼ',"'").replace('’',"'").replace('`',"'")
+            base = UA_CITY_NORMALIZE.get(raw_city, raw_city)
+            coords = CITY_COORDS.get(base)
+            if not coords and 'SETTLEMENTS_INDEX' in globals():
+                coords = (globals().get('SETTLEMENTS_INDEX') or {}).get(base)
+            if coords:
+                lat,lng = coords
+                threat, icon = 'shahed','shahed.png'
+                return [{
+                    'id': str(mid), 'place': base.title(), 'lat': lat, 'lng': lng,
+                    'threat_type': threat, 'text': text[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': 'city_dash_uav'
+                }]
+        # NEW: pattern "БпЛА на <city>" or "бпла на <city>" -> marker at city
+        m_on = _re_rel.search(r"бпла\s+на\s+([a-zа-яіїєґ'ʼ’`\-]{3,40})", low_txt)
+        if m_on:
+            rc = m_on.group(1)
+            rc = rc.replace('\u02bc',"'").replace('ʼ',"'").replace('’',"'").replace('`',"'")
+            base = UA_CITY_NORMALIZE.get(rc, rc)
+            coords = CITY_COORDS.get(base)
+            if not coords and 'SETTLEMENTS_INDEX' in globals():
+                coords = (globals().get('SETTLEMENTS_INDEX') or {}).get(base)
+            if coords:
+                lat,lng = coords
+                return [{
+                    'id': str(mid), 'place': base.title(), 'lat': lat, 'lng': lng,
+                    'threat_type': 'shahed', 'text': text[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': 'shahed.png', 'source_match': 'uav_on_city'
+                }]
         # pattern captures direction word + city morph form
         m_rel = _re_rel.search(r'(північніше|південніше|східніше|західніше)\s+([a-zа-яіїєґ\'ʼ’`\-]{3,40})', low_txt)
         if m_rel:
