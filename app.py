@@ -2313,6 +2313,53 @@ def process_message(text, mid, date_str, channel):
         pass
     # Ensure original_text is defined early to avoid UnboundLocalError in early parsing branches
     original_text = text
+    large_message_mode = False
+    LARGE_THRESHOLD = 15000
+    HARD_CUTOFF = 40000  # safety to avoid pathological regex backtracking
+    parse_started_ts = time.perf_counter()
+    if text and len(text) > LARGE_THRESHOLD:
+        large_message_mode = True
+        orig_len = len(text)
+        if orig_len > HARD_CUTOFF:
+            # Keep head + tail slices to retain some closing context
+            head = text[:HARD_CUTOFF//2]
+            tail = text[-2000:]
+            text = head + "\n...TRUNCATED...\n" + tail
+            log.debug(f"mid={mid} large_message_mode truncation {orig_len}->{len(text)} chars")
+        else:
+            log.debug(f"mid={mid} large_message_mode len={orig_len}")
+        # Quick complexity metrics
+        try:
+            lc = text.lower()
+            metrics = {
+                'len': orig_len,
+                'lines': text.count('\n') + 1,
+                'bpla': lc.count('бпла'),
+                'shahed': lc.count('шахед'),
+                'course': lc.count('курс'),
+                'napr': lc.count('напрям') + lc.count('напрямку')
+            }
+            log.debug(f"mid={mid} large_msg_metrics {metrics}")
+        except Exception:
+            pass
+        # Pre-scan chunk optimization: if many repeated 'бпла курсом на', extract tokens fast before heavy regex blocks
+        try:
+            if text.lower().count('курс') > 8 and text.lower().count('бпла') > 8:
+                fast_tokens = []
+                for ln in text.split('\n'):
+                    lnl = ln.lower()
+                    if 'бпла' in lnl and 'курс' in lnl and ' на ' in lnl:
+                        # light-weight extraction (avoid complex backtracking)
+                        # Regex: capture token after 'курс(ом) на' up to 40 chars (letters, spaces, dashes)
+                        m = re.search(r"курс(?:ом)?\s+на\s+([a-zа-яіїєґ\-\s]{3,40})", lnl, re.IGNORECASE)
+                        if m:
+                            tok = m.group(1).strip()
+                            if tok and tok not in fast_tokens:
+                                fast_tokens.append(tok)
+                if fast_tokens:
+                    log.debug(f"mid={mid} pre-scan collected {len(fast_tokens)} fast_tokens (will still run main parser)")
+        except Exception as _e_fast:
+            log.debug(f"mid={mid} pre-scan error: {_e_fast}")
     # Early benign filter: city name + emojis / hearts without any threat keywords -> ignore
     try:
         lt = (text or '').lower().strip()
@@ -2341,6 +2388,8 @@ def process_message(text, mid, date_str, channel):
                     return []
     except Exception:
         pass
+    # ... existing parsing logic continues ...
+    # At the very end of function (before return default) we'll log duration.
     # Air alarm region/raion tracking (start / cancel) before other parsing
     try:
         low_full = (text or '').lower()
@@ -4250,6 +4299,35 @@ def process_message(text, mid, date_str, channel):
                 })
         if course_tracks:
             return course_tracks
+        # Salvage fallback: large multi-line message with many 'бпла курсом' but parser produced nothing
+        try:
+            ll_full = text.lower()
+            if course_tracks == [] and ll_full.count('бпла') >= 5 and ll_full.count('курс') >= 5:
+                pat_salv = re.compile(r'(?:\d+\s*[xх]?\s*)?бпла[^\n]{0,60}?курс(?:ом)?\s+на\s+([a-zа-яіїєґ\-ʼ"“”\'`\s]{3,40})', re.IGNORECASE)
+                raw_hits = [m.group(1).strip() for m in pat_salv.finditer(ll_full)]
+                uniq = []
+                for h in raw_hits:
+                    if h and h not in uniq:
+                        uniq.append(h)
+                salvage_tracks = []
+                for idx, token in enumerate(uniq, 1):
+                    base_tok = _resolve_city_candidate(token)
+                    base_tok = norm_city_token(base_tok)
+                    coords = CITY_COORDS.get(base_tok) or (SETTLEMENTS_INDEX.get(base_tok) if SETTLEMENTS_INDEX else None)
+                    if not coords:
+                        continue
+                    lat, lng = coords
+                    threat_type, icon = classify(text)
+                    salvage_tracks.append({
+                        'id': f"{mid}_sf{idx}", 'place': base_tok.title(), 'lat': lat, 'lng': lng,
+                        'threat_type': threat_type, 'text': token[:120], 'date': date_str, 'channel': channel,
+                        'marker_icon': icon, 'source_match': 'salvage_course_multi'
+                    })
+                if salvage_tracks:
+                    log.debug(f"salvage_course_multi generated {len(salvage_tracks)} tracks mid={mid}")
+                    return salvage_tracks
+        except Exception as _e_salv:
+            log.debug(f'salvage fallback error mid={mid}: {_e_salv}')
 
     # --- Generic multi-line UAV near-pass counts (e.g. "5х бпла повз Барвінкове") ---
     if 'бпла' in lower and 'повз' in lower and re.search(r'\d+[xх]\s*бпла', lower):
