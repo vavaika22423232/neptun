@@ -1424,6 +1424,8 @@
             const circle = L.circle([j.lat,j.lng], { radius: 9000, color:'#3b82f6', weight:2, fillColor:'#2563eb', fillOpacity:0.15 });
             circle.addTo(map);
             setTimeout(()=>{ circle.setStyle({opacity:0, fillOpacity:0}); setTimeout(()=>{ try{map.removeLayer(circle);}catch(e){} }, 650); }, 1600);
+          } else if(j.status==='suggest' && Array.isArray(j.matches)) {
+            showSuggest(j.matches.map(n=> n));
           } else {
             // show not found suggestion with history fallback
             showSuggest(psHistory.slice(0,6));
@@ -1446,7 +1448,16 @@
             }
             // include recent history
             psHistory.filter(h=>h.toLowerCase().includes(v)).forEach(h=> set.add(h));
-            if(set.size){ showSuggest([...set].slice(0,12)); } else hideSuggest();
+            if(set.size){
+              showSuggest([...set].slice(0,12));
+            } else {
+              // fallback to backend suggestions for full settlement list
+              if(v.length>=3){
+                fetch(`/locate?q=${encodeURIComponent(v)}`).then(r=>r.json()).then(j=>{
+                  if(j.status==='suggest') showSuggest(j.matches||[]);
+                }).catch(()=>{});
+              } else hideSuggest();
+            }
         });
       }
       if(psSuggest){

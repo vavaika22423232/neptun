@@ -5491,6 +5491,19 @@ def locate_place():
     if key in CITY_COORDS:
         lat,lng = CITY_COORDS[key]
         return jsonify({'status':'ok','name':key.title(),'lat':lat,'lng':lng,'source':'dict'})
+    # Check full settlements index (all cities/villages loaded from external file)
+    if 'SETTLEMENTS_INDEX' in globals() and key in SETTLEMENTS_INDEX:
+        lat,lng = SETTLEMENTS_INDEX[key]
+        return jsonify({'status':'ok','name':key.title(),'lat':lat,'lng':lng,'source':'settlement'})
+    # If not exact, attempt prefix suggestions for UI autocomplete
+    if 'SETTLEMENTS_INDEX' in globals() and len(key) >= 3:
+        pref = key
+        matches = [n for n in SETTLEMENTS_INDEX.keys() if n.startswith(pref)][:15]
+        if not matches and pref.endswith(('у','ю')):
+            pref2 = pref[:-1] + 'а'
+            matches = [n for n in SETTLEMENTS_INDEX.keys() if n.startswith(pref2)][:15]
+        if matches:
+            return jsonify({'status':'suggest','query':q,'matches':matches})
     # Attempt dynamic ensure (geocode) unless negative cache prohibits
     coords = None
     try:
