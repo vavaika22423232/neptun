@@ -4187,8 +4187,11 @@ def process_message(text, mid, date_str, channel):
             if not ln_stripped:
                 continue
             low_ln = ln_stripped.lower()
+            # Allow region header if line ends with ':' even if preceded by emoji or bullets
             if low_ln.endswith(':'):
-                base_hdr = low_ln[:-1]
+                # remove leading emojis/symbols
+                cleaned_hdr = re.sub(r'^[^a-zа-яіїєґ]+','', low_ln[:-1])
+                base_hdr = cleaned_hdr.strip()
                 if base_hdr in OBLAST_CENTERS:
                     current_region_hdr = base_hdr
                 continue
