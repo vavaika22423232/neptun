@@ -4046,9 +4046,11 @@ def process_message(text, mid, date_str, channel):
     # --- Per-line UAV course / area city targeting ("БпЛА курсом на <місто>", "8х БпЛА в районі <міста>") ---
     # Triggered when region multi list suppressed earlier due to presence of course lines.
     if 'бпла' in lower and ('курс' in lower or 'в районі' in lower):
+        # Normalize: insert artificial newlines after region headers appearing mid-line (e.g. "Сумщина: БпЛА курсом ...")
+        original_text_norm = re.sub(r'(?i)(\b[А-Яа-яЇїІіЄєҐґ\-]{3,}(?:щина|область|обл\.)):(?!\s*\n)', r'\1:\n', original_text)
         lines_with_region = []
         current_region_hdr = None
-        for raw_ln in original_text.splitlines():
+        for raw_ln in original_text_norm.splitlines():
             ln_stripped = raw_ln.strip()
             if not ln_stripped:
                 continue
@@ -4061,6 +4063,30 @@ def process_message(text, mid, date_str, channel):
             subparts = [p.strip() for p in re.split(r'[;]+', ln_stripped) if p.strip()]
             for part in subparts:
                 lines_with_region.append((part, current_region_hdr))
+        # Expand lines that contain multiple course phrases glued together in one line
+        expanded = []
+        multi_start_re = re.compile(r'((?:\d+)[xх]?\s*)?бпла\s+курс', re.IGNORECASE)
+        for part, region_hdr in lines_with_region:
+            low_part = part.lower()
+            # fast skip if fewer than 2 occurrences
+            if low_part.count('бпла курс') + low_part.count('бпла  курс') < 2 and len(multi_start_re.findall(low_part)) < 2:
+                expanded.append((part, region_hdr))
+                continue
+            # Find segment boundaries
+            starts = [m.start() for m in multi_start_re.finditer(part)]
+            if not starts or len(starts) == 1:
+                expanded.append((part, region_hdr))
+                continue
+            # If there's a header-like prefix before first start (e.g. region name + ':'), keep it attached to first segment
+            for idx, s in enumerate(starts):
+                seg_start = s
+                seg_end = starts[idx+1] if idx+1 < len(starts) else len(part)
+                segment = part[seg_start:seg_end].strip()
+                if not segment:
+                    continue
+                expanded.append((segment, region_hdr))
+        if expanded:
+            lines_with_region = expanded
         course_tracks = []
         # Многословные названия (до 3 слов) после "курс(ом) на" и "в районі"
         pat_count_course = re.compile(r'^(\d+)[xх]?\s*бпла.*?курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
