@@ -859,6 +859,7 @@
    }
     document.addEventListener('DOMContentLoaded', ()=>{
       setupCommentForm(); startComments();
+  try { hookZoomRedraw(); } catch(e){}
       const fab=document.getElementById('commentsFab'); const closeBtn=document.getElementById('commentsCloseBtn'); const card=document.getElementById('commentsCard');
       // Initial state: show card on desktop, show fab only when collapsed
       if(window.innerWidth < 900 && card){ card.classList.add('collapsed'); } else {
@@ -1129,8 +1130,16 @@
         }
   const threatClass = (p.threat_type||'default').toLowerCase();
   const countBadge = p.count && p.count>1 ? `<div class="tm-badge">${p.count}×</div>` : '';
-  const html = `<img class='plain-marker-img' src='${iconUrl}' alt=''>`;
-  const icon = L.divIcon({ html, className:'', iconSize:[38,50], iconAnchor:[19,46], popupAnchor:[0,-44] });
+  // Dynamic scale: keep screen footprint smaller on distant zooms so visual offset feels minimal
+  let z = map.getZoom ? map.getZoom() : 6;
+  let base = 34; // base size at mid zoom
+  // scale factor: grow slightly after zoom 7, shrink under 5
+  let factor = z >= 9 ? 1.25 : z >= 7 ? 1.0 : z >= 6 ? 0.85 : z >=5 ? 0.7 : 0.55;
+  const w = Math.round(base * factor);
+  const h = Math.round(w * 1.15);
+  const html = `<img class='plain-marker-img' style='width:${w}px;height:${h}px;' src='${iconUrl}' alt=''>`;
+  // Anchor to visual center (half width/height) instead of bottom so geographic point stays stable when scaling
+  const icon = L.divIcon({ html, className:'', iconSize:[w,h], iconAnchor:[w/2, h/2], popupAnchor:[0,-h/2] });
   const m = L.marker([p.lat, p.lng], { icon, riseOnHover:true });
         // Optional short polyline showing nominal approach direction (simple cardinal/ordinal mapping)
         if (arrowDir) {
@@ -1244,6 +1253,15 @@
   // Notify listeners (banner heuristics etc.)
   try { document.dispatchEvent(new CustomEvent('markersUpdated', {detail: data})); } catch(e){}
   if (overlay && markers.length>0) overlay.classList.add('hidden');
+    }
+    // Re-scale markers on zoom (debounced)
+    let _zoomRedrawTimer=null;
+    function hookZoomRedraw(){
+      if(!map) return;
+      map.on('zoomend', ()=>{
+        if(_zoomRedrawTimer) clearTimeout(_zoomRedrawTimer);
+        _zoomRedrawTimer = setTimeout(()=>updateMarkers(), 40);
+      });
     }
     // Create a curved arc (quadratic bezier approximation) and fading tail
     function addTrajectoryArc(p, dx, dy){
