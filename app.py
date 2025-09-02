@@ -340,6 +340,7 @@ def save_messages(data):
         data = _prune_messages(data)
     except Exception as e:
         log.debug(f'Retention prune error: {e}')
+    print(f"DEBUG: Saving {len(data)} messages to file")
     with open(MESSAGES_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     # After each save attempt optional git auto-commit
@@ -2403,6 +2404,13 @@ def geocode_opencage(place: str):
         return None
 
 def process_message(text, mid, date_str, channel):  # type: ignore
+    # ВСЕГДА логируем каждое входящее сообщение для отладки
+    try:
+        print(f"DEBUG: process_message called - mid={mid}, channel={channel}, text_length={len(text or '')}")
+        print(f"DEBUG: message text preview: {(text or '')[:200]}...")
+    except Exception:
+        pass
+    
     # Strip embedded links (Markdown [text](url) or raw URLs) while keeping core message text.
     # Requested: if message contains links, remove them but keep the rest.
     try:
@@ -2497,12 +2505,14 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     base = UA_CITY_NORMALIZE.get(core, core)
                     if base in CITY_COORDS or ('SETTLEMENTS_INDEX' in globals() and (globals().get('SETTLEMENTS_INDEX') or {}).get(base)):
                         # Ignore this message (no tracks)
+                        print(f"DEBUG: BENIGN FILTER blocked message mid={mid} - detected city name without threats: '{core}'")
                         return []
             # NEW suppression: reconnaissance-only notes ("дорозвідка по БпЛА") should not produce a marker
             # Pattern triggers if word 'дорозвідк' present together with UAV terms but no other threat verbs
             if 'дорозвідк' in lt and any(k in lt for k in ['бпла','shahed','шахед','дрон']):
                 # Avoid suppressing if explosions or launches also present
                 if not any(k in lt for k in ['вибух','удар','пуск','прил','обстріл','обстрел','зліт','злет']):
+                    print(f"DEBUG: RECONNAISSANCE FILTER blocked message mid={mid} - reconnaissance only")
                     return []
     except Exception:
         pass
@@ -5348,6 +5358,7 @@ async def fetch_loop():
             ch_strip = ch.strip()
             if not ch_strip:
                 continue
+            print(f"DEBUG: Processing backfill for channel: {ch_strip}")
             fetched = 0
             try:
                 if not await ensure_connected():
@@ -5363,12 +5374,15 @@ async def fetch_loop():
                         continue
                     tracks = process_message(msg.text, msg.id, dt.strftime('%Y-%m-%d %H:%M:%S'), ch_strip)
                     if tracks:
+                        print(f"DEBUG: Message {msg.id} generated {len(tracks)} tracks")
                         merged_any = False
                         merged_refs = []
                         for t in tracks:
                             if t.get('place'):
                                 t['place'] = ensure_ua_place(t['place'])
                             merged, ref = maybe_merge_track(all_data, t)
+                    else:
+                        print(f"DEBUG: Message {msg.id} generated NO tracks (filtered or no matches)")
                             if merged:
                                 merged_any = True
                                 merged_refs.append(ref)
@@ -5393,6 +5407,7 @@ async def fetch_loop():
                             })
                             processed.add(msg.id)
                             total_raw += 1
+                        print(f"DEBUG: Message {msg.id} - ALWAYS_STORE_RAW={ALWAYS_STORE_RAW}, stored as raw")
                         log.debug(f'Backfill skip (no geo): {ch_strip} #{msg.id} {msg.text[:80]!r}')
                 if fetched:
                     total_backfilled += fetched
