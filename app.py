@@ -5534,6 +5534,15 @@ def debug_parse():
         payload = {}
     mid = payload.get('id')
     raw_text = payload.get('text')
+    # Allow base64-encoded text to avoid client console encoding corruption
+    if not raw_text:
+        b64_txt = payload.get('b64') or payload.get('b64_text') or None
+        if b64_txt:
+            try:
+                import base64
+                raw_text = base64.b64decode(b64_txt).decode('utf-8', errors='replace')
+            except Exception:
+                raw_text = ''
     channel = payload.get('channel') or ''
     date_str = payload.get('date') or datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
     src = 'raw'
