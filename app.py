@@ -2226,6 +2226,12 @@ def process_message(text, mid, date_str, channel):
                     if base in CITY_COORDS or ('SETTLEMENTS_INDEX' in globals() and (globals().get('SETTLEMENTS_INDEX') or {}).get(base)):
                         # Ignore this message (no tracks)
                         return []
+            # NEW suppression: reconnaissance-only notes ("дорозвідка по БпЛА") should not produce a marker
+            # Pattern triggers if word 'дорозвідк' present together with UAV terms but no other threat verbs
+            if 'дорозвідк' in lt and any(k in lt for k in ['бпла','shahed','шахед','дрон']):
+                # Avoid suppressing if explosions or launches also present
+                if not any(k in lt for k in ['вибух','удар','пуск','прил','обстріл','обстрел','зліт','злет']):
+                    return []
     except Exception:
         pass
     # Air alarm region/raion tracking (start / cancel) before other parsing
