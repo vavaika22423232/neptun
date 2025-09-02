@@ -5381,8 +5381,6 @@ async def fetch_loop():
                             if t.get('place'):
                                 t['place'] = ensure_ua_place(t['place'])
                             merged, ref = maybe_merge_track(all_data, t)
-                    else:
-                        print(f"DEBUG: Message {msg.id} generated NO tracks (filtered or no matches)")
                             if merged:
                                 merged_any = True
                                 merged_refs.append(ref)
@@ -5393,6 +5391,7 @@ async def fetch_loop():
                             log.info(f'Merged track(s) for {ch_strip} #{msg.id} into existing point(s).')
                         fetched += 1
                     else:
+                        print(f"DEBUG: Message {msg.id} generated NO tracks (filtered or no matches)")
                         if ALWAYS_STORE_RAW:
                             all_data.append({
                                 'id': str(msg.id),
