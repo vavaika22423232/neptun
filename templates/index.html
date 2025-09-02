@@ -551,6 +551,17 @@
   /* Avoid overlap with comments FAB on small screens */
   @media (max-width:900px){ .support-fab{ right:1rem; bottom:1rem; } .comments-fab{ right:1rem; bottom:4.4rem; } }
   @media (max-width:520px){ .comments-fab{ right:1rem; bottom:4.8rem; } }
+  /* --- Place search control --- */
+  .place-search{position:absolute;top:1rem;left:50%;transform:translateX(-50%);display:flex;gap:.4rem;background:rgba(15,23,42,.78);backdrop-filter:blur(8px) saturate(1.4);padding:.55rem .8rem;border-radius:1.1rem;box-shadow:0 4px 22px -6px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.08);z-index:950;align-items:center;}
+  .place-search input{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#fff;padding:.45rem .75rem;border-radius:.75rem;min-width:260px;font-size:.82rem;outline:none;transition:.18s;}
+  .place-search input:focus{border-color:#3b82f6;background:rgba(59,130,246,.15);box-shadow:0 0 0 2px rgba(59,130,246,.35);} 
+  .place-search button{background:linear-gradient(135deg,#2563eb,#7c3aed);border:none;color:#fff;padding:.5rem .75rem;border-radius:.7rem;cursor:pointer;display:flex;align-items:center;gap:.25rem;box-shadow:0 4px 14px -4px rgba(37,99,235,.55);transition:.2s;font-size:.75rem;font-weight:600;letter-spacing:.4px;}
+  .place-search button:hover{transform:translateY(-2px);} .place-search button:active{transform:translateY(0);} 
+  @media (max-width:820px){ .place-search{top:auto;bottom:.75rem;left:.75rem;transform:none;right:.75rem;margin:0;flex-wrap:nowrap;min-width:0;} .place-search input{min-width:0;width:160px;} }
+  .ps-suggest{position:absolute;top:100%;left:0;margin-top:.4rem;background:#0f172a;border:1px solid #1e293b;border-radius:.9rem;padding:.35rem .4rem;min-width:100%;max-height:240px;overflow-y:auto;box-shadow:0 8px 28px -6px rgba(0,0,0,.55);}
+  .ps-item{padding:.4rem .55rem;border-radius:.55rem;font-size:.75rem;cursor:pointer;display:flex;justify-content:space-between;gap:.6rem;}
+  .ps-item:hover,.ps-item.active{background:#1e293b;}
+  .ps-empty{padding:.5rem .6rem;font-size:.7rem;opacity:.6;}
     .donate-modal-overlay{position:fixed;inset:0;background:radial-gradient(circle at 30% 30%,rgba(15,23,42,.92),rgba(2,6,23,.94));backdrop-filter:blur(14px) saturate(1.4);display:none;align-items:center;justify-content:center;z-index:1400;}
     .donate-modal-overlay.active{display:flex;animation:fadeIn .35s ease;}
     .donate-modal{width:min(600px,92vw);background:linear-gradient(145deg,#0f172a,#1e293b 55%,#0f172a);border:1px solid #233247;border-radius:1.35rem;padding:1.85rem 1.75rem 1.6rem;position:relative;box-shadow:0 18px 48px -12px rgba(0,0,0,.65),0 0 0 1px rgba(59,130,246,.25);font-family:inherit;color:#e2e8f0;}
@@ -671,6 +682,12 @@
         <p>Зараз мітки з’являться (оновлення / перезапуск сервісу).</p>
       </div>
       <div id="map"></div>
+      <!-- Search control -->
+      <div id="placeSearch" class="place-search">
+        <input type="text" id="placeSearchInput" placeholder="Пошук населеного пункту…" aria-label="Пошук міста/села" autocomplete="off">
+        <button id="placeSearchBtn" title="Знайти" aria-label="Знайти"><i class="material-icons" style="font-size:18px;vertical-align:middle;">search</i></button>
+        <div id="placeSearchSuggest" class="ps-suggest" style="display:none;"></div>
+      </div>
     </div>
     <div class="card" id="events">
       <h2>Останні події</h2>
@@ -1053,6 +1070,8 @@
         if (!p.place || vague.includes(p.place.toLowerCase())) return false;
         return true;
       });
+  // Expose current points for search suggestions
+  window.__lastPoints = points;
       if (threatType) points = points.filter(p => (p.threat_type || '').toLowerCase() === threatType);
   if (overlay) { if (points.length>0) overlay.classList.add('hidden'); else overlay.classList.remove('hidden'); }
       if (markerLayer) { markerLayer.clearLayers(); }
@@ -1377,6 +1396,66 @@
         crossOrigin:true,
         attribution:''
       }).addTo(map);
+      // --- Place search wiring ---
+      const psWrap = document.getElementById('placeSearch');
+      const psInput = document.getElementById('placeSearchInput');
+      const psBtn = document.getElementById('placeSearchBtn');
+      const psSuggest = document.getElementById('placeSearchSuggest');
+      let psHistory = JSON.parse(localStorage.getItem('ps_history')||'[]');
+      function persistHistory(){ localStorage.setItem('ps_history', JSON.stringify(psHistory.slice(0,25))); }
+      function showSuggest(list){
+        if(!psSuggest) return;
+        if(!list || !list.length){ psSuggest.innerHTML = '<div class="ps-empty">Немає варіантів</div>'; psSuggest.style.display='block'; return; }
+        psSuggest.innerHTML = list.map((n,i)=>`<div class='ps-item' data-name='${n}'>${n}<span style='opacity:.45;'>⌖</span></div>`).join('');
+        psSuggest.style.display='block';
+      }
+      function hideSuggest(){ if(psSuggest) psSuggest.style.display='none'; }
+      function addHistory(name){ name = name.trim(); if(!name) return; psHistory = [name, ...psHistory.filter(n=>n!==name)]; persistHistory(); }
+      async function locate(query){
+        if(!query) return;
+        psWrap?.classList.add('loading');
+        try {
+          const r = await fetch(`/locate?q=${encodeURIComponent(query)}`);
+          const j = await r.json();
+          if(j.status==='ok'){
+            addHistory(j.name);
+            map.setView([j.lat,j.lng], Math.max(map.getZoom(), 9), { animate:true });
+            // flash circle
+            const circle = L.circle([j.lat,j.lng], { radius: 9000, color:'#3b82f6', weight:2, fillColor:'#2563eb', fillOpacity:0.15 });
+            circle.addTo(map);
+            setTimeout(()=>{ circle.setStyle({opacity:0, fillOpacity:0}); setTimeout(()=>{ try{map.removeLayer(circle);}catch(e){} }, 650); }, 1600);
+          } else {
+            // show not found suggestion with history fallback
+            showSuggest(psHistory.slice(0,6));
+          }
+        } catch(e){ showSuggest(psHistory.slice(0,6)); }
+        finally { psWrap?.classList.remove('loading'); }
+      }
+      if(psBtn){ psBtn.addEventListener('click', ()=> locate(psInput.value.trim())); }
+      if(psInput){
+        psInput.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); locate(psInput.value.trim()); hideSuggest(); }});
+        psInput.addEventListener('input', ()=>{
+          const v = psInput.value.trim().toLowerCase();
+            if(!v){ hideSuggest(); return; }
+            // local fuzzy over current markers' places (case-insensitive substring)
+            const set = new Set();
+            for(const m of (window.__lastPoints||[])){
+              const place = (m.place||'').trim(); if(!place) continue; const norm = place.toLowerCase();
+              if(norm.includes(v)) set.add(place);
+              if(set.size>=12) break;
+            }
+            // include recent history
+            psHistory.filter(h=>h.toLowerCase().includes(v)).forEach(h=> set.add(h));
+            if(set.size){ showSuggest([...set].slice(0,12)); } else hideSuggest();
+        });
+      }
+      if(psSuggest){
+        psSuggest.addEventListener('click', e=>{
+          const div = e.target.closest('.ps-item'); if(!div) return; const name = div.getAttribute('data-name');
+          psInput.value = name; hideSuggest(); locate(name);
+        });
+      }
+      document.addEventListener('click', e=>{ if(!psWrap.contains(e.target)) hideSuggest(); });
       // --- Darken all non-Ukraine territory (dynamic mask loading precise border if available) ---
       let worldMaskLayer = null;
       async function initWorldMask(){

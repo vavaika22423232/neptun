@@ -730,6 +730,8 @@ UA_CITY_NORMALIZE.update({
     ,'херсонського':'херсонський','херсонському':'херсонський','херсонський':'херсонський'
     ,'вінницького':'вінницький','вінницькому':'вінницький','вінницький':'вінницький'
     ,'куцуруба':'куцуруб','воскресенку':'воскресенка','воскресенки':'воскресенка'
+    # Цибулів (Черкаська обл.) падежные / вариантные формы
+    ,'цибулева':'цибулів','цибулеві':'цибулів','цибулеву':'цибулів','цибулевом':'цибулів','цибулів':'цибулів'
 })
 # Apostrophe-less fallback for Sloviansk
 UA_CITY_NORMALIZE['словянськ'] = "слов'янськ"
@@ -884,6 +886,8 @@ CITY_COORDS = {
     # Newly added Kyiv & Odesa region settlements / raion centers for alerts
     'гостомель': (50.5853, 30.2617), 'боярка': (50.3301, 30.5201), 'макарів': (50.4645, 29.8114),
     'бородянка': (50.6447, 29.9202), 'кілія': (45.4553, 29.2640),
+    # Cherkasy region settlement (directional course report: "БпЛА курсом на Цибулів")
+    'цибулів': (49.0733, 29.8472),
     # Raion centers (approx: use main settlement or administrative center)
     'ізмаїльський район': (45.3516, 28.8365), # near Izmail
     'броварський район': (50.5110, 30.7909),
@@ -2228,6 +2232,32 @@ def geocode_opencage(place: str):
         return None
 
 def process_message(text, mid, date_str, channel):
+    # Strip embedded links (Markdown [text](url) or raw URLs) while keeping core message text.
+    # Requested: if message contains links, remove them but keep the rest.
+    try:
+        import re as _re_strip
+        if text:
+            _orig_text = text
+            # Remove markdown links [ ... ](http...). Keep the visible text (group 1) only.
+            text = _re_strip.sub(r"\[([^\]]*)\]\((?:https?|tg|mailto)://[^)]+\)", lambda m: (m.group(1) or '').strip(), text)
+            # Remove any residual raw URLs (http/https/t.me) leaving a single space
+            text = _re_strip.sub(r"https?://\S+", " ", text)
+            text = _re_strip.sub(r"t\.me/\S+", " ", text)
+            # Remove lone decorative symbols (✙, •, ★) that may have surrounded links
+            text = _re_strip.sub(r"[✙•★]{1,}", " ", text)
+            # Collapse multiple spaces and trim each line
+            cleaned_lines = []
+            for _ln in text.splitlines():
+                _cl = ' '.join(_ln.split())
+                if _cl:
+                    cleaned_lines.append(_cl)
+            if cleaned_lines:
+                text = '\n'.join(cleaned_lines)
+            else:
+                # If stripping removed everything, fall back to original
+                text = _orig_text
+    except Exception:
+        pass
     # Early benign filter: city name + emojis / hearts without any threat keywords -> ignore
     try:
         lt = (text or '').lower().strip()
@@ -5434,6 +5464,43 @@ def data():
 @app.route('/channels')
 def list_channels():
     return jsonify({'channels': CHANNELS, 'invalid': list(INVALID_CHANNELS)})
+
+@app.route('/locate')
+def locate_place():
+    """Locate a settlement or raion by name. Query param: q=<name>
+    Returns: {status:'ok', name, lat, lng, source:'dict'|'geocode'|'fallback'} or {status:'not_found'}
+    Lightweight normalization reusing UA_CITY_NORMALIZE and CITY_COORDS. Falls back to ensure_city_coords (may geocode if key allowed).
+    """
+    q = (request.args.get('q') or '').strip()
+    if not q:
+        return jsonify({'status':'empty'}), 400
+    raw = q.lower()
+    # Basic cleanup similar to parser's normalization
+    raw = re.sub(r'["`ʼ’\'".,:;()]+','', raw)
+    raw = re.sub(r'\s+',' ', raw)
+    # Try direct dict match
+    key = raw
+    if key in UA_CITY_NORMALIZE:
+        key = UA_CITY_NORMALIZE[key]
+    # Heuristic accusative -> nominative (simple feminine endings) if still not found
+    if key not in CITY_COORDS and len(key) > 4 and key.endswith(('у','ю')):
+        alt = key[:-1] + 'а'
+        if alt in CITY_COORDS:
+            key = alt
+    # Direct dictionary coordinate fetch
+    if key in CITY_COORDS:
+        lat,lng = CITY_COORDS[key]
+        return jsonify({'status':'ok','name':key.title(),'lat':lat,'lng':lng,'source':'dict'})
+    # Attempt dynamic ensure (geocode) unless negative cache prohibits
+    coords = None
+    try:
+        coords = ensure_city_coords(key)
+    except Exception:
+        coords = None
+    if coords:
+        lat,lng = coords
+        return jsonify({'status':'ok','name':key.title(),'lat':lat,'lng':lng,'source':'geocode'})
+    return jsonify({'status':'not_found','query':q}), 404
 
 @app.route('/add_channel', methods=['POST'])
 def add_channel():
