@@ -3493,46 +3493,41 @@ def process_message(text, mid, date_str, channel):
         # Extract sequence tokens after prepositions з/із/від -> start, через -> middle(s), напрямку -> target
         # Very heuristic; splits by key words.
         try:
-            # Normalize spacing
             norm = re.sub(r'\s+', ' ', lower_full)
-            # Replace variants
             norm = norm.replace('із ', 'з ').replace('від ', 'з ')
-            # Identify segments
-            # split at ' через '
-            front, after = norm.split(' через ', 1)
-            start_token = front.split(' з ')[-1].strip()
-            # target part
-            target_part = None
-            for marker in [' у напрямку ', ' в напрямку ', ' напрямку ']:
-                if marker in after:
-                    mid_part, target_part = after.split(marker, 1)
-                    break
-            if target_part:
-                mid_token = mid_part.strip().split('.')[0]
-                target_token = target_part.strip().split('.')[0]
-                def region_center(token:str):
-                    for k,(lat,lng) in OBLAST_CENTERS.items():
-                        if token.startswith(k.split()[0][:6]) or token in k:
-                            return (k, (lat,lng))
-                    return None
-                seq = []
-                for tk in [start_token, mid_token, target_token]:
-                    rc = region_center(tk)
-                    if rc:
-                        # avoid duplicates in order
-                        if not seq or seq[-1][0] != rc[0]:
+            if ' через ' in norm:
+                front, after = norm.split(' через ', 1)
+                start_token = front.split(' з ')[-1].strip()
+                target_part = None; mid_part = ''
+                for marker in [' у напрямку ', ' в напрямку ', ' напрямку ']:
+                    if marker in after:
+                        mid_part, target_part = after.split(marker, 1)
+                        break
+                if target_part:
+                    mid_token = mid_part.strip().split('.')[0]
+                    target_token = target_part.strip().split('.')[0]
+                    def region_center(token: str):
+                        token = token.strip()
+                        for k,(lat,lng) in OBLAST_CENTERS.items():
+                            if token.startswith(k.split()[0][:6]) or token in k:
+                                return (k,(lat,lng))
+                        return None
+                    seq = []
+                    for tk in [start_token, mid_token, target_token]:
+                        rc = region_center(tk)
+                        if rc and (not seq or seq[-1][0] != rc[0]):
                             seq.append(rc)
-                if len(seq) >= 2:
-                    threat_type, icon = classify(text)
-                    tracks = []
-                    for idx,(name,(lat,lng)) in enumerate(seq,1):
-                        base = name.split()[0].title()
-                        tracks.append({
-                            'id': f"{mid}_t{idx}", 'place': base, 'lat': lat, 'lng': lng,
-                            'threat_type': threat_type, 'text': original_text[:500], 'date': date_str, 'channel': channel,
-                            'marker_icon': icon, 'source_match': 'trajectory_phrase'
-                        })
-                    return tracks
+                    if len(seq) >= 2:
+                        threat_type, icon = classify(text)
+                        tracks = []
+                        for idx,(name,(lat,lng)) in enumerate(seq,1):
+                            base = name.split()[0].title()
+                            tracks.append({
+                                'id': f"{mid}_t{idx}", 'place': base, 'lat': lat, 'lng': lng,
+                                'threat_type': threat_type, 'text': original_text[:500], 'date': date_str, 'channel': channel,
+                                'marker_icon': icon, 'source_match': 'trajectory_phrase'
+                            })
+                        return tracks
         except Exception:
             pass
     # direct coordinates pattern
