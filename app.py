@@ -5430,27 +5430,28 @@ def data():
             continue
         if dt >= min_time:
             # Fallback reparse: if message lacks geo but contains course pattern, try to derive markers now
-            if (not m.get('lat')) and (not m.get('lng')) and not m.get('list_only'):
-                txt_low = (m.get('text') or '').lower()
-                if 'бпла' in txt_low and 'курс' in txt_low and ' на ' in txt_low:
-                    try:
-                        reparsed = process_message(m.get('text') or '', m.get('id'), m.get('date'), m.get('channel') or m.get('source') or '')
-                        if isinstance(reparsed, list) and reparsed:
-                            for t in reparsed:
-                                try:
-                                    lat_r = round(float(t.get('lat')), 3)
-                                    lng_r = round(float(t.get('lng')), 3)
-                                except Exception:
-                                    continue
-                                text_r = (t.get('text') or '')
-                                source_r = t.get('channel') or t.get('source') or ''
-                                marker_key_r = f"{lat_r},{lng_r}|{text_r}|{source_r}"
-                                if marker_key_r in hidden:
-                                    continue
-                                out.append(t)
-                            continue  # don't treat original raw message further
-                    except Exception:
-                        pass
+            txt_low = (m.get('text') or '').lower()
+            if (not m.get('lat')) and (not m.get('lng')) and ('бпла' in txt_low and 'курс' in txt_low and ' на ' in txt_low):
+                try:
+                    reparsed = process_message(m.get('text') or '', m.get('id'), m.get('date'), m.get('channel') or m.get('source') or '')
+                    if isinstance(reparsed, list) and reparsed:
+                        for t in reparsed:
+                            try:
+                                lat_r = round(float(t.get('lat')), 3)
+                                lng_r = round(float(t.get('lng')), 3)
+                            except Exception:
+                                continue
+                            text_r = (t.get('text') or '')
+                            source_r = t.get('channel') or t.get('source') or ''
+                            marker_key_r = f"{lat_r},{lng_r}|{text_r}|{source_r}"
+                            if marker_key_r in hidden:
+                                continue
+                            out.append(t)
+                        # Skip adding original as event if we produced tracks
+                        if reparsed:
+                            continue
+                except Exception:
+                    pass
             # list-only (no coordinates) -> push into events list if not suppressed
             if m.get('list_only'):
                 if not m.get('suppress'):
