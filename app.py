@@ -4388,7 +4388,8 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     coords = (lat, lng)
                     approx_flag = True
                 else:
-                    # skip completely if no region context
+                    # skip THIS city but continue processing other cities
+                    print(f"DEBUG: Skipping unrecognized city '{base}' - no coordinates and no region context")
                     continue
             if base not in CITY_COORDS:
                 CITY_COORDS[base] = coords
