@@ -4344,7 +4344,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                 }]
         def norm_city_token(tok: str) -> str:
             t = tok.lower().strip(" .,'’ʼ`-:")
-            t = t.replace('’',"'")
+            t = t.replace("'''", "'")
             if t.endswith('ку'): t = t[:-2] + 'ка'
             elif t.endswith('ву'): t = t[:-2] + 'ва'
             elif t.endswith('ову'): t = t[:-3] + 'ова'
