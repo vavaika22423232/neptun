@@ -4250,8 +4250,10 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                 # remove leading emojis/symbols
                 cleaned_hdr = re.sub(r'^[^a-zа-яіїєґ]+','', low_ln[:-1])
                 base_hdr = cleaned_hdr.strip()
+                log.debug(f"mid={mid} region_header_check: '{low_ln}' -> cleaned: '{base_hdr}' -> found: {base_hdr in OBLAST_CENTERS}")
                 if base_hdr in OBLAST_CENTERS:
                     current_region_hdr = base_hdr
+                    log.debug(f"mid={mid} region_header_set: '{base_hdr}'")
                 continue
             # split by semicolons; also break on pattern like " 2х БпЛА курсом" inside the same segment later
             subparts = [p.strip() for p in re.split(r'[;]+', ln_stripped) if p.strip()]
@@ -4360,6 +4362,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     'threat_type': threat_type, 'text': ln[:500], 'date': date_str, 'channel': channel,
                     'marker_icon': icon, 'source_match': 'course_city_unit', 'count': 1
                 })
+        log.debug(f"mid={mid} course_tracks_generated: {len(course_tracks)} tracks")
         if course_tracks:
             return course_tracks
         # Salvage fallback: large multi-line message with many 'бпла курсом' but parser produced nothing
