@@ -2390,6 +2390,37 @@ def process_message(text, mid, date_str, channel):
     try:
         orig = text
         head = orig.split('\n',1)[0][:160]
+        
+        # NEW: Handle emoji-prefixed threat messages like "🛸 Звягель (Житомирська обл.) Загроза застосування БПЛА"
+        emoji_threat_pattern = r'^[^\w\s]*\s*([А-ЯІЇЄЁа-яіїєё\'\-\s]+)\s*\([^)]*обл[^)]*\)\s*загроза\s+застосування\s+бпла'
+        emoji_match = re.search(emoji_threat_pattern, head, re.IGNORECASE)
+        if emoji_match:
+            city_from_emoji = emoji_match.group(1).strip()
+            if city_from_emoji and 2 <= len(city_from_emoji) <= 40:
+                base = city_from_emoji.lower().replace('\u02bc',"'").replace('ʼ',"'").replace("'","'").replace('`',"'")
+                base = re.sub(r'\s+',' ', base)
+                norm = UA_CITY_NORMALIZE.get(base, base)
+                coords = CITY_COORDS.get(norm)
+                if not coords and 'SETTLEMENTS_INDEX' in globals():
+                    idx_map = globals().get('SETTLEMENTS_INDEX') or {}
+                    coords = idx_map.get(norm)
+                if coords:
+                    lat, lon = coords[:2]
+                    track = {
+                        'id': f"{timestamp_for_id()}_emoji_threat_{city_from_emoji.replace(' ','_')}",
+                        'lat': lat, 'lon': lon,
+                        'place': city_from_emoji,
+                        'type': 'threat',
+                        'threat_type': 'загроза застосування бпла',
+                        'marker_icon': 'shahed.png',
+                        'ts': now_ep,
+                        'source': 'emoji_threat_parser',
+                        'text': head[:80]
+                    }
+                    parsed_tracks.append(track)
+                    log.debug(f'Emoji threat parser: {city_from_emoji} -> {coords} -> shahed.png')
+                    return parsed_tracks  # Early return
+        
         if '(' in head and ('обл' in head.lower() or 'область' in head.lower()):
             import re as _re_early
             cleaned = head.replace('**','')
@@ -4168,16 +4199,19 @@ def process_message(text, mid, date_str, channel):
                 CITY_COORDS[base] = coords
             lat, lng = coords
             threat_type, icon = classify(text)
-            label = base.title()
-            if count:
-                label += f" ({count})"
-            if region_hdr and region_hdr not in label.lower():
-                label += f" [{region_hdr.title()}]"
-            course_tracks.append({
-                'id': f"{mid}_c{len(course_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
-                'threat_type': threat_type, 'text': ln[:500], 'date': date_str, 'channel': channel,
-                'marker_icon': icon, 'source_match': 'course_city', 'count': count or 1
-            })
+            # Generate individual markers per drone for progressive map loading
+            total = count or 1
+            for i in range(1, total+1):
+                label = base.title()
+                if total > 1:
+                    label += f" ({i}/{total})"
+                if region_hdr and region_hdr not in label.lower():
+                    label += f" [{region_hdr.title()}]"
+                course_tracks.append({
+                    'id': f"{mid}_c{len(course_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
+                    'threat_type': threat_type, 'text': ln[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': 'course_city_unit', 'count': 1
+                })
         if course_tracks:
             return course_tracks
 
