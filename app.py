@@ -2285,6 +2285,8 @@ def process_message(text, mid, date_str, channel):
                 text = _orig_text
     except Exception:
         pass
+    # Ensure original_text is defined early to avoid UnboundLocalError in early parsing branches
+    original_text = text
     # Early benign filter: city name + emojis / hearts without any threat keywords -> ignore
     try:
         lt = (text or '').lower().strip()
