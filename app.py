@@ -2747,7 +2747,7 @@ def process_message(text, mid, date_str, channel):
     raw_lines = text.splitlines()
     cleaned_for_multiline = []
     import re as _re_clean
-    donation_keys = ['монобанк','send.monobank','patreon','donat','донат','підтримати канал','підтримати','napramok']
+    donation_keys = ['монобанк','send.monobank','patreon','donat','донат','підтримати канал','підтримати']
     for l in raw_lines:
         ls = l.strip()
         if not ls:
