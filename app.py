@@ -4359,7 +4359,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             if 'бпла' not in ln_low:
                 continue
             print(f"DEBUG: Processing UAV line: '{ln[:100]}...' (region: {region_hdr})")
-            count = None; city = None
+            count = None; city = None; approx_flag = False
             m1 = pat_count_course.search(ln_low)
             if m1:
                 count = int(m1.group(1)); city = m1.group(2)
@@ -4413,7 +4413,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     label += f" ({i}/{total})"
                 if region_hdr and region_hdr not in label.lower():
                     label += f" [{region_hdr.title()}]"
-                if 'approx_flag' in locals() and approx_flag:
+                if approx_flag:
                     label += ' ~'
                 course_tracks.append({
                     'id': f"{mid}_c{len(course_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
