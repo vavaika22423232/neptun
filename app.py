@@ -3111,7 +3111,12 @@ def process_message(text, mid, date_str, channel):
             if not coords:
                 coords = ensure_city_coords(base)
             if coords:
-                lat, lng = coords
+                # Handle both 2-tuple (lat, lng) and 3-tuple (lat, lng, approx_flag) returns
+                if len(coords) == 3:
+                    lat, lng, approx_flag = coords
+                else:
+                    lat, lng = coords
+                    approx_flag = False
                 threat_type, icon = 'shahed', 'shahed.png'
                 label = UA_CITY_NORMALIZE.get(base, base).title()
                 if count > 1:
