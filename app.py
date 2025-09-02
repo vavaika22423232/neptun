@@ -3477,15 +3477,9 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         threat_tokens = ['бпла','дрон','шахед','shahed','geran','ракета','ракети','missile','iskander','s-300','s300','каб','артил','града','смерч','ураган','mlrs']
         has_threat_word = any(tok in low_full for tok in threat_tokens)
         if has_threat_word:
-            # Remove lines containing donation keywords to salvage threat content
-            kept_lines = []
-            for ln in original_text.splitlines():
-                ll = ln.lower()
-                if any(k in ll for k in DONATION_KEYS) or re.search(r'\b\d{16}\b', ll):
-                    continue
-                kept_lines.append(ln)
-            text = '\n'.join(kept_lines)
-            original_text = text  # treat stripped version as canonical for later stages
+            # НЕ удаляем строки с донатами если есть угрозы - просто продолжаем парсинг
+            log.debug(f"mid={mid} donation_present but has_threats - continuing without stripping")
+            # text остается без изменений
         else:
             return [{
                 'id': str(mid), 'place': None, 'lat': None, 'lng': None,
