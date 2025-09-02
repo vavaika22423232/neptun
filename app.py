@@ -5531,7 +5531,10 @@ def debug_parse():
     try:
         payload = request.get_json(force=True, silent=True) or {}
     except Exception:
-        payload = {}
+        try:
+            payload = request.get_json(silent=True) or {}
+        except Exception:
+            payload = {}
     mid = payload.get('id')
     raw_text = payload.get('text')
     # Allow base64-encoded text to avoid client console encoding corruption
