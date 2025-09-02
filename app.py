@@ -4046,7 +4046,6 @@ def process_message(text, mid, date_str, channel):
     # --- Per-line UAV course / area city targeting ("БпЛА курсом на <місто>", "8х БпЛА в районі <міста>") ---
     # Triggered when region multi list suppressed earlier due to presence of course lines.
     if 'бпла' in lower and ('курс' in lower or 'в районі' in lower):
-        # Normalize: insert artificial newlines after region headers appearing mid-line (e.g. "Сумщина: БпЛА курсом ...")
         original_text_norm = re.sub(r'(?i)(\b[А-Яа-яЇїІіЄєҐґ\-]{3,}(?:щина|область|обл\.)):(?!\s*\n)', r'\1:\n', original_text)
         lines_with_region = []
         current_region_hdr = None
@@ -4060,43 +4059,35 @@ def process_message(text, mid, date_str, channel):
                 if base_hdr in OBLAST_CENTERS:
                     current_region_hdr = base_hdr
                 continue
+            # split by semicolons; also break on pattern like " 2х БпЛА курсом" inside the same segment later
             subparts = [p.strip() for p in re.split(r'[;]+', ln_stripped) if p.strip()]
             for part in subparts:
                 lines_with_region.append((part, current_region_hdr))
-        # Expand lines that contain multiple course phrases glued together in one line
+        # Further split segments that contain multiple "БпЛА курс" phrases glued together
+        multi_start_re = re.compile(r'(?:\d+\s*[xх]?\s*)?бпла\s*курс', re.IGNORECASE)
         expanded = []
-        multi_start_re = re.compile(r'((?:\d+)[xх]?\s*)?бпла\s+курс', re.IGNORECASE)
         for part, region_hdr in lines_with_region:
             low_part = part.lower()
-            # fast skip if fewer than 2 occurrences
-            if low_part.count('бпла курс') + low_part.count('бпла  курс') < 2 and len(multi_start_re.findall(low_part)) < 2:
+            starts = [m.start() for m in multi_start_re.finditer(low_part)]
+            if len(starts) <= 1:
                 expanded.append((part, region_hdr))
                 continue
-            # Find segment boundaries
-            starts = [m.start() for m in multi_start_re.finditer(part)]
-            if not starts or len(starts) == 1:
-                expanded.append((part, region_hdr))
-                continue
-            # If there's a header-like prefix before first start (e.g. region name + ':'), keep it attached to first segment
             for idx, s in enumerate(starts):
                 seg_start = s
-                seg_end = starts[idx+1] if idx+1 < len(starts) else len(part)
+                seg_end = starts[idx+1] if idx+1 < len(starts) else len(low_part)
                 segment = part[seg_start:seg_end].strip()
-                if not segment:
-                    continue
-                expanded.append((segment, region_hdr))
+                if segment:
+                    expanded.append((segment, region_hdr))
         if expanded:
             lines_with_region = expanded
         course_tracks = []
-        # Многословные названия (до 3 слов) после "курс(ом) на" и "в районі"
-        pat_count_course = re.compile(r'^(\d+)[xх]?\s*бпла.*?курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
+        pat_count_course = re.compile(r'^(\d+)\s*[xх]?\s*бпла.*?курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         pat_course = re.compile(r'бпла.*?курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         pat_area = re.compile(r'(\d+)?[xх]?\s*бпла\s+в\s+районі\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
-        # Direct hotfix: ensure 'курс(ом) на Кіпті' resolves to SETTLEMENT_FALLBACK coords
         if re.search(r'бпла.*?курс(?:ом)?\s+на\s+кіпт[ії]', lower):
             coords = SETTLEMENT_FALLBACK.get('кіпті')
             if coords:
-                lat,lng = coords
+                lat, lng = coords
                 threat_type, icon = classify(original_text)
                 return [{
                     'id': f"{mid}_kipti_course", 'place': 'Кіпті', 'lat': lat, 'lng': lng,
@@ -4113,7 +4104,7 @@ def process_message(text, mid, date_str, channel):
             elif t.endswith('у'): t = t[:-1] + 'а'
             if t.startswith('нову '):
                 t = 'нова ' + t[5:]
-            t = t.replace('водолагу','водолага')
+            t = t.replace('водолагу','водолога')
             return t
         for ln, region_hdr in lines_with_region:
             ln_low = ln.lower()
@@ -4135,12 +4126,9 @@ def process_message(text, mid, date_str, channel):
                         city = m3.group(1)
             if not city:
                 continue
-            # Попытка многословного разрешения
             multi_norm = _resolve_city_candidate(city)
             base = norm_city_token(multi_norm)
-            coords = CITY_COORDS.get(base)
-            if not coords and SETTLEMENTS_INDEX:
-                coords = SETTLEMENTS_INDEX.get(base)
+            coords = CITY_COORDS.get(base) or (SETTLEMENTS_INDEX.get(base) if SETTLEMENTS_INDEX else None)
             if not coords:
                 try:
                     coords = region_enhanced_coords(base, region_hint_override=region_hdr)
