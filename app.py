@@ -1,4 +1,5 @@
 
+# pyright: reportUnusedVariable=false, reportRedeclaration=false, reportGeneralTypeIssues=false
 # ---------------- Admin & blocking endpoints -----------------
 
 # ...existing code...
@@ -2486,19 +2487,15 @@ def process_message(text, mid, date_str, channel):
                 if coords:
                     lat, lon = coords[:2]
                     track = {
-                        'id': f"{timestamp_for_id()}_emoji_threat_{city_from_emoji.replace(' ','_')}",
-                        'lat': lat, 'lon': lon,
+                        'id': f"{mid}_emoji_threat_{city_from_emoji.replace(' ','_')}",
                         'place': city_from_emoji,
-                        'type': 'threat',
-                        'threat_type': 'загроза застосування бпла',
-                        'marker_icon': 'shahed.png',
-                        'ts': now_ep,
-                        'source': 'emoji_threat_parser',
-                        'text': head[:80]
+                        'lat': lat, 'lng': lon,
+                        'threat_type': 'uav_threat',
+                        'text': head[:160], 'date': date_str, 'channel': channel,
+                        'marker_icon': 'shahed.png', 'source_match': 'emoji_threat'
                     }
-                    parsed_tracks.append(track)
                     log.debug(f'Emoji threat parser: {city_from_emoji} -> {coords} -> shahed.png')
-                    return parsed_tracks  # Early return
+                    return [track]  # Early return
         
         if '(' in head and ('обл' in head.lower() or 'область' in head.lower()):
             import re as _re_early
@@ -6351,21 +6348,6 @@ def _save_opencage_cache():
             json.dump(_opencage_cache, f, ensure_ascii=False, indent=2)
     except Exception as e:
         log.warning(f"Failed saving OpenCage cache: {e}")
-
-
-OBLAST_CENTERS = {
-    'донеччина': (48.0433, 37.7974), 'донеччини': (48.0433, 37.7974), 'донецька область': (48.0433, 37.7974),
-    'дніпропетровщина': (48.4500, 34.9830), 'дніпропетровщини': (48.4500, 34.9830), 'дніпропетровська область': (48.4500, 34.9830),
-    'днепропетровщина': (48.4500, 34.9830), 'днепропетровщины': (48.4500, 34.9830),
-    'чернігівщина': (51.4982, 31.2893), 'чернігівщини': (51.4982, 31.2893),
-    'харківщина': (49.9935, 36.2304), 'харківщини': (49.9935, 36.2304)
-    , 'дніпропетровська обл.': (48.4500, 34.9830), 'днепропетровская обл.': (48.4500, 34.9830)
-    , 'чернігівська обл.': (51.4982, 31.2893), 'черниговская обл.': (51.4982, 31.2893)
-    , 'харківська обл.': (49.9935, 36.2304), 'харьковская обл.': (49.9935, 36.2304)
-    , 'сумщина': (50.9077, 34.7981), 'сумщини': (50.9077, 34.7981), 'сумська область': (50.9077, 34.7981), 'сумська обл.': (50.9077, 34.7981), 'сумская обл.': (50.9077, 34.7981)
-    , 'полтавщина': (49.5883, 34.5514), 'полтавщини': (49.5883, 34.5514), 'полтавська обл.': (49.5883, 34.5514), 'полтавська область': (49.5883, 34.5514)
-    , 'хмельниччина': (49.4229, 26.9871), 'хмельниччини': (49.4229, 26.9871), 'хмельницька обл.': (49.4229, 26.9871), 'хмельницька область': (49.4229, 26.9871)
-}
 
 
 SETTLEMENTS_FILE = os.getenv('SETTLEMENTS_FILE', 'settlements_ua.json')
