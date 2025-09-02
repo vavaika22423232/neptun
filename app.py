@@ -5299,6 +5299,19 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             })
         if tracks:
             return tracks
+    
+    # Логируем длинные сообщения, которые не сгенерировали треков
+    try:
+        if text and len(text) > 1000:
+            print(f"DEBUG: LONG MESSAGE NO TRACKS - mid={mid}, length={len(text)}, preview: {text[:200]}...")
+            # Проверим наличие ключевых слов
+            lower_check = text.lower()
+            keywords = {'бпла': lower_check.count('бпла'), 'шахед': lower_check.count('шахед'), 
+                       'курс': lower_check.count('курс'), 'район': lower_check.count('район')}
+            print(f"DEBUG: Long message keywords: {keywords}")
+    except Exception:
+        pass
+    
     return None
 
 async def fetch_loop():
