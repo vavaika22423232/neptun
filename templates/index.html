@@ -1402,15 +1402,25 @@
       const psBtn = document.getElementById('placeSearchBtn');
       const psSuggest = document.getElementById('placeSearchSuggest');
       let psHistory = JSON.parse(localStorage.getItem('ps_history')||'[]');
+      let psActiveIndex = -1; // keyboard navigation index
+      const psCache = {}; // prefix -> matches cache
+      function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
       function persistHistory(){ localStorage.setItem('ps_history', JSON.stringify(psHistory.slice(0,25))); }
       function showSuggest(list){
         if(!psSuggest) return;
         if(!list || !list.length){ psSuggest.innerHTML = '<div class="ps-empty">Немає варіантів</div>'; psSuggest.style.display='block'; return; }
-        psSuggest.innerHTML = list.map((n,i)=>`<div class='ps-item' data-name='${n}'>${n}<span style='opacity:.45;'>⌖</span></div>`).join('');
+        psSuggest.innerHTML = list.map((n,i)=>`<div class='ps-item${i===psActiveIndex?' active':''}' data-name='${n}'>${n}<span style='opacity:.45;'>⌖</span></div>`).join('');
         psSuggest.style.display='block';
       }
       function hideSuggest(){ if(psSuggest) psSuggest.style.display='none'; }
       function addHistory(name){ name = name.trim(); if(!name) return; psHistory = [name, ...psHistory.filter(n=>n!==name)]; persistHistory(); }
+      function highlightNext(delta){
+        if(!psSuggest || psSuggest.style.display!=='block') return;
+        const items = [...psSuggest.querySelectorAll('.ps-item')];
+        if(!items.length) return;
+        psActiveIndex = (psActiveIndex + delta + items.length) % items.length;
+        items.forEach((el,i)=> el.classList.toggle('active', i===psActiveIndex));
+      }
       async function locate(query){
         if(!query) return;
         psWrap?.classList.add('loading');
@@ -1433,32 +1443,53 @@
         } catch(e){ showSuggest(psHistory.slice(0,6)); }
         finally { psWrap?.classList.remove('loading'); }
       }
+      async function fetchBackendSuggest(prefix){
+        const p = prefix.toLowerCase();
+        if(psCache[p]) return psCache[p];
+        try {
+          const r = await fetch(`/locate?q=${encodeURIComponent(p)}`);
+          const j = await r.json();
+          if(j.status==='suggest'){
+            psCache[p] = j.matches || [];
+            return psCache[p];
+          }
+        } catch(e){}
+        psCache[p] = [];
+        return [];
+      }
       if(psBtn){ psBtn.addEventListener('click', ()=> locate(psInput.value.trim())); }
       if(psInput){
-        psInput.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); locate(psInput.value.trim()); hideSuggest(); }});
-        psInput.addEventListener('input', ()=>{
-          const v = psInput.value.trim().toLowerCase();
-            if(!v){ hideSuggest(); return; }
-            // local fuzzy over current markers' places (case-insensitive substring)
-            const set = new Set();
-            for(const m of (window.__lastPoints||[])){
-              const place = (m.place||'').trim(); if(!place) continue; const norm = place.toLowerCase();
-              if(norm.includes(v)) set.add(place);
-              if(set.size>=12) break;
-            }
-            // include recent history
-            psHistory.filter(h=>h.toLowerCase().includes(v)).forEach(h=> set.add(h));
-            if(set.size){
-              showSuggest([...set].slice(0,12));
-            } else {
-              // fallback to backend suggestions for full settlement list
-              if(v.length>=3){
-                fetch(`/locate?q=${encodeURIComponent(v)}`).then(r=>r.json()).then(j=>{
-                  if(j.status==='suggest') showSuggest(j.matches||[]);
-                }).catch(()=>{});
-              } else hideSuggest();
-            }
+        psInput.addEventListener('keydown', e=>{
+          if(e.key==='ArrowDown'){ highlightNext(1); e.preventDefault(); }
+          else if(e.key==='ArrowUp'){ highlightNext(-1); e.preventDefault(); }
+          else if(e.key==='Enter'){
+            e.preventDefault();
+            const active = psSuggest && psSuggest.querySelector('.ps-item.active');
+            if(active){ const name = active.getAttribute('data-name'); psInput.value = name; hideSuggest(); locate(name); }
+            else { locate(psInput.value.trim()); hideSuggest(); }
+          } else if(e.key==='Escape'){ hideSuggest(); }
         });
+        psInput.addEventListener('input', debounce(async ()=>{
+          const vRaw = psInput.value.trim();
+          const v = vRaw.toLowerCase();
+          psActiveIndex = -1;
+          if(!v){ hideSuggest(); return; }
+          // Local fuzzy from markers + history
+          const set = new Set();
+          for(const m of (window.__lastPoints||[])){
+            const place = (m.place||'').trim(); if(!place) continue; const norm = place.toLowerCase();
+            if(norm.includes(v)) set.add(place);
+            if(set.size>=12) break;
+          }
+          psHistory.filter(h=>h.toLowerCase().includes(v)).forEach(h=> set.add(h));
+          let list = [...set];
+          // Backend suggestions (prefix) merge
+          if(v.length>=2){
+            const backend = await fetchBackendSuggest(v);
+            for(const name of backend){ if(!list.includes(name)) list.push(name); if(list.length>=20) break; }
+          }
+          if(list.length){ showSuggest(list.slice(0,20)); } else hideSuggest();
+        }, 180));
       }
       if(psSuggest){
         psSuggest.addEventListener('click', e=>{
