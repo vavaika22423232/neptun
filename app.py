@@ -3013,7 +3013,8 @@ def process_message(text, mid, date_str, channel):  # type: ignore
     
     # NEW: Handle single-line messages with multiple regions like "Чернігівщина: 1 БпЛА на Козелець ... Сумщина: 3 БпЛА..."
     # First try to split by region headers in single line
-    if len(raw_lines) == 1 and any(region in text.lower() for region in ['чернігівщин', 'сумщин', 'харківщин', 'полтавщин']):
+    single_line_regions = ['чернігівщин', 'сумщин', 'харківщин', 'полтавщин', 'херсонщин', 'донецьк', 'луганщин']
+    if len(raw_lines) == 1 and any(region in text.lower() for region in single_line_regions):
         add_debug_log(f"Single-line multi-region message detected, raw_lines count: {len(raw_lines)}", "multi_region")
         # Split by oblast headers that have colon after them
         import re as _re_split
@@ -3077,11 +3078,39 @@ def process_message(text, mid, date_str, channel):  # type: ignore
     add_debug_log(f"Processing {len(lines)} cleaned lines for multi-city tracks", "multi_region")
     for ln in lines:
         add_debug_log(f"Processing line: '{ln}'", "multi_region")
+        
+        # Check if line contains БпЛА information without specific course
+        ln_lower = ln.lower()
+        if 'бпла' in ln_lower or 'безпілотник' in ln_lower or 'дрон' in ln_lower:
+            add_debug_log(f"Line contains UAV keywords: {[k for k in ['бпла', 'безпілотник', 'дрон'] if k in ln_lower]}", "multi_region")
+            if not any(keyword in ln_lower for keyword in ['курс', 'на ', 'районі']):
+                add_debug_log(f"UAV line lacks direction keywords (курс/на/районі) - general activity message", "multi_region")
+        else:
+            add_debug_log(f"Line does not contain UAV keywords", "multi_region")
         # Если строка — это заголовок области (например, "Сумщина:")
         # Заголовок области: строка, заканчивающаяся на ':' (возможен пробел перед / после) или формой '<область>:' с лишними пробелами
+        # NEW: Also handle format like "**🚨 Конотопський район (Сумська обл.)**"
         import re
+        oblast_hdr_match = None
+        
+        # Standard format: "Сумщина:" or "Чернігівщина:"
         if re.match(r'^[A-Za-zА-Яа-яЇїІіЄєҐґ\-ʼ`\s]+:\s*$', ln):
             oblast_hdr = ln.split(':')[0].strip().lower()
+            oblast_hdr_match = True
+            add_debug_log(f"Standard region header format detected: '{oblast_hdr}'", "multi_region")
+        
+        # NEW format: "**🚨 Конотопський район (Сумська обл.)**" or similar with oblast in parentheses
+        elif re.search(r'\(([А-ЯІЇЄЁа-яіїєё]+ська\s+обл\.?)\)', ln):
+            oblast_match = re.search(r'\(([А-ЯІЇЄЁа-яіїєё]+ська\s+обл\.?)\)', ln)
+            if oblast_match:
+                oblast_full = oblast_match.group(1).lower().strip()
+                # Convert "сумська обл." to "сумщина"
+                oblast_hdr = oblast_full.replace('ська обл.', 'щина').replace('ська обл', 'щина')
+                oblast_hdr_match = True
+                add_debug_log(f"Parentheses region header format detected: '{oblast_full}' -> '{oblast_hdr}'", "multi_region")
+        
+        if oblast_hdr_match:
+        if oblast_hdr_match:
             add_debug_log(f"Region header detected: '{oblast_hdr}'", "multi_region")
             if oblast_hdr.startswith('на '):  # handle 'на харківщина:' header variant
                 oblast_hdr = oblast_hdr[3:].strip()
