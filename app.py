@@ -6727,6 +6727,20 @@ def _require_secret(req):
     supplied = req.args.get('secret') or req.headers.get('X-Auth-Secret') or req.form.get('secret')
     return supplied and supplied == AUTH_SECRET
 
+@app.route('/test_oblast_raion')
+def test_oblast_raion():
+    if not _require_secret(request):
+        return Response('Forbidden', status=403)
+    
+    test_text = "Загроза застосування БПЛА. Перейдіть в укриття! | чернігівська область (чернігівський район), київська область (вишгородський район), сумська область (сумський, конотопський райони) - загроза ударних бпла!"
+    result = process_message(test_text, 'test_99999', '2024-12-06', 'test_channel')
+    
+    return {
+        'test_text': test_text,
+        'result': result,
+        'debug_logs': [log for log in DEBUG_LOGS if log.get('category') == 'oblast_raion'][-10:]
+    }
+
 @app.route('/admin')
 def admin_panel():
     if not _require_secret(request):
