@@ -133,6 +133,27 @@
       </tbody>
     </table>
   </div>
+  
+  <!-- Debug Information Section -->
+  <div class="blocked-list" style="margin-top:2rem;">
+    <h2 style="font-size:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;">
+      Debug Information ({{ debug_logs|length }} entries)
+      <button type="button" class="danger" onclick="clearDebugLogs()" style="font-size:0.65rem;padding:4px 8px;">Clear Logs</button>
+    </h2>
+    <div style="background:#0a0f1a;border:1px solid #1e293b;border-radius:8px;padding:1rem;max-height:400px;overflow-y:auto;font-family:monospace;font-size:0.75rem;line-height:1.4;">
+      {% for log in debug_logs %}
+        <div style="margin-bottom:0.5rem;border-bottom:1px solid #1e293b;padding-bottom:0.3rem;">
+          <span style="color:#64748b;">[{{ log.timestamp }}]</span>
+          <span style="color:#3b82f6;font-weight:bold;">[{{ log.category }}]</span>
+          <span style="color:#f1f5f9;">{{ log.message }}</span>
+        </div>
+      {% endfor %}
+      {% if debug_logs|length == 0 %}
+        <div style="color:#64748b;font-style:italic;">No debug logs available</div>
+      {% endif %}
+    </div>
+  </div>
+  
   <div class="blocked-list" style="margin-top:2rem;">
     <h2 style="font-size:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;">Додати ручну мітку <span style="font-size:.65rem;opacity:.6;">(manual marker)</span></h2>
     <form onsubmit="return addManualMarker(event)" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.6rem;align-items:end;max-width:880px;">
@@ -312,6 +333,14 @@ async function clearNegCache(){
   const secret = new URLSearchParams(location.search).get('secret')||'';
   if(!confirm('Clear all negative geocode entries?')) return;
   try{ const r=await fetch('/admin/neg_geocode_clear?secret='+encodeURIComponent(secret),{method:'POST'}); if(r.ok) location.reload(); }catch(e){}
+}
+async function clearDebugLogs(){
+  const secret = new URLSearchParams(location.search).get('secret')||'';
+  if(!confirm('Clear all debug logs?')) return;
+  try{ 
+    const r=await fetch('/admin/clear_debug_logs?secret='+encodeURIComponent(secret),{method:'POST'}); 
+    if(r.ok) location.reload(); 
+  }catch(e){}
 }
 async function delNeg(name){
   const secret = new URLSearchParams(location.search).get('secret')||'';

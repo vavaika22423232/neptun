@@ -91,6 +91,22 @@ INIT_ONCE = False  # guard to ensure background startup once
 # Persistent dynamic channels file
 CHANNELS_FILE = 'channels_dynamic.json'
 
+# Global debug storage for admin panel
+DEBUG_LOGS = []
+MAX_DEBUG_LOGS = 100
+
+def add_debug_log(message, category="general"):
+    """Add debug message to global debug storage for admin panel."""
+    global DEBUG_LOGS
+    DEBUG_LOGS.append({
+        'timestamp': datetime.now().isoformat(),
+        'category': category,
+        'message': str(message)
+    })
+    # Keep only recent logs
+    if len(DEBUG_LOGS) > MAX_DEBUG_LOGS:
+        DEBUG_LOGS = DEBUG_LOGS[-MAX_DEBUG_LOGS:]
+
 # -------- Air alarm tracking (oblast / raion) --------
 APP_ALARM_TTL_MINUTES = 65  # auto-expire if no update ~1h
 ACTIVE_OBLAST_ALARMS = {}   # canonical oblast key -> {'since': epoch, 'last': epoch}
@@ -2411,12 +2427,12 @@ def geocode_opencage(place: str):
 def process_message(text, mid, date_str, channel):  # type: ignore
     # ВСЕГДА логируем каждое входящее сообщение для отладки
     try:
-        print(f"DEBUG: process_message called - mid={mid}, channel={channel}, text_length={len(text or '')}")
-        print(f"DEBUG: message text preview: {(text or '')[:200]}...")
+        add_debug_log(f"process_message called - mid={mid}, channel={channel}, text_length={len(text or '')}", "message_processing")
+        add_debug_log(f"message text preview: {(text or '')[:200]}...", "message_processing")
         # Check if this is our test message
         if 'чернігівщина' in (text or '').lower() and 'сумщина' in (text or '').lower():
-            print(f"DEBUG: MULTI-REGION MESSAGE DETECTED!")
-            print(f"DEBUG: Full text: {text}")
+            add_debug_log("MULTI-REGION MESSAGE DETECTED!", "multi_region")
+            add_debug_log(f"Full text: {text}", "multi_region")
     except Exception:
         pass
     
@@ -2514,14 +2530,14 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     base = UA_CITY_NORMALIZE.get(core, core)
                     if base in CITY_COORDS or ('SETTLEMENTS_INDEX' in globals() and (globals().get('SETTLEMENTS_INDEX') or {}).get(base)):
                         # Ignore this message (no tracks)
-                        print(f"DEBUG: BENIGN FILTER blocked message mid={mid} - detected city name without threats: '{core}'")
+                        add_debug_log(f"BENIGN FILTER blocked message mid={mid} - detected city name without threats: '{core}'", "filter")
                         return []
             # NEW suppression: reconnaissance-only notes ("дорозвідка по БпЛА") should not produce a marker
             # Pattern triggers if word 'дорозвідк' present together with UAV terms but no other threat verbs
             if 'дорозвідк' in lt and any(k in lt for k in ['бпла','shahed','шахед','дрон']):
                 # Avoid suppressing if explosions or launches also present
                 if not any(k in lt for k in ['вибух','удар','пуск','прил','обстріл','обстрел','зліт','злет']):
-                    print(f"DEBUG: RECONNAISSANCE FILTER blocked message mid={mid} - reconnaissance only")
+                    add_debug_log(f"RECONNAISSANCE FILTER blocked message mid={mid} - reconnaissance only", "filter")
                     return []
     except Exception:
         pass
@@ -2998,11 +3014,11 @@ def process_message(text, mid, date_str, channel):  # type: ignore
     # NEW: Handle single-line messages with multiple regions like "Чернігівщина: 1 БпЛА на Козелець ... Сумщина: 3 БпЛА..."
     # First try to split by region headers in single line
     if len(raw_lines) == 1 and any(region in text.lower() for region in ['чернігівщин', 'сумщин', 'харківщин', 'полтавщин']):
-        print(f"DEBUG: Single-line multi-region message detected, raw_lines count: {len(raw_lines)}")
+        add_debug_log(f"Single-line multi-region message detected, raw_lines count: {len(raw_lines)}", "multi_region")
         # Split by oblast headers that have colon after them
         import re as _re_split
         region_split = _re_split.split(r'([А-ЯІЇЄЁа-яіїєё]+щина):\s*', text)
-        print(f"DEBUG: Region split result: {region_split}")
+        add_debug_log(f"Region split result: {region_split}", "multi_region")
         if len(region_split) > 2:  # We have actual splits
             new_lines = []
             for i in range(1, len(region_split), 2):  # Take every odd element (region name) and next even (content)
@@ -3011,12 +3027,12 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     content = region_split[i+1].strip()
                     new_lines.append(f"{region_name}:")
                     new_lines.append(content)
-                    print(f"DEBUG: Added region header: '{region_name}:' and content: '{content}'")
+                    add_debug_log(f"Added region header: '{region_name}:' and content: '{content}'", "multi_region")
             if new_lines:
                 raw_lines = new_lines
-                print(f"DEBUG: Split single line into {len(raw_lines)} lines for multi-region processing")
+                add_debug_log(f"Split single line into {len(raw_lines)} lines for multi-region processing", "multi_region")
         else:
-            print(f"DEBUG: Region split failed, keeping original format")
+            add_debug_log("Region split failed, keeping original format", "multi_region")
     
     cleaned_for_multiline = []
     import re as _re_clean
@@ -3058,15 +3074,15 @@ def process_message(text, mid, date_str, channel):  # type: ignore
     lines = cleaned_for_multiline
     oblast_hdr = None
     multi_city_tracks = []
-    print(f"DEBUG: Processing {len(lines)} cleaned lines for multi-city tracks")
+    add_debug_log(f"Processing {len(lines)} cleaned lines for multi-city tracks", "multi_region")
     for ln in lines:
-        print(f"DEBUG: Processing line: '{ln}'")
+        add_debug_log(f"Processing line: '{ln}'", "multi_region")
         # Если строка — это заголовок области (например, "Сумщина:")
         # Заголовок области: строка, заканчивающаяся на ':' (возможен пробел перед / после) или формой '<область>:' с лишними пробелами
         import re
         if re.match(r'^[A-Za-zА-Яа-яЇїІіЄєҐґ\-ʼ`\s]+:\s*$', ln):
             oblast_hdr = ln.split(':')[0].strip().lower()
-            print(f"DEBUG: Region header detected: '{oblast_hdr}'")
+            add_debug_log(f"Region header detected: '{oblast_hdr}'", "multi_region")
             if oblast_hdr.startswith('на '):  # handle 'на харківщина:' header variant
                 oblast_hdr = oblast_hdr[3:].strip()
             if oblast_hdr and oblast_hdr[0] in ('е','є') and oblast_hdr.endswith('гівщина'):
@@ -3078,10 +3094,10 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             if oblast_hdr and oblast_hdr.endswith('нниччина') and oblast_hdr != 'вінниччина':
                 oblast_hdr = 'вінниччина'
             # header detected
-            print(f"DEBUG: Final region header: '{oblast_hdr}'")
+            add_debug_log(f"Final region header: '{oblast_hdr}'", "multi_region")
             continue
         try:
-            print(f"DEBUG: MLINE_LINE oblast={oblast_hdr} raw='{ln}'")
+            add_debug_log(f"MLINE_LINE oblast={oblast_hdr} raw='{ln}'", "multi_region")
         except Exception:
             pass
         except Exception:
@@ -4420,7 +4436,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
     # --- Per-line UAV course / area city targeting ("БпЛА курсом на <місто>", "8х БпЛА в районі <міста>") ---
     # Triggered when region multi list suppressed earlier due to presence of course lines.
     if 'бпла' in lower and ('курс' in lower or 'в районі' in lower):
-        print(f"DEBUG: UAV course parser triggered for message length: {len(text)} chars")
+        add_debug_log(f"UAV course parser triggered for message length: {len(text)} chars", "uav_course")
         original_text_norm = re.sub(r'(?i)(\b[А-Яа-яЇїІіЄєҐґ\-]{3,}(?:щина|область|обл\.)):(?!\s*\n)', r'\1:\n', original_text)
         lines_with_region = []
         current_region_hdr = None
@@ -4490,7 +4506,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             ln_low = ln.lower()
             if 'бпла' not in ln_low:
                 continue
-            print(f"DEBUG: Processing UAV line: '{ln[:100]}...' (region: {region_hdr})")
+            add_debug_log(f"Processing UAV line: '{ln[:100]}...' (region: {region_hdr})", "uav_course")
             count = None; city = None; approx_flag = False
             m1 = pat_count_course.search(ln_low)
             if m1:
@@ -4506,14 +4522,14 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     if m3:
                         city = m3.group(1)
             if not city:
-                print(f"DEBUG: No city found in UAV line")
+                add_debug_log("No city found in UAV line", "uav_course")
                 continue
-            print(f"DEBUG: Found city '{city}' in UAV line")
+            add_debug_log(f"Found city '{city}' in UAV line", "uav_course")
             multi_norm = _resolve_city_candidate(city)
             base = norm_city_token(multi_norm)
-            print(f"DEBUG: City normalized to '{base}'")
+            add_debug_log(f"City normalized to '{base}'", "uav_course")
             coords = CITY_COORDS.get(base) or (SETTLEMENTS_INDEX.get(base) if SETTLEMENTS_INDEX else None)
-            print(f"DEBUG: Coordinates lookup for '{base}': {coords}")
+            add_debug_log(f"Coordinates lookup for '{base}': {coords}", "uav_course")
             if not coords:
                 try:
                     coords = region_enhanced_coords(base, region_hint_override=region_hdr)
@@ -4531,7 +4547,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     approx_flag = True
                 else:
                     # skip THIS city but continue processing other cities
-                    print(f"DEBUG: Skipping unrecognized city '{base}' - no coordinates and no region context")
+                    add_debug_log(f"Skipping unrecognized city '{base}' - no coordinates and no region context", "uav_course")
                     continue
             if base not in CITY_COORDS:
                 CITY_COORDS[base] = coords
@@ -4552,8 +4568,8 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     'threat_type': threat_type, 'text': ln[:500], 'date': date_str, 'channel': channel,
                     'marker_icon': icon, 'source_match': 'course_city_unit', 'count': 1
                 })
-                print(f"DEBUG: Created course track for '{label}' at {lat}, {lng}")
-        print(f"DEBUG: Total course tracks generated: {len(course_tracks)}")
+                add_debug_log(f"Created course track for '{label}' at {lat}, {lng}", "uav_course")
+        add_debug_log(f"Total course tracks generated: {len(course_tracks)}", "uav_course")
         log.debug(f"mid={mid} course_tracks_generated: {len(course_tracks)} tracks")
         if course_tracks:
             return course_tracks
@@ -6512,9 +6528,18 @@ def admin_panel():
         markers=recent_markers,
         daily_unique=daily_unique,
         week_unique=week_unique,
-    hidden_markers=parsed_hidden,
-    neg_geocode=list(_load_neg_geocode_cache().items())[:150]
+        hidden_markers=parsed_hidden,
+        neg_geocode=list(_load_neg_geocode_cache().items())[:150],
+        debug_logs=DEBUG_LOGS
     )
+
+@app.route('/admin/clear_debug_logs', methods=['POST'])
+def clear_debug_logs():
+    if not _require_secret(request):
+        return jsonify({'status': 'forbidden'}), 403
+    global DEBUG_LOGS
+    DEBUG_LOGS.clear()
+    return jsonify({'status': 'ok', 'cleared': True})
 
 @app.route('/admin/set_monitor_period', methods=['POST'])
 def set_monitor_period():
