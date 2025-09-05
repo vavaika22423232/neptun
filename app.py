@@ -6727,6 +6727,10 @@ def _require_secret(req):
     supplied = req.args.get('secret') or req.headers.get('X-Auth-Secret') or req.form.get('secret')
     return supplied and supplied == AUTH_SECRET
 
+@app.route('/version')
+def version_check():
+    return {'version': '2024-12-06-oblast-raion-fix', 'timestamp': time.time()}
+
 @app.route('/test_oblast_raion')
 def test_oblast_raion():
     if not _require_secret(request):
