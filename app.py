@@ -2468,27 +2468,44 @@ def process_message(text, mid, date_str, channel):  # type: ignore
     original_text = text
     
     # Special handling for oblast+raion format: "чернігівська область (чернігівський район), київська область (вишгородський район)"
-    oblast_raion_pattern = r'([а-яіїєґ]+ська\s+область)\s*\(([^)]*?райони?[^)]*)\)'
+    oblast_raion_pattern = r'([а-яіїєґ]+ська\s+область)\s*\(([^)]*?райони?[^)]*?)\)'
     oblast_raion_matches = re.findall(oblast_raion_pattern, text.lower(), re.IGNORECASE)
+    
+    # Also check for pattern without requiring "райони" in parentheses - some messages might have just names
+    if not oblast_raion_matches:
+        oblast_raion_pattern_simple = r'([а-яіїєґ]+ська\s+область)\s*\(([^)]+)\)'
+        oblast_raion_matches_simple = re.findall(oblast_raion_pattern_simple, text.lower(), re.IGNORECASE)
+        # Filter to only those that contain district-like words
+        oblast_raion_matches = [(oblast, raion) for oblast, raion in oblast_raion_matches_simple 
+                               if any(word in raion for word in ['район', 'р-н', 'ський', 'цький'])]
+    
+    add_debug_log(f"Oblast+raion pattern check: found {len(oblast_raion_matches)} matches in text: {text[:200]}...", "oblast_raion")
+    
     if oblast_raion_matches and any(word in text.lower() for word in ['бпла', 'загроза', 'укриття']):
         add_debug_log(f"Oblast+raion format detected: {oblast_raion_matches}", "oblast_raion")
         tracks = []
         
         for oblast_text, raion_text in oblast_raion_matches:
+            add_debug_log(f"Processing oblast: '{oblast_text}', raion_text: '{raion_text}'", "oblast_raion")
             # Extract individual raions from the parentheses
             # Handle both single and multiple raions: "сумський, конотопський райони"
             raion_parts = re.split(r',\s*|\s+та\s+', raion_text)
+            add_debug_log(f"Split raion_parts: {raion_parts}", "oblast_raion")
             
             for raion_part in raion_parts:
                 raion_part = raion_part.strip()
                 if not raion_part:
                     continue
                     
+                add_debug_log(f"Processing raion_part: '{raion_part}'", "oblast_raion")
+                    
                 # Extract raion name (remove "район"/"райони" suffix)
                 raion_name = re.sub(r'\s*(райони?|р-н\.?).*$', '', raion_part).strip()
+                add_debug_log(f"After removing suffix, raion_name: '{raion_name}'", "oblast_raion")
                 
                 # Normalize raion name
                 raion_normalized = re.sub(r'(ському|ского|ського|ский|ськiй|ськой|ським|ском)$', 'ський', raion_name)
+                add_debug_log(f"Normalized raion: '{raion_normalized}', checking in RAION_FALLBACK", "oblast_raion")
                 
                 if raion_normalized in RAION_FALLBACK:
                     lat, lng = RAION_FALLBACK[raion_normalized]
@@ -2507,7 +2524,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                         'source_match': 'oblast_raion_format'
                     })
                 else:
-                    add_debug_log(f"Raion not found in RAION_FALLBACK: {raion_normalized}", "oblast_raion")
+                    add_debug_log(f"Raion not found in RAION_FALLBACK: '{raion_normalized}'. Available keys: {list(RAION_FALLBACK.keys())[:10]}...", "oblast_raion")
         
         if tracks:
             add_debug_log(f"Returning {len(tracks)} oblast+raion markers", "oblast_raion")
