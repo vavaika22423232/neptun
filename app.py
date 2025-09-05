@@ -6020,8 +6020,36 @@ def debug_parse():
         'tracks': tracks if isinstance(tracks, list) else []
     })
 
-@app.route('/locate')
-def locate_place():
+@app.route('/test_parse')
+def test_parse():
+    """Test endpoint to manually test message parsing without auth."""
+    test_message = "Чернігівщина: 1 БпЛА на Козелець 1 БпЛА на Носівку 1 БпЛА неподалік Ічні 2 БпЛА на Куликівку 2 БпЛА між Корюківкою та Меною Сумщина: 3 БпЛА в районі Конотопу ㅤ ➡Підписатися"
+    
+    try:
+        print("="*50)
+        print("MANUAL TEST STARTED")
+        print("="*50)
+        tracks = process_message(test_message, 'TEST_1', '2025-09-05 17:20:00', 'test')
+        print("="*50)
+        print("MANUAL TEST COMPLETED")
+        print("="*50)
+        
+        return jsonify({
+            'success': True,
+            'message': test_message,
+            'tracks_count': len(tracks) if tracks else 0,
+            'tracks': tracks,
+            'test_time': datetime.now().isoformat()
+        })
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"ERROR in test_parse: {error_details}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': error_details
+        }), 500
     """Locate a settlement or raion by name. Query param: q=<name>
     Returns: {status:'ok', name, lat, lng, source:'dict'|'geocode'|'fallback'} or {status:'not_found'}
     Lightweight normalization reusing UA_CITY_NORMALIZE and CITY_COORDS. Falls back to ensure_city_coords (may geocode if key allowed).
