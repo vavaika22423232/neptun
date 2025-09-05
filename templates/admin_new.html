@@ -207,6 +207,17 @@ body {
   font-size: 0.8rem;
 }
 
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.btn:disabled:hover {
+  transform: none !important;
+  opacity: 0.6;
+}
+
 .grid {
   display: flex;
   flex-direction: column;
@@ -746,9 +757,14 @@ textarea.input {
             🐛 Debug Console
             <span class="badge info">{{ debug_logs|length }}</span>
           </h2>
-          <button type="button" class="btn btn-danger btn-sm" onclick="clearDebugLogs()">
-            🗑️ Clear Logs
-          </button>
+          <div style="display: flex; gap: 0.5rem;">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="copyDebugLogs()">
+              📋 Copy Logs
+            </button>
+            <button type="button" class="btn btn-danger btn-sm" onclick="clearDebugLogs()">
+              🗑️ Clear Logs
+            </button>
+          </div>
         </div>
         <div class="card-body compact">
           {% if debug_logs %}
@@ -1220,6 +1236,63 @@ async function delNeg(name) {
 }
 
 // Debug logs
+async function copyDebugLogs() {
+  try {
+    const debugEntries = document.querySelectorAll('.debug-entry');
+    if (debugEntries.length === 0) {
+      alert('No debug logs to copy');
+      return;
+    }
+    
+    let logText = '';
+    debugEntries.forEach(entry => {
+      const timestamp = entry.querySelector('.debug-timestamp')?.textContent || '';
+      const category = entry.querySelector('.debug-category')?.textContent || '';
+      const message = entry.querySelector('.debug-message')?.textContent || '';
+      logText += `${timestamp} [${category}] ${message}\n`;
+    });
+    
+    // Copy to clipboard
+    await navigator.clipboard.writeText(logText);
+    
+    // Show success feedback
+    const btn = event.target;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '✅ Copied!';
+    btn.disabled = true;
+    
+    setTimeout(() => {
+      btn.innerHTML = originalText;
+      btn.disabled = false;
+    }, 2000);
+    
+  } catch (error) {
+    // Fallback for older browsers
+    try {
+      const debugEntries = document.querySelectorAll('.debug-entry');
+      let logText = '';
+      debugEntries.forEach(entry => {
+        const timestamp = entry.querySelector('.debug-timestamp')?.textContent || '';
+        const category = entry.querySelector('.debug-category')?.textContent || '';
+        const message = entry.querySelector('.debug-message')?.textContent || '';
+        logText += `${timestamp} [${category}] ${message}\n`;
+      });
+      
+      // Create temporary textarea for fallback copy
+      const textarea = document.createElement('textarea');
+      textarea.value = logText;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      
+      alert('Debug logs copied to clipboard!');
+    } catch (fallbackError) {
+      alert('Failed to copy logs to clipboard');
+    }
+  }
+}
+
 async function clearDebugLogs() {
   if (!confirm('Clear all debug logs?')) return;
   
