@@ -2413,6 +2413,10 @@ def process_message(text, mid, date_str, channel):  # type: ignore
     try:
         print(f"DEBUG: process_message called - mid={mid}, channel={channel}, text_length={len(text or '')}")
         print(f"DEBUG: message text preview: {(text or '')[:200]}...")
+        # Check if this is our test message
+        if 'чернігівщина' in (text or '').lower() and 'сумщина' in (text or '').lower():
+            print(f"DEBUG: MULTI-REGION MESSAGE DETECTED!")
+            print(f"DEBUG: Full text: {text}")
     except Exception:
         pass
     
@@ -2994,9 +2998,11 @@ def process_message(text, mid, date_str, channel):  # type: ignore
     # NEW: Handle single-line messages with multiple regions like "Чернігівщина: 1 БпЛА на Козелець ... Сумщина: 3 БпЛА..."
     # First try to split by region headers in single line
     if len(raw_lines) == 1 and any(region in text.lower() for region in ['чернігівщин', 'сумщин', 'харківщин', 'полтавщин']):
+        print(f"DEBUG: Single-line multi-region message detected, raw_lines count: {len(raw_lines)}")
         # Split by oblast headers that have colon after them
         import re as _re_split
         region_split = _re_split.split(r'([А-ЯІЇЄЁа-яіїєё]+щина):\s*', text)
+        print(f"DEBUG: Region split result: {region_split}")
         if len(region_split) > 2:  # We have actual splits
             new_lines = []
             for i in range(1, len(region_split), 2):  # Take every odd element (region name) and next even (content)
@@ -3005,9 +3011,12 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     content = region_split[i+1].strip()
                     new_lines.append(f"{region_name}:")
                     new_lines.append(content)
+                    print(f"DEBUG: Added region header: '{region_name}:' and content: '{content}'")
             if new_lines:
                 raw_lines = new_lines
                 print(f"DEBUG: Split single line into {len(raw_lines)} lines for multi-region processing")
+        else:
+            print(f"DEBUG: Region split failed, keeping original format")
     
     cleaned_for_multiline = []
     import re as _re_clean
@@ -3049,12 +3058,15 @@ def process_message(text, mid, date_str, channel):  # type: ignore
     lines = cleaned_for_multiline
     oblast_hdr = None
     multi_city_tracks = []
+    print(f"DEBUG: Processing {len(lines)} cleaned lines for multi-city tracks")
     for ln in lines:
+        print(f"DEBUG: Processing line: '{ln}'")
         # Если строка — это заголовок области (например, "Сумщина:")
         # Заголовок области: строка, заканчивающаяся на ':' (возможен пробел перед / после) или формой '<область>:' с лишними пробелами
         import re
         if re.match(r'^[A-Za-zА-Яа-яЇїІіЄєҐґ\-ʼ`\s]+:\s*$', ln):
             oblast_hdr = ln.split(':')[0].strip().lower()
+            print(f"DEBUG: Region header detected: '{oblast_hdr}'")
             if oblast_hdr.startswith('на '):  # handle 'на харківщина:' header variant
                 oblast_hdr = oblast_hdr[3:].strip()
             if oblast_hdr and oblast_hdr[0] in ('е','є') and oblast_hdr.endswith('гівщина'):
@@ -3066,9 +3078,12 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             if oblast_hdr and oblast_hdr.endswith('нниччина') and oblast_hdr != 'вінниччина':
                 oblast_hdr = 'вінниччина'
             # header detected
+            print(f"DEBUG: Final region header: '{oblast_hdr}'")
             continue
         try:
-            log.info(f"MLINE_LINE oblast={oblast_hdr} raw='{ln}'")
+            print(f"DEBUG: MLINE_LINE oblast={oblast_hdr} raw='{ln}'")
+        except Exception:
+            pass
         except Exception:
             pass
         # Пытаемся найти город и количество (например, "2х БпЛА курсом на Десну")
@@ -3351,6 +3366,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         
         # --- NEW: Simple "X БпЛА на <city>" pattern (e.g. '1 БпЛА на Козелець', '2 БпЛА на Куликівку') ---
         if not city:
+            print(f"DEBUG: Checking simple БпЛА pattern for line: '{ln}'")
             m_simple = re.search(r'(\d+)\s+бпла\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=\s|$|[,\.\!\?;])', ln, re.IGNORECASE)
             if m_simple:
                 try:
@@ -3358,12 +3374,14 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                 except Exception:
                     count = 1
                 city = m_simple.group(2).strip()
+                print(f"DEBUG: Found simple БпЛА pattern - count: {count}, city: '{city}'")
             elif re.search(r'бпла\s+на\s+[A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,}', ln, re.IGNORECASE):
                 # Fallback for "БпЛА на <city>" without count
                 m_simple_no_count = re.search(r'бпла\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=\s|$|[,\.\!\?;])', ln, re.IGNORECASE)
                 if m_simple_no_count:
                     count = 1
                     city = m_simple_no_count.group(1).strip()
+                    print(f"DEBUG: Found simple БпЛА pattern (no count) - city: '{city}'")
         
         # --- NEW: Handle "між X та Y" pattern (e.g. "між Корюківкою та Меною") ---
         if not city:
@@ -3425,7 +3443,9 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                 count = int(count_match.group(1)) if count_match else 1
         
         if city:
+            print(f"DEBUG: Processing city '{city}' with oblast_hdr '{oblast_hdr}' and count {count}")
             base = normalize_city_name(city)
+            print(f"DEBUG: Normalized city name: '{base}'")
             # Простейшая нормализация винительного падежа -> именительный ("велику димерку" -> "велика димерка")
             if base.endswith('у димерку') and 'велик' in base:
                 base = 'велика димерка'
@@ -3443,18 +3463,25 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             if base == 'троєщину':
                 base = 'троєщина'
             coords = CITY_COORDS.get(base)
+            print(f"DEBUG: Direct lookup for '{base}': {coords}")
             if not coords and SETTLEMENTS_INDEX:
                 coords = SETTLEMENTS_INDEX.get(base)
+                print(f"DEBUG: SETTLEMENTS_INDEX lookup for '{base}': {coords}")
             # coords lookup done
             # Если не найдено — пробуем добавить область к названию
             if not coords and oblast_hdr:
                 combo = f"{base} {oblast_hdr}"
+                print(f"DEBUG: Trying combo lookup for '{combo}'")
                 coords = CITY_COORDS.get(combo)
                 if not coords and SETTLEMENTS_INDEX:
                     coords = SETTLEMENTS_INDEX.get(combo)
+                print(f"DEBUG: Combo lookup result: {coords}")
             if not coords:
+                print(f"DEBUG: Calling ensure_city_coords for '{base}'")
                 coords = ensure_city_coords(base)
+                print(f"DEBUG: ensure_city_coords result: {coords}")
             if coords:
+                print(f"DEBUG: Found coords {coords} for city '{base}', creating track")
                 # Handle both 2-tuple (lat, lng) and 3-tuple (lat, lng, approx_flag) returns
                 if len(coords) == 3:
                     lat, lng, approx_flag = coords
@@ -3467,12 +3494,17 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     label += f" ({count})"
                 if oblast_hdr and oblast_hdr not in label.lower():
                     label += f" [{oblast_hdr.title()}]"
+                print(f"DEBUG: Creating track with label '{label}' at {lat}, {lng}")
                 multi_city_tracks.append({
                     'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
                     'threat_type': threat_type, 'text': ln[:500], 'date': date_str, 'channel': channel,
                     'marker_icon': icon, 'source_match': 'multiline_oblast_city', 'count': count
                 })
+            else:
+                print(f"DEBUG: No coordinates found for city '{base}'")
+    print(f"DEBUG: Multi-city tracks processing complete. Found {len(multi_city_tracks)} tracks")
     if multi_city_tracks:
+        print(f"DEBUG: Returning {len(multi_city_tracks)} multi-city tracks")
         return multi_city_tracks
     # --- Detect and split multiple city targets in one message ---
     import re
