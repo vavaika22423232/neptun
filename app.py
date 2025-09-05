@@ -1869,6 +1869,8 @@ RAION_FALLBACK = {
     # Новые районы для многократных сообщений
     'конотопський': (51.2375, 33.2020), 'конотопский': (51.2375, 33.2020),
     'сумський': (50.9077, 34.7981), 'сумский': (50.9077, 34.7981),
+    'чернігівський': (51.4982, 31.2893), 'черниговский': (51.4982, 31.2893),
+    'вишгородський': (50.5850, 30.4915), 'вышгородский': (50.5850, 30.4915),
     'новгород-сіверський': (51.9874, 33.2620), 'новгород-северский': (51.9874, 33.2620),
     'чугуївський': (49.8353, 36.6880), 'чугевский': (49.8353, 36.6880), 'чугевський': (49.8353, 36.6880), 'чугуевский': (49.8353, 36.6880)
     , 'синельниківський': (48.3167, 36.5000), 'синельниковский': (48.3167, 36.5000)
@@ -2464,6 +2466,53 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         pass
     # Ensure original_text is defined early to avoid UnboundLocalError in early parsing branches
     original_text = text
+    
+    # Special handling for oblast+raion format: "чернігівська область (чернігівський район), київська область (вишгородський район)"
+    oblast_raion_pattern = r'([а-яіїєґ]+ська\s+область)\s*\(([^)]*?райони?[^)]*)\)'
+    oblast_raion_matches = re.findall(oblast_raion_pattern, text.lower(), re.IGNORECASE)
+    if oblast_raion_matches and any(word in text.lower() for word in ['бпла', 'загроза', 'укриття']):
+        add_debug_log(f"Oblast+raion format detected: {oblast_raion_matches}", "oblast_raion")
+        tracks = []
+        
+        for oblast_text, raion_text in oblast_raion_matches:
+            # Extract individual raions from the parentheses
+            # Handle both single and multiple raions: "сумський, конотопський райони"
+            raion_parts = re.split(r',\s*|\s+та\s+', raion_text)
+            
+            for raion_part in raion_parts:
+                raion_part = raion_part.strip()
+                if not raion_part:
+                    continue
+                    
+                # Extract raion name (remove "район"/"райони" suffix)
+                raion_name = re.sub(r'\s*(райони?|р-н\.?).*$', '', raion_part).strip()
+                
+                # Normalize raion name
+                raion_normalized = re.sub(r'(ському|ского|ського|ский|ськiй|ськой|ським|ском)$', 'ський', raion_name)
+                
+                if raion_normalized in RAION_FALLBACK:
+                    lat, lng = RAION_FALLBACK[raion_normalized]
+                    add_debug_log(f"Creating oblast+raion marker: {raion_normalized} at {lat}, {lng}", "oblast_raion")
+                    
+                    tracks.append({
+                        'id': f"{mid}_raion_{raion_normalized}",
+                        'place': f"{raion_normalized.title()} район",
+                        'lat': lat,
+                        'lng': lng,
+                        'threat_type': 'shahed',  # Default for БПЛА threats
+                        'text': original_text[:500],
+                        'date': date_str,
+                        'channel': channel,
+                        'marker_icon': 'shahed.png',
+                        'source_match': 'oblast_raion_format'
+                    })
+                else:
+                    add_debug_log(f"Raion not found in RAION_FALLBACK: {raion_normalized}", "oblast_raion")
+        
+        if tracks:
+            add_debug_log(f"Returning {len(tracks)} oblast+raion markers", "oblast_raion")
+            return tracks
+    
     large_message_mode = False
     LARGE_THRESHOLD = 15000
     HARD_CUTOFF = 40000  # safety to avoid pathological regex backtracking
