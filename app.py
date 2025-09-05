@@ -3195,6 +3195,52 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                         add_debug_log(f"Created general UAV marker: {label} ({threat_type})", "multi_region")
                         continue  # move to next line
         
+        # NEW: Handle UAV messages without region but with city name
+        ln_lower = ln.lower()
+        if (not oblast_hdr) and ('бпла' in ln_lower or 'безпілотник' in ln_lower or 'дрон' in ln_lower or 'обстріл' in ln_lower or 'вибух' in ln_lower):
+            # Try to extract city name from the message
+            import re
+            # Pattern for messages like "❗️ Синельникове — 1х БпЛА довкола" or "💥 Херсон — обстріл"
+            city_match = re.search(r'[❗️⚠️🛸💥]*\s*([А-ЯІЇЄа-яіїєґ][А-Яа-яІіЇїЄєґ\-\'ʼ]{2,30}(?:ське|цьке|ський|ський район|ове|еве|ине|ино|івка|івськ|ськ|град|город)?)', ln)
+            if city_match:
+                city_name = city_match.group(1).strip()
+                
+                # Normalize city name
+                base_city = normalize_city_name(city_name)
+                base_city = UA_CITY_NORMALIZE.get(base_city, base_city)
+                coords = CITY_COORDS.get(base_city) or (SETTLEMENTS_INDEX.get(base_city) if SETTLEMENTS_INDEX else None)
+                
+                if coords:
+                    lat, lng = coords
+                    label = base_city.title()
+                    
+                    # Determine threat type based on message content
+                    threat_type = 'shahed'  # default for UAV
+                    if 'обстріл' in ln_lower or 'загроза обстрілу' in ln_lower:
+                        threat_type = 'obstril'
+                    elif any(word in ln_lower for word in ['вибух', 'вибухи']):
+                        threat_type = 'vibuh'
+                    elif any(word in ln_lower for word in ['ракета', 'ракети']):
+                        threat_type = 'raketa'
+                    elif any(word in ln_lower for word in ['артилерія', 'арта']):
+                        threat_type = 'rszv'
+                    
+                    multi_city_tracks.append({
+                        'id': f"{mid}_city_threat_{len(multi_city_tracks)+1}",
+                        'place': label,
+                        'lat': lat,
+                        'lng': lng,
+                        'threat_type': threat_type,
+                        'text': ln[:500],
+                        'date': date_str,
+                        'channel': channel,
+                        'marker_icon': f'{threat_type}.png',
+                        'source_match': 'city_threat_activity',
+                        'count': 1
+                    })
+                    add_debug_log(f"Created city threat marker: {label} ({threat_type})", "multi_region")
+                    continue  # move to next line
+        
         # Пытаемся найти город и количество (например, "2х БпЛА курсом на Десну")
         import re
         # --- NEW: распознавание ракетных строк внутри многострочного блока ---
