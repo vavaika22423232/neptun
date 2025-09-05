@@ -181,7 +181,7 @@ def init_alarm_events_db():
     except Exception as e:
         log.warning(f"alarm_events db init failed: {e}")
 
-def log_alarm_event(level:str, name:str, event:str, ts:float|None=None):
+def log_alarm_event(level:str, name:str, event:str, ts=None):
     ts = ts or time.time()
     try:
         with _visits_db_conn() as conn:
@@ -2431,6 +2431,64 @@ def geocode_opencage(place: str):
         return None
 
 def process_message(text, mid, date_str, channel):  # type: ignore
+    # Define classify function at the start so it's available throughout process_message
+    def classify(th: str):
+        l = th.lower()
+        # Recon / розвід дрони -> use pvo icon (rozved.png) per user request - PRIORITY: check BEFORE general БПЛА
+        if 'розвід' in l or 'розвідуваль' in l or 'развед' in l:
+            return 'rozved', 'rozved.png'
+        # Launch site detections for Shahed / UAV launches ("пуски" + origin phrases). User wants pusk.png marker.
+        if ('пуск' in l or 'пуски' in l) and (any(k in l for k in ['shahed','шахед','шахеді','шахедів','бпла','uav','дрон']) or ('аеродром' in l) or ('аэродром' in l)):
+            return 'pusk', 'pusk.png'
+        # Explicit launches from occupied Berdyansk airbase (Запорізька область) should also show as pusk (not avia)
+        if ('пуск' in l or 'пуски' in l) and 'бердян' in l and ('авіабаз' in l or 'аеродром' in l or 'авиабаз' in l):
+            return 'pusk', 'pusk.png'
+        # Air alarm start
+        if ('повітряна тривога' in l or 'повітряна тривога.' in l or ('тривога' in l and 'повітр' in l)) and not ('відбій' in l or 'отбой' in l):
+            return 'alarm', 'trivoga.png'
+        # Air alarm cancellation
+        if ('відбій тривоги' in l) or ('отбой тревоги' in l):
+            return 'alarm_cancel', 'vidboi.png'
+        # Explosions reporting -> vibuh icon (cover broader fixation phrases)
+        if ('повідомляють про вибух' in l or 'повідомлено про вибух' in l or 'зафіксовано вибух' in l or 'зафіксовано вибухи' in l
+            or 'фіксація вибух' in l or 'фіксують вибух' in l or re.search(r'\b(вибух|вибухи|вибухів)\b', l)):
+            return 'vibuh', 'vibuh.png'
+        # Artillery shelling warning (обстріл / загроза обстрілу) -> use obstril.png
+        if 'обстріл' in l or 'обстрел' in l or 'загроза обстрілу' in l or 'угроза обстрела' in l:
+            return 'artillery', 'obstril.png'
+        # Alarm cancellation (відбій тривоги / отбой тревоги)
+        if ('відбій' in l and 'тривог' in l) or ('отбой' in l and 'тревог' in l):
+            return 'alarm_cancel', 'vidboi.png'
+        # PRIORITY: drones (частая путаница). Если присутствуют слова шахед/бпла/дрон -> это shahed
+        if any(k in l for k in ['shahed','шахед','шахеді','шахедів','geran','герань','дрон','дрони','бпла','uav']):
+            return 'shahed', 'shahed.png'
+        # KAB (guided aerial bombs) treat as aviation threat
+        if any(k in l for k in ['каб','kab','умпк','umpk','модуль','fab','умпб','фаб','кабу']):
+            return 'avia', 'avia.png'
+        # Rocket / missile attacks (ракета, ракети) -> raketa.png
+        if any(k in l for k in ['ракет','rocket','міжконтинент','межконтинент','балістичн','крилат','cruise']):
+            return 'raketa', 'raketa.png'
+        # РСЗВ (MLRS, град, ураган, смерч) -> rszv.png
+        if any(k in l for k in ['рсзв','mlrs','град','ураган','смерч','рсув','tор','tорнадо','торнадо']):
+            return 'rszv', 'rszv.png'
+        # Korabel (naval/ship-related threats) -> korabel.png
+        if any(k in l for k in ['корабел','флот','корабл','ship','fleet','морськ','naval']):
+            return 'korabel', 'korabel.png'
+        # Aircraft activity (avia) -> avia.png (jets, tactical aviation)
+        if any(k in l for k in ['літак','самол','avia','tactical','тактичн','fighter','истребит','jets']):
+            return 'avia', 'avia.png'
+        # Artillery
+        if any(k in l for k in ['арт','artillery','гармат','гаубиц','минометн','howitzer']):
+            return 'artillery', 'artillery.png'
+        # PVO (air defense activity) -> pvo.png
+        if any(k in l for k in ['ппо','pvo','defense','оборон','зенітн','с-','patriot']):
+            return 'pvo', 'pvo.png'
+        # Naval mines -> neptun
+        if any(k in l for k in ['міна','мін ','mine','neptun','нептун','противокорабел']):
+            return 'neptun', 'neptun.jpg'
+        # General fallback for unclassified threats
+        return 'shahed', 'shahed.png'  # default fallback
+
     # ВСЕГДА логируем каждое входящее сообщение для отладки
     try:
         add_debug_log(f"process_message called - mid={mid}, channel={channel}, text_length={len(text or '')}", "message_processing")
@@ -2441,6 +2499,48 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             add_debug_log(f"Full text: {text}", "multi_region")
     except Exception:
         pass
+
+    # PRIORITY: Handle emoji + city + oblast format BEFORE any other processing
+    try:
+        head = text.split('\n', 1)[0][:160] if text else ""
+        
+        # Handle general emoji + city + oblast format with any UAV threat (more flexible pattern)
+        general_emoji_pattern = r'^[^\w\s]*\s*([А-ЯІЇЄЁа-яіїєё\'\-\s]+)\s*\([^)]*обл[^)]*\)'
+        general_emoji_match = re.search(general_emoji_pattern, head, re.IGNORECASE)
+        add_debug_log(f"PRIORITY: Testing general emoji pattern on head: {repr(head)}", "emoji_debug")
+        add_debug_log(f"PRIORITY: General emoji match result: {general_emoji_match}", "emoji_debug")
+        
+        if general_emoji_match and any(uav_word in text.lower() for uav_word in ['бпла', 'дрон', 'шахед', 'активність', 'загроза']):
+            city_from_general = general_emoji_match.group(1).strip()
+            add_debug_log(f"PRIORITY: Found city from general emoji: {repr(city_from_general)}", "emoji_debug")
+            
+            if city_from_general and 2 <= len(city_from_general) <= 40:
+                base = city_from_general.lower().replace('\u02bc',"'").replace('ʼ',"'").replace("'","'").replace('`',"'")
+                base = re.sub(r'\s+',' ', base)
+                norm = UA_CITY_NORMALIZE.get(base, base)
+                coords = CITY_COORDS.get(norm)
+                add_debug_log(f"PRIORITY: Looking up coordinates: base={repr(base)}, norm={repr(norm)}, coords={coords}", "emoji_debug")
+                
+                if not coords and 'SETTLEMENTS_INDEX' in globals():
+                    idx_map = globals().get('SETTLEMENTS_INDEX') or {}
+                    coords = idx_map.get(norm)
+                if coords:
+                    lat, lon = coords[:2]
+                    threat_type, icon = classify(text)
+                    track = {
+                        'id': f"{mid}_priority_emoji_{city_from_general.replace(' ','_')}",
+                        'place': city_from_general.title(),
+                        'lat': lat, 'lng': lon,
+                        'threat_type': threat_type,
+                        'text': text[:160], 'date': date_str, 'channel': channel,
+                        'marker_icon': icon, 'source_match': 'priority_emoji_threat'
+                    }
+                    add_debug_log(f'PRIORITY EARLY RETURN: {city_from_general} -> {coords} -> {icon}', "emoji_debug")
+                    return [track]  # Early return - highest priority
+    except Exception as e:
+        add_debug_log(f"PRIORITY emoji processing error: {e}", "emoji_debug")
+    
+    # Continue with existing logic...
     
     # Strip embedded links (Markdown [text](url) or raw URLs) while keeping core message text.
     # Requested: if message contains links, remove them but keep the rest.
@@ -2707,15 +2807,50 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     coords = idx_map.get(norm)
                 if coords:
                     lat, lon = coords[:2]
+                    threat_type, icon = classify(text)
                     track = {
                         'id': f"{mid}_emoji_threat_{city_from_emoji.replace(' ','_')}",
                         'place': city_from_emoji,
                         'lat': lat, 'lng': lon,
-                        'threat_type': 'uav_threat',
+                        'threat_type': threat_type,
                         'text': head[:160], 'date': date_str, 'channel': channel,
-                        'marker_icon': 'shahed.png', 'source_match': 'emoji_threat'
+                        'marker_icon': icon, 'source_match': 'emoji_threat'
                     }
-                    log.debug(f'Emoji threat parser: {city_from_emoji} -> {coords} -> shahed.png')
+                    log.debug(f'Emoji threat parser: {city_from_emoji} -> {coords} -> {icon}')
+                    return [track]  # Early return
+        
+        # NEW: Handle general emoji + city + oblast format with any UAV threat (more flexible pattern)
+        general_emoji_pattern = r'^[^\w\s]*\s*([А-ЯІЇЄЁа-яіїєё\'\-\s]+)\s*\([^)]*обл[^)]*\)'
+        general_emoji_match = re.search(general_emoji_pattern, head, re.IGNORECASE)
+        add_debug_log(f"Testing general emoji pattern on head: {repr(head)}", "emoji_debug")
+        add_debug_log(f"General emoji match result: {general_emoji_match}", "emoji_debug")
+        
+        if general_emoji_match and any(uav_word in text.lower() for uav_word in ['бпла', 'дрон', 'шахед', 'активність', 'загроза']):
+            city_from_general = general_emoji_match.group(1).strip()
+            add_debug_log(f"Found city from general emoji: {repr(city_from_general)}", "emoji_debug")
+            
+            if city_from_general and 2 <= len(city_from_general) <= 40:
+                base = city_from_general.lower().replace('\u02bc',"'").replace('ʼ',"'").replace("'","'").replace('`',"'")
+                base = re.sub(r'\s+',' ', base)
+                norm = UA_CITY_NORMALIZE.get(base, base)
+                coords = CITY_COORDS.get(norm)
+                add_debug_log(f"Looking up coordinates: base={repr(base)}, norm={repr(norm)}, coords={coords}", "emoji_debug")
+                
+                if not coords and 'SETTLEMENTS_INDEX' in globals():
+                    idx_map = globals().get('SETTLEMENTS_INDEX') or {}
+                    coords = idx_map.get(norm)
+                if coords:
+                    lat, lon = coords[:2]
+                    threat_type, icon = classify(text)
+                    track = {
+                        'id': f"{mid}_general_emoji_{city_from_general.replace(' ','_')}",
+                        'place': city_from_general.title(),
+                        'lat': lat, 'lng': lon,
+                        'threat_type': threat_type,
+                        'text': text[:160], 'date': date_str, 'channel': channel,
+                        'marker_icon': icon, 'source_match': 'general_emoji_threat'
+                    }
+                    add_debug_log(f'EARLY RETURN: General emoji threat parser: {city_from_general} -> {coords} -> {icon}', "emoji_debug")
                     return [track]  # Early return
         
         if '(' in head and ('обл' in head.lower() or 'область' in head.lower()):
@@ -4147,56 +4282,6 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     }]
         except Exception:
             pass
-    def classify(th: str):
-        l = th.lower()
-        # Recon / розвід дрони -> use pvo icon (rozved.png) per user request - PRIORITY: check BEFORE general БПЛА
-        if 'розвід' in l or 'розвідуваль' in l or 'развед' in l:
-            return 'rozved', 'rozved.png'
-        # Launch site detections for Shahed / UAV launches ("пуски" + origin phrases). User wants pusk.png marker.
-        if ('пуск' in l or 'пуски' in l) and (any(k in l for k in ['shahed','шахед','шахеді','шахедів','бпла','uav','дрон']) or ('аеродром' in l) or ('аэродром' in l)):
-            return 'pusk', 'pusk.png'
-        # Explicit launches from occupied Berdyansk airbase (Запорізька область) should also show as pusk (not avia)
-        if ('пуск' in l or 'пуски' in l) and 'бердян' in l and ('авіабаз' in l or 'аеродром' in l or 'авиабаз' in l):
-            return 'pusk', 'pusk.png'
-        # Air alarm start
-        if ('повітряна тривога' in l or 'повітряна тривога.' in l or ('тривога' in l and 'повітр' in l)) and not ('відбій' in l or 'отбой' in l):
-            return 'alarm', 'trivoga.png'
-        # Air alarm cancellation
-        if ('відбій тривоги' in l) or ('отбой тревоги' in l):
-            return 'alarm_cancel', 'vidboi.png'
-        # Explosions reporting -> vibuh icon (cover broader fixation phrases)
-        if ('повідомляють про вибух' in l or 'повідомлено про вибух' in l or 'зафіксовано вибух' in l or 'зафіксовано вибухи' in l
-            or 'фіксація вибух' in l or 'фіксують вибух' in l or re.search(r'\b(вибух|вибухи|вибухів)\b', l)):
-            return 'vibuh', 'vibuh.png'
-        # Artillery shelling warning (обстріл / загроза обстрілу) -> use obstril.png
-        if 'обстріл' in l or 'обстрел' in l or 'загроза обстрілу' in l or 'угроза обстрела' in l:
-            return 'artillery', 'obstril.png'
-        # Alarm cancellation (відбій тривоги / отбой тревоги)
-        if ('відбій' in l and 'тривог' in l) or ('отбой' in l and 'тревог' in l):
-            return 'alarm_cancel', 'vidboi.png'
-        # PRIORITY: drones (частая путаница). Если присутствуют слова шахед/бпла/дрон -> это shahed
-        if any(k in l for k in ['shahed','шахед','шахеді','шахедів','geran','герань','дрон','дрони','бпла','uav']):
-            return 'shahed', 'shahed.png'
-        # KAB (guided aerial bombs) treat as aviation threat
-        if 'каб' in l or 'КАБ' in th:
-            return 'avia', 'avia.png'
-        # High-speed targets explicit alert (custom icon)
-        if 'високошвидкісн' in l:
-            return 'rszv', 'rszv.png'
-        # Missiles / rockets (removed КАБ from here since КАБ are aviation bombs)
-        if any(k in l for k in ['ракета','ракети','ракетний','ракетная','ракетный','missile','iskander','крылат','крилат','кр ','s-300','s300']):
-            return 'raketa', 'raketa.png'
-        # Aviation
-        if any(k in l for k in ['avia','авіа','авиа','літак','самолет','бомба','бомби','бомбаки']):
-            return 'avia', 'avia.png'
-        # Air defense mention
-        if any(k in l for k in ['пво','зеніт','зенит']):
-            return 'pvo', 'rozved.png'
-        # Artillery / MLRS
-        if any(k in l for k in ['артил', 'mlrs','града','градів','смерч','ураган']):
-            return 'artillery', 'artillery.png'
-        # default assume shahed (консервативно)
-        return 'shahed', 'shahed.png'
     # --- Region-level shelling threat (e.g. "Харківська обл. Загроза обстрілу прикордонних територій") ---
     try:
         if re.search(r'(загроза обстрілу|угроза обстрела)', lower_full):
