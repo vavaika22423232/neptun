@@ -6239,6 +6239,7 @@ def alarms_stats():
 
 @app.route('/data')
 def data():
+    global FALLBACK_REPARSE_CACHE, MAX_REPARSE_CACHE_SIZE
     # Ignore user-provided timeRange; use global configured MONITOR_PERIOD_MINUTES
     time_range = MONITOR_PERIOD_MINUTES
     messages = load_messages()
