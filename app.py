@@ -3182,9 +3182,22 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             if genitive_match:
                 genitive_form = genitive_match.group(1)
                 # Convert genitive to nominative: "сумщини" -> "сумщина"
-                oblast_hdr = genitive_form.replace('щини', 'щина').replace('щині', 'щина')
-                oblast_hdr_match = True
-                add_debug_log(f"Genitive region format detected: '{genitive_form}' -> '{oblast_hdr}'", "multi_region")
+                potential_oblast = genitive_form.replace('щини', 'щина').replace('щині', 'щина')
+                
+                # Validate that this is actually a known region, not just any word ending with щин[иі]
+                known_regions = ['сумщина', 'чернігівщина', 'харківщина', 'полтавщина', 'херсонщина', 
+                               'донеччина', 'луганщина', 'запорожжя', 'дніпропетровщина', 'київщина',
+                               'львівщина', 'івано-франківщина', 'тернопільщина', 'хмельниччина',
+                               'рівненщина', 'волинщина', 'житомирщина', 'вінниччина', 'черкащина',
+                               'кіровоградщина', 'миколаївщина', 'одещина']
+                
+                if potential_oblast in known_regions:
+                    oblast_hdr = potential_oblast
+                    oblast_hdr_match = True
+                    add_debug_log(f"Genitive region format detected: '{genitive_form}' -> '{oblast_hdr}' in line: '{ln}'", "multi_region")
+                    add_debug_log(f"POTENTIAL ISSUE: Oblast set to '{oblast_hdr}' from genitive pattern in: '{ln}'", "oblast_detection")
+                else:
+                    add_debug_log(f"Ignored potential genitive form '{genitive_form}' -> '{potential_oblast}' (not in known regions) in line: '{ln}'", "multi_region")
         
         if oblast_hdr_match:
             add_debug_log(f"Region header detected: '{oblast_hdr}'", "multi_region")
@@ -3209,8 +3222,10 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         # NEW: Create markers for general UAV activity messages (without specific direction)
         ln_lower = ln.lower()
         if 'бпла' in ln_lower or 'безпілотник' in ln_lower or 'дрон' in ln_lower:
+            add_debug_log(f"UAV activity detected in line: '{ln}', oblast_hdr: '{oblast_hdr}'", "uav_processing")
             # Check if we have a region and this is a UAV message
             if oblast_hdr:
+                add_debug_log(f"Processing UAV with region context: '{oblast_hdr}'", "uav_processing")
                 # Find the main city of the region to place the marker
                 region_cities = {
                     'сумщина': 'суми',
@@ -3294,6 +3309,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                             'count': 1
                         })
                         add_debug_log(f"Created general UAV marker: {label} ({threat_type})", "multi_region")
+                        add_debug_log(f"MARKER CREATION: oblast_hdr='{oblast_hdr}', region_city='{region_city}', coords=({lat}, {lng})", "marker_creation")
                         continue  # move to next line
         
         # NEW: Handle UAV messages without region but with city name
