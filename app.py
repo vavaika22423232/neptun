@@ -6219,6 +6219,38 @@ def admin_add_manual_marker():
     except Exception as e:
         return jsonify({'status':'error','error':str(e)}), 400
 
+@app.route('/admin/markers')
+def admin_markers():
+    """API endpoint to get recent markers for admin map"""
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    
+    all_msgs = load_messages()
+    # Get recent markers (exclude pending geo)
+    recent_markers = [m for m in reversed(all_msgs) if m.get('lat') and m.get('lng') and not m.get('pending_geo')][:120]
+    
+    return jsonify({
+        'status': 'ok',
+        'markers': recent_markers,
+        'count': len(recent_markers)
+    })
+
+@app.route('/admin/raw_msgs')
+def admin_raw_msgs():
+    """API endpoint to get raw messages (pending geo) for admin panel"""
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    
+    all_msgs = load_messages()
+    raw_msgs = [m for m in reversed(all_msgs) if m.get('pending_geo')][:100]  # latest 100
+    raw_count = len([m for m in all_msgs if m.get('pending_geo')])
+    
+    return jsonify({
+        'status': 'ok',
+        'raw_msgs': raw_msgs,
+        'raw_count': raw_count
+    })
+
 @app.route('/admin/delete_manual_marker', methods=['POST'])
 def admin_delete_manual_marker():
     if not _require_secret(request):
@@ -6547,7 +6579,7 @@ def admin_panel():
         except Exception:
             continue
     return render_template(
-        'admin.html',
+        'admin_new.html',
         visitors=visitors,
         blocked=blocked,
         raw_msgs=raw_msgs,

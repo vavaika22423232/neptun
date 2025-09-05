@@ -2,173 +2,1005 @@
 <html lang="uk">
 <head>
 <meta charset="utf-8" />
-<title>Admin Panel</title>
+<title>Neptun Admin Dashboard</title>
 <meta name="viewport" content="width=device-width,initial-scale=1" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
- body{font-family:Arial,system-ui,sans-serif;background:#0f172a;color:#f1f5f9;margin:0;padding:1.5rem;}
- h1{margin:0 0 1rem;font-size:1.4rem;}
- table{width:100%;border-collapse:collapse;margin-top:1rem;font-size:0.85rem;}
- th,td{padding:8px 10px;border:1px solid #1e293b;text-align:left;}
- th{background:#1e293b;} tr:nth-child(even){background:#162132;}
- .blocked-list{margin-top:2rem;}
- button{background:#2563eb;color:#fff;border:0;padding:6px 10px;border-radius:5px;cursor:pointer;font-weight:600;font-size:.75rem;}
- button:hover{background:#1d4ed8;}
- .danger{background:#dc2626;} .danger:hover{background:#b91c1c;}
- .ok{background:#16a34a;} .ok:hover{background:#15803d;}
- .topbar{display:flex;gap:1rem;align-items:center;flex-wrap:wrap;}
- input[type=text]{background:#0f1d33;border:1px solid #1e2f43;color:#fff;padding:6px 8px;border-radius:5px;}
- .badge{display:inline-block;background:#334155;padding:2px 6px;border-radius:4px;font-size:.65rem;margin-left:6px;}
-.hidden-box{margin-top:2rem;}
-.hidden-box table td{font-size:.7rem;}
-.neg-cache{margin-top:2rem;}
-.neg-cache table td{font-size:.7rem;}
+:root {
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #334155;
+  --bg-accent: #0ea5e9;
+  --bg-success: #10b981;
+  --bg-warning: #f59e0b;
+  --bg-danger: #ef4444;
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #64748b;
+  --border-primary: #334155;
+  --border-secondary: #475569;
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: linear-gradient(135deg, var(--bg-primary) 0%, #1a202c 100%);
+  color: var(--text-primary);
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+.container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.header {
+  background: rgba(30, 41, 59, 0.8);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xl);
+  padding: 1.5rem 2rem;
+  margin-bottom: 2rem;
+  box-shadow: var(--shadow-lg);
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.header-title h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #0ea5e9, #3b82f6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.status-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  font-weight: 500;
+  border: 1px solid;
+}
+
+.badge.success {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #10b981;
+}
+
+.badge.danger {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+}
+
+.badge.info {
+  background: rgba(14, 165, 233, 0.1);
+  border-color: rgba(14, 165, 233, 0.3);
+  color: #0ea5e9;
+}
+
+.auth-form {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.input {
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1rem;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  transition: all 0.2s;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--bg-accent);
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+}
+
+.btn-primary {
+  background: var(--bg-accent);
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #0284c7;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-success {
+  background: var(--bg-success);
+  color: white;
+}
+
+.btn-success:hover {
+  background: #059669;
+  transform: translateY(-1px);
+}
+
+.btn-danger {
+  background: var(--bg-danger);
+  color: white;
+}
+
+.btn-danger:hover {
+  background: #dc2626;
+  transform: translateY(-1px);
+}
+
+.btn-secondary {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-primary);
+}
+
+.btn-secondary:hover {
+  background: var(--bg-tertiary);
+  transform: translateY(-1px);
+}
+
+.btn-sm {
+  padding: 0.5rem 1rem;
+  font-size: 0.8rem;
+}
+
+.grid {
+  display: grid;
+  gap: 2rem;
+}
+
+.grid-2 {
+  grid-template-columns: repeat(auto-fit, minmax(600px, 1fr));
+}
+
+.grid-3 {
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+}
+
+.card {
+  background: rgba(30, 41, 59, 0.6);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+  transition: all 0.3s;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-xl);
+  border-color: var(--border-secondary);
+}
+
+.card-header {
+  background: rgba(51, 65, 85, 0.3);
+  padding: 1.5rem 2rem;
+  border-bottom: 1px solid var(--border-primary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.card-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.card-body {
+  padding: 2rem;
+}
+
+.card-body.compact {
+  padding: 1rem;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.stat-card {
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  text-align: center;
+  transition: all 0.2s;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--bg-accent);
+}
+
+.stat-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--bg-accent);
+  margin-bottom: 0.5rem;
+}
+
+.stat-label {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.table-container {
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-primary);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.table th {
+  background: rgba(51, 65, 85, 0.5);
+  padding: 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.table td {
+  padding: 1rem;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.3);
+  color: var(--text-secondary);
+}
+
+.table tbody tr {
+  transition: all 0.2s;
+}
+
+.table tbody tr:hover {
+  background: rgba(51, 65, 85, 0.2);
+}
+
+.debug-console {
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  max-height: 500px;
+  overflow-y: auto;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', monospace;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.debug-entry {
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.2);
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.debug-entry:last-child {
+  border-bottom: none;
+}
+
+.debug-timestamp {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.debug-category {
+  background: rgba(14, 165, 233, 0.2);
+  color: #0ea5e9;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.debug-message {
+  color: var(--text-primary);
+  flex: 1;
+  word-break: break-word;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 3rem 2rem;
+  color: var(--text-muted);
+}
+
+.empty-state-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  opacity: 0.5;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.form-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  align-items: end;
+}
+
+.icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  display: inline-block;
+}
+
+.status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 0.5rem;
+}
+
+.status-online {
+  background: var(--bg-success);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+}
+
+.status-offline {
+  background: var(--text-muted);
+}
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 300px;
+}
+
+@media (max-width: 768px) {
+  .container {
+    padding: 1rem;
+  }
+  
+  .header-content {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .grid-2,
+  .grid-3 {
+    grid-template-columns: 1fr;
+  }
+  
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .table-container {
+    overflow-x: auto;
+  }
+  
+  .card-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.5s ease-in;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.pulse {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Map Styles */
+#adminMap {
+  height: 500px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-primary);
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+}
+
+.map-toolbar {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.map-stats {
+  background: rgba(15, 23, 42, 0.8);
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-md);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-primary);
+}
 </style>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-sA+e2atTHQnE0vJM0C2FZ9E1Cyan36H5v9g3rGm3o0k=" crossorigin=""/>
-<style>
-  #pickMap{height:320px;margin-top:.6rem;border:1px solid #1e293b;border-radius:8px;display:none;overflow:hidden;}
-  #pickMap.active{display:block;}
-  .pick-hint{font-size:.6rem;opacity:.6;margin-top:.25rem;}
-</style>
-<style>
-  #adminMap{height:520px;margin-top:1.2rem;border:1px solid #1e293b;border-radius:12px;box-shadow:0 0 0 1px #1e293b,0 4px 18px -6px rgba(0,0,0,.55);background:#0f1d33;}
-  .admin-map-toolbar{display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.4rem;font-size:.65rem;align-items:center;}
-  .admin-map-toolbar button{font-size:.65rem;padding:4px 8px;}
-  .admin-map-badge{background:#1e293b;padding:2px 6px;border-radius:4px;font-size:.6rem;}
-</style>
 </head>
 <body>
-  <div class="topbar">
-    <h1>Admin</h1>
-    {% if secret %}<span class="badge">auth ok</span>{% else %}<span class="badge" style="background:#991b1b">no secret</span>{% endif %}
-  <span class="badge" title="Унікальні відвідувачі за сьогодні">Day: {{ daily_unique }}</span>
-  <span class="badge" title="Унікальні відвідувачі за 7 днів">Week: {{ week_unique }}</span>
-    <form method="get" action="/admin" style="display:flex;gap:.5rem;align-items:center;">
-      <input type="text" name="secret" placeholder="secret" value="{{ secret }}" />
-      <button type="submit">Reload</button>
-    </form>
-    <div style="margin-left:auto;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;">
-      <label style="font-size:.7rem;display:flex;flex-direction:column;gap:4px;">
-        <span style="opacity:.7;">Період моніторингу (хв)</span>
-        <input type="number" id="monPeriod" value="{{ monitor_period }}" min="1" max="360" style="width:90px;">
-      </label>
-      <button type="button" class="ok" onclick="saveMonPeriod()">Зберегти</button>
-      <span id="monStatus" style="font-size:.65rem;color:#94a3b8;"></span>
-    </div>
-  </div>
-  <!-- Admin live map -->
-  <h2 style="margin:.2rem 0 .4rem;font-size:1rem">Карта (оперативні мітки)</h2>
-  <div id="adminMap"></div>
-  <div class="admin-map-toolbar">
-    <button type="button" onclick="reloadAdminMarkers()">Оновити</button>
-    <button type="button" onclick="toggleAutoAdmin()" id="autoBtn">Авто: ON</button>
-    <span class="admin-map-badge" id="adminMapStats">—</span>
-    <span class="admin-map-badge" style="background:#334155;">Right click по мітці → Hide</span>
-  </div>
-  <h2 style="margin-top:1.2rem;font-size:1rem">Active Visitors ({{ visitors|length }})</h2>
-  <table>
-  <thead><tr><th>ID</th><th>IP</th><th>Device</th><th>Time</th><th>Action</th></tr></thead>
-    <tbody>
-      {% for v in visitors %}
-      <tr>
-        <td style="max-width:220px;overflow-wrap:anywhere;">{{ v.id }}</td>
-        <td>{{ v.ip }}</td>
-  <td title="{{ v.ua }}" style="max-width:140px;overflow-wrap:anywhere;">{{ v.ua_short }}</td>
-  <td title="{{ v.age }}s">{{ v.age_fmt }}</td>
-        <td><button class="danger" onclick="blockId('{{ v.id }}')">Block</button></td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-
-  <div class="blocked-list">
-    <h2 style="font-size:1rem">Blocked ({{ blocked|length }})</h2>
-    <table>
-      <thead><tr><th>ID</th><th>Action</th></tr></thead>
-      <tbody>
-        {% for b in blocked %}
-        <tr>
-          <td style="max-width:240px;overflow-wrap:anywhere;">{{ b }}</td>
-          <td><button class="ok" onclick="unblockId('{{ b }}')">Unblock</button></td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  <div class="blocked-list" style="margin-top:2rem;" id="raw-block">
-    <h2 style="font-size:1rem" id="raw-header">Raw (pending geo) {{ raw_count }}</h2>
-    <table>
-      <thead><tr><th>Time</th><th>Channel</th><th>Text</th></tr></thead>
-      <tbody id="raw-tbody">
-        {% for r in raw_msgs %}
-        <tr>
-          <td style="white-space:nowrap;">{{ r.date }}</td>
-          <td style="white-space:nowrap;">{{ r.channel }}</td>
-          <td style="max-width:420px;overflow-wrap:anywhere;">{{ r.text }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  <div class="blocked-list" style="margin-top:2rem;">
-    <h2 style="font-size:1rem">Markers (last {{ markers|length }})</h2>
-    <table>
-      <thead><tr><th>Time</th><th>Type</th><th>Place</th><th>Excerpt</th><th>Action</th></tr></thead>
-      <tbody>
-        {% for m in markers %}
-        <tr>
-          <td style="white-space:nowrap;">{{ m.date }}</td>
-          <td style="white-space:nowrap;">{{ m.threat_type }}</td>
-          <td style="white-space:nowrap;">{{ m.place }}</td>
-          <td style="max-width:340px;overflow-wrap:anywhere;">{{ m.text }}</td>
-          <td>
-            <button class="danger" 
-              data-lat="{{ m.lat }}" 
-              data-lng="{{ m.lng }}" 
-              data-text="{{ (m.text or '')|e }}" 
-              data-source="{{ (m.channel or m.source)|e }}"
-              onclick="hideMarker(this.dataset.lat,this.dataset.lng,this.dataset.text,this.dataset.source)">Hide</button>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  
-  <!-- Debug Information Section -->
-  <div class="blocked-list" style="margin-top:2rem;">
-    <h2 style="font-size:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;">
-      Debug Information ({{ debug_logs|length }} entries)
-      <button type="button" class="danger" onclick="clearDebugLogs()" style="font-size:0.65rem;padding:4px 8px;">Clear Logs</button>
-    </h2>
-    <div style="background:#0a0f1a;border:1px solid #1e293b;border-radius:8px;padding:1rem;max-height:400px;overflow-y:auto;font-family:monospace;font-size:0.75rem;line-height:1.4;">
-      {% for log in debug_logs %}
-        <div style="margin-bottom:0.5rem;border-bottom:1px solid #1e293b;padding-bottom:0.3rem;">
-          <span style="color:#64748b;">[{{ log.timestamp }}]</span>
-          <span style="color:#3b82f6;font-weight:bold;">[{{ log.category }}]</span>
-          <span style="color:#f1f5f9;">{{ log.message }}</span>
+  <div class="container">
+    <!-- Header -->
+    <header class="header fade-in">
+      <div class="header-content">
+        <div class="header-title">
+          <h1>🌊 Neptun Admin</h1>
         </div>
-      {% endfor %}
-      {% if debug_logs|length == 0 %}
-        <div style="color:#64748b;font-style:italic;">No debug logs available</div>
-      {% endif %}
+        
+        <div class="status-badges">
+          {% if secret %}
+            <span class="badge success">
+              <span class="status-indicator status-online"></span>
+              Authenticated
+            </span>
+          {% else %}
+            <span class="badge danger">
+              <span class="status-indicator status-offline"></span>
+              No Auth
+            </span>
+          {% endif %}
+          
+          <span class="badge info">
+            📅 Today: {{ daily_unique }}
+          </span>
+          
+          <span class="badge info">
+            📊 Week: {{ week_unique }}
+          </span>
+        </div>
+        
+        <form method="get" action="/admin" class="auth-form">
+          <input type="text" name="secret" placeholder="Enter secret key" value="{{ secret }}" class="input" />
+          <button type="submit" class="btn btn-primary">
+            🔐 Authenticate
+          </button>
+        </form>
+      </div>
+    </header>
+    <!-- Main Content -->
+    <main class="grid grid-2">
+      <!-- System Configuration -->
+      <div class="card fade-in">
+        <div class="card-header">
+          <h2 class="card-title">
+            ⚙️ System Configuration
+          </h2>
+        </div>
+        <div class="card-body">
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">Monitoring Period (minutes)</label>
+              <input type="number" id="monPeriod" value="{{ monitor_period }}" min="1" max="360" class="input" />
+            </div>
+            <div style="display: flex; align-items: end; gap: 0.75rem;">
+              <button type="button" class="btn btn-success" onclick="saveMonPeriod()">
+                💾 Save Changes
+              </button>
+              <span id="monStatus" class="badge info" style="display: none;"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Map -->
+      <div class="card fade-in">
+        <div class="card-header">
+          <h2 class="card-title">
+            🗺️ Live Operations Map
+          </h2>
+          <div class="map-toolbar">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="reloadAdminMarkers()">
+              🔄 Refresh
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="toggleAutoAdmin()" id="autoBtn">
+              🔁 Auto: ON
+            </button>
+          </div>
+        </div>
+        <div class="card-body compact">
+          <div id="adminMap"></div>
+          <div class="map-toolbar">
+            <span class="map-stats" id="adminMapStats">—</span>
+            <span class="map-stats">💡 Right click marker → Hide</span>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Statistics Overview -->
+    <div class="stats-grid fade-in" style="margin-top: 2rem;">
+      <div class="stat-card">
+        <div class="stat-value">{{ visitors|length }}</div>
+        <div class="stat-label">👥 Active Users</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">{{ blocked|length }}</div>
+        <div class="stat-label">🚫 Blocked IPs</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">{{ raw_count }}</div>
+        <div class="stat-label">⏳ Pending Geo</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">{{ markers|length }}</div>
+        <div class="stat-label">📍 Recent Markers</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">{{ debug_logs|length }}</div>
+        <div class="stat-label">🐛 Debug Entries</div>
+      </div>
     </div>
+
+    <!-- Data Tables Grid -->
+    <div class="grid grid-3 fade-in" style="margin-top: 2rem;">
+      <!-- Active Visitors -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">
+            👥 Active Visitors
+            <span class="badge info">{{ visitors|length }}</span>
+          </h2>
+        </div>
+        <div class="card-body compact">
+          {% if visitors %}
+            <div class="table-container">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Session ID</th>
+                    <th>IP Address</th>
+                    <th>Device</th>
+                    <th>Duration</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for v in visitors %}
+                  <tr>
+                    <td class="truncate" title="{{ v.id }}">{{ v.id[:12] }}...</td>
+                    <td>{{ v.ip }}</td>
+                    <td class="truncate" title="{{ v.ua }}">{{ v.ua_short }}</td>
+                    <td>
+                      <span class="badge info">{{ v.age_fmt }}</span>
+                    </td>
+                    <td>
+                      <button class="btn btn-danger btn-sm" onclick="blockId('{{ v.id }}')">
+                        🚫 Block
+                      </button>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="empty-state">
+              <div class="empty-state-icon">👤</div>
+              <p>No active visitors</p>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Blocked Users -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">
+            🚫 Blocked Users
+            <span class="badge danger">{{ blocked|length }}</span>
+          </h2>
+        </div>
+        <div class="card-body compact">
+          {% if blocked %}
+            <div class="table-container">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Blocked ID</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for b in blocked %}
+                  <tr>
+                    <td class="truncate" title="{{ b }}">{{ b[:20] }}...</td>
+                    <td>
+                      <button class="btn btn-success btn-sm" onclick="unblockId('{{ b }}')">
+                        ✅ Unblock
+                      </button>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="empty-state">
+              <div class="empty-state-icon">🔓</div>
+              <p>No blocked users</p>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Debug Information -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">
+            🐛 Debug Console
+            <span class="badge info">{{ debug_logs|length }}</span>
+          </h2>
+          <button type="button" class="btn btn-danger btn-sm" onclick="clearDebugLogs()">
+            🗑️ Clear Logs
+          </button>
+        </div>
+        <div class="card-body compact">
+          {% if debug_logs %}
+            <div class="debug-console">
+              {% for log in debug_logs %}
+                <div class="debug-entry">
+                  <span class="debug-timestamp">{{ log.timestamp[-8:] }}</span>
+                  <span class="debug-category">{{ log.category }}</span>
+                  <span class="debug-message">{{ log.message }}</span>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="empty-state">
+              <div class="empty-state-icon">📝</div>
+              <p>No debug logs available</p>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <!-- Data Management Grid -->
+    <div class="grid grid-2 fade-in" style="margin-top: 2rem;">
+      <!-- Raw Messages -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">
+            📨 Raw Messages (Pending Geo)
+            <span class="badge warning" id="raw-header-count">{{ raw_count }}</span>
+          </h2>
+        </div>
+        <div class="card-body compact">
+          {% if raw_msgs %}
+            <div class="table-container">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Channel</th>
+                    <th>Message Content</th>
+                  </tr>
+                </thead>
+                <tbody id="raw-tbody">
+                  {% for r in raw_msgs %}
+                  <tr>
+                    <td style="white-space:nowrap; font-size: 0.8rem;">{{ r.date }}</td>
+                    <td style="white-space:nowrap;">
+                      <span class="badge info">{{ r.channel }}</span>
+                    </td>
+                    <td class="truncate" style="max-width: 400px;" title="{{ r.text }}">{{ r.text }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="empty-state">
+              <div class="empty-state-icon">📬</div>
+              <p>No pending messages</p>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Recent Markers -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">
+            📍 Recent Markers
+            <span class="badge success">{{ markers|length }}</span>
+          </h2>
+        </div>
+        <div class="card-body compact">
+          {% if markers %}
+            <div class="table-container">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Type</th>
+                    <th>Location</th>
+                    <th>Content</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for m in markers %}
+                  <tr>
+                    <td style="white-space:nowrap; font-size: 0.8rem;">{{ m.date }}</td>
+                    <td>
+                      <span class="badge info">{{ m.threat_type }}</span>
+                    </td>
+                    <td style="white-space:nowrap; font-weight: 500;">{{ m.place }}</td>
+                    <td class="truncate" style="max-width: 300px;" title="{{ m.text }}">{{ m.text }}</td>
+                    <td>
+                      <button class="btn btn-danger btn-sm" 
+                        data-lat="{{ m.lat }}" 
+                        data-lng="{{ m.lng }}" 
+                        data-text="{{ (m.text or '')|e }}" 
+                        data-source="{{ (m.channel or m.source)|e }}"
+                        onclick="hideMarker(this.dataset.lat,this.dataset.lng,this.dataset.text,this.dataset.source)">
+                        👁️ Hide
+                      </button>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="empty-state">
+              <div class="empty-state-icon">📌</div>
+              <p>No recent markers</p>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Tools and Forms -->
+    <div class="grid grid-2 fade-in" style="margin-top: 2rem;">
+      <!-- Manual Marker Tool -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">
+            📌 Add Manual Marker
+          </h2>
+        </div>
+        <div class="card-body">
+          <form onsubmit="return addManualMarker(event)" class="form-grid">
+            <div class="form-group">
+              <label class="form-label">Latitude</label>
+              <input type="text" required id="mmLat" placeholder="48.45" class="input" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Longitude</label>
+              <input type="text" required id="mmLng" placeholder="31.12" class="input" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Location Name</label>
+              <input type="text" id="mmPlace" placeholder="Київ" class="input" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Threat Type</label>
+              <select id="mmType" class="input">
+                <option value="shahed">Shahed</option>
+                <option value="raketa">Rocket</option>
+                <option value="rszv">Artillery</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Icon Filename</label>
+              <input type="text" id="mmIcon" placeholder="shahed.png" class="input" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Description</label>
+              <textarea id="mmText" placeholder="Threat description..." class="input" rows="2"></textarea>
+            </div>
+            <div style="grid-column: 1 / -1; display: flex; gap: 1rem; align-items: center;">
+              <button type="submit" class="btn btn-primary">
+                ➕ Add Marker
+              </button>
+              <button type="button" class="btn btn-secondary" onclick="togglePickMap()">
+                🗺️ Pick on Map
+              </button>
+              <span id="mmStatus" class="badge info" style="display: none;"></span>
+            </div>
+          </form>
+          
+          <div id="pickMap" style="height: 300px; margin-top: 1rem; border-radius: var(--radius-lg); overflow: hidden; display: none;"></div>
+          <div class="pick-hint" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem; display: none;" id="pickHint">
+            💡 Click on the map to select coordinates
+          </div>
+        </div>
+      </div>
+
+      <!-- Cache Management -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">
+            🗃️ Cache Management
+          </h2>
+        </div>
+        <div class="card-body">
+          {% if neg_geocode %}
+            <div style="margin-bottom: 1.5rem;">
+              <h3 style="font-size: 1rem; margin-bottom: 1rem; color: var(--text-secondary);">
+                🚫 Negative Geocode Cache ({{ neg_geocode|length }})
+              </h3>
+              <div class="table-container" style="max-height: 300px; overflow-y: auto;">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>City Name</th>
+                      <th>Region</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for name, region in neg_geocode %}
+                    <tr>
+                      <td>{{ name }}</td>
+                      <td>{{ region or "—" }}</td>
+                      <td>
+                        <button class="btn btn-danger btn-sm" onclick="delNeg('{{ name }}')">
+                          🗑️ Delete
+                        </button>
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+              <div style="margin-top: 1rem;">
+                <button class="btn btn-danger" onclick="clearNegCache()">
+                  🗑️ Clear All Cache
+                </button>
+              </div>
+            </div>
+          {% else %}
+            <div class="empty-state">
+              <div class="empty-state-icon">🗂️</div>
+              <p>Negative geocode cache is empty</p>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {% if hidden_markers %}
+    <!-- Hidden Markers -->
+    <div class="card fade-in" style="margin-top: 2rem;">
+      <div class="card-header">
+        <h2 class="card-title">
+          👁️‍🗨️ Hidden Markers
+          <span class="badge warning">{{ hidden_markers|length }}</span>
+        </h2>
+        <button class="btn btn-success btn-sm" onclick="bulkUnhide()">
+          👁️ Unhide All
+        </button>
+      </div>
+      <div class="card-body compact">
+        <div class="table-container">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Coordinates</th>
+                <th>Text</th>
+                <th>Source</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for h in hidden_markers %}
+              <tr>
+                <td style="white-space: nowrap;">{{ h.lat }}, {{ h.lng }}</td>
+                <td class="truncate" style="max-width: 300px;">{{ h.text }}</td>
+                <td>{{ h.source }}</td>
+                <td>
+                  <button class="btn btn-success btn-sm" onclick="unhideKey('{{ h.key }}')">
+                    👁️ Unhide
+                  </button>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    {% endif %}
   </div>
-  
-  <div class="blocked-list" style="margin-top:2rem;">
-    <h2 style="font-size:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;">Додати ручну мітку <span style="font-size:.65rem;opacity:.6;">(manual marker)</span></h2>
-    <form onsubmit="return addManualMarker(event)" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.6rem;align-items:end;max-width:880px;">
-      <label style="display:flex;flex-direction:column;font-size:.65rem;gap:4px;">
-        <span>Lat</span>
-        <input type="text" required id="mmLat" placeholder="48.45" />
-      </label>
-      <label style="display:flex;flex-direction:column;font-size:.65rem;gap:4px;">
-        <span>Lng</span>
-        <input type="text" required id="mmLng" placeholder="31.12" />
-      </label>
-      <label style="display:flex;flex-direction:column;font-size:.65rem;gap:4px;">
-        <span>Place</span>
-        <input type="text" id="mmPlace" placeholder="Київ" />
-      </label>
       <label style="display:flex;flex-direction:column;font-size:.65rem;gap:4px;">
         <span>Type</span>
         <select id="mmType">
