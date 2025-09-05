@@ -3173,15 +3173,20 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                 region_city = region_cities.get(oblast_hdr)
                 if region_city:
                     # Check if message refers to entire region rather than specific city
-                    # Skip marker creation for regional threats like "авіабомби на сумщину", "КАБ для Сумщини"
+                    # Skip marker creation for some regional threats, but create for KAB/aviation bombs
                     genitive_form = oblast_hdr.replace('щина', 'щини')  # сумщина -> сумщини
                     dative_form = oblast_hdr.replace('щина', 'щині')    # сумщина -> сумщині
                     accusative_form = oblast_hdr + 'у'                  # сумщина -> сумщину
                     
-                    if any(regional_ref in ln_lower for regional_ref in [
+                    is_regional_threat = any(regional_ref in ln_lower for regional_ref in [
                         f'на {oblast_hdr}', f'{accusative_form}', f'{genitive_form}', f'{dative_form}',
                         f'для {genitive_form}', f'по {dative_form}'
-                    ]):
+                    ])
+                    
+                    # For KAB/aviation bombs, always create marker even for regional threats
+                    has_kab = any(kab_word in ln_lower for kab_word in ['каб', 'авіабомб', 'авиабомб'])
+                    
+                    if is_regional_threat and not has_kab:
                         add_debug_log(f"Skipping regional threat marker - affects entire region: {oblast_hdr} (found: {[ref for ref in [f'на {oblast_hdr}', accusative_form, genitive_form, dative_form] if ref in ln_lower]})", "multi_region")
                         continue
                     
@@ -4100,14 +4105,14 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         # PRIORITY: drones first (частая путаница). Если присутствуют слова шахед/бпла/дрон -> это shahed
         if any(k in l for k in ['shahed','шахед','шахеді','шахедів','geran','герань','дрон','дрони','бпла','uav']):
             return 'shahed', 'shahed.png'
-        # KAB (guided bomb) treat as raketa per user request
-        if 'каб' in l:
-            return 'raketa', 'raketa.png'
+        # KAB (guided aerial bombs) treat as aviation threat
+        if 'каб' in l or 'КАБ' in th:
+            return 'avia', 'avia.png'
         # High-speed targets explicit alert (custom icon)
         if 'високошвидкісн' in l:
             return 'rszv', 'rszv.png'
-        # Missiles / rockets
-        if any(k in l for k in ['ракета','ракети','ракетний','ракетная','ракетный','missile','iskander','крылат','крилат','кр ','s-300','s300','КАБ']):
+        # Missiles / rockets (removed КАБ from here since КАБ are aviation bombs)
+        if any(k in l for k in ['ракета','ракети','ракетний','ракетная','ракетный','missile','iskander','крылат','крилат','кр ','s-300','s300']):
             return 'raketa', 'raketa.png'
         # Aviation
         if any(k in l for k in ['avia','авіа','авиа','літак','самолет','бомба','бомби','бомбаки']):
@@ -4149,6 +4154,30 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                 }]
     except Exception:
         pass
+    # Special handling for KAB threats with regional mentions (e.g., "Загроза КАБ для прифронтових громад Сумщини")
+    kab_region_match = re.search(r'(каб|авіабомб|авиабомб)[^\.]*?(сумщин[иі]|харківщин[иі]|чернігівщин[иі]|полтавщин[иі])', text.lower())
+    if kab_region_match:
+        region_mention = kab_region_match.group(2)
+        # Convert genitive/dative to nominative
+        if 'сумщин' in region_mention:
+            region_key = 'сумщина'
+        elif 'харківщин' in region_mention:
+            region_key = 'харківщина'
+        elif 'чернігівщин' in region_mention:
+            region_key = 'чернігівщина'
+        elif 'полтавщин' in region_mention:
+            region_key = 'полтавщина'
+        else:
+            region_key = None
+            
+        if region_key and region_key in OBLAST_CENTERS:
+            lat, lng = OBLAST_CENTERS[region_key]
+            add_debug_log(f"Creating KAB regional threat marker for {region_key}: lat={lat}, lng={lng}", "kab_regional")
+            return [{
+                'id': f"{mid}_kab_regional", 'place': region_key.title(), 'lat': lat, 'lng': lng,
+                'threat_type': 'avia', 'text': original_text[:500], 'date': date_str, 'channel': channel,
+                'marker_icon': 'avia.png', 'source_match': 'kab_regional_threat'
+            }]
     # Southeast-wide tactical aviation activity (no specific settlement): place a synthetic marker off SE border.
     se_phrase = lower if 'lower' in locals() else original_text.lower()
     if ('тактичн' in se_phrase or 'авіаці' in se_phrase or 'авиац' in se_phrase) and ('південно-східн' in se_phrase or 'південно східн' in se_phrase or 'юго-восточ' in se_phrase or 'південного-сходу' in se_phrase):
@@ -4163,8 +4192,8 @@ def process_message(text, mid, date_str, channel):  # type: ignore
     if ('тактичн' in se_phrase or 'авіаці' in se_phrase or 'авиац' in se_phrase) and (
         'північно-східн' in se_phrase or 'північно східн' in se_phrase or 'северо-восточ' in se_phrase or 'північного-сходу' in se_phrase
     ):
-        # Approximate midpoint NE front (lat near 49.7, lng 37.9)
-        lat, lng = 49.7, 37.9
+        # Approximate midpoint NE front, adjusted closer to Sumy region (lat near 50.4, lng 36.8)
+        lat, lng = 50.4, 36.8
         return [{
             'id': f"{mid}_ne", 'place': 'Північно-східний напрямок', 'lat': lat, 'lng': lng,
             'threat_type': 'avia', 'text': original_text[:500], 'date': date_str, 'channel': channel,
