@@ -124,6 +124,36 @@ body {
   color: #f59e0b;
 }
 
+.badge.threat-shahed {
+  background: rgba(147, 51, 234, 0.1);
+  border-color: rgba(147, 51, 234, 0.3);
+  color: #9333ea;
+}
+
+.badge.threat-raketa {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+}
+
+.badge.threat-artillery, .badge.threat-obstril, .badge.threat-rszv {
+  background: rgba(251, 146, 60, 0.1);
+  border-color: rgba(251, 146, 60, 0.3);
+  color: #fb923c;
+}
+
+.badge.threat-vibuh {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+}
+
+.badge.threat-avia {
+  background: rgba(99, 102, 241, 0.1);
+  border-color: rgba(99, 102, 241, 0.3);
+  color: #6366f1;
+}
+
 .auth-form {
   display: flex;
   align-items: center;
@@ -454,6 +484,50 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 600px;
+}
+
+.message-text {
+  position: relative;
+}
+
+.message-preview {
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.message-preview:hover {
+  background: rgba(51, 65, 85, 0.2);
+  border-radius: var(--radius-sm);
+  padding: 0.25rem;
+  margin: -0.25rem;
+}
+
+.truncated {
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.full-message {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: 1rem;
+  margin-top: 0.5rem;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.message-full {
+  color: var(--text-primary);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 @media (max-width: 768px) {
@@ -847,7 +921,8 @@ textarea.input {
                     <th>Time</th>
                     <th>Type</th>
                     <th>Location</th>
-                    <th>Content</th>
+                    <th>Original Message</th>
+                    <th>Channel</th>
                     <th>Action</th>
                   </tr>
                 </thead>
@@ -856,10 +931,31 @@ textarea.input {
                   <tr>
                     <td style="white-space:nowrap; font-size: 0.8rem;">{{ m.date }}</td>
                     <td>
-                      <span class="badge info">{{ m.threat_type }}</span>
+                      <span class="badge threat-{{ m.threat_type }}">
+                        {% if m.threat_type == 'shahed' %}🛸
+                        {% elif m.threat_type == 'raketa' %}🚀
+                        {% elif m.threat_type == 'artillery' %}💥
+                        {% elif m.threat_type == 'obstril' %}🎯
+                        {% elif m.threat_type == 'vibuh' %}💥
+                        {% elif m.threat_type == 'avia' %}✈️
+                        {% elif m.threat_type == 'rszv' %}🎯
+                        {% else %}⚠️
+                        {% endif %}
+                        {{ m.threat_type }}
+                      </span>
                     </td>
                     <td style="white-space:nowrap; font-weight: 500;">{{ m.place }}</td>
-                    <td class="truncate" style="max-width: 300px;" title="{{ m.text }}">{{ m.text }}</td>
+                    <td class="message-text" style="max-width: 500px;">
+                      <div class="message-preview" onclick="toggleMessage(this)">
+                        <span class="truncated" title="{{ m.text }}">{{ (m.text or 'No text')[:150] }}{% if (m.text|length or 0) > 150 %}...{% endif %}</span>
+                        {% if (m.text|length or 0) > 150 %}
+                        <div class="full-message" style="display: none;">
+                          <div class="message-full">{{ m.text or 'No text' }}</div>
+                        </div>
+                        {% endif %}
+                      </div>
+                    </td>
+                    <td style="white-space:nowrap; font-size: 0.8rem;">{{ m.channel or m.source or 'Unknown' }}</td>
                     <td>
                       <button class="btn btn-danger btn-sm" 
                         data-lat="{{ m.lat }}" 
@@ -1048,6 +1144,32 @@ let adminMap = null;
 let adminAuto = true;
 let pickMap = null;
 let pickMarker = null;
+
+// --- Toggle message display in Recent Markers ---
+function toggleMessage(element) {
+  const fullMessage = element.querySelector('.full-message');
+  if (fullMessage) {
+    if (fullMessage.style.display === 'none') {
+      // Close all other open messages first
+      document.querySelectorAll('.full-message').forEach(msg => {
+        msg.style.display = 'none';
+      });
+      // Show this message
+      fullMessage.style.display = 'block';
+    } else {
+      fullMessage.style.display = 'none';
+    }
+  }
+}
+
+// Close message when clicking outside
+document.addEventListener('click', function(event) {
+  if (!event.target.closest('.message-preview')) {
+    document.querySelectorAll('.full-message').forEach(msg => {
+      msg.style.display = 'none';
+    });
+  }
+});
 
 // Utility functions
 function showStatus(elementId, message, type = 'info') {
