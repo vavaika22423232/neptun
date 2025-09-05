@@ -3162,6 +3162,12 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                 
                 region_city = region_cities.get(oblast_hdr)
                 if region_city:
+                    # Check if message refers to entire region rather than specific city
+                    # Skip marker creation for regional threats like "авіабомби на сумщину"
+                    if any(regional_ref in ln_lower for regional_ref in [f'на {oblast_hdr}', f'{oblast_hdr}у', f'{oblast_hdr}і']):
+                        add_debug_log(f"Skipping regional threat marker - affects entire region: {oblast_hdr}", "multi_region")
+                        continue
+                    
                     # Try to find coordinates for the region's main city
                     base_city = normalize_city_name(region_city)
                     base_city = UA_CITY_NORMALIZE.get(base_city, base_city)
@@ -3178,6 +3184,12 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                             threat_type = 'obstril'
                         elif any(word in ln_lower for word in ['вибух', 'вибухи']):
                             threat_type = 'vibuh'
+                        elif any(word in ln_lower for word in ['авіаційних бомб', 'авіабомб', 'авіабомба', 'кабів', 'каб']):
+                            threat_type = 'avia'
+                        elif any(word in ln_lower for word in ['ракета', 'ракети']):
+                            threat_type = 'raketa'
+                        elif any(word in ln_lower for word in ['артилерія', 'арта']):
+                            threat_type = 'rszv'
                         
                         multi_city_tracks.append({
                             'id': f"{mid}_general_uav_{len(multi_city_tracks)+1}",
@@ -3220,8 +3232,12 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                         threat_type = 'obstril'
                     elif any(word in ln_lower for word in ['вибух', 'вибухи']):
                         threat_type = 'vibuh'
+                    elif any(word in ln_lower for word in ['авіаційних бомб', 'авіабомб', 'авіабомба', 'кабів', 'каб']):
+                        threat_type = 'avia'
                     elif any(word in ln_lower for word in ['ракета', 'ракети']):
                         threat_type = 'raketa'
+                    elif any(word in ln_lower for word in ['артилерія', 'арта']):
+                        threat_type = 'rszv'
                     elif any(word in ln_lower for word in ['артилерія', 'арта']):
                         threat_type = 'rszv'
                     
