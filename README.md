@@ -2,6 +2,8 @@
 
 Сполучає мінімальний Flask backend + Telegram fetch loop для розгортання на Render.
 
+**Latest update: 2024-12-06 - Added oblast+raion parsing support**
+
 ## Швидкий старт локально
 
 1. Створити та активувати venv (опційно)
