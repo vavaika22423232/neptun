@@ -3128,8 +3128,73 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             add_debug_log(f"MLINE_LINE oblast={oblast_hdr} raw='{ln}'", "multi_region")
         except Exception:
             pass
-        except Exception:
-            pass
+        
+        # NEW: Create markers for general UAV activity messages (without specific direction)
+        ln_lower = ln.lower()
+        if 'бпла' in ln_lower or 'безпілотник' in ln_lower or 'дрон' in ln_lower:
+            # Check if we have a region and this is a UAV message
+            if oblast_hdr:
+                # Find the main city of the region to place the marker
+                region_cities = {
+                    'сумщина': 'суми',
+                    'чернігівщина': 'чернігів', 
+                    'херсонщина': 'херсон',
+                    'харківщина': 'харків',
+                    'донеччина': 'краматорськ',  # safer than донецьк
+                    'луганщина': 'сєвєродонецьк',
+                    'запорожжя': 'запоріжжя',
+                    'дніпропетровщина': 'дніпро',
+                    'полтавщина': 'полтава',
+                    'київщина': 'київ',
+                    'львівщина': 'львів',
+                    'івано-франківщина': 'івано-франківськ',
+                    'тернопільщина': 'тернопіль',
+                    'хмельниччина': 'хмельницький',
+                    'рівненщина': 'рівне',
+                    'волинщина': 'луцьк',
+                    'житомирщина': 'житомир',
+                    'вінниччина': 'вінниця',
+                    'черкащина': 'черкаси',
+                    'кіровоградщина': 'кропивницький',
+                    'миколаївщина': 'миколаїв',
+                    'одещина': 'одеса'
+                }
+                
+                region_city = region_cities.get(oblast_hdr)
+                if region_city:
+                    # Try to find coordinates for the region's main city
+                    base_city = normalize_city_name(region_city)
+                    base_city = UA_CITY_NORMALIZE.get(base_city, base_city)
+                    coords = CITY_COORDS.get(base_city) or (SETTLEMENTS_INDEX.get(base_city) if SETTLEMENTS_INDEX else None)
+                    
+                    if coords:
+                        lat, lng = coords
+                        label = base_city.title()
+                        label += f" [{oblast_hdr.title()}]"
+                        
+                        # Determine threat type based on message content
+                        threat_type = 'shahed'  # default for UAV
+                        if 'обстріл' in ln_lower or 'загроза обстрілу' in ln_lower:
+                            threat_type = 'obstril'
+                        elif any(word in ln_lower for word in ['вибух', 'вибухи']):
+                            threat_type = 'vibuh'
+                        
+                        multi_city_tracks.append({
+                            'id': f"{mid}_general_uav_{len(multi_city_tracks)+1}",
+                            'place': label,
+                            'lat': lat,
+                            'lng': lng,
+                            'threat_type': threat_type,
+                            'text': ln[:500],
+                            'date': date_str,
+                            'channel': channel,
+                            'marker_icon': f'{threat_type}.png',
+                            'source_match': 'general_uav_activity',
+                            'count': 1
+                        })
+                        add_debug_log(f"Created general UAV marker: {label} ({threat_type})", "multi_region")
+                        continue  # move to next line
+        
         # Пытаемся найти город и количество (например, "2х БпЛА курсом на Десну")
         import re
         # --- NEW: распознавание ракетных строк внутри многострочного блока ---
