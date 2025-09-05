@@ -3109,6 +3109,16 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                 oblast_hdr_match = True
                 add_debug_log(f"Parentheses region header format detected: '{oblast_full}' -> '{oblast_hdr}'", "multi_region")
         
+        # NEW: Detect regional genitive forms like "Сумщини", "Харківщини", etc.
+        elif re.search(r'\b([а-яіїєґ]+щин[иі])\b', ln_lower):
+            genitive_match = re.search(r'\b([а-яіїєґ]+щин[иі])\b', ln_lower)
+            if genitive_match:
+                genitive_form = genitive_match.group(1)
+                # Convert genitive to nominative: "сумщини" -> "сумщина"
+                oblast_hdr = genitive_form.replace('щини', 'щина').replace('щині', 'щина')
+                oblast_hdr_match = True
+                add_debug_log(f"Genitive region format detected: '{genitive_form}' -> '{oblast_hdr}'", "multi_region")
+        
         if oblast_hdr_match:
             add_debug_log(f"Region header detected: '{oblast_hdr}'", "multi_region")
             if oblast_hdr.startswith('на '):  # handle 'на харківщина:' header variant
@@ -3163,9 +3173,16 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                 region_city = region_cities.get(oblast_hdr)
                 if region_city:
                     # Check if message refers to entire region rather than specific city
-                    # Skip marker creation for regional threats like "авіабомби на сумщину"
-                    if any(regional_ref in ln_lower for regional_ref in [f'на {oblast_hdr}', f'{oblast_hdr}у', f'{oblast_hdr}і']):
-                        add_debug_log(f"Skipping regional threat marker - affects entire region: {oblast_hdr}", "multi_region")
+                    # Skip marker creation for regional threats like "авіабомби на сумщину", "КАБ для Сумщини"
+                    genitive_form = oblast_hdr.replace('щина', 'щини')  # сумщина -> сумщини
+                    dative_form = oblast_hdr.replace('щина', 'щині')    # сумщина -> сумщині
+                    accusative_form = oblast_hdr + 'у'                  # сумщина -> сумщину
+                    
+                    if any(regional_ref in ln_lower for regional_ref in [
+                        f'на {oblast_hdr}', f'{accusative_form}', f'{genitive_form}', f'{dative_form}',
+                        f'для {genitive_form}', f'по {dative_form}'
+                    ]):
+                        add_debug_log(f"Skipping regional threat marker - affects entire region: {oblast_hdr} (found: {[ref for ref in [f'на {oblast_hdr}', accusative_form, genitive_form, dative_form] if ref in ln_lower]})", "multi_region")
                         continue
                     
                     # Try to find coordinates for the region's main city
@@ -3184,7 +3201,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                             threat_type = 'obstril'
                         elif any(word in ln_lower for word in ['вибух', 'вибухи']):
                             threat_type = 'vibuh'
-                        elif any(word in ln_lower for word in ['авіаційних бомб', 'авіабомб', 'авіабомба', 'кабів', 'каб']):
+                        elif any(word in ln_lower for word in ['авіаційних бомб', 'авіабомб', 'авіабомба', 'кабів', 'каб', 'загроза каб']):
                             threat_type = 'avia'
                         elif any(word in ln_lower for word in ['ракета', 'ракети']):
                             threat_type = 'raketa'
@@ -3232,7 +3249,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                         threat_type = 'obstril'
                     elif any(word in ln_lower for word in ['вибух', 'вибухи']):
                         threat_type = 'vibuh'
-                    elif any(word in ln_lower for word in ['авіаційних бомб', 'авіабомб', 'авіабомба', 'кабів', 'каб']):
+                    elif any(word in ln_lower for word in ['авіаційних бомб', 'авіабомб', 'авіабомба', 'кабів', 'каб', 'загроза каб']):
                         threat_type = 'avia'
                     elif any(word in ln_lower for word in ['ракета', 'ракети']):
                         threat_type = 'raketa'
