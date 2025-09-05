@@ -95,6 +95,10 @@ CHANNELS_FILE = 'channels_dynamic.json'
 DEBUG_LOGS = []
 MAX_DEBUG_LOGS = 100
 
+# Cache for fallback reparse to avoid duplicate processing
+FALLBACK_REPARSE_CACHE = set()  # message IDs that have been reparsed
+MAX_REPARSE_CACHE_SIZE = 1000  # Limit cache size to prevent memory growth
+
 def add_debug_log(message, category="general"):
     """Add debug message to global debug storage for admin panel."""
     global DEBUG_LOGS
@@ -6167,8 +6171,23 @@ def data():
         if dt >= min_time:
             # Fallback reparse: if message lacks geo but contains course pattern, try to derive markers now
             txt_low = (m.get('text') or '').lower()
+            msg_id = m.get('id')
             if (not m.get('lat')) and (not m.get('lng')) and ('бпла' in txt_low and 'курс' in txt_low and ' на ' in txt_low):
+                # Check if we've already reparsed this message to avoid duplicate processing
+                if msg_id in FALLBACK_REPARSE_CACHE:
+                    add_debug_log(f"Skipping fallback reparse for message ID {msg_id} - already processed", "reparse")
+                    continue
+                
                 try:
+                    # Add to cache to prevent future reprocessing
+                    FALLBACK_REPARSE_CACHE.add(msg_id)
+                    # Limit cache size to prevent memory growth
+                    if len(FALLBACK_REPARSE_CACHE) > MAX_REPARSE_CACHE_SIZE:
+                        # Remove oldest half of the cache (approximate LRU)
+                        cache_list = list(FALLBACK_REPARSE_CACHE)
+                        FALLBACK_REPARSE_CACHE = set(cache_list[len(cache_list)//2:])
+                    
+                    add_debug_log(f"Fallback reparse for message ID {msg_id} - first time processing", "reparse")
                     reparsed = process_message(m.get('text') or '', m.get('id'), m.get('date'), m.get('channel') or m.get('source') or '')
                     if isinstance(reparsed, list) and reparsed:
                         for t in reparsed:
