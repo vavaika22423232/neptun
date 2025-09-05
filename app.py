@@ -3110,7 +3110,6 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                 add_debug_log(f"Parentheses region header format detected: '{oblast_full}' -> '{oblast_hdr}'", "multi_region")
         
         if oblast_hdr_match:
-        if oblast_hdr_match:
             add_debug_log(f"Region header detected: '{oblast_hdr}'", "multi_region")
             if oblast_hdr.startswith('на '):  # handle 'на харківщина:' header variant
                 oblast_hdr = oblast_hdr[3:].strip()
