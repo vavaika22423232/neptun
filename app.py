@@ -3282,18 +3282,11 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                         label = base_city.title()
                         label += f" [{oblast_hdr.title()}]"
                         
-                        # Determine threat type based on message content
-                        threat_type = 'shahed'  # default for UAV
-                        if 'обстріл' in ln_lower or 'загроза обстрілу' in ln_lower:
-                            threat_type = 'obstril'
-                        elif any(word in ln_lower for word in ['вибух', 'вибухи']):
-                            threat_type = 'vibuh'
-                        elif any(word in ln_lower for word in ['авіаційних бомб', 'авіабомб', 'авіабомба', 'кабів', 'каб', 'загроза каб']):
-                            threat_type = 'avia'
-                        elif any(word in ln_lower for word in ['ракета', 'ракети']):
-                            threat_type = 'raketa'
-                        elif any(word in ln_lower for word in ['артилерія', 'арта']):
-                            threat_type = 'rszv'
+                        # Determine threat type based on message content using classify function
+                        threat_type, icon = classify(ln)
+                        # Keep shahed as default for UAV if classify doesn't return anything specific
+                        if not threat_type:
+                            threat_type = 'shahed'
                         
                         multi_city_tracks.append({
                             'id': f"{mid}_general_uav_{len(multi_city_tracks)+1}",
@@ -3304,7 +3297,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                             'text': ln[:500],
                             'date': date_str,
                             'channel': channel,
-                            'marker_icon': f'{threat_type}.png',
+                            'marker_icon': icon,
                             'source_match': 'general_uav_activity',
                             'count': 1
                         })
@@ -3331,20 +3324,12 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     lat, lng = coords
                     label = base_city.title()
                     
-                    # Determine threat type based on message content
-                    threat_type = 'shahed'  # default for UAV
-                    if 'обстріл' in ln_lower or 'загроза обстрілу' in ln_lower:
-                        threat_type = 'obstril'
-                    elif any(word in ln_lower for word in ['вибух', 'вибухи']):
-                        threat_type = 'vibuh'
-                    elif any(word in ln_lower for word in ['авіаційних бомб', 'авіабомб', 'авіабомба', 'кабів', 'каб', 'загроза каб']):
-                        threat_type = 'avia'
-                    elif any(word in ln_lower for word in ['ракета', 'ракети']):
-                        threat_type = 'raketa'
-                    elif any(word in ln_lower for word in ['артилерія', 'арта']):
-                        threat_type = 'rszv'
-                    elif any(word in ln_lower for word in ['артилерія', 'арта']):
-                        threat_type = 'rszv'
+                    # Determine threat type based on message content using classify function
+                    threat_type, icon = classify(ln)
+                    # Keep shahed as default for UAV if classify doesn't return anything specific
+                    if not threat_type:
+                        threat_type = 'shahed'
+                        icon = 'shahed.png'
                     
                     multi_city_tracks.append({
                         'id': f"{mid}_city_threat_{len(multi_city_tracks)+1}",
@@ -3355,7 +3340,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                         'text': ln[:500],
                         'date': date_str,
                         'channel': channel,
-                        'marker_icon': f'{threat_type}.png',
+                        'marker_icon': icon,
                         'source_match': 'city_threat_activity',
                         'count': 1
                     })
@@ -4160,9 +4145,9 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             pass
     def classify(th: str):
         l = th.lower()
-        # Recon / розвід дрони -> use pvo icon (rozved.png) per user request
+        # Recon / розвід дрони -> use pvo icon (rozved.png) per user request - PRIORITY: check BEFORE general БПЛА
         if 'розвід' in l or 'розвідуваль' in l or 'развед' in l:
-            return 'pvo', 'rozved.png'
+            return 'rozved', 'rozved.png'
         # Launch site detections for Shahed / UAV launches ("пуски" + origin phrases). User wants pusk.png marker.
         if ('пуск' in l or 'пуски' in l) and (any(k in l for k in ['shahed','шахед','шахеді','шахедів','бпла','uav','дрон']) or ('аеродром' in l) or ('аэродром' in l)):
             return 'pusk', 'pusk.png'
@@ -4185,7 +4170,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         # Alarm cancellation (відбій тривоги / отбой тревоги)
         if ('відбій' in l and 'тривог' in l) or ('отбой' in l and 'тревог' in l):
             return 'alarm_cancel', 'vidboi.png'
-        # PRIORITY: drones first (частая путаница). Если присутствуют слова шахед/бпла/дрон -> это shahed
+        # PRIORITY: drones (частая путаница). Если присутствуют слова шахед/бпла/дрон -> это shahed
         if any(k in l for k in ['shahed','шахед','шахеді','шахедів','geran','герань','дрон','дрони','бпла','uav']):
             return 'shahed', 'shahed.png'
         # KAB (guided aerial bombs) treat as aviation threat
