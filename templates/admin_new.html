@@ -208,16 +208,21 @@ body {
 }
 
 .grid {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 2rem;
 }
 
 .grid-2 {
-  grid-template-columns: repeat(auto-fit, minmax(600px, 1fr));
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
 }
 
 .grid-3 {
-  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
 }
 
 .card {
@@ -228,6 +233,7 @@ body {
   overflow: hidden;
   box-shadow: var(--shadow-md);
   transition: all 0.3s;
+  width: 100%;
 }
 
 .card:hover {
@@ -301,7 +307,7 @@ body {
   overflow: hidden;
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-primary);
-  max-height: 400px;
+  max-height: 600px;
   overflow-y: auto;
 }
 
@@ -436,7 +442,13 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 300px;
+  max-width: 600px;
+}
+
+@media (max-width: 768px) {
+  .truncate {
+    max-width: 200px;
+  }
 }
 
 select.input {
@@ -456,11 +468,6 @@ textarea.input {
   .header-content {
     flex-direction: column;
     align-items: stretch;
-  }
-  
-  .grid-2,
-  .grid-3 {
-    grid-template-columns: 1fr;
   }
   
   .stats-grid {
