@@ -2468,13 +2468,14 @@ def process_message(text, mid, date_str, channel):  # type: ignore
     original_text = text
     
     # Special handling for oblast+raion format: "чернігівська область (чернігівський район), київська область (вишгородський район)"
+    import re as _re_oblast
     oblast_raion_pattern = r'([а-яіїєґ]+ська\s+область)\s*\(([^)]*?райони?[^)]*?)\)'
-    oblast_raion_matches = re.findall(oblast_raion_pattern, text.lower(), re.IGNORECASE)
+    oblast_raion_matches = _re_oblast.findall(oblast_raion_pattern, text.lower(), _re_oblast.IGNORECASE)
     
     # Also check for pattern without requiring "райони" in parentheses - some messages might have just names
     if not oblast_raion_matches:
         oblast_raion_pattern_simple = r'([а-яіїєґ]+ська\s+область)\s*\(([^)]+)\)'
-        oblast_raion_matches_simple = re.findall(oblast_raion_pattern_simple, text.lower(), re.IGNORECASE)
+        oblast_raion_matches_simple = _re_oblast.findall(oblast_raion_pattern_simple, text.lower(), _re_oblast.IGNORECASE)
         # Filter to only those that contain district-like words
         oblast_raion_matches = [(oblast, raion) for oblast, raion in oblast_raion_matches_simple 
                                if any(word in raion for word in ['район', 'р-н', 'ський', 'цький'])]
@@ -2489,7 +2490,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             add_debug_log(f"Processing oblast: '{oblast_text}', raion_text: '{raion_text}'", "oblast_raion")
             # Extract individual raions from the parentheses
             # Handle both single and multiple raions: "сумський, конотопський райони"
-            raion_parts = re.split(r',\s*|\s+та\s+', raion_text)
+            raion_parts = _re_oblast.split(r',\s*|\s+та\s+', raion_text)
             add_debug_log(f"Split raion_parts: {raion_parts}", "oblast_raion")
             
             for raion_part in raion_parts:
@@ -2500,11 +2501,11 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                 add_debug_log(f"Processing raion_part: '{raion_part}'", "oblast_raion")
                     
                 # Extract raion name (remove "район"/"райони" suffix)
-                raion_name = re.sub(r'\s*(райони?|р-н\.?).*$', '', raion_part).strip()
+                raion_name = _re_oblast.sub(r'\s*(райони?|р-н\.?).*$', '', raion_part).strip()
                 add_debug_log(f"After removing suffix, raion_name: '{raion_name}'", "oblast_raion")
                 
                 # Normalize raion name
-                raion_normalized = re.sub(r'(ському|ского|ського|ский|ськiй|ськой|ським|ском)$', 'ський', raion_name)
+                raion_normalized = _re_oblast.sub(r'(ському|ского|ського|ский|ськiй|ськой|ським|ском)$', 'ський', raion_name)
                 add_debug_log(f"Normalized raion: '{raion_normalized}', checking in RAION_FALLBACK", "oblast_raion")
                 
                 if raion_normalized in RAION_FALLBACK:
