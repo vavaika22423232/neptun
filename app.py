@@ -1108,6 +1108,11 @@ CHERNIHIV_CITY_COORDS = {
     'прилуки': (50.5931, 32.3878),  # already present
     'новгород-сіверський': (51.9874, 33.2620),  # already present
     'корюківка': (51.7725, 32.2494),
+    'козелець': (51.5625, 31.2058),  # Added
+    'носівка': (51.0325, 31.5522),   # Added
+    'куликівка': (51.3667, 32.2000),  # Added
+    'мена': (51.5211, 32.2147),      # Fixed typo
+    'ічня': (51.0722, 32.3931),      # Added
     'борзна': (51.2542, 32.4192),  # already present
     'батиївка?': (51.4982, 31.2893),  # placeholder if appears; else remove
     'менa': (51.5211, 32.2147),  # variant with latin a? (typo guard)
@@ -2985,6 +2990,25 @@ def process_message(text, mid, date_str, channel):  # type: ignore
     # Если сообщение содержит несколько строк с заголовками-областями и городами
     # Предварительно уберём чисто донатные/подписи строки из многострочного блока, чтобы они не мешали
     raw_lines = text.splitlines()
+    
+    # NEW: Handle single-line messages with multiple regions like "Чернігівщина: 1 БпЛА на Козелець ... Сумщина: 3 БпЛА..."
+    # First try to split by region headers in single line
+    if len(raw_lines) == 1 and any(region in text.lower() for region in ['чернігівщин', 'сумщин', 'харківщин', 'полтавщин']):
+        # Split by oblast headers that have colon after them
+        import re as _re_split
+        region_split = _re_split.split(r'([А-ЯІЇЄЁа-яіїєё]+щина):\s*', text)
+        if len(region_split) > 2:  # We have actual splits
+            new_lines = []
+            for i in range(1, len(region_split), 2):  # Take every odd element (region name) and next even (content)
+                if i+1 < len(region_split):
+                    region_name = region_split[i]
+                    content = region_split[i+1].strip()
+                    new_lines.append(f"{region_name}:")
+                    new_lines.append(content)
+            if new_lines:
+                raw_lines = new_lines
+                print(f"DEBUG: Split single line into {len(raw_lines)} lines for multi-region processing")
+    
     cleaned_for_multiline = []
     import re as _re_clean
     donation_keys = ['монобанк','send.monobank','patreon','donat','донат','підтримати канал','підтримати']
@@ -3324,6 +3348,82 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                         'marker_icon': 'shahed.png', 'source_match': 'multiline_oblast_city_shahed', 'count': per_count
                     })
                 continue
+        
+        # --- NEW: Simple "X БпЛА на <city>" pattern (e.g. '1 БпЛА на Козелець', '2 БпЛА на Куликівку') ---
+        if not city:
+            m_simple = re.search(r'(\d+)\s+бпла\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=\s|$|[,\.\!\?;])', ln, re.IGNORECASE)
+            if m_simple:
+                try:
+                    count = int(m_simple.group(1))
+                except Exception:
+                    count = 1
+                city = m_simple.group(2).strip()
+            elif re.search(r'бпла\s+на\s+[A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,}', ln, re.IGNORECASE):
+                # Fallback for "БпЛА на <city>" without count
+                m_simple_no_count = re.search(r'бпла\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=\s|$|[,\.\!\?;])', ln, re.IGNORECASE)
+                if m_simple_no_count:
+                    count = 1
+                    city = m_simple_no_count.group(1).strip()
+        
+        # --- NEW: Handle "між X та Y" pattern (e.g. "між Корюківкою та Меною") ---
+        if not city:
+            m_between = re.search(r'між\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,30}?)\s+та\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,30}?)(?=\s|$|[,\.\!\?;])', ln, re.IGNORECASE)
+            if m_between:
+                city1 = m_between.group(1).strip()
+                city2 = m_between.group(2).strip()
+                # Try to geocode both cities and place marker at midpoint
+                base1 = normalize_city_name(city1)
+                base2 = normalize_city_name(city2)
+                base1 = UA_CITY_NORMALIZE.get(base1, base1)
+                base2 = UA_CITY_NORMALIZE.get(base2, base2)
+                
+                coords1 = CITY_COORDS.get(base1) or (SETTLEMENTS_INDEX.get(base1) if SETTLEMENTS_INDEX else None)
+                coords2 = CITY_COORDS.get(base2) or (SETTLEMENTS_INDEX.get(base2) if SETTLEMENTS_INDEX else None)
+                
+                if not coords1 and oblast_hdr:
+                    combo1 = f"{base1} {oblast_hdr}"
+                    coords1 = CITY_COORDS.get(combo1) or (SETTLEMENTS_INDEX.get(combo1) if SETTLEMENTS_INDEX else None)
+                if not coords2 and oblast_hdr:
+                    combo2 = f"{base2} {oblast_hdr}"
+                    coords2 = CITY_COORDS.get(combo2) or (SETTLEMENTS_INDEX.get(combo2) if SETTLEMENTS_INDEX else None)
+                
+                if coords1 and coords2:
+                    # Place marker at midpoint
+                    lat = (coords1[0] + coords2[0]) / 2
+                    lng = (coords1[1] + coords2[1]) / 2
+                    label = f"Між {base1.title()} та {base2.title()}"
+                    if oblast_hdr and oblast_hdr not in label.lower():
+                        label += f" [{oblast_hdr.title()}]"
+                    
+                    # Extract count from beginning of line if present
+                    count_match = re.search(r'^(\d+)\s*бпла', ln, re.IGNORECASE)
+                    count = int(count_match.group(1)) if count_match else 1
+                    
+                    multi_city_tracks.append({
+                        'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
+                        'threat_type': 'shahed', 'text': ln[:500], 'date': date_str, 'channel': channel,
+                        'marker_icon': 'shahed.png', 'source_match': 'multiline_oblast_city_between', 'count': count
+                    })
+                    continue
+        
+        # --- NEW: Handle "неподалік X" pattern (e.g. "неподалік Ічні") ---
+        if not city:
+            m_near = re.search(r'неподалік\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,30}?)(?=\s|$|[,\.\!\?;])', ln, re.IGNORECASE)
+            if m_near:
+                city = m_near.group(1).strip()
+                # Extract count from beginning of line if present
+                count_match = re.search(r'^(\d+)\s*бпла', ln, re.IGNORECASE)
+                count = int(count_match.group(1)) if count_match else 1
+        
+        # --- NEW: Handle "в районі X" pattern (e.g. "в районі Конотопу") ---
+        if not city:
+            m_area = re.search(r'в\s+районі\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,30}?)(?=\s|$|[,\.\!\?;])', ln, re.IGNORECASE)
+            if m_area:
+                city = m_area.group(1).strip()
+                # Extract count from beginning of line if present
+                count_match = re.search(r'^(\d+)\s*бпла', ln, re.IGNORECASE)
+                count = int(count_match.group(1)) if count_match else 1
+        
         if city:
             base = normalize_city_name(city)
             # Простейшая нормализация винительного падежа -> именительный ("велику димерку" -> "велика димерка")
