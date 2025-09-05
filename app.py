@@ -2502,6 +2502,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
 
     # PRIORITY: Handle emoji + city + oblast format BEFORE any other processing
     try:
+        import re  # Import re module for pattern matching
         head = text.split('\n', 1)[0][:160] if text else ""
         
         # Handle general emoji + city + oblast format with any UAV threat (more flexible pattern)
