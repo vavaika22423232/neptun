@@ -541,8 +541,223 @@
     @keyframes maSlide{from{opacity:0;transform:translate(-50%,-12px);}to{opacity:1;transform:translate(-50%,0);} }
     @media(max-width:680px){.mass-attack-banner{top:3.6rem;padding:.85rem 1.05rem;border-radius:.9rem;} .ma-title{font-size:.95rem;} .ma-icon{font-size:1.6rem;} }
   </style>
+  <!-- Server Support Notice Modal -->
+  <div id="serverSupportModal" class="server-modal-overlay">
+    <div class="server-modal">
+      <div class="server-modal-icon">
+        <i class="material-icons">cloud_queue</i>
+      </div>
+      <h2 class="server-modal-title">Підтримка роботи мапи</h2>
+      <p class="server-modal-text">
+        На жаль, для продовження роботи мапи/сайту треба кожного місяця поповнювати план сервера на якому тримається мапа. 
+        Ваша підтримка допомагає утримувати сервер і покращувати систему моніторингу загроз.
+      </p>
+      
+      <!-- Monobank Widget Integration -->
+      <div class="mono-widget-container">
+        <h3 class="widget-title">Підтримати розвиток</h3>
+        <iframe 
+          src="https://send.monobank.ua/widget.html?jar=3zkigTmA6u1J6fKE6d6bWSBTS465WuAb&sendId=6Vi9TVzJZQ&type=qrp&colorScheme=black"
+          width="100%" 
+          height="400" 
+          frameborder="0"
+          style="border-radius: 12px; background: #000;">
+        </iframe>
+      </div>
+      
+      <div class="server-modal-actions">
+        <button class="btn-understand" onclick="closeServerModal()">
+          <i class="material-icons">thumb_up</i>
+          Зрозуміло
+        </button>
+        <button class="btn-later" onclick="remindLater()">
+          <i class="material-icons">schedule</i>
+          Нагадати пізніше
+        </button>
+      </div>
+      
+      <button class="server-modal-close" onclick="closeServerModal()" aria-label="Закрити">×</button>
+    </div>
+  </div>
+
   <!-- Floating Support Button & Donation Modal -->
   <style>
+  /* Server Support Modal Styles */
+  .server-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(circle at 40% 30%, rgba(15,23,42,.95), rgba(2,6,23,.97));
+    backdrop-filter: blur(16px) saturate(1.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1500;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  .server-modal-overlay.active {
+    opacity: 1;
+    visibility: visible;
+  }
+  
+  .server-modal {
+    width: min(520px, 92vw);
+    background: linear-gradient(145deg, #0f172a, #1e293b 60%, #0f172a);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    border-radius: 20px;
+    padding: 2rem;
+    position: relative;
+    box-shadow: 
+      0 25px 60px -12px rgba(0,0,0,.7),
+      0 0 0 1px rgba(59,130,246,.25),
+      inset 0 1px 0 rgba(255,255,255,.1);
+    transform: scale(0.9) translateY(20px);
+    transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  .server-modal-overlay.active .server-modal {
+    transform: scale(1) translateY(0);
+  }
+  
+  .server-modal-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 80px;
+    height: 80px;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    border-radius: 20px;
+    margin: 0 auto 1.5rem;
+    box-shadow: 0 8px 32px -8px rgba(59, 130, 246, 0.6);
+  }
+  
+  .server-modal-icon i {
+    font-size: 2.5rem;
+    color: white;
+  }
+  
+  .server-modal-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    text-align: center;
+    margin: 0 0 1rem;
+    background: linear-gradient(90deg, #3b82f6, #8b5cf6, #06b6d4);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    letter-spacing: 0.5px;
+  }
+  
+  .server-modal-text {
+    font-size: 1rem;
+    line-height: 1.6;
+    color: #e2e8f0;
+    text-align: center;
+    margin: 0 0 2rem;
+    opacity: 0.9;
+  }
+  
+  .mono-widget-container {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    padding: 1.5rem;
+    margin: 1.5rem 0;
+  }
+  
+  .widget-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #f1f5f9;
+    text-align: center;
+    margin: 0 0 1rem;
+  }
+  
+  .server-modal-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    margin-top: 1.5rem;
+  }
+  
+  .btn-understand, .btn-later {
+    background: linear-gradient(135deg, #2563eb, #7c3aed);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    padding: 0.75rem 1.5rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.2s;
+    letter-spacing: 0.3px;
+    box-shadow: 0 4px 16px -4px rgba(37, 99, 235, 0.5);
+  }
+  
+  .btn-later {
+    background: linear-gradient(135deg, #374151, #4b5563);
+    box-shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.3);
+  }
+  
+  .btn-understand:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px -6px rgba(37, 99, 235, 0.6);
+  }
+  
+  .btn-later:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #4b5563, #6b7280);
+  }
+  
+  .server-modal-close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 40px;
+    height: 40px;
+    background: rgba(30, 41, 59, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    color: #94a3b8;
+    font-size: 18px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+  }
+  
+  .server-modal-close:hover {
+    background: rgba(59, 130, 246, 0.2);
+    color: #f1f5f9;
+    border-color: rgba(59, 130, 246, 0.3);
+  }
+  
+  @media (max-width: 640px) {
+    .server-modal {
+      padding: 1.5rem;
+      border-radius: 16px;
+    }
+    
+    .server-modal-actions {
+      flex-direction: column;
+    }
+    
+    .mono-widget-container {
+      padding: 1rem;
+    }
+    
+    .mono-widget-container iframe {
+      height: 350px;
+    }
+  }
+  
   .support-fab{position:fixed;bottom:1.4rem;right:1.4rem;z-index:1300;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;border:none;border-radius:1.1rem;padding:.95rem 1.15rem;display:flex;align-items:center;gap:.55rem;font-weight:600;font-size:.85rem;cursor:pointer;letter-spacing:.5px;box-shadow:0 10px 28px -8px rgba(37,99,235,.55),0 0 0 1px rgba(255,255,255,.12) inset;transition:.25s;backdrop-filter:blur(6px) saturate(1.2);} 
     .support-fab i{font-size:18px;}
     .support-fab:hover{transform:translateY(-4px) scale(1.03);box-shadow:0 14px 34px -8px rgba(37,99,235,.65),0 0 0 1px rgba(255,255,255,.18) inset;}
@@ -643,6 +858,9 @@
       <a href="#map" class="active"><i class="material-icons">map</i> Карта</a>
       <a href="#events"><i class="material-icons">notifications</i> Події</a>
       <a href="#about"><i class="material-icons">info</i> Інфо</a>
+      <a href="javascript:void(0)" onclick="showServerModal()" title="Підтримка сервера">
+        <i class="material-icons">cloud_queue</i> Сервер
+      </a>
     </div>
   <div class="live-users" id="liveUsers" title="Активні відвідувачі / Beta"><span>онлайн</span><strong>0</strong><span style="margin-left:.5rem;color:#fbbf24;font-weight:700;letter-spacing:.5px;">ТЕСТ</span></div>
   </div>
@@ -924,6 +1142,70 @@
         try { document.body.style.overflow=''; } catch(e){}
       }
     }
+    
+    // Server Support Modal Functions
+    function showServerModal() {
+      const modal = document.getElementById('serverSupportModal');
+      if (!modal) return;
+      
+      modal.classList.add('active');
+      try { 
+        document.body.style.overflow = 'hidden'; 
+      } catch(e) {}
+    }
+    
+    function closeServerModal() {
+      const modal = document.getElementById('serverSupportModal');
+      if (!modal) return;
+      
+      modal.classList.remove('active');
+      try { 
+        document.body.style.overflow = ''; 
+      } catch(e) {}
+      
+      // Save that user has seen the modal
+      localStorage.setItem('serverModalSeen', new Date().toISOString());
+    }
+    
+    function remindLater() {
+      const modal = document.getElementById('serverSupportModal');
+      if (!modal) return;
+      
+      modal.classList.remove('active');
+      try { 
+        document.body.style.overflow = ''; 
+      } catch(e) {}
+      
+      // Set reminder for 7 days later
+      const remindDate = new Date();
+      remindDate.setDate(remindDate.getDate() + 7);
+      localStorage.setItem('serverModalReminder', remindDate.toISOString());
+    }
+    
+    function shouldShowServerModal() {
+      const lastSeen = localStorage.getItem('serverModalSeen');
+      const reminder = localStorage.getItem('serverModalReminder');
+      const now = new Date();
+      
+      // If never seen, show it
+      if (!lastSeen) return true;
+      
+      // If has reminder set and time has passed
+      if (reminder) {
+        const reminderDate = new Date(reminder);
+        if (now >= reminderDate) {
+          localStorage.removeItem('serverModalReminder');
+          return true;
+        }
+        return false;
+      }
+      
+      // If seen more than 30 days ago, show again
+      const lastSeenDate = new Date(lastSeen);
+      const daysDiff = (now - lastSeenDate) / (1000 * 60 * 60 * 24);
+      return daysDiff > 30;
+    }
+    
     function copyDonate(val, btn){
       try { navigator.clipboard.writeText(val); } catch(e){
         const ta=document.createElement('textarea'); ta.value=val; document.body.appendChild(ta); ta.select(); try{ document.execCommand('copy'); }catch(e2){} document.body.removeChild(ta);
@@ -937,7 +1219,14 @@
       }
     }
     function openJar(){ window.open('https://send.monobank.ua/jar/6Vi9TVzJZQ','_blank','noopener'); }
-    document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ toggleDonate(false); } });
+    
+    // Keyboard event handlers
+    document.addEventListener('keydown', e => { 
+      if(e.key === 'Escape') { 
+        toggleDonate(false); 
+        closeServerModal();
+      } 
+    });
     // Константы и настройки
     const UKRAINE_CENTER = { lat: 48.3794, lng: 31.1656 };
     const ICONS = {
@@ -1881,7 +2170,22 @@
       async function loadAdm1(){ try{ const r=await fetch('/static/adm1.json'); if(!r.ok) return; const gj=await r.json(); window.adm1Layer = L.geoJSON(gj,{style:styleAdm1,interactive:false}).addTo(map); }catch(e){} }
       async function loadAdm2(){ try{ const r=await fetch('/static/adm2.json'); if(!r.ok) return; const gj=await r.json(); window.adm2Layer = L.geoJSON(gj,{style:styleAdm2,interactive:false}).addTo(map); }catch(e){} }
       // Kick off after map global is present
-      function init(){ if(typeof map==='undefined'){ return setTimeout(init,500); } loadAdm1(); /* loadAdm2(); */ refreshAlarms(); setInterval(refreshAlarms,15000); }
+      function init(){ 
+        if(typeof map==='undefined'){ 
+          return setTimeout(init,500); 
+        } 
+        loadAdm1(); 
+        /* loadAdm2(); */ 
+        refreshAlarms(); 
+        setInterval(refreshAlarms,15000); 
+        
+        // Show server support modal if needed
+        setTimeout(() => {
+          if (shouldShowServerModal()) {
+            showServerModal();
+          }
+        }, 2000); // Show after 2 seconds to let page load
+      }
       init();
     })();
   </script>
