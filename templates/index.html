@@ -605,10 +605,35 @@
   }
   
   .support-text p {
-    margin: 0;
-    font-size: 0.8rem;
+    margin: 0 0 8px 0;
+    font-size: 0.85rem;
     color: var(--text2);
-    line-height: 1.4;
+    line-height: 1.5;
+  }
+  
+  .support-info p:first-child {
+    color: var(--text1);
+    font-weight: 500;
+    margin-bottom: 12px;
+    background: rgba(255, 193, 7, 0.1);
+    padding: 8px 12px;
+    border-radius: 6px;
+    border-left: 3px solid #ffc107;
+  }
+  
+  .support-info p:not(:first-child):not(.support-appeal) {
+    margin-left: 8px;
+    position: relative;
+  }
+  
+  .support-appeal {
+    margin-top: 10px !important;
+    padding: 10px 12px;
+    background: rgba(0, 123, 255, 0.1);
+    border-radius: 6px;
+    border-left: 3px solid #007bff;
+    color: var(--text1) !important;
+    font-weight: 500;
   }
   
   .support-actions {
@@ -964,7 +989,7 @@
         </div>
         <div class="support-title">
           <h3>Підтримка сервера</h3>
-          <p>Допоможіть утримувати мапу онлайн</p>
+          <p>Допоможіть зберегти мапу безпеки онлайн 24/7</p>
         </div>
       </div>
       
@@ -986,7 +1011,13 @@
             </div>
           </div>
           <div class="support-text">
-            <p>Кошти йдуть на сервер та розвиток проекту</p>
+            <div class="support-info">
+              <p><strong>На жаль, щоб підтримувати сайт/мапу в робочому стані, треба постійно поповнювати баланс серверу.</strong></p>
+              <p>🖥️ Сервер працює цілодобово, обробляючи тисячі повідомлень</p>
+              <p>🔄 Дані оновлюються кожну хвилину з перевірених джерел</p>
+              <p>⚡ Швидкість та стабільність роботи залежать від якості хостингу</p>
+              <p class="support-appeal">Ваша підтримка допомагає зберігати цей важливий ресурс доступним для всіх українців!</p>
+            </div>
           </div>
         </div>
         
