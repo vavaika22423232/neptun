@@ -553,27 +553,40 @@
         Ваша підтримка допомагає утримувати сервер і покращувати систему моніторингу загроз.
       </p>
       
-      <!-- Monobank Widget Integration -->
+      <!-- Monobank Support Section -->
       <div class="mono-widget-container">
         <h3 class="widget-title">Підтримати розвиток</h3>
-        <div class="mono-widget-wrapper">
-          <iframe 
-            src="https://send.monobank.ua/widget.html?jar=3zkigTmA6u1J6fKE6d6bWSBTS465WuAb&sendId=6Vi9TVzJZQ&type=qrp&colorScheme=black"
-            width="100%" 
-            height="350" 
-            frameborder="0"
-            scrolling="no"
-            allowtransparency="true"
-            style="border-radius: 12px; background: transparent; border: none;">
-          </iframe>
-        </div>
         
-        <!-- Fallback link if widget fails -->
-        <div class="mono-fallback">
-          <a href="https://send.monobank.ua/jar/6Vi9TVzJZQ" target="_blank" class="mono-link-btn">
-            <i class="material-icons">account_balance</i>
-            Відкрити в Monobank
-          </a>
+        <!-- QR Code and donation info -->
+        <div class="mono-donation-content">
+          <div class="mono-qr-section">
+            <div class="mono-qr-placeholder">
+              <i class="material-icons">qr_code</i>
+              <p>QR-код для швидкого донату</p>
+            </div>
+          </div>
+          
+          <div class="mono-info">
+            <div class="mono-card-details">
+              <div class="mono-label">💳 Monobank</div>
+              <div class="mono-number">5375 4141 0534 3681</div>
+              <button class="copy-btn" onclick="copyToClipboard('5375414105343681', this)">
+                <i class="material-icons">content_copy</i>
+                Копіювати
+              </button>
+            </div>
+            
+            <div class="mono-jar-section">
+              <p class="mono-description">
+                💛 Ваша підтримка допомагає підтримувати сервер та покращувати систему моніторингу загроз
+              </p>
+              
+              <a href="https://send.monobank.ua/jar/6Vi9TVzJZQ" target="_blank" class="mono-link-btn">
+                <i class="material-icons">account_balance</i>
+                Відкрити банку Monobank
+              </a>
+            </div>
+          </div>
         </div>
       </div>
       
@@ -689,19 +702,107 @@
     margin: 0 0 0.8rem;
   }
   
-  .mono-widget-wrapper {
-    min-height: 280px;
+  .mono-donation-content {
     display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 12px;
-    overflow: hidden;
+    flex-direction: column;
+    gap: 1rem;
   }
   
-  .mono-fallback {
-    margin-top: 0.8rem;
+  .mono-qr-section {
+    display: flex;
+    justify-content: center;
+  }
+  
+  .mono-qr-placeholder {
+    width: 120px;
+    height: 120px;
+    background: linear-gradient(135deg, #374151, #4b5563);
+    border: 2px dashed rgba(255, 255, 255, 0.3);
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
     text-align: center;
+    gap: 0.5rem;
+  }
+  
+  .mono-qr-placeholder i {
+    font-size: 2rem;
+    color: #9ca3af;
+  }
+  
+  .mono-qr-placeholder p {
+    font-size: 0.7rem;
+    color: #9ca3af;
+    margin: 0;
+    line-height: 1.2;
+  }
+  
+  .mono-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+  }
+  
+  .mono-card-details {
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    border-radius: 12px;
+    padding: 0.8rem;
+    text-align: center;
+  }
+  
+  .mono-label {
+    font-size: 0.75rem;
+    color: #60a5fa;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+  }
+  
+  .mono-number {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #f1f5f9;
+    letter-spacing: 1px;
+    margin-bottom: 0.8rem;
+  }
+  
+  .copy-btn {
+    background: rgba(59, 130, 246, 0.2);
+    border: 1px solid rgba(59, 130, 246, 0.4);
+    color: #93c5fd;
+    padding: 0.4rem 0.8rem;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    transition: all 0.2s;
+  }
+  
+  .copy-btn:hover {
+    background: rgba(59, 130, 246, 0.3);
+    border-color: rgba(59, 130, 246, 0.6);
+    color: #dbeafe;
+  }
+  
+  .copy-btn i {
+    font-size: 14px;
+  }
+  
+  .mono-jar-section {
+    text-align: center;
+  }
+  
+  .mono-description {
+    font-size: 0.8rem;
+    color: #cbd5e1;
+    line-height: 1.4;
+    margin: 0 0 0.8rem;
   }
   
   .mono-link-btn {
@@ -815,8 +916,21 @@
       padding: 0.8rem;
     }
     
-    .mono-widget-wrapper {
-      min-height: 250px;
+    .mono-donation-content {
+      gap: 0.8rem;
+    }
+    
+    .mono-qr-placeholder {
+      width: 100px;
+      height: 100px;
+    }
+    
+    .mono-qr-placeholder i {
+      font-size: 1.5rem;
+    }
+    
+    .mono-number {
+      font-size: 0.9rem;
     }
     
     .server-modal-icon {
@@ -1223,25 +1337,6 @@
       try { 
         document.body.style.overflow = 'hidden'; 
       } catch(e) {}
-      
-      // Check if iframe loads properly
-      const iframe = modal.querySelector('iframe');
-      if (iframe) {
-        iframe.onload = function() {
-          console.log('Monobank widget loaded successfully');
-        };
-        iframe.onerror = function() {
-          console.log('Monobank widget failed to load');
-          // Show fallback button more prominently
-          const fallback = modal.querySelector('.mono-fallback');
-          if (fallback) {
-            fallback.style.marginTop = '1rem';
-            fallback.style.padding = '1rem';
-            fallback.style.background = 'rgba(59, 130, 246, 0.1)';
-            fallback.style.borderRadius = '8px';
-          }
-        };
-      }
     }
     
     function closeServerModal() {
@@ -1294,6 +1389,47 @@
       const lastSeenDate = new Date(lastSeen);
       const daysDiff = (now - lastSeenDate) / (1000 * 60 * 60 * 24);
       return daysDiff > 30;
+    }
+    
+    function copyToClipboard(text, button) {
+      try {
+        navigator.clipboard.writeText(text).then(() => {
+          showCopySuccess(button);
+        }).catch(() => {
+          fallbackCopy(text, button);
+        });
+      } catch (e) {
+        fallbackCopy(text, button);
+      }
+    }
+    
+    function fallbackCopy(text, button) {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand('copy');
+        showCopySuccess(button);
+      } catch (e) {
+        console.error('Copy failed');
+      }
+      document.body.removeChild(textarea);
+    }
+    
+    function showCopySuccess(button) {
+      const originalContent = button.innerHTML;
+      button.innerHTML = '<i class="material-icons">check</i>Скопійовано!';
+      button.style.background = 'rgba(16, 185, 129, 0.3)';
+      button.style.borderColor = 'rgba(16, 185, 129, 0.6)';
+      button.style.color = '#6ee7b7';
+      
+      setTimeout(() => {
+        button.innerHTML = originalContent;
+        button.style.background = '';
+        button.style.borderColor = '';
+        button.style.color = '';
+      }, 2000);
     }
     
     function copyDonate(val, btn){
