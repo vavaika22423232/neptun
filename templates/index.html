@@ -955,33 +955,6 @@
         <div id="placeSearchSuggest" class="ps-suggest" style="display:none;"></div>
       </div>
     </div>
-    <div class="card" id="events">
-      <h2>Останні події</h2>
-      <div class="filters">
-        <label>
-          Період моніторингу
-          <div class="input-group">
-            <input type="number" id="timeRange" value="0" readonly disabled style="opacity:.6;cursor:not-allowed;" title="Фіксовано адміністратором">
-            <span class="input-suffix">хв</span>
-          </div>
-        </label>
-        <label>
-          Тип загрози
-          <select id="threatTypeSelect">
-            <option value="">Всі типи</option>
-            <option value="shahed">Шахед/БПЛА</option>
-            <option value="raketa">Ракета</option>
-            <option value="avia">Авіація</option>
-            <option value="pvo">ППО</option>
-          </select>
-        </label>
-        <button onclick="updateMarkers()">
-          <i class="material-icons">refresh</i>
-          Оновити дані
-        </button>
-      </div>
-      <div class="event-list" id="eventList"></div>
-    </div>
 
     <!-- Server Support Card -->
     <div class="card support-card" id="supportCard">
@@ -1032,6 +1005,34 @@
           </button>
         </div>
       </div>
+    </div>
+
+    <div class="card" id="events">
+      <h2>Останні події</h2>
+      <div class="filters">
+        <label>
+          Період моніторингу
+          <div class="input-group">
+            <input type="number" id="timeRange" value="0" readonly disabled style="opacity:.6;cursor:not-allowed;" title="Фіксовано адміністратором">
+            <span class="input-suffix">хв</span>
+          </div>
+        </label>
+        <label>
+          Тип загрози
+          <select id="threatTypeSelect">
+            <option value="">Всі типи</option>
+            <option value="shahed">Шахед/БПЛА</option>
+            <option value="raketa">Ракета</option>
+            <option value="avia">Авіація</option>
+            <option value="pvo">ППО</option>
+          </select>
+        </label>
+        <button onclick="updateMarkers()">
+          <i class="material-icons">refresh</i>
+          Оновити дані
+        </button>
+      </div>
+      <div class="event-list" id="eventList"></div>
     </div>
 
     <div class="card" id="about">
