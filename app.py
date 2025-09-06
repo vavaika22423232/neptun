@@ -748,6 +748,10 @@ UA_CITY_NORMALIZE.update({
     ,'бердичев':'бердичів','бердичева':'бердичів','бердичеве':'бердичів','бердичеву':'бердичів','бердичеві':'бердичів','бердичевом':'бердичів','бердичеву':'бердичів','бердичіву':'бердичів','бердичіва':'бердичів'
     ,'гостомеля':'гостомель','гостомелю':'гостомель','гостомелі':'гостомель','гостомель':'гостомель'
     ,'боярки':'боярка','боярку':'боярка','боярці':'боярка','боярка':'боярка'
+    # Черниговская область - дополнительные формы
+    ,'седнів':'седнів','седніву':'седнів','седніва':'седнів'
+    ,'новгороду':'новгород','новгороді':'новгород','новгородом':'новгород'
+    ,'мену':'мена','мені':'мена','меною':'мена'
     ,'макарова':'макарів','макарові':'макарів','макаров':'макарів','макарову':'макарів','макарів':'макарів'
     ,'бородянки':'бородянка','бородянку':'бородянка','бородянці':'бородянка','бородянка':'бородянка'
     ,'кілії':'кілія','кілію':'кілія','кілією':'кілія','кілія':'кілія'
@@ -1157,6 +1161,10 @@ CHERNIHIV_CITY_COORDS = {
     'сновську': (51.8200, 31.9500),
     'семенівці': (52.1833, 32.5833),
     'семенівку': (52.1833, 32.5833),
+    # Дополнительные города и формы
+    'седнів': (51.5211, 32.1897),
+    'новгород': (51.9874, 33.2620),  # новгород-сіверський
+    'новгород-сіверський': (51.9874, 33.2620),
 }
 
 for _ch_name, _ch_coords in CHERNIHIV_CITY_COORDS.items():
@@ -2451,6 +2459,25 @@ def geocode_opencage(place: str):
         return None
 
 def process_message(text, mid, date_str, channel):  # type: ignore
+    # Helper function to clean text from subscription prompts
+    def clean_text(text_to_clean):
+        if not text_to_clean:
+            return text_to_clean
+        import re as re_import
+        cleaned = []
+        for ln in text_to_clean.splitlines():
+            ln2 = ln.strip()
+            if not ln2:
+                continue
+            # remove any line that is just a subscribe CTA or starts with arrow+subscribe
+            if re_import.search(r'(підписатись|підписатися|підписатися|подписаться|подпишись|subscribe)', ln2, re_import.IGNORECASE):
+                continue
+            # remove arrow+subscribe pattern specifically
+            if re_import.search(r'[➡→>]\s*підписатися', ln2, re_import.IGNORECASE):
+                continue
+            cleaned.append(ln2)
+        return '\n'.join(cleaned)
+    
     # PRIORITY FIRST: All air alarm messages should be list-only (no map markers)
     # This must be checked BEFORE any other processing to prevent other logic from creating markers
     original_text = text or ''
@@ -3231,7 +3258,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                 threat, icon = 'shahed','shahed.png'
                 return [{
                     'id': str(mid), 'place': base.title(), 'lat': lat, 'lng': lng,
-                    'threat_type': threat, 'text': text[:500], 'date': date_str, 'channel': channel,
+                    'threat_type': threat, 'text': clean_text(text)[:500], 'date': date_str, 'channel': channel,
                     'marker_icon': icon, 'source_match': 'city_dash_uav'
                 }]
         # NEW: pattern "БпЛА на <city>" or "бпла на <city>" -> marker at city
@@ -3247,8 +3274,8 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                 if coords:
                     lat,lng = coords
                     threats.append({
-                        'id': str(mid), 'place': base.title(), 'lat': lat, 'lng': lng,
-                        'threat_type': 'shahed', 'text': text[:500], 'date': date_str, 'channel': channel,
+                        'id': f"{mid}_uav_{idx}", 'place': base.title(), 'lat': lat, 'lng': lng,
+                        'threat_type': 'shahed', 'text': clean_text(text)[:500], 'date': date_str, 'channel': channel,
                         'marker_icon': 'shahed.png', 'source_match': 'uav_on_city'
                     })
             if threats:
