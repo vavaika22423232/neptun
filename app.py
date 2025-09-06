@@ -2469,12 +2469,23 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             ln2 = ln.strip()
             if not ln2:
                 continue
-            # remove any line that is just a subscribe CTA or starts with arrow+subscribe
-            if re_import.search(r'(підписатись|підписатися|підписатися|подписаться|подпишись|subscribe)', ln2, re_import.IGNORECASE):
+            # Remove invisible/unicode spaces and normalize
+            ln2 = re_import.sub(r'[\u200B-\u200D\uFEFF\u3164\u2060\u00A0\u1680\u180E\u2000-\u200F\u202A-\u202E\u2028\u2029\u205F\u3000]+', ' ', ln2)
+            ln2 = ln2.strip()
+            
+            # Check if line ends with subscription text after meaningful content
+            subscription_match = re_import.search(r'^(.+?)\s+[➡→>⬇⬆⬅⬌↗↘↙↖]\s*підписатися\s*$', ln2, re_import.IGNORECASE)
+            if subscription_match:
+                # Extract the part before the subscription text
+                main_content = subscription_match.group(1).strip()
+                if main_content and len(main_content) > 5:  # Only keep if meaningful content
+                    cleaned.append(main_content)
                 continue
-            # remove arrow+subscribe pattern specifically
-            if re_import.search(r'[➡→>]\s*підписатися', ln2, re_import.IGNORECASE):
+                
+            # remove any line that is ONLY a subscribe CTA
+            if re_import.search(r'^[➡→>⬇⬆⬅⬌↗↘↙↖]?\s*(підписатись|підписатися|підписатися|подписаться|подпишись|subscribe)\s*$', ln2, re_import.IGNORECASE):
                 continue
+                
             cleaned.append(ln2)
         return '\n'.join(cleaned)
     
@@ -3696,7 +3707,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                             'lat': lat,
                             'lng': lng,
                             'threat_type': threat_type,
-                            'text': ln[:500],
+                            'text': clean_text(ln)[:500],
                             'date': date_str,
                             'channel': channel,
                             'marker_icon': icon,
@@ -3739,7 +3750,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                         'lat': lat,
                         'lng': lng,
                         'threat_type': threat_type,
-                        'text': ln[:500],
+                        'text': clean_text(ln)[:500],
                         'date': date_str,
                         'channel': channel,
                         'marker_icon': icon,
@@ -3776,7 +3787,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     label += f" [{oblast_hdr.title()}]"
                 multi_city_tracks.append({
                     'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
-                    'threat_type': 'rszv', 'text': ln[:500], 'date': date_str, 'channel': channel,
+                    'threat_type': 'rszv', 'text': clean_text(ln)[:500], 'date': date_str, 'channel': channel,
                     'marker_icon': 'rszv.png', 'source_match': 'multiline_oblast_city_rocket', 'count': rocket_count
                 })
                 continue  # переходим к следующей строке (не пытаемся распознать как БпЛА)
