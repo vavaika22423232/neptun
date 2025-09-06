@@ -2451,6 +2451,37 @@ def geocode_opencage(place: str):
         return None
 
 def process_message(text, mid, date_str, channel):  # type: ignore
+    # PRIORITY FIRST: All air alarm messages should be list-only (no map markers)
+    # This must be checked BEFORE any other processing to prevent other logic from creating markers
+    original_text = text or ''
+    low_orig = original_text.lower()
+    if 'повітряна тривога' in low_orig or 'тривога' in low_orig or 'тривог' in low_orig:
+        # Always event-only record (list), never create map markers for air alarms or cancellations
+        place = None
+        low = low_orig.lower()
+        # Try to extract oblast/region info for place
+        for name in ['запорізька', 'одеська', 'миколаївська', 'херсонська', 'київська', 'львівська', 'харківська', 'дніпропетровська', 'чернігівська', 'сумська', 'полтавська', 'тернопільська', 'волинська', 'рівненська', 'житомирська', 'вінницька', 'закарпатська', 'івано-франківська', 'кіровоградська', 'черкаська', 'хмельницька', 'луганська', 'донецька']:
+            if name in low:
+                place = name.title() + ' Обл.'
+                break
+        
+        # Also try to find city names
+        if not place:
+            for city in ['запоріжжя', 'одеса', 'миколаїв', 'херсон', 'київ', 'львів', 'харків', 'дніпро', 'чернігів', 'суми', 'полтава']:
+                if city in low:
+                    place = city.title()
+                    break
+        
+        # Determine if this is alarm start or cancellation
+        threat_type = 'alarm_cancel' if ('відбій' in low_orig or 'отбой' in low_orig) else 'alarm'
+        icon = 'vidboi.png' if threat_type == 'alarm_cancel' else 'trivoga.png'
+        
+        return [{
+            'id': str(mid), 'place': place, 'lat': None, 'lng': None,
+            'threat_type': threat_type, 'text': original_text[:500], 'date': date_str, 'channel': channel,
+            'marker_icon': icon, 'list_only': True
+        }]
+
     # Define classify function at the start so it's available throughout process_message
     def classify(th: str):
         l = th.lower()
@@ -4383,22 +4414,6 @@ def process_message(text, mid, date_str, channel):  # type: ignore
     text = re.sub(r'[\*`_]+', '', text)
     # Удаляем ведущие эмодзи/иконки перед словами
     text = re.sub(r'^[\W_]+', '', text)
-    # PRIORITY: All air alarm messages should be list-only (no map markers)
-    low_orig = original_text.lower()
-    if 'повітряна тривога' in low_orig or 'тривога' in low_orig:
-        # Always event-only record (list), never create map markers for air alarms
-        place = None
-        low = low_orig.lower()
-        for name in OBLAST_CENTERS.keys():
-            if name in low:
-                place = name.title()
-                break
-        # Keep original text
-        return [{
-            'id': str(mid), 'place': place, 'lat': None, 'lng': None,
-            'threat_type': 'alarm', 'text': original_text[:500], 'date': date_str, 'channel': channel,
-            'marker_icon': 'trivoga.png', 'list_only': True
-        }]
     # Общий набор ключевых слов угроз
     THREAT_KEYS = ['бпла','дрон','шахед','shahed','geran','ракета','ракети','missile','iskander','s-300','s300','каб','артил','града','смерч','ураган','mlrs','avia','авіа','авиа','бомба','високошвидкісн']
     def has_threat(txt: str):
