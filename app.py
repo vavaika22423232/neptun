@@ -2494,6 +2494,145 @@ def process_message(text, mid, date_str, channel):  # type: ignore
     # This must be checked BEFORE any other processing to prevent other logic from creating markers
     original_text = text or ''
     low_orig = original_text.lower()
+    
+    # IMMEDIATE CHECK: Multi-regional UAV messages (highest priority)
+    text_lines = original_text.split('\n')
+    region_count = sum(1 for line in text_lines if any(region in line.lower() for region in ['щина:', 'область:', 'край:']))
+    uav_count = sum(1 for line in text_lines if 'бпла' in line.lower() and ('курс' in line.lower() or 'на ' in line.lower()))
+    
+    if region_count >= 2 and uav_count >= 3:
+        add_debug_log(f"IMMEDIATE MULTI-REGIONAL UAV: {region_count} regions, {uav_count} UAVs", "multi_regional")
+        # Process directly without going through other logic
+        import re
+        
+        # Define essential functions inline for immediate processing
+        def get_city_coords_quick(city_name):
+            """Quick coordinate lookup with accusative case normalization"""
+            city_norm = city_name.strip().lower()
+            
+            # Handle specific multi-word cities in accusative case
+            if city_norm == 'велику димерку':
+                city_norm = 'велика димерка'
+            elif city_norm == 'мену':
+                city_norm = 'мена'
+            elif city_norm == 'пісківку':
+                city_norm = 'пісківка'
+            elif city_norm == 'новгород-сіверський':
+                city_norm = 'новгород-сіверський'
+            
+            # General accusative case endings (винительный падеж)
+            elif city_norm.endswith('у') and len(city_norm) > 3:
+                city_norm = city_norm[:-1] + 'а'
+            elif city_norm.endswith('ю') and len(city_norm) > 3:
+                city_norm = city_norm[:-1] + 'я'
+            elif city_norm.endswith('ку') and len(city_norm) > 4:
+                city_norm = city_norm[:-2] + 'ка'
+            
+            # Apply UA_CITY_NORMALIZE rules
+            if city_norm in UA_CITY_NORMALIZE:
+                city_norm = UA_CITY_NORMALIZE[city_norm]
+            
+            # Try direct lookup
+            coords = CITY_COORDS.get(city_norm)
+            if not coords:
+                coords = ensure_city_coords(city_norm)
+            
+            add_debug_log(f"Coord lookup: '{city_name}' -> '{city_norm}' -> {bool(coords)}", "multi_regional")
+            return coords
+        
+        threats = []
+        processed_cities = set()  # Избегаем дубликатов
+        
+        for line in text_lines:
+            line_stripped = line.strip()
+            if not line_stripped or ':' in line_stripped[:20]:  # Skip region headers
+                continue
+            
+            line_lower = line_stripped.lower()
+            
+            # Look for UAV course patterns
+            if 'бпла' in line_lower and ('курс' in line_lower or ' на ' in line_lower):
+                # Extract city name from patterns - improved to capture multi-word cities like "Велику Димерку"
+                pattern = r'(\d+)?[xх]?\s*бпла\s+(?:курсом?)?\s*на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]{3,50}?)(?=\s*(?:\n|$))'
+                
+                matches = re.finditer(pattern, line_stripped, re.IGNORECASE)
+                for match in matches:
+                    if len(match.groups()) == 2:
+                        count_str, city_raw = match.groups()
+                    else:
+                        count_str = None
+                        city_raw = match.group(1)
+                    
+                    if not city_raw:
+                        continue
+                        
+                    # Clean city name (remove trailing spaces)
+                    city_clean = city_raw.strip()
+                    
+                    # Normalize city name for coordinate lookup  
+                    city_normalized = city_clean.lower()
+                    
+                    # Normalize for display (convert accusative to nominative)
+                    city_display = city_clean
+                    if city_normalized == 'велику димерку':
+                        city_display = 'Велика Димерка'
+                    elif city_normalized == 'мену':
+                        city_display = 'Мена'
+                    elif city_normalized == 'пісківку':
+                        city_display = 'Пісківка'
+                    elif city_normalized.endswith('у') and len(city_normalized) > 3:
+                        city_display = city_normalized[:-1] + 'а'
+                        city_display = city_display.title()
+                    elif city_normalized.endswith('ю') and len(city_normalized) > 3:
+                        city_display = city_normalized[:-1] + 'я'
+                        city_display = city_display.title()
+                    elif city_normalized.endswith('ку') and len(city_normalized) > 4:
+                        city_display = city_normalized[:-2] + 'ка'
+                        city_display = city_display.title()
+                    else:
+                        city_display = city_clean.title()
+                    
+                    city_key = city_normalized
+                    
+                    # Skip if already processed
+                    if city_key in processed_cities:
+                        continue
+                    processed_cities.add(city_key)
+                    
+                    # Try to get coordinates
+                    coords = get_city_coords_quick(city_clean)
+                    
+                    if coords:
+                        lat, lng = coords
+                        
+                        # Extract count if present
+                        uav_count_num = 1
+                        if count_str and count_str.isdigit():
+                            uav_count_num = int(count_str)
+                        
+                        threat_id = f"{mid}_imm_multi_{len(threats)}"
+                        threats.append({
+                            'id': threat_id,
+                            'place': city_display,  # Use normalized display name
+                            'lat': lat,
+                            'lng': lng,
+                            'threat_type': 'shahed',
+                            'text': f"{line_stripped} (мультирегіональне)",
+                            'date': date_str,
+                            'channel': channel,
+                            'marker_icon': 'shahed.png',
+                            'source_match': f'immediate_multi_regional_uav_{uav_count_num}x',
+                            'count': uav_count_num
+                        })
+                        
+                        add_debug_log(f"Immediate Multi-regional: {city_clean} ({uav_count_num}x) -> {coords}", "multi_regional")
+                    else:
+                        add_debug_log(f"Immediate Multi-regional: No coords for {city_clean}", "multi_regional")
+        
+        if threats:
+            add_debug_log(f"IMMEDIATE MULTI-REGIONAL RESULT: {len(threats)} threats", "multi_regional")
+            return threats
+    
     if 'повітряна тривога' in low_orig or 'тривога' in low_orig or 'тривог' in low_orig:
         # Always event-only record (list), never create map markers for air alarms or cancellations
         place = None
@@ -2963,6 +3102,19 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         if multi_threats:
             add_debug_log(f"MULTIPLE THREATS DETECTED: Found {len(multi_threats)} threats", "multi_threats")
             return multi_threats
+
+    # EARLY CHECK: Multi-regional UAV messages (before other logic can interfere)
+    text_lines = text.split('\n')
+    region_count = sum(1 for line in text_lines if any(region in line.lower() for region in ['щина:', 'область:', 'край:']))
+    uav_count = sum(1 for line in text_lines if 'бпла' in line.lower() and ('курс' in line.lower() or 'на ' in line.lower()))
+    
+    if region_count >= 2 and uav_count >= 3:
+        add_debug_log(f"EARLY MULTI-REGIONAL UAV DETECTION: {region_count} regions, {uav_count} UAVs", "multi_regional")
+        # We'll process this later when all functions are defined
+        # Set a flag for now
+        multi_regional_flag = True
+    else:
+        multi_regional_flag = False
 
     # ... existing parsing logic continues ...
     # At the very end of function (before return default) we'll log duration.
@@ -4660,6 +4812,111 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                 'threat_type': 'raketa', 'text': original_text[:500], 'date': date_str, 'channel': channel,
                 'marker_icon': 'raketa.png', 'source_match': 'kab_regional_threat'
             }]
+    
+    # SPECIAL: Handle multi-regional UAV messages (like the user's example)
+    def handle_multi_regional_uav():
+        """Handle messages with multiple regional UAV threats listed separately"""
+        threats = []
+        text_lines = text.split('\n')
+        
+        # Check if this looks like a multi-regional UAV message
+        region_count = 0
+        uav_count = 0
+        for line in text_lines:
+            line_lower = line.lower().strip()
+            if not line_lower:
+                continue
+                
+            # Count regions mentioned
+            if any(region in line_lower for region in ['щина:', 'область:', 'край:']):
+                region_count += 1
+            
+            # Count UAV mentions
+            if 'бпла' in line_lower and ('курс' in line_lower or 'на ' in line_lower):
+                uav_count += 1
+        
+        # If we have multiple regions and multiple UAV mentions, process each line
+        if region_count >= 2 and uav_count >= 3:
+            add_debug_log(f"MULTI-REGIONAL UAV MESSAGE: {region_count} regions, {uav_count} UAVs", "multi_regional")
+            
+            for line in text_lines:
+                line_stripped = line.strip()
+                if not line_stripped or ':' in line_stripped[:20]:  # Skip region headers
+                    continue
+                
+                line_lower = line_stripped.lower()
+                
+                # Look for UAV course patterns
+                if 'бпла' in line_lower and ('курс' in line_lower or ' на ' in line_lower):
+                    # Extract city name from patterns like "БпЛА курсом на Конотоп" or "2х БпЛА курсом на Велику Димерку"
+                    patterns = [
+                        r'(\d+)?[xх]?\s*бпла\s+курсом?\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s|$|[,\.\!\?])',
+                        r'бпла\s+курсом?\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s|$|[,\.\!\?])',
+                        r'(\d+)?[xх]?\s*бпла\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s|$|[,\.\!\?])'
+                    ]
+                    
+                    for pattern in patterns:
+                        matches = re.finditer(pattern, line_stripped, re.IGNORECASE)
+                        for match in matches:
+                            if len(match.groups()) == 2:
+                                count_str, city_raw = match.groups()
+                            else:
+                                count_str = None
+                                city_raw = match.group(1)
+                            
+                            if not city_raw:
+                                continue
+                                
+                            # Clean and normalize city name
+                            city_clean = city_raw.strip()
+                            city_norm = clean_text(city_clean).lower()
+                            
+                            # Apply normalization rules
+                            if city_norm in UA_CITY_NORMALIZE:
+                                city_norm = UA_CITY_NORMALIZE[city_norm]
+                            
+                            # Try to get coordinates
+                            coords = region_enhanced_coords(city_norm)
+                            if not coords:
+                                coords = ensure_city_coords(city_norm)
+                            
+                            if coords:
+                                lat, lng = coords
+                                threat_type, icon = classify(text)
+                                
+                                # Extract count if present
+                                uav_count_num = 1
+                                if count_str and count_str.isdigit():
+                                    uav_count_num = int(count_str)
+                                
+                                threat_id = f"{mid}_multi_{len(threats)}"
+                                threats.append({
+                                    'id': threat_id,
+                                    'place': city_clean.title(),
+                                    'lat': lat,
+                                    'lng': lng,
+                                    'threat_type': threat_type,
+                                    'text': f"{line_stripped} (з багаторегіонального повідомлення)",
+                                    'date': date_str,
+                                    'channel': channel,
+                                    'marker_icon': icon,
+                                    'source_match': f'multi_regional_uav_{uav_count_num}x',
+                                    'count': uav_count_num
+                                })
+                                
+                                add_debug_log(f"Multi-regional UAV: {city_clean} ({uav_count_num}x) -> {coords}", "multi_regional")
+                            else:
+                                add_debug_log(f"Multi-regional UAV: No coords for {city_clean}", "multi_regional")
+        
+        return threats
+
+    # Check for multi-regional UAV messages
+    if multi_regional_flag:
+        multi_regional_threats = handle_multi_regional_uav()
+        if multi_regional_threats:
+            add_debug_log(f"MULTI-REGIONAL UAV: Found {len(multi_regional_threats)} threats", "multi_regional")
+            return multi_regional_threats
+
     # Southeast-wide tactical aviation activity (no specific settlement): place a synthetic marker off SE border.
     se_phrase = lower if 'lower' in locals() else original_text.lower()
     if ('тактичн' in se_phrase or 'авіаці' in se_phrase or 'авиац' in se_phrase) and ('південно-східн' in se_phrase or 'південно східн' in se_phrase or 'юго-восточ' in se_phrase or 'південного-сходу' in se_phrase):
