@@ -1259,27 +1259,53 @@
         const cacheTime = localStorage.getItem('donationAmountTime');
         const now = Date.now();
         
-        // Use cache if it's less than 30 minutes old
-        if (cachedAmount && cacheTime && (now - parseInt(cacheTime)) < 1800000) {
-          const amount = parseFloat(cachedAmount) || 462; // Default to 462 if cache is corrupted
+        // Default fallback amount (known current amount)
+        const fallbackAmount = 462;
+        
+        // Use cache if it's less than 15 minutes old (reduced from 30)
+        if (cachedAmount && cacheTime && (now - parseInt(cacheTime)) < 900000) {
+          const amount = parseFloat(cachedAmount) || fallbackAmount;
           updateAmountDisplay(amount, targetAmount, amountElement, supportAmountElement, progressAmountElement, progressFillElement);
+          console.log('Using cached donation amount:', amount, 'грн');
           return;
         }
         
-        // Set loading state
-        if (amountElement) amountElement.textContent = '...';
-        if (supportAmountElement) supportAmountElement.textContent = '...';
-        if (progressAmountElement) progressAmountElement.textContent = '...';
+        // IMMEDIATELY show fallback amount to avoid showing 0
+        updateAmountDisplay(fallbackAmount, targetAmount, amountElement, supportAmountElement, progressAmountElement, progressFillElement);
+        console.log('Showing fallback amount immediately:', fallbackAmount, 'грн');
         
-        // Fetch real data from Monobank jar
-        fetchMonobankAmount(targetAmount, amountElement, supportAmountElement, progressAmountElement, progressFillElement, now);
+        // Then try to fetch real data in background with retry
+        fetchMonobankAmountWithRetry(targetAmount, amountElement, supportAmountElement, progressAmountElement, progressFillElement, now);
         
       } catch(e) {
         console.error('Failed to load donation amount:', e);
-        handleAmountError(amountElement, supportAmountElement, progressAmountElement);
+        // Show fallback amount on any error
+        const fallbackAmount = 462;
+        updateAmountDisplay(fallbackAmount, targetAmount, amountElement, supportAmountElement, progressAmountElement, progressFillElement);
       }
     }
     
+    // Enhanced function with retry mechanism
+    async function fetchMonobankAmountWithRetry(targetAmount, amountElement, supportAmountElement, progressAmountElement, progressFillElement, cacheTime, retryCount = 0) {
+      const maxRetries = 3;
+      const retryDelay = [1000, 3000, 5000]; // Delays for each retry
+      
+      try {
+        await fetchMonobankAmount(targetAmount, amountElement, supportAmountElement, progressAmountElement, progressFillElement, cacheTime);
+      } catch (error) {
+        console.warn(`Attempt ${retryCount + 1} failed:`, error);
+        
+        if (retryCount < maxRetries) {
+          console.log(`Retrying in ${retryDelay[retryCount]}ms...`);
+          setTimeout(() => {
+            fetchMonobankAmountWithRetry(targetAmount, amountElement, supportAmountElement, progressAmountElement, progressFillElement, cacheTime, retryCount + 1);
+          }, retryDelay[retryCount]);
+        } else {
+          console.warn('All retry attempts failed, keeping fallback amount');
+        }
+      }
+    }
+
     async function fetchMonobankAmount(targetAmount, amountElement, supportAmountElement, progressAmountElement, progressFillElement, cacheTime) {
       try {
         // Use a CORS proxy to fetch Monobank jar data
@@ -1296,27 +1322,47 @@
         let lastError = null;
         
         // Try each proxy until one works
-        for (const proxyUrl of proxyUrls) {
+        for (let i = 0; i < proxyUrls.length; i++) {
+          const proxyUrl = proxyUrls[i];
           try {
+            console.log(`Trying proxy ${i + 1}/${proxyUrls.length}: ${proxyUrl.split('?')[0]}...`);
+            
+            // Add timeout to fetch
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+            
             const response = await fetch(proxyUrl, {
               method: 'GET',
               headers: {
                 'Accept': 'application/json',
                 'X-Requested-With': 'XMLHttpRequest'
-              }
+              },
+              signal: controller.signal
             });
             
+            clearTimeout(timeoutId);
+            
             if (!response.ok) {
-              throw new Error(`HTTP ${response.status}`);
+              throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
             
             const data = await response.json();
             htmlContent = data.contents || data;
-            if (htmlContent) break;
+            if (htmlContent && htmlContent.length > 100) { // Make sure we got actual content
+              console.log(`Proxy ${i + 1} successful, content length: ${htmlContent.length}`);
+              break;
+            } else {
+              throw new Error('Empty or invalid content received');
+            }
             
           } catch (err) {
             lastError = err;
-            console.warn(`Proxy ${proxyUrl} failed:`, err);
+            console.warn(`Proxy ${i + 1} failed:`, err.message);
+            
+            // Add small delay between proxy attempts
+            if (i < proxyUrls.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
             continue;
           }
         }
@@ -1334,54 +1380,92 @@
         
         // Try different patterns to find the amount
         const patterns = [
-          // Pattern 1: Look for "Зібрано: 462 грн" or similar
+          // Pattern 1: Look for "Зібрано: 462 грн" or similar (most specific)
           /зібрано[:\s]*(\d+(?:[,\s]\d{3})*(?:[.,]\d+)?)\s*грн/i,
-          // Pattern 2: Look for amount in span or div with class containing "amount"
+          // Pattern 2: Look for "сума: 462 грн" or similar
+          /сума[:\s]*(\d+(?:[,\s]\d{3})*(?:[.,]\d+)?)\s*грн/i,
+          // Pattern 3: JSON-like structure with amount
+          /"amount"[:\s]*(\d+(?:[.,]\d+)?)/i,
+          // Pattern 4: Look for large numbers in quotes (JSON-like)
+          /"(\d{3,}(?:[.,]\d+)?)"/,
+          // Pattern 5: Look for amount in span or div with class containing "amount"
           /<[^>]*class="[^"]*amount[^"]*"[^>]*>[\s\S]*?(\d+(?:[,\s]\d{3})*(?:[.,]\d+)?)/i,
-          // Pattern 3: Look for large numbers followed by грн
+          // Pattern 6: Look for large numbers followed by грн (broader)
           /(\d{2,}(?:[,\s]\d{3})*(?:[.,]\d+)?)\s*грн/i,
-          // Pattern 4: Look for amount in data attributes
+          // Pattern 7: Look for amount in data attributes
           /data-amount="(\d+(?:[.,]\d+)?)"/i,
-          // Pattern 5: General number before грн
-          /(\d+(?:[.,]\d+)?)\s*грн/i
+          // Pattern 8: Find numbers that look like currency amounts (3+ digits)
+          /\b(\d{3,}(?:[.,]\d{2})?)\b/g
         ];
         
-        for (const pattern of patterns) {
-          const match = htmlContent.match(pattern);
-          if (match) {
-            const rawAmount = match[1].replace(/[,\s]/g, '').replace(',', '.');
-            const parsedAmount = parseFloat(rawAmount);
-            if (parsedAmount && parsedAmount > amount) {
-              amount = parsedAmount;
+        for (let i = 0; i < patterns.length; i++) {
+          const pattern = patterns[i];
+          const isGlobal = pattern.global;
+          
+          if (isGlobal) {
+            // For global patterns, find all matches
+            let match;
+            while ((match = pattern.exec(htmlContent)) !== null) {
+              const rawAmount = match[1].replace(/[,\s]/g, '').replace(',', '.');
+              const parsedAmount = parseFloat(rawAmount);
+              if (parsedAmount && parsedAmount >= 400 && parsedAmount <= 15000) { // Reasonable range
+                if (parsedAmount > amount) {
+                  amount = parsedAmount;
+                  console.log(`Found amount using pattern ${i + 1}: ${parsedAmount}`);
+                }
+              }
             }
-          }
-        }
-        
-        // If still no amount found, try parsing the DOM structure
-        if (amount === 0) {
-          const amountElements = doc.querySelectorAll('[class*="amount"], [class*="sum"], [class*="total"]');
-          for (const element of amountElements) {
-            const text = element.textContent || element.innerText || '';
-            const numberMatch = text.match(/(\d+(?:[,\s]\d{3})*(?:[.,]\d+)?)/);
-            if (numberMatch) {
-              const parsedAmount = parseFloat(numberMatch[1].replace(/[,\s]/g, '').replace(',', '.'));
-              if (parsedAmount && parsedAmount > amount) {
-                amount = parsedAmount;
+          } else {
+            // For non-global patterns
+            const match = htmlContent.match(pattern);
+            if (match) {
+              const rawAmount = match[1].replace(/[,\s]/g, '').replace(',', '.');
+              const parsedAmount = parseFloat(rawAmount);
+              if (parsedAmount && parsedAmount >= 400 && parsedAmount <= 15000) { // Reasonable range
+                if (parsedAmount > amount) {
+                  amount = parsedAmount;
+                  console.log(`Found amount using pattern ${i + 1}: ${parsedAmount}`);
+                }
               }
             }
           }
         }
         
-        // Cache the result
-        localStorage.setItem('donationAmount', amount.toString());
-        localStorage.setItem('donationAmountTime', cacheTime.toString());
+        // If still no amount found, try parsing the DOM structure
+        if (amount === 0 || amount < 400) {
+          console.log('Trying DOM parsing for amount...');
+          const amountElements = doc.querySelectorAll('[class*="amount"], [class*="sum"], [class*="total"], [class*="collected"], [class*="raised"]');
+          for (const element of amountElements) {
+            const text = element.textContent || element.innerText || '';
+            const numberMatch = text.match(/(\d+(?:[,\s]\d{3})*(?:[.,]\d+)?)/);
+            if (numberMatch) {
+              const parsedAmount = parseFloat(numberMatch[1].replace(/[,\s]/g, '').replace(',', '.'));
+              if (parsedAmount && parsedAmount >= 400 && parsedAmount <= 15000) {
+                if (parsedAmount > amount) {
+                  amount = parsedAmount;
+                  console.log(`Found amount in DOM element: ${parsedAmount}`);
+                }
+              }
+            }
+          }
+        }
         
-        updateAmountDisplay(amount, targetAmount, amountElement, supportAmountElement, progressAmountElement, progressFillElement);
-        
-        console.log('Donation amount loaded:', amount, 'грн');
+        // If amount is reasonable, cache and use it
+        if (amount >= 400) {
+          localStorage.setItem('donationAmount', amount.toString());
+          localStorage.setItem('donationAmountTime', cacheTime.toString());
+          
+          updateAmountDisplay(amount, targetAmount, amountElement, supportAmountElement, progressAmountElement, progressFillElement);
+          
+          console.log('Donation amount loaded:', amount, 'грн');
+        } else {
+          // Amount is too low or invalid, use fallback
+          console.warn('Invalid amount detected:', amount, 'using fallback');
+          throw new Error('Invalid amount: ' + amount);
+        }
         
         // Debug: log the HTML content to help with troubleshooting
-        if (amount === 0 || amount < 100) {
+        if (amount === 0 || amount < 400) {
           console.warn('Low amount detected, HTML content preview:', htmlContent.substring(0, 500));
         }
         
@@ -2499,9 +2583,26 @@
         setInterval(refreshAlarms,15000); 
         
         // Initialize donation amount loading for support card
+        // Load immediately with fallback, then try to fetch real data
+        loadDonationAmount();
+        
+        // Also try again after a short delay to catch any load timing issues
         setTimeout(() => {
+          const currentAmount = localStorage.getItem('donationAmount');
+          if (!currentAmount || parseFloat(currentAmount) < 100) {
+            console.log('Retrying donation amount load due to low/missing amount');
+            loadDonationAmount();
+          }
+        }, 2000);
+        
+        // Periodic refresh every 15 minutes to keep amount updated
+        setInterval(() => {
+          console.log('Periodic donation amount refresh');
+          // Clear cache to force fresh fetch
+          localStorage.removeItem('donationAmount');
+          localStorage.removeItem('donationAmountTime');
           loadDonationAmount();
-        }, 1000); // Load after 1 second to let page load
+        }, 900000); // 15 minutes
       }
       init();
     })();
