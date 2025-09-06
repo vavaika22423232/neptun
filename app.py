@@ -2476,9 +2476,28 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         threat_type = 'alarm_cancel' if ('відбій' in low_orig or 'отбой' in low_orig) else 'alarm'
         icon = 'vidboi.png' if threat_type == 'alarm_cancel' else 'trivoga.png'
         
+        # Clean subscription links from air alarm messages before returning
+        import re as re_import
+        cleaned_text = original_text
+        if original_text:
+            # remove lines containing subscription prompts
+            cleaned = []
+            for ln in original_text.splitlines():
+                ln2 = ln.strip()
+                if not ln2:
+                    continue
+                # remove any line that is just a subscribe CTA or starts with arrow+subscribe
+                if re_import.search(r'(підписатись|підписатися|підписатися|подписаться|подпишись|subscribe)', ln2, re_import.IGNORECASE):
+                    continue
+                # remove arrow+subscribe pattern specifically
+                if re_import.search(r'[➡→>]\s*підписатися', ln2, re_import.IGNORECASE):
+                    continue
+                cleaned.append(ln2)
+            cleaned_text = '\n'.join(cleaned)
+        
         return [{
             'id': str(mid), 'place': place, 'lat': None, 'lng': None,
-            'threat_type': threat_type, 'text': original_text[:500], 'date': date_str, 'channel': channel,
+            'threat_type': threat_type, 'text': cleaned_text[:500], 'date': date_str, 'channel': channel,
             'marker_icon': icon, 'list_only': True
         }]
 
@@ -4320,6 +4339,9 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                 continue
             # remove any line that is just a subscribe CTA or starts with arrow+subscribe
             if re.search(r'(підписатись|підписатися|підписатися|подписаться|подпишись|subscribe)', ln2, re.IGNORECASE):
+                continue
+            # remove arrow+subscribe pattern specifically
+            if re.search(r'[➡→>]\s*підписатися', ln2, re.IGNORECASE):
                 continue
             cleaned.append(ln2)
         return '\n'.join(cleaned)
