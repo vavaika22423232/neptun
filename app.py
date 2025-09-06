@@ -2950,7 +2950,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             lat, lng = 46.9750, 31.9946
             all_threats.append({
                 'id': f"{mid}_mykolaiv_uav", 'place': 'Миколаївщина', 'lat': lat, 'lng': lng,
-                'threat_type': 'shahed', 'text': text[:500], 'date': date_str, 'channel': channel,
+                'threat_type': 'shahed', 'text': clean_text(text)[:500], 'date': date_str, 'channel': channel,
                 'marker_icon': 'shahed.png', 'source_match': 'multiple_threats_mykolaiv_uav'
             })
         
@@ -4033,7 +4033,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                         label += f" [{oblast_hdr.title()}]"
                     multi_city_tracks.append({
                         'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
-                        'threat_type': 'shahed', 'text': ln[:500], 'date': date_str, 'channel': channel,
+                        'threat_type': 'shahed', 'text': clean_text(ln)[:500], 'date': date_str, 'channel': channel,
                         'marker_icon': 'shahed.png', 'source_match': 'multiline_oblast_city_shahed', 'count': per_count
                     })
                 continue
@@ -4128,7 +4128,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     
                     multi_city_tracks.append({
                         'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
-                        'threat_type': 'shahed', 'text': ln[:500], 'date': date_str, 'channel': channel,
+                        'threat_type': 'shahed', 'text': clean_text(ln)[:500], 'date': date_str, 'channel': channel,
                         'marker_icon': 'shahed.png', 'source_match': 'multiline_oblast_city_between', 'count': count
                     })
                     continue
@@ -4206,7 +4206,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                 print(f"DEBUG: Creating track with label '{label}' at {lat}, {lng}")
                 multi_city_tracks.append({
                     'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
-                    'threat_type': threat_type, 'text': ln[:500], 'date': date_str, 'channel': channel,
+                    'threat_type': threat_type, 'text': clean_text(ln)[:500], 'date': date_str, 'channel': channel,
                     'marker_icon': icon, 'source_match': 'multiline_oblast_city', 'count': count
                 })
             else:
@@ -4271,7 +4271,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         for idx, (city, (lat, lng)) in enumerate(found_cities, 1):
             multi_city_tracks.append({
                 'id': f"{mid}_mc{idx}", 'place': city.title(), 'lat': lat, 'lng': lng,
-                'threat_type': threat_type, 'text': original_text[:500], 'date': date_str, 'channel': channel,
+                'threat_type': threat_type, 'text': clean_text(original_text)[:500], 'date': date_str, 'channel': channel,
                 'marker_icon': icon, 'source_match': 'multi_city_auto'
             })
         if multi_city_tracks:
