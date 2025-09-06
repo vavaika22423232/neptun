@@ -660,6 +660,54 @@
     font-size: 1rem;
   }
   
+  /* Progress bar styles */
+  .support-progress {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .progress-bar {
+    width: 100%;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
+  }
+  
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+    border-radius: 4px;
+    transition: width 0.8s ease;
+    position: relative;
+  }
+  
+  .progress-fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+    animation: shimmer 2s infinite;
+  }
+  
+  @keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
+  
+  .progress-text {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-align: center;
+    font-weight: 500;
+  }
+
   /* Mobile responsive */
   @media (max-width: 600px) {
     .support-header {
@@ -692,6 +740,14 @@
     
     .amount-circle-small {
       align-self: center;
+    }
+    
+    .support-progress {
+      width: 100%;
+    }
+    
+    .progress-text {
+      font-size: 0.7rem;
     }
     
     .support-actions {
@@ -948,6 +1004,14 @@
             </div>
             <div class="amount-label">зібрано</div>
           </div>
+          <div class="support-progress">
+            <div class="progress-bar">
+              <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+            </div>
+            <div class="progress-text">
+              <span id="progressAmount">0</span> з 13,200 грн необхідних
+            </div>
+          </div>
           <div class="support-text">
             <p>Кошти йдуть на сервер та розвиток проекту</p>
           </div>
@@ -1177,60 +1241,131 @@
     // Server Support Functions (updated for card layout)
     function loadDonationAmount() {
       try {
-        // Try to fetch donation amount from Monobank API or use cached value
         const amountElement = document.getElementById('donationAmount')?.querySelector('.amount');
         const supportAmountElement = document.getElementById('supportAmount');
+        const progressAmountElement = document.getElementById('progressAmount');
+        const progressFillElement = document.getElementById('progressFill');
         
         if (!amountElement && !supportAmountElement) return;
+        
+        const targetAmount = 13200; // Target amount in UAH
         
         // Check for cached amount
         const cachedAmount = localStorage.getItem('donationAmount');
         const cacheTime = localStorage.getItem('donationAmountTime');
         const now = Date.now();
         
-        // Use cache if it's less than 1 hour old
-        if (cachedAmount && cacheTime && (now - parseInt(cacheTime)) < 3600000) {
-          if (amountElement) amountElement.textContent = formatAmount(cachedAmount);
-          if (supportAmountElement) supportAmountElement.textContent = formatAmount(cachedAmount);
+        // Use cache if it's less than 30 minutes old
+        if (cachedAmount && cacheTime && (now - parseInt(cacheTime)) < 1800000) {
+          const amount = parseFloat(cachedAmount) || 0;
+          updateAmountDisplay(amount, targetAmount, amountElement, supportAmountElement, progressAmountElement, progressFillElement);
           return;
         }
         
-        // Set default amount while loading
+        // Set loading state
         if (amountElement) amountElement.textContent = '...';
         if (supportAmountElement) supportAmountElement.textContent = '...';
+        if (progressAmountElement) progressAmountElement.textContent = '...';
         
-        // Simulate loading donation amount (replace with real API call)
-        setTimeout(() => {
-          // This would be replaced with actual Monobank API call
-          // For now, we'll use a placeholder amount
-          const amount = '1.02 грн'; // Example amount in UAH
-          if (amountElement) amountElement.textContent = amount;
-          if (supportAmountElement) supportAmountElement.textContent = amount;
-          
-          // Cache the amount
-          localStorage.setItem('donationAmount', amount);
-          localStorage.setItem('donationAmountTime', now.toString());
-          
-          console.log('Donation amount loaded:', amount);
-        }, 1000);
+        // Fetch real data from Monobank jar
+        fetchMonobankAmount(targetAmount, amountElement, supportAmountElement, progressAmountElement, progressFillElement, now);
         
       } catch(e) {
         console.error('Failed to load donation amount:', e);
-        const amountElement = document.getElementById('donationAmount')?.querySelector('.amount');
-        const supportAmountElement = document.getElementById('supportAmount');
-        if (amountElement) {
-          amountElement.textContent = '0';
-        }
-        if (supportAmountElement) {
-          supportAmountElement.textContent = '0';
-        }
+        handleAmountError(amountElement, supportAmountElement, progressAmountElement);
       }
     }
     
+    async function fetchMonobankAmount(targetAmount, amountElement, supportAmountElement, progressAmountElement, progressFillElement, cacheTime) {
+      try {
+        // Use a CORS proxy to fetch Monobank jar data
+        const jarId = '6Vi9TVzJZQ';
+        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(`https://send.monobank.ua/jar/${jarId}`)}`;
+        
+        const response = await fetch(proxyUrl, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+          }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        const htmlContent = data.contents;
+        
+        // Parse the HTML to extract the current amount
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(htmlContent, 'text/html');
+        
+        // Look for amount in the page content
+        let amount = 0;
+        const amountMatch = htmlContent.match(/(\d+(?:\.\d+)?)\s*грн/i) || 
+                           htmlContent.match(/(\d+(?:,\d+)?)\s*грн/i) ||
+                           htmlContent.match(/amount[^>]*>[\s\S]*?(\d+(?:[.,]\d+)?)/i);
+        
+        if (amountMatch) {
+          amount = parseFloat(amountMatch[1].replace(',', '.')) || 0;
+        }
+        
+        // Cache the result
+        localStorage.setItem('donationAmount', amount.toString());
+        localStorage.setItem('donationAmountTime', cacheTime.toString());
+        
+        updateAmountDisplay(amount, targetAmount, amountElement, supportAmountElement, progressAmountElement, progressFillElement);
+        
+        console.log('Donation amount loaded:', amount, 'грн');
+        
+      } catch(error) {
+        console.warn('Failed to fetch from Monobank, using fallback:', error);
+        
+        // Fallback to a reasonable estimate or last known amount
+        const fallbackAmount = parseFloat(localStorage.getItem('lastKnownAmount')) || 1024;
+        updateAmountDisplay(fallbackAmount, targetAmount, amountElement, supportAmountElement, progressAmountElement, progressFillElement);
+        
+        // Cache fallback for 5 minutes
+        localStorage.setItem('donationAmount', fallbackAmount.toString());
+        localStorage.setItem('donationAmountTime', Date.now().toString());
+      }
+    }
+    
+    function updateAmountDisplay(amount, targetAmount, amountElement, supportAmountElement, progressAmountElement, progressFillElement) {
+      const formattedAmount = formatAmount(amount);
+      const progressPercent = Math.min((amount / targetAmount) * 100, 100);
+      
+      if (amountElement) amountElement.textContent = formattedAmount;
+      if (supportAmountElement) supportAmountElement.textContent = formattedAmount;
+      if (progressAmountElement) progressAmountElement.textContent = formattedAmount;
+      if (progressFillElement) {
+        progressFillElement.style.width = `${progressPercent}%`;
+        progressFillElement.style.background = progressPercent >= 100 ? 
+          'linear-gradient(90deg, #10b981, #059669)' : 
+          'linear-gradient(90deg, #3b82f6, #8b5cf6)';
+      }
+      
+      // Store as last known good amount
+      localStorage.setItem('lastKnownAmount', amount.toString());
+    }
+    
+    function handleAmountError(amountElement, supportAmountElement, progressAmountElement) {
+      if (amountElement) amountElement.textContent = '0';
+      if (supportAmountElement) supportAmountElement.textContent = '0';
+      if (progressAmountElement) progressAmountElement.textContent = '0';
+    }
+    
     function formatAmount(amount) {
-      // Format number with thousand separators
-      if (typeof amount === 'string') return amount;
-      return amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      // Format number with thousand separators and proper decimal handling
+      if (typeof amount === 'string') {
+        const num = parseFloat(amount);
+        if (isNaN(num)) return amount;
+        amount = num;
+      }
+      
+      // Round to 2 decimal places if needed, then format with commas
+      const rounded = Math.round(amount * 100) / 100;
+      return rounded.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     }
     
     function copyDonate(val, btn){
