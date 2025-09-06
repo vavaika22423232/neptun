@@ -556,13 +556,25 @@
       <!-- Monobank Widget Integration -->
       <div class="mono-widget-container">
         <h3 class="widget-title">Підтримати розвиток</h3>
-        <iframe 
-          src="https://send.monobank.ua/widget.html?jar=3zkigTmA6u1J6fKE6d6bWSBTS465WuAb&sendId=6Vi9TVzJZQ&type=qrp&colorScheme=black"
-          width="100%" 
-          height="400" 
-          frameborder="0"
-          style="border-radius: 12px; background: #000;">
-        </iframe>
+        <div class="mono-widget-wrapper">
+          <iframe 
+            src="https://send.monobank.ua/widget.html?jar=3zkigTmA6u1J6fKE6d6bWSBTS465WuAb&sendId=6Vi9TVzJZQ&type=qrp&colorScheme=black"
+            width="100%" 
+            height="350" 
+            frameborder="0"
+            scrolling="no"
+            allowtransparency="true"
+            style="border-radius: 12px; background: transparent; border: none;">
+          </iframe>
+        </div>
+        
+        <!-- Fallback link if widget fails -->
+        <div class="mono-fallback">
+          <a href="https://send.monobank.ua/jar/6Vi9TVzJZQ" target="_blank" class="mono-link-btn">
+            <i class="material-icons">account_balance</i>
+            Відкрити в Monobank
+          </a>
+        </div>
       </div>
       
       <div class="server-modal-actions">
@@ -603,11 +615,13 @@
   }
   
   .server-modal {
-    width: min(520px, 92vw);
+    width: min(480px, 90vw);
+    max-height: 85vh;
+    overflow-y: auto;
     background: linear-gradient(145deg, #0f172a, #1e293b 60%, #0f172a);
     border: 1px solid rgba(59, 130, 246, 0.3);
     border-radius: 20px;
-    padding: 2rem;
+    padding: 1.5rem;
     position: relative;
     box-shadow: 
       0 25px 60px -12px rgba(0,0,0,.7),
@@ -625,21 +639,21 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 80px;
-    height: 80px;
+    width: 60px;
+    height: 60px;
     background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-    border-radius: 20px;
-    margin: 0 auto 1.5rem;
+    border-radius: 16px;
+    margin: 0 auto 1rem;
     box-shadow: 0 8px 32px -8px rgba(59, 130, 246, 0.6);
   }
   
   .server-modal-icon i {
-    font-size: 2.5rem;
+    font-size: 2rem;
     color: white;
   }
   
   .server-modal-title {
-    font-size: 1.5rem;
+    font-size: 1.3rem;
     font-weight: 700;
     text-align: center;
     margin: 0 0 1rem;
@@ -651,11 +665,11 @@
   }
   
   .server-modal-text {
-    font-size: 1rem;
+    font-size: 0.9rem;
     line-height: 1.6;
     color: #e2e8f0;
     text-align: center;
-    margin: 0 0 2rem;
+    margin: 0 0 1.5rem;
     opacity: 0.9;
   }
   
@@ -663,16 +677,53 @@
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 16px;
-    padding: 1.5rem;
-    margin: 1.5rem 0;
+    padding: 1rem;
+    margin: 1rem 0;
   }
   
   .widget-title {
-    font-size: 1.1rem;
+    font-size: 1rem;
     font-weight: 600;
     color: #f1f5f9;
     text-align: center;
-    margin: 0 0 1rem;
+    margin: 0 0 0.8rem;
+  }
+  
+  .mono-widget-wrapper {
+    min-height: 280px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  
+  .mono-fallback {
+    margin-top: 0.8rem;
+    text-align: center;
+  }
+  
+  .mono-link-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: linear-gradient(135deg, #2563eb, #7c3aed);
+    color: white;
+    text-decoration: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    transition: all 0.2s;
+    box-shadow: 0 4px 16px -4px rgba(37, 99, 235, 0.5);
+  }
+  
+  .mono-link-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px -6px rgba(37, 99, 235, 0.6);
+    text-decoration: none;
+    color: white;
   }
   
   .server-modal-actions {
@@ -741,20 +792,40 @@
   
   @media (max-width: 640px) {
     .server-modal {
-      padding: 1.5rem;
+      padding: 1rem;
       border-radius: 16px;
+      width: 95vw;
+      max-height: 90vh;
+    }
+    
+    .server-modal-title {
+      font-size: 1.1rem;
+    }
+    
+    .server-modal-text {
+      font-size: 0.85rem;
     }
     
     .server-modal-actions {
       flex-direction: column;
+      gap: 0.8rem;
     }
     
     .mono-widget-container {
-      padding: 1rem;
+      padding: 0.8rem;
     }
     
-    .mono-widget-container iframe {
-      height: 350px;
+    .mono-widget-wrapper {
+      min-height: 250px;
+    }
+    
+    .server-modal-icon {
+      width: 50px;
+      height: 50px;
+    }
+    
+    .server-modal-icon i {
+      font-size: 1.5rem;
     }
   }
   
@@ -1152,6 +1223,25 @@
       try { 
         document.body.style.overflow = 'hidden'; 
       } catch(e) {}
+      
+      // Check if iframe loads properly
+      const iframe = modal.querySelector('iframe');
+      if (iframe) {
+        iframe.onload = function() {
+          console.log('Monobank widget loaded successfully');
+        };
+        iframe.onerror = function() {
+          console.log('Monobank widget failed to load');
+          // Show fallback button more prominently
+          const fallback = modal.querySelector('.mono-fallback');
+          if (fallback) {
+            fallback.style.marginTop = '1rem';
+            fallback.style.padding = '1rem';
+            fallback.style.background = 'rgba(59, 130, 246, 0.1)';
+            fallback.style.borderRadius = '8px';
+          }
+        };
+      }
     }
     
     function closeServerModal() {
