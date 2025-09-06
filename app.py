@@ -2483,7 +2483,8 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         if any(k in l for k in ['shahed','шахед','шахеді','шахедів','geran','герань','дрон','дрони','бпла','uav']):
             return 'shahed', 'shahed.png'
         # KAB (guided aerial bombs) treat as missile/rocket threat (raketa.png)
-        if any(k in l for k in ['каб','kab','умпк','umpk','модуль','fab','умпб','фаб','кабу']):
+        if any(k in l for k in ['каб','kab','умпк','umpk','модуль','fab','умпб','фаб','кабу']) or \
+           ('авіаційн' in l and 'бомб' in l) or ('керован' in l and 'бомб' in l):
             return 'raketa', 'raketa.png'
         # Rocket / missile attacks (ракета, ракети) -> raketa.png
         if any(k in l for k in ['ракет','rocket','міжконтинент','межконтинент','балістичн','крилат','cruise']):
@@ -4504,7 +4505,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
     except Exception:
         pass
     # Special handling for KAB threats with regional mentions (e.g., "Загроза КАБ для прифронтових громад Сумщини")
-    kab_region_match = re.search(r'(каб|авіабомб|авиабомб)[^\.]*?(сумщин[иі]|харківщин[иі]|чернігівщин[иі]|полтавщин[иі])', text.lower())
+    kab_region_match = re.search(r'(каб|авіабомб|авиабомб|авіаційних.*бомб|керован.*бомб)[^\.]*?(сумщин[иіа]|харківщин[иіа]|чернігівщин[иіа]|полтавщин[иіа])', text.lower())
     if kab_region_match:
         region_mention = kab_region_match.group(2)
         # Convert genitive/dative to nominative
@@ -4521,11 +4522,18 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             
         if region_key and region_key in OBLAST_CENTERS:
             lat, lng = OBLAST_CENTERS[region_key]
+            # For KAB threats, offset coordinates slightly from city center to avoid implying direct city impact
+            if region_key == 'сумщина':
+                lat += 0.1  # Move north of Sumy city
+                lng -= 0.1  # Move west of Sumy city
+            elif region_key == 'харківщина':
+                lat += 0.1  # Move north of Kharkiv city
+                lng -= 0.1  # Move west of Kharkiv city
             add_debug_log(f"Creating KAB regional threat marker for {region_key}: lat={lat}, lng={lng}", "kab_regional")
             return [{
                 'id': f"{mid}_kab_regional", 'place': region_key.title(), 'lat': lat, 'lng': lng,
-                'threat_type': 'avia', 'text': original_text[:500], 'date': date_str, 'channel': channel,
-                'marker_icon': 'avia.png', 'source_match': 'kab_regional_threat'
+                'threat_type': 'raketa', 'text': original_text[:500], 'date': date_str, 'channel': channel,
+                'marker_icon': 'raketa.png', 'source_match': 'kab_regional_threat'
             }]
     # Southeast-wide tactical aviation activity (no specific settlement): place a synthetic marker off SE border.
     se_phrase = lower if 'lower' in locals() else original_text.lower()
