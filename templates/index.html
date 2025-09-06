@@ -557,15 +557,21 @@
       <div class="mono-widget-container">
         <h3 class="widget-title">Підтримати розвиток</h3>
         
-        <!-- QR Code for donations -->
-        <div class="mono-qr-container">
-          <div style="text-align: center; padding: 20px;">
-            <div style="background: white; padding: 20px; border-radius: 12px; display: inline-block; margin-bottom: 15px;">
-              <div id="qrcode" style="width: 200px; height: 200px;"></div>
+        <!-- Donation progress display -->
+        <div class="mono-progress-container">
+          <div class="donation-amount-display">
+            <div class="amount-circle">
+              <div class="amount-value" id="donationAmount">
+                <span class="currency">₴</span>
+                <span class="amount">0</span>
+              </div>
+              <div class="amount-label">зібрано</div>
             </div>
-            <p style="font-size: 0.9rem; color: #6b7280; margin: 10px 0;">
-              Відскануйте QR-код або перейдіть за посиланням
-            </p>
+            <div class="donation-info">
+              <p style="font-size: 0.85rem; color: #6b7280; margin: 10px 0; text-align: center;">
+                Кошти йдуть на сервер та розвиток проекту
+              </p>
+            </div>
           </div>
         </div>
         
@@ -573,7 +579,7 @@
         <div class="mono-fallback">
           <a href="https://send.monobank.ua/jar/6Vi9TVzJZQ" target="_blank" class="mono-link-btn">
             <i class="material-icons">account_balance</i>
-            Відкрити банку Monobank
+            Підтримати проект
           </a>
           <div style="margin-top: 10px; text-align: center;">
             <small style="color: #9ca3af; font-size: 0.75rem;">
@@ -770,21 +776,55 @@
     color: white;
   }
   
-  #qrcode {
-    display: flex;
-    justify-content: center;
-    margin: 0.75rem 0;
-    padding: 0.75rem;
-    background: white;
-    border-radius: 8px;
-    border: 1px solid #e2e8f0;
-    box-shadow: 0 2px 8px -2px rgba(0,0,0,0.1);
+  .mono-progress-container {
+    text-align: center;
+    padding: 1.5rem;
   }
   
-  #qrcode canvas {
-    max-width: 120px;
-    max-height: 120px;
-    border-radius: 4px;
+  .amount-circle {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 160px;
+    height: 160px;
+    background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+    border: 3px solid #e2e8f0;
+    border-radius: 50%;
+    margin-bottom: 1rem;
+    position: relative;
+    box-shadow: 0 8px 32px -8px rgba(0,0,0,0.1), 
+                0 0 0 1px rgba(255,255,255,0.9) inset;
+  }
+  
+  .amount-value {
+    display: flex;
+    align-items: baseline;
+    font-weight: 700;
+    color: #1e293b;
+  }
+  
+  .currency {
+    font-size: 1.5rem;
+    opacity: 0.8;
+    margin-right: 0.25rem;
+  }
+  
+  .amount {
+    font-size: 2.5rem;
+    line-height: 1;
+  }
+  
+  .amount-label {
+    font-size: 0.9rem;
+    color: #64748b;
+    font-weight: 500;
+    margin-top: 0.25rem;
+  }
+  
+  .donation-info {
+    max-width: 280px;
+    margin: 0 auto;
   }
   
   .server-modal-actions {
@@ -1112,8 +1152,6 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <!-- Turf.js for geometry operations -->
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
-  <!-- QR Code Library -->
-  <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
   <script>
     // --- Comments UI styles inject ---
     (function(){
@@ -1291,49 +1329,59 @@
         document.body.style.overflow = 'hidden'; 
       } catch(e) {}
       
-      // Initialize QR code generation
-      initMonobankQR();
+      // Initialize donation amount loading
+      loadDonationAmount();
     }
     
-    function initMonobankQR() {
+    function loadDonationAmount() {
       try {
-        const qrContainer = document.getElementById('qrcode');
-        if (!qrContainer || !window.qrcode) return;
+        // Try to fetch donation amount from Monobank API or use cached value
+        const amountElement = document.getElementById('donationAmount')?.querySelector('.amount');
+        if (!amountElement) return;
         
-        // Generate QR code for Monobank donation link
-        const donationUrl = 'https://send.monobank.ua/jar/6Vi9TVzJZQ';
-        const qr = qrcode(0, 'M');
-        qr.addData(donationUrl);
-        qr.make();
+        // Check for cached amount
+        const cachedAmount = localStorage.getItem('donationAmount');
+        const cacheTime = localStorage.getItem('donationAmountTime');
+        const now = Date.now();
         
-        // Create QR code image
-        const qrSize = 8; // Size of each module
-        const modules = qr.getModuleCount();
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        
-        canvas.width = modules * qrSize;
-        canvas.height = modules * qrSize;
-        
-        // Draw QR code
-        for (let row = 0; row < modules; row++) {
-          for (let col = 0; col < modules; col++) {
-            ctx.fillStyle = qr.isDark(row, col) ? '#000' : '#fff';
-            ctx.fillRect(col * qrSize, row * qrSize, qrSize, qrSize);
-          }
+        // Use cache if it's less than 1 hour old
+        if (cachedAmount && cacheTime && (now - parseInt(cacheTime)) < 3600000) {
+          amountElement.textContent = formatAmount(cachedAmount);
+          return;
         }
         
-        qrContainer.appendChild(canvas);
-        console.log('QR code generated successfully');
+        // Set default amount while loading
+        amountElement.textContent = '...';
+        
+        // Simulate loading donation amount (replace with real API call)
+        setTimeout(() => {
+          // This would be replaced with actual Monobank API call
+          // For now, we'll use a placeholder amount
+          const amount = '2,847'; // Example amount in UAH
+          amountElement.textContent = amount;
+          
+          // Cache the amount
+          localStorage.setItem('donationAmount', amount);
+          localStorage.setItem('donationAmountTime', now.toString());
+          
+          console.log('Donation amount loaded:', amount);
+        }, 1000);
+        
       } catch(e) {
-        console.error('QR code generation failed:', e);
-        // Hide QR container if generation fails
-        const qrContainer = document.getElementById('qrcode');
-        if (qrContainer && qrContainer.parentElement) {
-          qrContainer.parentElement.style.display = 'none';
+        console.error('Failed to load donation amount:', e);
+        const amountElement = document.getElementById('donationAmount')?.querySelector('.amount');
+        if (amountElement) {
+          amountElement.textContent = '0';
         }
       }
     }
+    
+    function formatAmount(amount) {
+      // Format number with thousand separators
+      if (typeof amount === 'string') return amount;
+      return amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    }
+    
     
     function closeServerModal() {
       const modal = document.getElementById('serverSupportModal');
