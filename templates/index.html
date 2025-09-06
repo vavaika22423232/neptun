@@ -557,27 +557,29 @@
       <div class="mono-widget-container">
         <h3 class="widget-title">Підтримати розвиток</h3>
         
-        <div class="mono-widget-wrapper">
-          <iframe 
-            src="https://send.monobank.ua/widget.html?jar=3zkigTmA6u1J6fKE6d6bWSBTS465WuAb&sendId=6Vi9TVzJZQ&type=qrp&colorScheme=black"
-            width="100%" 
-            height="400" 
-            frameborder="0"
-            scrolling="no"
-            allowtransparency="true"
-            style="border-radius: 12px; background: transparent; border: none;">
-          </iframe>
+        <!-- QR Code for donations -->
+        <div class="mono-qr-container">
+          <div style="text-align: center; padding: 20px;">
+            <div style="background: white; padding: 20px; border-radius: 12px; display: inline-block; margin-bottom: 15px;">
+              <div id="qrcode" style="width: 200px; height: 200px;"></div>
+            </div>
+            <p style="font-size: 0.9rem; color: #6b7280; margin: 10px 0;">
+              Відскануйте QR-код або перейдіть за посиланням
+            </p>
+          </div>
         </div>
         
-        <!-- Fallback link if widget doesn't load -->
+        <!-- Direct link to monobank jar -->
         <div class="mono-fallback">
-          <p style="font-size: 0.8rem; color: #9ca3af; text-align: center; margin: 0.5rem 0;">
-            Якщо віджет не завантажується:
-          </p>
           <a href="https://send.monobank.ua/jar/6Vi9TVzJZQ" target="_blank" class="mono-link-btn">
             <i class="material-icons">account_balance</i>
             Відкрити банку Monobank
           </a>
+          <div style="margin-top: 10px; text-align: center;">
+            <small style="color: #9ca3af; font-size: 0.75rem;">
+              send.monobank.ua/jar/6Vi9TVzJZQ
+            </small>
+          </div>
         </div>
       </div>
       
@@ -766,6 +768,23 @@
     box-shadow: 0 8px 25px -6px rgba(37, 99, 235, 0.6);
     text-decoration: none;
     color: white;
+  }
+  
+  #qrcode {
+    display: flex;
+    justify-content: center;
+    margin: 0.75rem 0;
+    padding: 0.75rem;
+    background: white;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 2px 8px -2px rgba(0,0,0,0.1);
+  }
+  
+  #qrcode canvas {
+    max-width: 120px;
+    max-height: 120px;
+    border-radius: 4px;
   }
   
   .server-modal-actions {
@@ -1093,6 +1112,8 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <!-- Turf.js for geometry operations -->
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+  <!-- QR Code Library -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
   <script>
     // --- Comments UI styles inject ---
     (function(){
@@ -1270,79 +1291,48 @@
         document.body.style.overflow = 'hidden'; 
       } catch(e) {}
       
-      // Initialize widget loading
-      initMonobankWidget();
+      // Initialize QR code generation
+      initMonobankQR();
     }
     
-    function initMonobankWidget() {
-      const primaryWidget = document.getElementById('monobankWidget');
-      const fallbackWidget = document.getElementById('monobankWidgetFallback');
-      const loading = document.getElementById('widgetLoading');
-      const fallback = document.getElementById('monoFallback');
-      
-      if (!primaryWidget || !loading) return;
-      
-      let loadingTimeout;
-      let hasLoaded = false;
-      
-      // Show loading initially
-      loading.style.display = 'flex';
-      
-      // Primary widget load handlers
-      primaryWidget.onload = function() {
-        console.log('Monobank primary widget loaded successfully');
-        hasLoaded = true;
-        loading.style.display = 'none';
-        clearTimeout(loadingTimeout);
-      };
-      
-      primaryWidget.onerror = function() {
-        console.log('Monobank primary widget failed, trying fallback');
-        primaryWidget.style.display = 'none';
-        if (fallbackWidget) {
-          fallbackWidget.style.display = 'block';
-          fallbackWidget.onload = function() {
-            console.log('Monobank fallback widget loaded');
-            hasLoaded = true;
-            loading.style.display = 'none';
-            clearTimeout(loadingTimeout);
-          };
-          fallbackWidget.onerror = function() {
-            console.log('Both widgets failed, showing fallback');
-            showWidgetFallback();
-          };
-        } else {
-          showWidgetFallback();
+    function initMonobankQR() {
+      try {
+        const qrContainer = document.getElementById('qrcode');
+        if (!qrContainer || !window.qrcode) return;
+        
+        // Generate QR code for Monobank donation link
+        const donationUrl = 'https://send.monobank.ua/jar/6Vi9TVzJZQ';
+        const qr = qrcode(0, 'M');
+        qr.addData(donationUrl);
+        qr.make();
+        
+        // Create QR code image
+        const qrSize = 8; // Size of each module
+        const modules = qr.getModuleCount();
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        canvas.width = modules * qrSize;
+        canvas.height = modules * qrSize;
+        
+        // Draw QR code
+        for (let row = 0; row < modules; row++) {
+          for (let col = 0; col < modules; col++) {
+            ctx.fillStyle = qr.isDark(row, col) ? '#000' : '#fff';
+            ctx.fillRect(col * qrSize, row * qrSize, qrSize, qrSize);
+          }
         }
-      };
-      
-      // Timeout fallback (10 seconds)
-      loadingTimeout = setTimeout(() => {
-        if (!hasLoaded) {
-          console.log('Widget loading timeout, showing fallback');
-          showWidgetFallback();
-        }
-      }, 10000);
-      
-      function showWidgetFallback() {
-        loading.style.display = 'none';
-        if (fallback) {
-          fallback.style.display = 'block';
+        
+        qrContainer.appendChild(canvas);
+        console.log('QR code generated successfully');
+      } catch(e) {
+        console.error('QR code generation failed:', e);
+        // Hide QR container if generation fails
+        const qrContainer = document.getElementById('qrcode');
+        if (qrContainer && qrContainer.parentElement) {
+          qrContainer.parentElement.style.display = 'none';
         }
       }
-      
-      // Try to detect if iframe content is accessible
-      setTimeout(() => {
-        try {
-          const doc = primaryWidget.contentDocument || primaryWidget.contentWindow.document;
-          if (!doc || doc.body.children.length === 0) {
-            console.log('Widget content not accessible, might be blocked');
-          }
-        } catch (e) {
-          console.log('Widget iframe blocked by CORS policy');
-          // Don't show fallback immediately, let the widget try to load
-        }
-      }, 2000);
     }
     
     function closeServerModal() {
