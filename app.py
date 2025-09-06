@@ -3235,21 +3235,24 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     'marker_icon': icon, 'source_match': 'city_dash_uav'
                 }]
         # NEW: pattern "БпЛА на <city>" or "бпла на <city>" -> marker at city
-        m_on = _re_rel.search(r"бпла\s+на\s+([a-zа-яіїєґ'ʼ’`\-/]{3,40})", low_txt)
-        if m_on:
-            rc = m_on.group(1)
-            rc = rc.replace('\u02bc',"'").replace('ʼ',"'").replace('’',"'").replace('`',"'")
-            base = UA_CITY_NORMALIZE.get(rc, rc)
-            coords = CITY_COORDS.get(base)
-            if not coords and 'SETTLEMENTS_INDEX' in globals():
-                coords = (globals().get('SETTLEMENTS_INDEX') or {}).get(base)
-            if coords:
-                lat,lng = coords
-                return [{
-                    'id': str(mid), 'place': base.title(), 'lat': lat, 'lng': lng,
-                    'threat_type': 'shahed', 'text': text[:500], 'date': date_str, 'channel': channel,
-                    'marker_icon': 'shahed.png', 'source_match': 'uav_on_city'
-                }]
+        uav_cities = _re_rel.findall(r"бпла\s+на\s+([a-zа-яіїєґ'ʼ’`\-/]{3,40})", low_txt)
+        if uav_cities:
+            threats = []
+            for idx, rc in enumerate(uav_cities):
+                rc = rc.replace('\u02bc',"'").replace('ʼ',"'").replace('’',"'").replace('`',"'")
+                base = UA_CITY_NORMALIZE.get(rc, rc)
+                coords = CITY_COORDS.get(base)
+                if not coords and 'SETTLEMENTS_INDEX' in globals():
+                    coords = (globals().get('SETTLEMENTS_INDEX') or {}).get(base)
+                if coords:
+                    lat,lng = coords
+                    threats.append({
+                        'id': str(mid), 'place': base.title(), 'lat': lat, 'lng': lng,
+                        'threat_type': 'shahed', 'text': text[:500], 'date': date_str, 'channel': channel,
+                        'marker_icon': 'shahed.png', 'source_match': 'uav_on_city'
+                    })
+            if threats:
+                return threats
         # pattern captures direction word + city morph form
         m_rel = _re_rel.search(r'(північніше|південніше|східніше|західніше)\s+([a-zа-яіїєґ\'ʼ’`\-]{3,40})', low_txt)
         if m_rel:
