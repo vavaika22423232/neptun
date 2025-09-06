@@ -553,40 +553,31 @@
         Ваша підтримка допомагає утримувати сервер і покращувати систему моніторингу загроз.
       </p>
       
-      <!-- Monobank Support Section -->
+      <!-- Monobank Widget Integration -->
       <div class="mono-widget-container">
         <h3 class="widget-title">Підтримати розвиток</h3>
         
-        <!-- QR Code and donation info -->
-        <div class="mono-donation-content">
-          <div class="mono-qr-section">
-            <div class="mono-qr-placeholder">
-              <i class="material-icons">qr_code</i>
-              <p>QR-код для швидкого донату</p>
-            </div>
-          </div>
-          
-          <div class="mono-info">
-            <div class="mono-card-details">
-              <div class="mono-label">💳 Monobank</div>
-              <div class="mono-number">4441 1111 2110 7290</div>
-              <button class="copy-btn" onclick="copyToClipboard('4441111121107290', this)">
-                <i class="material-icons">content_copy</i>
-                Копіювати
-              </button>
-            </div>
-            
-            <div class="mono-jar-section">
-              <p class="mono-description">
-                💛 Ваша підтримка допомагає підтримувати сервер та покращувати систему моніторингу загроз
-              </p>
-              
-              <a href="https://send.monobank.ua/jar/6Vi9TVzJZQ" target="_blank" class="mono-link-btn">
-                <i class="material-icons">account_balance</i>
-                Відкрити банку Monobank
-              </a>
-            </div>
-          </div>
+        <div class="mono-widget-wrapper">
+          <iframe 
+            src="https://send.monobank.ua/widget.html?jar=3zkigTmA6u1J6fKE6d6bWSBTS465WuAb&sendId=6Vi9TVzJZQ&type=qrp&colorScheme=black"
+            width="100%" 
+            height="400" 
+            frameborder="0"
+            scrolling="no"
+            allowtransparency="true"
+            style="border-radius: 12px; background: transparent; border: none;">
+          </iframe>
+        </div>
+        
+        <!-- Fallback link if widget doesn't load -->
+        <div class="mono-fallback">
+          <p style="font-size: 0.8rem; color: #9ca3af; text-align: center; margin: 0.5rem 0;">
+            Якщо віджет не завантажується:
+          </p>
+          <a href="https://send.monobank.ua/jar/6Vi9TVzJZQ" target="_blank" class="mono-link-btn">
+            <i class="material-icons">account_balance</i>
+            Відкрити банку Monobank
+          </a>
         </div>
       </div>
       
@@ -702,107 +693,57 @@
     margin: 0 0 0.8rem;
   }
   
-  .mono-donation-content {
+  .mono-widget-wrapper {
+    position: relative;
+    min-height: 350px;
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  
+  .widget-loading {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
     display: flex;
     flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(15, 23, 42, 0.9);
+    z-index: 10;
+    color: #e2e8f0;
     gap: 1rem;
   }
   
-  .mono-qr-section {
-    display: flex;
-    justify-content: center;
+  .loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(59, 130, 246, 0.3);
+    border-top: 3px solid #3b82f6;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
   }
   
-  .mono-qr-placeholder {
-    width: 120px;
-    height: 120px;
-    background: linear-gradient(135deg, #374151, #4b5563);
-    border: 2px dashed rgba(255, 255, 255, 0.3);
-    border-radius: 12px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    gap: 0.5rem;
-  }
-  
-  .mono-qr-placeholder i {
-    font-size: 2rem;
-    color: #9ca3af;
-  }
-  
-  .mono-qr-placeholder p {
-    font-size: 0.7rem;
-    color: #9ca3af;
+  .widget-loading p {
     margin: 0;
-    line-height: 1.2;
+    font-size: 0.9rem;
+    opacity: 0.8;
   }
   
-  .mono-info {
-    display: flex;
-    flex-direction: column;
-    gap: 0.8rem;
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
   }
   
-  .mono-card-details {
+  .mono-fallback {
+    margin-top: 0.8rem;
+    text-align: center;
+    padding: 1rem;
     background: rgba(59, 130, 246, 0.1);
     border: 1px solid rgba(59, 130, 246, 0.3);
     border-radius: 12px;
-    padding: 0.8rem;
-    text-align: center;
-  }
-  
-  .mono-label {
-    font-size: 0.75rem;
-    color: #60a5fa;
-    font-weight: 600;
-    margin-bottom: 0.5rem;
-  }
-  
-  .mono-number {
-    font-family: 'JetBrains Mono', 'Courier New', monospace;
-    font-size: 1rem;
-    font-weight: 700;
-    color: #f1f5f9;
-    letter-spacing: 1px;
-    margin-bottom: 0.8rem;
-  }
-  
-  .copy-btn {
-    background: rgba(59, 130, 246, 0.2);
-    border: 1px solid rgba(59, 130, 246, 0.4);
-    color: #93c5fd;
-    padding: 0.4rem 0.8rem;
-    border-radius: 8px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    transition: all 0.2s;
-  }
-  
-  .copy-btn:hover {
-    background: rgba(59, 130, 246, 0.3);
-    border-color: rgba(59, 130, 246, 0.6);
-    color: #dbeafe;
-  }
-  
-  .copy-btn i {
-    font-size: 14px;
-  }
-  
-  .mono-jar-section {
-    text-align: center;
-  }
-  
-  .mono-description {
-    font-size: 0.8rem;
-    color: #cbd5e1;
-    line-height: 1.4;
-    margin: 0 0 0.8rem;
   }
   
   .mono-link-btn {
@@ -916,21 +857,12 @@
       padding: 0.8rem;
     }
     
-    .mono-donation-content {
-      gap: 0.8rem;
+    .mono-widget-wrapper {
+      min-height: 300px;
     }
     
-    .mono-qr-placeholder {
-      width: 100px;
-      height: 100px;
-    }
-    
-    .mono-qr-placeholder i {
-      font-size: 1.5rem;
-    }
-    
-    .mono-number {
-      font-size: 0.9rem;
+    .mono-widget-wrapper iframe {
+      height: 350px;
     }
     
     .server-modal-icon {
@@ -1337,6 +1269,80 @@
       try { 
         document.body.style.overflow = 'hidden'; 
       } catch(e) {}
+      
+      // Initialize widget loading
+      initMonobankWidget();
+    }
+    
+    function initMonobankWidget() {
+      const primaryWidget = document.getElementById('monobankWidget');
+      const fallbackWidget = document.getElementById('monobankWidgetFallback');
+      const loading = document.getElementById('widgetLoading');
+      const fallback = document.getElementById('monoFallback');
+      
+      if (!primaryWidget || !loading) return;
+      
+      let loadingTimeout;
+      let hasLoaded = false;
+      
+      // Show loading initially
+      loading.style.display = 'flex';
+      
+      // Primary widget load handlers
+      primaryWidget.onload = function() {
+        console.log('Monobank primary widget loaded successfully');
+        hasLoaded = true;
+        loading.style.display = 'none';
+        clearTimeout(loadingTimeout);
+      };
+      
+      primaryWidget.onerror = function() {
+        console.log('Monobank primary widget failed, trying fallback');
+        primaryWidget.style.display = 'none';
+        if (fallbackWidget) {
+          fallbackWidget.style.display = 'block';
+          fallbackWidget.onload = function() {
+            console.log('Monobank fallback widget loaded');
+            hasLoaded = true;
+            loading.style.display = 'none';
+            clearTimeout(loadingTimeout);
+          };
+          fallbackWidget.onerror = function() {
+            console.log('Both widgets failed, showing fallback');
+            showWidgetFallback();
+          };
+        } else {
+          showWidgetFallback();
+        }
+      };
+      
+      // Timeout fallback (10 seconds)
+      loadingTimeout = setTimeout(() => {
+        if (!hasLoaded) {
+          console.log('Widget loading timeout, showing fallback');
+          showWidgetFallback();
+        }
+      }, 10000);
+      
+      function showWidgetFallback() {
+        loading.style.display = 'none';
+        if (fallback) {
+          fallback.style.display = 'block';
+        }
+      }
+      
+      // Try to detect if iframe content is accessible
+      setTimeout(() => {
+        try {
+          const doc = primaryWidget.contentDocument || primaryWidget.contentWindow.document;
+          if (!doc || doc.body.children.length === 0) {
+            console.log('Widget content not accessible, might be blocked');
+          }
+        } catch (e) {
+          console.log('Widget iframe blocked by CORS policy');
+          // Don't show fallback immediately, let the widget try to load
+        }
+      }, 2000);
     }
     
     function closeServerModal() {
@@ -1389,47 +1395,6 @@
       const lastSeenDate = new Date(lastSeen);
       const daysDiff = (now - lastSeenDate) / (1000 * 60 * 60 * 24);
       return daysDiff > 30;
-    }
-    
-    function copyToClipboard(text, button) {
-      try {
-        navigator.clipboard.writeText(text).then(() => {
-          showCopySuccess(button);
-        }).catch(() => {
-          fallbackCopy(text, button);
-        });
-      } catch (e) {
-        fallbackCopy(text, button);
-      }
-    }
-    
-    function fallbackCopy(text, button) {
-      const textarea = document.createElement('textarea');
-      textarea.value = text;
-      document.body.appendChild(textarea);
-      textarea.select();
-      try {
-        document.execCommand('copy');
-        showCopySuccess(button);
-      } catch (e) {
-        console.error('Copy failed');
-      }
-      document.body.removeChild(textarea);
-    }
-    
-    function showCopySuccess(button) {
-      const originalContent = button.innerHTML;
-      button.innerHTML = '<i class="material-icons">check</i>Скопійовано!';
-      button.style.background = 'rgba(16, 185, 129, 0.3)';
-      button.style.borderColor = 'rgba(16, 185, 129, 0.6)';
-      button.style.color = '#6ee7b7';
-      
-      setTimeout(() => {
-        button.innerHTML = originalContent;
-        button.style.background = '';
-        button.style.borderColor = '';
-        button.style.color = '';
-      }, 2000);
     }
     
     function copyDonate(val, btn){
