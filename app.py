@@ -3235,7 +3235,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     'marker_icon': icon, 'source_match': 'city_dash_uav'
                 }]
         # NEW: pattern "БпЛА на <city>" or "бпла на <city>" -> marker at city
-        m_on = _re_rel.search(r"бпла\s+на\s+([a-zа-яіїєґ'ʼ’`\-]{3,40})", low_txt)
+        m_on = _re_rel.search(r"бпла\s+на\s+([a-zа-яіїєґ'ʼ’`\-/]{3,40})", low_txt)
         if m_on:
             rc = m_on.group(1)
             rc = rc.replace('\u02bc',"'").replace('ʼ',"'").replace('’',"'").replace('`',"'")
@@ -4019,7 +4019,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         # --- NEW: Handle "X БпЛА City1 / City2" pattern (e.g. "2х БпЛА Гнідин / Бориспіль") ---
         if not city:
             print(f"DEBUG: Checking БпЛА city/city pattern for line: '{ln}'")
-            m_cities = re.search(r'(\d+)х?\s+бпла\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,30}?)\s*/\s*([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,30}?)(?=\s|$|[,\.\!\?;])', ln, re.IGNORECASE)
+            m_cities = re.search(r'(\d+)х?\s+бпла\s+(?:на\s+)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,30}?)\s*/\s*([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,30}?)(?=\s|$|[,\.\!\?;])', ln, re.IGNORECASE)
             if m_cities:
                 try:
                     count = int(m_cities.group(1))
