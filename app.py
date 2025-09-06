@@ -1876,7 +1876,7 @@ RAION_FALLBACK = {
     'харьковский': (49.9935, 36.2304),
     # Новые районы для многократных сообщений
     'конотопський': (51.2375, 33.2020), 'конотопский': (51.2375, 33.2020),
-    'сумський': (50.9077, 34.7981), 'сумский': (50.9077, 34.7981),
+    'сумський': (50.8500, 34.9500), 'сумский': (50.8500, 34.9500),  # Shifted SE from Sumy city center to represent district area
     'чернігівський': (51.4982, 31.2893), 'черниговский': (51.4982, 31.2893),
     'вишгородський': (50.5850, 30.4915), 'вышгородский': (50.5850, 30.4915),
     'новгород-сіверський': (51.9874, 33.2620), 'новгород-северский': (51.9874, 33.2620),
@@ -2608,12 +2608,17 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     if 'синельниківський район' in norm:
                         coords = CITY_COORDS.get('синельникове')  # Синельникове - центр району
                         add_debug_log(f"PRIORITY: Mapping Синельниківський район -> Синельникове: {coords}", "emoji_debug")
-                    elif 'сумський район' in norm:
-                        coords = CITY_COORDS.get('суми')  # Суми - центр району
-                        add_debug_log(f"PRIORITY: Mapping Сумський район -> Суми: {coords}", "emoji_debug")
                     elif 'миколаївський район' in norm and 'миколаївськ' in oblast_key:
                         coords = CITY_COORDS.get('миколаїв')  # Миколаїв - центр району
                         add_debug_log(f"PRIORITY: Mapping Миколаївський район -> Миколаїв: {coords}", "emoji_debug")
+                    # For other districts, try to find coordinates in DISTRICT_CENTERS first
+                    else:
+                        # Extract district name without 'район' suffix
+                        district_name = norm.replace('район', '').strip()
+                        district_coords = DISTRICT_CENTERS.get(district_name)
+                        if district_coords:
+                            coords = district_coords
+                            add_debug_log(f"PRIORITY: Found district coordinates for '{district_name}': {coords}", "emoji_debug")
                 
                 if not coords:
                     # Fallback to general lookup
@@ -3487,6 +3492,26 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             ls_no_links = ' '.join(low_no_links.split())
         cleaned_for_multiline.append(ls_no_links.strip())
     lines = cleaned_for_multiline
+    
+    # --- PRIORITY: Early explicit pattern for districts: "<RaionName> район (<Oblast ...>)" ---
+    # Check before multi-city processing to prevent fallback to oblast centers
+    m_raion_oblast = re.search(r'([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{4,})\s+район\s*\(([^)]*обл[^)]*)\)', text)
+    if m_raion_oblast:
+        raion_token = m_raion_oblast.group(1).strip().lower()
+        # Normalize morphological endings similar to later norm_raion logic
+        raion_base = re.sub(r'(ському|ского|ського|ский|ськiй|ськой|ським|ском)$', 'ський', raion_token)
+        if raion_base in RAION_FALLBACK:
+            lat, lng = RAION_FALLBACK[raion_base]
+            threat_type, icon = classify(original_text if 'original_text' in locals() else text)
+            add_debug_log(f"PRIORITY: Early district processing - {raion_base} район -> {lat}, {lng}", "district_early")
+            return [{
+                'id': str(mid), 'place': f"{raion_base.title()} район", 'lat': lat, 'lng': lng,
+                'threat_type': threat_type, 'text': (original_text if 'original_text' in locals() else text)[:500],
+                'date': date_str, 'channel': channel, 'marker_icon': icon, 'source_match': 'raion_oblast_combo_early'
+            }]
+        else:
+            add_debug_log(f"Early district processing - {raion_base} not found in RAION_FALLBACK", "district_early")
+
     oblast_hdr = None
     multi_city_tracks = []
     add_debug_log(f"Processing {len(lines)} cleaned lines for multi-city tracks", "multi_region")
