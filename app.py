@@ -921,7 +921,7 @@ CITY_COORDS = {
     'ямпіль': (51.2247, 34.3224),
         'узин': (49.8216, 30.4567), 'гончарівське': (51.6272, 31.3192), 'голованівськ': (48.3772, 30.5322), 'новоукраїнка': (48.3122, 31.5272),
         'тульчин': (48.6783, 28.8486), 'бровари': (50.5110, 30.7909), 'канів': (49.7517, 31.4717), 'миронівка': (49.6631, 31.0100),
-        'борова': (49.3742, 36.4892), 'буринь': (51.2000, 33.8500), 'конотоп': (51.2417, 33.2022), 'остер': (50.9481, 30.8831),
+        'борова': (49.3742, 36.4892), 'буринь': (51.2000, 33.8500), 'конотоп': (51.2417, 33.2022), 'кролевец': (51.5486, 33.3856), 'остер': (50.9481, 30.8831),
         'плавні': (49.0123, 33.6450), 'голованівський район': (48.3772, 30.5322), 'новоукраїнський район': (48.3122, 31.5272),
         'безлюдівка': (49.8872, 36.2731), 'рогань': (49.9342, 36.4942), 'савинці(харківщина)': (49.6272, 36.9781),
         'українка': (50.1447, 30.7381), 'царичанка': (48.9767, 34.3772), 'ріпки': (51.8122, 31.0817), 'михайло-коцюбинське': (51.5833, 31.1167),
@@ -933,6 +933,7 @@ CITY_COORDS = {
     'димер': (50.8390, 30.3050),
         'ржищів': (49.9719, 31.0500), 'вишеньки': (50.2987, 30.6445), 'жуляни': (50.4017, 30.4519), 'троєщина': (50.5130, 30.6030),
         'троєщину': (50.5130, 30.6030), 'конча-заспа': (50.2650, 30.5760), 'любар': (50.0500, 27.7500), 'старий остропіль': (49.6503, 27.2291),
+        'петрівці': (50.4167, 30.5833),
         'згурівка': (50.4950, 31.7780), 'мала дівиця': (50.8240, 32.4700), 'яготин': (50.2360, 31.7700), 'ставище': (49.3958, 30.1875),
         'березань': (50.3085, 31.4576), 'бортничі': (50.3915, 30.6695), 'старокостянтинів': (49.7574, 27.2039), 'адампіль': (49.6500, 27.3000),
         # Additional single-city early parser support
@@ -3238,17 +3239,25 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                 # Accept patterns like "нова група ударних БпЛА на Донеччині курсом на Дніпропетровщину"
                 # even if only 2 region stems present
                 if len(distinct) >= 2:
-                    # Extra guard: if a well-known large city (e.g. дніпро, харків, київ) appears ONLY because it's substring of region
-                    # we still treat as region directional, not city marker
-                    # But if message contains multiple explicit directional part-of-region clauses ("на сході <області>" ... "на сході <області>")
-                    # then we want to produce separate segment markers instead of a single list-only event.
-                    import re as _re_dd
-                    dir_clause_count = len(_re_dd.findall(r'на\s+(?:північ|півден|схід|заход|північно|південно)[^\.]{0,40}?(?:щина|щини|щину)', lorig))
-                    if dir_clause_count < 2:
-                        return [{
-                            'id': str(mid), 'text': text[:600], 'date': date_str, 'channel': channel,
-                            'list_only': True, 'source_match': 'region_direction_multi'
-                        }]
+                    # Check if message contains specific cities that should create markers instead
+                    city_keywords = ['на кролевец', 'на конотоп', 'на чернігів', 'на вишгород', 'на петрівці', 'на велика димерка', 'на білу церкву', 'на бровари', 'на суми', 'на харків', 'на дніпро', 'на кропивницький', 'на житомир']
+                    has_specific_cities = any(city_kw in lorig for city_kw in city_keywords)
+                    
+                    if has_specific_cities:
+                        # Let multi-city parser handle this instead
+                        pass
+                    else:
+                        # Extra guard: if a well-known large city (e.g. дніпро, харків, київ) appears ONLY because it's substring of region
+                        # we still treat as region directional, not city marker
+                        # But if message contains multiple explicit directional part-of-region clauses ("на сході <області>" ... "на сході <області>")
+                        # then we want to produce separate segment markers instead of a single list-only event.
+                        import re as _re_dd
+                        dir_clause_count = len(_re_dd.findall(r'на\s+(?:північ|півден|схід|заход|північно|південно)[^\.]{0,40}?(?:щина|щини|щину)', lorig))
+                        if dir_clause_count < 2:
+                            return [{
+                                'id': str(mid), 'text': clean_text(text)[:600], 'date': date_str, 'channel': channel,
+                                'list_only': True, 'source_match': 'region_direction_multi'
+                            }]
     except Exception:
         pass
     # Comparative directional relative to a city ("північніше Городні", "східніше Кролевця") -> use base city location
@@ -3273,22 +3282,35 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     'marker_icon': icon, 'source_match': 'city_dash_uav'
                 }]
         # NEW: pattern "БпЛА на <city>" or "бпла на <city>" -> marker at city
-        uav_cities = _re_rel.findall(r"бпла\s+на\s+([a-zа-яіїєґ'ʼ’`\-/]{3,40})", low_txt)
+        uav_cities = _re_rel.findall(r"бпла\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ\`\s/]+?)(?=\s+(?:з|на|до|від|через|повз|курсом|напрям)\s|[,\.\!\?;:\n]|$)", low_txt)
         if uav_cities:
             threats = []
             for idx, rc in enumerate(uav_cities):
-                rc = rc.replace('\u02bc',"'").replace('ʼ',"'").replace('’',"'").replace('`',"'")
-                base = UA_CITY_NORMALIZE.get(rc, rc)
-                coords = CITY_COORDS.get(base)
-                if not coords and 'SETTLEMENTS_INDEX' in globals():
-                    coords = (globals().get('SETTLEMENTS_INDEX') or {}).get(base)
-                if coords:
-                    lat,lng = coords
-                    threats.append({
-                        'id': f"{mid}_uav_{idx}", 'place': base.title(), 'lat': lat, 'lng': lng,
-                        'threat_type': 'shahed', 'text': clean_text(text)[:500], 'date': date_str, 'channel': channel,
-                        'marker_icon': 'shahed.png', 'source_match': 'uav_on_city'
-                    })
+                rc = rc.replace('\u02bc',"'").replace('ʼ',"'").replace("'","'").replace('`',"'")
+                
+                # Handle cities separated by slash (e.g., "вишгород/петрівці")
+                cities_to_process = []
+                if '/' in rc:
+                    cities_to_process.extend(rc.split('/'))
+                else:
+                    cities_to_process.append(rc)
+                
+                for city_idx, city in enumerate(cities_to_process):
+                    city = city.strip()
+                    if not city:
+                        continue
+                        
+                    base = UA_CITY_NORMALIZE.get(city, city)
+                    coords = CITY_COORDS.get(base)
+                    if not coords and 'SETTLEMENTS_INDEX' in globals():
+                        coords = (globals().get('SETTLEMENTS_INDEX') or {}).get(base)
+                    if coords:
+                        lat,lng = coords
+                        threats.append({
+                            'id': f"{mid}_uav_{idx}_{city_idx}", 'place': base.title(), 'lat': lat, 'lng': lng,
+                            'threat_type': 'shahed', 'text': clean_text(text)[:500], 'date': date_str, 'channel': channel,
+                            'marker_icon': 'shahed.png', 'source_match': 'uav_on_city'
+                        })
             if threats:
                 return threats
         # pattern captures direction word + city morph form
@@ -5156,7 +5178,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                 }]
         def norm_city_token(tok: str) -> str:
             t = tok.lower().strip(" .,'’ʼ`-:")
-            t = t.replace("'''", "'")
+            t = t.replace("'", "'")  # Normalize curly quotes
             if t.endswith('ку'): t = t[:-2] + 'ка'
             elif t.endswith('ву'): t = t[:-2] + 'ва'
             elif t.endswith('ову'): t = t[:-3] + 'ова'
