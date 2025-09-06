@@ -2473,8 +2473,8 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             ln2 = re_import.sub(r'[\u200B-\u200D\uFEFF\u3164\u2060\u00A0\u1680\u180E\u2000-\u200F\u202A-\u202E\u2028\u2029\u205F\u3000]+', ' ', ln2)
             ln2 = ln2.strip()
             
-            # Check if line ends with subscription text after meaningful content
-            subscription_match = re_import.search(r'^(.+?)\s+[➡→>⬇⬆⬅⬌↗↘↙↖]\s*підписатися\s*$', ln2, re_import.IGNORECASE)
+            # Check if line ends with subscription text after meaningful content (including bold **text**)
+            subscription_match = re_import.search(r'^(.+?)\s+[➡→>⬇⬆⬅⬌↗↘↙↖]\s*(\*\*)?підписатися(\*\*)?\s*$', ln2, re_import.IGNORECASE)
             if subscription_match:
                 # Extract the part before the subscription text
                 main_content = subscription_match.group(1).strip()
@@ -2482,8 +2482,8 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     cleaned.append(main_content)
                 continue
                 
-            # remove any line that is ONLY a subscribe CTA
-            if re_import.search(r'^[➡→>⬇⬆⬅⬌↗↘↙↖]?\s*(підписатись|підписатися|підписатися|подписаться|подпишись|subscribe)\s*$', ln2, re_import.IGNORECASE):
+            # remove any line that is ONLY a subscribe CTA (including bold)
+            if re_import.search(r'^[➡→>⬇⬆⬅⬌↗↘↙↖]?\s*(\*\*)?підписатися(\*\*)?\s*$', ln2, re_import.IGNORECASE):
                 continue
                 
             cleaned.append(ln2)
@@ -2674,7 +2674,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                         'place': city_from_general.title(),
                         'lat': lat, 'lng': lon,
                         'threat_type': threat_type,
-                        'text': text[:160], 'date': date_str, 'channel': channel,
+                        'text': clean_text(text)[:500], 'date': date_str, 'channel': channel,
                         'marker_icon': icon, 'source_match': 'priority_emoji_threat'
                     }
                     add_debug_log(f'PRIORITY EARLY RETURN: {city_from_general} -> {coords} -> {icon}', "emoji_debug")
@@ -3064,7 +3064,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                         'place': city_from_emoji,
                         'lat': lat, 'lng': lon,
                         'threat_type': threat_type,
-                        'text': head[:160], 'date': date_str, 'channel': channel,
+                        'text': clean_text(orig)[:500], 'date': date_str, 'channel': channel,
                         'marker_icon': icon, 'source_match': 'emoji_threat'
                     }
                     log.debug(f'Emoji threat parser: {city_from_emoji} -> {coords} -> {icon}')
@@ -3098,7 +3098,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                         'place': city_from_general.title(),
                         'lat': lat, 'lng': lon,
                         'threat_type': threat_type,
-                        'text': text[:160], 'date': date_str, 'channel': channel,
+                        'text': clean_text(text)[:500], 'date': date_str, 'channel': channel,
                         'marker_icon': icon, 'source_match': 'general_emoji_threat'
                     }
                     add_debug_log(f'EARLY RETURN: General emoji threat parser: {city_from_general} -> {coords} -> {icon}', "emoji_debug")
