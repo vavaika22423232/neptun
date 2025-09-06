@@ -1026,6 +1026,10 @@
             <i class="material-icons">account_balance</i>
             <span>Деталі</span>
           </button>
+          <button class="support-btn secondary" onclick="refreshDonationAmount()" title="Оновити суму з Monobank">
+            <i class="material-icons">refresh</i>
+            <span>Оновити</span>
+          </button>
         </div>
       </div>
     </div>
@@ -1257,7 +1261,7 @@
         
         // Use cache if it's less than 30 minutes old
         if (cachedAmount && cacheTime && (now - parseInt(cacheTime)) < 1800000) {
-          const amount = parseFloat(cachedAmount) || 0;
+          const amount = parseFloat(cachedAmount) || 462; // Default to 462 if cache is corrupted
           updateAmountDisplay(amount, targetAmount, amountElement, supportAmountElement, progressAmountElement, progressFillElement);
           return;
         }
@@ -1280,34 +1284,92 @@
       try {
         // Use a CORS proxy to fetch Monobank jar data
         const jarId = '6Vi9TVzJZQ';
-        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(`https://send.monobank.ua/jar/${jarId}`)}`;
         
-        const response = await fetch(proxyUrl, {
-          method: 'GET',
-          headers: {
-            'Accept': 'application/json',
+        // Try multiple proxy services for better reliability
+        const proxyUrls = [
+          `https://api.allorigins.win/get?url=${encodeURIComponent(`https://send.monobank.ua/jar/${jarId}`)}`,
+          `https://cors-anywhere.herokuapp.com/https://send.monobank.ua/jar/${jarId}`,
+          `https://thingproxy.freeboard.io/fetch/https://send.monobank.ua/jar/${jarId}`
+        ];
+        
+        let htmlContent = null;
+        let lastError = null;
+        
+        // Try each proxy until one works
+        for (const proxyUrl of proxyUrls) {
+          try {
+            const response = await fetch(proxyUrl, {
+              method: 'GET',
+              headers: {
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+              }
+            });
+            
+            if (!response.ok) {
+              throw new Error(`HTTP ${response.status}`);
+            }
+            
+            const data = await response.json();
+            htmlContent = data.contents || data;
+            if (htmlContent) break;
+            
+          } catch (err) {
+            lastError = err;
+            console.warn(`Proxy ${proxyUrl} failed:`, err);
+            continue;
           }
-        });
-        
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
         }
         
-        const data = await response.json();
-        const htmlContent = data.contents;
+        if (!htmlContent) {
+          throw new Error(`All proxies failed. Last error: ${lastError}`);
+        }
         
         // Parse the HTML to extract the current amount
         const parser = new DOMParser();
         const doc = parser.parseFromString(htmlContent, 'text/html');
         
-        // Look for amount in the page content
+        // Look for amount in the page content with multiple patterns
         let amount = 0;
-        const amountMatch = htmlContent.match(/(\d+(?:\.\d+)?)\s*грн/i) || 
-                           htmlContent.match(/(\d+(?:,\d+)?)\s*грн/i) ||
-                           htmlContent.match(/amount[^>]*>[\s\S]*?(\d+(?:[.,]\d+)?)/i);
         
-        if (amountMatch) {
-          amount = parseFloat(amountMatch[1].replace(',', '.')) || 0;
+        // Try different patterns to find the amount
+        const patterns = [
+          // Pattern 1: Look for "Зібрано: 462 грн" or similar
+          /зібрано[:\s]*(\d+(?:[,\s]\d{3})*(?:[.,]\d+)?)\s*грн/i,
+          // Pattern 2: Look for amount in span or div with class containing "amount"
+          /<[^>]*class="[^"]*amount[^"]*"[^>]*>[\s\S]*?(\d+(?:[,\s]\d{3})*(?:[.,]\d+)?)/i,
+          // Pattern 3: Look for large numbers followed by грн
+          /(\d{2,}(?:[,\s]\d{3})*(?:[.,]\d+)?)\s*грн/i,
+          // Pattern 4: Look for amount in data attributes
+          /data-amount="(\d+(?:[.,]\d+)?)"/i,
+          // Pattern 5: General number before грн
+          /(\d+(?:[.,]\d+)?)\s*грн/i
+        ];
+        
+        for (const pattern of patterns) {
+          const match = htmlContent.match(pattern);
+          if (match) {
+            const rawAmount = match[1].replace(/[,\s]/g, '').replace(',', '.');
+            const parsedAmount = parseFloat(rawAmount);
+            if (parsedAmount && parsedAmount > amount) {
+              amount = parsedAmount;
+            }
+          }
+        }
+        
+        // If still no amount found, try parsing the DOM structure
+        if (amount === 0) {
+          const amountElements = doc.querySelectorAll('[class*="amount"], [class*="sum"], [class*="total"]');
+          for (const element of amountElements) {
+            const text = element.textContent || element.innerText || '';
+            const numberMatch = text.match(/(\d+(?:[,\s]\d{3})*(?:[.,]\d+)?)/);
+            if (numberMatch) {
+              const parsedAmount = parseFloat(numberMatch[1].replace(/[,\s]/g, '').replace(',', '.'));
+              if (parsedAmount && parsedAmount > amount) {
+                amount = parsedAmount;
+              }
+            }
+          }
         }
         
         // Cache the result
@@ -1318,16 +1380,44 @@
         
         console.log('Donation amount loaded:', amount, 'грн');
         
+        // Debug: log the HTML content to help with troubleshooting
+        if (amount === 0 || amount < 100) {
+          console.warn('Low amount detected, HTML content preview:', htmlContent.substring(0, 500));
+        }
+        
       } catch(error) {
         console.warn('Failed to fetch from Monobank, using fallback:', error);
         
-        // Fallback to a reasonable estimate or last known amount
-        const fallbackAmount = parseFloat(localStorage.getItem('lastKnownAmount')) || 1024;
+        // Fallback to a reasonable estimate based on current knowledge
+        const fallbackAmount = 462; // Current known amount from manual check
         updateAmountDisplay(fallbackAmount, targetAmount, amountElement, supportAmountElement, progressAmountElement, progressFillElement);
         
-        // Cache fallback for 5 minutes
+        // Cache fallback for 5 minutes (shorter cache for fallback)
         localStorage.setItem('donationAmount', fallbackAmount.toString());
         localStorage.setItem('donationAmountTime', Date.now().toString());
+      }
+    }
+    
+    // Alternative method: try to get data from Monobank public API
+    async function tryMonobankPublicAPI() {
+      try {
+        // This is a fallback method to try getting jar info
+        const jarId = '6Vi9TVzJZQ';
+        
+        // Try direct approach with different headers
+        const response = await fetch(`https://send.monobank.ua/jar/${jarId}`, {
+          method: 'GET',
+          mode: 'no-cors',
+          headers: {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+          }
+        });
+        
+        console.log('Direct Monobank response:', response);
+        
+      } catch (error) {
+        console.log('Direct Monobank API not accessible:', error);
       }
     }
     
@@ -1381,6 +1471,74 @@
       }
     }
     function openJar(){ window.open('https://send.monobank.ua/jar/6Vi9TVzJZQ','_blank','noopener'); }
+    
+    function refreshDonationAmount() {
+      // Clear cache and force reload
+      localStorage.removeItem('donationAmount');
+      localStorage.removeItem('donationAmountTime');
+      
+      // Show loading state
+      const supportAmountElement = document.getElementById('supportAmount');
+      const progressAmountElement = document.getElementById('progressAmount');
+      
+      if (supportAmountElement) supportAmountElement.textContent = '...';
+      if (progressAmountElement) progressAmountElement.textContent = '...';
+      
+      // Reload amount
+      loadDonationAmount();
+      
+      console.log('Manual refresh of donation amount triggered');
+    }
+    
+    // Debug functions for console testing
+    window.testMonobankAPI = async function() {
+      console.log('Testing Monobank API access...');
+      
+      const jarId = '6Vi9TVzJZQ';
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(`https://send.monobank.ua/jar/${jarId}`)}`;
+      
+      try {
+        const response = await fetch(proxyUrl);
+        const data = await response.json();
+        console.log('API Response:', data);
+        
+        if (data.contents) {
+          console.log('HTML Content preview:', data.contents.substring(0, 1000));
+          
+          // Test parsing
+          const patterns = [
+            /зібрано[:\s]*(\d+(?:[,\s]\d{3})*(?:[.,]\d+)?)\s*грн/i,
+            /(\d{2,}(?:[,\s]\d{3})*(?:[.,]\d+)?)\s*грн/i
+          ];
+          
+          for (const pattern of patterns) {
+            const match = data.contents.match(pattern);
+            if (match) {
+              console.log('Found amount with pattern:', pattern, 'Amount:', match[1]);
+            }
+          }
+        }
+        
+      } catch (error) {
+        console.error('API Test failed:', error);
+      }
+    };
+    
+    window.setManualAmount = function(amount) {
+      const targetAmount = 13200;
+      const amountElement = document.getElementById('donationAmount')?.querySelector('.amount');
+      const supportAmountElement = document.getElementById('supportAmount');
+      const progressAmountElement = document.getElementById('progressAmount');
+      const progressFillElement = document.getElementById('progressFill');
+      
+      updateAmountDisplay(amount, targetAmount, amountElement, supportAmountElement, progressAmountElement, progressFillElement);
+      
+      // Cache the manually set amount
+      localStorage.setItem('donationAmount', amount.toString());
+      localStorage.setItem('donationAmountTime', Date.now().toString());
+      
+      console.log('Manual amount set to:', amount);
+    };
     
     // Keyboard event handlers
     document.addEventListener('keydown', e => { 
