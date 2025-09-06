@@ -1100,6 +1100,7 @@ KHARKIV_CITY_COORDS = {
     'куп\'янськ': (49.7106, 37.6156),
     'купянськ': (49.7106, 37.6156),  # variant without apostrophe
     'лозова': (48.8897, 36.3175),
+    'липці': (50.3061, 36.7597),  # село біля кордону з Росією
     'первомайський': (49.3914, 36.2147),
     'вовчанськ': (50.3000, 36.9500),
     'люботин': (49.9486, 35.9292),
@@ -1283,6 +1284,8 @@ SUMY_CITY_COORDS = {
     'ясенці?': (51.5230, 34.5770),
     'ясенців': (51.5230, 34.5770),
     'ясенців?': (51.5230, 34.5770),
+    'миколаївка(сумська)': (51.5667, 34.1333),  # Миколаївка, районний центр Сумської області
+    'миколаївка (сумська)': (51.5667, 34.1333),  # з пробілом
 }
 
 for _sm_name, _sm_coords in SUMY_CITY_COORDS.items():
@@ -1569,6 +1572,7 @@ KYIV_OBLAST_CITY_COORDS = {
     'біла церква': (49.7950, 30.1310),  # present
     'бровари': (50.5110, 30.7909),  # present
     'бориспіль': (50.3527, 30.9550),  # present
+    'гнідин': (50.3722, 30.8639),  # село біля Борисполя
     'ірпінь': (50.5218, 30.2506),
     'ірпеня': (50.5218, 30.2506),
     'буча': (50.5436, 30.2120),
@@ -2393,9 +2397,25 @@ _load_external_cities()
 def geocode_opencage(place: str):
     if not OPENCAGE_API_KEY:
         return None
+    
     # Skip if known negative
     if neg_geocode_check(place):
         return None
+    
+    # Block general directional terms that don't represent specific places
+    place_lower = place.lower().strip()
+    directional_terms = [
+        'напрямок', 'напрям', 'направлении', 'направление',
+        'північно-східний', 'північно-західний', 'південно-східний', 'південно-західний',
+        'північний', 'південний', 'східний', 'західний',
+        'nord', 'south', 'east', 'west', 'northeast', 'northwest', 'southeast', 'southwest'
+    ]
+    
+    if any(term in place_lower for term in directional_terms):
+        # Add to negative cache to avoid repeated attempts
+        neg_geocode_add(place, 'directional')
+        return None
+    
     cache = _load_opencage_cache()
     key = place.strip().lower()
     now = int(datetime.utcnow().timestamp())
@@ -2462,9 +2482,9 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         # PRIORITY: drones (частая путаница). Если присутствуют слова шахед/бпла/дрон -> это shahed
         if any(k in l for k in ['shahed','шахед','шахеді','шахедів','geran','герань','дрон','дрони','бпла','uav']):
             return 'shahed', 'shahed.png'
-        # KAB (guided aerial bombs) treat as aviation threat
+        # KAB (guided aerial bombs) treat as missile/rocket threat (raketa.png)
         if any(k in l for k in ['каб','kab','умпк','umpk','модуль','fab','умпб','фаб','кабу']):
-            return 'avia', 'avia.png'
+            return 'raketa', 'raketa.png'
         # Rocket / missile attacks (ракета, ракети) -> raketa.png
         if any(k in l for k in ['ракет','rocket','міжконтинент','межконтинент','балістичн','крилат','cruise']):
             return 'raketa', 'raketa.png'
@@ -2506,21 +2526,48 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         head = text.split('\n', 1)[0][:160] if text else ""
         
         # Handle general emoji + city + oblast format with any UAV threat (more flexible pattern)
-        general_emoji_pattern = r'^[^\w\s]*\s*([А-ЯІЇЄЁа-яіїєё\'\-\s]+)\s*\([^)]*обл[^)]*\)'
+        general_emoji_pattern = r'^[^\w\s]*\s*([А-ЯІЇЄЁа-яіїєё\'\-\s]+)\s*\(([^)]*обл[^)]*)\)'
         general_emoji_match = re.search(general_emoji_pattern, head, re.IGNORECASE)
         add_debug_log(f"PRIORITY: Testing general emoji pattern on head: {repr(head)}", "emoji_debug")
         add_debug_log(f"PRIORITY: General emoji match result: {general_emoji_match}", "emoji_debug")
         
-        if general_emoji_match and any(uav_word in text.lower() for uav_word in ['бпла', 'дрон', 'шахед', 'активність', 'загроза']):
+        if general_emoji_match and any(uav_word in text.lower() for uav_word in ['бпла', 'дрон', 'шахед', 'активність', 'загроза', 'тривога']):
             city_from_general = general_emoji_match.group(1).strip()
-            add_debug_log(f"PRIORITY: Found city from general emoji: {repr(city_from_general)}", "emoji_debug")
+            oblast_from_general = general_emoji_match.group(2).strip()
+            add_debug_log(f"PRIORITY: Found city: {repr(city_from_general)}, oblast: {repr(oblast_from_general)}", "emoji_debug")
             
             if city_from_general and 2 <= len(city_from_general) <= 40:
                 base = city_from_general.lower().replace('\u02bc',"'").replace('ʼ',"'").replace("'","'").replace('`',"'")
                 base = re.sub(r'\s+',' ', base)
                 norm = UA_CITY_NORMALIZE.get(base, base)
-                coords = CITY_COORDS.get(norm)
-                add_debug_log(f"PRIORITY: Looking up coordinates: base={repr(base)}, norm={repr(norm)}, coords={coords}", "emoji_debug")
+                
+                # First try to find city+oblast specific coordinates
+                oblast_key = oblast_from_general.lower()
+                coords = None
+                
+                # Try different lookup strategies for city+oblast disambiguation
+                if 'сум' in oblast_key and norm == 'миколаївка':
+                    coords = (51.5667, 34.1333)  # Миколаївка, Сумська область
+                    add_debug_log(f"PRIORITY: Using specific coordinates for Миколаївка (Сумська обл.): {coords}", "emoji_debug")
+                elif 'миколаївськ' in oblast_key and norm == 'миколаївка':
+                    coords = (47.0667, 31.8333)  # Миколаївка, Миколаївська область
+                    add_debug_log(f"PRIORITY: Using specific coordinates for Миколаївка (Миколаївська обл.): {coords}", "emoji_debug")
+                # Handle districts by mapping to their administrative centers
+                elif 'район' in norm:
+                    if 'синельниківський район' in norm:
+                        coords = CITY_COORDS.get('синельникове')  # Синельникове - центр району
+                        add_debug_log(f"PRIORITY: Mapping Синельниківський район -> Синельникове: {coords}", "emoji_debug")
+                    elif 'сумський район' in norm:
+                        coords = CITY_COORDS.get('суми')  # Суми - центр району
+                        add_debug_log(f"PRIORITY: Mapping Сумський район -> Суми: {coords}", "emoji_debug")
+                    elif 'миколаївський район' in norm and 'миколаївськ' in oblast_key:
+                        coords = CITY_COORDS.get('миколаїв')  # Миколаїв - центр району
+                        add_debug_log(f"PRIORITY: Mapping Миколаївський район -> Миколаїв: {coords}", "emoji_debug")
+                
+                if not coords:
+                    # Fallback to general lookup
+                    coords = CITY_COORDS.get(norm)
+                    add_debug_log(f"PRIORITY: General lookup: base={repr(base)}, norm={repr(norm)}, coords={coords}", "emoji_debug")
                 
                 if not coords and 'SETTLEMENTS_INDEX' in globals():
                     idx_map = globals().get('SETTLEMENTS_INDEX') or {}
@@ -2540,6 +2587,69 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     return [track]  # Early return - highest priority
     except Exception as e:
         add_debug_log(f"PRIORITY emoji processing error: {e}", "emoji_debug")
+
+    # PRIORITY: Handle emoji + oblast format (when only oblast is specified, place marker in regional center)
+    try:
+        import re  # Import re module for pattern matching
+        head = text.split('\n', 1)[0][:160] if text else ""
+        
+        # Handle emoji + oblast format (e.g. "👁️ Миколаївська обл.")
+        oblast_emoji_pattern = r'^[^\w\s]*\s*([А-ЯІЇЄЁа-яіїєё\'\-\s]*обл\.?)\s*\*\*'
+        oblast_emoji_match = re.search(oblast_emoji_pattern, head, re.IGNORECASE)
+        add_debug_log(f"PRIORITY: Testing oblast emoji pattern on head: {repr(head)}", "emoji_debug")
+        add_debug_log(f"PRIORITY: Oblast emoji match result: {oblast_emoji_match}", "emoji_debug")
+        
+        if oblast_emoji_match and any(uav_word in text.lower() for uav_word in ['бпла', 'дрон', 'шахед', 'активність', 'загроза', 'тривога']):
+            oblast_from_emoji = oblast_emoji_match.group(1).strip()
+            add_debug_log(f"PRIORITY: Found oblast from emoji: {repr(oblast_from_emoji)}", "emoji_debug")
+            
+            # Map oblast to regional center
+            regional_center = None
+            coords = None
+            
+            oblast_key = oblast_from_emoji.lower()
+            if 'миколаївськ' in oblast_key:
+                regional_center = 'Миколаїв'
+                coords = CITY_COORDS.get('миколаїв')
+            elif 'дніпропетровськ' in oblast_key:
+                regional_center = 'Дніпро'
+                coords = CITY_COORDS.get('дніпро')
+            elif 'харківськ' in oblast_key:
+                regional_center = 'Харків'
+                coords = CITY_COORDS.get('харків')
+            elif 'сумськ' in oblast_key:
+                regional_center = 'Суми'
+                coords = CITY_COORDS.get('суми')
+            elif 'херсонськ' in oblast_key:
+                regional_center = 'Херсон'
+                coords = CITY_COORDS.get('херсон')
+            elif 'одеськ' in oblast_key:
+                regional_center = 'Одеса'
+                coords = CITY_COORDS.get('одеса')
+            elif 'запорізьк' in oblast_key:
+                regional_center = 'Запоріжжя'
+                coords = CITY_COORDS.get('запоріжжя')
+            elif 'полтавськ' in oblast_key:
+                regional_center = 'Полтава'
+                coords = CITY_COORDS.get('полтава')
+            
+            add_debug_log(f"PRIORITY: Oblast {oblast_from_emoji} -> regional center {regional_center} -> coords {coords}", "emoji_debug")
+            
+            if coords and regional_center:
+                lat, lon = coords[:2]
+                threat_type, icon = classify(text)
+                track = {
+                    'id': f"{mid}_priority_oblast_{regional_center.replace(' ','_')}",
+                    'place': regional_center,
+                    'lat': lat, 'lng': lon,
+                    'threat_type': threat_type,
+                    'text': text[:160], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': 'priority_oblast_threat'
+                }
+                add_debug_log(f'PRIORITY OBLAST EARLY RETURN: {oblast_from_emoji} -> {regional_center} -> {coords} -> {icon}', "emoji_debug")
+                return [track]  # Early return - highest priority
+    except Exception as e:
+        add_debug_log(f"PRIORITY oblast processing error: {e}", "emoji_debug")
     
     # Continue with existing logic...
     
@@ -2713,6 +2823,52 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     return []
     except Exception:
         pass
+    
+    # SPECIAL: Handle multiple threats in one message BEFORE other parsing
+    def handle_multiple_threats():
+        """Check for messages with multiple different threats and process each separately"""
+        all_threats = []
+        text_lower = text.lower()
+        
+        # 1. Check for northeast tactical aviation threat
+        if ('тактичн' in text_lower or 'авіаці' in text_lower or 'авиац' in text_lower) and (
+            'північно-східн' in text_lower or 'північно східн' in text_lower or 'северо-восточ' in text_lower or 'північного-сходу' in text_lower
+        ):
+            lat, lng = 50.9, 34.8  # Near Sumy city (in Ukrainian territory)
+            all_threats.append({
+                'id': f"{mid}_ne_multi", 'place': 'Північно-східний напрямок', 'lat': lat, 'lng': lng,
+                'threat_type': 'avia', 'text': text[:500], 'date': date_str, 'channel': channel,
+                'marker_icon': 'avia.png', 'source_match': 'multiple_threats_northeast_aviation'
+            })
+        
+        # 2. Check for reconnaissance UAV in Mykolaiv oblast (миколаївщини/миколаївщині)
+        if ('розвід' in text_lower or 'розведуваль' in text_lower) and ('миколаївщини' in text_lower or 'миколаївщині' in text_lower or 'миколаївщина' in text_lower):
+            # Use Mykolaiv city coordinates
+            lat, lng = 46.9750, 31.9946
+            all_threats.append({
+                'id': f"{mid}_mykolaiv_recon", 'place': 'Миколаївщина', 'lat': lat, 'lng': lng,
+                'threat_type': 'rozved', 'text': text[:500], 'date': date_str, 'channel': channel,
+                'marker_icon': 'rozved.png', 'source_match': 'multiple_threats_mykolaiv_recon'
+            })
+        
+        # 3. Check for general БПЛА threats in oblast format (миколаївщини/миколаївщині) without "розвід"
+        elif ('бпла' in text_lower or 'дрон' in text_lower) and ('миколаївщини' in text_lower or 'миколаївщині' in text_lower or 'миколаївщина' in text_lower):
+            lat, lng = 46.9750, 31.9946
+            all_threats.append({
+                'id': f"{mid}_mykolaiv_uav", 'place': 'Миколаївщина', 'lat': lat, 'lng': lng,
+                'threat_type': 'shahed', 'text': text[:500], 'date': date_str, 'channel': channel,
+                'marker_icon': 'shahed.png', 'source_match': 'multiple_threats_mykolaiv_uav'
+            })
+        
+        return all_threats
+
+    # Check if this is a multi-threat message
+    if '🛬' in text and '🛸' in text:
+        multi_threats = handle_multiple_threats()
+        if multi_threats:
+            add_debug_log(f"MULTIPLE THREATS DETECTED: Found {len(multi_threats)} threats", "multi_threats")
+            return multi_threats
+
     # ... existing parsing logic continues ...
     # At the very end of function (before return default) we'll log duration.
     # Air alarm region/raion tracking (start / cancel) before other parsing
@@ -3784,6 +3940,41 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     city = m_simple_no_count.group(1).strip()
                     print(f"DEBUG: Found simple БпЛА pattern (no count) - city: '{city}'")
         
+        # --- NEW: Handle "X БпЛА City1 / City2" pattern (e.g. "2х БпЛА Гнідин / Бориспіль") ---
+        if not city:
+            print(f"DEBUG: Checking БпЛА city/city pattern for line: '{ln}'")
+            m_cities = re.search(r'(\d+)х?\s+бпла\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,30}?)\s*/\s*([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,30}?)(?=\s|$|[,\.\!\?;])', ln, re.IGNORECASE)
+            if m_cities:
+                try:
+                    count = int(m_cities.group(1))
+                except Exception:
+                    count = 1
+                city1 = m_cities.group(2).strip()
+                city2 = m_cities.group(3).strip()
+                print(f"DEBUG: Found БпЛА city/city pattern - count: {count}, cities: '{city1}' / '{city2}'")
+                
+                # Process both cities separately
+                for city_name in [city1, city2]:
+                    base = normalize_city_name(city_name)
+                    base = UA_CITY_NORMALIZE.get(base, base)
+                    coords = CITY_COORDS.get(base)
+                    if coords:
+                        print(f"DEBUG: Creating БпЛА track for {city_name} at {coords}")
+                        multi_city_tracks.append({
+                            'lat': coords[0],
+                            'lon': coords[1],
+                            'name': city_name,
+                            'type': 'БпЛА',
+                            'time': date_str,
+                            'id': mid,
+                            'message': text[:100] + ('...' if len(text) > 100 else ''),
+                            'channel': channel
+                        })
+                    else:
+                        print(f"DEBUG: No coordinates found for {city_name} (base: {base})")
+                
+                # Set city to processed to prevent further processing
+                city = f"{city1} / {city2}"
         # --- NEW: Handle "між X та Y" pattern (e.g. "між Корюківкою та Меною") ---
         if not city:
             m_between = re.search(r'між\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,30}?)\s+та\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,30}?)(?=\s|$|[,\.\!\?;])', ln, re.IGNORECASE)
@@ -4346,12 +4537,14 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             'threat_type': 'avia', 'text': original_text[:500], 'date': date_str, 'channel': channel,
             'marker_icon': 'avia.png', 'source_match': 'southeast_aviation'
         }]
-    # North-east tactical aviation activity (approx between Svatove & Kupiansk) -> avia marker
+    # North-east tactical aviation activity - coordinates moved to Ukrainian territory
+    # Original coordinates (50.4, 36.8) were too close to Russian border
+    # SKIP if this is a multi-threat message (handled separately above)
     if ('тактичн' in se_phrase or 'авіаці' in se_phrase or 'авиац' in se_phrase) and (
         'північно-східн' in se_phrase or 'північно східн' in se_phrase or 'северо-восточ' in se_phrase or 'північного-сходу' in se_phrase
-    ):
-        # Approximate midpoint NE front, adjusted closer to Sumy region (lat near 50.4, lng 36.8)
-        lat, lng = 50.4, 36.8
+    ) and not ('🛬' in original_text and '🛸' in original_text):
+        # Moved coordinates to Sumy area (clearly in Ukrainian territory)
+        lat, lng = 50.9, 34.8  # Near Sumy city
         return [{
             'id': f"{mid}_ne", 'place': 'Північно-східний напрямок', 'lat': lat, 'lng': lng,
             'threat_type': 'avia', 'text': original_text[:500], 'date': date_str, 'channel': channel,
@@ -4416,7 +4609,8 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         'донеччині': 'донеччина',
         'сумщині': 'сумщина',
         'харківщині': 'харківщина',
-        'чернігівщині': 'чернігівщина'
+        'чернігівщині': 'чернігівщина',
+        'миколаївщині': 'миколаївщина'
     }
     for lform, base_form in LOCATIVE_NORMALIZE.items():
         if lform in lower:
