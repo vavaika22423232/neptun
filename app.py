@@ -5989,6 +5989,9 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             # Handle '-у/ю' endings for multi-word second element 'долину' -> 'долина'
             if len(base) > 5 and base.endswith('ину'):
                 base = base[:-2] + 'на'
+            # Special handling for oblast names ending in 'щину' -> 'щина'
+            if len(base) > 6 and base.endswith('щину'):
+                base = base[:-1] + 'а'
             norm_parts.append(base)
         w = ' '.join(norm_parts)
         # Apply explicit manual normalization map last (covers irregular)
@@ -6009,8 +6012,9 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     # If the captured target looks like an oblast (region) name (e.g. 'дніпропетровщина', 'черкаська область'),
                     # we intentionally SKIP adding a precise course target marker to avoid falsely placing it at the oblast's capital city.
                     # User requirement: phrases like 'курс(ом) на Дніпропетровщину' must NOT create a marker right in 'Дніпро'.
-                    if re.search(r'(щина|область)$', norm_city):
-                        log.debug(f'skip course_target oblast_only={norm_city} mid={mid}')
+                    # Check both nominative and accusative forms (щина/щину)
+                    if re.search(r'(щина|щину|область)$', norm_city) or re.search(r'(щина|щину|область)$', raw_city.lower()):
+                        log.debug(f'skip course_target oblast_only={norm_city} raw={raw_city} mid={mid}')
                         continue
                     coords = region_enhanced_coords(norm_city)
                     if not coords:
