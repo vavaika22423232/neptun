@@ -4383,10 +4383,10 @@ def process_message(text, mid, date_str, channel):  # type: ignore
     text = re.sub(r'[\*`_]+', '', text)
     # Удаляем ведущие эмодзи/иконки перед словами
     text = re.sub(r'^[\W_]+', '', text)
-    # Если сообщение по сути только про тревогу (без упоминаний угроз) — пропускаем (не строим маркер)
+    # PRIORITY: All air alarm messages should be list-only (no map markers)
     low_orig = original_text.lower()
-    if 'повітряна тривога' in low_orig and not any(k in low_orig for k in ['бпла','дрон','шахед','shahed','geran','ракета','missile','iskander','s-300','s300','артил','града','смерч','ураган','mlrs']):
-        # Always event-only record (list), user wants always displayed in updateEventList
+    if 'повітряна тривога' in low_orig or 'тривога' in low_orig:
+        # Always event-only record (list), never create map markers for air alarms
         place = None
         low = low_orig.lower()
         for name in OBLAST_CENTERS.keys():
