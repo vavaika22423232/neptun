@@ -497,294 +497,29 @@
   .disclaimer-actions a:hover {background:#3b4b63;color:#fff;}
   @media (max-width:720px){.disclaimer-bar{flex-direction:row;align-items:flex-start;font-size:.72rem;padding:.75rem .85rem;} .disclaimer-icon{width:26px;height:26px;font-size:14px;} .disclaimer-close{width:26px;height:26px;font-size:12px;} }
   
-  /* Server Support Card Styles */
-  .support-card {
-    background: linear-gradient(135deg, var(--panel-bg) 0%, rgba(59, 130, 246, 0.05) 50%, var(--panel-bg) 100%);
-    border: 1px solid rgba(59, 130, 246, 0.2);
-    position: relative;
-    overflow: hidden;
-  }
+
+
   
-  .support-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: linear-gradient(90deg, #3b82f6, #8b5cf6, #06b6d4);
-    border-radius: 1rem 1rem 0 0;
-  }
+
+
   
-  .support-header {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 1.25rem;
-  }
+
   
-  .support-icon {
-    width: 48px;
-    height: 48px;
-    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 8px 32px -8px rgba(59, 130, 246, 0.6);
-    flex-shrink: 0;
-  }
+
+
   
-  .support-icon i {
-    font-size: 1.5rem;
-    color: white;
-  }
+
   
-  .support-title h3 {
-    margin: 0;
-    font-size: 1.1rem;
-    font-weight: 700;
-    color: var(--text);
-    line-height: 1.2;
-  }
+
   
-  .support-title p {
-    margin: 0.25rem 0 0 0;
-    font-size: 0.85rem;
-    color: var(--text-muted);
-    line-height: 1.3;
-  }
-  
-  .support-content {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-  
-  .support-amount {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-  }
-  
-  .amount-circle-small {
-    width: 64px;
-    height: 64px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(139, 92, 246, 0.1));
-    border: 2px solid rgba(59, 130, 246, 0.3);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-  
-  .amount-display {
-    display: flex;
-    align-items: baseline;
-    gap: 2px;
-  }
-  
-  .amount-display .currency {
-    font-size: 0.7rem;
-    color: var(--accent);
-    font-weight: 600;
-  }
-  
-  .amount-display .amount {
-    font-size: 0.9rem;
-    font-weight: 700;
-    color: var(--text);
-  }
-  
-  .amount-circle-small .amount-label {
-    font-size: 0.6rem;
-    color: var(--text-muted);
-    margin-top: 2px;
-  }
-  
-  .support-text p {
-    margin: 0 0 8px 0;
-    font-size: 0.85rem;
-    color: var(--text2);
-    line-height: 1.5;
-  }
-  
-  .support-info p:first-child {
-    color: var(--text1);
-    font-weight: 500;
-    margin-bottom: 12px;
-    background: rgba(255, 193, 7, 0.1);
-    padding: 8px 12px;
-    border-radius: 6px;
-    border-left: 3px solid #ffc107;
-  }
-  
-  .support-info p:not(:first-child):not(.support-appeal) {
-    margin-left: 8px;
-    position: relative;
-  }
-  
-  .support-appeal {
-    margin-top: 10px !important;
-    padding: 10px 12px;
-    background: rgba(0, 123, 255, 0.1);
-    border-radius: 6px;
-    border-left: 3px solid #007bff;
-    color: var(--text1) !important;
-    font-weight: 500;
-  }
-  
-  .support-actions {
-    display: flex;
-    gap: 0.75rem;
-  }
-  
-  .support-btn {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
-    border-radius: 0.75rem;
-    font-size: 0.85rem;
-    font-weight: 600;
-    text-decoration: none;
-    border: none;
-    cursor: pointer;
-    transition: all 0.2s;
-    letter-spacing: 0.3px;
-  }
-  
-  .support-btn.primary {
-    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-    color: white;
-    box-shadow: 0 6px 20px -6px rgba(59, 130, 246, 0.6);
-  }
-  
-  .support-btn.primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 28px -6px rgba(59, 130, 246, 0.7);
-  }
-  
-  .support-btn.secondary {
-    background: rgba(255, 255, 255, 0.05);
-    color: var(--text2);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-  }
-  
-  .support-btn.secondary:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: var(--text);
-    transform: translateY(-1px);
-  }
-  
-  .support-btn i {
-    font-size: 1rem;
-  }
-  
-  /* Progress bar styles */
-  .support-progress {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-  
-  .progress-bar {
-    width: 100%;
-    height: 8px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
-    overflow: hidden;
-    position: relative;
-  }
-  
-  .progress-fill {
-    height: 100%;
-    background: linear-gradient(90deg, #3b82f6, #8b5cf6);
-    border-radius: 4px;
-    transition: width 0.8s ease;
-    position: relative;
-  }
-  
-  .progress-fill::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
-    animation: shimmer 2s infinite;
-  }
-  
-  @keyframes shimmer {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(100%); }
-  }
-  
-  .progress-text {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    text-align: center;
-    font-weight: 500;
+
+
+
+
+
   }
 
-  /* Mobile responsive */
-  @media (max-width: 600px) {
-    .support-header {
-      gap: 0.75rem;
-      margin-bottom: 1rem;
-    }
-    
-    .support-icon {
-      width: 40px;
-      height: 40px;
-    }
-    
-    .support-icon i {
-      font-size: 1.25rem;
-    }
-    
-    .support-title h3 {
-      font-size: 1rem;
-    }
-    
-    .support-title p {
-      font-size: 0.8rem;
-    }
-    
-    .support-amount {
-      flex-direction: column;
-      gap: 0.75rem;
-      align-items: flex-start;
-    }
-    
-    .amount-circle-small {
-      align-self: center;
-    }
-    
-    .support-progress {
-      width: 100%;
-    }
-    
-    .progress-text {
-      font-size: 0.7rem;
-    }
-    
-    .support-actions {
-      flex-direction: column;
-      gap: 0.5rem;
-    }
-    
-    .support-btn {
-      font-size: 0.8rem;
-      padding: 0.65rem 0.875rem;
-    }
-  }
+  
   
   </style>
   <style>
@@ -832,17 +567,7 @@
     @media(max-width:680px){.mass-attack-banner{top:3.6rem;padding:.85rem 1.05rem;border-radius:.9rem;} .ma-title{font-size:.95rem;} .ma-icon{font-size:1.6rem;} }
   </style>
 
-  <!-- Floating Support Button & Donation Modal -->
-  <style>
-  .support-fab{position:fixed;bottom:1.4rem;right:1.4rem;z-index:1300;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;border:none;border-radius:1.1rem;padding:.95rem 1.15rem;display:flex;align-items:center;gap:.55rem;font-weight:600;font-size:.85rem;cursor:pointer;letter-spacing:.5px;box-shadow:0 10px 28px -8px rgba(37,99,235,.55),0 0 0 1px rgba(255,255,255,.12) inset;transition:.25s;backdrop-filter:blur(6px) saturate(1.2);} 
-    .support-fab i{font-size:18px;}
-    .support-fab:hover{transform:translateY(-4px) scale(1.03);box-shadow:0 14px 34px -8px rgba(37,99,235,.65),0 0 0 1px rgba(255,255,255,.18) inset;}
-    .support-fab:active{transform:translateY(0) scale(.98);}    
-  @media (max-width:700px){.support-fab{bottom:1rem;right:.9rem;padding:.8rem .95rem;border-radius:.9rem;font-size:.75rem;}}
-  /* Avoid overlap with comments FAB on small screens */
-  @media (max-width:900px){ .support-fab{ right:1rem; bottom:1rem; } .comments-fab{ right:1rem; bottom:4.4rem; } }
-  @media (max-width:520px){ .comments-fab{ right:1rem; bottom:4.8rem; } }
-  /* --- Place search control --- */
+  <!-- Place search control --> */
   .place-search{position:absolute;top:1rem;left:50%;transform:translateX(-50%);display:flex;gap:.4rem;background:rgba(15,23,42,.78);backdrop-filter:blur(8px) saturate(1.4);padding:.55rem .8rem;border-radius:1.1rem;box-shadow:0 4px 22px -6px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.08);z-index:950;align-items:center;}
   .place-search input{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#fff;padding:.45rem .75rem;border-radius:.75rem;min-width:260px;font-size:.82rem;outline:none;transition:.18s;}
   .place-search input:focus{border-color:#3b82f6;background:rgba(59,130,246,.15);box-shadow:0 0 0 2px rgba(59,130,246,.35);} 
@@ -878,7 +603,6 @@
     .copy-toast.show{display:block;animation:fadeIn .25s ease, fadeOut .4s linear 2.4s forwards;}
     @keyframes fadeOut{to{opacity:0;transform:translateY(4px);}}
   </style>
-  <button class="support-fab" id="supportFab" aria-haspopup="dialog" aria-controls="donateModal" onclick="toggleDonate()"><i class="material-icons">volunteer_activism</i><span>Підтримати</span></button>
   <div class="donate-modal-overlay" id="donateModal" role="dialog" aria-labelledby="donateTitle" aria-modal="true">
     <div class="donate-modal">
       <button class="donate-close" aria-label="Закрити" onclick="toggleDonate(false)">×</button>
@@ -978,63 +702,6 @@
         <input type="text" id="placeSearchInput" placeholder="Пошук населеного пункту…" aria-label="Пошук міста/села" autocomplete="off">
         <button id="placeSearchBtn" title="Знайти" aria-label="Знайти"><i class="material-icons" style="font-size:18px;vertical-align:middle;">search</i></button>
         <div id="placeSearchSuggest" class="ps-suggest" style="display:none;"></div>
-      </div>
-    </div>
-
-    <!-- Server Support Card -->
-    <div class="card support-card" id="supportCard">
-      <div class="support-header">
-        <div class="support-icon">
-          <i class="material-icons">cloud_queue</i>
-        </div>
-        <div class="support-title">
-          <h3>Підтримка сервера</h3>
-          <p>Допоможіть зберегти мапу безпеки онлайн 24/7</p>
-        </div>
-      </div>
-      
-      <div class="support-content">
-        <div class="support-amount">
-          <div class="amount-circle-small">
-            <div class="amount-display">
-              <span class="currency">₴</span>
-              <span class="amount" id="supportAmount">0</span>
-            </div>
-            <div class="amount-label">зібрано</div>
-          </div>
-          <div class="support-progress">
-            <div class="progress-bar">
-              <div class="progress-fill" id="progressFill" style="width: 0%"></div>
-            </div>
-            <div class="progress-text">
-              <span id="progressAmount">0</span> з 13,200 грн необхідних
-            </div>
-          </div>
-          <div class="support-text">
-            <div class="support-info">
-              <p><strong>На жаль, щоб підтримувати сайт/мапу в робочому стані, треба постійно поповнювати баланс серверу.</strong></p>
-              <p>🖥️ Сервер працює цілодобово, обробляючи тисячі повідомлень</p>
-              <p>🔄 Дані оновлюються кожну хвилину з перевірених джерел</p>
-              <p>⚡ Швидкість та стабільність роботи залежать від якості хостингу</p>
-              <p class="support-appeal">Ваша підтримка допомагає зберігати цей важливий ресурс доступним для всіх українців!</p>
-            </div>
-          </div>
-        </div>
-        
-        <div class="support-actions">
-          <a href="https://send.monobank.ua/jar/6Vi9TVzJZQ" target="_blank" class="support-btn primary">
-            <i class="material-icons">favorite</i>
-            <span>Підтримати</span>
-          </a>
-          <button class="support-btn secondary" onclick="toggleDonate()">
-            <i class="material-icons">account_balance</i>
-            <span>Деталі</span>
-          </button>
-          <button class="support-btn secondary" onclick="refreshDonationAmount()" title="Оновити суму з Monobank">
-            <i class="material-icons">refresh</i>
-            <span>Оновити</span>
-          </button>
-        </div>
       </div>
     </div>
 
