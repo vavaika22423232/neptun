@@ -578,7 +578,17 @@
     .copy-toast{position:fixed;bottom:calc(1.4rem + 64px);right:1.4rem;background:#1e293b;border:1px solid #334155;color:#e2e8f0;padding:.6rem .85rem;border-radius:.7rem;font-size:.7rem;font-weight:600;letter-spacing:.5px;box-shadow:0 8px 24px -8px rgba(0,0,0,.55);display:none;z-index:1500;}
     .copy-toast.show{display:block;animation:fadeIn .25s ease, fadeOut .4s linear 2.4s forwards;}
     @keyframes fadeOut{to{opacity:0;transform:translateY(4px);}}
+    
+    /* Support floating button */
+    .support-fab{position:fixed;bottom:1.4rem;right:1.4rem;z-index:1300;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;border:none;border-radius:1.1rem;padding:.95rem 1.15rem;display:flex;align-items:center;gap:.55rem;font-weight:600;font-size:.85rem;cursor:pointer;letter-spacing:.5px;box-shadow:0 10px 28px -8px rgba(37,99,235,.55),0 0 0 1px rgba(255,255,255,.12) inset;transition:.25s;backdrop-filter:blur(6px) saturate(1.2);} 
+    .support-fab i{font-size:18px;}
+    .support-fab:hover{transform:translateY(-4px) scale(1.03);box-shadow:0 14px 34px -8px rgba(37,99,235,.65),0 0 0 1px rgba(255,255,255,.18) inset;}
+    .support-fab:active{transform:translateY(0) scale(.98);}    
+    @media (max-width:700px){.support-fab{bottom:1rem;right:.9rem;padding:.8rem .95rem;border-radius:.9rem;font-size:.75rem;}}
+    @media (max-width:900px){ .support-fab{ right:1rem; bottom:1rem; } .comments-fab{ right:1rem; bottom:4.4rem; } }
+    @media (max-width:520px){ .comments-fab{ right:1rem; bottom:4.8rem; } }
   </style>
+  <button class="support-fab" id="supportFab" aria-haspopup="dialog" aria-controls="donateModal" onclick="toggleDonate()"><i class="material-icons">volunteer_activism</i><span>Підтримати</span></button>
   <div class="donate-modal-overlay" id="donateModal" role="dialog" aria-labelledby="donateTitle" aria-modal="true">
     <div class="donate-modal">
       <button class="donate-close" aria-label="Закрити" onclick="toggleDonate(false)">×</button>
