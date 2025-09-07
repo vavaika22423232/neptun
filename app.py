@@ -823,6 +823,9 @@ def ensure_city_coords(name: str):
     n = name.strip().lower()
     if n in CITY_COORDS:
         lat,lng = CITY_COORDS[n]; return (lat,lng,False)
+    # Check if it's a direct oblast/region name
+    if n in OBLAST_CENTERS:
+        lat,lng = OBLAST_CENTERS[n]; return (lat,lng,True)
     if 'SETTLEMENTS_INDEX' in globals() and n in (globals().get('SETTLEMENTS_INDEX') or {}):
         lat,lng = globals()['SETTLEMENTS_INDEX'][n]; return (lat,lng,False)
     region_hint = NAME_REGION_MAP.get(n)
