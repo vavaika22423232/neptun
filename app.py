@@ -2509,8 +2509,10 @@ def process_message(text, mid, date_str, channel):  # type: ignore
     ))
     uav_count = sum(1 for line in text_lines if 'бпла' in line.lower() and ('курс' in line.lower() or 'на ' in line.lower()))
     
+    add_debug_log(f"DEBUG COUNT CHECK: {region_count} regions, {uav_count} UAVs", "count_check")
+    
     if region_count >= 2 and uav_count >= 3:
-        add_debug_log(f"IMMEDIATE MULTI-REGIONAL UAV: {region_count} regions, {uav_count} UAVs", "multi_regional")
+        add_debug_log(f"IMMEDIATE MULTI-REGIONAL UAV: {region_count} regions, {uav_count} UAVs - ENTERING EARLY PROCESSING", "multi_regional")
         # Process directly without going through other logic
         import re
         
@@ -3405,10 +3407,15 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                         return [track]
     except Exception:
         pass
+
+    
     # Directional multi-region (e.g. "група БпЛА на Донеччині курсом на Дніпропетровщину") -> list-only, no fixed marker
     try:
         lorig = text.lower()
-        if ('курс' in lorig or '➡' in lorig or '→' in lorig or 'напрям' in lorig) and ('бпла' in lorig or 'дрон' in lorig or 'груп' in lorig):
+        # Skip if this message has route patterns (handled by route parser above)
+        if 'через' in lorig or 'повз' in lorig:
+            pass
+        elif ('курс' in lorig or '➡' in lorig or '→' in lorig or 'напрям' in lorig) and ('бпла' in lorig or 'дрон' in lorig or 'груп' in lorig):
             # Quick reject if explicit single settlement in parentheses (handled elsewhere)
             if '(' not in lorig:
                 present_regions = []
@@ -3523,6 +3530,110 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                 }]
     except Exception:
         pass
+    # Multi-segment UAV messages with pipe separator (e.g., "БпЛА курсом на Кагарлик | 2х БпЛА Білоцерківський район | 3х БпЛА Вишеньки / Українка")
+    try:
+        if '|' in text and 'бпла' in text.lower():
+            segments = [seg.strip() for seg in text.split('|') if seg.strip()]
+            if len(segments) >= 2:  # At least 2 segments
+                threats = []
+                import re as _re_multi
+                
+                for seg_idx, segment in enumerate(segments):
+                    seg_lower = segment.lower()
+                    if 'бпла' not in seg_lower:
+                        continue
+                    
+                    # Pattern 1: "БпЛА курсом на [city]"
+                    course_match = _re_multi.search(r'бпла\s+курсом?\s+на\s+([а-яіїєґ\'\-\s]+?)(?:\s|$)', seg_lower)
+                    if course_match:
+                        city_name = course_match.group(1).strip()
+                        city_norm = clean_text(city_name).lower()
+                        if city_norm in UA_CITY_NORMALIZE:
+                            city_norm = UA_CITY_NORMALIZE[city_norm]
+                        
+                        coords = ensure_city_coords(city_norm)
+                        
+                        if coords and isinstance(coords, tuple) and len(coords) >= 2:
+                            lat, lng = coords[0], coords[1]
+                            threat_type, icon = classify(text)
+                            threats.append({
+                                'id': f"{mid}_multi_{seg_idx}",
+                                'place': city_name.title(),
+                                'lat': lat,
+                                'lng': lng,
+                                'threat_type': threat_type,
+                                'text': f"Курсом на {city_name.title()}",
+                                'date': date_str,
+                                'channel': channel,
+                                'marker_icon': icon,
+                                'source_match': 'multi_segment_course',
+                                'count': 1
+                            })
+                    
+                    # Pattern 2: "[N]х БпЛА [location]" - extract cities
+                    location_match = _re_multi.search(r'(\d+)?[xх]?\s*бпла\s+(.+?)(?:\.|$)', seg_lower)
+                    if location_match and not course_match:  # Don't double-process course segments
+                        count_str = location_match.group(1) or "1"
+                        location_text = location_match.group(2).strip()
+                        count = int(count_str) if count_str.isdigit() else 1
+                        
+                        # Split by common separators to get individual cities
+                        cities = []
+                        for sep in [' / ', ' та ', ' і ', ', ']:
+                            if sep in location_text:
+                                cities = [c.strip() for c in location_text.split(sep) if c.strip()]
+                                break
+                        if not cities:
+                            cities = [location_text]
+                        
+                        for city_idx, city in enumerate(cities):
+                            city = city.strip()
+                            if not city:
+                                continue
+                            
+                            # Handle district references (e.g., "Білоцерківський район")
+                            if 'район' in city:
+                                # Extract district name and try to find main city
+                                district_name = city.replace('район', '').replace('ський', '').replace('цький', '').strip()
+                                
+                                # Special case mappings
+                                if 'білоцерків' in district_name:
+                                    district_name = 'біла церква'
+                                
+                                if district_name:
+                                    city = district_name
+                                else:
+                                    continue
+                                
+                            city_norm = clean_text(city).lower()
+                            if city_norm in UA_CITY_NORMALIZE:
+                                city_norm = UA_CITY_NORMALIZE[city_norm]
+                            
+                            coords = ensure_city_coords(city_norm)
+                            
+                            if coords and isinstance(coords, tuple) and len(coords) >= 2:
+                                lat, lng = coords[0], coords[1]
+                                threat_type, icon = classify(text)
+                                threats.append({
+                                    'id': f"{mid}_multi_{seg_idx}_{city_idx}",
+                                    'place': city.title(),
+                                    'lat': lat,
+                                    'lng': lng,
+                                    'threat_type': threat_type,
+                                    'text': f"{count}х БпЛА на {city.title()}",
+                                    'date': date_str,
+                                    'channel': channel,
+                                    'marker_icon': icon,
+                                    'source_match': f'multi_segment_location_{count}x',
+                                    'count': count
+                                })
+                
+                if threats:
+                    return threats
+                    
+    except Exception:
+        pass
+    
     # Course towards single city ("курс(ом) на Батурин") -> place marker at that city
     try:
         import re as _re_course
@@ -4711,6 +4822,131 @@ def process_message(text, mid, date_str, channel):  # type: ignore
     def has_threat(txt: str):
         l = txt.lower()
         return any(k in l for k in THREAT_KEYS)
+    # NEW: Handle UAV messages with "через [city]" and "повз [city]" patterns - BEFORE trajectory_phrase  
+    try:
+        lorig = text.lower()
+        if 'бпла' in lorig and ('через' in lorig or 'повз' in lorig):
+            threats = []
+            
+            # Extract cities from "через [city1], [city2]" pattern
+            import re as _re_route
+            route_pattern = r'через\s+([А-ЯІЇЄЁа-яіїєё\s\',\-]+?)(?:\s*\.\s+|$)'
+            route_matches = _re_route.findall(route_pattern, text, re.IGNORECASE)
+            
+            for route_match in route_matches:
+                # Split by comma to get individual cities
+                cities_raw = [c.strip() for c in route_match.split(',') if c.strip()]
+                
+                for city_raw in cities_raw:
+                    city_clean = city_raw.strip().strip('.,')
+                    city_norm = clean_text(city_clean).lower()
+                    
+                    # Apply normalization rules
+                    if city_norm in UA_CITY_NORMALIZE:
+                        city_norm = UA_CITY_NORMALIZE[city_norm]
+                    
+                    # Try to get coordinates
+                    coords = region_enhanced_coords(city_norm)
+                    if not coords:
+                        coords = ensure_city_coords(city_norm)
+                    
+                    if coords:
+                        # Handle different coordinate formats
+                        if isinstance(coords, tuple) and len(coords) >= 2:
+                            lat, lng = coords[0], coords[1]
+                        else:
+                            continue
+                        
+                        threat_type, icon = classify(text)
+                        
+                        # Extract count from text context (look for patterns like "15х БпЛА через")
+                        count = 1
+                        count_match = _re_route.search(rf'(\d+)[xх]?\s*бпла.*?через.*?{re.escape(city_clean)}', text, re.IGNORECASE)
+                        if count_match:
+                            count = int(count_match.group(1))
+                        
+                        threats.append({
+                            'id': f"{mid}_route_{len(threats)}",
+                            'place': city_clean.title(),
+                            'lat': lat,
+                            'lng': lng,
+                            'threat_type': threat_type,
+                            'text': f"Через {city_clean.title()} (з повідомлення про маршрут)",
+                            'date': date_str,
+                            'channel': channel,
+                            'marker_icon': icon,
+                            'source_match': f'route_via_{count}x',
+                            'count': count
+                        })
+                        
+                        add_debug_log(f"Route via: {city_clean} ({count}x) -> {coords}", "route_via")
+            
+            # Extract cities from "повз [city]" pattern
+            past_pattern = r'повз\s+([А-ЯІЇЄЁа-яіїєё\s\',\-]+?)(?:\s*\.\s*|$)'
+            past_matches = _re_route.findall(past_pattern, text, re.IGNORECASE)
+            
+            for past_match in past_matches:
+                city_clean = past_match.strip().strip('.,')
+                city_norm = clean_text(city_clean).lower()
+                
+                # Apply normalization rules
+                if city_norm in UA_CITY_NORMALIZE:
+                    city_norm = UA_CITY_NORMALIZE[city_norm]
+                
+                # Try to get coordinates
+                coords = region_enhanced_coords(city_norm)
+                if not coords:
+                    coords = ensure_city_coords(city_norm)
+                
+                # Fallback: try accusative case normalization (e.g., "олександрію" -> "олександрія")
+                if not coords and city_norm.endswith('ію'):
+                    accusative_fallback = city_norm[:-2] + 'ія'
+                    coords = region_enhanced_coords(accusative_fallback)
+                    if not coords:
+                        coords = ensure_city_coords(accusative_fallback)
+                    if coords:
+                        city_norm = accusative_fallback
+                        city_clean = accusative_fallback.title()  # Use normalized name for display
+                
+                if coords:
+                    # Handle different coordinate formats
+                        if isinstance(coords, tuple) and len(coords) >= 2:
+                            lat, lng = coords[0], coords[1]
+                        else:
+                            continue
+                        
+                        threat_type, icon = classify(text)
+                        
+                        # Extract count from text context (look for patterns like "4х БпЛА повз")
+                        count = 1
+                        count_match = _re_route.search(rf'(\d+)[xх]?\s*бпла.*?повз.*?{re.escape(city_clean)}', text, re.IGNORECASE)
+                        if count_match:
+                            count = int(count_match.group(1))
+                    
+                        threats.append({
+                            'id': f"{mid}_past_{len(threats)}",
+                            'place': city_clean.title(),
+                            'lat': lat,
+                            'lng': lng,
+                            'threat_type': threat_type,
+                            'text': f"Повз {city_clean.title()} (з повідомлення про маршрут)",
+                            'date': date_str,
+                            'channel': channel,
+                            'marker_icon': icon,
+                            'source_match': f'route_past_{count}x',
+                            'count': count
+                        })
+                        
+                        add_debug_log(f"Route past: {city_clean} ({count}x) -> {coords}", "route_past")
+            
+            if threats:
+                return threats
+            else:
+                pass
+                
+    except Exception:
+        pass
+    
     # --- Trajectory phrase pattern: "з дніпропетровщини через харківщину у напрямку полтавщини" ---
     # We map region stems to canonical OBLAST_CENTERS keys (simplistic stem matching).
     lower_full = text.lower()
@@ -5750,7 +5986,19 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         tracks = []
         seen = set()
         for idx,(name,(lat,lng)) in enumerate(raion_matches,1):
-            title = f"{name.title()} район"
+            # For some districts, show the main city name instead of district name
+            district_to_city_mapping = {
+                'павлоградський': 'Павлоград',
+                'білоцерківський': 'Біла Церква',
+                'кременчуцький': 'Кременчук',
+                'миколаївський': 'Миколаїв',
+                'дніпровський': 'Дніпро'
+            }
+            
+            if name.lower() in district_to_city_mapping:
+                title = district_to_city_mapping[name.lower()]
+            else:
+                title = f"{name.title()} район"
             if title in seen: continue
             seen.add(title)
             # Maintain alarm overlay state
