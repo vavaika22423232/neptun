@@ -2527,11 +2527,37 @@ def process_message(text, mid, date_str, channel):  # type: ignore
     region_count = sum(1 for line in text_lines if any(region in line.lower() for region in ['щина:', 'щина]', 'область:', 'край:']) or (
         'щина' in line.lower() and line.lower().strip().endswith(':')
     ))
-    uav_count = sum(1 for line in text_lines if 'бпла' in line.lower() and ('курс' in line.lower() or 'на ' in line.lower()))
+    # Look for lines with emoji + UAV mentions (more flexible detection)
+    uav_lines = [line for line in text_lines if 'бпла' in line.lower() and line.strip().startswith('🛵')]
+    uav_count = len(uav_lines)
     
-    add_debug_log(f"DEBUG COUNT CHECK: {region_count} regions, {uav_count} UAVs", "count_check")
+    add_debug_log(f"DEBUG COUNT CHECK: {region_count} regions, {uav_count} UAV lines", "count_check")
     
-    if region_count >= 2 and uav_count >= 3:
+    # If we have multiple UAV lines with emojis, process them separately even if they don't have explicit regions
+    if uav_count >= 2 and (region_count >= 1 or any('району' in line.lower() or 'області' in line.lower() or 'обл.' in line.lower() for line in uav_lines)):
+        add_debug_log(f"MULTI-LINE UAV PROCESSING: {uav_count} UAV lines detected", "multi_uav")
+        
+        all_tracks = []
+        for i, line in enumerate(uav_lines):
+            if not line.strip():
+                continue
+                
+            add_debug_log(f"Processing UAV line {i+1}: {line[:100]}", "uav_line")
+            
+            # Process each line as a separate message
+            line_result = process_message(line.strip(), f"{mid}_line_{i+1}", date_str, channel)
+            if line_result and isinstance(line_result, list):
+                all_tracks.extend(line_result)
+                add_debug_log(f"Line {i+1} produced {len(line_result)} tracks", "uav_line_result")
+            else:
+                add_debug_log(f"Line {i+1} produced no tracks", "uav_line_result")
+        
+        if all_tracks:
+            add_debug_log(f"Multi-line UAV processing complete: {len(all_tracks)} total tracks", "multi_uav_complete")
+            return all_tracks
+    
+    # Legacy multi-regional detection (keep for backward compatibility)
+    if region_count >= 2 and sum(1 for line in text_lines if 'бпла' in line.lower() and ('курс' in line.lower() or 'на ' in line.lower())) >= 3:
         add_debug_log(f"IMMEDIATE MULTI-REGIONAL UAV: {region_count} regions, {uav_count} UAVs - ENTERING EARLY PROCESSING", "multi_regional")
         # Process directly without going through other logic
         import re
