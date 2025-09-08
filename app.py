@@ -1564,6 +1564,10 @@ ODESA_CITY_COORDS = {
     'ізмаїлу': (45.3511, 28.8367),
     'вилкове': (45.4031, 29.5986),
     'вилковому': (45.4031, 29.5986),
+    # Чаплине (Дніпропетровська область)
+    'чаплине': (47.3811, 34.5619),
+    'чаплином': (47.3811, 34.5619),
+    'чаплиному': (47.3811, 34.5619),
     'рений': (45.4560, 28.2830),
     'рені': (45.4560, 28.2830),
     'рено?': (45.4560, 28.2830),
@@ -2531,7 +2535,36 @@ def process_message(text, mid, date_str, channel):  # type: ignore
     uav_lines = [line for line in text_lines if 'бпла' in line.lower() and line.strip().startswith('🛵')]
     uav_count = len(uav_lines)
     
-    add_debug_log(f"DEBUG COUNT CHECK: {region_count} regions, {uav_count} UAV lines", "count_check")
+    # NEW: Look for lines with Shahed mentions and regions (without emoji requirement)
+    shahed_region_lines = [line for line in text_lines if 
+                          ('шахед' in line.lower() or 'shahed' in line.lower()) and 
+                          ('щина' in line.lower() or 'щину' in line.lower() or 'щині' in line.lower())]
+    shahed_count = len(shahed_region_lines)
+    
+    add_debug_log(f"DEBUG COUNT CHECK: {region_count} regions, {uav_count} UAV lines, {shahed_count} Shahed+region lines", "count_check")
+    
+    # If we have multiple Shahed lines with regions, process them separately
+    if shahed_count >= 2:
+        add_debug_log(f"MULTI-LINE SHAHED PROCESSING: {shahed_count} Shahed+region lines detected", "multi_shahed")
+        
+        all_tracks = []
+        for i, line in enumerate(shahed_region_lines):
+            if not line.strip():
+                continue
+                
+            add_debug_log(f"Processing Shahed line {i+1}: {line[:100]}", "shahed_line")
+            
+            # Process each line as a separate message
+            line_result = process_message(line.strip(), f"{mid}_shahed_{i+1}", date_str, channel)
+            if line_result and isinstance(line_result, list):
+                all_tracks.extend(line_result)
+                add_debug_log(f"Shahed line {i+1} produced {len(line_result)} tracks", "shahed_line_result")
+            else:
+                add_debug_log(f"Shahed line {i+1} produced no tracks", "shahed_line_result")
+        
+        if all_tracks:
+            add_debug_log(f"Multi-line Shahed processing complete: {len(all_tracks)} total tracks", "multi_shahed_complete")
+            return all_tracks
     
     # If we have multiple UAV lines with emojis, process them separately even if they don't have explicit regions
     if uav_count >= 2 and (region_count >= 1 or any('району' in line.lower() or 'області' in line.lower() or 'обл.' in line.lower() for line in uav_lines)):
@@ -3922,6 +3955,54 @@ def process_message(text, mid, date_str, channel):  # type: ignore
     add_debug_log(f"Processing {len(lines)} cleaned lines for multi-city tracks", "multi_region")
     for ln in lines:
         add_debug_log(f"Processing line: '{ln}'", "multi_region")
+        
+        # PRIORITY: Check for specific "на [region] [count] шахедів на [city]" pattern FIRST
+        import re as _re_region_city
+        ln_lower = ln.lower()
+        region_city_pattern = _re_region_city.compile(r'на\s+([а-яіїєґ]+щин[іау]?)\s+(\d+)\s+шахед[іїв]*\s+на\s+([а-яіїєґ\'\-\s]+)', _re_region_city.IGNORECASE)
+        region_city_match = region_city_pattern.search(ln_lower)
+        
+        add_debug_log(f"CHECKING region-city pattern for line: '{ln_lower}'", "region_city_debug")
+        
+        if region_city_match:
+            region_raw, count_str, city_raw = region_city_match.groups()
+            target_city = city_raw.strip()
+            count = int(count_str) if count_str.isdigit() else 1
+            
+            add_debug_log(f"REGION-CITY pattern FOUND: region='{region_raw}', count={count}, city='{target_city}'", "region_city")
+            
+            # Normalize city name and try to find coordinates
+            city_norm = target_city.lower()
+            # Apply UA_CITY_NORMALIZE rules if available
+            if 'UA_CITY_NORMALIZE' in globals():
+                city_norm = UA_CITY_NORMALIZE.get(city_norm, city_norm)
+            coords = CITY_COORDS.get(city_norm)
+            
+            add_debug_log(f"City lookup: '{target_city}' -> '{city_norm}' -> {coords}", "region_city")
+            
+            if coords:
+                lat, lng = coords
+                threat_type, icon = classify(ln)
+                
+                multi_city_tracks.append({
+                    'id': f"{mid}_region_city_{len(multi_city_tracks)+1}",
+                    'place': target_city.title(),
+                    'lat': lat,
+                    'lng': lng,
+                    'threat_type': threat_type,
+                    'text': ln[:500],
+                    'date': date_str,
+                    'channel': channel,
+                    'marker_icon': icon,
+                    'source_match': 'region_city_shahed',
+                    'count': count
+                })
+                add_debug_log(f"Created region-city marker: {target_city.title()} ({count} шахедів)", "region_city")
+                continue  # Skip further processing of this line
+            else:
+                add_debug_log(f"No coordinates found for city: '{target_city}' (normalized: '{city_norm}')", "region_city")
+        else:
+            add_debug_log(f"REGION-CITY pattern NOT FOUND for line: '{ln_lower}'", "region_city_debug")
         
         # Check if line contains БпЛА information without specific course
         ln_lower = ln.lower()
