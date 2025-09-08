@@ -2535,7 +2535,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
     text_lines = original_text.split('\n')
     region_count = sum(1 for line in text_lines if any(region in line.lower() for region in ['щина:', 'щина]', 'область:', 'край:']) or (
         'щина' in line.lower() and line.lower().strip().endswith(':')
-    ))
+    ) or any(region in line.lower() for region in ['щина)', 'щини', 'щину', 'одещина', 'чернігівщина', 'дніпропетровщина', 'харківщина', 'київщина']))
     # Look for lines with emoji + UAV mentions (more flexible detection)
     uav_lines = [line for line in text_lines if 'бпла' in line.lower() and line.strip().startswith('🛵')]
     uav_count = len(uav_lines)
@@ -2653,9 +2653,51 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                 patterns = [
                     # Pattern for markdown links: БпЛА курсом на [Бровари](link)
                     r'(\d+)?[xх]?\s*бпла\s+(?:курсом?)?\s*(?:на|над)\s+\[([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)\]',
-                    # Pattern for plain text: БпЛА курсом на Конотоп
-                    r'(\d+)?[xх]?\s*бпла\s+(?:курсом?)?\s*(?:на|над)\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]{3,50}?)(?=\s*(?:\n|$))'
+                    # Pattern for plain text: БпЛА курсом на Конотоп (with optional н.п. prefix and flexible БпЛА...курсом)
+                    r'(\d+)?[xх]?\s*бпла\s+.*?курс(?:ом)?\s+на\s+(?:н\.п\.?\s*)?([А-ЯІЇЄЁа-яіїєё\'\-\s]{3,50}?)(?=\s*(?:\n|$|[,\.\!\?;]))'
                 ]
+                
+                # Also check for bracket city pattern like "Вилково (Одещина)"
+                bracket_matches = re.finditer(r'([А-ЯІЇЄЁа-яіїєё\'\-\s]{3,30})\s*\(([А-ЯІЇЄЁа-яіїєё\'\-\s]+щина|[А-ЯІЇЄЁа-яіїєё\'\-\s]+обл\.?)\)', line_stripped, re.IGNORECASE)
+                for bmatch in bracket_matches:
+                    city_clean = bmatch.group(1).strip()
+                    region_info = bmatch.group(2).strip()
+                    
+                    city_normalized = city_clean.lower()
+                    city_key = city_normalized
+                    
+                    # Skip if already processed
+                    if city_key in processed_cities:
+                        continue
+                    processed_cities.add(city_key)
+                    
+                    # Try to get coordinates
+                    coords = get_city_coords_quick(city_clean)
+                    
+                    if coords:
+                        if len(coords) == 3:
+                            lat, lng, approx = coords
+                        else:
+                            lat, lng = coords
+                        
+                        threat_id = f"{mid}_imm_bracket_{len(threats)}"
+                        threats.append({
+                            'id': threat_id,
+                            'place': city_clean.title(),
+                            'lat': lat,
+                            'lng': lng,
+                            'threat_type': 'shahed',
+                            'text': f"{line_stripped} (bracket city)",
+                            'date': date_str,
+                            'channel': channel,
+                            'marker_icon': 'shahed.png',
+                            'source_match': 'immediate_multi_regional_bracket',
+                            'count': 1
+                        })
+                        
+                        add_debug_log(f"Immediate Multi-regional bracket: {city_clean} -> {coords}", "multi_regional")
+                    else:
+                        add_debug_log(f"Immediate Multi-regional bracket: No coords for {city_clean}", "multi_regional")
                 
                 for pattern in patterns:
                     matches = re.finditer(pattern, line_stripped, re.IGNORECASE)
@@ -2742,6 +2784,75 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                             add_debug_log(f"Immediate Multi-regional: {city_clean} ({uav_count_num}x) -> {coords}", "multi_regional")
                         else:
                             add_debug_log(f"Immediate Multi-regional: No coords for {city_clean}", "multi_regional")
+        
+        # Also check for regional UAV references without specific cities
+        for line in text_lines:
+            line_stripped = line.strip()
+            if not line_stripped:
+                continue
+            line_lower = line_stripped.lower()
+            
+            # Look for UAV + region patterns without specific cities
+            if 'бпла' in line_lower and any(region in line_lower for region in ['щини', 'щину', 'одещина', 'чернігівщина', 'дніпропетровщини']):
+                # Skip if this specific line contains a city that was already processed
+                line_has_processed_city = False
+                for city in processed_cities:
+                    if city in line_lower:
+                        line_has_processed_city = True
+                        break
+                
+                if line_has_processed_city:
+                    continue
+                
+                # Check if this is a directional reference like "на півдні Дніпропетровщини"
+                region_match = re.search(r'на\s+([\w\-\s/]+?)\s+([а-яіїєґ]+щини|[а-яіїєґ]+щину|дніпропетровщини|одещини|чернігівщини)', line_lower)
+                if region_match:
+                    direction = region_match.group(1).strip()
+                    region_raw = region_match.group(2).strip()
+                    
+                    # Map region to oblast center
+                    region_coords = None
+                    if 'дніпропетров' in region_raw:
+                        region_coords = (48.45, 35.0)
+                        region_name = 'Дніпропетровщини'
+                    elif 'чернігів' in region_raw:
+                        region_coords = (51.4982, 31.3044)
+                        region_name = 'Чернігівщини'
+                    elif 'одес' in region_raw:
+                        region_coords = (46.5197, 30.7495)
+                        region_name = 'Одещини'
+                    
+                    if region_coords:
+                        # Apply directional offset
+                        lat, lng = region_coords
+                        if 'півдн' in direction or 'южн' in direction:
+                            lat -= 0.5
+                        elif 'північ' in direction or 'север' in direction:
+                            lat += 0.5
+                        elif 'захід' in direction or 'запад' in direction:
+                            lng -= 0.8
+                        elif 'схід' in direction or 'восток' in direction:
+                            lng += 0.8
+                        
+                        direction_label = direction.replace('півдн', 'південн').replace('північ', 'північн')
+                        place_name = f"{region_name} ({direction_label}а частина)"
+                        
+                        threat_id = f"{mid}_imm_regional_{len(threats)}"
+                        threats.append({
+                            'id': threat_id,
+                            'place': place_name,
+                            'lat': lat,
+                            'lng': lng,
+                            'threat_type': 'shahed',
+                            'text': f"{line_stripped} (регіональний)",
+                            'date': date_str,
+                            'channel': channel,
+                            'marker_icon': 'shahed.png',
+                            'source_match': 'immediate_multi_regional_region',
+                            'count': 1
+                        })
+                        
+                        add_debug_log(f"Immediate Multi-regional regional: {place_name} -> {lat}, {lng}", "multi_regional")
         
         if threats:
             add_debug_log(f"IMMEDIATE MULTI-REGIONAL RESULT: {len(threats)} threats", "multi_regional")
@@ -3681,8 +3792,8 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     if 'бпла' not in seg_lower:
                         continue
                     
-                    # Pattern 1: "БпЛА курсом на [city]"
-                    course_match = _re_multi.search(r'бпла\s+курсом?\s+на\s+([а-яіїєґ\'\-\s]+?)(?:\s|$)', seg_lower)
+                    # Pattern 1: "БпЛА курсом на [city]" (with optional н.п. prefix)
+                    course_match = _re_multi.search(r'бпла\s+курсом?\s+на\s+(?:н\.п\.?\s*)?([а-яіїєґ\'\-\s]+?)(?:\s|$)', seg_lower)
                     if course_match:
                         city_name = course_match.group(1).strip()
                         city_norm = clean_text(city_name).lower()
@@ -3878,6 +3989,13 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     }
                     label = f"{label_region} ({dir_label_map.get(code,'частина')})"
                     threat_type, icon = classify(text)
+                    
+                    # Skip if this segment contains "курсом на [city]" after the region match
+                    # to give priority to specific city course tracking
+                    segment_after = text[m.end():]
+                    if _re_seg.search(r'курсом?\s+на\s+(?:н\.п\.?\s*)?[А-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,}', segment_after, _re_seg.IGNORECASE):
+                        continue
+                    
                     seg_tracks.append({
                         'id': f"{mid}_rd{len(seg_tracks)+1}", 'place': label, 'lat': lat_o, 'lng': lng_o,
                         'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
@@ -4537,13 +4655,13 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     })
                     continue
         # Разрешаем многословные названия (до 3 слов) до конца строки / знака препинания
-        m = re.search(r'(\d+)[xх]?\s*бпла.*?курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\!\?;]|$)', ln, re.IGNORECASE)
+        m = re.search(r'(\d+)[xх]?\s*бпла.*?курс(?:ом)?\s+на\s+(?:н\.п\.?\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\!\?;]|$)', ln, re.IGNORECASE)
         if m:
             count = int(m.group(1))
             city = m.group(2)
         else:
             # Дополнительно поддерживаем строки вида "7х БпЛА повз <місто> ..." или "БпЛА повз <місто>"
-            m2 = re.search(r'бпла.*?курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\!\?;]|$)', ln, re.IGNORECASE)
+            m2 = re.search(r'бпла.*?курс(?:ом)?\s+на\s+(?:н\.п\.?\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\!\?;]|$)', ln, re.IGNORECASE)
             if m2:
                 count = 1
                 city = m2.group(1)
@@ -5939,8 +6057,8 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         if expanded:
             lines_with_region = expanded
         course_tracks = []
-        pat_count_course = re.compile(r'^(\d+)\s*[xх]?\s*бпла.*?курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
-        pat_course = re.compile(r'бпла.*?курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
+        pat_count_course = re.compile(r'^(\d+)\s*[xх]?\s*бпла.*?курс(?:ом)?\s+на\s+(?:н\.п\.?\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
+        pat_course = re.compile(r'бпла.*?курс(?:ом)?\s+на\s+(?:н\.п\.?\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         pat_area = re.compile(r'(\d+)?[xх]?\s*бпла\s+в\s+районі\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         if re.search(r'бпла.*?курс(?:ом)?\s+на\s+кіпт[ії]', lower):
             coords = SETTLEMENT_FALLBACK.get('кіпті')
