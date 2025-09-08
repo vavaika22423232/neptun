@@ -2790,6 +2790,9 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         if any(k in l for k in ['каб','kab','умпк','umpk','модуль','fab','умпб','фаб','кабу']) or \
            ('авіаційн' in l and 'бомб' in l) or ('керован' in l and 'бомб' in l):
             return 'raketa', 'raketa.png'
+        # High-speed targets / missile threats (ціль, високошвидкісні цілі) -> raketa.png
+        if any(k in l for k in ['ціль','цілей','цілі','високошвидкісн','high-speed']) or '🚀' in th:
+            return 'raketa', 'raketa.png'
         # Rocket / missile attacks (ракета, ракети) -> raketa.png
         if any(k in l for k in ['ракет','rocket','міжконтинент','межконтинент','балістичн','крилат','cruise']):
             return 'raketa', 'raketa.png'
