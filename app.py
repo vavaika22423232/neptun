@@ -776,6 +776,8 @@ UA_CITY_NORMALIZE.update({
     ,'чоповичі':'чоповичі','звягель':'звягель','сахновщину':'сахновщина'
     ,'камʼянське':'камʼянське','піщаний брід':'піщаний брід','бобринець':'бобринець'
     ,'тендрівську косу':'тендрівська коса'
+    # Одеська область
+    ,'вилково':'вилкове','вилкову':'вилкове'
 })
 # Apostrophe-less fallback for Sloviansk
 UA_CITY_NORMALIZE['словянськ'] = "слов'янськ"
@@ -2526,6 +2528,9 @@ def process_message(text, mid, date_str, channel):  # type: ignore
     original_text = text or ''
     low_orig = original_text.lower()
     
+    # Clear any previous priority result
+    globals()['_current_priority_result'] = None
+    
     # IMMEDIATE CHECK: Multi-regional UAV messages (highest priority)
     text_lines = original_text.split('\n')
     region_count = sum(1 for line in text_lines if any(region in line.lower() for region in ['щина:', 'щина]', 'область:', 'край:']) or (
@@ -2790,6 +2795,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
 
     # Define classify function at the start so it's available throughout process_message
     def classify(th: str):
+        import re  # Import re module locally for pattern matching
         l = th.lower()
         # Recon / розвід дрони -> use pvo icon (rozved.png) per user request - PRIORITY: check BEFORE general БПЛА
         if 'розвід' in l or 'розвідуваль' in l or 'развед' in l:
@@ -2849,6 +2855,56 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             return 'neptun', 'neptun.jpg'
         # General fallback for unclassified threats
         return 'shahed', 'shahed.png'  # default fallback
+
+    # HIGHEST PRIORITY: Check for region-district patterns immediately
+    import re as _re_priority
+    region_district_pattern = _re_priority.compile(r'([а-яіїєґ]+щин[ауи]?)\s*\(\s*([а-яіїєґ\'\-\s]+)\s+р[-\s]*н\)', _re_priority.IGNORECASE)
+    region_district_match = region_district_pattern.search(original_text)
+    
+    if region_district_match:
+        region_raw, district_raw = region_district_match.groups()
+        target_city = district_raw.strip()
+        
+        add_debug_log(f"PRIORITY REGION-DISTRICT pattern FOUND: region='{region_raw}', district='{district_raw}'", "priority_region_district")
+        
+        # Normalize city name and try to find coordinates
+        city_norm = target_city.lower()
+        # Apply UA_CITY_NORMALIZE rules if available
+        if 'UA_CITY_NORMALIZE' in globals():
+            city_norm = UA_CITY_NORMALIZE.get(city_norm, city_norm)
+        coords = CITY_COORDS.get(city_norm)
+        
+        add_debug_log(f"Priority district city lookup: '{target_city}' -> '{city_norm}' -> {coords}", "priority_region_district")
+        
+        if coords:
+            lat, lng = coords
+            threat_type, icon = classify(original_text)
+            
+            priority_result = [{
+                'id': f"{mid}_priority_district",
+                'place': target_city.title(),
+                'lat': lat,
+                'lng': lng,
+                'threat_type': threat_type,
+                'text': original_text[:500],
+                'date': date_str,
+                'channel': channel,
+                'marker_icon': icon,
+                'source_match': 'priority_region_district',
+                'count': 1
+            }]
+            add_debug_log(f"Created PRIORITY region-district marker: {target_city.title()}", "priority_region_district")
+            
+            # Store priority result globally for combination with other results
+            globals()['_current_priority_result'] = priority_result
+            
+            # Store priority result and continue with normal processing to catch other cities
+            # This allows other parsers to find additional cities in the same message
+        else:
+            add_debug_log(f"No coordinates found for priority district city: '{target_city}' (normalized: '{city_norm}')", "priority_region_district")
+            priority_result = None
+    else:
+        priority_result = None
 
     # ВСЕГДА логируем каждое входящее сообщение для отладки
     try:
@@ -3711,6 +3767,13 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                                 })
                 
                 if threats:
+                    # Check for priority result to combine
+                    if '_current_priority_result' in globals() and globals()['_current_priority_result']:
+                        combined_result = globals()['_current_priority_result'] + threats
+                        add_debug_log(f"MULTI-SEGMENT: Combined priority result ({len(globals()['_current_priority_result'])}) with threats ({len(threats)}) = {len(combined_result)} total", "priority_combine")
+                        # Clear the global priority result after use
+                        globals()['_current_priority_result'] = None
+                        return combined_result
                     return threats
                     
     except Exception:
@@ -3956,18 +4019,73 @@ def process_message(text, mid, date_str, channel):  # type: ignore
     for ln in lines:
         add_debug_log(f"Processing line: '{ln}'", "multi_region")
         
-        # PRIORITY: Check for specific "на [region] [count] шахедів на [city]" pattern FIRST
+        # PRIORITY: Check for specific region-city patterns FIRST
         import re as _re_region_city
         ln_lower = ln.lower()
-        region_city_pattern = _re_region_city.compile(r'на\s+([а-яіїєґ]+щин[іау]?)\s+(\d+)\s+шахед[іїв]*\s+на\s+([а-яіїєґ\'\-\s]+)', _re_region_city.IGNORECASE)
-        region_city_match = region_city_pattern.search(ln_lower)
         
-        add_debug_log(f"CHECKING region-city pattern for line: '{ln_lower}'", "region_city_debug")
+        # Pattern 1: "на [region] [count] шахедів на [city]"
+        region_city_pattern1 = _re_region_city.compile(r'на\s+([а-яіїєґ]+щин[іау]?)\s+(\d+)\s+шахед[іїв]*\s+на\s+([а-яіїєґ\'\-\s]+)', _re_region_city.IGNORECASE)
+        region_city_match1 = region_city_pattern1.search(ln_lower)
         
-        if region_city_match:
-            region_raw, count_str, city_raw = region_city_match.groups()
+        # Pattern 2: "[region] - шахеди на [city]"
+        region_city_pattern2 = _re_region_city.compile(r'([а-яіїєґ]+щин[ауи]?)\s*-\s*шахед[іїив]*\s+на\s+([а-яіїєґ\'\-\s]+)', _re_region_city.IGNORECASE)
+        region_city_match2 = region_city_pattern2.search(ln_lower)
+        
+        # Pattern 3: "[region] ([city] р-н)" - for district headquarters
+        region_district_pattern = _re_region_city.compile(r'([а-яіїєґ]+щин[ауи]?)\s*\(\s*([а-яіїєґ\'\-\s]+)\s+р[-\s]*н\)', _re_region_city.IGNORECASE)
+        region_district_match = region_district_pattern.search(ln_lower)
+        
+        add_debug_log(f"CHECKING region-city patterns for line: '{ln_lower}'", "region_city_debug")
+        
+        region_city_match = region_city_match1 or region_city_match2
+        
+        if region_district_match:
+            # Handle "чернігівщина (новгород-сіверський р-н)" format
+            region_raw, district_raw = region_district_match.groups()
+            target_city = district_raw.strip()
+            
+            add_debug_log(f"REGION-DISTRICT pattern FOUND: region='{region_raw}', district='{district_raw}'", "region_district")
+            
+            # Normalize city name and try to find coordinates
+            city_norm = target_city.lower()
+            # Apply UA_CITY_NORMALIZE rules if available
+            if 'UA_CITY_NORMALIZE' in globals():
+                city_norm = UA_CITY_NORMALIZE.get(city_norm, city_norm)
+            coords = CITY_COORDS.get(city_norm)
+            
+            add_debug_log(f"District city lookup: '{target_city}' -> '{city_norm}' -> {coords}", "region_district")
+            
+            if coords:
+                lat, lng = coords
+                threat_type, icon = classify(ln)
+                
+                multi_city_tracks.append({
+                    'id': f"{mid}_region_district_{len(multi_city_tracks)+1}",
+                    'place': target_city.title(),
+                    'lat': lat,
+                    'lng': lng,
+                    'threat_type': threat_type,
+                    'text': ln[:500],
+                    'date': date_str,
+                    'channel': channel,
+                    'marker_icon': icon,
+                    'source_match': 'region_district',
+                    'count': 1
+                })
+                add_debug_log(f"Created region-district marker: {target_city.title()}", "region_district")
+                continue  # Skip further processing of this line
+            else:
+                add_debug_log(f"No coordinates found for district city: '{target_city}' (normalized: '{city_norm}')", "region_district")
+        
+        elif region_city_match:
+            if region_city_match1:
+                region_raw, count_str, city_raw = region_city_match1.groups()
+                count = int(count_str) if count_str.isdigit() else 1
+            else:  # region_city_match2
+                region_raw, city_raw = region_city_match2.groups()
+                count = 1  # default count for pattern 2
+                
             target_city = city_raw.strip()
-            count = int(count_str) if count_str.isdigit() else 1
             
             add_debug_log(f"REGION-CITY pattern FOUND: region='{region_raw}', count={count}, city='{target_city}'", "region_city")
             
@@ -4659,6 +4777,11 @@ def process_message(text, mid, date_str, channel):  # type: ignore
     print(f"DEBUG: Multi-city tracks processing complete. Found {len(multi_city_tracks)} tracks")
     if multi_city_tracks:
         print(f"DEBUG: Returning {len(multi_city_tracks)} multi-city tracks")
+        # Combine with priority result if available
+        if 'priority_result' in locals() and priority_result:
+            combined_result = priority_result + multi_city_tracks
+            add_debug_log(f"Combined priority result ({len(priority_result)}) with multi-city tracks ({len(multi_city_tracks)}) = {len(combined_result)} total", "priority_combine")
+            return combined_result
         return multi_city_tracks
     # --- Detect and split multiple city targets in one message ---
     import re
