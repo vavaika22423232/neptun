@@ -2493,6 +2493,8 @@ def geocode_opencage(place: str):
         return None
 
 def process_message(text, mid, date_str, channel):  # type: ignore
+    import re
+    
     # Helper function to clean text from subscription prompts
     def clean_text(text_to_clean):
         if not text_to_clean:
@@ -2966,6 +2968,124 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             return 'neptun', 'neptun.jpg'
         # General fallback for unclassified threats
         return 'shahed', 'shahed.png'  # default fallback
+    
+    # PRIORITY CHECK: District-level UAV messages (e.g., "вишгородський р-н київська обл.")
+    # Added after classify function to ensure it's available
+    lower_text = original_text.lower()
+    district_pattern = re.compile(r'([а-яіїєґ\'\-\s]+ський|[а-яіїєґ\'\-\s]+цький)\s+р[-\s]*н\s+([а-яіїєґ\'\-\s]+(?:обл\.?|область|щина))', re.IGNORECASE)
+    district_match = district_pattern.search(lower_text)
+    
+    if district_match and 'бпла' in lower_text:
+        district_raw = district_match.group(1).strip()
+        region_raw = district_match.group(2).strip()
+        
+        add_debug_log(f"DISTRICT UAV: found '{district_raw} р-н {region_raw}'", "district_uav")
+        
+        # Try to map district to city coordinates
+        district_city = district_raw.replace('ський', '').replace('цький', '').strip()
+        
+        # Check if we have coordinates for this district city
+        coords = CITY_COORDS.get(district_city)
+        if not coords and district_city in UA_CITY_NORMALIZE:
+            coords = CITY_COORDS.get(UA_CITY_NORMALIZE[district_city])
+        
+        if coords:
+            lat, lng = coords
+            threat_type, icon = classify(original_text)
+            
+            # Create district-level marker
+            district_track = {
+                'id': f"{mid}_district",
+                'place': f"{district_city.title()} ({district_raw} р-н)",
+                'lat': lat,
+                'lng': lng,
+                'threat_type': threat_type,
+                'text': original_text[:500],
+                'date': date_str,
+                'channel': channel,
+                'marker_icon': icon,
+                'source_match': 'district_priority_uav',
+                'count': 1
+            }
+            
+            add_debug_log(f"DISTRICT UAV SUCCESS: {district_city} -> {coords}", "district_uav")
+            return [district_track]
+        else:
+            add_debug_log(f"DISTRICT UAV: No coords for '{district_city}'", "district_uav")
+    
+    # PRIORITY CHECK: Single-region numbered UAV lists (н.п. patterns)
+    # For messages like "Київщина:\n• н.п. Бровари - постійна загроза БпЛА"
+    lower_text = original_text.lower()
+    text_lines = original_text.split('\n')
+    
+    # Check if this is a single-region message with numbered н.п. cities
+    region_lines = [line for line in text_lines if any(region in line.lower() for region in ['щина:', 'щина]', 'область:']) and line.strip().endswith(':')]
+    np_lines = [line for line in text_lines if ('н.п.' in line.lower() or 'н. п.' in line.lower()) and 'бпла' in line.lower()]
+    
+    if len(region_lines) == 1 and len(np_lines) >= 1:  # Single region with н.п. cities
+        region_line = region_lines[0]
+        region_name = region_line.replace(':', '').strip()
+        
+        add_debug_log(f"SINGLE-REGION NUMBERED: found {len(np_lines)} н.п. cities in {region_name}", "single_region_numbered")
+        
+        numbered_tracks = []
+        for i, line in enumerate(np_lines):
+            # Extract city name from н.п. pattern
+            np_match = re.search(r'н\.?\s*п\.?\s+([а-яіїєґ\'\-\s]+)', line.lower())
+            if np_match:
+                city_name_raw = np_match.group(1).strip()
+                # Clean up - take only the city name before any separators
+                city_name = city_name_raw.split(' - ')[0].split(' –')[0].split(' ')[0].strip()
+                
+                # Try to find coordinates for this city
+                coords = CITY_COORDS.get(city_name)
+                if not coords and city_name in UA_CITY_NORMALIZE:
+                    coords = CITY_COORDS.get(UA_CITY_NORMALIZE[city_name])
+                
+                if coords:
+                    lat, lng = coords
+                    threat_type, icon = classify(line)
+                    
+                    numbered_tracks.append({
+                        'id': f"{mid}_np_{i+1}",
+                        'place': f"{city_name.title()} ({region_name})",
+                        'lat': lat,
+                        'lng': lng,
+                        'threat_type': threat_type,
+                        'text': line[:500],
+                        'date': date_str,
+                        'channel': channel,
+                        'marker_icon': icon,
+                        'source_match': 'single_region_numbered_np',
+                        'count': 1
+                    })
+                    add_debug_log(f"NUMBERED UAV SUCCESS: {city_name} -> {coords}", "single_region_numbered")
+                else:
+                    # Fallback to region coordinates if city not found
+                    region_key = region_name.lower().replace('щина', '').replace('область', '').strip()
+                    region_coords = CITY_COORDS.get(region_key)
+                    if region_coords:
+                        lat, lng = region_coords
+                        threat_type, icon = classify(line)
+                        
+                        numbered_tracks.append({
+                            'id': f"{mid}_np_fallback_{i+1}",
+                            'place': f"{region_name} (н.п. {city_name.title()})",
+                            'lat': lat,
+                            'lng': lng,
+                            'threat_type': threat_type,
+                            'text': line[:500],
+                            'date': date_str,
+                            'channel': channel,
+                            'marker_icon': icon,
+                            'source_match': 'single_region_numbered_np_fallback',
+                            'count': 1
+                        })
+                        add_debug_log(f"NUMBERED UAV FALLBACK: {city_name} -> {region_name} {region_coords}", "single_region_numbered")
+        
+        if numbered_tracks:
+            add_debug_log(f"SINGLE-REGION NUMBERED SUCCESS: {len(numbered_tracks)} markers created", "single_region_numbered")
+            return numbered_tracks
 
     # HIGHEST PRIORITY: Check for region-district patterns immediately
     import re as _re_priority
