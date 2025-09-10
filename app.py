@@ -4157,6 +4157,24 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     if course_match:
                         city_name = course_match.group(1).strip()
                         city_norm = clean_text(city_name).lower()
+                        
+                        # Accusative case normalization (винительный падеж)
+                        if city_norm == 'велику димерку':
+                            city_norm = 'велика димерка'
+                        elif city_norm == 'мену':
+                            city_norm = 'мена'
+                        elif city_norm == 'пісківку':
+                            city_norm = 'пісківка'
+                        elif city_norm == 'києвом':
+                            city_norm = 'київ'
+                        # General accusative case endings
+                        elif city_norm.endswith('у') and len(city_norm) > 3:
+                            city_norm = city_norm[:-1] + 'а'
+                        elif city_norm.endswith('ю') and len(city_norm) > 3:
+                            city_norm = city_norm[:-1] + 'я'
+                        elif city_norm.endswith('ку') and len(city_norm) > 4:
+                            city_norm = city_norm[:-2] + 'ка'
+                        
                         if city_norm in UA_CITY_NORMALIZE:
                             city_norm = UA_CITY_NORMALIZE[city_norm]
                         
@@ -4165,19 +4183,76 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                         if coords and isinstance(coords, tuple) and len(coords) >= 2:
                             lat, lng = coords[0], coords[1]
                             threat_type, icon = classify(text)
+                            # Use normalized city name for display, not the original accusative form
+                            display_name = city_norm.title()
                             threats.append({
                                 'id': f"{mid}_multi_{seg_idx}",
-                                'place': city_name.title(),
+                                'place': display_name,
                                 'lat': lat,
                                 'lng': lng,
                                 'threat_type': threat_type,
-                                'text': f"Курсом на {city_name.title()}",
+                                'text': f"Курсом на {display_name}",
                                 'date': date_str,
                                 'channel': channel,
                                 'marker_icon': icon,
                                 'source_match': 'multi_segment_course',
                                 'count': 1
                             })
+                    
+                    # Pattern 1.5: "БпЛА повз [city1] курсом на [city2]" - extract both cities
+                    povz_match = _re_multi.search(r'(\d+)?[xх]?\s*бпла\s+повз\s+([а-яіїєґ\'\-\s]+?)\s+курсом?\s+на\s+([а-яіїєґ\'\-\s]+?)(?:\s|$)', seg_lower)
+                    if povz_match and not course_match:  # Don't double-process if already handled by Pattern 1
+                        count_str, city1_name, city2_name = povz_match.groups()
+                        count = int(count_str) if count_str and count_str.isdigit() else 1
+                        
+                        for city_idx, city_raw in enumerate([city1_name, city2_name]):
+                            if not city_raw:
+                                continue
+                                
+                            city_name = city_raw.strip()
+                            city_norm = clean_text(city_name).lower()
+                            
+                            # Accusative case normalization for both cities
+                            if city_norm == 'велику димерку':
+                                city_norm = 'велика димерка'
+                            elif city_norm == 'мену':
+                                city_norm = 'мена'
+                            elif city_norm == 'пісківку':
+                                city_norm = 'пісківка'
+                            elif city_norm == 'києвом':
+                                city_norm = 'київ'
+                            # General accusative case endings
+                            elif city_norm.endswith('у') and len(city_norm) > 3:
+                                city_norm = city_norm[:-1] + 'а'
+                            elif city_norm.endswith('ю') and len(city_norm) > 3:
+                                city_norm = city_norm[:-1] + 'я'
+                            elif city_norm.endswith('ку') and len(city_norm) > 4:
+                                city_norm = city_norm[:-2] + 'ка'
+                            
+                            if city_norm in UA_CITY_NORMALIZE:
+                                city_norm = UA_CITY_NORMALIZE[city_norm]
+                            
+                            coords = ensure_city_coords(city_norm)
+                            
+                            if coords and isinstance(coords, tuple) and len(coords) >= 2:
+                                lat, lng = coords[0], coords[1]
+                                threat_type, icon = classify(text)
+                                action = "Повз" if city_idx == 0 else "Курсом на"
+                                # Use normalized city name for display
+                                display_name = city_norm.title()
+                                threats.append({
+                                    'id': f"{mid}_multi_{seg_idx}_povz_{city_idx}",
+                                    'place': display_name,
+                                    'lat': lat,
+                                    'lng': lng,
+                                    'threat_type': threat_type,
+                                    'text': f"{action} {display_name} ({count}x)",
+                                    'date': date_str,
+                                    'channel': channel,
+                                    'marker_icon': icon,
+                                    'source_match': 'multi_segment_povz',
+                                    'count': count
+                                })
                     
                     # Pattern 2: "[N]х БпЛА [location]" - extract cities
                     location_match = _re_multi.search(r'(\d+)?[xх]?\s*бпла\s+(.+?)(?:\.|$)', seg_lower)
