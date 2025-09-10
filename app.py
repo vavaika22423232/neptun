@@ -911,6 +911,17 @@ CITY_COORDS = {
     'зарічне': (51.2167, 26.0833),      # Рівненська область
     'сенкевичівка': (51.5667, 25.8333), # Волинська область
     'голоби': (50.7833, 25.2167),       # Волинська область
+    
+    # Дополнительные города из UAV сообщений (сентябрь 2025)
+    'корнин': (50.9167, 29.1167),       # Житомирська область, Малинський район
+    'корнину': (50.9167, 29.1167),
+    'корнином': (50.9167, 29.1167),
+    'корнина': (50.9167, 29.1167),
+    'добротвір': (50.2053, 24.4239),    # Львівська область, енергетичний центр
+    'добротворі': (50.2053, 24.4239),
+    'добротвору': (50.2053, 24.4239),
+    'добротвором': (50.2053, 24.4239),
+    'добротвора': (50.2053, 24.4239),
     'слов\'янськ': (48.8417, 37.5983), 'дружківка': (48.6203, 37.5263),
     # Fallback key without apostrophe (some sources strip it)
     'словянськ': (48.8417, 37.5983),
@@ -2766,7 +2777,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         'щина' in line.lower() and line.lower().strip().endswith(':')
     ) or any(region in line.lower() for region in ['щина)', 'щини', 'щину', 'одещина', 'чернігівщина', 'дніпропетровщина', 'харківщина', 'київщина']))
     # Look for lines with emoji + UAV mentions (more flexible detection)
-    uav_lines = [line for line in text_lines if 'бпла' in line.lower() and line.strip().startswith('🛵')]
+    uav_lines = [line for line in text_lines if 'бпла' in line.lower() and ('🛵' in line or '🛸' in line)]
     uav_count = len(uav_lines)
     
     # NEW: Look for lines with Shahed mentions and regions (without emoji requirement)
@@ -4227,6 +4238,45 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                                 })
                 
                 if threats:
+                    # ALSO: Extract cities from emoji structure in the same text 
+                    # Pattern for "| 🛸 Город (Область)"
+                    emoji_pattern = r'\|\s*🛸\s*([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)\s*\([^)]*обл[^)]*\)'
+                    emoji_matches = re.finditer(emoji_pattern, text, re.IGNORECASE)
+                    
+                    for match in emoji_matches:
+                        city_raw = match.group(1).strip()
+                        if not city_raw or len(city_raw) < 2:
+                            continue
+                            
+                        city_norm = clean_text(city_raw).lower()
+                        if city_norm in UA_CITY_NORMALIZE:
+                            city_norm = UA_CITY_NORMALIZE[city_norm]
+                        
+                        coords = ensure_city_coords(city_norm)
+                        
+                        if coords:
+                            lat, lng = coords[:2]
+                            threat_type, icon = classify(text)
+                            
+                            threat_id = f"{mid}_emoji_struct_{len(threats)}"
+                            threats.append({
+                                'id': threat_id,
+                                'place': city_raw.title(),
+                                'lat': lat,
+                                'lng': lng,
+                                'threat_type': threat_type,
+                                'text': f"Загроза в {city_raw}",
+                                'date': date_str,
+                                'channel': channel,
+                                'marker_icon': icon,
+                                'source_match': 'emoji_structure_multi',
+                                'count': 1
+                            })
+                            
+                            add_debug_log(f"Multi emoji structure: {city_raw} -> {coords}", "emoji_struct_multi")
+                        else:
+                            add_debug_log(f"Multi emoji structure: No coords for {city_raw}", "emoji_struct_multi")
+                    
                     # Check for priority result to combine
                     if '_current_priority_result' in globals() and globals()['_current_priority_result']:
                         combined_result = globals()['_current_priority_result'] + threats
@@ -5896,6 +5946,121 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         
         return threats
 
+    # SPECIAL: Handle single UAV course mentions in regular messages
+    def handle_single_uav_courses():
+        """Handle UAV course mentions like '4х БпЛА курсом на Добротвір' in regular alert messages"""
+        threats = []
+        
+        # Look for UAV course patterns in the entire message
+        patterns = [
+            r'(\d+)?[xх]?\s*бпла\s+курсом?\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s|[,\.\!\?\|\(])',
+            r'бпла\s+курсом?\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s|[,\.\!\?\|\(])',
+            r'(\d+)?[xх]?\s*бпла\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s|[,\.\!\?\|\(])'
+        ]
+        
+        for pattern in patterns:
+            matches = re.finditer(pattern, text, re.IGNORECASE)
+            for match in matches:
+                if len(match.groups()) == 2:
+                    count_str, city_raw = match.groups()
+                else:
+                    count_str = None
+                    city_raw = match.group(1)
+                
+                if not city_raw:
+                    continue
+                    
+                # Clean and normalize city name
+                city_clean = city_raw.strip()
+                city_norm = clean_text(city_clean).lower()
+                
+                # Apply normalization rules
+                if city_norm in UA_CITY_NORMALIZE:
+                    city_norm = UA_CITY_NORMALIZE[city_norm]
+                
+                # Try to get coordinates
+                coords = region_enhanced_coords(city_norm)
+                if not coords:
+                    coords = ensure_city_coords(city_norm)
+                
+                if coords:
+                    lat, lng = coords[:2]
+                    threat_type, icon = classify(text)
+                    
+                    # Extract count if present
+                    uav_count_num = 1
+                    if count_str and count_str.isdigit():
+                        uav_count_num = int(count_str)
+                    
+                    threat_id = f"{mid}_uav_course_{len(threats)}"
+                    threats.append({
+                        'id': threat_id,
+                        'place': city_clean.title(),
+                        'lat': lat,
+                        'lng': lng,
+                        'threat_type': threat_type,
+                        'text': f"БпЛА курсом на {city_clean} ({uav_count_num}x)",
+                        'date': date_str,
+                        'channel': channel,
+                        'marker_icon': icon,
+                        'source_match': f'single_uav_course_{uav_count_num}x',
+                        'count': uav_count_num
+                    })
+                    
+                    add_debug_log(f"Single UAV course: {city_clean} ({uav_count_num}x) -> {coords}", "single_uav")
+                else:
+                    add_debug_log(f"Single UAV course: No coords for {city_clean}", "single_uav")
+        
+        # ALSO: Extract cities from emoji structure in the same text 
+        # Pattern for "| 🛸 Город (Область)"
+        emoji_pattern = r'\|\s*🛸\s*([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)\s*\([^)]*обл[^)]*\)'
+        emoji_matches = re.finditer(emoji_pattern, text, re.IGNORECASE)
+        
+        for match in emoji_matches:
+            city_raw = match.group(1).strip()
+            if not city_raw or len(city_raw) < 2:
+                continue
+                
+            city_norm = clean_text(city_raw).lower()
+            if city_norm in UA_CITY_NORMALIZE:
+                city_norm = UA_CITY_NORMALIZE[city_norm]
+            
+            coords = region_enhanced_coords(city_norm)
+            if not coords:
+                coords = ensure_city_coords(city_norm)
+            
+            if coords:
+                lat, lng = coords[:2]
+                threat_type, icon = classify(text)
+                
+                threat_id = f"{mid}_emoji_struct_{len(threats)}"
+                threats.append({
+                    'id': threat_id,
+                    'place': city_raw.title(),
+                    'lat': lat,
+                    'lng': lng,
+                    'threat_type': threat_type,
+                    'text': f"Загроза в {city_raw}",
+                    'date': date_str,
+                    'channel': channel,
+                    'marker_icon': icon,
+                    'source_match': 'emoji_structure',
+                    'count': 1
+                })
+                
+                add_debug_log(f"Emoji structure: {city_raw} -> {coords}", "emoji_struct")
+            else:
+                add_debug_log(f"Emoji structure: No coords for {city_raw}", "emoji_struct")
+        
+        return threats
+
+    # Check for single UAV course mentions first (before multi-regional check)
+    single_uav_threats = handle_single_uav_courses()
+    if single_uav_threats:
+        add_debug_log(f"SINGLE UAV COURSES: Found {len(single_uav_threats)} threats", "single_uav")
+        # Continue processing to also get regular location markers
+        # Don't return early - we want both UAV course markers AND location markers
+
     # Check for multi-regional UAV messages
     if multi_regional_flag:
         multi_regional_threats = handle_multi_regional_uav()
@@ -7404,6 +7569,11 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             print(f"DEBUG: Long message keywords: {keywords}")
     except Exception:
         pass
+    
+    # Final check: if we found single UAV threats earlier but no other tracks, return the UAV threats
+    if 'single_uav_threats' in locals() and single_uav_threats:
+        add_debug_log(f"FINAL: Returning single UAV threats only: {len(single_uav_threats)}", "final_single_uav")
+        return single_uav_threats
     
     return None
 
