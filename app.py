@@ -71,6 +71,28 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(mess
 log = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# Configure caching and compression for better performance on slow connections
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000  # 1 year for static files
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+
+# Add cache headers for static files
+@app.after_request
+def add_cache_headers(response):
+    if request.endpoint == 'static':
+        # Cache static files for 1 week
+        response.headers['Cache-Control'] = 'public, max-age=604800, immutable'
+        response.headers['Expires'] = (datetime.now() + timedelta(days=7)).strftime('%a, %d %b %Y %H:%M:%S GMT')
+        
+        # Add compression hints
+        if request.path.endswith(('.png', '.jpg', '.jpeg', '.webp')):
+            response.headers['Vary'] = 'Accept-Encoding'
+            
+    elif request.endpoint == 'index':
+        # Cache main page for 5 minutes
+        response.headers['Cache-Control'] = 'public, max-age=300'
+        
+    return response
 COMMENTS = []  # retained as a small in-memory cache (recent) but now persisted to SQLite
 COMMENTS_MAX = 500
 ACTIVE_VISITORS = {}
@@ -7314,10 +7336,10 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         # --- Направления внутри области (північно-західний / південно-західний и т.п.) ---
         def detect_direction(lower_txt: str):
             # Support full adjectives with endings (-ний / -ня / -ньому) by searching stems
-            if 'північно-захід' in lower_txt: return 'nw'
-            if 'південно-захід' in lower_txt: return 'sw'
-            if 'північно-схід' in lower_txt: return 'ne'
-            if 'південно-схід' in lower_txt: return 'se'
+            if 'північно-захід' in lower_txt or 'північно-західн' in lower_txt: return 'nw'
+            if 'південно-захід' in lower_txt or 'південно-західн' in lower_txt: return 'sw'
+            if 'північно-схід' in lower_txt or 'північно-східн' in lower_txt: return 'ne'
+            if 'південно-схід' in lower_txt or 'південно-східн' in lower_txt: return 'se'
             # Single directions (allow stems 'північн', 'південн')
             if re.search(r'\bпівніч(?!о-с)(?:н\w*)?\b', lower_txt): return 'n'
             if re.search(r'\bпівденн?\w*\b', lower_txt): return 's'
@@ -7370,11 +7392,14 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                             'marker_icon': icon, 'source_match': 'course_sector', 'count': drone_count
                         }]
                 (reg_name, (base_lat, base_lng)) = matched_regions[0]
-                # смещение ~50-70 км в сторону указанного направления
+                
+                # Define offset function for coordinate calculations
                 def offset(lat, lng, code):
-                    # базовые дельты в градусах (широта ~111 км, долгота * cos(lat))
-                    lat_step = 0.55
-                    lng_step = 0.85 / max(0.2, abs(math.cos(math.radians(lat))))
+                    # Уменьшенные дельты для более точного позиционирования в пределах области
+                    # (широта ~111 км, долгота * cos(lat))
+                    import math
+                    lat_step = 0.35  # Примерно 35-40 км вместо 60 км
+                    lng_step = 0.55 / max(0.2, abs(math.cos(math.radians(lat))))  # Примерно 35-40 км
                     if code == 'n': return lat+lat_step, lng
                     if code == 's': return lat-lat_step, lng
                     if code == 'e': return lat, lng+lng_step
@@ -7387,6 +7412,69 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     if code == 'se': return lat-lat_diag, lng+lng_diag
                     if code == 'sw': return lat-lat_diag, lng-lng_diag
                     return lat, lng
+                
+                # SPECIAL: Handle messages with start position + course direction
+                # e.g. "на півночі тернопільщини ➡️ курсом на південно-західний напрямок"
+                start_direction = None
+                course_direction = None
+                
+                # Detect start position (на півночі/півдні/сході/заході)
+                if re.search(r'\bна\s+півночі\b', lower) or re.search(r'\bпівнічн\w+\s+частин\w*\b', lower):
+                    start_direction = 'n'
+                elif re.search(r'\bна\s+півдні\b', lower) or re.search(r'\bпівденн\w+\s+частин\w*\b', lower):
+                    start_direction = 's'
+                elif re.search(r'\bна\s+сході\b', lower) or re.search(r'\bсхідн\w+\s+частин\w*\b', lower):
+                    start_direction = 'e'
+                elif re.search(r'\bна\s+заході\b', lower) or re.search(r'\bзахідн\w+\s+частин\w*\b', lower):
+                    start_direction = 'w'
+                
+                # Detect course direction (курсом на направление)
+                if ('курс' in lower and 'напрямок' in lower) or ('➡' in lower or '→' in lower):
+                    if 'північно-західн' in lower or 'північно-захід' in lower:
+                        course_direction = 'nw'
+                    elif 'південно-західн' in lower or 'південно-захід' in lower:
+                        course_direction = 'sw'
+                    elif 'північно-східн' in lower or 'північно-схід' in lower:
+                        course_direction = 'ne'
+                    elif 'південно-східн' in lower or 'південно-схід' in lower:
+                        course_direction = 'se'
+                    # Single directions in course
+                    elif re.search(r'курс\w*\s+на\s+північ', lower):
+                        course_direction = 'n'
+                    elif re.search(r'курс\w*\s+на\s+південь', lower):
+                        course_direction = 's'
+                    elif re.search(r'курс\w*\s+на\s+схід', lower):
+                        course_direction = 'e'
+                    elif re.search(r'курс\w*\s+на\s+захід', lower):
+                        course_direction = 'w'
+                
+                # If we have both start position and course direction, apply them sequentially
+                if start_direction and course_direction:
+                    # First offset: move to start position within region
+                    lat_start, lng_start = offset(base_lat, base_lng, start_direction)
+                    # Second offset: apply course direction from start position  
+                    lat_final, lng_final = offset(lat_start, lng_start, course_direction)
+                    
+                    # Create descriptive label
+                    start_labels = {'n':'півночі', 's':'півдні', 'e':'сході', 'w':'заході'}
+                    course_labels = {
+                        'n':'північ', 's':'південь', 'e':'схід', 'w':'захід',
+                        'ne':'північний схід', 'nw':'північний захід', 
+                        'se':'південний схід', 'sw':'південний захід'
+                    }
+                    start_label = start_labels.get(start_direction, 'області')
+                    course_label = course_labels.get(course_direction, 'напрямок')
+                    base_disp = reg_name.split()[0].title()
+                    
+                    threat_type, icon = classify(text)
+                    return [{
+                        'id': str(mid), 'place': f"{base_disp} (з {start_label} на {course_label})", 
+                        'lat': lat_final, 'lng': lng_final,
+                        'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                        'marker_icon': icon, 'source_match': 'region_start_course', 'count': drone_count
+                    }]
+                
+                # смещение ~50-70 км в сторону указанного направления (fallback for single direction)
                 lat_o, lng_o = offset(base_lat, base_lng, direction_code)
                 threat_type, icon = classify(text)
                 dir_label_map = {

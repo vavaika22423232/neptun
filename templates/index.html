@@ -35,6 +35,29 @@
       line-height: 1.5;
     }
     
+    /* Performance optimizations for images */
+    img {
+      image-rendering: -webkit-optimize-contrast;
+      image-rendering: crisp-edges;
+      will-change: auto;
+    }
+    
+    .plain-marker-img, .cluster img {
+      image-rendering: -webkit-optimize-contrast;
+      transform: translateZ(0); /* Force hardware acceleration */
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
+    }
+    
+    /* Smooth loading transitions */
+    .cluster img, .plain-marker-img {
+      transition: opacity 0.2s ease-in-out;
+    }
+    
+    .cluster img[src*="data:image"], .plain-marker-img[src*="data:image"] {
+      opacity: 0.6; /* Dim placeholder/fallback images */
+    }
+    
   .navbar {width:100%;background:var(--panel-bg);color:var(--text);font-weight:600;font-size:1.15rem;padding:.7rem 1.1rem;box-shadow:0 4px 20px var(--shadow);display:flex;align-items:center;gap:1.5rem;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);}    
     .navbar .logo {
       display: flex;
@@ -1317,24 +1340,137 @@
     });
     // Константы и настройки
     const UKRAINE_CENTER = { lat: 48.3794, lng: 31.1656 };
+    
+    // Optimized icon loading system with placeholders
     const ICONS = {
       shahed: '/static/shahed.png',
       raketa: '/static/raketa.png',
       avia: '/static/avia.png',
       pvo: '/static/rozved.png',
-  rszv: '/static/rszv.png',
-  vibuh: '/static/vibuh.png',
-  alarm: '/static/trivoga.png',
-  alarm_cancel: '/static/vidboi.png',
-  mlrs: '/static/mlrs.png',
-  artillery: '/static/artillery.png',
-  obstril: '/static/obstril.png',
-  fpv: '/static/fpv.png',
+      rszv: '/static/rszv.png',
+      vibuh: '/static/vibuh.png',
+      alarm: '/static/trivoga.png',
+      alarm_cancel: '/static/vidboi.png',
+      mlrs: '/static/mlrs.png',
+      artillery: '/static/artillery.png',
+      obstril: '/static/obstril.png',
+      fpv: '/static/fpv.png',
       default: '/static/default.png'
     };
-    // Fallback tiny red dot if icon 404
-    function preloadIcons(){
-      Object.keys(ICONS).forEach(k=>{const url=ICONS[k]; const img=new Image(); img.onload=()=>{}; img.onerror=()=>{ICONS[k]='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA4AAAAOCAYAAAAfSC3RAAAALElEQVQokWP8////fwY0wAgjGJgGLABWMMRAFEg0gGE0GoBmGuwmCkYBAGmxD/dzJvLRwAAAABJRU5ErkJggg==';}; img.src=url;});
+    
+    // Placeholder versions for instant loading
+    const PLACEHOLDERS = {
+      shahed: '/static/placeholders/shahed.png',
+      raketa: '/static/placeholders/raketa.png',
+      avia: '/static/placeholders/avia.png',
+      pvo: '/static/placeholders/rozved.png',
+      rszv: '/static/placeholders/rszv.png',
+      vibuh: '/static/placeholders/vibuh.png',
+      alarm: '/static/placeholders/trivoga.png',
+      alarm_cancel: '/static/placeholders/vidboi.png',
+      mlrs: '/static/placeholders/mlrs.png',
+      artillery: '/static/placeholders/artillery.png',
+      obstril: '/static/placeholders/obstril.png',
+      fpv: '/static/placeholders/fpv.png',
+      default: '/static/placeholders/default.png'
+    };
+    
+    // Lazy loading system for images with progressive enhancement
+    const imageCache = new Map();
+    const loadingImages = new Map();
+    const placeholderCache = new Map();
+    
+    // Tiny placeholder for immediate display
+    const INSTANT_PLACEHOLDER = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    
+    // Fallback icon for errors
+    const FALLBACK_ICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA4AAAAOCAYAAAAfSC3RAAAALElEQVQokWP8////fwY0wAgjGJgGLABWMMRAFEg0gGE0GoBmGuwmCkYBAGmxD/dzJvLRwAAAABJRU5ErkJggg==';
+    
+    // Progressive image loader: placeholder → optimized image
+    function loadImageProgressive(iconType) {
+      const fullUrl = ICONS[iconType] || ICONS.default;
+      const placeholderUrl = PLACEHOLDERS[iconType] || PLACEHOLDERS.default;
+      
+      return new Promise((resolve) => {
+        // Step 1: Try to load placeholder first (very fast)
+        if (placeholderUrl && !placeholderCache.has(placeholderUrl)) {
+          const placeholderImg = new Image();
+          placeholderImg.onload = () => {
+            placeholderCache.set(placeholderUrl, true);
+          };
+          placeholderImg.src = placeholderUrl;
+        }
+        
+        // Return placeholder immediately for instant display
+        resolve(placeholderUrl || INSTANT_PLACEHOLDER);
+        
+        // Step 2: Load full quality image in background
+        setTimeout(() => {
+          if (!imageCache.has(fullUrl)) {
+            const fullImg = new Image();
+            fullImg.onload = () => {
+              imageCache.set(fullUrl, true);
+              // Update any markers using this icon
+              updateMarkersWithFullImage(iconType, fullUrl);
+            };
+            fullImg.onerror = () => {
+              console.warn(`Failed to load full image: ${fullUrl}`);
+              imageCache.set(fullUrl, 'error');
+            };
+            fullImg.src = fullUrl;
+          }
+        }, 100); // Small delay to prioritize placeholder loading
+      });
+    }
+    
+    // Update markers with full quality images when available
+    function updateMarkersWithFullImage(iconType, fullUrl) {
+      // Find all img elements using this icon type and update them
+      document.querySelectorAll(`img[data-icon-type="${iconType}"]`).forEach(img => {
+        if (imageCache.get(fullUrl) === true) {
+          img.style.transition = 'opacity 0.3s ease-in-out';
+          img.style.opacity = '0.7';
+          setTimeout(() => {
+            img.src = fullUrl;
+            img.style.opacity = '1';
+          }, 50);
+        }
+      });
+    }
+    
+    // Priority-based preloading for most common icons
+    function preloadCriticalIcons() {
+      const criticalIcons = ['shahed', 'raketa', 'avia', 'alarm']; // Most common types
+      
+      criticalIcons.forEach((iconType, index) => {
+        setTimeout(() => {
+          loadImageProgressive(iconType);
+        }, index * 100); // Stagger loading
+      });
+    }
+    
+    // Background preloading for remaining icons (lower priority)
+    function preloadRemainingIcons() {
+      const remainingIcons = Object.keys(ICONS).filter(key => 
+        !['shahed', 'raketa', 'avia', 'alarm'].includes(key)
+      );
+      
+      // Delay and spread out loading to avoid bandwidth congestion
+      remainingIcons.forEach((iconType, index) => {
+        setTimeout(() => {
+          loadImageProgressive(iconType);
+        }, (index + 1) * 300); // 300ms between each load
+      });
+    }
+    
+    // Smart icon getter with progressive loading
+    async function getIconUrl(iconType) {
+      try {
+        return await loadImageProgressive(iconType);
+      } catch (error) {
+        console.warn(`Failed to get icon ${iconType}:`, error);
+        return FALLBACK_ICON;
+      }
     }
     // Состояние приложения
   let map;
@@ -1472,17 +1608,26 @@
             const tt=(p.threat_type||'').toLowerCase(); b.types.set(tt, (b.types.get(tt)||0)+1);
             const ts = Date.parse((p.date||'').replace(/-/g,'/')) || 0; if(ts> b.latest) b.latest = ts;
         }
-        buckets.forEach(b => {
+        buckets.forEach(async b => {
           const lat = b.latSum / b.items.length;
           const lng = b.lngSum / b.items.length;
           // choose dominant threat type for icon (fallback default)
           let dominant = 'default'; let maxc=0;
           b.types.forEach((c,t)=>{ if(c>maxc){ maxc=c; dominant=t; } });
-          let iconUrl = ICONS[dominant] || ICONS.default;
+          
+          // Use optimized async image loading for clusters
+          let iconUrl = PLACEHOLDER_ICON; // Start with placeholder
+          try {
+            iconUrl = await getIconUrl(dominant);
+          } catch (error) {
+            console.warn('Failed to load cluster icon:', error);
+            iconUrl = FALLBACK_ICON;
+          }
+          
           const count = b.items.length;
           const ageMin = (Date.now()-b.latest)/60000;
           const freshness = ageMin < 8 ? 'fresh' : ageMin < 20 ? 'stale' : 'old';
-          const html = `<div class='cluster cluster-${freshness}'><img src='${iconUrl}' alt=''><b>${count}</b></div>`;
+          const html = `<div class='cluster cluster-${freshness}'><img src='${iconUrl}' alt='' loading="lazy"><b>${count}</b></div>`;
           const icon = L.divIcon({ html, className:'', iconSize:[44,52], iconAnchor:[22,48] });
           const m = L.marker([lat,lng], {icon});
           // Popup summary
@@ -1508,7 +1653,7 @@
       }
   // Container for border-shelling overlays (semi-circles)
   let borderShellingDrawn = false;
-      points.forEach(p => {
+      points.forEach(async p => {
         let iconUrl = ICONS[p.threat_type] || ICONS.default;
         if (p.marker_icon) {
           iconUrl = (p.marker_icon.startsWith('http') || p.marker_icon.startsWith('/')) ? p.marker_icon : '/static/' + p.marker_icon;
@@ -1516,6 +1661,14 @@
         // Override for FPV targeted settlements
         if (isFPVThreat(p.place, p.text, p.threat_type)) {
           iconUrl = ICONS.fpv || iconUrl;
+        }
+        
+        // Use optimized async image loading
+        try {
+          iconUrl = await getIconUrl(p.threat_type || 'default');
+        } catch (error) {
+          console.warn('Failed to load icon, using fallback:', error);
+          iconUrl = FALLBACK_ICON;
         }
         // Extract inline count / direction from place label pattern 'Name (N) ←півдня'
         if (!p.count && p.place) {
@@ -1535,7 +1688,7 @@
   let factor = z >= 9 ? 1.25 : z >= 7 ? 1.0 : z >= 6 ? 0.85 : z >=5 ? 0.7 : 0.55;
   const w = Math.round(base * factor);
   const h = Math.round(w * 1.15);
-  const html = `<div class='tm-wrap'><img class='plain-marker-img' style='width:${w}px;height:${h}px;' src='${iconUrl}' alt=''>${countBadge}</div>`;
+  const html = `<div class='tm-wrap'><img class='plain-marker-img' style='width:${w}px;height:${h}px;' src='${iconUrl}' alt='' loading="lazy" data-icon-type="${p.threat_type || 'default'}">${countBadge}</div>`;
   // Anchor to visual center (half width/height) instead of bottom so geographic point stays stable when scaling
   const icon = L.divIcon({ html, className:'', iconSize:[w,h], iconAnchor:[w/2, h/2], popupAnchor:[0,-h/2] });
   const m = L.marker([p.lat, p.lng], { icon, riseOnHover:true });
@@ -2109,7 +2262,21 @@
   // Adjust fullscreen height on orientation / resize for mobile
   window.addEventListener('orientationchange', ()=>{ if(document.body.classList.contains('map-expanded')){ const mapCard=document.querySelector('.map-card'); if(mapCard){ mapCard.style.height=window.innerHeight+'px'; if(map){ map.invalidateSize(); } } } });
   window.addEventListener('resize', ()=>{ if(document.body.classList.contains('map-expanded')){ const mapCard=document.querySelector('.map-card'); if(mapCard){ mapCard.style.height=window.innerHeight+'px'; if(map){ map.invalidateSize(); } } } });
-  window.onload = () => { preloadIcons(); initMap(); openWarn(); };
+  window.onload = () => { 
+    // Start optimized icon preloading
+    preloadCriticalIcons(); 
+    
+    // Initialize map
+    initMap(); 
+    
+    // Show disclaimer
+    openWarn(); 
+    
+    // Start background preloading after initial load
+    setTimeout(() => {
+      preloadRemainingIcons();
+    }, 2000); // Wait 2 seconds to avoid interfering with initial page load
+  };
     // Smart Mass Attack Banner Logic (wrapped inside same script tag)
     (function(){
       const banner = document.getElementById('massAttackBanner');
