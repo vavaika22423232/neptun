@@ -1353,6 +1353,7 @@
       raketa: `/static/raketa.png?v=${IMAGE_VERSION}`,
       avia: `/static/avia.png?v=${IMAGE_VERSION}`,
       pvo: `/static/rozved.png?v=${IMAGE_VERSION}`,
+      rozved: `/static/rozved.png?v=${IMAGE_VERSION}`, // Reconnaissance UAVs
       rszv: `/static/rszv.png?v=${IMAGE_VERSION}`,
       vibuh: `/static/vibuh.png?v=${IMAGE_VERSION}`,
       alarm: `/static/trivoga.png?v=${IMAGE_VERSION}`,
@@ -1370,6 +1371,7 @@
       raketa: `/static/placeholders/raketa.png?v=${IMAGE_VERSION}`,
       avia: `/static/placeholders/avia.png?v=${IMAGE_VERSION}`,
       pvo: `/static/placeholders/rozved.png?v=${IMAGE_VERSION}`,
+      rozved: `/static/placeholders/rozved.png?v=${IMAGE_VERSION}`, // Reconnaissance UAVs
       rszv: `/static/placeholders/rszv.png?v=${IMAGE_VERSION}`,
       vibuh: `/static/placeholders/vibuh.png?v=${IMAGE_VERSION}`,
       alarm: `/static/placeholders/trivoga.png?v=${IMAGE_VERSION}`,
@@ -1446,7 +1448,7 @@
     
     // Priority-based preloading for most common icons
     function preloadCriticalIcons() {
-      const criticalIcons = ['shahed', 'raketa', 'avia', 'alarm']; // Most common types
+      const criticalIcons = ['shahed', 'raketa', 'avia', 'rozved', 'alarm']; // Most common types
       
       criticalIcons.forEach((iconType, index) => {
         setTimeout(() => {
