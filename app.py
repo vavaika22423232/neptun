@@ -80,13 +80,21 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 @app.after_request
 def add_cache_headers(response):
     if request.endpoint == 'static':
-        # Cache static files for 1 week
-        response.headers['Cache-Control'] = 'public, max-age=604800, immutable'
-        response.headers['Expires'] = (datetime.now() + timedelta(days=7)).strftime('%a, %d %b %Y %H:%M:%S GMT')
+        # Check if this is a versioned resource (with ?v= parameter)
+        if 'v=' in request.query_string.decode():
+            # Cache versioned static files for 1 month (they won't change)
+            response.headers['Cache-Control'] = 'public, max-age=2592000, immutable'
+            response.headers['Expires'] = (datetime.now() + timedelta(days=30)).strftime('%a, %d %b %Y %H:%M:%S GMT')
+        else:
+            # Cache regular static files for 1 week
+            response.headers['Cache-Control'] = 'public, max-age=604800, immutable'
+            response.headers['Expires'] = (datetime.now() + timedelta(days=7)).strftime('%a, %d %b %Y %H:%M:%S GMT')
         
-        # Add compression hints
+        # Add compression hints for images
         if request.path.endswith(('.png', '.jpg', '.jpeg', '.webp')):
             response.headers['Vary'] = 'Accept-Encoding'
+            # Add ETag for better caching
+            response.headers['ETag'] = f'"{hash(request.path + request.query_string.decode())}"'
             
     elif request.endpoint == 'index':
         # Cache main page for 5 minutes

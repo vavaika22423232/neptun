@@ -4,6 +4,9 @@
   <meta charset="utf-8">
   <title>NEPTUN — Карта загроз</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
   <!-- Leaflet (OpenStreetMap) CSS -->
@@ -1341,38 +1344,41 @@
     // Константы и настройки
     const UKRAINE_CENTER = { lat: 48.3794, lng: 31.1656 };
     
+    // Cache busting timestamp for image updates
+    const IMAGE_VERSION = '20250911184500'; // Updated when images are optimized
+    
     // Optimized icon loading system with placeholders
     const ICONS = {
-      shahed: '/static/shahed.png',
-      raketa: '/static/raketa.png',
-      avia: '/static/avia.png',
-      pvo: '/static/rozved.png',
-      rszv: '/static/rszv.png',
-      vibuh: '/static/vibuh.png',
-      alarm: '/static/trivoga.png',
-      alarm_cancel: '/static/vidboi.png',
-      mlrs: '/static/mlrs.png',
-      artillery: '/static/artillery.png',
-      obstril: '/static/obstril.png',
-      fpv: '/static/fpv.png',
-      default: '/static/default.png'
+      shahed: `/static/shahed.png?v=${IMAGE_VERSION}`,
+      raketa: `/static/raketa.png?v=${IMAGE_VERSION}`,
+      avia: `/static/avia.png?v=${IMAGE_VERSION}`,
+      pvo: `/static/rozved.png?v=${IMAGE_VERSION}`,
+      rszv: `/static/rszv.png?v=${IMAGE_VERSION}`,
+      vibuh: `/static/vibuh.png?v=${IMAGE_VERSION}`,
+      alarm: `/static/trivoga.png?v=${IMAGE_VERSION}`,
+      alarm_cancel: `/static/vidboi.png?v=${IMAGE_VERSION}`,
+      mlrs: `/static/mlrs.png?v=${IMAGE_VERSION}`,
+      artillery: `/static/artillery.png?v=${IMAGE_VERSION}`,
+      obstril: `/static/obstril.png?v=${IMAGE_VERSION}`,
+      fpv: `/static/fpv.png?v=${IMAGE_VERSION}`,
+      default: `/static/default.png?v=${IMAGE_VERSION}`
     };
     
     // Placeholder versions for instant loading
     const PLACEHOLDERS = {
-      shahed: '/static/placeholders/shahed.png',
-      raketa: '/static/placeholders/raketa.png',
-      avia: '/static/placeholders/avia.png',
-      pvo: '/static/placeholders/rozved.png',
-      rszv: '/static/placeholders/rszv.png',
-      vibuh: '/static/placeholders/vibuh.png',
-      alarm: '/static/placeholders/trivoga.png',
-      alarm_cancel: '/static/placeholders/vidboi.png',
-      mlrs: '/static/placeholders/mlrs.png',
-      artillery: '/static/placeholders/artillery.png',
-      obstril: '/static/placeholders/obstril.png',
-      fpv: '/static/placeholders/fpv.png',
-      default: '/static/placeholders/default.png'
+      shahed: `/static/placeholders/shahed.png?v=${IMAGE_VERSION}`,
+      raketa: `/static/placeholders/raketa.png?v=${IMAGE_VERSION}`,
+      avia: `/static/placeholders/avia.png?v=${IMAGE_VERSION}`,
+      pvo: `/static/placeholders/rozved.png?v=${IMAGE_VERSION}`,
+      rszv: `/static/placeholders/rszv.png?v=${IMAGE_VERSION}`,
+      vibuh: `/static/placeholders/vibuh.png?v=${IMAGE_VERSION}`,
+      alarm: `/static/placeholders/trivoga.png?v=${IMAGE_VERSION}`,
+      alarm_cancel: `/static/placeholders/vidboi.png?v=${IMAGE_VERSION}`,
+      mlrs: `/static/placeholders/mlrs.png?v=${IMAGE_VERSION}`,
+      artillery: `/static/placeholders/artillery.png?v=${IMAGE_VERSION}`,
+      obstril: `/static/placeholders/obstril.png?v=${IMAGE_VERSION}`,
+      fpv: `/static/placeholders/fpv.png?v=${IMAGE_VERSION}`,
+      default: `/static/placeholders/default.png?v=${IMAGE_VERSION}`
     };
     
     // Lazy loading system for images with progressive enhancement
