@@ -3478,6 +3478,27 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     coords = idx_map.get(norm)
                 if coords:
                     lat, lon = coords[:2]
+                    
+                    # Check for threat cancellation BEFORE creating marker
+                    text_lower = text.lower()
+                    if ('відбій загрози' in text_lower or 
+                        'відбій тривоги' in text_lower or
+                        ('відбій' in text_lower and any(cancel_word in text_lower for cancel_word in ['загрози', 'тривоги']))):
+                        # This is a cancellation message - create list_only entry, no map marker
+                        track = {
+                            'id': f"{mid}_priority_emoji_cancel_{city_from_general.replace(' ','_')}",
+                            'place': city_from_general.title(),
+                            'threat_type': 'alarm_cancel',
+                            'text': clean_text(text)[:500], 
+                            'date': date_str, 
+                            'channel': channel,
+                            'list_only': True,  # NO map marker for cancellation
+                            'source_match': 'priority_emoji_cancel'
+                        }
+                        add_debug_log(f'PRIORITY CANCELLATION: {city_from_general} -> list_only=True (no marker)', "emoji_debug")
+                        return [track]  # Early return - cancellation handled
+                    
+                    # Regular threat - create map marker
                     threat_type, icon = classify(text)
                     track = {
                         'id': f"{mid}_priority_emoji_{city_from_general.replace(' ','_')}",
