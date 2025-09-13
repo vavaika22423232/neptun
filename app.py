@@ -3610,7 +3610,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         add_debug_log(f"PRIORITY: Testing general emoji pattern on head: {repr(head)}", "emoji_debug")
         add_debug_log(f"PRIORITY: General emoji match result: {general_emoji_match}", "emoji_debug")
         
-        if general_emoji_match and any(uav_word in text.lower() for uav_word in ['бпла', 'дрон', 'шахед', 'активність', 'загроза', 'тривога']):
+        if general_emoji_match and any(uav_word in text.lower() for uav_word in ['бпла', 'дрон', 'шахед', 'активність', 'загроза', 'тривога', 'обстріл', 'обстрел']):
             city_from_general = general_emoji_match.group(1).strip()
             oblast_from_general = general_emoji_match.group(2).strip()
             add_debug_log(f"PRIORITY: Found city: {repr(city_from_general)}, oblast: {repr(oblast_from_general)}", "emoji_debug")
