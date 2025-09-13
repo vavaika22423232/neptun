@@ -894,6 +894,51 @@ def ensure_city_coords(name: str):
                 return (olat, olng, True)
     return None
 
+def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
+    """Enhanced version that tries to extract oblast from message if city not found.
+    Returns (lat,lng,approx_bool) - approx_bool True means used oblast fallback."""
+    # First try standard lookup
+    result = ensure_city_coords(name)
+    if result:
+        return result
+    
+    # If city not found, try to extract oblast from message
+    if message_text:
+        message_lower = message_text.lower()
+        
+        # Look for oblast patterns in message
+        import re
+        # Pattern for "(Oblast name обл.)" or "(Oblast name область)"
+        oblast_patterns = [
+            r'\(([^)]+)\s+обл\.\)',
+            r'\(([^)]+)\s+область\)',
+            r'([а-яїіє]+ська)\s+обл\.',
+            r'([а-яїіє]+ська)\s+область',
+        ]
+        
+        for pattern in oblast_patterns:
+            matches = re.findall(pattern, message_lower)
+            for match in matches:
+                # Try to find this oblast in OBLAST_CENTERS
+                for oblast_key, (olat, olng) in OBLAST_CENTERS.items():
+                    if match.strip() in oblast_key or oblast_key.startswith(match.strip()):
+                        return (olat, olng, True)
+                        
+                # Also try common variations
+                oblast_variations = [
+                    f"{match.strip()}а область",
+                    f"{match.strip()}а обл.",
+                    f"{match.strip()}ща",
+                    f"{match.strip()}щина"
+                ]
+                
+                for variation in oblast_variations:
+                    if variation in OBLAST_CENTERS:
+                        lat, lng = OBLAST_CENTERS[variation]
+                        return (lat, lng, True)
+    
+    return None
+
 # Consolidated static fallback coordinates
 CITY_COORDS = {
         # Core cities
@@ -3080,7 +3125,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             # Try direct lookup
             coords = CITY_COORDS.get(city_norm)
             if not coords:
-                coords = ensure_city_coords(city_norm)
+                coords = ensure_city_coords_with_message_context(city_norm, text)
             
             add_debug_log(f"Coord lookup: '{city_name}' -> '{city_norm}' -> {bool(coords)}", "multi_regional")
             return coords
@@ -4419,7 +4464,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                         if city_norm in UA_CITY_NORMALIZE:
                             city_norm = UA_CITY_NORMALIZE[city_norm]
                         
-                        coords = ensure_city_coords(city_norm)
+                        coords = ensure_city_coords_with_message_context(city_norm, text)
                         
                         if coords and isinstance(coords, tuple) and len(coords) >= 2:
                             lat, lng = coords[0], coords[1]
@@ -5982,14 +6027,14 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                 # Try to get coordinates
                 coords = region_enhanced_coords(city_norm)
                 if not coords:
-                    coords = ensure_city_coords(city_norm)
+                    coords = ensure_city_coords_with_message_context(city_norm, text)
                 
                 # Fallback: try accusative case normalization (e.g., "олександрію" -> "олександрія")
                 if not coords and city_norm.endswith('ію'):
                     accusative_fallback = city_norm[:-2] + 'ія'
                     coords = region_enhanced_coords(accusative_fallback)
                     if not coords:
-                        coords = ensure_city_coords(accusative_fallback)
+                        coords = ensure_city_coords_with_message_context(accusative_fallback, text)
                     if coords:
                         city_norm = accusative_fallback
                         city_clean = accusative_fallback.title()  # Use normalized name for display
