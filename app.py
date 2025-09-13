@@ -3365,7 +3365,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         
         # Special override for specific cities - Kherson, Nikopol, Marhanets always get FPV icon
         city_lower = city_context.lower() if city_context else ""
-        fpv_cities = ['херсон', 'никополь', 'марганець', 'марганец']
+        fpv_cities = ['херсон', 'никополь', 'нікополь', 'марганець', 'марганец']
         
         # Check both city context and message text for FPV cities
         if any(fpv_city in city_lower for fpv_city in fpv_cities) or any(fpv_city in l for fpv_city in fpv_cities):
