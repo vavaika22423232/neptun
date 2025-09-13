@@ -3679,7 +3679,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                         return [track]  # Early return - cancellation handled
                     
                     # Regular threat - create map marker
-                    threat_type, icon = classify(text)
+                    threat_type, icon = classify(text, city_from_general)
                     track = {
                         'id': f"{mid}_priority_emoji_{city_from_general.replace(' ','_')}",
                         'place': city_from_general.title(),
