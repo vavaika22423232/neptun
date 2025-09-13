@@ -3350,6 +3350,11 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         import re  # Import re module locally for pattern matching
         l = th.lower()
         
+        # PRIORITY: Artillery shelling warning (обстріл / загроза обстрілу) -> use obstril.png
+        # This should have priority over FPV cities when explicit shelling threat is mentioned
+        if 'обстріл' in l or 'обстрел' in l or 'загроза обстрілу' in l or 'угроза обстрела' in l:
+            return 'artillery', 'obstril.png'
+        
         # Special override for specific cities - Kherson, Nikopol, Marhanets always get FPV icon
         city_lower = city_context.lower() if city_context else ""
         fpv_cities = ['херсон', 'никополь', 'марганець', 'марганец']
@@ -3376,9 +3381,6 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         if ('повідомляють про вибух' in l or 'повідомлено про вибух' in l or 'зафіксовано вибух' in l or 'зафіксовано вибухи' in l
             or 'фіксація вибух' in l or 'фіксують вибух' in l or re.search(r'\b(вибух|вибухи|вибухів)\b', l)):
             return 'vibuh', 'vibuh.png'
-        # Artillery shelling warning (обстріл / загроза обстрілу) -> use obstril.png
-        if 'обстріл' in l or 'обстрел' in l or 'загроза обстрілу' in l or 'угроза обстрела' in l:
-            return 'artillery', 'obstril.png'
         # Alarm cancellation (відбій тривоги / отбой тревоги)
         if ('відбій' in l and 'тривог' in l) or ('отбой' in l and 'тревог' in l):
             return 'alarm_cancel', 'vidboi.png'
