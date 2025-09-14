@@ -8946,12 +8946,21 @@ def alarms_stats():
 @app.route('/data')
 def data():
     global FALLBACK_REPARSE_CACHE, MAX_REPARSE_CACHE_SIZE
-    # Ignore user-provided timeRange; use global configured MONITOR_PERIOD_MINUTES
-    time_range = MONITOR_PERIOD_MINUTES
+    # Use user-provided timeRange or fall back to global configured MONITOR_PERIOD_MINUTES
+    try:
+        time_range = int(request.args.get('timeRange', MONITOR_PERIOD_MINUTES))
+        # Limit to reasonable values to prevent abuse
+        time_range = max(10, min(time_range, 200))
+    except (ValueError, TypeError):
+        time_range = MONITOR_PERIOD_MINUTES
+    
+    print(f"[DEBUG] /data endpoint called with timeRange={request.args.get('timeRange')}, using time_range={time_range}")
     messages = load_messages()
+    print(f"[DEBUG] Loaded {len(messages)} total messages")
     tz = pytz.timezone('Europe/Kyiv')
     now = datetime.now(tz).replace(tzinfo=None)
     min_time = now - timedelta(minutes=time_range)
+    print(f"[DEBUG] Filtering messages since {min_time} (last {time_range} minutes)")
     hidden = set(load_hidden())
     out = []  # geo tracks
     events = []  # list-only (alarms, cancellations, other non-geo informational)
@@ -9058,6 +9067,8 @@ def data():
         events.sort(key=lambda x: x.get('date',''), reverse=True)
     except Exception:
         pass
+    
+    print(f"[DEBUG] Returning {len(out)} tracks and {len(events)} events")
     resp = jsonify({'tracks': out, 'events': events, 'all_sources': CHANNELS, 'trajectories': []})
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     resp.headers['Pragma'] = 'no-cache'
@@ -9423,6 +9434,7 @@ if 'health' not in app.view_functions:
 def presence():
     data = request.get_json(silent=True) or {}
     vid = data.get('id')
+    print(f"[DEBUG] /presence called with id={vid}")
     if not vid:
         return jsonify({'status':'error','error':'id required'}), 400
     now = time.time()
@@ -9472,6 +9484,7 @@ def presence():
             if now - ts > ACTIVE_TTL:
                 del ACTIVE_VISITORS[k]
         count = len(ACTIVE_VISITORS)
+    print(f"[DEBUG] Returning visitors count: {count}")
     return jsonify({'status':'ok','visitors': count})
 
 @app.route('/raion_alarms')
