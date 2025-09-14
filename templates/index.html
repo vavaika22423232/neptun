@@ -2285,6 +2285,9 @@
       const params = new URLSearchParams({ timeRange, confRange: 0 });
   const overlay = document.getElementById('markerLoadingOverlay');
   if (overlay && (!markers || markers.length===0)) overlay.classList.remove('hidden');
+  
+      let points = []; // Объявляем переменную перед try блоком
+      
       try {
         console.log('updateMarkers: отправляем запрос к /data?' + params.toString());
         const res = await fetch('/data?' + params.toString());
@@ -2293,7 +2296,7 @@
         console.log('updateMarkers: данные распарсены:', data);
         console.log('updateMarkers: tracks массив:', data.tracks);
         console.log('updateMarkers: количество tracks:', (data.tracks || []).length);
-  let points = (data.tracks || []).filter(p => {
+  points = (data.tracks || []).filter(p => {
         console.log('updateMarkers: проверяем точку:', p);
         if (typeof p.lat !== 'number' || typeof p.lng !== 'number') {
           console.log('updateMarkers: пропускаем - неправильный тип координат:', p.lat, p.lng);
