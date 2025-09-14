@@ -1654,7 +1654,7 @@
     }
     
     // Server Support Functions (updated for card layout)
-    function loadDonationAmount() {
+  function loadDonationAmount() {
       try {
         const amountElement = document.getElementById('donationAmount')?.querySelector('.amount');
         const supportAmountElement = document.getElementById('supportAmount');
@@ -1694,7 +1694,9 @@
         const fallbackAmount = 462;
         updateAmountDisplay(fallbackAmount, targetAmount, amountElement, supportAmountElement, progressAmountElement, progressFillElement);
       }
-    }
+  }
+  // Expose on window for external calls/guards
+  try { window.loadDonationAmount = loadDonationAmount; } catch(e){}
     
     // Enhanced function with retry mechanism
     async function fetchMonobankAmountWithRetry(targetAmount, amountElement, supportAmountElement, progressAmountElement, progressFillElement, cacheTime, retryCount = 0) {
@@ -3304,28 +3306,28 @@
       function styleAdm1(f){ const n=((f.properties?.ADM1_UA||f.properties?.ADM1_UK||'')+'').toLowerCase(); const hit=[...activeOblasts].some(o=>n.includes(o.split(' ')[0])); return {color:'#444',weight:1,fillOpacity:hit?0.55:0.05,fillColor: hit?'#b30000':'#1e293b'}; }
       function styleAdm2(f){ const n=(f.properties?.ADM2_UA||'').toLowerCase(); const hit=[...activeRaions].some(r=>n.startsWith(r.split(' ')[0])); return {color:'#333',weight:0.6,fillOpacity:hit?0.5:0,fillColor:hit?'#ff3b30':'#000'}; }
       // Optional loaders (comment out if not ready)
-      async function loadAdm1(){ try{ const r=await fetch('/static/adm1.json'); if(!r.ok) return; const gj=await r.json(); window.adm1Layer = L.geoJSON(gj,{style:styleAdm1,interactive:false}).addTo(map); }catch(e){} }
+  async function loadAdm1(){ try{ const r=await fetch('/static/adm1.json?v=' + Date.now()); if(!r.ok) return; const gj=await r.json(); window.adm1Layer = L.geoJSON(gj,{style:styleAdm1,interactive:false}).addTo(map); }catch(e){} }
       async function loadAdm2(){ try{ const r=await fetch('/static/adm2.json'); if(!r.ok) return; const gj=await r.json(); window.adm2Layer = L.geoJSON(gj,{style:styleAdm2,interactive:false}).addTo(map); }catch(e){} }
       // Kick off after map global is present
       function init(){ 
         if(typeof map==='undefined'){ 
           return setTimeout(init,500); 
         } 
-        loadAdm1(); 
+  loadAdm1(); 
         /* loadAdm2(); */ 
         refreshAlarms(); 
         setInterval(refreshAlarms,15000); 
         
-        // Initialize donation amount loading for support card
-        // Load immediately with fallback, then try to fetch real data
-        loadDonationAmount();
+  // Initialize donation amount loading for support card
+  // Load immediately with fallback, then try to fetch real data
+  if (typeof window.loadDonationAmount === 'function') { window.loadDonationAmount(); } else { console.warn('Donation loader not ready'); }
         
         // Also try again after a short delay to catch any load timing issues
         setTimeout(() => {
           const currentAmount = localStorage.getItem('donationAmount');
           if (!currentAmount || parseFloat(currentAmount) < 100) {
             console.log('Retrying donation amount load due to low/missing amount');
-            loadDonationAmount();
+            if (typeof window.loadDonationAmount === 'function') { window.loadDonationAmount(); }
           }
         }, 2000);
         
@@ -3335,7 +3337,7 @@
           // Clear cache to force fresh fetch
           localStorage.removeItem('donationAmount');
           localStorage.removeItem('donationAmountTime');
-          loadDonationAmount();
+          if (typeof window.loadDonationAmount === 'function') { window.loadDonationAmount(); }
         }, 900000); // 15 minutes
       }
       init();
