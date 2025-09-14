@@ -29,6 +29,192 @@ except ImportError:
     class SessionPasswordNeededError(Exception):
         pass
 from telethon.sessions import StringSession
+import math
+
+# === Kyiv Directional Enhancement Functions ===
+def calculate_bearing(lat1, lon1, lat2, lon2):
+    """Calculate bearing from point 1 to point 2 in degrees (0-360)"""
+    lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+    
+    dlon = lon2 - lon1
+    y = math.sin(dlon) * math.cos(lat2)
+    x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
+    
+    bearing = math.atan2(y, x)
+    bearing = math.degrees(bearing)
+    return (bearing + 360) % 360
+
+def get_kyiv_directional_coordinates(threat_text, original_city="київ"):
+    """
+    For Kyiv threats, calculate directional coordinates based on threat patterns
+    Returns modified coordinates showing approach direction instead of city center
+    """
+    kyiv_lat, kyiv_lng = 50.4501, 30.5234
+    threat_lower = threat_text.lower()
+    
+    # Try to extract source city/direction from course patterns
+    course_patterns = [
+        r'бпла.*?курс.*?на.*?київ.*?з\s+([а-яіїєё\s\-\']+?)(?:\s|$|[,\.\!])',
+        r'бпла.*?курс.*?на.*?київ.*?від\s+([а-яіїєё\s\-\']+?)(?:\s|$|[,\.\!])', 
+        r'([а-яіїєё\s\-\']+?).*?курс.*?на.*?київ',
+        r'z\s+([а-яіїєё\s\-\']+?).*?курс.*?на.*?київ'
+    ]
+    
+    source_city = None
+    for pattern in course_patterns:
+        matches = re.findall(pattern, threat_lower)
+        if matches:
+            potential_city = matches[0].strip()
+            if potential_city and len(potential_city) > 2:
+                # Clean up common noise words
+                noise_words = {'бпла', 'курсом', 'курс', 'на', 'над', 'області', 'область', 'обл', 'район'}
+                clean_city = ' '.join([word for word in potential_city.split() if word not in noise_words])
+                if clean_city:
+                    source_city = clean_city
+                    break
+    
+    if source_city:
+        # Try to find coordinates for source city (we'll need to implement a simple lookup)
+        # For now, use some common approach directions
+        approach_directions = {
+            'чернігів': (51.4982, 31.2893, "↘ Київ"),
+            'суми': (50.9077, 34.7981, "↙ Київ"), 
+            'харків': (49.9935, 36.2304, "← Київ"),
+            'полтава': (49.5883, 34.5514, "↖ Київ"),
+            'черкаси': (49.4444, 32.0598, "↑ Київ"),
+            'житомир': (50.2547, 28.6587, "→ Київ"),
+            'біла церква': (49.7939, 30.1014, "↗ Київ")
+        }
+        
+        if source_city in approach_directions:
+            source_lat, source_lng, direction_label = approach_directions[source_city]
+            
+            # Calculate bearing from source to Kyiv
+            bearing = calculate_bearing(source_lat, source_lng, kyiv_lat, kyiv_lng)
+            
+            # Place marker on approach path (70% of the way from source to Kyiv)
+            progress = 0.7  # 70% towards Kyiv
+            approach_lat = source_lat + (kyiv_lat - source_lat) * progress
+            approach_lng = source_lng + (kyiv_lng - source_lng) * progress
+            
+            return approach_lat, approach_lng, f"{direction_label} ({int(bearing)}°)", source_city
+    
+    # Fallback: use directional keywords to offset from center
+    direction_offsets = {
+        'півдн': (-0.08, 0, "↑ Київ (Пд)"),      # south
+        'півден': (-0.08, 0, "↑ Київ (Пд)"), 
+        'пн': (0.08, 0, "↓ Київ (Пн)"),          # north
+        'північ': (0.08, 0, "↓ Київ (Пн)"),
+        'сх': (0, 0.08, "← Київ (Сх)"),          # east  
+        'схід': (0, 0.08, "← Київ (Сх)"),
+        'зх': (0, -0.08, "→ Київ (Зх)"),         # west
+        'захід': (0, -0.08, "→ Київ (Зх)"),
+        'пд-сх': (-0.06, 0.06, "↖ Київ (ПдСх)"), # southeast
+        'пн-зх': (0.06, -0.06, "↘ Київ (ПнЗх)"), # northwest
+    }
+    
+    for direction, (lat_offset, lng_offset, label) in direction_offsets.items():
+        if direction in threat_lower:
+            return (kyiv_lat + lat_offset, kyiv_lng + lng_offset, 
+                   label, direction)
+    
+    # Default: return regular Kyiv coordinates
+    return kyiv_lat, kyiv_lng, "Київ", None
+
+def extract_shahed_course_info(threat_text):
+    """
+    Extract course information from Shahed/UAV threat messages
+    Returns: (source_city, target_city, direction, bearing, course_type)
+    """
+    text_lower = threat_text.lower()
+    
+    # Common course patterns for Shahed/UAV
+    course_patterns = [
+        # "БпЛА курсом з [source] на [target]"
+        r'бпла\s+.*?курс(?:ом)?\s+з\s+([а-яіїєё\s\-\']+?)\s+на\s+([а-яіїєё\s\-\']+?)(?:\s|$|[,\.\!])',
+        # "БпЛА курсом на [target] з [source]"  
+        r'бпла\s+.*?курс(?:ом)?\s+на\s+([а-яіїєё\s\-\']+?)\s+з\s+([а-яіїєё\s\-\']+?)(?:\s|$|[,\.\!])',
+        # "БпЛА з [source] курсом на [target]"
+        r'бпла\s+з\s+([а-яіїєё\s\-\']+?)\s+курс(?:ом)?\s+на\s+([а-яіїєё\s\-\']+?)(?:\s|$|[,\.\!])',
+        # "БпЛА з [source] у напрямку [target]"
+        r'бпла\s+з\s+([а-яіїєё\s\-\']+?)\s+у\s+напрямк[уи]\s+([а-яіїєё\s\-\']+?)(?:\s|$|[,\.\!])',
+        # "БпЛА курсом на [target]" (target only)
+        r'бпла\s+.*?курс(?:ом)?\s+на\s+([а-яіїєё\s\-\']+?)(?=\s*(?:\n|$|[,\.\!\?;]))',
+        # "[count]х БпЛА курс [source]-[target]"
+        r'\d*х?\s*бпла\s+курс\s+([а-яіїєё\s\-\']+?)\s*[-–—]\s*([а-яіїєё\s\-\']+?)(?:\s|$|[,\.\!])',
+    ]
+    
+    # Try to extract course information
+    for pattern_idx, pattern in enumerate(course_patterns):
+        matches = re.findall(pattern, text_lower)
+        if matches:
+            match = matches[0]
+            
+            if pattern_idx == 0:  # з source на target
+                source = match[0].strip()
+                target = match[1].strip()
+            elif pattern_idx == 1:  # на target з source  
+                target = match[0].strip()
+                source = match[1].strip()
+            elif pattern_idx == 2:  # з source курсом на target
+                source = match[0].strip()
+                target = match[1].strip()
+            elif pattern_idx == 3:  # з source у напрямку target
+                source = match[0].strip()
+                target = match[1].strip()
+            elif pattern_idx == 4:  # курсом на target (no source)
+                source = None
+                target = match.strip() if isinstance(match, str) else match[0].strip()
+            elif pattern_idx == 5:  # курс source-target
+                source = match[0].strip()
+                target = match[1].strip()
+            
+            # Clean up noise words
+            noise_words = {'область', 'обл', 'район', 'р-н', 'на', 'з', 'від', 'до'}
+            if source:
+                source = ' '.join([word for word in source.split() if word not in noise_words]).strip()
+            if target:
+                target = ' '.join([word for word in target.split() if word not in noise_words]).strip()
+            
+            # Determine course type
+            if source and target:
+                course_type = "full_course"  # Full trajectory
+            elif target:
+                course_type = "target_only"  # Only destination
+            else:
+                course_type = "unknown"
+                
+            return {
+                'source_city': source,
+                'target_city': target,
+                'course_direction': f"на {target}" if target else None,
+                'raw_direction': None,
+                'course_type': course_type
+            }
+    
+    # Try to extract directional information
+    direction_patterns = {
+        'північ': 'N', 'північний': 'N', 'пн': 'N',
+        'південь': 'S', 'південний': 'S', 'пд': 'S', 
+        'схід': 'E', 'східний': 'E', 'сх': 'E',
+        'захід': 'W', 'західний': 'W', 'зх': 'W',
+        'північно-східний': 'NE', 'пн-сх': 'NE',
+        'північно-західний': 'NW', 'пн-зх': 'NW', 
+        'південно-східний': 'SE', 'пд-сх': 'SE',
+        'південно-західний': 'SW', 'пд-зх': 'SW'
+    }
+    
+    for direction_ukr, direction_eng in direction_patterns.items():
+        if direction_ukr in text_lower:
+            return {
+                'source_city': None,
+                'target_city': None,
+                'course_direction': direction_eng,
+                'raw_direction': direction_ukr,
+                'course_type': "directional"
+            }
+    
+    return None
 
 # Basic minimal subset for Render deployment. Heavy ML parts stripped for now.
 # Load secrets from a local hidden .env file (key=value) if present (for local dev),
@@ -3441,6 +3627,10 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         # PRIORITY: drones (частая путаница). Если присутствуют слова шахед/бпла/дрон -> это shahed
         if any(k in l for k in ['shahed','шахед','шахеді','шахедів','geran','герань','дрон','дрони','бпла','uav']):
             return 'shahed', 'shahed.png'
+        # PRIORITY: High-speed targets / missile threats with rocket emoji (🚀) -> raketa.png
+        # This should have priority over aviation to handle missile-like threats with rocket emoji
+        if '🚀' in th or any(k in l for k in ['ціль','цілей','цілі','високошвидкісн','high-speed']):
+            return 'raketa', 'raketa.png'
         # PRIORITY: Aircraft activity & tactical aviation (avia) -> avia.png (jets, tactical aviation, но БЕЗ КАБов)
         if any(k in l for k in ['літак','самол','avia','tactical','тактичн','fighter','истребит','jets']) or \
            ('авіаційн' in l and ('засоб' in l or 'ураж' in l)):
@@ -3448,9 +3638,6 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         # PRIORITY: КАБы (управляемые авиационные бомбы) -> raketa.png
         if any(k in l for k in ['каб','kab','умпк','umpk','модуль','fab','умпб','фаб','кабу']) or \
            ('авіаційн' in l and 'бомб' in l) or ('керован' in l and 'бомб' in l):
-            return 'raketa', 'raketa.png'
-        # High-speed targets / missile threats (ціль, високошвидкісні цілі) -> raketa.png
-        if any(k in l for k in ['ціль','цілей','цілі','високошвидкісн','high-speed']) or '🚀' in th:
             return 'raketa', 'raketa.png'
         # Rocket / missile attacks (ракета, ракети) -> raketa.png
         if any(k in l for k in ['ракет','rocket','міжконтинент','межконтинент','балістичн','крилат','cruise']):
@@ -3888,16 +4075,19 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     lat, lng = RAION_FALLBACK[raion_normalized]
                     add_debug_log(f"Creating oblast+raion marker: {raion_normalized} at {lat}, {lng}", "oblast_raion")
                     
+                    # Use classify function to determine correct threat type and icon
+                    threat_type, icon = classify(original_text, raion_normalized)
+                    
                     tracks.append({
                         'id': f"{mid}_raion_{raion_normalized}",
                         'place': f"{raion_normalized.title()} район",
                         'lat': lat,
                         'lng': lng,
-                        'threat_type': 'shahed',  # Default for БПЛА threats
+                        'threat_type': threat_type,
                         'text': original_text[:500],
                         'date': date_str,
                         'channel': channel,
-                        'marker_icon': 'shahed.png',
+                        'marker_icon': icon,
                         'source_match': 'oblast_raion_format'
                     })
                 else:
@@ -4387,6 +4577,24 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                         continue
                         
                     base = UA_CITY_NORMALIZE.get(city, city)
+                    
+                    # Special handling for Kyiv - show directional approach instead of center point
+                    if base.lower() == 'київ':
+                        kyiv_lat, kyiv_lng, kyiv_label, direction_info = get_kyiv_directional_coordinates(text, base)
+                        threat_type, icon = classify(text)
+                        
+                        # Use specialized icon for directional Kyiv threats
+                        if direction_info:
+                            icon = 'shahed.png'  # Could create special directional icon later
+                            
+                        threats.append({
+                            'id': f"{mid}_uav_{idx}_{city_idx}_kyiv_dir", 'place': kyiv_label, 'lat': kyiv_lat, 'lng': kyiv_lng,
+                            'threat_type': threat_type, 'text': clean_text(text)[:500], 'date': date_str, 'channel': channel,
+                            'marker_icon': icon, 'source_match': 'uav_on_city_kyiv_directional',
+                            'direction_info': direction_info
+                        })
+                        continue
+                    
                     coords = CITY_COORDS.get(base)
                     if not coords and 'SETTLEMENTS_INDEX' in globals():
                         coords = (globals().get('SETTLEMENTS_INDEX') or {}).get(base)
@@ -4675,11 +4883,28 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             if coords:
                 lat,lng = coords
                 threat_type, icon = classify(text)
-                return [{
+                
+                # Extract course information for Shahed threats
+                course_info = None
+                if threat_type == 'shahed':
+                    course_info = extract_shahed_course_info(text)
+                
+                threat_data = {
                     'id': str(mid), 'place': base.title(), 'lat': lat, 'lng': lng,
                     'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
                     'marker_icon': icon, 'source_match': 'course_to_city'
-                }]
+                }
+                
+                # Add course information if available
+                if course_info:
+                    threat_data.update({
+                        'course_source': course_info.get('source_city'),
+                        'course_target': course_info.get('target_city'),
+                        'course_direction': course_info.get('course_direction'),
+                        'course_type': course_info.get('course_type')
+                    })
+                
+                return [threat_data]
     except Exception:
         pass
     # Region directional segments specifying part of oblast ("на сході Дніпропетровщини") possibly multiple in one line
@@ -5716,12 +5941,29 @@ def process_message(text, mid, date_str, channel):  # type: ignore
     # Если найдено 2 и более города — создаём отдельный маркер для каждого
     if len(found_cities) >= 2:
         threat_type, icon = 'shahed', 'shahed.png'  # можно доработать auto-classify
+        
+        # Extract course information for Shahed threats
+        course_info = None
+        if threat_type == 'shahed':
+            course_info = extract_shahed_course_info(original_text)
+        
         for idx, (city, (lat, lng)) in enumerate(found_cities, 1):
-            multi_city_tracks.append({
+            track = {
                 'id': f"{mid}_mc{idx}", 'place': city.title(), 'lat': lat, 'lng': lng,
                 'threat_type': threat_type, 'text': clean_text(original_text)[:500], 'date': date_str, 'channel': channel,
                 'marker_icon': icon, 'source_match': 'multi_city_auto'
-            })
+            }
+            
+            # Add course information if available
+            if course_info:
+                track.update({
+                    'course_source': course_info.get('source_city'),
+                    'course_target': course_info.get('target_city'),
+                    'course_direction': course_info.get('course_direction'),
+                    'course_type': course_info.get('course_type')
+                })
+            
+            multi_city_tracks.append(track)
         if multi_city_tracks:
             return multi_city_tracks
     """Extract coordinates or try simple city geocoding (lightweight)."""
@@ -5809,7 +6051,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
     # New behavior: If donation lines present BUT the message also contains threat indicators, strip only the donation lines and continue parsing.
     low_full = original_text.lower()
     DONATION_KEYS = [
-        'монобанк','monobank','mono.bank','privat24','приват24','реквізит','реквизит','донат','donat','iban','paypal','patreon','send.monobank.ua','jar/','банка: http','карта(','карта(monobank)','карта(privat24)'
+        'монобанк','monobank','mono.bank','privat24','приват24','реквізит','реквизит','донат','donat','iban','paypal','patreon','send.monobank.ua','jar/','банка: http','карта(','карта(monobank)','карта(privat24)','підтримати канал'
     ]
     donation_present = any(k in low_full for k in DONATION_KEYS) or re.search(r'\b\d{16}\b', low_full)
     # Pure subscription / invite promo suppression (no threats, mostly t.me invite links + short call to action)
@@ -7806,17 +8048,35 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     break
             if not course_target_hint:
                 threat_type, icon = classify(text)
+                
+                # Extract course information for Shahed threats
+                course_info = None
+                if threat_type == 'shahed':
+                    course_info = extract_shahed_course_info(original_text or text)
+                
                 tracks = []
                 seen = set()
                 for idx,(n1,(lat,lng)) in enumerate(matched_regions,1):
                     base = n1.split()[0].title()
                     if base in seen: continue
                     seen.add(base)
-                    tracks.append({
+                    
+                    track = {
                         'id': f"{mid}_r{idx}", 'place': base, 'lat': lat, 'lng': lng,
                         'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
                         'marker_icon': icon, 'source_match': 'region_multi_simple', 'count': drone_count
-                    })
+                    }
+                    
+                    # Add course information if available
+                    if course_info:
+                        track.update({
+                            'course_source': course_info.get('source_city'),
+                            'course_target': course_info.get('target_city'),
+                            'course_direction': course_info.get('course_direction'),
+                            'course_type': course_info.get('course_type')
+                        })
+                    
+                    tracks.append(track)
                 if tracks:
                     return tracks
     # City fallback scan (ensure whole-word style match to avoid false hits inside oblast words, e.g. 'дніпро' in 'дніпропетровщина')
@@ -7979,11 +8239,28 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         for idx,(name,(lat,lng),snippet,line_count) in enumerate(course_matches,1):
             if name in seen_places: continue
             seen_places.add(name)
-            tracks.append({
+            
+            # Extract Shahed course information if this is a Shahed threat
+            course_info = None
+            if threat_type == 'shahed':
+                course_info = extract_shahed_course_info(original_text or text)
+            
+            track = {
                 'id': f"{mid}_c{idx}", 'place': name, 'lat': lat, 'lng': lng,
                 'threat_type': threat_type, 'text': snippet[:500], 'date': date_str, 'channel': channel,
                 'marker_icon': icon, 'source_match': 'course_target', 'count': line_count if line_count else drone_count
-            })
+            }
+            
+            # Add course information if available
+            if course_info:
+                track.update({
+                    'course_source': course_info.get('source_city'),
+                    'course_target': course_info.get('target_city'),
+                    'course_direction': course_info.get('course_direction'),
+                    'course_type': course_info.get('course_type')
+                })
+            
+            tracks.append(track)
         if tracks:
             return tracks
     
@@ -9051,6 +9328,12 @@ def test_oblast_raion():
         'result': result,
         'debug_logs': [log for log in DEBUG_LOGS if log.get('category') == 'oblast_raion'][-10:]
     }
+
+@app.route('/test-pusk')
+def test_pusk_icon():
+    """Test route to debug pusk.png display issues"""
+    with open('/Users/vladimirmalik/Desktop/render2/test_pusk_icon.html', 'r', encoding='utf-8') as f:
+        return f.read()
 
 @app.route('/admin')
 def admin_panel():

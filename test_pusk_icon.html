@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="utf-8">
+    <title>Тест pusk.png</title>
+</head>
+<body>
+    <h1>Тест отображения pusk.png</h1>
+    
+    <h2>1. Прямая ссылка на файл:</h2>
+    <img src="/static/pusk.png" alt="pusk.png" style="width: 100px; height: 100px; border: 1px solid red;">
+    
+    <h2>2. Имитация как в приложении:</h2>
+    <div style="border: 1px solid blue; padding: 10px;">
+        <img class='plain-marker-img' style='width:34px;height:39px;' src='/static/pusk.png' alt='' loading="lazy" data-icon-type="pusk">
+    </div>
+    
+    <h2>3. Сравнение с другими иконками:</h2>
+    <div style="display: flex; gap: 10px;">
+        <div style="text-align: center;">
+            <img src="/static/shahed.png" alt="shahed" style="width: 34px; height: 39px; border: 1px solid green;">
+            <br>shahed.png
+        </div>
+        <div style="text-align: center;">
+            <img src="/static/pusk.png" alt="pusk" style="width: 34px; height: 39px; border: 1px solid green;">
+            <br>pusk.png
+        </div>
+        <div style="text-align: center;">
+            <img src="/static/raketa.png" alt="raketa" style="width: 34px; height: 39px; border: 1px solid green;">
+            <br>raketa.png
+        </div>
+    </div>
+    
+    <h2>4. Проверка через JavaScript:</h2>
+    <div id="js-test"></div>
+    
+    <script>
+        // Проверяем загрузку изображения
+        const img = new Image();
+        img.onload = function() {
+            document.getElementById('js-test').innerHTML = '<span style="color: green;">✅ pusk.png загружается успешно через JavaScript</span>';
+        };
+        img.onerror = function() {
+            document.getElementById('js-test').innerHTML = '<span style="color: red;">❌ Ошибка загрузки pusk.png через JavaScript</span>';
+        };
+        img.src = '/static/pusk.png';
+    </script>
+</body>
+</html>

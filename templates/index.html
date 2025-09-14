@@ -354,6 +354,38 @@
   .plain-marker-img{width:34px;height:34px;object-fit:contain;image-rendering:auto;filter:drop-shadow(0 1px 2px rgba(0,0,0,.45));}
   .tm-badge{position:absolute;top:-6px;right:-6px;background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;font-size:11px;font-weight:700;padding:2px 5px;border-radius:12px;box-shadow:0 2px 6px -1px rgba(0,0,0,.5);font-family:Inter,system-ui,sans-serif;line-height:1;}
   .tm-wrap{position:relative;display:inline-block;}
+  
+  /* Shahed course visualization styles */
+  .shahed-course-line {
+    animation: shahedCourseFlow 3s ease-in-out infinite;
+  }
+  
+  .shahed-course-arrow {
+    animation: shahedArrowPulse 2s ease-in-out infinite;
+  }
+  
+  @keyframes shahedCourseFlow {
+    0%, 100% { 
+      opacity: 0.8;
+      stroke-dashoffset: 0;
+    }
+    50% { 
+      opacity: 1;
+      stroke-dashoffset: 12;
+    }
+  }
+  
+  @keyframes shahedArrowPulse {
+    0%, 100% { 
+      opacity: 0.9;
+      transform: scale(1);
+    }
+    50% { 
+      opacity: 1;
+      transform: scale(1.2);
+    }
+  }
+  
   @keyframes popIn{from{transform:scale(.5);opacity:0;}to{transform:scale(1);opacity:1;}}
     @media (max-width: 1100px) {
       .main-content {
@@ -1718,6 +1750,15 @@
             }
           }
         }
+        
+        // Enhanced Shahed course visualization
+        if (p.threat_type === 'shahed' && (p.course_source || p.course_target || p.course_direction)) {
+          try {
+            addShahedCourseVisualization(p);
+          } catch(e) {
+            console.warn('Shahed course visualization failed:', e);
+          }
+        }
         const placeUA = translatePlace(p.place);
         const popupHtml = `<div style=\"background:#ffffff;color:#1e293b;border:1px solid #d7dde3;border-radius:12px;padding:10px 10px;min-width:190px;font-size:.8rem;line-height:1.35;box-shadow:0 4px 14px -4px rgba(0,0,0,.18);\">`
           + (placeUA ? `<div style='font-size:.9rem;font-weight:600;margin-bottom:4px;'>${placeUA}</div>` : '')
@@ -1849,6 +1890,137 @@
       L.polyline(pts, {color: isDrone? '#00b3ff':'#ff784e', weight:2.2, opacity:0.8, className:'traj-arc'+(isDrone?' drone':'')}).addTo(markerLayer);
       // Fading thicker tail (static path that fades out)
       L.polyline(pts, {color: isDrone? '#41c9ff':'#ff9d7b', weight:3.4, opacity:0.5, className:'traj-tail'+(isDrone?' drone':'')}).addTo(markerLayer);
+    }
+    
+    // --- Shahed course visualization ---
+    function addShahedCourseVisualization(p) {
+      const { course_source, course_target, course_direction, course_type } = p;
+      
+      // If we have specific source and target cities, try to draw a path between them
+      if (course_source && course_target) {
+        // This would require city coordinates lookup on frontend
+        // For now, we'll use the direction information
+        addCourseDirectionIndicator(p, course_direction || 'на ' + course_target);
+        return;
+      }
+      
+      // If we have course direction, show it
+      if (course_direction) {
+        addCourseDirectionIndicator(p, course_direction);
+        return;
+      }
+      
+      // If we have target city, show direction arrow pointing roughly toward it
+      if (course_target) {
+        addCourseDirectionIndicator(p, 'на ' + course_target);
+        return;
+      }
+    }
+    
+    // --- Course direction indicator for Shahed threats ---
+    function addCourseDirectionIndicator(p, directionText) {
+      const lat = p.lat, lng = p.lng;
+      let dx = 0, dy = 0;
+      
+      // Parse direction from text
+      const dir = directionText.toLowerCase();
+      
+      // Extract city name if format is "на [city]"
+      const cityMatch = dir.match(/на\s+([а-яіїєґa-z\s\-']+)/);
+      if (cityMatch) {
+        const cityName = cityMatch[1].trim();
+        
+        // Simple heuristic direction mapping based on well-known cities
+        const cityDirections = {
+          'київ': {dx: 0.4, dy: 0.6},
+          'харків': {dx: 0.7, dy: 0.2},
+          'дніпро': {dx: 0.5, dy: -0.1},
+          'одеса': {dx: -0.3, dy: -0.5},
+          'львів': {dx: -0.8, dy: 0.3},
+          'чернігів': {dx: 0.2, dy: 0.8},
+          'суми': {dx: 0.6, dy: 0.5},
+          'полтава': {dx: 0.5, dy: 0.3},
+          'кременчук': {dx: 0.3, dy: 0.1},
+          'черкаси': {dx: 0.2, dy: 0.2}
+        };
+        
+        // Find matching city
+        for (const [city, coords] of Object.entries(cityDirections)) {
+          if (cityName.includes(city)) {
+            dx = coords.dx;
+            dy = coords.dy;
+            break;
+          }
+        }
+      }
+      
+      // Fallback to cardinal directions if no city match
+      if (dx === 0 && dy === 0) {
+        if (dir.includes('північ')) dy = 0.5;
+        if (dir.includes('південь') || dir.includes('півден')) dy = -0.5;
+        if (dir.includes('схід')) dx = 0.5;
+        if (dir.includes('захід')) dx = -0.5;
+        
+        // Compound directions
+        if (dir.includes('північно-схід') || dir.includes('північний схід')) {
+          dx = 0.35; dy = 0.35;
+        } else if (dir.includes('північно-захід') || dir.includes('північний захід')) {
+          dx = -0.35; dy = 0.35;
+        } else if (dir.includes('південно-схід') || dir.includes('південний схід')) {
+          dx = 0.35; dy = -0.35;
+        } else if (dir.includes('południowo-zachód') || dir.includes('південний захід')) {
+          dx = -0.35; dy = -0.35;
+        }
+      }
+      
+      // Create course line if we have direction
+      if (dx !== 0 || dy !== 0) {
+        const startLat = lat - dy * 0.3;
+        const startLng = lng - dx * 0.3;
+        const endLat = lat + dy * 0.8;
+        const endLng = lng + dx * 0.8;
+        
+        // Course line
+        const courseLine = L.polyline([
+          [startLat, startLng],
+          [lat, lng],
+          [endLat, endLng]
+        ], {
+          color: '#00d4ff',
+          weight: 3,
+          opacity: 0.8,
+          dashArray: '8 4',
+          className: 'shahed-course-line'
+        }).addTo(markerLayer);
+        
+        // Direction arrow at the end
+        const arrowSize = 0.1;
+        const arrowPoints = [
+          [endLat, endLng],
+          [endLat - dy * arrowSize + dx * arrowSize * 0.5, endLng - dx * arrowSize - dy * arrowSize * 0.5],
+          [endLat - dy * arrowSize - dx * arrowSize * 0.5, endLng - dx * arrowSize + dy * arrowSize * 0.5]
+        ];
+        
+        L.polyline(arrowPoints, {
+          color: '#00d4ff',
+          weight: 3,
+          opacity: 0.9,
+          className: 'shahed-course-arrow'
+        }).addTo(markerLayer);
+        
+        // Add course info to popup if it exists
+        setTimeout(() => {
+          const courseInfo = `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #333;">
+            <strong>🎯 Курс:</strong> ${directionText}
+          </div>`;
+          
+          // Try to add to existing popup content
+          if (p._popup && p._popup.getContent) {
+            const existingContent = p._popup.getContent();
+            p._popup.setContent(existingContent + courseInfo);
+          }
+        }, 100);
+      }
     }
     // --- KAB rotating scan line (single per map instance concurrently) ---
     function addKabRotor(lat, lng, radiusKm){
