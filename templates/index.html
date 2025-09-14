@@ -2287,13 +2287,14 @@
         console.log('updateMarkers: получен ответ, статус:', res.status);
         const data = await res.json();
         console.log('updateMarkers: данные распарсены:', data);
-      let points = (data.tracks || []).filter(p => {
+  let points = (data.tracks || []).filter(p => {
         if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return false;
         if (isNaN(p.lat) || isNaN(p.lng)) return false;
         if (Math.abs(p.lat) < 1 && Math.abs(p.lng) < 1) return false;
         if (p.lat < 43 || p.lat > 53.5 || p.lng < 21 || p.lng > 41) return false;
-        const vague = ['схід','захід','північ','південь','восток','запад','север','юг'];
-        if (!p.place || vague.includes(p.place.toLowerCase())) return false;
+    const vague = ['схід','захід','північ','південь','восток','запад','север','юг'];
+    // allow markers without place label; only skip if place exists and is too vague
+    if (p.place && vague.includes((p.place||'').toLowerCase())) return false;
         return true;
       });
       console.log('updateMarkers: количество точек после фильтрации:', points.length);
@@ -2306,7 +2307,8 @@
   // Expose current points for search suggestions
   window.__lastPoints = points;
       if (threatType) points = points.filter(p => (p.threat_type || '').toLowerCase() === threatType);
-  if (overlay) { if (points.length>0) overlay.classList.add('hidden'); else overlay.classList.remove('hidden'); }
+  // Always hide the overlay after processing one fetch to avoid spinner lock
+  if (overlay) { overlay.classList.add('hidden'); }
       if (markerLayer) { markerLayer.clearLayers(); }
       else { markerLayer = L.layerGroup().addTo(map); }
       markers = [];
