@@ -837,6 +837,13 @@
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
   <script type="text/javascript">
     // @ts-nocheck
+    
+    // Early donation amount function definition to prevent ReferenceError
+    window.loadDonationAmount = function() {
+      console.log('loadDonationAmount called (early stub)');
+      // Will be replaced by full implementation below
+    };
+    
     // --- Comments UI styles inject ---
     (function(){
       if(document.getElementById('commentsStyles')) return;
