@@ -3441,12 +3441,14 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         # PRIORITY: drones (частая путаница). Если присутствуют слова шахед/бпла/дрон -> это shahed
         if any(k in l for k in ['shahed','шахед','шахеді','шахедів','geran','герань','дрон','дрони','бпла','uav']):
             return 'shahed', 'shahed.png'
-        # PRIORITY: Aircraft activity & tactical aviation (avia) -> avia.png (jets, tactical aviation, CAB)
+        # PRIORITY: Aircraft activity & tactical aviation (avia) -> avia.png (jets, tactical aviation, но БЕЗ КАБов)
         if any(k in l for k in ['літак','самол','avia','tactical','тактичн','fighter','истребит','jets']) or \
-           ('авіаційн' in l and ('засоб' in l or 'ураж' in l)) or \
-           any(k in l for k in ['каб','kab','умпк','umpk','модуль','fab','умпб','фаб','кабу']) or \
-           ('авіаційн' in l and 'бомб' in l) or ('керован' in l and 'бомб' in l):
+           ('авіаційн' in l and ('засоб' in l or 'ураж' in l)):
             return 'avia', 'avia.png'
+        # PRIORITY: КАБы (управляемые авиационные бомбы) -> raketa.png
+        if any(k in l for k in ['каб','kab','умпк','umpk','модуль','fab','умпб','фаб','кабу']) or \
+           ('авіаційн' in l and 'бомб' in l) or ('керован' in l and 'бомб' in l):
+            return 'raketa', 'raketa.png'
         # High-speed targets / missile threats (ціль, високошвидкісні цілі) -> raketa.png
         if any(k in l for k in ['ціль','цілей','цілі','високошвидкісн','high-speed']) or '🚀' in th:
             return 'raketa', 'raketa.png'
