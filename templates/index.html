@@ -1441,11 +1441,6 @@
             toggleReaction(commentId, emoji, btn);
          });
       });
-         btn.addEventListener('click', e=>{
-            const id = btn.getAttribute('data-reply');
-            beginReply(id, byId[id]);
-         });
-      });
     }
     function escapeHtml(s){ return s? s.replace(/[&<>"']/g, ch=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch])):''; }
     
