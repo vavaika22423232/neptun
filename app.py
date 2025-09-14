@@ -2846,6 +2846,17 @@ def init_comments_db():
                     epoch REAL
                 )
             """)
+            # Enhanced reactions table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS comment_reactions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    comment_id TEXT NOT NULL,
+                    emoji TEXT NOT NULL,
+                    user_ip TEXT NOT NULL,
+                    timestamp REAL NOT NULL,
+                    UNIQUE(comment_id, emoji, user_ip)
+                )
+            """)
             # Migration: ensure reply_to column exists
             cur = conn.execute("PRAGMA table_info(comments)")
             cols = [r[1] for r in cur.fetchall()]
@@ -2858,7 +2869,9 @@ def init_comments_db():
             # Create indexes (individually wrapped)
             for idx_sql in [
                 "CREATE INDEX IF NOT EXISTS idx_comments_epoch ON comments(epoch)",
-                "CREATE INDEX IF NOT EXISTS idx_comments_reply ON comments(reply_to)"
+                "CREATE INDEX IF NOT EXISTS idx_comments_reply ON comments(reply_to)",
+                "CREATE INDEX IF NOT EXISTS idx_reactions_comment ON comment_reactions(comment_id)",
+                "CREATE INDEX IF NOT EXISTS idx_reactions_user ON comment_reactions(user_ip)"
             ]:
                 try:
                     conn.execute(idx_sql)
@@ -2900,10 +2913,142 @@ def load_recent_comments(limit:int=80)->list[dict]:
             for rid, text, ts, reply_to in fetched:
                 d={'id': rid, 'text': text, 'ts': ts}
                 if reply_to: d['reply_to']=reply_to
+                
+                # Load reactions for this comment
+                try:
+                    reactions = load_comment_reactions(rid, conn)
+                    if reactions:
+                        d['reactions'] = reactions
+                except Exception:
+                    pass  # Non-critical, skip reactions if failed
+                
                 rows.append(d)
     except Exception as e:
         log.warning(f"load_recent_comments failed: {e}")
     return list(reversed(rows))  # reverse so oldest of the slice first
+
+def load_comment_reactions(comment_id: str, conn=None) -> dict:
+    """Load reaction counts for a specific comment."""
+    try:
+        if conn:
+            cur = conn.execute("""
+                SELECT emoji, COUNT(*) as count 
+                FROM comment_reactions 
+                WHERE comment_id = ? 
+                GROUP BY emoji
+            """, (comment_id,))
+            
+            reactions = {}
+            for emoji, count in cur.fetchall():
+                reactions[emoji] = count
+            return reactions
+        else:
+            with _visits_db_conn() as use_conn:
+                cur = use_conn.execute("""
+                    SELECT emoji, COUNT(*) as count 
+                    FROM comment_reactions 
+                    WHERE comment_id = ? 
+                    GROUP BY emoji
+                """, (comment_id,))
+                
+                reactions = {}
+                for emoji, count in cur.fetchall():
+                    reactions[emoji] = count
+                return reactions
+    except Exception as e:
+        log.debug(f"load_comment_reactions failed: {e}")
+        return {}
+
+def toggle_comment_reaction(comment_id: str, emoji: str, user_ip: str) -> dict:
+    """Toggle a reaction on a comment. Returns updated reaction counts."""
+    try:
+        with _visits_db_conn() as conn:
+            # Check if reaction already exists
+            cur = conn.execute("""
+                SELECT id FROM comment_reactions 
+                WHERE comment_id = ? AND emoji = ? AND user_ip = ?
+            """, (comment_id, emoji, user_ip))
+            
+            existing = cur.fetchone()
+            
+            if existing:
+                # Remove existing reaction
+                conn.execute("DELETE FROM comment_reactions WHERE id = ?", (existing[0],))
+                action = 'removed'
+            else:
+                # Add new reaction
+                conn.execute("""
+                    INSERT INTO comment_reactions (comment_id, emoji, user_ip, timestamp)
+                    VALUES (?, ?, ?, ?)
+                """, (comment_id, emoji, user_ip, time.time()))
+                action = 'added'
+            
+            conn.commit()
+            
+            # Return updated counts
+            reactions = load_comment_reactions(comment_id, conn)
+            return {'action': action, 'reactions': reactions}
+            
+    except Exception as e:
+        log.warning(f"toggle_comment_reaction failed: {e}")
+        return {'action': 'error', 'reactions': {}}
+
+def load_comment_reactions(comment_id: str, conn=None) -> dict:
+    """Load reaction counts for a specific comment."""
+    try:
+        use_conn = conn
+        if not use_conn:
+            use_conn = _visits_db_conn()
+            
+        with use_conn as c:
+            cur = c.execute("""
+                SELECT emoji, COUNT(*) as count 
+                FROM comment_reactions 
+                WHERE comment_id = ? 
+                GROUP BY emoji
+            """, (comment_id,))
+            
+            reactions = {}
+            for emoji, count in cur.fetchall():
+                reactions[emoji] = count
+            return reactions
+    except Exception as e:
+        log.debug(f"load_comment_reactions failed: {e}")
+        return {}
+
+def toggle_comment_reaction(comment_id: str, emoji: str, user_ip: str) -> dict:
+    """Toggle a reaction on a comment. Returns updated reaction counts."""
+    try:
+        with _visits_db_conn() as conn:
+            # Check if reaction already exists
+            cur = conn.execute("""
+                SELECT id FROM comment_reactions 
+                WHERE comment_id = ? AND emoji = ? AND user_ip = ?
+            """, (comment_id, emoji, user_ip))
+            
+            existing = cur.fetchone()
+            
+            if existing:
+                # Remove existing reaction
+                conn.execute("DELETE FROM comment_reactions WHERE id = ?", (existing[0],))
+                action = 'removed'
+            else:
+                # Add new reaction
+                conn.execute("""
+                    INSERT INTO comment_reactions (comment_id, emoji, user_ip, timestamp)
+                    VALUES (?, ?, ?, ?)
+                """, (comment_id, emoji, user_ip, time.time()))
+                action = 'added'
+            
+            conn.commit()
+            
+            # Return updated counts
+            reactions = load_comment_reactions(comment_id, conn)
+            return {'action': action, 'reactions': reactions}
+            
+    except Exception as e:
+        log.warning(f"toggle_comment_reaction failed: {e}")
+        return {'action': 'error', 'reactions': {}}
 
 def record_visit_sql(id_:str, now_ts:float):
     if not id_:
@@ -8697,6 +8842,55 @@ def comments_endpoint():
     if not rows and COMMENTS:  # fallback to cache if DB query unexpectedly empty
         rows = COMMENTS[-limit:]
     return jsonify({'ok': True, 'items': rows})
+
+@app.route('/comments/react', methods=['POST'])
+def comment_react_endpoint():
+    """Toggle emoji reactions on comments."""
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+    except Exception:
+        return jsonify({'ok': False, 'error': 'invalid_json'}), 400
+    
+    comment_id = (data.get('comment_id') or '').strip()
+    emoji = (data.get('emoji') or '').strip()
+    
+    # Validation
+    if not comment_id or not emoji:
+        return jsonify({'ok': False, 'error': 'missing_params'}), 400
+        
+    # Validate emoji is in allowed list
+    allowed_emojis = ['👍', '❤️', '🔥', '😢', '😡', '😂', '👎']
+    if emoji not in allowed_emojis:
+        return jsonify({'ok': False, 'error': 'invalid_emoji'}), 400
+    
+    # Get user IP for uniqueness
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr) or 'unknown'
+    
+    # Rate limiting: max 20 reactions per minute per IP
+    now_ts = time.time()
+    rt = getattr(app, '_reaction_rate', None)
+    if rt is None:
+        rt = {}
+        setattr(app, '_reaction_rate', rt)
+    
+    arr = rt.get(ip, [])
+    arr = [t for t in arr if now_ts - t < 60]  # Keep last 60 seconds
+    if len(arr) >= 20:
+        return jsonify({'ok': False, 'error': 'rate_limited'}), 429
+    arr.append(now_ts)
+    rt[ip] = arr
+    
+    # Toggle reaction
+    result = toggle_comment_reaction(comment_id, emoji, ip)
+    
+    if result['action'] == 'error':
+        return jsonify({'ok': False, 'error': 'server_error'}), 500
+    
+    return jsonify({
+        'ok': True, 
+        'action': result['action'],
+        'reactions': result['reactions']
+    })
 
 @app.route('/active_alarms')
 def active_alarms_endpoint():
