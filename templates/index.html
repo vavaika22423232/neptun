@@ -1365,7 +1365,6 @@
     .quick-reactions { opacity: 1; } /* Always show on mobile */
   }
       `;
-      `;
       const st=document.createElement('style'); st.id='commentsStyles'; st.textContent=css; document.head.appendChild(st);
     })();
     // --- Comments logic ---
@@ -2277,13 +2276,18 @@
       return pts;
     }
     async function updateMarkers() {
+      console.log('updateMarkers: начинаем загрузку данных...');
       const timeRange = 50; // fixed
       const threatType = document.getElementById('threatTypeSelect').value;
       const params = new URLSearchParams({ timeRange, confRange: 0 });
   const overlay = document.getElementById('markerLoadingOverlay');
   if (overlay && (!markers || markers.length===0)) overlay.classList.remove('hidden');
-      const res = await fetch('/data?' + params.toString());
-      const data = await res.json();
+      try {
+        console.log('updateMarkers: отправляем запрос к /data?' + params.toString());
+        const res = await fetch('/data?' + params.toString());
+        console.log('updateMarkers: получен ответ, статус:', res.status);
+        const data = await res.json();
+        console.log('updateMarkers: данные распарсены:', data);
       let points = (data.tracks || []).filter(p => {
         if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return false;
         if (isNaN(p.lat) || isNaN(p.lng)) return false;
@@ -2292,7 +2296,13 @@
         const vague = ['схід','захід','північ','південь','восток','запад','север','юг'];
         if (!p.place || vague.includes(p.place.toLowerCase())) return false;
         return true;
-      });
+      console.log('updateMarkers: количество точек после фильтрации:', points.length);
+      } catch (error) {
+        console.error('updateMarkers: ошибка при загрузке данных:', error);
+        const overlay = document.getElementById('markerLoadingOverlay');
+        if (overlay) overlay.classList.add('hidden');
+        return;
+      }
   // Expose current points for search suggestions
   window.__lastPoints = points;
       if (threatType) points = points.filter(p => (p.threat_type || '').toLowerCase() === threatType);
@@ -2940,9 +2950,12 @@
       const uid = localStorage.getItem('presence_id') || (self.crypto?.randomUUID ? crypto.randomUUID() : (Date.now()+""+Math.random()).replace(/\D/g,''));
       localStorage.setItem('presence_id', uid);
       async function pingPresence(){
+        console.log('pingPresence: отправляем запрос к /presence...');
         try {
           const r = await fetch('/presence', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id:uid})});
+          console.log('pingPresence: получен ответ, статус:', r.status);
           const j = await r.json();
+          console.log('pingPresence: данные:', j);
           if(j.status === 'blocked'){
             // Show overlay and stop further updates
             const ov = document.createElement('div');
