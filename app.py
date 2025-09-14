@@ -1092,36 +1092,68 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
     if message_text:
         message_lower = message_text.lower()
         
-        # Look for oblast patterns in message
-        import re
-        # Pattern for "(Oblast name обл.)" or "(Oblast name область)"
-        oblast_patterns = [
+        # Enhanced regional context detection
+        regional_patterns = [
+            # Direct oblast names: "харківщина", "полтавщина", etc.
+            r'\b([а-яїіє]+щина)\b',
+            r'\b([а-яїіє]+щині)\b',
+            r'\b([а-яїіє]+щину)\b',
+            # Oblast with "область"
+            r'\b([а-яїіє]+ська)\s+обл(?:\.|асть)?\b',
+            r'\b([а-яїіє]+цька)\s+обл(?:\.|асть)?\b',
+            # Parenthetical oblast: "(Oblast обл.)"
             r'\(([^)]+)\s+обл\.\)',
             r'\(([^)]+)\s+область\)',
-            r'([а-яїіє]+ська)\s+обл\.',
-            r'([а-яїіє]+ська)\s+область',
         ]
         
-        for pattern in oblast_patterns:
+        detected_oblast = None
+        
+        for pattern in regional_patterns:
             matches = re.findall(pattern, message_lower)
             for match in matches:
-                # Try to find this oblast in OBLAST_CENTERS
-                for oblast_key, (olat, olng) in OBLAST_CENTERS.items():
-                    if match.strip() in oblast_key or oblast_key.startswith(match.strip()):
-                        return (olat, olng, True)
-                        
-                # Also try common variations
-                oblast_variations = [
-                    f"{match.strip()}а область",
-                    f"{match.strip()}а обл.",
-                    f"{match.strip()}ща",
-                    f"{match.strip()}щина"
-                ]
+                match = match.strip().lower()
                 
-                for variation in oblast_variations:
-                    if variation in OBLAST_CENTERS:
-                        lat, lng = OBLAST_CENTERS[variation]
-                        return (lat, lng, True)
+                # Normalize regional forms to standard oblast center keys
+                oblast_normalizations = {
+                    'харківщина': 'харківська обл.',
+                    'харківщині': 'харківська обл.',
+                    'харківщину': 'харківська обл.',
+                    'полтавщина': 'полтавська область',
+                    'полтавщині': 'полтавська область', 
+                    'полтавщину': 'полтавська область',
+                    'дніпропетровщина': 'дніпропетровська область',
+                    'дніпропетровщині': 'дніпропетровська область',
+                    'дніпропетровщину': 'дніпропетровська область',
+                    'сумщина': 'сумська область',
+                    'сумщині': 'сумська область',
+                    'сумщину': 'сумська область',
+                    'чернігівщина': 'чернігівська обл.',
+                    'чернігівщині': 'чернігівська обл.',
+                    'чернігівщину': 'чернігівська обл.',
+                }
+                
+                # First try direct normalization
+                if match in oblast_normalizations:
+                    detected_oblast = oblast_normalizations[match]
+                    break
+                    
+                # Try to match against OBLAST_CENTERS keys directly
+                for oblast_key in OBLAST_CENTERS.keys():
+                    if match in oblast_key or oblast_key.startswith(match[:5]):
+                        detected_oblast = oblast_key
+                        break
+                        
+                if detected_oblast:
+                    break
+            
+            if detected_oblast:
+                break
+        
+        # If we detected an oblast, return its center coordinates
+        if detected_oblast and detected_oblast in OBLAST_CENTERS:
+            lat, lng = OBLAST_CENTERS[detected_oblast]
+            print(f"DEBUG: Using oblast center for {name}: {detected_oblast} -> ({lat}, {lng})")
+            return (lat, lng, True)  # True indicates this is an oblast fallback
     
     return None
 
@@ -1231,6 +1263,7 @@ CITY_COORDS = {
         'борова': (49.3742, 36.4892), 'буринь': (51.2000, 33.8500), 'конотоп': (51.2417, 33.2022), 'кролевец': (51.5486, 33.3856), 'остер': (50.9481, 30.8831),
         'плавні': (49.0123, 33.6450), 'голованівський район': (48.3772, 30.5322), 'новоукраїнський район': (48.3122, 31.5272),
         'безлюдівка': (49.8872, 36.2731), 'рогань': (49.9342, 36.4942), 'савинці(харківщина)': (49.6272, 36.9781),
+        'гути': (50.0167, 36.3833),  # Гути, Харьковская область
         'українка': (50.1447, 30.7381), 'царичанка': (48.9767, 34.3772), 'ріпки': (51.8122, 31.0817), 'михайло-коцюбинське': (51.5833, 31.1167),
     'андріївка': (49.9380, 36.9510),
         'макошине': (51.6275, 32.2731), 'парафіївка': (50.9833, 32.2833), 'дубовʼязівка': (51.1833, 33.7833), 'боромля': (50.7500, 34.9833),
@@ -5257,6 +5290,17 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                 oblast_hdr_match = True
                 add_debug_log(f"Parentheses region header format detected: '{oblast_full}' -> '{oblast_hdr}'", "multi_region")
         
+        # NEW format: "Харківщина — БпЛА на Гути" - region with dash followed by content
+        elif re.search(r'^([А-ЯІЇЄЁа-яіїєё]+щина)\s*[-–—]\s*(.+)', ln):
+            dash_match = re.search(r'^([А-ЯІЇЄЁа-яіїєё]+щина)\s*[-–—]\s*(.+)', ln)
+            if dash_match:
+                oblast_hdr = dash_match.group(1).lower().strip()
+                remaining_content = dash_match.group(2).strip()
+                oblast_hdr_match = True
+                add_debug_log(f"Dash region header format detected: '{oblast_hdr}' with content: '{remaining_content}'", "multi_region")
+                # Set the line content to just the remaining part after dash for further processing
+                ln = remaining_content
+        
         # NEW: Detect regional genitive forms like "Сумщини", "Харківщини", etc.
         elif re.search(r'\b([а-яіїєґ]+щин[иі])\b', ln_lower):
             genitive_match = re.search(r'\b([а-яіїєґ]+щин[иі])\b', ln_lower)
@@ -5854,8 +5898,13 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                     coords = SETTLEMENTS_INDEX.get(combo)
                 print(f"DEBUG: Combo lookup result: {coords}")
             if not coords:
-                print(f"DEBUG: Calling ensure_city_coords for '{base}'")
-                coords = ensure_city_coords(base)
+                print(f"DEBUG: Calling ensure_city_coords_with_message_context for '{base}' with oblast context '{oblast_hdr}'")
+                # Try with full message context first to get oblast-specific coordinates
+                context_message = f"{oblast_hdr} {original_text if 'original_text' in locals() else text}"
+                coords = ensure_city_coords_with_message_context(base, context_message)
+                if not coords:
+                    print(f"DEBUG: Context-based lookup failed, trying standard ensure_city_coords for '{base}'")
+                    coords = ensure_city_coords(base)
                 print(f"DEBUG: ensure_city_coords result: {coords}")
             if coords:
                 print(f"DEBUG: Found coords {coords} for city '{base}', creating track")
