@@ -2291,14 +2291,33 @@
         console.log('updateMarkers: получен ответ, статус:', res.status);
         const data = await res.json();
         console.log('updateMarkers: данные распарсены:', data);
+        console.log('updateMarkers: tracks массив:', data.tracks);
+        console.log('updateMarkers: количество tracks:', (data.tracks || []).length);
   let points = (data.tracks || []).filter(p => {
-        if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return false;
-        if (isNaN(p.lat) || isNaN(p.lng)) return false;
-        if (Math.abs(p.lat) < 1 && Math.abs(p.lng) < 1) return false;
-        if (p.lat < 43 || p.lat > 53.5 || p.lng < 21 || p.lng > 41) return false;
+        console.log('updateMarkers: проверяем точку:', p);
+        if (typeof p.lat !== 'number' || typeof p.lng !== 'number') {
+          console.log('updateMarkers: пропускаем - неправильный тип координат:', p.lat, p.lng);
+          return false;
+        }
+        if (isNaN(p.lat) || isNaN(p.lng)) {
+          console.log('updateMarkers: пропускаем - NaN координаты:', p.lat, p.lng);
+          return false;
+        }
+        if (Math.abs(p.lat) < 1 && Math.abs(p.lng) < 1) {
+          console.log('updateMarkers: пропускаем - слишком маленькие координаты:', p.lat, p.lng);
+          return false;
+        }
+        if (p.lat < 43 || p.lat > 53.5 || p.lng < 21 || p.lng > 41) {
+          console.log('updateMarkers: пропускаем - координаты вне Украины:', p.lat, p.lng);
+          return false;
+        }
     const vague = ['схід','захід','північ','південь','восток','запад','север','юг'];
     // allow markers without place label; only skip if place exists and is too vague
-    if (p.place && vague.includes((p.place||'').toLowerCase())) return false;
+    if (p.place && vague.includes((p.place||'').toLowerCase())) {
+      console.log('updateMarkers: пропускаем - слишком общее место:', p.place);
+      return false;
+    }
+        console.log('updateMarkers: точка прошла фильтрацию:', p);
         return true;
       });
       console.log('updateMarkers: количество точек после фильтрации:', points.length);
