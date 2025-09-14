@@ -2296,6 +2296,7 @@
         const vague = ['схід','захід','північ','південь','восток','запад','север','юг'];
         if (!p.place || vague.includes(p.place.toLowerCase())) return false;
         return true;
+      });
       console.log('updateMarkers: количество точек после фильтрации:', points.length);
       } catch (error) {
         console.error('updateMarkers: ошибка при загрузке данных:', error);
@@ -2533,6 +2534,7 @@
   // Notify listeners (banner heuristics etc.)
   try { document.dispatchEvent(new CustomEvent('markersUpdated', {detail: data})); } catch(e){}
   if (overlay && markers.length>0) overlay.classList.add('hidden');
+  console.log('updateMarkers: завершено. Создано маркеров:', markers.length, 'Overlay скрыт:', overlay && markers.length>0);
     }
     // Re-scale markers on zoom (debounced)
     let _zoomRedrawTimer=null;
@@ -2966,9 +2968,14 @@
           }
           if(j.visitors !== undefined){
             const el = document.getElementById('liveUsers');
-            if(el){ el.querySelector('strong').textContent = j.visitors; }
+            if(el){ 
+              el.querySelector('strong').textContent = j.visitors; 
+              console.log('pingPresence: обновлен счетчик онлайн пользователей:', j.visitors);
+            }
           }
-        } catch(e){}
+        } catch(e){
+          console.error('pingPresence: ошибка при загрузке данных о пользователях:', e);
+        }
       }
       pingPresence();
   setInterval(pingPresence, 5000);
