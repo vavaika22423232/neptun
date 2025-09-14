@@ -2321,20 +2321,23 @@
         return true;
       });
       console.log('updateMarkers: количество точек после фильтрации:', points.length);
+      
+      // Expose current points for search suggestions
+      window.__lastPoints = points;
+      if (threatType) points = points.filter(p => (p.threat_type || '').toLowerCase() === threatType);
+      
+      // Always hide the overlay after processing one fetch to avoid spinner lock
+      if (overlay) { overlay.classList.add('hidden'); }
+      if (markerLayer) { markerLayer.clearLayers(); }
+      else { markerLayer = L.layerGroup().addTo(map); }
+      markers = [];
+      
       } catch (error) {
         console.error('updateMarkers: ошибка при загрузке данных:', error);
         const overlay = document.getElementById('markerLoadingOverlay');
         if (overlay) overlay.classList.add('hidden');
         return;
       }
-  // Expose current points for search suggestions
-  window.__lastPoints = points;
-      if (threatType) points = points.filter(p => (p.threat_type || '').toLowerCase() === threatType);
-  // Always hide the overlay after processing one fetch to avoid spinner lock
-  if (overlay) { overlay.classList.add('hidden'); }
-      if (markerLayer) { markerLayer.clearLayers(); }
-      else { markerLayer = L.layerGroup().addTo(map); }
-      markers = [];
       // --------- Performance adaptive mode ---------
       const MAX_DIRECT_MARKERS = 650; // threshold where we switch to clustered fast mode
       const useFastMode = points.length > MAX_DIRECT_MARKERS;
