@@ -3001,23 +3001,34 @@
       let ukrBorderLayer = null;
   let raionAlarmLayer = null;
       async function fetchAirAlarms(){
-        try { const r = await fetch('https://alerts.com.ua/api/states'); const j = await r.json(); return j.regions || {}; } catch(e){ return {}; }
+        // External API currently unavailable due to CORS restrictions
+        console.log('Air alarm API disabled (CORS/availability issues)');
+        return {};
       }
       async function showAirAlarmsOnMap(){
         const regions = await fetchAirAlarms();
-        const geoRes = await fetch('https://alerts.com.ua/static/geo/ukraine_regions.json');
-        const geo = await geoRes.json();
-        if (airAlarmLayer) { airAlarmLayer.remove(); }
-        airAlarmLayer = L.geoJSON(geo, {
-         
-          style: feature => {
-            let code = feature.properties.id || feature.properties.ISO_3166_2;
-            if (code) code = code.toUpperCase();
-            let alarm = false;
-            if (code && regions[code]) alarm = regions[code].alert;
-            if (!alarm && code && regions[code.toLowerCase()]) alarm = regions[code.toLowerCase()].alert;
-            return {
-              color: alarm ? '#d93025' : '#c9d0d6',
+        
+        // Skip external geo data due to CORS/404 issues
+        if (Object.keys(regions).length === 0) {
+          console.log('Air alarm visualization disabled (no data available)');
+          return;
+        }
+        
+        try {
+          const geoRes = await fetch('https://alerts.com.ua/static/geo/ukraine_regions.json');
+          const geo = await geoRes.json();
+          
+          if (airAlarmLayer) { airAlarmLayer.remove(); }
+          airAlarmLayer = L.geoJSON(geo, {
+           
+            style: feature => {
+              let code = feature.properties.id || feature.properties.ISO_3166_2;
+              if (code) code = code.toUpperCase();
+              let alarm = false;
+              if (code && regions[code]) alarm = regions[code].alert;
+              if (!alarm && code && regions[code.toLowerCase()]) alarm = regions[code.toLowerCase()].alert;
+              return {
+                color: alarm ? '#d93025' : '#c9d0d6',
               weight: alarm ? 2 : 1,
               fillColor: alarm ? '#ffd54f' : '#f1f3f6',
               fillOpacity: alarm ? 0.5 : 0.15
@@ -3041,9 +3052,13 @@
             }
           }
         } catch(e){}
+        } catch(geoError) {
+          console.warn('Air alarm geo data unavailable:', geoError.message);
+        }
       }
-      showAirAlarmsOnMap();
-      setInterval(showAirAlarmsOnMap, 20000);
+      // Air alarm overlay disabled due to CORS/API availability issues
+      // showAirAlarmsOnMap();
+      // setInterval(showAirAlarmsOnMap, 20000);
 
       // ---- Dynamic raion alarm overlay (district-level) ----
       async function fetchRaionAlarms(){
