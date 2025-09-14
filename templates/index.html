@@ -2967,11 +2967,22 @@
             document.body.appendChild(ov);
             return;
           }
-          if(j.visitors !== undefined){
+          let visitors = (j && typeof j.visitors !== 'undefined') ? j.visitors : undefined;
+          if (typeof visitors === 'undefined' || visitors === null) {
+            try {
+              const hr = await fetch('/health');
+              if (hr.ok) {
+                const hj = await hr.json();
+                if (typeof hj.visitors !== 'undefined') visitors = hj.visitors;
+              }
+            } catch(e) { /* ignore */ }
+          }
+          if(typeof visitors !== 'undefined'){
             const el = document.getElementById('liveUsers');
             if(el){ 
-              el.querySelector('strong').textContent = j.visitors; 
-              console.log('pingPresence: обновлен счетчик онлайн пользователей:', j.visitors);
+              const strong = el.querySelector('strong');
+              if (strong) strong.textContent = visitors; 
+              console.log('pingPresence: обновлен счетчик онлайн пользователей:', visitors);
             }
           }
         } catch(e){
