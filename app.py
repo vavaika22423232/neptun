@@ -3768,9 +3768,19 @@ def process_message(text, mid, date_str, channel):  # type: ignore
         import re  # Import re module locally for pattern matching
         l = th.lower()
         
+        # Add debug logging
+        print(f"[CLASSIFY DEBUG] Input text: {th}")
+        print(f"[CLASSIFY DEBUG] Lowercase text: {l}")
+        print(f"[CLASSIFY DEBUG] City context: {city_context}")
+        print(f"[CLASSIFY DEBUG] Contains 🚀: {'🚀' in th}")
+        print(f"[CLASSIFY DEBUG] Contains 'ціль': {'ціль' in l}")
+        print(f"[CLASSIFY DEBUG] Contains 'високошвидкісн': {'високошвидкісн' in l}")
+        print(f"[CLASSIFY DEBUG] Contains 'бпла': {'бпла' in l}")
+        
         # PRIORITY: Artillery shelling warning (обстріл / загроза обстрілу) -> use obstril.png
         # This should have priority over FPV cities when explicit shelling threat is mentioned
         if 'обстріл' in l or 'обстрел' in l or 'загроза обстрілу' in l or 'угроза обстрела' in l:
+            print(f"[CLASSIFY DEBUG] Classified as artillery")
             return 'artillery', 'obstril.png'
         
         # Special override for specific cities - Kherson, Nikopol, Marhanets always get FPV icon
@@ -3801,14 +3811,19 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             return 'vibuh', 'vibuh.png'
         # Alarm cancellation (відбій тривоги / отбой тревоги)
         if ('відбій' in l and 'тривог' in l) or ('отбой' in l and 'тревог' in l):
+            print(f"[CLASSIFY DEBUG] Classified as alarm_cancel")
             return 'alarm_cancel', 'vidboi.png'
+        
+        # PRIORITY: High-speed targets / missile threats with rocket emoji (🚀) -> raketa.png
+        # This should have priority over drones to handle missile-like threats with rocket emoji
+        if '🚀' in th or any(k in l for k in ['ціль','цілей','цілі','високошвидкісн','high-speed']):
+            print(f"[CLASSIFY DEBUG] Classified as raketa (high-speed targets/rocket emoji)")
+            return 'raketa', 'raketa.png'
+            
         # PRIORITY: drones (частая путаница). Если присутствуют слова шахед/бпла/дрон -> это shahed
         if any(k in l for k in ['shahed','шахед','шахеді','шахедів','geran','герань','дрон','дрони','бпла','uav']):
+            print(f"[CLASSIFY DEBUG] Classified as shahed (drones/UAV)")
             return 'shahed', 'shahed.png'
-        # PRIORITY: High-speed targets / missile threats with rocket emoji (🚀) -> raketa.png
-        # This should have priority over aviation to handle missile-like threats with rocket emoji
-        if '🚀' in th or any(k in l for k in ['ціль','цілей','цілі','високошвидкісн','high-speed']):
-            return 'raketa', 'raketa.png'
         # PRIORITY: Aircraft activity & tactical aviation (avia) -> avia.png (jets, tactical aviation, но БЕЗ КАБов)
         if any(k in l for k in ['літак','самол','avia','tactical','тактичн','fighter','истребит','jets']) or \
            ('авіаційн' in l and ('засоб' in l or 'ураж' in l)):
@@ -3837,8 +3852,10 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             return 'neptun', 'neptun.jpg'
         # FPV drones -> fpv.png
         if any(k in l for k in ['fpv','фпв','камікадз','kamikaze']):
+            print(f"[CLASSIFY DEBUG] Classified as fpv")
             return 'fpv', 'fpv.png'
         # General fallback for unclassified threats
+        print(f"[CLASSIFY DEBUG] Using default fallback: shahed")
         return 'shahed', 'shahed.png'  # default fallback
     
     # PRIORITY CHECK: District-level UAV messages (e.g., "вишгородський р-н київська обл.")
