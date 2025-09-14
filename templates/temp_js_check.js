@@ -1,842 +1,3 @@
-<!DOCTYPE html>
-<html lang="uk">
-<head>
-  <meta charset="utf-8">
-  <title>NEPTUN — Карта загроз</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-  <meta http-equiv="Pragma" content="no-cache" />
-  <meta http-equiv="Expires" content="0" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-  <!-- Leaflet (OpenStreetMap) CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
-  <style>
-    :root {
-      --main-bg: #0a0f1c;
-      --panel-bg: #111827;
-      --accent: #3b82f6;
-      --accent2: #10b981;
-      --text: #f3f4f6;
-      --text2: #d1d5db;
-      --text-muted: #9ca3af;
-      --border: #1f2937;
-      --shadow: rgba(0, 0, 0, 0.25);
-      --card-bg: rgba(17, 24, 39, 0.95);
-      --card-blur: blur(12px);
-      --danger: #ef4444;
-      --warning: #f59e0b;
-      --success: #10b981;
-    }
-    body {
-      margin: 0;
-      font-family: 'Inter', system-ui, -apple-system, sans-serif;
-      background: var(--main-bg);
-      color: var(--text);
-      min-height: 100vh;
-      overflow-x: hidden;
-      line-height: 1.5;
-    }
-    
-    /* Performance optimizations for images */
-    img {
-      image-rendering: -webkit-optimize-contrast;
-      image-rendering: crisp-edges;
-      will-change: auto;
-    }
-    
-    .plain-marker-img, .cluster img {
-      image-rendering: -webkit-optimize-contrast;
-      transform: translateZ(0); /* Force hardware acceleration */
-      backface-visibility: hidden;
-      -webkit-backface-visibility: hidden;
-    }
-    
-    /* Smooth loading transitions */
-    .cluster img, .plain-marker-img {
-      transition: opacity 0.2s ease-in-out;
-    }
-    
-    .cluster img[src*="data:image"], .plain-marker-img[src*="data:image"] {
-      opacity: 0.6; /* Dim placeholder/fallback images */
-    }
-    
-  .navbar {width:100%;background:var(--panel-bg);color:var(--text);font-weight:600;font-size:1.15rem;padding:.7rem 1.1rem;box-shadow:0 4px 20px var(--shadow);display:flex;align-items:center;gap:1.5rem;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);}    
-    .navbar .logo {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-    }
-    
-    .navbar .logo img {
-      width: 2.5rem;
-      height: 2.5rem;
-      border-radius: 0.75rem;
-      background: var(--accent);
-      box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
-      transition: transform 0.2s;
-    }
-    
-    .navbar .logo img:hover {
-      transform: scale(1.05);
-    }
-
-  .live-users {display:inline-flex;align-items:center;gap:.3rem;padding:.32rem .65rem;background:linear-gradient(135deg,#1e293b,#0f172a 60%);border:1px solid #1f2b3a;border-radius:999px;font-size:.68rem;font-weight:600;letter-spacing:.4px;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);box-shadow:0 0 0 1px rgba(59,130,246,.15),0 4px 10px -2px rgba(0,0,0,.45);white-space:nowrap;}
-        .live-users:before {content:"";width:10px;height:10px;background:radial-gradient(circle at 30% 30%,#34d399,#059669);border-radius:50%;box-shadow:0 0 8px 2px rgba(16,185,129,.6);animation:pulse 2.2s ease-in-out infinite;}
-        @keyframes pulse {0%{box-shadow:0 0 0 0 rgba(16,185,129,.6);transform:scale(1);}50%{box-shadow:0 0 0 6px rgba(16,185,129,0);transform:scale(1.08);}100%{box-shadow:0 0 0 0 rgba(16,185,129,0);transform:scale(1);}}
-        .live-users span{color:#e2e8f0}
-        .live-users strong{color:#34d399;font-weight:700}
-    
-  .navbar .nav-links {display:flex;gap:.75rem;font-size:.85rem;flex-wrap:wrap;align-items:center;}
-    
-  .navbar .nav-links a {color:var(--text2);text-decoration:none;font-weight:500;transition:all .2s;padding:.45rem .75rem;border-radius:.5rem;line-height:1;display:flex;align-items:center;gap:.25rem;}
-    
-    .navbar .nav-links a:hover {
-      color: var(--text);
-      background: var(--border);
-    }
-    
-    .navbar .nav-links a.active {
-      color: var(--accent);
-      background: rgba(59, 130, 246, 0.1);
-    }
-    .main-content {
-      display: grid;
-      grid-template-columns: minmax(320px, 400px) 1fr;
-      gap: 2rem;
-      padding: 2rem;
-      max-width: 1920px;
-      margin: 0 auto;
-    }
-    
-    .card {
-      background: var(--card-bg);
-      border-radius: 1rem;
-      box-shadow: 0 8px 32px var(--shadow);
-      padding: 1.5rem;
-      backdrop-filter: var(--card-blur);
-      border: 1px solid var(--border);
-      height: fit-content;
-      transition: transform 0.2s, box-shadow 0.2s;
-    }
-    
-    .card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 12px 40px var(--shadow);
-    }
-    .card h2 {
-      margin: 0 0 1.5rem 0;
-      font-size: 1.5rem;
-      color: var(--text);
-      font-weight: 600;
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-    }
-    
-    .card h2::before {
-      content: '';
-      display: block;
-      width: 4px;
-      height: 1.5rem;
-      background: var(--accent);
-      border-radius: 2px;
-    }
-    
-    .card .event-list {
-      max-height: calc(100vh - 15rem);
-      overflow-y: auto;
-      padding-right: 0.5rem;
-      scrollbar-width: thin;
-      scrollbar-color: var(--border) transparent;
-    }
-    
-    .card .event-list::-webkit-scrollbar {
-      width: 6px;
-    }
-    
-    .card .event-list::-webkit-scrollbar-track {
-      background: transparent;
-    }
-    
-    .card .event-list::-webkit-scrollbar-thumb {
-      background-color: var(--border);
-      border-radius: 3px;
-    }
-    
-    .event {
-      background: var(--panel-bg);
-      border-radius: 0.75rem;
-      margin-bottom: 1rem;
-      padding: 1rem;
-      box-shadow: 0 2px 8px var(--shadow);
-      display: flex;
-      gap: 1rem;
-      align-items: flex-start;
-      border: 1px solid var(--border);
-      transition: all 0.2s;
-    }
-    
-    .event:hover {
-      transform: translateX(4px);
-      border-color: var(--accent);
-    }
-    .event:last-child { 
-      margin-bottom: 0; 
-    }
-    
-    .event .event-icon {
-      width: 2.5rem;
-      height: 2.5rem;
-      padding: 0.5rem;
-      border-radius: 0.75rem;
-      background: rgba(59, 130, 246, 0.1);
-      box-shadow: 0 0 20px rgba(59, 130, 246, 0.2);
-    }
-    
-    .event .event-info {
-      flex: 1;
-      color: var(--text);
-      font-size: 0.9375rem;
-      line-height: 1.5;
-    }
-    
-    .event .event-time {
-      font-size: 0.875rem;
-      color: var(--text-muted);
-      margin-top: 0.5rem;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-    
-    .event .event-time::before {
-      content: '';
-      display: inline-block;
-      width: 0.5rem;
-      height: 0.5rem;
-      background: var(--accent);
-      border-radius: 50%;
-      opacity: 0.7;
-    }
-    .filters {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 1rem;
-      margin-bottom: 1.5rem;
-      padding: 1rem;
-      background: var(--panel-bg);
-      border-radius: 0.75rem;
-      border: 1px solid var(--border);
-    }
-    
-    .filters label {
-      font-size: 0.875rem;
-      font-weight: 500;
-      color: var(--text-muted);
-      display: flex;
-      flex-direction: column;
-      gap: 0.5rem;
-    }
-    
-    .filters input, .filters select {
-      border: 1px solid var(--border);
-      border-radius: 0.5rem;
-      padding: 0.625rem 1rem;
-      font-size: 0.9375rem;
-      background: var(--main-bg);
-      color: var(--text);
-      transition: all 0.2s;
-      width: 100%;
-    }
-    
-    .filters input:hover, .filters select:hover {
-      border-color: var(--accent);
-    }
-    .filters input:focus, .filters select:focus {
-      border-color: var(--accent);
-      outline: none;
-      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
-    }
-    
-    .filters button {
-      background: var(--accent);
-      color: #fff;
-      border: none;
-      border-radius: 0.5rem;
-      padding: 0.625rem 1.25rem;
-      font-size: 0.9375rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.5rem;
-    }
-    
-    .filters button:hover {
-      background: var(--accent);
-      opacity: 0.9;
-      transform: translateY(-1px);
-    }
-    
-    .filters button:active {
-      transform: translateY(0);
-    }
-    
-    .filters button i {
-      font-size: 1.25rem;
-    }
-    .map-card {
-      grid-column: 2;
-      grid-row: 1 / 4;
-      padding: 0;
-      overflow: hidden;
-      background: radial-gradient(circle at 35% 30%, #ffffff, #e9eef3 55%, #dde4ea);
-      border-radius: 1.15rem;
-      border: 1px solid #d0d9e2;
-      position: relative;
-      box-shadow: 0 8px 26px -10px rgba(0,0,0,.25), 0 2px 4px rgba(0,0,0,.08), 0 0 0 1px rgba(255,255,255,.6) inset;
-      backdrop-filter: blur(6px) saturate(1.2);
-    }
-    
-    #map {
-      height: calc(100vh - 4rem);
-      width: 100%;
-      border-radius: 1.15rem;
-      background:#f1f4f8;
-      box-shadow: 0 0 0 1px rgba(0,0,0,.04), 0 4px 18px -8px rgba(0,0,0,.18), inset 0 0 0 1px rgba(255,255,255,.55);
-      position:relative;
-    }
-  /* Marker loading overlay */
-  #markerLoadingOverlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(140deg,rgba(10,15,28,.94),rgba(17,24,39,.94));backdrop-filter:blur(6px) saturate(1.25);z-index:1200;color:#e2e8f0;gap:1.1rem;font-family:Inter,system-ui,sans-serif;transition:opacity .4s ease, visibility .4s ease;}
-  #markerLoadingOverlay.hidden{opacity:0;visibility:hidden;pointer-events:none;}
-  #markerLoadingOverlay .spinner{width:60px;height:60px;border:6px solid rgba(255,255,255,.15);border-top-color:#3b82f6;border-radius:50%;animation:spin 1s linear infinite;box-shadow:0 0 18px -4px rgba(59,130,246,.55);} 
-  #markerLoadingOverlay h3{margin:0;font-size:1.1rem;font-weight:600;letter-spacing:.4px;background:linear-gradient(90deg,#3b82f6,#06b6d4);-webkit-background-clip:text;background-clip:text;color:transparent;text-align:center;}
-  #markerLoadingOverlay p{margin:0;font-size:.8rem;max-width:360px;text-align:center;opacity:.85;line-height:1.45;}
-  @keyframes spin{to{transform:rotate(360deg);}}
-    #map:after { /* subtle vignette */
-      content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(circle at 60% 40%,rgba(255,255,255,0) 40%,rgba(0,0,0,.15) 95%);
-      mix-blend-mode:multiply;opacity:.35;
-    }
-    
-    .map-controls {
-      position: absolute;
-      top: 1rem;
-      right: 1rem;
-      display: flex;
-      gap: 0.5rem;
-  /* Leaflet panes use z-index up to ~700 (popupPane). Use higher to always stay on top */
-  z-index: 1200; /* above all Leaflet layers, below modal */
-    }
-    
-    .map-control-btn {
-      background: linear-gradient(145deg,rgba(255,255,255,0.82),rgba(248,250,252,0.95));
-      border: 1px solid #c3cdd6;
-      border-radius: 0.65rem;
-      padding: 0.55rem;
-      color: #1e293b;
-      cursor: pointer;
-      transition: all 0.25s;
-      backdrop-filter: blur(10px) saturate(1.3);
-      box-shadow: 0 2px 5px rgba(0,0,0,.12),0 0 0 1px rgba(255,255,255,.7) inset,0 6px 18px -8px rgba(0,0,0,.22);
-    }
-    .map-control-btn:hover { background:linear-gradient(145deg,#ffffff,#f1f5f9); transform: translateY(-3px) scale(1.04); box-shadow:0 6px 18px -6px rgba(0,0,0,.25),0 0 0 1px rgba(255,255,255,.85) inset; }
-    .map-control-btn:active { transform:translateY(0); }
-    .map-control-btn i { font-size:20px; }
-    .map-controls { pointer-events:none; }
-    .map-controls .map-control-btn { pointer-events:auto; }
-    .leaflet-popup-content-wrapper{background:#ffffff;border:1px solid #d7dde3;border-radius:.9rem;box-shadow:0 6px 22px -6px rgba(0,0,0,.25);} 
-    .leaflet-popup-tip{background:#ffffff;border:1px solid #d7dde3;}
-    .leaflet-container a{color:#2563eb;}
-  /* Simplified marker: only raw PNG image (no styled container) */
-  .plain-marker-img{width:34px;height:34px;object-fit:contain;image-rendering:auto;filter:drop-shadow(0 1px 2px rgba(0,0,0,.45));}
-  .tm-badge{position:absolute;top:-6px;right:-6px;background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;font-size:11px;font-weight:700;padding:2px 5px;border-radius:12px;box-shadow:0 2px 6px -1px rgba(0,0,0,.5);font-family:Inter,system-ui,sans-serif;line-height:1;}
-  .tm-wrap{position:relative;display:inline-block;}
-  
-  /* Shahed course visualization styles */
-  .shahed-course-line {
-    animation: shahedCourseFlow 3s ease-in-out infinite;
-  }
-  
-  .shahed-course-arrow {
-    animation: shahedArrowPulse 2s ease-in-out infinite;
-  }
-  
-  @keyframes shahedCourseFlow {
-    0%, 100% { 
-      opacity: 0.8;
-      stroke-dashoffset: 0;
-    }
-    50% { 
-      opacity: 1;
-      stroke-dashoffset: 12;
-    }
-  }
-  
-  @keyframes shahedArrowPulse {
-    0%, 100% { 
-      opacity: 0.9;
-      transform: scale(1);
-    }
-    50% { 
-      opacity: 1;
-      transform: scale(1.2);
-    }
-  }
-  
-  @keyframes popIn{from{transform:scale(.5);opacity:0;}to{transform:scale(1);opacity:1;}}
-    @media (max-width: 1100px) {
-      .main-content {
-        grid-template-columns: 1fr;
-        padding: 1rem;
-      }
-      
-      .map-card {
-        grid-column: 1;
-        grid-row: 1;
-        height: 50vh;
-      }
-      
-      #map {
-        height: 100%;
-      }
-      
-      .card {
-        grid-column: 1;
-      }
-    }
-    
-    @media (max-width: 700px) {
-      .navbar {
-        padding: 0.75rem 1rem;
-      }
-      
-      .navbar .logo span {
-        font-size: 1rem;
-      }
-      
-      .navbar .nav-links {
-        display: none;
-      }
-      
-      .main-content {
-        padding: 0.5rem;
-        gap: 0.5rem;
-      }
-      
-      .card {
-        padding: 1rem;
-        border-radius: 0.75rem;
-      }
-      
-      .filters {
-        grid-template-columns: 1fr;
-      }
-    }
-    
-    /* Темна тема для карти */
-    [class*="copyrights-pane"] {
-      background-color: var(--panel-bg) !important;
-      color: var(--text) !important;
-    }
-    
-    /* Анімації */
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(10px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    
-    .event {
-      animation: fadeIn 0.3s ease-out;
-    }
-  /* Warning modal */
-  /* Increased z-index to sit above Leaflet panes (popup pane ~700) */
-  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:10000;animation:fadeIn .25s ease;}
-  .modal{background:#111c2b;border:1px solid #1f2b3a;border-radius:1rem;padding:1.75rem;max-width:520px;width:92%;box-shadow:0 10px 40px -5px rgba(0,0,0,.6),0 0 0 1px rgba(59,130,246,.15);font-size:.95rem;line-height:1.55;position:relative;font-weight:500;}
-  .modal h3{margin:0 0 1rem;font-size:1.35rem;letter-spacing:.5px;background:linear-gradient(90deg,#3b82f6,#06b6d4);-webkit-background-clip:text;background-clip:text;color:transparent;}
-  .modal p{margin:.35rem 0;color:#e5e7eb;}
-  .modal button{margin-top:1.2rem;background:#2563eb;color:#fff;font-weight:600;border:0;padding:.65rem 1.25rem;border-radius:.65rem;cursor:pointer;box-shadow:0 4px 18px -4px rgba(37,99,235,.55);transition:.18s;}
-  .modal button:hover{background:#1d4ed8;transform:translateY(-2px);} .modal button:active{transform:translateY(0);} 
-  .modal-close{position:absolute;top:.6rem;right:.6rem;background:#1e293b;border:1px solid #2c3a4d;color:#9ca3af;width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-weight:600;font-size:14px;transition:.18s;} .modal-close:hover{color:#fff;background:#253549;}
-  @media (max-width:600px){.modal{padding:1.25rem;font-size:.9rem;} .modal h3{font-size:1.15rem;}}
-    /* Дополнительные стили */
-    .input-group {
-      position: relative;
-      display: flex;
-      align-items: center;
-    }
-    
-    .input-suffix {
-      position: absolute;
-      right: 1rem;
-      color: var(--text-muted);
-      pointer-events: none;
-    }
-    
-    .info-content {
-      display: grid;
-      gap: 1.5rem;
-    }
-    
-    .info-section {
-      background: var(--panel-bg);
-      padding: 1rem;
-      border-radius: 0.75rem;
-      border: 1px solid var(--border);
-    }
-    
-    .info-section h3 {
-      margin: 0 0 0.75rem 0;
-      font-size: 1rem;
-      color: var(--accent);
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-    
-    .info-section p {
-      margin: 0;
-      color: var(--text2);
-      font-size: 0.9375rem;
-      line-height: 1.5;
-    }
-    
-    .accent-link {
-      color: var(--accent);
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.25rem;
-      transition: opacity 0.2s;
-    }
-    
-    .accent-link:hover {
-      opacity: 0.8;
-    }
-    
-    .accent-link i {
-      font-size: 1rem;
-    }
-    /* --- Mobile full-width centering fix (eliminate right gap) --- */
-    * { box-sizing: border-box; }
-    @media (max-width: 840px){
-      html, body { width:100%; max-width:100%; overflow-x:hidden; }
-      .main-content { display:block; padding:0 !important; margin:0 !important; width:100vw; max-width:100vw; }
-      .map-card, .card { width:100vw; max-width:100vw; margin:0 !important; border-radius:0; }
-      #map { width:100%; max-width:100%; border-radius:0; }
-    }
-    /* --- Fullscreen map (custom) --- */
-    body.map-expanded { overflow:hidden; }
-    body.map-expanded .navbar { display:none; }
-    body.map-expanded .main-content { padding:0 !important; margin:0 !important; }
-    body.map-expanded .map-card { position:fixed; inset:0; z-index:500; width:100vw !important; height:100vh !important; border-radius:0 !important; }
-    body.map-expanded #map { height:100vh !important; width:100vw !important; border-radius:0 !important; }
-    body.map-expanded .card:not(.map-card) { display:none !important; }
-    /* Dynamic viewport height for mobile browsers supporting dvh */
-    @supports (height: 100dvh) {
-      body.map-expanded .map-card { height:100dvh !important; }
-      body.map-expanded #map { height:100dvh !important; }
-    }
-    /* Ensure controls stay above map in fullscreen */
-  body.map-expanded .map-controls { z-index:1200; top:0.75rem; right:0.75rem; }
-  /* Force-hide any default Google fullscreen control if Google re-injects it */
-  .gm-fullscreen-control { display:none !important; }
-  /* --- Disclaimer bar --- */
-  .disclaimer-bar {position:sticky;top:0;z-index:1200;display:flex;gap:.85rem;align-items:flex-start;background:linear-gradient(90deg,#1e293b,#0f172a);color:#e2e8f0;padding:.9rem 1.15rem;border-bottom:1px solid #334155;font-size:.8rem;line-height:1.35;font-weight:500;letter-spacing:.2px;box-shadow:0 4px 18px -6px rgba(0,0,0,.55);backdrop-filter:blur(6px);} 
-  .disclaimer-bar.hidden {display:none !important;}
-  .disclaimer-bar b {color:#fbbf24;font-weight:700;}
-  .disclaimer-icon {flex:0 0 auto;width:32px;height:32px;border-radius:10px;background:radial-gradient(circle at 30% 30%,#f59e0b,#b45309);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#fff;box-shadow:0 0 0 1px rgba(255,255,255,.08),0 6px 14px -4px rgba(0,0,0,.55);} 
-  .disclaimer-close {margin-left:auto;background:#1e293b;border:1px solid #334155;color:#cbd5e1;width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;font-weight:600;transition:.18s;} 
-  .disclaimer-close:hover{background:#334155;color:#fff;}
-  .disclaimer-actions {margin-top:.4rem;display:flex;flex-wrap:wrap;gap:.6rem;}
-  .disclaimer-actions a {text-decoration:none;background:#334155;color:#e2e8f0;font-size:.65rem;padding:.35rem .6rem;border-radius:.5rem;text-transform:uppercase;letter-spacing:.5px;font-weight:600;display:inline-flex;align-items:center;gap:.25rem;box-shadow:0 2px 6px -2px rgba(0,0,0,.5);transition:.18s;}
-  .disclaimer-actions a:hover {background:#3b4b63;color:#fff;}
-  @media (max-width:720px){.disclaimer-bar{flex-direction:row;align-items:flex-start;font-size:.72rem;padding:.75rem .85rem;} .disclaimer-icon{width:26px;height:26px;font-size:14px;} .disclaimer-close{width:26px;height:26px;font-size:12px;} }
-    
-  </style>
-  <style>
-  /* Animated trajectories (arcs + fading tails) */
-  @keyframes dashFlow { to { stroke-dashoffset:-260; } }
-  @keyframes tailFade { 0%{opacity:.55;} 70%{opacity:.18;} 100%{opacity:0;} }
-  .traj-arc { stroke:#ff784e !important; stroke-width:2.2; stroke-dasharray:8 12; stroke-linecap:round; animation:dashFlow 5.5s linear infinite; filter:drop-shadow(0 0 6px rgba(255,120,78,.55)); }
-  .traj-tail { stroke:#ff9d7b !important; stroke-width:3.4; stroke-linecap:round; opacity:.5; animation:tailFade 9s ease-out forwards; }
-  .traj-arc.drone { stroke:#00b3ff !important; filter:drop-shadow(0 0 6px rgba(0,179,255,.55)); }
-  .traj-tail.drone { stroke:#41c9ff !important; }
-  /* KAB scan rotating line */
-  .kab-rotor-line { stroke:#ffe0dc; stroke-width:2.2; stroke-linecap:round; filter:drop-shadow(0 0 4px rgba(255,224,220,.9)); }
-  .kab-rotor-tail { stroke:url(#kabRotorGrad); stroke-width:5; stroke-linecap:round; opacity:.85; }
-  @keyframes kabRotate { to { transform:rotate(360deg); } }
-  .kab-rotor-group { transform-origin:center center; animation:kabRotate 18s linear infinite; }
-  /* Raion alarm animated hatch */
-  @keyframes hatchShift { to { background-position: 40px 0, 40px 0; } }
-  .raion-alarm-anim { position:relative; }
-  .raion-alarm-anim::after { content:""; position:absolute; inset:0; background-image: repeating-linear-gradient(135deg, rgba(220,38,38,0.55) 0 8px, rgba(220,38,38,0) 8px 16px), repeating-linear-gradient(135deg, rgba(255,255,255,0.08) 0 8px, rgba(255,255,255,0) 8px 16px); background-size:32px 32px,32px 32px; mix-blend-mode:overlay; animation:hatchShift 2.2s linear infinite; pointer-events:none; border-radius:50%; filter:blur(0.4px) saturate(1.2); }
-  </style>
-</head>
-<body>
-  <!-- Smart Mass Attack Warning Banner -->
-  <div id="massAttackBanner" class="mass-attack-banner hidden" role="alert" aria-live="assertive">
-    <div class="ma-icon">⚠️</div>
-    <div class="ma-content">
-      <div class="ma-title">Можлива масована комбінована атака</div>
-      <div class="ma-text" id="maDynamicText">Сьогодні очікується масована комбінована атака шахедів та ракет.</div>
-      <div class="ma-meta" id="maHeuristics"></div>
-    </div>
-    <button class="ma-close" id="maClose" aria-label="Закрити">×</button>
-  </div>
-  <style>
-    .mass-attack-banner{position:fixed;top:4.25rem;left:50%;transform:translateX(-50%);width:min(960px,92%);background:linear-gradient(135deg,#581c87,#1e3a8a 48%,#0f172a);border:1px solid rgba(168,85,247,.45);border-radius:1.1rem;padding:1.05rem 1.3rem;display:flex;gap:1rem;z-index:1400;box-shadow:0 20px 50px -12px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.07) inset,0 0 0 1px rgba(147,51,234,.35);color:#f1f5f9;backdrop-filter:blur(10px) saturate(1.3);animation:maSlide .55s cubic-bezier(.4,.0,.2,1);} 
-    .mass-attack-banner.hidden{display:none;}
-    .ma-icon{flex:0 0 auto;font-size:2rem;line-height:1;filter:drop-shadow(0 2px 6px rgba(0,0,0,.45));}
-    .ma-content{flex:1;min-width:0;}
-  .ma-title{font-size:1.05rem;font-weight:700;letter-spacing:.5px;margin-bottom:.4rem;background:linear-gradient(90deg,#fde68a,#fbcfe8 45%,#93c5fd);-webkit-background-clip:text;background-clip:text;color:transparent;}
-    .ma-text{font-size:.9rem;font-weight:500;line-height:1.45;}
-    .ma-meta{margin-top:.55rem;font-size:.65rem;letter-spacing:.5px;text-transform:uppercase;display:flex;flex-wrap:wrap;gap:.45rem;}
-    .ma-meta span{background:rgba(255,255,255,.08);padding:.25rem .55rem;border-radius:.5rem;border:1px solid rgba(255,255,255,.12);backdrop-filter:blur(4px);}
-    .ma-close{background:#1e293b;border:1px solid #334155;color:#cbd5e1;width:34px;height:34px;border-radius:.75rem;font-size:18px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-weight:600;transition:.18s;}
-    .ma-close:hover{background:#334155;color:#fff;}
-    @keyframes maSlide{from{opacity:0;transform:translate(-50%,-12px);}to{opacity:1;transform:translate(-50%,0);} }
-    @media(max-width:680px){.mass-attack-banner{top:3.6rem;padding:.85rem 1.05rem;border-radius:.9rem;} .ma-title{font-size:.95rem;} .ma-icon{font-size:1.6rem;} }
-  </style>
-  <style>
-  /* Place search control */
-  .place-search{position:absolute;top:1rem;left:50%;transform:translateX(-50%);display:flex;gap:.4rem;background:rgba(15,23,42,.78);backdrop-filter:blur(8px) saturate(1.4);padding:.55rem .8rem;border-radius:1.1rem;box-shadow:0 4px 22px -6px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.08);z-index:950;align-items:center;}
-  .place-search input{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#fff;padding:.45rem .75rem;border-radius:.75rem;min-width:260px;font-size:.82rem;outline:none;transition:.18s;}
-  .place-search input:focus{border-color:#3b82f6;background:rgba(59,130,246,.15);box-shadow:0 0 0 2px rgba(59,130,246,.35);} 
-  .place-search button{background:linear-gradient(135deg,#2563eb,#7c3aed);border:none;color:#fff;padding:.5rem .75rem;border-radius:.7rem;cursor:pointer;display:flex;align-items:center;gap:.25rem;box-shadow:0 4px 14px -4px rgba(37,99,235,.55);transition:.2s;font-size:.75rem;font-weight:600;letter-spacing:.4px;}
-  .place-search button:hover{transform:translateY(-2px);} .place-search button:active{transform:translateY(0);} 
-  @media (max-width:820px){ .place-search{top:auto;bottom:.75rem;left:.75rem;transform:none;right:.75rem;margin:0;flex-wrap:nowrap;min-width:0;} .place-search input{min-width:0;width:160px;} }
-  .ps-suggest{position:absolute;top:100%;left:0;margin-top:.4rem;background:#0f172a;border:1px solid #1e293b;border-radius:.9rem;padding:.35rem .4rem;min-width:100%;max-height:240px;overflow-y:auto;box-shadow:0 8px 28px -6px rgba(0,0,0,.55);}
-  .ps-item{padding:.4rem .55rem;border-radius:.55rem;font-size:.75rem;cursor:pointer;display:flex;justify-content:space-between;gap:.6rem;}
-  .ps-item:hover,.ps-item.active{background:#1e293b;}
-  .ps-empty{padding:.5rem .6rem;font-size:.7rem;opacity:.6;}
-    .donate-modal-overlay{position:fixed;inset:0;background:radial-gradient(circle at 30% 30%,rgba(15,23,42,.92),rgba(2,6,23,.94));backdrop-filter:blur(14px) saturate(1.4);display:none;align-items:center;justify-content:center;z-index:1400;}
-    .donate-modal-overlay.active{display:flex;animation:fadeIn .35s ease;}
-    .donate-modal{width:min(600px,92vw);background:linear-gradient(145deg,#0f172a,#1e293b 55%,#0f172a);border:1px solid #233247;border-radius:1.35rem;padding:1.85rem 1.75rem 1.6rem;position:relative;box-shadow:0 18px 48px -12px rgba(0,0,0,.65),0 0 0 1px rgba(59,130,246,.25);font-family:inherit;color:#e2e8f0;}
-  .donate-modal:before{content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;background:linear-gradient(135deg,rgba(59,130,246,.65),rgba(147,51,234,.5),rgba(14,165,233,.45));-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;}
-  .donate-title{margin:0 0 .9rem;font-size:1.4rem;letter-spacing:.5px;font-weight:700;background:linear-gradient(90deg,#3b82f6,#8b5cf6 40%,#06b6d4);-webkit-background-clip:text;background-clip:text;color:transparent;display:flex;align-items:center;gap:.55rem;}
-    .donate-sub{margin:0 0 1.1rem;font-size:.85rem;color:#94a3b8;line-height:1.5;}
-    .donate-grid{display:grid;gap:.85rem;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));margin:0 0 1.15rem;}
-    .donate-card{position:relative;background:linear-gradient(160deg,rgba(30,41,59,.75),rgba(17,24,39,.85));border:1px solid #253447;border-radius:.95rem;padding:.9rem .95rem .95rem;display:flex;flex-direction:column;gap:.55rem;overflow:hidden;min-height:118px;}
-    .donate-card:before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 80% 15%,rgba(59,130,246,.35),rgba(59,130,246,0) 70%);pointer-events:none;opacity:.75;}
-    .donate-label{font-size:.65rem;text-transform:uppercase;letter-spacing:1.2px;font-weight:700;color:#60a5fa;}
-    .donate-value{font-family:'JetBrains Mono',monospace,Consolas,monospace;font-weight:600;font-size:.95rem;word-break:break-all;color:#f1f5f9;}
-    .donate-actions{margin-top:auto;display:flex;gap:.5rem;flex-wrap:wrap;}
-    .btn-mini{background:#1d4ed8;color:#fff;border:none;border-radius:.55rem;padding:.45rem .75rem;font-size:.65rem;font-weight:600;letter-spacing:.5px;cursor:pointer;display:inline-flex;align-items:center;gap:.35rem;box-shadow:0 4px 12px -4px rgba(29,78,216,.55);transition:.2s;}
-    .btn-mini.alt{background:#334155;box-shadow:none;}
-    .btn-mini:hover{background:#2563eb;}
-    .btn-mini.alt:hover{background:#3b4b63;}
-    .donate-close{position:absolute;top:.7rem;right:.7rem;width:40px;height:40px;background:#1e293b;border:1px solid #2a3a4d;border-radius:.85rem;display:flex;align-items:center;justify-content:center;color:#94a3b8;cursor:pointer;font-weight:600;font-size:15px;transition:.2s;}
-    .donate-close:hover{background:#243349;color:#fff;}
-    .jar-link-button{background:linear-gradient(90deg,#3b82f6,#8b5cf6);color:#fff;border:none;border-radius:.9rem;padding:.85rem 1.2rem;font-size:.8rem;font-weight:600;letter-spacing:.6px;display:inline-flex;align-items:center;gap:.5rem;margin-top:.5rem;cursor:pointer;box-shadow:0 6px 22px -8px rgba(59,130,246,.55);transition:.25s;}
-    .jar-link-button:hover{transform:translateY(-3px);box-shadow:0 10px 30px -8px rgba(59,130,246,.65);}    
-    .donate-footer{font-size:.6rem;color:#64748b;margin-top:.6rem;letter-spacing:.5px;}
-    .copy-toast{position:fixed;bottom:calc(1.4rem + 64px);right:1.4rem;background:#1e293b;border:1px solid #334155;color:#e2e8f0;padding:.6rem .85rem;border-radius:.7rem;font-size:.7rem;font-weight:600;letter-spacing:.5px;box-shadow:0 8px 24px -8px rgba(0,0,0,.55);display:none;z-index:1500;}
-    .copy-toast.show{display:block;animation:fadeIn .25s ease, fadeOut .4s linear 2.4s forwards;}
-    @keyframes fadeOut{to{opacity:0;transform:translateY(4px);}}
-    
-    /* Support floating button */
-    .support-fab{position:fixed;bottom:1.4rem;right:1.4rem;z-index:1300;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;border:none;border-radius:1.1rem;padding:.95rem 1.15rem;display:flex;align-items:center;gap:.55rem;font-weight:600;font-size:.85rem;cursor:pointer;letter-spacing:.5px;box-shadow:0 10px 28px -8px rgba(37,99,235,.55),0 0 0 1px rgba(255,255,255,.12) inset;transition:.25s;backdrop-filter:blur(6px) saturate(1.2);} 
-    .support-fab i{font-size:18px;}
-    .support-fab:hover{transform:translateY(-4px) scale(1.03);box-shadow:0 14px 34px -8px rgba(37,99,235,.65),0 0 0 1px rgba(255,255,255,.18) inset;}
-    .support-fab:active{transform:translateY(0) scale(.98);}    
-    @media (max-width:700px){.support-fab{bottom:1rem;right:.9rem;padding:.8rem .95rem;border-radius:.9rem;font-size:.75rem;}}
-    @media (max-width:900px){ .support-fab{ right:1rem; bottom:1rem; } .comments-fab{ right:1rem; bottom:4.4rem; } }
-    @media (max-width:520px){ .comments-fab{ right:1rem; bottom:4.8rem; } }
-  </style>
-  <button class="support-fab" id="supportFab" aria-haspopup="dialog" aria-controls="donateModal" onclick="toggleDonate()"><i class="material-icons">volunteer_activism</i><span>Підтримати</span></button>
-  <div class="donate-modal-overlay" id="donateModal" role="dialog" aria-labelledby="donateTitle" aria-modal="true">
-    <div class="donate-modal">
-      <button class="donate-close" aria-label="Закрити" onclick="toggleDonate(false)">×</button>
-      <h3 class="donate-title" id="donateTitle"><i class="material-icons" style="font-size:22px;">favorite</i>Підтримати розробку</h3>
-      <p class="donate-sub">Ваша допомога пришвидшує розвиток точності та функцій мапи. Кожна гривня = краща аналітика загроз.</p>
-      <div class="donate-grid">
-        <div class="donate-card">
-          <div class="donate-label">Моно (UAH)</div>
-          <div class="donate-value" data-val="4441111121107290">4441 1111 2110 7290</div>
-          <div class="donate-actions">
-            <button class="btn-mini" onclick="copyDonate('4441111121107290', this)"><i class="material-icons" style="font-size:14px;">content_copy</i>Копіювати</button>
-          </div>
-        </div>
-        <div class="donate-card">
-          <div class="donate-label">Приват (UAH)</div>
-          <div class="donate-value" data-val="5168745153133886">5168 7451 5313 3886</div>
-          <div class="donate-actions">
-            <button class="btn-mini" onclick="copyDonate('5168745153133886', this)"><i class="material-icons" style="font-size:14px;">content_copy</i>Копіювати</button>
-          </div>
-        </div>
-        <div class="donate-card">
-          <div class="donate-label">Monobank Банка</div>
-          <div class="donate-value" style="font-size:.8rem;line-height:1.25;word-break:break-word;">send.monobank.ua/jar/6Vi9TVzJZQ</div>
-          <div class="donate-actions">
-            <button class="btn-mini" onclick="openJar()"><i class="material-icons" style="font-size:14px;">open_in_new</i>Відкрити</button>
-            <button class="btn-mini alt" onclick="copyDonate('https://send.monobank.ua/jar/6Vi9TVzJZQ', this)"><i class="material-icons" style="font-size:14px;">content_copy</i>Лінк</button>
-          </div>
-        </div>
-      </div>
-      <button class="jar-link-button" onclick="openJar()"><i class="material-icons">rocket_launch</i><span>Задонатити зараз</span></button>
-      <div class="donate-footer">Фінансова підтримка не створює зобов'язань. Звіти й оновлення у спільноті Telegram.</div>
-  <div class="donate-footer">Адмінмежі: OCHA FISS / SSPЕ «Картографія», COD-AB (оновл. січень 2025), CC BY-IGO. Можливі затримки перейменувань (реформа hromadas).</div>
-    </div>
-  </div>
-  <div class="copy-toast" id="copyToast">Скопійовано</div>
-  <div id="disclaimerBar" class="disclaimer-bar" role="note" aria-label="Важливе застереження" style="display:none;">
-    <div class="disclaimer-icon">!</div>
-    <div class="disclaimer-text">
-      <div><b>УВАГА:</b> Дані формуються автоматично з відкритих джерел (Telegram тощо) та можуть містити похибки. Сервіс <b>не є</b> офіційною системою оповіщення і не замінює сигналів Повітряної тривоги. Не використовуйте інформацію для коригування вогню чи розкриття позицій Сил Оборони. Завжди дотримуйтесь вказівок офіційних органів.</div>
-      <div class="disclaimer-actions">
-        <a href="#about"><span class="material-icons" style="font-size:14px;">info</span> Докладніше</a>
-        <a href="https://t.me/+zFxu_4W_ishiNjli" target="_blank" rel="noopener"><span class="material-icons" style="font-size:14px;">group</span> Спільнота</a>
-      </div>
-    </div>
-    <button class="disclaimer-close" aria-label="Закрити" onclick="hideDisclaimer()">×</button>
-  </div>
-  <div class="navbar">
-    <div class="logo">
-  <img src="/static/neptun.jpg" alt="NEPTUN">
-  <span>NEPTUN</span>
-    </div>
-    <div class="nav-links">
-      <a href="#map" class="active"><i class="material-icons">map</i> Карта</a>
-      <a href="#events"><i class="material-icons">notifications</i> Події</a>
-      <a href="#about"><i class="material-icons">info</i> Інфо</a>
-    </div>
-  <div class="live-users" id="liveUsers" title="Активні відвідувачі / Beta"><span>онлайн</span><strong>0</strong><span style="margin-left:.5rem;color:#fbbf24;font-weight:700;letter-spacing:.5px;">ТЕСТ</span></div>
-  </div>
-
-  <!-- Warning Modal -->
-  <div class="modal-overlay" id="warnModal" style="display:none;">
-    <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="warnTitle">
-      <button class="modal-close" onclick="closeWarn()" aria-label="Закрити">×</button>
-      <h3 id="warnTitle">Попередження!</h3>
-      <p>Мапу <strong>не можна використовувати</strong> в прямих трансляціях TikTok та інших соцмережах.</p>
-      <p>Використання <strong>тільки в інформативних цілях.</strong></p>
-  <p style="margin-top:.6rem;color:#fca5a5;"><strong>Увага:</strong> В разі виявлення порушення ваш тікток акаунт буде заблокований модераторами.</p>
-      <button onclick="ackWarn()">Зрозуміло</button>
-    </div>
-  </div>
-
-  <div class="main-content">
-    <!-- Map moved to top -->
-    <div class="map-card">
-      <div class="map-controls">
-        <button class="map-control-btn" onclick="map.setZoom(map.getZoom() + 1)">
-          <i class="material-icons">add</i>
-        </button>
-        <button class="map-control-btn" onclick="map.setZoom(map.getZoom() - 1)">
-          <i class="material-icons">remove</i>
-        </button>
-        <button class="map-control-btn" onclick="map.setCenter({lat: 48.3794, lng: 31.1656})">
-          <i class="material-icons">center_focus_strong</i>
-        </button>
-        <button class="map-control-btn" id="expandBtn" onclick="toggleMapExpand()" title="Розгорнути карту" aria-label="Розгорнути карту">
-          <i class="material-icons" id="expandIcon">fullscreen</i>
-        </button>
-      </div>
-      <div id="markerLoadingOverlay">
-        <div class="spinner" aria-hidden="true"></div>
-        <h3>Зачекай хвильку…</h3>
-        <p>Зараз мітки з’являться (оновлення / додаємо зміни на мапу).</p>
-      </div>
-      <div id="map"></div>
-      <!-- Search control -->
-      <div id="placeSearch" class="place-search">
-        <input type="text" id="placeSearchInput" placeholder="Пошук населеного пункту…" aria-label="Пошук міста/села" autocomplete="off">
-        <button id="placeSearchBtn" title="Знайти" aria-label="Знайти"><i class="material-icons" style="font-size:18px;vertical-align:middle;">search</i></button>
-        <div id="placeSearchSuggest" class="ps-suggest" style="display:none;"></div>
-      </div>
-    </div>
-
-    <div class="card" id="events">
-      <h2>Останні події</h2>
-      <div class="filters">
-        <label>
-          Період моніторингу
-          <div class="input-group">
-            <input type="number" id="timeRange" value="0" readonly disabled style="opacity:.6;cursor:not-allowed;" title="Фіксовано адміністратором">
-            <span class="input-suffix">хв</span>
-          </div>
-        </label>
-        <label>
-          Тип загрози
-          <select id="threatTypeSelect">
-            <option value="">Всі типи</option>
-            <option value="shahed">Шахед/БПЛА</option>
-            <option value="raketa">Ракета</option>
-            <option value="avia">Авіація</option>
-            <option value="pvo">ППО</option>
-          </select>
-        </label>
-        <button onclick="updateMarkers()">
-          <i class="material-icons">refresh</i>
-          Оновити дані
-        </button>
-      </div>
-      <div class="event-list" id="eventList"></div>
-    </div>
-
-    <div class="card" id="about">
-      <h2>Про систему</h2>
-      <div class="info-content">
-        <div class="info-section">
-          <h3><i class="material-icons">security</i> Призначення</h3>
-          <p>Система показує географію повідомлень про повітряні та інші загрози (ракети, БпЛА, артилерія) з відкритих джерел у режимі близькому до реального часу.</p>
-        </div>
-        <div class="info-section">
-          <h3><i class="material-icons">update</i> Оновлення</h3>
-          <p>Дані оновлюються автоматично кожну хвилину з перевірених джерел.</p>
-        </div>
-        <div class="info-section">
-          <h3><i class="material-icons">warning</i> Важливо</h3>
-          <p>Координати та типи загроз визначаються автоматично. Можливі похибки у визначенні місць.</p>
-        </div>
-        <div class="info-section">
-          <h3><i class="material-icons">code</i> Розробка</h3>
-          <p>Проєкт <a href="https://t.me/+zFxu_4W_ishiNjli" target="_blank" class="accent-link">НЕПТУН <i class="material-icons">open_in_new</i></a></p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Anonymous comments widget -->
-    <div class="comments-card" id="commentsCard" aria-label="Анонімні коментарі">
-      <div class="comments-header">
-        <span class="ch-left">
-          Коментарі <span id="commentsCount" class="comments-count"></span>
-          <button type="button" class="sound-toggle-btn" id="soundToggle" onclick="toggleSounds()" aria-label="Перемкнути звуки">🔊</button>
-        </span>
-        <button type="button" class="comments-close" id="commentsCloseBtn" aria-label="Згорнути">×</button>
-      </div>
-      <div class="chat-filters" id="chatFilters">
-        <div class="filter-group">
-          <button class="filter-btn active" data-filter="all" title="Всі коментарі">Всі</button>
-          <button class="filter-btn" data-filter="recent" title="Останні 10 хвилин">Нові</button>
-          <button class="filter-btn" data-filter="popular" title="З реакціями">Популярні</button>
-        </div>
-        <div class="search-group">
-          <input type="text" id="chatSearch" placeholder="Пошук..." maxlength="50">
-          <button id="clearSearch" class="clear-btn">×</button>
-        </div>
-      </div>
-      <div class="comments-list" id="commentsList" role="list" aria-live="polite"></div>
-      <form id="commentForm" class="comment-form" autocomplete="off" novalidate>
-        <textarea id="commentText" maxlength="800" placeholder="Напишіть короткий коментар..." aria-label="Текст коментаря" required></textarea>
-        <div class="comment-actions">
-          <button type="submit" id="commentSubmit">Надіслати</button>
-          <div class="comment-hint" id="commentHint">Анонімно • без реєстрації</div>
-        </div>
-      </form>
-    </div>
-    <button id="commentsFab" class="comments-fab" aria-label="Відкрити коментарі" title="Коментарі">💬</button>
-
-  </div>
-  <!-- Leaflet (OpenStreetMap) JS -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <!-- Turf.js for geometry operations -->
-  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
-  <script type="text/javascript">
-    // @ts-nocheck
     // --- Comments UI styles inject ---
     (function(){
       if(document.getElementById('commentsStyles')) return;
@@ -2051,38 +1212,38 @@
     
     // Optimized icon loading system with placeholders
     const ICONS = {
-      shahed: '/static/shahed.png?v=' + IMAGE_VERSION,
-      raketa: '/static/raketa.png?v=' + IMAGE_VERSION,
-      avia: '/static/avia.png?v=' + IMAGE_VERSION,
-      pvo: '/static/rozved.png?v=' + IMAGE_VERSION,
-      rozved: '/static/rozved.png?v=' + IMAGE_VERSION, // Reconnaissance UAVs
-      rszv: '/static/rszv.png?v=' + IMAGE_VERSION,
-      vibuh: '/static/vibuh.png?v=' + IMAGE_VERSION,
-      alarm: '/static/trivoga.png?v=' + IMAGE_VERSION,
-      alarm_cancel: '/static/vidboi.png?v=' + IMAGE_VERSION,
-      mlrs: '/static/mlrs.png?v=' + IMAGE_VERSION,
-      artillery: '/static/artillery.png?v=' + IMAGE_VERSION,
-      obstril: '/static/obstril.png?v=' + IMAGE_VERSION,
-      fpv: '/static/fpv.png?v=' + IMAGE_VERSION,
-      default: '/static/default.png?v=' + IMAGE_VERSION
+      shahed: `/static/shahed.png?v=${IMAGE_VERSION}`,
+      raketa: `/static/raketa.png?v=${IMAGE_VERSION}`,
+      avia: `/static/avia.png?v=${IMAGE_VERSION}`,
+      pvo: `/static/rozved.png?v=${IMAGE_VERSION}`,
+      rozved: `/static/rozved.png?v=${IMAGE_VERSION}`, // Reconnaissance UAVs
+      rszv: `/static/rszv.png?v=${IMAGE_VERSION}`,
+      vibuh: `/static/vibuh.png?v=${IMAGE_VERSION}`,
+      alarm: `/static/trivoga.png?v=${IMAGE_VERSION}`,
+      alarm_cancel: `/static/vidboi.png?v=${IMAGE_VERSION}`,
+      mlrs: `/static/mlrs.png?v=${IMAGE_VERSION}`,
+      artillery: `/static/artillery.png?v=${IMAGE_VERSION}`,
+      obstril: `/static/obstril.png?v=${IMAGE_VERSION}`,
+      fpv: `/static/fpv.png?v=${IMAGE_VERSION}`,
+      default: `/static/default.png?v=${IMAGE_VERSION}`
     };
     
     // Placeholder versions for instant loading
     const PLACEHOLDERS = {
-      shahed: '/static/placeholders/shahed.png?v=' + IMAGE_VERSION,
-      raketa: '/static/placeholders/raketa.png?v=' + IMAGE_VERSION,
-      avia: '/static/placeholders/avia.png?v=' + IMAGE_VERSION,
-      pvo: '/static/placeholders/rozved.png?v=' + IMAGE_VERSION,
-      rozved: '/static/placeholders/rozved.png?v=' + IMAGE_VERSION, // Reconnaissance UAVs
-      rszv: '/static/placeholders/rszv.png?v=' + IMAGE_VERSION,
-      vibuh: '/static/placeholders/vibuh.png?v=' + IMAGE_VERSION,
-      alarm: '/static/placeholders/trivoga.png?v=' + IMAGE_VERSION,
-      alarm_cancel: '/static/placeholders/vidboi.png?v=' + IMAGE_VERSION,
-      mlrs: '/static/placeholders/mlrs.png?v=' + IMAGE_VERSION,
-      artillery: '/static/placeholders/artillery.png?v=' + IMAGE_VERSION,
-      obstril: '/static/placeholders/obstril.png?v=' + IMAGE_VERSION,
-      fpv: '/static/placeholders/fpv.png?v=' + IMAGE_VERSION,
-      default: '/static/placeholders/default.png?v=' + IMAGE_VERSION
+      shahed: `/static/placeholders/shahed.png?v=${IMAGE_VERSION}`,
+      raketa: `/static/placeholders/raketa.png?v=${IMAGE_VERSION}`,
+      avia: `/static/placeholders/avia.png?v=${IMAGE_VERSION}`,
+      pvo: `/static/placeholders/rozved.png?v=${IMAGE_VERSION}`,
+      rozved: `/static/placeholders/rozved.png?v=${IMAGE_VERSION}`, // Reconnaissance UAVs
+      rszv: `/static/placeholders/rszv.png?v=${IMAGE_VERSION}`,
+      vibuh: `/static/placeholders/vibuh.png?v=${IMAGE_VERSION}`,
+      alarm: `/static/placeholders/trivoga.png?v=${IMAGE_VERSION}`,
+      alarm_cancel: `/static/placeholders/vidboi.png?v=${IMAGE_VERSION}`,
+      mlrs: `/static/placeholders/mlrs.png?v=${IMAGE_VERSION}`,
+      artillery: `/static/placeholders/artillery.png?v=${IMAGE_VERSION}`,
+      obstril: `/static/placeholders/obstril.png?v=${IMAGE_VERSION}`,
+      fpv: `/static/placeholders/fpv.png?v=${IMAGE_VERSION}`,
+      default: `/static/placeholders/default.png?v=${IMAGE_VERSION}`
     };
     
     // Lazy loading system for images with progressive enhancement
@@ -2124,7 +1285,7 @@
               updateMarkersWithFullImage(iconType, fullUrl);
             };
             fullImg.onerror = () => {
-              console.warn('Failed to load full image: ' + fullUrl);
+              console.warn(`Failed to load full image: ${fullUrl}`);
               imageCache.set(fullUrl, 'error');
             };
             fullImg.src = fullUrl;
@@ -2136,7 +1297,7 @@
     // Update markers with full quality images when available
     function updateMarkersWithFullImage(iconType, fullUrl) {
       // Find all img elements using this icon type and update them
-      document.querySelectorAll('img[data-icon-type="' + iconType + '"]').forEach(img => {
+      document.querySelectorAll(`img[data-icon-type="${iconType}"]`).forEach(img => {
         if (imageCache.get(fullUrl) === true) {
           img.style.transition = 'opacity 0.3s ease-in-out';
           img.style.opacity = '0.7';
@@ -2178,7 +1339,7 @@
       try {
         return await loadImageProgressive(iconType);
       } catch (error) {
-        console.warn('Failed to get icon ' + iconType + ':', error);
+        console.warn(`Failed to get icon ${iconType}:`, error);
         return FALLBACK_ICON;
       }
     }
@@ -2282,7 +1443,7 @@
       const params = new URLSearchParams({ timeRange, confRange: 0 });
   const overlay = document.getElementById('markerLoadingOverlay');
   if (overlay && (!markers || markers.length===0)) overlay.classList.remove('hidden');
-      const res = await fetch('/data?' + params.toString());
+      const res = await fetch(`/data?${params.toString()}`);
       const data = await res.json();
       let points = (data.tracks || []).filter(p => {
         if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return false;
@@ -2308,7 +1469,7 @@
         // cell size (degrees) shrinks with zoom to gradually reveal more detail
         let cell = 0.55;
         if (z >= 7) cell = 0.32; if (z >= 8) cell = 0.18; if (z >= 9) cell = 0.11; if (z >= 10) cell = 0.06;
-        const keyFn = p => Math.floor(p.lat / cell) + '_' + Math.floor(p.lng / cell);
+        const keyFn = p => `${Math.floor(p.lat / cell)}_${Math.floor(p.lng / cell)}`;
         const buckets = new Map();
         for (const p of points){
           const k = keyFn(p);
@@ -2337,24 +1498,24 @@
           const count = b.items.length;
           const ageMin = (Date.now()-b.latest)/60000;
           const freshness = ageMin < 8 ? 'fresh' : ageMin < 20 ? 'stale' : 'old';
-          const html = '<div class="cluster cluster-' + freshness + '"><img src="' + iconUrl + '" alt="" loading="lazy"><b>' + count + '</b></div>';
+          const html = `<div class='cluster cluster-${freshness}'><img src='${iconUrl}' alt='' loading="lazy"><b>${count}</b></div>`;
           const icon = L.divIcon({ html, className:'', iconSize:[44,52], iconAnchor:[22,48] });
           const m = L.marker([lat,lng], {icon});
           // Popup summary
-          const typeLines = [...b.types.entries()].sort((a,b)=>b[1]-a[1]).slice(0,6).map(([t,c])=>'<div>' + (t||'—') + ': ' + c + '</div>').join('');
-          m.bindPopup('<div style="font-size:.7rem;line-height:1.25;"><b>' + count + '</b> подій<br>' + typeLines + '<div style="margin-top:4px;opacity:.55;">кластер (деталі при збільшенні)</div></div>');
+          const typeLines = [...b.types.entries()].sort((a,b)=>b[1]-a[1]).slice(0,6).map(([t,c])=>`<div>${t||'—'}: ${c}</div>`).join('');
+          m.bindPopup(`<div style='font-size:.7rem;line-height:1.25;'><b>${count}</b> подій<br>${typeLines}<div style='margin-top:4px;opacity:.55;'>кластер (деталі при збільшенні)</div></div>`);
           m.addTo(markerLayer); markers.push(m);
         });
         // Style inject (once)
         if(!document.getElementById('clusterStyles')){
-          const st=document.createElement('style'); st.id='clusterStyles'; st.textContent=
-            '.cluster{position:relative;display:flex;align-items:center;justify-content:center;background:linear-gradient(145deg,#1e293b,#0f172a);border:2px solid #334155;border-radius:18px;padding:4px 6px 6px;box-shadow:0 4px 12px -3px rgba(0,0,0,.4);} ' +
-            '.cluster img{width:26px;height:26px;object-fit:contain;filter:drop-shadow(0 0 4px rgba(0,0,0,.5));margin-right:2px;} ' +
-            '.cluster b{font-size:.8rem;font-family:Inter,system-ui,sans-serif;color:#fff;text-shadow:0 1px 2px #000;} ' +
-            '.cluster-fresh{background:linear-gradient(160deg,#164e63,#0f2d40);border-color:#155e75;} ' +
-            '.cluster-stale{background:linear-gradient(160deg,#3f3f46,#27272a);border-color:#52525b;} ' +
-            '.cluster-old{background:linear-gradient(160deg,#1e1b4b,#0f172a);border-color:#312e81;opacity:.72;} ';
-          document.head.appendChild(st); }
+          const st=document.createElement('style'); st.id='clusterStyles'; st.textContent=`
+            .cluster{position:relative;display:flex;align-items:center;justify-content:center;background:linear-gradient(145deg,#1e293b,#0f172a);border:2px solid #334155;border-radius:18px;padding:4px 6px 6px;box-shadow:0 4px 12px -3px rgba(0,0,0,.4);} 
+            .cluster img{width:26px;height:26px;object-fit:contain;filter:drop-shadow(0 0 4px rgba(0,0,0,.5));margin-right:2px;} 
+            .cluster b{font-size:.8rem;font-family:Inter,system-ui,sans-serif;color:#fff;text-shadow:0 1px 2px #000;} 
+            .cluster-fresh{background:linear-gradient(160deg,#164e63,#0f2d40);border-color:#155e75;} 
+            .cluster-stale{background:linear-gradient(160deg,#3f3f46,#27272a);border-color:#52525b;} 
+            .cluster-old{background:linear-gradient(160deg,#1e1b4b,#0f172a);border-color:#312e81;opacity:.72;} 
+          `; document.head.appendChild(st); }
         // Update event list but skip detailed marker render heavy stuff
         updateEventList(data.events || []);
         try { document.dispatchEvent(new CustomEvent('markersUpdated', {detail: data})); } catch(e){}
@@ -2390,7 +1551,7 @@
           arrowDir = p.place.split('←').pop().trim();
         }
   const threatClass = (p.threat_type||'default').toLowerCase();
-  const countBadge = (p.threat_type==='shahed' || /shahed|шахед|бпла/i.test(p.threat_type||'')) && p.count && p.count>1 ? '<div class="tm-badge">' + p.count + '×</div>' : '';
+  const countBadge = (p.threat_type==='shahed' || /shahed|шахед|бпла/i.test(p.threat_type||'')) && p.count && p.count>1 ? `<div class="tm-badge">${p.count}×</div>` : '';
   // Dynamic scale: keep screen footprint smaller on distant zooms so visual offset feels minimal
   let z = map.getZoom ? map.getZoom() : 6;
   let base = 34; // base size at mid zoom
@@ -2398,7 +1559,7 @@
   let factor = z >= 9 ? 1.25 : z >= 7 ? 1.0 : z >= 6 ? 0.85 : z >=5 ? 0.7 : 0.55;
   const w = Math.round(base * factor);
   const h = Math.round(w * 1.15);
-  const html = '<div class="tm-wrap"><img class="plain-marker-img" style="width:' + w + 'px;height:' + h + 'px;" src="' + iconUrl + '" alt="" loading="lazy" data-icon-type="' + (p.threat_type || 'default') + '">' + countBadge + '</div>';
+  const html = `<div class='tm-wrap'><img class='plain-marker-img' style='width:${w}px;height:${h}px;' src='${iconUrl}' alt='' loading="lazy" data-icon-type="${p.threat_type || 'default'}">${countBadge}</div>`;
   // Anchor to visual center (half width/height) instead of bottom so geographic point stays stable when scaling
   const icon = L.divIcon({ html, className:'', iconSize:[w,h], iconAnchor:[w/2, h/2], popupAnchor:[0,-h/2] });
   const m = L.marker([p.lat, p.lng], { icon, riseOnHover:true });
@@ -2430,12 +1591,12 @@
           }
         }
         const placeUA = translatePlace(p.place);
-        const popupHtml = '<div style="background:#ffffff;color:#1e293b;border:1px solid #d7dde3;border-radius:12px;padding:10px 10px;min-width:190px;font-size:.8rem;line-height:1.35;box-shadow:0 4px 14px -4px rgba(0,0,0,.18);">'
-          + (placeUA ? '<div style="font-size:.9rem;font-weight:600;margin-bottom:4px;">' + placeUA + '</div>' : '')
-          + (p.count ? '<div style="margin-bottom:4px;font-weight:600;color:#b91c1c;">Кількість: ' + p.count + '×</div>' : '')
-          + '<div style="white-space:pre-wrap;">' + cleanMessage(p.text||'') + '</div>'
-          + '<div style="margin-top:6px;font-size:.6rem;opacity:.55;">' + (p.date || '') + '</div>'
-          + '</div>';
+        const popupHtml = `<div style=\"background:#ffffff;color:#1e293b;border:1px solid #d7dde3;border-radius:12px;padding:10px 10px;min-width:190px;font-size:.8rem;line-height:1.35;box-shadow:0 4px 14px -4px rgba(0,0,0,.18);\">`
+          + (placeUA ? `<div style='font-size:.9rem;font-weight:600;margin-bottom:4px;'>${placeUA}</div>` : '')
+          + (p.count ? `<div style='margin-bottom:4px;font-weight:600;color:#b91c1c;'>Кількість: ${p.count}×</div>` : '')
+          + `<div style='white-space:pre-wrap;'>${cleanMessage(p.text||'')}</div>`
+          + `<div style='margin-top:6px;font-size:.6rem;opacity:.55;'>${p.date || ''}</div>`
+          + `</div>`;
         m.bindPopup(popupHtml, { closeButton:false, autoPan:true });
   if (p.count && p.count > 1) { m.openPopup(); }
         markerLayer.addLayer(m);
@@ -3256,58 +2417,3 @@
         initSSE();
       }
     })();
-  </script>
-  <!-- Google Maps script removed after migration to Leaflet / OpenStreetMap -->
-  <script>
-    // Air alarm polygons (requires separately hosted adm1/adm2 geojson files placed under /static)
-    (function(){
-      let activeOblasts=new Set(); let activeRaions=new Set();
-      async function refreshAlarms(){
-        try{ const r=await fetch('/active_alarms'); if(!r.ok) return; const d=await r.json();
-          activeOblasts=new Set(d.oblasts.map(o=>o.name)); activeRaions=new Set(d.raions.map(o=>o.name));
-          if(window.adm1Layer){ window.adm1Layer.setStyle(styleAdm1); }
-          if(window.adm2Layer){ window.adm2Layer.setStyle(styleAdm2); }
-        }catch(e){}
-      }
-      function styleAdm1(f){ const n=((f.properties?.ADM1_UA||f.properties?.ADM1_UK||'')+'').toLowerCase(); const hit=[...activeOblasts].some(o=>n.includes(o.split(' ')[0])); return {color:'#444',weight:1,fillOpacity:hit?0.55:0.05,fillColor: hit?'#b30000':'#1e293b'}; }
-      function styleAdm2(f){ const n=(f.properties?.ADM2_UA||'').toLowerCase(); const hit=[...activeRaions].some(r=>n.startsWith(r.split(' ')[0])); return {color:'#333',weight:0.6,fillOpacity:hit?0.5:0,fillColor:hit?'#ff3b30':'#000'}; }
-      // Optional loaders (comment out if not ready)
-      async function loadAdm1(){ try{ const r=await fetch('/static/adm1.json'); if(!r.ok) return; const gj=await r.json(); window.adm1Layer = L.geoJSON(gj,{style:styleAdm1,interactive:false}).addTo(map); }catch(e){} }
-      async function loadAdm2(){ try{ const r=await fetch('/static/adm2.json'); if(!r.ok) return; const gj=await r.json(); window.adm2Layer = L.geoJSON(gj,{style:styleAdm2,interactive:false}).addTo(map); }catch(e){} }
-      // Kick off after map global is present
-      function init(){ 
-        if(typeof map==='undefined'){ 
-          return setTimeout(init,500); 
-        } 
-        loadAdm1(); 
-        /* loadAdm2(); */ 
-        refreshAlarms(); 
-        setInterval(refreshAlarms,15000); 
-        
-        // Initialize donation amount loading for support card
-        // Load immediately with fallback, then try to fetch real data
-        loadDonationAmount();
-        
-        // Also try again after a short delay to catch any load timing issues
-        setTimeout(() => {
-          const currentAmount = localStorage.getItem('donationAmount');
-          if (!currentAmount || parseFloat(currentAmount) < 100) {
-            console.log('Retrying donation amount load due to low/missing amount');
-            loadDonationAmount();
-          }
-        }, 2000);
-        
-        // Periodic refresh every 15 minutes to keep amount updated
-        setInterval(() => {
-          console.log('Periodic donation amount refresh');
-          // Clear cache to force fresh fetch
-          localStorage.removeItem('donationAmount');
-          localStorage.removeItem('donationAmountTime');
-          loadDonationAmount();
-        }, 900000); // 15 minutes
-      }
-      init();
-    })();
-  </script>
-</body>
-</html>
