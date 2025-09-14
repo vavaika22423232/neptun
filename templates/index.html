@@ -2298,6 +2298,7 @@
         console.log('updateMarkers: количество tracks:', (data.tracks || []).length);
   points = (data.tracks || []).filter(p => {
         console.log('updateMarkers: проверяем точку:', p);
+        console.log('updateMarkers: threat_type точки:', p.threat_type, 'текст:', p.text);
         if (typeof p.lat !== 'number' || typeof p.lng !== 'number') {
           console.log('updateMarkers: пропускаем - неправильный тип координат:', p.lat, p.lng);
           return false;
@@ -2405,21 +2406,27 @@
   // Container for border-shelling overlays (semi-circles)
   let borderShellingDrawn = false;
       points.forEach(async p => {
+        console.log('updateMarkers: создаем маркер для точки с threat_type:', p.threat_type, 'текст:', p.text);
         let iconUrl = ICONS[p.threat_type] || ICONS.default;
+        console.log('updateMarkers: выбрана иконка:', iconUrl, 'для threat_type:', p.threat_type);
         if (p.marker_icon) {
           iconUrl = (p.marker_icon.startsWith('http') || p.marker_icon.startsWith('/')) ? p.marker_icon : '/static/' + p.marker_icon;
+          console.log('updateMarkers: переопределена иконка через marker_icon:', iconUrl);
         }
         // Override for FPV targeted settlements
         if (isFPVThreat(p.place, p.text, p.threat_type)) {
           iconUrl = ICONS.fpv || iconUrl;
+          console.log('updateMarkers: переопределена иконка для FPV:', iconUrl);
         }
         
         // Use optimized async image loading
         try {
           iconUrl = await getIconUrl(p.threat_type || 'default');
+          console.log('updateMarkers: финальная иконка после getIconUrl:', iconUrl);
         } catch (error) {
           console.warn('Failed to load icon, using fallback:', error);
           iconUrl = FALLBACK_ICON;
+          console.log('updateMarkers: используем fallback иконку:', iconUrl);
         }
         // Extract inline count / direction from place label pattern 'Name (N) ←півдня'
         if (!p.count && p.place) {
