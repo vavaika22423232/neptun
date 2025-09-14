@@ -2336,12 +2336,6 @@
       else { markerLayer = L.layerGroup().addTo(map); }
       markers = [];
       
-      } catch (error) {
-        console.error('updateMarkers: ошибка при загрузке данных:', error);
-        const overlay = document.getElementById('markerLoadingOverlay');
-        if (overlay) overlay.classList.add('hidden');
-        return;
-      }
       // --------- Performance adaptive mode ---------
       const MAX_DIRECT_MARKERS = 650; // threshold where we switch to clustered fast mode
       const useFastMode = points.length > MAX_DIRECT_MARKERS;
@@ -2567,11 +2561,19 @@
           } catch(e){}
         }
       });
+      
       updateEventList(data.events || []);
-  // Notify listeners (banner heuristics etc.)
-  try { document.dispatchEvent(new CustomEvent('markersUpdated', {detail: data})); } catch(e){}
-  if (overlay && markers.length>0) overlay.classList.add('hidden');
-  console.log('updateMarkers: завершено. Создано маркеров:', markers.length, 'Overlay скрыт:', overlay && markers.length>0);
+      // Notify listeners (banner heuristics etc.)
+      try { document.dispatchEvent(new CustomEvent('markersUpdated', {detail: data})); } catch(e){}
+      if (overlay && markers.length>0) overlay.classList.add('hidden');
+      console.log('updateMarkers: завершено. Создано маркеров:', markers.length, 'Overlay скрыт:', overlay && markers.length>0);
+      
+      } catch (error) {
+        console.error('updateMarkers: ошибка при загрузке данных:', error);
+        const overlay = document.getElementById('markerLoadingOverlay');
+        if (overlay) overlay.classList.add('hidden');
+        return;
+      }
     }
     // Re-scale markers on zoom (debounced)
     let _zoomRedrawTimer=null;
