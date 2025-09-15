@@ -2394,6 +2394,9 @@
       pts.unshift([lat,lng]);
       return pts;
     }
+    // Переменная для отслеживания первоначальной загрузки
+    let isInitialLoad = true;
+    
     async function updateMarkers() {
       console.log('updateMarkers: начинаем загрузку данных...');
       const timeRange = 1.33; // фиксированное значение - 80 минут (1.33 часа)
@@ -2401,7 +2404,11 @@
       console.log('updateMarkers: параметры фильтрации - timeRange:', timeRange, 'часов, threatType:', threatType || 'все типы');
       const params = new URLSearchParams({ timeRange, confRange: 0 });
   const overlay = document.getElementById('markerLoadingOverlay');
-  if (overlay) overlay.classList.remove('hidden'); // показать экран загрузки при каждом обновлении
+  // Показываем экран загрузки только при первоначальной загрузке
+  if (overlay && isInitialLoad) {
+    overlay.classList.remove('hidden');
+    console.log('updateMarkers: показываем экран загрузки для первоначальной загрузки');
+  }
   
       let points = []; // Объявляем переменную перед try блоком
       
@@ -2449,7 +2456,13 @@
       if (threatType) points = points.filter(p => (p.threat_type || '').toLowerCase() === threatType);
       
       // Always hide the overlay after processing one fetch to avoid spinner lock
-      if (overlay) { overlay.classList.add('hidden'); }
+      if (overlay) { 
+        overlay.classList.add('hidden'); 
+        if (isInitialLoad) {
+          console.log('updateMarkers: скрываем экран загрузки после первоначальной загрузки');
+          isInitialLoad = false; // Отмечаем, что первоначальная загрузка завершена
+        }
+      }
       if (markerLayer) { markerLayer.clearLayers(); }
       else { markerLayer = L.layerGroup().addTo(map); }
       markers = [];
@@ -2512,7 +2525,13 @@
         // Update event list but skip detailed marker render heavy stuff
         updateEventList(data.events || []);
         try { document.dispatchEvent(new CustomEvent('markersUpdated', {detail: data})); } catch(e){}
-  if (overlay && points.length>0) overlay.classList.add('hidden');
+        if (overlay && points.length>0) { 
+          overlay.classList.add('hidden');
+          if (isInitialLoad) {
+            console.log('updateMarkers: скрываем экран загрузки после первоначальной загрузки (fast mode)');
+            isInitialLoad = false; // Отмечаем, что первоначальная загрузка завершена
+          }
+        }
         return; // exit early in fast mode
       }
   // Container for border-shelling overlays (semi-circles)
@@ -2683,13 +2702,25 @@
       updateEventList(data.events || []);
       // Notify listeners (banner heuristics etc.)
       try { document.dispatchEvent(new CustomEvent('markersUpdated', {detail: data})); } catch(e){}
-      if (overlay) overlay.classList.add('hidden'); // всегда скрывать экран загрузки после обработки
+      if (overlay) { 
+        overlay.classList.add('hidden'); // всегда скрывать экран загрузки после обработки
+        if (isInitialLoad) {
+          console.log('updateMarkers: скрываем экран загрузки после первоначальной загрузки (обычный режим)');
+          isInitialLoad = false; // Отмечаем, что первоначальная загрузка завершена
+        }
+      }
       console.log('updateMarkers: завершено. Создано маркеров:', markers.length, 'Overlay скрыт');
       
       } catch (error) {
         console.error('updateMarkers: ошибка при загрузке данных:', error);
         const overlay = document.getElementById('markerLoadingOverlay');
-        if (overlay) overlay.classList.add('hidden');
+        if (overlay) { 
+          overlay.classList.add('hidden');
+          if (isInitialLoad) {
+            console.log('updateMarkers: скрываем экран загрузки из-за ошибки при первоначальной загрузке');
+            isInitialLoad = false; // Отмечаем, что первоначальная загрузка завершена даже при ошибке
+          }
+        }
         return;
       }
     }
