@@ -541,6 +541,81 @@
     font-family: 'Inter', system-ui, sans-serif;
     /* Принудительная локализация для украинских названий */
     font-feature-settings: "locl" 1;
+    /* Увеличиваем размер текста на карте */
+    font-size: 16px !important;
+  }
+  
+  /* Специальные стили для улучшения читаемости названий на карте */
+  .leaflet-tile-container {
+    /* Увеличиваем масштаб тайлов для больших названий */
+    transform: scale(1.2);
+    transform-origin: center;
+  }
+  
+  /* Корректируем размеры контейнера тайлов */
+  .leaflet-tile-pane {
+    /* Компенсируем увеличение масштаба */
+    width: 83.3% !important;
+    height: 83.3% !important;
+    left: 8.35% !important;
+    top: 8.35% !important;
+  }
+  
+  /* Дополнительное увеличение для мобильных устройств */
+  @media (max-width: 768px) {
+    .leaflet-tile-container {
+      transform: scale(1.3);
+    }
+    
+    .leaflet-tile-pane {
+      width: 76.9% !important;
+      height: 76.9% !important;
+      left: 11.55% !important;
+      top: 11.55% !important;
+    }
+    
+    .leaflet-container {
+      font-size: 18px !important;
+    }
+  }
+  
+  /* Увеличенный размер текста - дополнительный класс */
+  #map.large-text .leaflet-tile-container {
+    transform: scale(1.5) !important;
+  }
+  
+  #map.large-text .leaflet-tile-pane {
+    width: 66.7% !important;
+    height: 66.7% !important;
+    left: 16.65% !important;
+    top: 16.65% !important;
+  }
+  
+  #map.large-text .ukrainian-readable-tiles,
+  #map.large-text .ukrainian-localized-tiles {
+    filter: contrast(1.6) brightness(1.15) saturate(1.2) !important;
+  }
+  
+  /* Альтернативный подход - CSS фильтры для улучшения контраста текста */
+  .ukrainian-localized-tiles {
+    /* Оптимизация для украинского текста с улучшенной читаемостью */
+    filter: contrast(1.25) brightness(1.05) saturate(1.03) !important;
+    /* Улучшаем рендеринг кириллицы */
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+  }
+  
+  /* Специальный класс для тайлов с лучшей читаемостью */
+  .ukrainian-readable-tiles {
+    /* Максимальное увеличение контраста и четкости для названий */
+    filter: contrast(1.4) brightness(1.1) saturate(1.1) !important;
+    /* Сглаживание шрифтов */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* Четкий рендеринг */
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: pixelated;
   }
   
   /* Улучшаем отображение текста на карте */
@@ -592,6 +667,17 @@
     }
     #regionBoundariesBtn.active:hover {
       background: linear-gradient(145deg, #d97706, #b45309) !important;
+      transform: translateY(-2px) scale(1.02);
+    }
+    
+    /* Active state for text size button */
+    #textSizeBtn.active {
+      background: linear-gradient(145deg, #10b981, #059669) !important;
+      color: white !important;
+      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4), 0 0 0 1px rgba(16, 185, 129, 0.8) inset;
+    }
+    #textSizeBtn.active:hover {
+      background: linear-gradient(145deg, #059669, #047857) !important;
       transform: translateY(-2px) scale(1.02);
     }
     .map-controls { pointer-events:none; }
@@ -983,6 +1069,9 @@
         </button>
         <button class="map-control-btn" onclick="map.setCenter({lat: 48.3794, lng: 31.1656})">
           <i class="material-icons">center_focus_strong</i>
+        </button>
+        <button class="map-control-btn" id="textSizeBtn" onclick="toggleTextSize()" title="Збільшити/зменшити розмір тексту на карті" aria-label="Розмір тексту">
+          <i class="material-icons">text_fields</i>
         </button>
         <button class="map-control-btn" id="regionBoundariesBtn" onclick="toggleRegionBoundaries()" title="Показати/приховати границі областей" aria-label="Границі областей">
           <i class="material-icons">map</i>
@@ -3371,17 +3460,27 @@
     async function initMap() {
       map = L.map('map', { zoomControl:false, attributionControl:false }).setView([48.3794,31.1656], 6);
       
-      // Используем специальный тайл-сервер с украинской локализацией
-      // OpenStreetMap с украинским языком по умолчанию
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png?lang=uk', {
+      // Используем тайл-слой с увеличенным размером шрифта
+      // CartoDB Positron - более читаемые названия
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         maxZoom: 19,
         attribution: '',
         crossOrigin: true,
         detectRetina: true,
-        // Параметры для украинской локализации
+        // Класс для дополнительного увеличения читаемости
+        className: 'ukrainian-readable-tiles',
+        subdomains: 'abcd'
+      }).addTo(map);
+      
+      // Альтернативный слой - OSM с украинским языком
+      window.osmUkrainianLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png?lang=uk', {
+        maxZoom: 19,
+        attribution: '',
+        crossOrigin: true,
+        detectRetina: true,
         className: 'ukrainian-localized-tiles',
         subdomains: 'abc'
-      }).addTo(map);
+      });
       
       // Альтернативный слой - Wikimedia International
       window.wikimediaTileLayer = L.tileLayer('https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}{r}.png', {
@@ -3400,6 +3499,17 @@
         detectRetina: true,
         subdomains: 'abcd'
       });
+      
+      // Функция переключения на OSM украинский слой
+      window.switchToOSMUkrainianTiles = function() {
+        map.eachLayer(function (layer) {
+          if (layer instanceof L.TileLayer) {
+            map.removeLayer(layer);
+          }
+        });
+        window.osmUkrainianLayer.addTo(map);
+        console.log('Переключились на OSM с украинским языком');
+      };
       
       // Функция переключения на Wikimedia слой
       window.switchToWikimediaTiles = function() {
@@ -3853,6 +3963,50 @@
         }
       }
     }
+  }
+  
+  // Text size toggle functionality
+  let largeTextEnabled = false;
+  
+  function toggleTextSize() {
+    const btn = document.getElementById('textSizeBtn');
+    const mapElement = document.getElementById('map');
+    
+    if (!mapElement) {
+      console.warn('Елемент карти не знайдено');
+      return;
+    }
+    
+    largeTextEnabled = !largeTextEnabled;
+    
+    if (largeTextEnabled) {
+      // Увеличить текст
+      mapElement.classList.add('large-text');
+      
+      if (btn) {
+        btn.classList.add('active');
+        btn.title = 'Зменшити розмір тексту на карті';
+      }
+      
+      console.log('Увеличен размер текста на карте');
+    } else {
+      // Уменьшить текст до нормального
+      mapElement.classList.remove('large-text');
+      
+      if (btn) {
+        btn.classList.remove('active');
+        btn.title = 'Збільшити розмір тексту на карті';
+      }
+      
+      console.log('Восстановлен нормальный размер текста на карте');
+    }
+    
+    // Обновляем размер карты после изменения
+    setTimeout(() => {
+      if (map) {
+        map.invalidateSize();
+      }
+    }, 100);
   }
   
   // Adjust fullscreen height on orientation / resize for mobile
