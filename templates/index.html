@@ -450,6 +450,75 @@
   #markerLoadingOverlay .spinner{width:60px;height:60px;border:6px solid rgba(255,255,255,.15);border-top-color:#3b82f6;border-radius:50%;animation:spin 1s linear infinite;box-shadow:0 0 18px -4px rgba(59,130,246,.55);} 
   #markerLoadingOverlay h3{margin:0;font-size:1.1rem;font-weight:600;letter-spacing:.4px;background:linear-gradient(90deg,#3b82f6,#06b6d4);-webkit-background-clip:text;background-clip:text;color:transparent;text-align:center;}
   #markerLoadingOverlay p{margin:0;font-size:.8rem;max-width:360px;text-align:center;opacity:.85;line-height:1.45;}
+  
+  /* Regional threat zones styling */
+  .regional-threat-zone {
+    pointer-events: auto;
+    transition: all 0.3s ease;
+  }
+  
+  .regional-threat-glow {
+    pointer-events: none;
+  }
+  
+  @keyframes regionalPulse {
+    0% { 
+      fill-opacity: 0.12; 
+      stroke-opacity: 0.9; 
+      transform: scale(1); 
+    }
+    50% { 
+      fill-opacity: 0.22; 
+      stroke-opacity: 1; 
+      transform: scale(1.005); 
+    }
+    100% { 
+      fill-opacity: 0.12; 
+      stroke-opacity: 0.9; 
+      transform: scale(1); 
+    }
+  }
+  
+  @keyframes regionalGlow {
+    0% { 
+      stroke-opacity: 0.2; 
+      stroke-width: 3; 
+    }
+    100% { 
+      stroke-opacity: 0.6; 
+      stroke-width: 6; 
+    }
+  }
+  
+  @keyframes floatLabel {
+    0%, 100% { 
+      transform: translateY(0px) scale(1); 
+      opacity: 0.95; 
+    }
+    33% { 
+      transform: translateY(-4px) scale(1.02); 
+      opacity: 1; 
+    }
+    66% { 
+      transform: translateY(-2px) scale(1.01); 
+      opacity: 0.98; 
+    }
+  }
+  
+  @keyframes shimmer {
+    0% { left: -100%; }
+    100% { left: 100%; }
+  }
+  
+  .regional-threat-label {
+    text-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+  
+  .regional-threat-popup .leaflet-popup-content-wrapper {
+    border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.15);
+  }
   @keyframes spin{to{transform:rotate(360deg);}}
     #map:after { /* subtle vignette */
       content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(circle at 60% 40%,rgba(255,255,255,0) 40%,rgba(0,0,0,.15) 95%);
@@ -2394,6 +2463,278 @@
       pts.unshift([lat,lng]);
       return pts;
     }
+    
+    // === РЕГИОНАЛЬНЫЕ УГРОЗЫ ===
+    // Функция для определения региональных угроз
+    function isRegionalThreat(text, place) {
+      if (!text) return null;
+      
+      const textLower = text.toLowerCase();
+      
+      // Паттерны региональных угроз
+      const regionalPatterns = [
+        // Дніпропетровська область
+        {
+          pattern: /дніпропетровська\s+область|днипропетровская\s+область/i,
+          region: 'dnipropetrovska',
+          regionName: 'Дніпропетровська область',
+          coords: [48.464717, 35.046183] // центр области
+        },
+        // Харківська область
+        {
+          pattern: /харківська\s+область|харковская\s+область/i,
+          region: 'kharkivska',
+          regionName: 'Харківська область',
+          coords: [49.993499, 36.230383]
+        },
+        // Полтавська область
+        {
+          pattern: /полтавська\s+область|полтавская\s+область/i,
+          region: 'poltavska',
+          regionName: 'Полтавська область',
+          coords: [49.588267, 34.551417]
+        },
+        // Київська область
+        {
+          pattern: /київська\s+область|киевская\s+область/i,
+          region: 'kyivska',
+          regionName: 'Київська область',
+          coords: [50.053469, 30.758883]
+        },
+        // Черкаська область
+        {
+          pattern: /черкаська\s+область|черкасская\s+область/i,
+          region: 'cherkaska',
+          regionName: 'Черкаська область',
+          coords: [49.444433, 32.059767]
+        },
+        // Кіровоградська область
+        {
+          pattern: /кіровоградська\s+область|кировоградская\s+область/i,
+          region: 'kirovogradska',
+          regionName: 'Кіровоградська область',
+          coords: [48.507850, 32.262383]
+        }
+      ];
+      
+      for (const regional of regionalPatterns) {
+        if (regional.pattern.test(textLower)) {
+          return regional;
+        }
+      }
+      
+      return null;
+    }
+    
+    // Функция для создания региональной подсветки области
+    function createRegionalThreatOverlay(regionalInfo, threatType, text) {
+      const regionBounds = getRegionBounds(regionalInfo.region);
+      if (!regionBounds) return;
+      
+      // Определяем цвет и иконку в зависимости от типа угрозы
+      let color = '#ff6b6b';
+      let icon = '⚠️';
+      let threatName = 'Загроза';
+      
+      if (threatType === 'shahed' || /бпла|шахед/i.test(text)) {
+        color = '#339af0';
+        icon = '🛩️';
+        threatName = 'Загроза БпЛА';
+      } else if (/ракет/i.test(text)) {
+        color = '#ff8a65';
+        icon = '🚀';
+        threatName = 'Ракетна загроза';
+      } else if (/артилер/i.test(text)) {
+        color = '#ffa726';
+        icon = '💥';
+        threatName = 'Артилерійська загроза';
+      }
+      
+      // Создаем основной полигон области с градиентной заливкой
+      const polygon = L.polygon(regionBounds, {
+        color: color,
+        weight: 2,
+        opacity: 0.9,
+        fillColor: color,
+        fillOpacity: 0.12,
+        className: `regional-threat-zone ${regionalInfo.region}`
+      });
+      
+      // Создаем внешнюю границу с эффектом свечения
+      const glowPolygon = L.polygon(regionBounds, {
+        color: color,
+        weight: 5,
+        opacity: 0.4,
+        fillOpacity: 0,
+        className: `regional-threat-glow ${regionalInfo.region}`
+      });
+      
+      // Добавляем анимацию пульсации
+      polygon.on('add', function() {
+        const element = polygon.getElement();
+        if (element) {
+          element.style.animation = 'regionalPulse 4s ease-in-out infinite';
+          element.style.filter = `drop-shadow(0 0 8px ${color}40)`;
+        }
+      });
+      
+      glowPolygon.on('add', function() {
+        const element = glowPolygon.getElement();
+        if (element) {
+          element.style.animation = 'regionalGlow 3s ease-in-out infinite alternate';
+        }
+      });
+      
+      // Popup с детальной информацией
+      const threatDetails = text.length > 100 ? text.substring(0, 100) + '...' : text;
+      const popupContent = `
+        <div style="
+          font-size: 0.9rem; 
+          line-height: 1.4; 
+          max-width: 280px; 
+          font-family: 'Inter', system-ui, sans-serif;
+        ">
+          <div style="
+            font-weight: 700; 
+            color: ${color}; 
+            margin-bottom: 10px; 
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          ">
+            ${icon} ${threatName}
+          </div>
+          <div style="
+            font-weight: 600; 
+            margin-bottom: 8px; 
+            color: #334155;
+            font-size: 0.95rem;
+          ">
+            📍 ${regionalInfo.regionName}
+          </div>
+          <div style="
+            color: #64748b; 
+            font-size: 0.8rem; 
+            line-height: 1.3;
+            background: #f8fafc;
+            padding: 8px;
+            border-radius: 6px;
+            border-left: 3px solid ${color};
+          ">
+            ${threatDetails}
+          </div>
+          <div style="
+            margin-top: 8px;
+            font-size: 0.7rem;
+            color: #94a3b8;
+            font-style: italic;
+          ">
+            🕒 Регіональне попередження • ${new Date().toLocaleTimeString('uk-UA')}
+          </div>
+        </div>
+      `;
+      
+      polygon.bindPopup(popupContent, {
+        maxWidth: 320,
+        className: 'regional-threat-popup'
+      });
+      
+      // Добавляем слои на карту
+      glowPolygon.addTo(markerLayer);
+      polygon.addTo(markerLayer);
+      
+      // Создаем floating label в центре области
+      createRegionalFloatingLabel(regionalInfo, threatName, icon, color);
+      
+      return { polygon, glowPolygon };
+    }
+    
+    // Функция для создания floating label
+    function createRegionalFloatingLabel(regionalInfo, threatName, icon, color) {
+      const labelDiv = L.divIcon({
+        html: `
+          <div class="regional-threat-label" style="
+            background: linear-gradient(135deg, ${color}20, ${color}35);
+            border: 2px solid ${color};
+            border-radius: 16px;
+            padding: 10px 16px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: ${color};
+            white-space: nowrap;
+            backdrop-filter: blur(12px);
+            box-shadow: 
+              0 8px 32px ${color}30,
+              0 0 0 1px ${color}20,
+              inset 0 1px 0 rgba(255,255,255,0.2);
+            animation: floatLabel 6s ease-in-out infinite;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+            letter-spacing: 0.5px;
+            position: relative;
+            overflow: hidden;
+          ">
+            <div style="
+              position: absolute;
+              top: 0;
+              left: -100%;
+              width: 100%;
+              height: 100%;
+              background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+              animation: shimmer 3s ease-in-out infinite;
+            "></div>
+            ${icon} ${threatName}
+          </div>
+        `,
+        className: '',
+        iconSize: [1, 1],
+        iconAnchor: [0, 0]
+      });
+      
+      const marker = L.marker(regionalInfo.coords, {
+        icon: labelDiv,
+        interactive: false,
+        zIndexOffset: 1000
+      });
+      
+      marker.addTo(markerLayer);
+      return marker;
+    }
+    
+    // Функция для получения границ областей (более точные полигоны)
+    function getRegionBounds(region) {
+      const regions = {
+        dnipropetrovska: [
+          [49.27, 33.15], [49.27, 36.73], [49.00, 36.85], [48.50, 36.73],
+          [47.95, 36.15], [47.73, 35.50], [47.73, 34.20], [47.90, 33.40],
+          [48.20, 33.15], [49.27, 33.15]
+        ],
+        kharkivska: [
+          [50.85, 35.10], [50.85, 38.15], [50.45, 38.15], [49.95, 37.85],
+          [49.25, 37.40], [49.05, 36.80], [49.05, 35.80], [49.25, 35.10],
+          [50.85, 35.10]
+        ],
+        poltavska: [
+          [50.25, 32.60], [50.25, 35.75], [49.85, 35.75], [49.45, 35.40],
+          [48.85, 34.90], [48.85, 33.20], [49.15, 32.60], [50.25, 32.60]
+        ],
+        kyivska: [
+          [51.15, 29.55], [51.15, 31.95], [50.75, 31.95], [50.35, 31.60],
+          [49.85, 31.20], [49.85, 30.40], [50.05, 29.55], [51.15, 29.55]
+        ],
+        cherkaska: [
+          [49.95, 30.85], [49.95, 33.15], [49.55, 33.15], [49.15, 32.80],
+          [48.85, 32.20], [48.85, 31.40], [49.05, 30.85], [49.95, 30.85]
+        ],
+        kirovogradska: [
+          [49.15, 31.05], [49.15, 33.95], [48.75, 33.95], [48.35, 33.60],
+          [47.85, 33.05], [47.85, 31.80], [48.05, 31.05], [49.15, 31.05]
+        ]
+      };
+      
+      return regions[region] || null;
+    }
+    
     // Переменная для отслеживания первоначальной загрузки
     let isInitialLoad = true;
     
@@ -2538,6 +2879,15 @@
   let borderShellingDrawn = false;
       points.forEach(async p => {
         console.log('updateMarkers: создаем маркер для точки с threat_type:', p.threat_type, 'текст:', p.text);
+        
+        // === ПРОВЕРКА НА РЕГИОНАЛЬНЫЕ УГРОЗЫ ===
+        const regionalInfo = isRegionalThreat(p.text, p.place);
+        if (regionalInfo) {
+          console.log('updateMarkers: обнаружена региональная угроза:', regionalInfo.regionName);
+          createRegionalThreatOverlay(regionalInfo, p.threat_type, p.text);
+          return; // Пропускаем создание обычного маркера
+        }
+        
         let iconUrl = ICONS[p.threat_type] || ICONS.default;
         console.log('updateMarkers: выбрана иконка:', iconUrl, 'для threat_type:', p.threat_type);
         if (p.marker_icon) {
