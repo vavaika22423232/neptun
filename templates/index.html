@@ -3908,8 +3908,9 @@
         // Server is healthy
         if (consecutiveFailures >= 2) {
           // Server is back online after deployment
+          // Не скрываем сразу - ждем загрузки меток
           hideDeploymentOverlay();
-          console.log('Server is back online, hiding deployment overlay');
+          console.log('Server is back online, transitioning to marker loading');
         }
         consecutiveFailures = 0;
       } else {
@@ -3937,9 +3938,9 @@
     
     if (overlay && title && description) {
       title.textContent = 'Оновлення системи…';
-      description.textContent = 'Зараз відбувається оновлення NEPTUN. Це займе 1-2 хвилини. Мапа незабаром буде доступна з новими функціями!';
+      description.textContent = 'Відбувається деплой нової версії NEPTUN. Це займе 1-2 хвилини. Після оновлення мітки автоматично з\'являться на мапі.';
       overlay.classList.remove('hidden');
-      console.log('Showing deployment overlay');
+      console.log('Showing deployment overlay during server update');
     }
   }
   
@@ -3949,12 +3950,28 @@
     const description = overlay?.querySelector('p');
     
     if (overlay && title && description) {
-      // Restore original loading text
-      title.textContent = 'Зачекай хвильку…';
-      description.textContent = 'Зараз мітки з\'являться (оновлення / додаємо зміни на мапу).';
-      overlay.classList.add('hidden');
+      // После восстановления сервера переходим в режим ожидания меток
+      title.textContent = 'Завантаження меток…';
+      description.textContent = 'Сервер відновлено. Зараз завантажуються мітки на мапу.';
+      
       consecutiveFailures = 0;
-      console.log('Hiding deployment overlay');
+      console.log('Server restored, now waiting for markers to load');
+      
+      // Принудительно запускаем загрузку меток
+      if (typeof updateMarkers === 'function') {
+        isInitialLoad = true; // Помечаем как первоначальную загрузку
+        updateMarkers().then(() => {
+          // Экран будет скрыт в updateMarkers после успешной загрузки меток
+          console.log('Markers loaded after server restoration');
+        }).catch(error => {
+          console.error('Failed to load markers after server restoration:', error);
+          // Если загрузка меток не удалась, скрываем экран
+          overlay.classList.add('hidden');
+        });
+      } else {
+        // Если функция недоступна, просто скрываем экран
+        overlay.classList.add('hidden');
+      }
     }
   }
   
