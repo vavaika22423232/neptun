@@ -890,32 +890,6 @@
 
     <div class="card" id="events">
       <h2>Останні події</h2>
-      <div class="filters">
-        <label>
-          Період моніторингу
-          <select id="timeRange">
-            <option value="3">Останні 3 години</option>
-            <option value="6">Останні 6 годин</option>
-            <option value="12" selected>Останні 12 годин</option>
-            <option value="24">Останні 24 години</option>
-            <option value="48">Останні 48 годин</option>
-          </select>
-        </label>
-        <label>
-          Тип загрози
-          <select id="threatTypeSelect">
-            <option value="">Всі типи</option>
-            <option value="shahed">Шахед/БПЛА</option>
-            <option value="raketa">Ракета</option>
-            <option value="avia">Авіація</option>
-            <option value="pvo">ППО</option>
-          </select>
-        </label>
-        <button onclick="updateMarkers()">
-          <i class="material-icons">refresh</i>
-          Оновити дані
-        </button>
-      </div>
       <div class="event-list" id="eventList"></div>
     </div>
 
@@ -2422,8 +2396,8 @@
     }
     async function updateMarkers() {
       console.log('updateMarkers: начинаем загрузку данных...');
-      const timeRange = parseInt(document.getElementById('timeRange').value) || 12; // читаем из селектора, по умолчанию 12 часов
-      const threatType = document.getElementById('threatTypeSelect').value;
+      const timeRange = 1.33; // фиксированное значение - 80 минут (1.33 часа)
+      const threatType = ''; // фиксированное значение - все типы угроз
       console.log('updateMarkers: параметры фильтрации - timeRange:', timeRange, 'часов, threatType:', threatType || 'все типы');
       const params = new URLSearchParams({ timeRange, confRange: 0 });
   const overlay = document.getElementById('markerLoadingOverlay');
@@ -3073,24 +3047,6 @@
         });
       }
       document.addEventListener('click', e=>{ if(!psWrap.contains(e.target)) hideSuggest(); });
-      
-      // Auto-update when time range changes
-      const timeRangeSelect = document.getElementById('timeRange');
-      if (timeRangeSelect) {
-        timeRangeSelect.addEventListener('change', () => {
-          console.log('Time range changed to:', timeRangeSelect.value, 'hours');
-          updateMarkers();
-        });
-      }
-      
-      // Also update when threat type changes
-      const threatTypeSelect = document.getElementById('threatTypeSelect');
-      if (threatTypeSelect) {
-        threatTypeSelect.addEventListener('change', () => {
-          console.log('Threat type changed to:', threatTypeSelect.value);
-          updateMarkers();
-        });
-      }
       
       // --- Darken all non-Ukraine territory (dynamic mask loading precise border if available) ---
       let worldMaskLayer = null;
