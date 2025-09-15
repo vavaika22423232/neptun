@@ -1,0 +1,302 @@
+[
+  {
+    "name": "Київ",
+    "population": "2908249",
+    "osm_id": 421866,
+    "admin_level": "4",
+    "bounds": {
+      "minlat": 50.2132422,
+      "minlon": 30.2361453,
+      "maxlat": 50.5908142,
+      "maxlon": 30.8263593
+    }
+  },
+  {
+    "name": "Харків",
+    "population": "1447652",
+    "osm_id": 3154746,
+    "admin_level": "8",
+    "bounds": {
+      "minlat": 49.8784822,
+      "minlon": 36.1055541,
+      "maxlat": 50.1047533,
+      "maxlon": 36.4554864
+    }
+  },
+  {
+    "name": "Донецьк",
+    "population": "929063",
+    "osm_id": 1413957,
+    "admin_level": "10",
+    "bounds": {
+      "minlat": 47.8757157,
+      "minlon": 37.5254345,
+      "maxlat": 48.0895015,
+      "maxlon": 37.9987906
+    }
+  },
+  {
+    "name": "Запоріжжя",
+    "population": "750685",
+    "osm_id": 1418311,
+    "admin_level": null,
+    "bounds": {
+      "minlat": 47.7526201,
+      "minlon": 34.9866698,
+      "maxlat": 47.9544669,
+      "maxlon": 35.369035
+    }
+  },
+  {
+    "name": "Львів",
+    "population": "728350",
+    "osm_id": 2032280,
+    "admin_level": "9",
+    "bounds": {
+      "minlat": 49.7681748,
+      "minlon": 23.8980549,
+      "maxlat": 49.9037122,
+      "maxlon": 24.1334136
+    }
+  },
+  {
+    "name": "Севастополь",
+    "population": "509992",
+    "osm_id": 3030976,
+    "admin_level": null,
+    "bounds": {
+      "minlat": 44.5122525,
+      "minlon": 33.3779569,
+      "maxlat": 44.7014019,
+      "maxlon": 33.6106217
+    }
+  },
+  {
+    "name": "Маріуполь",
+    "population": "453623",
+    "osm_id": 1748539,
+    "admin_level": "10",
+    "bounds": {
+      "minlat": 47.0276125,
+      "minlon": 37.4655309,
+      "maxlat": 47.2294948,
+      "maxlon": 37.7554739
+    }
+  },
+  {
+    "name": "Луганськ",
+    "population": "414509",
+    "osm_id": 2171253,
+    "admin_level": "10",
+    "bounds": {
+      "minlat": 48.4746035,
+      "minlon": 39.2152905,
+      "maxlat": 48.6980669,
+      "maxlon": 39.4983923
+    }
+  },
+  {
+    "name": "Вінниця",
+    "population": "373302",
+    "osm_id": 361818,
+    "admin_level": "9",
+    "bounds": {
+      "minlat": 49.1873426,
+      "minlon": 28.3679759,
+      "maxlat": 49.2865952,
+      "maxlon": 28.59204
+    }
+  },
+  {
+    "name": "Макіївка",
+    "population": "347227",
+    "osm_id": 2224013,
+    "admin_level": "10",
+    "bounds": {
+      "minlat": 47.9707648,
+      "minlon": 37.8139604,
+      "maxlat": 48.1426932,
+      "maxlon": 38.1089101
+    }
+  },
+  {
+    "name": "Горлівка",
+    "population": "289872",
+    "osm_id": 3862199,
+    "admin_level": "10",
+    "bounds": {
+      "minlat": 48.2149587,
+      "minlon": 37.9046988,
+      "maxlat": 48.3985268,
+      "maxlon": 38.25388
+    }
+  },
+  {
+    "name": "Хмельницький",
+    "population": "269308",
+    "osm_id": 1792913,
+    "admin_level": "8",
+    "bounds": {
+      "minlat": 49.3588836,
+      "minlon": 26.8950317,
+      "maxlat": 49.4691037,
+      "maxlon": 27.0934151
+    }
+  },
+  {
+    "name": "Рівне",
+    "population": "245323",
+    "osm_id": 448930,
+    "admin_level": null,
+    "bounds": {
+      "minlat": 50.5693221,
+      "minlon": 26.1475993,
+      "maxlat": 50.6523081,
+      "maxlon": 26.3409096
+    }
+  },
+  {
+    "name": "Івано-Франківськ",
+    "population": "238196",
+    "osm_id": 2362670,
+    "admin_level": "9",
+    "bounds": {
+      "minlat": 48.8611451,
+      "minlon": 24.6417506,
+      "maxlat": 48.956705,
+      "maxlon": 24.7589659
+    }
+  },
+  {
+    "name": "Тернопіль",
+    "population": "218134",
+    "osm_id": 3058686,
+    "admin_level": "9",
+    "bounds": {
+      "minlat": 49.505361,
+      "minlon": 25.458604,
+      "maxlat": 49.5968918,
+      "maxlon": 25.6645145
+    }
+  },
+  {
+    "name": "Миколаїв",
+    "population": "14824",
+    "osm_id": 3830901,
+    "admin_level": "9",
+    "bounds": {
+      "minlat": 49.4928313,
+      "minlon": 23.9340041,
+      "maxlat": 49.5468491,
+      "maxlon": 24.0729193
+    }
+  },
+  {
+    "name": "Одеса",
+    "population": null,
+    "osm_id": 1413934,
+    "admin_level": null,
+    "bounds": {
+      "minlat": 46.3426662,
+      "minlon": 30.6114013,
+      "maxlat": 46.6291187,
+      "maxlon": 30.8313753
+    }
+  },
+  {
+    "name": "Дніпро",
+    "population": null,
+    "osm_id": 1017311,
+    "admin_level": null,
+    "bounds": {
+      "minlat": 48.3558547,
+      "minlon": 34.7489459,
+      "maxlat": 48.5763901,
+      "maxlon": 35.2421952
+    }
+  },
+  {
+    "name": "Кривий Ріг",
+    "population": null,
+    "osm_id": 1821193,
+    "admin_level": null,
+    "bounds": {
+      "minlat": 47.6503431,
+      "minlon": 33.139351,
+      "maxlat": 48.1954303,
+      "maxlon": 33.5987019
+    }
+  },
+  {
+    "name": "Херсон",
+    "population": null,
+    "osm_id": 2175078,
+    "admin_level": null,
+    "bounds": {
+      "minlat": 46.5967989,
+      "minlon": 32.5447258,
+      "maxlat": 46.7049083,
+      "maxlon": 32.7262718
+    }
+  },
+  {
+    "name": "Полтава",
+    "population": null,
+    "osm_id": 1641691,
+    "admin_level": null,
+    "bounds": {
+      "minlat": 49.5477254,
+      "minlon": 34.4463883,
+      "maxlat": 49.6579108,
+      "maxlon": 34.6603407
+    }
+  },
+  {
+    "name": "Чернігів",
+    "population": null,
+    "osm_id": 1952636,
+    "admin_level": null,
+    "bounds": {
+      "minlat": 51.4366613,
+      "minlon": 31.2070643,
+      "maxlat": 51.5494453,
+      "maxlon": 31.3823733
+    }
+  },
+  {
+    "name": "Кропивницький",
+    "population": null,
+    "osm_id": 2825228,
+    "admin_level": null,
+    "bounds": {
+      "minlat": 48.4605266,
+      "minlon": 32.1039835,
+      "maxlat": 48.5813629,
+      "maxlon": 32.3527523
+    }
+  },
+  {
+    "name": "Кременчук",
+    "population": null,
+    "osm_id": 2320579,
+    "admin_level": null,
+    "bounds": {
+      "minlat": 48.9965557,
+      "minlon": 33.3732288,
+      "maxlat": 49.1889873,
+      "maxlon": 33.5111075
+    }
+  },
+  {
+    "name": "Луцьк",
+    "population": null,
+    "osm_id": 1951964,
+    "admin_level": null,
+    "bounds": {
+      "minlat": 50.688998,
+      "minlon": 25.2619629,
+      "maxlat": 50.7888828,
+      "maxlon": 25.4058021
+    }
+  }
+]
