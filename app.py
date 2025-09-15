@@ -942,6 +942,8 @@ UA_CITY_NORMALIZE = {
     'улянівку':'улянівка','уляновку':'улянівка',
     # Велика Димерка падежные формы
     'велику димерку':'велика димерка','велика димерку':'велика димерка','великої димерки':'велика димерка','великій димерці':'велика димерка',
+    # Велика Виска падежные формы  
+    'велику виску':'велика виска','великої виски':'велика виска','великій висці':'велика виска',
     # Мала дівиця
     'малу дівицю':'мала дівиця','мала дівицю':'мала дівиця',
     # Additional safety normalizations
@@ -1347,6 +1349,8 @@ CITY_COORDS = {
     'миколаївка': (47.0667, 31.8333), 'миколаївку': (47.0667, 31.8333), 'миколаївці': (47.0667, 31.8333),
     'вільногірськ': (47.9333, 34.0167), 'вільногірську': (47.9333, 34.0167), 'вільногірська': (47.9333, 34.0167),
     'велика виска': (49.2333, 32.1833), 'великої виски': (49.2333, 32.1833), 'великій висці': (49.2333, 32.1833),
+    'велику виску': (49.2333, 32.1833),  # accusative form
+    'доброслав': (46.6000, 30.0500), 'доброславу': (46.6000, 30.0500), 'доброславі': (46.6000, 30.0500),
     'тишківка': (48.7667, 32.6833), 'тишківку': (48.7667, 32.6833), 'тишківці': (48.7667, 32.6833),
     'салькове': (48.6167, 32.4500), 'салькову': (48.6167, 32.4500), 'сальковому': (48.6167, 32.4500),
     'благовіщенське': (48.4167, 32.8833), 'благовіщенську': (48.4167, 32.8833), 'благовіщенського': (48.4167, 32.8833),
@@ -3347,7 +3351,7 @@ def geocode_opencage(place: str):
         _save_opencage_cache(); neg_geocode_add(place,'error')
         return None
 
-def process_message(text, mid, date_str, channel):  # type: ignore
+def process_message(text, mid, date_str, channel, _disable_multiline=False):  # type: ignore
     import re
     
     # Helper function to clean text from subscription prompts
@@ -3379,6 +3383,59 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                 
             cleaned.append(ln2)
         return '\n'.join(cleaned)
+    
+    # EARLY CHECK: General multi-line threat detection (before specific cases)
+    if not _disable_multiline:
+        text_lines = (text or '').split('\n')
+        threat_lines = []
+        
+        # Look for lines that contain threats with quantities and targets
+        for line in text_lines:
+            line_stripped = line.strip()
+            if not line_stripped:
+                continue
+                
+            line_lower = line_stripped.lower()
+            
+            # Check if line contains threat patterns with quantities and targets
+            has_threat_pattern = (
+                # Pattern: "N x/× БпЛА курсом на [target]"
+                (re.search(r'\d+\s*[xх×]\s*бпла.*?(курс|на)\s+([а-яіїєё\'\-\s]+)', line_lower)) or
+                # Pattern: "N шахедів/шахеди на [target]" - all forms of Shahed
+                (re.search(r'\d+\s+шахед[а-яіїєёыийї]*\s+на\s+([а-яіїєё\'\-\s]+)', line_lower)) or
+                # Pattern: "N ударних БпЛА на [target]"
+                (re.search(r'\d+\s+ударн.*?бпла.*?на\s+([а-яіїєё\'\-\s]+)', line_lower)) or
+                # Pattern: "N БпЛА на [target]" or "N бпла на [target]"  
+                (re.search(r'\d+\s+бпла.*?на\s+([а-яіїєё\'\-\s]+)', line_lower)) or
+                # Pattern: "БпЛА курсом на [target]" (without count)
+                (re.search(r'бпла.*?курс.*?на\s+([а-яіїєё\'\-\s]+)', line_lower))
+            )
+            
+            if has_threat_pattern:
+                threat_lines.append(line_stripped)
+        
+        # If we have multiple threat lines, process them separately
+        if len(threat_lines) >= 2:
+            add_debug_log(f"MULTI-LINE THREAT PROCESSING: {len(threat_lines)} threat lines detected", "multi_line_threats")
+            
+            all_tracks = []
+            for i, line in enumerate(threat_lines):
+                if not line.strip():
+                    continue
+                    
+                add_debug_log(f"Processing threat line {i+1}: {line[:100]}", "threat_line")
+                
+                # Process each line as a separate message with multiline disabled
+                line_result = process_message(line.strip(), f"{mid}_threat_{i+1}", date_str, channel, _disable_multiline=True)
+                if line_result and isinstance(line_result, list):
+                    all_tracks.extend(line_result)
+                    add_debug_log(f"Threat line {i+1} produced {len(line_result)} tracks", "threat_line_result")
+                else:
+                    add_debug_log(f"Threat line {i+1} produced no tracks", "threat_line_result")
+            
+            if all_tracks:
+                add_debug_log(f"Multi-line threat processing complete: {len(all_tracks)} total tracks", "multi_line_threats_complete")
+                return all_tracks
     
     # PRIORITY FIRST: All air alarm messages should be list-only (no map markers)
     # This must be checked BEFORE any other processing to prevent other logic from creating markers
@@ -3417,7 +3474,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             add_debug_log(f"Processing Shahed line {i+1}: {line[:100]}", "shahed_line")
             
             # Process each line as a separate message
-            line_result = process_message(line.strip(), f"{mid}_shahed_{i+1}", date_str, channel)
+            line_result = process_message(line.strip(), f"{mid}_shahed_{i+1}", date_str, channel, _disable_multiline=True)
             if line_result and isinstance(line_result, list):
                 all_tracks.extend(line_result)
                 add_debug_log(f"Shahed line {i+1} produced {len(line_result)} tracks", "shahed_line_result")
@@ -3440,7 +3497,7 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             add_debug_log(f"Processing UAV line {i+1}: {line[:100]}", "uav_line")
             
             # Process each line as a separate message
-            line_result = process_message(line.strip(), f"{mid}_line_{i+1}", date_str, channel)
+            line_result = process_message(line.strip(), f"{mid}_line_{i+1}", date_str, channel, _disable_multiline=True)
             if line_result and isinstance(line_result, list):
                 all_tracks.extend(line_result)
                 add_debug_log(f"Line {i+1} produced {len(line_result)} tracks", "uav_line_result")
@@ -3465,6 +3522,8 @@ def process_message(text, mid, date_str, channel):  # type: ignore
             # Handle specific multi-word cities in accusative case
             if city_norm == 'велику димерку':
                 city_norm = 'велика димерка'
+            elif city_norm == 'велику виску':
+                city_norm = 'велика виска'
             elif city_norm == 'мену':
                 city_norm = 'мена'
             elif city_norm == 'пісківку':
@@ -3580,6 +3639,8 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                         city_display = city_clean
                         if city_normalized == 'велику димерку':
                             city_display = 'Велика Димерка'
+                        elif city_normalized == 'велику виску':
+                            city_display = 'Велика Виска'
                         elif city_normalized == 'мену':
                             city_display = 'Мена'
                         elif city_normalized == 'пісківку':
@@ -5084,10 +5145,17 @@ def process_message(text, mid, date_str, channel):  # type: ignore
                 if threat_type == 'shahed':
                     course_info = extract_shahed_course_info(text)
                 
+                # Extract count from text (look for pattern like "10х БпЛА")
+                uav_count = 1
+                import re as _re_count
+                count_match = _re_count.search(r'(\d+)\s*[xх×]\s*бпла', low_txt2)
+                if count_match:
+                    uav_count = int(count_match.group(1))
+                
                 threat_data = {
                     'id': str(mid), 'place': base.title(), 'lat': lat, 'lng': lng,
                     'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                    'marker_icon': icon, 'source_match': 'course_to_city'
+                    'marker_icon': icon, 'source_match': 'course_to_city', 'count': uav_count
                 }
                 
                 # Add course information if available
