@@ -569,14 +569,14 @@
     .map-control-btn:active { transform:translateY(0); }
     .map-control-btn i { font-size:20px; }
     
-    /* Active state for city boundaries button */
-    #cityBoundariesBtn.active {
-      background: linear-gradient(145deg, #3b82f6, #1d4ed8) !important;
+    /* Active state for region boundaries button */
+    #regionBoundariesBtn.active {
+      background: linear-gradient(145deg, #f59e0b, #d97706) !important;
       color: white !important;
-      box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4), 0 0 0 1px rgba(59, 130, 246, 0.8) inset;
+      box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4), 0 0 0 1px rgba(245, 158, 11, 0.8) inset;
     }
-    #cityBoundariesBtn.active:hover {
-      background: linear-gradient(145deg, #1d4ed8, #1e40af) !important;
+    #regionBoundariesBtn.active:hover {
+      background: linear-gradient(145deg, #d97706, #b45309) !important;
       transform: translateY(-2px) scale(1.02);
     }
     .map-controls { pointer-events:none; }
@@ -969,8 +969,8 @@
         <button class="map-control-btn" onclick="map.setCenter({lat: 48.3794, lng: 31.1656})">
           <i class="material-icons">center_focus_strong</i>
         </button>
-        <button class="map-control-btn" id="cityBoundariesBtn" onclick="toggleCityBoundaries()" title="Показати/приховати границі міст" aria-label="Границі міст">
-          <i class="material-icons">location_city</i>
+        <button class="map-control-btn" id="regionBoundariesBtn" onclick="toggleRegionBoundaries()" title="Показати/приховати границі областей" aria-label="Границі областей">
+          <i class="material-icons">map</i>
         </button>
         <button class="map-control-btn" id="expandBtn" onclick="toggleMapExpand()" title="Розгорнути карту" aria-label="Розгорнути карту">
           <i class="material-icons" id="expandIcon">fullscreen</i>
@@ -1053,8 +1053,8 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <!-- Turf.js for geometry operations -->
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
-  <!-- City boundaries data for NEPTUN -->
-  <script src="{{ url_for('static', filename='city_boundaries.js') }}"></script>
+  <!-- Region boundaries data for NEPTUN -->
+  <script src="{{ url_for('static', filename='region_boundaries.js') }}"></script>
   <script type="text/javascript">
     // @ts-nocheck
     
@@ -3786,52 +3786,52 @@
   }
   
   // City boundaries toggle functionality
-  let cityBoundariesVisible = false;
-  let cityBoundariesLayer = null;
+  let regionBoundariesVisible = false;
+  let regionBoundariesLayer = null;
   
-  function toggleCityBoundaries() {
-    const btn = document.getElementById('cityBoundariesBtn');
+  function toggleRegionBoundaries() {
+    const btn = document.getElementById('regionBoundariesBtn');
     
-    if (!window.CITY_BOUNDARIES) {
-      console.warn('Дані про границі міст не завантажені');
+    if (!window.REGION_BOUNDARIES) {
+      console.warn('Дані про границі областей не завантажені');
       return;
     }
     
-    if (cityBoundariesVisible) {
+    if (regionBoundariesVisible) {
       // Скрыть границы
-      if (cityBoundariesLayer && map) {
-        map.removeLayer(cityBoundariesLayer);
-        cityBoundariesLayer = null;
+      if (regionBoundariesLayer && map) {
+        map.removeLayer(regionBoundariesLayer);
+        regionBoundariesLayer = null;
       }
-      cityBoundariesVisible = false;
+      regionBoundariesVisible = false;
       
       if (btn) {
         btn.classList.remove('active');
-        btn.title = 'Показати границі міст';
+        btn.title = 'Показати границі областей';
       }
       
-      console.log('Границі міст приховані');
+      console.log('Границі областей приховані');
     } else {
       // Показать границы
-      if (map && window.showAllCityBoundaries) {
-        cityBoundariesLayer = window.showAllCityBoundaries(map, {
-          color: '#3b82f6',
+      if (map && window.showAllRegionBoundaries) {
+        regionBoundariesLayer = window.showAllRegionBoundaries(map, {
+          color: '#f59e0b',
           weight: 2,
-          opacity: 0.7,
-          fillColor: '#3b82f6',
-          fillOpacity: 0.1,
-          className: 'city-boundaries-layer'
+          opacity: 0.8,
+          fillColor: '#f59e0b',
+          fillOpacity: 0.15,
+          className: 'region-boundaries-layer'
         });
         
-        if (cityBoundariesLayer) {
-          cityBoundariesVisible = true;
+        if (regionBoundariesLayer) {
+          regionBoundariesVisible = true;
           
           if (btn) {
             btn.classList.add('active');
-            btn.title = 'Приховати границі міст';
+            btn.title = 'Приховати границі областей';
           }
           
-          console.log('Границі міст показані');
+          console.log('Границі областей показані');
         }
       }
     }
