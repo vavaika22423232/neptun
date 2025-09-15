@@ -893,10 +893,13 @@
       <div class="filters">
         <label>
           Період моніторингу
-          <div class="input-group">
-            <input type="number" id="timeRange" value="0" readonly disabled style="opacity:.6;cursor:not-allowed;" title="Фіксовано адміністратором">
-            <span class="input-suffix">хв</span>
-          </div>
+          <select id="timeRange">
+            <option value="3">Останні 3 години</option>
+            <option value="6">Останні 6 годин</option>
+            <option value="12" selected>Останні 12 годин</option>
+            <option value="24">Останні 24 години</option>
+            <option value="48">Останні 48 годин</option>
+          </select>
         </label>
         <label>
           Тип загрози
@@ -2419,8 +2422,9 @@
     }
     async function updateMarkers() {
       console.log('updateMarkers: начинаем загрузку данных...');
-      const timeRange = 50; // fixed
+      const timeRange = parseInt(document.getElementById('timeRange').value) || 12; // читаем из селектора, по умолчанию 12 часов
       const threatType = document.getElementById('threatTypeSelect').value;
+      console.log('updateMarkers: параметры фильтрации - timeRange:', timeRange, 'часов, threatType:', threatType || 'все типы');
       const params = new URLSearchParams({ timeRange, confRange: 0 });
   const overlay = document.getElementById('markerLoadingOverlay');
   if (overlay && (!markers || markers.length===0)) overlay.classList.remove('hidden');
@@ -2438,6 +2442,7 @@
   points = (data.tracks || []).filter(p => {
         console.log('updateMarkers: проверяем точку:', p);
         console.log('updateMarkers: threat_type точки:', p.threat_type, 'текст:', p.text);
+        console.log('updateMarkers: время события:', p.date, 'сейчас:', new Date().toISOString().slice(0, 19));
         if (typeof p.lat !== 'number' || typeof p.lng !== 'number') {
           console.log('updateMarkers: пропускаем - неправильный тип координат:', p.lat, p.lng);
           return false;
@@ -3068,6 +3073,25 @@
         });
       }
       document.addEventListener('click', e=>{ if(!psWrap.contains(e.target)) hideSuggest(); });
+      
+      // Auto-update when time range changes
+      const timeRangeSelect = document.getElementById('timeRange');
+      if (timeRangeSelect) {
+        timeRangeSelect.addEventListener('change', () => {
+          console.log('Time range changed to:', timeRangeSelect.value, 'hours');
+          updateMarkers();
+        });
+      }
+      
+      // Also update when threat type changes
+      const threatTypeSelect = document.getElementById('threatTypeSelect');
+      if (threatTypeSelect) {
+        threatTypeSelect.addEventListener('change', () => {
+          console.log('Threat type changed to:', threatTypeSelect.value);
+          updateMarkers();
+        });
+      }
+      
       // --- Darken all non-Ukraine territory (dynamic mask loading precise border if available) ---
       let worldMaskLayer = null;
       async function initWorldMask(){
