@@ -3850,11 +3850,103 @@
     // Show disclaimer
     openWarn(); 
     
+    // Start deployment monitoring
+    startDeploymentMonitoring();
+    
     // Start background preloading after initial load
     setTimeout(() => {
       preloadRemainingIcons();
     }, 2000); // Wait 2 seconds to avoid interfering with initial page load
   };
+  
+  // Deployment monitoring system
+  let deploymentMonitoringActive = false;
+  let deploymentCheckInterval = null;
+  let consecutiveFailures = 0;
+  
+  function startDeploymentMonitoring() {
+    // Check server health every 10 seconds
+    deploymentCheckInterval = setInterval(checkServerHealth, 10000);
+    deploymentMonitoringActive = true;
+    console.log('Deployment monitoring started');
+  }
+  
+  async function checkServerHealth() {
+    if (!deploymentMonitoringActive) return;
+    
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+      
+      const response = await fetch('/health', {
+        method: 'GET',
+        signal: controller.signal,
+        cache: 'no-cache'
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (response.ok) {
+        // Server is healthy
+        if (consecutiveFailures >= 2) {
+          // Server is back online after deployment
+          hideDeploymentOverlay();
+          console.log('Server is back online, hiding deployment overlay');
+        }
+        consecutiveFailures = 0;
+      } else {
+        handleServerUnavailable();
+      }
+    } catch (error) {
+      handleServerUnavailable();
+    }
+  }
+  
+  function handleServerUnavailable() {
+    consecutiveFailures++;
+    console.log(`Server check failed (${consecutiveFailures} consecutive failures)`);
+    
+    if (consecutiveFailures >= 2) {
+      // Server appears to be down (likely deploying)
+      showDeploymentOverlay();
+    }
+  }
+  
+  function showDeploymentOverlay() {
+    const overlay = document.getElementById('markerLoadingOverlay');
+    const title = overlay?.querySelector('h3');
+    const description = overlay?.querySelector('p');
+    
+    if (overlay && title && description) {
+      title.textContent = 'Оновлення системи…';
+      description.textContent = 'Зараз відбувається оновлення NEPTUN. Це займе 1-2 хвилини. Мапа незабаром буде доступна з новими функціями!';
+      overlay.classList.remove('hidden');
+      console.log('Showing deployment overlay');
+    }
+  }
+  
+  function hideDeploymentOverlay() {
+    const overlay = document.getElementById('markerLoadingOverlay');
+    const title = overlay?.querySelector('h3');
+    const description = overlay?.querySelector('p');
+    
+    if (overlay && title && description) {
+      // Restore original loading text
+      title.textContent = 'Зачекай хвильку…';
+      description.textContent = 'Зараз мітки з\'являться (оновлення / додаємо зміни на мапу).';
+      overlay.classList.add('hidden');
+      consecutiveFailures = 0;
+      console.log('Hiding deployment overlay');
+    }
+  }
+  
+  // Stop monitoring when page is being unloaded
+  window.addEventListener('beforeunload', () => {
+    deploymentMonitoringActive = false;
+    if (deploymentCheckInterval) {
+      clearInterval(deploymentCheckInterval);
+    }
+  });
     // Smart Mass Attack Banner Logic (wrapped inside same script tag)
     (function(){
       const banner = document.getElementById('massAttackBanner');
