@@ -526,9 +526,21 @@
     filter: contrast(1.05) brightness(1.02);
   }
   
+  /* Специальные стили для украинского тайл-слоя */
+  .ukrainian-localized-tiles {
+    /* Оптимизация для украинского текста */
+    filter: contrast(1.08) brightness(1.03) saturate(1.02);
+    /* Улучшаем рендеринг кириллицы */
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+  }
+  
   /* Дополнительные стили для карты */
   .leaflet-container {
     font-family: 'Inter', system-ui, sans-serif;
+    /* Принудительная локализация для украинских названий */
+    font-feature-settings: "locl" 1;
   }
   
   /* Улучшаем отображение текста на карте */
@@ -537,6 +549,9 @@
     image-rendering: -webkit-optimize-contrast;
     image-rendering: -moz-crisp-edges;
     image-rendering: crisp-edges;
+    /* Улучшаем качество отображения */
+    transform: translateZ(0);
+    backface-visibility: hidden;
   }
   @keyframes spin{to{transform:rotate(360deg);}}
     #map:after { /* subtle vignette */
@@ -3356,53 +3371,56 @@
     async function initMap() {
       map = L.map('map', { zoomControl:false, attributionControl:false }).setView([48.3794,31.1656], 6);
       
-      // Используем тайл-сервер с поддержкой локализации для Украины
-      // CartoDB Voyager лучше поддерживает локальные названия
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}{r}.png', {
+      // Используем специальный тайл-сервер с украинской локализацией
+      // OpenStreetMap с украинским языком по умолчанию
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png?lang=uk', {
         maxZoom: 19,
         attribution: '',
         crossOrigin: true,
-        // Этот слой лучше показывает локальные названия
         detectRetina: true,
-        subdomains: 'abcd'
+        // Параметры для украинской локализации
+        className: 'ukrainian-localized-tiles',
+        subdomains: 'abc'
       }).addTo(map);
       
-      // Альтернатива - Wikimedia с украинской локализацией
-      window.ukrainianTileLayer = L.tileLayer('https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}{r}.png', {
-        maxZoom: 19,
-        attribution: '',
-        crossOrigin: true
-      });
-      
-      // Еще один вариант - специальный украинский OSM
-      window.osmUkrainianLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      // Альтернативный слой - Wikimedia International
+      window.wikimediaTileLayer = L.tileLayer('https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}{r}.png', {
         maxZoom: 19,
         attribution: '',
         crossOrigin: true,
-        // Добавляем параметры для лучшей локализации
-        className: 'ukrainian-map-tiles'
+        detectRetina: true,
+        className: 'ukrainian-localized-tiles'
       });
       
-      // Функция переключения на украинский слой
-      window.switchToUkrainianTiles = function() {
+      // Резервный слой - CartoDB с настройками для украинской локализации
+      window.cartoTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19,
+        attribution: '',
+        crossOrigin: true,
+        detectRetina: true,
+        subdomains: 'abcd'
+      });
+      
+      // Функция переключения на Wikimedia слой
+      window.switchToWikimediaTiles = function() {
         map.eachLayer(function (layer) {
           if (layer instanceof L.TileLayer) {
             map.removeLayer(layer);
           }
         });
-        window.ukrainianTileLayer.addTo(map);
-        console.log('Переключились на украинский тайл-слой Wikimedia');
+        window.wikimediaTileLayer.addTo(map);
+        console.log('Переключились на Wikimedia International');
       };
       
-      // Функция переключения на стандартный OSM
-      window.switchToOSMTiles = function() {
+      // Функция переключения на CartoDB слой (резервный)
+      window.switchToCartoTiles = function() {
         map.eachLayer(function (layer) {
           if (layer instanceof L.TileLayer) {
             map.removeLayer(layer);
           }
         });
-        window.osmUkrainianLayer.addTo(map);
-        console.log('Переключились на стандартный OSM');
+        window.cartoTileLayer.addTo(map);
+        console.log('Переключились на CartoDB Voyager');
       };
       
       // --- Place search wiring ---
