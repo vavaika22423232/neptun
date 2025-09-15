@@ -593,72 +593,49 @@
   
   #map.large-text .ukrainian-readable-tiles,
   #map.large-text .ukrainian-localized-tiles {
-    filter: contrast(1.8) brightness(1.3) saturate(1.4) !important;
+    filter: contrast(1.1) brightness(1.05) !important;
   }
   
-  /* Альтернативный подход - CSS фильтры для улучшения контраста текста */
+  /* Простые стили для украинского текста */
   .ukrainian-localized-tiles {
-    /* Оптимизация для украинского текста с улучшенной читаемостью */
-    filter: contrast(1.25) brightness(1.05) saturate(1.03) !important;
-    /* Улучшаем рендеринг кириллицы */
-    image-rendering: -webkit-optimize-contrast;
-    image-rendering: -moz-crisp-edges;
-    image-rendering: crisp-edges;
+    filter: contrast(1.05) brightness(1.02) !important;
   }
   
-  /* Специальный класс для тайлов с лучшей читаемостью на темной карте */
+  /* Базовые стили для читаемости */
   .ukrainian-readable-tiles {
-    /* Оптимизировано для темной карты - повышаем яркость и контраст текста */
-    filter: contrast(1.6) brightness(1.25) saturate(1.3) !important;
-    /* Сглаживание шрифтов */
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    /* Четкий рендеринг */
-    image-rendering: -webkit-optimize-contrast;
-    image-rendering: crisp-edges;
+    filter: contrast(1.08) brightness(1.03) !important;
   }
   
-  /* Улучшаем отображение текста на карте */
+  /* Базовые стили для карты */
   .leaflet-tile {
-    /* Сглаживание для лучшей читаемости украинских букв */
-    image-rendering: -webkit-optimize-contrast;
-    image-rendering: -moz-crisp-edges;
-    image-rendering: crisp-edges;
-    /* Улучшаем качество отображения */
-    transform: translateZ(0);
-    backface-visibility: hidden;
+    image-rendering: auto;
   }
   
-  /* Улучшаем видимость маркеров на темной карте */
+  /* Простые стили для маркеров */
   .leaflet-marker-icon {
-    /* Добавляем тень для лучшего контраста */
-    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.8)) drop-shadow(0 0 8px rgba(255,255,255,0.3));
-    /* Улучшаем четкость иконок */
-    image-rendering: -webkit-optimize-contrast;
-    image-rendering: crisp-edges;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
   }
   
-  /* Стили для поп-апов на темной карте */
+  /* Стандартные поп-апы */
   .leaflet-popup-content-wrapper {
-    background: rgba(17, 24, 39, 0.95) !important;
-    color: #f9fafb !important;
-    border: 1px solid rgba(75, 85, 99, 0.6) !important;
-    backdrop-filter: blur(12px) !important;
+    background: #fff !important;
+    color: #333 !important;
+    border: 1px solid #ccc !important;
   }
   
   .leaflet-popup-content {
-    color: #f9fafb !important;
+    color: #333 !important;
   }
   
   .leaflet-popup-tip {
-    background: rgba(17, 24, 39, 0.95) !important;
-    border: 1px solid rgba(75, 85, 99, 0.6) !important;
+    background: #fff !important;
+    border: 1px solid #ccc !important;
   }
   
   @keyframes spin{to{transform:rotate(360deg);}}
-    #map:after { /* subtle vignette - обновляем для темной карты */
-      content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(circle at 60% 40%,rgba(0,0,0,0) 40%,rgba(0,0,0,.25) 95%);
-      mix-blend-mode:multiply;opacity:.35;
+    #map:after { /* легкая виньетка */
+      content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(circle at 60% 40%,rgba(0,0,0,0) 60%,rgba(0,0,0,.08) 100%);
+      opacity:.5;
     }
     
     .map-controls {
@@ -3487,16 +3464,13 @@
     async function initMap() {
       map = L.map('map', { zoomControl:false, attributionControl:false }).setView([48.3794,31.1656], 6);
       
-      // Используем темную карту для лучшего контраста с маркерами угроз
-      // CartoDB Dark Matter - темная карта для хорошей видимости маркеров
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      // Используем стандартную красивую карту OpenStreetMap
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
         attribution: '',
         crossOrigin: true,
         detectRetina: true,
-        // Класс для дополнительного увеличения читаемости
-        className: 'ukrainian-readable-tiles',
-        subdomains: 'abcd'
+        subdomains: 'abc'
       }).addTo(map);
       
       // Альтернативный слой - OSM с украинским языком
