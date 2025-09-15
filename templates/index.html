@@ -519,6 +519,25 @@
     border-radius: 12px;
     box-shadow: 0 12px 40px rgba(0,0,0,0.15);
   }
+  
+  /* Ukrainian map tiles optimization */
+  .ukrainian-map-tiles {
+    /* Улучшаем читаемость украинских названий */
+    filter: contrast(1.05) brightness(1.02);
+  }
+  
+  /* Дополнительные стили для карты */
+  .leaflet-container {
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+  
+  /* Улучшаем отображение текста на карте */
+  .leaflet-tile {
+    /* Сглаживание для лучшей читаемости украинских букв */
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+  }
   @keyframes spin{to{transform:rotate(360deg);}}
     #map:after { /* subtle vignette */
       content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(circle at 60% 40%,rgba(255,255,255,0) 40%,rgba(0,0,0,.15) 95%);
@@ -3320,12 +3339,56 @@
     }
     async function initMap() {
       map = L.map('map', { zoomControl:false, attributionControl:false }).setView([48.3794,31.1656], 6);
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      
+      // Используем тайл-сервер с поддержкой локализации для Украины
+      // CartoDB Voyager лучше поддерживает локальные названия
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}{r}.png', {
         maxZoom: 19,
-        tileSize: 256,
-        crossOrigin:true,
-        attribution:''
+        attribution: '',
+        crossOrigin: true,
+        // Этот слой лучше показывает локальные названия
+        detectRetina: true,
+        subdomains: 'abcd'
       }).addTo(map);
+      
+      // Альтернатива - Wikimedia с украинской локализацией
+      window.ukrainianTileLayer = L.tileLayer('https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19,
+        attribution: '',
+        crossOrigin: true
+      });
+      
+      // Еще один вариант - специальный украинский OSM
+      window.osmUkrainianLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '',
+        crossOrigin: true,
+        // Добавляем параметры для лучшей локализации
+        className: 'ukrainian-map-tiles'
+      });
+      
+      // Функция переключения на украинский слой
+      window.switchToUkrainianTiles = function() {
+        map.eachLayer(function (layer) {
+          if (layer instanceof L.TileLayer) {
+            map.removeLayer(layer);
+          }
+        });
+        window.ukrainianTileLayer.addTo(map);
+        console.log('Переключились на украинский тайл-слой Wikimedia');
+      };
+      
+      // Функция переключения на стандартный OSM
+      window.switchToOSMTiles = function() {
+        map.eachLayer(function (layer) {
+          if (layer instanceof L.TileLayer) {
+            map.removeLayer(layer);
+          }
+        });
+        window.osmUkrainianLayer.addTo(map);
+        console.log('Переключились на стандартный OSM');
+      };
+      
       // --- Place search wiring ---
       const psWrap = document.getElementById('placeSearch');
       const psInput = document.getElementById('placeSearchInput');
