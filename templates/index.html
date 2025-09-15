@@ -874,7 +874,7 @@
           <i class="material-icons" id="expandIcon">fullscreen</i>
         </button>
       </div>
-      <div id="markerLoadingOverlay">
+      <div id="markerLoadingOverlay" class="hidden">
         <div class="spinner" aria-hidden="true"></div>
         <h3>Зачекай хвильку…</h3>
         <p>Зараз мітки з’являться (оновлення / додаємо зміни на мапу).</p>
@@ -2401,7 +2401,7 @@
       console.log('updateMarkers: параметры фильтрации - timeRange:', timeRange, 'часов, threatType:', threatType || 'все типы');
       const params = new URLSearchParams({ timeRange, confRange: 0 });
   const overlay = document.getElementById('markerLoadingOverlay');
-  if (overlay && (!markers || markers.length===0)) overlay.classList.remove('hidden');
+  if (overlay) overlay.classList.remove('hidden'); // показать экран загрузки при каждом обновлении
   
       let points = []; // Объявляем переменную перед try блоком
       
@@ -2683,8 +2683,8 @@
       updateEventList(data.events || []);
       // Notify listeners (banner heuristics etc.)
       try { document.dispatchEvent(new CustomEvent('markersUpdated', {detail: data})); } catch(e){}
-      if (overlay && markers.length>0) overlay.classList.add('hidden');
-      console.log('updateMarkers: завершено. Создано маркеров:', markers.length, 'Overlay скрыт:', overlay && markers.length>0);
+      if (overlay) overlay.classList.add('hidden'); // всегда скрывать экран загрузки после обработки
+      console.log('updateMarkers: завершено. Создано маркеров:', markers.length, 'Overlay скрыт');
       
       } catch (error) {
         console.error('updateMarkers: ошибка при загрузке данных:', error);
