@@ -466,7 +466,7 @@ if _dyn:
     CHANNELS = base
 # ---------------- Monitoring period global config (admin editable) ----------------
 CONFIG_FILE = 'config.json'
-MONITOR_PERIOD_MINUTES = 80  # default; editable only via admin panel
+MONITOR_PERIOD_MINUTES = 30  # default; editable only via admin panel
 
 def load_config():
     """Load persisted configuration (currently only monitor period)."""
