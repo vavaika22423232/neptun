@@ -955,7 +955,7 @@ UA_CITY_NORMALIZE = {
     'нову':'нова водолага',  # Fallback for partial regex matches
     'убни':'лубни','олми':'холми','летичів':'летичів','летичев':'летичів','летичеве':'летичів','деражню':'деражня',
     'деражне':'деражня','деражні':'деражня','корюківку':'корюківка','борзну':'борзна','жмеринку':'жмеринка','лосинівку':'лосинівка',
-    'ніжину':'ніжин','межову':'межова','святогірську':'святогірськ'
+    'ніжину':'ніжин','ніжина':'ніжин','межову':'межова','святогірську':'святогірськ'
 }
 
 # Add accusative / genitive / variant forms for reported missing settlements
@@ -997,6 +997,8 @@ UA_CITY_NORMALIZE.update({
     ,'тендрівську косу':'тендрівська коса'
     # Одеська область
     ,'вилково':'вилкове','вилкову':'вилкове'
+    # Common accusative forms for major cities  
+    ,'одесу':'одеса','полтаву':'полтава','сумами':'суми','суму':'суми'
 })
 # Apostrophe-less fallback for Sloviansk
 UA_CITY_NORMALIZE['словянськ'] = "слов'янськ"
@@ -1265,6 +1267,7 @@ CITY_COORDS = {
         'борова': (49.3742, 36.4892), 'буринь': (51.2000, 33.8500), 'конотоп': (51.2417, 33.2022), 'кролевец': (51.5486, 33.3856), 'остер': (50.9481, 30.8831),
         'плавні': (49.0123, 33.6450), 'голованівський район': (48.3772, 30.5322), 'новоукраїнський район': (48.3122, 31.5272),
         'безлюдівка': (49.8872, 36.2731), 'рогань': (49.9342, 36.4942), 'савинці(харківщина)': (49.6272, 36.9781),
+        'слатине': (49.7500, 36.1500),  # Слатине, Дергачівський р-н, Харківська обл.
         'гути': (50.0167, 36.3833),  # Гути, Харьковская область
         'українка': (50.1447, 30.7381), 'царичанка': (48.9767, 34.3772), 'ріпки': (51.8122, 31.0817), 'михайло-коцюбинське': (51.5833, 31.1167),
     'андріївка': (49.9380, 36.9510),
@@ -5574,8 +5577,84 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         except Exception:
             pass
         
-        # NEW: Create markers for general UAV activity messages (without specific direction)
+        # NEW: Check for specific direction patterns before falling back to general UAV activity
         ln_lower = ln.lower()
+        if 'бпла' in ln_lower and any(pattern in ln_lower for pattern in ['у напрямку', 'через', 'повз']):
+            import re
+            target_cities = []
+            
+            # Pattern 1: "у напрямку [city]"
+            naprym_pattern = r'у\s+напрямку\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*[\.\,\!\?;]|$)'
+            naprym_matches = re.findall(naprym_pattern, ln, re.IGNORECASE)
+            for city_raw in naprym_matches:
+                target_cities.append(('у напрямку', city_raw.strip()))
+            
+            # Pattern 2: "через [city]"
+            cherez_pattern = r'через\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*[\.\,\!\?;]|$)'
+            cherez_matches = re.findall(cherez_pattern, ln, re.IGNORECASE)
+            for city_raw in cherez_matches:
+                target_cities.append(('через', city_raw.strip()))
+            
+            # Pattern 3: "повз [city]"
+            povz_pattern = r'повз\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*[\.\,\!\?;]|$)'
+            povz_matches = re.findall(povz_pattern, ln, re.IGNORECASE)
+            for city_raw in povz_matches:
+                target_cities.append(('повз', city_raw.strip()))
+            
+            # Process extracted target cities
+            for direction_type, city_raw in target_cities:
+                city_clean = city_raw.strip()
+                city_norm = city_clean.lower()
+                
+                # Apply UA_CITY_NORMALIZE rules
+                if city_norm in UA_CITY_NORMALIZE:
+                    city_norm = UA_CITY_NORMALIZE[city_norm]
+                
+                # Try to get coordinates
+                coords = CITY_COORDS.get(city_norm)
+                if not coords and SETTLEMENTS_INDEX:
+                    coords = SETTLEMENTS_INDEX.get(city_norm)
+                if not coords:
+                    coords = SETTLEMENT_FALLBACK.get(city_norm) if 'SETTLEMENT_FALLBACK' in globals() else None
+                
+                add_debug_log(f"Direction pattern '{direction_type}' found city: '{city_raw}' -> '{city_norm}' -> coords: {coords}", "direction_processing")
+                
+                if coords:
+                    lat, lng = coords
+                    threat_type, icon = classify(ln)
+                    
+                    # Create label showing direction
+                    place_label = city_clean.title()
+                    if direction_type == 'у напрямку':
+                        place_label += f" (напрямок)"
+                    elif direction_type == 'через':
+                        place_label += f" (через)"
+                    elif direction_type == 'повз':
+                        place_label += f" (повз)"
+                    
+                    multi_city_tracks.append({
+                        'id': f"{mid}_direction_{len(multi_city_tracks)+1}",
+                        'place': place_label,
+                        'lat': lat,
+                        'lng': lng,
+                        'threat_type': threat_type,
+                        'text': clean_text(ln)[:500],
+                        'date': date_str,
+                        'channel': channel,
+                        'marker_icon': icon,
+                        'source_match': f'direction_{direction_type.replace(" ", "_")}',
+                        'count': 1
+                    })
+                    add_debug_log(f"Created direction marker: {place_label} ({direction_type})", "direction_processing")
+                else:
+                    add_debug_log(f"No coordinates found for direction target: '{city_raw}' (normalized: '{city_norm}')", "direction_processing")
+            
+            # If we found any target cities with valid coordinates, skip general UAV processing
+            if any(coords for _, coords in [(city_norm, CITY_COORDS.get(UA_CITY_NORMALIZE.get(city_raw.strip().lower(), city_raw.strip().lower()))) for _, city_raw in target_cities]):
+                add_debug_log(f"Direction processing complete, skipping general UAV activity for line: '{ln}'", "direction_processing")
+                continue
+        
+        # NEW: Create markers for general UAV activity messages (without specific direction)
         if 'бпла' in ln_lower or 'безпілотник' in ln_lower or 'дрон' in ln_lower:
             add_debug_log(f"UAV activity detected in line: '{ln}', oblast_hdr: '{oblast_hdr}'", "uav_processing")
             # Check if we have a region and this is a UAV message
