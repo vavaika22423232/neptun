@@ -186,6 +186,18 @@
     border-radius: 0.5rem;
     text-transform: uppercase;
     backdrop-filter: blur(4px);
+    animation: betaPulse 3s ease-in-out infinite;
+  }
+  
+  @keyframes betaPulse {
+    0%, 100% { 
+      background: linear-gradient(135deg, rgba(251, 191, 36, 0.15), rgba(245, 158, 11, 0.1));
+      border-color: rgba(251, 191, 36, 0.3);
+    }
+    50% { 
+      background: linear-gradient(135deg, rgba(251, 191, 36, 0.25), rgba(245, 158, 11, 0.2));
+      border-color: rgba(251, 191, 36, 0.5);
+    }
   }
   
   /* Responsive adjustments */
@@ -842,6 +854,47 @@
       line-height: 1.5;
     }
     
+    .info-section.beta-status {
+      background: linear-gradient(135deg, rgba(251, 191, 36, 0.08), rgba(245, 158, 11, 0.05));
+      border: 1px solid rgba(251, 191, 36, 0.2);
+      border-radius: 0.75rem;
+      padding: 1rem;
+      margin-bottom: 1.5rem;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .info-section.beta-status::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, #fbbf24, #f59e0b, #fbbf24);
+      animation: betaGradient 2s ease-in-out infinite;
+    }
+    
+    @keyframes betaGradient {
+      0%, 100% { transform: translateX(-100%); }
+      50% { transform: translateX(100%); }
+    }
+    
+    .info-section.beta-status h3 {
+      color: #f59e0b;
+      margin-bottom: 0.75rem;
+    }
+    
+    .info-section.beta-status p {
+      color: var(--text);
+      font-weight: 400;
+    }
+    
+    .info-section.beta-status strong {
+      color: #f59e0b;
+      font-weight: 600;
+    }
+    
     .accent-link {
       color: var(--accent);
       text-decoration: none;
@@ -1042,10 +1095,10 @@
       <a href="#events"><i class="material-icons">notifications</i> Події</a>
       <a href="#about"><i class="material-icons">info</i> Інфо</a>
     </div>
-  <div class="live-users" id="liveUsers" title="Активні відвідувачі зараз онлайн • Оновлюється кожні 5 секунд">
+  <div class="live-users" id="liveUsers" title="Активні відвідувачі зараз онлайн • Бета-тест до 1 жовтня • Оновлюється кожні 5 секунд">
     <span class="live-label">онлайн</span>
     <span class="live-count" id="liveCount">0</span>
-    <span class="live-beta">BETA</span>
+    <span class="live-beta">BETA • до 1.10</span>
   </div>
   </div>
 
@@ -1106,6 +1159,10 @@
     <div class="card" id="about">
       <h2>Про систему</h2>
       <div class="info-content">
+        <div class="info-section beta-status">
+          <h3><i class="material-icons">schedule</i> Статус бета-тесту</h3>
+          <p><strong>Бета-тест завершується 1 жовтня 2025 року.</strong> Дякуємо всім учасникам за цінний зворотний зв'язок! Стабільна версія буде доступна з жовтня з покращеною функціональністю та надійністю.</p>
+        </div>
         <div class="info-section">
           <h3><i class="material-icons">security</i> Призначення</h3>
           <p>Система показує географію повідомлень про повітряні та інші загрози (ракети, БпЛА, артилерія) з відкритих джерел у режимі близькому до реального часу.</p>
