@@ -1116,77 +1116,81 @@ def ensure_city_coords(name: str):
 def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
     """Enhanced version that tries to extract oblast from message if city not found.
     Returns (lat,lng,approx_bool) - approx_bool True means used oblast fallback."""
-    # First try standard lookup
-    result = ensure_city_coords(name)
-    if result:
-        return result
     
-    # If city not found, try to extract oblast from message
+    # First, if we have message text, try to extract oblast info and build specific city keys
     if message_text:
         message_lower = message_text.lower()
         
-        # Enhanced regional context detection
-        regional_patterns = [
-            # Direct oblast names: "харківщина", "полтавщина", etc.
+        # Enhanced regional context detection - try parenthetical oblast first
+        oblast_patterns = [
+            # Parenthetical oblast: "(Oblast обл.)" - most specific
+            r'\(([^)]+)\s+обл\.\)',
+            r'\(([^)]+)\s+область\)',
+            # Oblast adjective forms: "харківська обл."
+            r'\b([а-яїіє]+ська)\s+обл(?:\.|асть)?\b',
+            r'\b([а-яїіє]+цька)\s+обл(?:\.|асть)?\b', 
+            # Regional names: "харківщина", "полтавщина", etc.
             r'\b([а-яїіє]+щина)\b',
             r'\b([а-яїіє]+щині)\b',
             r'\b([а-яїіє]+щину)\b',
-            # Oblast with "область"
-            r'\b([а-яїіє]+ська)\s+обл(?:\.|асть)?\b',
-            r'\b([а-яїіє]+цька)\s+обл(?:\.|асть)?\b',
-            # Parenthetical oblast: "(Oblast обл.)"
-            r'\(([^)]+)\s+обл\.\)',
-            r'\(([^)]+)\s+область\)',
         ]
         
-        detected_oblast = None
+        detected_oblast_key = None
         
-        for pattern in regional_patterns:
+        for pattern in oblast_patterns:
             matches = re.findall(pattern, message_lower)
             for match in matches:
                 match = match.strip().lower()
                 
-                # Normalize regional forms to standard oblast center keys
+                # Create possible city+oblast combinations to search
+                city_variants = [
+                    f"{name.lower()} {match}",
+                    f"{name.lower()} {match} обл.",
+                    f"{name.lower()} {match} область",
+                ]
+                
+                # Try to find exact city+oblast match first
+                for variant in city_variants:
+                    if variant in CITY_COORDS:
+                        lat, lng = CITY_COORDS[variant]
+                        print(f"DEBUG: Found exact city+oblast match: {variant} -> ({lat}, {lng})")
+                        return (lat, lng, False)
+                
+                # Store oblast key for potential fallback
                 oblast_normalizations = {
+                    'харківська': 'харківська обл.',
+                    'чернігівська': 'чернігівська обл.',
+                    'полтавська': 'полтавська область',
+                    'дніпропетровська': 'дніпропетровська область',
+                    'сумська': 'сумська область',
                     'харківщина': 'харківська обл.',
-                    'харківщині': 'харківська обл.',
-                    'харківщину': 'харківська обл.',
-                    'полтавщина': 'полтавська область',
-                    'полтавщині': 'полтавська область', 
-                    'полтавщину': 'полтавська область',
-                    'дніпропетровщина': 'дніпропетровська область',
-                    'дніпропетровщині': 'дніпропетровська область',
-                    'дніпропетровщину': 'дніпропетровська область',
-                    'сумщина': 'сумська область',
-                    'сумщині': 'сумська область',
-                    'сумщину': 'сумська область',
                     'чернігівщина': 'чернігівська обл.',
-                    'чернігівщині': 'чернігівська обл.',
-                    'чернігівщину': 'чернігівська обл.',
+                    'полтавщина': 'полтавська область',
+                    'дніпропетровщина': 'дніпропетровська область',
+                    'сумщина': 'сумська область',
                 }
                 
-                # First try direct normalization
                 if match in oblast_normalizations:
-                    detected_oblast = oblast_normalizations[match]
-                    break
-                    
-                # Try to match against OBLAST_CENTERS keys directly
-                for oblast_key in OBLAST_CENTERS.keys():
-                    if match in oblast_key or oblast_key.startswith(match[:5]):
-                        detected_oblast = oblast_key
-                        break
-                        
-                if detected_oblast:
+                    detected_oblast_key = oblast_normalizations[match]
+                elif match in OBLAST_CENTERS:
+                    detected_oblast_key = match
+                
+                if detected_oblast_key:
                     break
             
-            if detected_oblast:
+            if detected_oblast_key:
                 break
-        
-        # If we detected an oblast, return its center coordinates
-        if detected_oblast and detected_oblast in OBLAST_CENTERS:
-            lat, lng = OBLAST_CENTERS[detected_oblast]
-            print(f"DEBUG: Using oblast center for {name}: {detected_oblast} -> ({lat}, {lng})")
-            return (lat, lng, True)  # True indicates this is an oblast fallback
+    
+    # Second try: standard city lookup (without oblast context)
+    result = ensure_city_coords(name)
+    if result:
+        return result
+    
+    # Third try: if we have oblast key, return oblast center as fallback
+    if message_text and detected_oblast_key and detected_oblast_key in OBLAST_CENTERS:
+        lat, lng = OBLAST_CENTERS[detected_oblast_key]
+        print(f"DEBUG: Using oblast center fallback for {name}: {detected_oblast_key} -> ({lat}, {lng})")
+        return (lat, lng, True)  # True indicates this is an oblast fallback
     
     return None
 
@@ -1263,7 +1267,7 @@ CITY_COORDS = {
         'гребінки': (50.2500, 30.2500), 'біла церква': (49.7950, 30.1310), 'сквира': (49.7333, 29.6667), 'чорнобиль': (51.2768, 30.2219),
         'пулини': (50.4333, 28.4333), 'головине': (50.3833, 28.6667), 'радомишль': (50.4972, 29.2292), 'коростень': (50.9500, 28.6333),
         'погребище': (49.4833, 29.2667), 'теплик': (48.6667, 29.6667), 'оратів': (48.9333, 29.5167), 'дашів': (48.9000, 29.4333),
-        'шаргород': (48.7333, 28.0833), 'бірки': (49.7517, 36.1025), 'златопіль': (48.3640, 38.1500), 'балаклія': (49.4627, 36.8586),
+        'шаргород': (48.7333, 28.0833), 'бірки': (49.7517, 36.1025), 'златопіль': (49.9800, 35.5300), 'балаклія': (49.4627, 36.8586),
         'берестин': (50.2000, 35.0000), 'старий салтів': (50.0847, 36.7424), 'борки': (49.9380, 36.1260), 'кролевець': (51.5481, 33.3847),
     'глобине': (49.3833, 33.2667), 'кринички': (47.2333, 34.3500), 'солоне': (48.1436, 35.9933), 'брусилів': (50.2800, 29.5300),
     'терни': (50.9070, 34.0130), 'понорниця': (51.8033, 32.5333), 'куликівка': (51.3520, 31.6480),
@@ -1832,6 +1836,26 @@ POLTAVA_CITY_COORDS = {
     'дик анок?': (49.8214, 34.5769),
     'дик анок.': (49.8214, 34.5769),
     'дик анок,': (49.8214, 34.5769),
+    
+    # ========== CITY+OBLAST SPECIFIC COORDINATES ==========
+    # These entries resolve ambiguous city names by including oblast context
+    
+    # Срібне (different cities in different oblasts)
+    'срібне чернігівська': (51.1300, 31.9400),  # Срібне, Чернігівська область  
+    'срібне чернігівська обл.': (51.1300, 31.9400),
+    'срібне (чернігівська обл.)': (51.1300, 31.9400),
+    'срібне чернігівщина': (51.1300, 31.9400),
+    'срібне чернігівщині': (51.1300, 31.9400),
+    'срібне': (51.1300, 31.9400),  # Default to Chernihiv oblast variant
+    
+    # Златопіль (fixing incorrect coordinates - was pointing to Donetsk)
+    'златопіль харківська': (49.9800, 35.5300),  # Златопіль, Харківська область (correct)
+    'златопіль харківська обл.': (49.9800, 35.5300),
+    'златопіль (харківська обл.)': (49.9800, 35.5300),
+    'златопіль харківщина': (49.9800, 35.5300),
+    'златопіль харківщині': (49.9800, 35.5300),
+    # Keep old incorrect entry as fallback for other messages, but correct default
+    'златопіль': (49.9800, 35.5300),  # Override with correct Kharkiv oblast coordinates
 }
 
 for _pl_name, _pl_coords in POLTAVA_CITY_COORDS.items():
