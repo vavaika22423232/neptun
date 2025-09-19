@@ -3392,7 +3392,7 @@
           b.types.forEach((c,t)=>{ if(c>maxc){ maxc=c; dominant=t; } });
           
           // Use optimized async image loading for clusters
-          let iconUrl = PLACEHOLDER_ICON; // Start with placeholder
+          let iconUrl = INSTANT_PLACEHOLDER; // Start with placeholder
           try {
             iconUrl = await getIconUrl(dominant);
           } catch (error) {
