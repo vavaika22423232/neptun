@@ -52,29 +52,6 @@
       -webkit-backface-visibility: hidden;
     }
     
-    /* Global performance optimization - disable all animations and transitions */
-    *, *::before, *::after {
-      animation-duration: 0s !important;
-      animation-delay: 0s !important;
-      transition-duration: 0s !important;
-      transition-delay: 0s !important;
-      backdrop-filter: none !important; /* Disable expensive backdrop filters */
-      will-change: auto !important; /* Disable will-change optimization hints */
-      transform-style: flat !important; /* Disable 3D transforms */
-    }
-    
-    /* Disable specific Leaflet animations */
-    .leaflet-zoom-anim, .leaflet-tile-container {
-      animation: none !important;
-      transition: none !important;
-    }
-    
-    /* Disable expensive CSS effects for performance */
-    .leaflet-marker-icon, .leaflet-div-icon {
-      will-change: auto !important;
-      transform: translate3d(0,0,0) !important; /* Force hardware acceleration */
-    }
-    
     /* Smooth loading transitions */
     .cluster img, .plain-marker-img {
       transition: opacity 0.2s ease-in-out;
@@ -2280,7 +2257,7 @@
         catch(err){ btn.textContent='Збій'; setTimeout(()=>{btn.textContent=orig;},1400);} finally { commentsBusy=false; btn.disabled=false; }
       });
     }
-    function startComments(){ if(commentsPolling) return; fetchComments(); commentsPolling=setInterval(fetchComments, updateIntervals.comments); } // Adaptive frequency based on device
+    function startComments(){ if(commentsPolling) return; fetchComments(); commentsPolling=setInterval(fetchComments, 10000); }
    function toggleComments(force){
     const card=document.getElementById('commentsCard'); const fab=document.getElementById('commentsFab'); if(!card||!fab) return;
     const isCollapsed = card.classList.contains('collapsed');
@@ -2878,50 +2855,6 @@
   let map;
     let markerLayer = null;
     let markers = [];
-    
-    // Performance monitoring and adaptive optimization
-    let performanceMode = 'auto'; // auto, high, low
-    let updateIntervals = {
-      markers: 30000,
-      alarms: 60000,
-      presence: 30000,
-      comments: 60000
-    };
-    
-    // Detect device capabilities and adjust performance
-    function detectPerformanceCapabilities() {
-      const isMobile = window.innerWidth <= 768 || /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      const isLowEnd = navigator.hardwareConcurrency <= 2 || window.deviceMemory <= 2;
-      const isSlowConnection = navigator.connection && (navigator.connection.effectiveType === 'slow-2g' || navigator.connection.effectiveType === '2g');
-      
-      if (isMobile || isLowEnd || isSlowConnection) {
-        performanceMode = 'low';
-        updateIntervals.markers = 60000;
-        updateIntervals.alarms = 120000;
-        updateIntervals.presence = 60000;
-        updateIntervals.comments = 120000;
-        console.log('Performance mode: LOW - reduced update frequencies');
-      } else {
-        performanceMode = 'high';
-        console.log('Performance mode: HIGH - normal update frequencies');
-      }
-      
-      // Also reduce updates if battery is low
-      if ('getBattery' in navigator) {
-        navigator.getBattery().then(battery => {
-          if (battery.level < 0.2) {
-            performanceMode = 'low';
-            updateIntervals.markers *= 2;
-            updateIntervals.alarms *= 2;
-            console.log('Battery low - further reducing update frequencies');
-          }
-        });
-      }
-    }
-    
-    // Call detection on load
-    detectPerformanceCapabilities();
-    
     // Проста мапа транслітерації/перекладу російських / застарілих назв на українські
     const PLACE_UA_MAP = (()=>{
       const m = new Map([
@@ -3341,15 +3274,6 @@
       });
       console.log('updateMarkers: количество точек после фильтрации:', points.length);
       
-      // Performance optimization - limit markers for all devices
-      const isMobile = window.innerWidth <= 768 || /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      const maxMarkers = isMobile ? 30 : 100; // Reduced limits for better performance
-      if (points.length > maxMarkers) {
-        // Sort by most recent and take top N for performance
-        points = points.sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, maxMarkers);
-        console.log(`updateMarkers: performance optimization - limited to ${maxMarkers} most recent markers`);
-      }
-      
       // Expose current points for search suggestions
       window.__lastPoints = points;
       if (threatType) points = points.filter(p => (p.threat_type || '').toLowerCase() === threatType);
@@ -3367,7 +3291,7 @@
       markers = [];
       
       // --------- Performance adaptive mode ---------
-      const MAX_DIRECT_MARKERS = 50; // Aggressive clustering for performance
+      const MAX_DIRECT_MARKERS = 650; // threshold where we switch to clustered fast mode
       const useFastMode = points.length > MAX_DIRECT_MARKERS;
       if (useFastMode) {
         const z = map.getZoom();
@@ -3392,7 +3316,7 @@
           b.types.forEach((c,t)=>{ if(c>maxc){ maxc=c; dominant=t; } });
           
           // Use optimized async image loading for clusters
-          let iconUrl = INSTANT_PLACEHOLDER; // Start with placeholder
+          let iconUrl = PLACEHOLDER_ICON; // Start with placeholder
           try {
             iconUrl = await getIconUrl(dominant);
           } catch (error) {
@@ -3877,104 +3801,62 @@
       }).join('');
     }
     async function initMap() {
-      // Агрессивные оптимизации производительности для всех устройств
-      const isMobile = window.innerWidth <= 768 || /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      
       map = L.map('map', { 
         zoomControl: false, 
         attributionControl: false,
-        fadeAnimation: false, // Отключаем все анимации для скорости
-        zoomAnimation: false,
-        markerZoomAnimation: false,
+        fadeAnimation: true,
+        zoomAnimation: true,
+        markerZoomAnimation: true,
         preferCanvas: true,
-        tap: false,
-        renderer: L.canvas({ padding: 0.1 }), // Минимальный padding
-        wheelPxPerZoomLevel: 120, // Быстрый зум
-        zoomSnap: 1, // Только целые значения зума
-        zoomDelta: 1,
-        trackResize: true,
-        worldCopyJump: false, // Отключаем копирование мира
-        maxBoundsViscosity: 0.3, // Ограничиваем перетаскивание
-        inertia: !isMobile, // Отключаем инерцию на мобильных
-        inertiaDeceleration: isMobile ? 5000 : 3000 // Быстрее остановка
+        tap: false  // Отключаем tap для лучшей производительности на мобильных
       }).setView([48.3794,31.1656], 6);
       
-      // Агрессивно оптимизированный основной слой карты
+      // Используем красивую карту CartoDB Positron (светлая, четкая)
       L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        maxZoom: 16, // Ограничиваем максимальный зум для всех устройств
+        maxZoom: 19,
         attribution: '',
         crossOrigin: true,
-        detectRetina: false, // Отключаем retina для экономии трафика
+        detectRetina: true,
         subdomains: 'abcd',
-        className: 'main-tile-layer',
-        keepBuffer: 0, // Минимальный буфер
-        updateWhenZooming: false, // Не обновляем во время зума
-        updateWhenIdle: true, // Обновляем только когда остановились
-        reuseTiles: true,
-        opacity: 1,
-        zIndex: 1,
-        // Дополнительные оптимизации
-        tileSize: 256,
-        maxNativeZoom: 16
+        className: 'main-tile-layer'
       }).addTo(map);
       
-      // Оптимизированные альтернативные слои
+      // Альтернативный слой - CartoDB Voyager (более детальный)
       window.cartoVoyagerLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        maxZoom: 16,
+        maxZoom: 19,
         attribution: '',
         crossOrigin: true,
-        detectRetina: false,
+        detectRetina: true,
         subdomains: 'abcd',
-        className: 'voyager-tile-layer',
-        keepBuffer: 0,
-        updateWhenZooming: false,
-        updateWhenIdle: true,
-        reuseTiles: true,
-        tileSize: 256,
-        maxNativeZoom: 16
+        className: 'voyager-tile-layer'
       });
       
+      // Альтернативный слой - OSM с украинским языком
       window.osmUkrainianLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png?lang=uk', {
-        maxZoom: 16,
+        maxZoom: 19,
         attribution: '',
         crossOrigin: true,
-        detectRetina: false,
+        detectRetina: true,
         className: 'ukrainian-localized-tiles',
-        subdomains: 'abc',
-        keepBuffer: 0,
-        updateWhenZooming: false,
-        updateWhenIdle: true,
-        reuseTiles: true,
-        tileSize: 256,
-        maxNativeZoom: 16
+        subdomains: 'abc'
       });
       
+      // Альтернативный слой - Wikimedia International (хорошая читаемость)
       window.wikimediaTileLayer = L.tileLayer('https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}{r}.png', {
-        maxZoom: 16,
+        maxZoom: 19,
         attribution: '',
         crossOrigin: true,
-        detectRetina: false,
-        className: 'wikimedia-tiles',
-        keepBuffer: 0,
-        updateWhenZooming: false,
-        updateWhenIdle: true,
-        reuseTiles: true,
-        tileSize: 256,
-        maxNativeZoom: 16
+        detectRetina: true,
+        className: 'wikimedia-tiles'
       });
       
+      // Улучшенный слой - ESRI World Street Map (очень четкий)
       window.esriLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
-        maxZoom: 16,
+        maxZoom: 19,
         attribution: '',
         crossOrigin: true,
-        detectRetina: false,
-        className: 'esri-tiles',
-        keepBuffer: 0,
-        updateWhenZooming: false,
-        updateWhenIdle: true,
-        reuseTiles: true,
-        tileSize: 256,
-        maxNativeZoom: 16
+        detectRetina: true,
+        className: 'esri-tiles'
       });
       
       // Функция переключения на OSM украинский слой
@@ -4223,7 +4105,7 @@
         }
       }
       pingPresence();
-  setInterval(pingPresence, updateIntervals.presence); // Adaptive frequency based on device
+  setInterval(pingPresence, 5000);
 
       // --- Интеграция с alerts.in.ua ---
       let airAlarmLayer = null;
@@ -4329,7 +4211,7 @@
         raionAlarmLayer.addTo(map);
       }
       updateRaionAlarms();
-      setInterval(updateRaionAlarms, updateIntervals.alarms); // Adaptive frequency based on device
+      setInterval(updateRaionAlarms, 15000);
 
       await updateMarkers();
       try {
@@ -4350,7 +4232,7 @@
           } catch(e){}
         };
       } catch(e) {}
-      setInterval(updateMarkers, updateIntervals.markers); // Adaptive frequency based on device
+      setInterval(updateMarkers, 10000);
       // --- Re-cluster / re-render markers on zoom (debounced) so fast-mode buckets follow zoom level ---
       (function(){
         let zoomRedrawTimer=null; let lastZoom=map.getZoom();
@@ -4628,7 +4510,7 @@
   
   function startDeploymentMonitoring() {
     // Check server health every 10 seconds
-    deploymentCheckInterval = setInterval(checkServerHealth, 60000); // Reduced frequency for performance
+    deploymentCheckInterval = setInterval(checkServerHealth, 10000);
     deploymentMonitoringActive = true;
     console.log('Deployment monitoring started');
   }
@@ -4881,7 +4763,7 @@
   loadAdm1(); 
         /* loadAdm2(); */ 
         refreshAlarms(); 
-        setInterval(refreshAlarms, updateIntervals.alarms); // Adaptive frequency based on device 
+        setInterval(refreshAlarms,15000); 
         
   // Initialize donation amount loading for support card
   // Load immediately with fallback, then try to fetch real data
