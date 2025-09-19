@@ -2257,7 +2257,7 @@
         catch(err){ btn.textContent='Збій'; setTimeout(()=>{btn.textContent=orig;},1400);} finally { commentsBusy=false; btn.disabled=false; }
       });
     }
-    function startComments(){ if(commentsPolling) return; fetchComments(); commentsPolling=setInterval(fetchComments, 10000); }
+  function startComments(){ if(commentsPolling) return; fetchComments(); commentsPolling=safeInterval(fetchComments, IS_MOBILE ? 60000 : 30000); }
    function toggleComments(force){
     const card=document.getElementById('commentsCard'); const fab=document.getElementById('commentsFab'); if(!card||!fab) return;
     const isCollapsed = card.classList.contains('collapsed');
@@ -2759,11 +2759,14 @@
     const loadingImages = new Map();
     const placeholderCache = new Map();
     
-    // Tiny placeholder for immediate display
-    const INSTANT_PLACEHOLDER = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  // Tiny placeholder for immediate display
+  const INSTANT_PLACEHOLDER = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
     
-    // Fallback icon for errors
-    const FALLBACK_ICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA4AAAAOCAYAAAAfSC3RAAAALElEQVQokWP8////fwY0wAgjGJgGLABWMMRAFEg0gGE0GoBmGuwmCkYBAGmxD/dzJvLRwAAAABJRU5ErkJggg==';
+  // Fallback icon for errors
+  const FALLBACK_ICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA4AAAAOCAYAAAAfSC3RAAAALElEQVQokWP8////fwY0wAgjGJgGLABWMMRAFEg0gGE0GoBmGuwmCkYBAGmxD/dzJvLRwAAAABJRU5ErkJggg==';
+    
+  // Backward-compatible placeholder constant used elsewhere
+  const PLACEHOLDER_ICON = INSTANT_PLACEHOLDER;
     
     // Progressive image loader: placeholder → optimized image
     function loadImageProgressive(iconType) {
@@ -2855,6 +2858,14 @@
   let map;
     let markerLayer = null;
     let markers = [];
+    
+    // Global device hints
+    const IS_MOBILE = (window.innerWidth <= 768) || /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
+    // Safe interval: pauses updates when tab is hidden to reduce CPU/heat
+    function safeInterval(fn, ms){
+      return setInterval(()=>{ if(document.hidden) return; try{ fn(); }catch(e){ console.error(e); } }, ms);
+    }
     // Проста мапа транслітерації/перекладу російських / застарілих назв на українські
     const PLACE_UA_MAP = (()=>{
       const m = new Map([
@@ -3274,6 +3285,15 @@
       });
       console.log('updateMarkers: количество точек после фильтрации:', points.length);
       
+      // Adaptive marker cap to reduce CPU load and device heating
+      try {
+        const maxMarkers = IS_MOBILE ? 80 : 180;
+        if (points.length > maxMarkers) {
+          points = points.sort((a,b)=> new Date(b.date) - new Date(a.date)).slice(0, maxMarkers);
+          console.log('updateMarkers: capped to', maxMarkers, 'markers for performance');
+        }
+      } catch(e) { console.warn('marker cap failed', e); }
+      
       // Expose current points for search suggestions
       window.__lastPoints = points;
       if (threatType) points = points.filter(p => (p.threat_type || '').toLowerCase() === threatType);
@@ -3290,8 +3310,8 @@
       else { markerLayer = L.layerGroup().addTo(map); }
       markers = [];
       
-      // --------- Performance adaptive mode ---------
-      const MAX_DIRECT_MARKERS = 650; // threshold where we switch to clustered fast mode
+  // --------- Performance adaptive mode ---------
+  const MAX_DIRECT_MARKERS = 220; // lower threshold to enable fast-mode clustering earlier
       const useFastMode = points.length > MAX_DIRECT_MARKERS;
       if (useFastMode) {
         const z = map.getZoom();
@@ -3316,7 +3336,7 @@
           b.types.forEach((c,t)=>{ if(c>maxc){ maxc=c; dominant=t; } });
           
           // Use optimized async image loading for clusters
-          let iconUrl = PLACEHOLDER_ICON; // Start with placeholder
+          let iconUrl = PLACEHOLDER_ICON; // Start with placeholder (defined above)
           try {
             iconUrl = await getIconUrl(dominant);
           } catch (error) {
@@ -3804,9 +3824,9 @@
       map = L.map('map', { 
         zoomControl: false, 
         attributionControl: false,
-        fadeAnimation: true,
-        zoomAnimation: true,
-        markerZoomAnimation: true,
+        fadeAnimation: !IS_MOBILE,
+        zoomAnimation: !IS_MOBILE,
+        markerZoomAnimation: !IS_MOBILE,
         preferCanvas: true,
         tap: false  // Отключаем tap для лучшей производительности на мобильных
       }).setView([48.3794,31.1656], 6);
@@ -3816,9 +3836,14 @@
         maxZoom: 19,
         attribution: '',
         crossOrigin: true,
-        detectRetina: true,
+        detectRetina: false,
         subdomains: 'abcd',
-        className: 'main-tile-layer'
+        className: 'main-tile-layer',
+        keepBuffer: 0,
+        updateWhenZooming: false,
+        updateWhenIdle: true,
+        reuseTiles: true,
+        tileSize: 256
       }).addTo(map);
       
       // Альтернативный слой - CartoDB Voyager (более детальный)
@@ -3826,9 +3851,14 @@
         maxZoom: 19,
         attribution: '',
         crossOrigin: true,
-        detectRetina: true,
+        detectRetina: false,
         subdomains: 'abcd',
-        className: 'voyager-tile-layer'
+        className: 'voyager-tile-layer',
+        keepBuffer: 0,
+        updateWhenZooming: false,
+        updateWhenIdle: true,
+        reuseTiles: true,
+        tileSize: 256
       });
       
       // Альтернативный слой - OSM с украинским языком
@@ -3836,9 +3866,14 @@
         maxZoom: 19,
         attribution: '',
         crossOrigin: true,
-        detectRetina: true,
+        detectRetina: false,
         className: 'ukrainian-localized-tiles',
-        subdomains: 'abc'
+        subdomains: 'abc',
+        keepBuffer: 0,
+        updateWhenZooming: false,
+        updateWhenIdle: true,
+        reuseTiles: true,
+        tileSize: 256
       });
       
       // Альтернативный слой - Wikimedia International (хорошая читаемость)
@@ -3846,8 +3881,13 @@
         maxZoom: 19,
         attribution: '',
         crossOrigin: true,
-        detectRetina: true,
-        className: 'wikimedia-tiles'
+        detectRetina: false,
+        className: 'wikimedia-tiles',
+        keepBuffer: 0,
+        updateWhenZooming: false,
+        updateWhenIdle: true,
+        reuseTiles: true,
+        tileSize: 256
       });
       
       // Улучшенный слой - ESRI World Street Map (очень четкий)
@@ -3855,8 +3895,13 @@
         maxZoom: 19,
         attribution: '',
         crossOrigin: true,
-        detectRetina: true,
-        className: 'esri-tiles'
+        detectRetina: false,
+        className: 'esri-tiles',
+        keepBuffer: 0,
+        updateWhenZooming: false,
+        updateWhenIdle: true,
+        reuseTiles: true,
+        tileSize: 256
       });
       
       // Функция переключения на OSM украинский слой
@@ -4105,7 +4150,7 @@
         }
       }
       pingPresence();
-  setInterval(pingPresence, 5000);
+  safeInterval(pingPresence, IS_MOBILE ? 20000 : 10000);
 
       // --- Интеграция с alerts.in.ua ---
       let airAlarmLayer = null;
@@ -4211,7 +4256,7 @@
         raionAlarmLayer.addTo(map);
       }
       updateRaionAlarms();
-      setInterval(updateRaionAlarms, 15000);
+  safeInterval(updateRaionAlarms, IS_MOBILE ? 45000 : 20000);
 
       await updateMarkers();
       try {
@@ -4232,7 +4277,7 @@
           } catch(e){}
         };
       } catch(e) {}
-      setInterval(updateMarkers, 10000);
+  safeInterval(updateMarkers, IS_MOBILE ? 30000 : 15000);
       // --- Re-cluster / re-render markers on zoom (debounced) so fast-mode buckets follow zoom level ---
       (function(){
         let zoomRedrawTimer=null; let lastZoom=map.getZoom();
@@ -4510,7 +4555,7 @@
   
   function startDeploymentMonitoring() {
     // Check server health every 10 seconds
-    deploymentCheckInterval = setInterval(checkServerHealth, 10000);
+  deploymentCheckInterval = safeInterval(checkServerHealth, IS_MOBILE ? 30000 : 15000);
     deploymentMonitoringActive = true;
     console.log('Deployment monitoring started');
   }
@@ -4763,7 +4808,7 @@
   loadAdm1(); 
         /* loadAdm2(); */ 
         refreshAlarms(); 
-        setInterval(refreshAlarms,15000); 
+  safeInterval(refreshAlarms, IS_MOBILE ? 45000 : 20000); 
         
   // Initialize donation amount loading for support card
   // Load immediately with fallback, then try to fetch real data
