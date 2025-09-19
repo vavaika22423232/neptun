@@ -3735,12 +3735,23 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                 if tracks_to_create > 1:
                                     track_display_name += f" #{i+1}"
                                 
+                                # Add small coordinate offsets to prevent marker overlap
+                                marker_lat = lat
+                                marker_lng = lng
+                                if tracks_to_create > 1:
+                                    # Create a circular pattern around the target
+                                    import math
+                                    angle = (2 * math.pi * i) / tracks_to_create
+                                    offset_distance = 0.01  # ~1km offset
+                                    marker_lat += offset_distance * math.cos(angle)
+                                    marker_lng += offset_distance * math.sin(angle)
+                                
                                 threat_id = f"{mid}_imm_multi_{len(threats)}"
                                 threats.append({
                                     'id': threat_id,
                                     'place': track_display_name,  # Use numbered display name for multiple drones
-                                    'lat': lat,
-                                    'lng': lng,
+                                    'lat': marker_lat,
+                                    'lng': marker_lng,
                                     'threat_type': 'shahed',
                                     'text': f"{line_stripped} (мультирегіональне)",
                                     'date': date_str,
@@ -5210,8 +5221,19 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     if tracks_to_create > 1:
                         track_name += f" #{i+1}"
                     
+                    # Add small coordinate offsets to prevent marker overlap
+                    marker_lat = lat
+                    marker_lng = lng
+                    if tracks_to_create > 1:
+                        # Create a circular pattern around the target
+                        import math
+                        angle = (2 * math.pi * i) / tracks_to_create
+                        offset_distance = 0.01  # ~1km offset
+                        marker_lat += offset_distance * math.cos(angle)
+                        marker_lng += offset_distance * math.sin(angle)
+                    
                     threat_data = {
-                        'id': f"{mid}_{i+1}", 'place': track_name, 'lat': lat, 'lng': lng,
+                        'id': f"{mid}_{i+1}", 'place': track_name, 'lat': marker_lat, 'lng': marker_lng,
                         'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
                         'marker_icon': icon, 'source_match': 'course_to_city', 'count': 1
                     }
@@ -6129,15 +6151,32 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     lat, lng = coords_s
                     label = UA_CITY_NORMALIZE.get(cbase, cbase).title()
                     per_count = scount if len(raw_parts) == 1 else 1
-                    if per_count > 1:
-                        label += f" ({per_count})"
                     if oblast_hdr and oblast_hdr not in label.lower():
                         label += f" [{oblast_hdr.title()}]"
-                    multi_city_tracks.append({
-                        'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
-                        'threat_type': 'shahed', 'text': clean_text(ln)[:500], 'date': date_str, 'channel': channel,
-                        'marker_icon': 'shahed.png', 'source_match': 'multiline_oblast_city_shahed', 'count': per_count
-                    })
+                    
+                    # Create multiple tracks for multiple shaheds
+                    tracks_to_create = max(1, per_count)
+                    for i in range(tracks_to_create):
+                        track_label = label
+                        if tracks_to_create > 1:
+                            track_label += f" #{i+1}"
+                        
+                        # Add small coordinate offsets to prevent marker overlap
+                        marker_lat = lat
+                        marker_lng = lng
+                        if tracks_to_create > 1:
+                            # Create a circular pattern around the target
+                            import math
+                            angle = (2 * math.pi * i) / tracks_to_create
+                            offset_distance = 0.01  # ~1km offset
+                            marker_lat += offset_distance * math.cos(angle)
+                            marker_lng += offset_distance * math.sin(angle)
+                        
+                        multi_city_tracks.append({
+                            'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': track_label, 'lat': marker_lat, 'lng': marker_lng,
+                            'threat_type': 'shahed', 'text': clean_text(ln)[:500], 'date': date_str, 'channel': channel,
+                            'marker_icon': 'shahed.png', 'source_match': 'multiline_oblast_city_shahed', 'count': 1
+                        })
                 continue
         
         # --- NEW: Simple "X БпЛА на <city>" pattern (e.g. '1 БпЛА на Козелець', '2 БпЛА на Куликівку') ---
@@ -6316,9 +6355,20 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     if tracks_to_create > 1:
                         track_label += f" #{i+1}"
                     
-                    print(f"DEBUG: Creating track {i+1}/{tracks_to_create} with label '{track_label}' at {lat}, {lng}")
+                    # Add small coordinate offsets to prevent marker overlap
+                    marker_lat = lat
+                    marker_lng = lng
+                    if tracks_to_create > 1:
+                        # Create a circular pattern around the target
+                        import math
+                        angle = (2 * math.pi * i) / tracks_to_create
+                        offset_distance = 0.01  # ~1km offset
+                        marker_lat += offset_distance * math.cos(angle)
+                        marker_lng += offset_distance * math.sin(angle)
+                    
+                    print(f"DEBUG: Creating track {i+1}/{tracks_to_create} with label '{track_label}' at {marker_lat}, {marker_lng}")
                     multi_city_tracks.append({
-                        'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': track_label, 'lat': lat, 'lng': lng,
+                        'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': track_label, 'lat': marker_lat, 'lng': marker_lng,
                         'threat_type': threat_type, 'text': clean_text(ln)[:500], 'date': date_str, 'channel': channel,
                         'marker_icon': icon, 'source_match': 'multiline_oblast_city', 'count': 1
                     })
@@ -8449,12 +8499,23 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             track_label = city_part.title()
                             if tracks_to_create > 1:
                                 track_label += f" #{i+1}"
+                            
+                            # Add small coordinate offsets to prevent marker overlap
+                            marker_lat = lat
+                            marker_lng = lng
+                            if tracks_to_create > 1:
+                                # Create a circular pattern around the target
+                                import math
+                                angle = (2 * math.pi * i) / tracks_to_create
+                                offset_distance = 0.01  # ~1km offset
+                                marker_lat += offset_distance * math.cos(angle)
+                                marker_lng += offset_distance * math.sin(angle)
                                 
                             all_shahed_tracks.append({
                                 'id': f"{mid}_{pattern_type}_{len(all_shahed_tracks)}", 
                                 'place': track_label, 
-                                'lat': lat, 
-                                'lng': lng,
+                                'lat': marker_lat, 
+                                'lng': marker_lng,
                                 'threat_type': threat_type, 
                                 'text': text[:500], 
                                 'date': date_str, 
@@ -8906,8 +8967,19 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 if tracks_to_create > 1:
                     track_name += f" #{i+1}"
                 
+                # Add small coordinate offsets to prevent marker overlap
+                marker_lat = lat
+                marker_lng = lng
+                if tracks_to_create > 1:
+                    # Create a circular pattern around the target
+                    import math
+                    angle = (2 * math.pi * i) / tracks_to_create
+                    offset_distance = 0.01  # ~1km offset
+                    marker_lat += offset_distance * math.cos(angle)
+                    marker_lng += offset_distance * math.sin(angle)
+                
                 track = {
-                    'id': f"{mid}_c{idx}_{i+1}", 'place': track_name, 'lat': lat, 'lng': lng,
+                    'id': f"{mid}_c{idx}_{i+1}", 'place': track_name, 'lat': marker_lat, 'lng': marker_lng,
                     'threat_type': threat_type, 'text': snippet[:500], 'date': date_str, 'channel': channel,
                     'marker_icon': icon, 'source_match': 'course_target', 'count': 1
                 }
