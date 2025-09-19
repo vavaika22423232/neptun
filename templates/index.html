@@ -443,20 +443,6 @@
       background:#f1f4f8;
       box-shadow: 0 0 0 1px rgba(0,0,0,.04), 0 4px 18px -8px rgba(0,0,0,.18), inset 0 0 0 1px rgba(255,255,255,.55);
       position:relative;
-      /* iOS performance optimizations */
-      -webkit-transform: translateZ(0);
-      transform: translateZ(0);
-      -webkit-backface-visibility: hidden;
-      backface-visibility: hidden;
-      -webkit-perspective: 1000px;
-      perspective: 1000px;
-      /* Disable text selection and highlighting for smoother interaction */
-      -webkit-user-select: none;
-      -moz-user-select: none;
-      user-select: none;
-      /* Improve touch responsiveness */
-      -webkit-touch-callout: none;
-      -webkit-tap-highlight-color: transparent;
     }
   /* Marker loading overlay */
   #markerLoadingOverlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(140deg,rgba(10,15,28,.94),rgba(17,24,39,.94));backdrop-filter:blur(6px) saturate(1.25);z-index:1200;color:#e2e8f0;gap:1.1rem;font-family:Inter,system-ui,sans-serif;transition:opacity .4s ease, visibility .4s ease;}
@@ -473,38 +459,6 @@
   
   .regional-threat-glow {
     pointer-events: none;
-  }
-  
-  /* Mobile-specific marker optimizations */
-  @media (max-width: 768px) {
-    .leaflet-marker-icon {
-      /* Hardware acceleration for markers on mobile */
-      -webkit-transform: translateZ(0);
-      transform: translateZ(0);
-      -webkit-backface-visibility: hidden;
-      backface-visibility: hidden;
-      /* Reduce marker animations on mobile */
-      transition: none !important;
-      animation: none !important;
-    }
-    
-    .leaflet-popup {
-      /* Simpler popups on mobile */
-      -webkit-transform: translateZ(0);
-      transform: translateZ(0);
-    }
-    
-    /* Disable complex animations on mobile */
-    .cluster, .kab-rotor-group, .regional-threat-zone {
-      animation: none !important;
-    }
-    
-    /* Optimize tile rendering on mobile */
-    .leaflet-tile {
-      -webkit-transform: translateZ(0);
-      transform: translateZ(0);
-      image-rendering: optimizeSpeed;
-    }
   }
   
   @keyframes regionalPulse {
@@ -2924,40 +2878,10 @@
       return regions[region] || null;
     }
     
-    // Mobile-optimized interaction state tracking
-    let isUserInteracting = false;
-    let interactionTimeout = null;
-    let updatesPaused = false;
-    
-    function pauseUpdatesForInteraction() {
-      if (!isMobileDevice) return; // Only for mobile
-      
-      isUserInteracting = true;
-      updatesPaused = true;
-      
-      // Clear any existing timeout
-      if (interactionTimeout) {
-        clearTimeout(interactionTimeout);
-      }
-      
-      // Resume updates after interaction stops
-      interactionTimeout = setTimeout(() => {
-        isUserInteracting = false;
-        updatesPaused = false;
-        console.log('Resuming updates after interaction');
-      }, 2000); // 2 seconds after interaction stops
-    }
-    
     // Переменная для отслеживания первоначальной загрузки
     let isInitialLoad = true;
     
     async function updateMarkers() {
-      // Skip updates if user is actively interacting (mobile only)
-      if (updatesPaused && !isInitialLoad) {
-        console.log('Skipping update - user is interacting');
-        return;
-      }
-      
       console.log('updateMarkers: начинаем загрузку данных...');
       const timeRange = 1.33; // фиксированное значение - 80 минут (1.33 часа)
       const threatType = ''; // фиксированное значение - все типы угроз
@@ -3027,20 +2951,14 @@
       else { markerLayer = L.layerGroup().addTo(map); }
       markers = [];
       
-      // --------- Performance adaptive mode with mobile optimizations ---------
-      const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      const MAX_DIRECT_MARKERS = isMobileDevice ? 400 : 650; // Lower threshold for mobile
+      // --------- Performance adaptive mode ---------
+      const MAX_DIRECT_MARKERS = 650; // threshold where we switch to clustered fast mode
       const useFastMode = points.length > MAX_DIRECT_MARKERS;
-      
       if (useFastMode) {
         const z = map.getZoom();
         // cell size (degrees) shrinks with zoom to gradually reveal more detail
-        // More aggressive cell sizing for mobile to reduce marker count
-        let cell = isMobileDevice ? 0.8 : 0.55;
-        if (z >= 7) cell = isMobileDevice ? 0.5 : 0.32; 
-        if (z >= 8) cell = isMobileDevice ? 0.28 : 0.18; 
-        if (z >= 9) cell = isMobileDevice ? 0.16 : 0.11; 
-        if (z >= 10) cell = isMobileDevice ? 0.09 : 0.06;
+        let cell = 0.55;
+        if (z >= 7) cell = 0.32; if (z >= 8) cell = 0.18; if (z >= 9) cell = 0.11; if (z >= 10) cell = 0.06;
         const keyFn = p => Math.floor(p.lat / cell) + '_' + Math.floor(p.lng / cell);
         const buckets = new Map();
         for (const p of points){
@@ -3544,54 +3462,16 @@
       }).join('');
     }
     async function initMap() {
-      // Mobile-specific map options for better performance
-      const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      map = L.map('map', { zoomControl:false, attributionControl:false }).setView([48.3794,31.1656], 6);
       
-      const mapOptions = {
-        zoomControl: false,
-        attributionControl: false,
-        // Mobile-specific performance optimizations
-        preferCanvas: isMobileDevice, // Use canvas renderer for mobile
-        renderer: isMobileDevice ? L.canvas() : L.svg(),
-        // Reduce animation smoothness on mobile to improve performance
-        zoomAnimation: !isMobileDevice,
-        fadeAnimation: !isMobileDevice,
-        markerZoomAnimation: !isMobileDevice,
-        // Disable hardware acceleration on iOS to prevent overheating
-        transform3DLimit: isMobileDevice ? 0 : 2^23
-      };
-      
-      map = L.map('map', mapOptions).setView([48.3794,31.1656], 6);
-      
-      // Используем оптимизированную карту для мобильных устройств
-      const tileOptions = {
+      // Используем стандартную красивую карту OpenStreetMap
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
         attribution: '',
         crossOrigin: true,
-        detectRetina: !isMobileDevice, // Disable retina on mobile to save bandwidth
-        subdomains: 'abc',
-        // Mobile-specific tile options
-        keepBuffer: isMobileDevice ? 1 : 2, // Smaller buffer for mobile
-        updateWhenIdle: isMobileDevice, // Update tiles only when map is idle on mobile
-        updateWhenZooming: !isMobileDevice, // Disable live updates during zoom on mobile
-        updateInterval: isMobileDevice ? 300 : 200 // Slower tile updates on mobile
-      };
-      
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', tileOptions).addTo(map);
-      
-      // Add mobile-specific interaction listeners
-      if (isMobileDevice) {
-        // Pause updates during map dragging/panning
-        map.on('dragstart', pauseUpdatesForInteraction);
-        map.on('drag', pauseUpdatesForInteraction);
-        map.on('zoomstart', pauseUpdatesForInteraction);
-        
-        // Touch events for iOS
-        map.on('touchstart', pauseUpdatesForInteraction);
-        map.on('touchmove', pauseUpdatesForInteraction);
-        
-        console.log('Mobile interaction listeners enabled');
-      }
+        detectRetina: true,
+        subdomains: 'abc'
+      }).addTo(map);
       
       // Альтернативный слой - OSM с украинским языком
       window.osmUkrainianLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png?lang=uk', {
@@ -3994,30 +3874,16 @@
           } catch(e){}
         };
       } catch(e) {}
-      // Mobile-optimized update intervals
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      const updateInterval = isMobile ? 20000 : 10000; // 20s for mobile, 10s for desktop
-      
-      setInterval(updateMarkers, updateInterval);
-      
-      // --- Re-cluster / re-render markers on zoom (heavily debounced for mobile) ---
+      setInterval(updateMarkers, 10000);
+      // --- Re-cluster / re-render markers on zoom (debounced) so fast-mode buckets follow zoom level ---
       (function(){
         let zoomRedrawTimer=null; let lastZoom=map.getZoom();
         function onZoomEnd(){
           const z = map.getZoom();
-          if(z===lastZoom) return; // no change
-          lastZoom = z;
-          if(zoomRedrawTimer){ clearTimeout(zoomRedrawTimer); }
-          
-          // Longer debounce for mobile to prevent excessive redraws
-          const debounceTime = isMobile ? 800 : 180;
-          zoomRedrawTimer = setTimeout(()=>{ 
-            try { 
-              // Only redraw if significant zoom change (2+ levels for mobile)
-              if (isMobile && Math.abs(z - lastZoom) < 2) return;
-              updateMarkers(); 
-            } catch(e){} 
-          }, debounceTime);
+            if(z===lastZoom) return; // no change
+            lastZoom = z;
+            if(zoomRedrawTimer){ clearTimeout(zoomRedrawTimer); }
+            zoomRedrawTimer = setTimeout(()=>{ try { updateMarkers(); } catch(e){} }, 180);
         }
         map.on('zoomend', onZoomEnd);
       })();
