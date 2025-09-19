@@ -1067,6 +1067,19 @@ def _load_name_region_map():
 
 _load_name_region_map()
 
+# Fix problematic entries in NAME_REGION_MAP that cause wrong city resolution
+# Remove incomplete city names that point to wrong regions
+PROBLEMATIC_ENTRIES = [
+    'кривий',  # Should be 'кривий ріг' not just 'кривий' -> causes wrong region lookup
+    'старий',  # Too generic, causes conflicts
+    'нова',    # Too generic
+    'велика',  # Too generic
+    'мала',    # Too generic
+]
+
+for entry in PROBLEMATIC_ENTRIES:
+    NAME_REGION_MAP.pop(entry, None)
+
 def ensure_city_coords(name: str):
     """Return (lat,lng,approx_bool) for settlement, performing lazy geocoding.
     approx_bool True means we used oblast center fallback (low precision)."""
@@ -2066,6 +2079,10 @@ KYIV_OBLAST_CITY_COORDS = {
     'петрівське?': (50.4501, 30.5234),
     'петрівське(київ)': (50.4501, 30.5234),
     'петрівське київська': (50.4501, 30.5234),
+    'переяслав': (50.0769, 31.4610),  # Переяслав-Хмельницький
+    'переяслові': (50.0769, 31.4610),
+    'переяславу': (50.0769, 31.4610),
+    'переяславом': (50.0769, 31.4610),
 }
 
 for _kv_name, _kv_coords in KYIV_OBLAST_CITY_COORDS.items():
@@ -4989,7 +5006,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         continue
                     
                     # Pattern 1: "БпЛА курсом на [city]" (with optional н.п. prefix)
-                    course_match = _re_multi.search(r'бпла\s+курсом?\s+на\s+(?:н\.п\.?\s*)?([а-яіїєґ\'\-\s]+?)(?:\s|$)', seg_lower)
+                    course_match = _re_multi.search(r'бпла\s+курсом?\s+на\s+(?:н\.п\.?\s*)?([а-яіїєґ\'\-\s]+?)(?:\s*$|\s*\|)', seg_lower)
                     if course_match:
                         city_name = course_match.group(1).strip()
                         city_norm = clean_text(city_name).lower()
@@ -5035,8 +5052,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                 'count': 1
                             })
                     
-                    # Pattern 1.5: "БпЛА повз [city1] курсом на [city2]" - extract both cities
-                    povz_match = _re_multi.search(r'(\d+)?[xх]?\s*бпла\s+повз\s+([а-яіїєґ\'\-\s]+?)\s+курсом?\s+на\s+([а-яіїєґ\'\-\s]+?)(?:\s|$)', seg_lower)
+                    # Pattern 1.5: "БпЛА повз [city1] курсом на [city2]" - extract both cities  
+                    povz_match = _re_multi.search(r'(\d+)?[xх]?\s*бпла\s+повз\s+([а-яіїєґ\'\-\s]+?)\s+курсом?\s+на\s+([а-яіїєґ\'\-\s]+?)(?:\s*$|\s*\|)', seg_lower)
                     if povz_match and not course_match:  # Don't double-process if already handled by Pattern 1
                         count_str, city1_name, city2_name = povz_match.groups()
                         count = int(count_str) if count_str and count_str.isdigit() else 1
@@ -7065,9 +7082,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 if 'бпла' in line_lower and ('курс' in line_lower or ' на ' in line_lower):
                     # Extract city name from patterns like "БпЛА курсом на Конотоп" or "2х БпЛА курсом на Велику Димерку"
                     patterns = [
-                        r'(\d+)?[xх]?\s*бпла\s+курсом?\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s|$|[,\.\!\?])',
-                        r'бпла\s+курсом?\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s|$|[,\.\!\?])',
-                        r'(\d+)?[xх]?\s*бпла\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s|$|[,\.\!\?])'
+                        r'(\d+)?[xх]?\s*бпла\s+курсом?\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*$|\s*[,\.\!\?\|])',
+                        r'бпла\s+курсом?\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*$|\s*[,\.\!\?\|])',
+                        r'(\d+)?[xх]?\s*бпла\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*$|\s*[,\.\!\?\|])'
                     ]
                     
                     for pattern in patterns:
@@ -7132,9 +7149,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         
         # Look for UAV course patterns in the entire message
         patterns = [
-            r'(\d+)?[xх]?\s*бпла\s+курсом?\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s|[,\.\!\?\|\(])',
-            r'бпла\s+курсом?\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s|[,\.\!\?\|\(])',
-            r'(\d+)?[xх]?\s*бпла\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s|[,\.\!\?\|\(])'
+            r'(\d+)?[xх]?\s*бпла\s+курсом?\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*$|\s*[,\.\!\?\|\(])',
+            r'бпла\s+курсом?\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*$|\s*[,\.\!\?\|\(])',
+            r'(\d+)?[xх]?\s*бпла\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*$|\s*[,\.\!\?\|\(])'
         ]
         
         for pattern in patterns:
