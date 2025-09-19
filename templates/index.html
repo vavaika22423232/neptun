@@ -499,9 +499,96 @@
       height: calc(100vh - 4rem);
       width: 100%;
       border-radius: 1.15rem;
-      background:#f1f4f8;
-      box-shadow: 0 0 0 1px rgba(0,0,0,.04), 0 4px 18px -8px rgba(0,0,0,.18), inset 0 0 0 1px rgba(255,255,255,.55);
-      position:relative;
+      background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+      box-shadow: 
+        0 0 0 1px rgba(0,0,0,.04), 
+        0 4px 18px -8px rgba(0,0,0,.18), 
+        inset 0 0 0 1px rgba(255,255,255,.55),
+        0 20px 40px -12px rgba(0,0,0,.08);
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    #map:hover {
+      box-shadow: 
+        0 0 0 1px rgba(0,0,0,.06), 
+        0 8px 32px -12px rgba(0,0,0,.25), 
+        inset 0 0 0 1px rgba(255,255,255,.65),
+        0 32px 64px -16px rgba(0,0,0,.12);
+      transform: translateY(-1px);
+    }
+    
+    /* Улучшенные стили для плиток карты */
+    .main-tile-layer,
+    .voyager-tile-layer,
+    .wikimedia-tiles,
+    .esri-tiles {
+      filter: brightness(1.02) contrast(1.05) saturate(1.1);
+      transition: filter 0.3s ease;
+    }
+    
+    /* Стили для плавного переключения слоев */
+    .leaflet-tile-container {
+      transition: opacity 0.4s ease-in-out;
+    }
+    
+    /* Улучшенные маркеры */
+    .leaflet-marker-icon {
+      filter: drop-shadow(0 2px 8px rgba(0,0,0,0.15));
+      transition: all 0.2s ease;
+    }
+    
+    .leaflet-marker-icon:hover {
+      filter: drop-shadow(0 4px 16px rgba(0,0,0,0.25));
+      transform: scale(1.05) translateY(-2px);
+    }
+    
+    /* Улучшенные попапы */
+    .leaflet-popup-content-wrapper {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(12px) saturate(1.2);
+      border-radius: 12px;
+      box-shadow: 
+        0 0 0 1px rgba(0,0,0,.08),
+        0 8px 32px -8px rgba(0,0,0,.2),
+        0 0 80px -20px rgba(59, 130, 246, 0.15);
+      border: none;
+      overflow: hidden;
+    }
+    
+    .leaflet-popup-tip {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(12px);
+      box-shadow: 0 2px 8px rgba(0,0,0,.12);
+    }
+    
+    /* Зум контролы */
+    .leaflet-control-zoom {
+      border: none !important;
+      box-shadow: 
+        0 4px 16px -4px rgba(0,0,0,.15),
+        0 0 0 1px rgba(255,255,255,.8) !important;
+      border-radius: 12px !important;
+      overflow: hidden;
+      backdrop-filter: blur(8px);
+      background: rgba(255, 255, 255, 0.9) !important;
+    }
+    
+    .leaflet-control-zoom a {
+      background: rgba(255, 255, 255, 0.9) !important;
+      border: none !important;
+      color: #1e293b !important;
+      font-weight: 600;
+      font-size: 18px;
+      transition: all 0.2s ease;
+      backdrop-filter: blur(8px);
+    }
+    
+    .leaflet-control-zoom a:hover {
+      background: rgba(59, 130, 246, 0.9) !important;
+      color: white !important;
+      transform: scale(1.05);
     }
   /* Marker loading overlay */
   #markerLoadingOverlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(140deg,rgba(10,15,28,.94),rgba(17,24,39,.94));backdrop-filter:blur(6px) saturate(1.25);z-index:1200;color:#e2e8f0;gap:1.1rem;font-family:Inter,system-ui,sans-serif;transition:opacity .4s ease, visibility .4s ease;}
@@ -702,25 +789,68 @@
       top: 1rem;
       right: 1rem;
       display: flex;
-      gap: 0.5rem;
-  /* Leaflet panes use z-index up to ~700 (popupPane). Use higher to always stay on top */
-  z-index: 1200; /* above all Leaflet layers, below modal */
+      flex-direction: column;
+      gap: 0.75rem;
+      z-index: 1200; /* above all Leaflet layers, below modal */
     }
     
     .map-control-btn {
-      background: linear-gradient(145deg,rgba(255,255,255,0.82),rgba(248,250,252,0.95));
-      border: 1px solid #c3cdd6;
-      border-radius: 0.65rem;
-      padding: 0.55rem;
+      background: linear-gradient(145deg, rgba(255,255,255,0.95), rgba(248,250,252,0.9));
+      border: 1px solid rgba(203, 205, 214, 0.4);
+      border-radius: 12px;
+      padding: 0.75rem;
       color: #1e293b;
       cursor: pointer;
-      transition: all 0.25s;
-      backdrop-filter: blur(10px) saturate(1.3);
-      box-shadow: 0 2px 5px rgba(0,0,0,.12),0 0 0 1px rgba(255,255,255,.7) inset,0 6px 18px -8px rgba(0,0,0,.22);
+      transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+      backdrop-filter: blur(16px) saturate(1.4);
+      box-shadow: 
+        0 4px 16px -4px rgba(0,0,0,.15),
+        0 0 0 1px rgba(255,255,255,.8) inset,
+        0 8px 32px -12px rgba(0,0,0,.18);
+      font-size: 18px;
+      font-weight: 500;
+      width: 48px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
     }
-    .map-control-btn:hover { background:linear-gradient(145deg,#ffffff,#f1f5f9); transform: translateY(-3px) scale(1.04); box-shadow:0 6px 18px -6px rgba(0,0,0,.25),0 0 0 1px rgba(255,255,255,.85) inset; }
-    .map-control-btn:active { transform:translateY(0); }
-    .map-control-btn i { font-size:20px; }
+    
+    .map-control-btn::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(139, 92, 246, 0.1));
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    
+    .map-control-btn:hover::before {
+      opacity: 1;
+    }
+    
+    .map-control-btn:hover { 
+      background: linear-gradient(145deg, #ffffff, #f8fafc);
+      transform: translateY(-4px) scale(1.08);
+      box-shadow: 
+        0 8px 32px -8px rgba(0,0,0,.25),
+        0 0 0 1px rgba(255,255,255,.9) inset,
+        0 16px 48px -16px rgba(59, 130, 246, 0.2);
+      border-color: rgba(59, 130, 246, 0.3);
+    }
+    
+    .map-control-btn:active { 
+      transform: translateY(-1px) scale(1.02);
+      transition-duration: 0.1s;
+    }
+    
+    .map-control-btn i { 
+      font-size: 20px;
+      position: relative;
+      z-index: 1;
+    }
     
     /* Active state for region boundaries button */
     #regionBoundariesBtn.active {
@@ -731,6 +861,23 @@
     #regionBoundariesBtn.active:hover {
       background: linear-gradient(145deg, #d97706, #b45309) !important;
       transform: translateY(-2px) scale(1.02);
+    }
+    
+    /* Map layer button styles */
+    #mapLayerBtn {
+      font-size: 16px;
+      transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    
+    #mapLayerBtn:hover {
+      transform: translateY(-3px) scale(1.08) rotate(5deg);
+      box-shadow: 0 8px 25px -8px rgba(59, 130, 246, 0.4);
+    }
+    
+    /* Spinner animation for loading states */
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
     }
     
     /* Active state for text size button */
@@ -1041,11 +1188,81 @@
   </style>
   <style>
   /* Place search control */
-  .place-search{position:absolute;top:1rem;left:50%;transform:translateX(-50%);display:flex;gap:.4rem;background:rgba(15,23,42,.78);backdrop-filter:blur(8px) saturate(1.4);padding:.55rem .8rem;border-radius:1.1rem;box-shadow:0 4px 22px -6px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.08);z-index:950;align-items:center;}
-  .place-search input{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#fff;padding:.45rem .75rem;border-radius:.75rem;min-width:260px;font-size:.82rem;outline:none;transition:.18s;}
-  .place-search input:focus{border-color:#3b82f6;background:rgba(59,130,246,.15);box-shadow:0 0 0 2px rgba(59,130,246,.35);} 
-  .place-search button{background:linear-gradient(135deg,#2563eb,#7c3aed);border:none;color:#fff;padding:.5rem .75rem;border-radius:.7rem;cursor:pointer;display:flex;align-items:center;gap:.25rem;box-shadow:0 4px 14px -4px rgba(37,99,235,.55);transition:.2s;font-size:.75rem;font-weight:600;letter-spacing:.4px;}
-  .place-search button:hover{transform:translateY(-2px);} .place-search button:active{transform:translateY(0);} 
+  .place-search{
+    position:absolute;
+    top:1rem;
+    left:50%;
+    transform:translateX(-50%);
+    display:flex;
+    gap:.5rem;
+    background:rgba(255,255,255,.95);
+    backdrop-filter:blur(16px) saturate(1.4);
+    padding:.75rem 1rem;
+    border-radius:16px;
+    box-shadow:0 8px 32px -8px rgba(0,0,0,.15), 0 0 0 1px rgba(255,255,255,.8);
+    z-index:950;
+    align-items:center;
+    border: 1px solid rgba(0,0,0,.06);
+    transition: all 0.3s ease;
+  }
+  
+  .place-search:hover {
+    box-shadow:0 12px 48px -12px rgba(0,0,0,.2), 0 0 0 1px rgba(255,255,255,.9);
+    transform:translateX(-50%) translateY(-2px);
+  }
+  
+  .place-search input{
+    background:rgba(248,250,252,.8);
+    border:1px solid rgba(203,213,225,.5);
+    color:#1e293b;
+    padding:.5rem .75rem;
+    border-radius:12px;
+    min-width:280px;
+    font-size:.9rem;
+    outline:none;
+    transition:all .3s ease;
+    font-weight:500;
+  }
+  
+  .place-search input:focus{
+    border-color:#3b82f6;
+    background:rgba(255,255,255,.95);
+    box-shadow:0 0 0 3px rgba(59,130,246,.1), 0 4px 16px -4px rgba(59,130,246,.2);
+    transform: scale(1.02);
+  } 
+  
+  .place-search input::placeholder {
+    color: #64748b;
+    font-weight: 400;
+  }
+  
+  .place-search button{
+    background:linear-gradient(135deg,#3b82f6,#1d4ed8);
+    border:none;
+    color:#fff;
+    padding:.65rem .9rem;
+    border-radius:12px;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    gap:.3rem;
+    box-shadow:0 4px 14px -4px rgba(59,130,246,.4);
+    transition:all .3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    font-size:.85rem;
+    font-weight:600;
+    letter-spacing:.3px;
+  }
+  
+  .place-search button:hover{
+    transform:translateY(-3px) scale(1.05);
+    box-shadow:0 8px 28px -8px rgba(59,130,246,.5);
+    background:linear-gradient(135deg,#1d4ed8,#1e40af);
+  } 
+  
+  .place-search button:active{
+    transform:translateY(-1px) scale(1.02);
+    transition-duration: .1s;
+  } 
   @media (max-width:820px){ .place-search{top:auto;bottom:.75rem;left:.75rem;transform:none;right:.75rem;margin:0;flex-wrap:nowrap;min-width:0;} .place-search input{min-width:0;width:160px;} }
   .ps-suggest{position:absolute;top:100%;left:0;margin-top:.4rem;background:#0f172a;border:1px solid #1e293b;border-radius:.9rem;padding:.35rem .4rem;min-width:100%;max-height:240px;overflow-y:auto;box-shadow:0 8px 28px -6px rgba(0,0,0,.55);}
   .ps-item{padding:.4rem .55rem;border-radius:.55rem;font-size:.75rem;cursor:pointer;display:flex;justify-content:space-between;gap:.6rem;}
@@ -1135,7 +1352,7 @@
   <div class="navbar">
     <div class="logo">
   <img src="/static/neptun.jpg" alt="NEPTUN">
-  <span>NEPTUN</span>
+  <span>НЕПТУН</span>
     </div>
     <div class="nav-links">
       <a href="#map" class="active"><i class="material-icons">map</i> Карта</a>
@@ -1178,7 +1395,10 @@
           <i class="material-icons">text_fields</i>
         </button>
         <button class="map-control-btn" id="regionBoundariesBtn" onclick="toggleRegionBoundaries()" title="Показати/приховати границі областей" aria-label="Границі областей">
-          <i class="material-icons">map</i>
+          🗺️
+        </button>
+        <button class="map-control-btn" id="mapLayerBtn" onclick="toggleMapLayer()" title="Переключити стиль карти" aria-label="Стиль карти">
+          🌍
         </button>
         <button class="map-control-btn" id="expandBtn" onclick="toggleMapExpand()" title="Розгорнути карту" aria-label="Розгорнути карту">
           <i class="material-icons" id="expandIcon">fullscreen</i>
@@ -1265,8 +1485,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <!-- Turf.js for geometry operations -->
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
-  <!-- Region boundaries data for NEPTUN -->
-  <script src="{{ url_for('static', filename='region_boundaries.js') }}"></script>
+  <!-- Region boundaries data for NEPTUN - loaded asynchronously -->
   <script type="text/javascript">
     // @ts-nocheck
     
@@ -3566,16 +3785,35 @@
       }).join('');
     }
     async function initMap() {
-      map = L.map('map', { zoomControl:false, attributionControl:false }).setView([48.3794,31.1656], 6);
+      map = L.map('map', { 
+        zoomControl: false, 
+        attributionControl: false,
+        fadeAnimation: true,
+        zoomAnimation: true,
+        markerZoomAnimation: true,
+        preferCanvas: true,
+        tap: false  // Отключаем tap для лучшей производительности на мобильных
+      }).setView([48.3794,31.1656], 6);
       
-      // Используем стандартную красивую карту OpenStreetMap
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      // Используем красивую карту CartoDB Positron (светлая, четкая)
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         maxZoom: 19,
         attribution: '',
         crossOrigin: true,
         detectRetina: true,
-        subdomains: 'abc'
+        subdomains: 'abcd',
+        className: 'main-tile-layer'
       }).addTo(map);
+      
+      // Альтернативный слой - CartoDB Voyager (более детальный)
+      window.cartoVoyagerLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19,
+        attribution: '',
+        crossOrigin: true,
+        detectRetina: true,
+        subdomains: 'abcd',
+        className: 'voyager-tile-layer'
+      });
       
       // Альтернативный слой - OSM с украинским языком
       window.osmUkrainianLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png?lang=uk', {
@@ -3587,22 +3825,22 @@
         subdomains: 'abc'
       });
       
-      // Альтернативный слой - Wikimedia International
+      // Альтернативный слой - Wikimedia International (хорошая читаемость)
       window.wikimediaTileLayer = L.tileLayer('https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}{r}.png', {
         maxZoom: 19,
         attribution: '',
         crossOrigin: true,
         detectRetina: true,
-        className: 'ukrainian-localized-tiles'
+        className: 'wikimedia-tiles'
       });
       
-      // Резервный слой - CartoDB с настройками для украинской локализации
-      window.cartoTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}{r}.png', {
+      // Улучшенный слой - ESRI World Street Map (очень четкий)
+      window.esriLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
         maxZoom: 19,
         attribution: '',
         crossOrigin: true,
         detectRetina: true,
-        subdomains: 'abcd'
+        className: 'esri-tiles'
       });
       
       // Функция переключения на OSM украинский слой
@@ -4021,13 +4259,67 @@
   // City boundaries toggle functionality
   let regionBoundariesVisible = false;
   let regionBoundariesLayer = null;
+  let regionBoundariesLoading = false;
   
-  function toggleRegionBoundaries() {
+  async function loadRegionBoundaries() {
+    if (window.REGION_BOUNDARIES || regionBoundariesLoading) {
+      return; // Уже загружено или загружается
+    }
+    
+    regionBoundariesLoading = true;
+    console.log('Загрузка границ областей...');
+    
+    try {
+      // Показываем индикатор загрузки
+      const btn = document.getElementById('regionBoundariesBtn');
+      if (btn) {
+        btn.innerHTML = '<span style="animation: spin 1s linear infinite;">⌛</span>';
+        btn.disabled = true;
+      }
+      
+      const script = document.createElement('script');
+      script.src = '{{ url_for("static", filename="region_boundaries.js") }}';
+      script.async = true;
+      
+      return new Promise((resolve, reject) => {
+        script.onload = () => {
+          console.log('Границі областей завантажені');
+          regionBoundariesLoading = false;
+          if (btn) {
+            btn.innerHTML = '🗺️';
+            btn.disabled = false;
+          }
+          resolve();
+        };
+        script.onerror = () => {
+          console.error('Помилка завантаження границь областей');
+          regionBoundariesLoading = false;
+          if (btn) {
+            btn.innerHTML = '❌';
+            btn.disabled = false;
+          }
+          reject(new Error('Failed to load region boundaries'));
+        };
+        document.head.appendChild(script);
+      });
+    } catch (error) {
+      regionBoundariesLoading = false;
+      console.error('Помилка:', error);
+      throw error;
+    }
+  }
+  
+  async function toggleRegionBoundaries() {
     const btn = document.getElementById('regionBoundariesBtn');
     
+    // Если границы ещё не загружены, загрузим их
     if (!window.REGION_BOUNDARIES) {
-      console.warn('Дані про границі областей не завантажені');
-      return;
+      try {
+        await loadRegionBoundaries();
+      } catch (error) {
+        console.warn('Не вдалося завантажити дані про границі областей:', error);
+        return;
+      }
     }
     
     if (regionBoundariesVisible) {
@@ -4068,6 +4360,65 @@
         }
       }
     }
+  }
+  
+  // Map layer toggle functionality
+  let currentMapLayer = 0;
+  const mapLayers = [
+    { name: 'CartoDB Light', layer: null, icon: '🌍' },
+    { name: 'CartoDB Voyager', layer: 'cartoVoyagerLayer', icon: '🗺️' },
+    { name: 'OpenStreetMap UA', layer: 'osmUkrainianLayer', icon: '🇺🇦' },
+    { name: 'Wikimedia', layer: 'wikimediaTileLayer', icon: '📍' },
+    { name: 'ESRI Street', layer: 'esriLayer', icon: '🛣️' }
+  ];
+  
+  function toggleMapLayer() {
+    const btn = document.getElementById('mapLayerBtn');
+    
+    if (!map) {
+      console.warn('Карта не ініціалізована');
+      return;
+    }
+    
+    // Switch to next layer
+    currentMapLayer = (currentMapLayer + 1) % mapLayers.length;
+    const newLayer = mapLayers[currentMapLayer];
+    
+    // Remove all existing tile layers
+    map.eachLayer(function (layer) {
+      if (layer instanceof L.TileLayer) {
+        map.removeLayer(layer);
+      }
+    });
+    
+    // Add new layer
+    if (newLayer.layer && window[newLayer.layer]) {
+      window[newLayer.layer].addTo(map);
+    } else {
+      // Default CartoDB Light layer
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19,
+        attribution: '',
+        crossOrigin: true,
+        detectRetina: true,
+        subdomains: 'abcd',
+        className: 'main-tile-layer'
+      }).addTo(map);
+    }
+    
+    // Update button
+    if (btn) {
+      btn.innerHTML = newLayer.icon;
+      btn.title = `Стиль карти: ${newLayer.name}`;
+      
+      // Add animation effect
+      btn.style.transform = 'scale(1.2) rotate(180deg)';
+      setTimeout(() => {
+        btn.style.transform = 'scale(1) rotate(0deg)';
+      }, 200);
+    }
+    
+    console.log(`Переключено на стиль карти: ${newLayer.name}`);
   }
   
   // Text size toggle functionality

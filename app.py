@@ -9,7 +9,7 @@
 
 import os, re, json, asyncio, threading, logging, pytz, time, subprocess, queue, sys, platform, traceback, uuid
 from datetime import datetime, timedelta
-from flask import Flask, render_template, jsonify, request, Response
+from flask import Flask, render_template, jsonify, request, Response, send_from_directory
 from telethon import TelegramClient
 try:
     from telethon.errors import (
@@ -257,6 +257,29 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(mess
 log = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# Custom route for serving pre-compressed static files
+@app.route('/static/<path:filename>')
+def static_with_gzip(filename):
+    """Serve static files with gzip compression support."""
+    # Check if client accepts gzip and we have a gzipped version
+    accepts_gzip = 'gzip' in request.headers.get('Accept-Encoding', '').lower()
+    
+    if accepts_gzip and filename.endswith('.js'):
+        gzip_path = os.path.join(app.static_folder, filename + '.gz')
+        if os.path.exists(gzip_path):
+            response = send_from_directory(app.static_folder, filename + '.gz')
+            response.headers['Content-Encoding'] = 'gzip'
+            response.headers['Content-Type'] = 'application/javascript; charset=utf-8'
+            
+            # Add strong caching for JS files
+            response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+            response.headers['Expires'] = (datetime.now() + timedelta(days=365)).strftime('%a, %d %b %Y %H:%M:%S GMT')
+            
+            return response
+    
+    # Fall back to regular static file serving
+    return send_from_directory(app.static_folder, filename)
 
 # Configure caching and compression for better performance on slow connections
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000  # 1 year for static files
@@ -948,6 +971,12 @@ UA_CITY_NORMALIZE = {
     'малу дівицю':'мала дівиця','мала дівицю':'мала дівиця',
     # Additional safety normalizations
     'олишівку':'олишівка','згурівку':'згурівка','ставищею':'ставище','кегичівку':'кегичівка','кегичевку':'кегичівка',
+    # Voznesensk variants
+    'вознесенська':'вознесенськ',
+    # Mykolaiv variants  
+    'миколаєва':'миколаїв',
+    # Novoukrainka variants
+    'новоукраїнку':'новоукраїнка',
     'старому салтову':'старий салтів','старому салтові':'старий салтів','карлівку':'карлівка','магдалинівку':'магдалинівка',
     'балаклію':'балаклія','білу церкву':'біла церква','баришівку':'баришівка','сквиру':'сквира','сосницю':'сосниця',
     'васильківку':'васильківка','понорницю':'понорниця','куликівку':'куликівка','терни':'терни',
@@ -1197,6 +1226,8 @@ CITY_COORDS = {
     'святогірськ': (49.0339, 37.5663),
     # Antonivka (Kherson urban-type settlement, user report for UAV threat)
     'антонівка': (46.6925, 32.7186),
+    # Alexandria (Kirovohrad Oblast) - avoid confusion with other cities named Alexandria
+    'олександрія': (48.8033, 33.1147),
     # Baturyn (Chernihiv Obl.) for directional course reports
     'батурин': (51.3450, 32.8761),
         'рівне': (50.6199, 26.2516), 'івано-франківськ': (48.9226, 24.7111), 'луцьк': (50.7472, 25.3254), 'тернопіль': (49.5535, 25.5948),
@@ -2124,9 +2155,9 @@ LVIV_CITY_COORDS = {
     'кам\'янка-бузька': (50.0914, 24.0361),
     'кам\'янці-бузькій': (50.0914, 24.0361),
     'кам\'янку-бузьку': (50.0914, 24.0361),
-    'миколаїв': (49.5778, 24.0342),  # Миколаїв Львівський (не той що в Миколаївській обл.)
-    'миколаєві': (49.5778, 24.0342),
-    'миколаєвом': (49.5778, 24.0342),
+    'миколаїв': (46.9750, 31.9946),  # Миколаїв правильный (Миколаївська обл.)
+    'миколаєві': (46.9750, 31.9946),
+    'миколаєвом': (46.9750, 31.9946),
     'мостиська': (49.7956, 23.1533),
     'мостиськах': (49.7956, 23.1533),
     'мостиську': (49.7956, 23.1533),
@@ -2653,6 +2684,7 @@ RAION_FALLBACK = {
     , 'шепетівський': (50.1822, 27.0637), 'шепетовский': (50.1822, 27.0637)  # Shepetivka
     , 'полтавський': (49.5883, 34.5514), 'полтавский': (49.5883, 34.5514)    # Poltava (raion)
     , 'хмельницький': (49.4229, 26.9871), 'хмельницкий': (49.4229, 26.9871)  # Khmelnytskyi raion (city)
+    , 'куп\'янський': (49.7106, 37.6156), 'купянський': (49.7106, 37.6156)   # Kupiansk raion (Kharkiv oblast)
     , 'роменський': (50.7515, 33.4746), 'роменский': (50.7515, 33.4746)      # Romny
     , 'охтирський': (50.3103, 34.8988), 'ахтырский': (50.3103, 34.8988)      # Okhtyrka translit variant
     , 'харківський': (49.9935, 36.2304), 'харьковский': (49.9935, 36.2304)   # ensure duplication above
@@ -2667,6 +2699,7 @@ RAION_FALLBACK = {
     , 'лозівський': (48.8926, 36.3172), 'лозовский': (48.8926, 36.3172)         # Lozova
     , 'новоукраїнський': (48.3174, 31.5167), 'новоукраинский': (48.3174, 31.5167) # Novoukrainka
     , 'олександрійський': (48.6696, 33.1176), 'александрийский': (48.6696, 33.1176) # Oleksandriia
+    , 'березівський': (46.8183, 31.3972), 'березовский': (46.8183, 31.3972) # Berezivka (Odesa Oblast)
     , 'охтирский': (50.3103, 34.8988)  # Russian variant explicit
     # Potential typo in feed: 'берестинський' (if meant 'Бериславський' already covered). Placeholder guess -> skip precise to avoid misplot.
 }
@@ -3406,12 +3439,18 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 (re.search(r'\d+\s*[xх×]\s*бпла.*?(курс|на)\s+([а-яіїєё\'\-\s]+)', line_lower)) or
                 # Pattern: "N шахедів/шахеди на [target]" - all forms of Shahed
                 (re.search(r'\d+\s+шахед[а-яіїєёыийї]*\s+на\s+([а-яіїєё\'\-\s]+)', line_lower)) or
+                # Pattern: "N шахедів/шахеди біля [target]" - near target
+                (re.search(r'\d+\s+шахед[а-яіїєёыийї]*\s+біля\s+([а-яіїєё\'\-\s]+)', line_lower)) or
                 # Pattern: "N ударних БпЛА на [target]"
                 (re.search(r'\d+\s+ударн.*?бпла.*?на\s+([а-яіїєё\'\-\s]+)', line_lower)) or
                 # Pattern: "N БпЛА на [target]" or "N бпла на [target]"  
                 (re.search(r'\d+\s+бпла.*?на\s+([а-яіїєё\'\-\s]+)', line_lower)) or
                 # Pattern: "БпЛА курсом на [target]" (without count)
-                (re.search(r'бпла.*?курс.*?на\s+([а-яіїєё\'\-\s]+)', line_lower))
+                (re.search(r'бпла.*?курс.*?на\s+([а-яіїєё\'\-\s]+)', line_lower)) or
+                # Pattern: "N шахедів через [target]" - via target  
+                (re.search(r'\d+\s+шахед[а-яіїєёыийї]*\s+через\s+([а-яіїєё\'\-\s]+)', line_lower)) or
+                # Pattern: "N шахедів з боку [target]" - from direction of target
+                (re.search(r'\d+\s+шахед[а-яіїєёыийї]*\s+з\s+боку\s+([а-яіїєё\'\-\s]+)', line_lower))
             )
             
             if has_threat_pattern:
@@ -3689,22 +3728,29 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             if count_str and count_str.isdigit():
                                 uav_count_num = int(count_str)
                             
-                            threat_id = f"{mid}_imm_multi_{len(threats)}"
-                            threats.append({
-                                'id': threat_id,
-                                'place': city_display,  # Use normalized display name
-                                'lat': lat,
-                                'lng': lng,
-                                'threat_type': 'shahed',
-                                'text': f"{line_stripped} (мультирегіональне)",
-                                'date': date_str,
-                                'channel': channel,
-                                'marker_icon': 'shahed.png',
-                                'source_match': f'immediate_multi_regional_uav_{uav_count_num}x',
-                                'count': uav_count_num
-                            })
+                            # Create multiple tracks for multiple drones
+                            tracks_to_create = max(1, uav_count_num)
+                            for i in range(tracks_to_create):
+                                track_display_name = city_display
+                                if tracks_to_create > 1:
+                                    track_display_name += f" #{i+1}"
+                                
+                                threat_id = f"{mid}_imm_multi_{len(threats)}"
+                                threats.append({
+                                    'id': threat_id,
+                                    'place': track_display_name,  # Use numbered display name for multiple drones
+                                    'lat': lat,
+                                    'lng': lng,
+                                    'threat_type': 'shahed',
+                                    'text': f"{line_stripped} (мультирегіональне)",
+                                    'date': date_str,
+                                    'channel': channel,
+                                    'marker_icon': 'shahed.png',
+                                    'source_match': f'immediate_multi_regional_uav_{uav_count_num}x',
+                                    'count': 1  # Each track represents 1 drone
+                                })
                             
-                            add_debug_log(f"Immediate Multi-regional: {city_clean} ({uav_count_num}x) -> {coords}", "multi_regional")
+                            add_debug_log(f"Immediate Multi-regional: {city_clean} ({uav_count_num}x) -> {tracks_to_create} tracks at {coords}", "multi_regional")
                         else:
                             add_debug_log(f"Immediate Multi-regional: No coords for {city_clean}", "multi_regional")
         
@@ -5155,24 +5201,78 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 if count_match:
                     uav_count = int(count_match.group(1))
                 
-                threat_data = {
-                    'id': str(mid), 'place': base.title(), 'lat': lat, 'lng': lng,
-                    'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                    'marker_icon': icon, 'source_match': 'course_to_city', 'count': uav_count
-                }
+                # Create multiple tracks for multiple drones
+                tracks_to_create = max(1, uav_count)
+                threat_tracks = []
                 
-                # Add course information if available
-                if course_info:
-                    threat_data.update({
-                        'course_source': course_info.get('source_city'),
-                        'course_target': course_info.get('target_city'),
-                        'course_direction': course_info.get('course_direction'),
-                        'course_type': course_info.get('course_type')
-                    })
+                for i in range(tracks_to_create):
+                    track_name = base.title()
+                    if tracks_to_create > 1:
+                        track_name += f" #{i+1}"
+                    
+                    threat_data = {
+                        'id': f"{mid}_{i+1}", 'place': track_name, 'lat': lat, 'lng': lng,
+                        'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                        'marker_icon': icon, 'source_match': 'course_to_city', 'count': 1
+                    }
+                    
+                    # Add course information if available
+                    if course_info:
+                        threat_data.update({
+                            'course_source': course_info.get('source_city'),
+                            'course_target': course_info.get('target_city'),
+                            'course_direction': course_info.get('course_direction'),
+                            'course_type': course_info.get('course_type')
+                        })
+                    
+                    threat_tracks.append(threat_data)
                 
-                return [threat_data]
+                return threat_tracks
     except Exception:
         pass
+    
+    # --- PRIORITY: Early explicit pattern for districts - MOVED UP TO AVOID CONFLICTS ---
+    # Check before region direction processing to prevent fallback to oblast centers
+    try:
+        import re as _re_raion
+        # Pattern 1: "<RaionName> район (<Oblast ...>)"
+        m_raion_oblast = _re_raion.search(r'([A-Za-zА-Яа-яЇїІіЄєҐґ\'\-]{4,})\s+район\s*\(([^)]*обл[^)]*)\)', text)
+        if m_raion_oblast:
+            raion_token = m_raion_oblast.group(1).strip().lower()
+            # Normalize morphological endings
+            raion_base = _re_raion.sub(r'(ському|ского|ського|ский|ськiй|ськой|ським|ском)$', 'ський', raion_token)
+            if raion_base in RAION_FALLBACK:
+                lat, lng = RAION_FALLBACK[raion_base]
+                threat_type, icon = classify(text)
+                add_debug_log(f"PRIORITY: Early district processing - {raion_base} район -> {lat}, {lng}", "district_early")
+                return [{
+                    'id': str(mid), 'place': f"{raion_base.title()} район", 'lat': lat, 'lng': lng,
+                    'threat_type': threat_type, 'text': text[:500],
+                    'date': date_str, 'channel': channel, 'marker_icon': icon, 'source_match': 'raion_oblast_combo_early'
+                }]
+            else:
+                add_debug_log(f"Early district processing - {raion_base} not found in RAION_FALLBACK", "district_early")
+
+        # Pattern 2: "<RaionName> район <OblastName>" (без дужок)
+        m_raion_oblast2 = _re_raion.search(r'([A-Za-zА-Яа-яЇїІіЄєҐґ\'\-]{4,})\s+район\s+([\w\']+(?:щини|щину|области|області))', text)
+        if m_raion_oblast2:
+            raion_token = m_raion_oblast2.group(1).strip().lower()
+            # Normalize morphological endings
+            raion_base = _re_raion.sub(r'(ському|ского|ського|ский|ськiй|ськой|ським|ском)$', 'ський', raion_token)
+            if raion_base in RAION_FALLBACK:
+                lat, lng = RAION_FALLBACK[raion_base]
+                threat_type, icon = classify(text)
+                add_debug_log(f"PRIORITY: Early district processing (format 2) - {raion_base} район -> {lat}, {lng}", "district_early")
+                return [{
+                    'id': str(mid), 'place': f"{raion_base.title()} район", 'lat': lat, 'lng': lng,
+                    'threat_type': threat_type, 'text': text[:500],
+                    'date': date_str, 'channel': channel, 'marker_icon': icon, 'source_match': 'raion_oblast_combo_early_v2'
+                }]
+            else:
+                add_debug_log(f"Early district processing (format 2) - {raion_base} not found in RAION_FALLBACK", "district_early")
+    except Exception as e:
+        add_debug_log(f"Early district processing error: {e}", "district_early")
+    
     # Region directional segments specifying part of oblast ("на сході Дніпропетровщини") possibly multiple in one line
     try:
         import re as _re_seg
@@ -5365,25 +5465,6 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         cleaned_for_multiline.append(ls_no_links.strip())
     lines = cleaned_for_multiline
     
-    # --- PRIORITY: Early explicit pattern for districts: "<RaionName> район (<Oblast ...>)" ---
-    # Check before multi-city processing to prevent fallback to oblast centers
-    m_raion_oblast = re.search(r'([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{4,})\s+район\s*\(([^)]*обл[^)]*)\)', text)
-    if m_raion_oblast:
-        raion_token = m_raion_oblast.group(1).strip().lower()
-        # Normalize morphological endings similar to later norm_raion logic
-        raion_base = re.sub(r'(ському|ского|ського|ский|ськiй|ськой|ським|ском)$', 'ський', raion_token)
-        if raion_base in RAION_FALLBACK:
-            lat, lng = RAION_FALLBACK[raion_base]
-            threat_type, icon = classify(original_text if 'original_text' in locals() else text)
-            add_debug_log(f"PRIORITY: Early district processing - {raion_base} район -> {lat}, {lng}", "district_early")
-            return [{
-                'id': str(mid), 'place': f"{raion_base.title()} район", 'lat': lat, 'lng': lng,
-                'threat_type': threat_type, 'text': (original_text if 'original_text' in locals() else text)[:500],
-                'date': date_str, 'channel': channel, 'marker_icon': icon, 'source_match': 'raion_oblast_combo_early'
-            }]
-        else:
-            add_debug_log(f"Early district processing - {raion_base} not found in RAION_FALLBACK", "district_early")
-
     oblast_hdr = None
     multi_city_tracks = []
     add_debug_log(f"Processing {len(lines)} cleaned lines for multi-city tracks", "multi_region")
@@ -6225,16 +6306,22 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     approx_flag = False
                 threat_type, icon = 'shahed', 'shahed.png'
                 label = UA_CITY_NORMALIZE.get(base, base).title()
-                if count > 1:
-                    label += f" ({count})"
                 if oblast_hdr and oblast_hdr not in label.lower():
                     label += f" [{oblast_hdr.title()}]"
-                print(f"DEBUG: Creating track with label '{label}' at {lat}, {lng}")
-                multi_city_tracks.append({
-                    'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
-                    'threat_type': threat_type, 'text': clean_text(ln)[:500], 'date': date_str, 'channel': channel,
-                    'marker_icon': icon, 'source_match': 'multiline_oblast_city', 'count': count
-                })
+                
+                # Create multiple tracks for multiple drones instead of one track with count
+                tracks_to_create = max(1, count)
+                for i in range(tracks_to_create):
+                    track_label = label
+                    if tracks_to_create > 1:
+                        track_label += f" #{i+1}"
+                    
+                    print(f"DEBUG: Creating track {i+1}/{tracks_to_create} with label '{track_label}' at {lat}, {lng}")
+                    multi_city_tracks.append({
+                        'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': track_label, 'lat': lat, 'lng': lng,
+                        'threat_type': threat_type, 'text': clean_text(ln)[:500], 'date': date_str, 'channel': channel,
+                        'marker_icon': icon, 'source_match': 'multiline_oblast_city', 'count': 1
+                    })
             else:
                 print(f"DEBUG: No coordinates found for city '{base}'")
     print(f"DEBUG: Multi-city tracks processing complete. Found {len(multi_city_tracks)} tracks")
@@ -6555,6 +6642,61 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     def has_threat(txt: str):
         l = txt.lower()
         return any(k in l for k in THREAT_KEYS)
+    
+    # PRIORITY: Structured messages with regional headers (e.g., "Область:\n city details")
+    if not _disable_multiline and has_threat(original_text):
+        import re as _struct_re
+        # Look for pattern: "RegionName:\n threats with cities"
+        region_header_pattern = r'^([А-Яа-яЇїІіЄєҐґ]+щина):\s*$'
+        text_lines = original_text.split('\n')
+        
+        structured_sections = []
+        current_region = None
+        current_threats = []
+        
+        for line in text_lines:
+            line = line.strip()
+            if not line or 'підписатися' in line.lower():
+                continue
+                
+            # Check if line is a region header
+            region_match = _struct_re.match(region_header_pattern, line)
+            if region_match:
+                # Save previous section
+                if current_region and current_threats:
+                    structured_sections.append((current_region, current_threats))
+                # Start new section
+                current_region = region_match.group(1)
+                current_threats = []
+            elif current_region and ('шахед' in line.lower() or 'бпла' in line.lower()):
+                # This is a threat line under current region
+                current_threats.append(line)
+        
+        # Don't forget last section
+        if current_region and current_threats:
+            structured_sections.append((current_region, current_threats))
+        
+        # Process structured sections if we found any
+        if len(structured_sections) >= 2:
+            add_debug_log(f"STRUCTURED REGIONS: Found {len(structured_sections)} regions with threats", "structured_regions")
+            
+            all_structured_tracks = []
+            for region_name, threat_lines in structured_sections:
+                add_debug_log(f"Processing region {region_name} with {len(threat_lines)} threats", "structured_region_detail")
+                
+                for threat_line in threat_lines:
+                    # Process each threat line with region context
+                    region_context_text = f"{region_name}:\n{threat_line}"
+                    line_tracks = process_message(region_context_text, f"{mid}_{region_name}_{len(all_structured_tracks)}", 
+                                                date_str, channel, _disable_multiline=True)
+                    if line_tracks:
+                        all_structured_tracks.extend(line_tracks)
+                        add_debug_log(f"Region {region_name} threat '{threat_line[:50]}...' produced {len(line_tracks)} tracks", "structured_threat_result")
+            
+            if all_structured_tracks:
+                add_debug_log(f"Structured processing complete: {len(all_structured_tracks)} total tracks", "structured_complete")
+                return all_structured_tracks
+    
     # NEW: Handle UAV messages with "через [city]" and "повз [city]" patterns - BEFORE trajectory_phrase  
     try:
         lorig = text.lower()
@@ -8185,6 +8327,149 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     if tracks:
                         return tracks
 
+    # --- PRIORITY: Direction patterns (у напрямку, через, повз) - BEFORE region boundary logic ---
+    try:
+        import re as _re_direction
+        
+        if has_threat(text) and any(pattern in text.lower() for pattern in ['у напрямку', 'через', 'повз']):
+            direction_targets = []
+            
+            # Pattern 1: "у напрямку [city], [oblast]"
+            naprym_pattern = r'у\s+напрямку\s+([А-Яа-яЇїІіЄєҐґ\'\-\s]+?)(?:\s*,\s*([А-Яа-яЇїІіЄєҐґ\'\-\s]*області?))?(?:[\.\,\!\?;]|$)'
+            naprym_matches = _re_direction.findall(naprym_pattern, text, _re_direction.IGNORECASE)
+            for city_raw, oblast_raw in naprym_matches:
+                direction_targets.append(('у напрямку', city_raw.strip(), oblast_raw.strip() if oblast_raw else ''))
+            
+            # Process direction targets
+            for direction_type, city_raw, oblast_raw in direction_targets:
+                if direction_type == 'у напрямку':
+                    city_norm = city_raw.lower().replace('\u02bc',"'").replace('ʼ',"'").replace("'","'").replace('`',"'")
+                    city_norm = re.sub(r'\s+',' ', city_norm).strip()
+                    
+                    # Try exact lookup
+                    coords = CITY_COORDS.get(city_norm)
+                    if not coords:
+                        # Try normalized lookup
+                        city_base = UA_CITY_NORMALIZE.get(city_norm, city_norm)
+                        coords = CITY_COORDS.get(city_base)
+                    
+                    if coords:
+                        lat, lng = coords
+                        threat_type, icon = classify(text)
+                        
+                        # Extract drone count
+                        import re as _re_count
+                        count_match = _re_count.search(r'(\d+)\s*[хx]?\s*(?:бпла|дрон|шахед)', text.lower())
+                        drone_count = int(count_match.group(1)) if count_match else 1
+                        
+                        add_debug_log(f"PRIORITY: Direction target found - {city_norm} -> {coords}", "direction_priority")
+                        return [{
+                            'id': str(mid), 'place': city_raw.title(), 'lat': lat, 'lng': lng,
+                            'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                            'marker_icon': icon, 'source_match': 'direction_target_priority', 'count': drone_count
+                        }]
+                    else:
+                        add_debug_log(f"PRIORITY: Direction target not found - {city_norm}", "direction_priority")
+    except Exception as e:
+        add_debug_log(f"Direction priority processing error: {e}", "direction_priority")
+
+    # PRIORITY: Various Shahed patterns - Process before region boundary logic
+    try:
+        import re as _re_shahed
+        all_shahed_tracks = []
+        
+        # Pattern 1: "N шахедів біля [city]" or "N шахедів біля [city1]/[city2]"
+        bilya_pattern = r'(\d+)\s+шахед[а-яіїєёыийї]*\s+біля\s+([А-Яа-яЏїІіЄєҐґ\'\-\s\/]+?)(?:\s+та\s+район)?(?:\s+на\s+[А-Яа-яЇїІіЄєҐґ\'\-\s]+)?(?:[\.\,\!\?;]|$)'
+        bilya_matches = _re_shahed.findall(bilya_pattern, text, _re_shahed.IGNORECASE)
+        
+        # Pattern 2: "N шахед на [city]"
+        na_pattern = r'(\d+)\s+шахед[а-яіїєёыийї]*\s+на\s+([А-Яа-яЇїІіЄєҐґ\'\-\s]+?)(?:[\.\,\!\?;]|$)'
+        na_matches = _re_shahed.findall(na_pattern, text, _re_shahed.IGNORECASE)
+        
+        # Pattern 3: "N шахедів з боку [city]"
+        z_boku_pattern = r'(\d+)\s+шахед[а-яіїєёыийї]*\s+з\s+боку\s+([А-Яа-яЇїІіЄєҐґ\'\-\s]+?)(?:[\.\,\!\?;]|$)'
+        z_boku_matches = _re_shahed.findall(z_boku_pattern, text, _re_shahed.IGNORECASE)
+        
+        # Pattern 4: "N шахедів через [city1]/[city2]" - multiple cities
+        cherez_multi_pattern = r'(\d+)\s+шахед[а-яіїєёыийї]*\s+через\s+([А-Яа-яЇїІіЄєҐґ\'\-\s\/]+?)(?:\s+район)?(?:\s+на\s+[А-Яа-яЇїІіЄєҐґ\'\-\s]+)?(?:[\.\,\!\?;]|$)'
+        cherez_matches = _re_shahed.findall(cherez_multi_pattern, text, _re_shahed.IGNORECASE)
+        
+        all_patterns = [
+            (bilya_matches, 'bilya'),
+            (na_matches, 'na'), 
+            (z_boku_matches, 'z_boku'),
+            (cherez_matches, 'cherez')
+        ]
+        
+        for matches, pattern_type in all_patterns:
+            for count_str, city_raw in matches:
+                # Handle multiple cities separated by /
+                cities = [c.strip() for c in city_raw.split('/')]
+                
+                for city_part in cities:
+                    city_norm = city_part.lower().replace('\u02bc',"'").replace('ʼ',"'").replace("'","'").replace('`',"'")
+                    city_norm = re.sub(r'\s+',' ', city_norm).strip()
+                    
+                    # Apply normalization rules for accusative/genitive cases
+                    original_norm = city_norm
+                    if city_norm in UA_CITY_NORMALIZE:
+                        city_norm = UA_CITY_NORMALIZE[city_norm]
+                    
+                    # Try accusative endings for cities like "миколаєва" -> "миколаїв", "полтави" -> "полтава"
+                    if not (city_norm in CITY_COORDS or region_enhanced_coords(city_norm)):
+                        # Try various ending transformations
+                        variants = [city_norm]
+                        if city_norm.endswith('а'):
+                            variants.extend([city_norm[:-1] + 'ів', city_norm[:-1] + 'і'])
+                        elif city_norm.endswith('и'):
+                            variants.extend([city_norm[:-1] + 'а', city_norm[:-1] + 'я'])
+                        elif city_norm.endswith('у'):
+                            variants.extend([city_norm[:-1] + 'п', city_norm[:-1] + 'к'])
+                        
+                        for variant in variants:
+                            if variant in CITY_COORDS or region_enhanced_coords(variant):
+                                city_norm = variant
+                                break
+                    
+                    # Try to get coordinates
+                    coords = region_enhanced_coords(city_norm)
+                    if not coords:
+                        context_result = ensure_city_coords_with_message_context(city_norm, text)
+                        if context_result:
+                            coords = context_result[:2]  # Take only lat, lng
+                    
+                    if coords:
+                        lat, lng = coords
+                        threat_type, icon = classify(text)
+                        count = int(count_str) if count_str.isdigit() else 1
+                        
+                        # Create multiple tracks for multiple drones
+                        tracks_to_create = max(1, count)
+                        for i in range(tracks_to_create):
+                            track_label = city_part.title()
+                            if tracks_to_create > 1:
+                                track_label += f" #{i+1}"
+                                
+                            all_shahed_tracks.append({
+                                'id': f"{mid}_{pattern_type}_{len(all_shahed_tracks)}", 
+                                'place': track_label, 
+                                'lat': lat, 
+                                'lng': lng,
+                                'threat_type': threat_type, 
+                                'text': text[:500], 
+                                'date': date_str, 
+                                'channel': channel,
+                                'marker_icon': icon, 
+                                'source_match': f'{pattern_type}_shahed_priority', 
+                                'count': 1
+                            })
+                        add_debug_log(f"SHAHED {pattern_type.upper()}: {city_norm} ({count}x) -> {coords}", f"shahed_{pattern_type}")
+        
+        if all_shahed_tracks:
+            return all_shahed_tracks
+    except Exception as e:
+        add_debug_log(f"Shahed patterns processing error: {e}", "shahed_priority")
+
     # Region boundary logic (fallback single or midpoint for exactly two)
     matched_regions = []
     for name, coords in OBLAST_CENTERS.items():
@@ -8550,6 +8835,11 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     if not coords:
                         log.debug(f'course_target_lookup miss city={norm_city} mid={mid} line={line.strip()[:120]!r} region_hint={region_hint_global}')
                         coords = ensure_city_coords(norm_city)
+                        # Try context-based lookup if standard lookup fails
+                        if not coords:
+                            context_result = ensure_city_coords_with_message_context(norm_city, text)
+                            if context_result:
+                                coords = context_result[:2]  # Take only lat, lng
                     # Oblast stem disambiguation: if global hint exists and known expected stem differs, re-query with region-qualified geocode
                     if coords and region_hint_global and norm_city in CITY_TO_OBLAST:
                         expected_stem = CITY_TO_OBLAST[norm_city]
@@ -8589,6 +8879,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                 line_count = int(m_lc.group(1))
                             except Exception:
                                 line_count = None
+                        # Ensure coords is a tuple of exactly 2 elements (lat, lng)
+                        if len(coords) >= 2:
+                            coords = coords[:2]
                         course_matches.append((norm_city.title(), coords, line[:200], line_count))
     if course_matches:
         threat_type, icon = classify(text)
@@ -8603,22 +8896,32 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             if threat_type == 'shahed':
                 course_info = extract_shahed_course_info(original_text or text)
             
-            track = {
-                'id': f"{mid}_c{idx}", 'place': name, 'lat': lat, 'lng': lng,
-                'threat_type': threat_type, 'text': snippet[:500], 'date': date_str, 'channel': channel,
-                'marker_icon': icon, 'source_match': 'course_target', 'count': line_count if line_count else drone_count
-            }
+            # Determine how many tracks to create
+            count = line_count if line_count else drone_count
+            tracks_to_create = max(1, count if count else 1)
             
-            # Add course information if available
-            if course_info:
-                track.update({
-                    'course_source': course_info.get('source_city'),
-                    'course_target': course_info.get('target_city'),
-                    'course_direction': course_info.get('course_direction'),
-                    'course_type': course_info.get('course_type')
-                })
-            
-            tracks.append(track)
+            # Create multiple tracks for multiple drones
+            for i in range(tracks_to_create):
+                track_name = name
+                if tracks_to_create > 1:
+                    track_name += f" #{i+1}"
+                
+                track = {
+                    'id': f"{mid}_c{idx}_{i+1}", 'place': track_name, 'lat': lat, 'lng': lng,
+                    'threat_type': threat_type, 'text': snippet[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': 'course_target', 'count': 1
+                }
+                
+                # Add course information if available
+                if course_info:
+                    track.update({
+                        'course_source': course_info.get('source_city'),
+                        'course_target': course_info.get('target_city'),
+                        'course_direction': course_info.get('course_direction'),
+                        'course_type': course_info.get('course_type')
+                    })
+                
+                tracks.append(track)
         if tracks:
             return tracks
     
