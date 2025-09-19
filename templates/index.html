@@ -38,7 +38,7 @@
       line-height: 1.5;
     }
     
-    /* Performance optimizations for images and mobile */
+    /* Performance optimizations for images */
     img {
       image-rendering: -webkit-optimize-contrast;
       image-rendering: crisp-edges;
@@ -61,28 +61,11 @@
       opacity: 0.6; /* Dim placeholder/fallback images */
     }
     
-    /* Mobile optimizations */
-    @media (max-width: 768px) {
-      .leaflet-tile-container {
-        will-change: transform;
-      }
-      
-      .leaflet-zoom-anim {
-        animation-duration: 0.15s !important; /* Faster animations on mobile */
-      }
-      
-      .leaflet-marker-icon {
-        transform: translateZ(0);
-        backface-visibility: hidden;
-      }
-    }
-    
-  .navbar {width:100%;background:var(--panel-bg);color:var(--text);font-weight:600;font-size:1.15rem;padding:.7rem 1.1rem;box-shadow:0 4px 20px var(--shadow);display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);}    
+  .navbar {width:100%;background:var(--panel-bg);color:var(--text);font-weight:600;font-size:1.15rem;padding:.7rem 1.1rem;box-shadow:0 4px 20px var(--shadow);display:flex;align-items:center;gap:1.5rem;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);}    
     .navbar .logo {
       display: flex;
       align-items: center;
       gap: 1rem;
-      flex-shrink: 0;
     }
     
     .navbar .logo img {
@@ -110,8 +93,10 @@
     font-size: 0.75rem;
     font-weight: 600;
     letter-spacing: 0.5px;
-    margin-left: auto;
-    flex-shrink: 0;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
     box-shadow: 
       0 0 0 1px rgba(59, 130, 246, 0.1),
       0 8px 25px -8px rgba(0, 0, 0, 0.6),
@@ -122,7 +107,7 @@
   }
   
   .live-users:hover {
-    transform: translateY(-2px);
+    transform: translate(-50%, -50%) translateY(-2px);
     box-shadow: 
       0 0 0 1px rgba(59, 130, 246, 0.3),
       0 12px 35px -10px rgba(0, 0, 0, 0.7),
@@ -201,18 +186,6 @@
     border-radius: 0.5rem;
     text-transform: uppercase;
     backdrop-filter: blur(4px);
-    animation: betaPulse 3s ease-in-out infinite;
-  }
-  
-  @keyframes betaPulse {
-    0%, 100% { 
-      background: linear-gradient(135deg, rgba(251, 191, 36, 0.15), rgba(245, 158, 11, 0.1));
-      border-color: rgba(251, 191, 36, 0.3);
-    }
-    50% { 
-      background: linear-gradient(135deg, rgba(251, 191, 36, 0.25), rgba(245, 158, 11, 0.2));
-      border-color: rgba(251, 191, 36, 0.5);
-    }
   }
   
   /* Responsive adjustments */
@@ -249,7 +222,7 @@
     }
   }
     
-  .navbar .nav-links {display:flex;gap:.75rem;font-size:.85rem;flex-wrap:wrap;align-items:center;flex:1;justify-content:center;}
+  .navbar .nav-links {display:flex;gap:.75rem;font-size:.85rem;flex-wrap:wrap;align-items:center;}
     
   .navbar .nav-links a {color:var(--text2);text-decoration:none;font-weight:500;transition:all .2s;padding:.45rem .75rem;border-radius:.5rem;line-height:1;display:flex;align-items:center;gap:.25rem;}
     
@@ -261,54 +234,6 @@
     .navbar .nav-links a.active {
       color: var(--accent);
       background: rgba(59, 130, 246, 0.1);
-    }
-    
-    /* Responsive navbar */
-    @media (max-width: 768px) {
-      .navbar {
-        flex-wrap: wrap;
-        padding: 0.6rem 1rem;
-        gap: 0.5rem;
-      }
-      
-      .navbar .nav-links {
-        order: 3;
-        width: 100%;
-        justify-content: center;
-        gap: 0.5rem;
-        margin-top: 0.5rem;
-      }
-      
-      .navbar .nav-links a {
-        font-size: 0.8rem;
-        padding: 0.4rem 0.6rem;
-      }
-      
-      .live-users {
-        order: 2;
-        margin-left: auto;
-        margin-right: 0;
-      }
-    }
-    
-    @media (max-width: 480px) {
-      .navbar {
-        padding: 0.5rem 0.8rem;
-      }
-      
-      .navbar .logo span {
-        font-size: 1rem;
-      }
-      
-      .navbar .nav-links a {
-        font-size: 0.75rem;
-        padding: 0.35rem 0.5rem;
-        gap: 0.2rem;
-      }
-      
-      .navbar .nav-links a .material-icons {
-        font-size: 1rem;
-      }
     }
     .main-content {
       display: grid;
@@ -515,96 +440,9 @@
       height: calc(100vh - 4rem);
       width: 100%;
       border-radius: 1.15rem;
-      background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-      box-shadow: 
-        0 0 0 1px rgba(0,0,0,.04), 
-        0 4px 18px -8px rgba(0,0,0,.18), 
-        inset 0 0 0 1px rgba(255,255,255,.55),
-        0 20px 40px -12px rgba(0,0,0,.08);
-      position: relative;
-      overflow: hidden;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    
-    #map:hover {
-      box-shadow: 
-        0 0 0 1px rgba(0,0,0,.06), 
-        0 8px 32px -12px rgba(0,0,0,.25), 
-        inset 0 0 0 1px rgba(255,255,255,.65),
-        0 32px 64px -16px rgba(0,0,0,.12);
-      transform: translateY(-1px);
-    }
-    
-    /* Улучшенные стили для плиток карты */
-    .main-tile-layer,
-    .voyager-tile-layer,
-    .wikimedia-tiles,
-    .esri-tiles {
-      filter: brightness(1.02) contrast(1.05) saturate(1.1);
-      transition: filter 0.3s ease;
-    }
-    
-    /* Стили для плавного переключения слоев */
-    .leaflet-tile-container {
-      transition: opacity 0.4s ease-in-out;
-    }
-    
-    /* Улучшенные маркеры */
-    .leaflet-marker-icon {
-      filter: drop-shadow(0 2px 8px rgba(0,0,0,0.15));
-      transition: all 0.2s ease;
-    }
-    
-    .leaflet-marker-icon:hover {
-      filter: drop-shadow(0 4px 16px rgba(0,0,0,0.25));
-      transform: scale(1.05) translateY(-2px);
-    }
-    
-    /* Улучшенные попапы */
-    .leaflet-popup-content-wrapper {
-      background: rgba(255, 255, 255, 0.95);
-      backdrop-filter: blur(12px) saturate(1.2);
-      border-radius: 12px;
-      box-shadow: 
-        0 0 0 1px rgba(0,0,0,.08),
-        0 8px 32px -8px rgba(0,0,0,.2),
-        0 0 80px -20px rgba(59, 130, 246, 0.15);
-      border: none;
-      overflow: hidden;
-    }
-    
-    .leaflet-popup-tip {
-      background: rgba(255, 255, 255, 0.95);
-      backdrop-filter: blur(12px);
-      box-shadow: 0 2px 8px rgba(0,0,0,.12);
-    }
-    
-    /* Зум контролы */
-    .leaflet-control-zoom {
-      border: none !important;
-      box-shadow: 
-        0 4px 16px -4px rgba(0,0,0,.15),
-        0 0 0 1px rgba(255,255,255,.8) !important;
-      border-radius: 12px !important;
-      overflow: hidden;
-      backdrop-filter: blur(8px);
-      background: rgba(255, 255, 255, 0.9) !important;
-    }
-    
-    .leaflet-control-zoom a {
-      background: rgba(255, 255, 255, 0.9) !important;
-      border: none !important;
-      color: #1e293b !important;
-      font-weight: 600;
-      font-size: 18px;
-      transition: all 0.2s ease;
-      backdrop-filter: blur(8px);
-    }
-    
-    .leaflet-control-zoom a:hover {
-      background: rgba(59, 130, 246, 0.9) !important;
-      color: white !important;
-      transform: scale(1.05);
+      background:#f1f4f8;
+      box-shadow: 0 0 0 1px rgba(0,0,0,.04), 0 4px 18px -8px rgba(0,0,0,.18), inset 0 0 0 1px rgba(255,255,255,.55);
+      position:relative;
     }
   /* Marker loading overlay */
   #markerLoadingOverlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(140deg,rgba(10,15,28,.94),rgba(17,24,39,.94));backdrop-filter:blur(6px) saturate(1.25);z-index:1200;color:#e2e8f0;gap:1.1rem;font-family:Inter,system-ui,sans-serif;transition:opacity .4s ease, visibility .4s ease;}
@@ -805,68 +643,25 @@
       top: 1rem;
       right: 1rem;
       display: flex;
-      flex-direction: column;
-      gap: 0.75rem;
-      z-index: 1200; /* above all Leaflet layers, below modal */
+      gap: 0.5rem;
+  /* Leaflet panes use z-index up to ~700 (popupPane). Use higher to always stay on top */
+  z-index: 1200; /* above all Leaflet layers, below modal */
     }
     
     .map-control-btn {
-      background: linear-gradient(145deg, rgba(255,255,255,0.95), rgba(248,250,252,0.9));
-      border: 1px solid rgba(203, 205, 214, 0.4);
-      border-radius: 12px;
-      padding: 0.75rem;
+      background: linear-gradient(145deg,rgba(255,255,255,0.82),rgba(248,250,252,0.95));
+      border: 1px solid #c3cdd6;
+      border-radius: 0.65rem;
+      padding: 0.55rem;
       color: #1e293b;
       cursor: pointer;
-      transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-      backdrop-filter: blur(16px) saturate(1.4);
-      box-shadow: 
-        0 4px 16px -4px rgba(0,0,0,.15),
-        0 0 0 1px rgba(255,255,255,.8) inset,
-        0 8px 32px -12px rgba(0,0,0,.18);
-      font-size: 18px;
-      font-weight: 500;
-      width: 48px;
-      height: 48px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      position: relative;
-      overflow: hidden;
+      transition: all 0.25s;
+      backdrop-filter: blur(10px) saturate(1.3);
+      box-shadow: 0 2px 5px rgba(0,0,0,.12),0 0 0 1px rgba(255,255,255,.7) inset,0 6px 18px -8px rgba(0,0,0,.22);
     }
-    
-    .map-control-btn::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(139, 92, 246, 0.1));
-      opacity: 0;
-      transition: opacity 0.3s ease;
-    }
-    
-    .map-control-btn:hover::before {
-      opacity: 1;
-    }
-    
-    .map-control-btn:hover { 
-      background: linear-gradient(145deg, #ffffff, #f8fafc);
-      transform: translateY(-4px) scale(1.08);
-      box-shadow: 
-        0 8px 32px -8px rgba(0,0,0,.25),
-        0 0 0 1px rgba(255,255,255,.9) inset,
-        0 16px 48px -16px rgba(59, 130, 246, 0.2);
-      border-color: rgba(59, 130, 246, 0.3);
-    }
-    
-    .map-control-btn:active { 
-      transform: translateY(-1px) scale(1.02);
-      transition-duration: 0.1s;
-    }
-    
-    .map-control-btn i { 
-      font-size: 20px;
-      position: relative;
-      z-index: 1;
-    }
+    .map-control-btn:hover { background:linear-gradient(145deg,#ffffff,#f1f5f9); transform: translateY(-3px) scale(1.04); box-shadow:0 6px 18px -6px rgba(0,0,0,.25),0 0 0 1px rgba(255,255,255,.85) inset; }
+    .map-control-btn:active { transform:translateY(0); }
+    .map-control-btn i { font-size:20px; }
     
     /* Active state for region boundaries button */
     #regionBoundariesBtn.active {
@@ -877,23 +672,6 @@
     #regionBoundariesBtn.active:hover {
       background: linear-gradient(145deg, #d97706, #b45309) !important;
       transform: translateY(-2px) scale(1.02);
-    }
-    
-    /* Map layer button styles */
-    #mapLayerBtn {
-      font-size: 16px;
-      transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-    }
-    
-    #mapLayerBtn:hover {
-      transform: translateY(-3px) scale(1.08) rotate(5deg);
-      box-shadow: 0 8px 25px -8px rgba(59, 130, 246, 0.4);
-    }
-    
-    /* Spinner animation for loading states */
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
     }
     
     /* Active state for text size button */
@@ -1064,47 +842,6 @@
       line-height: 1.5;
     }
     
-    .info-section.beta-status {
-      background: linear-gradient(135deg, rgba(251, 191, 36, 0.08), rgba(245, 158, 11, 0.05));
-      border: 1px solid rgba(251, 191, 36, 0.2);
-      border-radius: 0.75rem;
-      padding: 1rem;
-      margin-bottom: 1.5rem;
-      position: relative;
-      overflow: hidden;
-    }
-    
-    .info-section.beta-status::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 3px;
-      background: linear-gradient(90deg, #fbbf24, #f59e0b, #fbbf24);
-      animation: betaGradient 2s ease-in-out infinite;
-    }
-    
-    @keyframes betaGradient {
-      0%, 100% { transform: translateX(-100%); }
-      50% { transform: translateX(100%); }
-    }
-    
-    .info-section.beta-status h3 {
-      color: #f59e0b;
-      margin-bottom: 0.75rem;
-    }
-    
-    .info-section.beta-status p {
-      color: var(--text);
-      font-weight: 400;
-    }
-    
-    .info-section.beta-status strong {
-      color: #f59e0b;
-      font-weight: 600;
-    }
-    
     .accent-link {
       color: var(--accent);
       text-decoration: none;
@@ -1204,81 +941,11 @@
   </style>
   <style>
   /* Place search control */
-  .place-search{
-    position:absolute;
-    top:1rem;
-    left:50%;
-    transform:translateX(-50%);
-    display:flex;
-    gap:.5rem;
-    background:rgba(255,255,255,.95);
-    backdrop-filter:blur(16px) saturate(1.4);
-    padding:.75rem 1rem;
-    border-radius:16px;
-    box-shadow:0 8px 32px -8px rgba(0,0,0,.15), 0 0 0 1px rgba(255,255,255,.8);
-    z-index:950;
-    align-items:center;
-    border: 1px solid rgba(0,0,0,.06);
-    transition: all 0.3s ease;
-  }
-  
-  .place-search:hover {
-    box-shadow:0 12px 48px -12px rgba(0,0,0,.2), 0 0 0 1px rgba(255,255,255,.9);
-    transform:translateX(-50%) translateY(-2px);
-  }
-  
-  .place-search input{
-    background:rgba(248,250,252,.8);
-    border:1px solid rgba(203,213,225,.5);
-    color:#1e293b;
-    padding:.5rem .75rem;
-    border-radius:12px;
-    min-width:280px;
-    font-size:.9rem;
-    outline:none;
-    transition:all .3s ease;
-    font-weight:500;
-  }
-  
-  .place-search input:focus{
-    border-color:#3b82f6;
-    background:rgba(255,255,255,.95);
-    box-shadow:0 0 0 3px rgba(59,130,246,.1), 0 4px 16px -4px rgba(59,130,246,.2);
-    transform: scale(1.02);
-  } 
-  
-  .place-search input::placeholder {
-    color: #64748b;
-    font-weight: 400;
-  }
-  
-  .place-search button{
-    background:linear-gradient(135deg,#3b82f6,#1d4ed8);
-    border:none;
-    color:#fff;
-    padding:.65rem .9rem;
-    border-radius:12px;
-    cursor:pointer;
-    display:flex;
-    align-items:center;
-    gap:.3rem;
-    box-shadow:0 4px 14px -4px rgba(59,130,246,.4);
-    transition:all .3s cubic-bezier(0.34, 1.56, 0.64, 1);
-    font-size:.85rem;
-    font-weight:600;
-    letter-spacing:.3px;
-  }
-  
-  .place-search button:hover{
-    transform:translateY(-3px) scale(1.05);
-    box-shadow:0 8px 28px -8px rgba(59,130,246,.5);
-    background:linear-gradient(135deg,#1d4ed8,#1e40af);
-  } 
-  
-  .place-search button:active{
-    transform:translateY(-1px) scale(1.02);
-    transition-duration: .1s;
-  } 
+  .place-search{position:absolute;top:1rem;left:50%;transform:translateX(-50%);display:flex;gap:.4rem;background:rgba(15,23,42,.78);backdrop-filter:blur(8px) saturate(1.4);padding:.55rem .8rem;border-radius:1.1rem;box-shadow:0 4px 22px -6px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.08);z-index:950;align-items:center;}
+  .place-search input{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#fff;padding:.45rem .75rem;border-radius:.75rem;min-width:260px;font-size:.82rem;outline:none;transition:.18s;}
+  .place-search input:focus{border-color:#3b82f6;background:rgba(59,130,246,.15);box-shadow:0 0 0 2px rgba(59,130,246,.35);} 
+  .place-search button{background:linear-gradient(135deg,#2563eb,#7c3aed);border:none;color:#fff;padding:.5rem .75rem;border-radius:.7rem;cursor:pointer;display:flex;align-items:center;gap:.25rem;box-shadow:0 4px 14px -4px rgba(37,99,235,.55);transition:.2s;font-size:.75rem;font-weight:600;letter-spacing:.4px;}
+  .place-search button:hover{transform:translateY(-2px);} .place-search button:active{transform:translateY(0);} 
   @media (max-width:820px){ .place-search{top:auto;bottom:.75rem;left:.75rem;transform:none;right:.75rem;margin:0;flex-wrap:nowrap;min-width:0;} .place-search input{min-width:0;width:160px;} }
   .ps-suggest{position:absolute;top:100%;left:0;margin-top:.4rem;background:#0f172a;border:1px solid #1e293b;border-radius:.9rem;padding:.35rem .4rem;min-width:100%;max-height:240px;overflow-y:auto;box-shadow:0 8px 28px -6px rgba(0,0,0,.55);}
   .ps-item{padding:.4rem .55rem;border-radius:.55rem;font-size:.75rem;cursor:pointer;display:flex;justify-content:space-between;gap:.6rem;}
@@ -1368,17 +1035,17 @@
   <div class="navbar">
     <div class="logo">
   <img src="/static/neptun.jpg" alt="NEPTUN">
-  <span>НЕПТУН</span>
+  <span>NEPTUN</span>
     </div>
     <div class="nav-links">
       <a href="#map" class="active"><i class="material-icons">map</i> Карта</a>
       <a href="#events"><i class="material-icons">notifications</i> Події</a>
       <a href="#about"><i class="material-icons">info</i> Інфо</a>
     </div>
-  <div class="live-users" id="liveUsers" title="Активні відвідувачі зараз онлайн • Бета-тест до 1 жовтня • Оновлюється кожні 5 секунд">
+  <div class="live-users" id="liveUsers" title="Активні відвідувачі зараз онлайн • Оновлюється кожні 5 секунд">
     <span class="live-label">онлайн</span>
     <span class="live-count" id="liveCount">0</span>
-    <span class="live-beta">BETA • до 1.10</span>
+    <span class="live-beta">BETA</span>
   </div>
   </div>
 
@@ -1411,10 +1078,7 @@
           <i class="material-icons">text_fields</i>
         </button>
         <button class="map-control-btn" id="regionBoundariesBtn" onclick="toggleRegionBoundaries()" title="Показати/приховати границі областей" aria-label="Границі областей">
-          🗺️
-        </button>
-        <button class="map-control-btn" id="mapLayerBtn" onclick="toggleMapLayer()" title="Переключити стиль карти" aria-label="Стиль карти">
-          🌍
+          <i class="material-icons">map</i>
         </button>
         <button class="map-control-btn" id="expandBtn" onclick="toggleMapExpand()" title="Розгорнути карту" aria-label="Розгорнути карту">
           <i class="material-icons" id="expandIcon">fullscreen</i>
@@ -1442,10 +1106,6 @@
     <div class="card" id="about">
       <h2>Про систему</h2>
       <div class="info-content">
-        <div class="info-section beta-status">
-          <h3><i class="material-icons">schedule</i> Статус бета-тесту</h3>
-          <p><strong>Бета-тест завершується 1 жовтня 2025 року.</strong> Дякуємо всім учасникам за цінний зворотний зв'язок! Стабільна версія буде доступна з жовтня з покращеною функціональністю та надійністю.</p>
-        </div>
         <div class="info-section">
           <h3><i class="material-icons">security</i> Призначення</h3>
           <p>Система показує географію повідомлень про повітряні та інші загрози (ракети, БпЛА, артилерія) з відкритих джерел у режимі близькому до реального часу.</p>
@@ -1501,7 +1161,8 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <!-- Turf.js for geometry operations -->
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
-  <!-- Region boundaries data for NEPTUN - loaded asynchronously -->
+  <!-- Region boundaries data for NEPTUN -->
+  <script src="{{ url_for('static', filename='region_boundaries.js') }}"></script>
   <script type="text/javascript">
     // @ts-nocheck
     
@@ -2257,7 +1918,7 @@
         catch(err){ btn.textContent='Збій'; setTimeout(()=>{btn.textContent=orig;},1400);} finally { commentsBusy=false; btn.disabled=false; }
       });
     }
-  function startComments(){ if(commentsPolling) return; fetchComments(); commentsPolling=safeInterval(fetchComments, IS_MOBILE ? 60000 : 30000); }
+    function startComments(){ if(commentsPolling) return; fetchComments(); commentsPolling=setInterval(fetchComments, 10000); }
    function toggleComments(force){
     const card=document.getElementById('commentsCard'); const fab=document.getElementById('commentsFab'); if(!card||!fab) return;
     const isCollapsed = card.classList.contains('collapsed');
@@ -2759,14 +2420,11 @@
     const loadingImages = new Map();
     const placeholderCache = new Map();
     
-  // Tiny placeholder for immediate display
-  const INSTANT_PLACEHOLDER = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    // Tiny placeholder for immediate display
+    const INSTANT_PLACEHOLDER = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
     
-  // Fallback icon for errors
-  const FALLBACK_ICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA4AAAAOCAYAAAAfSC3RAAAALElEQVQokWP8////fwY0wAgjGJgGLABWMMRAFEg0gGE0GoBmGuwmCkYBAGmxD/dzJvLRwAAAABJRU5ErkJggg==';
-    
-  // Backward-compatible placeholder constant used elsewhere
-  const PLACEHOLDER_ICON = INSTANT_PLACEHOLDER;
+    // Fallback icon for errors
+    const FALLBACK_ICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA4AAAAOCAYAAAAfSC3RAAAALElEQVQokWP8////fwY0wAgjGJgGLABWMMRAFEg0gGE0GoBmGuwmCkYBAGmxD/dzJvLRwAAAABJRU5ErkJggg==';
     
     // Progressive image loader: placeholder → optimized image
     function loadImageProgressive(iconType) {
@@ -2858,14 +2516,6 @@
   let map;
     let markerLayer = null;
     let markers = [];
-    
-    // Global device hints
-    const IS_MOBILE = (window.innerWidth <= 768) || /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    
-    // Safe interval: pauses updates when tab is hidden to reduce CPU/heat
-    function safeInterval(fn, ms){
-      return setInterval(()=>{ if(document.hidden) return; try{ fn(); }catch(e){ console.error(e); } }, ms);
-    }
     // Проста мапа транслітерації/перекладу російських / застарілих назв на українські
     const PLACE_UA_MAP = (()=>{
       const m = new Map([
@@ -3285,15 +2935,6 @@
       });
       console.log('updateMarkers: количество точек после фильтрации:', points.length);
       
-      // Adaptive marker cap to reduce CPU load and device heating
-      try {
-        const maxMarkers = IS_MOBILE ? 80 : 180;
-        if (points.length > maxMarkers) {
-          points = points.sort((a,b)=> new Date(b.date) - new Date(a.date)).slice(0, maxMarkers);
-          console.log('updateMarkers: capped to', maxMarkers, 'markers for performance');
-        }
-      } catch(e) { console.warn('marker cap failed', e); }
-      
       // Expose current points for search suggestions
       window.__lastPoints = points;
       if (threatType) points = points.filter(p => (p.threat_type || '').toLowerCase() === threatType);
@@ -3310,8 +2951,8 @@
       else { markerLayer = L.layerGroup().addTo(map); }
       markers = [];
       
-  // --------- Performance adaptive mode ---------
-  const MAX_DIRECT_MARKERS = 220; // lower threshold to enable fast-mode clustering earlier
+      // --------- Performance adaptive mode ---------
+      const MAX_DIRECT_MARKERS = 650; // threshold where we switch to clustered fast mode
       const useFastMode = points.length > MAX_DIRECT_MARKERS;
       if (useFastMode) {
         const z = map.getZoom();
@@ -3336,7 +2977,7 @@
           b.types.forEach((c,t)=>{ if(c>maxc){ maxc=c; dominant=t; } });
           
           // Use optimized async image loading for clusters
-          let iconUrl = PLACEHOLDER_ICON; // Start with placeholder (defined above)
+          let iconUrl = PLACEHOLDER_ICON; // Start with placeholder
           try {
             iconUrl = await getIconUrl(dominant);
           } catch (error) {
@@ -3821,87 +3462,43 @@
       }).join('');
     }
     async function initMap() {
-      map = L.map('map', { 
-        zoomControl: false, 
-        attributionControl: false,
-        fadeAnimation: !IS_MOBILE,
-        zoomAnimation: !IS_MOBILE,
-        markerZoomAnimation: !IS_MOBILE,
-        preferCanvas: true,
-        tap: false  // Отключаем tap для лучшей производительности на мобильных
-      }).setView([48.3794,31.1656], 6);
+      map = L.map('map', { zoomControl:false, attributionControl:false }).setView([48.3794,31.1656], 6);
       
-      // Используем красивую карту CartoDB Positron (светлая, четкая)
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      // Используем стандартную красивую карту OpenStreetMap
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
         attribution: '',
         crossOrigin: true,
-        detectRetina: false,
-        subdomains: 'abcd',
-        className: 'main-tile-layer',
-        keepBuffer: 0,
-        updateWhenZooming: false,
-        updateWhenIdle: true,
-        reuseTiles: true,
-        tileSize: 256
+        detectRetina: true,
+        subdomains: 'abc'
       }).addTo(map);
-      
-      // Альтернативный слой - CartoDB Voyager (более детальный)
-      window.cartoVoyagerLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        maxZoom: 19,
-        attribution: '',
-        crossOrigin: true,
-        detectRetina: false,
-        subdomains: 'abcd',
-        className: 'voyager-tile-layer',
-        keepBuffer: 0,
-        updateWhenZooming: false,
-        updateWhenIdle: true,
-        reuseTiles: true,
-        tileSize: 256
-      });
       
       // Альтернативный слой - OSM с украинским языком
       window.osmUkrainianLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png?lang=uk', {
         maxZoom: 19,
         attribution: '',
         crossOrigin: true,
-        detectRetina: false,
+        detectRetina: true,
         className: 'ukrainian-localized-tiles',
-        subdomains: 'abc',
-        keepBuffer: 0,
-        updateWhenZooming: false,
-        updateWhenIdle: true,
-        reuseTiles: true,
-        tileSize: 256
+        subdomains: 'abc'
       });
       
-      // Альтернативный слой - Wikimedia International (хорошая читаемость)
+      // Альтернативный слой - Wikimedia International
       window.wikimediaTileLayer = L.tileLayer('https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}{r}.png', {
         maxZoom: 19,
         attribution: '',
         crossOrigin: true,
-        detectRetina: false,
-        className: 'wikimedia-tiles',
-        keepBuffer: 0,
-        updateWhenZooming: false,
-        updateWhenIdle: true,
-        reuseTiles: true,
-        tileSize: 256
+        detectRetina: true,
+        className: 'ukrainian-localized-tiles'
       });
       
-      // Улучшенный слой - ESRI World Street Map (очень четкий)
-      window.esriLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+      // Резервный слой - CartoDB с настройками для украинской локализации
+      window.cartoTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}{r}.png', {
         maxZoom: 19,
         attribution: '',
         crossOrigin: true,
-        detectRetina: false,
-        className: 'esri-tiles',
-        keepBuffer: 0,
-        updateWhenZooming: false,
-        updateWhenIdle: true,
-        reuseTiles: true,
-        tileSize: 256
+        detectRetina: true,
+        subdomains: 'abcd'
       });
       
       // Функция переключения на OSM украинский слой
@@ -4150,7 +3747,7 @@
         }
       }
       pingPresence();
-  safeInterval(pingPresence, IS_MOBILE ? 20000 : 10000);
+  setInterval(pingPresence, 5000);
 
       // --- Интеграция с alerts.in.ua ---
       let airAlarmLayer = null;
@@ -4256,7 +3853,7 @@
         raionAlarmLayer.addTo(map);
       }
       updateRaionAlarms();
-  safeInterval(updateRaionAlarms, IS_MOBILE ? 45000 : 20000);
+      setInterval(updateRaionAlarms, 15000);
 
       await updateMarkers();
       try {
@@ -4277,7 +3874,7 @@
           } catch(e){}
         };
       } catch(e) {}
-  safeInterval(updateMarkers, IS_MOBILE ? 30000 : 15000);
+      setInterval(updateMarkers, 10000);
       // --- Re-cluster / re-render markers on zoom (debounced) so fast-mode buckets follow zoom level ---
       (function(){
         let zoomRedrawTimer=null; let lastZoom=map.getZoom();
@@ -4320,67 +3917,13 @@
   // City boundaries toggle functionality
   let regionBoundariesVisible = false;
   let regionBoundariesLayer = null;
-  let regionBoundariesLoading = false;
   
-  async function loadRegionBoundaries() {
-    if (window.REGION_BOUNDARIES || regionBoundariesLoading) {
-      return; // Уже загружено или загружается
-    }
-    
-    regionBoundariesLoading = true;
-    console.log('Загрузка границ областей...');
-    
-    try {
-      // Показываем индикатор загрузки
-      const btn = document.getElementById('regionBoundariesBtn');
-      if (btn) {
-        btn.innerHTML = '<span style="animation: spin 1s linear infinite;">⌛</span>';
-        btn.disabled = true;
-      }
-      
-      const script = document.createElement('script');
-      script.src = '{{ url_for("static", filename="region_boundaries.js") }}';
-      script.async = true;
-      
-      return new Promise((resolve, reject) => {
-        script.onload = () => {
-          console.log('Границі областей завантажені');
-          regionBoundariesLoading = false;
-          if (btn) {
-            btn.innerHTML = '🗺️';
-            btn.disabled = false;
-          }
-          resolve();
-        };
-        script.onerror = () => {
-          console.error('Помилка завантаження границь областей');
-          regionBoundariesLoading = false;
-          if (btn) {
-            btn.innerHTML = '❌';
-            btn.disabled = false;
-          }
-          reject(new Error('Failed to load region boundaries'));
-        };
-        document.head.appendChild(script);
-      });
-    } catch (error) {
-      regionBoundariesLoading = false;
-      console.error('Помилка:', error);
-      throw error;
-    }
-  }
-  
-  async function toggleRegionBoundaries() {
+  function toggleRegionBoundaries() {
     const btn = document.getElementById('regionBoundariesBtn');
     
-    // Если границы ещё не загружены, загрузим их
     if (!window.REGION_BOUNDARIES) {
-      try {
-        await loadRegionBoundaries();
-      } catch (error) {
-        console.warn('Не вдалося завантажити дані про границі областей:', error);
-        return;
-      }
+      console.warn('Дані про границі областей не завантажені');
+      return;
     }
     
     if (regionBoundariesVisible) {
@@ -4421,65 +3964,6 @@
         }
       }
     }
-  }
-  
-  // Map layer toggle functionality
-  let currentMapLayer = 0;
-  const mapLayers = [
-    { name: 'CartoDB Light', layer: null, icon: '🌍' },
-    { name: 'CartoDB Voyager', layer: 'cartoVoyagerLayer', icon: '🗺️' },
-    { name: 'OpenStreetMap UA', layer: 'osmUkrainianLayer', icon: '🇺🇦' },
-    { name: 'Wikimedia', layer: 'wikimediaTileLayer', icon: '📍' },
-    { name: 'ESRI Street', layer: 'esriLayer', icon: '🛣️' }
-  ];
-  
-  function toggleMapLayer() {
-    const btn = document.getElementById('mapLayerBtn');
-    
-    if (!map) {
-      console.warn('Карта не ініціалізована');
-      return;
-    }
-    
-    // Switch to next layer
-    currentMapLayer = (currentMapLayer + 1) % mapLayers.length;
-    const newLayer = mapLayers[currentMapLayer];
-    
-    // Remove all existing tile layers
-    map.eachLayer(function (layer) {
-      if (layer instanceof L.TileLayer) {
-        map.removeLayer(layer);
-      }
-    });
-    
-    // Add new layer
-    if (newLayer.layer && window[newLayer.layer]) {
-      window[newLayer.layer].addTo(map);
-    } else {
-      // Default CartoDB Light layer
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        maxZoom: 19,
-        attribution: '',
-        crossOrigin: true,
-        detectRetina: true,
-        subdomains: 'abcd',
-        className: 'main-tile-layer'
-      }).addTo(map);
-    }
-    
-    // Update button
-    if (btn) {
-      btn.innerHTML = newLayer.icon;
-      btn.title = `Стиль карти: ${newLayer.name}`;
-      
-      // Add animation effect
-      btn.style.transform = 'scale(1.2) rotate(180deg)';
-      setTimeout(() => {
-        btn.style.transform = 'scale(1) rotate(0deg)';
-      }, 200);
-    }
-    
-    console.log(`Переключено на стиль карти: ${newLayer.name}`);
   }
   
   // Text size toggle functionality
@@ -4555,7 +4039,7 @@
   
   function startDeploymentMonitoring() {
     // Check server health every 10 seconds
-  deploymentCheckInterval = safeInterval(checkServerHealth, IS_MOBILE ? 30000 : 15000);
+    deploymentCheckInterval = setInterval(checkServerHealth, 10000);
     deploymentMonitoringActive = true;
     console.log('Deployment monitoring started');
   }
@@ -4808,7 +4292,7 @@
   loadAdm1(); 
         /* loadAdm2(); */ 
         refreshAlarms(); 
-  safeInterval(refreshAlarms, IS_MOBILE ? 45000 : 20000); 
+        setInterval(refreshAlarms,15000); 
         
   // Initialize donation amount loading for support card
   // Load immediately with fallback, then try to fetch real data
