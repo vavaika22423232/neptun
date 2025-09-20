@@ -1146,6 +1146,10 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
             r'\b([а-яїіє]+щина)\b',
             r'\b([а-яїіє]+щині)\b',
             r'\b([а-яїіє]+щину)\b',
+            # Additional patterns for regional context
+            r'\bна\s+([а-яїіє]+щині)\b',  # "на Сумщині"
+            r'\bу\s+([а-яїіє]+щині)\b',   # "у Сумщині"
+            r'\bв\s+([а-яїіє]+щині)\b',   # "в Сумщині"
         ]
         
         detected_oblast_key = None
@@ -1155,8 +1159,28 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
             for match in matches:
                 match = match.strip().lower()
                 
+                # Normalize regional names to nominative case AND adjective form
+                if match.endswith('щині'):
+                    match = match[:-2] + 'на'  # сумщині -> сумщина
+                elif match.endswith('щину'):
+                    match = match[:-2] + 'на'  # сумщину -> сумщина
+                
+                # Convert regional names to adjective forms for city lookup
+                regional_to_adjective = {
+                    'сумщина': 'сумська',
+                    'харківщина': 'харківська',
+                    'чернігівщина': 'чернігівська',
+                    'полтавщина': 'полтавська',
+                    'дніпропетровщина': 'дніпропетровська',
+                }
+                
+                if match in regional_to_adjective:
+                    match = regional_to_adjective[match]
+                
                 # Create possible city+oblast combinations to search
                 city_variants = [
+                    f"{name.lower()}({match})",  # миколаївка(сумська)
+                    f"{name.lower()} ({match})",  # миколаївка (сумська)
                     f"{name.lower()} {match}",
                     f"{name.lower()} {match} обл.",
                     f"{name.lower()} {match} область",
@@ -1169,6 +1193,8 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                         print(f"DEBUG: Found exact city+oblast match: {variant} -> ({lat}, {lng})")
                         return (lat, lng, False)
                 
+                print(f"DEBUG: No exact match found for variants: {city_variants}")
+                
                 # Store oblast key for potential fallback
                 oblast_normalizations = {
                     'харківська': 'харківська обл.',
@@ -1176,11 +1202,11 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                     'полтавська': 'полтавська область',
                     'дніпропетровська': 'дніпропетровська область',
                     'сумська': 'сумська область',
-                    'харківщина': 'харківська обл.',
-                    'чернігівщина': 'чернігівська обл.',
-                    'полтавщина': 'полтавська область',
-                    'дніпропетровщина': 'дніпропетровська область',
-                    'сумщина': 'сумська область',
+                    'харківщина': 'харківська',
+                    'чернігівщина': 'чернігівська',
+                    'полтавщина': 'полтавська',
+                    'дніпропетровщина': 'дніпропетровська',
+                    'сумщина': 'сумська',
                 }
                 
                 if match in oblast_normalizations:
@@ -1346,7 +1372,8 @@ CITY_COORDS = {
         'згурівка': (50.4950, 31.7780), 'мала дівиця': (50.8240, 32.4700), 'яготин': (50.2360, 31.7700), 'ставище': (49.3958, 30.1875),
         'березань': (50.3085, 31.4576), 'бортничі': (50.3915, 30.6695), 'старокостянтинів': (49.7574, 27.2039), 'адампіль': (49.6500, 27.3000),
         # Additional single-city early parser support
-        'покровське': (48.1180, 36.2470), 'петропавлівка': (48.5000, 36.4500), 'шахтарське': (47.9500, 36.0500), 'миколаївка': (49.1667, 36.2333),
+        'покровське': (48.1180, 36.2470), 'петропавлівка': (48.5000, 36.4500), 'шахтарське': (47.9500, 36.0500),
+        # 'миколаївка': Удалено - неоднозначное название, используется контекстный поиск
         'низи': (50.7435, 34.9860), 'барвінкове': (48.9000, 37.0167), 'пісочин': (49.9500, 36.1330), 'берестове': (49.3500, 37.0000),
     'кобеляки': (49.1500, 34.2000), 'бердичів': (49.8942, 28.5986),
     'куцуруб': (46.7906, 31.9222), 'воскресенка': (50.4850, 30.6090),
@@ -1413,7 +1440,7 @@ CITY_COORDS = {
     'ямполю': (48.1333, 28.2833), 'ямполі': (48.1333, 28.2833),
     'дзигівка': (49.2167, 28.1500), 'дзигівку': (49.2167, 28.1500), 'дзигівці': (49.2167, 28.1500),
     'березівка': (46.8167, 30.9167), 'березівку': (46.8167, 30.9167), 'березівці': (46.8167, 30.9167),
-    'миколаївка': (47.0667, 31.8333), 'миколаївку': (47.0667, 31.8333), 'миколаївці': (47.0667, 31.8333),
+    # 'миколаївка': Удалено - неоднозначное название, используется контекстный поиск
     'вільногірськ': (47.9333, 34.0167), 'вільногірську': (47.9333, 34.0167), 'вільногірська': (47.9333, 34.0167),
     'велика виска': (49.2333, 32.1833), 'великої виски': (49.2333, 32.1833), 'великій висці': (49.2333, 32.1833),
     'велику виску': (49.2333, 32.1833),  # accusative form
@@ -1708,6 +1735,8 @@ SUMY_CITY_COORDS = {
     'ясенців?': (51.5230, 34.5770),
     'миколаївка(сумська)': (51.5667, 34.1333),  # Миколаївка, районний центр Сумської області
     'миколаївка (сумська)': (51.5667, 34.1333),  # з пробілом
+    'миколаївку(сумська)': (51.5667, 34.1333),  # винительный падеж
+    'миколаївку (сумська)': (51.5667, 34.1333),  # винительный падеж з пробілом
 }
 
 for _sm_name, _sm_coords in SUMY_CITY_COORDS.items():
@@ -3490,6 +3519,28 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             cleaned.append(ln2)
         return '\n'.join(cleaned)
     
+    # PRIORITY: Handle "[city] на [region]" patterns early to avoid misprocessing
+    regional_city_match = re.search(r'(\d+)\s+шахед[а-яіїєёыийї]*\s+на\s+([а-яіїєё\'\-\s]+?)\s+на\s+([а-яіїє]+щині?)', text.lower()) if text else None
+    if regional_city_match:
+        count_str = regional_city_match.group(1)
+        city_raw = regional_city_match.group(2).strip()
+        region_raw = regional_city_match.group(3).strip()
+        
+        # Use context-aware resolution
+        coords = ensure_city_coords_with_message_context(city_raw, text)
+        if coords:
+            lat, lng, approx = coords
+            add_debug_log(f"PRIORITY: Regional city pattern - {city_raw} на {region_raw} -> ({lat}, {lng})", "priority_regional_city")
+            
+            result_entry = {
+                'id': f"{mid}_priority_regional",
+                'place': f"{city_raw.title()} на {region_raw.title()}",
+                'lat': lat, 'lng': lng,
+                'type': 'shahed', 'count': int(count_str),
+                'timestamp': date_str, 'channel': channel
+            }
+            return [result_entry]
+    
     # EARLY CHECK: General multi-line threat detection (before specific cases)
     if not _disable_multiline:
         text_lines = (text or '').split('\n')
@@ -4902,7 +4953,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 # even if only 2 region stems present
                 if len(distinct) >= 2:
                     # Check if message contains specific cities that should create markers instead
-                    city_keywords = ['на кролевец', 'на конотоп', 'на чернігів', 'на вишгород', 'на петрівці', 'на велика димерка', 'на білу церкву', 'на бровари', 'на суми', 'на харків', 'на дніпро', 'на кропивницький', 'на житомир']
+                    city_keywords = ['на кролевец', 'на конотоп', 'на чернігів', 'на вишгород', 'на петрівці', 'на велика димерка', 'на білу церкву', 'на бровари', 'на суми', 'на харків', 'на дніпро', 'на кропивницький', 'на житомир', 'на миколаївку']
                     has_specific_cities = any(city_kw in lorig for city_kw in city_keywords)
                     
                     if has_specific_cities:
@@ -8529,6 +8580,27 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 for city_part in cities:
                     city_norm = city_part.lower().replace('\u02bc',"'").replace('ʼ',"'").replace("'","'").replace('`',"'")
                     city_norm = re.sub(r'\s+',' ', city_norm).strip()
+                    
+                    # Special handling for "[city] на [region]" patterns
+                    region_match = re.match(r'^(.+?)\s+на\s+([а-яіїє]+щині?|[а-яіїє]+ській?\s+обл?\.?|[а-яіїє]+ській?\s+області?)$', city_norm)
+                    if region_match:
+                        city_norm = region_match.group(1).strip()
+                        region_hint = region_match.group(2).strip()
+                        # Use full message context for resolution
+                        coords = ensure_city_coords_with_message_context(city_norm, text)
+                        if coords:
+                            lat, lng, approx = coords
+                            add_debug_log(f"SHAHED: Regional pattern found - {city_norm} на {region_hint} -> ({lat}, {lng})", "shahed_regional")
+                            
+                            result_entry = {
+                                'id': f"{mid}_sha_{len(threats)+1}",
+                                'place': f"{city_part.title()}",
+                                'lat': lat, 'lng': lng,
+                                'type': 'shahed', 'count': int(count_str),
+                                'timestamp': date_str, 'channel': channel
+                            }
+                            threats.append(result_entry)
+                            continue  # Skip regular processing for this city
                     
                     # Apply normalization rules for accusative/genitive cases
                     original_norm = city_norm
