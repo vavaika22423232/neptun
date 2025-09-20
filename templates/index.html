@@ -461,175 +461,28 @@
     pointer-events: none;
   }
   
-  @keyframes regionalPulse {
-    0% { 
-      fill-opacity: 0.12; 
-      stroke-opacity: 0.9; 
-      transform: scale(1); 
-    }
-    50% { 
-      fill-opacity: 0.22; 
-      stroke-opacity: 1; 
-      transform: scale(1.005); 
-    }
-    100% { 
-      fill-opacity: 0.12; 
-      stroke-opacity: 0.9; 
-      transform: scale(1); 
-    }
-  }
+  /* Упрощенные стили карты - только основное */
   
-  @keyframes regionalGlow {
-    0% { 
-      stroke-opacity: 0.2; 
-      stroke-width: 3; 
-    }
-    100% { 
-      stroke-opacity: 0.6; 
-      stroke-width: 6; 
-    }
-  }
-  
-  @keyframes floatLabel {
-    0%, 100% { 
-      transform: translateY(0px) scale(1); 
-      opacity: 0.95; 
-    }
-    33% { 
-      transform: translateY(-4px) scale(1.02); 
-      opacity: 1; 
-    }
-    66% { 
-      transform: translateY(-2px) scale(1.01); 
-      opacity: 0.98; 
-    }
-  }
-  
-  @keyframes shimmer {
-    0% { left: -100%; }
-    100% { left: 100%; }
-  }
-  
-  .regional-threat-label {
-    text-shadow: 0 1px 3px rgba(0,0,0,0.3);
-    font-family: 'Inter', system-ui, sans-serif;
-  }
-  
-  .regional-threat-popup .leaflet-popup-content-wrapper {
-    border-radius: 12px;
-    box-shadow: 0 12px 40px rgba(0,0,0,0.15);
-  }
-  
-  /* Ukrainian map tiles optimization */
-  .ukrainian-map-tiles {
-    /* Улучшаем читаемость украинских названий */
-    filter: contrast(1.05) brightness(1.02);
-  }
-  
-  /* Специальные стили для украинского тайл-слоя */
-  .ukrainian-localized-tiles {
-    /* Оптимизация для украинского текста */
-    filter: contrast(1.08) brightness(1.03) saturate(1.02);
-    /* Улучшаем рендеринг кириллицы */
-    image-rendering: -webkit-optimize-contrast;
-    image-rendering: -moz-crisp-edges;
-    image-rendering: crisp-edges;
-  }
-  
-  /* Дополнительные стили для карты */
+  /* Упрощенные стили карты - только основное */
   .leaflet-container {
     font-family: 'Inter', system-ui, sans-serif;
-    /* Принудительная локализация для украинских названий */
-    font-feature-settings: "locl" 1;
-    /* Увеличиваем размер текста на карте */
-    font-size: 16px !important;
+    font-size: 14px;
   }
   
-  /* Специальные стили для улучшения читаемости названий на карте */
-  .leaflet-tile-container {
-    /* Увеличиваем масштаб тайлов для больших названий */
-    transform: scale(1.2);
-    transform-origin: center;
-  }
-  
-  /* Корректируем размеры контейнера тайлов */
-  .leaflet-tile-pane {
-    /* Компенсируем увеличение масштаба */
-    width: 83.3% !important;
-    height: 83.3% !important;
-    left: 8.35% !important;
-    top: 8.35% !important;
-  }
-  
-  /* Дополнительное увеличение для мобильных устройств */
-  @media (max-width: 768px) {
-    .leaflet-tile-container {
-      transform: scale(1.3);
-    }
-    
-    .leaflet-tile-pane {
-      width: 76.9% !important;
-      height: 76.9% !important;
-      left: 11.55% !important;
-      top: 11.55% !important;
-    }
-    
-    .leaflet-container {
-      font-size: 18px !important;
-    }
-  }
-  
-  /* Увеличенный размер текста - дополнительный класс */
-  #map.large-text .leaflet-tile-container {
-    transform: scale(1.5) !important;
-  }
-  
-  #map.large-text .leaflet-tile-pane {
-    width: 66.7% !important;
-    height: 66.7% !important;
-    left: 16.65% !important;
-    top: 16.65% !important;
-  }
-  
-  #map.large-text .ukrainian-readable-tiles,
-  #map.large-text .ukrainian-localized-tiles {
-    filter: contrast(1.1) brightness(1.05) !important;
-  }
-  
-  /* Простые стили для украинского текста */
-  .ukrainian-localized-tiles {
-    filter: contrast(1.05) brightness(1.02) !important;
-  }
-  
-  /* Базовые стили для читаемости */
-  .ukrainian-readable-tiles {
-    filter: contrast(1.08) brightness(1.03) !important;
-  }
-  
-  /* Базовые стили для карты */
-  .leaflet-tile {
-    image-rendering: auto;
-  }
-  
-  /* Простые стили для маркеров */
-  .leaflet-marker-icon {
-    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
-  }
-  
-  /* Стандартные поп-апы */
   .leaflet-popup-content-wrapper {
-    background: #fff !important;
-    color: #333 !important;
-    border: 1px solid #ccc !important;
+    background: #fff;
+    color: #333;
+    border: 1px solid #ccc;
+    border-radius: 6px;
   }
   
   .leaflet-popup-content {
-    color: #333 !important;
+    color: #333;
   }
   
   .leaflet-popup-tip {
-    background: #fff !important;
-    border: 1px solid #ccc !important;
+    background: #fff;
+    border: 1px solid #ccc;
   }
   
   @keyframes spin{to{transform:rotate(360deg);}}
@@ -694,36 +547,7 @@
   .tm-badge{position:absolute;top:-6px;right:-6px;background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;font-size:11px;font-weight:700;padding:2px 5px;border-radius:12px;box-shadow:0 2px 6px -1px rgba(0,0,0,.5);font-family:Inter,system-ui,sans-serif;line-height:1;}
   .tm-wrap{position:relative;display:inline-block;}
   
-  /* Shahed course visualization styles */
-  .shahed-course-line {
-    animation: shahedCourseFlow 3s ease-in-out infinite;
-  }
-  
-  .shahed-course-arrow {
-    animation: shahedArrowPulse 2s ease-in-out infinite;
-  }
-  
-  @keyframes shahedCourseFlow {
-    0%, 100% { 
-      opacity: 0.8;
-      stroke-dashoffset: 0;
-    }
-    50% { 
-      opacity: 1;
-      stroke-dashoffset: 12;
-    }
-  }
-  
-  @keyframes shahedArrowPulse {
-    0%, 100% { 
-      opacity: 0.9;
-      transform: scale(1);
-    }
-    50% { 
-      opacity: 1;
-      transform: scale(1.2);
-    }
-  }
+  /* Упрощенные стили для маркеров - без анимаций */
   
   @keyframes popIn{from{transform:scale(.5);opacity:0;}to{transform:scale(1);opacity:1;}}
     @media (max-width: 1100px) {
@@ -894,24 +718,6 @@
   .disclaimer-actions a:hover {background:#3b4b63;color:#fff;}
   @media (max-width:720px){.disclaimer-bar{flex-direction:row;align-items:flex-start;font-size:.72rem;padding:.75rem .85rem;} .disclaimer-icon{width:26px;height:26px;font-size:14px;} .disclaimer-close{width:26px;height:26px;font-size:12px;} }
     
-  </style>
-  <style>
-  /* Animated trajectories (arcs + fading tails) */
-  @keyframes dashFlow { to { stroke-dashoffset:-260; } }
-  @keyframes tailFade { 0%{opacity:.55;} 70%{opacity:.18;} 100%{opacity:0;} }
-  .traj-arc { stroke:#ff784e !important; stroke-width:2.2; stroke-dasharray:8 12; stroke-linecap:round; animation:dashFlow 5.5s linear infinite; filter:drop-shadow(0 0 6px rgba(255,120,78,.55)); }
-  .traj-tail { stroke:#ff9d7b !important; stroke-width:3.4; stroke-linecap:round; opacity:.5; animation:tailFade 9s ease-out forwards; }
-  .traj-arc.drone { stroke:#00b3ff !important; filter:drop-shadow(0 0 6px rgba(0,179,255,.55)); }
-  .traj-tail.drone { stroke:#41c9ff !important; }
-  /* KAB scan rotating line */
-  .kab-rotor-line { stroke:#ffe0dc; stroke-width:2.2; stroke-linecap:round; filter:drop-shadow(0 0 4px rgba(255,224,220,.9)); }
-  .kab-rotor-tail { stroke:url(#kabRotorGrad); stroke-width:5; stroke-linecap:round; opacity:.85; }
-  @keyframes kabRotate { to { transform:rotate(360deg); } }
-  .kab-rotor-group { transform-origin:center center; animation:kabRotate 18s linear infinite; }
-  /* Raion alarm animated hatch */
-  @keyframes hatchShift { to { background-position: 40px 0, 40px 0; } }
-  .raion-alarm-anim { position:relative; }
-  .raion-alarm-anim::after { content:""; position:absolute; inset:0; background-image: repeating-linear-gradient(135deg, rgba(220,38,38,0.55) 0 8px, rgba(220,38,38,0) 8px 16px), repeating-linear-gradient(135deg, rgba(255,255,255,0.08) 0 8px, rgba(255,255,255,0) 8px 16px); background-size:32px 32px,32px 32px; mix-blend-mode:overlay; animation:hatchShift 2.2s linear infinite; pointer-events:none; border-radius:50%; filter:blur(0.4px) saturate(1.2); }
   </style>
 </head>
 <body>
@@ -3086,21 +2892,12 @@
             const tailStart=[p.lat+dy, p.lng+dx];
             // Simple static direction hint line
             L.polyline([tailStart,[p.lat,p.lng]], {color:'#f59e0b', weight:2, opacity:0.55, dashArray:'4 3'}).addTo(markerLayer);
-            // Animated trajectory arc for missiles / drones
-            if (/(raketa|shahed|fpv|pusk)/i.test(p.threat_type||'')) {
-              try { addTrajectoryArc(p, dx, dy); } catch(e){}
-            }
+            // Отключили анимированные траектории для производительности
           }
         }
         
-        // Enhanced Shahed course visualization
-        if (p.threat_type === 'shahed' && (p.course_source || p.course_target || p.course_direction)) {
-          try {
-            addShahedCourseVisualization(p);
-          } catch(e) {
-            console.warn('Shahed course visualization failed:', e);
-          }
-        }
+        // Отключили Shahed course visualization для производительности
+        
         const placeUA = translatePlace(p.place);
         const popupHtml = '<div style="background:#ffffff;color:#1e293b;border:1px solid #d7dde3;border-radius:12px;padding:10px 10px;min-width:190px;font-size:.8rem;line-height:1.35;box-shadow:0 4px 14px -4px rgba(0,0,0,.18);">'
           + (placeUA ? '<div style="font-size:.9rem;font-weight:600;margin-bottom:4px;">' + placeUA + '</div>' : '')
@@ -3177,7 +2974,7 @@
             const scanPts = buildSemiCircle(centerLat, centerLng, startBearing, endBearing, OUTER*0.92, segments);
             const scan = L.polygon(scanPts, {className:'kab-zone-scan', color:'#ffe0dc', weight:1, fill:false});
             scan.addTo(markerLayer);
-            try { addKabRotor(centerLat, centerLng, OUTER*0.92); } catch(e){}
+            // Отключили KAB rotor для производительности
             // Center glow & label using a divIcon
             const centerDiv = L.divIcon({ html:`<div class='kab-center-glow'></div>`, className:'', iconSize:[36,36] });
             L.marker([centerLat, centerLng], {icon:centerDiv, interactive:false}).addTo(markerLayer);
@@ -3462,78 +3259,24 @@
       }).join('');
     }
     async function initMap() {
-      map = L.map('map', { zoomControl:false, attributionControl:false }).setView([48.3794,31.1656], 6);
+      map = L.map('map', { 
+        zoomControl: false, 
+        attributionControl: false,
+        preferCanvas: true  // Используем canvas для лучшей производительности
+      }).setView([48.3794,31.1656], 6);
       
-      // Используем стандартную красивую карту OpenStreetMap
+      // Простая карта без дополнительных слоев
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
+        maxZoom: 18,  // Ограничиваем зум для производительности
         attribution: '',
         crossOrigin: true,
-        detectRetina: true,
-        subdomains: 'abc'
+        detectRetina: false,  // Отключаем retina для экономии
+        subdomains: 'abc',
+        updateWhenIdle: true,  // Обновляем только когда карта неактивна
+        keepBuffer: 1  // Уменьшаем буфер тайлов
       }).addTo(map);
       
-      // Альтернативный слой - OSM с украинским языком
-      window.osmUkrainianLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png?lang=uk', {
-        maxZoom: 19,
-        attribution: '',
-        crossOrigin: true,
-        detectRetina: true,
-        className: 'ukrainian-localized-tiles',
-        subdomains: 'abc'
-      });
-      
-      // Альтернативный слой - Wikimedia International
-      window.wikimediaTileLayer = L.tileLayer('https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}{r}.png', {
-        maxZoom: 19,
-        attribution: '',
-        crossOrigin: true,
-        detectRetina: true,
-        className: 'ukrainian-localized-tiles'
-      });
-      
-      // Резервный слой - CartoDB с настройками для украинской локализации
-      window.cartoTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}{r}.png', {
-        maxZoom: 19,
-        attribution: '',
-        crossOrigin: true,
-        detectRetina: true,
-        subdomains: 'abcd'
-      });
-      
-      // Функция переключения на OSM украинский слой
-      window.switchToOSMUkrainianTiles = function() {
-        map.eachLayer(function (layer) {
-          if (layer instanceof L.TileLayer) {
-            map.removeLayer(layer);
-          }
-        });
-        window.osmUkrainianLayer.addTo(map);
-        console.log('Переключились на OSM с украинским языком');
-      };
-      
-      // Функция переключения на Wikimedia слой
-      window.switchToWikimediaTiles = function() {
-        map.eachLayer(function (layer) {
-          if (layer instanceof L.TileLayer) {
-            map.removeLayer(layer);
-          }
-        });
-        window.wikimediaTileLayer.addTo(map);
-        console.log('Переключились на Wikimedia International');
-      };
-      
-      // Функция переключения на CartoDB слой (резервный)
-      window.switchToCartoTiles = function() {
-        map.eachLayer(function (layer) {
-          if (layer instanceof L.TileLayer) {
-            map.removeLayer(layer);
-          }
-        });
-        window.cartoTileLayer.addTo(map);
-        console.log('Переключились на CartoDB Voyager');
-      };
-      
+      // Упрощенный поиск мест без дополнительных функций
       // --- Place search wiring ---
       const psWrap = document.getElementById('placeSearch');
       const psInput = document.getElementById('placeSearchInput');
