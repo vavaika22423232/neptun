@@ -1388,6 +1388,20 @@ def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = Non
                     # Normalize city name using lemma
                     normalized_name = token.lemma_ if token.lemma_ != ent.text.lower() else ent.text.lower()
                     
+                    # Fix incorrect SpaCy lemmatization for Ukrainian place names
+                    spacy_lemma_fixes = {
+                        'савинка': 'савинці',  # SpaCy incorrectly lemmatizes "Савинці" as "савинка"
+                        'миколаївка': 'миколаївка',  # Ensure consistency 
+                        'гусарівка': 'гусарівка',
+                        'протопопівка': 'протопопівка',
+                        # Add more fixes as needed
+                    }
+                    
+                    if normalized_name in spacy_lemma_fixes:
+                        original_lemma = normalized_name
+                        normalized_name = spacy_lemma_fixes[normalized_name]
+                        print(f"DEBUG SpaCy lemma fix: '{original_lemma}' -> '{normalized_name}' for original '{ent.text}'")
+                    
                     # Apply existing normalization rules
                     if normalized_name in existing_normalizer:
                         normalized_name = existing_normalizer[normalized_name]
@@ -1664,8 +1678,9 @@ CITY_COORDS = {
         'безлюдівка': (49.8872, 36.2731), 'рогань': (49.9342, 36.4942), 'савинці(харківщина)': (49.6272, 36.9781),
         'слатине': (49.7500, 36.1500),  # Слатине, Дергачівський р-н, Харківська обл.
         'гути': (50.0167, 36.3833),  # Гути, Харьковская область
-        'гусарівка': (49.1000, 37.1500),  # Гусарівка, Харківська область
-        'протопопівка': (49.7000, 37.0000),  # Протопопівка, Харківська область
+        # Temporary missing cities (should be in external data sources)
+        'гусарівка': (49.1000, 37.1500),  # Гусарівка, Харківська область - TEMP: SpaCy не находит автоматически
+        'протопопівка': (49.7000, 37.0000),  # Протопопівка, Харківська область - TEMP: SpaCy не находит автоматически
         'українка': (50.1447, 30.7381), 'царичанка': (48.9767, 34.3772), 'ріпки': (51.8122, 31.0817), 'михайло-коцюбинське': (51.5833, 31.1167),
     'андріївка': (49.9380, 36.9510),
         'макошине': (51.6275, 32.2731), 'парафіївка': (50.9833, 32.2833), 'дубовʼязівка': (51.1833, 33.7833), 'боромля': (50.7500, 34.9833),
