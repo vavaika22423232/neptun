@@ -1334,7 +1334,7 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
 def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = None, 
                            existing_normalizer: dict = None) -> list:
     """
-    Enhanced city extraction using SpaCy NLP for Ukrainian text
+    Enhanced city extraction using SpaCy NLP for Ukrainian text with proper entity recognition
     
     Args:
         message_text: Original message text
@@ -1386,62 +1386,127 @@ def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = Non
             if any(pattern in message_lower for pattern in patterns):
                 detected_regions.append(region_name)
         
-        # Process named entities from SpaCy NER
+        print(f"DEBUG SpaCy NLP: Processing text: '{message_text}'")
+        print(f"DEBUG SpaCy NLP: Detected regions: {detected_regions}")
+        
+        # Process named entities from SpaCy NER - this is the proper NLP approach
+        geographical_entities = []
         for ent in doc.ents:
             if ent.label_ in ['LOC', 'GPE']:  # Location, Geopolitical entity
-                entity_text = ent.text.lower()
-                
-                # Skip if this is a region (already processed)
-                is_region = False
-                for region_name, patterns in region_patterns.items():
-                    if any(pattern in entity_text for pattern in patterns):
-                        is_region = True
-                        break
-                
-                if not is_region:
-                    # Get morphological info
-                    token = doc[ent.start]
-                    case_info = None
-                    if hasattr(token, 'morph') and token.morph:
-                        morph_dict = token.morph.to_dict()
-                        case_info = morph_dict.get('Case', None)
-                    
-                    # Normalize city name using lemma
-                    normalized_name = token.lemma_ if token.lemma_ != ent.text.lower() else ent.text.lower()
-                    
-                    # Fix incorrect SpaCy lemmatization for Ukrainian place names
-                    spacy_lemma_fixes = {
-                        'савинка': 'савинці',  # SpaCy incorrectly lemmatizes "Савинці" as "савинка"
-                        'миколаївка': 'миколаївка',  # Ensure consistency 
-                        'гусарівка': 'гусарівка',
-                        'протопопівка': 'протопопівка',
-                        # Add more fixes as needed
-                    }
-                    
-                    if normalized_name in spacy_lemma_fixes:
-                        original_lemma = normalized_name
-                        normalized_name = spacy_lemma_fixes[normalized_name]
-                        print(f"DEBUG SpaCy lemma fix: '{original_lemma}' -> '{normalized_name}' for original '{ent.text}'")
-                    
-                    # Apply existing normalization rules
-                    if normalized_name in existing_normalizer:
-                        normalized_name = existing_normalizer[normalized_name]
-                    
-                    # Look up coordinates with multiple key formats
-                    coords = _find_coordinates_multiple_formats(normalized_name, detected_regions, existing_city_coords)
-                    
-                    result = {
-                        'name': ent.text,
-                        'normalized': normalized_name,
-                        'coords': coords,
-                        'region': detected_regions[0] if detected_regions else None,
-                        'confidence': 0.9,  # High confidence for NER
-                        'source': 'spacy_ner',
-                        'case': case_info
-                    }
-                    results.append(result)
+                print(f"DEBUG SpaCy NLP: Found entity '{ent.text}' with label '{ent.label_}' confidence: {ent._.score if hasattr(ent, '_') and hasattr(ent._, 'score') else 'N/A'}")
+                geographical_entities.append(ent)
         
-        # Additional pattern-based extraction for missed entities
+        # Also look for proper nouns that might be geographical names
+        for token in doc:
+            if (token.pos_ == 'PROPN' and 
+                not any(ent.start <= token.i < ent.end for ent in geographical_entities) and
+                len(token.text) > 2):  # Skip short tokens
+                print(f"DEBUG SpaCy NLP: Found additional PROPN candidate: '{token.text}'")
+                # Create a pseudo-entity for processing
+                class PseudoEntity:
+                    def __init__(self, token):
+                        self.text = token.text
+                        self.start = token.i
+                        self.label_ = 'PROPN_CANDIDATE'
+                geographical_entities.append(PseudoEntity(token))
+        
+        for ent in geographical_entities:
+            entity_text = ent.text.lower()
+            
+            # Skip if this is a region (already processed)
+            is_region = False
+            for region_name, patterns in region_patterns.items():
+                if any(pattern in entity_text for pattern in patterns):
+                    is_region = True
+                    break
+            
+            if not is_region:
+                # Get morphological info
+                if hasattr(ent, 'start'):
+                    token = doc[ent.start]
+                else:
+                    # For pseudo-entities, find the token
+                    token = next((t for t in doc if t.text.lower() == entity_text), None)
+                    if not token:
+                        continue
+                
+                case_info = None
+                if hasattr(token, 'morph') and token.morph:
+                    morph_dict = token.morph.to_dict()
+                    case_info = morph_dict.get('Case', None)
+                
+                # Normalize city name using lemma - this is proper NLP morphological analysis
+                normalized_name = token.lemma_.lower() if token.lemma_ and token.lemma_ != '-PRON-' else entity_text
+                
+                # For multi-word geographical entities, handle them specially
+                if len(ent.text.split()) > 1:
+                    # For multi-word entities, use custom normalization
+                    entity_lower = ent.text.lower()
+                    multi_word_fixes = {
+                        'кривому рогу': 'кривий ріг',
+                        'кривий ріг': 'кривий ріг',
+                        'кривого рогу': 'кривий ріг',
+                        'новий буг': 'новий буг',
+                        'білий камінь': 'білий камінь',
+                        'покровськ': 'покровськ',  # formerly красноармейск
+                    }
+                    for pattern, canonical in multi_word_fixes.items():
+                        if pattern in entity_lower:
+                            normalized_name = canonical
+                            break
+                    else:
+                        # If no special case, try to reconstruct from lemmas
+                        words = []
+                        for i in range(ent.start, ent.end):
+                            word_token = doc[i]
+                            word_lemma = word_token.lemma_.lower() if word_token.lemma_ and word_token.lemma_ != '-PRON-' else word_token.text.lower()
+                            words.append(word_lemma)
+                        normalized_name = ' '.join(words)
+                
+                print(f"DEBUG SpaCy NLP: Entity '{ent.text}' -> normalized: '{normalized_name}', case: {case_info}")
+                
+                # Fix incorrect SpaCy lemmatization for Ukrainian place names
+                spacy_lemma_fixes = {
+                    'савинка': 'савинці',  # SpaCy incorrectly lemmatizes "Савинці" as "савинка"
+                    'миколаївка': 'миколаївка',  # Ensure consistency 
+                    'гусарівка': 'гусарівка',
+                    'протопопівка': 'протопопівка',
+                    'зарічний': 'зарічне',  # Fix "Зарічного" → "зарічне"
+                    'олексадрія': 'олександрія',  # Common typo
+                    'олександрія': 'олександрія',  # Ensure consistency
+                    # Add more fixes as needed
+                }
+                
+                if normalized_name in spacy_lemma_fixes:
+                    original_lemma = normalized_name
+                    normalized_name = spacy_lemma_fixes[normalized_name]
+                    print(f"DEBUG SpaCy lemma fix: '{original_lemma}' -> '{normalized_name}' for original '{ent.text}'")
+                
+                # Apply existing normalization rules
+                if normalized_name in existing_normalizer:
+                    normalized_name = existing_normalizer[normalized_name]
+                
+                # Look up coordinates using enhanced lookup with Nominatim fallback
+                region_context = detected_regions[0] if detected_regions else None
+                coords = get_coordinates_enhanced(normalized_name, region_context, message_text)
+                
+                # Determine confidence based on source
+                confidence = 0.9 if ent.label_ in ['LOC', 'GPE'] else 0.7  # Higher for NER entities
+                source = 'spacy_ner' if ent.label_ in ['LOC', 'GPE'] else 'spacy_propn'
+                
+                result = {
+                    'name': ent.text,
+                    'normalized': normalized_name,
+                    'coords': coords,
+                    'region': detected_regions[0] if detected_regions else None,
+                    'confidence': confidence,
+                    'source': source,
+                    'case': case_info
+                }
+                results.append(result)
+                print(f"DEBUG SpaCy NLP: Added result: {result}")
+        
+        # Additional pattern-based extraction for missed entities (as fallback)
         preposition_patterns = ['на', 'повз', 'через', 'у напрямку', 'в напрямку']
         
         for i, token in enumerate(doc):
@@ -1469,6 +1534,7 @@ def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = Non
                 seen_cities.add(city_key)
                 unique_results.append(result)
         
+        print(f"DEBUG SpaCy NLP: Final results: {unique_results}")
         return unique_results
         
     except Exception as e:
@@ -1671,8 +1737,9 @@ def _extract_city_after_preposition_spacy(doc, prep_index: int, detected_regions
     if normalized_name in existing_normalizer:
         normalized_name = existing_normalizer[normalized_name]
     
-    # Look up coordinates with multiple key formats
-    coords = _find_coordinates_multiple_formats(normalized_name, detected_regions, existing_city_coords)
+    # Look up coordinates using enhanced lookup with Nominatim fallback  
+    region_context = detected_regions[0] if detected_regions else None
+    coords = get_coordinates_enhanced(normalized_name, region_context, ' '.join(token.text for token in doc))
     
     return {
         'name': city_name,
