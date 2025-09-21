@@ -11,6 +11,16 @@ import os, re, json, asyncio, threading, logging, pytz, time, subprocess, queue,
 from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify, request, Response, send_from_directory
 from telethon import TelegramClient
+
+# SpaCy integration for enhanced Ukrainian NLP
+try:
+    import spacy
+    nlp = spacy.load('uk_core_news_sm')
+    SPACY_AVAILABLE = True
+except (ImportError, OSError):
+    nlp = None
+    SPACY_AVAILABLE = False
+    print("WARNING: SpaCy Ukrainian model not available. Using fallback geocoding methods.")
 try:
     from telethon.errors import (
         AuthKeyDuplicatedError,
@@ -1086,6 +1096,8 @@ def ensure_city_coords(name: str):
     if not name:
         return None
     n = name.strip().lower()
+    
+    # Quick check in existing coordinates first
     if n in CITY_COORDS:
         lat,lng = CITY_COORDS[n]; return (lat,lng,False)
     # Check if it's a direct oblast/region name
@@ -1093,6 +1105,24 @@ def ensure_city_coords(name: str):
         lat,lng = OBLAST_CENTERS[n]; return (lat,lng,True)
     if 'SETTLEMENTS_INDEX' in globals() and n in (globals().get('SETTLEMENTS_INDEX') or {}):
         lat,lng = globals()['SETTLEMENTS_INDEX'][n]; return (lat,lng,False)
+    
+    # Try SpaCy normalization for single city names
+    if SPACY_AVAILABLE:
+        try:
+            # Create a simple test message to leverage SpaCy normalization
+            test_message = f"на {name}"
+            spacy_results = spacy_enhanced_geocoding(test_message)
+            
+            for result in spacy_results:
+                if result['coords'] and result['normalized'] == n:
+                    lat, lng = result['coords']
+                    print(f"DEBUG SpaCy single city: Found {name} -> {result['normalized']} -> ({lat}, {lng})")
+                    return (lat, lng, False)
+                    
+        except Exception as e:
+            print(f"DEBUG SpaCy single city error: {e}")
+            # Continue to existing logic
+    
     region_hint = NAME_REGION_MAP.get(n)
     # Attempt precise geocode if API key
     if region_hint and OPENCAGE_API_KEY:
@@ -1129,6 +1159,27 @@ def ensure_city_coords(name: str):
 def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
     """Enhanced version that tries to extract oblast from message if city not found.
     Returns (lat,lng,approx_bool) - approx_bool True means used oblast fallback."""
+    
+    # PRIORITY: Try SpaCy first if available
+    if SPACY_AVAILABLE and message_text:
+        try:
+            spacy_results = spacy_enhanced_geocoding(message_text)
+            
+            # Look for the specific city we're searching for
+            name_lower = name.lower()
+            for result in spacy_results:
+                if (result['normalized'] == name_lower or 
+                    result['name'].lower() == name_lower):
+                    if result['coords']:
+                        lat, lng = result['coords']
+                        print(f"DEBUG SpaCy: Found {name} via SpaCy -> ({lat}, {lng})")
+                        return (lat, lng, False)  # Not approximate since SpaCy found exact match
+            
+        except Exception as e:
+            print(f"DEBUG SpaCy fallback error: {e}")
+            # Continue to regex-based processing
+    
+    # FALLBACK: Original regex-based processing
     
     # First, if we have message text, try to extract oblast info and build specific city keys
     if message_text:
@@ -1232,6 +1283,233 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
         return (lat, lng, True)  # True indicates this is an oblast fallback
     
     return None
+
+def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = None, 
+                           existing_normalizer: dict = None) -> list:
+    """
+    Enhanced city extraction using SpaCy NLP for Ukrainian text
+    
+    Args:
+        message_text: Original message text
+        existing_city_coords: CITY_COORDS dict (defaults to global CITY_COORDS)
+        existing_normalizer: UA_CITY_NORMALIZE dict (defaults to global UA_CITY_NORMALIZE)
+        
+    Returns:
+        List of dicts with city information:
+        {
+            'name': str,           # Original city name from message
+            'normalized': str,     # Normalized city name for lookup
+            'coords': tuple,       # (lat, lng) coordinates if found
+            'region': str,         # Detected region if any
+            'confidence': float,   # Confidence score 0.0-1.0
+            'source': str,         # Detection method used
+            'case': str           # Grammatical case if detected
+        }
+    """
+    if not SPACY_AVAILABLE:
+        return []
+    
+    if existing_city_coords is None:
+        existing_city_coords = CITY_COORDS
+    if existing_normalizer is None:
+        existing_normalizer = UA_CITY_NORMALIZE
+        
+    results = []
+    
+    try:
+        doc = nlp(message_text)
+        
+        # Extract regions first for context
+        detected_regions = []
+        region_patterns = {
+            'сумщина': ['сумщин', 'сумська область', 'сумська обл'],
+            'чернігівщина': ['чернігівщин', 'чернігівська область', 'чернігівська обл'],
+            'харківщина': ['харківщин', 'харківська область', 'харківська обл'],
+            'полтавщина': ['полтавщин', 'полтавська область', 'полтавська обл'],
+            'херсонщина': ['херсонщин', 'херсонська область', 'херсонська обл'],
+            'миколаївщина': ['миколаївщин', 'миколаївська область', 'миколаївська обл'],
+            'дніпропетровщина': ['дніпропетровщин', 'дніпропетровська область', 'дніпропетровська обл'],
+            'київщина': ['київщин', 'київська область', 'київська обл'],
+            'донеччина': ['донеччин', 'донецька область', 'донецька обл'],
+            'луганщина': ['луганщин', 'луганська область', 'луганська обл'],
+        }
+        
+        message_lower = message_text.lower()
+        for region_name, patterns in region_patterns.items():
+            if any(pattern in message_lower for pattern in patterns):
+                detected_regions.append(region_name)
+        
+        # Process named entities from SpaCy NER
+        for ent in doc.ents:
+            if ent.label_ in ['LOC', 'GPE']:  # Location, Geopolitical entity
+                entity_text = ent.text.lower()
+                
+                # Skip if this is a region (already processed)
+                is_region = False
+                for region_name, patterns in region_patterns.items():
+                    if any(pattern in entity_text for pattern in patterns):
+                        is_region = True
+                        break
+                
+                if not is_region:
+                    # Get morphological info
+                    token = doc[ent.start]
+                    case_info = None
+                    if hasattr(token, 'morph') and token.morph:
+                        morph_dict = token.morph.to_dict()
+                        case_info = morph_dict.get('Case', None)
+                    
+                    # Normalize city name using lemma
+                    normalized_name = token.lemma_ if token.lemma_ != ent.text.lower() else ent.text.lower()
+                    
+                    # Apply existing normalization rules
+                    if normalized_name in existing_normalizer:
+                        normalized_name = existing_normalizer[normalized_name]
+                    
+                    # Look up coordinates with multiple key formats
+                    coords = _find_coordinates_multiple_formats(normalized_name, detected_regions, existing_city_coords)
+                    
+                    result = {
+                        'name': ent.text,
+                        'normalized': normalized_name,
+                        'coords': coords,
+                        'region': detected_regions[0] if detected_regions else None,
+                        'confidence': 0.9,  # High confidence for NER
+                        'source': 'spacy_ner',
+                        'case': case_info
+                    }
+                    results.append(result)
+        
+        # Additional pattern-based extraction for missed entities
+        preposition_patterns = ['на', 'повз', 'через', 'у напрямку', 'в напрямку']
+        
+        for i, token in enumerate(doc):
+            # Simple prepositions
+            if token.text.lower() in preposition_patterns[:3]:  # на, повз, через
+                city_info = _extract_city_after_preposition_spacy(doc, i, detected_regions, 
+                                                                existing_city_coords, existing_normalizer)
+                if city_info:
+                    results.append(city_info)
+            
+            # Direction patterns
+            elif (token.text.lower() == 'у' and i + 1 < len(doc) and 
+                  doc[i + 1].text.lower() == 'напрямку'):
+                city_info = _extract_city_after_preposition_spacy(doc, i + 1, detected_regions,
+                                                                existing_city_coords, existing_normalizer)
+                if city_info:
+                    results.append(city_info)
+        
+        # Remove duplicates while preserving order
+        unique_results = []
+        seen_cities = set()
+        for result in results:
+            city_key = result['normalized']
+            if city_key not in seen_cities:
+                seen_cities.add(city_key)
+                unique_results.append(result)
+        
+        return unique_results
+        
+    except Exception as e:
+        print(f"SpaCy processing error: {e}")
+        return []
+
+def _find_coordinates_multiple_formats(city_name: str, detected_regions: list, existing_city_coords: dict) -> tuple:
+    """
+    Try to find coordinates using multiple key formats
+    Returns coordinates tuple (lat, lng) or None
+    """
+    # List of key formats to try
+    search_keys = [city_name]
+    
+    # Add regional variants if regions detected
+    if detected_regions:
+        for region in detected_regions:
+            # Convert region names to adjective forms for coordinate lookup
+            region_adj_map = {
+                'сумщина': 'сумська',
+                'чернігівщина': 'чернігівська', 
+                'харківщина': 'харківська',
+                'полтавщина': 'полтавська',
+                'дніпропетровщина': 'дніпропетровська',
+                'херсонщина': 'херсонська',
+                'миколаївщина': 'миколаївська',
+                'київщина': 'київська',
+                'донеччина': 'донецька',
+                'луганщина': 'луганська'
+            }
+            
+            region_adj = region_adj_map.get(region, region)
+            
+            # Try various formats
+            search_keys.extend([
+                f"{city_name} {region}",           # миколаївка сумщина
+                f"{city_name}({region_adj})",      # миколаївка(сумська)
+                f"{city_name} ({region_adj})",     # миколаївка (сумська)  
+                f"{city_name} {region_adj}",       # миколаївка сумська
+                f"{city_name} {region_adj} обл",   # миколаївка сумська обл
+                f"{city_name} {region_adj} область" # миколаївка сумська область
+            ])
+    
+    # Try each key format
+    for key in search_keys:
+        coords = existing_city_coords.get(key)
+        if coords:
+            print(f"DEBUG SpaCy coord lookup: Found '{city_name}' using key '{key}' -> {coords}")
+            return coords
+    
+    print(f"DEBUG SpaCy coord lookup: No coordinates found for '{city_name}' (tried {len(search_keys)} keys)")
+    return None
+
+def _extract_city_after_preposition_spacy(doc, prep_index: int, detected_regions: list,
+                                        existing_city_coords: dict, existing_normalizer: dict) -> dict:
+    """Extract city name after preposition using SpaCy tokens"""
+    if prep_index + 1 >= len(doc):
+        return None
+    
+    # Collect potential city tokens (proper nouns, nouns, adjectives)
+    city_tokens = []
+    start_idx = prep_index + 1
+    
+    for i in range(start_idx, min(start_idx + 3, len(doc))):  # Max 3 words
+        token = doc[i]
+        if token.pos_ in ['PROPN', 'NOUN', 'ADJ'] or token.text == '-':
+            city_tokens.append(token)
+        else:
+            break
+    
+    if not city_tokens:
+        return None
+    
+    # Build city name
+    city_name = ' '.join(token.text for token in city_tokens)
+    
+    # Get morphological info from the main token (usually the first one)
+    main_token = city_tokens[0]
+    case_info = None
+    if hasattr(main_token, 'morph') and main_token.morph:
+        morph_dict = main_token.morph.to_dict()
+        case_info = morph_dict.get('Case', None)
+    
+    # Normalize using lemma
+    normalized_name = main_token.lemma_ if main_token.lemma_ != city_name.lower() else city_name.lower()
+    
+    # Apply existing normalization rules
+    if normalized_name in existing_normalizer:
+        normalized_name = existing_normalizer[normalized_name]
+    
+    # Look up coordinates with multiple key formats
+    coords = _find_coordinates_multiple_formats(normalized_name, detected_regions, existing_city_coords)
+    
+    return {
+        'name': city_name,
+        'normalized': normalized_name,
+        'coords': coords,
+        'region': detected_regions[0] if detected_regions else None,
+        'confidence': 0.7,  # Medium confidence for pattern-based
+        'source': 'spacy_pattern',
+        'case': case_info
+    }
 
 # Consolidated static fallback coordinates
 CITY_COORDS = {
@@ -3518,6 +3796,59 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 
             cleaned.append(ln2)
         return '\n'.join(cleaned)
+    
+    # PRIORITY: Try SpaCy enhanced processing first
+    if SPACY_AVAILABLE:
+        try:
+            spacy_results = spacy_enhanced_geocoding(text)
+            if spacy_results:
+                # Convert SpaCy results to the format expected by the rest of the system
+                threat_markers = []
+                
+                for spacy_city in spacy_results:
+                    if spacy_city['coords']:  # Only process cities with valid coordinates
+                        lat, lng = spacy_city['coords']
+                        
+                        # Determine threat type based on message content
+                        threat_type, icon = classify(text)
+                        if not threat_type:
+                            threat_type = 'shahed'  # Default
+                            icon = 'shahed.png'
+                        
+                        # Create a proper place label
+                        place_label = spacy_city['name'].title()
+                        if spacy_city['region']:
+                            place_label += f" [{spacy_city['region'].title()}]"
+                        
+                        marker = {
+                            'id': f"{mid}_spacy_{len(threat_markers)+1}",
+                            'place': place_label,
+                            'lat': lat,
+                            'lng': lng,
+                            'threat_type': threat_type,
+                            'text': clean_text(text)[:500],
+                            'date': date_str,
+                            'channel': channel,
+                            'marker_icon': icon,
+                            'source_match': f'spacy_{spacy_city["source"]}',
+                            'count': 1,
+                            'confidence': spacy_city['confidence']
+                        }
+                        threat_markers.append(marker)
+                        
+                        add_debug_log(f"SPACY: Created marker for {spacy_city['name']} -> {spacy_city['normalized']} "
+                                    f"(case: {spacy_city.get('case', 'unknown')}, confidence: {spacy_city['confidence']})", 
+                                    "spacy_integration")
+                
+                if threat_markers:
+                    add_debug_log(f"SPACY: Successfully processed message with {len(threat_markers)} markers", "spacy_integration")
+                    return threat_markers
+                    
+        except Exception as e:
+            add_debug_log(f"SPACY: Error processing message: {e}", "spacy_integration")
+            # Continue with fallback processing
+    
+    # FALLBACK: Original regex-based processing continues below
     
     # PRIORITY: Handle "[city] на [region]" patterns early to avoid misprocessing
     regional_city_match = re.search(r'(\d+)\s+шахед[а-яіїєёыийї]*\s+на\s+([а-яіїєё\'\-\s]+?)\s+на\s+([а-яіїє]+щині?)', text.lower()) if text else None
