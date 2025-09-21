@@ -3854,6 +3854,19 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             cleaned.append(ln2)
         return '\n'.join(cleaned)
     
+    # PRIORITY: Check for trajectory patterns FIRST (before any processing)
+    # Pattern: "з [source_region] на [target_region(s)]" - trajectory, not multi-target
+    trajectory_pattern = r'(\d+)?\s*шахед[іївыиє]*\s+з\s+([а-яіїєґ]+(щин|ччин)[ауиі])\s+на\s+([а-яіїєґ/]+(щин|ччин)[ауиіу])'
+    trajectory_match = re.search(trajectory_pattern, text.lower(), re.IGNORECASE)
+    
+    if trajectory_match:
+        count_str = trajectory_match.group(1)
+        source_region = trajectory_match.group(2)
+        target_regions = trajectory_match.group(4)
+        
+        print(f"DEBUG: Trajectory detected - {count_str or ''}шахедів з {source_region} на {target_regions}")
+        return []
+    
     # PRIORITY: Try SpaCy enhanced processing first
     if SPACY_AVAILABLE:
         try:
@@ -7999,6 +8012,30 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
 
     # --- Multi-segment / enumerated lines (1. 2. 3.) region extraction ---
     # Разбиваем по переносам, собираем упоминания нескольких областей; создаём отдельные маркеры
+    
+    # PRIORITY: Detect trajectory patterns BEFORE multi-region processing
+    # Pattern: "з [source_region] на [target_region(s)]" - trajectory, not multi-target
+    trajectory_pattern = r'(\d+)?\s*шахед[іївыиє]*\s+з\s+([а-яіїєґ]+(щин|ччин)[ауиі])\s+на\s+([а-яіїєґ/]+(щин|ччин)[ауиіу])'
+    trajectory_match = re.search(trajectory_pattern, text.lower(), re.IGNORECASE)
+    
+    if trajectory_match:
+        count_str = trajectory_match.group(1)
+        source_region = trajectory_match.group(2)
+        target_regions = trajectory_match.group(4)
+        
+        print(f"DEBUG: Trajectory detected - {count_str or ''}шахедів з {source_region} на {target_regions}")
+        
+        # For trajectory messages, we should NOT create markers in region centers
+        # This represents movement through airspace, not attacks on specific locations
+        # Options:
+        # 1. Don't create any markers (trajectory only)
+        # 2. Create trajectory line visualization 
+        # 3. Create border crossing markers
+        
+        # For now, suppress markers for pure trajectory messages
+        print(f"DEBUG: Suppressing region markers for trajectory message")
+        return None
+    
     region_hits = []  # list of (display_name, (lat,lng), snippet)
     # Treat semicolons as separators like newlines for multi-segment parsing
     seg_text = text.replace(';', '\n')
