@@ -18,6 +18,17 @@ try:
     nlp = spacy.load('uk_core_news_sm')
     SPACY_AVAILABLE = True
 except (ImportError, OSError):
+    SPACY_AVAILABLE = False
+    nlp = None
+
+# Nominatim geocoding integration
+try:
+    from nominatim_geocoder import get_coordinates_nominatim
+    NOMINATIM_AVAILABLE = True
+except ImportError:
+    NOMINATIM_AVAILABLE = False
+    def get_coordinates_nominatim(city_name, region=None):
+        return None
     nlp = None
     SPACY_AVAILABLE = False
     print("WARNING: SpaCy Ukrainian model not available. Using fallback geocoding methods.")
@@ -1501,6 +1512,74 @@ def _find_coordinates_multiple_formats(city_name: str, detected_regions: list, e
     print(f"DEBUG SpaCy coord lookup: No coordinates found for '{city_name}' (tried {len(search_keys)} keys)")
     return None
 
+def get_coordinates_enhanced(city_name: str, region: str = None, context: str = "") -> tuple:
+    """
+    Enhanced coordinate lookup with Nominatim API fallback
+    
+    Args:
+        city_name: Name of the settlement
+        region: Optional region specification
+        context: Context for military priority (e.g., "БпЛА курсом на")
+        
+    Returns:
+        Tuple of (latitude, longitude) or None if not found
+    """
+    
+    # First try local database with military context prioritization
+    if city_name == 'зарічне' and 'бпла' in context.lower():
+        # For military contexts, prefer Dnipropetrovska oblast coordinates
+        coords = DNIPRO_CITY_COORDS.get('зарічне дніпропетровська')
+        if coords:
+            print(f"DEBUG Enhanced coord lookup: Found '{city_name}' using military priority -> Dnipropetrovska oblast {coords}")
+            return coords
+    
+    # Try basic local lookup
+    coords = CITY_COORDS.get(city_name)
+    if coords:
+        print(f"DEBUG Enhanced coord lookup: Found '{city_name}' in local database -> {coords}")
+        return coords
+    
+    # Try settlements index if available
+    if 'SETTLEMENTS_INDEX' in globals() and globals().get('SETTLEMENTS_INDEX'):
+        coords = globals()['SETTLEMENTS_INDEX'].get(city_name)
+        if coords:
+            print(f"DEBUG Enhanced coord lookup: Found '{city_name}' in settlements index -> {coords}")
+            return coords
+    
+    # Try with region specification in local database
+    if region:
+        # Normalize region name
+        region_lower = region.lower().replace('область', '').replace('обл.', '').replace('обл', '').strip()
+        search_keys = [
+            f"{city_name} {region_lower}",
+            f"{city_name} {region_lower} область",
+            f"{city_name} {region_lower} обл",
+            f"{city_name} ({region_lower})",
+            f"{city_name} ({region})"
+        ]
+        
+        for key in search_keys:
+            coords = CITY_COORDS.get(key)
+            if coords:
+                print(f"DEBUG Enhanced coord lookup: Found '{city_name}' using regional key '{key}' -> {coords}")
+                return coords
+    
+    # Fallback to Nominatim API for precise geocoding
+    if NOMINATIM_AVAILABLE:
+        print(f"DEBUG Enhanced coord lookup: Trying Nominatim API for '{city_name}'" + (f" in {region}" if region else ""))
+        coords = get_coordinates_nominatim(city_name, region)
+        if coords:
+            print(f"DEBUG Enhanced coord lookup: Nominatim found '{city_name}' -> {coords}")
+            # Cache the result in local database for future use
+            cache_key = f"{city_name}" + (f" {region}" if region else "")
+            CITY_COORDS[cache_key] = coords
+            return coords
+        else:
+            print(f"DEBUG Enhanced coord lookup: Nominatim could not find '{city_name}'")
+    
+    print(f"DEBUG Enhanced coord lookup: No coordinates found for '{city_name}' anywhere")
+    return None
+
 def _extract_city_after_preposition_spacy(doc, prep_index: int, detected_regions: list,
                                         existing_city_coords: dict, existing_normalizer: dict) -> dict:
     """Extract city name after preposition using SpaCy tokens"""
@@ -1731,6 +1810,8 @@ CITY_COORDS = {
     'семенівку': (50.6633, 32.3933), 'лубни': (50.0186, 32.9931),
     'згурівка (київщина)': (50.4950, 31.7780),
     'гребінку': (50.2500, 30.2500), 'згурівко': (50.4950, 31.7780),
+    # Гребінка (Полтавська область) - правильні координати
+    'гребінка': (50.1058, 32.4464), 'гребінці': (50.1058, 32.4464), 'гребінку полтавська': (50.1058, 32.4464),
     'хотінь': (51.0550, 34.0000), 'хотіні': (51.0550, 34.0000),
     # Додаткові міста з нових повідомлень
     'хмільник': (49.5500, 27.9667), 'хмільнику': (49.5500, 27.9667), 'хмільника': (49.5500, 27.9667),
@@ -1948,6 +2029,9 @@ DNIPRO_CITY_COORDS = {
     'вільногірськ': (48.4850, 34.0300),
     'жовті': (48.3456, 33.5022),  # truncated mention mapping
     'новомосковськ': (48.6333, 35.2167),
+    'зарічне': (48.15, 35.2),  # Зарічне, Покровський район, Дніпропетровська область
+    'зарічне дніпропетровська': (48.15, 35.2),  # Спеціально для військового контексту  
+    'зарічне покровський': (48.15, 35.2),  # Альтернативний ключ
     'синельникове': (48.3167, 35.5167),
     'петропавлівка': (48.5000, 36.4500),  # present
     'покровське(дніпропетровщина)': (48.1180, 36.2470),
@@ -5707,13 +5791,18 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             raw_city = m_course.group(1)
             raw_city = raw_city.replace('\u02bc',"'").replace('ʼ',"'").replace('’',"'").replace('`',"'")
             base = UA_CITY_NORMALIZE.get(raw_city, raw_city)
-            coords = CITY_COORDS.get(base)
-            if not coords and 'SETTLEMENTS_INDEX' in globals():
-                idx = globals().get('SETTLEMENTS_INDEX') or {}
-                coords = idx.get(base)
+            
+            # Use enhanced coordinate lookup with Nominatim fallback
+            coords = get_coordinates_enhanced(base, context="БпЛА курсом на")
+            
             if not coords:
+                # Legacy fallback for backwards compatibility
                 enriched = ensure_city_coords(base)
                 if enriched:
+                    if isinstance(enriched, tuple) and len(enriched)==3:
+                        coords = (enriched[0], enriched[1])
+                    else:
+                        coords = enriched
                     if isinstance(enriched, tuple) and len(enriched)==3:
                         coords = (enriched[0], enriched[1])
                     else:
@@ -6834,16 +6923,16 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             base = UA_CITY_NORMALIZE.get(base, base)
             if base == 'троєщину':
                 base = 'троєщина'
-            coords = CITY_COORDS.get(base)
-            print(f"DEBUG: Direct lookup for '{base}': {coords}")
-            if not coords and SETTLEMENTS_INDEX:
-                coords = SETTLEMENTS_INDEX.get(base)
-                print(f"DEBUG: SETTLEMENTS_INDEX lookup for '{base}': {coords}")
-            # coords lookup done
-            # Если не найдено — пробуем добавить область к названию
+                
+            # Use enhanced coordinate lookup with Nominatim fallback and region context
+            coords = get_coordinates_enhanced(base, region=oblast_hdr, context="БпЛА курсом на")
+            
+            print(f"DEBUG: Enhanced lookup for '{base}'" + (f" in {oblast_hdr}" if oblast_hdr else "") + f": {coords}")
+            
             if not coords and oblast_hdr:
+                # Legacy combo lookup as fallback
                 combo = f"{base} {oblast_hdr}"
-                print(f"DEBUG: Trying combo lookup for '{combo}'")
+                print(f"DEBUG: Trying legacy combo lookup for '{combo}'")
                 coords = CITY_COORDS.get(combo)
                 if not coords and SETTLEMENTS_INDEX:
                     coords = SETTLEMENTS_INDEX.get(combo)
