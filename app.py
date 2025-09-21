@@ -1080,11 +1080,12 @@ _load_name_region_map()
 # Fix problematic entries in NAME_REGION_MAP that cause wrong city resolution
 # Remove incomplete city names that point to wrong regions
 PROBLEMATIC_ENTRIES = [
-    'кривий',  # Should be 'кривий ріг' not just 'кривий' -> causes wrong region lookup
-    'старий',  # Too generic, causes conflicts
-    'нова',    # Too generic
-    'велика',  # Too generic
-    'мала',    # Too generic
+    'кривий',     # Should be 'кривий ріг' not just 'кривий' -> causes wrong region lookup
+    'старий',     # Too generic, causes conflicts
+    'нова',       # Too generic
+    'велика',     # Too generic
+    'мала',       # Too generic
+    'білозерка',  # Conflicts with Херсонська область when message clearly specifies region
 ]
 
 for entry in PROBLEMATIC_ENTRIES:
@@ -1106,15 +1107,18 @@ def ensure_city_coords(name: str):
     if 'SETTLEMENTS_INDEX' in globals() and n in (globals().get('SETTLEMENTS_INDEX') or {}):
         lat,lng = globals()['SETTLEMENTS_INDEX'][n]; return (lat,lng,False)
     
-    # Try SpaCy normalization for single city names
+    # Try SpaCy normalization for single city names (with limited context)
     if SPACY_AVAILABLE:
         try:
             # Create a simple test message to leverage SpaCy normalization
+            # NOTE: This should only find exact matches for the specific city
             test_message = f"на {name}"
             spacy_results = spacy_enhanced_geocoding(test_message)
             
             for result in spacy_results:
-                if result['coords'] and result['normalized'] == n:
+                if (result['coords'] and 
+                    result['normalized'] == n and 
+                    result['name'].lower() == n):  # Ensure exact name match
                     lat, lng = result['coords']
                     print(f"DEBUG SpaCy single city: Found {name} -> {result['normalized']} -> ({lat}, {lng})")
                     return (lat, lng, False)
@@ -1185,91 +1189,113 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
     if message_text:
         message_lower = message_text.lower()
         
-        # Enhanced regional context detection - try parenthetical oblast first
-        oblast_patterns = [
-            # Parenthetical oblast: "(Oblast обл.)" - most specific
-            r'\(([^)]+)\s+обл\.\)',
-            r'\(([^)]+)\s+область\)',
-            # Oblast adjective forms: "харківська обл."
-            r'\b([а-яїіє]+ська)\s+обл(?:\.|асть)?\b',
-            r'\b([а-яїіє]+цька)\s+обл(?:\.|асть)?\b', 
-            # Regional names: "харківщина", "полтавщина", etc.
-            r'\b([а-яїіє]+щина)\b',
-            r'\b([а-яїіє]+щині)\b',
-            r'\b([а-яїіє]+щину)\b',
-            # Additional patterns for regional context
-            r'\bна\s+([а-яїіє]+щині)\b',  # "на Сумщині"
-            r'\bу\s+([а-яїіє]+щині)\b',   # "у Сумщині"
-            r'\bв\s+([а-яїіє]+щині)\b',   # "в Сумщині"
-        ]
-        
-        detected_oblast_key = None
-        
-        for pattern in oblast_patterns:
-            matches = re.findall(pattern, message_lower)
-            for match in matches:
-                match = match.strip().lower()
+        # ENHANCED: Find the closest oblast to the specific city name
+        city_pos = message_lower.find(name.lower())
+        if city_pos != -1:
+            # Look for oblast in close proximity to the city (within 100 characters before/after)
+            start_pos = max(0, city_pos - 100)
+            end_pos = min(len(message_lower), city_pos + len(name) + 100)
+            context = message_lower[start_pos:end_pos]
+            
+            # Enhanced regional context detection - try parenthetical oblast first
+            oblast_patterns = [
+                # Parenthetical oblast: "(Oblast обл.)" - most specific
+                r'\(([^)]+)\s+обл\.\)',
+                r'\(([^)]+)\s+область\)',
+                # Oblast adjective forms: "харківська обл."
+                r'\b([а-яїіє]+ська)\s+обл(?:\.|асть)?\b',
+                r'\b([а-яїіє]+цька)\s+обл(?:\.|асть)?\b', 
+                # Regional names: "харківщина", "полтавщина", etc.
+                r'\b([а-яїіє]+щина)\b',
+                r'\b([а-яїіє]+щині)\b',
+                r'\b([а-яїіє]+щину)\b',
+                # Additional patterns for regional context
+                r'\bна\s+([а-яїіє]+щині)\b',  # "на Сумщині"
+                r'\bу\s+([а-яїіє]+щині)\b',   # "у Сумщині"
+                r'\bв\s+([а-яїіє]+щині)\b',   # "в Сумщині"
+            ]
+            
+            detected_oblast_key = None
+            
+            for pattern in oblast_patterns:
+                matches = re.findall(pattern, context)  # Search in context, not full message
+                for match in matches:
+                    match = match.strip().lower()
+                    
+                    # Normalize regional names to nominative case AND adjective form
+                    if match.endswith('щині'):
+                        match = match[:-2] + 'на'  # сумщині -> сумщина
+                    elif match.endswith('щину'):
+                        match = match[:-2] + 'на'  # сумщину -> сумщина
+                    
+                    # Convert regional names to adjective forms for city lookup
+                    regional_to_adjective = {
+                        'сумщина': 'сумська',
+                        'харківщина': 'харківська',
+                        'чернігівщина': 'чернігівська',
+                        'полтавщина': 'полтавська',
+                        'дніпропетровщина': 'дніпропетровська',
+                        'херсонщина': 'херсонська',
+                        'миколаївщина': 'миколаївська',
+                    }
+                    
+                    if match in regional_to_adjective:
+                        match = regional_to_adjective[match]
+                    
+                    # Create possible city+oblast combinations to search
+                    city_variants = [
+                        f"{name.lower()}({match})",  # миколаївка(сумська)
+                        f"{name.lower()} ({match})",  # миколаївка (сумська)
+                        f"{name.lower()} {match}",
+                        f"{name.lower()} {match} обл.",
+                        f"{name.lower()} {match} область",
+                    ]
+                    
+                    print(f"DEBUG: Checking variants for {name} with closest oblast {match}: {city_variants}")
+                    
+                    # Try to find coordinates using these specific combinations
+                    for variant in city_variants:
+                        if variant in CITY_COORDS:
+                            coords = CITY_COORDS[variant]
+                            print(f"DEBUG: Found exact match for '{variant}' -> {coords}")
+                            return (coords[0], coords[1], False)
+                        
+                        # Also try SETTLEMENTS_INDEX if available
+                        if 'SETTLEMENTS_INDEX' in globals():
+                            settlements = globals().get('SETTLEMENTS_INDEX') or {}
+                            if variant in settlements:
+                                coords = settlements[variant]
+                                print(f"DEBUG: Found settlement match for '{variant}' -> {coords}")
+                                return (coords[0], coords[1], False)
+                    
+                    print(f"DEBUG: No exact match found for variants: {city_variants}")
+                    
+                    # Store oblast key for potential fallback
+                    oblast_normalizations = {
+                        'харківська': 'харківська обл.',
+                        'чернігівська': 'чернігівська обл.',
+                        'полтавська': 'полтавська область',
+                        'дніпропетровська': 'дніпропетровська область',
+                        'сумська': 'сумська область',
+                        'харківщина': 'харківська',
+                        'чернігівщина': 'чернігівська',
+                        'полтавщина': 'полтавська',
+                        'дніпропетровщина': 'дніпропетровська',
+                        'сумщина': 'сумська',
+                    }
+                    
+                    if match in oblast_normalizations:
+                        detected_oblast_key = oblast_normalizations[match]
+                    elif match in OBLAST_CENTERS:
+                        detected_oblast_key = match
+                    
+                    # If we found a valid oblast, stop searching
+                    if detected_oblast_key:
+                        break
                 
-                # Normalize regional names to nominative case AND adjective form
-                if match.endswith('щині'):
-                    match = match[:-2] + 'на'  # сумщині -> сумщина
-                elif match.endswith('щину'):
-                    match = match[:-2] + 'на'  # сумщину -> сумщина
-                
-                # Convert regional names to adjective forms for city lookup
-                regional_to_adjective = {
-                    'сумщина': 'сумська',
-                    'харківщина': 'харківська',
-                    'чернігівщина': 'чернігівська',
-                    'полтавщина': 'полтавська',
-                    'дніпропетровщина': 'дніпропетровська',
-                }
-                
-                if match in regional_to_adjective:
-                    match = regional_to_adjective[match]
-                
-                # Create possible city+oblast combinations to search
-                city_variants = [
-                    f"{name.lower()}({match})",  # миколаївка(сумська)
-                    f"{name.lower()} ({match})",  # миколаївка (сумська)
-                    f"{name.lower()} {match}",
-                    f"{name.lower()} {match} обл.",
-                    f"{name.lower()} {match} область",
-                ]
-                
-                # Try to find exact city+oblast match first
-                for variant in city_variants:
-                    if variant in CITY_COORDS:
-                        lat, lng = CITY_COORDS[variant]
-                        print(f"DEBUG: Found exact city+oblast match: {variant} -> ({lat}, {lng})")
-                        return (lat, lng, False)
-                
-                print(f"DEBUG: No exact match found for variants: {city_variants}")
-                
-                # Store oblast key for potential fallback
-                oblast_normalizations = {
-                    'харківська': 'харківська обл.',
-                    'чернігівська': 'чернігівська обл.',
-                    'полтавська': 'полтавська область',
-                    'дніпропетровська': 'дніпропетровська область',
-                    'сумська': 'сумська область',
-                    'харківщина': 'харківська',
-                    'чернігівщина': 'чернігівська',
-                    'полтавщина': 'полтавська',
-                    'дніпропетровщина': 'дніпропетровська',
-                    'сумщина': 'сумська',
-                }
-                
-                if match in oblast_normalizations:
-                    detected_oblast_key = oblast_normalizations[match]
-                elif match in OBLAST_CENTERS:
-                    detected_oblast_key = match
-                
+                # If we found oblast in this pattern, stop searching other patterns 
                 if detected_oblast_key:
                     break
-            
-            if detected_oblast_key:
-                break
     
     # Second try: standard city lookup (without oblast context)
     result = ensure_city_coords(name)
@@ -1567,6 +1593,7 @@ CITY_COORDS = {
         'ужгород': (48.6208, 22.2879), 'кропивницький': (48.5079, 32.2623), 'кременчук': (49.0670, 33.4204), 'краматорськ': (48.7389, 37.5848),
         'мелітополь': (46.8489, 35.3650), 'бердянськ': (46.7553, 36.7885), 'павлоград': (48.5350, 35.8700), 'нікополь': (47.5667, 34.4061),
         'марганець': (47.6433, 34.6289), 'херсон': (46.6350, 32.6169),
+        'білозерка': (46.64, 32.88),  # Херсонська область
         'чорнобаївка': (46.6964, 32.5469),  # Херсонська область
     
     # Недостающие города из UAV сообщений (сентябрь 2025)
@@ -2887,6 +2914,18 @@ VOLYN_CITY_COORDS = {
 
 for _volyn_name, _volyn_coords in VOLYN_CITY_COORDS.items():
     CITY_COORDS.setdefault(_volyn_name, _volyn_coords)
+
+# Kherson Oblast Cities - Adding specific variants for города with oblast designation
+KHERSON_CITY_COORDS = {
+    'білозерка херсонська': (46.64, 32.88),
+    'білозерка (херсонська)': (46.64, 32.88),
+    'білозерка херсонська обл.': (46.64, 32.88),
+    'білозерка херсонська область': (46.64, 32.88),
+    'білозерка херсонщина': (46.64, 32.88),
+}
+
+for _ks_name, _ks_coords in KHERSON_CITY_COORDS.items():
+    CITY_COORDS.setdefault(_ks_name, _ks_coords)
 
 # Additional missing settlements from large UAV course messages
 MISSING_SETTLEMENTS = {
@@ -5228,7 +5267,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         coords = idx.get(norm)
                     approx_flag = False
                     if not coords:
-                        enriched = ensure_city_coords(norm)
+                        enriched = ensure_city_coords_with_message_context(norm, orig)
                         if enriched:
                             if isinstance(enriched, tuple) and len(enriched) == 3:
                                 coords = (enriched[0], enriched[1])
