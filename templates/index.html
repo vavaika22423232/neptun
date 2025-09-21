@@ -13,21 +13,22 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   <style>
     :root {
-      /* Светлая современная палитра */
-      --main-bg: #f8fafc;
-      --panel-bg: rgba(255, 255, 255, 0.95);
+      /* Темная тема для сайта (как было) */
+      --main-bg: #0a0f1c;
+      --panel-bg: #111827;
       --accent: #3b82f6;
       --accent2: #10b981;
-      --text: #1e293b;
-      --text2: #475569;
-      --text-muted: #64748b;
-      --border: #e2e8f0;
-      --shadow: rgba(15, 23, 42, 0.08);
-      --card-bg: rgba(255, 255, 255, 0.98);
+      --text: #f3f4f6;
+      --text2: #d1d5db;
+      --text-muted: #9ca3af;
+      --border: #1f2937;
+      --shadow: rgba(0, 0, 0, 0.25);
+      --card-bg: rgba(17, 24, 39, 0.95);
       --card-blur: blur(12px);
       --danger: #ef4444;
       --warning: #f59e0b;
       --success: #10b981;
+      /* Только для карты - светлые фильтры */
       --map-filter: brightness(1.05) contrast(0.95) saturate(1.1);
     }
     
@@ -41,7 +42,7 @@
       line-height: 1.5;
     }
     
-    /* Стили карты */
+    /* Стили карты - только карта светлая */
     #map {
       filter: var(--map-filter);
       transition: filter 0.3s ease;
@@ -90,7 +91,7 @@
     
     /* Дополнительные стили для лучшей читаемости */
     .leaflet-container {
-      background: #f1f5f9 !important;
+      background: #e2e8f0 !important; /* Нейтральный светлый фон для карты */
     }
     
     /* Стили зум-контроллов */
@@ -184,14 +185,14 @@
       transform: scale(1.05);
     }
 
-  /* Современный счетчик пользователей для светлой темы */
+  /* Современный счетчик пользователей - темная тема */
   .live-users {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
     padding: 0.6rem 1rem;
-    background: linear-gradient(145deg, #ffffff 0%, #f8fafc 40%, #e2e8f0 100%);
-    border: 1px solid rgba(59, 130, 246, 0.15);
+    background: linear-gradient(145deg, #0f172a 0%, #1e293b 40%, #334155 100%);
+    border: 1px solid rgba(59, 130, 246, 0.2);
     border-radius: 1.5rem;
     font-size: 0.75rem;
     font-weight: 600;
@@ -201,22 +202,21 @@
     top: 50%;
     transform: translate(-50%, -50%);
     box-shadow: 
-      0 0 0 1px rgba(59, 130, 246, 0.08),
-      0 4px 12px -2px rgba(15, 23, 42, 0.1),
-      inset 0 1px 0 rgba(255, 255, 255, 0.8);
+      0 0 0 1px rgba(59, 130, 246, 0.1),
+      0 8px 25px -8px rgba(0, 0, 0, 0.6),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
     white-space: nowrap;
     backdrop-filter: blur(12px) saturate(150%);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    color: var(--text);
   }
   
   .live-users:hover {
     transform: translate(-50%, -50%) translateY(-2px);
     box-shadow: 
-      0 0 0 1px rgba(59, 130, 246, 0.2),
-      0 8px 20px -4px rgba(15, 23, 42, 0.15),
-      inset 0 1px 0 rgba(255, 255, 255, 0.9);
-    border-color: rgba(59, 130, 246, 0.25);
+      0 0 0 1px rgba(59, 130, 246, 0.3),
+      0 12px 35px -10px rgba(0, 0, 0, 0.7),
+      inset 0 1px 0 rgba(255, 255, 255, 0.15);
+    border-color: rgba(59, 130, 246, 0.4);
   }
   
   .live-users::before {
