@@ -5918,9 +5918,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     try:
         import re as _re_course
         low_txt2 = text.lower()
-        m_course = _re_course.search(r'курс(?:ом)?\s+на\s+([a-zа-яіїєґ\'ʼ’`\-]{3,40})', low_txt2)
+        m_course = _re_course.search(r"курс(?:ом)?\s+на\s+([a-zа-яіїєґ\'ʼ'`\-\s]{3,60})(?=\s*(?:$|[,\.\!\?;]|\n))", low_txt2)
         if m_course:
-            raw_city = m_course.group(1)
+            raw_city = m_course.group(1).strip()
             raw_city = raw_city.replace('\u02bc',"'").replace('ʼ',"'").replace('’',"'").replace('`',"'")
             base = UA_CITY_NORMALIZE.get(raw_city, raw_city)
             
