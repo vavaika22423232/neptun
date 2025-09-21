@@ -29,6 +29,16 @@ except ImportError:
     NOMINATIM_AVAILABLE = False
     def get_coordinates_nominatim(city_name, region=None):
         return None
+
+# Context-aware geocoding integration
+try:
+    from context_aware_geocoder import get_context_aware_geocoding
+    CONTEXT_GEOCODER_AVAILABLE = True
+except ImportError:
+    CONTEXT_GEOCODER_AVAILABLE = False
+    def get_context_aware_geocoding(text):
+        return []
+        return None
     nlp = None
     SPACY_AVAILABLE = False
     print("WARNING: SpaCy Ukrainian model not available. Using fallback geocoding methods.")
@@ -1578,6 +1588,50 @@ def get_coordinates_enhanced(city_name: str, region: str = None, context: str = 
             print(f"DEBUG Enhanced coord lookup: Nominatim could not find '{city_name}'")
     
     print(f"DEBUG Enhanced coord lookup: No coordinates found for '{city_name}' anywhere")
+    return None
+
+def get_coordinates_context_aware(text: str) -> tuple:
+    """
+    Context-aware coordinate lookup using intelligent text analysis
+    
+    Args:
+        text: Full message text for context analysis
+        
+    Returns:
+        Tuple of (latitude, longitude, target_city_name) or None if not found
+    """
+    
+    if not CONTEXT_GEOCODER_AVAILABLE:
+        print("DEBUG Context geocoder: Not available")
+        return None
+    
+    print(f"DEBUG Context geocoder: Analyzing text: '{text}'")
+    
+    # Get prioritized geocoding candidates
+    candidates = get_context_aware_geocoding(text)
+    
+    if not candidates:
+        print("DEBUG Context geocoder: No candidates found")
+        return None
+    
+    print(f"DEBUG Context geocoder: Found {len(candidates)} candidates: {candidates}")
+    
+    # Try each candidate in order of confidence
+    for city_name, region, confidence in candidates:
+        # Skip obviously invalid candidates
+        if len(city_name) < 2 or city_name in ['-', 'над', 'на', 'у', 'в', 'до', 'під', 'біля', 'а', 'курсом']:
+            continue
+            
+        print(f"DEBUG Context geocoder: Trying candidate '{city_name}' (region: {region}, confidence: {confidence})")
+        
+        # Use enhanced coordinate lookup
+        coords = get_coordinates_enhanced(city_name, region=region, context=text)
+        
+        if coords:
+            print(f"DEBUG Context geocoder: SUCCESS - Found '{city_name}' -> {coords}")
+            return coords[0], coords[1], city_name
+    
+    print("DEBUG Context geocoder: No valid coordinates found for any candidate")
     return None
 
 def _extract_city_after_preposition_spacy(doc, prep_index: int, detected_regions: list,
@@ -5424,7 +5478,85 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         # Skip if this message has route patterns (handled by route parser above)
         if 'через' in lorig or 'повз' in lorig:
             pass
-        elif ('курс' in lorig or '➡' in lorig or '→' in lorig or 'напрям' in lorig) and ('бпла' in lorig or 'дрон' in lorig or 'груп' in lorig):
+        elif (('курс' in lorig or '➡' in lorig or '→' in lorig or 'напрям' in lorig) and ('бпла' in lorig or 'дрон' in lorig or 'груп' in lorig)) or ('бпла' in lorig and 'частин' in lorig) or ('дрон' in lorig and 'частин' in lorig):
+            # Special case: BPLA current location with directional info
+            # e.g., "БпЛА в північно-західній частині Полтавщини, курсом на Київщину"
+            # or "БпЛА в південно-східній частині Харківщини"
+            import re as _re_loc
+            
+            # Look for current location patterns
+            location_match = _re_loc.search(r'(?:бпла|дрон[иа]?)\s+(?:в|на|над)\s+([а-яіїєґ\-\s]+(?:частин[іа]|район[іе]|округ[уі])\s+[а-яіїєґ]+щин[иаю])', lorig)
+            if location_match:
+                current_location = location_match.group(1).strip()
+                print(f"DEBUG: Found current BPLA location: {current_location}")
+                
+                # Extract region from current location
+                region_in_location = None
+                for reg_key in OBLAST_CENTERS.keys():
+                    if reg_key in current_location:
+                        region_in_location = reg_key
+                        break
+                
+                if region_in_location:
+                    # Get region center and apply directional offset
+                    region_coords = OBLAST_CENTERS.get(region_in_location, (50.0, 30.0))
+                    
+                    # Apply directional offset based on specified part of region
+                    offset_lat, offset_lon = 0, 0
+                    if 'північно-західн' in current_location:
+                        offset_lat, offset_lon = 0.8, -0.8  # Northwest
+                    elif 'північно-східн' in current_location:
+                        offset_lat, offset_lon = 0.8, 0.8   # Northeast
+                    elif 'південно-західн' in current_location:
+                        offset_lat, offset_lon = -0.8, -0.8 # Southwest
+                    elif 'південно-східн' in current_location:
+                        offset_lat, offset_lon = -0.8, 0.8  # Southeast
+                    elif 'північн' in current_location:
+                        offset_lat, offset_lon = 0.8, 0     # North
+                    elif 'південн' in current_location:
+                        offset_lat, offset_lon = -0.8, 0    # South
+                    elif 'західн' in current_location:
+                        offset_lat, offset_lon = 0, -0.8    # West
+                    elif 'східн' in current_location:
+                        offset_lat, offset_lon = 0, 0.8     # East
+                    elif 'центральн' in current_location:
+                        offset_lat, offset_lon = 0, 0       # Center
+                    
+                    final_lat = region_coords[0] + offset_lat
+                    final_lon = region_coords[1] + offset_lon
+                    
+                    # Clean up city name for display
+                    region_name = region_in_location.replace('щини', 'щина').replace('щину', 'щина')
+                    direction_part = ""
+                    if 'північно-західн' in current_location:
+                        direction_part = "Пн-Зх "
+                    elif 'північно-східн' in current_location:
+                        direction_part = "Пн-Сх "
+                    elif 'південно-західн' in current_location:
+                        direction_part = "Пд-Зх "
+                    elif 'південно-східн' in current_location:
+                        direction_part = "Пд-Сх "
+                    elif 'північн' in current_location:
+                        direction_part = "Пн "
+                    elif 'південн' in current_location:
+                        direction_part = "Пд "
+                    elif 'західн' in current_location:
+                        direction_part = "Зх "
+                    elif 'східн' in current_location:
+                        direction_part = "Сх "
+                    elif 'центральн' in current_location:
+                        direction_part = "Центр "
+                    
+                    display_name = f"{direction_part}{region_name.title()}"
+                    
+                    print(f"DEBUG: Location '{current_location}' in {region_in_location} -> ({final_lat}, {final_lon})")
+                    
+                    return [{
+                        'id': str(mid), 'text': clean_text(text)[:600], 'date': date_str, 'channel': channel,
+                        'lat': final_lat, 'lon': final_lon, 'city': display_name,
+                        'source_match': 'trajectory_current_location'
+                    }]
+            
             # Quick reject if explicit single settlement in parentheses (handled elsewhere)
             if '(' not in lorig:
                 present_regions = []
@@ -9193,6 +9325,21 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         if name in lower:
             matched_regions.append((name, coords))
     if matched_regions:
+        # НОВОЕ: Проверка контекстного геокодинга перед региональными маркерами
+        if CONTEXT_GEOCODER_AVAILABLE:
+            context_result = get_coordinates_context_aware(text)
+            if context_result:
+                lat, lng, target_city = context_result
+                threat_type, icon = classify(text)
+                
+                print(f"DEBUG Context-aware geocoding: Found primary target '{target_city}' at ({lat}, {lng})")
+                
+                return [{
+                    'id': str(mid), 'place': target_city.title(), 'lat': lat, 'lng': lng,
+                    'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': 'context_aware_geocoding', 'count': 1
+                }]
+        
         # Если только области упомянуты и нет ключей угроз, пропускаем.
         # Дополнительная защита: иногда в messages.json могли сохраниться старые записи без угроз.
         if not has_threat(text):
