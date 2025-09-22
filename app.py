@@ -1342,6 +1342,98 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
     
     return None
 
+def normalize_ukrainian_toponym(lemmatized_name: str, original_text: str, grammatical_case: str = None) -> str:
+    """
+    Universal normalization for Ukrainian place names using linguistic patterns
+    
+    Args:
+        lemmatized_name: SpaCy lemmatized form
+        original_text: Original text from message
+        grammatical_case: Grammatical case detected by SpaCy (Nom, Gen, Acc, etc.)
+        
+    Returns:
+        Properly normalized toponym
+    """
+    
+    # Rule 1: Special exceptions that need manual handling
+    special_exceptions = {
+        'чкаловський': 'чкаловське',    # "Чкаловське" wrongly lemmatized as adjective
+        'чкаловського': 'чкаловське',   # Genitive case of Чкаловське
+        'чкаловському': 'чкаловське',   # Locative case of Чкаловське
+        'чкаловськом': 'чкаловське',    # Instrumental case of Чкаловське
+        'олексадрія': 'олександрія',    # Common typo/variant
+    }
+    
+    if lemmatized_name in special_exceptions:
+        fixed = special_exceptions[lemmatized_name]
+        print(f"DEBUG normalize_toponym: Special exception '{lemmatized_name}' → '{fixed}'")
+        return fixed
+    
+    # Rule 2: Adjective endings → City names (most common SpaCy error)
+    adjective_to_city_patterns = [
+        (r'(.+)ський$', r'\1ськ'),      # покровський → покровськ
+        (r'(.+)цький$', r'\1цьк'),      # краматорський → краматорськ  
+        (r'(.+)рський$', r'\1рськ'),    # examples like "петрівський" → "петрівськ"
+        (r'(.+)нський$', r'\1нськ'),    # examples like "український" → "українськ"
+        (r'(.+)льський$', r'\1льськ'),  # examples like "кривський" → "кривськ"
+    ]
+    
+    for pattern, replacement in adjective_to_city_patterns:
+        import re
+        if re.match(pattern, lemmatized_name):
+            normalized = re.sub(pattern, replacement, lemmatized_name)
+            print(f"DEBUG normalize_toponym: Adjective pattern '{lemmatized_name}' → '{normalized}'")
+            return normalized
+    
+    # Rule 3: Handle specific case forms that need different normalization
+    case_specific_fixes = {
+        # Genitive forms that should be nominative
+        'зарічний': 'зарічне',          # "Зарічного" (Gen) → "зарічне" (Nom)
+        
+        # Instrumental case normalization
+        'новоукраїнськом': 'новоукраїнськ',  # "над Новоукраїнськом" (Ins) → base form
+        'краматорськом': 'краматорськ',      # "над Краматорськом" (Ins) → base form
+        'покровськом': 'покровськ',          # "над Покровськом" (Ins) → base form
+    }
+    
+    if lemmatized_name in case_specific_fixes:
+        fixed = case_specific_fixes[lemmatized_name]
+        print(f"DEBUG normalize_toponym: Case fix '{lemmatized_name}' → '{fixed}'")
+        return fixed
+    
+    # Rule 4: Handle endings that indicate feminine places
+    feminine_place_patterns = [
+        (r'(.+)івка$', r'\1івка'),      # Keep as is: миколаївка, гусарівка
+        (r'(.+)енка$', r'\1енка'),      # Keep as is: савинка (but handle special cases)
+    ]
+    
+    # Special feminine cases that need fixing
+    feminine_special_cases = {
+        'савинка': 'савинці',  # This is actually "Савинці" wrongly lemmatized
+    }
+    
+    if lemmatized_name in feminine_special_cases:
+        fixed = feminine_special_cases[lemmatized_name]
+        print(f"DEBUG normalize_toponym: Feminine fix '{lemmatized_name}' → '{fixed}'")
+        return fixed
+    
+    # Rule 5: Use original text pattern if lemmatization looks wrong
+    original_lower = original_text.lower()
+    
+    # If original ends with typical city suffixes but lemma doesn't, prefer original pattern
+    city_ending_patterns = [r'(.+)ськ$', r'(.+)цьк$', r'(.+)ів$', r'(.+)ине$', r'(.+)не$']
+    lemma_is_adjective = any(lemmatized_name.endswith(ending) for ending in ['ський', 'цький', 'рський', 'нський'])
+    
+    import re
+    for pattern in city_ending_patterns:
+        if re.match(pattern, original_lower) and lemma_is_adjective:
+            print(f"DEBUG normalize_toponym: Using original pattern '{original_lower}' over lemma '{lemmatized_name}'")
+            return original_lower
+    
+    # Rule 6: Default - return the lemmatized form if no patterns match
+    return lemmatized_name
+
+
 def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = None, 
                            existing_normalizer: dict = None) -> list:
     """
@@ -1476,30 +1568,8 @@ def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = Non
                 
                 print(f"DEBUG SpaCy NLP: Entity '{ent.text}' -> normalized: '{normalized_name}', case: {case_info}")
                 
-                # Fix incorrect SpaCy lemmatization for Ukrainian place names
-                spacy_lemma_fixes = {
-                    'савинка': 'савинці',  # SpaCy incorrectly lemmatizes "Савинці" as "савинка"
-                    'миколаївка': 'миколаївка',  # Ensure consistency 
-                    'гусарівка': 'гусарівка',
-                    'протопопівка': 'протопопівка',
-                    'зарічний': 'зарічне',  # Fix "Зарічного" → "зарічне"
-                    'олексадрія': 'олександрія',  # Common typo
-                    'олександрія': 'олександрія',  # Ensure consistency
-                    'чкаловський': 'чкаловське',  # Fix "Чкаловське" → "чкаловське" instead of "чкаловський"
-                    'покровський': 'покровськ',  # Fix adjective form to city name
-                    'краматорський': 'краматорськ',  # Fix adjective form to city name
-                    'слов\'янський': 'слов\'янськ',  # Fix adjective form to city name
-                    'новоукраїнський': 'новоукраїнськ',  # Fix adjective form to city name
-                    'новоукраїнськом': 'новоукраїнськ',  # Fix instrumental case to nominative
-                    'першотравенський': 'першотравенськ',  # Fix adjective form
-                    'новомосковський': 'новомосковськ',  # Fix adjective form
-                    # Add more fixes as needed
-                }
-                
-                if normalized_name in spacy_lemma_fixes:
-                    original_lemma = normalized_name
-                    normalized_name = spacy_lemma_fixes[normalized_name]
-                    print(f"DEBUG SpaCy lemma fix: '{original_lemma}' -> '{normalized_name}' for original '{ent.text}'")
+                # Apply intelligent normalization for Ukrainian place names
+                normalized_name = normalize_ukrainian_toponym(normalized_name, ent.text, case_info)
                 
                 # Apply existing normalization rules
                 if normalized_name in existing_normalizer:
@@ -1752,29 +1822,8 @@ def _extract_city_after_preposition_spacy(doc, prep_index: int, detected_regions
     # Normalize using lemma
     normalized_name = main_token.lemma_ if main_token.lemma_ != city_name.lower() else city_name.lower()
     
-    # Apply same lemma fixes as in main SpaCy function
-    spacy_lemma_fixes = {
-        'савинка': 'савинці',
-        'миколаївка': 'миколаївка',
-        'гусарівка': 'гусарівка',
-        'протопопівка': 'протопопівка',
-        'зарічний': 'зарічне',
-        'олексадрія': 'олександрія',
-        'олександрія': 'олександрія',
-        'чкаловський': 'чкаловське',  # Fix "Чкаловське" → "чкаловське" 
-        'покровський': 'покровськ',
-        'краматорський': 'краматорськ',
-        'слов\'янський': 'слов\'янськ',
-        'новоукраїнський': 'новоукраїнськ',
-        'новоукраїнськом': 'новоукраїнськ',
-        'першотравенський': 'першотравенськ',
-        'новомосковський': 'новомосковськ',
-    }
-    
-    if normalized_name in spacy_lemma_fixes:
-        original_lemma = normalized_name
-        normalized_name = spacy_lemma_fixes[normalized_name]
-        print(f"DEBUG SpaCy pattern lemma fix: '{original_lemma}' -> '{normalized_name}' for original '{city_name}'")
+    # Apply intelligent normalization for Ukrainian place names
+    normalized_name = normalize_ukrainian_toponym(normalized_name, city_name, case_info)
     
     # Apply existing normalization rules
     if normalized_name in existing_normalizer:
