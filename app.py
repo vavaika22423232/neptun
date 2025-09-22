@@ -17,9 +17,20 @@ try:
     import spacy
     nlp = spacy.load('uk_core_news_sm')
     SPACY_AVAILABLE = True
-except (ImportError, OSError):
+    print("INFO: SpaCy Ukrainian model uk_core_news_sm loaded successfully")
+except ImportError:
     SPACY_AVAILABLE = False
     nlp = None
+    print("WARNING: SpaCy library not available - NLP analysis disabled")
+except OSError:
+    SPACY_AVAILABLE = False
+    nlp = None
+    print("WARNING: SpaCy Ukrainian model uk_core_news_sm not found - NLP analysis disabled")
+    print("HINT: Install with: python -m spacy download uk_core_news_sm")
+except Exception as e:
+    SPACY_AVAILABLE = False
+    nlp = None
+    print(f"ERROR: SpaCy initialization failed: {e}")
 
 # Nominatim geocoding integration
 try:

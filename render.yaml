@@ -3,7 +3,7 @@ services:
     name: neptun-alerts
     env: python
     plan: free
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt && python -c "import spacy; print('SpaCy installed')" && python -m spacy download uk_core_news_sm || echo "SpaCy model download failed, continuing without NLP..."
     startCommand: python app.py
     disk:
       name: data
