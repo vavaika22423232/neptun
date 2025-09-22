@@ -1434,6 +1434,88 @@ def normalize_ukrainian_toponym(lemmatized_name: str, original_text: str, gramma
     return lemmatized_name
 
 
+def determine_regional_context(entity, doc, detected_regions, message_text):
+    """
+    Determine the correct regional context for a geographical entity
+    based on its position in the text relative to regional headers
+    
+    Args:
+        entity: SpaCy entity or PseudoEntity
+        doc: SpaCy Doc object
+        detected_regions: List of detected region names
+        message_text: Original message text
+        
+    Returns:
+        str: Most appropriate region name or None
+    """
+    if not detected_regions:
+        return None
+    
+    if len(detected_regions) == 1:
+        return detected_regions[0]
+    
+    # For multiple regions, find the closest preceding region header
+    entity_start_char = entity.start_char if hasattr(entity, 'start_char') else 0
+    
+    # If entity doesn't have char positions, estimate from token positions
+    if not hasattr(entity, 'start_char'):
+        try:
+            # Find token in doc by text matching
+            for token in doc:
+                if token.text == entity.text and token.i >= entity.start:
+                    entity_start_char = token.idx
+                    break
+        except:
+            entity_start_char = 0
+    
+    # Find all region positions in text
+    region_positions = []
+    message_lower = message_text.lower()
+    
+    region_patterns = {
+        'сумщина': ['сумщин'],
+        'чернігівщина': ['чернігівщин'],
+        'харківщина': ['харківщин'],
+        'полтавщина': ['полтавщин'],
+        'херсонщина': ['херсонщин'],
+        'миколаївщина': ['миколаївщин'],
+        'дніпропетровщина': ['дніпропетровщин'],
+        'київщина': ['київщин'],
+        'донеччина': ['донеччин'],
+        'луганщина': ['луганщин'],
+    }
+    
+    for region_name in detected_regions:
+        patterns = region_patterns.get(region_name, [region_name])
+        for pattern in patterns:
+            pos = message_lower.find(pattern)
+            if pos != -1:
+                region_positions.append((pos, region_name))
+                break
+    
+    # Sort by position
+    region_positions.sort(key=lambda x: x[0])
+    
+    # Find the closest preceding region
+    closest_region = None
+    closest_distance = float('inf')
+    
+    for pos, region_name in region_positions:
+        if pos <= entity_start_char:
+            distance = entity_start_char - pos
+            if distance < closest_distance:
+                closest_distance = distance
+                closest_region = region_name
+    
+    # If no preceding region found, use the first one
+    result = closest_region if closest_region else detected_regions[0]
+    
+    print(f"DEBUG Regional context: Entity '{entity.text}' at char {entity_start_char} -> region '{result}'")
+    print(f"DEBUG Region positions: {region_positions}")
+    
+    return result
+
+
 def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = None, 
                            existing_normalizer: dict = None) -> list:
     """
@@ -1510,6 +1592,7 @@ def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = Non
                     def __init__(self, token):
                         self.text = token.text
                         self.start = token.i
+                        self.end = token.i + 1  # Add missing end attribute
                         self.label_ = 'PROPN_CANDIDATE'
                 geographical_entities.append(PseudoEntity(token))
         
@@ -1575,8 +1658,10 @@ def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = Non
                 if normalized_name in existing_normalizer:
                     normalized_name = existing_normalizer[normalized_name]
                 
+                # Determine the most appropriate regional context for this entity
+                region_context = determine_regional_context(ent, doc, detected_regions, message_text)
+                
                 # Look up coordinates using enhanced lookup with Nominatim fallback
-                region_context = detected_regions[0] if detected_regions else None
                 coords = get_coordinates_enhanced(normalized_name, region_context, message_text)
                 
                 # Determine confidence based on source
@@ -1587,7 +1672,7 @@ def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = Non
                     'name': ent.text,
                     'normalized': normalized_name,
                     'coords': coords,
-                    'region': detected_regions[0] if detected_regions else None,
+                    'region': region_context,
                     'confidence': confidence,
                     'source': source,
                     'case': case_info
@@ -1698,7 +1783,54 @@ def get_coordinates_enhanced(city_name: str, region: str = None, context: str = 
             print(f"DEBUG Enhanced coord lookup: Found '{city_name}' using military priority -> Dnipropetrovska oblast {coords}")
             return coords
     
-    # Try basic local lookup
+    # PRIORITIZE NOMINATIM API when region is specified
+    if region and NOMINATIM_AVAILABLE:
+        # Normalize region name for Nominatim API
+        normalized_region = region.lower()
+        
+        # Convert regional nicknames to standard oblast names
+        region_mappings = {
+            'миколаївщина': 'миколаївська область',
+            'херсонщина': 'херсонська область', 
+            'харківщина': 'харківська область',
+            'донеччина': 'донецька область',
+            'луганщина': 'луганська область',
+            'запоріжжя': 'запорізька область',
+            'дніпропетровщина': 'дніпропетровська область',
+            'полтавщина': 'полтавська область',
+            'сумщина': 'сумська область',
+            'чернігівщина': 'чернігівська область',
+            'київщина': 'київська область',
+            'житомирщина': 'житомирська область',
+            'вінниччина': 'вінницька область',
+            'черкащина': 'черкаська область',
+            'кіровоградщина': 'кіровоградська область',
+            'тернопільщина': 'тернопільська область',
+            'хмельниччина': 'хмельницька область',
+            'рівненщина': 'рівненська область',
+            'волинщина': 'волинська область',
+            'львівщина': 'львівська область',
+            'закарпаття': 'закарпатська область',
+            'івано-франківщина': 'івано-франківська область',
+            'буковина': 'чернівецька область',
+            'одещина': 'одеська область',
+        }
+        
+        # Apply mapping if available
+        nominatim_region = region_mappings.get(normalized_region, region)
+        
+        print(f"DEBUG Enhanced coord lookup: Trying Nominatim API first for '{city_name}' in {nominatim_region} (from {region})")
+        coords = get_coordinates_nominatim(city_name, nominatim_region)
+        if coords:
+            print(f"DEBUG Enhanced coord lookup: Nominatim found '{city_name}' in {nominatim_region} -> {coords}")
+            # Cache the result in local database for future use
+            cache_key = f"{city_name} {region}"
+            CITY_COORDS[cache_key] = coords
+            return coords
+        else:
+            print(f"DEBUG Enhanced coord lookup: Nominatim could not find '{city_name}' in {nominatim_region}")
+    
+    # Try basic local lookup (only if no region specified or Nominatim failed)
     coords = CITY_COORDS.get(city_name)
     if coords:
         print(f"DEBUG Enhanced coord lookup: Found '{city_name}' in local database -> {coords}")
