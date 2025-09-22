@@ -1485,6 +1485,14 @@ def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = Non
                     'зарічний': 'зарічне',  # Fix "Зарічного" → "зарічне"
                     'олексадрія': 'олександрія',  # Common typo
                     'олександрія': 'олександрія',  # Ensure consistency
+                    'чкаловський': 'чкаловське',  # Fix "Чкаловське" → "чкаловське" instead of "чкаловський"
+                    'покровський': 'покровськ',  # Fix adjective form to city name
+                    'краматорський': 'краматорськ',  # Fix adjective form to city name
+                    'слов\'янський': 'слов\'янськ',  # Fix adjective form to city name
+                    'новоукраїнський': 'новоукраїнськ',  # Fix adjective form to city name
+                    'новоукраїнськом': 'новоукраїнськ',  # Fix instrumental case to nominative
+                    'першотравенський': 'першотравенськ',  # Fix adjective form
+                    'новомосковський': 'новомосковськ',  # Fix adjective form
                     # Add more fixes as needed
                 }
                 
@@ -1743,6 +1751,30 @@ def _extract_city_after_preposition_spacy(doc, prep_index: int, detected_regions
     
     # Normalize using lemma
     normalized_name = main_token.lemma_ if main_token.lemma_ != city_name.lower() else city_name.lower()
+    
+    # Apply same lemma fixes as in main SpaCy function
+    spacy_lemma_fixes = {
+        'савинка': 'савинці',
+        'миколаївка': 'миколаївка',
+        'гусарівка': 'гусарівка',
+        'протопопівка': 'протопопівка',
+        'зарічний': 'зарічне',
+        'олексадрія': 'олександрія',
+        'олександрія': 'олександрія',
+        'чкаловський': 'чкаловське',  # Fix "Чкаловське" → "чкаловське" 
+        'покровський': 'покровськ',
+        'краматорський': 'краматорськ',
+        'слов\'янський': 'слов\'янськ',
+        'новоукраїнський': 'новоукраїнськ',
+        'новоукраїнськом': 'новоукраїнськ',
+        'першотравенський': 'першотравенськ',
+        'новомосковський': 'новомосковськ',
+    }
+    
+    if normalized_name in spacy_lemma_fixes:
+        original_lemma = normalized_name
+        normalized_name = spacy_lemma_fixes[normalized_name]
+        print(f"DEBUG SpaCy pattern lemma fix: '{original_lemma}' -> '{normalized_name}' for original '{city_name}'")
     
     # Apply existing normalization rules
     if normalized_name in existing_normalizer:
@@ -2096,6 +2128,7 @@ KHARKIV_CITY_COORDS = {
     'малинівка': (49.6550, 36.7060),
     'коломак': (49.8422, 35.2761),
     'козача лопань': (49.8872, 36.4167),  # СМТ в Дергачівському районі
+    'чкаловське': (49.7155296, 36.9322501),  # Правильне Чкаловське в Харківській області
     'створ населеного пункту балки?': (49.4627, 36.8586),  # placeholder example – remove/replace if noise
 }
 
