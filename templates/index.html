@@ -2520,6 +2520,108 @@
     }
     
     // === РЕГИОНАЛЬНЫЕ УГРОЗЫ ===
+    
+    // Функция для обработки направленных региональных угроз
+    function parseDirectionalThreat(text) {
+      if (!text) return null;
+      
+      const textLower = text.toLowerCase();
+      
+      // Паттерны направленных угроз
+      const directionalPatterns = [
+        // "на харківщина в напрямку чугуєва зі сходу"
+        {
+          pattern: /на\s+(харківщин[аи]|харків.*?област[ьі])\s+.*?напрямк[уи]\s+(\w+).*?(зі?\s+)?(сход[уи]|заход[уи]|півд[ня]|північ[і])/i,
+          region: 'kharkivska',
+          baseCity: 'харків'
+        },
+        // "на чернігівщина - в напрямку н.п.понорниця з північного сходу"
+        {
+          pattern: /на\s+(чернігівщин[аи]|черніг.*?област[ьі]).*?напрямк[уи]\s+.*?(понорниц[яі]|н\.п\.понорниц[яі]).*?(півн.*?сход|північн.*?схід)/i,
+          region: 'chernihivska', 
+          baseCity: 'чернігів'
+        },
+        // "група ворожих бпла на південному заході від м.запоріжжя"
+        {
+          pattern: /(група.*?бпла|бпла).*?(на\s+)?(.+?)від\s+.*?(запоріжж[яі])/i,
+          region: 'zaporizka',
+          baseCity: 'запоріжжя'
+        }
+      ];
+      
+      for (const pattern of directionalPatterns) {
+        const match = textLower.match(pattern.pattern);
+        if (match) {
+          return {
+            region: pattern.region,
+            baseCity: pattern.baseCity,
+            direction: extractDirection(textLower),
+            originalText: text
+          };
+        }
+      }
+      
+      return null;
+    }
+    
+    // Извлекает направление из текста
+    function extractDirection(text) {
+      const directions = {
+        'зі сходу': 'east',
+        'зі заходу': 'west', 
+        'з півночі': 'north',
+        'з півдня': 'south',
+        'з północного сходу': 'northeast',
+        'з північного заходу': 'northwest',
+        'з південного сходу': 'southeast',
+        'з південного заходу': 'southwest',
+        'на південному заході': 'southwest',
+        'на північному заході': 'northwest',
+        'курс - північно-західний': 'northwest',
+        'курс північно-західний': 'northwest',
+        'північно-західний': 'northwest',
+        'південному заході': 'southwest'
+      };
+      
+      for (const [phrase, direction] of Object.entries(directions)) {
+        if (text.includes(phrase)) {
+          return direction;
+        }
+      }
+      
+      return null;
+    }
+    
+    // Вычисляет координаты для направленной угрозы
+    function calculateDirectionalCoords(baseCity, direction, distanceKm = 50) {
+      const cityCoords = {
+        'харків': [49.9935, 36.2304],
+        'чернігів': [51.4982, 31.2893], 
+        'запоріжжя': [47.8388, 35.1396]
+      };
+      
+      const baseLat = cityCoords[baseCity]?.[0];
+      const baseLng = cityCoords[baseCity]?.[1];
+      
+      if (!baseLat || !baseLng) return null;
+      
+      const directionOffsets = {
+        'north': [distanceKm / 111, 0],
+        'south': [-distanceKm / 111, 0],
+        'east': [0, distanceKm / (111 * Math.cos(baseLat * Math.PI / 180))],
+        'west': [0, -distanceKm / (111 * Math.cos(baseLat * Math.PI / 180))],
+        'northeast': [distanceKm / 157, distanceKm / (157 * Math.cos(baseLat * Math.PI / 180))],
+        'northwest': [distanceKm / 157, -distanceKm / (157 * Math.cos(baseLat * Math.PI / 180))],
+        'southeast': [-distanceKm / 157, distanceKm / (157 * Math.cos(baseLat * Math.PI / 180))],
+        'southwest': [-distanceKm / 157, -distanceKm / (157 * Math.cos(baseLat * Math.PI / 180))]
+      };
+      
+      const offset = directionOffsets[direction];
+      if (!offset) return [baseLat, baseLng]; // Fallback to base city
+      
+      return [baseLat + offset[0], baseLng + offset[1]];
+    }
+    
     // Функция для определения региональных угроз
     function isRegionalThreat(text, place) {
       if (!text) return null;
@@ -2935,9 +3037,25 @@
       points.forEach(async p => {
         console.log('updateMarkers: создаем маркер для точки с threat_type:', p.threat_type, 'текст:', p.text);
         
+        // === ПРОВЕРКА НА НАПРАВЛЕННЫЕ РЕГИОНАЛЬНЫЕ УГРОЗЫ ===
+        const directionalThreat = parseDirectionalThreat(p.text);
+        if (directionalThreat) {
+          console.log('updateMarkers: обнаружена направленная угроза:', directionalThreat);
+          
+          // Вычисляем правильные координаты с учетом направления
+          const dirCoords = calculateDirectionalCoords(directionalThreat.baseCity, directionalThreat.direction);
+          if (dirCoords) {
+            // Создаем маркер в правильном месте
+            p.lat = dirCoords[0];
+            p.lng = dirCoords[1];
+            p.place = `${directionalThreat.baseCity} (${directionalThreat.direction})`;
+            console.log('updateMarkers: скорректированы координаты для направленной угрозы:', dirCoords);
+          }
+        }
+        
         // === ПРОВЕРКА НА РЕГИОНАЛЬНЫЕ УГРОЗЫ ===
         const regionalInfo = isRegionalThreat(p.text, p.place);
-        if (regionalInfo) {
+        if (regionalInfo && !directionalThreat) { // Не обрабатываем как региональную, если уже обработали как направленную
           console.log('updateMarkers: обнаружена региональная угроза:', regionalInfo.regionName);
           createRegionalThreatOverlay(regionalInfo, p.threat_type, p.text);
           return; // Пропускаем создание обычного маркера
