@@ -4414,6 +4414,103 @@ def geocode_opencage(place: str):
 def process_message(text, mid, date_str, channel, _disable_multiline=False):  # type: ignore
     import re
     
+    print(f"DEBUG process_message: START - text='{text[:100]}...', SPACY_AVAILABLE={SPACY_AVAILABLE}")
+    
+    # Define classify function at the start so it's available throughout process_message
+    def classify(th: str, city_context: str = ""):
+        import re  # Import re module locally for pattern matching
+        l = th.lower()
+        
+        # Add debug logging
+        print(f"[CLASSIFY DEBUG] Input text: {th}")
+        print(f"[CLASSIFY DEBUG] Lowercase text: {l}")
+        print(f"[CLASSIFY DEBUG] City context: {city_context}")
+        print(f"[CLASSIFY DEBUG] Contains 🚀: {'🚀' in th}")
+        print(f"[CLASSIFY DEBUG] Contains 'ціль': {'ціль' in l}")
+        print(f"[CLASSIFY DEBUG] Contains 'високошвидкісн': {'високошвидкісн' in l}")
+        print(f"[CLASSIFY DEBUG] Contains 'бпла': {'бпла' in l}")
+        
+        # PRIORITY: Artillery shelling warning (обстріл / загроза обстрілу) -> use obstril.png
+        # This should have priority over FPV cities when explicit shelling threat is mentioned
+        if 'обстріл' in l or 'обстрел' in l or 'загроза обстрілу' in l or 'угроза обстрела' in l:
+            print(f"[CLASSIFY DEBUG] Classified as artillery")
+            return 'artillery', 'obstril.png'
+        
+        # Special override for specific cities - Kherson, Nikopol, Marhanets always get FPV icon
+        city_lower = city_context.lower() if city_context else ""
+        fpv_cities = ['херсон', 'никополь', 'нікополь', 'марганець', 'марганец']
+        
+        # Check both city context and message text for FPV cities
+        if any(fpv_city in city_lower for fpv_city in fpv_cities) or any(fpv_city in l for fpv_city in fpv_cities):
+            return 'fpv', 'fpv.png'
+        # Recon / розвід дрони -> use pvo icon (rozved.png) per user request - PRIORITY: check BEFORE general БПЛА
+        if 'розвід' in l or 'розвідуваль' in l or 'развед' in l:
+            return 'rozved', 'rozved.png'
+        # Launch site detections for Shahed / UAV launches ("пуски" + origin phrases). User wants pusk.png marker.
+        if ('пуск' in l or 'пуски' in l) and (any(k in l for k in ['shahed','шахед','шахеді','шахедів','бпла','uav','дрон']) or ('аеродром' in l) or ('аэродром' in l)):
+            return 'pusk', 'pusk.png'
+        # Explicit launches from occupied Berdyansk airbase (Запорізька область) should also show as pusk (not avia)
+        if ('пуск' in l or 'пуски' in l) and 'бердян' in l and ('авіабаз' in l or 'аеродром' in l or 'авиабаз' in l):
+            return 'pusk', 'pusk.png'
+        # Air alarm start
+        if ('повітряна тривога' in l or 'повітряна тривога.' in l or ('тривога' in l and 'повітр' in l)) and not ('відбій' in l or 'отбой' in l):
+            return 'alarm', 'trivoga.png'
+        # Air alarm cancellation
+        if ('відбій тривоги' in l) or ('отбой тревоги' in l):
+            return 'alarm_cancel', 'vidboi.png'
+        # Explosions reporting -> vibuh icon (cover broader fixation phrases)
+        if ('повідомляють про вибух' in l or 'повідомлено про вибух' in l or 'зафіксовано вибух' in l or 'зафіксовано вибухи' in l
+            or 'фіксація вибух' in l or 'фіксують вибух' in l or re.search(r'\b(вибух|вибухи|вибухів)\b', l)):
+            return 'vibuh', 'vibuh.png'
+        # Alarm cancellation (відбій тривоги / отбой тревоги)
+        if ('відбій' in l and 'тривог' in l) or ('отбой' in l and 'тревог' in l):
+            print(f"[CLASSIFY DEBUG] Classified as alarm_cancel")
+            return 'alarm_cancel', 'vidboi.png'
+        
+        # PRIORITY: High-speed targets / missile threats with rocket emoji (🚀) -> raketa.png
+        # This should have priority over drones to handle missile-like threats with rocket emoji
+        if '🚀' in th or any(k in l for k in ['ціль','цілей','цілі','високошвидкісн','high-speed']):
+            print(f"[CLASSIFY DEBUG] Classified as raketa (high-speed targets/rocket emoji)")
+            return 'raketa', 'raketa.png'
+            
+        # PRIORITY: drones (частая путаница). Если присутствуют слова шахед/бпла/дрон -> это shahed
+        if any(k in l for k in ['shahed','шахед','шахеді','шахедів','geran','герань','дрон','дрони','бпла','uav']):
+            print(f"[CLASSIFY DEBUG] Classified as shahed (drones/UAV)")
+            return 'shahed', 'shahed.png'
+        # PRIORITY: Aircraft activity & tactical aviation (avia) -> avia.png (jets, tactical aviation, но БЕЗ КАБов)
+        if any(k in l for k in ['літак','самол','avia','tactical','тактичн','fighter','истребит','jets']) or \
+           ('авіаційн' in l and ('засоб' in l or 'ураж' in l)):
+            return 'avia', 'avia.png'
+        # PRIORITY: КАБы (управляемые авиационные бомбы) -> raketa.png
+        if any(k in l for k in ['каб','kab','умпк','umpk','модуль','fab','умпб','фаб','кабу']) or \
+           ('авіаційн' in l and 'бомб' in l) or ('керован' in l and 'бомб' in l):
+            return 'raketa', 'raketa.png'
+        # Rocket / missile attacks (ракета, ракети) -> raketa.png
+        if any(k in l for k in ['ракет','rocket','міжконтинент','межконтинент','балістичн','крилат','cruise']):
+            return 'raketa', 'raketa.png'
+        # РСЗВ (MLRS, град, ураган, смерч) -> rszv.png
+        if any(k in l for k in ['рсзв','mlrs','град','ураган','смерч','рсув','tор','tорнадо','торнадо']):
+            return 'rszv', 'rszv.png'
+        # Korabel (naval/ship-related threats) -> korabel.png
+        if any(k in l for k in ['корабел','флот','корабл','ship','fleet','морськ','naval']):
+            return 'korabel', 'korabel.png'
+        # Artillery
+        if any(k in l for k in ['арт','artillery','гармат','гаубиц','минометн','howitzer']):
+            return 'artillery', 'artillery.png'
+        # PVO (air defense activity) -> pvo.png
+        if any(k in l for k in ['ппо','pvo','defense','оборон','зенітн','с-','patriot']):
+            return 'pvo', 'pvo.png'
+        # Naval mines -> neptun
+        if any(k in l for k in ['міна','мін ','mine','neptun','нептун','противокорабел']):
+            return 'neptun', 'neptun.jpg'
+        # FPV drones -> fpv.png
+        if any(k in l for k in ['fpv','фпв','камікадз','kamikaze']):
+            print(f"[CLASSIFY DEBUG] Classified as fpv")
+            return 'fpv', 'fpv.png'
+        # General fallback for unclassified threats
+        print(f"[CLASSIFY DEBUG] Using default fallback: shahed")
+        return 'shahed', 'shahed.png'  # default fallback
+    
     # Helper function to clean text from subscription prompts
     def clean_text(text_to_clean):
         if not text_to_clean:
@@ -4461,40 +4558,63 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     if SPACY_AVAILABLE:
         try:
             spacy_results = spacy_enhanced_geocoding(text)
+            print(f"DEBUG process_message: SpaCy returned {len(spacy_results)} results")
+            for i, city in enumerate(spacy_results):
+                print(f"DEBUG process_message: SpaCy result {i+1}: name='{city['name']}', coords={city['coords']}, directional={city.get('directional_threat', False)}")
+            
             if spacy_results:
                 # Convert SpaCy results to the format expected by the rest of the system
                 threat_markers = []
                 
                 for spacy_city in spacy_results:
-                    if spacy_city['coords']:  # Only process cities with valid coordinates
-                        lat, lng = spacy_city['coords']
-                        
-                        # Determine threat type based on message content
-                        threat_type, icon = classify(text)
-                        if not threat_type:
-                            threat_type = 'shahed'  # Default
-                            icon = 'shahed.png'
-                        
-                        # Create a proper place label
-                        place_label = spacy_city['name'].title()
-                        if spacy_city['region']:
-                            place_label += f" [{spacy_city['region'].title()}]"
-                        
-                        marker = {
-                            'id': f"{mid}_spacy_{len(threat_markers)+1}",
-                            'place': place_label,
-                            'lat': lat,
-                            'lng': lng,
-                            'threat_type': threat_type,
-                            'text': clean_text(text)[:500],
-                            'date': date_str,
-                            'channel': channel,
-                            'marker_icon': icon,
-                            'source_match': f'spacy_{spacy_city["source"]}',
-                            'count': 1,
-                            'confidence': spacy_city['confidence']
-                        }
-                        threat_markers.append(marker)
+                    print(f"DEBUG process_message: Processing SpaCy city '{spacy_city['name']}' with coords {spacy_city['coords']}")
+                    try:
+                        if spacy_city['coords']:  # Only process cities with valid coordinates
+                            lat, lng = spacy_city['coords']
+                            
+                            # Determine threat type based on message content
+                            threat_type, icon = classify(text)
+                            if not threat_type:
+                                threat_type = 'shahed'  # Default
+                                icon = 'shahed.png'
+                            
+                            # Create a proper place label
+                            place_label = spacy_city['name'].title()
+                            if spacy_city['region']:
+                                place_label += f" [{spacy_city['region'].title()}]"
+                            
+                            print(f"DEBUG process_message: Creating marker for {place_label} at [{lat}, {lng}]")
+                            
+                            marker = {
+                                'id': f"{mid}_spacy_{len(threat_markers)+1}",
+                                'place': place_label,
+                                'lat': lat,
+                                'lng': lng,
+                                'threat_type': threat_type,
+                                'text': clean_text(text)[:500],
+                                'date': date_str,
+                                'channel': channel,
+                                'marker_icon': icon,
+                                'source_match': f'spacy_{spacy_city["source"]}',
+                                'count': 1,
+                                'confidence': spacy_city['confidence']
+                            }
+                            
+                            # ДОБАВЛЯЕМ ПОЛЯ НАПРАВЛЕННОЙ УГРОЗЫ от Python бэкенда
+                            if spacy_city.get('directional_threat'):
+                                marker['directional_threat'] = True
+                                marker['direction'] = spacy_city.get('direction')
+                                marker['base_coords'] = spacy_city.get('base_coords')
+                                print(f"DEBUG process_message: Added directional threat data - direction: {marker['direction']}, base_coords: {marker['base_coords']}")
+                            
+                            threat_markers.append(marker)
+                            print(f"DEBUG process_message: Added marker to threat_markers. Total: {len(threat_markers)}")
+                        else:
+                            print(f"DEBUG process_message: Skipping SpaCy city '{spacy_city['name']}' - no coordinates")
+                    except Exception as e:
+                        print(f"DEBUG process_message: Error processing SpaCy city '{spacy_city['name']}': {e}")
+                        import traceback
+                        traceback.print_exc()
                         
                         add_debug_log(f"SPACY: Created marker for {spacy_city['name']} -> {spacy_city['normalized']} "
                                     f"(case: {spacy_city.get('case', 'unknown')}, confidence: {spacy_city['confidence']})", 
@@ -4502,7 +4622,15 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 
                 if threat_markers:
                     add_debug_log(f"SPACY: Successfully processed message with {len(threat_markers)} markers", "spacy_integration")
+                    print(f"DEBUG process_message: SpaCy returning {len(threat_markers)} markers")
+                    for marker in threat_markers:
+                        print(f"DEBUG process_message: Marker - place: {marker['place']}, coords: [{marker['lat']}, {marker['lng']}], directional: {marker.get('directional_threat', False)}")
                     return threat_markers
+                else:
+                    print(f"DEBUG process_message: SpaCy found {len(spacy_results)} results but no valid markers created")
+                    for spacy_city in spacy_results:
+                        print(f"DEBUG process_message: SpaCy result - name: {spacy_city['name']}, coords: {spacy_city['coords']}, directional: {spacy_city.get('directional_threat', False)}")
+                    # Continue with fallback processing
                     
         except Exception as e:
             add_debug_log(f"SPACY: Error processing message: {e}", "spacy_integration")
@@ -4996,101 +5124,6 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             'marker_icon': icon, 'list_only': True
         }]
 
-    # Define classify function at the start so it's available throughout process_message
-    def classify(th: str, city_context: str = ""):
-        import re  # Import re module locally for pattern matching
-        l = th.lower()
-        
-        # Add debug logging
-        print(f"[CLASSIFY DEBUG] Input text: {th}")
-        print(f"[CLASSIFY DEBUG] Lowercase text: {l}")
-        print(f"[CLASSIFY DEBUG] City context: {city_context}")
-        print(f"[CLASSIFY DEBUG] Contains 🚀: {'🚀' in th}")
-        print(f"[CLASSIFY DEBUG] Contains 'ціль': {'ціль' in l}")
-        print(f"[CLASSIFY DEBUG] Contains 'високошвидкісн': {'високошвидкісн' in l}")
-        print(f"[CLASSIFY DEBUG] Contains 'бпла': {'бпла' in l}")
-        
-        # PRIORITY: Artillery shelling warning (обстріл / загроза обстрілу) -> use obstril.png
-        # This should have priority over FPV cities when explicit shelling threat is mentioned
-        if 'обстріл' in l or 'обстрел' in l or 'загроза обстрілу' in l or 'угроза обстрела' in l:
-            print(f"[CLASSIFY DEBUG] Classified as artillery")
-            return 'artillery', 'obstril.png'
-        
-        # Special override for specific cities - Kherson, Nikopol, Marhanets always get FPV icon
-        city_lower = city_context.lower() if city_context else ""
-        fpv_cities = ['херсон', 'никополь', 'нікополь', 'марганець', 'марганец']
-        
-        # Check both city context and message text for FPV cities
-        if any(fpv_city in city_lower for fpv_city in fpv_cities) or any(fpv_city in l for fpv_city in fpv_cities):
-            return 'fpv', 'fpv.png'
-        # Recon / розвід дрони -> use pvo icon (rozved.png) per user request - PRIORITY: check BEFORE general БПЛА
-        if 'розвід' in l or 'розвідуваль' in l or 'развед' in l:
-            return 'rozved', 'rozved.png'
-        # Launch site detections for Shahed / UAV launches ("пуски" + origin phrases). User wants pusk.png marker.
-        if ('пуск' in l or 'пуски' in l) and (any(k in l for k in ['shahed','шахед','шахеді','шахедів','бпла','uav','дрон']) or ('аеродром' in l) or ('аэродром' in l)):
-            return 'pusk', 'pusk.png'
-        # Explicit launches from occupied Berdyansk airbase (Запорізька область) should also show as pusk (not avia)
-        if ('пуск' in l or 'пуски' in l) and 'бердян' in l and ('авіабаз' in l or 'аеродром' in l or 'авиабаз' in l):
-            return 'pusk', 'pusk.png'
-        # Air alarm start
-        if ('повітряна тривога' in l or 'повітряна тривога.' in l or ('тривога' in l and 'повітр' in l)) and not ('відбій' in l or 'отбой' in l):
-            return 'alarm', 'trivoga.png'
-        # Air alarm cancellation
-        if ('відбій тривоги' in l) or ('отбой тревоги' in l):
-            return 'alarm_cancel', 'vidboi.png'
-        # Explosions reporting -> vibuh icon (cover broader fixation phrases)
-        if ('повідомляють про вибух' in l or 'повідомлено про вибух' in l or 'зафіксовано вибух' in l or 'зафіксовано вибухи' in l
-            or 'фіксація вибух' in l or 'фіксують вибух' in l or re.search(r'\b(вибух|вибухи|вибухів)\b', l)):
-            return 'vibuh', 'vibuh.png'
-        # Alarm cancellation (відбій тривоги / отбой тревоги)
-        if ('відбій' in l and 'тривог' in l) or ('отбой' in l and 'тревог' in l):
-            print(f"[CLASSIFY DEBUG] Classified as alarm_cancel")
-            return 'alarm_cancel', 'vidboi.png'
-        
-        # PRIORITY: High-speed targets / missile threats with rocket emoji (🚀) -> raketa.png
-        # This should have priority over drones to handle missile-like threats with rocket emoji
-        if '🚀' in th or any(k in l for k in ['ціль','цілей','цілі','високошвидкісн','high-speed']):
-            print(f"[CLASSIFY DEBUG] Classified as raketa (high-speed targets/rocket emoji)")
-            return 'raketa', 'raketa.png'
-            
-        # PRIORITY: drones (частая путаница). Если присутствуют слова шахед/бпла/дрон -> это shahed
-        if any(k in l for k in ['shahed','шахед','шахеді','шахедів','geran','герань','дрон','дрони','бпла','uav']):
-            print(f"[CLASSIFY DEBUG] Classified as shahed (drones/UAV)")
-            return 'shahed', 'shahed.png'
-        # PRIORITY: Aircraft activity & tactical aviation (avia) -> avia.png (jets, tactical aviation, но БЕЗ КАБов)
-        if any(k in l for k in ['літак','самол','avia','tactical','тактичн','fighter','истребит','jets']) or \
-           ('авіаційн' in l and ('засоб' in l or 'ураж' in l)):
-            return 'avia', 'avia.png'
-        # PRIORITY: КАБы (управляемые авиационные бомбы) -> raketa.png
-        if any(k in l for k in ['каб','kab','умпк','umpk','модуль','fab','умпб','фаб','кабу']) or \
-           ('авіаційн' in l and 'бомб' in l) or ('керован' in l and 'бомб' in l):
-            return 'raketa', 'raketa.png'
-        # Rocket / missile attacks (ракета, ракети) -> raketa.png
-        if any(k in l for k in ['ракет','rocket','міжконтинент','межконтинент','балістичн','крилат','cruise']):
-            return 'raketa', 'raketa.png'
-        # РСЗВ (MLRS, град, ураган, смерч) -> rszv.png
-        if any(k in l for k in ['рсзв','mlrs','град','ураган','смерч','рсув','tор','tорнадо','торнадо']):
-            return 'rszv', 'rszv.png'
-        # Korabel (naval/ship-related threats) -> korabel.png
-        if any(k in l for k in ['корабел','флот','корабл','ship','fleet','морськ','naval']):
-            return 'korabel', 'korabel.png'
-        # Artillery
-        if any(k in l for k in ['арт','artillery','гармат','гаубиц','минометн','howitzer']):
-            return 'artillery', 'artillery.png'
-        # PVO (air defense activity) -> pvo.png
-        if any(k in l for k in ['ппо','pvo','defense','оборон','зенітн','с-','patriot']):
-            return 'pvo', 'pvo.png'
-        # Naval mines -> neptun
-        if any(k in l for k in ['міна','мін ','mine','neptun','нептун','противокорабел']):
-            return 'neptun', 'neptun.jpg'
-        # FPV drones -> fpv.png
-        if any(k in l for k in ['fpv','фпв','камікадз','kamikaze']):
-            print(f"[CLASSIFY DEBUG] Classified as fpv")
-            return 'fpv', 'fpv.png'
-        # General fallback for unclassified threats
-        print(f"[CLASSIFY DEBUG] Using default fallback: shahed")
-        return 'shahed', 'shahed.png'  # default fallback
-    
     # PRIORITY CHECK: District-level UAV messages (e.g., "вишгородський р-н київська обл.")
     # Added after classify function to ensure it's available
     lower_text = original_text.lower()

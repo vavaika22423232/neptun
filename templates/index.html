@@ -2994,9 +2994,21 @@
           const m = p.place.match(/\((\d{1,3})\)/);
           if (m) { p.count = parseInt(m[1]); }
         }
+        
+        // НОВАЯ ЛОГИКА: Получаем направление из Python бэкенда
         let arrowDir = null;
-        if (p.place && p.place.includes('←')) {
+        let isDirectionalThreat = false;
+        
+        // Проверяем, есть ли данные о направленной угрозе от Python бэкенда
+        if (p.directional_threat && p.direction) {
+          arrowDir = p.direction; // 'east', 'west', 'north', 'south', 'northeast' и т.д.
+          isDirectionalThreat = true;
+          console.log('updateMarkers: обнаружена направленная угроза от бэкенда:', arrowDir);
+        }
+        // Fallback: старый способ через разбор place
+        else if (p.place && p.place.includes('←')) {
           arrowDir = p.place.split('←').pop().trim();
+          console.log('updateMarkers: используем старый способ определения направления:', arrowDir);
         }
         
         // Функция для определения угла поворота иконки по направлению
@@ -3004,6 +3016,17 @@
           if (!direction) return 0;
           const dir = direction.toLowerCase();
           
+          // НОВАЯ ЛОГИКА: Обрабатываем английские направления от Python бэкенда
+          if (dir === 'north') return 0;       // север - стандартное направление
+          if (dir === 'northeast') return 45;  // северо-восток
+          if (dir === 'east') return 90;       // восток  
+          if (dir === 'southeast') return 135; // юго-восток
+          if (dir === 'south') return 180;     // юг
+          if (dir === 'southwest') return 225; // юго-запад
+          if (dir === 'west') return 270;      // запад
+          if (dir === 'northwest') return 315; // северо-запад
+          
+          // СТАРАЯ ЛОГИКА: Обрабатываем украинские направления (fallback)
           // Основные направления (8 сторон света) - проверяем комбинированные сначала
           if (dir.includes('півд') && (dir.includes('сход') || dir.includes('сх'))) return 135; // с юго-востока = поворот на северо-запад
           if (dir.includes('півд') && (dir.includes('зах') || dir.includes('зх'))) return 45;   // с юго-запада = поворот на северо-восток  
@@ -3022,18 +3045,22 @@
   const countBadge = (p.threat_type==='shahed' || /shahed|шахед|бпла/i.test(p.threat_type||'')) && p.count && p.count>1 ? '<div class="tm-badge">' + p.count + '×</div>' : '';
   const groupLabel = (p.threat_type==='shahed' || /shahed|шахед|бпла/i.test(p.threat_type||'')) ? '<div class="tm-group-label">(1 группа шахедов)</div>' : '';
   
-  // Определяем угол поворота для шахедов
+  // Определяем угол поворота для шахедов и направленных угроз
   let rotationAngle = 0;
   const isShahed = (p.threat_type==='shahed' || /shahed|шахед|бпла/i.test(p.threat_type||''));
-  if (isShahed && arrowDir) {
+  
+  // Поворачиваем иконки для шахедов ИЛИ для любых направленных угроз
+  if ((isShahed || isDirectionalThreat) && arrowDir) {
     rotationAngle = getRotationAngle(arrowDir);
+    console.log('updateMarkers: поворачиваем иконку на', rotationAngle, 'градусов для направления', arrowDir);
   }
   
-  // Создаем стрелочку направления для шахедов
+  // Создаем стрелочку направления для шахедов и направленных угроз
   let directionArrow = '';
-  if (isShahed && arrowDir && rotationAngle !== 0) {
+  if ((isShahed || isDirectionalThreat) && arrowDir && rotationAngle !== 0) {
     const arrowRotation = rotationAngle + 45; // Поворачиваем стрелочку относительно иконки
     directionArrow = '<div class="tm-direction-arrow" style="transform: rotate(' + arrowRotation + 'deg);">➤</div>';
+    console.log('updateMarkers: добавляем стрелочку направления с поворотом', arrowRotation, 'градусов');
   }
   
   // Dynamic scale: keep screen footprint smaller on distant zooms so visual offset feels minimal
@@ -3050,18 +3077,39 @@
   // Anchor to visual center (half width/height) instead of bottom so geographic point stays stable when scaling
   const icon = L.divIcon({ html, className:'', iconSize:[w,h], iconAnchor:[w/2, h/2], popupAnchor:[0,-h/2] });
   const m = L.marker([p.lat, p.lng], { icon, riseOnHover:true });
-        // Optional short polyline showing nominal approach direction (simple cardinal/ordinal mapping)
+        // Optional short polyline showing nominal approach direction
         if (arrowDir) {
           const dir = arrowDir.toLowerCase();
           let dx=0, dy=0;
+          
+          // НОВАЯ ЛОГИКА: обрабатываем английские направления от Python бэкенда
+          if (dir === 'north') { dy = 0.25; }      // с севера
+          if (dir === 'south') { dy = -0.25; }     // с юга  
+          if (dir === 'east') { dx = -0.25; }      // с востока
+          if (dir === 'west') { dx = 0.25; }       // с запада
+          if (dir === 'northeast') { dx = -0.18; dy = 0.18; }  // с северо-востока
+          if (dir === 'northwest') { dx = 0.18; dy = 0.18; }   // с северо-запада
+          if (dir === 'southeast') { dx = -0.18; dy = -0.18; } // с юго-востока
+          if (dir === 'southwest') { dx = 0.18; dy = -0.18; }  // с юго-запада
+          
+          // СТАРАЯ ЛОГИКА: украинские направления (fallback)
           if (dir.includes('півд')) dy = -0.25; // tail origin south of marker => movement northwards
           if (dir.includes('північ')) dy = 0.25;
           if (dir.includes('сход')) dx = -0.25; // east origin => movement westwards
           if (dir.includes('зах')) dx = 0.25;
+          
           if (dx !==0 || dy !==0) {
             const tailStart=[p.lat+dy, p.lng+dx];
-            // Simple static direction hint line
-            L.polyline([tailStart,[p.lat,p.lng]], {color:'#f59e0b', weight:2, opacity:0.55, dashArray:'4 3'}).addTo(markerLayer);
+            // Simple static direction hint line - разные цвета для разных типов угроз
+            const lineColor = isDirectionalThreat ? '#ef4444' : '#f59e0b'; // красный для направленных угроз, оранжевый для остальных
+            const lineWeight = isDirectionalThreat ? 3 : 2;
+            L.polyline([tailStart,[p.lat,p.lng]], {
+              color: lineColor, 
+              weight: lineWeight, 
+              opacity: 0.75, 
+              dashArray: '4 3'
+            }).addTo(markerLayer);
+            console.log('updateMarkers: добавлена линия направления от', tailStart, 'к', [p.lat,p.lng]);
             // Отключили анимированные траектории для производительности
           }
         }
