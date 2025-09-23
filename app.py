@@ -4448,6 +4448,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     
     print(f"DEBUG process_message: START - text='{text[:100]}...', SPACY_AVAILABLE={SPACY_AVAILABLE}")
     
+    # Store original text for reference
+    original_text = text
+    
     # Define classify function at the start so it's available throughout process_message
     def classify(th: str, city_context: str = ""):
         import re  # Import re module locally for pattern matching
@@ -4544,11 +4547,21 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         print(f"[CLASSIFY DEBUG] Using default fallback: shahed")
         return 'shahed', 'shahed.png'  # default fallback
     
-    # Helper function to clean text from subscription prompts
+    # Helper function to clean text from subscription prompts and links
     def clean_text(text_to_clean):
         if not text_to_clean:
             return text_to_clean
         import re as re_import
+        
+        # First, remove markdown links [text](url)
+        text_to_clean = re_import.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', text_to_clean)
+        
+        # Remove standalone links that start with http/https
+        text_to_clean = re_import.sub(r'https?://[^\s]+', '', text_to_clean)
+        
+        # Remove Telegram links
+        text_to_clean = re_import.sub(r't\.me/[^\s]+', '', text_to_clean)
+        
         cleaned = []
         for ln in text_to_clean.splitlines():
             ln2 = ln.strip()
@@ -4571,13 +4584,24 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             if re_import.search(r'^[➡→>⬇⬆⬅⬌↗↘↙↖]?\s*(\*\*)?підписатися(\*\*)?\s*$', ln2, re_import.IGNORECASE):
                 continue
                 
+            # Remove lines that contain only spaces or arrows
+            if re_import.match(r'^[\s➡→>⬇⬆⬅⬌↗↘↙↖]*$', ln2):
+                continue
+                
             cleaned.append(ln2)
-        return '\n'.join(cleaned)
+        return '\n'.join(cleaned).strip()
+    
+    # Clean the text from links and subscription prompts
+    cleaned_text = clean_text(text)
+    print(f"DEBUG process_message: Cleaned text='{cleaned_text[:100]}...'")
+    
+    # Use cleaned text for processing, but keep original for trajectory check (it needs exact patterns)
+    text = cleaned_text
     
     # PRIORITY: Check for trajectory patterns FIRST (before any processing)
     # Pattern: "з [source_region] на [target_region(s)]" - trajectory, not multi-target
     trajectory_pattern = r'(\d+)?\s*шахед[іївыиє]*\s+з\s+([а-яіїєґ]+(щин|ччин)[ауиі])\s+на\s+([а-яіїєґ/]+(щин|ччин)[ауиіу])'
-    trajectory_match = re.search(trajectory_pattern, text.lower(), re.IGNORECASE)
+    trajectory_match = re.search(trajectory_pattern, original_text.lower(), re.IGNORECASE)
     
     if trajectory_match:
         count_str = trajectory_match.group(1)
