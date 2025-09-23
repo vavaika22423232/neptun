@@ -4587,6 +4587,18 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         print(f"DEBUG: Trajectory detected - {count_str or ''}шахедів з {source_region} на {target_regions}")
         return []
     
+    # EARLY CHECK: Air alarms and cancellations should NOT appear on map
+    # Return empty list to exclude from map display
+    lower_text = text.lower() if text else ""
+    if ('повітряна тривога' in lower_text or 'повітряна тривога.' in lower_text or 
+        ('тривога' in lower_text and 'повітр' in lower_text)) and not ('відбій' in lower_text or 'отбой' in lower_text):
+        print(f"DEBUG process_message: Air alarm detected - excluding from map")
+        return []
+    
+    if ('відбій тривоги' in lower_text) or ('отбой тревоги' in lower_text) or ('тривога' in lower_text and 'відбій' in lower_text):
+        print(f"DEBUG process_message: Air alarm cancellation detected - excluding from map")
+        return []
+    
     # PRIORITY: Try SpaCy enhanced processing first
     if SPACY_AVAILABLE:
         try:
