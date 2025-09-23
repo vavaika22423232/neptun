@@ -1864,6 +1864,38 @@ def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = Non
                 seen_cities.add(city_key)
                 unique_results.append(result)
         
+        # === ФИЛЬТРАЦИЯ ПЛОХИХ РЕЗУЛЬТАТОВ ===
+        # Исключаем результаты, которые очевидно неправильные
+        bad_patterns = [
+            'м.', 'м',           # "м." превращается в Киев
+            'південь', 'півдні', 'південні', 'південний',  # "південь" создает маркер в Винницкой области
+            'бпла', 'дрон', 'дрони',  # технические термины
+            'курс', 'курсом',     # направления движения
+            'напрям', 'напрямок', 'напрямку',  # направления
+            'околиці', 'околиць', # околицы
+            'через', 'повз',      # предлоги движения
+            'міста', 'місто',     # общие слова "город"
+        ]
+        
+        filtered_results = []
+        for result in unique_results:
+            normalized = result['normalized'].lower()
+            # Исключаем плохие результаты
+            if normalized in bad_patterns:
+                print(f"DEBUG SpaCy NLP: Filtering out bad result: {result['name']} ({normalized})")
+                continue
+            # Исключаем составные фразы с околицами
+            if 'околиці' in normalized or 'околиць' in normalized:
+                print(f"DEBUG SpaCy NLP: Filtering out suburbs result: {result['name']} ({normalized})")
+                continue
+            # Исключаем результаты без координат от spacy_pattern (кроме регионов)
+            if result['source'] == 'spacy_pattern' and result['coords'] is None:
+                print(f"DEBUG SpaCy NLP: Filtering out pattern without coords: {result['name']}")
+                continue
+            filtered_results.append(result)
+        
+        unique_results = filtered_results
+        
         # === ОБРАБОТКА НАПРАВЛЕННЫХ РЕГИОНАЛЬНЫХ УГРОЗ ===
         unique_results = process_directional_threats(message_text, unique_results)
         
