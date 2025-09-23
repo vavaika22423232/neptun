@@ -1523,6 +1523,148 @@ def determine_regional_context(entity, doc, detected_regions, message_text):
     return result
 
 
+def process_directional_threats(message_text: str, geocoding_results: list) -> list:
+    """
+    Универсальная обработка направленных региональных угроз.
+    Анализирует текст на предмет направлений и корректирует координаты соответственно.
+    
+    Args:
+        message_text: Исходный текст сообщения
+        geocoding_results: Результаты геокодинга от spacy_enhanced_geocoding
+        
+    Returns:
+        Обновленный список результатов с скорректированными координатами
+    """
+    if not geocoding_results:
+        return geocoding_results
+    
+    import re
+    import math
+    
+    # Универсальные паттерны направлений
+    direction_patterns = {
+        # Основные направления
+        'north': [r'з\s+півночі', r'північн', r'півн(?!день)', r'на\s+північ'],
+        'south': [r'з\s+півдня', r'з\s+юга', r'південн', r'півд', r'на\s+південь'],
+        'east': [r'зі?\s+сходу', r'зі?\s+востока', r'східн', r'сх(?!ід)', r'на\s+схід'],
+        'west': [r'зі?\s+заходу', r'зі?\s+запада', r'західн', r'зах', r'на\s+захід'],
+        
+        # Промежуточные направления
+        'northeast': [r'півн.*сход', r'північ.*сх', r'сход.*півн'],
+        'northwest': [r'півн.*зах', r'північ.*зах', r'зах.*півн'],
+        'southeast': [r'півд.*сход', r'півдн.*сх', r'сход.*півд'],
+        'southwest': [r'півд.*зах', r'півдн.*зах', r'зах.*півд']
+    }
+    
+    # Паттерны для определения направленных угроз
+    directional_threat_patterns = [
+        # "на [область/регион] в напрямку [город] з [направление]"
+        r'на\s+(\w+(?:щин[аи]|ська\s+область))\s+.*?напрямк[уи]\s+(\w+).*?з[іи]?\s+(\w+)',
+        
+        # "бпла на [направление] від [город]"
+        r'бпла\s+на\s+(.+?)\s+від\s+.*?(\w+)',
+        
+        # "[группа] на [направление] [область/регион]"
+        r'(група.*?бпла|бпла)\s+на\s+(.+?)\s+(\w+(?:щин[аи]|ська\s+область))',
+        
+        # "курсом на [направление]"
+        r'курсом?\s+.*?(\w+(?:західний|східний|північний|південний))',
+    ]
+    
+    message_lower = message_text.lower()
+    
+    # Определяем направление из текста
+    detected_direction = None
+    for direction, patterns in direction_patterns.items():
+        for pattern in patterns:
+            if re.search(pattern, message_lower, re.IGNORECASE):
+                detected_direction = direction
+                break
+        if detected_direction:
+            break
+    
+    if not detected_direction:
+        return geocoding_results  # Направление не найдено
+    
+    print(f"DEBUG Directional: Detected direction '{detected_direction}' in message: {message_text}")
+    
+    # Ищем базовый город для смещения
+    base_city_result = None
+    for result in geocoding_results:
+        if result.get('coords') and result.get('confidence', 0) > 0.8:
+            base_city_result = result
+            break
+    
+    if not base_city_result:
+        return geocoding_results  # Базовый город не найден
+    
+    # Вычисляем новые координаты с учетом направления
+    base_lat, base_lng = base_city_result['coords']
+    offset_distance_km = 50  # Стандартное смещение 50 км
+    
+    new_coords = calculate_directional_offset(base_lat, base_lng, detected_direction, offset_distance_km)
+    
+    if new_coords:
+        # Обновляем координаты базового результата
+        base_city_result['coords'] = new_coords
+        base_city_result['name'] = f"{base_city_result['name']} ({detected_direction})"
+        base_city_result['directional_threat'] = True
+        base_city_result['direction'] = detected_direction
+        base_city_result['base_coords'] = (base_lat, base_lng)
+        
+        print(f"DEBUG Directional: Updated coordinates for {base_city_result['normalized']} from {(base_lat, base_lng)} to {new_coords}")
+    
+    return geocoding_results
+
+
+def calculate_directional_offset(lat: float, lng: float, direction: str, distance_km: float) -> tuple:
+    """
+    Вычисляет новые координаты с учетом направления и расстояния.
+    
+    Args:
+        lat, lng: Базовые координаты
+        direction: Направление ('north', 'south', 'east', 'west', 'northeast', etc.)
+        distance_km: Расстояние смещения в километрах
+        
+    Returns:
+        Новые координаты (lat, lng) или None при ошибке
+    """
+    try:
+        # Коэффициенты для преобразования км в градусы
+        km_to_lat = 1 / 111.0  # 1 градус широты ≈ 111 км
+        km_to_lng = 1 / (111.0 * math.cos(math.radians(lat)))  # Корректировка для долготы
+        
+        # Смещения по направлениям
+        direction_offsets = {
+            'north': (distance_km * km_to_lat, 0),
+            'south': (-distance_km * km_to_lat, 0),
+            'east': (0, distance_km * km_to_lng),
+            'west': (0, -distance_km * km_to_lng),
+            'northeast': (distance_km * km_to_lat / 1.414, distance_km * km_to_lng / 1.414),
+            'northwest': (distance_km * km_to_lat / 1.414, -distance_km * km_to_lng / 1.414),
+            'southeast': (-distance_km * km_to_lat / 1.414, distance_km * km_to_lng / 1.414),
+            'southwest': (-distance_km * km_to_lat / 1.414, -distance_km * km_to_lng / 1.414)
+        }
+        
+        if direction not in direction_offsets:
+            return None
+        
+        lat_offset, lng_offset = direction_offsets[direction]
+        new_lat = lat + lat_offset
+        new_lng = lng + lng_offset
+        
+        # Проверяем, что координаты остаются в разумных пределах для Украины
+        if 44.0 <= new_lat <= 53.0 and 22.0 <= new_lng <= 41.0:
+            return (new_lat, new_lng)
+        else:
+            print(f"WARNING: Calculated coordinates {(new_lat, new_lng)} are outside Ukraine bounds")
+            return (lat, lng)  # Возвращаем исходные координаты
+            
+    except Exception as e:
+        print(f"ERROR calculating directional offset: {e}")
+        return None
+
+
 def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = None, 
                            existing_normalizer: dict = None) -> list:
     """
@@ -1721,6 +1863,9 @@ def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = Non
             if city_key not in seen_cities:
                 seen_cities.add(city_key)
                 unique_results.append(result)
+        
+        # === ОБРАБОТКА НАПРАВЛЕННЫХ РЕГИОНАЛЬНЫХ УГРОЗ ===
+        unique_results = process_directional_threats(message_text, unique_results)
         
         print(f"DEBUG SpaCy NLP: Final results: {unique_results}")
         return unique_results
