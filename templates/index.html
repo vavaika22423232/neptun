@@ -651,6 +651,7 @@
   .tm-badge{position:absolute;top:-6px;right:-6px;background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;font-size:11px;font-weight:700;padding:2px 5px;border-radius:12px;box-shadow:0 2px 6px -1px rgba(0,0,0,.5);font-family:Inter,system-ui,sans-serif;line-height:1;}
   .tm-wrap{position:relative;display:inline-block;}
   .tm-group-label{position:absolute;top:-20px;left:50%;transform:translateX(-50%);background:rgba(220,38,38,0.9);color:#fff;font-size:10px;font-weight:600;padding:2px 6px;border-radius:8px;white-space:nowrap;font-family:Inter,system-ui,sans-serif;line-height:1;box-shadow:0 1px 4px rgba(0,0,0,.3);}
+  .tm-direction-arrow{position:absolute;top:-2px;right:-8px;width:12px;height:12px;background:#f59e0b;border-radius:50% 0 50% 50%;color:#fff;font-size:8px;font-weight:900;display:flex;align-items:center;justify-content:center;line-height:1;box-shadow:0 1px 3px rgba(0,0,0,.4);transform-origin:center;}
   
   /* Упрощенные стили для маркеров - без анимаций */
   
@@ -2972,9 +2973,44 @@
         if (p.place && p.place.includes('←')) {
           arrowDir = p.place.split('←').pop().trim();
         }
+        
+        // Функция для определения угла поворота иконки по направлению
+        function getRotationAngle(direction) {
+          if (!direction) return 0;
+          const dir = direction.toLowerCase();
+          
+          // Основные направления (8 сторон света) - проверяем комбинированные сначала
+          if (dir.includes('півд') && (dir.includes('сход') || dir.includes('сх'))) return 135; // с юго-востока = поворот на северо-запад
+          if (dir.includes('півд') && (dir.includes('зах') || dir.includes('зх'))) return 45;   // с юго-запада = поворот на северо-восток  
+          if ((dir.includes('північ') || dir.includes('півн')) && (dir.includes('сход') || dir.includes('сх'))) return 225; // с северо-востока = поворот на юго-запад
+          if ((dir.includes('північ') || dir.includes('півн')) && (dir.includes('зах') || dir.includes('зх'))) return 315; // с северо-запада = поворот на юго-восток
+          
+          if (dir.includes('півд')) return 90;  // с юга = поворот на север
+          if (dir.includes('північ') || dir.includes('півн')) return 270; // с севера = поворот на юг  
+          if (dir.includes('сход') || dir.includes('сх')) return 180; // с востока = поворот на запад
+          if (dir.includes('зах') || dir.includes('заход')) return 0;    // с запада = поворот на восток
+          
+          return 0; // по умолчанию
+        }
+        
   const threatClass = (p.threat_type||'default').toLowerCase();
   const countBadge = (p.threat_type==='shahed' || /shahed|шахед|бпла/i.test(p.threat_type||'')) && p.count && p.count>1 ? '<div class="tm-badge">' + p.count + '×</div>' : '';
   const groupLabel = (p.threat_type==='shahed' || /shahed|шахед|бпла/i.test(p.threat_type||'')) ? '<div class="tm-group-label">(1 группа шахедов)</div>' : '';
+  
+  // Определяем угол поворота для шахедов
+  let rotationAngle = 0;
+  const isShahed = (p.threat_type==='shahed' || /shahed|шахед|бпла/i.test(p.threat_type||''));
+  if (isShahed && arrowDir) {
+    rotationAngle = getRotationAngle(arrowDir);
+  }
+  
+  // Создаем стрелочку направления для шахедов
+  let directionArrow = '';
+  if (isShahed && arrowDir && rotationAngle !== 0) {
+    const arrowRotation = rotationAngle + 45; // Поворачиваем стрелочку относительно иконки
+    directionArrow = '<div class="tm-direction-arrow" style="transform: rotate(' + arrowRotation + 'deg);">➤</div>';
+  }
+  
   // Dynamic scale: keep screen footprint smaller on distant zooms so visual offset feels minimal
   let z = map.getZoom ? map.getZoom() : 6;
   let base = 34; // base size at mid zoom
@@ -2982,7 +3018,10 @@
   let factor = z >= 9 ? 1.25 : z >= 7 ? 1.0 : z >= 6 ? 0.85 : z >=5 ? 0.7 : 0.55;
   const w = Math.round(base * factor);
   const h = Math.round(w * 1.15);
-  const html = '<div class="tm-wrap">' + groupLabel + '<img class="plain-marker-img" style="width:' + w + 'px;height:' + h + 'px;" src="' + iconUrl + '" alt="" loading="lazy" data-icon-type="' + (p.threat_type || 'default') + '">' + countBadge + '</div>';
+  
+  // Добавляем поворот к стилю иконки для шахедов
+  const rotationStyle = rotationAngle !== 0 ? `transform: rotate(${rotationAngle}deg); transition: transform 0.3s ease;` : '';
+  const html = '<div class="tm-wrap">' + groupLabel + '<img class="plain-marker-img" style="width:' + w + 'px;height:' + h + 'px;' + rotationStyle + '" src="' + iconUrl + '" alt="" loading="lazy" data-icon-type="' + (p.threat_type || 'default') + '">' + countBadge + directionArrow + '</div>';
   // Anchor to visual center (half width/height) instead of bottom so geographic point stays stable when scaling
   const icon = L.divIcon({ html, className:'', iconSize:[w,h], iconAnchor:[w/2, h/2], popupAnchor:[0,-h/2] });
   const m = L.marker([p.lat, p.lng], { icon, riseOnHover:true });
