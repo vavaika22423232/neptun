@@ -4472,8 +4472,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         city_lower = city_context.lower() if city_context else ""
         fpv_cities = ['херсон', 'никополь', 'нікополь', 'марганець', 'марганец']
         
-        # Check both city context and message text for FPV cities
-        if any(fpv_city in city_lower for fpv_city in fpv_cities) or any(fpv_city in l for fpv_city in fpv_cities):
+        # Check ONLY city context, not the entire message to avoid false positives
+        if any(fpv_city in city_lower for fpv_city in fpv_cities):
+            print(f"[CLASSIFY DEBUG] City '{city_context}' is FPV override")
             return 'fpv', 'fpv.png'
         # Recon / розвід дрони -> use pvo icon (rozved.png) per user request - PRIORITY: check BEFORE general БПЛА
         if 'розвід' in l or 'розвідуваль' in l or 'развед' in l:
@@ -4595,10 +4596,22 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 print(f"DEBUG process_message: SpaCy result {i+1}: name='{city['name']}', coords={city['coords']}, directional={city.get('directional_threat', False)}")
             
             if spacy_results:
+                # Фильтруем результаты: если есть конкретные города, исключаем общие регионы
+                city_results = [r for r in spacy_results if r['coords'] and r['source'] in ['spacy_ner', 'spacy_propn']]
+                region_results = [r for r in spacy_results if r['coords'] and r['source'] == 'spacy_pattern']
+                
+                # Если есть конкретные города, используем только их
+                if city_results:
+                    filtered_results = city_results
+                    print(f"DEBUG process_message: Using {len(city_results)} city results, excluding {len(region_results)} region results")
+                else:
+                    filtered_results = spacy_results
+                    print(f"DEBUG process_message: No city results, using all {len(spacy_results)} results")
+                
                 # Convert SpaCy results to the format expected by the rest of the system
                 threat_markers = []
                 
-                for spacy_city in spacy_results:
+                for spacy_city in filtered_results:
                     print(f"DEBUG process_message: Processing SpaCy city '{spacy_city['name']}' with coords {spacy_city['coords']}")
                     try:
                         if spacy_city['coords']:  # Only process cities with valid coordinates
