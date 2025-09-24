@@ -3687,11 +3687,8 @@
           const j = await r.json();
           console.log('pingPresence: данные:', j);
           if(j.status === 'blocked'){
-            // Show overlay and stop further updates
-            const ov = document.createElement('div');
-            ov.style.cssText='position:fixed;inset:0;background:#0a0f1f;display:flex;align-items:center;justify-content:center;z-index:9999;font-family:Inter,sans-serif;color:#fff;padding:2rem;text-align:center;';
-            ov.innerHTML='<div style="max-width:480px;">Ваш доступ тимчасово обмежено.</div>';
-            document.body.appendChild(ov);
+            console.log('Пользователь заблокирован через /presence проверку');
+            showBlockedOverlay();
             return;
           }
           let visitors = (j && typeof j.visitors !== 'undefined') ? j.visitors : undefined;
@@ -3728,7 +3725,7 @@
         }
       }
       pingPresence();
-  setInterval(pingPresence, 5000);
+  setInterval(pingPresence, 2000); // Уменьшен интервал с 5 до 2 секунд для быстрой реакции на блокировку
 
       // --- Интеграция с alerts.in.ua ---
       let airAlarmLayer = null;
@@ -3837,24 +3834,47 @@
       setInterval(updateRaionAlarms, 15000);
 
       await updateMarkers();
+      // Глобальная функция для показа экрана блокировки
+      function showBlockedOverlay() {
+        if (document.getElementById('blocked-overlay')) return; // Уже показан
+        const ov = document.createElement('div');
+        ov.id = 'blocked-overlay';
+        ov.style.cssText='position:fixed;inset:0;background:#0a0f1f;display:flex;align-items:center;justify-content:center;z-index:9999;font-family:Inter,sans-serif;color:#fff;padding:2rem;text-align:center;';
+        ov.innerHTML='<div style="max-width:480px;">Ваш доступ тимчасово обмежено.</div>';
+        document.body.appendChild(ov);
+        console.log('Показан экран блокировки');
+      }
+
       try {
-    const es = new EventSource('/stream');
-    const uid2 = localStorage.getItem('presence_id');
-    es.onmessage = ev => {
+        const es = new EventSource('/stream');
+        const uid2 = localStorage.getItem('presence_id');
+        console.log('EventSource создан, presence_id:', uid2);
+        
+        es.onopen = () => {
+          console.log('EventSource соединение установлено');
+        };
+        
+        es.onerror = (err) => {
+          console.error('EventSource ошибка:', err);
+        };
+        
+        es.onmessage = ev => {
           try {
             const p = JSON.parse(ev.data);
-      if (p.tracks && p.tracks.length) { updateMarkers(); }
-      if (p.control && p.control.type === 'block' && p.control.id && uid2 && p.control.id === uid2) {
-               // show block overlay instantly
-               const ov = document.createElement('div');
-               ov.style.cssText='position:fixed;inset:0;background:#0a0f1f;display:flex;align-items:center;justify-content:center;z-index:9999;font-family:Inter,sans-serif;color:#fff;padding:2rem;text-align:center;';
-               ov.innerHTML='<div style="max-width:480px;">Ваш доступ тимчасово обмежено.</div>';
-               document.body.appendChild(ov);
-               try { es.close(); } catch(e){}
+            console.log('EventSource сообщение:', p);
+            if (p.tracks && p.tracks.length) { updateMarkers(); }
+            if (p.control && p.control.type === 'block' && p.control.id && uid2 && p.control.id === uid2) {
+              console.log('Получена команда блокировки для', p.control.id);
+              showBlockedOverlay();
+              try { es.close(); } catch(e){}
             }
-          } catch(e){}
+          } catch(e){
+            console.error('Ошибка обработки EventSource сообщения:', e);
+          }
         };
-      } catch(e) {}
+      } catch(e) {
+        console.error('Ошибка создания EventSource:', e);
+      }
       setInterval(updateMarkers, 10000);
       // --- Re-cluster / re-render markers on zoom (debounced) so fast-mode buckets follow zoom level ---
       (function(){
