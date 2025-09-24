@@ -11922,6 +11922,11 @@ def startup_init():
     _init_background()
     return jsonify({'status': 'ok'})
 
+@app.route('/test-blocking')
+def test_blocking():
+    """Тестовая страница для проверки системы блокировки."""
+    return send_from_directory('.', 'test_blocking_system.html')
+
 if __name__ == '__main__':
     # Local / container direct run (not needed if a WSGI server like gunicorn is used)
     port = int(os.getenv('PORT', '5000'))

@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Тест системы блокировки</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .ok { background: #d4edda; color: #155724; }
+        .blocked { background: #f8d7da; color: #721c24; }
+        .info { background: #d1ecf1; color: #0c5460; }
+        button { padding: 10px 20px; margin: 5px; }
+        #log { background: #f8f9fa; padding: 10px; height: 200px; overflow-y: auto; border: 1px solid #ddd; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Тест системы блокировки</h1>
+    
+    <div class="info status">
+        <strong>Ваш ID:</strong> <span id="user-id">загружается...</span>
+    </div>
+    
+    <div class="info status">
+        <strong>Статус:</strong> <span id="status">проверяется...</span>
+    </div>
+    
+    <button onclick="checkStatus()">Проверить статус</button>
+    <button onclick="testEventSource()">Тест EventSource</button>
+    <button onclick="clearLog()">Очистить лог</button>
+    
+    <h3>Лог событий:</h3>
+    <div id="log"></div>
+
+    <script>
+        const uid = localStorage.getItem('presence_id') || (self.crypto?.randomUUID ? crypto.randomUUID() : (Date.now()+""+Math.random()).replace(/\D/g,''));
+        localStorage.setItem('presence_id', uid);
+        document.getElementById('user-id').textContent = uid;
+        
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${time}] ${message}<br>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(message);
+        }
+        
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+        
+        // Глобальная функция для показа экрана блокировки
+        function showBlockedOverlay() {
+            if (document.getElementById('blocked-overlay')) return; // Уже показан
+            const ov = document.createElement('div');
+            ov.id = 'blocked-overlay';
+            ov.style.cssText='position:fixed;inset:0;background:#0a0f1f;display:flex;align-items:center;justify-content:center;z-index:9999;font-family:Inter,sans-serif;color:#fff;padding:2rem;text-align:center;';
+            ov.innerHTML='<div style="max-width:480px;">Ваш доступ тимчасово обмежено.<br><br><button onclick="location.reload()" style="background:#fff;color:#0a0f1f;border:none;padding:10px 20px;border-radius:5px;cursor:pointer;">Перезагрузить</button></div>';
+            document.body.appendChild(ov);
+            log('🚫 ПОКАЗАН ЭКРАН БЛОКИРОВКИ');
+        }
+        
+        async function checkStatus() {
+            try {
+                log('🔍 Проверяем статус через /presence...');
+                const response = await fetch('/presence', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({id: uid})
+                });
+                const data = await response.json();
+                log(`📊 Ответ: ${JSON.stringify(data)}`);
+                
+                const statusEl = document.getElementById('status');
+                if (data.status === 'blocked') {
+                    statusEl.className = 'blocked';
+                    statusEl.textContent = 'ЗАБЛОКИРОВАН';
+                    showBlockedOverlay();
+                } else {
+                    statusEl.className = 'ok';
+                    statusEl.textContent = 'OK';
+                }
+            } catch (error) {
+                log(`❌ Ошибка проверки статуса: ${error}`);
+            }
+        }
+        
+        function testEventSource() {
+            try {
+                log('🔌 Создаем EventSource соединение...');
+                const es = new EventSource('/stream');
+                
+                es.onopen = () => {
+                    log('✅ EventSource соединение установлено');
+                };
+                
+                es.onerror = (err) => {
+                    log(`❌ EventSource ошибка: ${err.type}`);
+                };
+                
+                es.onmessage = ev => {
+                    try {
+                        const p = JSON.parse(ev.data);
+                        log(`📨 EventSource сообщение: ${ev.data}`);
+                        
+                        if (p.control && p.control.type === 'block' && p.control.id && p.control.id === uid) {
+                            log('🚫 Получена команда блокировки!');
+                            showBlockedOverlay();
+                            try { es.close(); } catch(e){}
+                        }
+                    } catch(e) {
+                        log(`❌ Ошибка обработки сообщения: ${e}`);
+                    }
+                };
+                
+                // Автоматически закрываем через 30 секунд для теста
+                setTimeout(() => {
+                    es.close();
+                    log('🔌 EventSource соединение закрыто (тест завершен)');
+                }, 30000);
+                
+            } catch(e) {
+                log(`❌ Ошибка создания EventSource: ${e}`);
+            }
+        }
+        
+        // Автоматически проверяем статус при загрузке
+        window.onload = () => {
+            log('🚀 Тестовая страница загружена');
+            checkStatus();
+        };
+        
+        // Проверяем статус каждые 2 секунды
+        setInterval(checkStatus, 2000);
+    </script>
+</body>
+</html>
