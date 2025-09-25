@@ -7996,11 +7996,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     if _has_threat_local(lower_all):
         directional_course = 'курс' in lower_all and any(w in lower_all for w in ['північ','півден','схід','захід']) and not re.search(r'курс(?:ом)?\s+на\s+[A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,}', lower_all)
         relative_dir_tokens = any(tok in lower_all for tok in ['північніше','південніше','східніше','західніше'])
+        # Check for specific regional mentions (на Миколаївщині, на Київщині, etc.)
+        has_specific_region = bool(re.search(r'\bна\s+[а-яіїєё]+щин[іїуою]\b', original_text))
         # Multi-city list heuristic (comma or slash separated multiple city tokens at start)
         multi_city_pattern = r"^[^\n]{0,120}?([A-Za-zА-Яа-яЇїІіЄєҐґ'`’ʼ\-]{3,}\s*,\s*){1,}[A-Za-zА-Яа-яЇїІіЄєҐґ'`’ʼ\-]{3,}"
         multi_city_enumeration = bool(re.match(multi_city_pattern, lower_all)) or ('/' in lower_all)
         has_pass_near = 'повз ' in lower_all
-        if (directional_course or relative_dir_tokens) and not has_pass_near and not multi_city_enumeration:
+        if (directional_course or relative_dir_tokens) and not has_pass_near and not multi_city_enumeration and not has_specific_region:
             return [{
                 'id': str(mid), 'place': None, 'lat': None, 'lng': None,
                 'threat_type': None, 'text': original_text[:500], 'date': date_str, 'channel': channel,
