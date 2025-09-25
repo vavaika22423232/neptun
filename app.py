@@ -1588,6 +1588,21 @@ def process_directional_threats(message_text: str, geocoding_results: list) -> l
     
     print(f"DEBUG Directional: Detected direction '{detected_direction}' in message: {message_text}")
     
+    # Проверяем, является ли это сообщением о пуске - пуски не смещаются!
+    launch_patterns = [r'пуск[и]?', r'запуск', r'старт', r'launch']
+    is_launch_message = any(re.search(pattern, message_lower, re.IGNORECASE) for pattern in launch_patterns)
+    
+    if is_launch_message:
+        print(f"DEBUG Directional: Launch detected - no offset will be applied")
+        # Для пусков просто добавляем метаданные без смещения координат
+        for result in geocoding_results:
+            if result.get('coords'):
+                result['directional_threat'] = False  # НЕ направленная угроза для пусков
+                result['direction'] = detected_direction
+                result['base_coords'] = result['coords']  # Базовые координаты = текущие
+                print(f"DEBUG Directional: Launch site marker for {result['normalized']} - no coordinate offset")
+        return geocoding_results
+    
     # Ищем базовый город для смещения
     base_city_result = None
     for result in geocoding_results:
@@ -4676,6 +4691,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                 'date': date_str,
                                 'channel': channel,
                                 'marker_icon': icon,
+                                'icon': icon,  # Добавляем поле icon для совместимости
                                 'source_match': f'spacy_{spacy_city["source"]}',
                                 'count': 1,
                                 'confidence': spacy_city['confidence']
