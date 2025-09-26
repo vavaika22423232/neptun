@@ -850,7 +850,7 @@
           <span class="donation-icon">🇺🇦</span>
           Підтримка ЗСУ
         </div>
-        <div class="donation-subtitle">Разом до перемоги! Кожна гривня рятує життя наших захисників</div>
+        <div class="donation-subtitle">До нас звернулися бійці 4 ОТБ, за допомогою у відновленні КСП</div>
         
         <div class="donation-methods">
           <div class="donation-method">
@@ -886,6 +886,20 @@
           <strong>Слава Україні! Героям Слава!</strong>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Mini Donation Banner (appears after main banner is closed) -->
+  <div id="miniDonationBanner" class="mini-donation-banner hidden">
+    <div class="mini-donation-content">
+      <div class="mini-donation-icon">🇺🇦</div>
+      <div class="mini-donation-text">
+        <div class="mini-donation-title">Підтримка ЗСУ</div>
+        <div class="mini-donation-subtitle">4 ОТБ • КСП</div>
+      </div>
+      <button class="mini-donate-btn" onclick="showMainDonationBanner()">
+        <span class="mini-btn-icon">💙</span>
+      </button>
     </div>
   </div>
 
@@ -1136,6 +1150,117 @@
       display: none;
     }
     
+    /* Mini Donation Banner Styles */
+    .mini-donation-banner {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      width: 280px;
+      background: linear-gradient(135deg, #1e3a8a, #7c2d12, #166534);
+      border: 1px solid rgba(255, 215, 0, 0.4);
+      border-radius: 12px;
+      box-shadow: 0 8px 25px -8px rgba(0, 0, 0, 0.6), 
+                  0 0 0 1px rgba(255, 215, 0, 0.15) inset;
+      z-index: 1200;
+      backdrop-filter: blur(8px);
+      animation: miniSlideIn 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .mini-donation-banner:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 35px -8px rgba(0, 0, 0, 0.7), 
+                  0 0 0 1px rgba(255, 215, 0, 0.25) inset;
+    }
+    
+    .mini-donation-banner.hidden {
+      display: none;
+    }
+    
+    .mini-donation-content {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px;
+    }
+    
+    .mini-donation-icon {
+      font-size: 1.8rem;
+      flex-shrink: 0;
+      filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+    }
+    
+    .mini-donation-text {
+      flex: 1;
+      min-width: 0;
+    }
+    
+    .mini-donation-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 2px;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    }
+    
+    .mini-donation-subtitle {
+      font-size: 0.75rem;
+      color: #e2e8f0;
+      opacity: 0.9;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    }
+    
+    .mini-donate-btn {
+      background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+      border: none;
+      border-radius: 8px;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+    }
+    
+    .mini-donate-btn:hover {
+      background: linear-gradient(135deg, #2563eb, #1e40af);
+      transform: scale(1.05);
+      box-shadow: 0 6px 16px rgba(59, 130, 246, 0.6);
+    }
+    
+    .mini-donate-btn:active {
+      transform: scale(0.95);
+    }
+    
+    .mini-btn-icon {
+      font-size: 1.1rem;
+      filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+    }
+    
+    @keyframes miniSlideIn {
+      from {
+        opacity: 0;
+        transform: translateX(100%) scale(0.8);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0) scale(1);
+      }
+    }
+    
+    @keyframes miniSlideOut {
+      from {
+        opacity: 1;
+        transform: translateX(0) scale(1);
+      }
+      to {
+        opacity: 0;
+        transform: translateX(100%) scale(0.8);
+      }
+    }
+    
     /* Mobile responsiveness */
     @media (max-width: 480px) {
       .donation-banner {
@@ -1164,6 +1289,39 @@
       
       .btn-text {
         font-size: 0.75rem;
+      }
+      
+      /* Mini banner mobile styles */
+      .mini-donation-banner {
+        top: 10px;
+        right: 10px;
+        width: 240px;
+      }
+      
+      .mini-donation-content {
+        padding: 12px;
+        gap: 10px;
+      }
+      
+      .mini-donation-icon {
+        font-size: 1.5rem;
+      }
+      
+      .mini-donation-title {
+        font-size: 0.8rem;
+      }
+      
+      .mini-donation-subtitle {
+        font-size: 0.7rem;
+      }
+      
+      .mini-donate-btn {
+        width: 32px;
+        height: 32px;
+      }
+      
+      .mini-btn-icon {
+        font-size: 1rem;
       }
     }
   </style>
@@ -2073,12 +2231,43 @@
     // Donation Banner Functions
     function closeDonationBanner() {
       const banner = document.getElementById('donationBanner');
+      const miniBanner = document.getElementById('miniDonationBanner');
+      
       if (banner) {
         banner.style.animation = 'donationSlideOut 0.5s ease forwards';
         setTimeout(() => {
           banner.classList.add('hidden');
           localStorage.setItem('donationBannerClosed', Date.now().toString());
+          
+          // Show mini banner after main banner is closed
+          if (miniBanner) {
+            setTimeout(() => {
+              miniBanner.classList.remove('hidden');
+            }, 300);
+          }
         }, 500);
+      }
+    }
+    
+    function showMainDonationBanner() {
+      const banner = document.getElementById('donationBanner');
+      const miniBanner = document.getElementById('miniDonationBanner');
+      
+      // Hide mini banner
+      if (miniBanner) {
+        miniBanner.style.animation = 'miniSlideOut 0.4s ease forwards';
+        setTimeout(() => {
+          miniBanner.classList.add('hidden');
+          miniBanner.style.animation = '';
+        }, 400);
+      }
+      
+      // Show main banner
+      if (banner) {
+        banner.classList.remove('hidden');
+        banner.style.animation = 'donationSlideIn 0.8s cubic-bezier(0.4, 0, 0.2, 1)';
+        // Remove the "closed" timestamp so it can be shown again
+        localStorage.removeItem('donationBannerClosed');
       }
     }
     
@@ -2104,17 +2293,29 @@
     // Show donation banner if not closed recently (24 hours)
     function showDonationBanner() {
       const banner = document.getElementById('donationBanner');
+      const miniBanner = document.getElementById('miniDonationBanner');
       const lastClosed = localStorage.getItem('donationBannerClosed');
       const now = Date.now();
       const dayInMs = 24 * 60 * 60 * 1000; // 24 hours
       
       if (!lastClosed || (now - parseInt(lastClosed)) > dayInMs) {
+        // Show main banner, hide mini banner
         if (banner) {
           banner.classList.remove('hidden');
         }
+        if (miniBanner) {
+          miniBanner.classList.add('hidden');
+        }
       } else {
+        // Hide main banner, show mini banner
         if (banner) {
           banner.classList.add('hidden');
+        }
+        if (miniBanner) {
+          // Show mini banner after a delay
+          setTimeout(() => {
+            miniBanner.classList.remove('hidden');
+          }, 1000);
         }
       }
     }
