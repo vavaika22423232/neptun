@@ -650,8 +650,6 @@
   .plain-marker-img{width:34px;height:34px;object-fit:contain;image-rendering:auto;filter:drop-shadow(0 1px 2px rgba(0,0,0,.45));}
   .tm-badge{position:absolute;top:-6px;right:-6px;background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;font-size:11px;font-weight:700;padding:2px 5px;border-radius:12px;box-shadow:0 2px 6px -1px rgba(0,0,0,.5);font-family:Inter,system-ui,sans-serif;line-height:1;}
   .tm-wrap{position:relative;display:inline-block;}
-  .tm-group-label{position:absolute;top:-20px;left:50%;transform:translateX(-50%);background:rgba(220,38,38,0.9);color:#fff;font-size:10px;font-weight:600;padding:2px 6px;border-radius:8px;white-space:nowrap;font-family:Inter,system-ui,sans-serif;line-height:1;box-shadow:0 1px 4px rgba(0,0,0,.3);}
-  .tm-direction-arrow{position:absolute;top:-2px;right:-8px;width:12px;height:12px;background:#f59e0b;border-radius:50% 0 50% 50%;color:#fff;font-size:8px;font-weight:900;display:flex;align-items:center;justify-content:center;line-height:1;box-shadow:0 1px 3px rgba(0,0,0,.4);transform-origin:center;}
   
   /* Упрощенные стили для маркеров - без анимаций */
   
@@ -837,6 +835,60 @@
     </div>
     <button class="ma-close" id="maClose" aria-label="Закрити">×</button>
   </div>
+
+  <!-- Donation Banner for Military Support -->
+  <div id="donationBanner" class="donation-banner">
+    <div class="donation-close" onclick="closeDonationBanner()">×</div>
+    <div class="donation-content">
+      <div class="donation-video">
+        <video autoplay muted loop playsinline>
+          <source src="/static/zbir.MP4" type="video/mp4">
+        </video>
+      </div>
+      <div class="donation-info">
+        <div class="donation-title">
+          <span class="donation-icon">🇺🇦</span>
+          Підтримка ЗСУ
+        </div>
+        <div class="donation-subtitle">Разом до перемоги! Кожна гривня рятує життя наших захисників</div>
+        
+        <div class="donation-methods">
+          <div class="donation-method">
+            <button class="donate-btn mono" onclick="window.open('https://send.monobank.ua/jar/34BgBPrhkG', '_blank')">
+              <span class="btn-icon">🏦</span>
+              <span class="btn-text">MonoBank Банка</span>
+            </button>
+          </div>
+          
+          <div class="donation-method">
+            <button class="donate-btn card" onclick="copyToClipboard('4874100028075417', 'Номер картки скопійовано!')">
+              <span class="btn-icon">💳</span>
+              <span class="btn-text">Картка: 4874•••5417</span>
+            </button>
+          </div>
+          
+          <div class="donation-method">
+            <button class="donate-btn privat" onclick="copyToClipboard('5168745153133886', 'Номер картки ПриватБанк скопійовано!')">
+              <span class="btn-icon">🏛️</span> 
+              <span class="btn-text">ПриватБанк: 5168•••3886</span>
+            </button>
+          </div>
+          
+          <div class="donation-method">
+            <button class="donate-btn paypal" onclick="copyToClipboard('gesundheit.map@gmail.com', 'PayPal адреса скопійована!')">
+              <span class="btn-icon">💰</span>
+              <span class="btn-text">PayPal: gesundheit.map@gmail.com</span>
+            </button>
+          </div>
+        </div>
+        
+        <div class="donation-message">
+          <strong>Слава Україні! Героям Слава!</strong>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <style>
     .mass-attack-banner{position:fixed;top:4.25rem;left:50%;transform:translateX(-50%);width:min(960px,92%);background:linear-gradient(135deg,#581c87,#1e3a8a 48%,#0f172a);border:1px solid rgba(168,85,247,.45);border-radius:1.1rem;padding:1.05rem 1.3rem;display:flex;gap:1rem;z-index:1400;box-shadow:0 20px 50px -12px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.07) inset,0 0 0 1px rgba(147,51,234,.35);color:#f1f5f9;backdrop-filter:blur(10px) saturate(1.3);animation:maSlide .55s cubic-bezier(.4,.0,.2,1);} 
     .mass-attack-banner.hidden{display:none;}
@@ -850,6 +902,270 @@
     .ma-close:hover{background:#334155;color:#fff;}
     @keyframes maSlide{from{opacity:0;transform:translate(-50%,-12px);}to{opacity:1;transform:translate(-50%,0);} }
     @media(max-width:680px){.mass-attack-banner{top:3.6rem;padding:.85rem 1.05rem;border-radius:.9rem;} .ma-title{font-size:.95rem;} .ma-icon{font-size:1.6rem;} }
+
+    /* Donation Banner Styles */
+    .donation-banner {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      width: min(420px, calc(100vw - 40px));
+      background: linear-gradient(145deg, #1e3a8a, #7c2d12, #166534);
+      border: 2px solid rgba(255, 215, 0, 0.6);
+      border-radius: 20px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), 
+                  0 0 0 1px rgba(255, 215, 0, 0.2) inset,
+                  0 0 30px rgba(255, 215, 0, 0.3);
+      z-index: 1300;
+      overflow: hidden;
+      backdrop-filter: blur(12px);
+      animation: donationSlideIn 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    
+    .donation-banner:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 35px 70px -12px rgba(0, 0, 0, 0.8), 
+                  0 0 0 1px rgba(255, 215, 0, 0.3) inset,
+                  0 0 40px rgba(255, 215, 0, 0.4);
+    }
+    
+    .donation-close {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      width: 32px;
+      height: 32px;
+      background: rgba(0, 0, 0, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 50%;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 18px;
+      font-weight: 700;
+      z-index: 10;
+      transition: all 0.2s ease;
+    }
+    
+    .donation-close:hover {
+      background: rgba(220, 38, 38, 0.8);
+      transform: scale(1.1);
+    }
+    
+    .donation-content {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+    
+    .donation-video {
+      position: relative;
+      width: 100%;
+      height: 140px;
+      overflow: hidden;
+      border-radius: 18px 18px 0 0;
+    }
+    
+    .donation-video video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      filter: brightness(0.8) contrast(1.1);
+    }
+    
+    .donation-video::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to bottom, 
+                  transparent 0%, 
+                  rgba(0, 0, 0, 0.3) 70%, 
+                  rgba(0, 0, 0, 0.6) 100%);
+    }
+    
+    .donation-info {
+      padding: 20px;
+      position: relative;
+      background: linear-gradient(145deg, 
+                  rgba(30, 58, 138, 0.95), 
+                  rgba(124, 45, 18, 0.95), 
+                  rgba(22, 101, 52, 0.95));
+    }
+    
+    .donation-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 1.3rem;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 8px;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    }
+    
+    .donation-icon {
+      font-size: 1.5rem;
+      filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+    }
+    
+    .donation-subtitle {
+      font-size: 0.9rem;
+      color: #e2e8f0;
+      margin-bottom: 18px;
+      line-height: 1.4;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    }
+    
+    .donation-methods {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    
+    .donate-btn {
+      width: 100%;
+      padding: 12px 16px;
+      border: none;
+      border-radius: 12px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-align: left;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .donate-btn::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, 
+                  transparent, 
+                  rgba(255, 255, 255, 0.2), 
+                  transparent);
+      transition: left 0.5s ease;
+    }
+    
+    .donate-btn:hover::before {
+      left: 100%;
+    }
+    
+    .donate-btn.mono {
+      background: linear-gradient(135deg, #7c3aed, #a855f7);
+      color: white;
+      box-shadow: 0 4px 15px rgba(124, 58, 237, 0.4);
+    }
+    
+    .donate-btn.card {
+      background: linear-gradient(135deg, #2563eb, #3b82f6);
+      color: white;
+      box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4);
+    }
+    
+    .donate-btn.privat {
+      background: linear-gradient(135deg, #059669, #10b981);
+      color: white;
+      box-shadow: 0 4px 15px rgba(5, 150, 105, 0.4);
+    }
+    
+    .donate-btn.paypal {
+      background: linear-gradient(135deg, #f59e0b, #fbbf24);
+      color: #1f2937;
+      box-shadow: 0 4px 15px rgba(245, 158, 11, 0.4);
+    }
+    
+    .donate-btn:hover {
+      transform: translateY(-2px);
+      filter: brightness(1.1);
+    }
+    
+    .donate-btn:active {
+      transform: translateY(0);
+    }
+    
+    .btn-icon {
+      font-size: 1.1rem;
+      flex-shrink: 0;
+    }
+    
+    .btn-text {
+      flex: 1;
+      font-size: 0.85rem;
+    }
+    
+    .donation-message {
+      text-align: center;
+      font-size: 0.9rem;
+      color: #fbbf24;
+      font-weight: 700;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+      background: linear-gradient(90deg, #fbbf24, #f59e0b, #fbbf24);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: textShine 3s ease-in-out infinite;
+    }
+    
+    @keyframes donationSlideIn {
+      from {
+        opacity: 0;
+        transform: translateX(100%) translateY(20px) scale(0.9);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0) translateY(0) scale(1);
+      }
+    }
+    
+    @keyframes textShine {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.8; }
+    }
+    
+    .donation-banner.hidden {
+      display: none;
+    }
+    
+    /* Mobile responsiveness */
+    @media (max-width: 480px) {
+      .donation-banner {
+        bottom: 10px;
+        right: 10px;
+        left: 10px;
+        width: calc(100vw - 20px);
+      }
+      
+      .donation-video {
+        height: 120px;
+      }
+      
+      .donation-title {
+        font-size: 1.1rem;
+      }
+      
+      .donation-subtitle {
+        font-size: 0.8rem;
+      }
+      
+      .donate-btn {
+        padding: 10px 12px;
+        font-size: 0.8rem;
+      }
+      
+      .btn-text {
+        font-size: 0.75rem;
+      }
+    }
   </style>
   <style>
   /* Place search control */
@@ -1754,6 +2070,77 @@
       }, 3000);
     }
     
+    // Donation Banner Functions
+    function closeDonationBanner() {
+      const banner = document.getElementById('donationBanner');
+      if (banner) {
+        banner.style.animation = 'donationSlideOut 0.5s ease forwards';
+        setTimeout(() => {
+          banner.classList.add('hidden');
+          localStorage.setItem('donationBannerClosed', Date.now().toString());
+        }, 500);
+      }
+    }
+    
+    function copyToClipboard(text, successMessage) {
+      navigator.clipboard.writeText(text).then(() => {
+        showToast(successMessage, 'success');
+      }).catch(() => {
+        // Fallback for older browsers
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+          document.execCommand('copy');
+          showToast(successMessage, 'success');
+        } catch (err) {
+          showToast('Не вдалося скопіювати', 'error');
+        }
+        document.body.removeChild(textarea);
+      });
+    }
+    
+    // Show donation banner if not closed recently (24 hours)
+    function showDonationBanner() {
+      const banner = document.getElementById('donationBanner');
+      const lastClosed = localStorage.getItem('donationBannerClosed');
+      const now = Date.now();
+      const dayInMs = 24 * 60 * 60 * 1000; // 24 hours
+      
+      if (!lastClosed || (now - parseInt(lastClosed)) > dayInMs) {
+        if (banner) {
+          banner.classList.remove('hidden');
+        }
+      } else {
+        if (banner) {
+          banner.classList.add('hidden');
+        }
+      }
+    }
+    
+    // Initialize donation banner when page loads
+    document.addEventListener('DOMContentLoaded', () => {
+      // Add slide out animation to styles
+      const style = document.createElement('style');
+      style.textContent = `
+        @keyframes donationSlideOut {
+          from {
+            opacity: 1;
+            transform: translateX(0) translateY(0) scale(1);
+          }
+          to {
+            opacity: 0;
+            transform: translateX(100%) translateY(20px) scale(0.9);
+          }
+        }
+      `;
+      document.head.appendChild(style);
+      
+      // Show banner after a short delay
+      setTimeout(showDonationBanner, 2000);
+    });
+    
     // Sound notification system
     let audioEnabled = localStorage.getItem('chatSounds') !== 'false';
     let lastCommentCount = 0;
@@ -2519,32 +2906,7 @@
       return pts;
     }
     
-    // === УНИВЕРСАЛЬНАЯ СИСТЕМА НАПРАВЛЕННЫХ УГРОЗ ===
-    
-    // Универсальная функция для обработки любых направленных угроз
-    // Устаревшие функции для обратной совместимости
-    function parseDirectionalThreat(text) {
-      return null; // Обработка перенесена в Python backend
-    }
-    
-    function extractDirection(text) {
-      return null; // Обработка перенесена в Python backend
-    }
-    
-    function calculateDirectionalCoords(baseCity, direction, distanceKm = 50) {
-      // Устаревшая версия - используем универсальную
-      const cityCoords = {
-        'харків': [49.9935, 36.2304],
-        'чернігів': [51.4982, 31.2893], 
-        'запоріжжя': [47.8388, 35.1396]
-      };
-      
-      const coords = cityCoords[baseCity];
-      if (!coords) return null;
-      
-      return calculateUniversalDirectionalCoords(coords, direction, distanceKm);
-    }
-    
+    // === РЕГИОНАЛЬНЫЕ УГРОЗЫ ===
     // Функция для определения региональных угроз
     function isRegionalThreat(text, place) {
       if (!text) return null;
@@ -2994,75 +3356,12 @@
           const m = p.place.match(/\((\d{1,3})\)/);
           if (m) { p.count = parseInt(m[1]); }
         }
-        
-        // НОВАЯ ЛОГИКА: Получаем направление из Python бэкенда
         let arrowDir = null;
-        let isDirectionalThreat = false;
-        
-        // Проверяем, есть ли данные о направленной угрозе от Python бэкенда
-        if (p.directional_threat && p.direction) {
-          arrowDir = p.direction; // 'east', 'west', 'north', 'south', 'northeast' и т.д.
-          isDirectionalThreat = true;
-          console.log('updateMarkers: обнаружена направленная угроза от бэкенда:', arrowDir);
-        }
-        // Fallback: старый способ через разбор place
-        else if (p.place && p.place.includes('←')) {
+        if (p.place && p.place.includes('←')) {
           arrowDir = p.place.split('←').pop().trim();
-          console.log('updateMarkers: используем старый способ определения направления:', arrowDir);
         }
-        
-        // Функция для определения угла поворота иконки по направлению
-        function getRotationAngle(direction) {
-          if (!direction) return 0;
-          const dir = direction.toLowerCase();
-          
-          // НОВАЯ ЛОГИКА: Обрабатываем английские направления от Python бэкенда
-          if (dir === 'north') return 0;       // север - стандартное направление
-          if (dir === 'northeast') return 45;  // северо-восток
-          if (dir === 'east') return 90;       // восток  
-          if (dir === 'southeast') return 135; // юго-восток
-          if (dir === 'south') return 180;     // юг
-          if (dir === 'southwest') return 225; // юго-запад
-          if (dir === 'west') return 270;      // запад
-          if (dir === 'northwest') return 315; // северо-запад
-          
-          // СТАРАЯ ЛОГИКА: Обрабатываем украинские направления (fallback)
-          // Основные направления (8 сторон света) - проверяем комбинированные сначала
-          if (dir.includes('півд') && (dir.includes('сход') || dir.includes('сх'))) return 135; // с юго-востока = поворот на северо-запад
-          if (dir.includes('півд') && (dir.includes('зах') || dir.includes('зх'))) return 45;   // с юго-запада = поворот на северо-восток  
-          if ((dir.includes('північ') || dir.includes('півн')) && (dir.includes('сход') || dir.includes('сх'))) return 225; // с северо-востока = поворот на юго-запад
-          if ((dir.includes('північ') || dir.includes('півн')) && (dir.includes('зах') || dir.includes('зх'))) return 315; // с северо-запада = поворот на юго-восток
-          
-          if (dir.includes('півд')) return 90;  // с юга = поворот на север
-          if (dir.includes('північ') || dir.includes('півн')) return 270; // с севера = поворот на юг  
-          if (dir.includes('сход') || dir.includes('сх')) return 180; // с востока = поворот на запад
-          if (dir.includes('зах') || dir.includes('заход')) return 0;    // с запада = поворот на восток
-          
-          return 0; // по умолчанию
-        }
-        
   const threatClass = (p.threat_type||'default').toLowerCase();
   const countBadge = (p.threat_type==='shahed' || /shahed|шахед|бпла/i.test(p.threat_type||'')) && p.count && p.count>1 ? '<div class="tm-badge">' + p.count + '×</div>' : '';
-  const groupLabel = (p.threat_type==='shahed' || /shahed|шахед|бпла/i.test(p.threat_type||'')) ? '<div class="tm-group-label">(1 группа шахедов)</div>' : '';
-  
-  // Определяем угол поворота для шахедов и направленных угроз
-  let rotationAngle = 0;
-  const isShahed = (p.threat_type==='shahed' || /shahed|шахед|бпла/i.test(p.threat_type||''));
-  
-  // Поворачиваем иконки для шахедов ИЛИ для любых направленных угроз
-  if ((isShahed || isDirectionalThreat) && arrowDir) {
-    rotationAngle = getRotationAngle(arrowDir);
-    console.log('updateMarkers: поворачиваем иконку на', rotationAngle, 'градусов для направления', arrowDir);
-  }
-  
-  // Создаем стрелочку направления для шахедов и направленных угроз
-  let directionArrow = '';
-  if ((isShahed || isDirectionalThreat) && arrowDir && rotationAngle !== 0) {
-    const arrowRotation = rotationAngle + 45; // Поворачиваем стрелочку относительно иконки
-    directionArrow = '<div class="tm-direction-arrow" style="transform: rotate(' + arrowRotation + 'deg);">➤</div>';
-    console.log('updateMarkers: добавляем стрелочку направления с поворотом', arrowRotation, 'градусов');
-  }
-  
   // Dynamic scale: keep screen footprint smaller on distant zooms so visual offset feels minimal
   let z = map.getZoom ? map.getZoom() : 6;
   let base = 34; // base size at mid zoom
@@ -3070,46 +3369,22 @@
   let factor = z >= 9 ? 1.25 : z >= 7 ? 1.0 : z >= 6 ? 0.85 : z >=5 ? 0.7 : 0.55;
   const w = Math.round(base * factor);
   const h = Math.round(w * 1.15);
-  
-  // Добавляем поворот к стилю иконки для шахедов
-  const rotationStyle = rotationAngle !== 0 ? `transform: rotate(${rotationAngle}deg); transition: transform 0.3s ease;` : '';
-  const html = '<div class="tm-wrap">' + groupLabel + '<img class="plain-marker-img" style="width:' + w + 'px;height:' + h + 'px;' + rotationStyle + '" src="' + iconUrl + '" alt="" loading="lazy" data-icon-type="' + (p.threat_type || 'default') + '">' + countBadge + directionArrow + '</div>';
+  const html = '<div class="tm-wrap"><img class="plain-marker-img" style="width:' + w + 'px;height:' + h + 'px;" src="' + iconUrl + '" alt="" loading="lazy" data-icon-type="' + (p.threat_type || 'default') + '">' + countBadge + '</div>';
   // Anchor to visual center (half width/height) instead of bottom so geographic point stays stable when scaling
   const icon = L.divIcon({ html, className:'', iconSize:[w,h], iconAnchor:[w/2, h/2], popupAnchor:[0,-h/2] });
   const m = L.marker([p.lat, p.lng], { icon, riseOnHover:true });
-        // Optional short polyline showing nominal approach direction
+        // Optional short polyline showing nominal approach direction (simple cardinal/ordinal mapping)
         if (arrowDir) {
           const dir = arrowDir.toLowerCase();
           let dx=0, dy=0;
-          
-          // НОВАЯ ЛОГИКА: обрабатываем английские направления от Python бэкенда
-          if (dir === 'north') { dy = 0.25; }      // с севера
-          if (dir === 'south') { dy = -0.25; }     // с юга  
-          if (dir === 'east') { dx = -0.25; }      // с востока
-          if (dir === 'west') { dx = 0.25; }       // с запада
-          if (dir === 'northeast') { dx = -0.18; dy = 0.18; }  // с северо-востока
-          if (dir === 'northwest') { dx = 0.18; dy = 0.18; }   // с северо-запада
-          if (dir === 'southeast') { dx = -0.18; dy = -0.18; } // с юго-востока
-          if (dir === 'southwest') { dx = 0.18; dy = -0.18; }  // с юго-запада
-          
-          // СТАРАЯ ЛОГИКА: украинские направления (fallback)
           if (dir.includes('півд')) dy = -0.25; // tail origin south of marker => movement northwards
           if (dir.includes('північ')) dy = 0.25;
           if (dir.includes('сход')) dx = -0.25; // east origin => movement westwards
           if (dir.includes('зах')) dx = 0.25;
-          
           if (dx !==0 || dy !==0) {
             const tailStart=[p.lat+dy, p.lng+dx];
-            // Simple static direction hint line - разные цвета для разных типов угроз
-            const lineColor = isDirectionalThreat ? '#ef4444' : '#f59e0b'; // красный для направленных угроз, оранжевый для остальных
-            const lineWeight = isDirectionalThreat ? 3 : 2;
-            L.polyline([tailStart,[p.lat,p.lng]], {
-              color: lineColor, 
-              weight: lineWeight, 
-              opacity: 0.75, 
-              dashArray: '4 3'
-            }).addTo(markerLayer);
-            console.log('updateMarkers: добавлена линия направления от', tailStart, 'к', [p.lat,p.lng]);
+            // Simple static direction hint line
+            L.polyline([tailStart,[p.lat,p.lng]], {color:'#f59e0b', weight:2, opacity:0.55, dashArray:'4 3'}).addTo(markerLayer);
             // Отключили анимированные траектории для производительности
           }
         }
@@ -3687,8 +3962,11 @@
           const j = await r.json();
           console.log('pingPresence: данные:', j);
           if(j.status === 'blocked'){
-            console.log('Пользователь заблокирован через /presence проверку');
-            showBlockedOverlay();
+            // Show overlay and stop further updates
+            const ov = document.createElement('div');
+            ov.style.cssText='position:fixed;inset:0;background:#0a0f1f;display:flex;align-items:center;justify-content:center;z-index:9999;font-family:Inter,sans-serif;color:#fff;padding:2rem;text-align:center;';
+            ov.innerHTML='<div style="max-width:480px;">Ваш доступ тимчасово обмежено.</div>';
+            document.body.appendChild(ov);
             return;
           }
           let visitors = (j && typeof j.visitors !== 'undefined') ? j.visitors : undefined;
@@ -3725,7 +4003,7 @@
         }
       }
       pingPresence();
-  setInterval(pingPresence, 2000); // Уменьшен интервал с 5 до 2 секунд для быстрой реакции на блокировку
+  setInterval(pingPresence, 5000);
 
       // --- Интеграция с alerts.in.ua ---
       let airAlarmLayer = null;
@@ -3834,47 +4112,24 @@
       setInterval(updateRaionAlarms, 15000);
 
       await updateMarkers();
-      // Глобальная функция для показа экрана блокировки
-      function showBlockedOverlay() {
-        if (document.getElementById('blocked-overlay')) return; // Уже показан
-        const ov = document.createElement('div');
-        ov.id = 'blocked-overlay';
-        ov.style.cssText='position:fixed;inset:0;background:#0a0f1f;display:flex;align-items:center;justify-content:center;z-index:9999;font-family:Inter,sans-serif;color:#fff;padding:2rem;text-align:center;';
-        ov.innerHTML='<div style="max-width:480px;">Ваш доступ тимчасово обмежено.</div>';
-        document.body.appendChild(ov);
-        console.log('Показан экран блокировки');
-      }
-
       try {
-        const es = new EventSource('/stream');
-        const uid2 = localStorage.getItem('presence_id');
-        console.log('EventSource создан, presence_id:', uid2);
-        
-        es.onopen = () => {
-          console.log('EventSource соединение установлено');
-        };
-        
-        es.onerror = (err) => {
-          console.error('EventSource ошибка:', err);
-        };
-        
-        es.onmessage = ev => {
+    const es = new EventSource('/stream');
+    const uid2 = localStorage.getItem('presence_id');
+    es.onmessage = ev => {
           try {
             const p = JSON.parse(ev.data);
-            console.log('EventSource сообщение:', p);
-            if (p.tracks && p.tracks.length) { updateMarkers(); }
-            if (p.control && p.control.type === 'block' && p.control.id && uid2 && p.control.id === uid2) {
-              console.log('Получена команда блокировки для', p.control.id);
-              showBlockedOverlay();
-              try { es.close(); } catch(e){}
+      if (p.tracks && p.tracks.length) { updateMarkers(); }
+      if (p.control && p.control.type === 'block' && p.control.id && uid2 && p.control.id === uid2) {
+               // show block overlay instantly
+               const ov = document.createElement('div');
+               ov.style.cssText='position:fixed;inset:0;background:#0a0f1f;display:flex;align-items:center;justify-content:center;z-index:9999;font-family:Inter,sans-serif;color:#fff;padding:2rem;text-align:center;';
+               ov.innerHTML='<div style="max-width:480px;">Ваш доступ тимчасово обмежено.</div>';
+               document.body.appendChild(ov);
+               try { es.close(); } catch(e){}
             }
-          } catch(e){
-            console.error('Ошибка обработки EventSource сообщения:', e);
-          }
+          } catch(e){}
         };
-      } catch(e) {
-        console.error('Ошибка создания EventSource:', e);
-      }
+      } catch(e) {}
       setInterval(updateMarkers, 10000);
       // --- Re-cluster / re-render markers on zoom (debounced) so fast-mode buckets follow zoom level ---
       (function(){
