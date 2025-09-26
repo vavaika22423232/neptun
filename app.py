@@ -7241,8 +7241,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 city = m_simple.group(2).strip()
                 print(f"DEBUG: Found simple БпЛА pattern - count: {count}, city: '{city}'")
             elif re.search(r'бпла\s+на\s+[A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,}', ln, re.IGNORECASE):
-                # Fallback for "БпЛА на <city>" without count
-                m_simple_no_count = re.search(r'бпла\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=\s|$|[,\.\!\?;])', ln, re.IGNORECASE)
+                # Fallback for "БпЛА на <city>" without count - handle cities with parentheses like "Кривий ріг (Дніпропетровщина)"
+                m_simple_no_count = re.search(r'бпла\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,}?)(?:\s*\([^)]*\))?(?=\s*$|[,\.\!\?;])', ln, re.IGNORECASE)
                 if m_simple_no_count:
                     count = 1
                     city = m_simple_no_count.group(1).strip()
