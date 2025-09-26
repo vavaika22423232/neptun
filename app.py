@@ -8453,6 +8453,41 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     if _is_russian_strategic_aviation(text):
         return None
 
+    # --- Western border drone reconnaissance suppression ---
+    def _is_western_border_reconnaissance(t: str) -> bool:
+        """Suppress messages about drones crossing western borders (Hungary, etc.) - not related to Russian threats"""
+        t_lower = t.lower()
+        
+        # Check for western border crossing indicators
+        border_crossing_terms = [
+            'перетнув державний кордон', 'пересек государственную границу',
+            'перетнув кордон', 'пересек границу',
+            'з боку угорщини', 'со стороны венгрии',
+            'з території угорщини', 'с территории венгрии'
+        ]
+        has_border_crossing = any(term in t_lower for term in border_crossing_terms)
+        
+        # Check for western regions (primarily Zakarpattya)
+        western_regions = ['закарпатт', 'закарпать', 'ужгород', 'мукачев']
+        has_western_region = any(region in t_lower for region in western_regions)
+        
+        # Check for reconnaissance/monitoring context (not combat threats)
+        recon_terms = ['радари зсу', 'радары всу', 'зафіксували проліт', 'зафиксировали пролет', 'стежити за обстановкою', 'следить за обстановкой']
+        has_recon_context = any(term in t_lower for term in recon_terms)
+        
+        # Suppress if it's about western border reconnaissance
+        if has_border_crossing and has_western_region:
+            return True
+            
+        # Also suppress general monitoring messages about western regions
+        if has_western_region and has_recon_context and ('дрон' in t_lower or 'бпла' in t_lower):
+            return True
+            
+        return False
+
+    if _is_western_border_reconnaissance(text):
+        return None
+
     # --- Aggregate / statistical summary suppression ---
     def _is_aggregate_summary(t: str) -> bool:
         # Situation report override: if starts with 'обстановка' we evaluate full logic first (word 'загроза' inside shouldn't unblock)
