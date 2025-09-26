@@ -969,6 +969,79 @@ def _save_neg_geocode_cache():
     except Exception as e:
         log.warning(f"Failed saving negative geocode cache: {e}")
 
+def _msg_timestamp(msg):
+    """Extract timestamp from message for sorting and filtering"""
+    if not msg:
+        return 0
+    
+    # Try different timestamp fields
+    date_str = msg.get('date') or msg.get('timestamp') or msg.get('time')
+    if not date_str:
+        return 0
+    
+    try:
+        # Handle different date formats
+        if isinstance(date_str, (int, float)):
+            return float(date_str)
+        
+        # Parse datetime string
+        if isinstance(date_str, str):
+            # Try common formats
+            for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%d.%m.%Y %H:%M:%S', '%d.%m.%Y %H:%M']:
+                try:
+                    dt = datetime.strptime(date_str, fmt)
+                    return dt.timestamp()
+                except ValueError:
+                    continue
+            
+            # Try parsing with dateutil as fallback
+            try:
+                from dateutil import parser
+                dt = parser.parse(date_str)
+                return dt.timestamp()
+            except:
+                pass
+    except Exception:
+        pass
+    
+    return 0
+
+def _msg_timestamp(msg):
+    """Extract timestamp from message for sorting/filtering"""
+    if not msg:
+        return 0
+    
+    # Try different timestamp fields
+    date_str = msg.get('date') or msg.get('timestamp') or msg.get('ts')
+    if not date_str:
+        return 0
+    
+    try:
+        # Handle different date formats
+        if isinstance(date_str, (int, float)):
+            return float(date_str)
+        
+        # Parse string dates
+        if isinstance(date_str, str):
+            # Try common formats
+            formats = [
+                '%Y-%m-%d %H:%M:%S',
+                '%Y-%m-%d %H:%M',
+                '%d.%m.%Y %H:%M:%S',
+                '%d.%m.%Y %H:%M'
+            ]
+            
+            for fmt in formats:
+                try:
+                    dt = datetime.strptime(date_str, fmt)
+                    return dt.timestamp()
+                except ValueError:
+                    continue
+                    
+        return 0
+    except Exception:
+        return 0
+
 def neg_geocode_check(name:str):
     if not name:
         return False
@@ -11395,7 +11468,7 @@ def admin_panel():
         except Exception:
             continue
     return render_template(
-        'admin_new.html',
+        'admin.html',
         visitors=visitors,
         blocked=blocked,
         raw_msgs=raw_msgs,
@@ -11454,6 +11527,163 @@ def admin_neg_geocode_delete():
     cache = _load_neg_geocode_cache()
     if name in cache:
         del cache[name]
+        _save_neg_geocode_cache()
+        return jsonify({'status':'ok','deleted':True})
+    return jsonify({'status':'error','error':'not found'}),404
+
+@app.route('/admin/stats', methods=['GET'])
+def admin_stats():
+    """Get comprehensive system statistics for admin dashboard"""
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    
+    try:
+        all_msgs = load_messages()
+        now = time.time()
+        tz = pytz.timezone('Europe/Kyiv')
+        
+        # Message statistics
+        total_messages = len(all_msgs)
+        pending_geo = len([m for m in all_msgs if m.get('pending_geo')])
+        with_coordinates = len([m for m in all_msgs if m.get('lat') and m.get('lng')])
+        
+        # Recent activity (last 24h)
+        cutoff_24h = now - 86400
+        recent_msgs = [m for m in all_msgs if _msg_timestamp(m) > cutoff_24h]
+        
+        # Threat type breakdown
+        threat_counts = {}
+        for msg in all_msgs:
+            if not msg.get('pending_geo') and msg.get('lat') and msg.get('lng'):
+                threat_type = msg.get('threat_type', 'unknown')
+                threat_counts[threat_type] = threat_counts.get(threat_type, 0) + 1
+        
+        # System health
+        with ACTIVE_LOCK:
+            active_users = len(ACTIVE_VISITORS)
+        blocked_users = len(load_blocked())
+        hidden_markers = len(load_hidden())
+        neg_cache_size = len(_load_neg_geocode_cache())
+        debug_logs_count = len(DEBUG_LOGS)
+        
+        return jsonify({
+            'status': 'ok',
+            'stats': {
+                'messages': {
+                    'total': total_messages,
+                    'pending_geo': pending_geo,
+                    'with_coordinates': with_coordinates,
+                    'recent_24h': len(recent_msgs)
+                },
+                'threats': threat_counts,
+                'system': {
+                    'active_users': active_users,
+                    'blocked_users': blocked_users,
+                    'hidden_markers': hidden_markers,
+                    'neg_cache_size': neg_cache_size,
+                    'debug_logs': debug_logs_count,
+                    'monitor_period': MONITOR_PERIOD_MINUTES
+                },
+                'timestamp': now
+            }
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+@app.route('/admin/cleanup', methods=['POST'])
+def admin_cleanup():
+    """Clean up old data to maintain performance"""
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    
+    payload = request.get_json(silent=True) or {}
+    days_to_keep = int(payload.get('days', 7))  # Keep last 7 days by default
+    
+    try:    
+        cutoff_time = time.time() - (days_to_keep * 86400)
+        
+        # Clean old messages
+        all_msgs = load_messages()
+        old_count = len(all_msgs)
+        new_msgs = [m for m in all_msgs if _msg_timestamp(m) > cutoff_time]
+        
+        # Always keep at least 100 most recent messages
+        if len(new_msgs) < 100 and len(all_msgs) >= 100:
+            new_msgs = sorted(all_msgs, key=_msg_timestamp, reverse=True)[:100]
+        
+        save_messages(new_msgs)
+        
+        # Clean old debug logs (keep last 500)
+        global DEBUG_LOGS
+        if len(DEBUG_LOGS) > 500:
+            DEBUG_LOGS = DEBUG_LOGS[-500:]
+        
+        # Clean old visitor data from SQLite
+        try:
+            conn = sqlite3.connect(VISIT_DB_PATH)
+            c = conn.cursor()
+            c.execute("DELETE FROM visits WHERE first_seen < ?", (cutoff_time,))
+            deleted_visits = c.rowcount
+            conn.commit()
+            conn.close()
+        except Exception:
+            deleted_visits = 0
+        
+        return jsonify({
+            'status': 'ok',
+            'cleaned': {
+                'messages': old_count - len(new_msgs),
+                'debug_logs': max(0, len(DEBUG_LOGS) - 500),
+                'visitor_records': deleted_visits
+            },
+            'remaining': {
+                'messages': len(new_msgs),
+                'debug_logs': len(DEBUG_LOGS)
+            }
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+@app.route('/admin/export', methods=['GET'])
+def admin_export():
+    """Export data for backup/analysis"""
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    
+    export_type = request.args.get('type', 'messages')
+    
+    try:
+        if export_type == 'messages':
+            all_msgs = load_messages()
+            # Remove sensitive data
+            clean_msgs = []
+            for msg in all_msgs:
+                clean_msg = {k: v for k, v in msg.items() if k not in ['id']}
+                clean_msgs.append(clean_msg)
+            return jsonify({'status': 'ok', 'data': clean_msgs, 'count': len(clean_msgs)})
+        
+        elif export_type == 'stats':
+            with ACTIVE_LOCK:
+                active_count = len(ACTIVE_VISITORS)
+            
+            return jsonify({
+                'status': 'ok',
+                'data': {
+                    'active_users': active_count,
+                    'blocked_users': len(load_blocked()),
+                    'hidden_markers': len(load_hidden()),
+                    'neg_cache_entries': len(_load_neg_geocode_cache()),
+                    'debug_logs': len(DEBUG_LOGS),
+                    'monitor_period': MONITOR_PERIOD_MINUTES,
+                    'export_time': time.time()
+                }
+            })
+        
+        else:
+            return jsonify({'status': 'error', 'error': 'Invalid export type'}), 400
+    
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
         _save_neg_geocode_cache()
         return jsonify({'status':'ok','removed':name})
     return jsonify({'status':'ok','removed':None})

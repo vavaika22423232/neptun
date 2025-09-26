@@ -203,6 +203,69 @@ body {
 .btn-success:hover {
   background: #059669;
   transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-secondary {
+  background: rgba(51, 65, 85, 0.8);
+  color: var(--text-primary);
+  border: 1px solid var(--border-primary);
+}
+
+.btn-secondary:hover {
+  background: rgba(51, 65, 85, 1);
+  border-color: var(--bg-accent);
+  transform: translateY(-1px);
+}
+
+.btn-warning {
+  background: #f59e0b;
+  color: white;
+}
+
+.btn-warning:hover {
+  background: #d97706;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-info {
+  background: #0ea5e9;
+  color: white;
+}
+
+.btn-info:hover {
+  background: #0284c7;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-danger {
+  background: var(--bg-danger);
+  color: white;
+}
+
+.btn-danger:hover {
+  background: #dc2626;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-sm {
+  padding: 0.5rem 1rem;
+  font-size: 0.8rem;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none !important;
+}
+}
+
+.btn-success:hover {
+  background: #059669;
+  transform: translateY(-1px);
 }
 
 .btn-danger {
@@ -661,7 +724,7 @@ body {
             <button type="button" class="btn btn-secondary btn-sm" onclick="reloadAdminMarkers()">
               🔄 Refresh
             </button>
-            <button type="button" class="btn btn-secondary btn-sm" onclick="toggleAutoAdmin()" id="autoBtn">
+            <button type="button" class="btn btn-success btn-sm" onclick="toggleAutoAdmin()" id="autoBtn">
               🔁 Auto: ON
             </button>
           </div>
@@ -1126,60 +1189,63 @@ body {
         <span id="mmStatus" style="font-size:.65rem;opacity:.8;"></span>
       </div>
     </form>
-    <details style="margin-top:1rem;">
-      <summary style="cursor:pointer;font-size:.75rem;opacity:.9;">Як користуватись (інтерактивне вибирання координат)</summary>
-      <p style="font-size:.65rem;line-height:1.4;opacity:.8;">Відкрийте основну карту у вкладці, натисніть правою кнопкою (або довгий тап) у місці події, оберіть «Копіювати координати», вставте у поля Lat/Lng. (Можна додати окремий режим кліку прямо тут у майбутньому).</p>
-    </details>
-    <div style="margin-top:.8rem;display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;">
-      <button type="button" class="ok" onclick="togglePickMap()" id="pickBtn">Обрати на мапі</button>
-      <span class="pick-hint">Клік по мапі вставить координати. Правий клік / довгий тап теж працює. Повторний клік по кнопці сховає мапу.</span>
+        </div>
+      </div>
+
+  <!-- Advanced Tools -->
+  <div class="card fade-in" style="margin-top: 2rem;">
+    <div class="card-header">
+      <h2 class="card-title">
+        🛠️ Advanced Tools
+      </h2>
     </div>
-    <div id="pickMap"></div>
+    <div class="card-body">
+      <div class="form-grid">
+        <!-- System Statistics -->
+        <div class="form-group">
+          <label class="form-label">System Statistics</label>
+          <button type="button" class="btn btn-info" onclick="loadSystemStats()">
+            📊 Load Stats
+          </button>
+        </div>
+        
+        <!-- Data Cleanup -->
+        <div class="form-group">
+          <label class="form-label">Data Cleanup (Keep Days)</label>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <input type="number" id="cleanupDays" value="7" min="1" max="30" class="input" style="width: 80px;" />
+            <button type="button" class="btn btn-warning" onclick="performCleanup()">
+              🧹 Clean Old Data
+            </button>
+          </div>
+        </div>
+        
+        <!-- Export Data -->
+        <div class="form-group">
+          <label class="form-label">Export Data</label>
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button type="button" class="btn btn-secondary" onclick="exportData('messages')">
+              📝 Export Messages
+            </button>
+            <button type="button" class="btn btn-secondary" onclick="exportData('stats')">
+              📈 Export Stats
+            </button>
+          </div>
+        </div>
+        
+        <!-- Status Display -->
+        <div style="grid-column: 1 / -1;">
+          <div id="advancedStatus" class="debug-console" style="max-height: 200px; display: none;">
+            <div class="debug-entry">
+              <span class="debug-message" id="advancedStatusText">Ready...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
-  <div class="hidden-box">
-    <h2 style="font-size:1rem">Hidden Markers ({{ hidden_markers|length }})</h2>
-    <table>
-      <thead><tr><th>Lat</th><th>Lng</th><th>Source</th><th>Excerpt</th><th>Action</th></tr></thead>
-      <tbody>
-      {% for h in hidden_markers %}
-        <tr>
-          <td>{{ h.lat }}</td>
-          <td>{{ h.lng }}</td>
-          <td style="white-space:nowrap;">{{ h.source }}</td>
-          <td style="max-width:260px;overflow-wrap:anywhere;">{{ h.text[:140] }}</td>
-          <td><button class="ok" onclick="unhideKey('{{ h.key }}')">Unhide</button></td>
-        </tr>
-      {% endfor %}
-      {% if not hidden_markers %}
-        <tr><td colspan="5" style="opacity:.6;">No hidden markers</td></tr>
-      {% endif %}
-      </tbody>
-    </table>
-    {% if hidden_markers %}
-      <button style="margin-top:.75rem;" class="danger" onclick="bulkUnhide()">Unhide ALL</button>
-    {% endif %}
-  </div>
-  <div class="neg-cache">
-    <h2 style="font-size:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;">Negative Geocode Cache ({{ neg_geocode|length }})
-      <button class="danger" style="margin-left:auto;" onclick="clearNegCache()">Clear All</button>
-    </h2>
-    <table>
-      <thead><tr><th>Query</th><th>When</th><th>Reason</th><th>Action</th></tr></thead>
-      <tbody>
-      {% for key, meta in neg_geocode %}
-        <tr>
-          <td style="max-width:220px;overflow-wrap:anywhere;">{{ key }}</td>
-          <td style="white-space:nowrap;">{{ meta.ts | datetime if meta.ts else meta.ts }}</td>
-          <td style="white-space:nowrap;">{{ meta.reason }}</td>
-          <td><button class="ok" onclick="delNeg('{{ key }}')">Remove</button></td>
-        </tr>
-      {% endfor %}
-      {% if not neg_geocode %}
-        <tr><td colspan="4" style="opacity:.6;">Empty</td></tr>
-      {% endif %}
-      </tbody>
-    </table>
-  </div>
+</div>
+
 <script>
 // --- Toggle message display in Recent Markers ---
 function toggleMessage(element) {
@@ -1207,6 +1273,89 @@ document.addEventListener('click', function(event) {
   }
 });
 
+// Enhanced UI helpers
+function showNotification(message, type = 'info') {
+  // Create notification element
+  const notification = document.createElement('div');
+  notification.className = `notification notification-${type}`;
+  notification.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 1rem 1.5rem;
+    border-radius: 8px;
+    color: white;
+    font-size: 0.9rem;
+    z-index: 9999;
+    opacity: 0;
+    transform: translateX(100%);
+    transition: all 0.3s ease;
+    max-width: 400px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  `;
+  
+  // Set background color based on type
+  const colors = {
+    success: '#10b981',
+    error: '#ef4444',
+    warning: '#f59e0b',
+    info: '#0ea5e9'
+  };
+  notification.style.background = colors[type] || colors.info;
+  
+  notification.textContent = message;
+  document.body.appendChild(notification);
+  
+  // Animate in
+  setTimeout(() => {
+    notification.style.opacity = '1';
+    notification.style.transform = 'translateX(0)';
+  }, 10);
+  
+  // Auto remove
+  setTimeout(() => {
+    notification.style.opacity = '0';
+    notification.style.transform = 'translateX(100%)';
+    setTimeout(() => {
+      if (notification.parentNode) {
+        notification.parentNode.removeChild(notification);
+      }
+    }, 300);
+  }, 4000);
+}
+
+// Enhanced error handling for all admin functions
+const originalFetch = window.fetch;
+window.fetch = function(...args) {
+  return originalFetch.apply(this, args)
+    .catch(error => {
+      showNotification('Network error: ' + error.message, 'error');
+      throw error;
+    });
+};
+
+// Add loading states to buttons
+function setButtonLoading(button, loading = true) {
+  if (loading) {
+    button.disabled = true;
+    button.originalText = button.textContent;
+    button.textContent = '⏳ Loading...';
+  } else {
+    button.disabled = false;
+    if (button.originalText) {
+      button.textContent = button.originalText;
+      delete button.originalText;
+    }
+  }
+}
+
+// Add confirmation dialogs for destructive actions
+function confirmAction(message, callback) {
+  if (confirm(message)) {
+    callback();
+  }
+}
+
 // --- Real-time update for Raw (pending geo) ---
 async function updateRawSection() {
   try {
@@ -1214,31 +1363,107 @@ async function updateRawSection() {
     const r = await fetch('/admin/raw_msgs?secret='+encodeURIComponent(secret));
     if (!r.ok) return;
     const js = await r.json();
-    // Update header
-    const header = document.getElementById('raw-header');
-    if(header && js.raw_count !== undefined) {
-      header.textContent = `Raw (pending geo) ${js.raw_count}`;
+    
+    // Update header count
+    const headerCount = document.querySelector('.badge.warning#raw-header-count');
+    if(headerCount && js.raw_count !== undefined) {
+      headerCount.textContent = js.raw_count;
+      // Add pulse animation for new messages
+      if(parseInt(headerCount.textContent) !== js.raw_count) {
+        headerCount.classList.add('pulse');
+        setTimeout(() => headerCount.classList.remove('pulse'), 2000);
+      }
     }
+    
     // Update table body
     const tbody = document.getElementById('raw-tbody');
     if(tbody && Array.isArray(js.raw_msgs)) {
       tbody.innerHTML = js.raw_msgs.map(r =>
-        `<tr><td style='white-space:nowrap;'>${r.date}</td><td style='white-space:nowrap;'>${r.channel}</td><td style='max-width:420px;overflow-wrap:anywhere;'>${r.text}</td></tr>`
+        `<tr>
+          <td style='white-space:nowrap; font-size: 0.8rem;'>${r.date}</td>
+          <td style='white-space:nowrap;'>
+            <span class="badge info">${r.channel}</span>
+          </td>
+          <td class="truncate" style='max-width:400px;' title="${r.text}">${r.text}</td>
+        </tr>`
       ).join('');
     }
-  } catch(e) {}
+  } catch(e) {
+    console.warn('Raw section update failed:', e);
+  }
 }
+
+// Update stats in real-time
+async function updateStatsCards() {
+  try {
+    const secret = new URLSearchParams(location.search).get('secret')||'';
+    const r = await fetch('/admin/stats?secret='+encodeURIComponent(secret));
+    if (!r.ok) return;
+    const data = await r.json();
+    
+    if(data.status === 'ok') {
+      const stats = data.stats;
+      
+      // Update stat cards with smooth transitions
+      const updateStatCard = (selector, value) => {
+        const card = document.querySelector(selector);
+        if(card && card.textContent !== value.toString()) {
+          card.style.transform = 'scale(1.1)';
+          card.textContent = value;
+          setTimeout(() => card.style.transform = 'scale(1)', 200);
+        }
+      };
+      
+      // Map stats to cards (this depends on the exact structure)
+      const statCards = document.querySelectorAll('.stat-value');
+      if(statCards.length >= 5) {
+        updateStatCard('.stat-value:nth-child(1)', stats.system.active_users);
+        updateStatCard('.stat-value:nth-child(2)', stats.system.blocked_users);
+        updateStatCard('.stat-value:nth-child(3)', stats.messages.pending_geo);
+        updateStatCard('.stat-value:nth-child(4)', stats.messages.with_coordinates);
+        updateStatCard('.stat-value:nth-child(5)', stats.system.debug_logs);
+      }
+    }
+  } catch(e) {
+    console.warn('Stats update failed:', e);
+  }
+}
+
+// Enhanced update intervals
 setInterval(updateRawSection, 10000); // every 10 seconds
-document.addEventListener('DOMContentLoaded', () => { setTimeout(updateRawSection, 2000); });
+setInterval(updateStatsCards, 20000); // every 20 seconds
+document.addEventListener('DOMContentLoaded', () => { 
+  setTimeout(updateRawSection, 2000);
+  setTimeout(updateStatsCards, 3000);
+});
 async function blockId(id){
   const secret = new URLSearchParams(location.search).get('secret')||'';
-  const r = await fetch('/block?secret='+encodeURIComponent(secret), {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
-  if(r.ok) location.reload();
+  try {
+    const r = await fetch('/block?secret='+encodeURIComponent(secret), {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+    if(r.ok) {
+      showNotification('User blocked successfully', 'success');
+      setTimeout(() => location.reload(), 1000);
+    } else {
+      showNotification('Failed to block user', 'error');
+    }
+  } catch(e) {
+    showNotification('Error blocking user: ' + e.message, 'error');
+  }
 }
+
 async function unblockId(id){
   const secret = new URLSearchParams(location.search).get('secret')||'';
-  const r = await fetch('/unblock?secret='+encodeURIComponent(secret), {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
-  if(r.ok) location.reload();
+  try {
+    const r = await fetch('/unblock?secret='+encodeURIComponent(secret), {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+    if(r.ok) {
+      showNotification('User unblocked successfully', 'success');
+      setTimeout(() => location.reload(), 1000);
+    } else {
+      showNotification('Failed to unblock user', 'error');
+    }
+  } catch(e) {
+    showNotification('Error unblocking user: ' + e.message, 'error');
+  }
 }
 async function saveMonPeriod(){
   const secret = new URLSearchParams(location.search).get('secret')||'';
@@ -1284,17 +1509,37 @@ async function bulkUnhide(){
   location.reload();
 }
 async function clearNegCache(){
-  const secret = new URLSearchParams(location.search).get('secret')||'';
-  if(!confirm('Clear all negative geocode entries?')) return;
-  try{ const r=await fetch('/admin/neg_geocode_clear?secret='+encodeURIComponent(secret),{method:'POST'}); if(r.ok) location.reload(); }catch(e){}
+  confirmAction('Clear all negative geocode entries? This cannot be undone.', async () => {
+    const secret = new URLSearchParams(location.search).get('secret')||'';
+    try { 
+      const r = await fetch('/admin/neg_geocode_clear?secret='+encodeURIComponent(secret),{method:'POST'}); 
+      if(r.ok) {
+        showNotification('Negative geocode cache cleared', 'success');
+        setTimeout(() => location.reload(), 1000);
+      } else {
+        showNotification('Failed to clear cache', 'error');
+      }
+    } catch(e) {
+      showNotification('Error clearing cache: ' + e.message, 'error');
+    }
+  });
 }
+
 async function clearDebugLogs(){
-  const secret = new URLSearchParams(location.search).get('secret')||'';
-  if(!confirm('Clear all debug logs?')) return;
-  try{ 
-    const r=await fetch('/admin/clear_debug_logs?secret='+encodeURIComponent(secret),{method:'POST'}); 
-    if(r.ok) location.reload(); 
-  }catch(e){}
+  confirmAction('Clear all debug logs? This cannot be undone.', async () => {
+    const secret = new URLSearchParams(location.search).get('secret')||'';
+    try { 
+      const r = await fetch('/admin/clear_debug_logs?secret='+encodeURIComponent(secret),{method:'POST'}); 
+      if(r.ok) {
+        showNotification('Debug logs cleared', 'success');
+        setTimeout(() => location.reload(), 1000);
+      } else {
+        showNotification('Failed to clear debug logs', 'error');
+      }
+    } catch(e) {
+      showNotification('Error clearing logs: ' + e.message, 'error');
+    }
+  });
 }
 async function delNeg(name){
   const secret = new URLSearchParams(location.search).get('secret')||'';
@@ -1400,9 +1645,135 @@ async function hideMarkerMap(lat,lng,txtEnc,srcEnc, btn){
     if(r.ok){ if(btn){ btn.textContent='Hidden'; btn.disabled=true; } reloadAdminMarkers(); }
   }catch(e){}
 }
-function toggleAutoAdmin(){ adminAuto=!adminAuto; document.getElementById('autoBtn').textContent='Авто: '+(adminAuto?'ON':'OFF'); }
+function toggleAutoAdmin(){ 
+  adminAuto=!adminAuto; 
+  const btn = document.getElementById('autoBtn');
+  if(btn) {
+    btn.textContent = '🔁 Auto: '+(adminAuto?'ON':'OFF');
+    btn.className = adminAuto ? 'btn btn-success btn-sm' : 'btn btn-secondary btn-sm';
+  }
+}
+
+// Advanced Tools Functions
+async function loadSystemStats() {
+  const secret = new URLSearchParams(location.search).get('secret')||'';
+  const statusDiv = document.getElementById('advancedStatus');
+  const statusText = document.getElementById('advancedStatusText');
+  
+  statusDiv.style.display = 'block';
+  statusText.textContent = 'Loading system statistics...';
+  
+  try {
+    const r = await fetch('/admin/stats?secret='+encodeURIComponent(secret));
+    const data = await r.json();
+    
+    if(data.status === 'ok') {
+      const stats = data.stats;
+      let html = '<div class="debug-entry"><span class="debug-category">MESSAGES</span><span class="debug-message">';
+      html += `Total: ${stats.messages.total}, Geo: ${stats.messages.with_coordinates}, Pending: ${stats.messages.pending_geo}, Recent 24h: ${stats.messages.recent_24h}`;
+      html += '</span></div>';
+      
+      html += '<div class="debug-entry"><span class="debug-category">THREATS</span><span class="debug-message">';
+      const threats = Object.entries(stats.threats).map(([type, count]) => `${type}: ${count}`).join(', ');
+      html += threats || 'No threat data';
+      html += '</span></div>';
+      
+      html += '<div class="debug-entry"><span class="debug-category">SYSTEM</span><span class="debug-message">';
+      html += `Users: ${stats.system.active_users}, Blocked: ${stats.system.blocked_users}, Hidden: ${stats.system.hidden_markers}, Cache: ${stats.system.neg_cache_size}`;
+      html += '</span></div>';
+      
+      statusDiv.innerHTML = html;
+    } else {
+      statusText.textContent = 'Error: ' + (data.error || 'Unknown error');
+    }
+  } catch(e) {
+    statusText.textContent = 'Error loading stats: ' + e.message;
+  }
+}
+
+async function performCleanup() {
+  const secret = new URLSearchParams(location.search).get('secret')||'';
+  const days = document.getElementById('cleanupDays').value;
+  const statusDiv = document.getElementById('advancedStatus');
+  const statusText = document.getElementById('advancedStatusText');
+  
+  if(!confirm(`Clean up data older than ${days} days? This action cannot be undone.`)) return;
+  
+  statusDiv.style.display = 'block';
+  statusText.textContent = 'Cleaning up old data...';
+  
+  try {
+    const r = await fetch('/admin/cleanup?secret='+encodeURIComponent(secret), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({days: parseInt(days)})
+    });
+    const data = await r.json();
+    
+    if(data.status === 'ok') {
+      let html = '<div class="debug-entry"><span class="debug-category">CLEANED</span><span class="debug-message">';
+      html += `Messages: ${data.cleaned.messages}, Debug logs: ${data.cleaned.debug_logs}, Visitor records: ${data.cleaned.visitor_records}`;
+      html += '</span></div>';
+      
+      html += '<div class="debug-entry"><span class="debug-category">REMAINING</span><span class="debug-message">';
+      html += `Messages: ${data.remaining.messages}, Debug logs: ${data.remaining.debug_logs}`;
+      html += '</span></div>';
+      
+      statusDiv.innerHTML = html;
+      
+      // Refresh page after cleanup
+      setTimeout(() => location.reload(), 2000);
+    } else {
+      statusText.textContent = 'Error: ' + (data.error || 'Unknown error');
+    }
+  } catch(e) {
+    statusText.textContent = 'Error during cleanup: ' + e.message;
+  }
+}
+
+async function exportData(type) {
+  const secret = new URLSearchParams(location.search).get('secret')||'';
+  const statusDiv = document.getElementById('advancedStatus');
+  const statusText = document.getElementById('advancedStatusText');
+  
+  statusDiv.style.display = 'block';
+  statusText.textContent = `Exporting ${type} data...`;
+  
+  try {
+    const r = await fetch(`/admin/export?type=${type}&secret=${encodeURIComponent(secret)}`);
+    const data = await r.json();
+    
+    if(data.status === 'ok') {
+      // Create and download file
+      const blob = new Blob([JSON.stringify(data.data, null, 2)], {type: 'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `neptun_${type}_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      statusText.textContent = `Exported ${data.count || 'data'} ${type} entries successfully`;
+    } else {
+      statusText.textContent = 'Error: ' + (data.error || 'Unknown error');
+    }
+  } catch(e) {
+    statusText.textContent = 'Error during export: ' + e.message;
+  }
+}
+
+// Enhanced auto-refresh with better intervals
 setInterval(()=>{ if(adminAuto && adminMap){ reloadAdminMarkers(); } }, 30000);
-document.addEventListener('DOMContentLoaded', ()=>{ initAdminMap(); });
+setInterval(updateRawSection, 15000); // Update raw messages more frequently
+
+// Initialize everything
+document.addEventListener('DOMContentLoaded', ()=>{ 
+  initAdminMap(); 
+  // Auto-load stats on page load
+  setTimeout(loadSystemStats, 1000);
+});
 </script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-o9N1j7kGStb6g2JbHb3bWbW7Z6nLqgG1R2GZ8Z8li2M=" crossorigin=""></script>
 </body>
