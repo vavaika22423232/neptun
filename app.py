@@ -4517,6 +4517,31 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         if has_alert_message:
             return True
         
+        # Check for tactical threat messages first - these should NEVER be filtered
+        tactical_phrases = [
+            'бпла',
+            'крилаті ракети',
+            'ракет',
+            'ракета',
+            'ракети',
+            'загроза',
+            'курсом на',
+            'наближається',
+            'повз',
+            'поблизу',
+            'напрямок',
+            'кв шахед',
+            'шахед',
+            'каб',
+            'умп',
+            'іскандер'
+        ]
+        has_tactical_info = any(phrase in t_lower for phrase in tactical_phrases)
+        
+        # If message contains tactical information, do NOT filter it
+        if has_tactical_info:
+            return False
+        
         # Check for donation/fundraising messages (use more specific phrases)
         donation_phrases = [
             'підтримайте мене',
@@ -4531,7 +4556,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             'monobank.ua',
             'privat24.ua',
             'send.monobank',
-            'www.privat24'
+            'www.privat24',
+            'донати',
+            'донат',
+            'дуже вдячний',
+            'вдячний вам за підтримку',
+            'за підтримку',
+            'дякую за підтримку'
         ]
         has_donation_message = any(phrase in t_lower for phrase in donation_phrases)
         
@@ -4541,7 +4572,6 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         
         # Check for channel promotion messages
         promotion_phrases = [
-            'напрямок ракет',
             'підтримати канал',
             'спасибо за подписку',
             'подписывайтесь',
