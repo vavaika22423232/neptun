@@ -261,7 +261,7 @@ body {
   cursor: not-allowed;
   transform: none !important;
 }
-}
+
 
 .btn-success:hover {
   background: #059669;
@@ -726,6 +726,12 @@ body {
             </button>
             <button type="button" class="btn btn-success btn-sm" onclick="toggleAutoAdmin()" id="autoBtn">
               🔁 Auto: ON
+            </button>
+            <button type="button" class="btn btn-info btn-sm" onclick="debugAdminMap()">
+              🔍 Debug
+            </button>
+            <button type="button" class="btn btn-warning btn-sm" onclick="reinitAdminMap()">
+              🔧 Reinit
             </button>
           </div>
         </div>
@@ -1600,42 +1606,145 @@ const ICON_MAP = {
 };
 function initAdminMap(){
   if(adminMap) return;
-  adminMap = L.map('adminMap',{attributionControl:false,zoomControl:true}).setView([49.0,31.3],6);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:11}).addTo(adminMap);
-  adminMarkersLayer = L.layerGroup().addTo(adminMap);
-  adminMap.on('contextmenu', e=>{ /* placeholder for future */ });
-  reloadAdminMarkers();
+  
+  try {
+    const mapElement = document.getElementById('adminMap');
+    if(!mapElement) {
+      console.error('Admin map element not found');
+      return;
+    }
+    
+    // Initialize map
+    adminMap = L.map('adminMap', {
+      attributionControl: false,
+      zoomControl: true,
+      preferCanvas: true
+    }).setView([49.0, 31.3], 6);
+    
+    // Add tile layer
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 11,
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(adminMap);
+    
+    // Add markers layer
+    adminMarkersLayer = L.layerGroup().addTo(adminMap);
+    
+    // Map event handlers
+    adminMap.on('contextmenu', e => { /* placeholder for future */ });
+    
+    // Initial marker load
+    setTimeout(() => {
+      reloadAdminMarkers();
+      console.log('Admin map initialized successfully');
+    }, 500);
+    
+  } catch(error) {
+    console.error('Failed to initialize admin map:', error);
+  }
 }
 function markerIconFor(t){
   const fname = ICON_MAP[t] || 'shahed.png';
   return L.icon({iconUrl:'/static/'+fname, iconSize:[34,34], iconAnchor:[17,17], popupAnchor:[0,-10], className:'plain-admin-ico'});
 }
 async function reloadAdminMarkers(){
+  if(!adminMap || !adminMarkersLayer) {
+    console.warn('Admin map not initialized, skipping marker reload');
+    return;
+  }
+  
   try{
     const r = await fetch('/data?ts='+(Date.now()));
-    if(!r.ok) return;
+    if(!r.ok) {
+      console.error('Failed to fetch markers:', r.status, r.statusText);
+      return;
+    }
+    
     const js = await r.json();
     lastAdminFetch = Date.now();
-    renderAdminMarkers(js.tracks||[]);
-  }catch(e){}
+    
+    if(js.tracks && Array.isArray(js.tracks)) {
+      renderAdminMarkers(js.tracks);
+      console.log(`Loaded ${js.tracks.length} markers on admin map`);
+    } else {
+      console.warn('No tracks data received');
+      renderAdminMarkers([]);
+    }
+  } catch(e) {
+    console.error('Error reloading admin markers:', e);
+  }
 }
 function renderAdminMarkers(tracks){
-  adminMarkersLayer.clearLayers();
-  adminMarkerIndex={};
-  let cnt=0;
-  tracks.forEach(t=>{
-    if(!t.lat || !t.lng) return;
-    const ico = markerIconFor(t.threat_type||'shahed');
-    const m = L.marker([t.lat,t.lng],{icon:ico}).addTo(adminMarkersLayer);
-    const safeText = (t.text||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    const place = (t.place||'')
-    const time = t.date||'';
-    const source = t.channel || t.source || '';
-    m.bindPopup(`<div style='font-size:.7rem;max-width:220px;line-height:1.3;'><strong>${place}</strong><br>${safeText}<br><span style='opacity:.6;'>${time}</span><br><button style='margin-top:4px;font-size:.6rem;padding:3px 6px;' onclick="hideMarkerMap(${t.lat},${t.lng},'${encodeURIComponent((t.text||'').slice(0,190))}','${encodeURIComponent(source)}', this)">Hide</button></div>`);
-    m.on('contextmenu',()=>hideMarkerMap(t.lat,t.lng,encodeURIComponent((t.text||'').slice(0,190)),encodeURIComponent(source)));
-    cnt++;
-  });
-  const statEl=document.getElementById('adminMapStats'); if(statEl){ statEl.textContent = `Markers: ${cnt}`; }
+  if(!adminMarkersLayer) {
+    console.error('Admin markers layer not initialized');
+    return;
+  }
+  
+  try {
+    adminMarkersLayer.clearLayers();
+    adminMarkerIndex = {};
+    let cnt = 0;
+    
+    if(!Array.isArray(tracks)) {
+      console.warn('Invalid tracks data:', tracks);
+      tracks = [];
+    }
+    
+    tracks.forEach(t => {
+      try {
+        if(!t.lat || !t.lng) return;
+        
+        // Validate coordinates
+        const lat = parseFloat(t.lat);
+        const lng = parseFloat(t.lng);
+        if(isNaN(lat) || isNaN(lng)) return;
+        
+        const ico = markerIconFor(t.threat_type || 'shahed');
+        const m = L.marker([lat, lng], {icon: ico}).addTo(adminMarkersLayer);
+        
+        const safeText = (t.text || '').replace(/</g,'&lt;').replace(/>/g,'&gt;').slice(0, 200);
+        const place = (t.place || 'Unknown location');
+        const time = t.date || '';
+        const source = t.channel || t.source || '';
+        
+        const popupContent = `
+          <div style='font-size:0.75rem;max-width:250px;line-height:1.4;'>
+            <strong style='color:#0ea5e9;'>${place}</strong><br>
+            <div style='margin:4px 0;'>${safeText}</div>
+            <div style='opacity:0.7;font-size:0.65rem;margin:4px 0;'>${time}</div>
+            <button 
+              style='margin-top:6px;font-size:0.65rem;padding:4px 8px;background:#ef4444;color:white;border:none;border-radius:3px;cursor:pointer;' 
+              onclick="hideMarkerMap(${lat},${lng},'${encodeURIComponent(safeText)}','${encodeURIComponent(source)}', this)"
+            >
+              🗑️ Hide
+            </button>
+          </div>
+        `;
+        
+        m.bindPopup(popupContent);
+        m.on('contextmenu', () => hideMarkerMap(lat, lng, encodeURIComponent(safeText), encodeURIComponent(source)));
+        
+        cnt++;
+      } catch(markerError) {
+        console.warn('Error rendering marker:', markerError, t);
+      }
+    });
+    
+    // Update stats
+    const statEl = document.getElementById('adminMapStats');
+    if(statEl) { 
+      statEl.textContent = `📍 Markers: ${cnt}`;
+      if(cnt > 0) {
+        statEl.style.color = '#10b981';
+      } else {
+        statEl.style.color = '#94a3b8';
+      }
+    }
+    
+    console.log(`Rendered ${cnt} markers on admin map`);
+  } catch(error) {
+    console.error('Error in renderAdminMarkers:', error);
+  }
 }
 async function hideMarkerMap(lat,lng,txtEnc,srcEnc, btn){
   try{
@@ -1652,6 +1761,86 @@ function toggleAutoAdmin(){
     btn.textContent = '🔁 Auto: '+(adminAuto?'ON':'OFF');
     btn.className = adminAuto ? 'btn btn-success btn-sm' : 'btn btn-secondary btn-sm';
   }
+  console.log('Auto-refresh toggled:', adminAuto);
+}
+
+function debugAdminMap() {
+  console.log('=== Admin Map Debug Info ===');
+  console.log('adminMap initialized:', !!adminMap);
+  console.log('adminMarkersLayer initialized:', !!adminMarkersLayer);
+  console.log('Auto-refresh enabled:', adminAuto);
+  console.log('Last fetch time:', new Date(lastAdminFetch));
+  
+  const mapElement = document.getElementById('adminMap');
+  console.log('Map element found:', !!mapElement);
+  
+  if(mapElement) {
+    console.log('Map element dimensions:', {
+      width: mapElement.offsetWidth,
+      height: mapElement.offsetHeight,
+      visible: mapElement.offsetParent !== null
+    });
+  }
+  
+  if(adminMap) {
+    console.log('Map center:', adminMap.getCenter());
+    console.log('Map zoom:', adminMap.getZoom());
+    
+    try {
+      adminMap.invalidateSize();
+      console.log('Map size invalidated successfully');
+    } catch(e) {
+      console.error('Error invalidating map size:', e);
+    }
+  }
+  
+  if(adminMarkersLayer) {
+    const layerCount = adminMarkersLayer.getLayers().length;
+    console.log('Current markers on map:', layerCount);
+  }
+  
+  // Test data fetch
+  fetch('/data?ts=' + Date.now())
+    .then(r => {
+      console.log('Data fetch response:', r.status, r.statusText);
+      return r.json();
+    })
+    .then(data => {
+      console.log('Data received:', {
+        tracks: data.tracks ? data.tracks.length : 'none',
+        sample: data.tracks ? data.tracks[0] : null
+      });
+    })
+    .catch(e => console.error('Data fetch error:', e));
+}
+
+function reinitAdminMap() {
+  console.log('Reinitializing admin map...');
+  
+  // Clean up existing map
+  if(adminMap) {
+    try {
+      adminMap.remove();
+      console.log('Previous map removed');
+    } catch(e) {
+      console.warn('Error removing previous map:', e);
+    }
+  }
+  
+  // Reset variables
+  adminMap = null;
+  adminMarkersLayer = null;
+  adminMarkerIndex = {};
+  
+  // Reinitialize after a short delay
+  setTimeout(() => {
+    try {
+      initAdminMap();
+      console.log('Map reinitialized successfully');
+    } catch(error) {
+      console.error('Failed to reinitialize map:', error);
+    }
+  }, 100);
 }
 
 // Advanced Tools Functions
@@ -1769,10 +1958,34 @@ setInterval(()=>{ if(adminAuto && adminMap){ reloadAdminMarkers(); } }, 30000);
 setInterval(updateRawSection, 15000); // Update raw messages more frequently
 
 // Initialize everything
-document.addEventListener('DOMContentLoaded', ()=>{ 
-  initAdminMap(); 
+document.addEventListener('DOMContentLoaded', () => { 
+  console.log('DOM loaded, initializing admin panel...');
+  
+  // Wait for Leaflet to be fully loaded
+  if(typeof L === 'undefined') {
+    console.error('Leaflet not loaded!');
+    return;
+  }
+  
+  // Initialize map after a short delay to ensure DOM is ready
+  setTimeout(() => {
+    try {
+      initAdminMap();
+    } catch(error) {
+      console.error('Failed to initialize admin map:', error);
+    }
+  }, 100);
+  
   // Auto-load stats on page load
-  setTimeout(loadSystemStats, 1000);
+  setTimeout(loadSystemStats, 1500);
+  
+  // Test button functionality
+  const autoBtn = document.getElementById('autoBtn');
+  if(autoBtn) {
+    console.log('Auto-refresh button found');
+  } else {
+    console.warn('Auto-refresh button not found');
+  }
 });
 </script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-o9N1j7kGStb6g2JbHb3bWbW7Z6nLqgG1R2GZ8Z8li2M=" crossorigin=""></script>
