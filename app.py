@@ -4438,40 +4438,52 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 # Convert SpaCy results to the format expected by the rest of the system
                 threat_markers = []
                 
-                for spacy_city in spacy_results:
-                    if spacy_city['coords']:  # Only process cities with valid coordinates
-                        lat, lng = spacy_city['coords']
-                        
-                        # Determine threat type based on message content
-                        threat_type, icon = classify(text)
-                        if not threat_type:
-                            threat_type = 'shahed'  # Default
-                            icon = 'shahed.png'
-                        
-                        # Create a proper place label
-                        place_label = spacy_city['name'].title()
-                        if spacy_city['region']:
-                            place_label += f" [{spacy_city['region'].title()}]"
-                        
-                        marker = {
-                            'id': f"{mid}_spacy_{len(threat_markers)+1}",
-                            'place': place_label,
-                            'lat': lat,
-                            'lng': lng,
-                            'threat_type': threat_type,
-                            'text': clean_text(text)[:500],
-                            'date': date_str,
-                            'channel': channel,
-                            'marker_icon': icon,
-                            'source_match': f'spacy_{spacy_city["source"]}',
-                            'count': 1,
-                            'confidence': spacy_city['confidence']
-                        }
-                        threat_markers.append(marker)
-                        
-                        add_debug_log(f"SPACY: Created marker for {spacy_city['name']} -> {spacy_city['normalized']} "
-                                    f"(case: {spacy_city.get('case', 'unknown')}, confidence: {spacy_city['confidence']})", 
-                                    "spacy_integration")
+                # Process cities with coordinates first
+                cities_with_coords = [city for city in spacy_results if city['coords']]
+                
+                for spacy_city in cities_with_coords:
+                    lat, lng = spacy_city['coords']
+                    
+                    # Determine threat type - use a simple inline classification to avoid conflicts
+                    threat_type = 'pusk'  # For "Підготовка до пусків БПЛА" messages
+                    icon = 'pusk.png'
+                    
+                    # Check for specific patterns in the message
+                    text_lower = text.lower()
+                    if 'підготовка до пусків' in text_lower or 'пуск' in text_lower:
+                        threat_type = 'pusk'
+                        icon = 'pusk.png'
+                    elif 'обстріл' in text_lower:
+                        threat_type = 'artillery'
+                        icon = 'obstril.png'
+                    else:
+                        threat_type = 'shahed'
+                        icon = 'shahed.png'
+                    
+                    # Create a proper place label
+                    place_label = spacy_city['name'].title()
+                    if spacy_city['region']:
+                        place_label += f" [{spacy_city['region'].title()}]"
+                    
+                    marker = {
+                        'id': f"{mid}_spacy_{len(threat_markers)+1}",
+                        'place': place_label,
+                        'lat': lat,
+                        'lng': lng,
+                        'threat_type': threat_type,
+                        'text': clean_text(text)[:500],
+                        'date': date_str,
+                        'channel': channel,
+                        'marker_icon': icon,
+                        'source_match': f'spacy_{spacy_city["source"]}',
+                        'count': 1,
+                        'confidence': spacy_city['confidence']
+                    }
+                    threat_markers.append(marker)
+                    
+                    add_debug_log(f"SPACY: Created marker for {spacy_city['name']} -> {spacy_city['normalized']} "
+                                f"(case: {spacy_city.get('case', 'unknown')}, confidence: {spacy_city['confidence']})", 
+                                "spacy_integration")
                 
                 if threat_markers:
                     add_debug_log(f"SPACY: Successfully processed message with {len(threat_markers)} markers", "spacy_integration")
@@ -4974,19 +4986,19 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         import re  # Import re module locally for pattern matching
         l = th.lower()
         
-        # Add debug logging
-        print(f"[CLASSIFY DEBUG] Input text: {th}")
-        print(f"[CLASSIFY DEBUG] Lowercase text: {l}")
-        print(f"[CLASSIFY DEBUG] City context: {city_context}")
-        print(f"[CLASSIFY DEBUG] Contains 🚀: {'🚀' in th}")
-        print(f"[CLASSIFY DEBUG] Contains 'ціль': {'ціль' in l}")
-        print(f"[CLASSIFY DEBUG] Contains 'високошвидкісн': {'високошвидкісн' in l}")
-        print(f"[CLASSIFY DEBUG] Contains 'бпла': {'бпла' in l}")
+        # Add debug logging (temporarily disabled)
+        # print(f"[CLASSIFY DEBUG] Input text: {th}")
+        # print(f"[CLASSIFY DEBUG] Lowercase text: {l}")
+        # print(f"[CLASSIFY DEBUG] City context: {city_context}")
+        # print(f"[CLASSIFY DEBUG] Contains 🚀: {'🚀' in th}")
+        # print(f"[CLASSIFY DEBUG] Contains 'ціль': {'ціль' in l}")
+        # print(f"[CLASSIFY DEBUG] Contains 'високошвидкісн': {'високошвидкісн' in l}")
+        # print(f"[CLASSIFY DEBUG] Contains 'бпла': {'бпла' in l}")
         
         # PRIORITY: Artillery shelling warning (обстріл / загроза обстрілу) -> use obstril.png
         # This should have priority over FPV cities when explicit shelling threat is mentioned
         if 'обстріл' in l or 'обстрел' in l or 'загроза обстрілу' in l or 'угроза обстрела' in l:
-            print(f"[CLASSIFY DEBUG] Classified as artillery")
+            # print(f"[CLASSIFY DEBUG] Classified as artillery")
             return 'artillery', 'obstril.png'
         
         # Special override for specific cities - Kherson, Nikopol, Marhanets always get FPV icon

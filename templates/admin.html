@@ -240,6 +240,17 @@ body {
   box-shadow: var(--shadow-md);
 }
 
+.btn-purple {
+  background: #8b5cf6;
+  color: white;
+}
+
+.btn-purple:hover {
+  background: #7c3aed;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
 .btn-danger {
   background: var(--bg-danger);
   color: white;
@@ -648,10 +659,60 @@ body {
   width: 100%;
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-primary);
-  overflow: hidden;
-  box-shadow: var(--shadow-md);
-  background: #f8f9fa;
-  position: relative;
+  transition: all 0.3s ease;
+}
+
+/* Fullscreen Map Styles */
+.map-fullscreen {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 9999 !important;
+  border-radius: 0 !important;
+  border: none !important;
+  background: #1a202c !important;
+}
+
+.fullscreen-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.95);
+  backdrop-filter: blur(10px);
+  z-index: 9998;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fullscreen-controls {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 10000;
+  display: flex;
+  gap: 10px;
+}
+
+.fullscreen-controls button {
+  background: rgba(30, 41, 59, 0.9);
+  border: 1px solid var(--border-primary);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  backdrop-filter: blur(10px);
+  transition: all 0.2s;
+}
+
+.fullscreen-controls button:hover {
+  background: rgba(51, 65, 85, 0.9);
+  transform: translateY(-1px);
 }
 
 #adminMap.loading {
@@ -775,6 +836,9 @@ body {
             </button>
             <button type="button" class="btn btn-primary btn-sm" onclick="forceReloadLeaflet()">
               🔄 Reload Leaflet
+            </button>
+            <button type="button" class="btn btn-purple btn-sm" onclick="toggleFullscreenMap()" id="fullscreenBtn">
+              🔲 Fullscreen
             </button>
           </div>
         </div>
@@ -2004,6 +2068,121 @@ function forceReloadLeaflet() {
   }
   
   tryLoadLeaflet();
+}
+
+// Fullscreen Map Functions
+let isMapFullscreen = false;
+let fullscreenOverlay = null;
+let fullscreenControls = null;
+
+function toggleFullscreenMap() {
+  const mapElement = document.getElementById('adminMap');
+  const btn = document.getElementById('fullscreenBtn');
+  
+  if (!mapElement) {
+    console.error('Map element not found');
+    return;
+  }
+  
+  if (!isMapFullscreen) {
+    enterFullscreenMap(mapElement, btn);
+  } else {
+    exitFullscreenMap(mapElement, btn);
+  }
+}
+
+function enterFullscreenMap(mapElement, btn) {
+  console.log('Entering fullscreen mode...');
+  
+  // Create overlay
+  fullscreenOverlay = document.createElement('div');
+  fullscreenOverlay.className = 'fullscreen-overlay';
+  
+  // Create controls
+  fullscreenControls = document.createElement('div');
+  fullscreenControls.className = 'fullscreen-controls';
+  fullscreenControls.innerHTML = `
+    <button onclick="exitFullscreenMap(document.getElementById('adminMap'), document.getElementById('fullscreenBtn'))">
+      ❌ Close
+    </button>
+    <button onclick="reloadAdminMarkers()">
+      🔄 Refresh
+    </button>
+    <button onclick="debugAdminMap()">
+      🔍 Debug
+    </button>
+  `;
+  
+  // Add elements to body
+  document.body.appendChild(fullscreenOverlay);
+  document.body.appendChild(fullscreenControls);
+  
+  // Add fullscreen class to map
+  mapElement.classList.add('map-fullscreen');
+  
+  // Update button
+  if (btn) {
+    btn.textContent = '🔳 Exit';
+    btn.className = 'btn btn-warning btn-sm';
+  }
+  
+  isMapFullscreen = true;
+  
+  // Invalidate map size after transition
+  setTimeout(() => {
+    if (adminMap) {
+      adminMap.invalidateSize();
+      console.log('Map size invalidated for fullscreen');
+    }
+  }, 350);
+  
+  // Add ESC key handler
+  document.addEventListener('keydown', handleFullscreenEscape);
+}
+
+function exitFullscreenMap(mapElement, btn) {
+  console.log('Exiting fullscreen mode...');
+  
+  // Remove fullscreen class
+  if (mapElement) {
+    mapElement.classList.remove('map-fullscreen');
+  }
+  
+  // Remove overlay and controls
+  if (fullscreenOverlay) {
+    document.body.removeChild(fullscreenOverlay);
+    fullscreenOverlay = null;
+  }
+  
+  if (fullscreenControls) {
+    document.body.removeChild(fullscreenControls);
+    fullscreenControls = null;
+  }
+  
+  // Update button
+  if (btn) {
+    btn.textContent = '🔲 Fullscreen';
+    btn.className = 'btn btn-purple btn-sm';
+  }
+  
+  isMapFullscreen = false;
+  
+  // Invalidate map size after transition
+  setTimeout(() => {
+    if (adminMap) {
+      adminMap.invalidateSize();
+      console.log('Map size invalidated for normal view');
+    }
+  }, 350);
+  
+  // Remove ESC key handler
+  document.removeEventListener('keydown', handleFullscreenEscape);
+}
+
+function handleFullscreenEscape(e) {
+  if (e.key === 'Escape' && isMapFullscreen) {
+    toggleFullscreenMap();
+  }
 }
 
 // Advanced Tools Functions
