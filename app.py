@@ -4413,6 +4413,27 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             # remove any line that is ONLY a subscribe CTA (including bold)
             if re_import.search(r'^[➡→>⬇⬆⬅⬌↗↘↙↖]?\s*(\*\*)?підписатися(\*\*)?\s*$', ln2, re_import.IGNORECASE):
                 continue
+            
+            # Remove URLs and links from text
+            ln2 = re_import.sub(r'https?://[^\s]+', '', ln2)  # Remove http/https links
+            ln2 = re_import.sub(r'www\.[^\s]+', '', ln2)      # Remove www links
+            ln2 = re_import.sub(r't\.me/[^\s]+', '', ln2)     # Remove Telegram links
+            ln2 = re_import.sub(r'@[a-zA-Z0-9_]+', '', ln2)  # Remove @mentions
+            ln2 = re_import.sub(r'_+', '', ln2)  # Remove leftover underscores
+            ln2 = re_import.sub(r'[✙✚]+[^✙✚]*✙[^✙✚]*✙', '', ln2)  # Remove ✙...✙ patterns
+            
+            # Remove card numbers and bank details
+            ln2 = re_import.sub(r'\d{4}\s*\d{4}\s*\d{4}\s*\d{4}', '', ln2)  # Card numbers
+            ln2 = re_import.sub(r'[—-]\s*Картка:', '', ln2)  # Card labels
+            ln2 = re_import.sub(r'[—-]\s*Банка:', '', ln2)   # Bank labels
+            ln2 = re_import.sub(r'[—-]\s*Конверт:', '', ln2) # Envelope labels
+            
+            # Clean up multiple spaces and trim
+            ln2 = re_import.sub(r'\s+', ' ', ln2).strip()
+            
+            # Skip empty lines after cleaning
+            if not ln2:
+                continue
                 
             cleaned.append(ln2)
         return '\n'.join(cleaned)
@@ -4430,6 +4451,151 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         print(f"DEBUG: Trajectory detected - {count_str or ''}шахедів з {source_region} на {target_regions}")
         return []
     
+    # EARLY FILTERS: Check for messages that should be completely filtered out
+    def _is_russian_strategic_aviation(t: str) -> bool:
+        """Suppress messages about Russian strategic aviation (Tu-95, etc.) from Russian airbases"""
+        t_lower = t.lower()
+        
+        # Check for Russian strategic bombers
+        russian_bombers = ['ту-95', 'tu-95', 'ту-160', 'tu-160', 'ту-22', 'tu-22']
+        has_bomber = any(bomber in t_lower for bomber in russian_bombers)
+        
+        # Check for Russian airbases and regions
+        russian_airbases = ['енгельс', 'engels', 'энгельс', 'саратов', 'рязань', 'муром', 'украінка', 'українка']
+        has_russian_airbase = any(airbase in t_lower for airbase in russian_airbases)
+        
+        # Check for Russian regions/areas
+        russian_regions = ['саратовській області', 'саратовской области', 'тульській області', 'рязанській області']
+        has_russian_region = any(region in t_lower for region in russian_regions)
+        
+        # Check for terms indicating Russian territory/airbases
+        russian_territory_terms = ['аеродрома', 'аэродрома', 'з аеродрому', 'с аэродрома', 'мета вильоту невідома', 'цель вылета неизвестна']
+        has_russian_territory = any(term in t_lower for term in russian_territory_terms)
+        
+        # Check for generic relocation/transfer terms without specific threats
+        relocation_terms = ['передислокація', 'передислокация', 'переліт', 'перелет', 'відмічено', 'отмечено']
+        has_relocation = any(term in t_lower for term in relocation_terms)
+        
+        # Suppress if it's about Russian bombers from Russian territory
+        if has_bomber and (has_russian_airbase or has_russian_territory or has_russian_region):
+            return True
+            
+        # Suppress relocation/transfer messages between Russian airbases
+        if has_relocation and has_bomber and (has_russian_airbase or has_russian_region):
+            return True
+            
+        # Also suppress general strategic aviation reports without specific Ukrainian targets
+        if ('борт' in t_lower or 'борти' in t_lower) and ('мета вильоту невідома' in t_lower or 'цель вылета неизвестна' in t_lower):
+            return True
+            
+        return False
+
+    def _is_general_warning_without_location(t: str) -> bool:
+        """Suppress general warnings without specific locations or threat details"""
+        t_lower = t.lower()
+        
+        # Check for general warning phrases
+        warning_phrases = [
+            'протягом ночі уважним бути',
+            'протягом дня уважним бути', 
+            'уважним бути',
+            'загальне попередження',
+            'общее предупреждение'
+        ]
+        has_general_warning = any(phrase in t_lower for phrase in warning_phrases)
+        
+        # Check for alert messages that should only be in events, not on map
+        alert_phrases = [
+            'відбій тривоги',
+            'повітряна тривога',
+            'відбой тревоги',
+            'воздушная тревога'
+        ]
+        has_alert_message = any(phrase in t_lower for phrase in alert_phrases)
+        
+        # Suppress alert messages - they should only be in events
+        if has_alert_message:
+            return True
+        
+        # Check for donation/fundraising messages (use more specific phrases)
+        donation_phrases = [
+            'підтримайте мене',
+            'підтримати канал',
+            'реквізити',
+            'картка:',
+            'банка:',
+            'грн на каву',
+            'на каву та енергетики',
+            'по бажанню',
+            'підтримка тільки',
+            'monobank.ua',
+            'privat24.ua',
+            'send.monobank',
+            'www.privat24'
+        ]
+        has_donation_message = any(phrase in t_lower for phrase in donation_phrases)
+        
+        # Suppress donation messages
+        if has_donation_message:
+            return True
+        
+        # Check for channel promotion messages
+        promotion_phrases = [
+            'напрямок ракет',
+            'підтримати канал',
+            'спасибо за подписку',
+            'подписывайтесь',
+            'наш канал',
+            'наш телеграм'
+        ]
+        has_promotion_message = any(phrase in t_lower for phrase in promotion_phrases)
+        
+        # Suppress promotion messages
+        if has_promotion_message:
+            return True
+        
+        # Check for general informational messages without threats
+        info_phrases = [
+            'наразі це єдина',
+            'фактична активність',
+            'буду оновлювати',
+            'в разі додаткової інформації',
+            'здійснив посадку',
+            'посадку на аеродром',
+            'активність бортів'
+        ]
+        has_info_message = any(phrase in t_lower for phrase in info_phrases)
+        
+        # Suppress general info messages
+        if has_info_message:
+            return True
+        
+        # Check for very broad regions without specific cities
+        broad_regions = [
+            'києву, київщина і західна україна',
+            'київ, київщина і західна україна', 
+            'центр і північ', 
+            'південь і схід'
+        ]
+        has_broad_region = any(region in t_lower for region in broad_regions)
+        
+        # Suppress if it's a general warning with broad regions
+        if has_general_warning and has_broad_region:
+            return True
+            
+        # Also suppress very short messages that are just general alerts
+        if len(t.strip()) < 50 and has_general_warning:
+            return True
+            
+        return False
+
+    # Apply early filters
+    if _is_russian_strategic_aviation(text):
+        return []
+        
+    if _is_general_warning_without_location(text):
+        return []
+    
     # PRIORITY: Try SpaCy enhanced processing first
     if SPACY_AVAILABLE:
         try:
@@ -4444,21 +4610,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 for spacy_city in cities_with_coords:
                     lat, lng = spacy_city['coords']
                     
-                    # Determine threat type - use a simple inline classification to avoid conflicts
-                    threat_type = 'pusk'  # For "Підготовка до пусків БПЛА" messages
-                    icon = 'pusk.png'
-                    
-                    # Check for specific patterns in the message
-                    text_lower = text.lower()
-                    if 'підготовка до пусків' in text_lower or 'пуск' in text_lower:
-                        threat_type = 'pusk'
-                        icon = 'pusk.png'
-                    elif 'обстріл' in text_lower:
-                        threat_type = 'artillery'
-                        icon = 'obstril.png'
-                    else:
-                        threat_type = 'shahed'
-                        icon = 'shahed.png'
+                    # Determine threat type using our classify function
+                    threat_type, icon = classify(text, spacy_city['name'])
                     
                     # Create a proper place label
                     place_label = spacy_city['name'].title()
@@ -5011,8 +5164,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         # Recon / розвід дрони -> use pvo icon (rozved.png) per user request - PRIORITY: check BEFORE general БПЛА
         if 'розвід' in l or 'розвідуваль' in l or 'развед' in l:
             return 'rozved', 'rozved.png'
+        # PRIORITY: КАБы (управляемые авиационные бомбы) -> rszv.png - check BEFORE пуски to avoid misclassification
+        if any(k in l for k in ['каб','kab','умпк','umpk','модуль','fab','умпб','фаб','кабу']) or \
+           ('авіаційн' in l and 'бомб' in l) or ('керован' in l and 'бомб' in l):
+            return 'kab', 'rszv.png'
         # Launch site detections for Shahed / UAV launches ("пуски" + origin phrases). User wants pusk.png marker.
-        if ('пуск' in l or 'пуски' in l) and (any(k in l for k in ['shahed','шахед','шахеді','шахедів','бпла','uav','дрон']) or ('аеродром' in l) or ('аэродром' in l)):
+        # Exclude КАБ launches - they should be classified as КАБ, not пуски
+        if ('пуск' in l or 'пуски' in l) and (any(k in l for k in ['shahed','шахед','шахеді','шахедів','бпла','uav','дрон']) or ('аеродром' in l) or ('аэродром' in l)) and not any(k in l for k in ['каб','kab','умпк','fab','фаб']):
             return 'pusk', 'pusk.png'
         # Explicit launches from occupied Berdyansk airbase (Запорізька область) should also show as pusk (not avia)
         if ('пуск' in l or 'пуски' in l) and 'бердян' in l and ('авіабаз' in l or 'аеродром' in l or 'авиабаз' in l):
@@ -5046,10 +5204,6 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         if any(k in l for k in ['літак','самол','avia','tactical','тактичн','fighter','истребит','jets']) or \
            ('авіаційн' in l and ('засоб' in l or 'ураж' in l)):
             return 'avia', 'avia.png'
-        # PRIORITY: КАБы (управляемые авиационные бомбы) -> raketa.png
-        if any(k in l for k in ['каб','kab','умпк','umpk','модуль','fab','умпб','фаб','кабу']) or \
-           ('авіаційн' in l and 'бомб' in l) or ('керован' in l and 'бомб' in l):
-            return 'raketa', 'raketa.png'
         # Rocket / missile attacks (ракета, ракети) -> raketa.png
         if any(k in l for k in ['ракет','rocket','міжконтинент','межконтинент','балістичн','крилат','cruise']):
             return 'raketa', 'raketa.png'
@@ -8562,16 +8716,28 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         russian_bombers = ['ту-95', 'tu-95', 'ту-160', 'tu-160', 'ту-22', 'tu-22']
         has_bomber = any(bomber in t_lower for bomber in russian_bombers)
         
-        # Check for Russian airbases
-        russian_airbases = ['енгельс', 'engels', 'энгельс', 'саратов', 'рязань', 'муром']
+        # Check for Russian airbases and regions
+        russian_airbases = ['енгельс', 'engels', 'энгельс', 'саратов', 'рязань', 'муром', 'украінка', 'українка']
         has_russian_airbase = any(airbase in t_lower for airbase in russian_airbases)
+        
+        # Check for Russian regions/areas
+        russian_regions = ['саратовській області', 'саратовской области', 'тульській області', 'рязанській області']
+        has_russian_region = any(region in t_lower for region in russian_regions)
         
         # Check for terms indicating Russian territory/airbases
         russian_territory_terms = ['аеродрома', 'аэродрома', 'з аеродрому', 'с аэродрома', 'мета вильоту невідома', 'цель вылета неизвестна']
         has_russian_territory = any(term in t_lower for term in russian_territory_terms)
         
+        # Check for generic relocation/transfer terms without specific threats
+        relocation_terms = ['передислокація', 'передислокация', 'переліт', 'перелет', 'відмічено', 'отмечено']
+        has_relocation = any(term in t_lower for term in relocation_terms)
+        
         # Suppress if it's about Russian bombers from Russian territory
-        if has_bomber and (has_russian_airbase or has_russian_territory):
+        if has_bomber and (has_russian_airbase or has_russian_territory or has_russian_region):
+            return True
+            
+        # Suppress relocation/transfer messages between Russian airbases
+        if has_relocation and has_bomber and (has_russian_airbase or has_russian_region):
             return True
             
         # Also suppress general strategic aviation reports without specific Ukrainian targets
@@ -8580,7 +8746,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             
         return False
 
+    # --- General warning suppression ---
+
     if _is_russian_strategic_aviation(text):
+        return None
+        
+    if _is_general_warning_without_location(text):
         return None
 
     # --- Western border drone reconnaissance suppression ---
