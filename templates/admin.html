@@ -686,7 +686,6 @@ body {
 }
 </style>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-sA+e2atTHQnE0vJM0C2FZ9E1Cyan36H5v9g3rGm3o0k=" crossorigin=""/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-o9N1j7kGStb6g2JbHb3bWbW7Z6nLqgG1R2GZ8Z8li2M=" crossorigin=""></script>
 </head>
 <body>
   <div class="container">
@@ -773,6 +772,9 @@ body {
             </button>
             <button type="button" class="btn btn-success btn-sm" onclick="testJS()">
               🧪 Test JS
+            </button>
+            <button type="button" class="btn btn-primary btn-sm" onclick="forceReloadLeaflet()">
+              🔄 Reload Leaflet
             </button>
           </div>
         </div>
@@ -1911,18 +1913,79 @@ function reinitAdminMap() {
 }
 
 function testJS() {
-  alert('JavaScript работает! Leaflet доступен: ' + (typeof L !== 'undefined' ? 'ДА' : 'НЕТ'));
+  const leafletOK = typeof L !== 'undefined';
+  const message = `JavaScript работает!
+Leaflet: ${leafletOK ? 'ДА ✅' : 'НЕТ ❌'}
+${leafletOK ? 'Версия Leaflet: ' + L.version : 'Leaflet не загружен!'}
+Карта инициализирована: ${adminMap ? 'ДА ✅' : 'НЕТ ❌'}`;
+  
+  alert(message);
+  
   console.log('=== JavaScript Test ===');
-  console.log('Leaflet available:', typeof L !== 'undefined');
-  console.log('jQuery available:', typeof $ !== 'undefined');
+  console.log('Leaflet available:', leafletOK);
+  if(leafletOK) console.log('Leaflet version:', L.version);
   console.log('Document ready state:', document.readyState);
   console.log('Location:', window.location.href);
+  console.log('Admin map initialized:', !!adminMap);
+  console.log('Admin markers layer:', !!adminMarkersLayer);
   
   // Test all main functions
   const functions = ['initAdminMap', 'debugAdminMap', 'reloadAdminMarkers', 'toggleAutoAdmin'];
   functions.forEach(fname => {
     console.log(`Function ${fname} defined:`, typeof window[fname] === 'function');
   });
+  
+  // Test critical elements
+  const elements = ['adminMap', 'autoBtn', 'adminMapStats'];
+  elements.forEach(id => {
+    const el = document.getElementById(id);
+    console.log(`Element ${id}:`, el ? 'FOUND' : 'MISSING');
+  });
+}
+
+function forceReloadLeaflet() {
+  console.log('Force reloading Leaflet...');
+  
+  // Remove existing Leaflet if present
+  if(typeof L !== 'undefined') {
+    console.log('Leaflet already loaded, cleaning up...');
+    if(adminMap) {
+      try {
+        adminMap.remove();
+        adminMap = null;
+        adminMarkersLayer = null;
+      } catch(e) {
+        console.warn('Error cleaning up map:', e);
+      }
+    }
+  }
+  
+  // Dynamically load Leaflet
+  const script = document.createElement('script');
+  script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+  script.integrity = 'sha256-o9N1j7kGStb6g2JbHb3bWbW7Z6nLqgG1R2GZ8Z8li2M=';
+  script.crossOrigin = '';
+  
+  script.onload = () => {
+    console.log('Leaflet reloaded successfully!');
+    alert('Leaflet перезагружен успешно! Теперь попробуйте инициализировать карту.');
+    
+    setTimeout(() => {
+      try {
+        initAdminMap();
+      } catch(error) {
+        console.error('Still failed after reload:', error);
+        alert('Ошибка после перезагрузки: ' + error.message);
+      }
+    }, 100);
+  };
+  
+  script.onerror = () => {
+    console.error('Failed to reload Leaflet');
+    alert('Не удалось перезагрузить Leaflet. Проверьте интернет соединение.');
+  };
+  
+  document.head.appendChild(script);
 }
 
 // Advanced Tools Functions
@@ -2039,36 +2102,27 @@ async function exportData(type) {
 setInterval(()=>{ if(adminAuto && adminMap){ reloadAdminMarkers(); } }, 30000);
 setInterval(updateRawSection, 15000); // Update raw messages more frequently
 
-// Wait for both DOM and Leaflet to be ready
-function waitForLeaflet(callback, attempts = 0) {
-  if(typeof L !== 'undefined') {
-    callback();
-  } else if(attempts < 50) { // Wait up to 5 seconds
-    setTimeout(() => waitForLeaflet(callback, attempts + 1), 100);
-  } else {
-    console.error('Leaflet failed to load after 5 seconds');
-    alert('Ошибка загрузки карты. Проверьте интернет соединение.');
-  }
-}
-
 // Initialize everything
 document.addEventListener('DOMContentLoaded', () => { 
   console.log('DOM loaded, initializing admin panel...');
+  console.log('Leaflet available:', typeof L !== 'undefined');
   
-  // Wait for Leaflet to be available
-  waitForLeaflet(() => {
-    console.log('Leaflet loaded successfully');
-    
-    // Initialize map after a short delay to ensure DOM is ready
-    setTimeout(() => {
-      try {
-        initAdminMap();
-      } catch(error) {
-        console.error('Failed to initialize admin map:', error);
-        alert('Ошибка инициализации карты: ' + error.message);
-      }
-    }, 100);
-  });
+  if(typeof L === 'undefined') {
+    console.error('Leaflet not available!');
+    alert('Ошибка: библиотека карт не загружена. Обновите страницу.');
+    return;
+  }
+  
+  // Initialize map after a short delay to ensure DOM is ready
+  setTimeout(() => {
+    try {
+      console.log('Starting map initialization...');
+      initAdminMap();
+    } catch(error) {
+      console.error('Failed to initialize admin map:', error);
+      alert('Ошибка инициализации карты: ' + error.message);
+    }
+  }, 100);
   
   // Auto-load stats on page load
   setTimeout(() => {
@@ -2092,6 +2146,19 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }, 200);
 });
+</script>
+
+<!-- Load Leaflet synchronously before our scripts -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-o9N1j7kGStb6g2JbHb3bWbW7Z6nLqgG1R2GZ8Z8li2M=" crossorigin=""></script>
+
+<script>
+// Verify Leaflet is loaded
+if (typeof L === 'undefined') {
+  console.error('Leaflet failed to load!');
+  alert('Ошибка загрузки библиотеки карт. Обновите страницу.');
+} else {
+  console.log('Leaflet loaded successfully, version:', L.version);
+}
 </script>
 </body>
 </html>
