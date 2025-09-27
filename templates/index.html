@@ -2879,7 +2879,7 @@
     // Cache busting timestamp for image updates
     const IMAGE_VERSION = '20250911184500'; // Updated when images are optimized
     
-    // Optimized icon loading system with placeholders
+    // Optimized icon loading system with placeholders - synchronized with admin panel
     const ICONS = {
       shahed: '/static/shahed.png?v=' + IMAGE_VERSION,
       raketa: '/static/raketa.png?v=' + IMAGE_VERSION,
@@ -2890,14 +2890,16 @@
       vibuh: '/static/vibuh.png?v=' + IMAGE_VERSION,
       alarm: '/static/trivoga.png?v=' + IMAGE_VERSION,
       alarm_cancel: '/static/vidboi.png?v=' + IMAGE_VERSION,
-      mlrs: '/static/mlrs.png?v=' + IMAGE_VERSION,
-      artillery: '/static/artillery.png?v=' + IMAGE_VERSION,
+      mlrs: '/static/rszv.png?v=' + IMAGE_VERSION, // Fix: use rszv.png for mlrs
+      artillery: '/static/obstril.png?v=' + IMAGE_VERSION, // Fix: use obstril.png for artillery 
       obstril: '/static/obstril.png?v=' + IMAGE_VERSION,
       fpv: '/static/fpv.png?v=' + IMAGE_VERSION,
+      pusk: '/static/pusk.png?v=' + IMAGE_VERSION, // Fix: add missing pusk icon
+      manual: '/static/raketa.png?v=' + IMAGE_VERSION, // Fix: add manual fallback
       default: '/static/default.png?v=' + IMAGE_VERSION
     };
     
-    // Placeholder versions for instant loading
+    // Placeholder versions for instant loading - synchronized with admin panel
     const PLACEHOLDERS = {
       shahed: '/static/placeholders/shahed.png?v=' + IMAGE_VERSION,
       raketa: '/static/placeholders/raketa.png?v=' + IMAGE_VERSION,
@@ -2908,10 +2910,12 @@
       vibuh: '/static/placeholders/vibuh.png?v=' + IMAGE_VERSION,
       alarm: '/static/placeholders/trivoga.png?v=' + IMAGE_VERSION,
       alarm_cancel: '/static/placeholders/vidboi.png?v=' + IMAGE_VERSION,
-      mlrs: '/static/placeholders/mlrs.png?v=' + IMAGE_VERSION,
-      artillery: '/static/placeholders/artillery.png?v=' + IMAGE_VERSION,
+      mlrs: '/static/placeholders/rszv.png?v=' + IMAGE_VERSION, // Fix: use rszv.png for mlrs
+      artillery: '/static/placeholders/obstril.png?v=' + IMAGE_VERSION, // Fix: use obstril.png for artillery
       obstril: '/static/placeholders/obstril.png?v=' + IMAGE_VERSION,
       fpv: '/static/placeholders/fpv.png?v=' + IMAGE_VERSION,
+      pusk: '/static/placeholders/pusk.png?v=' + IMAGE_VERSION, // Fix: add missing pusk placeholder
+      manual: '/static/placeholders/raketa.png?v=' + IMAGE_VERSION, // Fix: add manual fallback
       default: '/static/placeholders/default.png?v=' + IMAGE_VERSION
     };
     
