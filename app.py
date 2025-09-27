@@ -4530,6 +4530,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             'повз',
             'поблизу',
             'напрямок',
+            'напрямку',
+            'у напрямку',
             'кв шахед',
             'шахед',
             'каб',
@@ -7045,9 +7047,14 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             pass
         
         # NEW: Check for specific direction patterns before falling back to general UAV activity
+        import re
         ln_lower = ln.lower()
-        if 'бпла' in ln_lower and any(pattern in ln_lower for pattern in ['у напрямку', 'через', 'повз']):
-            import re
+        # Check if line has БпЛА or starts with a number (implying drones)
+        has_bpla = 'бпла' in ln_lower
+        starts_with_number = re.match(r'^\d+', ln.strip())
+        has_direction_pattern = any(pattern in ln_lower for pattern in ['у напрямку', 'через', 'повз'])
+        
+        if (has_bpla or starts_with_number) and has_direction_pattern:
             target_cities = []
             
             # Pattern 1: "у напрямку [city]"
@@ -7562,6 +7569,48 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     city = m_simple_no_count.group(1).strip()
                     print(f"DEBUG: Found simple БпЛА pattern (no count) - city: '{city}'")
         
+        # --- NEW: Handle "X у напрямку City1, City2" pattern (e.g. "4 у напрямку Карлівки, Полтави") ---
+        if not city:
+            print(f"DEBUG: Checking 'X у напрямку' pattern for line: '{ln}'")
+            m_naprymku = re.search(r'(\d+)\s+у\s+напрямку\s+([А-ЯІЇЄЁа-яіїєё\'\-\s,]{5,})(?=\s*$|[,\.\!\?;])', ln, re.IGNORECASE)
+            if m_naprymku:
+                try:
+                    count = int(m_naprymku.group(1))
+                except Exception:
+                    count = 1
+                cities_raw = m_naprymku.group(2).strip()
+                print(f"DEBUG: Found 'у напрямку' pattern - count: {count}, cities: '{cities_raw}'")
+                
+                # Split cities by comma
+                cities_list = [c.strip() for c in cities_raw.split(',') if c.strip()]
+                for city_name in cities_list:
+                    base = normalize_city_name(city_name)
+                    base = UA_CITY_NORMALIZE.get(base, base)
+                    coords = CITY_COORDS.get(base)
+                    
+                    # If not found, try to handle declensions (ending with -и, -ми, -у, etc)
+                    if not coords and base:
+                        if base.endswith('і') or base.endswith('и'):
+                            base_nom = base[:-1] + 'а'  # карлівки -> карлівка
+                            coords = CITY_COORDS.get(base_nom)
+                        elif base.endswith('у'):
+                            base_nom = base[:-1] + 'а'  # полтаву -> полтава  
+                            coords = CITY_COORDS.get(base_nom)
+                        elif base.endswith('ми'):
+                            base_nom = base[:-2] + 'а'  # київми -> києва -> doesn't work, try other variants
+                            coords = CITY_COORDS.get(base_nom)
+                    
+                    if coords:
+                        lat, lng = coords
+                        multi_city_tracks.append({
+                            'id': f"{mid}_naprymku{len(multi_city_tracks)+1}", 'place': city_name.title(), 'lat': lat, 'lng': lng,
+                            'threat_type': 'shahed', 'text': clean_text(ln)[:500], 'date': date_str, 'channel': channel,
+                            'marker_icon': 'shahed.png', 'source_match': 'naprymku_pattern', 'count': count
+                        })
+                        print(f"DEBUG: Added marker for '{city_name}' at {lat}, {lng}")
+                if multi_city_tracks:
+                    continue
+                
         # --- NEW: Handle "X БпЛА City1 / City2" pattern (e.g. "2х БпЛА Гнідин / Бориспіль") ---
         if not city:
             print(f"DEBUG: Checking БпЛА city/city pattern for line: '{ln}'")
