@@ -645,10 +645,27 @@ body {
 /* Map Styles */
 #adminMap {
   height: 500px;
+  width: 100%;
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-primary);
   overflow: hidden;
   box-shadow: var(--shadow-md);
+  background: #f8f9fa;
+  position: relative;
+}
+
+#adminMap.loading {
+  background: linear-gradient(45deg, #0ea5e9, #3b82f6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+}
+
+#adminMap.loading::before {
+  content: "📍 Загрузка карты...";
+  animation: pulse 2s infinite;
 }
 
 .map-toolbar {
@@ -669,6 +686,7 @@ body {
 }
 </style>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-sA+e2atTHQnE0vJM0C2FZ9E1Cyan36H5v9g3rGm3o0k=" crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-o9N1j7kGStb6g2JbHb3bWbW7Z6nLqgG1R2GZ8Z8li2M=" crossorigin=""></script>
 </head>
 <body>
   <div class="container">
@@ -752,6 +770,9 @@ body {
             </button>
             <button type="button" class="btn btn-warning btn-sm" onclick="reinitAdminMap()">
               🔧 Reinit
+            </button>
+            <button type="button" class="btn btn-success btn-sm" onclick="testJS()">
+              🧪 Test JS
             </button>
           </div>
         </div>
@@ -1631,8 +1652,12 @@ function initAdminMap(){
     const mapElement = document.getElementById('adminMap');
     if(!mapElement) {
       console.error('Admin map element not found');
+      alert('Элемент карты не найден!');
       return;
     }
+    
+    // Show loading state
+    mapElement.classList.add('loading');
     
     // Initialize map
     adminMap = L.map('adminMap', {
@@ -1642,16 +1667,32 @@ function initAdminMap(){
     }).setView([49.0, 31.3], 6);
     
     // Add tile layer
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 11,
       attribution: '© OpenStreetMap contributors'
-    }).addTo(adminMap);
+    });
+    
+    tileLayer.on('loading', () => {
+      console.log('Tiles loading...');
+    });
+    
+    tileLayer.on('load', () => {
+      console.log('Tiles loaded successfully');
+      mapElement.classList.remove('loading');
+    });
+    
+    tileLayer.addTo(adminMap);
     
     // Add markers layer
     adminMarkersLayer = L.layerGroup().addTo(adminMap);
     
     // Map event handlers
     adminMap.on('contextmenu', e => { /* placeholder for future */ });
+    
+    // Remove loading state after initialization
+    setTimeout(() => {
+      mapElement.classList.remove('loading');
+    }, 2000);
     
     // Initial marker load
     setTimeout(() => {
@@ -1660,7 +1701,13 @@ function initAdminMap(){
     }, 500);
     
   } catch(error) {
+    const mapElement = document.getElementById('adminMap');
+    if(mapElement) {
+      mapElement.classList.remove('loading');
+      mapElement.innerHTML = '<div style="padding:2rem;text-align:center;color:#ef4444;">❌ Ошибка загрузки карты: ' + error.message + '</div>';
+    }
     console.error('Failed to initialize admin map:', error);
+    alert('Ошибка инициализации карты: ' + error.message);
   }
 }
 function markerIconFor(t){
@@ -1863,6 +1910,21 @@ function reinitAdminMap() {
   }, 100);
 }
 
+function testJS() {
+  alert('JavaScript работает! Leaflet доступен: ' + (typeof L !== 'undefined' ? 'ДА' : 'НЕТ'));
+  console.log('=== JavaScript Test ===');
+  console.log('Leaflet available:', typeof L !== 'undefined');
+  console.log('jQuery available:', typeof $ !== 'undefined');
+  console.log('Document ready state:', document.readyState);
+  console.log('Location:', window.location.href);
+  
+  // Test all main functions
+  const functions = ['initAdminMap', 'debugAdminMap', 'reloadAdminMarkers', 'toggleAutoAdmin'];
+  functions.forEach(fname => {
+    console.log(`Function ${fname} defined:`, typeof window[fname] === 'function');
+  });
+}
+
 // Advanced Tools Functions
 async function loadSystemStats() {
   const secret = new URLSearchParams(location.search).get('secret')||'';
@@ -1977,37 +2039,59 @@ async function exportData(type) {
 setInterval(()=>{ if(adminAuto && adminMap){ reloadAdminMarkers(); } }, 30000);
 setInterval(updateRawSection, 15000); // Update raw messages more frequently
 
+// Wait for both DOM and Leaflet to be ready
+function waitForLeaflet(callback, attempts = 0) {
+  if(typeof L !== 'undefined') {
+    callback();
+  } else if(attempts < 50) { // Wait up to 5 seconds
+    setTimeout(() => waitForLeaflet(callback, attempts + 1), 100);
+  } else {
+    console.error('Leaflet failed to load after 5 seconds');
+    alert('Ошибка загрузки карты. Проверьте интернет соединение.');
+  }
+}
+
 // Initialize everything
 document.addEventListener('DOMContentLoaded', () => { 
   console.log('DOM loaded, initializing admin panel...');
   
-  // Wait for Leaflet to be fully loaded
-  if(typeof L === 'undefined') {
-    console.error('Leaflet not loaded!');
-    return;
-  }
-  
-  // Initialize map after a short delay to ensure DOM is ready
-  setTimeout(() => {
-    try {
-      initAdminMap();
-    } catch(error) {
-      console.error('Failed to initialize admin map:', error);
-    }
-  }, 100);
+  // Wait for Leaflet to be available
+  waitForLeaflet(() => {
+    console.log('Leaflet loaded successfully');
+    
+    // Initialize map after a short delay to ensure DOM is ready
+    setTimeout(() => {
+      try {
+        initAdminMap();
+      } catch(error) {
+        console.error('Failed to initialize admin map:', error);
+        alert('Ошибка инициализации карты: ' + error.message);
+      }
+    }, 100);
+  });
   
   // Auto-load stats on page load
-  setTimeout(loadSystemStats, 1500);
+  setTimeout(() => {
+    try {
+      loadSystemStats();
+    } catch(error) {
+      console.error('Failed to load stats:', error);
+    }
+  }, 1500);
   
-  // Test button functionality
-  const autoBtn = document.getElementById('autoBtn');
-  if(autoBtn) {
-    console.log('Auto-refresh button found');
-  } else {
-    console.warn('Auto-refresh button not found');
-  }
+  // Test UI elements
+  setTimeout(() => {
+    const elements = [
+      'autoBtn', 'adminMap', 'adminMapStats', 'advancedStatus', 
+      'mmLat', 'mmLng', 'mmText', 'monPeriod'
+    ];
+    
+    elements.forEach(id => {
+      const el = document.getElementById(id);
+      console.log(`Element ${id}:`, el ? 'FOUND' : 'MISSING');
+    });
+  }, 200);
 });
 </script>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-o9N1j7kGStb6g2JbHb3bWbW7Z6nLqgG1R2GZ8Z8li2M=" crossorigin=""></script>
 </body>
 </html>
