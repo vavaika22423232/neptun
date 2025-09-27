@@ -1862,12 +1862,50 @@ def get_coordinates_enhanced(city_name: str, region: str = None, context: str = 
         Tuple of (latitude, longitude) or None if not found
     """
     
-    # First try local database with military context prioritization
-    if city_name == 'зарічне' and 'бпла' in context.lower():
-        # For military contexts, prefer Dnipropetrovska oblast coordinates
-        coords = DNIPRO_CITY_COORDS.get('зарічне дніпропетровська')
-        if coords:
-            print(f"DEBUG Enhanced coord lookup: Found '{city_name}' using military priority -> Dnipropetrovska oblast {coords}")
+    # First try local database with regional context prioritization
+    context_lower = context.lower()
+    
+    # Handle Зарічне disambiguation based on context
+    if city_name == 'зарічне':
+        if any(keyword in context_lower for keyword in ['дніпропетровщина', 'дніпро', 'покровський', 'бпла']):
+            # For Dnipropetrovska oblast contexts
+            coords = DNIPRO_CITY_COORDS.get('зарічне дніпропетровська')
+            if coords:
+                print(f"DEBUG Enhanced coord lookup: Found '{city_name}' using Dnipropetrovska context -> {coords}")
+                return coords
+        elif any(keyword in context_lower for keyword in ['рівненщина', 'рівне']):
+            # For Rivne oblast contexts  
+            coords = (51.2167, 26.0833)
+            print(f"DEBUG Enhanced coord lookup: Found '{city_name}' using Rivne context -> {coords}")
+            return coords
+    
+    # Handle regional prefixes in context
+    regional_indicators = {
+        'дніпропетровщина': 'дніпропетровська',
+        'киівщина': 'київська', 
+        'харківщина': 'харківська',
+        'житомирщина': 'житомирська',
+        'чернігівщина': 'чернігівська',
+        'сумщина': 'сумська'
+    }
+    
+    detected_region = None
+    for indicator, region_name in regional_indicators.items():
+        if indicator in context_lower:
+            detected_region = region_name
+            break
+    
+    # If region detected from context but not passed as parameter, use detected
+    if detected_region and not region:
+        region = detected_region
+        print(f"DEBUG Enhanced coord lookup: Detected region '{region}' from context for '{city_name}'")
+    
+    # Handle specific directional contexts (e.g., "північніше Чернігова")
+    if 'чернігов' in context_lower and any(direction in context_lower for direction in ['північн', 'півн', 'північ']):
+        if city_name == 'любеч':
+            # Любеч північніше Чернігова
+            coords = (51.4961, 30.2675)  # Правильні координати Любеча
+            print(f"DEBUG Enhanced coord lookup: Found '{city_name}' using directional context north of Chernigiv -> {coords}")
             return coords
     
     # PRIORITIZE NOMINATIM API when region is specified
@@ -2398,6 +2436,7 @@ KHARKIV_CITY_COORDS = {
     'коломак': (49.8422, 35.2761),
     'козача лопань': (49.8872, 36.4167),  # СМТ в Дергачівському районі
     'чкаловське': (49.7155296, 36.9322501),  # Правильне Чкаловське в Харківській області
+    'першотравневий': (49.3914, 36.2147),  # с. Першотравневе, Харківська область (same as Первомайський)
     'створ населеного пункту балки?': (49.4627, 36.8586),  # placeholder example – remove/replace if noise
 }
 
@@ -2754,6 +2793,12 @@ POLTAVA_CITY_COORDS = {
     'златопіль харківщині': (49.9800, 35.5300),
     # Keep old incorrect entry as fallback for other messages, but correct default
     'златопіль': (49.9800, 35.5300),  # Override with correct Kharkiv oblast coordinates
+    
+    # Чернігівська область - додаткові міста
+    'любеч': (51.4961, 30.2675),  # Любеч, Чернігівська область
+    'любеч чернігівська': (51.4961, 30.2675),
+    'любеч чернігівська обл.': (51.4961, 30.2675),
+    'любеч (чернігівська обл.)': (51.4961, 30.2675),
 }
 
 for _pl_name, _pl_coords in POLTAVA_CITY_COORDS.items():
