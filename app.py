@@ -4566,8 +4566,21 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         is_brief_message = len(t.strip()) < 100
         has_brief_tactical = any(re.search(pattern, t_lower) for pattern in brief_tactical_patterns)
         
+        # Check if this is actually a current location message (not brief update)
+        current_location_phrases = [
+            'над',
+            'в районі',
+            'атакував',
+            'вибухи в',
+            'влучання в',
+            'збито в',
+            'знищено в'
+        ]
+        has_current_location = any(phrase in t_lower for phrase in current_location_phrases)
+        
         # Filter brief tactical messages - these are often status updates
-        if is_brief_message and has_brief_tactical:
+        # BUT not if they describe current location/events
+        if is_brief_message and has_brief_tactical and not has_current_location:
             return True
         
         # Check for general status messages that contain tactical terms but are informational
@@ -4680,6 +4693,43 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         return []
         
     if _is_general_warning_without_location(text):
+        return []
+    
+    # PRIORITY: Handle directional movement patterns (у напрямку, в направлении)
+    # These should show trajectory/direction, not markers at destination
+    def _is_directional_movement_message(t: str) -> bool:
+        """Check if message describes movement towards a destination"""
+        t_lower = t.lower()
+        
+        # Patterns indicating movement toward destination, not presence at location
+        directional_patterns = [
+            'у напрямку',
+            'в напрямку', 
+            'напрямок',
+            'рухається в напрямку',
+            'летить у напрямку',
+            'курс на',
+            'прямує до'
+        ]
+        
+        # Additional context that suggests this is about movement, not current location
+        movement_context = [
+            'з північного-сходу',
+            'з півдня',
+            'з заходу',
+            'з сходу',  
+            'рухається',
+            'летить',
+            'прямує'
+        ]
+        
+        has_directional = any(pattern in t_lower for pattern in directional_patterns)
+        has_movement_context = any(context in t_lower for context in movement_context)
+        
+        return has_directional and has_movement_context
+    
+    # Filter directional movement messages - they describe trajectory, not current location
+    if _is_directional_movement_message(text):
         return []
     
     # PRIORITY: Try SpaCy enhanced processing first
