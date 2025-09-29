@@ -4735,6 +4735,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             cleaned.append(ln2)
         return '\n'.join(cleaned)
     
+
+    
     # PRIORITY: Check for trajectory patterns FIRST (before any processing)
     # Pattern: "з [source_region] на [target_region(s)]" - trajectory, not multi-target
     trajectory_pattern = r'(\d+)?\s*шахед[іївыиє]*\s+з\s+([а-яіїєґ]+(щин|ччин)[ауиі])\s+на\s+([а-яіїєґ/]+(щин|ччин)[ауиіу])'
@@ -5467,6 +5469,61 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 if line_has_processed_city:
                     continue
                 
+                # Special case: movement messages with direction in parentheses
+                # Pattern: "БпЛА на півдні Чернігівщини, рухаються на південь (Київщина)"
+                # Here (Київщина) indicates direction, not location
+                directional_movement = re.search(r'на\s+([\w\-\s/]+?)\s+([а-яіїєґ]+щини|[а-яіїєґ]+щину|дніпропетровщини|одещини|чернігівщини).*рухаються.*\(([^)]+)\)', line_lower)
+                if directional_movement:
+                    direction = directional_movement.group(1).strip()
+                    region_raw = directional_movement.group(2).strip()
+                    target_direction = directional_movement.group(3).strip()
+                    
+                    # Map region to oblast center (current location, not target)
+                    region_coords = None
+                    if 'дніпропетров' in region_raw:
+                        region_coords = (48.45, 35.0)
+                        region_name = 'Дніпропетровщини'
+                    elif 'чернігів' in region_raw:
+                        region_coords = (51.4982, 31.3044)
+                        region_name = 'Чернігівщини'
+                    elif 'одес' in region_raw:
+                        region_coords = (46.5197, 30.7495)
+                        region_name = 'Одещини'
+                    
+                    if region_coords:
+                        # Apply directional offset for current location
+                        lat, lng = region_coords
+                        if 'півдн' in direction or 'южн' in direction:
+                            lat -= 0.5
+                        elif 'північ' in direction or 'север' in direction:
+                            lat += 0.5
+                        elif 'захід' in direction or 'запад' in direction:
+                            lng -= 0.8
+                        elif 'схід' in direction or 'восток' in direction:
+                            lng += 0.8
+                        
+                        direction_label = direction.replace('півдн', 'південн').replace('північ', 'північн')
+                        place_name = f"{region_name} ({direction_label}а частина) → {target_direction}"
+                        
+                        threat_id = f"{mid}_imm_regional_movement_{len(threats)}"
+                        threats.append({
+                            'id': threat_id,
+                            'place': place_name,
+                            'lat': lat,
+                            'lng': lng,
+                            'threat_type': 'shahed',
+                            'text': f"{line_stripped} (рух у напрямку {target_direction})",
+                            'date': date_str,
+                            'channel': channel,
+                            'marker_icon': 'shahed.png',
+                            'source_match': 'immediate_multi_regional_movement',
+                            'count': 1,
+                            'movement_target': target_direction
+                        })
+                        
+                        add_debug_log(f"Immediate Multi-regional movement: {place_name} -> {lat}, {lng} (target: {target_direction})", "multi_regional")
+                        continue
+                
                 # Check if this is a directional reference like "на півдні Дніпропетровщини"
                 region_match = re.search(r'на\s+([\w\-\s/]+?)\s+([а-яіїєґ]+щини|[а-яіїєґ]+щину|дніпропетровщини|одещини|чернігівщини)', line_lower)
                 if region_match:
@@ -5780,6 +5837,65 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         if numbered_tracks:
             add_debug_log(f"SINGLE-REGION NUMBERED SUCCESS: {len(numbered_tracks)} markers created", "single_region_numbered")
             return numbered_tracks
+
+    # HIGHEST PRIORITY: Check for regional movement patterns immediately
+    # Pattern: "БпЛА на півдні Чернігівщини, рухаються на південь (Київщина)"
+    # Here (Київщина) indicates movement direction, not current location
+    text_lower = text.lower()
+    directional_movement = re.search(r'бпла\s+на\s+([\w\-\s/]+?)\s+([а-яіїєґ]+щини|[а-яіїєґ]+щину|дніпропетровщини|одещини|чернігівщини).*рухаються.*\(([^)]+)\)', text_lower)
+    
+    if directional_movement:
+        direction = directional_movement.group(1).strip()
+        region_raw = directional_movement.group(2).strip()
+        target_direction = directional_movement.group(3).strip()
+        
+        add_debug_log(f"PRIORITY: Regional movement detected - {direction} {region_raw} -> {target_direction}", "regional_movement")
+        
+        # Map region to oblast center (current location, not target)
+        region_coords = None
+        region_name = None
+        if 'дніпропетров' in region_raw:
+            region_coords = (48.45, 35.0)
+            region_name = 'Дніпропетровщини'
+        elif 'чернігів' in region_raw:
+            region_coords = (51.4982, 31.3044)
+            region_name = 'Чернігівщини'
+        elif 'одес' in region_raw:
+            region_coords = (46.5197, 30.7495)
+            region_name = 'Одещини'
+        
+        if region_coords:
+            # Apply directional offset for current location
+            lat, lng = region_coords
+            if 'півдн' in direction or 'южн' in direction:
+                lat -= 0.5
+            elif 'північ' in direction or 'север' in direction:
+                lat += 0.5
+            elif 'захід' in direction or 'запад' in direction:
+                lng -= 0.8
+            elif 'схід' in direction or 'восток' in direction:
+                lng += 0.8
+            
+            direction_label = direction.replace('півдн', 'південн').replace('північ', 'північн')
+            place_name = f"{region_name} ({direction_label}а частина) → {target_direction}"
+            
+            threat_type, icon = classify(text)
+            track = {
+                'id': f"{mid}_regional_movement",
+                'place': place_name,
+                'lat': lat,
+                'lng': lng,
+                'threat_type': threat_type,
+                'text': f"{text[:500]} (рух у напрямку {target_direction})",
+                'date': date_str,
+                'channel': channel,
+                'marker_icon': icon,
+                'source_match': 'priority_regional_movement',
+                'movement_target': target_direction
+            }
+            
+            add_debug_log(f"PRIORITY: Regional movement marker created - {place_name} at {lat}, {lng}", "regional_movement")
+            return [track]
 
     # HIGHEST PRIORITY: Check for region-district patterns immediately
     import re as _re_priority

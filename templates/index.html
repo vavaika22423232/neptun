@@ -3494,7 +3494,20 @@
           const count = b.items.length;
           const ageMin = (Date.now()-b.latest)/60000;
           const freshness = ageMin < 8 ? 'fresh' : ageMin < 20 ? 'stale' : 'old';
-          const html = '<div class="cluster cluster-' + freshness + '"><img src="' + iconUrl + '" alt="" loading="lazy"><b>' + count + '</b></div>';
+          
+          // Вычисление прозрачности кластера на основе возраста
+          let clusterOpacity = 1.0;
+          if (ageMin <= 30) {
+            clusterOpacity = 1.0;
+          } else if (ageMin <= 120) {
+            clusterOpacity = 1.0 - ((ageMin - 30) / 90) * 0.4;
+          } else {
+            const extraMinutes = Math.min(ageMin - 120, 120);
+            clusterOpacity = 0.6 - (extraMinutes / 120) * 0.3;
+          }
+          clusterOpacity = Math.max(0.3, Math.min(1.0, clusterOpacity));
+          
+          const html = '<div class="cluster cluster-' + freshness + '" style="opacity:' + clusterOpacity + ';"><img src="' + iconUrl + '" alt="" loading="lazy"><b>' + count + '</b></div>';
           const icon = L.divIcon({ html, className:'', iconSize:[44,52], iconAnchor:[22,48] });
           const m = L.marker([lat,lng], {icon});
           // Popup summary
@@ -3582,7 +3595,39 @@
   let factor = z >= 9 ? 1.25 : z >= 7 ? 1.0 : z >= 6 ? 0.85 : z >=5 ? 0.7 : 0.55;
   const w = Math.round(base * factor);
   const h = Math.round(w * 1.15);
-  const html = '<div class="tm-wrap"><img class="plain-marker-img" style="width:' + w + 'px;height:' + h + 'px;" src="' + iconUrl + '" alt="" loading="lazy" data-icon-type="' + (p.threat_type || 'default') + '">' + countBadge + '</div>';
+  
+  // Вычисление прозрачности на основе возраста маркера
+  let opacity = 1.0;
+  if (p.date) {
+    try {
+      const markerDate = new Date(p.date);
+      const now = new Date();
+      const ageInMinutes = (now - markerDate) / (1000 * 60);
+      
+      // Логика прозрачности:
+      // 0-30 минут: полная непрозрачность (1.0)
+      // 30-120 минут: постепенное уменьшение до 0.6
+      // 120+ минут: минимальная прозрачность 0.3
+      if (ageInMinutes <= 30) {
+        opacity = 1.0;
+      } else if (ageInMinutes <= 120) {
+        // Линейное уменьшение от 1.0 до 0.6 за 90 минут
+        opacity = 1.0 - ((ageInMinutes - 30) / 90) * 0.4;
+      } else {
+        // Дальнейшее уменьшение до 0.3 за следующие 120 минут
+        const extraMinutes = Math.min(ageInMinutes - 120, 120);
+        opacity = 0.6 - (extraMinutes / 120) * 0.3;
+      }
+      
+      // Ограничиваем минимальную прозрачность
+      opacity = Math.max(0.3, Math.min(1.0, opacity));
+    } catch (e) {
+      console.warn('Ошибка парсинга даты маркера:', p.date, e);
+      opacity = 1.0;
+    }
+  }
+  
+  const html = '<div class="tm-wrap" style="opacity:' + opacity + ';"><img class="plain-marker-img" style="width:' + w + 'px;height:' + h + 'px;" src="' + iconUrl + '" alt="" loading="lazy" data-icon-type="' + (p.threat_type || 'default') + '">' + countBadge + '</div>';
   // Anchor to visual center (half width/height) instead of bottom so geographic point stays stable when scaling
   const icon = L.divIcon({ html, className:'', iconSize:[w,h], iconAnchor:[w/2, h/2], popupAnchor:[0,-h/2] });
   const m = L.marker([p.lat, p.lng], { icon, riseOnHover:true });
@@ -3596,8 +3641,9 @@
           if (dir.includes('зах')) dx = 0.25;
           if (dx !==0 || dy !==0) {
             const tailStart=[p.lat+dy, p.lng+dx];
-            // Simple static direction hint line
-            L.polyline([tailStart,[p.lat,p.lng]], {color:'#f59e0b', weight:2, opacity:0.55, dashArray:'4 3'}).addTo(markerLayer);
+            // Simple static direction hint line with age-based opacity
+            const polylineOpacity = opacity * 0.55; // Умножаем базовую прозрачность на возрастную
+            L.polyline([tailStart,[p.lat,p.lng]], {color:'#f59e0b', weight:2, opacity:polylineOpacity, dashArray:'4 3'}).addTo(markerLayer);
             // Отключили анимированные траектории для производительности
           }
         }
