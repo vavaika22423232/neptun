@@ -4540,7 +4540,61 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         ]
         has_tactical_info = any(phrase in t_lower for phrase in tactical_phrases)
         
-        # If message contains tactical information, do NOT filter it
+        # Check for informational/historical messages that should be filtered
+        # even if they contain tactical terms
+        informational_phrases = [
+            'пролетів',
+            'відвернув',
+            'здійснив посадку',
+            'посадку на аеродром',
+            'активність бортів',
+            'буду оновлювати',
+            'в разі додаткової інформації',
+            'наразі це єдина',
+            'фактична активність'
+        ]
+        has_informational_content = any(phrase in t_lower for phrase in informational_phrases)
+        
+        # Check for short tactical messages that are likely informational updates
+        # These patterns suggest updates rather than active threats
+        brief_tactical_patterns = [
+            'бпла курсом на',
+            'бпла на ',
+            'повз .* курсом на'
+        ]
+        # But only filter if the message is relatively short (likely an update, not detailed threat)
+        is_brief_message = len(t.strip()) < 100
+        has_brief_tactical = any(re.search(pattern, t_lower) for pattern in brief_tactical_patterns)
+        
+        # Filter brief tactical messages - these are often status updates
+        if is_brief_message and has_brief_tactical:
+            return True
+        
+        # Check for general status messages that contain tactical terms but are informational
+        status_phrases = [
+            'український | ппошник',
+            'український|ппошник',
+            'поділ лук\'янівка'
+        ]
+        has_status_message = any(phrase in t_lower for phrase in status_phrases)
+        
+        # Check for route/location listing messages (format: "city — city1/city2 | region:")
+        route_listing_pattern = r'київ.*—.*жуляни.*вишневе.*київ'
+        has_route_listing = re.search(route_listing_pattern, t_lower, re.IGNORECASE)
+        
+        # Filter route listing messages as they are informational
+        if has_route_listing:
+            return True
+        
+        # If message is informational/historical, filter it out
+        if has_informational_content:
+            return True
+            
+        # If message is a general status update with tactical info, filter it out
+        if has_status_message and has_tactical_info:
+            return True
+        
+        # If message contains tactical information and is not informational, do NOT filter it
         if has_tactical_info:
             return False
         
