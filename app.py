@@ -4384,6 +4384,305 @@ def geocode_opencage(place: str):
         _save_opencage_cache(); neg_geocode_add(place,'error')
         return None
 
+def calculate_projected_path(source_lat, source_lng, target_lat, target_lng, speed_kmh=50):
+    """
+    Calculate projected path from source to target with intermediate points
+    
+    Args:
+        source_lat, source_lng: Current/source coordinates
+        target_lat, target_lng: Target coordinates  
+        speed_kmh: Estimated speed in km/h (default: 50 km/h for UAVs)
+    
+    Returns:
+        dict with path_points, estimated_arrival, total_distance
+    """
+    try:
+        # Calculate distance using Haversine formula
+        R = 6371  # Earth's radius in km
+        
+        lat1_rad = math.radians(source_lat)
+        lon1_rad = math.radians(source_lng)
+        lat2_rad = math.radians(target_lat)
+        lon2_rad = math.radians(target_lng)
+        
+        dlat = lat2_rad - lat1_rad
+        dlon = lon2_rad - lon1_rad
+        
+        a = math.sin(dlat/2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon/2)**2
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+        distance_km = R * c
+        
+        # Calculate estimated travel time
+        travel_time_hours = distance_km / speed_kmh
+        travel_time_minutes = travel_time_hours * 60
+        
+        # Generate intermediate points along the path (every ~10km or 10 points max)
+        num_points = min(10, max(2, int(distance_km / 10)))
+        path_points = []
+        
+        for i in range(num_points + 1):
+            fraction = i / num_points
+            
+            # Linear interpolation for simple path
+            lat = source_lat + (target_lat - source_lat) * fraction
+            lng = source_lng + (target_lng - source_lng) * fraction
+            
+            # Calculate ETA for this point
+            point_travel_time = travel_time_minutes * fraction
+            
+            path_points.append({
+                'lat': lat,
+                'lng': lng,
+                'eta_minutes': point_travel_time,
+                'fraction': fraction
+            })
+        
+        return {
+            'path_points': path_points,
+            'total_distance_km': distance_km,
+            'estimated_arrival_minutes': travel_time_minutes,
+            'speed_kmh': speed_kmh
+        }
+        
+    except Exception as e:
+        print(f"ERROR calculating projected path: {e}")
+        return None
+
+def create_eta_circles(center_lat, center_lng, time_minutes, speed_kmh=50):
+    """
+    Create ETA circles showing possible positions after given time
+    
+    Args:
+        center_lat, center_lng: Center coordinates
+        time_minutes: Time in minutes
+        speed_kmh: Speed in km/h
+        
+    Returns:
+        List of circle definitions for different confidence levels
+    """
+    try:
+        # Calculate distance that can be covered in given time
+        max_distance_km = (speed_kmh * time_minutes) / 60
+        
+        # Create circles with different confidence levels
+        circles = []
+        
+        # 90% confidence circle (slightly smaller radius)
+        circles.append({
+            'center_lat': center_lat,
+            'center_lng': center_lng,
+            'radius_km': max_distance_km * 0.9,
+            'confidence': 90,
+            'color': '#ff4444',
+            'opacity': 0.3,
+            'stroke_color': '#cc0000',
+            'stroke_width': 2
+        })
+        
+        # 50% confidence circle (even smaller)
+        circles.append({
+            'center_lat': center_lat,
+            'center_lng': center_lng,
+            'radius_km': max_distance_km * 0.6,
+            'confidence': 50,
+            'color': '#ffaa00',
+            'opacity': 0.4,
+            'stroke_color': '#ff8800',
+            'stroke_width': 2
+        })
+        
+        return circles
+        
+    except Exception as e:
+        print(f"ERROR creating ETA circles: {e}")
+        return []
+
+def _create_directional_trajectory_markers(text, mid, date_str, channel):
+    """
+    Create trajectory markers for directional movement messages
+    Instead of showing destination marker, show projected path and ETA circles
+    """
+    import re
+    from datetime import datetime, timedelta
+    
+    try:
+        text_lower = text.lower()
+        
+        # Extract target city from directional patterns
+        target_city = None
+        source_direction = None
+        
+        # Patterns to extract target city
+        target_patterns = [
+            r'у напрямку\s+([а-яіїєґ\'\-\s]+?)(?:\s|$|з)',
+            r'в напрямку\s+([а-яіїєґ\'\-\s]+?)(?:\s|$|з)',
+            r'курс на\s+([а-яіїєґ\'\-\s]+?)(?:\s|$|з)',
+            r'прямує до\s+([а-яіїєґ\'\-\s]+?)(?:\s|$|з)'
+        ]
+        
+        for pattern in target_patterns:
+            match = re.search(pattern, text_lower)
+            if match:
+                target_city = match.group(1).strip()
+                break
+        
+        # Extract source direction
+        direction_patterns = [
+            r'з\s+(північного?-?сходу?)',
+            r'з\s+(південного?-?заходу?)', 
+            r'з\s+(північного?-?заходу?)',
+            r'з\s+(південного?-?сходу?)',
+            r'з\s+(півночі)',
+            r'з\s+(півдня)',
+            r'з\s+(заходу)',
+            r'з\s+(сходу)'
+        ]
+        
+        for pattern in direction_patterns:
+            match = re.search(pattern, text_lower)
+            if match:
+                source_direction = match.group(1)
+                break
+        
+        if not target_city:
+            return []
+        
+        # Normalize target city name and get coordinates
+        target_city_normalized = target_city.lower().strip()
+        
+        # Try to find coordinates for target city
+        target_coords = None
+        
+        # Check in CITY_COORDS
+        if target_city_normalized in CITY_COORDS:
+            target_coords = CITY_COORDS[target_city_normalized]
+        else:
+            # Try common variations and declensions
+            common_variations = {
+                'дніпро': 'дніпро',
+                'киев': 'київ', 
+                'київа': 'київ',
+                'харков': 'харків',
+                'харкова': 'харків',
+                'одесса': 'одеса',
+                'одеси': 'одеса'
+            }
+            
+            for variant, canonical in common_variations.items():
+                if variant in target_city_normalized or target_city_normalized in variant:
+                    if canonical in CITY_COORDS:
+                        target_coords = CITY_COORDS[canonical]
+                        break
+            
+            # If still not found, try specific declension patterns
+            if not target_coords:
+                declension_map = {
+                    'києва': 'київ',
+                    'харкова': 'харків', 
+                    'одеси': 'одеса',
+                    'дніпра': 'дніпро',
+                    'львова': 'львів'
+                }
+                
+                if target_city_normalized in declension_map:
+                    canonical = declension_map[target_city_normalized]
+                    if canonical in CITY_COORDS:
+                        target_coords = CITY_COORDS[canonical]
+        
+        if not target_coords:
+            # Fallback - return empty if we can't find target coordinates
+            return []
+        
+        target_lat, target_lng = target_coords
+        
+        # Estimate source coordinates based on direction
+        source_lat, source_lng = _estimate_source_coordinates(target_lat, target_lng, source_direction)
+        
+        # Create projected path
+        projected_path = calculate_projected_path(source_lat, source_lng, target_lat, target_lng)
+        
+        if not projected_path:
+            return []
+        
+        # Create trajectory markers
+        markers = []
+        
+        # Add path markers (intermediate points)
+        for i, point in enumerate(projected_path['path_points'][1:-1], 1):  # Skip first and last
+            if i % 2 == 0:  # Only show every other point to avoid clutter
+                continue
+                
+            markers.append({
+                'id': f"{mid}_path_{i}",
+                'place': f"Траєкторія ({int(point['eta_minutes'])}хв)",
+                'lat': point['lat'],
+                'lng': point['lng'],
+                'threat_type': 'trajectory',
+                'text': f"Проміжна точка маршруту до {target_city.title()}",
+                'date': date_str,
+                'channel': channel,
+                'marker_icon': 'trajectory.png',
+                'source_match': 'projected_path',
+                'eta_minutes': point['eta_minutes'],
+                'marker_type': 'trajectory_point',
+                'opacity': 0.7
+            })
+        
+        # Add ETA circles around target
+        eta_circles = create_eta_circles(target_lat, target_lng, projected_path['estimated_arrival_minutes'])
+        
+        # Create main target marker with trajectory info
+        markers.append({
+            'id': f"{mid}_target",
+            'place': f"{target_city.title()} (ціль)",
+            'lat': target_lat,
+            'lng': target_lng,
+            'threat_type': 'trajectory_target',
+            'text': f"Ціль: {target_city.title()} (ETA: {int(projected_path['estimated_arrival_minutes'])}хв)",
+            'date': date_str,
+            'channel': channel,
+            'marker_icon': 'target.png',
+            'source_match': 'trajectory_target',
+            'eta_minutes': projected_path['estimated_arrival_minutes'],
+            'distance_km': projected_path['total_distance_km'],
+            'marker_type': 'trajectory_target',
+            'eta_circles': eta_circles,
+            'projected_path': projected_path['path_points']
+        })
+        
+        return markers
+        
+    except Exception as e:
+        print(f"ERROR creating directional trajectory markers: {e}")
+        return []
+
+def _estimate_source_coordinates(target_lat, target_lng, direction):
+    """Estimate source coordinates based on target and direction"""
+    
+    # Default distance for estimation (50km)
+    distance_km = 50
+    
+    # Direction offsets (approximate)
+    direction_offsets = {
+        'північного-сходу': (-0.45, 0.45),
+        'південного-заходу': (0.45, -0.45),
+        'північного-заходу': (-0.45, -0.45), 
+        'південного-сходу': (0.45, 0.45),
+        'півночі': (-0.45, 0),
+        'півдня': (0.45, 0),
+        'заходу': (0, -0.45),
+        'сходу': (0, 0.45)
+    }
+    
+    # Get offset or default to east
+    lat_offset, lng_offset = direction_offsets.get(direction, (0, 0.45))
+    
+    # Apply offset (rough approximation: 1 degree ≈ 111km)
+    source_lat = target_lat + lat_offset
+    source_lng = target_lng + lng_offset
+    
+    return source_lat, source_lng
+
 def process_message(text, mid, date_str, channel, _disable_multiline=False):  # type: ignore
     import re
     
@@ -4728,9 +5027,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         
         return has_directional and has_movement_context
     
-    # Filter directional movement messages - they describe trajectory, not current location
+    # Handle directional movement messages - create projected path instead of filtering
     if _is_directional_movement_message(text):
-        return []
+        return _create_directional_trajectory_markers(text, mid, date_str, channel)
     
     # PRIORITY: Try SpaCy enhanced processing first
     if SPACY_AVAILABLE:
