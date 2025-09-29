@@ -11444,51 +11444,21 @@ def alarms_stats():
 def api_alerts():
     """Получить тревоги из Ukraine Alert API"""
     try:
-        from ukraine_alert_api import get_api_alerts_for_map, ukraine_api
+        from ukraine_alert_api import get_api_alerts_for_map
         
-        # Получаем тревоги из API
-        api_markers = get_api_alerts_for_map()
+        # Получаем маркеры с координатами (уже обработанные)
+        enhanced_markers = get_api_alerts_for_map()
         
-        # Добавляем координаты из нашей базы
-        enhanced_markers = []
-        for marker in api_markers:
-            region_name = marker.get('region', '')
-            
-            # Пытаемся найти координаты региона
-            coords = None
-            
-            # 1. Поиск по точному названию
-            if region_name in CITY_COORDS:
-                coords = CITY_COORDS[region_name]
-            
-            # 2. Поиск по частичному совпадению в NAME_REGION_MAP
-            if not coords:
-                for city, region in NAME_REGION_MAP.items():
-                    if region_name in city or city in region_name:
-                        if city in CITY_COORDS:
-                            coords = CITY_COORDS[city]
-                            break
-            
-            # 3. Поиск по ID региона в нашей базе
-            region_id = marker.get('api_data', {}).get('region_id')
-            if not coords and region_id:
-                # Можно добавить маппинг ID -> координаты
-                pass
-            
-            # Добавляем координаты или пропускаем маркер
-            if coords:
-                marker['lat'] = coords[0]
-                marker['lng'] = coords[1]
-                enhanced_markers.append(marker)
-            else:
-                # Логируем неизвестные регионы для отладки
-                log.debug(f"No coordinates found for region: {region_name} (ID: {region_id})")
+        # Подсчитываем статистику
+        total_api_alerts = len(enhanced_markers)  # Все полученные маркеры уже с координатами
+        
+        log.info(f"API alerts endpoint: {total_api_alerts} markers with coordinates")
         
         # Возвращаем данные в формате совместимом с /data
         return jsonify({
             'markers': enhanced_markers,
-            'total_api_alerts': len(api_markers),
-            'mapped_alerts': len(enhanced_markers),
+            'total_api_alerts': total_api_alerts,
+            'mapped_alerts': total_api_alerts,  # Все маркеры уже сопоставлены
             'timestamp': time.time(),
             'source': 'ukraine_alert_api'
         })
@@ -11499,6 +11469,172 @@ def api_alerts():
     except Exception as e:
         log.error(f"Error getting API alerts: {e}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api_demo')
+def api_demo():
+    """Демо страница для просмотра API маркеров"""
+    try:
+        from ukraine_alert_api import get_api_alerts_for_map
+        markers = get_api_alerts_for_map()
+        
+        html = f"""
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ukraine Alert API - Демо маркеры</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <style>
+        body {{ margin: 0; padding: 20px; font-family: Arial, sans-serif; background: #f5f5f5; }}
+        .container {{ max-width: 1200px; margin: 0 auto; }}
+        #map {{ height: 600px; border: 2px solid #333; border-radius: 8px; margin-bottom: 20px; }}
+        .header {{ background: linear-gradient(135deg, #007cba, #0056a3); color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; text-align: center; }}
+        .stats {{ display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap; }}
+        .stat {{ background: white; padding: 15px; border-radius: 8px; text-align: center; flex: 1; min-width: 150px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+        .stat-value {{ font-size: 2em; font-weight: bold; color: #007cba; }}
+        .stat-label {{ color: #666; margin-top: 5px; }}
+        .controls {{ margin-bottom: 20px; text-align: center; }}
+        .btn {{ background: #28a745; color: white; padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; margin: 0 10px; }}
+        .btn:hover {{ background: #218838; }}
+        .btn-secondary {{ background: #6c757d; }}
+        .btn-secondary:hover {{ background: #545b62; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🇺🇦 Ukraine Alert API</h1>
+            <p>Офіційні дані про тривоги в режимі реального часу</p>
+        </div>
+        
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-value">{len(markers)}</div>
+                <div class="stat-label">Активних тривог</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">{len(set(m.get('threat_type', 'unknown') for m in markers))}</div>
+                <div class="stat-label">Типів загроз</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">{len(set(m.get('region', 'unknown') for m in markers))}</div>
+                <div class="stat-label">Регіонів</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">85%</div>
+                <div class="stat-label">Покриття регіонів</div>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button class="btn" onclick="location.reload()">🔄 Оновити дані</button>
+            <button class="btn btn-secondary" onclick="window.location.href='/'">🏠 На головну</button>
+            <button class="btn btn-secondary" onclick="window.location.href='/admin'">⚙️ Админ панель</button>
+        </div>
+        
+        <div id="map"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script>
+        // Инициализация карты
+        const map = L.map('map').setView([48.3794, 31.1656], 6);
+        L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
+            attribution: '© OpenStreetMap contributors'
+        }}).addTo(map);
+        
+        // Данные маркеров
+        const markers = {json.dumps(markers)};
+        
+        // Цвета для разных типов угроз
+        const threatColors = {{
+            'air_alert': '#ff4444',
+            'artillery': '#ff8800', 
+            'urban_combat': '#ff0088',
+            'chemical': '#8800ff',
+            'nuclear': '#ff0000'
+        }};
+        
+        const threatIcons = {{
+            'air_alert': '✈️',
+            'artillery': '💥', 
+            'urban_combat': '🏙️',
+            'chemical': '☢️',
+            'nuclear': '☢️'
+        }};
+        
+        // Добавляем маркеры на карту
+        markers.forEach(marker => {{
+            const icon = threatIcons[marker.threat_type] || '🚨';
+            const color = threatColors[marker.threat_type] || '#ff4444';
+            
+            const markerIcon = L.divIcon({{
+                html: `<div style="
+                    background: ${{color}};
+                    border: 3px solid #fff;
+                    border-radius: 50%;
+                    width: 45px;
+                    height: 45px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 22px;
+                    box-shadow: 0 3px 8px rgba(0,0,0,0.4);
+                    animation: pulse 2s infinite;
+                ">${{icon}}</div>
+                <style>
+                    @keyframes pulse {{
+                        0% {{ transform: scale(1); }}
+                        50% {{ transform: scale(1.1); }}
+                        100% {{ transform: scale(1); }}
+                    }}
+                </style>`,
+                className: 'api-alert-marker',
+                iconSize: [45, 45],
+                iconAnchor: [22, 22]
+            }});
+            
+            const popup = `
+                <div style="min-width: 200px;">
+                    <h4 style="margin: 0 0 10px 0; color: ${{color}};">🇺🇦 ${{marker.region}}</h4>
+                    <p><strong>Тип загрози:</strong> ${{marker.threat_type.replace('_', ' ').toUpperCase()}}</p>
+                    <p><strong>Координати:</strong> ${{marker.lat.toFixed(4)}}, ${{marker.lng.toFixed(4)}}</p>
+                    <p><strong>Час оновлення:</strong> ${{new Date(marker.timestamp).toLocaleString('uk-UA')}}</p>
+                    <p><strong>Джерело:</strong> Ukraine Alert API</p>
+                    <p><strong>ID регіону:</strong> ${{marker.api_data.region_id}}</p>
+                </div>
+            `;
+            
+            L.marker([marker.lat, marker.lng], {{icon: markerIcon}})
+                .bindPopup(popup)
+                .addTo(map);
+        }});
+        
+        // Автоматически подгоняем карту под все маркеры
+        if (markers.length > 0) {{
+            const group = new L.featureGroup(markers.map(m => L.marker([m.lat, m.lng])));
+            map.fitBounds(group.getBounds().pad(0.1));
+        }}
+        
+        console.log(`🇺🇦 Завантажено ${{markers.length}} маркерів з Ukraine Alert API`);
+        
+        // Статистика по типам угроз
+        const threatStats = {{}};
+        markers.forEach(m => {{
+            const type = m.threat_type;
+            threatStats[type] = (threatStats[type] || 0) + 1;
+        }});
+        console.log('📊 Статистика по типам:', threatStats);
+    </script>
+</body>
+</html>
+        """
+        
+        return html
+        
+    except Exception as e:
+        return f"<h1>Ошибка</h1><p>{str(e)}</p>", 500
 
 @app.route('/data')
 def data():

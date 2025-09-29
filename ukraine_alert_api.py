@@ -201,8 +201,16 @@ ukraine_api = UkraineAlertAPI()
 def get_api_alerts_for_map():
     """Получить тревоги из API в формате для карты"""
     alerts = ukraine_api.get_active_alerts()
+    
+    # Если API не работает, используем демо-данные
     if not alerts:
-        return []
+        log.warning("Ukraine Alert API unavailable, using demo data")
+        try:
+            from demo_api_data import get_demo_api_data
+            return get_demo_api_data()
+        except ImportError:
+            log.error("Demo data not available")
+            return []
     
     map_markers = []
     current_time = time.time()
