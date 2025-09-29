@@ -837,6 +837,12 @@ body {
             <button type="button" class="btn btn-primary btn-sm" onclick="forceReloadLeaflet()">
               🔄 Reload Leaflet
             </button>
+            <button type="button" class="btn btn-warning btn-sm" onclick="toggleAPIAlerts()" id="apiAlertsBtn">
+              🇺🇦 API: OFF
+            </button>
+            <button type="button" class="btn btn-info btn-sm" onclick="testAPIConnection()">
+              🔗 Test API
+            </button>
             <button type="button" class="btn btn-purple btn-sm" onclick="toggleFullscreenMap()" id="fullscreenBtn">
               🔲 Fullscreen
             </button>
@@ -1787,6 +1793,7 @@ async function reloadAdminMarkers(){
   }
   
   try{
+    // Загружаем данные Telegram
     const r = await fetch('/data?ts='+(Date.now()));
     if(!r.ok) {
       console.error('Failed to fetch markers:', r.status, r.statusText);
@@ -1796,13 +1803,40 @@ async function reloadAdminMarkers(){
     const js = await r.json();
     lastAdminFetch = Date.now();
     
-    if(js.tracks && Array.isArray(js.tracks)) {
-      renderAdminMarkers(js.tracks);
-      console.log(`Loaded ${js.tracks.length} markers on admin map`);
-    } else {
-      console.warn('No tracks data received');
-      renderAdminMarkers([]);
+    let allTracks = js.tracks && Array.isArray(js.tracks) ? js.tracks : [];
+    
+    // Если включен API, загружаем и данные API
+    if (apiAlertsEnabled) {
+      try {
+        const apiResponse = await fetch('/api_alerts?ts='+(Date.now()));
+        if (apiResponse.ok) {
+          const apiData = await apiResponse.json();
+          const apiMarkers = apiData.markers || [];
+          
+          // Конвертируем API маркеры в формат совместимый с админ панелью
+          const convertedApiMarkers = apiMarkers.map(marker => ({
+            ...marker,
+            threat_type: marker.threat_type,
+            coordinates: [marker.lat, marker.lng],
+            region_name: marker.region,
+            message_text: `🇺🇦 API: ${marker.message}`,
+            timestamp_dt: marker.timestamp,
+            isAPIAlert: true
+          }));
+          
+          allTracks = [...allTracks, ...convertedApiMarkers];
+          console.log(`📊 Admin markers: ${js.tracks?.length || 0} Telegram + ${apiMarkers.length} API = ${allTracks.length} total`);
+        } else {
+          console.warn('⚠️ API данные недоступны:', apiResponse.status);
+        }
+      } catch (apiError) {
+        console.error('❌ Error loading API data:', apiError);
+      }
     }
+    
+    renderAdminMarkers(allTracks);
+    console.log(`Loaded ${allTracks.length} markers on admin map`);
+    
   } catch(e) {
     console.error('Error reloading admin markers:', e);
   }
@@ -2377,6 +2411,122 @@ function verifyLeaflet() {
 
 // Verify Leaflet is loaded (with delay for fallback)
 setTimeout(verifyLeaflet, 100);
+
+// Ukraine Alert API Management Functions
+let apiAlertsEnabled = localStorage.getItem('apiAlertsEnabled') === 'true';
+
+function toggleAPIAlerts() {
+  apiAlertsEnabled = !apiAlertsEnabled;
+  localStorage.setItem('apiAlertsEnabled', apiAlertsEnabled);
+  
+  const btn = document.getElementById('apiAlertsBtn');
+  
+  if (apiAlertsEnabled) {
+    btn.classList.remove('btn-warning');
+    btn.classList.add('btn-success');
+    btn.innerHTML = '🇺🇦 API: ON';
+    btn.title = 'Вимкнути Ukraine Alert API';
+    console.log('🇺🇦 Ukraine Alert API увімкнено');
+    showAdminMessage('Ukraine Alert API увімкнено', 'success');
+  } else {
+    btn.classList.remove('btn-success');
+    btn.classList.add('btn-warning');
+    btn.innerHTML = '🇺🇦 API: OFF';
+    btn.title = 'Увімкнути Ukraine Alert API';
+    console.log('❌ Ukraine Alert API вимкнено');
+    showAdminMessage('Ukraine Alert API вимкнено', 'warning');
+  }
+  
+  // Перезагрузить данные если автообновление включено
+  if (autoRefreshEnabled) {
+    reloadAdminMarkers();
+  }
+}
+
+async function testAPIConnection() {
+  const btn = document.querySelector('[onclick="testAPIConnection()"]');
+  const originalText = btn.innerHTML;
+  btn.innerHTML = '⏳ Testing...';
+  btn.disabled = true;
+  
+  try {
+    console.log('🧪 Тестирование Ukraine Alert API...');
+    
+    const response = await fetch('/api_alerts');
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    
+    const message = `API тест успешен!
+📊 Всего тревог: ${data.total_api_alerts || 0}
+🗺️ С координатами: ${data.mapped_alerts || 0}
+⏰ Время: ${new Date().toLocaleTimeString()}`;
+    
+    console.log('✅ API тест успешен:', data);
+    showAdminMessage(message, 'success');
+    
+  } catch (error) {
+    console.error('❌ API тест неудачен:', error);
+    showAdminMessage(`API тест неудачен: ${error.message}`, 'error');
+  } finally {
+    btn.innerHTML = originalText;
+    btn.disabled = false;
+  }
+}
+
+function showAdminMessage(message, type = 'info') {
+  // Создаем уведомление в админ панели
+  const alert = document.createElement('div');
+  alert.className = `alert alert-${type === 'error' ? 'danger' : type} alert-dismissible fade show`;
+  alert.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 9999;
+    min-width: 300px;
+    max-width: 500px;
+  `;
+  
+  alert.innerHTML = `
+    <div class="d-flex align-items-start">
+      <div class="me-2">
+        ${type === 'success' ? '✅' : type === 'warning' ? '⚠️' : type === 'error' ? '❌' : 'ℹ️'}
+      </div>
+      <div class="flex-grow-1">
+        <pre style="margin: 0; white-space: pre-wrap; font-family: inherit;">${message}</pre>
+      </div>
+      <button type="button" class="btn-close" onclick="this.parentElement.parentElement.remove()"></button>
+    </div>
+  `;
+  
+  document.body.appendChild(alert);
+  
+  // Автоматически убираем через 5 секунд
+  setTimeout(() => {
+    if (alert.parentElement) {
+      alert.remove();
+    }
+  }, 5000);
+}
+
+// Инициализация состояния кнопки API при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+  const btn = document.getElementById('apiAlertsBtn');
+  if (btn) {
+    if (apiAlertsEnabled) {
+      btn.classList.remove('btn-warning');
+      btn.classList.add('btn-success');
+      btn.innerHTML = '🇺🇦 API: ON';
+    } else {
+      btn.classList.remove('btn-success');
+      btn.classList.add('btn-warning');
+      btn.innerHTML = '🇺🇦 API: OFF';
+    }
+  }
+});
 </script>
 </body>
 </html>

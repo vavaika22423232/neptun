@@ -1466,6 +1466,7 @@
         <button class="map-control-btn" id="regionBoundariesBtn" onclick="toggleRegionBoundaries()" title="Показати/приховати границі областей" aria-label="Границі областей">
           <i class="material-icons">map</i>
         </button>
+
         <button class="map-control-btn" id="expandBtn" onclick="toggleMapExpand()" title="Розгорнути карту" aria-label="Розгорнути карту">
           <i class="material-icons" id="expandIcon">fullscreen</i>
         </button>
@@ -4785,6 +4786,11 @@
         }, 900000); // 15 minutes
       }
       init();
+
+
+      
+      // API интеграция управляется из админ панели
+      console.log('✅ Ukraine Alert API доступен через админ панель');
     })();
   </script>
 </body>

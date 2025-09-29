@@ -11440,6 +11440,66 @@ def alarms_stats():
         return jsonify({'error': str(e)}), 500
     return jsonify({'items': rows, 'count': len(rows), 'window_minutes': minutes})
 
+@app.route('/api_alerts')
+def api_alerts():
+    """Получить тревоги из Ukraine Alert API"""
+    try:
+        from ukraine_alert_api import get_api_alerts_for_map, ukraine_api
+        
+        # Получаем тревоги из API
+        api_markers = get_api_alerts_for_map()
+        
+        # Добавляем координаты из нашей базы
+        enhanced_markers = []
+        for marker in api_markers:
+            region_name = marker.get('region', '')
+            
+            # Пытаемся найти координаты региона
+            coords = None
+            
+            # 1. Поиск по точному названию
+            if region_name in CITY_COORDS:
+                coords = CITY_COORDS[region_name]
+            
+            # 2. Поиск по частичному совпадению в NAME_REGION_MAP
+            if not coords:
+                for city, region in NAME_REGION_MAP.items():
+                    if region_name in city or city in region_name:
+                        if city in CITY_COORDS:
+                            coords = CITY_COORDS[city]
+                            break
+            
+            # 3. Поиск по ID региона в нашей базе
+            region_id = marker.get('api_data', {}).get('region_id')
+            if not coords and region_id:
+                # Можно добавить маппинг ID -> координаты
+                pass
+            
+            # Добавляем координаты или пропускаем маркер
+            if coords:
+                marker['lat'] = coords[0]
+                marker['lng'] = coords[1]
+                enhanced_markers.append(marker)
+            else:
+                # Логируем неизвестные регионы для отладки
+                log.debug(f"No coordinates found for region: {region_name} (ID: {region_id})")
+        
+        # Возвращаем данные в формате совместимом с /data
+        return jsonify({
+            'markers': enhanced_markers,
+            'total_api_alerts': len(api_markers),
+            'mapped_alerts': len(enhanced_markers),
+            'timestamp': time.time(),
+            'source': 'ukraine_alert_api'
+        })
+        
+    except ImportError as e:
+        log.error(f"Ukraine Alert API module not available: {e}")
+        return jsonify({'error': 'API module not available'}), 500
+    except Exception as e:
+        log.error(f"Error getting API alerts: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/data')
 def data():
     global FALLBACK_REPARSE_CACHE, MAX_REPARSE_CACHE_SIZE
