@@ -4735,8 +4735,6 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             cleaned.append(ln2)
         return '\n'.join(cleaned)
     
-
-    
     # PRIORITY: Check for trajectory patterns FIRST (before any processing)
     # Pattern: "з [source_region] на [target_region(s)]" - trajectory, not multi-target
     trajectory_pattern = r'(\d+)?\s*шахед[іївыиє]*\s+з\s+([а-яіїєґ]+(щин|ччин)[ауиі])\s+на\s+([а-яіїєґ/]+(щин|ччин)[ауиіу])'
@@ -5838,65 +5836,6 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             add_debug_log(f"SINGLE-REGION NUMBERED SUCCESS: {len(numbered_tracks)} markers created", "single_region_numbered")
             return numbered_tracks
 
-    # HIGHEST PRIORITY: Check for regional movement patterns immediately
-    # Pattern: "БпЛА на півдні Чернігівщини, рухаються на південь (Київщина)"
-    # Here (Київщина) indicates movement direction, not current location
-    text_lower = text.lower()
-    directional_movement = re.search(r'бпла\s+на\s+([\w\-\s/]+?)\s+([а-яіїєґ]+щини|[а-яіїєґ]+щину|дніпропетровщини|одещини|чернігівщини).*рухаються.*\(([^)]+)\)', text_lower)
-    
-    if directional_movement:
-        direction = directional_movement.group(1).strip()
-        region_raw = directional_movement.group(2).strip()
-        target_direction = directional_movement.group(3).strip()
-        
-        add_debug_log(f"PRIORITY: Regional movement detected - {direction} {region_raw} -> {target_direction}", "regional_movement")
-        
-        # Map region to oblast center (current location, not target)
-        region_coords = None
-        region_name = None
-        if 'дніпропетров' in region_raw:
-            region_coords = (48.45, 35.0)
-            region_name = 'Дніпропетровщини'
-        elif 'чернігів' in region_raw:
-            region_coords = (51.4982, 31.3044)
-            region_name = 'Чернігівщини'
-        elif 'одес' in region_raw:
-            region_coords = (46.5197, 30.7495)
-            region_name = 'Одещини'
-        
-        if region_coords:
-            # Apply directional offset for current location
-            lat, lng = region_coords
-            if 'півдн' in direction or 'южн' in direction:
-                lat -= 0.5
-            elif 'північ' in direction or 'север' in direction:
-                lat += 0.5
-            elif 'захід' in direction or 'запад' in direction:
-                lng -= 0.8
-            elif 'схід' in direction or 'восток' in direction:
-                lng += 0.8
-            
-            direction_label = direction.replace('півдн', 'південн').replace('північ', 'північн')
-            place_name = f"{region_name} ({direction_label}а частина) → {target_direction}"
-            
-            threat_type, icon = classify(text)
-            track = {
-                'id': f"{mid}_regional_movement",
-                'place': place_name,
-                'lat': lat,
-                'lng': lng,
-                'threat_type': threat_type,
-                'text': f"{text[:500]} (рух у напрямку {target_direction})",
-                'date': date_str,
-                'channel': channel,
-                'marker_icon': icon,
-                'source_match': 'priority_regional_movement',
-                'movement_target': target_direction
-            }
-            
-            add_debug_log(f"PRIORITY: Regional movement marker created - {place_name} at {lat}, {lng}", "regional_movement")
-            return [track]
-
     # HIGHEST PRIORITY: Check for region-district patterns immediately
     import re as _re_priority
     region_district_pattern = _re_priority.compile(r'([а-яіїєґ]+щин[ауи]?)\s*\(\s*([а-яіїєґ\'\-\s]+)\s+р[-\s]*н\)', _re_priority.IGNORECASE)
@@ -6710,8 +6649,14 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 # even if only 2 region stems present
                 if len(distinct) >= 2:
                     # Check if message contains specific cities that should create markers instead
-                    city_keywords = ['на кролевец', 'на конотоп', 'на чернігів', 'на вишгород', 'на петрівці', 'на велика димерка', 'на білу церкву', 'на бровари', 'на суми', 'на харків', 'на дніпро', 'на кропивницький', 'на житомир', 'на миколаївку']
+                    city_keywords = ['на кролевец', 'на конотоп', 'на чернігів', 'на вишгород', 'на петрівці', 'на велика димерка', 'на білу церкву', 'на бровари', 'на суми', 'на харків', 'на дніпро', 'на кропивницький', 'на житомир', 'на миколаївку', 'на липовець', 'на ріпки', 'на терни', 'на павлоград']
                     has_specific_cities = any(city_kw in lorig for city_kw in city_keywords)
+                    
+                    # Also check for pattern "БпЛА на [city]" which should create markers
+                    import re as _re_cities
+                    bpla_na_pattern = _re_cities.findall(r'бпла\s+на\s+([a-zа-яіїєґʼ`\-\s]{3,20})', lorig)
+                    if bpla_na_pattern:
+                        has_specific_cities = True
                     
                     if has_specific_cities:
                         # Let multi-city parser handle this instead
