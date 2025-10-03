@@ -358,6 +358,7 @@ ACTIVE_VISITORS = {}
 ACTIVE_LOCK = threading.Lock()
 ACTIVE_TTL = 70  # seconds of inactivity before a visitor is dropped
 BLOCKED_FILE = 'blocked_ids.json'
+BLOCKED_IPS_FILE = 'blocked_ips.json'
 STATS_FILE = 'visits_stats.json'  # persistent first-seen timestamps per visitor id
 RECENT_VISITS_FILE = 'visits_recent.json'  # stores rolling today/week visitor id sets for fast counts
 VISIT_STATS = None  # lazy-loaded dict: {id: first_seen_epoch}
@@ -767,6 +768,42 @@ def save_blocked(blocked):
             json.dump(blocked, f, ensure_ascii=False, indent=2)
     except Exception as e:
         log.warning(f'Failed saving {BLOCKED_FILE}: {e}')
+
+def load_blocked_ips():
+    if os.path.exists(BLOCKED_IPS_FILE):
+        try:
+            with open(BLOCKED_IPS_FILE, 'r', encoding='utf-8') as f:
+                return set(json.load(f))
+        except Exception as e:
+            log.warning(f'Failed loading {BLOCKED_IPS_FILE}: {e}')
+            return set()
+    return set()
+
+def save_blocked_ips(blocked_ips):
+    try:
+        with open(BLOCKED_IPS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(list(blocked_ips), f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log.warning(f'Failed saving {BLOCKED_IPS_FILE}: {e}')
+
+def get_client_ip(request):
+    """Extract real client IP from request headers"""
+    # Try different headers that proxies/load balancers use
+    for header in ['X-Forwarded-For', 'X-Real-IP', 'X-Client-IP']:
+        ip = request.headers.get(header)
+        if ip:
+            # X-Forwarded-For can be comma-separated list, take first
+            return ip.split(',')[0].strip()
+    return request.remote_addr or 'unknown'
+
+def is_ip_blocked(request):
+    """Check if client IP is in blocked list"""
+    client_ip = get_client_ip(request)
+    if client_ip == 'unknown':
+        return False
+    
+    blocked_ips = load_blocked_ips()
+    return client_ip in blocked_ips
 
 def _load_visit_stats():
     global VISIT_STATS
@@ -11327,6 +11364,10 @@ def start_session_watcher():
 
 @app.route('/')
 def index():
+    # Check if IP is blocked
+    if is_ip_blocked(request):
+        return "Access denied", 403
+    
     # Leaflet version of frontend no longer needs Google Maps key
     return render_template('index.html')
 
@@ -11451,6 +11492,10 @@ def comment_react_endpoint():
 @app.route('/active_alarms')
 def active_alarms_endpoint():
     """Return current active oblast & raion air alarms (for polygon styling)."""
+    # Check if IP is blocked
+    if is_ip_blocked(request):
+        return jsonify({'error': 'Access denied'}), 403
+    
     try:
         now_ep = time.time()
         cutoff = now_ep - APP_ALARM_TTL_MINUTES*60
@@ -11501,6 +11546,10 @@ def alarms_stats():
 
 @app.route('/data')
 def data():
+    # Check if IP is blocked
+    if is_ip_blocked(request):
+        return jsonify({'error': 'Access denied'}), 403
+    
     global FALLBACK_REPARSE_CACHE, MAX_REPARSE_CACHE_SIZE
     # Use user-provided timeRange or fall back to global configured MONITOR_PERIOD_MINUTES
     try:
@@ -12065,6 +12114,10 @@ def raion_alarms():
 # SSE stream endpoint
 @app.route('/stream')
 def stream():
+    # Check if IP is blocked
+    if is_ip_blocked(request):
+        return "Access denied", 403
+    
     def gen():
         q = queue.Queue()
         SUBSCRIBERS.add(q)
@@ -12236,10 +12289,12 @@ def admin_panel():
             parsed_hidden.append({'lat':lat_str,'lng':lng_str,'text':text_part,'source':source_part,'key':hk})
         except Exception:
             continue
+    blocked_ips = load_blocked_ips()
     return render_template(
         'admin.html',
         visitors=visitors,
         blocked=blocked,
+        blocked_ips=list(blocked_ips),
         raw_msgs=raw_msgs,
         raw_count=len([m for m in all_msgs if m.get('pending_geo')]),
         secret=(request.args.get('secret') or ''),
@@ -12486,6 +12541,56 @@ def unblock_id():
         blocked.remove(vid)
         save_blocked(blocked)
     return jsonify({'status':'ok','blocked':blocked})
+
+@app.route('/admin/blocked_ips', methods=['GET'])
+def get_blocked_ips():
+    """Get list of blocked IPs"""
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    
+    blocked_ips = load_blocked_ips()
+    return jsonify({'status': 'ok', 'blocked_ips': list(blocked_ips)})
+
+@app.route('/admin/block_ip', methods=['POST'])
+def block_ip():
+    """Block an IP address"""
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    
+    payload = request.get_json(silent=True) or request.form
+    ip = (payload or {}).get('ip', '').strip()
+    
+    if not ip:
+        return jsonify({'status':'error','error':'IP address required'}), 400
+    
+    # Basic IP validation
+    import re
+    if not re.match(r'^(\d{1,3}\.){3}\d{1,3}$', ip):
+        return jsonify({'status':'error','error':'Invalid IP address format'}), 400
+    
+    blocked_ips = load_blocked_ips()
+    blocked_ips.add(ip)
+    save_blocked_ips(blocked_ips)
+    
+    return jsonify({'status':'ok','blocked_ips': list(blocked_ips), 'added': ip})
+
+@app.route('/admin/unblock_ip', methods=['POST'])
+def unblock_ip():
+    """Unblock an IP address"""
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    
+    payload = request.get_json(silent=True) or request.form
+    ip = (payload or {}).get('ip', '').strip()
+    
+    if not ip:
+        return jsonify({'status':'error','error':'IP address required'}), 400
+    
+    blocked_ips = load_blocked_ips()
+    blocked_ips.discard(ip)
+    save_blocked_ips(blocked_ips)
+    
+    return jsonify({'status':'ok','blocked_ips': list(blocked_ips), 'removed': ip})
 
 def _fmt_age(age_seconds:int)->str:
     # Format seconds to H:MM:SS (or M:SS if <1h)
