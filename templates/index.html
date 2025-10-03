@@ -465,6 +465,104 @@
     .navbar-server-donation .mini-server-btn-icon {
       font-size: 0.9rem;
     }
+    
+    /* Mobile responsiveness for donation elements */
+    @media (max-width: 900px) {
+      .navbar-donation,
+      .navbar-server-donation {
+        margin-left: 0.25rem;
+        padding-left: 0.25rem;
+      }
+      
+      .navbar-donation .mini-donation-content,
+      .navbar-server-donation .mini-server-content {
+        padding: 0.3rem 0.4rem;
+        gap: 0.4rem;
+        font-size: 0.7rem;
+      }
+      
+      .navbar-donation .mini-donation-title,
+      .navbar-server-donation .mini-server-title {
+        font-size: 0.7rem;
+      }
+      
+      .navbar-donation .mini-donation-subtitle,
+      .navbar-server-donation .mini-server-subtitle {
+        font-size: 0.6rem;
+      }
+      
+      .navbar-donation .mini-donate-btn,
+      .navbar-server-donation .mini-server-btn {
+        padding: 0.25rem 0.4rem;
+      }
+    }
+    
+    @media (max-width: 768px) {
+      /* Stack donation elements vertically on mobile */
+      .navbar {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+      
+      .navbar-donation,
+      .navbar-server-donation {
+        order: 10; /* Move donations to next line */
+        margin: 0;
+        padding: 0;
+        flex: 1;
+        min-width: calc(50% - 0.25rem);
+      }
+      
+      .navbar-donation .mini-donation-content,
+      .navbar-server-donation .mini-server-content {
+        padding: 0.3rem 0.5rem;
+        border-radius: 0.4rem;
+        font-size: 0.65rem;
+      }
+      
+      .navbar-donation .mini-donation-icon,
+      .navbar-server-donation .mini-server-icon {
+        font-size: 0.9rem;
+      }
+      
+      .navbar-donation .mini-donation-title,
+      .navbar-server-donation .mini-server-title {
+        font-size: 0.65rem;
+      }
+      
+      .navbar-donation .mini-donation-subtitle,
+      .navbar-server-donation .mini-server-subtitle {
+        font-size: 0.55rem;
+      }
+    }
+    
+    @media (max-width: 480px) {
+      /* Single column on very small screens */
+      .navbar-donation,
+      .navbar-server-donation {
+        min-width: 100%;
+        margin-bottom: 0.3rem;
+      }
+      
+      .navbar-donation .mini-donation-content,
+      .navbar-server-donation .mini-server-content {
+        justify-content: center;
+        text-align: center;
+      }
+      
+      /* Hide text on very small screens, show only icons */
+      .navbar-donation .mini-donation-text,
+      .navbar-server-donation .mini-server-text {
+        display: none;
+      }
+      
+      .navbar-donation .mini-donation-content,
+      .navbar-server-donation .mini-server-content {
+        gap: 0.8rem;
+        justify-content: space-between;
+        padding: 0.4rem 0.6rem;
+      }
+    }
     .main-content {
       display: grid;
       grid-template-columns: minmax(320px, 400px) 1fr;
