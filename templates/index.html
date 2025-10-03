@@ -210,6 +210,16 @@
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
   
+  /* Desktop live counter - visible by default */
+  .desktop-live {
+    display: inline-flex;
+  }
+  
+  /* Mobile live counter - hidden by default */
+  .mobile-live {
+    display: none;
+  }
+  
   .live-users:hover {
     transform: translate(-50%, -50%) translateY(-2px);
     box-shadow: 
@@ -551,6 +561,41 @@
     }
     
     @media (max-width: 480px) {
+      /* Extra compact mobile styles */
+      .navbar {
+        padding: 0.5rem 0.8rem;
+        height: 3rem;
+      }
+      
+      .navbar .logo {
+        gap: 0.5rem;
+      }
+      
+      .navbar .logo img {
+        width: 2rem;
+        height: 2rem;
+      }
+      
+      .navbar .live-users {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.65rem;
+        border-radius: 0.5rem;
+      }
+      
+      .navbar .live-count {
+        font-size: 0.75rem;
+      }
+      
+      .navbar .live-label {
+        font-size: 0.6rem;
+      }
+      
+      .navbar .live-beta {
+        font-size: 0.45rem;
+        padding: 0.05rem 0.25rem;
+        margin-left: 0.15rem;
+      }
+      
       .navbar-donations {
         gap: 0.3rem;
         margin-left: 0.2rem;
@@ -925,8 +970,57 @@
         padding: 0.75rem 1rem;
       }
       
-      .navbar .logo span {
-        font-size: 1rem;
+      /* Hide NEPTUN text on mobile */
+      .navbar .logo .logo-text {
+        display: none;
+      }
+      
+      /* Show mobile live counter, hide desktop one */
+      .desktop-live {
+        display: none !important;
+      }
+      
+      .mobile-live {
+        display: flex !important;
+        position: static;
+        transform: none;
+        left: auto;
+        top: auto;
+        margin: 0;
+        background: rgba(34, 197, 94, 0.15);
+        border: 1px solid rgba(34, 197, 94, 0.3);
+        border-radius: 0.6rem;
+        padding: 0.3rem 0.6rem;
+        font-size: 0.7rem;
+        backdrop-filter: blur(8px);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      }
+      
+      /* Ensure logo has proper flex layout on mobile */
+      .navbar .logo {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+      
+      .navbar .live-count {
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: #22c55e;
+      }
+      
+      .navbar .live-label {
+        color: #86efac;
+        font-size: 0.65rem;
+      }
+      
+      .navbar .live-beta {
+        font-size: 0.5rem;
+        color: #4ade80;
+        background: rgba(34, 197, 94, 0.2);
+        padding: 0.1rem 0.3rem;
+        border-radius: 0.3rem;
+        margin-left: 0.2rem;
       }
       
       .navbar .nav-links {
@@ -1998,19 +2092,24 @@
   </div>
   <div class="navbar">
     <div class="logo">
-  <img src="/static/neptun.jpg" alt="NEPTUN">
-  <span>NEPTUN</span>
+      <img src="/static/neptun.jpg" alt="NEPTUN">
+      <span class="logo-text">NEPTUN</span>
+      <div class="live-users mobile-live" id="liveUsers" title="Активні відвідувачі зараз онлайн • Оновлюється кожні 5 секунд">
+        <span class="live-label">онлайн</span>
+        <span class="live-count" id="liveCount">0</span>
+        <span class="live-beta">BETA</span>
+      </div>
     </div>
     <div class="nav-links">
       <a href="#map" class="active"><i class="material-icons">map</i> Карта</a>
       <a href="#events"><i class="material-icons">notifications</i> Події</a>
       <a href="#about"><i class="material-icons">info</i> Інфо</a>
     </div>
-  <div class="live-users" id="liveUsers" title="Активні відвідувачі зараз онлайн • Оновлюється кожні 5 секунд">
-    <span class="live-label">онлайн</span>
-    <span class="live-count" id="liveCount">0</span>
-    <span class="live-beta">BETA</span>
-  </div>
+    <div class="live-users desktop-live" id="liveUsersDesktop" title="Активні відвідувачі зараз онлайн • Оновлюється кожні 5 секунд">
+      <span class="live-label">онлайн</span>
+      <span class="live-count" id="liveCountDesktop">0</span>
+      <span class="live-beta">BETA</span>
+    </div>
   
   <!-- Navbar Donations Container -->
   <div class="navbar-donations">
@@ -4119,23 +4218,41 @@
             } catch(e) { /* ignore */ }
           }
           if(typeof visitors !== 'undefined'){
-            const el = document.getElementById('liveUsers');
-            if(el){ 
-              const countEl = el.querySelector('.live-count') || el.querySelector('strong');
+            // Update mobile live counter
+            const mobileEl = document.getElementById('liveUsers');
+            if(mobileEl){ 
+              const countEl = mobileEl.querySelector('.live-count') || mobileEl.querySelector('strong');
               if (countEl) {
                 const oldValue = parseInt(countEl.textContent) || 0;
                 const newValue = parseInt(visitors) || 0;
                 
-                // Add animation class if value changed
                 if (oldValue !== newValue) {
                   countEl.classList.add('updating');
                   setTimeout(() => countEl.classList.remove('updating'), 600);
                 }
                 
                 countEl.textContent = visitors; 
-                console.log('pingPresence: обновлен счетчик онлайн пользователей:', visitors);
               }
             }
+            
+            // Update desktop live counter
+            const desktopEl = document.getElementById('liveUsersDesktop');
+            if(desktopEl){ 
+              const countEl = desktopEl.querySelector('.live-count') || desktopEl.querySelector('strong');
+              if (countEl) {
+                const oldValue = parseInt(countEl.textContent) || 0;
+                const newValue = parseInt(visitors) || 0;
+                
+                if (oldValue !== newValue) {
+                  countEl.classList.add('updating');
+                  setTimeout(() => countEl.classList.remove('updating'), 600);
+                }
+                
+                countEl.textContent = visitors; 
+              }
+            }
+            
+            console.log('pingPresence: обновлен счетчик онлайн пользователей:', visitors);
           }
         } catch(e){
           console.error('pingPresence: ошибка при загрузке данных о пользователях:', e);
