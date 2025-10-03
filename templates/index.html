@@ -1369,9 +1369,50 @@
     .support-fab:active{transform:translateY(0) scale(.98);}    
     @media (max-width:700px){.support-fab{bottom:1rem;right:.9rem;padding:.8rem .95rem;border-radius:.9rem;font-size:.75rem;}}
     @media (max-width:900px){ .support-fab{ right:1rem; bottom:1rem; } }
+    
+    .map-theme-fab{position:fixed;bottom:4.8rem;right:1.4rem;z-index:1300;background:linear-gradient(135deg,#1f2937,#4b5563);color:#fff;border:none;border-radius:50%;width:3.5rem;height:3.5rem;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 10px 28px -8px rgba(31,41,55,.55),0 0 0 1px rgba(255,255,255,.12) inset;transition:.25s;backdrop-filter:blur(6px) saturate(1.2);}
+    .map-theme-fab i{font-size:20px;}
+    .map-theme-fab:hover{transform:translateY(-4px) scale(1.03);box-shadow:0 14px 34px -8px rgba(31,41,55,.65),0 0 0 1px rgba(255,255,255,.18) inset;}
+    .map-theme-fab:active{transform:translateY(0) scale(.98);}
+    @media (max-width:700px){.map-theme-fab{bottom:4.2rem;right:.9rem;width:3rem;height:3rem;} .map-theme-fab i{font-size:18px;}}
+    @media (max-width:900px){ .map-theme-fab{ right:1rem; bottom:4.4rem; } }
+    
+    /* Стили для темной темы карты */
+    .map-dark-theme .leaflet-marker-icon {
+      filter: drop-shadow(0 0 4px rgba(255,255,255,0.8)) brightness(1.1) !important;
+    }
+    
+    .map-dark-theme .leaflet-popup-content-wrapper {
+      background: #1f2937 !important;
+      color: #f3f4f6 !important;
+    }
+    
+    .map-dark-theme .leaflet-popup-tip {
+      background: #1f2937 !important;
+    }
+    
+    .map-dark-theme .leaflet-control-zoom a {
+      background: #374151 !important;
+      color: #f3f4f6 !important;
+      border-color: #4b5563 !important;
+    }
+    
+    .map-dark-theme .leaflet-control-zoom a:hover {
+      background: #4b5563 !important;
+    }
+    
+    .map-dark-theme .leaflet-control-attribution {
+      background: rgba(31, 41, 55, 0.8) !important;
+      color: #d1d5db !important;
+    }
+    
+    .map-dark-theme .leaflet-control-attribution a {
+      color: #93c5fd !important;
+    }
 
   </style>
   <button class="support-fab" id="supportFab" aria-haspopup="dialog" aria-controls="donateModal" onclick="toggleDonate()"><i class="material-icons">volunteer_activism</i><span>Підтримати</span></button>
+  <button class="map-theme-fab" id="mapThemeFab" onclick="toggleMapTheme()" title="Переключити тему карти"><i class="material-icons" id="mapThemeIcon">dark_mode</i></button>
   <div class="donate-modal-overlay" id="donateModal" role="dialog" aria-labelledby="donateTitle" aria-modal="true">
     <div class="donate-modal">
       <button class="donate-close" aria-label="Закрити" onclick="toggleDonate(false)">×</button>
@@ -3251,9 +3292,8 @@
         preferCanvas: true  // Используем canvas для лучшей производительности
       }).setView([48.3794,31.1656], 6);
       
-      // Красивая карта с украинскими названиями
-      // Используем OpenStreetMap с украинской локализацией
-      const baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      // Светлая и темная темы карты
+      window.lightLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 18,
         attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
         crossOrigin: true,
@@ -3261,10 +3301,35 @@
         subdomains: 'abc',
         updateWhenIdle: true,
         keepBuffer: 1,
-        className: 'ukraine-map-tiles'
+        className: 'ukraine-map-tiles light-theme'
       });
       
-      baseLayer.addTo(map);
+      window.darkLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 18,
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/attributions">CARTO</a>',
+        crossOrigin: true,
+        detectRetina: false,
+        subdomains: 'abcd',
+        updateWhenIdle: true,
+        keepBuffer: 1,
+        className: 'ukraine-map-tiles dark-theme'
+      });
+      
+      // Проверяем сохраненную тему или используем светлую по умолчанию
+      const isDarkTheme = localStorage.getItem('mapTheme') === 'dark';
+      const currentLayer = isDarkTheme ? window.darkLayer : window.lightLayer;
+      currentLayer.addTo(map);
+      
+      // Функция для обновления иконки кнопки темы
+      function updateMapThemeIcon(isDark) {
+        const icon = document.getElementById('mapThemeIcon');
+        if (icon) {
+          icon.textContent = isDark ? 'light_mode' : 'dark_mode';
+        }
+      }
+      
+      // Обновляем иконку кнопки в соответствии с текущей темой
+      updateMapThemeIcon(isDarkTheme);
       
       // Добавляем кастомные стили для украинских названий через CSS
       const mapStyle = document.createElement('style');
@@ -3757,6 +3822,59 @@
         map.invalidateSize();
       }
     }, 100);
+  }
+  
+  // Map theme toggle functionality
+  function toggleMapTheme() {
+    const isDarkTheme = localStorage.getItem('mapTheme') === 'dark';
+    const newTheme = isDarkTheme ? 'light' : 'dark';
+    
+    // Сохраняем новую тему
+    localStorage.setItem('mapTheme', newTheme);
+    
+    // Переключаем слои карты
+    if (newTheme === 'dark') {
+      map.removeLayer(window.lightLayer);
+      window.darkLayer.addTo(map);
+    } else {
+      map.removeLayer(window.darkLayer);
+      window.lightLayer.addTo(map);
+    }
+    
+    // Обновляем иконку кнопки
+    updateMapThemeIcon(newTheme === 'dark');
+    
+    // Обновляем стили меток для лучшей видимости на темной теме
+    updateMarkerStyles(newTheme === 'dark');
+    
+    console.log(`Переключено на ${newTheme === 'dark' ? 'темную' : 'светлую'} тему карты`);
+  }
+  
+
+  
+  function updateMarkerStyles(isDark) {
+    // Добавляем или убираем класс для темной темы у контейнера карты
+    const mapContainer = document.getElementById('map');
+    if (mapContainer) {
+      if (isDark) {
+        mapContainer.classList.add('map-dark-theme');
+      } else {
+        mapContainer.classList.remove('map-dark-theme');
+      }
+    }
+    
+    // Обновляем видимость существующих маркеров
+    if (window.markers) {
+      window.markers.forEach(marker => {
+        if (marker._icon) {
+          if (isDark) {
+            marker._icon.style.filter = 'drop-shadow(0 0 4px rgba(255,255,255,0.8)) brightness(1.1)';
+          } else {
+            marker._icon.style.filter = 'drop-shadow(0 0 2px rgba(0,0,0,0.3))';
+          }
+        }
+      });
+    }
   }
   
   // Adjust fullscreen height on orientation / resize for mobile
