@@ -339,6 +339,20 @@
       color: var(--accent);
       background: rgba(59, 130, 246, 0.1);
     }
+    
+    .navbar .nav-links a.nav-support {
+      background:linear-gradient(135deg,#2563eb,#7c3aed);
+      color:#fff;
+      font-weight:600;
+      box-shadow:0 2px 8px -2px rgba(37,99,235,.4);
+      border:1px solid rgba(255,255,255,.1);
+    }
+    
+    .navbar .nav-links a.nav-support:hover {
+      background:linear-gradient(135deg,#3b82f6,#8b5cf6);
+      transform:translateY(-1px);
+      box-shadow:0 4px 12px -2px rgba(37,99,235,.5);
+    }
     .main-content {
       display: grid;
       grid-template-columns: minmax(320px, 400px) 1fr;
@@ -1363,19 +1377,14 @@
     @keyframes fadeOut{to{opacity:0;transform:translateY(4px);}}
     
     /* Support floating button */
-    .support-fab{position:fixed;bottom:1.4rem;right:1.4rem;z-index:1300;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;border:none;border-radius:1.1rem;padding:.95rem 1.15rem;display:flex;align-items:center;gap:.55rem;font-weight:600;font-size:.85rem;cursor:pointer;letter-spacing:.5px;box-shadow:0 10px 28px -8px rgba(37,99,235,.55),0 0 0 1px rgba(255,255,255,.12) inset;transition:.25s;backdrop-filter:blur(6px) saturate(1.2);} 
-    .support-fab i{font-size:18px;}
-    .support-fab:hover{transform:translateY(-4px) scale(1.03);box-shadow:0 14px 34px -8px rgba(37,99,235,.65),0 0 0 1px rgba(255,255,255,.18) inset;}
-    .support-fab:active{transform:translateY(0) scale(.98);}    
-    @media (max-width:700px){.support-fab{bottom:1rem;right:.9rem;padding:.8rem .95rem;border-radius:.9rem;font-size:.75rem;}}
-    @media (max-width:900px){ .support-fab{ right:1rem; bottom:1rem; } }
+
     
-    .map-theme-fab{position:fixed;bottom:4.8rem;right:1.4rem;z-index:1300;background:linear-gradient(135deg,#1f2937,#4b5563);color:#fff;border:none;border-radius:50%;width:3.5rem;height:3.5rem;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 10px 28px -8px rgba(31,41,55,.55),0 0 0 1px rgba(255,255,255,.12) inset;transition:.25s;backdrop-filter:blur(6px) saturate(1.2);}
+    .map-theme-fab{position:fixed;bottom:1.4rem;right:1.4rem;z-index:1300;background:linear-gradient(135deg,#1f2937,#4b5563);color:#fff;border:none;border-radius:50%;width:3.5rem;height:3.5rem;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 10px 28px -8px rgba(31,41,55,.55),0 0 0 1px rgba(255,255,255,.12) inset;transition:.25s;backdrop-filter:blur(6px) saturate(1.2);}
     .map-theme-fab i{font-size:20px;}
     .map-theme-fab:hover{transform:translateY(-4px) scale(1.03);box-shadow:0 14px 34px -8px rgba(31,41,55,.65),0 0 0 1px rgba(255,255,255,.18) inset;}
     .map-theme-fab:active{transform:translateY(0) scale(.98);}
-    @media (max-width:700px){.map-theme-fab{bottom:4.2rem;right:.9rem;width:3rem;height:3rem;} .map-theme-fab i{font-size:18px;}}
-    @media (max-width:900px){ .map-theme-fab{ right:1rem; bottom:4.4rem; } }
+    @media (max-width:700px){.map-theme-fab{bottom:1rem;right:.9rem;width:3rem;height:3rem;} .map-theme-fab i{font-size:18px;}}
+    @media (max-width:900px){ .map-theme-fab{ right:1rem; bottom:1rem; } }
     
     /* Стили для темной темы карты */
     .map-dark-theme .leaflet-marker-icon {
@@ -1411,7 +1420,7 @@
     }
 
   </style>
-  <button class="support-fab" id="supportFab" aria-haspopup="dialog" aria-controls="donateModal" onclick="toggleDonate()"><i class="material-icons">volunteer_activism</i><span>Підтримати</span></button>
+
   <button class="map-theme-fab" id="mapThemeFab" onclick="toggleMapTheme()" title="Переключити тему карти"><i class="material-icons" id="mapThemeIcon">dark_mode</i></button>
   <div class="donate-modal-overlay" id="donateModal" role="dialog" aria-labelledby="donateTitle" aria-modal="true">
     <div class="donate-modal">
@@ -1468,6 +1477,7 @@
       <a href="#map" class="active"><i class="material-icons">map</i> Карта</a>
       <a href="#events"><i class="material-icons">notifications</i> Події</a>
       <a href="#about"><i class="material-icons">info</i> Інфо</a>
+      <a href="#" class="nav-support" onclick="toggleDonate()" aria-haspopup="dialog" aria-controls="donateModal"><i class="material-icons">volunteer_activism</i> Підтримати</a>
     </div>
   <div class="live-users" id="liveUsers" title="Активні відвідувачі зараз онлайн • Оновлюється кожні 5 секунд">
     <span class="live-label">онлайн</span>
