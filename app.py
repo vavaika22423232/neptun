@@ -73,6 +73,40 @@ except ImportError:
 from telethon.sessions import StringSession
 import math
 
+# === Message Cleaning Functions ===
+def clean_message_for_frontend(text):
+    """
+    Clean message text for frontend display by removing links, special symbols, and unwanted content
+    """
+    if not text:
+        return text
+    
+    import re
+    
+    # Remove markdown links [text](url) and keep only text
+    text = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', text)
+    
+    # Remove direct links
+    text = re.sub(r'https?://[^\s\]]+', '', text)
+    text = re.sub(r't\.me/[^\s\]]+', '', text)
+    text = re.sub(r'send\.monobank\.ua/[^\s\]]+', '', text)
+    
+    # Remove special symbols
+    text = re.sub(r'[✙✚]+', '', text)              # Remove crosses
+    text = re.sub(r'[ㅤ]+', '', text)                # Remove invisible spaces
+    text = re.sub(r'\*{2,}', '', text)              # Remove multiple asterisks
+    text = re.sub(r'^\*+|\*+$', '', text)           # Remove leading/trailing asterisks
+    
+    # Remove donation/support patterns
+    text = re.sub(r'підтримати\s+канал[^\n]*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'напрямок\s+ракет[^\n]*', '', text, flags=re.IGNORECASE)
+    
+    # Clean up multiple spaces and normalize
+    text = re.sub(r'\s+', ' ', text)
+    text = text.strip()
+    
+    return text
+
 # === Kyiv Directional Enhancement Functions ===
 def calculate_bearing(lat1, lon1, lat2, lon2):
     """Calculate bearing from point 1 to point 2 in degrees (0-360)"""
@@ -4749,12 +4783,24 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 continue
             
             # Remove URLs and links from text
-            ln2 = re_import.sub(r'https?://[^\s]+', '', ln2)  # Remove http/https links
-            ln2 = re_import.sub(r'www\.[^\s]+', '', ln2)      # Remove www links
-            ln2 = re_import.sub(r't\.me/[^\s]+', '', ln2)     # Remove Telegram links
-            ln2 = re_import.sub(r'@[a-zA-Z0-9_]+', '', ln2)  # Remove @mentions
-            ln2 = re_import.sub(r'_+', '', ln2)  # Remove leftover underscores
-            ln2 = re_import.sub(r'[✙✚]+[^✙✚]*✙[^✙✚]*✙', '', ln2)  # Remove ✙...✙ patterns
+            ln2 = re_import.sub(r'https?://[^\s\]]+', '', ln2)  # Remove http/https links
+            ln2 = re_import.sub(r'www\.[^\s\]]+', '', ln2)      # Remove www links
+            ln2 = re_import.sub(r't\.me/[^\s\]]+', '', ln2)     # Remove Telegram links
+            ln2 = re_import.sub(r'@[a-zA-Z0-9_]+', '', ln2)    # Remove @mentions
+            ln2 = re_import.sub(r'_+', '', ln2)                # Remove leftover underscores
+            
+            # Remove markdown links [text](url) and keep only text
+            ln2 = re_import.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', ln2)
+            
+            # Remove special symbols and patterns
+            ln2 = re_import.sub(r'[✙✚]+', '', ln2)                           # Remove crosses
+            ln2 = re_import.sub(r'[ㅤ]+', '', ln2)                            # Remove invisible spaces
+            ln2 = re_import.sub(r'\*{2,}', '', ln2)                          # Remove multiple asterisks
+            ln2 = re_import.sub(r'^\*+|\*+$', '', ln2)                       # Remove leading/trailing asterisks
+            
+            # Remove donation/support patterns
+            ln2 = re_import.sub(r'підтримати\s+канал[^\n]*', '', ln2, flags=re_import.IGNORECASE)
+            ln2 = re_import.sub(r'send\.monobank\.ua/[^\s\]]+', '', ln2)     # Remove monobank links
             
             # Remove card numbers and bank details
             ln2 = re_import.sub(r'\d{4}\s*\d{4}\s*\d{4}\s*\d{4}', '', ln2)  # Card numbers
@@ -11672,6 +11718,15 @@ def data():
         events.sort(key=lambda x: x.get('date',''), reverse=True)
     except Exception:
         pass
+    
+    # Clean text messages for frontend display
+    for track in out:
+        if track.get('text'):
+            track['text'] = clean_message_for_frontend(track['text'])
+    
+    for event in events:
+        if event.get('text'):
+            event['text'] = clean_message_for_frontend(event['text'])
     
     print(f"[DEBUG] Returning {len(out)} tracks and {len(events)} events")
     resp = jsonify({'tracks': out, 'events': events, 'all_sources': CHANNELS, 'trajectories': []})
