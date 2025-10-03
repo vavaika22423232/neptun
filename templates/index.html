@@ -343,6 +343,7 @@
     .navbar-donation {
       margin-left: auto;
       padding-left: 1rem;
+      flex-shrink: 0; /* Don't allow shrinking */
     }
     
     .navbar-donation .mini-donation-content {
@@ -354,6 +355,8 @@
       align-items: center;
       gap: 0.5rem;
       font-size: 0.8rem;
+      width: auto;
+      min-width: 0;
     }
     
     .navbar-donation .mini-donation-icon {
@@ -399,6 +402,7 @@
     .navbar-server-donation {
       margin-left: 0.5rem;
       padding-left: 0.5rem;
+      flex-shrink: 0; /* Don't allow shrinking */
     }
     
     .navbar-server-donation .mini-server-content {
@@ -413,6 +417,8 @@
       position: relative;
       overflow: hidden;
       animation: serverUrgentPulse 2s ease-in-out infinite;
+      width: auto;
+      min-width: 0;
     }
     
     @keyframes serverUrgentPulse {
@@ -509,8 +515,9 @@
         order: 10; /* Move donations to next line */
         margin: 0;
         padding: 0;
-        flex: 1;
-        min-width: calc(50% - 0.25rem);
+        flex: 0 0 auto; /* Don't grow, maintain natural size */
+        width: auto;
+        max-width: calc(50% - 0.25rem);
       }
       
       .navbar-donation .mini-donation-content,
@@ -537,10 +544,12 @@
     }
     
     @media (max-width: 480px) {
-      /* Single column on very small screens */
+      /* Compact elements on very small screens */
       .navbar-donation,
       .navbar-server-donation {
-        min-width: 100%;
+        flex: 0 0 auto;
+        width: auto;
+        max-width: none;
         margin-bottom: 0.3rem;
       }
       
@@ -548,19 +557,20 @@
       .navbar-server-donation .mini-server-content {
         justify-content: center;
         text-align: center;
+        padding: 0.35rem 0.5rem;
+        min-width: 0;
+        width: auto;
       }
       
-      /* Hide text on very small screens, show only icons */
-      .navbar-donation .mini-donation-text,
-      .navbar-server-donation .mini-server-text {
-        display: none;
+      /* Show compact text on very small screens */
+      .navbar-donation .mini-donation-title,
+      .navbar-server-donation .mini-server-title {
+        font-size: 0.6rem;
       }
       
-      .navbar-donation .mini-donation-content,
-      .navbar-server-donation .mini-server-content {
-        gap: 0.8rem;
-        justify-content: space-between;
-        padding: 0.4rem 0.6rem;
+      .navbar-donation .mini-donation-subtitle,
+      .navbar-server-donation .mini-server-subtitle {
+        font-size: 0.5rem;
       }
     }
     .main-content {
