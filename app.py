@@ -11718,6 +11718,13 @@ def data():
     except (ValueError, TypeError):
         time_range = MONITOR_PERIOD_MINUTES
     
+    # Add performance optimization: limit number of tracks returned
+    try:
+        max_tracks = int(request.args.get('maxTracks', 100))  # Default limit 100 tracks
+        max_tracks = max(10, min(max_tracks, 500))  # Between 10-500 tracks
+    except (ValueError, TypeError):
+        max_tracks = 100
+    
     print(f"[DEBUG] /data endpoint called with timeRange={request.args.get('timeRange')}, using time_range={time_range}")
     messages = load_messages()
     print(f"[DEBUG] Loaded {len(messages)} total messages")
@@ -11842,6 +11849,12 @@ def data():
     except Exception:
         pass
     
+    # Sort tracks by date (newest first) for better performance
+    try:
+        out.sort(key=lambda x: x.get('date', ''), reverse=True)
+    except Exception:
+        pass
+    
     # Clean text messages for frontend display
     for track in out:
         if track.get('text'):
@@ -11851,8 +11864,11 @@ def data():
         if event.get('text'):
             event['text'] = clean_message_for_frontend(event['text'])
     
-    print(f"[DEBUG] Returning {len(out)} tracks and {len(events)} events")
-    resp = jsonify({'tracks': out, 'events': events, 'all_sources': CHANNELS, 'trajectories': []})
+    # Apply track limit for performance optimization
+    tracks_limited = out[:max_tracks] if len(out) > max_tracks else out
+    
+    print(f"[DEBUG] Returning {len(tracks_limited)} tracks ({len(out)} total, limited to {max_tracks}) and {len(events)} events")
+    resp = jsonify({'tracks': tracks_limited, 'events': events, 'all_sources': CHANNELS, 'trajectories': [], 'total_tracks': len(out), 'limited': len(out) > max_tracks})
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     resp.headers['Pragma'] = 'no-cache'
     return resp

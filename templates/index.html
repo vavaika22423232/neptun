@@ -3342,12 +3342,18 @@
     // Переменная для отслеживания первоначальной загрузки
     let isInitialLoad = true;
     
+    // Кеш для данных карты
+    let dataCache = null;
+    let cacheTimestamp = 0;
+    const CACHE_DURATION = 30000; // 30 секунд кеш
+    
     async function updateMarkers() {
       console.log('updateMarkers: начинаем загрузку данных...');
       const timeRange = 1.33; // фиксированное значение - 80 минут (1.33 часа)
       const threatType = ''; // фиксированное значение - все типы угроз
-      console.log('updateMarkers: параметры фильтрации - timeRange:', timeRange, 'часов, threatType:', threatType || 'все типы');
-      const params = new URLSearchParams({ timeRange, confRange: 0 });
+      const maxTracks = 150; // лимит треков для быстрой загрузки
+      console.log('updateMarkers: параметры фильтрации - timeRange:', timeRange, 'часов, threatType:', threatType || 'все типы', 'maxTracks:', maxTracks);
+      const params = new URLSearchParams({ timeRange, confRange: 0, maxTracks });
   const overlay = document.getElementById('markerLoadingOverlay');
   // Показываем экран загрузки только при первоначальной загрузке
   if (overlay && isInitialLoad) {
@@ -3358,13 +3364,31 @@
       let points = []; // Объявляем переменную перед try блоком
       
       try {
-        console.log('updateMarkers: отправляем запрос к /data?' + params.toString());
-        const res = await fetch('/data?' + params.toString());
-        console.log('updateMarkers: получен ответ, статус:', res.status);
-        const data = await res.json();
+        let data;
+        // Проверяем кеш
+        const now = Date.now();
+        if (dataCache && (now - cacheTimestamp) < CACHE_DURATION) {
+          console.log('updateMarkers: используем кешированные данные');
+          data = dataCache;
+        } else {
+          console.log('updateMarkers: отправляем запрос к /data?' + params.toString());
+          const res = await fetch('/data?' + params.toString());
+          console.log('updateMarkers: получен ответ, статус:', res.status);
+          data = await res.json();
+          
+          // Кешируем данные
+          dataCache = data;
+          cacheTimestamp = now;
+          console.log('updateMarkers: данные закешированы');
+        }
         console.log('updateMarkers: данные распарсены:', data);
         console.log('updateMarkers: tracks массив:', data.tracks);
         console.log('updateMarkers: количество tracks:', (data.tracks || []).length);
+        
+        // Показать уведомление если треки были ограничены
+        if (data.limited && data.total_tracks > data.tracks.length) {
+          console.log(`updateMarkers: отображено ${data.tracks.length} из ${data.total_tracks} треков для быстрой загрузки`);
+        }
   points = (data.tracks || []).filter(p => {
         console.log('updateMarkers: проверяем точку:', p);
         console.log('updateMarkers: threat_type точки:', p.threat_type, 'текст:', p.text);
