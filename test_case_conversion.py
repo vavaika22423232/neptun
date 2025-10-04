@@ -5,35 +5,41 @@
 
 test_cases = [
     ("Кролевець", "кролевець"),      # no change
-    ("Шостку", "шостк"),             # у -> remove
-    ("Понорницю", "понорниць"),      # цю -> ць
-    ("Борзну", "борзн"),             # у -> remove
+    ("Шостку", "шостка"),            # у -> а
+    ("Понорницю", "понорниця"),      # цю -> ця
+    ("Борзну", "борзна"),            # у -> а
     ("Ніжин", "ніжин"),              # no change
-    ("Ічню", "ічн"),                 # ю -> remove
-    ("Малу Дівицю", "алу дівиць"),   # цю -> ць
-    ("Згурівку", "згурівк"),         # ку -> к
+    ("Ічню", "ічня"),                # ю -> я
+    ("Малу Дівицю", "алу дівиця"),   # цю -> ця
+    ("Згурівку", "згурівка"),        # ку -> ка
     ("Яготин", "яготин"),            # no change
     ("Димер", "димер"),              # no change
-    ("Полтаву", "полтав"),           # у -> remove
-    ("Машівку", "машівк"),           # ку -> к
+    ("Полтаву", "полтава"),          # у -> а
+    ("Машівку", "машівка"),          # ку -> ка
     ("Сахновщину", "сахновщина"),    # щину -> щина
-    ("Смілу", "сміл"),               # у -> remove
-    ("Самар", "амар"),               # no change but wrong!
-    ("Софіївку", "софіївк"),         # ку -> к
+    ("Смілу", "сміла"),              # у -> а
+    ("Самар", "самар"),              # no change
+    ("Софіївку", "софіївка"),        # ку -> ка
+    ("Карлівку", "карлівка"),        # ку -> ка (KEY TEST)
 ]
 
 def convert_accusative_to_nominative(city_norm):
     """Convert Ukrainian city name from accusative to nominative case"""
-    if city_norm.endswith('у') and len(city_norm) > 3:
-        return city_norm[:-1]
-    elif city_norm.endswith('ю') and len(city_norm) > 3:
-        return city_norm[:-1]
-    elif city_norm.endswith('ку') and len(city_norm) > 4:
-        return city_norm[:-2] + 'к'
+    if city_norm.endswith('ку') and len(city_norm) > 4:
+        # карлівку -> карлівка
+        return city_norm[:-2] + 'ка'
     elif city_norm.endswith('цю') and len(city_norm) > 4:
-        return city_norm[:-2] + 'ць'
+        # понорницю -> понорниця
+        return city_norm[:-2] + 'ця'
     elif city_norm.endswith('щину') and len(city_norm) > 6:
+        # сахновщину -> сахновщина
         return city_norm[:-4] + 'щина'
+    elif city_norm.endswith('у') and len(city_norm) > 3:
+        # полтаву -> полтава
+        return city_norm[:-1] + 'а'
+    elif city_norm.endswith('ю') and len(city_norm) > 3:
+        # ічню -> ічня
+        return city_norm[:-1] + 'я'
     else:
         return city_norm
 

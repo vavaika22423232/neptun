@@ -6387,10 +6387,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     
     if region_count >= 2 and uav_count >= 3:
         add_debug_log(f"EARLY MULTI-REGIONAL UAV DETECTION: {region_count} regions, {uav_count} UAVs", "multi_regional")
+        add_debug_log(f"Text preview: {text[:200]}...", "multi_regional")
         # We'll process this later when all functions are defined
         # Set a flag for now
         multi_regional_flag = True
     else:
+        add_debug_log(f"NOT multi-regional: {region_count} regions, {uav_count} UAVs (need >= 2 regions and >= 3 UAVs)", "multi_regional")
         multi_regional_flag = False
 
     # ... existing parsing logic continues ...
@@ -9009,6 +9011,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         # If we have multiple regions and multiple UAV mentions, process each line
         if region_count >= 2 and uav_count >= 3:
             add_debug_log(f"MULTI-REGIONAL UAV MESSAGE: {region_count} regions, {uav_count} UAVs", "multi_regional")
+            add_debug_log(f"Text length: {len(text)}, Lines count: {len(text_lines)}", "multi_regional")
             
             for line in text_lines:
                 line_stripped = line.strip()
@@ -9097,7 +9100,54 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                 
                                 add_debug_log(f"Multi-regional UAV: {city_clean} ({uav_count_num}x) -> {coords}", "multi_regional")
                             else:
-                                add_debug_log(f"Multi-regional UAV: No coords for {city_clean}", "multi_regional")
+                                # CREATE MARKER WITHOUT COORDINATES for multi-regional messages
+                                # Use center of Ukraine as fallback coordinates
+                                fallback_lat, fallback_lng = 49.0, 32.0  # Center of Ukraine
+                                threat_type, icon = classify(text)
+                                
+                                # Extract count if present
+                                uav_count_num = 1
+                                if count_str and count_str.isdigit():
+                                    uav_count_num = int(count_str)
+                                
+                                threat_id = f"{mid}_multi_{len(threats)}"
+                                threats.append({
+                                    'id': threat_id,
+                                    'place': f"{city_clean.title()} (приблизно)",
+                                    'lat': fallback_lat,
+                                    'lng': fallback_lng,
+                                    'threat_type': threat_type,
+                                    'text': f"{line_stripped} (з багаторегіонального повідомлення - координати не знайдено)",
+                                    'date': date_str,
+                                    'channel': channel,
+                                    'marker_icon': icon,
+                                    'source_match': f'multi_regional_uav_fallback_{uav_count_num}x',
+                                    'count': uav_count_num
+                                })
+                                
+                                add_debug_log(f"Multi-regional UAV: No coords for {city_clean}, using fallback", "multi_regional")
+        
+        # CRITICAL: Always return at least one marker for multi-regional messages
+        if not threats and region_count >= 2 and uav_count >= 3:
+            # Create a synthetic marker to ensure multi-regional messages appear
+            threat_type, icon = classify(text)
+            fallback_lat, fallback_lng = 49.0, 32.0  # Center of Ukraine
+            
+            threats.append({
+                'id': f"{mid}_multi_synthetic",
+                'place': f"Багаторегіональна загроза БпЛА ({region_count} регіонів, {uav_count} БпЛА)",
+                'lat': fallback_lat,
+                'lng': fallback_lng,
+                'threat_type': threat_type,
+                'text': f"Багаторегіональне повідомлення про БпЛА (координати міст не знайдено)",
+                'date': date_str,
+                'channel': channel,
+                'marker_icon': icon,
+                'source_match': 'multi_regional_synthetic',
+                'count': uav_count
+            })
+            
+            add_debug_log(f"Created synthetic marker for multi-regional message: {region_count} regions, {uav_count} UAVs", "multi_regional")
         
         return threats
 
