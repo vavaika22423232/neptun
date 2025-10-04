@@ -5270,6 +5270,19 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     
     add_debug_log(f"DEBUG COUNT CHECK: {region_count} regions, {uav_count} UAV lines, {shahed_count} Shahed+region lines", "count_check")
     
+    # Additional debugging for multi-regional detection
+    uav_course_count = sum(1 for line in text_lines if 'бпла' in line.lower() and ('курс' in line.lower() or 'на ' in line.lower()))
+    add_debug_log(f"UAV course lines: {uav_course_count}", "uav_course_debug")
+    
+    if region_count >= 2:
+        add_debug_log(f"Region condition met: {region_count} >= 2", "region_debug")
+        if uav_course_count >= 3:
+            add_debug_log(f"UAV course condition met: {uav_course_count} >= 3", "uav_debug")
+        else:
+            add_debug_log(f"UAV course condition NOT met: {uav_course_count} < 3", "uav_debug")
+    else:
+        add_debug_log(f"Region condition NOT met: {region_count} < 2", "region_debug")
+    
     # If we have multiple Shahed lines with regions, process them separately
     if shahed_count >= 2:
         add_debug_log(f"MULTI-LINE SHAHED PROCESSING: {shahed_count} Shahed+region lines detected", "multi_shahed")
@@ -11814,22 +11827,82 @@ def debug_parse():
 @app.route('/test_parse')
 def test_parse():
     """Test endpoint to manually test message parsing without auth."""
-    test_message = "Чернігівщина: 1 БпЛА на Козелець 1 БпЛА на Носівку 1 БпЛА неподалік Ічні 2 БпЛА на Куликівку 2 БпЛА між Корюківкою та Меною Сумщина: 3 БпЛА в районі Конотопу ㅤ ➡Підписатися"
+    test_message = """Сумщина:
+БпЛА курсом на Липову Долину 
+
+Чернігівщина:
+2х БпЛА курсом на Сосницю
+БпЛА курсом на Батурин
+2х БпЛА курсом на Борзну 
+БпЛА курсом на Ічню
+БпЛА курсом на Парафіївку
+БпЛА курсом на Козелець
+БпЛА курсом на Ягідне 
+БпЛА курсом на Куликівку
+
+Харківщина:
+БпЛА курсом на Балаклію
+6х БпЛА курсом на Нову Водолагу 
+3х БпЛА курсом на Бірки 
+2х БпЛА курсом на Донець
+3х БпЛА курсом на Златопіль
+2х БпЛА курсом на Сахновщину 
+БпЛА курсом на Орільку
+БпЛА курсом на Зачепилівку
+БпЛА курсом на Слобожанське 
+БпЛА курсом на Берестин
+БпЛА курсом на Савинці 
+БпЛА курсом на Краснокутськ
+БпЛА курсом на Чугуїв 
+БпЛА курсом на Андріївку
+
+Полтавщина:
+БпЛА курсом на Великі Сорочинці 
+БпЛА курсом на Миргород 
+БпЛА курсом на Полтаву 
+БпЛА курсом на Карлівку
+БпЛА курсом на Машівку
+БпЛА курсом на Нові Санжари 
+БпЛА курсом на Решетилівку 
+БпЛА курсом на Глобине
+БпЛА курсом на Котельву 
+
+Дніпропетровщина:
+БпЛА курсом на Софіївку
+БпЛА курсом на Томаківку
+БпЛА курсом на Петриківку
+2х БпЛА курсом на Юріївку
+БпЛА курсом на Магдалинівку 
+БпЛА курсом на Царичанку 
+2х БпЛА курсом на Верхньодніпровськ 
+Розвідувальний БпЛА в районі Славгорода
+
+Донеччина:
+БпЛА курсом на Білозерське
+
+✙ Напрямок ракет ✙
+✙Підтримати канал✙"""
     
     try:
+        # Clear debug logs for clean test
+        debug_logs.clear()
+        
         print("="*50)
         print("MANUAL TEST STARTED")
         print("="*50)
-        tracks = process_message(test_message, 'TEST_1', '2025-09-05 17:20:00', 'test')
+        add_debug_log("MANUAL TEST: Starting multi-regional message test", "manual_test")
+        tracks = process_message(test_message, 'TEST_1', '2025-10-04 12:00:00', 'test')
         print("="*50)
         print("MANUAL TEST COMPLETED")
         print("="*50)
         
         return jsonify({
             'success': True,
-            'message': test_message,
+            'message': test_message[:500] + ('...' if len(test_message) > 500 else ''),
+            'message_length': len(test_message),
             'tracks_count': len(tracks) if tracks else 0,
             'tracks': tracks,
+            'debug_logs': debug_logs[-100:] if debug_logs else [],
             'test_time': datetime.now().isoformat()
         })
     except Exception as e:
