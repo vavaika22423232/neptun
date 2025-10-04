@@ -12014,15 +12014,79 @@ def hide_marker():
         lng = round(float(payload.get('lng')), 3)
         text = (payload.get('text') or '').strip()
         source = (payload.get('source') or '').strip()
+        
         marker_key = f"{lat},{lng}|{text}|{source}"
+        log.info(f"hide_marker: attempting to hide marker_key='{marker_key[:100]}...'")
+        
         hidden = load_hidden()
-        if marker_key not in hidden:
+        was_already_hidden = marker_key in hidden
+        
+        if not was_already_hidden:
             hidden.append(marker_key)
             save_hidden(hidden)
-        return jsonify({'status':'ok','hidden_count':len(hidden)})
+            log.info(f"hide_marker: successfully hidden marker. Total hidden: {len(hidden)}")
+        else:
+            log.info(f"hide_marker: marker was already hidden")
+            
+        return jsonify({
+            'status':'ok',
+            'hidden_count':len(hidden),
+            'was_already_hidden': was_already_hidden,
+            'marker_key': marker_key[:100] + ('...' if len(marker_key) > 100 else '')
+        })
     except Exception as e:
         log.warning(f"hide_marker error: {e}")
         return jsonify({'status':'error','error':str(e)}), 400
+
+@app.route('/admin/hidden_markers')
+def get_hidden_markers():
+    """Get all hidden markers for admin diagnostics."""
+    if not check_admin_access():
+        return "Access denied", 403
+    
+    try:
+        hidden = load_hidden()
+        parsed_markers = []
+        
+        for key in hidden:
+            try:
+                parts = key.split('|', 2)
+                if len(parts) >= 3:
+                    coords, text, source = parts
+                    lat_str, lng_str = coords.split(',')
+                    parsed_markers.append({
+                        'key': key,
+                        'lat': float(lat_str),
+                        'lng': float(lng_str), 
+                        'text': text,
+                        'source': source
+                    })
+                else:
+                    parsed_markers.append({
+                        'key': key,
+                        'lat': None,
+                        'lng': None,
+                        'text': 'Invalid format',
+                        'source': ''
+                    })
+            except Exception as e:
+                log.warning(f"Error parsing hidden marker key '{key}': {e}")
+                parsed_markers.append({
+                    'key': key,
+                    'lat': None,
+                    'lng': None,
+                    'text': f'Parse error: {str(e)}',
+                    'source': ''
+                })
+        
+        return jsonify({
+            'status': 'ok',
+            'hidden_markers': parsed_markers,
+            'total_count': len(hidden)
+        })
+    except Exception as e:
+        log.warning(f"get_hidden_markers error: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
 
 @app.route('/unhide_marker', methods=['POST'])
 def unhide_marker():
