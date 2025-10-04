@@ -73,6 +73,40 @@ except ImportError:
 from telethon.sessions import StringSession
 import math
 
+# === Message Cleaning Functions ===
+def clean_message_for_frontend(text):
+    """
+    Clean message text for frontend display by removing links, special symbols, and unwanted content
+    """
+    if not text:
+        return text
+    
+    import re
+    
+    # Remove markdown links [text](url) and keep only text
+    text = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', text)
+    
+    # Remove direct links
+    text = re.sub(r'https?://[^\s\]]+', '', text)
+    text = re.sub(r't\.me/[^\s\]]+', '', text)
+    text = re.sub(r'send\.monobank\.ua/[^\s\]]+', '', text)
+    
+    # Remove special symbols
+    text = re.sub(r'[✙✚]+', '', text)              # Remove crosses
+    text = re.sub(r'[ㅤ]+', '', text)                # Remove invisible spaces
+    text = re.sub(r'\*{2,}', '', text)              # Remove multiple asterisks
+    text = re.sub(r'^\*+|\*+$', '', text)           # Remove leading/trailing asterisks
+    
+    # Remove donation/support patterns
+    text = re.sub(r'підтримати\s+канал[^\n]*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'напрямок\s+ракет[^\n]*', '', text, flags=re.IGNORECASE)
+    
+    # Clean up multiple spaces and normalize
+    text = re.sub(r'\s+', ' ', text)
+    text = text.strip()
+    
+    return text
+
 # === Kyiv Directional Enhancement Functions ===
 def calculate_bearing(lat1, lon1, lat2, lon2):
     """Calculate bearing from point 1 to point 2 in degrees (0-360)"""
@@ -358,6 +392,7 @@ ACTIVE_VISITORS = {}
 ACTIVE_LOCK = threading.Lock()
 ACTIVE_TTL = 70  # seconds of inactivity before a visitor is dropped
 BLOCKED_FILE = 'blocked_ids.json'
+BLOCKED_IPS_FILE = 'blocked_ips.json'
 STATS_FILE = 'visits_stats.json'  # persistent first-seen timestamps per visitor id
 RECENT_VISITS_FILE = 'visits_recent.json'  # stores rolling today/week visitor id sets for fast counts
 VISIT_STATS = None  # lazy-loaded dict: {id: first_seen_epoch}
@@ -767,6 +802,42 @@ def save_blocked(blocked):
             json.dump(blocked, f, ensure_ascii=False, indent=2)
     except Exception as e:
         log.warning(f'Failed saving {BLOCKED_FILE}: {e}')
+
+def load_blocked_ips():
+    if os.path.exists(BLOCKED_IPS_FILE):
+        try:
+            with open(BLOCKED_IPS_FILE, 'r', encoding='utf-8') as f:
+                return set(json.load(f))
+        except Exception as e:
+            log.warning(f'Failed loading {BLOCKED_IPS_FILE}: {e}')
+            return set()
+    return set()
+
+def save_blocked_ips(blocked_ips):
+    try:
+        with open(BLOCKED_IPS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(list(blocked_ips), f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log.warning(f'Failed saving {BLOCKED_IPS_FILE}: {e}')
+
+def get_client_ip(request):
+    """Extract real client IP from request headers"""
+    # Try different headers that proxies/load balancers use
+    for header in ['X-Forwarded-For', 'X-Real-IP', 'X-Client-IP']:
+        ip = request.headers.get(header)
+        if ip:
+            # X-Forwarded-For can be comma-separated list, take first
+            return ip.split(',')[0].strip()
+    return request.remote_addr or 'unknown'
+
+def is_ip_blocked(request):
+    """Check if client IP is in blocked list"""
+    client_ip = get_client_ip(request)
+    if client_ip == 'unknown':
+        return False
+    
+    blocked_ips = load_blocked_ips()
+    return client_ip in blocked_ips
 
 def _load_visit_stats():
     global VISIT_STATS
@@ -4712,12 +4783,24 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 continue
             
             # Remove URLs and links from text
-            ln2 = re_import.sub(r'https?://[^\s]+', '', ln2)  # Remove http/https links
-            ln2 = re_import.sub(r'www\.[^\s]+', '', ln2)      # Remove www links
-            ln2 = re_import.sub(r't\.me/[^\s]+', '', ln2)     # Remove Telegram links
-            ln2 = re_import.sub(r'@[a-zA-Z0-9_]+', '', ln2)  # Remove @mentions
-            ln2 = re_import.sub(r'_+', '', ln2)  # Remove leftover underscores
-            ln2 = re_import.sub(r'[✙✚]+[^✙✚]*✙[^✙✚]*✙', '', ln2)  # Remove ✙...✙ patterns
+            ln2 = re_import.sub(r'https?://[^\s\]]+', '', ln2)  # Remove http/https links
+            ln2 = re_import.sub(r'www\.[^\s\]]+', '', ln2)      # Remove www links
+            ln2 = re_import.sub(r't\.me/[^\s\]]+', '', ln2)     # Remove Telegram links
+            ln2 = re_import.sub(r'@[a-zA-Z0-9_]+', '', ln2)    # Remove @mentions
+            ln2 = re_import.sub(r'_+', '', ln2)                # Remove leftover underscores
+            
+            # Remove markdown links [text](url) and keep only text
+            ln2 = re_import.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', ln2)
+            
+            # Remove special symbols and patterns
+            ln2 = re_import.sub(r'[✙✚]+', '', ln2)                           # Remove crosses
+            ln2 = re_import.sub(r'[ㅤ]+', '', ln2)                            # Remove invisible spaces
+            ln2 = re_import.sub(r'\*{2,}', '', ln2)                          # Remove multiple asterisks
+            ln2 = re_import.sub(r'^\*+|\*+$', '', ln2)                       # Remove leading/trailing asterisks
+            
+            # Remove donation/support patterns
+            ln2 = re_import.sub(r'підтримати\s+канал[^\n]*', '', ln2, flags=re_import.IGNORECASE)
+            ln2 = re_import.sub(r'send\.monobank\.ua/[^\s\]]+', '', ln2)     # Remove monobank links
             
             # Remove card numbers and bank details
             ln2 = re_import.sub(r'\d{4}\s*\d{4}\s*\d{4}\s*\d{4}', '', ln2)  # Card numbers
@@ -5187,6 +5270,19 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     
     add_debug_log(f"DEBUG COUNT CHECK: {region_count} regions, {uav_count} UAV lines, {shahed_count} Shahed+region lines", "count_check")
     
+    # Additional debugging for multi-regional detection
+    uav_course_count = sum(1 for line in text_lines if 'бпла' in line.lower() and ('курс' in line.lower() or 'на ' in line.lower()))
+    add_debug_log(f"UAV course lines: {uav_course_count}", "uav_course_debug")
+    
+    if region_count >= 2:
+        add_debug_log(f"Region condition met: {region_count} >= 2", "region_debug")
+        if uav_course_count >= 3:
+            add_debug_log(f"UAV course condition met: {uav_course_count} >= 3", "uav_debug")
+        else:
+            add_debug_log(f"UAV course condition NOT met: {uav_course_count} < 3", "uav_debug")
+    else:
+        add_debug_log(f"Region condition NOT met: {region_count} < 2", "region_debug")
+    
     # If we have multiple Shahed lines with regions, process them separately
     if shahed_count >= 2:
         add_debug_log(f"MULTI-LINE SHAHED PROCESSING: {shahed_count} Shahed+region lines detected", "multi_shahed")
@@ -5234,8 +5330,15 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             return all_tracks
     
     # Legacy multi-regional detection (keep for backward compatibility)
-    if region_count >= 2 and sum(1 for line in text_lines if 'бпла' in line.lower() and ('курс' in line.lower() or 'на ' in line.lower())) >= 3:
-        add_debug_log(f"IMMEDIATE MULTI-REGIONAL UAV: {region_count} regions, {uav_count} UAVs - ENTERING EARLY PROCESSING", "multi_regional")
+    multi_regional_uav_count = sum(1 for line in text_lines if 'бпла' in line.lower() and ('курс' in line.lower() or 'на ' in line.lower()))
+    add_debug_log(f"Multi-regional check: regions={region_count}, uav_lines={multi_regional_uav_count}", "multi_check")
+    
+    if region_count >= 2 and multi_regional_uav_count >= 3:
+        add_debug_log(f"IMMEDIATE MULTI-REGIONAL UAV: {region_count} regions, {multi_regional_uav_count} UAV lines - ENTERING EARLY PROCESSING", "multi_regional")
+        
+        # Log all text lines for debugging
+        for i, line in enumerate(text_lines):
+            add_debug_log(f"Line {i}: '{line}'", "multi_lines")
         # Process directly without going through other logic
         import re
         
@@ -6277,8 +6380,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
 
     # EARLY CHECK: Multi-regional UAV messages (before other logic can interfere)
     text_lines = text.split('\n')
-    region_count = sum(1 for line in text_lines if any(region in line.lower() for region in ['щина:', 'щина]', 'область:', 'край:']) or (
-        'щина' in line.lower() and line.lower().strip().endswith(':')
+    region_count = sum(1 for line in text_lines if any(region in line.lower() for region in ['щина:', 'ччина:', 'щина]', 'ччина]', 'область:', 'край:']) or (
+        ('щина' in line.lower() or 'ччина' in line.lower()) and line.lower().strip().endswith(':')
     ))
     uav_count = sum(1 for line in text_lines if 'бпла' in line.lower() and ('курс' in line.lower() or 'на ' in line.lower()))
     
@@ -8894,7 +8997,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 continue
                 
             # Count regions mentioned
-            if any(region in line_lower for region in ['щина:', 'область:', 'край:']):
+            if any(region in line_lower for region in ['щина:', 'ччина:', 'щина]', 'ччина]', 'область:', 'край:']) or (
+                ('щина' in line_lower or 'ччина' in line_lower) and line_lower.endswith(':')
+            ):
                 region_count += 1
             
             # Count UAV mentions
@@ -11327,6 +11432,10 @@ def start_session_watcher():
 
 @app.route('/')
 def index():
+    # Check if IP is blocked
+    if is_ip_blocked(request):
+        return "Access denied", 403
+    
     # Leaflet version of frontend no longer needs Google Maps key
     return render_template('index.html')
 
@@ -11451,6 +11560,10 @@ def comment_react_endpoint():
 @app.route('/active_alarms')
 def active_alarms_endpoint():
     """Return current active oblast & raion air alarms (for polygon styling)."""
+    # Check if IP is blocked
+    if is_ip_blocked(request):
+        return jsonify({'error': 'Access denied'}), 403
+    
     try:
         now_ep = time.time()
         cutoff = now_ep - APP_ALARM_TTL_MINUTES*60
@@ -11501,6 +11614,10 @@ def alarms_stats():
 
 @app.route('/data')
 def data():
+    # Check if IP is blocked
+    if is_ip_blocked(request):
+        return jsonify({'error': 'Access denied'}), 403
+    
     global FALLBACK_REPARSE_CACHE, MAX_REPARSE_CACHE_SIZE
     # Use user-provided timeRange or fall back to global configured MONITOR_PERIOD_MINUTES
     try:
@@ -11569,8 +11686,10 @@ def data():
                                 continue
                             text_r = (t.get('text') or '')
                             source_r = t.get('channel') or t.get('source') or ''
-                            marker_key_r = f"{lat_r},{lng_r}|{text_r}|{source_r}"
-                            if marker_key_r in hidden:
+                            marker_key_r_original = f"{lat_r},{lng_r}|{text_r}|{source_r}"
+                            text_r_cleaned = clean_message_for_frontend(text_r)
+                            marker_key_r_cleaned = f"{lat_r},{lng_r}|{text_r_cleaned}|{source_r}"
+                            if marker_key_r_original in hidden or marker_key_r_cleaned in hidden:
                                 continue
                             out.append(t)
                         # Skip adding original as event if we produced tracks
@@ -11591,8 +11710,13 @@ def data():
                 continue  # not a proper geo marker
             text = (m.get('text') or '')
             source = m.get('source') or m.get('channel') or ''
-            marker_key = f"{lat},{lng}|{text}|{source}"
-            if marker_key in hidden:
+            
+            # Check both original and cleaned text versions for hiding
+            marker_key_original = f"{lat},{lng}|{text}|{source}"
+            text_cleaned = clean_message_for_frontend(text)
+            marker_key_cleaned = f"{lat},{lng}|{text_cleaned}|{source}"
+            
+            if marker_key_original in hidden or marker_key_cleaned in hidden:
                 continue
             # Backward compatibility: allow prefix match (text truncated when stored) for same lat,lng,source
             base_prefix = f"{lat},{lng}|"
@@ -11608,9 +11732,12 @@ def data():
                         _, htext, hsource = h.split('|',2)
                     except ValueError:
                         continue
-                    if hsource == source and text.startswith(htext):
-                        skip = True
-                        break
+                    if hsource == source:
+                        # Check both original and cleaned text for prefix match
+                        if (text.startswith(htext) or htext.startswith(text) or 
+                            text_cleaned.startswith(htext) or htext.startswith(text_cleaned)):
+                            skip = True
+                            break
                 if skip:
                     continue
             # Фильтр: удаляем региональные метки без явных слов угроз (могли сохраниться старыми версиями логики)
@@ -11623,6 +11750,15 @@ def data():
         events.sort(key=lambda x: x.get('date',''), reverse=True)
     except Exception:
         pass
+    
+    # Clean text messages for frontend display
+    for track in out:
+        if track.get('text'):
+            track['text'] = clean_message_for_frontend(track['text'])
+    
+    for event in events:
+        if event.get('text'):
+            event['text'] = clean_message_for_frontend(event['text'])
     
     print(f"[DEBUG] Returning {len(out)} tracks and {len(events)} events")
     resp = jsonify({'tracks': out, 'events': events, 'all_sources': CHANNELS, 'trajectories': []})
@@ -11700,22 +11836,82 @@ def debug_parse():
 @app.route('/test_parse')
 def test_parse():
     """Test endpoint to manually test message parsing without auth."""
-    test_message = "Чернігівщина: 1 БпЛА на Козелець 1 БпЛА на Носівку 1 БпЛА неподалік Ічні 2 БпЛА на Куликівку 2 БпЛА між Корюківкою та Меною Сумщина: 3 БпЛА в районі Конотопу ㅤ ➡Підписатися"
+    test_message = """Сумщина:
+БпЛА курсом на Липову Долину 
+
+Чернігівщина:
+2х БпЛА курсом на Сосницю
+БпЛА курсом на Батурин
+2х БпЛА курсом на Борзну 
+БпЛА курсом на Ічню
+БпЛА курсом на Парафіївку
+БпЛА курсом на Козелець
+БпЛА курсом на Ягідне 
+БпЛА курсом на Куликівку
+
+Харківщина:
+БпЛА курсом на Балаклію
+6х БпЛА курсом на Нову Водолагу 
+3х БпЛА курсом на Бірки 
+2х БпЛА курсом на Донець
+3х БпЛА курсом на Златопіль
+2х БпЛА курсом на Сахновщину 
+БпЛА курсом на Орільку
+БпЛА курсом на Зачепилівку
+БпЛА курсом на Слобожанське 
+БпЛА курсом на Берестин
+БпЛА курсом на Савинці 
+БпЛА курсом на Краснокутськ
+БпЛА курсом на Чугуїв 
+БпЛА курсом на Андріївку
+
+Полтавщина:
+БпЛА курсом на Великі Сорочинці 
+БпЛА курсом на Миргород 
+БпЛА курсом на Полтаву 
+БпЛА курсом на Карлівку
+БпЛА курсом на Машівку
+БпЛА курсом на Нові Санжари 
+БпЛА курсом на Решетилівку 
+БпЛА курсом на Глобине
+БпЛА курсом на Котельву 
+
+Дніпропетровщина:
+БпЛА курсом на Софіївку
+БпЛА курсом на Томаківку
+БпЛА курсом на Петриківку
+2х БпЛА курсом на Юріївку
+БпЛА курсом на Магдалинівку 
+БпЛА курсом на Царичанку 
+2х БпЛА курсом на Верхньодніпровськ 
+Розвідувальний БпЛА в районі Славгорода
+
+Донеччина:
+БпЛА курсом на Білозерське
+
+✙ Напрямок ракет ✙
+✙Підтримати канал✙"""
     
     try:
+        # Clear debug logs for clean test
+        debug_logs.clear()
+        
         print("="*50)
         print("MANUAL TEST STARTED")
         print("="*50)
-        tracks = process_message(test_message, 'TEST_1', '2025-09-05 17:20:00', 'test')
+        add_debug_log("MANUAL TEST: Starting multi-regional message test", "manual_test")
+        tracks = process_message(test_message, 'TEST_1', '2025-10-04 12:00:00', 'test')
         print("="*50)
         print("MANUAL TEST COMPLETED")
         print("="*50)
         
         return jsonify({
             'success': True,
-            'message': test_message,
+            'message': test_message[:500] + ('...' if len(test_message) > 500 else ''),
+            'message_length': len(test_message),
             'tracks_count': len(tracks) if tracks else 0,
             'tracks': tracks,
+            'debug_logs': debug_logs[-100:] if debug_logs else [],
             'test_time': datetime.now().isoformat()
         })
     except Exception as e:
@@ -11908,17 +12104,150 @@ def hide_marker():
         payload = request.get_json(force=True) or {}
         lat = round(float(payload.get('lat')), 3)
         lng = round(float(payload.get('lng')), 3)
-        text = (payload.get('text') or '').strip()
+        text_raw = (payload.get('text') or '').strip()
         source = (payload.get('source') or '').strip()
-        marker_key = f"{lat},{lng}|{text}|{source}"
+        
+        # Clean text the same way as frontend to ensure key matching
+        text_cleaned = clean_message_for_frontend(text_raw)
+        
+        # Try both original and cleaned versions for better compatibility
+        marker_key_original = f"{lat},{lng}|{text_raw}|{source}"
+        marker_key_cleaned = f"{lat},{lng}|{text_cleaned}|{source}" 
+        
+        log.info(f"hide_marker: attempting to hide marker")
+        log.info(f"  Original key: '{marker_key_original[:100]}...'")
+        log.info(f"  Cleaned key:  '{marker_key_cleaned[:100]}...'")
+        
         hidden = load_hidden()
-        if marker_key not in hidden:
-            hidden.append(marker_key)
+        keys_to_add = []
+        
+        # Add both versions if they're different and not already hidden
+        if marker_key_original not in hidden:
+            keys_to_add.append(marker_key_original)
+        if marker_key_cleaned != marker_key_original and marker_key_cleaned not in hidden:
+            keys_to_add.append(marker_key_cleaned)
+            
+        was_already_hidden = len(keys_to_add) == 0
+        
+        if keys_to_add:
+            hidden.extend(keys_to_add)
             save_hidden(hidden)
-        return jsonify({'status':'ok','hidden_count':len(hidden)})
+            log.info(f"hide_marker: successfully hidden {len(keys_to_add)} key variants. Total hidden: {len(hidden)}")
+        else:
+            log.info(f"hide_marker: marker was already hidden")
+            
+        return jsonify({
+            'status':'ok',
+            'hidden_count':len(hidden),
+            'was_already_hidden': was_already_hidden,
+            'keys_added': keys_to_add,
+            'original_key': marker_key_original[:100] + ('...' if len(marker_key_original) > 100 else ''),
+            'cleaned_key': marker_key_cleaned[:100] + ('...' if len(marker_key_cleaned) > 100 else '')
+        })
     except Exception as e:
         log.warning(f"hide_marker error: {e}")
         return jsonify({'status':'error','error':str(e)}), 400
+
+@app.route('/admin/cleanup_hidden_markers', methods=['POST'])
+def cleanup_hidden_markers():
+    """Clean up duplicate and invalid hidden marker keys."""
+    if not check_admin_access():
+        return "Access denied", 403
+    
+    try:
+        hidden = load_hidden()
+        original_count = len(hidden)
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        cleaned = []
+        for key in hidden:
+            if key not in seen:
+                seen.add(key)
+                cleaned.append(key)
+        
+        # Also add cleaned versions of existing keys if they don't exist
+        additional_keys = []
+        for key in cleaned:
+            try:
+                parts = key.split('|', 2)
+                if len(parts) >= 3:
+                    coords, text, source = parts
+                    text_cleaned = clean_message_for_frontend(text)
+                    if text_cleaned != text:
+                        cleaned_key = f"{coords}|{text_cleaned}|{source}"
+                        if cleaned_key not in seen:
+                            additional_keys.append(cleaned_key)
+                            seen.add(cleaned_key)
+            except Exception:
+                continue
+        
+        final_list = cleaned + additional_keys
+        
+        if len(final_list) != original_count:
+            save_hidden(final_list)
+            log.info(f"cleanup_hidden_markers: cleaned {original_count} -> {len(final_list)} keys")
+        
+        return jsonify({
+            'status': 'ok',
+            'original_count': original_count,
+            'cleaned_count': len(cleaned),
+            'additional_count': len(additional_keys),
+            'final_count': len(final_list)
+        })
+    except Exception as e:
+        log.warning(f"cleanup_hidden_markers error: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+@app.route('/admin/hidden_markers')
+def get_hidden_markers():
+    """Get all hidden markers for admin diagnostics."""
+    if not check_admin_access():
+        return "Access denied", 403
+    
+    try:
+        hidden = load_hidden()
+        parsed_markers = []
+        
+        for key in hidden:
+            try:
+                parts = key.split('|', 2)
+                if len(parts) >= 3:
+                    coords, text, source = parts
+                    lat_str, lng_str = coords.split(',')
+                    parsed_markers.append({
+                        'key': key,
+                        'lat': float(lat_str),
+                        'lng': float(lng_str), 
+                        'text': text,
+                        'source': source
+                    })
+                else:
+                    parsed_markers.append({
+                        'key': key,
+                        'lat': None,
+                        'lng': None,
+                        'text': 'Invalid format',
+                        'source': ''
+                    })
+            except Exception as e:
+                log.warning(f"Error parsing hidden marker key '{key}': {e}")
+                parsed_markers.append({
+                    'key': key,
+                    'lat': None,
+                    'lng': None,
+                    'text': f'Parse error: {str(e)}',
+                    'source': ''
+                })
+        
+        return jsonify({
+            'status': 'ok',
+            'hidden_markers': parsed_markers,
+            'total_count': len(hidden)
+        })
+    except Exception as e:
+        log.warning(f"get_hidden_markers error: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
 
 @app.route('/unhide_marker', methods=['POST'])
 def unhide_marker():
@@ -12065,6 +12394,10 @@ def raion_alarms():
 # SSE stream endpoint
 @app.route('/stream')
 def stream():
+    # Check if IP is blocked
+    if is_ip_blocked(request):
+        return "Access denied", 403
+    
     def gen():
         q = queue.Queue()
         SUBSCRIBERS.add(q)
@@ -12236,10 +12569,12 @@ def admin_panel():
             parsed_hidden.append({'lat':lat_str,'lng':lng_str,'text':text_part,'source':source_part,'key':hk})
         except Exception:
             continue
+    blocked_ips = load_blocked_ips()
     return render_template(
         'admin.html',
         visitors=visitors,
         blocked=blocked,
+        blocked_ips=list(blocked_ips),
         raw_msgs=raw_msgs,
         raw_count=len([m for m in all_msgs if m.get('pending_geo')]),
         secret=(request.args.get('secret') or ''),
@@ -12486,6 +12821,56 @@ def unblock_id():
         blocked.remove(vid)
         save_blocked(blocked)
     return jsonify({'status':'ok','blocked':blocked})
+
+@app.route('/admin/blocked_ips', methods=['GET'])
+def get_blocked_ips():
+    """Get list of blocked IPs"""
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    
+    blocked_ips = load_blocked_ips()
+    return jsonify({'status': 'ok', 'blocked_ips': list(blocked_ips)})
+
+@app.route('/admin/block_ip', methods=['POST'])
+def block_ip():
+    """Block an IP address"""
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    
+    payload = request.get_json(silent=True) or request.form
+    ip = (payload or {}).get('ip', '').strip()
+    
+    if not ip:
+        return jsonify({'status':'error','error':'IP address required'}), 400
+    
+    # Basic IP validation
+    import re
+    if not re.match(r'^(\d{1,3}\.){3}\d{1,3}$', ip):
+        return jsonify({'status':'error','error':'Invalid IP address format'}), 400
+    
+    blocked_ips = load_blocked_ips()
+    blocked_ips.add(ip)
+    save_blocked_ips(blocked_ips)
+    
+    return jsonify({'status':'ok','blocked_ips': list(blocked_ips), 'added': ip})
+
+@app.route('/admin/unblock_ip', methods=['POST'])
+def unblock_ip():
+    """Unblock an IP address"""
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    
+    payload = request.get_json(silent=True) or request.form
+    ip = (payload or {}).get('ip', '').strip()
+    
+    if not ip:
+        return jsonify({'status':'error','error':'IP address required'}), 400
+    
+    blocked_ips = load_blocked_ips()
+    blocked_ips.discard(ip)
+    save_blocked_ips(blocked_ips)
+    
+    return jsonify({'status':'ok','blocked_ips': list(blocked_ips), 'removed': ip})
 
 def _fmt_age(age_seconds:int)->str:
     # Format seconds to H:MM:SS (or M:SS if <1h)
