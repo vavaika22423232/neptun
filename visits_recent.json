@@ -1,12 +1,10 @@
 {
-  "day": "2025-09-29",
+  "day": "2025-10-05",
   "today_ids": [
     "52306c8d-5636-488a-b887-121a5cc8d50e"
   ],
   "week_ids": [
-    "normal_user",
-    "test_user_real",
     "52306c8d-5636-488a-b887-121a5cc8d50e"
   ],
-  "week_start": "2025-09-25"
+  "week_start": "2025-10-05"
 }

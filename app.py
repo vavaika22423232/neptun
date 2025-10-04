@@ -9042,14 +9042,34 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             city_clean = city_raw.strip()
                             city_norm = clean_text(city_clean).lower()
                             
-                            # Apply normalization rules
-                            if city_norm in UA_CITY_NORMALIZE:
-                                city_norm = UA_CITY_NORMALIZE[city_norm]
+                            # Convert from accusative case to nominative (курсом на Київ-у -> Київ)
+                            # Remove common Ukrainian accusative endings
+                            if city_norm.endswith('у') and len(city_norm) > 3:
+                                city_nom = city_norm[:-1]
+                            elif city_norm.endswith('ю') and len(city_norm) > 3:
+                                city_nom = city_norm[:-1]
+                            elif city_norm.endswith('ку') and len(city_norm) > 4:
+                                city_nom = city_norm[:-2] + 'к'
+                            elif city_norm.endswith('цю') and len(city_norm) > 4:
+                                city_nom = city_norm[:-2] + 'ць'
+                            elif city_norm.endswith('щину') and len(city_norm) > 6:
+                                city_nom = city_norm[:-4] + 'щина'
+                            else:
+                                city_nom = city_norm
                             
-                            # Try to get coordinates
-                            coords = region_enhanced_coords(city_norm)
+                            # Apply normalization rules
+                            if city_nom in UA_CITY_NORMALIZE:
+                                city_nom = UA_CITY_NORMALIZE[city_nom]
+                            
+                            # Try to get coordinates (try both nominative and original forms)
+                            coords = region_enhanced_coords(city_nom)
                             if not coords:
-                                coords = ensure_city_coords(city_norm)
+                                coords = ensure_city_coords(city_nom)
+                            if not coords and city_nom != city_norm:
+                                # Fallback to original form if nominative didn't work
+                                coords = region_enhanced_coords(city_norm)
+                                if not coords:
+                                    coords = ensure_city_coords(city_norm)
                             
                             if coords:
                                 lat, lng = coords
@@ -9109,14 +9129,34 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 city_clean = city_raw.strip()
                 city_norm = clean_text(city_clean).lower()
                 
-                # Apply normalization rules
-                if city_norm in UA_CITY_NORMALIZE:
-                    city_norm = UA_CITY_NORMALIZE[city_norm]
+                # Convert from accusative case to nominative (курсом на Київ-у -> Київ)
+                # Remove common Ukrainian accusative endings
+                if city_norm.endswith('у') and len(city_norm) > 3:
+                    city_nom = city_norm[:-1]
+                elif city_norm.endswith('ю') and len(city_norm) > 3:
+                    city_nom = city_norm[:-1]
+                elif city_norm.endswith('ку') and len(city_norm) > 4:
+                    city_nom = city_norm[:-2] + 'к'
+                elif city_norm.endswith('цю') and len(city_norm) > 4:
+                    city_nom = city_norm[:-2] + 'ць'
+                elif city_norm.endswith('щину') and len(city_norm) > 6:
+                    city_nom = city_norm[:-4] + 'щина'
+                else:
+                    city_nom = city_norm
                 
-                # Try to get coordinates
-                coords = region_enhanced_coords(city_norm)
+                # Apply normalization rules
+                if city_nom in UA_CITY_NORMALIZE:
+                    city_nom = UA_CITY_NORMALIZE[city_nom]
+                
+                # Try to get coordinates (try both nominative and original forms)
+                coords = region_enhanced_coords(city_nom)
                 if not coords:
-                    coords = ensure_city_coords(city_norm)
+                    coords = ensure_city_coords(city_nom)
+                if not coords and city_nom != city_norm:
+                    # Fallback to original form if nominative didn't work
+                    coords = region_enhanced_coords(city_norm)
+                    if not coords:
+                        coords = ensure_city_coords(city_norm)
                 
                 if coords:
                     lat, lng = coords[:2]
