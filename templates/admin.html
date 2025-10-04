@@ -1247,9 +1247,14 @@ body {
           👁️‍🗨️ Hidden Markers
           <span class="badge warning">{{ hidden_markers|length }}</span>
         </h2>
-        <button class="btn btn-success btn-sm" onclick="bulkUnhide()">
-          👁️ Unhide All
-        </button>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-success btn-sm" onclick="bulkUnhide()">
+            👁️ Unhide All
+          </button>
+          <button class="btn btn-warning btn-sm" onclick="cleanupHiddenMarkers()">
+            🧹 Cleanup
+          </button>
+        </div>
       </div>
       <div class="card-body compact">
         <div class="table-container">
@@ -1644,6 +1649,30 @@ async function bulkUnhide(){
   location.reload();
 }
 
+async function cleanupHiddenMarkers(){
+  try {
+    console.log('Cleaning up hidden markers...');
+    const secret = new URLSearchParams(location.search).get('secret') || '';
+    const r = await fetch('/admin/cleanup_hidden_markers?secret=' + encodeURIComponent(secret), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'}
+    });
+    const result = await r.json();
+    console.log('Cleanup response:', result);
+    
+    if (r.ok && result.status === 'ok') {
+      alert(`Cleanup completed!\nOriginal: ${result.original_count}\nCleaned: ${result.cleaned_count}\nAdditional: ${result.additional_count}\nFinal: ${result.final_count}`);
+      location.reload();
+    } else {
+      console.error('Failed to cleanup:', result);
+      alert('Failed to cleanup: ' + (result.error || 'Unknown error'));
+    }
+  } catch (error) {
+    console.error('Error during cleanup:', error);
+    alert('Error during cleanup: ' + error.message);
+  }
+}
+
 async function diagnoseHiddenMarkers(){
   console.log('=== Hidden Markers Diagnosis ===');
   
@@ -2012,7 +2041,14 @@ async function hideMarkerMap(lat,lng,txtEnc,srcEnc, btn){
     const source = decodeURIComponent(srcEnc);
     
     // Debug logging
-    console.log('Hiding marker:', { lat, lng, text: text.substring(0, 50) + '...', source });
+    console.log('Hiding marker:', { 
+      lat, 
+      lng, 
+      text_preview: text.substring(0, 100) + (text.length > 100 ? '...' : ''),
+      text_length: text.length,
+      source,
+      text_chars: text.split('').map(c => c.charCodeAt(0)).slice(0, 20)
+    });
     
     const payload = {
       lat: parseFloat(lat), 

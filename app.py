@@ -11664,8 +11664,10 @@ def data():
                                 continue
                             text_r = (t.get('text') or '')
                             source_r = t.get('channel') or t.get('source') or ''
-                            marker_key_r = f"{lat_r},{lng_r}|{text_r}|{source_r}"
-                            if marker_key_r in hidden:
+                            marker_key_r_original = f"{lat_r},{lng_r}|{text_r}|{source_r}"
+                            text_r_cleaned = clean_message_for_frontend(text_r)
+                            marker_key_r_cleaned = f"{lat_r},{lng_r}|{text_r_cleaned}|{source_r}"
+                            if marker_key_r_original in hidden or marker_key_r_cleaned in hidden:
                                 continue
                             out.append(t)
                         # Skip adding original as event if we produced tracks
@@ -11686,8 +11688,13 @@ def data():
                 continue  # not a proper geo marker
             text = (m.get('text') or '')
             source = m.get('source') or m.get('channel') or ''
-            marker_key = f"{lat},{lng}|{text}|{source}"
-            if marker_key in hidden:
+            
+            # Check both original and cleaned text versions for hiding
+            marker_key_original = f"{lat},{lng}|{text}|{source}"
+            text_cleaned = clean_message_for_frontend(text)
+            marker_key_cleaned = f"{lat},{lng}|{text_cleaned}|{source}"
+            
+            if marker_key_original in hidden or marker_key_cleaned in hidden:
                 continue
             # Backward compatibility: allow prefix match (text truncated when stored) for same lat,lng,source
             base_prefix = f"{lat},{lng}|"
@@ -11703,9 +11710,12 @@ def data():
                         _, htext, hsource = h.split('|',2)
                     except ValueError:
                         continue
-                    if hsource == source and text.startswith(htext):
-                        skip = True
-                        break
+                    if hsource == source:
+                        # Check both original and cleaned text for prefix match
+                        if (text.startswith(htext) or htext.startswith(text) or 
+                            text_cleaned.startswith(htext) or htext.startswith(text_cleaned)):
+                            skip = True
+                            break
                 if skip:
                     continue
             # Фильтр: удаляем региональные метки без явных слов угроз (могли сохраниться старыми версиями логики)
@@ -12012,19 +12022,35 @@ def hide_marker():
         payload = request.get_json(force=True) or {}
         lat = round(float(payload.get('lat')), 3)
         lng = round(float(payload.get('lng')), 3)
-        text = (payload.get('text') or '').strip()
+        text_raw = (payload.get('text') or '').strip()
         source = (payload.get('source') or '').strip()
         
-        marker_key = f"{lat},{lng}|{text}|{source}"
-        log.info(f"hide_marker: attempting to hide marker_key='{marker_key[:100]}...'")
+        # Clean text the same way as frontend to ensure key matching
+        text_cleaned = clean_message_for_frontend(text_raw)
+        
+        # Try both original and cleaned versions for better compatibility
+        marker_key_original = f"{lat},{lng}|{text_raw}|{source}"
+        marker_key_cleaned = f"{lat},{lng}|{text_cleaned}|{source}" 
+        
+        log.info(f"hide_marker: attempting to hide marker")
+        log.info(f"  Original key: '{marker_key_original[:100]}...'")
+        log.info(f"  Cleaned key:  '{marker_key_cleaned[:100]}...'")
         
         hidden = load_hidden()
-        was_already_hidden = marker_key in hidden
+        keys_to_add = []
         
-        if not was_already_hidden:
-            hidden.append(marker_key)
+        # Add both versions if they're different and not already hidden
+        if marker_key_original not in hidden:
+            keys_to_add.append(marker_key_original)
+        if marker_key_cleaned != marker_key_original and marker_key_cleaned not in hidden:
+            keys_to_add.append(marker_key_cleaned)
+            
+        was_already_hidden = len(keys_to_add) == 0
+        
+        if keys_to_add:
+            hidden.extend(keys_to_add)
             save_hidden(hidden)
-            log.info(f"hide_marker: successfully hidden marker. Total hidden: {len(hidden)}")
+            log.info(f"hide_marker: successfully hidden {len(keys_to_add)} key variants. Total hidden: {len(hidden)}")
         else:
             log.info(f"hide_marker: marker was already hidden")
             
@@ -12032,11 +12058,64 @@ def hide_marker():
             'status':'ok',
             'hidden_count':len(hidden),
             'was_already_hidden': was_already_hidden,
-            'marker_key': marker_key[:100] + ('...' if len(marker_key) > 100 else '')
+            'keys_added': keys_to_add,
+            'original_key': marker_key_original[:100] + ('...' if len(marker_key_original) > 100 else ''),
+            'cleaned_key': marker_key_cleaned[:100] + ('...' if len(marker_key_cleaned) > 100 else '')
         })
     except Exception as e:
         log.warning(f"hide_marker error: {e}")
         return jsonify({'status':'error','error':str(e)}), 400
+
+@app.route('/admin/cleanup_hidden_markers', methods=['POST'])
+def cleanup_hidden_markers():
+    """Clean up duplicate and invalid hidden marker keys."""
+    if not check_admin_access():
+        return "Access denied", 403
+    
+    try:
+        hidden = load_hidden()
+        original_count = len(hidden)
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        cleaned = []
+        for key in hidden:
+            if key not in seen:
+                seen.add(key)
+                cleaned.append(key)
+        
+        # Also add cleaned versions of existing keys if they don't exist
+        additional_keys = []
+        for key in cleaned:
+            try:
+                parts = key.split('|', 2)
+                if len(parts) >= 3:
+                    coords, text, source = parts
+                    text_cleaned = clean_message_for_frontend(text)
+                    if text_cleaned != text:
+                        cleaned_key = f"{coords}|{text_cleaned}|{source}"
+                        if cleaned_key not in seen:
+                            additional_keys.append(cleaned_key)
+                            seen.add(cleaned_key)
+            except Exception:
+                continue
+        
+        final_list = cleaned + additional_keys
+        
+        if len(final_list) != original_count:
+            save_hidden(final_list)
+            log.info(f"cleanup_hidden_markers: cleaned {original_count} -> {len(final_list)} keys")
+        
+        return jsonify({
+            'status': 'ok',
+            'original_count': original_count,
+            'cleaned_count': len(cleaned),
+            'additional_count': len(additional_keys),
+            'final_count': len(final_list)
+        })
+    except Exception as e:
+        log.warning(f"cleanup_hidden_markers error: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
 
 @app.route('/admin/hidden_markers')
 def get_hidden_markers():
