@@ -210,16 +210,6 @@
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
   
-  /* Desktop live counter - visible by default */
-  .desktop-live {
-    display: inline-flex;
-  }
-  
-  /* Mobile live counter - hidden by default */
-  .mobile-live {
-    display: none;
-  }
-  
   .live-users:hover {
     transform: translate(-50%, -50%) translateY(-2px);
     box-shadow: 
@@ -348,286 +338,6 @@
     .navbar .nav-links a.active {
       color: var(--accent);
       background: rgba(59, 130, 246, 0.1);
-    }
-    
-    /* Unified Navbar Donations Container */
-    .navbar-donations {
-      display: flex;
-      gap: 0.75rem;
-      align-items: center;
-      margin-left: auto;
-      flex-shrink: 0;
-    }
-    
-    .navbar-donation-item {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      background: rgba(30, 41, 59, 0.8);
-      border: 1px solid rgba(148, 163, 184, 0.2);
-      border-radius: 0.75rem;
-      padding: 0.4rem 0.6rem;
-      backdrop-filter: blur(8px);
-      transition: all 0.2s ease;
-      min-width: 0;
-      flex: 0 0 auto;
-      width: auto;
-    }
-    
-    .navbar-donation-item:hover {
-      background: rgba(30, 41, 59, 0.95);
-      border-color: rgba(148, 163, 184, 0.3);
-      transform: translateY(-1px);
-    }
-    
-    .navbar-donation-item:first-child {
-      background: rgba(59, 130, 246, 0.1);
-      border-color: rgba(59, 130, 246, 0.2);
-    }
-    
-    .navbar-donation-item:first-child:hover {
-      background: rgba(59, 130, 246, 0.15);
-      border-color: rgba(59, 130, 246, 0.3);
-    }
-    
-    .navbar-donation-item:last-child {
-      background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(220, 38, 38, 0.1));
-      border-color: rgba(239, 68, 68, 0.3);
-      animation: serverUrgentPulse 2s ease-in-out infinite;
-    }
-    
-    .navbar-donation-item:last-child:hover {
-      background: linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(220, 38, 38, 0.15));
-    }
-    
-    @keyframes serverUrgentPulse {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
-      50% { box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2); }
-    }
-    
-    .navbar-donation-item .donation-icon {
-      font-size: 1rem;
-      flex-shrink: 0;
-    }
-    
-    .navbar-donation-item:last-child .donation-icon {
-      animation: serverIconBlink 1.5s ease-in-out infinite;
-    }
-    
-    @keyframes serverIconBlink {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.6; }
-    }
-    
-    .navbar-donation-item .donation-text {
-      display: flex;
-      flex-direction: column;
-      min-width: 0;
-    }
-    
-    .navbar-donation-item .donation-title {
-      font-size: 0.75rem;
-      font-weight: 600;
-      color: var(--text);
-      line-height: 1;
-      white-space: nowrap;
-    }
-    
-    .navbar-donation-item:last-child .donation-title {
-      color: #ef4444;
-    }
-    
-    .navbar-donation-item .donation-subtitle {
-      font-size: 0.65rem;
-      color: var(--text2);
-      line-height: 1;
-      white-space: nowrap;
-    }
-    
-    .navbar-donation-item:last-child .donation-subtitle {
-      color: #fbbf24;
-      font-weight: 500;
-    }
-    
-    .navbar-donation-item .donation-btn {
-      background: linear-gradient(135deg, #3b82f6, #1d4ed8);
-      border: none;
-      border-radius: 0.5rem;
-      width: 2rem;
-      height: 2rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      flex-shrink: 0;
-    }
-    
-    .navbar-donation-item:first-child .donation-btn {
-      background: linear-gradient(135deg, #2563eb, #7c3aed);
-    }
-    
-    .navbar-donation-item:last-child .donation-btn {
-      background: linear-gradient(135deg, #dc2626, #ef4444);
-    }
-    
-    .navbar-donation-item .donation-btn:hover {
-      transform: scale(1.05);
-    }
-    
-    .navbar-donation-item:first-child .donation-btn:hover {
-      background: linear-gradient(135deg, #1d4ed8, #6d28d9);
-      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
-    }
-    
-    .navbar-donation-item:last-child .donation-btn:hover {
-      background: linear-gradient(135deg, #b91c1c, #dc2626);
-      box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3);
-    }
-    
-    .navbar-donation-item .btn-icon {
-      font-size: 0.9rem;
-    }
-    
-    /* Mobile responsiveness for donation elements */
-    @media (max-width: 900px) {
-      .navbar-donations {
-        gap: 0.5rem;
-        margin-left: 0.5rem;
-      }
-      
-      .navbar-donation-item {
-        padding: 0.3rem 0.4rem;
-        gap: 0.4rem;
-        border-radius: 0.6rem;
-      }
-      
-      .navbar-donation-item .donation-title {
-        font-size: 0.7rem;
-      }
-      
-      .navbar-donation-item .donation-subtitle {
-        font-size: 0.6rem;
-      }
-      
-      .navbar-donation-item .donation-btn {
-        width: 1.8rem;
-        height: 1.8rem;
-        border-radius: 0.4rem;
-      }
-      
-      .navbar-donation-item .btn-icon {
-        font-size: 0.8rem;
-      }
-      
-      .navbar-donation-item .donation-icon {
-        font-size: 0.9rem;
-      }
-    }
-    
-    @media (max-width: 768px) {
-      .navbar-donations {
-        gap: 0.4rem;
-        margin-left: 0.25rem;
-      }
-      
-      .navbar-donation-item {
-        padding: 0.25rem 0.35rem;
-        gap: 0.3rem;
-        border-radius: 0.5rem;
-      }
-      
-      .navbar-donation-item .donation-title {
-        font-size: 0.65rem;
-      }
-      
-      .navbar-donation-item .donation-subtitle {
-        font-size: 0.55rem;
-      }
-      
-      .navbar-donation-item .donation-btn {
-        width: 1.6rem;
-        height: 1.6rem;
-        border-radius: 0.35rem;
-      }
-      
-      .navbar-donation-item .btn-icon {
-        font-size: 0.75rem;
-      }
-      
-      .navbar-donation-item .donation-icon {
-        font-size: 0.85rem;
-      }
-    }
-    
-    @media (max-width: 480px) {
-      /* Extra compact mobile styles */
-      .navbar {
-        padding: 0.5rem 0.8rem;
-        height: 3rem;
-      }
-      
-      .navbar .logo {
-        gap: 0.5rem;
-      }
-      
-      .navbar .logo img {
-        width: 2rem;
-        height: 2rem;
-      }
-      
-      .navbar .live-users {
-        padding: 0.25rem 0.5rem;
-        font-size: 0.65rem;
-        border-radius: 0.5rem;
-      }
-      
-      .navbar .live-count {
-        font-size: 0.75rem;
-      }
-      
-      .navbar .live-label {
-        font-size: 0.6rem;
-      }
-      
-      .navbar .live-beta {
-        font-size: 0.45rem;
-        padding: 0.05rem 0.25rem;
-        margin-left: 0.15rem;
-      }
-      
-      .navbar-donations {
-        gap: 0.3rem;
-        margin-left: 0.2rem;
-      }
-      
-      .navbar-donation-item {
-        padding: 0.2rem 0.3rem;
-        gap: 0.25rem;
-        border-radius: 0.4rem;
-      }
-      
-      .navbar-donation-item .donation-title {
-        font-size: 0.6rem;
-      }
-      
-      .navbar-donation-item .donation-subtitle {
-        font-size: 0.5rem;
-      }
-      
-      .navbar-donation-item .donation-btn {
-        width: 1.4rem;
-        height: 1.4rem;
-        border-radius: 0.3rem;
-      }
-      
-      .navbar-donation-item .btn-icon {
-        font-size: 0.7rem;
-      }
-      
-      .navbar-donation-item .donation-icon {
-        font-size: 0.8rem;
-      }
     }
     .main-content {
       display: grid;
@@ -970,57 +680,8 @@
         padding: 0.75rem 1rem;
       }
       
-      /* Hide NEPTUN text on mobile */
-      .navbar .logo .logo-text {
-        display: none;
-      }
-      
-      /* Show mobile live counter, hide desktop one */
-      .desktop-live {
-        display: none !important;
-      }
-      
-      .mobile-live {
-        display: flex !important;
-        position: static;
-        transform: none;
-        left: auto;
-        top: auto;
-        margin: 0;
-        background: rgba(34, 197, 94, 0.15);
-        border: 1px solid rgba(34, 197, 94, 0.3);
-        border-radius: 0.6rem;
-        padding: 0.3rem 0.6rem;
-        font-size: 0.7rem;
-        backdrop-filter: blur(8px);
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-      }
-      
-      /* Ensure logo has proper flex layout on mobile */
-      .navbar .logo {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-      }
-      
-      .navbar .live-count {
-        font-size: 0.8rem;
-        font-weight: 700;
-        color: #22c55e;
-      }
-      
-      .navbar .live-label {
-        color: #86efac;
-        font-size: 0.65rem;
-      }
-      
-      .navbar .live-beta {
-        font-size: 0.5rem;
-        color: #4ade80;
-        background: rgba(34, 197, 94, 0.2);
-        padding: 0.1rem 0.3rem;
-        border-radius: 0.3rem;
-        margin-left: 0.2rem;
+      .navbar .logo span {
+        font-size: 1rem;
       }
       
       .navbar .nav-links {
@@ -1228,59 +889,17 @@
     </div>
   </div>
 
-  <!-- Server Donation Banner -->
-  <div id="serverDonationBanner" class="server-donation-banner" style="display: none;">
-    <div class="donation-close" onclick="closeServerDonationBanner()">×</div>
-    <div class="server-donation-content">
-      <div class="server-urgency-header">
-        <div class="server-urgency-icon">⚠️</div>
-        <div class="server-urgency-text">
-          <div class="server-title">Терміновий збір на сервер!</div>
-          <div class="server-subtitle">Потрібно $180 для оплати Render хостингу</div>
-        </div>
+  <!-- Mini Donation Banner (appears after main banner is closed) -->
+  <div id="miniDonationBanner" class="mini-donation-banner hidden">
+    <div class="mini-donation-content">
+      <div class="mini-donation-icon">🇺🇦</div>
+      <div class="mini-donation-text">
+        <div class="mini-donation-title">Підтримка ЗСУ</div>
+        <div class="mini-donation-subtitle">4 ОТБ • КСП</div>
       </div>
-      
-      <div class="server-explanation">
-        <div class="server-warning">
-          <strong>🚨 Без оплати карта припинить роботу!</strong>
-        </div>
-        <div class="server-details">
-          <p><span class="detail-icon">💰</span> <strong>Сума:</strong> $180 USD щомісяця</p>
-          <p><span class="detail-icon">🌐</span> <strong>Хостинг:</strong> Render.com Professional Plan</p>
-          <p><span class="detail-icon">⏰</span> <strong>Термін:</strong> До кінця місяця</p>
-          <p><span class="detail-icon">👥</span> <strong>Користувачів:</strong> Тисячі щодня залежать від карти</p>
-        </div>
-      </div>
-      
-      <div class="server-donation-methods">
-        <div class="server-method-title">Способи допомоги:</div>
-        
-        <div class="server-method">
-          <button class="server-donate-btn mono" onclick="window.open('https://send.monobank.ua/jar/6Vi9TVzJZQ', '_blank')">
-            <span class="server-btn-icon">🏦</span>
-            <span class="server-btn-text">MonoBank Банка • $180</span>
-          </button>
-        </div>
-        
-        <div class="server-method">
-          <button class="server-donate-btn card" onclick="copyToClipboard('4441111121107290', 'Номер картки Моно скопійовано!')">
-            <span class="server-btn-icon">💳</span>
-            <span class="server-btn-text">Моно: 4441•••7290</span>
-          </button>
-        </div>
-        
-        <div class="server-method">
-          <button class="server-donate-btn privat" onclick="copyToClipboard('5168745153133886', 'Номер картки ПриватБанк скопійовано!')">
-            <span class="server-btn-icon">🏛️</span>
-            <span class="server-btn-text">ПриватБанк: 5168•••3886</span>
-          </button>
-        </div>
-      </div>
-      
-      <div class="server-gratitude">
-        <strong>🙏 Дякуємо за підтримку!</strong><br>
-        <small>Разом ми збережемо карту онлайн для всіх українців</small>
-      </div>
+      <button class="mini-donate-btn" onclick="showMainDonationBanner()">
+        <span class="mini-btn-icon">💙</span>
+      </button>
     </div>
   </div>
 
@@ -1531,253 +1150,6 @@
       display: none;
     }
     
-    /* Server Donation Banner Styles */
-    .server-donation-banner {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: min(480px, 90vw);
-      max-height: 85vh;
-      background: linear-gradient(145deg, #0f172a 0%, #1e293b 50%, #374151 100%);
-      border: 2px solid #ef4444;
-      border-radius: 20px;
-      box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8), 
-                  0 0 0 1px rgba(255, 255, 255, 0.1) inset,
-                  0 0 20px rgba(239, 68, 68, 0.4);
-      z-index: 1500;
-      color: #f8fafc;
-      animation: serverBannerSlide 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-      overflow: hidden;
-    }
-    
-    @keyframes serverBannerSlide {
-      from {
-        opacity: 0;
-        transform: translate(-50%, -50%) scale(0.8);
-      }
-      to {
-        opacity: 1;
-        transform: translate(-50%, -50%) scale(1);
-      }
-    }
-    
-    @keyframes serverBannerSlideOut {
-      from {
-        opacity: 1;
-        transform: translate(-50%, -50%) scale(1);
-      }
-      to {
-        opacity: 0;
-        transform: translate(-50%, -50%) scale(0.8);
-      }
-    }
-    
-    .server-donation-content {
-      padding: 24px;
-      position: relative;
-    }
-    
-    .server-urgency-header {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      margin-bottom: 20px;
-      background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(220, 38, 38, 0.05));
-      border: 1px solid rgba(239, 68, 68, 0.3);
-      border-radius: 12px;
-      padding: 16px;
-      position: relative;
-      overflow: hidden;
-    }
-    
-    .server-urgency-header::before {
-      content: '';
-      position: absolute;
-      top: -2px;
-      left: -100%;
-      width: 100%;
-      height: 4px;
-      background: linear-gradient(90deg, transparent, #ef4444, transparent);
-      animation: urgencyLine 2s ease-in-out infinite;
-    }
-    
-    @keyframes urgencyLine {
-      0%, 100% { left: -100%; }
-      50% { left: 100%; }
-    }
-    
-    .server-urgency-icon {
-      font-size: 2.5rem;
-      animation: urgencyBounce 1.5s ease-in-out infinite;
-    }
-    
-    @keyframes urgencyBounce {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.1); }
-    }
-    
-    .server-title {
-      font-size: 1.4rem;
-      font-weight: 700;
-      color: #ef4444;
-      margin-bottom: 4px;
-    }
-    
-    .server-subtitle {
-      font-size: 1rem;
-      color: #fbbf24;
-      font-weight: 500;
-    }
-    
-    .server-explanation {
-      margin-bottom: 24px;
-    }
-    
-    .server-warning {
-      background: linear-gradient(135deg, #dc2626, #ef4444);
-      color: white;
-      padding: 12px 16px;
-      border-radius: 10px;
-      text-align: center;
-      margin-bottom: 16px;
-      font-size: 1rem;
-      box-shadow: 0 4px 15px rgba(220, 38, 38, 0.4);
-      animation: warningPulse 2s ease-in-out infinite;
-    }
-    
-    @keyframes warningPulse {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.02); }
-    }
-    
-    .server-details {
-      background: rgba(15, 23, 42, 0.6);
-      border: 1px solid rgba(148, 163, 184, 0.2);
-      border-radius: 12px;
-      padding: 16px;
-    }
-    
-    .server-details p {
-      margin: 8px 0;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      font-size: 0.9rem;
-    }
-    
-    .detail-icon {
-      font-size: 1.1rem;
-      width: 20px;
-      text-align: center;
-    }
-    
-    .server-details strong {
-      color: #fbbf24;
-      min-width: 100px;
-    }
-    
-    .server-donation-methods {
-      margin-bottom: 20px;
-    }
-    
-    .server-method-title {
-      font-size: 1.1rem;
-      font-weight: 600;
-      color: #e5e7eb;
-      margin-bottom: 16px;
-      text-align: center;
-    }
-    
-    .server-method {
-      margin-bottom: 12px;
-    }
-    
-    .server-donate-btn {
-      width: 100%;
-      padding: 12px 16px;
-      border: none;
-      border-radius: 12px;
-      font-size: 1rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      text-align: left;
-      position: relative;
-      overflow: hidden;
-    }
-    
-    .server-donate-btn::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: -100%;
-      width: 100%;
-      height: 100%;
-      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-      transition: left 0.5s ease;
-    }
-    
-    .server-donate-btn:hover::before {
-      left: 100%;
-    }
-    
-    .server-donate-btn.mono {
-      background: linear-gradient(135deg, #7c3aed, #a855f7);
-      color: white;
-      box-shadow: 0 4px 15px rgba(124, 58, 237, 0.4);
-    }
-    
-    .server-donate-btn.card {
-      background: linear-gradient(135deg, #2563eb, #3b82f6);
-      color: white;
-      box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4);
-    }
-    
-    .server-donate-btn.privat {
-      background: linear-gradient(135deg, #059669, #10b981);
-      color: white;
-      box-shadow: 0 4px 15px rgba(5, 150, 105, 0.4);
-    }
-    
-    .server-donate-btn.paypal {
-      background: linear-gradient(135deg, #f59e0b, #fbbf24);
-      color: #1f2937;
-      box-shadow: 0 4px 15px rgba(245, 158, 11, 0.4);
-    }
-    
-    .server-donate-btn:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
-    }
-    
-    .server-btn-icon {
-      font-size: 1.2rem;
-    }
-    
-    .server-gratitude {
-      background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(5, 150, 105, 0.05));
-      border: 1px solid rgba(16, 185, 129, 0.3);
-      border-radius: 12px;
-      padding: 16px;
-      text-align: center;
-    }
-    
-    .server-gratitude strong {
-      color: #10b981;
-      font-size: 1.1rem;
-    }
-    
-    .server-gratitude small {
-      color: #d1d5db;
-      font-size: 0.85rem;
-      display: block;
-      margin-top: 8px;
-    }
-    
     /* Mini Donation Banner Styles */
     .mini-donation-banner {
       position: fixed;
@@ -1991,59 +1363,15 @@
     @keyframes fadeOut{to{opacity:0;transform:translateY(4px);}}
     
     /* Support floating button */
-
-    
     .support-fab{position:fixed;bottom:1.4rem;right:1.4rem;z-index:1300;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;border:none;border-radius:1.1rem;padding:.95rem 1.15rem;display:flex;align-items:center;gap:.55rem;font-weight:600;font-size:.85rem;cursor:pointer;letter-spacing:.5px;box-shadow:0 10px 28px -8px rgba(37,99,235,.55),0 0 0 1px rgba(255,255,255,.12) inset;transition:.25s;backdrop-filter:blur(6px) saturate(1.2);} 
     .support-fab i{font-size:18px;}
     .support-fab:hover{transform:translateY(-4px) scale(1.03);box-shadow:0 14px 34px -8px rgba(37,99,235,.65),0 0 0 1px rgba(255,255,255,.18) inset;}
     .support-fab:active{transform:translateY(0) scale(.98);}    
     @media (max-width:700px){.support-fab{bottom:1rem;right:.9rem;padding:.8rem .95rem;border-radius:.9rem;font-size:.75rem;}}
     @media (max-width:900px){ .support-fab{ right:1rem; bottom:1rem; } }
-    
-    .map-theme-fab{position:fixed;bottom:4.8rem;right:1.4rem;z-index:1300;background:linear-gradient(135deg,#1f2937,#4b5563);color:#fff;border:none;border-radius:50%;width:3.5rem;height:3.5rem;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 10px 28px -8px rgba(31,41,55,.55),0 0 0 1px rgba(255,255,255,.12) inset;transition:.25s;backdrop-filter:blur(6px) saturate(1.2);}
-    .map-theme-fab i{font-size:20px;}
-    .map-theme-fab:hover{transform:translateY(-4px) scale(1.03);box-shadow:0 14px 34px -8px rgba(31,41,55,.65),0 0 0 1px rgba(255,255,255,.18) inset;}
-    .map-theme-fab:active{transform:translateY(0) scale(.98);}
-    @media (max-width:700px){.map-theme-fab{bottom:4.2rem;right:.9rem;width:3rem;height:3rem;} .map-theme-fab i{font-size:18px;}}
-    @media (max-width:900px){ .map-theme-fab{ right:1rem; bottom:4.4rem; } }
-    
-    /* Стили для темной темы карты */
-    .map-dark-theme .leaflet-marker-icon {
-      filter: drop-shadow(0 0 4px rgba(255,255,255,0.8)) brightness(1.1) !important;
-    }
-    
-    .map-dark-theme .leaflet-popup-content-wrapper {
-      background: #1f2937 !important;
-      color: #f3f4f6 !important;
-    }
-    
-    .map-dark-theme .leaflet-popup-tip {
-      background: #1f2937 !important;
-    }
-    
-    .map-dark-theme .leaflet-control-zoom a {
-      background: #374151 !important;
-      color: #f3f4f6 !important;
-      border-color: #4b5563 !important;
-    }
-    
-    .map-dark-theme .leaflet-control-zoom a:hover {
-      background: #4b5563 !important;
-    }
-    
-    .map-dark-theme .leaflet-control-attribution {
-      background: rgba(31, 41, 55, 0.8) !important;
-      color: #d1d5db !important;
-    }
-    
-    .map-dark-theme .leaflet-control-attribution a {
-      color: #93c5fd !important;
-    }
 
   </style>
-
   <button class="support-fab" id="supportFab" aria-haspopup="dialog" aria-controls="donateModal" onclick="toggleDonate()"><i class="material-icons">volunteer_activism</i><span>Підтримати</span></button>
-  <button class="map-theme-fab" id="mapThemeFab" onclick="toggleMapTheme()" title="Переключити тему карти"><i class="material-icons" id="mapThemeIcon">dark_mode</i></button>
   <div class="donate-modal-overlay" id="donateModal" role="dialog" aria-labelledby="donateTitle" aria-modal="true">
     <div class="donate-modal">
       <button class="donate-close" aria-label="Закрити" onclick="toggleDonate(false)">×</button>
@@ -2092,50 +1420,18 @@
   </div>
   <div class="navbar">
     <div class="logo">
-      <img src="/static/neptun.jpg" alt="NEPTUN">
-      <span class="logo-text">NEPTUN</span>
-      <div class="live-users mobile-live" id="liveUsers" title="Активні відвідувачі зараз онлайн • Оновлюється кожні 5 секунд">
-        <span class="live-label">онлайн</span>
-        <span class="live-count" id="liveCount">0</span>
-        <span class="live-beta">BETA</span>
-      </div>
+  <img src="/static/neptun.jpg" alt="NEPTUN">
+  <span>NEPTUN</span>
     </div>
     <div class="nav-links">
       <a href="#map" class="active"><i class="material-icons">map</i> Карта</a>
       <a href="#events"><i class="material-icons">notifications</i> Події</a>
       <a href="#about"><i class="material-icons">info</i> Інфо</a>
     </div>
-    <div class="live-users desktop-live" id="liveUsersDesktop" title="Активні відвідувачі зараз онлайн • Оновлюється кожні 5 секунд">
-      <span class="live-label">онлайн</span>
-      <span class="live-count" id="liveCountDesktop">0</span>
-      <span class="live-beta">BETA</span>
-    </div>
-  
-  <!-- Navbar Donations Container -->
-  <div class="navbar-donations">
-    <!-- ZSU Support -->
-    <div class="navbar-donation-item">
-      <div class="donation-icon">🇺🇦</div>
-      <div class="donation-text">
-        <div class="donation-title">Підтримка ЗСУ</div>
-        <div class="donation-subtitle">4 ОТБ • КСП</div>
-      </div>
-      <button class="donation-btn" onclick="showMainDonationBanner()">
-        <span class="btn-icon">💙</span>
-      </button>
-    </div>
-    
-    <!-- Server Support -->
-    <div class="navbar-donation-item">
-      <div class="donation-icon">⚠️</div>
-      <div class="donation-text">
-        <div class="donation-title">Збір на сервер</div>
-        <div class="donation-subtitle">$180 • Render</div>
-      </div>
-      <button class="donation-btn" onclick="showServerDonationBanner()">
-        <span class="btn-icon">💻</span>
-      </button>
-    </div>
+  <div class="live-users" id="liveUsers" title="Активні відвідувачі зараз онлайн • Оновлюється кожні 5 секунд">
+    <span class="live-label">онлайн</span>
+    <span class="live-count" id="liveCount">0</span>
+    <span class="live-beta">BETA</span>
   </div>
   </div>
 
@@ -2293,26 +1589,6 @@
               miniBanner.classList.remove('hidden');
             }, 300);
           }
-        }, 500);
-      }
-    }
-    
-    // Server Donation Banner Functions
-    function showServerDonationBanner() {
-      const serverBanner = document.getElementById('serverDonationBanner');
-      if (serverBanner) {
-        serverBanner.style.display = 'block';
-        serverBanner.style.animation = 'serverBannerSlide 0.6s cubic-bezier(0.4, 0, 0.2, 1)';
-      }
-    }
-    
-    function closeServerDonationBanner() {
-      const serverBanner = document.getElementById('serverDonationBanner');
-      if (serverBanner) {
-        serverBanner.style.animation = 'serverBannerSlideOut 0.5s ease forwards';
-        setTimeout(() => {
-          serverBanner.style.display = 'none';
-          localStorage.setItem('serverDonationBannerClosed', Date.now().toString());
         }, 500);
       }
     }
@@ -2836,7 +2112,7 @@
     const UKRAINE_CENTER = { lat: 48.3794, lng: 31.1656 };
     
     // Cache busting timestamp for image updates
-    const IMAGE_VERSION = '20251003120000'; // Updated when images are optimized
+    const IMAGE_VERSION = '20250911184500'; // Updated when images are optimized
     
     // Optimized icon loading system with placeholders - synchronized with admin panel
     const ICONS = {
@@ -3026,11 +2302,14 @@
         .replace(/ъ/g,'ʼ');
       return t;
     }
-    // Базовая очистка текста (основная очистка теперь происходит на бэкенде)
+    // Удаляем лишние звездочки / markdown-звезды из текста
     function cleanMessage(t){
       if(!t) return t;
-      // Минимальная очистка на фронтенде для совместимости
-      return t.trim();
+      // убрать тройные/двойные звездочки и одиночные вокруг эмодзи/слов
+      let s = t.replace(/\*{2,}/g,'');
+      // убрать звездочки, прилегающие к началу/концу строки
+      s = s.replace(/^\*+/,'').replace(/\*+$/,'');
+      return s.trim();
     }
     // Цільові міста для відображення спеціальної іконки FPV при загрозі БПЛА
     const FPV_CITIES = ['херсон','білозерка','марганець','нікополь'];
@@ -3972,8 +3251,9 @@
         preferCanvas: true  // Используем canvas для лучшей производительности
       }).setView([48.3794,31.1656], 6);
       
-      // Светлая и темная темы карты
-      window.lightLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      // Красивая карта с украинскими названиями
+      // Используем OpenStreetMap с украинской локализацией
+      const baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 18,
         attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
         crossOrigin: true,
@@ -3981,35 +3261,10 @@
         subdomains: 'abc',
         updateWhenIdle: true,
         keepBuffer: 1,
-        className: 'ukraine-map-tiles light-theme'
+        className: 'ukraine-map-tiles'
       });
       
-      window.darkLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        maxZoom: 18,
-        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/attributions">CARTO</a>',
-        crossOrigin: true,
-        detectRetina: false,
-        subdomains: 'abcd',
-        updateWhenIdle: true,
-        keepBuffer: 1,
-        className: 'ukraine-map-tiles dark-theme'
-      });
-      
-      // Проверяем сохраненную тему или используем светлую по умолчанию
-      const isDarkTheme = localStorage.getItem('mapTheme') === 'dark';
-      const currentLayer = isDarkTheme ? window.darkLayer : window.lightLayer;
-      currentLayer.addTo(map);
-      
-      // Функция для обновления иконки кнопки темы
-      function updateMapThemeIcon(isDark) {
-        const icon = document.getElementById('mapThemeIcon');
-        if (icon) {
-          icon.textContent = isDark ? 'light_mode' : 'dark_mode';
-        }
-      }
-      
-      // Обновляем иконку кнопки в соответствии с текущей темой
-      updateMapThemeIcon(isDarkTheme);
+      baseLayer.addTo(map);
       
       // Добавляем кастомные стили для украинских названий через CSS
       const mapStyle = document.createElement('style');
@@ -4218,41 +3473,23 @@
             } catch(e) { /* ignore */ }
           }
           if(typeof visitors !== 'undefined'){
-            // Update mobile live counter
-            const mobileEl = document.getElementById('liveUsers');
-            if(mobileEl){ 
-              const countEl = mobileEl.querySelector('.live-count') || mobileEl.querySelector('strong');
+            const el = document.getElementById('liveUsers');
+            if(el){ 
+              const countEl = el.querySelector('.live-count') || el.querySelector('strong');
               if (countEl) {
                 const oldValue = parseInt(countEl.textContent) || 0;
                 const newValue = parseInt(visitors) || 0;
                 
+                // Add animation class if value changed
                 if (oldValue !== newValue) {
                   countEl.classList.add('updating');
                   setTimeout(() => countEl.classList.remove('updating'), 600);
                 }
                 
                 countEl.textContent = visitors; 
+                console.log('pingPresence: обновлен счетчик онлайн пользователей:', visitors);
               }
             }
-            
-            // Update desktop live counter
-            const desktopEl = document.getElementById('liveUsersDesktop');
-            if(desktopEl){ 
-              const countEl = desktopEl.querySelector('.live-count') || desktopEl.querySelector('strong');
-              if (countEl) {
-                const oldValue = parseInt(countEl.textContent) || 0;
-                const newValue = parseInt(visitors) || 0;
-                
-                if (oldValue !== newValue) {
-                  countEl.classList.add('updating');
-                  setTimeout(() => countEl.classList.remove('updating'), 600);
-                }
-                
-                countEl.textContent = visitors; 
-              }
-            }
-            
-            console.log('pingPresence: обновлен счетчик онлайн пользователей:', visitors);
           }
         } catch(e){
           console.error('pingPresence: ошибка при загрузке данных о пользователях:', e);
@@ -4520,59 +3757,6 @@
         map.invalidateSize();
       }
     }, 100);
-  }
-  
-  // Map theme toggle functionality
-  function toggleMapTheme() {
-    const isDarkTheme = localStorage.getItem('mapTheme') === 'dark';
-    const newTheme = isDarkTheme ? 'light' : 'dark';
-    
-    // Сохраняем новую тему
-    localStorage.setItem('mapTheme', newTheme);
-    
-    // Переключаем слои карты
-    if (newTheme === 'dark') {
-      map.removeLayer(window.lightLayer);
-      window.darkLayer.addTo(map);
-    } else {
-      map.removeLayer(window.darkLayer);
-      window.lightLayer.addTo(map);
-    }
-    
-    // Обновляем иконку кнопки
-    updateMapThemeIcon(newTheme === 'dark');
-    
-    // Обновляем стили меток для лучшей видимости на темной теме
-    updateMarkerStyles(newTheme === 'dark');
-    
-    console.log(`Переключено на ${newTheme === 'dark' ? 'темную' : 'светлую'} тему карты`);
-  }
-  
-
-  
-  function updateMarkerStyles(isDark) {
-    // Добавляем или убираем класс для темной темы у контейнера карты
-    const mapContainer = document.getElementById('map');
-    if (mapContainer) {
-      if (isDark) {
-        mapContainer.classList.add('map-dark-theme');
-      } else {
-        mapContainer.classList.remove('map-dark-theme');
-      }
-    }
-    
-    // Обновляем видимость существующих маркеров
-    if (window.markers) {
-      window.markers.forEach(marker => {
-        if (marker._icon) {
-          if (isDark) {
-            marker._icon.style.filter = 'drop-shadow(0 0 4px rgba(255,255,255,0.8)) brightness(1.1)';
-          } else {
-            marker._icon.style.filter = 'drop-shadow(0 0 2px rgba(0,0,0,0.3))';
-          }
-        }
-      });
-    }
   }
   
   // Adjust fullscreen height on orientation / resize for mobile
