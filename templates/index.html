@@ -3345,13 +3345,13 @@
     // Кеш для данных карты
     let dataCache = null;
     let cacheTimestamp = 0;
-    const CACHE_DURATION = 30000; // 30 секунд кеш
+    const CACHE_DURATION = 60000; // 60 секунд кеш (увеличено с 30)
     
     async function updateMarkers() {
       console.log('updateMarkers: начинаем загрузку данных...');
       const timeRange = 1.33; // фиксированное значение - 80 минут (1.33 часа)
       const threatType = ''; // фиксированное значение - все типы угроз
-      const maxTracks = 150; // лимит треков для быстрой загрузки
+      const maxTracks = 100; // уменьшено с 150 до 100 для быстрой загрузки
       console.log('updateMarkers: параметры фильтрации - timeRange:', timeRange, 'часов, threatType:', threatType || 'все типы', 'maxTracks:', maxTracks);
       const params = new URLSearchParams({ timeRange, confRange: 0, maxTracks });
   const overlay = document.getElementById('markerLoadingOverlay');
@@ -4410,7 +4410,7 @@
           } catch(e){}
         };
       } catch(e) {}
-      setInterval(updateMarkers, 10000);
+      setInterval(updateMarkers, 30000); // Увеличено с 10 до 30 секунд
       // --- Re-cluster / re-render markers on zoom (debounced) so fast-mode buckets follow zoom level ---
       (function(){
         let zoomRedrawTimer=null; let lastZoom=map.getZoom();
