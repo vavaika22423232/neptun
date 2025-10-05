@@ -3349,7 +3349,7 @@
     
     async function updateMarkers() {
       console.log('updateMarkers: начинаем загрузку данных...');
-      const timeRange = 1.33; // фиксированное значение - 80 минут (1.33 часа)
+      const timeRange = 40; // фиксированное значение - 40 минут
       const threatType = ''; // фиксированное значение - все типы угроз
       const maxTracks = 100; // уменьшено с 150 до 100 для быстрой загрузки
       console.log('updateMarkers: параметры фильтрации - timeRange:', timeRange, 'часов, threatType:', threatType || 'все типы', 'maxTracks:', maxTracks);

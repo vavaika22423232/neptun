@@ -566,7 +566,7 @@ if _dyn:
     CHANNELS = base
 # ---------------- Monitoring period global config (admin editable) ----------------
 CONFIG_FILE = 'config.json'
-MONITOR_PERIOD_MINUTES = 30  # default; editable only via admin panel
+MONITOR_PERIOD_MINUTES = 40  # default; editable only via admin panel
 
 def load_config():
     """Load persisted configuration (currently only monitor period)."""
@@ -609,7 +609,7 @@ OPENCAGE_TTL = 60 * 60 * 24 * 30  # 30 days
 NEG_GEOCODE_FILE = 'negative_geocode_cache.json'
 NEG_GEOCODE_TTL = 60 * 60 * 24 * 3  # 3 days for 'not found' entries
 MESSAGES_RETENTION_MINUTES = int(os.getenv('MESSAGES_RETENTION_MINUTES', '120'))  # 2 hours retention by default
-MESSAGES_MAX_COUNT = int(os.getenv('MESSAGES_MAX_COUNT', '10000'))  # Лимит 10000 сообщений для производительности
+MESSAGES_MAX_COUNT = int(os.getenv('MESSAGES_MAX_COUNT', '300'))  # Лимит 300 сообщений для максимальной производительности
 
 def _startup_diagnostics():
     """Log one-time startup diagnostics to help investigate early exit issues on hosting platforms."""
@@ -13273,13 +13273,23 @@ def startup_init():
     return jsonify({'status': 'ok'})
 
 if __name__ == '__main__':
-    # Local / container direct run (not needed if a WSGI server like gunicorn is used)
-    port = int(os.getenv('PORT', '5000'))
-    host = os.getenv('HOST', '0.0.0.0')
-    log.info(f'Launching Flask app on {host}:{port}')
-    # Eager start (still guarded) so that fetch begins even without first HTTP request locally
-    try:
-        _init_background()
-    except Exception:
-        pass
-    app.run(host=host, port=port, debug=False)
+    # Check if running under CGI (GMhost)
+    if 'REQUEST_METHOD' in os.environ:
+        # CGI mode for GMhost
+        from wsgiref.handlers import CGIHandler
+        try:
+            _init_background()
+        except Exception:
+            pass
+        CGIHandler().run(app)
+    else:
+        # Local / container direct run (not needed if a WSGI server like gunicorn is used)
+        port = int(os.getenv('PORT', '5000'))
+        host = os.getenv('HOST', '0.0.0.0')
+        log.info(f'Launching Flask app on {host}:{port}')
+        # Eager start (still guarded) so that fetch begins even without first HTTP request locally
+        try:
+            _init_background()
+        except Exception:
+            pass
+        app.run(host=host, port=port, debug=False)
