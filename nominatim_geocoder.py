@@ -9,6 +9,7 @@ import json
 import time
 from typing import Dict, List, Tuple, Optional
 import logging
+import random
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -70,46 +71,83 @@ class NominatimGeocoder:
             'extratags': 1
         }
         
-        try:
-            # Rate limiting
-            self._rate_limit()
-            
-            logger.info(f"Nominatim query: {query}")
-            response = requests.get(self.base_url, params=params, headers=self.headers, timeout=10)
-            response.raise_for_status()
-            
-            results = response.json()
-            
-            if not results:
-                logger.warning(f"No results found for: {query}")
-                self.cache[cache_key] = None
+        # Retry logic with exponential backoff
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # Rate limiting
+                self._rate_limit()
+                
+                logger.info(f"Nominatim query (attempt {attempt + 1}): {query}")
+                response = requests.get(self.base_url, params=params, headers=self.headers, timeout=15)
+                response.raise_for_status()
+                
+                results = response.json()
+                
+                if not results:
+                    logger.warning(f"No results found for: {query}")
+                    self.cache[cache_key] = None
+                    return None
+                
+                # Find the best match
+                best_result = self._find_best_match(results, city_name, region)
+                
+                if best_result:
+                    lat = float(best_result['lat'])
+                    lng = float(best_result['lon'])
+                    coords = (lat, lng)
+                    
+                    logger.info(f"Found coordinates for {city_name}: {coords}")
+                    logger.debug(f"Address: {best_result.get('display_name', 'N/A')}")
+                    
+                    # Cache the result
+                    self.cache[cache_key] = coords
+                    return coords
+                else:
+                    logger.warning(f"No suitable match found for: {query}")
+                    self.cache[cache_key] = None
+                    return None
+                    
+            except requests.exceptions.ConnectionError as e:
+                logger.warning(f"Connection error for {query} (attempt {attempt + 1}, network unreachable): {e}")
+                if attempt == max_retries - 1:
+                    # Cache negative result on final failure to avoid repeated failed requests
+                    self.cache[cache_key] = None
+                    return None
+                # Wait before retry with exponential backoff
+                wait_time = (2 ** attempt) + random.uniform(0, 1)
+                logger.info(f"Retrying in {wait_time:.1f} seconds...")
+                time.sleep(wait_time)
+                continue
+                
+            except requests.exceptions.Timeout as e:
+                logger.warning(f"Timeout error for {query} (attempt {attempt + 1}): {e}")
+                if attempt == max_retries - 1:
+                    self.cache[cache_key] = None
+                    return None
+                wait_time = (2 ** attempt) + random.uniform(0, 1)
+                logger.info(f"Retrying in {wait_time:.1f} seconds...")
+                time.sleep(wait_time)
+                continue
+                
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Request error for {query} (attempt {attempt + 1}): {e}")
+                if attempt == max_retries - 1:
+                    self.cache[cache_key] = None
+                    return None
+                wait_time = (2 ** attempt) + random.uniform(0, 1)
+                logger.info(f"Retrying in {wait_time:.1f} seconds...")
+                time.sleep(wait_time)
+                continue
+                
+            except (ValueError, KeyError) as e:
+                logger.error(f"Parsing error for {query}: {e}")
                 return None
-            
-            # Find the best match
-            best_result = self._find_best_match(results, city_name, region)
-            
-            if best_result:
-                lat = float(best_result['lat'])
-                lng = float(best_result['lon'])
-                coords = (lat, lng)
-                
-                logger.info(f"Found coordinates for {city_name}: {coords}")
-                logger.debug(f"Address: {best_result.get('display_name', 'N/A')}")
-                
-                # Cache the result
-                self.cache[cache_key] = coords
-                return coords
-            else:
-                logger.warning(f"No suitable match found for: {query}")
-                self.cache[cache_key] = None
-                return None
-                
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Request error for {query}: {e}")
-            return None
-        except (ValueError, KeyError) as e:
-            logger.error(f"Parsing error for {query}: {e}")
-            return None
+        
+        # If we get here, all retries failed
+        logger.error(f"All {max_retries} attempts failed for {query}")
+        self.cache[cache_key] = None
+        return None
     
     def _find_best_match(self, results: List[Dict], city_name: str, region: str = None) -> Optional[Dict]:
         """

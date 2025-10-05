@@ -12059,49 +12059,77 @@ def locate():
     Returns: {status:'ok', name, lat, lng, source:'dict'|'geocode'|'fallback'} or {status:'not_found'}
     Lightweight normalization reusing UA_CITY_NORMALIZE and CITY_COORDS. Falls back to ensure_city_coords (may geocode if key allowed).
     """
-    q = (request.args.get('q') or '').strip()
-    if not q:
-        return jsonify({'status':'empty'}), 400
-    raw = q.lower()
-    # Basic cleanup similar to parser's normalization
-    raw = re.sub(r'["`ʼ’\'".,:;()]+','', raw)
-    raw = re.sub(r'\s+',' ', raw)
-    # Try direct dict match
-    key = raw
-    if key in UA_CITY_NORMALIZE:
-        key = UA_CITY_NORMALIZE[key]
-    # Heuristic accusative -> nominative (simple feminine endings) if still not found
-    if key not in CITY_COORDS and len(key) > 4 and key.endswith(('у','ю')):
-        alt = key[:-1] + 'а'
-        if alt in CITY_COORDS:
-            key = alt
-    # Direct dictionary coordinate fetch
-    if key in CITY_COORDS:
-        lat,lng = CITY_COORDS[key]
-        return jsonify({'status':'ok','name':key.title(),'lat':lat,'lng':lng,'source':'dict'})
-    # Check full settlements index (all cities/villages loaded from external file)
-    if 'SETTLEMENTS_INDEX' in globals() and key in SETTLEMENTS_INDEX:
-        lat,lng = SETTLEMENTS_INDEX[key]
-        return jsonify({'status':'ok','name':key.title(),'lat':lat,'lng':lng,'source':'settlement'})
-    # If not exact, attempt prefix suggestions for UI autocomplete
-    if 'SETTLEMENTS_INDEX' in globals() and len(key) >= 3:
-        pref = key
-        matches = [n for n in SETTLEMENTS_INDEX.keys() if n.startswith(pref)][:15]
-        if not matches and pref.endswith(('у','ю')):
-            pref2 = pref[:-1] + 'а'
-            matches = [n for n in SETTLEMENTS_INDEX.keys() if n.startswith(pref2)][:15]
-        if matches:
-            return jsonify({'status':'suggest','query':q,'matches':matches})
-    # Attempt dynamic ensure (geocode) unless negative cache prohibits
-    coords = None
     try:
-        coords = ensure_city_coords(key)
-    except Exception:
+        q = (request.args.get('q') or '').strip()
+        if not q:
+            return jsonify({'status':'empty'}), 400
+        
+        raw = q.lower()
+        # Basic cleanup similar to parser's normalization
+        raw = re.sub(r'["`ʼ\'\"\.,:;()]+','', raw)
+        raw = re.sub(r'\s+',' ', raw)
+        # Try direct dict match
+        key = raw
+        if key in UA_CITY_NORMALIZE:
+            key = UA_CITY_NORMALIZE[key]
+        # Heuristic accusative -> nominative (simple feminine endings) if still not found
+        if key not in CITY_COORDS and len(key) > 4 and key.endswith(('у','ю')):
+            alt = key[:-1] + 'а'
+            if alt in CITY_COORDS:
+                key = alt
+        
+        # Direct dictionary coordinate fetch
+        try:
+            if key in CITY_COORDS:
+                coords_data = CITY_COORDS[key]
+                if isinstance(coords_data, (list, tuple)) and len(coords_data) >= 2:
+                    lat, lng = coords_data[0], coords_data[1]
+                    if isinstance(lat, (int, float)) and isinstance(lng, (int, float)):
+                        return jsonify({'status':'ok','name':key.title(),'lat':lat,'lng':lng,'source':'dict'})
+        except Exception as e:
+            print(f"ERROR in /locate: CITY_COORDS access failed for '{key}': {e}")
+        
+        # Check full settlements index (all cities/villages loaded from external file)
+        try:
+            if 'SETTLEMENTS_INDEX' in globals() and SETTLEMENTS_INDEX and key in SETTLEMENTS_INDEX:
+                lat,lng = SETTLEMENTS_INDEX[key]
+                if isinstance(lat, (int, float)) and isinstance(lng, (int, float)):
+                    return jsonify({'status':'ok','name':key.title(),'lat':lat,'lng':lng,'source':'settlement'})
+        except Exception as e:
+            print(f"ERROR in /locate: SETTLEMENTS_INDEX access failed: {e}")
+        
+        # If not exact, attempt prefix suggestions for UI autocomplete
+        try:
+            if 'SETTLEMENTS_INDEX' in globals() and SETTLEMENTS_INDEX and len(key) >= 3:
+                pref = key
+                matches = [n for n in SETTLEMENTS_INDEX.keys() if n.startswith(pref)][:15]
+                if not matches and pref.endswith(('у','ю')):
+                    pref2 = pref[:-1] + 'а'
+                    matches = [n for n in SETTLEMENTS_INDEX.keys() if n.startswith(pref2)][:15]
+                if matches:
+                    return jsonify({'status':'suggest','query':q,'matches':matches})
+        except Exception as e:
+            print(f"ERROR in /locate: SETTLEMENTS_INDEX suggestions failed: {e}")
+        
+        # Attempt dynamic ensure (geocode) unless negative cache prohibits
         coords = None
-    if coords:
-        lat,lng = coords
-        return jsonify({'status':'ok','name':key.title(),'lat':lat,'lng':lng,'source':'geocode'})
-    return jsonify({'status':'not_found','query':q}), 404
+        try:
+            coords = ensure_city_coords(key)
+            if coords and len(coords) >= 2:
+                lat, lng = coords[0], coords[1]
+                if isinstance(lat, (int, float)) and isinstance(lng, (int, float)):
+                    return jsonify({'status':'ok','name':key.title(),'lat':lat,'lng':lng,'source':'geocode'})
+        except Exception as e:
+            print(f"ERROR in /locate: ensure_city_coords failed for '{key}': {e}")
+            coords = None
+        
+        return jsonify({'status':'not_found','query':q}), 404
+        
+    except Exception as e:
+        print(f"ERROR in /locate endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'status':'error','error':'internal_server_error'}), 500
 
 @app.route('/add_channel', methods=['POST'])
 def add_channel():
