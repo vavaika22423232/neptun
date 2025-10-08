@@ -35,16 +35,9 @@ const SVGMarkers = {
         const s = size || this.config.size;
         const color = this.config.colors[type] || this.config.colors.default;
         
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.setAttribute('width', s);
-        svg.setAttribute('height', s);
-        svg.setAttribute('viewBox', `0 0 ${s} ${s}`);
-        svg.style.cssText = 'overflow: visible;';
-        
-        // Генерируем содержимое в зависимости от типа
-        svg.innerHTML = this.getMarkerSVG(type, s, color);
-        
-        return svg;
+        // Возвращаем HTML строку вместо DOM элемента
+        const svgContent = this.getMarkerSVG(type, s, color);
+        return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" style="overflow: visible;">${svgContent}</svg>`;
     },
 
     // Получение детальной SVG разметки для каждого типа (точная копия PNG иконок)
