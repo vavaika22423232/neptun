@@ -1793,8 +1793,14 @@ async function reloadAdminMarkers(){
   }
   
   try{
-    // Загружаем данные Telegram
-    const r = await fetch('/data?ts='+(Date.now()));
+    // Загружаем данные Telegram с теми же параметрами, что и основной сайт
+    const params = new URLSearchParams({ 
+      timeRange: 40,  // 40 минут как на основном сайте
+      confRange: 0, 
+      maxTracks: 100,
+      ts: Date.now()
+    });
+    const r = await fetch('/data?' + params.toString());
     if(!r.ok) {
       console.error('Failed to fetch markers:', r.status, r.statusText);
       return;
@@ -1967,7 +1973,13 @@ function debugAdminMap() {
   }
   
   // Test data fetch
-  fetch('/data?ts=' + Date.now())
+  const testParams = new URLSearchParams({ 
+    timeRange: 40, 
+    confRange: 0, 
+    maxTracks: 100,
+    ts: Date.now()
+  });
+  fetch('/data?' + testParams.toString())
     .then(r => {
       console.log('Data fetch response:', r.status, r.statusText);
       return r.json();
