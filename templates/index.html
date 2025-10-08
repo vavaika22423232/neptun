@@ -3352,8 +3352,21 @@
   }
   
   // Use SVG markers instead of PNG images for better performance
-  const svgIcon = SVGMarkers.createSVG(p.threat_type || 'default', w);
-  const html = '<div class="tm-wrap" style="opacity:' + opacity + ';">' + svgIcon + countBadge + '</div>';
+  let markerContent = '';
+  try {
+    const svgIcon = SVGMarkers.createSVG(p.threat_type || 'default', w);
+    // Проверяем что получили строку а не объект
+    if (typeof svgIcon === 'string' && svgIcon.includes('<svg')) {
+      markerContent = svgIcon;
+    } else {
+      // Fallback на PNG если SVG не работает
+      markerContent = '<img class="plain-marker-img" style="width:' + w + 'px;height:' + h + 'px;" src="' + iconUrl + '" alt="" loading="lazy">';
+    }
+  } catch (e) {
+    // Fallback на PNG при ошибке
+    markerContent = '<img class="plain-marker-img" style="width:' + w + 'px;height:' + h + 'px;" src="' + iconUrl + '" alt="" loading="lazy">';
+  }
+  const html = '<div class="tm-wrap" style="opacity:' + opacity + ';">' + markerContent + countBadge + '</div>';
   // Anchor to visual center (half width/height) instead of bottom so geographic point stays stable when scaling
   const icon = L.divIcon({ html, className:'', iconSize:[w,h], iconAnchor:[w/2, h/2], popupAnchor:[0,-h/2] });
   const m = L.marker([p.lat, p.lng], { icon, riseOnHover:true });

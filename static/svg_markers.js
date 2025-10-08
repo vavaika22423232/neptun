@@ -30,14 +30,23 @@ const SVGMarkers = {
         }
     },
 
-    // Создание SVG элемента
+    // Создание SVG элемента - возвращает HTML строку
     createSVG(type, size = null) {
         const s = size || this.config.size;
         const color = this.config.colors[type] || this.config.colors.default;
         
-        // Возвращаем HTML строку вместо DOM элемента
+        // Генерируем содержимое SVG
         const svgContent = this.getMarkerSVG(type, s, color);
-        return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" style="overflow: visible;">${svgContent}</svg>`;
+        
+        // Возвращаем HTML строку (НЕ DOM элемент)
+        const htmlString = `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" style="overflow: visible; display: block;">${svgContent}</svg>`;
+        
+        return htmlString;
+    },
+
+    // Альтернативный метод для получения HTML строки (на всякий случай)
+    getSVGHTML(type, size = null) {
+        return this.createSVG(type, size);
     },
 
     // Получение детальной SVG разметки для каждого типа (точная копия PNG иконок)
@@ -49,20 +58,84 @@ const SVGMarkers = {
 
         switch(type) {
             case 'shahed':
-                // Шахед - дрон-камикадзе (треугольная форма с крестом)
+                // Шахед - детализированный дрон-камикадзе
+                const bodyLen = size * 0.44;
+                const wingSpan = size * 0.72;
+                const tailSpan = size * 0.36;
+                const noseLen = size * 0.14;
+                
                 return `
                     <defs>
-                        <radialGradient id="shahedGrad" cx="50%" cy="30%">
-                            <stop offset="0%" stop-color="#FF5555"/>
-                            <stop offset="100%" stop-color="${color}"/>
-                        </radialGradient>
+                        <linearGradient id="shahedBodyGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stop-color="${color}" stop-opacity="0.95"/>
+                            <stop offset="100%" stop-color="${color}" stop-opacity="0.6"/>
+                        </linearGradient>
                     </defs>
-                    <polygon points="${cx},${cy-r} ${cx+r*0.8},${cy+r*0.6} ${cx-r*0.8},${cy+r*0.6}" 
-                             fill="url(#shahedGrad)" stroke="#000" stroke-width="${stroke}"/>
-                    <circle cx="${cx}" cy="${cy-r/3}" r="${r/4}" fill="#fff" stroke="#000" stroke-width="0.5"/>
-                    <path d="M${cx-r/3},${cy} L${cx+r/3},${cy} M${cx},${cy-r/3} L${cx},${cy+r/3}" 
-                          stroke="#fff" stroke-width="${stroke*1.5}" stroke-linecap="round"/>
-                    <text x="${cx}" y="${cy+r/2+3}" text-anchor="middle" fill="#fff" font-size="${size/5}" font-weight="bold">Ш</text>
+
+                    <!-- фюзеляж -->
+                    <path d="
+                        M ${cx - noseLen/2},${cy - bodyLen/2}
+                        L ${cx + noseLen/2},${cy - bodyLen/2}
+                        L ${cx + 4},${cy + bodyLen/2}
+                        L ${cx - 4},${cy + bodyLen/2}
+                        Z
+                    " fill="url(#shahedBodyGrad)" stroke="#000" stroke-width="${stroke}"/>
+
+                    <!-- крылья -->
+                    <polygon 
+                        points="
+                            ${cx - wingSpan/2},${cy - size*0.06},
+                            ${cx - size*0.04},${cy - size*0.1},
+                            ${cx + size*0.04},${cy - size*0.1},
+                            ${cx + wingSpan/2},${cy - size*0.06},
+                            ${cx + size*0.04},${cy - size*0.02},
+                            ${cx - size*0.04},${cy - size*0.02}
+                        " 
+                        fill="url(#shahedBodyGrad)" 
+                        stroke="#000" 
+                        stroke-width="${stroke}" 
+                    />
+
+                    <!-- хвостовые стабилизаторы -->
+                    <polygon 
+                        points="
+                            ${cx - tailSpan/2},${cy + bodyLen/2 - size*0.04},
+                            ${cx - size*0.06},${cy + bodyLen/2},
+                            ${cx - size*0.02},${cy + bodyLen/2 - size*0.04}
+                        "
+                        fill="url(#shahedBodyGrad)"
+                        stroke="#000"
+                        stroke-width="${stroke}"
+                    />
+                    <polygon 
+                        points="
+                            ${cx + tailSpan/2},${cy + bodyLen/2 - size*0.04},
+                            ${cx + size*0.06},${cy + bodyLen/2},
+                            ${cx + size*0.02},${cy + bodyLen/2 - size*0.04}
+                        "
+                        fill="url(#shahedBodyGrad)"
+                        stroke="#000"
+                        stroke-width="${stroke}"
+                    />
+
+                    <!-- носовая часть (оптика) -->
+                    <circle 
+                        cx="${cx}" 
+                        cy="${cy - bodyLen/2 + size*0.02}" 
+                        r="${size*0.028}" 
+                        fill="#222" 
+                        stroke="#fff" 
+                        stroke-width="${stroke*0.4}"
+                    />
+
+                    <!-- лёгкое свечение -->
+                    <circle 
+                        cx="${cx}" 
+                        cy="${cy - bodyLen/2 + size*0.02}" 
+                        r="${size*0.012}" 
+                        fill="#fff" 
+                        opacity="0.5"
+                    />
                 `;
 
             case 'avia':
