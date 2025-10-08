@@ -11034,21 +11034,32 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     return None
 
 async def fetch_loop():
+    log.info('fetch_loop() started')
     if not client:
         log.warning('Telegram client not configured; skipping fetch loop.')
         return
+    log.info('fetch_loop: client exists, proceeding')
     async def ensure_connected():
+        log.info('ensure_connected() called')
         if client.is_connected():
-            return True
+            log.info('Client already connected')
+            auth_status = await client.is_user_authorized()
+            log.info(f'Authorization status: {auth_status}')
+            return auth_status
         try:
+            log.info('Connecting client...')
             await client.connect()
+            log.info('Client connected successfully')
             # If bot token provided and not authorized yet, try bot login
             if BOT_TOKEN and not await client.is_user_authorized():
                 try:
+                    log.info('Trying bot token login...')
                     await client.start(bot_token=BOT_TOKEN)
                 except Exception as be:
                     log.error(f'Bot start failed: {be}')
-            if not await client.is_user_authorized():
+            auth_status = await client.is_user_authorized()
+            log.info(f'Final authorization status: {auth_status}')
+            if not auth_status:
                 log.error('Not authorized. Use /auth/start & /auth/complete to login or set TELEGRAM_SESSION.')
                 return False
             return True
@@ -11253,16 +11264,24 @@ async def fetch_loop():
 
 def start_fetch_thread():
     global FETCH_THREAD_STARTED
-    if not client or FETCH_THREAD_STARTED:
+    log.info('start_fetch_thread() called')
+    if not client:
+        log.warning('start_fetch_thread: client is None')
         return
+    if FETCH_THREAD_STARTED:
+        log.info('start_fetch_thread: already started')
+        return
+    log.info('start_fetch_thread: starting new thread')
     FETCH_THREAD_STARTED = True
     loop = asyncio.new_event_loop()
     def runner():
+        log.info('fetch_thread runner started')
         if FETCH_START_DELAY > 0:
             log.info(f'Delaying Telegram fetch start for {FETCH_START_DELAY}s (FETCH_START_DELAY).')
             time.sleep(FETCH_START_DELAY)
         asyncio.set_event_loop(loop)
         try:
+            log.info('About to call fetch_loop()')
             loop.run_until_complete(fetch_loop())
         except AuthKeyDuplicatedError:
             AUTH_STATUS.update({'authorized': False, 'reason': 'authkey_duplicated_runner'})
@@ -11272,7 +11291,9 @@ def start_fetch_thread():
             log.error(f'Fetch loop crashed: {e}')
         finally:
             FETCH_THREAD_STARTED = False
+            log.info('fetch_thread runner finished')
     threading.Thread(target=runner, daemon=True).start()
+    log.info('start_fetch_thread: thread started successfully')
 
 def replace_client(new_session: str):
     global client, session_str

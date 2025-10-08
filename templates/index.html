@@ -480,6 +480,14 @@
       border-radius: 0.75rem;
       background: rgba(59, 130, 246, 0.1);
       box-shadow: 0 0 20px rgba(59, 130, 246, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .event .event-icon svg {
+      width: 100%;
+      height: 100%;
     }
     
     .event .event-info {
@@ -1957,6 +1965,8 @@
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
   <!-- Region boundaries data for NEPTUN -->
   <script src="{{ url_for('static', filename='region_boundaries.js') }}"></script>
+  <!-- SVG markers for performance optimization -->
+  <script src="{{ url_for('static', filename='svg_markers.js') }}"></script>
   <script type="text/javascript">
     // @ts-nocheck
     
@@ -3218,7 +3228,10 @@
           }
           clusterOpacity = Math.max(0.3, Math.min(1.0, clusterOpacity));
           
-          const html = '<div class="cluster cluster-' + freshness + '" style="opacity:' + clusterOpacity + ';"><img src="' + iconUrl + '" alt="" loading="lazy"><b>' + count + '</b></div>';
+          // Use most common threat type for cluster SVG icon
+          const mostCommonType = [...b.types.entries()].sort((a,b)=>b[1]-a[1])[0][0] || 'default';
+          const clusterSvg = SVGMarkers.createSVG(mostCommonType, 32);
+          const html = '<div class="cluster cluster-' + freshness + '" style="opacity:' + clusterOpacity + ';">' + clusterSvg + '<b>' + count + '</b></div>';
           const icon = L.divIcon({ html, className:'', iconSize:[44,52], iconAnchor:[22,48] });
           const m = L.marker([lat,lng], {icon});
           // Popup summary
@@ -3338,7 +3351,9 @@
     }
   }
   
-  const html = '<div class="tm-wrap" style="opacity:' + opacity + ';"><img class="plain-marker-img" style="width:' + w + 'px;height:' + h + 'px;" src="' + iconUrl + '" alt="" loading="lazy" data-icon-type="' + (p.threat_type || 'default') + '">' + countBadge + '</div>';
+  // Use SVG markers instead of PNG images for better performance
+  const svgIcon = SVGMarkers.createSVG(p.threat_type || 'default', w);
+  const html = '<div class="tm-wrap" style="opacity:' + opacity + ';">' + svgIcon + countBadge + '</div>';
   // Anchor to visual center (half width/height) instead of bottom so geographic point stays stable when scaling
   const icon = L.divIcon({ html, className:'', iconSize:[w,h], iconAnchor:[w/2, h/2], popupAnchor:[0,-h/2] });
   const m = L.marker([p.lat, p.lng], { icon, riseOnHover:true });
@@ -3718,7 +3733,9 @@
         }
   const isCancel = ev.threat_type === 'alarm_cancel';
   const placeLine = (ev.place && !isCancel) ? `<b>${translatePlace(ev.place)}</b><br>` : '';
-  return `<div class='event'><img class='event-icon' src='${iconUrl}' alt='${ev.threat_type || ''}'><div class='event-info'>${placeLine}${cleanMessage(ev.text||'')}<div class='event-time'>${ev.date || ''}</div></div></div>`;
+  // Use SVG icon for events list
+  const eventSvg = SVGMarkers.createSVG(ev.threat_type || 'default', 24);
+  return `<div class='event'><div class='event-icon'>${eventSvg}</div><div class='event-info'>${placeLine}${cleanMessage(ev.text||'')}<div class='event-time'>${ev.date || ''}</div></div></div>`;
       }).join('');
     }
     async function initMap() {
