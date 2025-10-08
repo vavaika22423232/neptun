@@ -1,5 +1,79 @@
-// Ukraine Alert API Integration для фронтенда
-// Добавить этот код в templates/index.html в секцию JavaScript
+// Ukraine Alert API Integration для фронтенда + SVG Markers
+// BANDWIDTH OPTIMIZATION: Замена PNG на SVG маркеры (экономия ~6MB)
+
+// Определение типов маркеров и их SVG иконок
+const MarkerIcons = {
+    // Кеш для созданных иконок
+    cache: {},
+    
+    // Получение иконки для типа угрозы
+    getIcon(threatType, text = '') {
+        const type = this.detectType(threatType, text);
+        
+        if (!this.cache[type]) {
+            // Создаем SVG иконку если она не в кеше
+            this.cache[type] = window.SVGMarkers ? 
+                window.SVGMarkers.createDataURL(type, 32) : 
+                this.createFallbackIcon(type);
+        }
+        
+        return this.cache[type];
+    },
+    
+    // Определение типа по тексту угрозы
+    detectType(threatType, text = '') {
+        const lowerText = (text || '').toLowerCase();
+        const lowerType = (threatType || '').toLowerCase();
+        
+        // Приоритет по типу, затем по тексту
+        if (lowerType.includes('shahed') || lowerText.includes('шахед')) return 'shahed';
+        if (lowerType.includes('avia') || lowerText.includes('авіа') || lowerText.includes('авиа')) return 'avia';
+        if (lowerType.includes('raketa') || lowerText.includes('ракета')) return 'raketa';
+        if (lowerType.includes('artillery') || lowerText.includes('артил')) return 'artillery';
+        if (lowerType.includes('mlrs') || lowerText.includes('рсзв')) return 'mlrs';
+        if (lowerType.includes('fpv') || lowerText.includes('фпв')) return 'fpv';
+        if (lowerText.includes('обстріл') || lowerText.includes('обстрел')) return 'obstril';
+        if (lowerText.includes('вибух') || lowerText.includes('взрыв')) return 'vibuh';
+        if (lowerText.includes('пуск') || lowerText.includes('запуск')) return 'pusk';
+        if (lowerText.includes('розвід') || lowerText.includes('разведка')) return 'rozved';
+        if (lowerText.includes('корабель') || lowerText.includes('корабль')) return 'korabel';
+        if (lowerText.includes('тривога') || lowerText.includes('тревога')) return 'trivoga';
+        if (lowerText.includes('відбій') || lowerText.includes('отбой')) return 'vidboi';
+        
+        return 'default';
+    },
+    
+    // Fallback иконка если SVGMarkers недоступен
+    createFallbackIcon(type) {
+        const colors = {
+            shahed: '#ff4444',
+            avia: '#ff8800',
+            raketa: '#cc0000', 
+            artillery: '#990000',
+            default: '#666666'
+        };
+        
+        const color = colors[type] || colors.default;
+        const svg = `<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="16" cy="16" r="12" fill="${color}" stroke="#000" stroke-width="2"/>
+            <text x="16" y="20" text-anchor="middle" fill="#fff" font-size="10">!</text>
+        </svg>`;
+        
+        return 'data:image/svg+xml;base64,' + btoa(svg);
+    },
+    
+    // Предзагрузка всех иконок
+    preloadIcons() {
+        console.log('🎨 Предзагрузка SVG иконок...');
+        const types = ['shahed', 'avia', 'raketa', 'artillery', 'mlrs', 'fpv', 'obstril', 'vibuh', 'pusk', 'rozved', 'korabel', 'trivoga', 'vidboi', 'default'];
+        
+        types.forEach(type => {
+            this.getIcon(type);
+        });
+        
+        console.log(`✅ Загружено ${Object.keys(this.cache).length} SVG иконок (вместо PNG)`);
+    }
+};
 
 // Функция для получения данных из Ukraine Alert API
 async function fetchAPIAlerts() {

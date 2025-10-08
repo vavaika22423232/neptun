@@ -73,40 +73,6 @@ except ImportError:
 from telethon.sessions import StringSession
 import math
 
-# === Message Cleaning Functions ===
-def clean_message_for_frontend(text):
-    """
-    Clean message text for frontend display by removing links, special symbols, and unwanted content
-    """
-    if not text:
-        return text
-    
-    import re
-    
-    # Remove markdown links [text](url) and keep only text
-    text = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', text)
-    
-    # Remove direct links
-    text = re.sub(r'https?://[^\s\]]+', '', text)
-    text = re.sub(r't\.me/[^\s\]]+', '', text)
-    text = re.sub(r'send\.monobank\.ua/[^\s\]]+', '', text)
-    
-    # Remove special symbols
-    text = re.sub(r'[✙✚]+', '', text)              # Remove crosses
-    text = re.sub(r'[ㅤ]+', '', text)                # Remove invisible spaces
-    text = re.sub(r'\*{2,}', '', text)              # Remove multiple asterisks
-    text = re.sub(r'^\*+|\*+$', '', text)           # Remove leading/trailing asterisks
-    
-    # Remove donation/support patterns
-    text = re.sub(r'підтримати\s+канал[^\n]*', '', text, flags=re.IGNORECASE)
-    text = re.sub(r'напрямок\s+ракет[^\n]*', '', text, flags=re.IGNORECASE)
-    
-    # Clean up multiple spaces and normalize
-    text = re.sub(r'\s+', ' ', text)
-    text = text.strip()
-    
-    return text
-
 # === Kyiv Directional Enhancement Functions ===
 def calculate_bearing(lat1, lon1, lat2, lon2):
     """Calculate bearing from point 1 to point 2 in degrees (0-360)"""
@@ -392,7 +358,6 @@ ACTIVE_VISITORS = {}
 ACTIVE_LOCK = threading.Lock()
 ACTIVE_TTL = 70  # seconds of inactivity before a visitor is dropped
 BLOCKED_FILE = 'blocked_ids.json'
-BLOCKED_IPS_FILE = 'blocked_ips.json'
 STATS_FILE = 'visits_stats.json'  # persistent first-seen timestamps per visitor id
 RECENT_VISITS_FILE = 'visits_recent.json'  # stores rolling today/week visitor id sets for fast counts
 VISIT_STATS = None  # lazy-loaded dict: {id: first_seen_epoch}
@@ -566,7 +531,7 @@ if _dyn:
     CHANNELS = base
 # ---------------- Monitoring period global config (admin editable) ----------------
 CONFIG_FILE = 'config.json'
-MONITOR_PERIOD_MINUTES = 40  # default; editable only via admin panel
+MONITOR_PERIOD_MINUTES = 30  # default; editable only via admin panel
 
 def load_config():
     """Load persisted configuration (currently only monitor period)."""
@@ -609,7 +574,7 @@ OPENCAGE_TTL = 60 * 60 * 24 * 30  # 30 days
 NEG_GEOCODE_FILE = 'negative_geocode_cache.json'
 NEG_GEOCODE_TTL = 60 * 60 * 24 * 3  # 3 days for 'not found' entries
 MESSAGES_RETENTION_MINUTES = int(os.getenv('MESSAGES_RETENTION_MINUTES', '120'))  # 2 hours retention by default
-MESSAGES_MAX_COUNT = int(os.getenv('MESSAGES_MAX_COUNT', '300'))  # Лимит 300 сообщений для максимальной производительности
+MESSAGES_MAX_COUNT = int(os.getenv('MESSAGES_MAX_COUNT', '0'))  # 0 = unlimited
 
 def _startup_diagnostics():
     """Log one-time startup diagnostics to help investigate early exit issues on hosting platforms."""
@@ -802,42 +767,6 @@ def save_blocked(blocked):
             json.dump(blocked, f, ensure_ascii=False, indent=2)
     except Exception as e:
         log.warning(f'Failed saving {BLOCKED_FILE}: {e}')
-
-def load_blocked_ips():
-    if os.path.exists(BLOCKED_IPS_FILE):
-        try:
-            with open(BLOCKED_IPS_FILE, 'r', encoding='utf-8') as f:
-                return set(json.load(f))
-        except Exception as e:
-            log.warning(f'Failed loading {BLOCKED_IPS_FILE}: {e}')
-            return set()
-    return set()
-
-def save_blocked_ips(blocked_ips):
-    try:
-        with open(BLOCKED_IPS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(list(blocked_ips), f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        log.warning(f'Failed saving {BLOCKED_IPS_FILE}: {e}')
-
-def get_client_ip(request):
-    """Extract real client IP from request headers"""
-    # Try different headers that proxies/load balancers use
-    for header in ['X-Forwarded-For', 'X-Real-IP', 'X-Client-IP']:
-        ip = request.headers.get(header)
-        if ip:
-            # X-Forwarded-For can be comma-separated list, take first
-            return ip.split(',')[0].strip()
-    return request.remote_addr or 'unknown'
-
-def is_ip_blocked(request):
-    """Check if client IP is in blocked list"""
-    client_ip = get_client_ip(request)
-    if client_ip == 'unknown':
-        return False
-    
-    blocked_ips = load_blocked_ips()
-    return client_ip in blocked_ips
 
 def _load_visit_stats():
     global VISIT_STATS
@@ -1340,9 +1269,6 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
     """Enhanced version that tries to extract oblast from message if city not found.
     Returns (lat,lng,approx_bool) - approx_bool True means used oblast fallback."""
     
-    # Initialize oblast key variable
-    detected_oblast_key = None
-    
     # PRIORITY: Try SpaCy first if available
     if SPACY_AVAILABLE and message_text:
         try:
@@ -1393,6 +1319,8 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                 r'\bу\s+([а-яїіє]+щині)\b',   # "у Сумщині"
                 r'\bв\s+([а-яїіє]+щині)\b',   # "в Сумщині"
             ]
+            
+            detected_oblast_key = None
             
             for pattern in oblast_patterns:
                 matches = re.findall(pattern, context)  # Search in context, not full message
@@ -4784,24 +4712,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 continue
             
             # Remove URLs and links from text
-            ln2 = re_import.sub(r'https?://[^\s\]]+', '', ln2)  # Remove http/https links
-            ln2 = re_import.sub(r'www\.[^\s\]]+', '', ln2)      # Remove www links
-            ln2 = re_import.sub(r't\.me/[^\s\]]+', '', ln2)     # Remove Telegram links
-            ln2 = re_import.sub(r'@[a-zA-Z0-9_]+', '', ln2)    # Remove @mentions
-            ln2 = re_import.sub(r'_+', '', ln2)                # Remove leftover underscores
-            
-            # Remove markdown links [text](url) and keep only text
-            ln2 = re_import.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', ln2)
-            
-            # Remove special symbols and patterns
-            ln2 = re_import.sub(r'[✙✚]+', '', ln2)                           # Remove crosses
-            ln2 = re_import.sub(r'[ㅤ]+', '', ln2)                            # Remove invisible spaces
-            ln2 = re_import.sub(r'\*{2,}', '', ln2)                          # Remove multiple asterisks
-            ln2 = re_import.sub(r'^\*+|\*+$', '', ln2)                       # Remove leading/trailing asterisks
-            
-            # Remove donation/support patterns
-            ln2 = re_import.sub(r'підтримати\s+канал[^\n]*', '', ln2, flags=re_import.IGNORECASE)
-            ln2 = re_import.sub(r'send\.monobank\.ua/[^\s\]]+', '', ln2)     # Remove monobank links
+            ln2 = re_import.sub(r'https?://[^\s]+', '', ln2)  # Remove http/https links
+            ln2 = re_import.sub(r'www\.[^\s]+', '', ln2)      # Remove www links
+            ln2 = re_import.sub(r't\.me/[^\s]+', '', ln2)     # Remove Telegram links
+            ln2 = re_import.sub(r'@[a-zA-Z0-9_]+', '', ln2)  # Remove @mentions
+            ln2 = re_import.sub(r'_+', '', ln2)  # Remove leftover underscores
+            ln2 = re_import.sub(r'[✙✚]+[^✙✚]*✙[^✙✚]*✙', '', ln2)  # Remove ✙...✙ patterns
             
             # Remove card numbers and bank details
             ln2 = re_import.sub(r'\d{4}\s*\d{4}\s*\d{4}\s*\d{4}', '', ln2)  # Card numbers
@@ -5271,19 +5187,6 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     
     add_debug_log(f"DEBUG COUNT CHECK: {region_count} regions, {uav_count} UAV lines, {shahed_count} Shahed+region lines", "count_check")
     
-    # Additional debugging for multi-regional detection
-    uav_course_count = sum(1 for line in text_lines if 'бпла' in line.lower() and ('курс' in line.lower() or 'на ' in line.lower()))
-    add_debug_log(f"UAV course lines: {uav_course_count}", "uav_course_debug")
-    
-    if region_count >= 2:
-        add_debug_log(f"Region condition met: {region_count} >= 2", "region_debug")
-        if uav_course_count >= 3:
-            add_debug_log(f"UAV course condition met: {uav_course_count} >= 3", "uav_debug")
-        else:
-            add_debug_log(f"UAV course condition NOT met: {uav_course_count} < 3", "uav_debug")
-    else:
-        add_debug_log(f"Region condition NOT met: {region_count} < 2", "region_debug")
-    
     # If we have multiple Shahed lines with regions, process them separately
     if shahed_count >= 2:
         add_debug_log(f"MULTI-LINE SHAHED PROCESSING: {shahed_count} Shahed+region lines detected", "multi_shahed")
@@ -5331,15 +5234,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             return all_tracks
     
     # Legacy multi-regional detection (keep for backward compatibility)
-    multi_regional_uav_count = sum(1 for line in text_lines if 'бпла' in line.lower() and ('курс' in line.lower() or 'на ' in line.lower()))
-    add_debug_log(f"Multi-regional check: regions={region_count}, uav_lines={multi_regional_uav_count}", "multi_check")
-    
-    if region_count >= 2 and multi_regional_uav_count >= 3:
-        add_debug_log(f"IMMEDIATE MULTI-REGIONAL UAV: {region_count} regions, {multi_regional_uav_count} UAV lines - ENTERING EARLY PROCESSING", "multi_regional")
-        
-        # Log all text lines for debugging
-        for i, line in enumerate(text_lines):
-            add_debug_log(f"Line {i}: '{line}'", "multi_lines")
+    if region_count >= 2 and sum(1 for line in text_lines if 'бпла' in line.lower() and ('курс' in line.lower() or 'на ' in line.lower())) >= 3:
+        add_debug_log(f"IMMEDIATE MULTI-REGIONAL UAV: {region_count} regions, {uav_count} UAVs - ENTERING EARLY PROCESSING", "multi_regional")
         # Process directly without going through other logic
         import re
         
@@ -6381,19 +6277,17 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
 
     # EARLY CHECK: Multi-regional UAV messages (before other logic can interfere)
     text_lines = text.split('\n')
-    region_count = sum(1 for line in text_lines if any(region in line.lower() for region in ['щина:', 'ччина:', 'щина]', 'ччина]', 'область:', 'край:']) or (
-        ('щина' in line.lower() or 'ччина' in line.lower()) and line.lower().strip().endswith(':')
+    region_count = sum(1 for line in text_lines if any(region in line.lower() for region in ['щина:', 'щина]', 'область:', 'край:']) or (
+        'щина' in line.lower() and line.lower().strip().endswith(':')
     ))
     uav_count = sum(1 for line in text_lines if 'бпла' in line.lower() and ('курс' in line.lower() or 'на ' in line.lower()))
     
     if region_count >= 2 and uav_count >= 3:
         add_debug_log(f"EARLY MULTI-REGIONAL UAV DETECTION: {region_count} regions, {uav_count} UAVs", "multi_regional")
-        add_debug_log(f"Text preview: {text[:200]}...", "multi_regional")
         # We'll process this later when all functions are defined
         # Set a flag for now
         multi_regional_flag = True
     else:
-        add_debug_log(f"NOT multi-regional: {region_count} regions, {uav_count} UAVs (need >= 2 regions and >= 3 UAVs)", "multi_regional")
         multi_regional_flag = False
 
     # ... existing parsing logic continues ...
@@ -9000,9 +8894,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 continue
                 
             # Count regions mentioned
-            if any(region in line_lower for region in ['щина:', 'ччина:', 'щина]', 'ччина]', 'область:', 'край:']) or (
-                ('щина' in line_lower or 'ччина' in line_lower) and line_lower.endswith(':')
-            ):
+            if any(region in line_lower for region in ['щина:', 'область:', 'край:']):
                 region_count += 1
             
             # Count UAV mentions
@@ -9012,7 +8904,6 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         # If we have multiple regions and multiple UAV mentions, process each line
         if region_count >= 2 and uav_count >= 3:
             add_debug_log(f"MULTI-REGIONAL UAV MESSAGE: {region_count} regions, {uav_count} UAVs", "multi_regional")
-            add_debug_log(f"Text length: {len(text)}, Lines count: {len(text_lines)}", "multi_regional")
             
             for line in text_lines:
                 line_stripped = line.strip()
@@ -9046,34 +8937,14 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             city_clean = city_raw.strip()
                             city_norm = clean_text(city_clean).lower()
                             
-                            # Convert from accusative case to nominative (курсом на Київ-у -> Київ)
-                            # Remove common Ukrainian accusative endings
-                            if city_norm.endswith('у') and len(city_norm) > 3:
-                                city_nom = city_norm[:-1]
-                            elif city_norm.endswith('ю') and len(city_norm) > 3:
-                                city_nom = city_norm[:-1]
-                            elif city_norm.endswith('ку') and len(city_norm) > 4:
-                                city_nom = city_norm[:-2] + 'к'
-                            elif city_norm.endswith('цю') and len(city_norm) > 4:
-                                city_nom = city_norm[:-2] + 'ць'
-                            elif city_norm.endswith('щину') and len(city_norm) > 6:
-                                city_nom = city_norm[:-4] + 'щина'
-                            else:
-                                city_nom = city_norm
-                            
                             # Apply normalization rules
-                            if city_nom in UA_CITY_NORMALIZE:
-                                city_nom = UA_CITY_NORMALIZE[city_nom]
+                            if city_norm in UA_CITY_NORMALIZE:
+                                city_norm = UA_CITY_NORMALIZE[city_norm]
                             
-                            # Try to get coordinates (try both nominative and original forms)
-                            coords = region_enhanced_coords(city_nom)
+                            # Try to get coordinates
+                            coords = region_enhanced_coords(city_norm)
                             if not coords:
-                                coords = ensure_city_coords(city_nom)
-                            if not coords and city_nom != city_norm:
-                                # Fallback to original form if nominative didn't work
-                                coords = region_enhanced_coords(city_norm)
-                                if not coords:
-                                    coords = ensure_city_coords(city_norm)
+                                coords = ensure_city_coords(city_norm)
                             
                             if coords:
                                 lat, lng = coords
@@ -9101,54 +8972,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                 
                                 add_debug_log(f"Multi-regional UAV: {city_clean} ({uav_count_num}x) -> {coords}", "multi_regional")
                             else:
-                                # CREATE MARKER WITHOUT COORDINATES for multi-regional messages
-                                # Use center of Ukraine as fallback coordinates
-                                fallback_lat, fallback_lng = 49.0, 32.0  # Center of Ukraine
-                                threat_type, icon = classify(text)
-                                
-                                # Extract count if present
-                                uav_count_num = 1
-                                if count_str and count_str.isdigit():
-                                    uav_count_num = int(count_str)
-                                
-                                threat_id = f"{mid}_multi_{len(threats)}"
-                                threats.append({
-                                    'id': threat_id,
-                                    'place': f"{city_clean.title()} (приблизно)",
-                                    'lat': fallback_lat,
-                                    'lng': fallback_lng,
-                                    'threat_type': threat_type,
-                                    'text': f"{line_stripped} (з багаторегіонального повідомлення - координати не знайдено)",
-                                    'date': date_str,
-                                    'channel': channel,
-                                    'marker_icon': icon,
-                                    'source_match': f'multi_regional_uav_fallback_{uav_count_num}x',
-                                    'count': uav_count_num
-                                })
-                                
-                                add_debug_log(f"Multi-regional UAV: No coords for {city_clean}, using fallback", "multi_regional")
-        
-        # CRITICAL: Always return at least one marker for multi-regional messages
-        if not threats and region_count >= 2 and uav_count >= 3:
-            # Create a synthetic marker to ensure multi-regional messages appear
-            threat_type, icon = classify(text)
-            fallback_lat, fallback_lng = 49.0, 32.0  # Center of Ukraine
-            
-            threats.append({
-                'id': f"{mid}_multi_synthetic",
-                'place': f"Багаторегіональна загроза БпЛА ({region_count} регіонів, {uav_count} БпЛА)",
-                'lat': fallback_lat,
-                'lng': fallback_lng,
-                'threat_type': threat_type,
-                'text': f"Багаторегіональне повідомлення про БпЛА (координати міст не знайдено)",
-                'date': date_str,
-                'channel': channel,
-                'marker_icon': icon,
-                'source_match': 'multi_regional_synthetic',
-                'count': uav_count
-            })
-            
-            add_debug_log(f"Created synthetic marker for multi-regional message: {region_count} regions, {uav_count} UAVs", "multi_regional")
+                                add_debug_log(f"Multi-regional UAV: No coords for {city_clean}", "multi_regional")
         
         return threats
 
@@ -9180,34 +9004,14 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 city_clean = city_raw.strip()
                 city_norm = clean_text(city_clean).lower()
                 
-                # Convert from accusative case to nominative (курсом на Київ-у -> Київ)
-                # Remove common Ukrainian accusative endings
-                if city_norm.endswith('у') and len(city_norm) > 3:
-                    city_nom = city_norm[:-1]
-                elif city_norm.endswith('ю') and len(city_norm) > 3:
-                    city_nom = city_norm[:-1]
-                elif city_norm.endswith('ку') and len(city_norm) > 4:
-                    city_nom = city_norm[:-2] + 'к'
-                elif city_norm.endswith('цю') and len(city_norm) > 4:
-                    city_nom = city_norm[:-2] + 'ць'
-                elif city_norm.endswith('щину') and len(city_norm) > 6:
-                    city_nom = city_norm[:-4] + 'щина'
-                else:
-                    city_nom = city_norm
-                
                 # Apply normalization rules
-                if city_nom in UA_CITY_NORMALIZE:
-                    city_nom = UA_CITY_NORMALIZE[city_nom]
+                if city_norm in UA_CITY_NORMALIZE:
+                    city_norm = UA_CITY_NORMALIZE[city_norm]
                 
-                # Try to get coordinates (try both nominative and original forms)
-                coords = region_enhanced_coords(city_nom)
+                # Try to get coordinates
+                coords = region_enhanced_coords(city_norm)
                 if not coords:
-                    coords = ensure_city_coords(city_nom)
-                if not coords and city_nom != city_norm:
-                    # Fallback to original form if nominative didn't work
-                    coords = region_enhanced_coords(city_norm)
-                    if not coords:
-                        coords = ensure_city_coords(city_norm)
+                    coords = ensure_city_coords(city_norm)
                 
                 if coords:
                     lat, lng = coords[:2]
@@ -11523,10 +11327,6 @@ def start_session_watcher():
 
 @app.route('/')
 def index():
-    # Check if IP is blocked
-    if is_ip_blocked(request):
-        return "Access denied", 403
-    
     # Leaflet version of frontend no longer needs Google Maps key
     return render_template('index.html')
 
@@ -11651,10 +11451,6 @@ def comment_react_endpoint():
 @app.route('/active_alarms')
 def active_alarms_endpoint():
     """Return current active oblast & raion air alarms (for polygon styling)."""
-    # Check if IP is blocked
-    if is_ip_blocked(request):
-        return jsonify({'error': 'Access denied'}), 403
-    
     try:
         now_ep = time.time()
         cutoff = now_ep - APP_ALARM_TTL_MINUTES*60
@@ -11705,10 +11501,6 @@ def alarms_stats():
 
 @app.route('/data')
 def data():
-    # Check if IP is blocked
-    if is_ip_blocked(request):
-        return jsonify({'error': 'Access denied'}), 403
-    
     global FALLBACK_REPARSE_CACHE, MAX_REPARSE_CACHE_SIZE
     # Use user-provided timeRange or fall back to global configured MONITOR_PERIOD_MINUTES
     try:
@@ -11717,13 +11509,6 @@ def data():
         time_range = max(10, min(time_range, 200))
     except (ValueError, TypeError):
         time_range = MONITOR_PERIOD_MINUTES
-    
-    # Add performance optimization: limit number of tracks returned
-    try:
-        max_tracks = int(request.args.get('maxTracks', 100))  # Default limit 100 tracks
-        max_tracks = max(10, min(max_tracks, 500))  # Between 10-500 tracks
-    except (ValueError, TypeError):
-        max_tracks = 100
     
     print(f"[DEBUG] /data endpoint called with timeRange={request.args.get('timeRange')}, using time_range={time_range}")
     messages = load_messages()
@@ -11784,10 +11569,8 @@ def data():
                                 continue
                             text_r = (t.get('text') or '')
                             source_r = t.get('channel') or t.get('source') or ''
-                            marker_key_r_original = f"{lat_r},{lng_r}|{text_r}|{source_r}"
-                            text_r_cleaned = clean_message_for_frontend(text_r)
-                            marker_key_r_cleaned = f"{lat_r},{lng_r}|{text_r_cleaned}|{source_r}"
-                            if marker_key_r_original in hidden or marker_key_r_cleaned in hidden:
+                            marker_key_r = f"{lat_r},{lng_r}|{text_r}|{source_r}"
+                            if marker_key_r in hidden:
                                 continue
                             out.append(t)
                         # Skip adding original as event if we produced tracks
@@ -11808,13 +11591,8 @@ def data():
                 continue  # not a proper geo marker
             text = (m.get('text') or '')
             source = m.get('source') or m.get('channel') or ''
-            
-            # Check both original and cleaned text versions for hiding
-            marker_key_original = f"{lat},{lng}|{text}|{source}"
-            text_cleaned = clean_message_for_frontend(text)
-            marker_key_cleaned = f"{lat},{lng}|{text_cleaned}|{source}"
-            
-            if marker_key_original in hidden or marker_key_cleaned in hidden:
+            marker_key = f"{lat},{lng}|{text}|{source}"
+            if marker_key in hidden:
                 continue
             # Backward compatibility: allow prefix match (text truncated when stored) for same lat,lng,source
             base_prefix = f"{lat},{lng}|"
@@ -11830,12 +11608,9 @@ def data():
                         _, htext, hsource = h.split('|',2)
                     except ValueError:
                         continue
-                    if hsource == source:
-                        # Check both original and cleaned text for prefix match
-                        if (text.startswith(htext) or htext.startswith(text) or 
-                            text_cleaned.startswith(htext) or htext.startswith(text_cleaned)):
-                            skip = True
-                            break
+                    if hsource == source and text.startswith(htext):
+                        skip = True
+                        break
                 if skip:
                     continue
             # Фильтр: удаляем региональные метки без явных слов угроз (могли сохраниться старыми версиями логики)
@@ -11849,26 +11624,8 @@ def data():
     except Exception:
         pass
     
-    # Sort tracks by date (newest first) for better performance
-    try:
-        out.sort(key=lambda x: x.get('date', ''), reverse=True)
-    except Exception:
-        pass
-    
-    # Clean text messages for frontend display
-    for track in out:
-        if track.get('text'):
-            track['text'] = clean_message_for_frontend(track['text'])
-    
-    for event in events:
-        if event.get('text'):
-            event['text'] = clean_message_for_frontend(event['text'])
-    
-    # Apply track limit for performance optimization
-    tracks_limited = out[:max_tracks] if len(out) > max_tracks else out
-    
-    print(f"[DEBUG] Returning {len(tracks_limited)} tracks ({len(out)} total, limited to {max_tracks}) and {len(events)} events")
-    resp = jsonify({'tracks': tracks_limited, 'events': events, 'all_sources': CHANNELS, 'trajectories': [], 'total_tracks': len(out), 'limited': len(out) > max_tracks})
+    print(f"[DEBUG] Returning {len(out)} tracks and {len(events)} events")
+    resp = jsonify({'tracks': out, 'events': events, 'all_sources': CHANNELS, 'trajectories': []})
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     resp.headers['Pragma'] = 'no-cache'
     return resp
@@ -11943,104 +11700,22 @@ def debug_parse():
 @app.route('/test_parse')
 def test_parse():
     """Test endpoint to manually test message parsing without auth."""
-    test_message = """Сумщина:
-БпЛА курсом на Ріпки
-БпЛА курсом на Степанівку
-
-Чернігівщина:
-БпЛА курсом на Короп
-8х БпЛА курсом на Борзну 
-БпЛА курсом на Малу Дівицю 
-БпЛА курсом на Прилуки 
-БпЛА курсом на Гончарівське 
-БпЛА курсом на Носівку
-3х БпЛА курсом на Бобровицю 
-
-Київщина:
-БпЛА курсом на Яготин 
-3х БпЛА курсом на Переяслав 
-БпЛА курсом на Березань 
-2х БпЛА курсом на Баришівку 
-БпЛА курсом на Ржищів 
-
-Житомирщина:
-БпЛА курсом на Малин 
-БпЛА курсом на Коростень
-
-Полтавщина:
-БпЛА курсом на Чутове
-2х БпЛА курсом на Карлівку
-БпЛА курсом на Машівку
-БпЛА курсом на Кобеляки 
-БпЛА курсом на Градизьк 
-3х БпЛА курсом на Глобине 
-БпЛА курсом на Котельву 
-
-Харківщина:
-БпЛА курсом на Покотилівку
-БпЛА курсом на Коломак 
-2х БпЛА курсом на Нову Водолагу 
-2х БпЛА курсом на Бірки
-БпЛА курсом на Берестин
-4х БпЛА курсом на Златопіль
-БпЛА курсом на Барвінкове 
-2х БпЛА курсом на Андріївку
-БпЛА курсом на Краснопавлівку
-
-Черкащина:
-БпЛА курсом на Цвіткове
-БпЛА курсом на Чигирин
-2х БпЛА курсом на Черкаси 
-БпЛА курсом на Золотоношу 
-БпЛА курсом на Смілу 
-БпЛА курсом на Канів 
-
-Дніпропетровщина:
-БпЛА курсом на Вільногірськ
-5х БпЛА курсом на Пʼятихатки 
-БпЛА курсом на Лихівку
-4х БпЛА курсом на Царичанку 
-2х БпЛА курсом на Юріївку
-БпЛА курсом на Петропавлівку 
-
-Кіровоградщина:
-БпЛА курсом на Знамʼянку 
-БпЛА курсом на Бобринець
-3х БпЛА курсом на Інгулецьке 
-6х БпЛА курсом на Петрове 
-БпЛА курсом на Павлиш 
-
-Миколаївщина:
-8х БпЛА курсом на Снігурівку
-
-✙ Напрямок ракет ✙
-✙Підтримати канал✙"""
+    test_message = "Чернігівщина: 1 БпЛА на Козелець 1 БпЛА на Носівку 1 БпЛА неподалік Ічні 2 БпЛА на Куликівку 2 БпЛА між Корюківкою та Меною Сумщина: 3 БпЛА в районі Конотопу ㅤ ➡Підписатися"
     
     try:
-        # Initialize debug logs if not present
-        if 'debug_logs' not in globals():
-            global debug_logs
-            debug_logs = []
-        
-        # Clear debug logs for clean test
-        debug_logs.clear()
-        
         print("="*50)
         print("MANUAL TEST STARTED")
         print("="*50)
-        add_debug_log("MANUAL TEST: Starting multi-regional message test", "manual_test")
-        tracks = process_message(test_message, 'TEST_1', '2025-10-04 12:00:00', 'test')
+        tracks = process_message(test_message, 'TEST_1', '2025-09-05 17:20:00', 'test')
         print("="*50)
         print("MANUAL TEST COMPLETED")
         print("="*50)
         
         return jsonify({
             'success': True,
-            'message': test_message[:500] + ('...' if len(test_message) > 500 else ''),
-            'message_length': len(test_message),
+            'message': test_message,
             'tracks_count': len(tracks) if tracks else 0,
             'tracks': tracks,
-            'debug_logs': debug_logs[-100:] if debug_logs else [],
             'test_time': datetime.now().isoformat()
         })
     except Exception as e:
@@ -12052,84 +11727,53 @@ def test_parse():
             'error': str(e),
             'traceback': error_details
         }), 500
-
-@app.route('/locate')
-def locate():
     """Locate a settlement or raion by name. Query param: q=<name>
     Returns: {status:'ok', name, lat, lng, source:'dict'|'geocode'|'fallback'} or {status:'not_found'}
     Lightweight normalization reusing UA_CITY_NORMALIZE and CITY_COORDS. Falls back to ensure_city_coords (may geocode if key allowed).
     """
+    q = (request.args.get('q') or '').strip()
+    if not q:
+        return jsonify({'status':'empty'}), 400
+    raw = q.lower()
+    # Basic cleanup similar to parser's normalization
+    raw = re.sub(r'["`ʼ’\'".,:;()]+','', raw)
+    raw = re.sub(r'\s+',' ', raw)
+    # Try direct dict match
+    key = raw
+    if key in UA_CITY_NORMALIZE:
+        key = UA_CITY_NORMALIZE[key]
+    # Heuristic accusative -> nominative (simple feminine endings) if still not found
+    if key not in CITY_COORDS and len(key) > 4 and key.endswith(('у','ю')):
+        alt = key[:-1] + 'а'
+        if alt in CITY_COORDS:
+            key = alt
+    # Direct dictionary coordinate fetch
+    if key in CITY_COORDS:
+        lat,lng = CITY_COORDS[key]
+        return jsonify({'status':'ok','name':key.title(),'lat':lat,'lng':lng,'source':'dict'})
+    # Check full settlements index (all cities/villages loaded from external file)
+    if 'SETTLEMENTS_INDEX' in globals() and key in SETTLEMENTS_INDEX:
+        lat,lng = SETTLEMENTS_INDEX[key]
+        return jsonify({'status':'ok','name':key.title(),'lat':lat,'lng':lng,'source':'settlement'})
+    # If not exact, attempt prefix suggestions for UI autocomplete
+    if 'SETTLEMENTS_INDEX' in globals() and len(key) >= 3:
+        pref = key
+        matches = [n for n in SETTLEMENTS_INDEX.keys() if n.startswith(pref)][:15]
+        if not matches and pref.endswith(('у','ю')):
+            pref2 = pref[:-1] + 'а'
+            matches = [n for n in SETTLEMENTS_INDEX.keys() if n.startswith(pref2)][:15]
+        if matches:
+            return jsonify({'status':'suggest','query':q,'matches':matches})
+    # Attempt dynamic ensure (geocode) unless negative cache prohibits
+    coords = None
     try:
-        q = (request.args.get('q') or '').strip()
-        if not q:
-            return jsonify({'status':'empty'}), 400
-        
-        raw = q.lower()
-        # Basic cleanup similar to parser's normalization
-        raw = re.sub(r'["`ʼ\'\"\.,:;()]+','', raw)
-        raw = re.sub(r'\s+',' ', raw)
-        # Try direct dict match
-        key = raw
-        if key in UA_CITY_NORMALIZE:
-            key = UA_CITY_NORMALIZE[key]
-        # Heuristic accusative -> nominative (simple feminine endings) if still not found
-        if key not in CITY_COORDS and len(key) > 4 and key.endswith(('у','ю')):
-            alt = key[:-1] + 'а'
-            if alt in CITY_COORDS:
-                key = alt
-        
-        # Direct dictionary coordinate fetch
-        try:
-            if key in CITY_COORDS:
-                coords_data = CITY_COORDS[key]
-                if isinstance(coords_data, (list, tuple)) and len(coords_data) >= 2:
-                    lat, lng = coords_data[0], coords_data[1]
-                    if isinstance(lat, (int, float)) and isinstance(lng, (int, float)):
-                        return jsonify({'status':'ok','name':key.title(),'lat':lat,'lng':lng,'source':'dict'})
-        except Exception as e:
-            print(f"ERROR in /locate: CITY_COORDS access failed for '{key}': {e}")
-        
-        # Check full settlements index (all cities/villages loaded from external file)
-        try:
-            if 'SETTLEMENTS_INDEX' in globals() and SETTLEMENTS_INDEX and key in SETTLEMENTS_INDEX:
-                lat,lng = SETTLEMENTS_INDEX[key]
-                if isinstance(lat, (int, float)) and isinstance(lng, (int, float)):
-                    return jsonify({'status':'ok','name':key.title(),'lat':lat,'lng':lng,'source':'settlement'})
-        except Exception as e:
-            print(f"ERROR in /locate: SETTLEMENTS_INDEX access failed: {e}")
-        
-        # If not exact, attempt prefix suggestions for UI autocomplete
-        try:
-            if 'SETTLEMENTS_INDEX' in globals() and SETTLEMENTS_INDEX and len(key) >= 3:
-                pref = key
-                matches = [n for n in SETTLEMENTS_INDEX.keys() if n.startswith(pref)][:15]
-                if not matches and pref.endswith(('у','ю')):
-                    pref2 = pref[:-1] + 'а'
-                    matches = [n for n in SETTLEMENTS_INDEX.keys() if n.startswith(pref2)][:15]
-                if matches:
-                    return jsonify({'status':'suggest','query':q,'matches':matches})
-        except Exception as e:
-            print(f"ERROR in /locate: SETTLEMENTS_INDEX suggestions failed: {e}")
-        
-        # Attempt dynamic ensure (geocode) unless negative cache prohibits
+        coords = ensure_city_coords(key)
+    except Exception:
         coords = None
-        try:
-            coords = ensure_city_coords(key)
-            if coords and len(coords) >= 2:
-                lat, lng = coords[0], coords[1]
-                if isinstance(lat, (int, float)) and isinstance(lng, (int, float)):
-                    return jsonify({'status':'ok','name':key.title(),'lat':lat,'lng':lng,'source':'geocode'})
-        except Exception as e:
-            print(f"ERROR in /locate: ensure_city_coords failed for '{key}': {e}")
-            coords = None
-        
-        return jsonify({'status':'not_found','query':q}), 404
-        
-    except Exception as e:
-        print(f"ERROR in /locate endpoint: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'status':'error','error':'internal_server_error'}), 500
+    if coords:
+        lat,lng = coords
+        return jsonify({'status':'ok','name':key.title(),'lat':lat,'lng':lng,'source':'geocode'})
+    return jsonify({'status':'not_found','query':q}), 404
 
 @app.route('/add_channel', methods=['POST'])
 def add_channel():
@@ -12264,150 +11908,17 @@ def hide_marker():
         payload = request.get_json(force=True) or {}
         lat = round(float(payload.get('lat')), 3)
         lng = round(float(payload.get('lng')), 3)
-        text_raw = (payload.get('text') or '').strip()
+        text = (payload.get('text') or '').strip()
         source = (payload.get('source') or '').strip()
-        
-        # Clean text the same way as frontend to ensure key matching
-        text_cleaned = clean_message_for_frontend(text_raw)
-        
-        # Try both original and cleaned versions for better compatibility
-        marker_key_original = f"{lat},{lng}|{text_raw}|{source}"
-        marker_key_cleaned = f"{lat},{lng}|{text_cleaned}|{source}" 
-        
-        log.info(f"hide_marker: attempting to hide marker")
-        log.info(f"  Original key: '{marker_key_original[:100]}...'")
-        log.info(f"  Cleaned key:  '{marker_key_cleaned[:100]}...'")
-        
+        marker_key = f"{lat},{lng}|{text}|{source}"
         hidden = load_hidden()
-        keys_to_add = []
-        
-        # Add both versions if they're different and not already hidden
-        if marker_key_original not in hidden:
-            keys_to_add.append(marker_key_original)
-        if marker_key_cleaned != marker_key_original and marker_key_cleaned not in hidden:
-            keys_to_add.append(marker_key_cleaned)
-            
-        was_already_hidden = len(keys_to_add) == 0
-        
-        if keys_to_add:
-            hidden.extend(keys_to_add)
+        if marker_key not in hidden:
+            hidden.append(marker_key)
             save_hidden(hidden)
-            log.info(f"hide_marker: successfully hidden {len(keys_to_add)} key variants. Total hidden: {len(hidden)}")
-        else:
-            log.info(f"hide_marker: marker was already hidden")
-            
-        return jsonify({
-            'status':'ok',
-            'hidden_count':len(hidden),
-            'was_already_hidden': was_already_hidden,
-            'keys_added': keys_to_add,
-            'original_key': marker_key_original[:100] + ('...' if len(marker_key_original) > 100 else ''),
-            'cleaned_key': marker_key_cleaned[:100] + ('...' if len(marker_key_cleaned) > 100 else '')
-        })
+        return jsonify({'status':'ok','hidden_count':len(hidden)})
     except Exception as e:
         log.warning(f"hide_marker error: {e}")
         return jsonify({'status':'error','error':str(e)}), 400
-
-@app.route('/admin/cleanup_hidden_markers', methods=['POST'])
-def cleanup_hidden_markers():
-    """Clean up duplicate and invalid hidden marker keys."""
-    if not check_admin_access():
-        return "Access denied", 403
-    
-    try:
-        hidden = load_hidden()
-        original_count = len(hidden)
-        
-        # Remove duplicates while preserving order
-        seen = set()
-        cleaned = []
-        for key in hidden:
-            if key not in seen:
-                seen.add(key)
-                cleaned.append(key)
-        
-        # Also add cleaned versions of existing keys if they don't exist
-        additional_keys = []
-        for key in cleaned:
-            try:
-                parts = key.split('|', 2)
-                if len(parts) >= 3:
-                    coords, text, source = parts
-                    text_cleaned = clean_message_for_frontend(text)
-                    if text_cleaned != text:
-                        cleaned_key = f"{coords}|{text_cleaned}|{source}"
-                        if cleaned_key not in seen:
-                            additional_keys.append(cleaned_key)
-                            seen.add(cleaned_key)
-            except Exception:
-                continue
-        
-        final_list = cleaned + additional_keys
-        
-        if len(final_list) != original_count:
-            save_hidden(final_list)
-            log.info(f"cleanup_hidden_markers: cleaned {original_count} -> {len(final_list)} keys")
-        
-        return jsonify({
-            'status': 'ok',
-            'original_count': original_count,
-            'cleaned_count': len(cleaned),
-            'additional_count': len(additional_keys),
-            'final_count': len(final_list)
-        })
-    except Exception as e:
-        log.warning(f"cleanup_hidden_markers error: {e}")
-        return jsonify({'status': 'error', 'error': str(e)}), 500
-
-@app.route('/admin/hidden_markers')
-def get_hidden_markers():
-    """Get all hidden markers for admin diagnostics."""
-    if not check_admin_access():
-        return "Access denied", 403
-    
-    try:
-        hidden = load_hidden()
-        parsed_markers = []
-        
-        for key in hidden:
-            try:
-                parts = key.split('|', 2)
-                if len(parts) >= 3:
-                    coords, text, source = parts
-                    lat_str, lng_str = coords.split(',')
-                    parsed_markers.append({
-                        'key': key,
-                        'lat': float(lat_str),
-                        'lng': float(lng_str), 
-                        'text': text,
-                        'source': source
-                    })
-                else:
-                    parsed_markers.append({
-                        'key': key,
-                        'lat': None,
-                        'lng': None,
-                        'text': 'Invalid format',
-                        'source': ''
-                    })
-            except Exception as e:
-                log.warning(f"Error parsing hidden marker key '{key}': {e}")
-                parsed_markers.append({
-                    'key': key,
-                    'lat': None,
-                    'lng': None,
-                    'text': f'Parse error: {str(e)}',
-                    'source': ''
-                })
-        
-        return jsonify({
-            'status': 'ok',
-            'hidden_markers': parsed_markers,
-            'total_count': len(hidden)
-        })
-    except Exception as e:
-        log.warning(f"get_hidden_markers error: {e}")
-        return jsonify({'status': 'error', 'error': str(e)}), 500
 
 @app.route('/unhide_marker', methods=['POST'])
 def unhide_marker():
@@ -12554,10 +12065,6 @@ def raion_alarms():
 # SSE stream endpoint
 @app.route('/stream')
 def stream():
-    # Check if IP is blocked
-    if is_ip_blocked(request):
-        return "Access denied", 403
-    
     def gen():
         q = queue.Queue()
         SUBSCRIBERS.add(q)
@@ -12729,12 +12236,10 @@ def admin_panel():
             parsed_hidden.append({'lat':lat_str,'lng':lng_str,'text':text_part,'source':source_part,'key':hk})
         except Exception:
             continue
-    blocked_ips = load_blocked_ips()
     return render_template(
         'admin.html',
         visitors=visitors,
         blocked=blocked,
-        blocked_ips=list(blocked_ips),
         raw_msgs=raw_msgs,
         raw_count=len([m for m in all_msgs if m.get('pending_geo')]),
         secret=(request.args.get('secret') or ''),
@@ -12982,56 +12487,6 @@ def unblock_id():
         save_blocked(blocked)
     return jsonify({'status':'ok','blocked':blocked})
 
-@app.route('/admin/blocked_ips', methods=['GET'])
-def get_blocked_ips():
-    """Get list of blocked IPs"""
-    if not _require_secret(request):
-        return jsonify({'status':'forbidden'}), 403
-    
-    blocked_ips = load_blocked_ips()
-    return jsonify({'status': 'ok', 'blocked_ips': list(blocked_ips)})
-
-@app.route('/admin/block_ip', methods=['POST'])
-def block_ip():
-    """Block an IP address"""
-    if not _require_secret(request):
-        return jsonify({'status':'forbidden'}), 403
-    
-    payload = request.get_json(silent=True) or request.form
-    ip = (payload or {}).get('ip', '').strip()
-    
-    if not ip:
-        return jsonify({'status':'error','error':'IP address required'}), 400
-    
-    # Basic IP validation
-    import re
-    if not re.match(r'^(\d{1,3}\.){3}\d{1,3}$', ip):
-        return jsonify({'status':'error','error':'Invalid IP address format'}), 400
-    
-    blocked_ips = load_blocked_ips()
-    blocked_ips.add(ip)
-    save_blocked_ips(blocked_ips)
-    
-    return jsonify({'status':'ok','blocked_ips': list(blocked_ips), 'added': ip})
-
-@app.route('/admin/unblock_ip', methods=['POST'])
-def unblock_ip():
-    """Unblock an IP address"""
-    if not _require_secret(request):
-        return jsonify({'status':'forbidden'}), 403
-    
-    payload = request.get_json(silent=True) or request.form
-    ip = (payload or {}).get('ip', '').strip()
-    
-    if not ip:
-        return jsonify({'status':'error','error':'IP address required'}), 400
-    
-    blocked_ips = load_blocked_ips()
-    blocked_ips.discard(ip)
-    save_blocked_ips(blocked_ips)
-    
-    return jsonify({'status':'ok','blocked_ips': list(blocked_ips), 'removed': ip})
-
 def _fmt_age(age_seconds:int)->str:
     # Format seconds to H:MM:SS (or M:SS if <1h)
     if age_seconds < 3600:
@@ -13273,23 +12728,13 @@ def startup_init():
     return jsonify({'status': 'ok'})
 
 if __name__ == '__main__':
-    # Check if running under CGI (GMhost)
-    if 'REQUEST_METHOD' in os.environ:
-        # CGI mode for GMhost
-        from wsgiref.handlers import CGIHandler
-        try:
-            _init_background()
-        except Exception:
-            pass
-        CGIHandler().run(app)
-    else:
-        # Local / container direct run (not needed if a WSGI server like gunicorn is used)
-        port = int(os.getenv('PORT', '5000'))
-        host = os.getenv('HOST', '0.0.0.0')
-        log.info(f'Launching Flask app on {host}:{port}')
-        # Eager start (still guarded) so that fetch begins even without first HTTP request locally
-        try:
-            _init_background()
-        except Exception:
-            pass
-        app.run(host=host, port=port, debug=False)
+    # Local / container direct run (not needed if a WSGI server like gunicorn is used)
+    port = int(os.getenv('PORT', '5000'))
+    host = os.getenv('HOST', '0.0.0.0')
+    log.info(f'Launching Flask app on {host}:{port}')
+    # Eager start (still guarded) so that fetch begins even without first HTTP request locally
+    try:
+        _init_background()
+    except Exception:
+        pass
+    app.run(host=host, port=port, debug=False)

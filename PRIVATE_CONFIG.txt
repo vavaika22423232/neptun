@@ -1,0 +1,54 @@
+# 🔐 ПРИВАТНЫЕ ДАННЫЕ ДЛЯ VPS УСТАНОВКИ
+# Не загружайте этот файл в публичный репозиторий!
+
+# Telegram API настройки (готовые к использованию)
+TELEGRAM_API_ID=24031340
+TELEGRAM_API_HASH=2daaa58652e315ce52adb1090313d36a
+TELEGRAM_SESSION=1BJWap1sBuxFfvv8jKavyih1syeG0Qyw7-kTbENdjz0-VUSbG4c4dTD_B4UAdF_Dm3om3Mto6aw7bE34bga-H0I1BNe7-KyDJ5drxbaaEMFJN6_ZIDP7Fpyu-RTEY1SCCR8wmCpBgIYizAC00q5fqMsMmQpEIGgDQWnKRab90PN-8gX6zvgr-0ylca8Rk_mFAZKUnno8U9to0BVQ7eAsWVHvo2fOZirjfXMQ9rr-csA0Nx6AqclX-kps9Q0JNjcPTQrBwQQUYkzW9RDYjmaRKyaq-cIIjZfQCO5dZFvRoecV1BETC7NSnnGur4F0lEcGoVrcqgjeCJ_6_LhLWuqv3IVdtltiNAvw=
+
+# Каналы для мониторинга
+TELEGRAM_CHANNELS=UkraineAlarmSignal,kpszsu,war_monitor,napramok,raketa_trevoga,ukrainsiypposhnik
+
+# API ключи
+OPENCAGE_API_KEY=30263924aa374a45a8b1b0469cb8d347
+GOOGLE_MAPS_KEY=YOUR_GOOGLE_MAPS_KEY
+
+# GitHub синхронизация
+GIT_SYNC_TOKEN=your_github_token_here
+
+# Настройки производительности
+MESSAGES_MAX_COUNT=300
+MONITOR_PERIOD_MINUTES=40
+
+# Безопасность
+AUTH_SECRET=Fortschritt080910.
+ADMIN_AUTH_SECRET=FgbO07fCT653_secret
+BASIC_AUTH_PASSWORD=secure_password_123
+
+# Режим работы
+FLASK_ENV=production
+HOST=0.0.0.0
+PORT=5000
+
+# =====================================================
+# ИНСТРУКЦИЯ ПО ИСПОЛЬЗОВАНИЮ НА VPS:
+# =====================================================
+
+# 1. Подключитесь к VPS:
+#    ssh root@195.226.192.65
+#    Пароль: FgbO07fCT653
+
+# 2. Запустите автоматическую установку:
+#    curl -sL https://raw.githubusercontent.com/vavaika22423232/neptun/main/install_vps_auto.sh | bash
+
+# 3. Создайте .env файл с этими данными:
+#    cat > /var/www/neptun/.env << 'EOF'
+#    [скопируйте все переменные выше]
+#    EOF
+
+# 4. Запустите проект:
+#    /root/neptun_control.sh start
+
+# 5. Откройте сайт:
+#    http://195.226.192.65
+#    http://neptun.com

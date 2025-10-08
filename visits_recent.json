@@ -1,12 +1,12 @@
 {
-  "day": "2025-10-05",
+  "day": "2025-10-08",
   "today_ids": [
-    "52306c8d-5636-488a-b887-121a5cc8d50e",
-    "3b327207-b5d9-4eef-ac03-4721ace0a9e1"
+    "f3db83ba-fca5-469b-922f-8cf6f4e8b63c"
   ],
   "week_ids": [
     "52306c8d-5636-488a-b887-121a5cc8d50e",
-    "3b327207-b5d9-4eef-ac03-4721ace0a9e1"
+    "3b327207-b5d9-4eef-ac03-4721ace0a9e1",
+    "f3db83ba-fca5-469b-922f-8cf6f4e8b63c"
   ],
   "week_start": "2025-10-05"
 }

@@ -846,9 +846,6 @@ body {
             <button type="button" class="btn btn-purple btn-sm" onclick="toggleFullscreenMap()" id="fullscreenBtn">
               🔲 Fullscreen
             </button>
-            <button type="button" class="btn btn-warning btn-sm" onclick="diagnoseHiddenMarkers()">
-              🔍 Diagnose
-            </button>
           </div>
         </div>
         <div class="card-body compact">
@@ -1247,14 +1244,9 @@ body {
           👁️‍🗨️ Hidden Markers
           <span class="badge warning">{{ hidden_markers|length }}</span>
         </h2>
-        <div style="display: flex; gap: 0.5rem;">
-          <button class="btn btn-success btn-sm" onclick="bulkUnhide()">
-            👁️ Unhide All
-          </button>
-          <button class="btn btn-warning btn-sm" onclick="cleanupHiddenMarkers()">
-            🧹 Cleanup
-          </button>
-        </div>
+        <button class="btn btn-success btn-sm" onclick="bulkUnhide()">
+          👁️ Unhide All
+        </button>
       </div>
       <div class="card-body compact">
         <div class="table-container">
@@ -1622,22 +1614,9 @@ async function hideMarker(lat,lng,text,source){
 }
 async function unhideKey(key){
   try{
-    console.log('Unhiding marker with key:', key);
     const r = await fetch('/unhide_marker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key})});
-    const result = await r.json();
-    console.log('Unhide marker response:', result);
-    
-    if(r.ok && result.status === 'ok') {
-      console.log(`Marker unhidden. Remaining hidden: ${result.remaining}`);
-      location.reload();
-    } else {
-      console.error('Failed to unhide marker:', result);
-      alert('Failed to unhide marker: ' + (result.error || 'Unknown error'));
-    }
-  }catch(e){
-    console.error('Error unhiding marker:', e);
-    alert('Error unhiding marker: ' + e.message);
-  }
+    if(r.ok) location.reload();
+  }catch(e){}
 }
 async function bulkUnhide(){
   // naive: iterate all keys in the table
@@ -1647,101 +1626,6 @@ async function bulkUnhide(){
     try{ await fetch('/unhide_marker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key})}); }catch(e){}
   }
   location.reload();
-}
-
-async function cleanupHiddenMarkers(){
-  try {
-    console.log('Cleaning up hidden markers...');
-    const secret = new URLSearchParams(location.search).get('secret') || '';
-    const r = await fetch('/admin/cleanup_hidden_markers?secret=' + encodeURIComponent(secret), {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'}
-    });
-    const result = await r.json();
-    console.log('Cleanup response:', result);
-    
-    if (r.ok && result.status === 'ok') {
-      alert(`Cleanup completed!\nOriginal: ${result.original_count}\nCleaned: ${result.cleaned_count}\nAdditional: ${result.additional_count}\nFinal: ${result.final_count}`);
-      location.reload();
-    } else {
-      console.error('Failed to cleanup:', result);
-      alert('Failed to cleanup: ' + (result.error || 'Unknown error'));
-    }
-  } catch (error) {
-    console.error('Error during cleanup:', error);
-    alert('Error during cleanup: ' + error.message);
-  }
-}
-
-async function diagnoseHiddenMarkers(){
-  console.log('=== Hidden Markers Diagnosis ===');
-  
-  try {
-    // Get current visible markers
-    const dataResponse = await fetch('/data?ts=' + Date.now());
-    const data = await dataResponse.json();
-    console.log(`Current visible markers: ${data.markers?.length || 0}`);
-    
-    // Get hidden markers list
-    const hiddenResponse = await fetch('/admin/hidden_markers?secret=' + encodeURIComponent(new URLSearchParams(location.search).get('secret') || ''));
-    const hiddenData = await hiddenResponse.json();
-    console.log(`Total hidden markers: ${hiddenData.hidden_markers?.length || 0}`);
-    
-    // Analyze overlaps
-    if (data.markers && hiddenData.hidden_markers) {
-      let potentialIssues = 0;
-      
-      data.markers.forEach((marker, idx) => {
-        const markerKey = `${Math.round(marker.lat * 1000) / 1000},${Math.round(marker.lng * 1000) / 1000}|${marker.text}|${marker.source || marker.channel || ''}`;
-        
-        // Check if this marker should be hidden
-        const shouldBeHidden = hiddenData.hidden_markers.some(hidden => {
-          const hiddenKey = hidden.key;
-          
-          // Exact match
-          if (markerKey === hiddenKey) return true;
-          
-          // Coordinate match with text prefix
-          const [coords1] = markerKey.split('|');
-          const [coords2] = hiddenKey.split('|');
-          if (coords1 === coords2) {
-            const [, text1, source1] = markerKey.split('|');
-            const [, text2, source2] = hiddenKey.split('|');
-            if (source1 === source2 && (text1.startsWith(text2) || text2.startsWith(text1))) {
-              return true;
-            }
-          }
-          
-          return false;
-        });
-        
-        if (shouldBeHidden) {
-          console.warn(`Marker ${idx} should be hidden but is visible:`, {
-            key: markerKey.substring(0, 100),
-            marker: {
-              lat: marker.lat,
-              lng: marker.lng,
-              text: marker.text?.substring(0, 50),
-              source: marker.source || marker.channel
-            }
-          });
-          potentialIssues++;
-        }
-      });
-      
-      console.log(`Found ${potentialIssues} markers that should be hidden but are still visible`);
-      
-      if (potentialIssues > 0) {
-        alert(`Found ${potentialIssues} markers that should be hidden but are still visible. Check console for details.`);
-      } else {
-        alert('No issues found. All hidden markers are properly filtered.');
-      }
-    }
-    
-  } catch (error) {
-    console.error('Error during diagnosis:', error);
-    alert('Error during diagnosis: ' + error.message);
-  }
 }
 async function clearNegCache(){
   confirmAction('Clear all negative geocode entries? This cannot be undone.', async () => {
@@ -1990,17 +1874,11 @@ function renderAdminMarkers(tracks){
         const time = t.date || '';
         const source = t.channel || t.source || '';
         
-        const markerKey = `${lat},${lng}|${safeText}|${source}`;
         const popupContent = `
-          <div style='font-size:0.75rem;max-width:300px;line-height:1.4;'>
+          <div style='font-size:0.75rem;max-width:250px;line-height:1.4;'>
             <strong style='color:#0ea5e9;'>${place}</strong><br>
             <div style='margin:4px 0;'>${safeText}</div>
             <div style='opacity:0.7;font-size:0.65rem;margin:4px 0;'>${time}</div>
-            <div style='opacity:0.6;font-size:0.6rem;margin:4px 0;background:#1e293b;padding:2px 4px;border-radius:2px;font-family:monospace;'>
-              <strong>Coords:</strong> ${lat}, ${lng}<br>
-              <strong>Source:</strong> ${source}<br>
-              <strong>Key:</strong> ${markerKey.substring(0, 80)}${markerKey.length > 80 ? '...' : ''}
-            </div>
             <button 
               style='margin-top:6px;font-size:0.65rem;padding:4px 8px;background:#ef4444;color:white;border:none;border-radius:3px;cursor:pointer;' 
               onclick="hideMarkerMap(${lat},${lng},'${encodeURIComponent(safeText)}','${encodeURIComponent(source)}', this)"
@@ -2039,55 +1917,9 @@ async function hideMarkerMap(lat,lng,txtEnc,srcEnc, btn){
   try{
     const text = decodeURIComponent(txtEnc);
     const source = decodeURIComponent(srcEnc);
-    
-    // Debug logging
-    console.log('Hiding marker:', { 
-      lat, 
-      lng, 
-      text_preview: text.substring(0, 100) + (text.length > 100 ? '...' : ''),
-      text_length: text.length,
-      source,
-      text_chars: text.split('').map(c => c.charCodeAt(0)).slice(0, 20)
-    });
-    
-    const payload = {
-      lat: parseFloat(lat), 
-      lng: parseFloat(lng), 
-      text: text, 
-      source: source
-    };
-    
-    const r = await fetch('/hide_marker',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(payload)
-    });
-    
-    const result = await r.json();
-    console.log('Hide marker response:', result);
-    
-    if(r.ok && result.status === 'ok'){ 
-      if(btn){ 
-        btn.textContent='✓ Hidden'; 
-        btn.disabled=true; 
-        btn.style.background='#10b981';
-      } 
-      console.log(`Marker hidden successfully. Total hidden: ${result.hidden_count}`);
-      setTimeout(() => reloadAdminMarkers(), 500); // Small delay to ensure backend processed
-    } else {
-      console.error('Failed to hide marker:', result);
-      if(btn){ 
-        btn.textContent='❌ Failed'; 
-        btn.style.background='#ef4444';
-      }
-    }
-  }catch(e){
-    console.error('Error hiding marker:', e);
-    if(btn){ 
-      btn.textContent='❌ Error'; 
-      btn.style.background='#ef4444';
-    }
-  }
+    const r = await fetch('/hide_marker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,text,source})});
+    if(r.ok){ if(btn){ btn.textContent='Hidden'; btn.disabled=true; } reloadAdminMarkers(); }
+  }catch(e){}
 }
 function toggleAutoAdmin(){ 
   adminAuto=!adminAuto; 
