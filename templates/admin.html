@@ -1814,9 +1814,8 @@ async function reloadAdminMarkers(){
   }
   
   try{
-    // Загружаем данные Telegram с теми же параметрами, что и основной сайт
+    // Загружаем данные без передачи timeRange - пусть сервер использует MONITOR_PERIOD_MINUTES из админки
     const params = new URLSearchParams({ 
-      timeRange: 40,  // 40 минут как на основном сайте
       confRange: 0, 
       maxTracks: 100,
       ts: Date.now()

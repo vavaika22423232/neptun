@@ -663,18 +663,6 @@
   z-index: 1200; /* above all Leaflet layers, below modal */
     }
     
-    .time-control {
-      display: flex !important;
-      align-items: center;
-      gap: 4px;
-      padding: 6px 8px !important;
-    }
-    
-    .time-control input:focus {
-      outline: 1px solid rgba(59, 130, 246, 0.5);
-      border-radius: 2px;
-    }
-    
     .map-control-btn {
       background: linear-gradient(145deg,rgba(255,255,255,0.82),rgba(248,250,252,0.95));
       border: 1px solid #c3cdd6;
@@ -1927,14 +1915,6 @@
         <button class="map-control-btn" id="expandBtn" onclick="toggleMapExpand()" title="Розгорнути карту" aria-label="Розгорнути карту">
           <i class="material-icons" id="expandIcon">fullscreen</i>
         </button>
-        
-        <!-- Time Period Control -->
-        <div class="map-control-btn time-control" title="Період моніторингу (хвилини)">
-          <i class="material-icons">schedule</i>
-          <input type="number" id="timePeriodInput" value="40" min="5" max="360" 
-                 onchange="updateTimePeriod()" onclick="event.stopPropagation()" 
-                 style="width:45px;background:transparent;border:none;color:white;text-align:center;font-size:12px;">
-        </div>
       </div>
       <div id="markerLoadingOverlay" class="hidden">
         <div class="spinner" aria-hidden="true"></div>
@@ -3112,13 +3092,11 @@
     
     async function updateMarkers() {
       console.log('updateMarkers: начинаем загрузку данных...');
-      // Используем значение из URL параметров или по умолчанию
-      const urlParams = new URLSearchParams(window.location.search);
-      const timeRange = parseInt(urlParams.get('timeRange')) || 40; // По умолчанию 40 минут
+      // НЕ используем timeRange - пусть сервер использует настройку из админки (MONITOR_PERIOD_MINUTES)
       const threatType = ''; // фиксированное значение - все типы угроз
       const maxTracks = 100; // уменьшено с 150 до 100 для быстрой загрузки
-      console.log('updateMarkers: параметры фильтрации - timeRange:', timeRange, 'минут, threatType:', threatType || 'все типы', 'maxTracks:', maxTracks);
-      const params = new URLSearchParams({ timeRange, confRange: 0, maxTracks });
+      console.log('updateMarkers: параметры фильтрации - используем MONITOR_PERIOD_MINUTES с сервера, threatType:', threatType || 'все типы', 'maxTracks:', maxTracks);
+      const params = new URLSearchParams({ confRange: 0, maxTracks });
   const overlay = document.getElementById('markerLoadingOverlay');
   // Показываем экран загрузки только при первоначальной загрузке
   if (overlay && isInitialLoad) {

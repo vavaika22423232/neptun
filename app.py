@@ -11531,7 +11531,7 @@ def data():
     except (ValueError, TypeError):
         time_range = MONITOR_PERIOD_MINUTES
     
-    print(f"[DEBUG] /data endpoint called with timeRange={request.args.get('timeRange')}, using time_range={time_range}")
+    print(f"[DEBUG] /data endpoint called with timeRange={request.args.get('timeRange')}, MONITOR_PERIOD_MINUTES={MONITOR_PERIOD_MINUTES}, using time_range={time_range}")
     messages = load_messages()
     print(f"[DEBUG] Loaded {len(messages)} total messages")
     tz = pytz.timezone('Europe/Kyiv')
@@ -12293,6 +12293,7 @@ def set_monitor_period():
             raise ValueError('out of range')
         MONITOR_PERIOD_MINUTES = val
         save_config()
+        print(f"[DEBUG] MONITOR_PERIOD_MINUTES updated to {MONITOR_PERIOD_MINUTES} minutes")
         return jsonify({'status':'ok','monitor_period':MONITOR_PERIOD_MINUTES})
     except Exception as e:
         return jsonify({'status':'error','error':str(e)}), 400
