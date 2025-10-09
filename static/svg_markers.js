@@ -41,6 +41,12 @@ const SVGMarkers = {
         // Возвращаем HTML строку (НЕ DOM элемент)
         const htmlString = `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" style="overflow: visible; display: block;">${svgContent}</svg>`;
         
+        // Отладка для проверки что загружается новая версия
+        if (type === 'shahed' && !window.shahedDebugShown) {
+            console.log('🚁 SVG Markers v2.0 loaded - New Shahed design active!');
+            window.shahedDebugShown = true;
+        }
+        
         return htmlString;
     },
 
