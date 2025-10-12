@@ -304,9 +304,9 @@ app = Flask(__name__)
 from collections import defaultdict
 import time
 
-# Simple rate limiting storage (more aggressive)
+# CRITICAL BANDWIDTH PROTECTION: Extremely aggressive rate limiting
 request_counts = defaultdict(list)
-RATE_LIMIT_REQUESTS = 10  # requests per minute (reduced from 30)
+RATE_LIMIT_REQUESTS = 3   # CRITICAL: Only 3 requests per minute per IP
 RATE_LIMIT_WINDOW = 60    # seconds
 
 def is_rate_limited(client_ip):
@@ -11547,6 +11547,22 @@ def comment_react_endpoint():
 @app.route('/active_alarms')
 def active_alarms_endpoint():
     """Return current active oblast & raion air alarms (for polygon styling)."""
+    
+    # CRITICAL BANDWIDTH PROTECTION: Rate limit active_alarms
+    client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
+    alarm_requests = request_counts.get(f"{client_ip}_alarms", [])
+    now = time.time()
+    
+    # Clean old requests (last 60 seconds)
+    alarm_requests = [req_time for req_time in alarm_requests if now - req_time < 60]
+    
+    # Allow only 1 request per minute
+    if len(alarm_requests) >= 1:
+        return jsonify({'error': 'Alarms endpoint rate limited'}), 429
+    
+    alarm_requests.append(now)
+    request_counts[f"{client_ip}_alarms"] = alarm_requests
+    
     try:
         now_ep = time.time()
         cutoff = now_ep - APP_ALARM_TTL_MINUTES*60
@@ -11599,10 +11615,27 @@ def alarms_stats():
 def data():
     global FALLBACK_REPARSE_CACHE, MAX_REPARSE_CACHE_SIZE
     
-    # BANDWIDTH OPTIMIZATION: Add aggressive caching headers
+    # CRITICAL BANDWIDTH PROTECTION: Special rate limiting for /data endpoint
+    client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
+    data_requests = request_counts.get(f"{client_ip}_data", [])
+    now = time.time()
+    
+    # Clean old requests (last 2 minutes for /data)
+    data_requests = [req_time for req_time in data_requests if now - req_time < 120]
+    
+    # CRITICAL: Allow only 1 /data request per 2 minutes per IP
+    if len(data_requests) >= 1:
+        print(f"[CRITICAL BANDWIDTH] Blocking /data request from {client_ip} - too frequent")
+        return jsonify({'error': 'Data endpoint rate limited - wait 2 minutes between requests'}), 429
+    
+    # Record this request
+    data_requests.append(now)
+    request_counts[f"{client_ip}_data"] = data_requests
+    
+    # BANDWIDTH OPTIMIZATION: Add aggressive caching headers  
     response_headers = {
-        'Cache-Control': 'public, max-age=30, s-maxage=30',
-        'ETag': f'data-{int(time.time() // 30)}',  # Cache for 30 seconds
+        'Cache-Control': 'public, max-age=60, s-maxage=60',  # Increased cache to 60 seconds
+        'ETag': f'data-{int(time.time() // 60)}',  # Cache for 60 seconds
         'Vary': 'Accept-Encoding'
     }
     
@@ -12164,6 +12197,21 @@ def presence():
 
 @app.route('/raion_alarms')
 def raion_alarms():
+    # CRITICAL BANDWIDTH PROTECTION: Rate limit raion_alarms
+    client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
+    raion_requests = request_counts.get(f"{client_ip}_raion", [])
+    now_time = time.time()
+    
+    # Clean old requests (last 60 seconds)
+    raion_requests = [req_time for req_time in raion_requests if now_time - req_time < 60]
+    
+    # Allow only 1 request per minute
+    if len(raion_requests) >= 1:
+        return jsonify({'error': 'Raion alarms endpoint rate limited'}), 429
+    
+    raion_requests.append(now_time)
+    request_counts[f"{client_ip}_raion"] = raion_requests
+    
     # Expose current active district air alarms
     out = []
     now = time.time()
