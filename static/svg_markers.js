@@ -61,84 +61,128 @@ const SVGMarkers = {
 
         switch(type) {
             case 'shahed':
-                // Шахед - детализированный дрон-камикадзе
-                const bodyLen = size * 0.44;
-                const wingSpan = size * 0.72;
-                const tailSpan = size * 0.36;
-                const noseLen = size * 0.14;
+                // Шахед - дельтовидный дрон в соответствии с эталонным дизайном
+                const wingTip = r * 1.2;    // Размах крыла
+                const bodyLength = r * 1.1;  // Длина фюзеляжа
                 
                 return `
                     <defs>
                         <linearGradient id="shahedBodyGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stop-color="${color}" stop-opacity="0.95"/>
-                            <stop offset="100%" stop-color="${color}" stop-opacity="0.6"/>
+                            <stop offset="0%" stop-color="#6b7280"/>
+                            <stop offset="100%" stop-color="#374151"/>
+                        </linearGradient>
+                        <linearGradient id="shahedWingGrad" x1="0" y1="0" x2="1" y2="0">
+                            <stop offset="0%" stop-color="#9ca3af"/>
+                            <stop offset="100%" stop-color="#4b5563"/>
                         </linearGradient>
                     </defs>
 
-                    <!-- фюзеляж -->
+                    <!-- Основное треугольное крыло (дельтовидная форма) -->
                     <path d="
-                        M ${cx - noseLen/2},${cy - bodyLen/2}
-                        L ${cx + noseLen/2},${cy - bodyLen/2}
-                        L ${cx + 4},${cy + bodyLen/2}
-                        L ${cx - 4},${cy + bodyLen/2}
+                        M ${cx - bodyLength*0.7},${cy}
+                        L ${cx + wingTip*0.8},${cy - r*0.6}
+                        L ${cx + wingTip},${cy}
+                        L ${cx + wingTip*0.8},${cy + r*0.6}
                         Z
-                    " fill="url(#shahedBodyGrad)" stroke="#000" stroke-width="${stroke}"/>
-
-                    <!-- крылья -->
-                    <polygon 
-                        points="
-                            ${cx - wingSpan/2},${cy - size*0.06},
-                            ${cx - size*0.04},${cy - size*0.1},
-                            ${cx + size*0.04},${cy - size*0.1},
-                            ${cx + wingSpan/2},${cy - size*0.06},
-                            ${cx + size*0.04},${cy - size*0.02},
-                            ${cx - size*0.04},${cy - size*0.02}
-                        " 
-                        fill="url(#shahedBodyGrad)" 
-                        stroke="#000" 
-                        stroke-width="${stroke}" 
-                    />
-
-                    <!-- хвостовые стабилизаторы -->
-                    <polygon 
-                        points="
-                            ${cx - tailSpan/2},${cy + bodyLen/2 - size*0.04},
-                            ${cx - size*0.06},${cy + bodyLen/2},
-                            ${cx - size*0.02},${cy + bodyLen/2 - size*0.04}
-                        "
-                        fill="url(#shahedBodyGrad)"
-                        stroke="#000"
-                        stroke-width="${stroke}"
-                    />
-                    <polygon 
-                        points="
-                            ${cx + tailSpan/2},${cy + bodyLen/2 - size*0.04},
-                            ${cx + size*0.06},${cy + bodyLen/2},
-                            ${cx + size*0.02},${cy + bodyLen/2 - size*0.04}
-                        "
-                        fill="url(#shahedBodyGrad)"
-                        stroke="#000"
-                        stroke-width="${stroke}"
-                    />
-
-                    <!-- носовая часть (оптика) -->
-                    <circle 
-                        cx="${cx}" 
-                        cy="${cy - bodyLen/2 + size*0.02}" 
-                        r="${size*0.028}" 
-                        fill="#222" 
-                        stroke="#fff" 
-                        stroke-width="${stroke*0.4}"
-                    />
-
-                    <!-- лёгкое свечение -->
-                    <circle 
-                        cx="${cx}" 
-                        cy="${cy - bodyLen/2 + size*0.02}" 
-                        r="${size*0.012}" 
-                        fill="#fff" 
-                        opacity="0.5"
-                    />
+                    " fill="url(#shahedWingGrad)" stroke="#374151" stroke-width="${stroke}"/>
+                    
+                    <!-- Детали крыла - верхняя панель -->
+                    <path d="
+                        M ${cx - bodyLength*0.6},${cy}
+                        L ${cx + wingTip*0.75},${cy - r*0.5}
+                        L ${cx + wingTip*0.8},${cy - r*0.6}
+                        L ${cx - bodyLength*0.7},${cy}
+                        Z
+                    " fill="#9ca3af" opacity="0.3"/>
+                    
+                    <!-- Детали крыла - нижняя панель -->
+                    <path d="
+                        M ${cx - bodyLength*0.6},${cy}
+                        L ${cx + wingTip*0.75},${cy + r*0.5}
+                        L ${cx + wingTip*0.8},${cy + r*0.6}
+                        L ${cx - bodyLength*0.7},${cy}
+                        Z
+                    " fill="#4b5563" opacity="0.3"/>
+                    
+                    <!-- Центральная линия крыла -->
+                    <line x1="${cx - bodyLength*0.7}" y1="${cy}" 
+                          x2="${cx + wingTip}" y2="${cy}" 
+                          stroke="#374151" stroke-width="${stroke}"/>
+                    
+                    <!-- Фюзеляж (узкий центральный корпус) -->
+                    <ellipse cx="${cx + r*0.1}" cy="${cy}" 
+                             rx="${bodyLength*0.8}" ry="${r*0.15}" 
+                             fill="#4b5563" stroke="#1f2937" stroke-width="${stroke}"/>
+                    
+                    <!-- Носовая часть -->
+                    <path d="
+                        M ${cx - bodyLength*0.7},${cy}
+                        L ${cx - bodyLength*0.8},${cy - r*0.08}
+                        L ${cx - bodyLength*0.85},${cy}
+                        L ${cx - bodyLength*0.8},${cy + r*0.08}
+                        Z
+                    " fill="#374151" stroke="#1f2937" stroke-width="${stroke}"/>
+                    
+                    <!-- Левый вертикальный стабилизатор -->
+                    <path d="
+                        M ${cx + wingTip*0.8},${cy - r*0.6}
+                        L ${cx + wingTip*0.85},${cy - r*0.65}
+                        L ${cx + wingTip*0.9},${cy - r*0.8}
+                        L ${cx + wingTip*0.87},${cy - r*0.65}
+                        L ${cx + wingTip*0.8},${cy - r*0.6}
+                        Z
+                    " fill="#6b7280" stroke="#374151" stroke-width="${stroke}"/>
+                    
+                    <!-- Правый вертикальный стабилизатор -->
+                    <path d="
+                        M ${cx + wingTip*0.8},${cy + r*0.6}
+                        L ${cx + wingTip*0.85},${cy + r*0.65}
+                        L ${cx + wingTip*0.9},${cy + r*0.8}
+                        L ${cx + wingTip*0.87},${cy + r*0.65}
+                        L ${cx + wingTip*0.8},${cy + r*0.6}
+                        Z
+                    " fill="#6b7280" stroke="#374151" stroke-width="${stroke}"/>
+                    
+                    <!-- Задняя часть фюзеляжа где мотор -->
+                    <ellipse cx="${cx + wingTip*0.85}" cy="${cy}" 
+                             rx="${r*0.2}" ry="${r*0.2}" 
+                             fill="#374151" stroke="#1f2937" stroke-width="${stroke}"/>
+                    
+                    <!-- Пропеллер (толкающая конфигурация) -->
+                    <g transform="translate(${cx + wingTip*0.95}, ${cy})">
+                        <!-- Лопасть 1 -->
+                        <ellipse cx="0" cy="${-r*0.15}" rx="${r*0.05}" ry="${r*0.18}" 
+                                 fill="#1f2937" stroke="#111827" stroke-width="0.5"/>
+                        <!-- Лопасть 2 -->
+                        <ellipse cx="0" cy="${r*0.15}" rx="${r*0.05}" ry="${r*0.18}" 
+                                 fill="#1f2937" stroke="#111827" stroke-width="0.5"/>
+                        <!-- Центральная втулка -->
+                        <circle cx="0" cy="0" r="${r*0.08}" fill="#111827"/>
+                    </g>
+                    
+                    <!-- Управляющие поверхности на крыле -->
+                    <path d="
+                        M ${cx + r*0.2},${cy - r*0.25}
+                        L ${cx + r*0.6},${cy - r*0.4}
+                        L ${cx + r*0.65},${cy - r*0.35}
+                        L ${cx + r*0.25},${cy - r*0.2}
+                        Z
+                    " fill="#374151" opacity="0.6"/>
+                    
+                    <path d="
+                        M ${cx + r*0.2},${cy + r*0.25}
+                        L ${cx + r*0.6},${cy + r*0.4}
+                        L ${cx + r*0.65},${cy + r*0.35}
+                        L ${cx + r*0.25},${cy + r*0.2}
+                        Z
+                    " fill="#374151" opacity="0.6"/>
+                    
+                    <!-- Антенна/сенсоры -->
+                    <circle cx="${cx - bodyLength*0.75}" cy="${cy}" r="${r*0.06}" 
+                            fill="#ef4444" opacity="0.8"/>
+                    <line x1="${cx - r*0.2}" y1="${cy}" x2="${cx - r*0.2}" y2="${cy - r*0.08}" 
+                          stroke="#1f2937" stroke-width="${stroke}"/>
+                    <circle cx="${cx - r*0.2}" cy="${cy - r*0.1}" r="${r*0.04}" fill="#374151"/>
                 `;
 
             case 'avia':
