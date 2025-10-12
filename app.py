@@ -12123,20 +12123,7 @@ def unhide_marker():
 if 'health' not in app.view_functions:
     @app.route('/health')
     def health():  # type: ignore
-        # CRITICAL BANDWIDTH PROTECTION: Rate limit health endpoint
-        client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
-        health_requests = request_counts.get(f"{client_ip}_health", [])
-        now = time.time()
-        
-        # Clean old requests (last 60 seconds)
-        health_requests = [req_time for req_time in health_requests if now - req_time < 60]
-        
-        # Allow only 1 health request per minute per IP
-        if len(health_requests) >= 1:
-            return jsonify({'error': 'Health endpoint rate limited'}), 429
-        
-        health_requests.append(now)
-        request_counts[f"{client_ip}_health"] = health_requests
+    # ...existing code...
         
         # Basic stats + prune visitors
         with ACTIVE_LOCK:
