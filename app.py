@@ -11765,7 +11765,7 @@ def data():
     
     # BANDWIDTH OPTIMIZATION: Minimize response size and add caching
     response_data = {
-        'tracks': out[:50],  # Limit to 50 tracks max to reduce bandwidth
+        'tracks': out[:100],  # Limit to 100 tracks max to reduce bandwidth
         'events': events[:20],  # Limit to 20 events max
         'all_sources': CHANNELS[:10],  # Limit sources
         'trajectories': []
@@ -12278,20 +12278,7 @@ def presence():
 
 @app.route('/raion_alarms')
 def raion_alarms():
-    # CRITICAL BANDWIDTH PROTECTION: Rate limit raion_alarms
-    client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
-    raion_requests = request_counts.get(f"{client_ip}_raion", [])
-    now_time = time.time()
-    
-    # Clean old requests (last 60 seconds)
-    raion_requests = [req_time for req_time in raion_requests if now_time - req_time < 60]
-    
-    # Allow only 1 request per minute
-    if len(raion_requests) >= 1:
-        return jsonify({'error': 'Raion alarms endpoint rate limited'}), 429
-    
-    raion_requests.append(now_time)
-    request_counts[f"{client_ip}_raion"] = raion_requests
+    # ...existing code...
     
     # Expose current active district air alarms
     out = []
