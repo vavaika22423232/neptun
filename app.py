@@ -11567,20 +11567,7 @@ def comment_react_endpoint():
 def active_alarms_endpoint():
     """Return current active oblast & raion air alarms (for polygon styling)."""
     
-    # CRITICAL BANDWIDTH PROTECTION: Rate limit active_alarms
-    client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
-    alarm_requests = request_counts.get(f"{client_ip}_alarms", [])
-    now = time.time()
-    
-    # Clean old requests (last 60 seconds)
-    alarm_requests = [req_time for req_time in alarm_requests if now - req_time < 60]
-    
-    # Allow only 1 request per minute
-    if len(alarm_requests) >= 1:
-        return jsonify({'error': 'Alarms endpoint rate limited'}), 429
-    
-    alarm_requests.append(now)
-    request_counts[f"{client_ip}_alarms"] = alarm_requests
+    # Rate limit отключен: все пользователи имеют свободный доступ
     
     try:
         now_ep = time.time()
@@ -11634,22 +11621,7 @@ def alarms_stats():
 def data():
     global FALLBACK_REPARSE_CACHE, MAX_REPARSE_CACHE_SIZE
     
-    # CRITICAL BANDWIDTH PROTECTION: Special rate limiting for /data endpoint
-    client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
-    data_requests = request_counts.get(f"{client_ip}_data", [])
-    now = time.time()
-    
-    # Clean old requests (last 2 minutes for /data)
-    data_requests = [req_time for req_time in data_requests if now - req_time < 120]
-    
-    # CRITICAL: Allow only 1 /data request per 2 minutes per IP
-    if len(data_requests) >= 1:
-        print(f"[CRITICAL BANDWIDTH] Blocking /data request from {client_ip} - too frequent")
-        return jsonify({'error': 'Data endpoint rate limited - wait 2 minutes between requests'}), 429
-    
-    # Record this request
-    data_requests.append(now)
-    request_counts[f"{client_ip}_data"] = data_requests
+    # Rate limit отключен: все пользователи имеют свободный доступ
     
     # BANDWIDTH OPTIMIZATION: Add aggressive caching headers  
     response_headers = {
