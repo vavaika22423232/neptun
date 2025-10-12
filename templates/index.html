@@ -1852,12 +1852,7 @@
         <button class="map-control-btn" onclick="map.setCenter({lat: 48.3794, lng: 31.1656})">
           <i class="material-icons">center_focus_strong</i>
         </button>
-        <button class="map-control-btn" id="textSizeBtn" onclick="toggleTextSize()" title="Збільшити/зменшити розмір тексту на карті" aria-label="Розмір тексту">
-          <i class="material-icons">text_fields</i>
-        </button>
-        <button class="map-control-btn" id="regionBoundariesBtn" onclick="toggleRegionBoundaries()" title="Показати/приховати границі областей" aria-label="Границі областей">
-          <i class="material-icons">map</i>
-        </button>
+  <!-- Кнопки управления границами областей и размером текста удалены по запросу -->
 
         <button class="map-control-btn" id="expandBtn" onclick="toggleMapExpand()" title="Розгорнути карту" aria-label="Розгорнути карту">
           <i class="material-icons" id="expandIcon">fullscreen</i>
@@ -4197,88 +4192,14 @@
     if (btn) btn.style.opacity = '0.5';
     return;
     
-    if (regionBoundariesVisible) {
-      // Скрыть границы
-      if (regionBoundariesLayer && map) {
-        map.removeLayer(regionBoundariesLayer);
-        regionBoundariesLayer = null;
-      }
-      regionBoundariesVisible = false;
-      
-      if (btn) {
-        btn.classList.remove('active');
-        btn.title = 'Показати границі областей';
-      }
-      
-      console.log('Границі областей приховані');
-    } else {
-      // Показать границы
-      if (map && window.showAllRegionBoundaries) {
-        regionBoundariesLayer = window.showAllRegionBoundaries(map, {
-          color: '#f59e0b',
-          weight: 2,
-          opacity: 0.8,
-          fillColor: '#f59e0b',
-          fillOpacity: 0.15,
-          className: 'region-boundaries-layer'
-        });
-        
-        if (regionBoundariesLayer) {
-          regionBoundariesVisible = true;
-          
-          if (btn) {
-            btn.classList.add('active');
-            btn.title = 'Приховати границі областей';
-          }
-          
-          console.log('Границі областей показані');
-        }
-      }
-    }
+    // Функция управления границами областей удалена
   }
   
   // Text size toggle functionality
   let largeTextEnabled = false;
   
   function toggleTextSize() {
-    const btn = document.getElementById('textSizeBtn');
-    const mapElement = document.getElementById('map');
-    
-    if (!mapElement) {
-      console.warn('Елемент карти не знайдено');
-      return;
-    }
-    
-    largeTextEnabled = !largeTextEnabled;
-    
-    if (largeTextEnabled) {
-      // Увеличить текст
-      mapElement.classList.add('large-text');
-      
-      if (btn) {
-        btn.classList.add('active');
-        btn.title = 'Зменшити розмір тексту на карті';
-      }
-      
-      console.log('Увеличен размер текста на карте');
-    } else {
-      // Уменьшить текст до нормального
-      mapElement.classList.remove('large-text');
-      
-      if (btn) {
-        btn.classList.remove('active');
-        btn.title = 'Збільшити розмір тексту на карті';
-      }
-      
-      console.log('Восстановлен нормальный размер текста на карте');
-    }
-    
-    // Обновляем размер карты после изменения
-    setTimeout(() => {
-      if (map) {
-        map.invalidateSize();
-      }
-    }, 100);
+    // Функция управления размером текста на карте удалена
   }
   
   // Map theme toggle functionality
