@@ -12128,8 +12128,22 @@ def unhide_marker():
 if 'health' not in app.view_functions:
     @app.route('/health')
     def health():  # type: ignore
-        # Basic stats + prune visitors
+        # CRITICAL BANDWIDTH PROTECTION: Rate limit health endpoint
+        client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
+        health_requests = request_counts.get(f"{client_ip}_health", [])
         now = time.time()
+        
+        # Clean old requests (last 60 seconds)
+        health_requests = [req_time for req_time in health_requests if now - req_time < 60]
+        
+        # Allow only 1 health request per minute per IP
+        if len(health_requests) >= 1:
+            return jsonify({'error': 'Health endpoint rate limited'}), 429
+        
+        health_requests.append(now)
+        request_counts[f"{client_ip}_health"] = health_requests
+        
+        # Basic stats + prune visitors
         with ACTIVE_LOCK:
             for vid, meta in list(ACTIVE_VISITORS.items()):
                 ts = meta if isinstance(meta,(int,float)) else meta.get('ts',0)
@@ -12140,9 +12154,24 @@ if 'health' not in app.view_functions:
 
 @app.route('/presence', methods=['POST'])
 def presence():
+    # CRITICAL BANDWIDTH PROTECTION: Rate limit presence endpoint
+    client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
+    presence_requests = request_counts.get(f"{client_ip}_presence", [])
+    now_time = time.time()
+    
+    # Clean old requests (last 120 seconds - allow every 2 minutes)
+    presence_requests = [req_time for req_time in presence_requests if now_time - req_time < 120]
+    
+    # Allow only 1 presence request per 2 minutes per IP
+    if len(presence_requests) >= 1:
+        return jsonify({'error': 'Presence endpoint rate limited - wait 2 minutes'}), 429
+    
+    presence_requests.append(now_time)
+    request_counts[f"{client_ip}_presence"] = presence_requests
+    
     data = request.get_json(silent=True) or {}
     vid = data.get('id')
-    print(f"[DEBUG] /presence called with id={vid}")
+    print(f"[DEBUG] /presence called with id={vid} from IP {client_ip}")
     if not vid:
         return jsonify({'status':'error','error':'id required'}), 400
     now = time.time()
@@ -12232,6 +12261,21 @@ def raion_alarms():
 # SSE stream endpoint
 @app.route('/stream')
 def stream():
+    # CRITICAL BANDWIDTH PROTECTION: Rate limit stream endpoint
+    client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
+    stream_requests = request_counts.get(f"{client_ip}_stream", [])
+    now_time = time.time()
+    
+    # Clean old requests (last 300 seconds - allow every 5 minutes)
+    stream_requests = [req_time for req_time in stream_requests if now_time - req_time < 300]
+    
+    # Allow only 1 stream connection per 5 minutes per IP
+    if len(stream_requests) >= 1:
+        return jsonify({'error': 'Stream endpoint rate limited - wait 5 minutes'}), 429
+    
+    stream_requests.append(now_time)
+    request_counts[f"{client_ip}_stream"] = stream_requests
+    
     def gen():
         q = queue.Queue()
         SUBSCRIBERS.add(q)
