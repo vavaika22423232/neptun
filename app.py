@@ -357,6 +357,7 @@ def static_with_gzip(filename):
     
     static_requests.append(now_time)
     request_counts[f"{client_ip}_static"] = static_requests
+        # Rate limiting removed
     
     # SMART BANDWIDTH PROTECTION: Block only genuinely large files (>1MB)
     try:
