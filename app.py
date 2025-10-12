@@ -375,6 +375,35 @@ def compress_response(response):
 @app.route('/static/<path:filename>')
 def static_with_gzip(filename):
     """Serve static files with gzip compression support."""
+    
+    # CRITICAL BANDWIDTH PROTECTION: Rate limit static files
+    client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
+    static_requests = request_counts.get(f"{client_ip}_static", [])
+    now_time = time.time()
+    
+    # Clean old requests (last 60 seconds)
+    static_requests = [req_time for req_time in static_requests if now_time - req_time < 60]
+    
+    # Allow only 5 static file requests per minute per IP
+    if len(static_requests) >= 5:
+        print(f"[CRITICAL BANDWIDTH] Blocking static file {filename} from {client_ip} - too many requests")
+        return jsonify({'error': 'Static files rate limited - wait 1 minute'}), 429
+    
+    static_requests.append(now_time)
+    request_counts[f"{client_ip}_static"] = static_requests
+    
+    # EMERGENCY: Block high-bandwidth files completely
+    high_bandwidth_files = [
+        'adm1.json',  # Large administrative boundaries file
+        'geoBoundaries-UKR-ADM0_simplified.geojson',  # Large geo data
+        'region_boundaries.js',  # Large regions data
+        'city_boundaries.js'  # Large cities data
+    ]
+    
+    if any(blocked_file in filename for blocked_file in high_bandwidth_files):
+        print(f"[EMERGENCY BANDWIDTH] Blocking high-bandwidth file {filename} from {client_ip}")
+        return jsonify({'error': 'File temporarily blocked to save bandwidth'}), 503
+    
     # Check if client accepts gzip and we have a gzipped version
     accepts_gzip = 'gzip' in request.headers.get('Accept-Encoding', '').lower()
     
@@ -392,7 +421,19 @@ def static_with_gzip(filename):
             return response
     
     # Fall back to regular static file serving
-    return send_from_directory(app.static_folder, filename)
+    response = send_from_directory(app.static_folder, filename)
+    
+    # CRITICAL BANDWIDTH PROTECTION: Check file size
+    try:
+        file_path = os.path.join(app.static_folder, filename)
+        if os.path.exists(file_path):
+            file_size = os.path.getsize(file_path)
+            if file_size > 100 * 1024:  # 100KB limit
+                print(f"[CRITICAL BANDWIDTH] Large static file {filename}: {file_size/1024:.1f}KB from {client_ip}")
+    except Exception:
+        pass
+    
+    return response
 
 # Configure caching and compression for better performance on slow connections
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000  # 1 year for static files
