@@ -341,6 +341,9 @@ def compress_response(response):
 @app.route('/static/<path:filename>')
 def static_with_gzip(filename):
     """Serve static files with gzip compression support."""
+    # Rate limiting removed
+    # ...existing code...
+    """Serve static files with gzip compression support."""
     
     # CRITICAL BANDWIDTH PROTECTION: Rate limit static files
     client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
