@@ -306,7 +306,7 @@ import time
 
 # CRITICAL BANDWIDTH PROTECTION: Extremely aggressive rate limiting
 request_counts = defaultdict(list)
-RATE_LIMIT_REQUESTS = 3   # CRITICAL: Only 3 requests per minute per IP
+RATE_LIMIT_REQUESTS = 100   # Разрешаем до 100 запросов в минуту на IP
 RATE_LIMIT_WINDOW = 60    # seconds
 
 def is_rate_limited(client_ip):
