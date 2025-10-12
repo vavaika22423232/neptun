@@ -301,41 +301,7 @@ log = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # BANDWIDTH OPTIMIZATION: Rate limiting to prevent abuse
-from collections import defaultdict
-import time
-
-# CRITICAL BANDWIDTH PROTECTION: Extremely aggressive rate limiting
-request_counts = defaultdict(list)
-RATE_LIMIT_REQUESTS = 100   # Разрешаем до 100 запросов в минуту на IP
-RATE_LIMIT_WINDOW = 60    # seconds
-
-def is_rate_limited(client_ip):
-    """Check if client IP has exceeded rate limit."""
-    now = time.time()
-    # Clean old requests outside the window
-    request_counts[client_ip] = [req_time for req_time in request_counts[client_ip] if now - req_time < RATE_LIMIT_WINDOW]
-    
-    # Check if limit exceeded
-    if len(request_counts[client_ip]) >= RATE_LIMIT_REQUESTS:
-        return True
-    
-    # Add current request
-    request_counts[client_ip].append(now)
-    return False
-
-@app.before_request
-def check_rate_limit():
-    """Apply rate limiting to high-bandwidth endpoints."""
-    # Block suspicious user agents (bots, scrapers)
-    user_agent = request.headers.get('User-Agent', '').lower()
-    suspicious_agents = ['bot', 'crawler', 'spider', 'scraper', 'curl', 'wget', 'python-requests']
-    if any(agent in user_agent for agent in suspicious_agents):
-        return jsonify({'error': 'Access denied'}), 403
-    
-    # Apply rate limiting to ALL endpoints (not just specific ones)
-    client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
-    if is_rate_limited(client_ip):
-        return jsonify({'error': 'Rate limit exceeded. Try again later.'}), 429
+    # Rate limiting отключен: все пользователи имеют свободный доступ
 
 # BANDWIDTH OPTIMIZATION: Enable gzip compression globally
 from flask import Flask
