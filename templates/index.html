@@ -1907,12 +1907,31 @@
   <!-- Turf.js for geometry operations -->
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
   <!-- SVG markers for performance optimization -->
-  <script src="{{ url_for('static', filename='svg_markers.js') }}"></script>
+  <!-- SVG markers отключены, используем PNG -->
   
   <!-- BANDWIDTH OPTIMIZATION: Region boundaries removed to save 19MB -->
   <script>
     // Stub for removed region boundaries to prevent errors
     window.REGION_BOUNDARIES = {type: "FeatureCollection", features: []};
+
+    // Функция для создания PNG-маркера
+    function createPNGMarker(type) {
+      // Сопоставление типа с файлом
+      const files = {
+        shahed: 'shahed.png',
+        avia: 'avia.png',
+        artillery: 'artillery.png',
+        neptun: 'neptun.jpg',
+        // Добавьте другие типы иконок по необходимости
+      };
+      const filename = files[type] || 'neptun.jpg';
+      const img = document.createElement('img');
+      img.src = `/static/${filename}`;
+      img.className = 'plain-marker-img';
+      img.width = 32;
+      img.height = 32;
+      return img;
+    }
   </script>
   <script type="text/javascript">
     // @ts-nocheck
