@@ -392,17 +392,29 @@ def static_with_gzip(filename):
     static_requests.append(now_time)
     request_counts[f"{client_ip}_static"] = static_requests
     
-    # EMERGENCY: Block high-bandwidth files completely
-    high_bandwidth_files = [
-        'adm1.json',  # Large administrative boundaries file
-        'geoBoundaries-UKR-ADM0_simplified.geojson',  # Large geo data
-        'region_boundaries.js',  # Large regions data
-        'city_boundaries.js'  # Large cities data
-    ]
-    
-    if any(blocked_file in filename for blocked_file in high_bandwidth_files):
-        print(f"[EMERGENCY BANDWIDTH] Blocking high-bandwidth file {filename} from {client_ip}")
-        return jsonify({'error': 'File temporarily blocked to save bandwidth'}), 503
+    # SMART BANDWIDTH PROTECTION: Block only genuinely large files (>1MB)
+    try:
+        static_folder = os.path.join(os.path.dirname(__file__), 'static')
+        file_path = os.path.join(static_folder, filename)
+        
+        if os.path.exists(file_path):
+            file_size = os.path.getsize(file_path)
+            
+            # Block files larger than 1MB to save bandwidth
+            if file_size > 1024 * 1024:  # 1MB limit 
+                print(f"[BANDWIDTH PROTECTION] Blocking large file {filename} ({file_size//1024}KB) from {client_ip}")
+                return jsonify({'error': f'Large file blocked - size {file_size//1024}KB exceeds 1MB limit'}), 503
+                
+            # Log access to files over 100KB for monitoring
+            if file_size > 100 * 1024:
+                print(f"[BANDWIDTH MONITOR] Serving large file {filename} ({file_size//1024}KB) to {client_ip}")
+        else:
+            print(f"[STATIC FILE] File not found: {filename}")
+            return jsonify({'error': 'File not found'}), 404
+            
+    except Exception as e:
+        print(f"[BANDWIDTH ERROR] Error checking file {filename}: {e}")
+        return jsonify({'error': 'File access error'}), 500
     
     # Check if client accepts gzip and we have a gzipped version
     accepts_gzip = 'gzip' in request.headers.get('Accept-Encoding', '').lower()
@@ -12979,6 +12991,9 @@ def startup_diag():
 def startup_init():
     _init_background()
     return jsonify({'status': 'ok'})
+
+# BANDWIDTH PROTECTION: Custom static route will compete with Flask's built-in route
+# Flask will prioritize our custom route due to specificity
 
 if __name__ == '__main__':
     # Local / container direct run (not needed if a WSGI server like gunicorn is used)

@@ -1911,10 +1911,14 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <!-- Turf.js for geometry operations -->
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
-  <!-- Region boundaries data for NEPTUN -->
-  <script src="{{ url_for('static', filename='region_boundaries.js') }}"></script>
   <!-- SVG markers for performance optimization -->
   <script src="{{ url_for('static', filename='svg_markers.js') }}"></script>
+  
+  <!-- BANDWIDTH OPTIMIZATION: Region boundaries removed to save 19MB -->
+  <script>
+    // Stub for removed region boundaries to prevent errors
+    window.REGION_BOUNDARIES = {type: "FeatureCollection", features: []};
+  </script>
   <script type="text/javascript">
     // @ts-nocheck
     
@@ -4188,10 +4192,10 @@
   function toggleRegionBoundaries() {
     const btn = document.getElementById('regionBoundariesBtn');
     
-    if (!window.REGION_BOUNDARIES) {
-      console.warn('Дані про границі областей не завантажені');
-      return;
-    }
+    // BANDWIDTH OPTIMIZATION: Region boundaries disabled to save 19MB
+    console.warn('Границі регіонів відключені для економії трафіку');
+    if (btn) btn.style.opacity = '0.5';
+    return;
     
     if (regionBoundariesVisible) {
       // Скрыть границы
