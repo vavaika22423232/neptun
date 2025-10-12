@@ -298,7 +298,8 @@ ALWAYS_STORE_RAW = os.getenv('ALWAYS_STORE_RAW', '1') not in ('0','false','False
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 log = logging.getLogger(__name__)
 
-app = Flask(__name__)
+# CRITICAL: Disable Flask's built-in static file serving to force all requests through our protected route
+app = Flask(__name__, static_folder=None, static_url_path=None)
 
 # BANDWIDTH OPTIMIZATION: Rate limiting to prevent abuse
 from collections import defaultdict
@@ -376,23 +377,9 @@ def compress_response(response):
 def static_with_gzip(filename):
     """Serve static files with gzip compression support."""
     
-    # CRITICAL BANDWIDTH PROTECTION: Rate limit static files
     client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
-    static_requests = request_counts.get(f"{client_ip}_static", [])
-    now_time = time.time()
     
-    # Clean old requests (last 60 seconds)
-    static_requests = [req_time for req_time in static_requests if now_time - req_time < 60]
-    
-    # Allow only 5 static file requests per minute per IP
-    if len(static_requests) >= 5:
-        print(f"[CRITICAL BANDWIDTH] Blocking static file {filename} from {client_ip} - too many requests")
-        return jsonify({'error': 'Static files rate limited - wait 1 minute'}), 429
-    
-    static_requests.append(now_time)
-    request_counts[f"{client_ip}_static"] = static_requests
-    
-    # EMERGENCY: Block high-bandwidth files completely
+    # EMERGENCY: Block high-bandwidth files FIRST (before any other processing)
     high_bandwidth_files = [
         'adm1.json',  # Large administrative boundaries file
         'geoBoundaries-UKR-ADM0_simplified.geojson',  # Large geo data
@@ -402,15 +389,39 @@ def static_with_gzip(filename):
     
     if any(blocked_file in filename for blocked_file in high_bandwidth_files):
         print(f"[EMERGENCY BANDWIDTH] Blocking high-bandwidth file {filename} from {client_ip}")
-        return jsonify({'error': 'File temporarily blocked to save bandwidth'}), 503
+        return jsonify({'error': 'File temporarily blocked to save bandwidth costs'}), 503
+    
+    # CRITICAL BANDWIDTH PROTECTION: Rate limit ALL static files
+    static_requests = request_counts.get(f"{client_ip}_static", [])
+    now_time = time.time()
+    
+    # Clean old requests (last 60 seconds)
+    static_requests = [req_time for req_time in static_requests if now_time - req_time < 60]
+    
+    # Allow only 3 static file requests per minute per IP (reduced from 5)
+    if len(static_requests) >= 3:
+        print(f"[CRITICAL BANDWIDTH] Rate limiting static file {filename} from {client_ip} - {len(static_requests)} requests")
+        return jsonify({'error': 'Static files rate limited - wait 1 minute'}), 429
+    
+    static_requests.append(now_time)
+    request_counts[f"{client_ip}_static"] = static_requests
+    
+    # Define static folder manually since we disabled Flask's built-in static serving
+    static_folder = os.path.join(os.path.dirname(__file__), 'static')
+    
+    # Check if file exists before serving
+    file_path = os.path.join(static_folder, filename)
+    if not os.path.exists(file_path):
+        print(f"[STATIC FILE] File not found: {filename} from {client_ip}")
+        return jsonify({'error': 'File not found'}), 404
     
     # Check if client accepts gzip and we have a gzipped version
     accepts_gzip = 'gzip' in request.headers.get('Accept-Encoding', '').lower()
     
     if accepts_gzip and filename.endswith('.js'):
-        gzip_path = os.path.join(app.static_folder, filename + '.gz')
+        gzip_path = os.path.join(static_folder, filename + '.gz')
         if os.path.exists(gzip_path):
-            response = send_from_directory(app.static_folder, filename + '.gz')
+            response = send_from_directory(static_folder, filename + '.gz')
             response.headers['Content-Encoding'] = 'gzip'
             response.headers['Content-Type'] = 'application/javascript; charset=utf-8'
             
@@ -421,13 +432,14 @@ def static_with_gzip(filename):
             return response
     
     # Fall back to regular static file serving
-    response = send_from_directory(app.static_folder, filename)
+    response = send_from_directory(static_folder, filename)
     
-    # CRITICAL BANDWIDTH PROTECTION: Check file size
+    # CRITICAL BANDWIDTH PROTECTION: Check file size and log access
     try:
-        file_path = os.path.join(app.static_folder, filename)
-        if os.path.exists(file_path):
-            file_size = os.path.getsize(file_path)
+        file_size = os.path.getsize(file_path)
+        print(f"[STATIC ACCESS] Serving {filename} ({file_size} bytes) to {client_ip}")
+        if file_size > 100 * 1024:  # Files larger than 100KB
+            print(f"[BANDWIDTH WARNING] Large file served: {filename} ({file_size} bytes) to {client_ip}")
             if file_size > 100 * 1024:  # 100KB limit
                 print(f"[CRITICAL BANDWIDTH] Large static file {filename}: {file_size/1024:.1f}KB from {client_ip}")
     except Exception:
