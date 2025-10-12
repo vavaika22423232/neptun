@@ -12149,6 +12149,63 @@ if 'health' not in app.view_functions:
 
 @app.route('/presence', methods=['POST'])
 def presence():
+    # Rate limiting removed
+    data = request.get_json(silent=True) or {}
+    vid = data.get('id')
+    client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
+    print(f"[DEBUG] /presence called with id={vid} from IP {client_ip}")
+    if not vid:
+        return jsonify({'status':'error','error':'id required'}), 400
+    now = time.time()
+    blocked = set(load_blocked())
+    if vid in blocked:
+        return jsonify({'status':'blocked'})
+    remote_ip = request.headers.get('X-Forwarded-For', request.remote_addr or '')
+    ua = request.headers.get('User-Agent', '')[:300]
+    # Load stats and register first-seen if new
+    stats = _load_visit_stats()
+    if vid not in stats:
+        stats[vid] = now
+        # prune occasionally (1/200 probability)
+        if int(now) % 200 == 0:
+            _prune_visit_stats()
+        _save_visit_stats()
+    # Update rolling today/week stats (independent persistence)
+    try:
+        _update_recent_visits(vid)
+    except Exception as e:
+        log.warning(f"recent visits update failed: {e}")
+    # Record in SQLite persistent store
+    try:
+        record_visit_sql(vid, now)
+    except Exception:
+        pass
+    # Query DB for persistent first_seen to avoid resetting session on process restart
+    db_first = None
+    try:
+        with _visits_db_conn() as conn:
+            cur = conn.execute("SELECT first_seen FROM visits WHERE id=?", (vid,))
+            row = cur.fetchone()
+            if row and row[0]:
+                try:
+                    db_first = float(row[0])
+                except Exception:
+                    db_first = None
+    except Exception:
+        pass
+    with ACTIVE_LOCK:
+        prev = ACTIVE_VISITORS.get(vid) if isinstance(ACTIVE_VISITORS.get(vid), dict) else {}
+        first_seen = prev.get('first') or db_first or stats.get(vid) or now
+        ACTIVE_VISITORS[vid] = {'ts': now, 'first': first_seen, 'ip': remote_ip, 'ua': prev.get('ua') or ua}
+        # prune
+        for k, meta in list(ACTIVE_VISITORS.items()):
+            ts = meta if isinstance(meta,(int,float)) else meta.get('ts',0)
+            if now - ts > ACTIVE_TTL:
+                del ACTIVE_VISITORS[k]
+        count = len(ACTIVE_VISITORS)
+    print(f"[DEBUG] Returning visitors count: {count}")
+    return jsonify({'status':'ok','visitors': count})
+def presence():
     # CRITICAL BANDWIDTH PROTECTION: Rate limit presence endpoint
     client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
     presence_requests = request_counts.get(f"{client_ip}_presence", [])
