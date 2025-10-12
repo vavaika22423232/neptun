@@ -943,59 +943,6 @@
     <button class="ma-close" id="maClose" aria-label="Закрити">×</button>
   </div>
 
-  <!-- Donation Banner for Military Support -->
-  <div id="donationBanner" class="donation-banner">
-    <div class="donation-close" onclick="closeDonationBanner()">×</div>
-    <div class="donation-content">
-      <div class="donation-video">
-        <video autoplay muted loop playsinline>
-          <source src="/static/zbir.MP4" type="video/mp4">
-        </video>
-      </div>
-      <div class="donation-info">
-        <div class="donation-title">
-          <span class="donation-icon">🇺🇦</span>
-          Підтримка ЗСУ
-        </div>
-        <div class="donation-subtitle">До нас звернулися бійці 4 ОТБ, за допомогою у відновленні КСП</div>
-        
-        <div class="donation-methods">
-          <div class="donation-method">
-            <button class="donate-btn mono" onclick="window.open('https://send.monobank.ua/jar/34BgBPrhkG', '_blank')">
-              <span class="btn-icon">🏦</span>
-              <span class="btn-text">MonoBank Банка</span>
-            </button>
-          </div>
-          
-          <div class="donation-method">
-            <button class="donate-btn card" onclick="copyToClipboard('4874100028075417', 'Номер картки скопійовано!')">
-              <span class="btn-icon">💳</span>
-              <span class="btn-text">Картка: 4874•••5417</span>
-            </button>
-          </div>
-          
-          <div class="donation-method">
-            <button class="donate-btn privat" onclick="copyToClipboard('5168745153133886', 'Номер картки ПриватБанк скопійовано!')">
-              <span class="btn-icon">🏛️</span> 
-              <span class="btn-text">ПриватБанк: 5168•••3886</span>
-            </button>
-          </div>
-          
-          <div class="donation-method">
-            <button class="donate-btn paypal" onclick="copyToClipboard('gesundheit.map@gmail.com', 'PayPal адреса скопійована!')">
-              <span class="btn-icon">💰</span>
-              <span class="btn-text">PayPal: gesundheit.map@gmail.com</span>
-            </button>
-          </div>
-        </div>
-        
-        <div class="donation-message">
-          <strong>Слава Україні! Героям Слава!</strong>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- Server Donation Banner -->
   <div id="serverDonationBanner" class="server-donation-banner" style="display: none;">
     <div class="donation-close" onclick="closeServerDonationBanner()">×</div>
@@ -4046,7 +3993,7 @@
         }
       }
       pingPresence();
-  setInterval(pingPresence, 5000);
+  setInterval(pingPresence, 30000); // Увеличено с 5 до 30 секунд
 
       // --- Интеграция с alerts.in.ua ---
       let airAlarmLayer = null;
@@ -4152,7 +4099,7 @@
         raionAlarmLayer.addTo(map);
       }
       updateRaionAlarms();
-      setInterval(updateRaionAlarms, 15000);
+      setInterval(updateRaionAlarms, 60000); // Увеличено с 15 до 60 секунд
 
       await updateMarkers();
       try {
@@ -4173,7 +4120,7 @@
           } catch(e){}
         };
       } catch(e) {}
-      setInterval(updateMarkers, 30000); // Увеличено с 10 до 30 секунд
+      setInterval(updateMarkers, 60000); // Увеличено с 30 до 60 секунд
       // --- Re-cluster / re-render markers on zoom (debounced) so fast-mode buckets follow zoom level ---
       (function(){
         let zoomRedrawTimer=null; let lastZoom=map.getZoom();
@@ -4420,7 +4367,7 @@
   
   function startDeploymentMonitoring() {
     // Check server health every 10 seconds
-    deploymentCheckInterval = setInterval(checkServerHealth, 10000);
+    deploymentCheckInterval = setInterval(checkServerHealth, 60000); // Увеличено с 10 до 60 секунд
     deploymentMonitoringActive = true;
     console.log('Deployment monitoring started');
   }
@@ -4673,7 +4620,7 @@
   loadAdm1(); 
         /* loadAdm2(); */ 
         refreshAlarms(); 
-        setInterval(refreshAlarms,15000); 
+        setInterval(refreshAlarms, 60000); // Увеличено с 15 до 60 секунд 
         
   // Initialize donation amount loading for support card
   // Load immediately with fallback, then try to fetch real data

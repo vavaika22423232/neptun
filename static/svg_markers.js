@@ -41,11 +41,8 @@ const SVGMarkers = {
         // Возвращаем HTML строку (НЕ DOM элемент)
         const htmlString = `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" style="overflow: visible; display: block;">${svgContent}</svg>`;
         
-        // Отладка для проверки что загружается новая версия
-        if (type === 'shahed' && !window.shahedDebugShown) {
-            console.log('🚁 SVG Markers v2.0 loaded - New Shahed design active!');
-            window.shahedDebugShown = true;
-        }
+        // Отладочный лог чтобы убедиться что возвращается строка
+        console.log('SVG createSVG returning:', typeof htmlString, htmlString.substring(0, 50));
         
         return htmlString;
     },
@@ -64,77 +61,84 @@ const SVGMarkers = {
 
         switch(type) {
             case 'shahed':
-                // Шахед - реалистичный дрон-камикадзе с дельтовидным крылом
-                const scale = size / 32; // Масштабирование под размер маркера
+                // Шахед - детализированный дрон-камикадзе
+                const bodyLen = size * 0.44;
+                const wingSpan = size * 0.72;
+                const tailSpan = size * 0.36;
+                const noseLen = size * 0.14;
                 
                 return `
                     <defs>
                         <linearGradient id="shahedBodyGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stop-color="#6b7280"/>
-                            <stop offset="100%" stop-color="#4b5563"/>
-                        </linearGradient>
-                        <linearGradient id="shahedWingGrad" x1="0" y1="0" x2="1" y2="0">
-                            <stop offset="0%" stop-color="${color}"/>
-                            <stop offset="100%" stop-color="#6b7280"/>
+                            <stop offset="0%" stop-color="${color}" stop-opacity="0.95"/>
+                            <stop offset="100%" stop-color="${color}" stop-opacity="0.6"/>
                         </linearGradient>
                     </defs>
 
-                    <g transform="translate(${cx-size/2}, ${cy-size/2}) scale(${scale})">
-                        <!-- Основное треугольное крыло (дельтовидная форма) -->
-                        <path d="M 2 16 L 20 5 L 26 16 L 20 27 Z" 
-                              fill="url(#shahedWingGrad)" stroke="#374151" stroke-width="0.5"/>
-                        
-                        <!-- Детали крыла - панели -->
-                        <path d="M 3 16 L 19 6 L 20 5 L 2 16 Z" 
-                              fill="#9ca3af" opacity="0.3"/>
-                        <path d="M 3 16 L 19 26 L 20 27 L 2 16 Z" 
-                              fill="#4b5563" opacity="0.3"/>
-                        
-                        <!-- Центральная линия крыла -->
-                        <line x1="2" y1="16" x2="26" y2="16" 
-                              stroke="#374151" stroke-width="0.5"/>
-                        
-                        <!-- Фюзеляж (узкий центральный корпус) -->
-                        <ellipse cx="14" cy="16" rx="10" ry="1.2" 
-                                 fill="url(#shahedBodyGrad)" stroke="#1f2937" stroke-width="0.5"/>
-                        
-                        <!-- Носовая часть -->
-                        <path d="M 2 16 L 0 15.5 L -1 16 L 0 16.5 Z" 
-                              fill="#374151" stroke="#1f2937" stroke-width="0.3"/>
-                        
-                        <!-- Левый вертикальный стабилизатор -->
-                        <path d="M 20 5 L 21 4 L 22 2 L 21.5 4 L 20 5 Z" 
-                              fill="#6b7280" stroke="#374151" stroke-width="0.3"/>
-                        
-                        <!-- Правый вертикальный стабилизатор -->
-                        <path d="M 20 27 L 21 28 L 22 30 L 21.5 28 L 20 27 Z" 
-                              fill="#6b7280" stroke="#374151" stroke-width="0.3"/>
-                        
-                        <!-- Задняя часть фюзеляжа где мотор -->
-                        <ellipse cx="25" cy="16" rx="1.5" ry="1.5" 
-                                 fill="#374151" stroke="#1f2937" stroke-width="0.3"/>
-                        
-                        <!-- Пропеллер -->
-                        <g transform="translate(26, 16)">
-                            <ellipse cx="0" cy="-1.2" rx="0.2" ry="1.3" fill="#1f2937"/>
-                            <ellipse cx="0" cy="1.2" rx="0.2" ry="1.3" fill="#1f2937"/>
-                            <circle cx="0" cy="0" r="0.4" fill="#111827"/>
-                        </g>
-                        
-                        <!-- Посадочное шасси -->
-                        <rect x="11" y="16.5" width="0.3" height="1" fill="#1f2937" rx="0.1"/>
-                        <circle cx="11.15" cy="17.7" r="0.3" fill="#374151"/>
-                        
-                        <rect x="16" y="16.5" width="0.3" height="1" fill="#1f2937" rx="0.1"/>
-                        <circle cx="16.15" cy="17.7" r="0.3" fill="#374151"/>
-                        
-                        <!-- Красный датчик на носу -->
-                        <circle cx="0.5" cy="16" r="0.2" fill="#ef4444" opacity="0.8"/>
-                        
-                        <!-- Антенна -->
-                        <line x1="8" y1="16" x2="8" y2="15.5" stroke="#1f2937" stroke-width="0.2"/>
-                        <circle cx="8" cy="15.3" r="0.1" fill="#374151"/>
-                    </g>
+                    <!-- фюзеляж -->
+                    <path d="
+                        M ${cx - noseLen/2},${cy - bodyLen/2}
+                        L ${cx + noseLen/2},${cy - bodyLen/2}
+                        L ${cx + 4},${cy + bodyLen/2}
+                        L ${cx - 4},${cy + bodyLen/2}
+                        Z
+                    " fill="url(#shahedBodyGrad)" stroke="#000" stroke-width="${stroke}"/>
+
+                    <!-- крылья -->
+                    <polygon 
+                        points="
+                            ${cx - wingSpan/2},${cy - size*0.06},
+                            ${cx - size*0.04},${cy - size*0.1},
+                            ${cx + size*0.04},${cy - size*0.1},
+                            ${cx + wingSpan/2},${cy - size*0.06},
+                            ${cx + size*0.04},${cy - size*0.02},
+                            ${cx - size*0.04},${cy - size*0.02}
+                        " 
+                        fill="url(#shahedBodyGrad)" 
+                        stroke="#000" 
+                        stroke-width="${stroke}" 
+                    />
+
+                    <!-- хвостовые стабилизаторы -->
+                    <polygon 
+                        points="
+                            ${cx - tailSpan/2},${cy + bodyLen/2 - size*0.04},
+                            ${cx - size*0.06},${cy + bodyLen/2},
+                            ${cx - size*0.02},${cy + bodyLen/2 - size*0.04}
+                        "
+                        fill="url(#shahedBodyGrad)"
+                        stroke="#000"
+                        stroke-width="${stroke}"
+                    />
+                    <polygon 
+                        points="
+                            ${cx + tailSpan/2},${cy + bodyLen/2 - size*0.04},
+                            ${cx + size*0.06},${cy + bodyLen/2},
+                            ${cx + size*0.02},${cy + bodyLen/2 - size*0.04}
+                        "
+                        fill="url(#shahedBodyGrad)"
+                        stroke="#000"
+                        stroke-width="${stroke}"
+                    />
+
+                    <!-- носовая часть (оптика) -->
+                    <circle 
+                        cx="${cx}" 
+                        cy="${cy - bodyLen/2 + size*0.02}" 
+                        r="${size*0.028}" 
+                        fill="#222" 
+                        stroke="#fff" 
+                        stroke-width="${stroke*0.4}"
+                    />
+
+                    <!-- лёгкое свечение -->
+                    <circle 
+                        cx="${cx}" 
+                        cy="${cy - bodyLen/2 + size*0.02}" 
+                        r="${size*0.012}" 
+                        fill="#fff" 
+                        opacity="0.5"
+                    />
                 `;
 
             case 'avia':
@@ -223,29 +227,129 @@ const SVGMarkers = {
                 `;
 
             case 'fpv':
-                // FPV дрон - квадрокоптер с пропеллерами
+                // FPV дрон - детализированный квадрокоптер для гонок и фристайла
+                const armLength = r * 0.8;
+                const motorSize = r * 0.15;
+                const propSize = r * 0.25;
+                
                 return `
                     <defs>
-                        <radialGradient id="fpvGrad">
-                            <stop offset="0%" stop-color="#FF6633"/>
-                            <stop offset="100%" stop-color="${color}"/>
+                        <!-- Градиенты для реалистичного вида -->
+                        <radialGradient id="fpvBodyGrad">
+                            <stop offset="0%" stop-color="#2c3e50"/>
+                            <stop offset="100%" stop-color="#34495e"/>
+                        </radialGradient>
+                        <linearGradient id="fpvArmGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" stop-color="#1a1a1a"/>
+                            <stop offset="50%" stop-color="#333"/>
+                            <stop offset="100%" stop-color="#1a1a1a"/>
+                        </linearGradient>
+                        <radialGradient id="fpvMotorGrad">
+                            <stop offset="0%" stop-color="#5a5a5a"/>
+                            <stop offset="100%" stop-color="#2c3e50"/>
+                        </radialGradient>
+                        <radialGradient id="fpvCameraGrad">
+                            <stop offset="0%" stop-color="#3498db"/>
+                            <stop offset="100%" stop-color="#2980b9"/>
                         </radialGradient>
                     </defs>
-                    <!-- Центральный корпус -->
-                    <circle cx="${cx}" cy="${cy}" r="${r/3}" fill="url(#fpvGrad)" stroke="#000" stroke-width="${stroke}"/>
-                    <!-- Лучи (arms) -->
-                    <line x1="${cx-r}" y1="${cy-r}" x2="${cx}" y2="${cy}" stroke="#333" stroke-width="${stroke*2}"/>
-                    <line x1="${cx+r}" y1="${cy-r}" x2="${cx}" y2="${cy}" stroke="#333" stroke-width="${stroke*2}"/>
-                    <line x1="${cx-r}" y1="${cy+r}" x2="${cx}" y2="${cy}" stroke="#333" stroke-width="${stroke*2}"/>
-                    <line x1="${cx+r}" y1="${cy+r}" x2="${cx}" y2="${cy}" stroke="#333" stroke-width="${stroke*2}"/>
-                    <!-- Пропеллеры -->
-                    <circle cx="${cx-r}" cy="${cy-r}" r="${r/5}" fill="none" stroke="#666" stroke-width="1"/>
-                    <circle cx="${cx+r}" cy="${cy-r}" r="${r/5}" fill="none" stroke="#666" stroke-width="1"/>
-                    <circle cx="${cx-r}" cy="${cy+r}" r="${r/5}" fill="none" stroke="#666" stroke-width="1"/>
-                    <circle cx="${cx+r}" cy="${cy+r}" r="${r/5}" fill="none" stroke="#666" stroke-width="1"/>
-                    <!-- Камера -->
-                    <circle cx="${cx}" cy="${cy-r/6}" r="${r/6}" fill="#000"/>
+
+                    <!-- Карбоновые лучи (arms) - X-образная конфигурация -->
+                    <g stroke-linecap="round">
+                        <!-- Передние лучи -->
+                        <line x1="${cx}" y1="${cy}" x2="${cx-armLength}" y2="${cy-armLength}" 
+                              stroke="url(#fpvArmGrad)" stroke-width="${stroke*3}" opacity="0.9"/>
+                        <line x1="${cx}" y1="${cy}" x2="${cx+armLength}" y2="${cy-armLength}" 
+                              stroke="url(#fpvArmGrad)" stroke-width="${stroke*3}" opacity="0.9"/>
+                        
+                        <!-- Задние лучи -->
+                        <line x1="${cx}" y1="${cy}" x2="${cx-armLength}" y2="${cy+armLength}" 
+                              stroke="url(#fpvArmGrad)" stroke-width="${stroke*3}" opacity="0.9"/>
+                        <line x1="${cx}" y1="${cy}" x2="${cx+armLength}" y2="${cy+armLength}" 
+                              stroke="url(#fpvArmGrad)" stroke-width="${stroke*3}" opacity="0.9"/>
+                    </g>
+
+                    <!-- Моторы на концах лучей -->
+                    <circle cx="${cx-armLength}" cy="${cy-armLength}" r="${motorSize}" 
+                            fill="url(#fpvMotorGrad)" stroke="#000" stroke-width="0.5"/>
+                    <circle cx="${cx+armLength}" cy="${cy-armLength}" r="${motorSize}" 
+                            fill="url(#fpvMotorGrad)" stroke="#000" stroke-width="0.5"/>
+                    <circle cx="${cx-armLength}" cy="${cy+armLength}" r="${motorSize}" 
+                            fill="url(#fpvMotorGrad)" stroke="#000" stroke-width="0.5"/>
+                    <circle cx="${cx+armLength}" cy="${cy+armLength}" r="${motorSize}" 
+                            fill="url(#fpvMotorGrad)" stroke="#000" stroke-width="0.5"/>
+
+                    <!-- Пропеллеры с анимацией вращения -->
+                    <g opacity="0.7">
+                        <!-- Передние пропеллеры -->
+                        <g transform-origin="${cx-armLength} ${cy-armLength}">
+                            <ellipse cx="${cx-armLength}" cy="${cy-armLength}" rx="${propSize}" ry="${propSize/6}" 
+                                     fill="none" stroke="#444" stroke-width="1.5" opacity="0.6"/>
+                            <ellipse cx="${cx-armLength}" cy="${cy-armLength}" rx="${propSize/6}" ry="${propSize}" 
+                                     fill="none" stroke="#444" stroke-width="1.5" opacity="0.6"/>
+                        </g>
+                        <g transform-origin="${cx+armLength} ${cy-armLength}">
+                            <ellipse cx="${cx+armLength}" cy="${cy-armLength}" rx="${propSize}" ry="${propSize/6}" 
+                                     fill="none" stroke="#444" stroke-width="1.5" opacity="0.6"/>
+                            <ellipse cx="${cx+armLength}" cy="${cy-armLength}" rx="${propSize/6}" ry="${propSize}" 
+                                     fill="none" stroke="#444" stroke-width="1.5" opacity="0.6"/>
+                        </g>
+                        
+                        <!-- Задние пропеллеры -->
+                        <g transform-origin="${cx-armLength} ${cy+armLength}">
+                            <ellipse cx="${cx-armLength}" cy="${cy+armLength}" rx="${propSize}" ry="${propSize/6}" 
+                                     fill="none" stroke="#444" stroke-width="1.5" opacity="0.6"/>
+                            <ellipse cx="${cx-armLength}" cy="${cy+armLength}" rx="${propSize/6}" ry="${propSize}" 
+                                     fill="none" stroke="#444" stroke-width="1.5" opacity="0.6"/>
+                        </g>
+                        <g transform-origin="${cx+armLength} ${cy+armLength}">
+                            <ellipse cx="${cx+armLength}" cy="${cy+armLength}" rx="${propSize}" ry="${propSize/6}" 
+                                     fill="none" stroke="#444" stroke-width="1.5" opacity="0.6"/>
+                            <ellipse cx="${cx+armLength}" cy="${cy+armLength}" rx="${propSize/6}" ry="${propSize}" 
+                                     fill="none" stroke="#444" stroke-width="1.5" opacity="0.6"/>
+                        </g>
+                    </g>
+
+                    <!-- Центральная рама (карбон) -->
+                    <rect x="${cx-r/2.5}" y="${cy-r/2.5}" width="${r*2/2.5}" height="${r*2/2.5}" 
+                          fill="url(#fpvBodyGrad)" stroke="#000" stroke-width="${stroke}" rx="${r/8}"/>
+                    
+                    <!-- Детали рамы -->
+                    <rect x="${cx-r/3}" y="${cy-r/6}" width="${r*2/3}" height="${r/3}" 
+                          fill="#1a1a1a" stroke="#333" stroke-width="0.5" rx="2"/>
+
+                    <!-- FPV камера (широкоугольная) -->
+                    <circle cx="${cx}" cy="${cy-r/3}" r="${r/4}" 
+                            fill="url(#fpvCameraGrad)" stroke="#1e3a8a" stroke-width="1"/>
+                    <circle cx="${cx}" cy="${cy-r/3}" r="${r/6}" 
+                            fill="#87ceeb" opacity="0.8"/>
+                    <circle cx="${cx}" cy="${cy-r/3}" r="${r/12}" 
+                            fill="#fff" opacity="0.9"/>
+                    
+                    <!-- Наклон камеры (характерно для FPV) -->
+                    <rect x="${cx-r/8}" y="${cy-r/2.2}" width="${r/4}" height="${r/8}" 
+                          fill="#2c3e50" stroke="#000" stroke-width="0.5" rx="1"/>
+
+                    <!-- Антенны (видео и телеметрия) -->
+                    <line x1="${cx-r/3}" y1="${cy-r/4}" x2="${cx-r/1.5}" y2="${cy-r/1.2}" 
+                          stroke="#e74c3c" stroke-width="2" stroke-linecap="round"/>
+                    <line x1="${cx+r/3}" y1="${cy-r/4}" x2="${cx+r/1.5}" y2="${cy-r/1.2}" 
+                          stroke="#3498db" stroke-width="2" stroke-linecap="round"/>
+                    
+                    <!-- Светодиоды (навигационные огни) -->
+                    <circle cx="${cx-r/4}" cy="${cy+r/4}" r="${r/12}" fill="#2ecc71" opacity="0.8"/>
+                    <circle cx="${cx+r/4}" cy="${cy+r/4}" r="${r/12}" fill="#e74c3c" opacity="0.8"/>
+                    
+                    <!-- Батарея (характерная деталь) -->
+                    <rect x="${cx-r/6}" y="${cy}" width="${r/3}" height="${r/4}" 
+                          fill="#f39c12" stroke="#d68910" stroke-width="0.5" rx="2"/>
+                    
+                    <!-- Полетный контроллер -->
+                    <rect x="${cx-r/8}" y="${cy-r/8}" width="${r/4}" height="${r/4}" 
+                          fill="#27ae60" stroke="#1e8449" stroke-width="0.5" rx="1"/>
+                    <circle cx="${cx}" cy="${cy}" r="${r/16}" fill="#fff"/>
                 `;
+            
 
             case 'obstril':
                 // Обстрел - взрыв с восклицательным знаком
@@ -275,11 +379,6 @@ const SVGMarkers = {
                 return `
                     <defs>
                         <radialGradient id="vibuhGrad">
-                            <stop offset="0%" stop-color="#FF3333"/>
-                            <stop offset="50%" stop-color="#FF6600"/>
-                            <stop offset="100%" stop-color="${color}"/>
-                        </radialGradient>
-                    </defs>
                     <!-- Основной взрыв -->
                     <circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#vibuhGrad)" stroke="#000" stroke-width="${stroke}"/>
                     <!-- Лучи взрыва -->

@@ -300,6 +300,77 @@ log = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# BANDWIDTH OPTIMIZATION: Rate limiting to prevent abuse
+from collections import defaultdict
+import time
+
+# Simple rate limiting storage (more aggressive)
+request_counts = defaultdict(list)
+RATE_LIMIT_REQUESTS = 10  # requests per minute (reduced from 30)
+RATE_LIMIT_WINDOW = 60    # seconds
+
+def is_rate_limited(client_ip):
+    """Check if client IP has exceeded rate limit."""
+    now = time.time()
+    # Clean old requests outside the window
+    request_counts[client_ip] = [req_time for req_time in request_counts[client_ip] if now - req_time < RATE_LIMIT_WINDOW]
+    
+    # Check if limit exceeded
+    if len(request_counts[client_ip]) >= RATE_LIMIT_REQUESTS:
+        return True
+    
+    # Add current request
+    request_counts[client_ip].append(now)
+    return False
+
+@app.before_request
+def check_rate_limit():
+    """Apply rate limiting to high-bandwidth endpoints."""
+    # Block suspicious user agents (bots, scrapers)
+    user_agent = request.headers.get('User-Agent', '').lower()
+    suspicious_agents = ['bot', 'crawler', 'spider', 'scraper', 'curl', 'wget', 'python-requests']
+    if any(agent in user_agent for agent in suspicious_agents):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    # Apply rate limiting to ALL endpoints (not just specific ones)
+    client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
+    if is_rate_limited(client_ip):
+        return jsonify({'error': 'Rate limit exceeded. Try again later.'}), 429
+
+# BANDWIDTH OPTIMIZATION: Enable gzip compression globally
+from flask import Flask
+import gzip
+import io
+
+# Add global response compression
+@app.after_request
+def compress_response(response):
+    """Apply gzip compression to reduce bandwidth usage."""
+    if (
+        response.status_code == 200 and
+        'gzip' in request.headers.get('Accept-Encoding', '').lower() and
+        response.content_length and response.content_length > 500 and
+        response.content_type.startswith(('application/json', 'text/html', 'text/css', 'application/javascript'))
+    ):
+        try:
+            # Compress the response data
+            buffer = io.BytesIO()
+            with gzip.GzipFile(fileobj=buffer, mode='wb') as f:
+                f.write(response.get_data())
+            
+            response.set_data(buffer.getvalue())
+            response.headers['Content-Encoding'] = 'gzip'
+            response.headers['Content-Length'] = len(response.get_data())
+            response.headers['Vary'] = 'Accept-Encoding'
+        except Exception:
+            pass  # If compression fails, return original response
+    
+    # Add cache headers for static content
+    if request.endpoint == 'static':
+        response.headers['Cache-Control'] = 'public, max-age=86400'  # 24 hours
+    
+    return response
+
 # Custom route for serving pre-compressed static files
 @app.route('/static/<path:filename>')
 def static_with_gzip(filename):
@@ -11348,8 +11419,12 @@ def start_session_watcher():
 
 @app.route('/')
 def index():
-    # Leaflet version of frontend no longer needs Google Maps key
-    return render_template('index.html')
+    # BANDWIDTH OPTIMIZATION: Add caching headers for main page
+    response = render_template('index.html')
+    resp = app.response_class(response)
+    resp.headers['Cache-Control'] = 'public, max-age=300'  # 5 minutes cache
+    resp.headers['ETag'] = f'index-{int(time.time() // 300)}'
+    return resp
 
 def _prune_comments():
     # keep only last COMMENTS_MAX comments
@@ -11523,11 +11598,24 @@ def alarms_stats():
 @app.route('/data')
 def data():
     global FALLBACK_REPARSE_CACHE, MAX_REPARSE_CACHE_SIZE
+    
+    # BANDWIDTH OPTIMIZATION: Add aggressive caching headers
+    response_headers = {
+        'Cache-Control': 'public, max-age=30, s-maxage=30',
+        'ETag': f'data-{int(time.time() // 30)}',  # Cache for 30 seconds
+        'Vary': 'Accept-Encoding'
+    }
+    
+    # Check if client has cached version
+    client_etag = request.headers.get('If-None-Match')
+    if client_etag == response_headers['ETag']:
+        return Response(status=304, headers=response_headers)
+    
     # Use user-provided timeRange or fall back to global configured MONITOR_PERIOD_MINUTES
     try:
         time_range = int(request.args.get('timeRange', MONITOR_PERIOD_MINUTES))
-        # Limit to reasonable values to prevent abuse
-        time_range = max(10, min(time_range, 200))
+        # Limit to reasonable values to prevent abuse and reduce bandwidth
+        time_range = max(10, min(time_range, 100))  # Reduced from 200 to 100
     except (ValueError, TypeError):
         time_range = MONITOR_PERIOD_MINUTES
     
@@ -11646,9 +11734,19 @@ def data():
         pass
     
     print(f"[DEBUG] Returning {len(out)} tracks and {len(events)} events")
-    resp = jsonify({'tracks': out, 'events': events, 'all_sources': CHANNELS, 'trajectories': []})
-    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-    resp.headers['Pragma'] = 'no-cache'
+    
+    # BANDWIDTH OPTIMIZATION: Minimize response size and add caching
+    response_data = {
+        'tracks': out[:50],  # Limit to 50 tracks max to reduce bandwidth
+        'events': events[:20],  # Limit to 20 events max
+        'all_sources': CHANNELS[:10],  # Limit sources
+        'trajectories': []
+    }
+    
+    resp = jsonify(response_data)
+    # Add aggressive caching headers to reduce bandwidth
+    resp.headers.update(response_headers)
+    resp.headers['Content-Encoding'] = 'gzip'
     return resp
 
 @app.route('/channels')
