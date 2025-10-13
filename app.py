@@ -12122,7 +12122,7 @@ def unhide_marker():
 if 'health' not in app.view_functions:
     @app.route('/health')
     def health():  # type: ignore
-    # ...existing code...
+        now = time.time()
         
         # Basic stats + prune visitors
         with ACTIVE_LOCK:
