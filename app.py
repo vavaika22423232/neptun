@@ -12287,21 +12287,6 @@ def raion_alarms():
 # SSE stream endpoint
 @app.route('/stream')
 def stream():
-    # CRITICAL BANDWIDTH PROTECTION: Rate limit stream endpoint
-    client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
-    stream_requests = request_counts.get(f"{client_ip}_stream", [])
-    now_time = time.time()
-    
-    # Clean old requests (last 300 seconds - allow every 5 minutes)
-    stream_requests = [req_time for req_time in stream_requests if now_time - req_time < 300]
-    
-    # Allow only 1 stream connection per 5 minutes per IP
-    if len(stream_requests) >= 1:
-        return jsonify({'error': 'Stream endpoint rate limited - wait 5 minutes'}), 429
-    
-    stream_requests.append(now_time)
-    request_counts[f"{client_ip}_stream"] = stream_requests
-    
     def gen():
         q = queue.Queue()
         SUBSCRIBERS.add(q)
