@@ -1807,7 +1807,6 @@
   </div>
   <div class="navbar">
     <div class="logo">
-      <img src="/static/neptun.jpg" alt="NEPTUN">
       <span class="logo-text">NEPTUN</span>
       <div class="live-users mobile-live" id="liveUsers" title="Активні відвідувачі зараз онлайн • Оновлюється кожні 5 секунд">
         <span class="live-label">онлайн</span>
@@ -1921,10 +1920,9 @@
         shahed: 'shahed.png',
         avia: 'avia.png',
         artillery: 'artillery.png',
-        neptun: 'neptun.jpg',
         // Добавьте другие типы иконок по необходимости
       };
-      const filename = files[type] || 'neptun.jpg';
+      const filename = files[type] || 'default.png';
       const img = document.createElement('img');
       img.src = `/static/${filename}`;
       img.className = 'plain-marker-img';
