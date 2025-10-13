@@ -1797,14 +1797,15 @@ function initAdminMap(){
   }
 }
 function markerIconFor(t){
-  // Use SVG markers instead of PNG for better performance
-  const svgIcon = SVGMarkers.createSVG(t || 'default', 34);
-  return L.divIcon({
-    html: '<div class="admin-marker-wrap">' + svgIcon + '</div>',
-    className: '',
+  // Use PNG markers for consistency with main map
+  const type = t || 'default';
+  const iconPath = `/static/${type}.png`;
+  return L.icon({
+    iconUrl: iconPath,
     iconSize: [34, 34],
     iconAnchor: [17, 17],
-    popupAnchor: [0, -10]
+    popupAnchor: [0, -17],
+    className: 'plain-marker-img'
   });
 }
 async function reloadAdminMarkers(){

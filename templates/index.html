@@ -4352,7 +4352,7 @@
     consecutiveFailures++;
     console.log(`Server check failed (${consecutiveFailures} consecutive failures)`);
     
-    if (consecutiveFailures >= 2) {
+  if (consecutiveFailures >= 5) {
       // Server appears to be down (likely deploying)
       showDeploymentOverlay();
     }

@@ -11774,7 +11774,6 @@ def data():
     resp = jsonify(response_data)
     # Add aggressive caching headers to reduce bandwidth
     resp.headers.update(response_headers)
-    resp.headers['Content-Encoding'] = 'gzip'
     return resp
 
 @app.route('/channels')
