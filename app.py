@@ -11449,6 +11449,14 @@ def index():
     resp.headers['ETag'] = f'index-{int(time.time() // 300)}'
     return resp
 
+@app.route('/blackouts')
+def blackouts():
+    """Power blackout schedules and information page"""
+    response = render_template('blackouts.html')
+    resp = app.response_class(response)
+    resp.headers['Cache-Control'] = 'public, max-age=300'  # 5 minutes cache
+    return resp
+
 def _prune_comments():
     # keep only last COMMENTS_MAX comments
     global COMMENTS
