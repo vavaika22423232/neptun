@@ -619,13 +619,23 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 32px;
+      min-width: 42px;
       height: 32px;
-      background: rgba(59, 130, 246, 0.15);
-      border: 1px solid rgba(59, 130, 246, 0.3);
+      padding: 0 0.5rem;
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(37, 99, 235, 0.1));
+      border: 1px solid rgba(59, 130, 246, 0.4);
       border-radius: 0.5rem;
       color: var(--accent);
       font-weight: 700;
+      font-size: 0.875rem;
+      transition: all 0.2s;
+    }
+    
+    .queue-badge:hover {
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.25), rgba(37, 99, 235, 0.15));
+      border-color: var(--accent);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(59, 130, 246, 0.2);
     }
     
     .time-slot {
@@ -1401,6 +1411,13 @@
           'stable': 'Стабільно'
         }[statusClass] || 'Невідомо';
         
+        // Format queues as separate badges
+        let queuesHTML = '';
+        if (region.queue) {
+          const queues = region.queue.split(', ');
+          queuesHTML = queues.map(q => `<span class="queue-badge">${q}</span>`).join(' ');
+        }
+        
         card.innerHTML = `
           <div class="schedule-header">
             <div class="schedule-city">${region.city}</div>
@@ -1416,8 +1433,8 @@
             </div>
             ${region.queue ? `
             <div class="schedule-row">
-              <div class="schedule-label">Черга:</div>
-              <div class="queue-badge">${region.queue}</div>
+              <div class="schedule-label">Черги:</div>
+              <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">${queuesHTML}</div>
             </div>
             ` : ''}
             ${region.nextBlackout ? `
