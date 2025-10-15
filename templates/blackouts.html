@@ -999,9 +999,21 @@
         <div class="search-header-text">
           <h2>Знайти графік за адресою</h2>
           <p>Введіть вашу адресу для перегляду персонального графіку відключень</p>
-          <div id="updateStatus" style="margin-top: 0.5rem; font-size: 0.75rem; color: var(--accent2); display: flex; align-items: center; gap: 0.5rem;">
-            <span class="material-icons" style="font-size: 1rem; animation: pulse 2s infinite;">sync</span>
-            <span>Графіки оновлюються автоматично кожну годину з ДТЕК та Укренерго</span>
+          <div style="margin-top: 0.75rem; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+            <div id="updateStatus" style="font-size: 0.75rem; color: var(--accent2); display: flex; align-items: center; gap: 0.5rem;">
+              <span class="material-icons" style="font-size: 1rem; animation: pulse 2s infinite;">sync</span>
+              <span>Графіки оновлюються автоматично кожну годину з ДТЕК та Укренерго</span>
+            </div>
+            <button 
+              onclick="forceUpdateSchedules()" 
+              id="forceUpdateBtn"
+              style="padding: 0.4rem 0.75rem; background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 0.5rem; color: var(--accent); font-size: 0.75rem; cursor: pointer; display: flex; align-items: center; gap: 0.375rem; transition: all 0.2s;"
+              onmouseover="this.style.background='rgba(59, 130, 246, 0.2)'"
+              onmouseout="this.style.background='rgba(59, 130, 246, 0.1)'"
+            >
+              <span class="material-icons" style="font-size: 0.9rem;">refresh</span>
+              Оновити зараз
+            </button>
           </div>
         </div>
       </div>
@@ -1236,6 +1248,59 @@
       
       // Check status every minute
       setInterval(checkUpdateStatus, 60 * 1000);
+    }
+
+    // Force schedule update
+    async function forceUpdateSchedules() {
+      const btn = document.getElementById('forceUpdateBtn');
+      if (!btn) return;
+      
+      const originalHTML = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="material-icons" style="font-size: 0.9rem; animation: spin 1s linear infinite;">sync</span> Оновлення...';
+      
+      try {
+        const response = await fetch('/api/force_update', { method: 'POST' });
+        const data = await response.json();
+        
+        if (data.success) {
+          // Reload data
+          await loadData();
+          renderStats();
+          renderSchedule();
+          await checkUpdateStatus();
+          
+          // Show success
+          btn.innerHTML = '<span class="material-icons" style="font-size: 0.9rem;">check_circle</span> Оновлено!';
+          btn.style.background = 'rgba(16, 185, 129, 0.1)';
+          btn.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+          btn.style.color = 'var(--success)';
+          
+          setTimeout(() => {
+            btn.innerHTML = originalHTML;
+            btn.disabled = false;
+            btn.style.background = 'rgba(59, 130, 246, 0.1)';
+            btn.style.borderColor = 'rgba(59, 130, 246, 0.3)';
+            btn.style.color = 'var(--accent)';
+          }, 3000);
+        } else {
+          throw new Error(data.error || 'Update failed');
+        }
+      } catch (error) {
+        console.error('Force update error:', error);
+        btn.innerHTML = '<span class="material-icons" style="font-size: 0.9rem;">error</span> Помилка';
+        btn.style.background = 'rgba(239, 68, 68, 0.1)';
+        btn.style.borderColor = 'rgba(239, 68, 68, 0.3)';
+        btn.style.color = 'var(--danger)';
+        
+        setTimeout(() => {
+          btn.innerHTML = originalHTML;
+          btn.disabled = false;
+          btn.style.background = 'rgba(59, 130, 246, 0.1)';
+          btn.style.borderColor = 'rgba(59, 130, 246, 0.3)';
+          btn.style.color = 'var(--accent)';
+        }, 3000);
+      }
     }
 
     // Load data from APIs

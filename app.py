@@ -330,9 +330,15 @@ app = Flask(__name__)
 
 # Initialize background scheduler for automatic schedule updates
 scheduler = BackgroundScheduler(daemon=True)
+scheduler_initialized = False
 
 def init_scheduler():
     """Initialize the scheduler for automatic updates"""
+    global scheduler_initialized
+    
+    if scheduler_initialized:
+        return
+    
     if SCHEDULE_UPDATER_AVAILABLE:
         try:
             # Run initial update
@@ -349,14 +355,15 @@ def init_scheduler():
             )
             
             scheduler.start()
+            scheduler_initialized = True
             log.info("✅ Scheduler started: automatic updates every hour")
         except Exception as e:
             log.error(f"❌ Failed to start scheduler: {e}")
     else:
         log.warning("⚠ Schedule updater not available, skipping automatic updates")
 
-# Start scheduler when app initializes
-init_scheduler()
+# Don't start scheduler immediately - wait for first request
+# init_scheduler()
 
 # BANDWIDTH OPTIMIZATION: Rate limiting to prevent abuse
     # Rate limiting отключен: все пользователи имеют свободный доступ
@@ -365,6 +372,13 @@ init_scheduler()
 from flask import Flask
 import gzip
 import io
+
+# Initialize scheduler on first request
+@app.before_request
+def ensure_scheduler_running():
+    """Ensure scheduler is initialized on first request"""
+    if not scheduler_initialized:
+        init_scheduler()
 
 # Add global response compression
 @app.after_request
@@ -12086,12 +12100,41 @@ def get_schedule_status():
             'last_update': last_update.isoformat() if last_update else None,
             'cache_valid': cache_valid,
             'next_update': 'через годину' if cache_valid else 'зараз',
-            'scheduler_running': scheduler.running if 'scheduler' in globals() else False
+            'scheduler_running': scheduler.running if scheduler_initialized else False,
+            'scheduler_initialized': scheduler_initialized
         })
         
     except Exception as e:
         log.error(f"Error in get_schedule_status: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/force_update', methods=['POST'])
+def force_schedule_update():
+    """Force immediate schedule update (admin only)"""
+    try:
+        if not SCHEDULE_UPDATER_AVAILABLE:
+            return jsonify({
+                'success': False,
+                'error': 'Schedule updater not available'
+            }), 503
+        
+        log.info("🔄 Manual schedule update triggered")
+        result = schedule_updater.update_all_schedules()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Графіки успішно оновлено',
+            'last_update': schedule_updater.last_update.isoformat() if schedule_updater.last_update else None,
+            'data': result is not None
+        })
+        
+    except Exception as e:
+        log.error(f"Error in force_schedule_update: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 
 def _prune_comments():
