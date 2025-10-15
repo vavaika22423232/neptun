@@ -11812,6 +11812,101 @@ def search_cities():
             'addresses': []
         })
 
+
+@app.route('/api/all_cities_with_queues')
+def get_all_cities_with_queues():
+    """Get all cities with their queues for the schedule grid"""
+    try:
+        # Group addresses by city and queue
+        cities_data = {}
+        
+        for address_key, data in BLACKOUT_ADDRESSES.items():
+            city = data.get('city', '')
+            oblast = data.get('oblast', '')
+            queue = data.get('group', '')
+            provider = data.get('provider', '')
+            
+            if not city:
+                continue
+            
+            # Create city key
+            city_key = f"{city}, {oblast}"
+            
+            if city_key not in cities_data:
+                cities_data[city_key] = {
+                    'city': city,
+                    'oblast': oblast,
+                    'provider': provider,
+                    'queues': set()
+                }
+            
+            if queue:
+                cities_data[city_key]['queues'].add(queue)
+        
+        # Convert to list and format
+        result = []
+        for city_key, data in cities_data.items():
+            queues_list = sorted(list(data['queues']))
+            
+            # Determine current hour for status
+            current_hour = datetime.now(pytz.timezone('Europe/Kiev')).hour
+            
+            # Check if any queue has active blackout now
+            has_active_blackout = False
+            active_queues = []
+            
+            for queue in queues_list:
+                schedule = BLACKOUT_SCHEDULES.get(queue, [])
+                for slot in schedule:
+                    if slot.get('status') == 'active':
+                        # Parse time range
+                        time_range = slot.get('time', '')
+                        if ' - ' in time_range:
+                            start_time = time_range.split(' - ')[0]
+                            start_hour = int(start_time.split(':')[0])
+                            end_hour = (start_hour + 4) % 24
+                            
+                            if start_hour <= current_hour < end_hour or (end_hour < start_hour and (current_hour >= start_hour or current_hour < end_hour)):
+                                has_active_blackout = True
+                                active_queues.append(queue)
+            
+            # Determine status
+            if has_active_blackout:
+                status = 'active'
+                status_text = f"Відключення черг: {', '.join(active_queues)}"
+            elif len(queues_list) > 0:
+                status = 'warning'
+                status_text = f"Черги: {', '.join(queues_list)}"
+            else:
+                status = 'stable'
+                status_text = "Стабільно"
+            
+            result.append({
+                'city': data['city'],
+                'oblast': data['oblast'],
+                'provider': data['provider'],
+                'queues': queues_list,
+                'status': status,
+                'statusText': status_text,
+                'queuesCount': len(queues_list)
+            })
+        
+        # Sort by city name
+        result.sort(key=lambda x: x['city'])
+        
+        return jsonify({
+            'success': True,
+            'cities': result,
+            'total': len(result)
+        })
+        
+    except Exception as e:
+        log.error(f"Error in get_all_cities_with_queues: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 @app.route('/api/get_schedule')
 def get_schedule():
     """Get blackout schedule for a specific address using real geocoding and live DTEK updates"""

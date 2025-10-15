@@ -1231,12 +1231,52 @@
     // Load data from APIs
     async function loadData() {
       try {
-        // TODO: Implement real API calls to DTEK, Ukrenergo, etc.
-        // For now, using sample data
+        // Load real cities with queues from backend
+        const response = await fetch('/api/all_cities_with_queues');
         
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        if (response.ok) {
+          const data = await response.json();
+          
+          if (data.success && data.cities) {
+            // Transform data for rendering
+            blackoutData.regions = data.cities.map(city => ({
+              city: city.city,
+              oblast: city.oblast,
+              status: city.status,
+              queue: city.queues.length > 0 ? city.queues.join(', ') : null,
+              nextBlackout: city.status === 'active' ? 'Зараз' : null,
+              duration: city.status === 'active' ? '4 год' : null,
+              source: city.provider,
+              queuesCount: city.queuesCount
+            }));
+            
+            // Update stats
+            const activeCount = data.cities.filter(c => c.status === 'active').length;
+            const warningCount = data.cities.filter(c => c.status === 'warning').length;
+            const stableCount = data.cities.filter(c => c.status === 'stable').length;
+            
+            blackoutData.stats = {
+              active: activeCount,
+              scheduled: warningCount,
+              stable: stableCount,
+              deficit: activeCount > 5 ? 'Високий' : activeCount > 2 ? 'Помірний' : 'Низький'
+            };
+            
+            console.log(`Loaded ${data.cities.length} cities with queues`);
+          }
+        } else {
+          console.warn('Failed to load cities data, using fallback');
+          loadFallbackData();
+        }
         
+      } catch (error) {
+        console.error('Error loading data:', error);
+        loadFallbackData();
+      }
+    }
+
+    // Fallback data
+    function loadFallbackData() {
         // Sample data
         blackoutData = {
           regions: [
@@ -1323,10 +1363,7 @@
           ]
         };
         
-        console.log('Data loaded:', blackoutData);
-      } catch (error) {
-        console.error('Error loading data:', error);
-      }
+        console.log('Fallback data loaded:', blackoutData);
     }
 
     // Render statistics
