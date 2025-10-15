@@ -734,6 +734,8 @@
       font-weight: 700;
       font-size: 0.875rem;
       transition: all 0.2s;
+      cursor: pointer;
+      position: relative;
     }
     
     .queue-badge:hover {
@@ -741,6 +743,24 @@
       border-color: var(--accent);
       transform: translateY(-2px);
       box-shadow: 0 4px 8px rgba(59, 130, 246, 0.2);
+    }
+    
+    .queue-badge:active {
+      transform: translateY(0);
+    }
+    
+    .queue-badge::after {
+      content: "👁️";
+      position: absolute;
+      right: -8px;
+      top: -8px;
+      font-size: 0.7rem;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    
+    .queue-badge:hover::after {
+      opacity: 1;
     }
     
     .time-slot {
@@ -1376,6 +1396,29 @@
       }
     }
 
+    // Scroll to specific queue card
+    function scrollToQueue(queueId) {
+      const queueCard = document.getElementById(`queue-${queueId}`);
+      if (queueCard) {
+        // Scroll to queue with smooth animation
+        queueCard.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'center' 
+        });
+        
+        // Add highlight animation
+        queueCard.style.transition = 'all 0.3s ease';
+        queueCard.style.transform = 'scale(1.02)';
+        queueCard.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.5), 0 20px 40px -10px rgba(0, 0, 0, 0.5)';
+        
+        // Remove highlight after animation
+        setTimeout(() => {
+          queueCard.style.transform = '';
+          queueCard.style.boxShadow = '';
+        }, 1500);
+      }
+    }
+
     // Initialize page
     async function init() {
       console.log('Initializing blackouts page...');
@@ -1659,7 +1702,7 @@
         let queuesHTML = '';
         if (region.queue) {
           const queues = region.queue.split(', ');
-          queuesHTML = queues.map(q => `<span class="queue-badge">${q}</span>`).join(' ');
+          queuesHTML = queues.map(q => `<span class="queue-badge" onclick="scrollToQueue('${q}')" title="Натисніть щоб побачити графік черги ${q}">${q}</span>`).join(' ');
         }
         
         card.innerHTML = `
@@ -2107,6 +2150,7 @@
 
         const card = document.createElement('div');
         card.className = 'queue-card';
+        card.id = `queue-${queue.id}`; // Add ID for scrolling
         
         const statusBadge = isActiveNow 
           ? '<span class="queue-current-status active-now"><span class="material-icons" style="font-size: 0.9rem;">power_off</span>Відключено</span>'
