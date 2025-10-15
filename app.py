@@ -11,6 +11,7 @@ import os, re, json, asyncio, threading, logging, pytz, time, subprocess, queue,
 from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify, request, Response, send_from_directory
 from telethon import TelegramClient
+from apscheduler.schedulers.background import BackgroundScheduler
 
 # Import blackout API client
 try:
@@ -20,6 +21,24 @@ try:
 except Exception as e:
     BLACKOUT_API_AVAILABLE = False
     print(f"WARNING: Blackout API client not available: {e}")
+
+# Import schedule updater
+try:
+    from schedule_updater import schedule_updater, start_schedule_updates
+    SCHEDULE_UPDATER_AVAILABLE = True
+    print("INFO: Schedule updater loaded successfully")
+except Exception as e:
+    SCHEDULE_UPDATER_AVAILABLE = False
+    print(f"WARNING: Schedule updater not available: {e}")
+
+# Import expanded Ukraine addresses database
+try:
+    from ukraine_addresses_db import UKRAINE_ADDRESSES_DB, UKRAINE_CITIES
+    print(f"INFO: Ukraine addresses database loaded: {len(UKRAINE_ADDRESSES_DB)} addresses")
+except Exception as e:
+    UKRAINE_ADDRESSES_DB = {}
+    UKRAINE_CITIES = []
+    print(f"WARNING: Ukraine addresses database not available: {e}")
 
 # SpaCy integration for enhanced Ukrainian NLP
 try:
@@ -308,6 +327,36 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(mess
 log = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# Initialize background scheduler for automatic schedule updates
+scheduler = BackgroundScheduler(daemon=True)
+
+def init_scheduler():
+    """Initialize the scheduler for automatic updates"""
+    if SCHEDULE_UPDATER_AVAILABLE:
+        try:
+            # Run initial update
+            start_schedule_updates()
+            
+            # Schedule hourly updates
+            scheduler.add_job(
+                func=schedule_updater.update_all_schedules,
+                trigger='interval',
+                hours=1,
+                id='update_schedules',
+                name='Update blackout schedules from DTEK and Ukrenergo',
+                replace_existing=True
+            )
+            
+            scheduler.start()
+            log.info("✅ Scheduler started: automatic updates every hour")
+        except Exception as e:
+            log.error(f"❌ Failed to start scheduler: {e}")
+    else:
+        log.warning("⚠ Schedule updater not available, skipping automatic updates")
+
+# Start scheduler when app initializes
+init_scheduler()
 
 # BANDWIDTH OPTIMIZATION: Rate limiting to prevent abuse
     # Rate limiting отключен: все пользователи имеют свободный доступ
@@ -11633,6 +11682,11 @@ BLACKOUT_ADDRESSES = {
     'кременчук автозаводський': {'group': '2.1', 'city': 'Кременчук', 'oblast': 'Полтавська', 'provider': 'Полтаваобленерго'},
 }
 
+# Merge with extended database if available
+if UKRAINE_ADDRESSES_DB:
+    BLACKOUT_ADDRESSES.update(UKRAINE_ADDRESSES_DB)
+    print(f"INFO: Merged addresses database, total: {len(BLACKOUT_ADDRESSES)} addresses")
+
 # Blackout schedules by group and subgroup
 # Format: group "1.1", "1.2", "2.1", "2.2", "3.1", "3.2"
 # Each subgroup has different timing within main group
@@ -11659,11 +11713,11 @@ BLACKOUT_SCHEDULES = {
     # Group 2 subgroups
     '2.1': [
         {'time': '00:00 - 04:00', 'label': 'Електропостачання', 'status': 'normal'},
-        {'time': '04:00 - 08:00', 'label': 'Активне відключення', 'status': 'active'},
+        {'time': '04:00 - 08:00', 'label': 'Можливе відключення', 'status': 'normal'},
         {'time': '08:00 - 12:00', 'label': 'Електропостачання', 'status': 'normal'},
         {'time': '12:00 - 16:00', 'label': 'Можливе відключення', 'status': 'normal'},
-        {'time': '16:00 - 20:00', 'label': 'Електропостачання', 'status': 'normal'},
-        {'time': '20:00 - 24:00', 'label': 'Можливе відключення', 'status': 'upcoming'},
+        {'time': '16:00 - 20:00', 'label': 'Активне відключення', 'status': 'active'},
+        {'time': '20:00 - 24:00', 'label': 'Електропостачання', 'status': 'normal'},
     ],
     '2.2': [
         {'time': '00:00 - 04:00', 'label': 'Можливе відключення', 'status': 'normal'},
@@ -11718,52 +11772,49 @@ BLACKOUT_SCHEDULES = {
 
 @app.route('/api/search_cities')
 def search_cities():
-    """Search for cities and addresses in Ukraine with autocomplete"""
-    query = request.args.get('q', '').strip()
-    
-    if len(query) < 2:
-        return jsonify([])
-    
-    if not BLACKOUT_API_AVAILABLE:
-        # Fallback to static data
-        results = []
-        query_lower = query.lower()
-        seen_cities = set()
+    """Get all cities and addresses for autocomplete"""
+    try:
+        # Collect unique cities
+        cities_set = set()
+        addresses_list = []
         
         for address_key, data in BLACKOUT_ADDRESSES.items():
-            city = data['city']
-            if query_lower in city.lower() and city not in seen_cities:
-                results.append({
+            city = data.get('city', '')
+            if city:
+                cities_set.add(city)
+            
+            # Parse address_key to extract street and building
+            # Format: "city street" or "city street building"
+            parts = address_key.split()
+            if len(parts) >= 2:
+                street = ' '.join(parts[1:])
+                addresses_list.append({
                     'city': city,
-                    'oblast': data['oblast'],
-                    'provider': data['provider']
+                    'street': street,
+                    'building': '',  # Can be extracted if needed
+                    'group': data.get('group', ''),
+                    'oblast': data.get('oblast', ''),
+                    'provider': data.get('provider', '')
                 })
-                seen_cities.add(city)
         
-        return jsonify(results[:10])
-    
-    try:
-        # Use geocoding to find real addresses
-        addresses = blackout_client.search_addresses(query)
+        # Convert cities set to sorted list
+        cities_list = sorted(list(cities_set))
         
-        results = []
-        for addr in addresses:
-            results.append({
-                'address': addr['display_name'],
-                'full_address': addr['address'],
-                'lat': addr['latitude'],
-                'lon': addr['longitude']
-            })
-        
-        return jsonify(results)
+        return jsonify({
+            'cities': cities_list,
+            'addresses': addresses_list[:200]  # Limit for performance
+        })
         
     except Exception as e:
-        logging.error(f"Error in search_cities: {e}")
-        return jsonify([])
+        print(f"ERROR in search_cities: {str(e)}")
+        return jsonify({
+            'cities': UKRAINE_CITIES if UKRAINE_CITIES else [],
+            'addresses': []
+        })
 
 @app.route('/api/get_schedule')
 def get_schedule():
-    """Get blackout schedule for a specific address using real geocoding and provider APIs"""
+    """Get blackout schedule for a specific address using real geocoding and live DTEK updates"""
     city = request.args.get('city', '').strip()
     street = request.args.get('street', '').strip()
     building = request.args.get('building', '').strip()
@@ -11771,8 +11822,32 @@ def get_schedule():
     if not city:
         return jsonify({'error': 'Місто обов\'язкове для заповнення'}), 400
     
+    # Try to use live schedule updater first
+    if SCHEDULE_UPDATER_AVAILABLE:
+        try:
+            # Ensure cache is fresh
+            if not schedule_updater.is_cache_valid(max_age_hours=1):
+                schedule_updater.update_all_schedules()
+            
+            # Get schedule from live updater
+            result = schedule_updater.get_schedule_for_address(city, street, building)
+            
+            if result and result.get('schedule'):
+                return jsonify({
+                    'found': True,
+                    'address': f"{city}, {street} {building}".strip(),
+                    'city': city,
+                    'group': result.get('queue'),
+                    'provider': result.get('provider'),
+                    'schedule': result.get('schedule'),
+                    'last_update': result.get('last_update'),
+                    'source': 'live_dtek'
+                })
+        except Exception as e:
+            log.warning(f"Live schedule failed, falling back: {e}")
+    
+    # Fallback to API client
     if not BLACKOUT_API_AVAILABLE:
-        # Fallback to old static data if API not available
         return get_schedule_fallback(city, street, building)
     
     try:
@@ -11858,6 +11933,71 @@ def get_schedule_fallback(city, street, building):
         'provider': best_match_data['provider'],
         'schedule': schedule
     })
+
+
+@app.route('/api/live_schedules')
+def get_live_schedules():
+    """Get live schedules from DTEK and Ukrenergo with automatic hourly updates"""
+    try:
+        if not SCHEDULE_UPDATER_AVAILABLE:
+            return jsonify({
+                'error': 'Автооновлення графіків недоступне',
+                'fallback': True
+            }), 503
+        
+        # Check if cache is still valid
+        if not schedule_updater.is_cache_valid(max_age_hours=1):
+            log.info("Cache expired, triggering update...")
+            schedule_updater.update_all_schedules()
+        
+        # Get cached schedules
+        schedules = schedule_updater.get_cached_schedules()
+        
+        if not schedules:
+            return jsonify({
+                'error': 'Графіки тимчасово недоступні',
+                'retry_after': 60
+            }), 503
+        
+        return jsonify({
+            'success': True,
+            'schedules': schedules,
+            'last_update': schedules.get('last_update'),
+            'next_update': 'через годину'
+        })
+        
+    except Exception as e:
+        log.error(f"Error in get_live_schedules: {e}")
+        return jsonify({
+            'error': 'Помилка отримання графіків'
+        }), 500
+
+
+@app.route('/api/schedule_status')
+def get_schedule_status():
+    """Get status of automatic schedule updates"""
+    try:
+        if not SCHEDULE_UPDATER_AVAILABLE:
+            return jsonify({
+                'available': False,
+                'message': 'Автооновлення недоступне'
+            })
+        
+        last_update = schedule_updater.last_update
+        cache_valid = schedule_updater.is_cache_valid()
+        
+        return jsonify({
+            'available': True,
+            'last_update': last_update.isoformat() if last_update else None,
+            'cache_valid': cache_valid,
+            'next_update': 'через годину' if cache_valid else 'зараз',
+            'scheduler_running': scheduler.running if 'scheduler' in globals() else False
+        })
+        
+    except Exception as e:
+        log.error(f"Error in get_schedule_status: {e}")
+        return jsonify({'error': str(e)}), 500
+
 
 def _prune_comments():
     # keep only last COMMENTS_MAX comments
@@ -13361,6 +13501,26 @@ def startup_init():
 
 # BANDWIDTH PROTECTION: Custom static route will compete with Flask's built-in route
 # Flask will prioritize our custom route due to specificity
+
+# Graceful shutdown handler
+import atexit
+import signal
+
+def shutdown_scheduler():
+    """Shutdown scheduler gracefully"""
+    if SCHEDULE_UPDATER_AVAILABLE and 'scheduler' in globals():
+        try:
+            if scheduler.running:
+                log.info("Shutting down scheduler...")
+                scheduler.shutdown(wait=False)
+                log.info("✅ Scheduler shutdown complete")
+        except Exception as e:
+            log.error(f"Error shutting down scheduler: {e}")
+
+# Register shutdown handlers
+atexit.register(shutdown_scheduler)
+signal.signal(signal.SIGTERM, lambda sig, frame: shutdown_scheduler())
+signal.signal(signal.SIGINT, lambda sig, frame: shutdown_scheduler())
 
 if __name__ == '__main__':
     # Local / container direct run (not needed if a WSGI server like gunicorn is used)
