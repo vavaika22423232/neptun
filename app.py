@@ -11457,6 +11457,136 @@ def blackouts():
     resp.headers['Cache-Control'] = 'public, max-age=300'  # 5 minutes cache
     return resp
 
+# Address database for blackout schedules
+# TODO: Replace with real database and API integration
+BLACKOUT_ADDRESSES = {
+    # Kyiv
+    'київ хрещатик': {'group': 1, 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
+    'київ вул хрещатик': {'group': 1, 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
+    'київ майдан': {'group': 2, 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
+    'київ оболонь': {'group': 3, 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
+    'київ троєщина': {'group': 1, 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
+    'київ позняки': {'group': 2, 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
+    
+    # Odesa
+    'одеса дерибасівська': {'group': 1, 'city': 'Одеса', 'oblast': 'Одеська', 'provider': 'ДТЕК Одеські електромережі'},
+    'одеса приморський': {'group': 2, 'city': 'Одеса', 'oblast': 'Одеська', 'provider': 'ДТЕК Одеські електромережі'},
+    'одеса таїрова': {'group': 3, 'city': 'Одеса', 'oblast': 'Одеська', 'provider': 'ДТЕК Одеські електромережі'},
+    
+    # Kharkiv
+    'харків сумська': {'group': 2, 'city': 'Харків', 'oblast': 'Харківська', 'provider': 'ДТЕК Східенерго'},
+    'харків салтівка': {'group': 1, 'city': 'Харків', 'oblast': 'Харківська', 'provider': 'ДТЕК Східенерго'},
+    'харків нагірний': {'group': 3, 'city': 'Харків', 'oblast': 'Харківська', 'provider': 'ДТЕК Східенерго'},
+    
+    # Dnipro
+    'дніпро проспект': {'group': 3, 'city': 'Дніпро', 'oblast': 'Дніпропетровська', 'provider': 'ДТЕК Дніпровські електромережі'},
+    'дніпро центр': {'group': 1, 'city': 'Дніпро', 'oblast': 'Дніпропетровська', 'provider': 'ДТЕК Дніпровські електромережі'},
+    
+    # Lviv
+    'львів площа ринок': {'group': 1, 'city': 'Львів', 'oblast': 'Львівська', 'provider': 'Львівобленерго'},
+    'львів сихів': {'group': 2, 'city': 'Львів', 'oblast': 'Львівська', 'provider': 'Львівобленерго'},
+    
+    # Zaporizhzhia
+    'запоріжжя проспект': {'group': 1, 'city': 'Запоріжжя', 'oblast': 'Запорізька', 'provider': 'ДТЕК Запорізькі електромережі'},
+}
+
+# Blackout schedules by group
+# TODO: Fetch from real APIs (DTEK, Ukrenergo)
+BLACKOUT_SCHEDULES = {
+    1: [
+        {'time': '06:00 - 10:00', 'label': 'Можливе відключення', 'status': 'normal'},
+        {'time': '10:00 - 14:00', 'label': 'Електропостачання', 'status': 'normal'},
+        {'time': '14:00 - 18:00', 'label': 'Активне відключення', 'status': 'active'},
+        {'time': '18:00 - 22:00', 'label': 'Електропостачання', 'status': 'normal'},
+        {'time': '22:00 - 02:00', 'label': 'Можливе відключення', 'status': 'upcoming'},
+    ],
+    2: [
+        {'time': '08:00 - 12:00', 'label': 'Електропостачання', 'status': 'normal'},
+        {'time': '12:00 - 16:00', 'label': 'Можливе відключення', 'status': 'upcoming'},
+        {'time': '16:00 - 20:00', 'label': 'Активне відключення', 'status': 'active'},
+        {'time': '20:00 - 00:00', 'label': 'Електропостачання', 'status': 'normal'},
+        {'time': '00:00 - 04:00', 'label': 'Можливе відключення', 'status': 'normal'},
+    ],
+    3: [
+        {'time': '04:00 - 08:00', 'label': 'Можливе відключення', 'status': 'normal'},
+        {'time': '08:00 - 12:00', 'label': 'Активне відключення', 'status': 'active'},
+        {'time': '12:00 - 16:00', 'label': 'Електропостачання', 'status': 'normal'},
+        {'time': '16:00 - 20:00', 'label': 'Можливе відключення', 'status': 'upcoming'},
+        {'time': '20:00 - 00:00', 'label': 'Електропостачання', 'status': 'normal'},
+    ],
+}
+
+@app.route('/api/search_address')
+def search_address():
+    """Search for addresses and return matching results with blackout groups"""
+    query = request.args.get('q', '').lower().strip()
+    
+    if len(query) < 3:
+        return jsonify([])
+    
+    results = []
+    for address_key, data in BLACKOUT_ADDRESSES.items():
+        if query in address_key:
+            # Reconstruct readable address
+            parts = address_key.split()
+            city = parts[0].capitalize()
+            street = ' '.join(parts[1:]).capitalize()
+            
+            results.append({
+                'address': f'{city}, {street}',
+                'city': data['city'],
+                'oblast': data['oblast'],
+                'group': data['group'],
+                'provider': data['provider']
+            })
+    
+    # Limit to 5 results
+    return jsonify(results[:5])
+
+@app.route('/api/get_schedule')
+def get_schedule():
+    """Get blackout schedule for a specific address"""
+    address = request.args.get('address', '').lower().strip()
+    
+    if not address:
+        return jsonify({'error': 'Адреса не вказана'}), 400
+    
+    # Try to find matching address
+    best_match = None
+    best_match_data = None
+    
+    for address_key, data in BLACKOUT_ADDRESSES.items():
+        # Simple matching - check if key words are in the query
+        key_words = address_key.split()
+        matches = sum(1 for word in key_words if word in address)
+        
+        if matches >= 2:  # At least 2 words match
+            if best_match is None or matches > sum(1 for word in best_match.split() if word in address):
+                best_match = address_key
+                best_match_data = data
+    
+    if not best_match_data:
+        return jsonify({'error': 'Адресу не знайдено. Спробуйте інший варіант.'}), 404
+    
+    # Reconstruct readable address
+    parts = best_match.split()
+    city = parts[0].capitalize()
+    street = ' '.join(parts[1:]).capitalize()
+    readable_address = f'{city}, {street}'
+    
+    # Get schedule for the group
+    group = best_match_data['group']
+    schedule = BLACKOUT_SCHEDULES.get(group, [])
+    
+    return jsonify({
+        'address': readable_address,
+        'city': best_match_data['city'],
+        'oblast': best_match_data['oblast'],
+        'group': group,
+        'provider': best_match_data['provider'],
+        'schedule': schedule
+    })
+
 def _prune_comments():
     # keep only last COMMENTS_MAX comments
     global COMMENTS

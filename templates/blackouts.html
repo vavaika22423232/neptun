@@ -105,6 +105,296 @@
       padding: 2rem;
     }
     
+    /* Address Search */
+    .search-section {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+    }
+    
+    .search-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+    
+    .search-icon {
+      width: 48px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 0.75rem;
+      background: rgba(59, 130, 246, 0.15);
+      color: var(--accent);
+      font-size: 1.5rem;
+    }
+    
+    .search-header-text h2 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 0.25rem;
+    }
+    
+    .search-header-text p {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+    
+    .search-form {
+      display: flex;
+      gap: 1rem;
+      position: relative;
+    }
+    
+    .search-input-wrapper {
+      flex: 1;
+      position: relative;
+    }
+    
+    .search-input {
+      width: 100%;
+      padding: 1rem 1rem 1rem 3rem;
+      background: rgba(31, 41, 55, 0.5);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      color: var(--text);
+      font-size: 1rem;
+      font-family: inherit;
+      transition: all 0.2s;
+    }
+    
+    .search-input:focus {
+      outline: none;
+      border-color: var(--accent);
+      background: rgba(31, 41, 55, 0.8);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+    
+    .search-input-icon {
+      position: absolute;
+      left: 1rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      pointer-events: none;
+    }
+    
+    .search-btn {
+      padding: 1rem 2rem;
+      background: linear-gradient(135deg, var(--accent), #2563eb);
+      border: none;
+      border-radius: 0.75rem;
+      color: white;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    
+    .search-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 16px -4px rgba(59, 130, 246, 0.4);
+    }
+    
+    .search-btn:active {
+      transform: translateY(0);
+    }
+    
+    .autocomplete-dropdown {
+      position: absolute;
+      top: calc(100% + 0.5rem);
+      left: 0;
+      right: 0;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      max-height: 300px;
+      overflow-y: auto;
+      z-index: 1000;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+      display: none;
+    }
+    
+    .autocomplete-dropdown.show {
+      display: block;
+    }
+    
+    .autocomplete-item {
+      padding: 0.875rem 1rem;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    
+    .autocomplete-item:last-child {
+      border-bottom: none;
+    }
+    
+    .autocomplete-item:hover {
+      background: rgba(59, 130, 246, 0.1);
+    }
+    
+    .autocomplete-item .material-icons {
+      color: var(--text-muted);
+      font-size: 1.25rem;
+    }
+    
+    .autocomplete-text {
+      flex: 1;
+    }
+    
+    .autocomplete-address {
+      color: var(--text);
+      font-size: 0.95rem;
+      margin-bottom: 0.125rem;
+    }
+    
+    .autocomplete-group {
+      color: var(--text-muted);
+      font-size: 0.8rem;
+    }
+    
+    /* My Schedule */
+    .my-schedule {
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(16, 185, 129, 0.15));
+      border: 2px solid var(--accent);
+      border-radius: 1rem;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      display: none;
+    }
+    
+    .my-schedule.show {
+      display: block;
+    }
+    
+    .my-schedule-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.5rem;
+    }
+    
+    .my-schedule-title {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    
+    .my-schedule-title h3 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+    
+    .my-schedule-badge {
+      padding: 0.375rem 0.875rem;
+      background: rgba(59, 130, 246, 0.2);
+      border: 1px solid var(--accent);
+      border-radius: 0.5rem;
+      color: var(--accent);
+      font-size: 0.875rem;
+      font-weight: 600;
+    }
+    
+    .close-my-schedule {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      border-radius: 0.5rem;
+      color: var(--danger);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .close-my-schedule:hover {
+      background: rgba(239, 68, 68, 0.2);
+    }
+    
+    .my-address {
+      font-size: 1.1rem;
+      color: var(--text2);
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .schedule-timeline {
+      display: grid;
+      gap: 0.75rem;
+    }
+    
+    .timeline-item {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem;
+      background: rgba(17, 24, 39, 0.5);
+      border-radius: 0.75rem;
+      border-left: 3px solid transparent;
+    }
+    
+    .timeline-item.active {
+      border-left-color: var(--danger);
+      background: rgba(239, 68, 68, 0.1);
+    }
+    
+    .timeline-item.upcoming {
+      border-left-color: var(--warning);
+      background: rgba(245, 158, 11, 0.1);
+    }
+    
+    .timeline-item.normal {
+      border-left-color: var(--success);
+    }
+    
+    .timeline-time {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text);
+      min-width: 120px;
+    }
+    
+    .timeline-status {
+      flex: 1;
+      font-size: 1rem;
+      color: var(--text2);
+    }
+    
+    .timeline-icon {
+      font-size: 1.5rem;
+    }
+    
+    .timeline-item.active .timeline-icon {
+      color: var(--danger);
+    }
+    
+    .timeline-item.upcoming .timeline-icon {
+      color: var(--warning);
+    }
+    
+    .timeline-item.normal .timeline-icon {
+      color: var(--success);
+    }
+    
     /* Stats Cards */
     .stats-grid {
       display: grid;
@@ -494,6 +784,59 @@
 
   <!-- Main Content -->
   <div class="container">
+    <!-- Address Search -->
+    <div class="search-section">
+      <div class="search-header">
+        <div class="search-icon">
+          <span class="material-icons">home</span>
+        </div>
+        <div class="search-header-text">
+          <h2>Знайти графік за адресою</h2>
+          <p>Введіть вашу адресу для перегляду персонального графіку відключень</p>
+        </div>
+      </div>
+      
+      <form class="search-form" id="searchForm" onsubmit="return false;">
+        <div class="search-input-wrapper">
+          <span class="material-icons search-input-icon">location_on</span>
+          <input 
+            type="text" 
+            class="search-input" 
+            id="addressInput"
+            placeholder="Наприклад: Київ, вул. Хрещатик, 1"
+            autocomplete="off"
+          >
+          <div class="autocomplete-dropdown" id="autocompleteDropdown"></div>
+        </div>
+        <button type="submit" class="search-btn" id="searchBtn">
+          <span class="material-icons">search</span>
+          Знайти
+        </button>
+      </form>
+    </div>
+
+    <!-- My Schedule (appears after search) -->
+    <div class="my-schedule" id="mySchedule">
+      <div class="my-schedule-header">
+        <div class="my-schedule-title">
+          <h3>Ваш графік відключень</h3>
+          <span class="my-schedule-badge" id="myScheduleGroup">—</span>
+        </div>
+        <div class="close-my-schedule" onclick="closeMySchedule()">
+          <span class="material-icons">close</span>
+        </div>
+      </div>
+      
+      <div class="my-address">
+        <span class="material-icons">location_on</span>
+        <span id="myAddressText">—</span>
+      </div>
+      
+      <div class="schedule-timeline" id="myScheduleTimeline">
+        <!-- Timeline items will be inserted here -->
+      </div>
+    </div>
+    
     <!-- Stats Overview -->
     <div class="stats-grid" id="statsGrid">
       <div class="stat-card">
@@ -594,6 +937,7 @@
     // Initialize page
     async function init() {
       console.log('Initializing blackouts page...');
+      initSearch(); // Initialize address search
       await loadData();
       renderStats();
       renderSchedule();
@@ -806,6 +1150,182 @@
         
         timeline.appendChild(item);
       });
+    }
+
+    // Address Search Functions
+    let addressSearchTimeout = null;
+    let selectedAddressData = null;
+
+    // Initialize search form
+    function initSearch() {
+      const input = document.getElementById('addressInput');
+      const form = document.getElementById('searchForm');
+      const dropdown = document.getElementById('autocompleteDropdown');
+
+      input.addEventListener('input', handleAddressInput);
+      input.addEventListener('blur', () => setTimeout(() => hideAutocomplete(), 200));
+      
+      form.addEventListener('submit', handleSearchSubmit);
+    }
+
+    // Handle address input with debounce
+    function handleAddressInput(e) {
+      const query = e.target.value.trim();
+      
+      clearTimeout(addressSearchTimeout);
+      
+      if (query.length < 3) {
+        hideAutocomplete();
+        return;
+      }
+
+      addressSearchTimeout = setTimeout(() => {
+        searchAddress(query);
+      }, 300);
+    }
+
+    // Search for address
+    async function searchAddress(query) {
+      try {
+        const response = await fetch(`/api/search_address?q=${encodeURIComponent(query)}`);
+        if (!response.ok) throw new Error('Search failed');
+        
+        const results = await response.json();
+        showAutocomplete(results);
+      } catch (error) {
+        console.error('Address search error:', error);
+      }
+    }
+
+    // Show autocomplete dropdown
+    function showAutocomplete(results) {
+      const dropdown = document.getElementById('autocompleteDropdown');
+      
+      if (!results || results.length === 0) {
+        hideAutocomplete();
+        return;
+      }
+
+      dropdown.innerHTML = results.map(result => `
+        <div class="autocomplete-item" onclick='selectAddress(${JSON.stringify(result)})'>
+          <span class="material-icons">location_on</span>
+          <div class="autocomplete-text">
+            <div class="autocomplete-address">${result.address}</div>
+            <div class="autocomplete-group">Черга ${result.group} • ${result.provider}</div>
+          </div>
+        </div>
+      `).join('');
+
+      dropdown.classList.add('show');
+    }
+
+    // Hide autocomplete dropdown
+    function hideAutocomplete() {
+      const dropdown = document.getElementById('autocompleteDropdown');
+      dropdown.classList.remove('show');
+    }
+
+    // Select address from autocomplete
+    function selectAddress(addressData) {
+      selectedAddressData = addressData;
+      document.getElementById('addressInput').value = addressData.address;
+      hideAutocomplete();
+      showMySchedule(addressData);
+    }
+
+    // Handle search form submit
+    function handleSearchSubmit(e) {
+      e.preventDefault();
+      
+      const query = document.getElementById('addressInput').value.trim();
+      if (query.length < 3) {
+        alert('Будь ласка, введіть адресу (мінімум 3 символи)');
+        return;
+      }
+
+      if (selectedAddressData) {
+        showMySchedule(selectedAddressData);
+      } else {
+        // Search directly if no address selected from dropdown
+        searchAndShowSchedule(query);
+      }
+    }
+
+    // Search and show schedule for address
+    async function searchAndShowSchedule(query) {
+      const btn = document.getElementById('searchBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="material-icons">hourglass_empty</span> Пошук...';
+
+      try {
+        const response = await fetch(`/api/get_schedule?address=${encodeURIComponent(query)}`);
+        if (!response.ok) throw new Error('Failed to get schedule');
+        
+        const data = await response.json();
+        
+        if (data.error) {
+          alert(data.error);
+        } else {
+          showMySchedule(data);
+        }
+      } catch (error) {
+        console.error('Schedule fetch error:', error);
+        alert('Помилка при отриманні графіку. Спробуйте ще раз.');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span class="material-icons">search</span> Знайти';
+      }
+    }
+
+    // Show user's personal schedule
+    function showMySchedule(data) {
+      const scheduleDiv = document.getElementById('mySchedule');
+      const addressText = document.getElementById('myAddressText');
+      const groupBadge = document.getElementById('myScheduleGroup');
+      const timeline = document.getElementById('myScheduleTimeline');
+
+      // Set address and group
+      addressText.textContent = data.address;
+      groupBadge.textContent = `Черга ${data.group}`;
+
+      // Render timeline
+      timeline.innerHTML = '';
+      
+      if (data.schedule && data.schedule.length > 0) {
+        data.schedule.forEach(slot => {
+          const item = document.createElement('div');
+          item.className = `timeline-item ${slot.status}`;
+          
+          const icon = slot.status === 'active' ? 'power_off' : 
+                      slot.status === 'upcoming' ? 'schedule' : 'power';
+          
+          item.innerHTML = `
+            <div class="timeline-time">${slot.time}</div>
+            <div class="timeline-status">${slot.label}</div>
+            <span class="material-icons timeline-icon">${icon}</span>
+          `;
+          
+          timeline.appendChild(item);
+        });
+      } else {
+        timeline.innerHTML = '<div class="empty-state" style="padding: 2rem;"><p>Графік відключень недоступний для вашої адреси</p></div>';
+      }
+
+      // Show schedule
+      scheduleDiv.classList.add('show');
+      
+      // Scroll to schedule
+      setTimeout(() => {
+        scheduleDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+    }
+
+    // Close personal schedule
+    function closeMySchedule() {
+      const scheduleDiv = document.getElementById('mySchedule');
+      scheduleDiv.classList.remove('show');
+      document.getElementById('addressInput').value = '';
+      selectedAddressData = null;
     }
 
     // Refresh all data
