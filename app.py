@@ -12,6 +12,15 @@ from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify, request, Response, send_from_directory
 from telethon import TelegramClient
 
+# Import blackout API client
+try:
+    from blackout_api import blackout_client
+    BLACKOUT_API_AVAILABLE = True
+    print("INFO: Blackout API client loaded successfully")
+except Exception as e:
+    BLACKOUT_API_AVAILABLE = False
+    print(f"WARNING: Blackout API client not available: {e}")
+
 # SpaCy integration for enhanced Ukrainian NLP
 try:
     import spacy
@@ -11457,42 +11466,233 @@ def blackouts():
     resp.headers['Cache-Control'] = 'public, max-age=300'  # 5 minutes cache
     return resp
 
-# Address database for blackout schedules
+# Address database for blackout schedules with subgroups
+# Format: group can be "1.1", "1.2", "2.1", "2.2", "3.1", "3.2" etc.
 # TODO: Replace with real database and API integration
 BLACKOUT_ADDRESSES = {
-    # Kyiv
-    'київ хрещатик': {'group': 1, 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
-    'київ вул хрещатик': {'group': 1, 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
-    'київ майдан': {'group': 2, 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
-    'київ оболонь': {'group': 3, 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
-    'київ троєщина': {'group': 1, 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
-    'київ позняки': {'group': 2, 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
+    # Kyiv - all subgroups across different districts
+    'київ хрещатик': {'group': '1.1', 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
+    'київ вулиця хрещатик': {'group': '1.1', 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
+    'київ майдан': {'group': '1.2', 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
+    'київ печерськ': {'group': '2.1', 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
+    'київ поділ': {'group': '2.2', 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
+    'київ шевченківський': {'group': '3.1', 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
+    'київ оболонь': {'group': '3.2', 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
+    'київ троєщина': {'group': '1.1', 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
+    'київ позняки': {'group': '2.1', 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
+    'київ дарниця': {'group': '3.1', 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
+    'київ лівобережна': {'group': '2.2', 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
+    'київ академмістечко': {'group': '3.2', 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
+    'київ теремки': {'group': '1.2', 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
+    'київ вишневе': {'group': '2.1', 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
+    'київ бориспіль': {'group': '1.1', 'city': 'Бориспіль', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
     
-    # Odesa
-    'одеса дерибасівська': {'group': 1, 'city': 'Одеса', 'oblast': 'Одеська', 'provider': 'ДТЕК Одеські електромережі'},
-    'одеса приморський': {'group': 2, 'city': 'Одеса', 'oblast': 'Одеська', 'provider': 'ДТЕК Одеські електромережі'},
-    'одеса таїрова': {'group': 3, 'city': 'Одеса', 'oblast': 'Одеська', 'provider': 'ДТЕК Одеські електромережі'},
+    # Odesa - all subgroups
+    'одеса дерибасівська': {'group': '1.1', 'city': 'Одеса', 'oblast': 'Одеська', 'provider': 'ДТЕК Одеські електромережі'},
+    'одеса приморський': {'group': '1.2', 'city': 'Одеса', 'oblast': 'Одеська', 'provider': 'ДТЕК Одеські електромережі'},
+    'одеса центр': {'group': '2.1', 'city': 'Одеса', 'oblast': 'Одеська', 'provider': 'ДТЕК Одеські електромережі'},
+    'одеса аркадія': {'group': '2.2', 'city': 'Одеса', 'oblast': 'Одеська', 'provider': 'ДТЕК Одеські електромережі'},
+    'одеса таїрова': {'group': '3.1', 'city': 'Одеса', 'oblast': 'Одеська', 'provider': 'ДТЕК Одеські електромережі'},
+    'одеса котовського': {'group': '3.2', 'city': 'Одеса', 'oblast': 'Одеська', 'provider': 'ДТЕК Одеські електромережі'},
+    'одеса молдаванка': {'group': '1.1', 'city': 'Одеса', 'oblast': 'Одеська', 'provider': 'ДТЕК Одеські електромережі'},
+    'одеса пересипь': {'group': '2.1', 'city': 'Одеса', 'oblast': 'Одеська', 'provider': 'ДТЕК Одеські електромережі'},
+    'одеса суворовський': {'group': '3.1', 'city': 'Одеса', 'oblast': 'Одеська', 'provider': 'ДТЕК Одеські електромережі'},
+    'одеса чорноморка': {'group': '1.2', 'city': 'Одеса', 'oblast': 'Одеська', 'provider': 'ДТЕК Одеські електромережі'},
     
-    # Kharkiv
-    'харків сумська': {'group': 2, 'city': 'Харків', 'oblast': 'Харківська', 'provider': 'ДТЕК Східенерго'},
-    'харків салтівка': {'group': 1, 'city': 'Харків', 'oblast': 'Харківська', 'provider': 'ДТЕК Східенерго'},
-    'харків нагірний': {'group': 3, 'city': 'Харків', 'oblast': 'Харківська', 'provider': 'ДТЕК Східенерго'},
+    # Kharkiv - all subgroups
+    'харків сумська': {'group': '1.1', 'city': 'Харків', 'oblast': 'Харківська', 'provider': 'ДТЕК Східенерго'},
+    'харків центр': {'group': '1.2', 'city': 'Харків', 'oblast': 'Харківська', 'provider': 'ДТЕК Східенерго'},
+    'харків салтівка': {'group': '2.1', 'city': 'Харків', 'oblast': 'Харківська', 'provider': 'ДТЕК Східенерго'},
+    'харків нагірний': {'group': '2.2', 'city': 'Харків', 'oblast': 'Харківська', 'provider': 'ДТЕК Східенерго'},
+    'харків холодна гора': {'group': '3.1', 'city': 'Харків', 'oblast': 'Харківська', 'provider': 'ДТЕК Східенерго'},
+    'харків павлове поле': {'group': '3.2', 'city': 'Харків', 'oblast': 'Харківська', 'provider': 'ДТЕК Східенерго'},
+    'харків московський': {'group': '1.1', 'city': 'Харків', 'oblast': 'Харківська', 'provider': 'ДТЕК Східенерго'},
+    'харків індустріальний': {'group': '2.1', 'city': 'Харків', 'oblast': 'Харківська', 'provider': 'ДТЕК Східенерго'},
+    'харків київський': {'group': '1.2', 'city': 'Харків', 'oblast': 'Харківська', 'provider': 'ДТЕК Східенерго'},
     
-    # Dnipro
-    'дніпро проспект': {'group': 3, 'city': 'Дніпро', 'oblast': 'Дніпропетровська', 'provider': 'ДТЕК Дніпровські електромережі'},
-    'дніпро центр': {'group': 1, 'city': 'Дніпро', 'oblast': 'Дніпропетровська', 'provider': 'ДТЕК Дніпровські електромережі'},
+    # Dnipro - all subgroups
+    'дніпро центр': {'group': '1.1', 'city': 'Дніпро', 'oblast': 'Дніпропетровська', 'provider': 'ДТЕК Дніпровські електромережі'},
+    'дніпро гагаріна': {'group': '1.2', 'city': 'Дніпро', 'oblast': 'Дніпропетровська', 'provider': 'ДТЕК Дніпровські електромережі'},
+    'дніпро нагірний': {'group': '2.1', 'city': 'Дніпро', 'oblast': 'Дніпропетровська', 'provider': 'ДТЕК Дніпровські електромережі'},
+    'дніпро проспект': {'group': '2.2', 'city': 'Дніпро', 'oblast': 'Дніпропетровська', 'provider': 'ДТЕК Дніпровські електромережі'},
+    'дніпро придніпровськ': {'group': '3.1', 'city': 'Дніпро', 'oblast': 'Дніпропетровська', 'provider': 'ДТЕК Дніпровські електромережі'},
+    'дніпро новокодацький': {'group': '3.2', 'city': 'Дніпро', 'oblast': 'Дніпропетровська', 'provider': 'ДТЕК Дніпровські електромережі'},
+    'дніпро соборний': {'group': '1.1', 'city': 'Дніпро', 'oblast': 'Дніпропетровська', 'provider': 'ДТЕК Дніпровські електромережі'},
+    'дніпро амур': {'group': '2.1', 'city': 'Дніпро', 'oblast': 'Дніпропетровська', 'provider': 'ДТЕК Дніпровські електромережі'},
     
-    # Lviv
-    'львів площа ринок': {'group': 1, 'city': 'Львів', 'oblast': 'Львівська', 'provider': 'Львівобленерго'},
-    'львів сихів': {'group': 2, 'city': 'Львів', 'oblast': 'Львівська', 'provider': 'Львівобленерго'},
+    # Lviv - all subgroups
+    'львів центр': {'group': '1.1', 'city': 'Львів', 'oblast': 'Львівська', 'provider': 'Львівобленерго'},
+    'львів площа ринок': {'group': '1.2', 'city': 'Львів', 'oblast': 'Львівська', 'provider': 'Львівобленерго'},
+    'львів франка': {'group': '2.1', 'city': 'Львів', 'oblast': 'Львівська', 'provider': 'Львівобленерго'},
+    'львів сихів': {'group': '2.2', 'city': 'Львів', 'oblast': 'Львівська', 'provider': 'Львівобленерго'},
+    'львів личаківська': {'group': '3.1', 'city': 'Львів', 'oblast': 'Львівська', 'provider': 'Львівобленерго'},
+    'львів сихівська': {'group': '3.2', 'city': 'Львів', 'oblast': 'Львівська', 'provider': 'Львівобленерго'},
+    'львів залізничний': {'group': '1.1', 'city': 'Львів', 'oblast': 'Львівська', 'provider': 'Львівобленерго'},
+    'львів шевченківський': {'group': '2.1', 'city': 'Львів', 'oblast': 'Львівська', 'provider': 'Львівобленерго'},
     
-    # Zaporizhzhia
-    'запоріжжя проспект': {'group': 1, 'city': 'Запоріжжя', 'oblast': 'Запорізька', 'provider': 'ДТЕК Запорізькі електромережі'},
+    # Zaporizhzhia - all subgroups
+    'запоріжжя центр': {'group': '1.1', 'city': 'Запоріжжя', 'oblast': 'Запорізька', 'provider': 'ДТЕК Запорізькі електромережі'},
+    'запоріжжя проспект': {'group': '1.2', 'city': 'Запоріжжя', 'oblast': 'Запорізька', 'provider': 'ДТЕК Запорізькі електромережі'},
+    'запоріжжя хортицький': {'group': '2.1', 'city': 'Запоріжжя', 'oblast': 'Запорізька', 'provider': 'ДТЕК Запорізькі електромережі'},
+    'запоріжжя шевченківський': {'group': '2.2', 'city': 'Запоріжжя', 'oblast': 'Запорізька', 'provider': 'ДТЕК Запорізькі електромережі'},
+    'запоріжжя заводський': {'group': '3.1', 'city': 'Запоріжжя', 'oblast': 'Запорізька', 'provider': 'ДТЕК Запорізькі електромережі'},
+    'запоріжжя дніпровський': {'group': '3.2', 'city': 'Запоріжжя', 'oblast': 'Запорізька', 'provider': 'ДТЕК Запорізькі електромережі'},
+    
+    # Vinnytsia - all subgroups
+    'вінниця центр': {'group': '1.1', 'city': 'Вінниця', 'oblast': 'Вінницька', 'provider': 'Вінницяобленерго'},
+    'вінниця соборна': {'group': '1.2', 'city': 'Вінниця', 'oblast': 'Вінницька', 'provider': 'Вінницяобленерго'},
+    'вінниця хмельницьке': {'group': '2.1', 'city': 'Вінниця', 'oblast': 'Вінницька', 'provider': 'Вінницяобленерго'},
+    'вінниця вишенька': {'group': '2.2', 'city': 'Вінниця', 'oblast': 'Вінницька', 'provider': 'Вінницяобленерго'},
+    'вінниця замостя': {'group': '3.1', 'city': 'Вінниця', 'oblast': 'Вінницька', 'provider': 'Вінницяобленерго'},
+    
+    # Poltava - all subgroups
+    'полтава центр': {'group': '1.1', 'city': 'Полтава', 'oblast': 'Полтавська', 'provider': 'Полтаваобленерго'},
+    'полтава соборності': {'group': '1.2', 'city': 'Полтава', 'oblast': 'Полтавська', 'provider': 'Полтаваобленерго'},
+    'полтава київський': {'group': '2.1', 'city': 'Полтава', 'oblast': 'Полтавська', 'provider': 'Полтаваобленерго'},
+    'полтава подільський': {'group': '2.2', 'city': 'Полтава', 'oblast': 'Полтавська', 'provider': 'Полтаваобленерго'},
+    
+    # Chernihiv - all subgroups
+    'чернігів центр': {'group': '1.1', 'city': 'Чернігів', 'oblast': 'Чернігівська', 'provider': 'Чернігівобленерго'},
+    'чернігів мира': {'group': '1.2', 'city': 'Чернігів', 'oblast': 'Чернігівська', 'provider': 'Чернігівобленерго'},
+    'чернігів деснянський': {'group': '2.1', 'city': 'Чернігів', 'oblast': 'Чернігівська', 'provider': 'Чернігівобленерго'},
+    
+    # Zhytomyr - all subgroups
+    'житомир центр': {'group': '1.1', 'city': 'Житомир', 'oblast': 'Житомирська', 'provider': 'Житомиробленерго'},
+    'житомир київська': {'group': '1.2', 'city': 'Житомир', 'oblast': 'Житомирська', 'provider': 'Житомиробленерго'},
+    'житомир богунія': {'group': '2.1', 'city': 'Житомир', 'oblast': 'Житомирська', 'provider': 'Житомиробленерго'},
+    'житомир корольовський': {'group': '2.2', 'city': 'Житомир', 'oblast': 'Житомирська', 'provider': 'Житомиробленерго'},
+    
+    # Cherkasy - all subgroups
+    'черкаси центр': {'group': '1.1', 'city': 'Черкаси', 'oblast': 'Черкаська', 'provider': 'Черкасиобленерго'},
+    'черкаси соборна': {'group': '1.2', 'city': 'Черкаси', 'oblast': 'Черкаська', 'provider': 'Черкасиобленерgo'},
+    'черкаси придніпровський': {'group': '2.1', 'city': 'Черкаси', 'oblast': 'Черкаська', 'provider': 'Черкасиобленерго'},
+    
+    # Sumy - all subgroups
+    'суми центр': {'group': '1.1', 'city': 'Суми', 'oblast': 'Сумська', 'provider': 'Сумиобленерго'},
+    'суми соборна': {'group': '1.2', 'city': 'Суми', 'oblast': 'Сумська', 'provider': 'Сумиобленерго'},
+    'суми ковпаківський': {'group': '2.1', 'city': 'Суми', 'oblast': 'Сумська', 'provider': 'Сумиобленерго'},
+    
+    # Khmelnytskyi - all subgroups
+    'хмельницький центр': {'group': '1.1', 'city': 'Хмельницький', 'oblast': 'Хмельницька', 'provider': 'Хмельницькобленерго'},
+    'хмельницький проспект': {'group': '1.2', 'city': 'Хмельницький', 'oblast': 'Хмельницька', 'provider': 'Хмельницькобленерго'},
+    'хмельницький загоцька': {'group': '2.1', 'city': 'Хмельницький', 'oblast': 'Хмельницька', 'provider': 'Хмельницькобленерго'},
+    
+    # Rivne - all subgroups
+    'рівне центр': {'group': '1.1', 'city': 'Рівне', 'oblast': 'Рівненська', 'provider': 'Рівненобленерго'},
+    'рівне соборна': {'group': '1.2', 'city': 'Рівне', 'oblast': 'Рівненська', 'provider': 'Рівненобленерго'},
+    'рівне північний': {'group': '2.1', 'city': 'Рівне', 'oblast': 'Рівненська', 'provider': 'Рівненобленерго'},
+    
+    # Ivano-Frankivsk - all subgroups
+    'івано-франківськ центр': {'group': '1.1', 'city': 'Івано-Франківськ', 'oblast': 'Івано-Франківська', 'provider': 'Прикарпаттяобленерго'},
+    'івано-франківськ незалежності': {'group': '1.2', 'city': 'Івано-Франківськ', 'oblast': 'Івано-Франківська', 'provider': 'Прикарпаттяобленерго'},
+    'івано-франківськ пасічна': {'group': '2.1', 'city': 'Івано-Франківськ', 'oblast': 'Івано-Франківська', 'provider': 'Прикарпаттяобленерго'},
+    
+    # Ternopil - all subgroups
+    'тернопіль центр': {'group': '1.1', 'city': 'Тернопіль', 'oblast': 'Тернопільська', 'provider': 'Тернопільобленерго'},
+    'тернопіль руська': {'group': '1.2', 'city': 'Тернопіль', 'oblast': 'Тернопільська', 'provider': 'Тернопільобленерго'},
+    'тернопіль східний': {'group': '2.1', 'city': 'Тернопіль', 'oblast': 'Тернопільська', 'provider': 'Тернопільобленерго'},
+    
+    # Lutsk - all subgroups
+    'луцьк центр': {'group': '1.1', 'city': 'Луцьк', 'oblast': 'Волинська', 'provider': 'Волиньобленерго'},
+    'луцьк волі': {'group': '1.2', 'city': 'Луцьк', 'oblast': 'Волинська', 'provider': 'Волиньобленерго'},
+    'луцьк вокзальна': {'group': '2.1', 'city': 'Луцьк', 'oblast': 'Волинська', 'provider': 'Волиньобленерго'},
+    
+    # Chernivtsi - all subgroups
+    'чернівці центр': {'group': '1.1', 'city': 'Чернівці', 'oblast': 'Чернівецька', 'provider': 'Чернівціобленерго'},
+    'чернівці головна': {'group': '1.2', 'city': 'Чернівці', 'oblast': 'Чернівецька', 'provider': 'Чернівціобленерго'},
+    'чернівці садгора': {'group': '2.1', 'city': 'Чернівці', 'oblast': 'Чернівецька', 'provider': 'Чернівціобленерго'},
+    
+    # Uzhhorod - all subgroups
+    'ужгород центр': {'group': '1.1', 'city': 'Ужгород', 'oblast': 'Закарпатська', 'provider': 'Закарпаттяобленерго'},
+    'ужгород корзо': {'group': '1.2', 'city': 'Ужгород', 'oblast': 'Закарпатська', 'provider': 'Закарпаттяобленерго'},
+    'ужгород боздош': {'group': '2.1', 'city': 'Ужгород', 'oblast': 'Закарпатська', 'provider': 'Закарпаттяобленерго'},
+    
+    # Kropyvnytskyi (Kirovohrad) - all subgroups
+    'кропивницький центр': {'group': '1.1', 'city': 'Кропивницький', 'oblast': 'Кіровоградська', 'provider': 'Кіровоградобленерго'},
+    'кропивницький велика перспективна': {'group': '1.2', 'city': 'Кропивницький', 'oblast': 'Кіровоградська', 'provider': 'Кіровоградобленерго'},
+    'кропивницький фортечний': {'group': '2.1', 'city': 'Кропивницький', 'oblast': 'Кіровоградська', 'provider': 'Кіровоградобленерго'},
+    
+    # Mykolaiv - all subgroups
+    'миколаїв центр': {'group': '1.1', 'city': 'Миколаїв', 'oblast': 'Миколаївська', 'provider': 'Миколаївобленерго'},
+    'миколаїв соборна': {'group': '1.2', 'city': 'Миколаїв', 'oblast': 'Миколаївська', 'provider': 'Миколаївобленерго'},
+    'миколаїв інгульський': {'group': '2.1', 'city': 'Миколаїв', 'oblast': 'Миколаївська', 'provider': 'Миколаївобленерго'},
+    'миколаїв корабельний': {'group': '2.2', 'city': 'Миколаїв', 'oblast': 'Миколаївська', 'provider': 'Миколаївобленерго'},
+    
+    # Kherson - all subgroups
+    'херсон центр': {'group': '1.1', 'city': 'Херсон', 'oblast': 'Херсонська', 'provider': 'Херсонобленерго'},
+    'херсон ушакова': {'group': '1.2', 'city': 'Херсон', 'oblast': 'Херсонська', 'provider': 'Херсонобленерго'},
+    'херсон дніпровський': {'group': '2.1', 'city': 'Херсон', 'oblast': 'Херсонська', 'provider': 'Херсонобленерго'},
+    
+    # Mariupol (DTEK Donetsk region)
+    'маріуполь центр': {'group': '1.1', 'city': 'Маріуполь', 'oblast': 'Донецька', 'provider': 'ДТЕК Донецькі електромережі'},
+    'маріуполь лівобережний': {'group': '2.1', 'city': 'Маріуполь', 'oblast': 'Донецька', 'provider': 'ДТЕК Донецькі електромережі'},
+    
+    # Kremenchuk - all subgroups
+    'кременчук центр': {'group': '1.1', 'city': 'Кременчук', 'oblast': 'Полтавська', 'provider': 'Полтаваобленерго'},
+    'кременчук київська': {'group': '1.2', 'city': 'Кременчук', 'oblast': 'Полтавська', 'provider': 'Полтаваобленерго'},
+    'кременчук автозаводський': {'group': '2.1', 'city': 'Кременчук', 'oblast': 'Полтавська', 'provider': 'Полтаваобленерго'},
 }
 
-# Blackout schedules by group
+# Blackout schedules by group and subgroup
+# Format: group "1.1", "1.2", "2.1", "2.2", "3.1", "3.2"
+# Each subgroup has different timing within main group
 # TODO: Fetch from real APIs (DTEK, Ukrenergo)
 BLACKOUT_SCHEDULES = {
+    # Group 1 subgroups
+    '1.1': [
+        {'time': '00:00 - 04:00', 'label': 'Електропостачання', 'status': 'normal'},
+        {'time': '04:00 - 08:00', 'label': 'Можливе відключення', 'status': 'normal'},
+        {'time': '08:00 - 12:00', 'label': 'Електропостачання', 'status': 'normal'},
+        {'time': '12:00 - 16:00', 'label': 'Активне відключення', 'status': 'active'},
+        {'time': '16:00 - 20:00', 'label': 'Електропостачання', 'status': 'normal'},
+        {'time': '20:00 - 24:00', 'label': 'Можливе відключення', 'status': 'upcoming'},
+    ],
+    '1.2': [
+        {'time': '00:00 - 04:00', 'label': 'Можливе відключення', 'status': 'upcoming'},
+        {'time': '04:00 - 08:00', 'label': 'Електропостачання', 'status': 'normal'},
+        {'time': '08:00 - 12:00', 'label': 'Можливе відключення', 'status': 'normal'},
+        {'time': '12:00 - 16:00', 'label': 'Електропостачання', 'status': 'normal'},
+        {'time': '16:00 - 20:00', 'label': 'Активне відключення', 'status': 'active'},
+        {'time': '20:00 - 24:00', 'label': 'Електропостачання', 'status': 'normal'},
+    ],
+    
+    # Group 2 subgroups
+    '2.1': [
+        {'time': '00:00 - 04:00', 'label': 'Електропостачання', 'status': 'normal'},
+        {'time': '04:00 - 08:00', 'label': 'Активне відключення', 'status': 'active'},
+        {'time': '08:00 - 12:00', 'label': 'Електропостачання', 'status': 'normal'},
+        {'time': '12:00 - 16:00', 'label': 'Можливе відключення', 'status': 'normal'},
+        {'time': '16:00 - 20:00', 'label': 'Електропостачання', 'status': 'normal'},
+        {'time': '20:00 - 24:00', 'label': 'Можливе відключення', 'status': 'upcoming'},
+    ],
+    '2.2': [
+        {'time': '00:00 - 04:00', 'label': 'Можливе відключення', 'status': 'normal'},
+        {'time': '04:00 - 08:00', 'label': 'Електропостачання', 'status': 'normal'},
+        {'time': '08:00 - 12:00', 'label': 'Активне відключення', 'status': 'active'},
+        {'time': '12:00 - 16:00', 'label': 'Електропостачання', 'status': 'normal'},
+        {'time': '16:00 - 20:00', 'label': 'Можливе відключення', 'status': 'upcoming'},
+        {'time': '20:00 - 24:00', 'label': 'Електропостачання', 'status': 'normal'},
+    ],
+    
+    # Group 3 subgroups
+    '3.1': [
+        {'time': '00:00 - 04:00', 'label': 'Можливе відключення', 'status': 'upcoming'},
+        {'time': '04:00 - 08:00', 'label': 'Електропостачання', 'status': 'normal'},
+        {'time': '08:00 - 12:00', 'label': 'Можливе відключення', 'status': 'normal'},
+        {'time': '12:00 - 16:00', 'label': 'Електропостачання', 'status': 'normal'},
+        {'time': '16:00 - 20:00', 'label': 'Активне відключення', 'status': 'active'},
+        {'time': '20:00 - 24:00', 'label': 'Електропостачання', 'status': 'normal'},
+    ],
+    '3.2': [
+        {'time': '00:00 - 04:00', 'label': 'Електропостачання', 'status': 'normal'},
+        {'time': '04:00 - 08:00', 'label': 'Можливе відключення', 'status': 'normal'},
+        {'time': '08:00 - 12:00', 'label': 'Електропостачання', 'status': 'normal'},
+        {'time': '12:00 - 16:00', 'label': 'Можливе відключення', 'status': 'upcoming'},
+        {'time': '16:00 - 20:00', 'label': 'Електропостачання', 'status': 'normal'},
+        {'time': '20:00 - 24:00', 'label': 'Активне відключення', 'status': 'active'},
+    ],
+    
+    # Fallback for old integer groups (backward compatibility)
     1: [
         {'time': '06:00 - 10:00', 'label': 'Можливе відключення', 'status': 'normal'},
         {'time': '10:00 - 14:00', 'label': 'Електропостачання', 'status': 'normal'},
@@ -11516,63 +11716,135 @@ BLACKOUT_SCHEDULES = {
     ],
 }
 
-@app.route('/api/search_address')
-def search_address():
-    """Search for addresses and return matching results with blackout groups"""
-    query = request.args.get('q', '').lower().strip()
+@app.route('/api/search_cities')
+def search_cities():
+    """Search for cities and addresses in Ukraine with autocomplete"""
+    query = request.args.get('q', '').strip()
     
-    if len(query) < 3:
+    if len(query) < 2:
         return jsonify([])
     
-    results = []
-    for address_key, data in BLACKOUT_ADDRESSES.items():
-        if query in address_key:
-            # Reconstruct readable address
-            parts = address_key.split()
-            city = parts[0].capitalize()
-            street = ' '.join(parts[1:]).capitalize()
-            
-            results.append({
-                'address': f'{city}, {street}',
-                'city': data['city'],
-                'oblast': data['oblast'],
-                'group': data['group'],
-                'provider': data['provider']
-            })
+    if not BLACKOUT_API_AVAILABLE:
+        # Fallback to static data
+        results = []
+        query_lower = query.lower()
+        seen_cities = set()
+        
+        for address_key, data in BLACKOUT_ADDRESSES.items():
+            city = data['city']
+            if query_lower in city.lower() and city not in seen_cities:
+                results.append({
+                    'city': city,
+                    'oblast': data['oblast'],
+                    'provider': data['provider']
+                })
+                seen_cities.add(city)
+        
+        return jsonify(results[:10])
     
-    # Limit to 5 results
-    return jsonify(results[:5])
+    try:
+        # Use geocoding to find real addresses
+        addresses = blackout_client.search_addresses(query)
+        
+        results = []
+        for addr in addresses:
+            results.append({
+                'address': addr['display_name'],
+                'full_address': addr['address'],
+                'lat': addr['latitude'],
+                'lon': addr['longitude']
+            })
+        
+        return jsonify(results)
+        
+    except Exception as e:
+        logging.error(f"Error in search_cities: {e}")
+        return jsonify([])
 
 @app.route('/api/get_schedule')
 def get_schedule():
-    """Get blackout schedule for a specific address"""
-    address = request.args.get('address', '').lower().strip()
+    """Get blackout schedule for a specific address using real geocoding and provider APIs"""
+    city = request.args.get('city', '').strip()
+    street = request.args.get('street', '').strip()
+    building = request.args.get('building', '').strip()
     
-    if not address:
-        return jsonify({'error': 'Адреса не вказана'}), 400
+    if not city:
+        return jsonify({'error': 'Місто обов\'язкове для заповнення'}), 400
     
-    # Try to find matching address
+    if not BLACKOUT_API_AVAILABLE:
+        # Fallback to old static data if API not available
+        return get_schedule_fallback(city, street, building)
+    
+    try:
+        # Use real API client to get schedule
+        result = blackout_client.get_schedule_for_address(city, street, building)
+        
+        if not result['found']:
+            return jsonify({
+                'error': f'Адресу "{city}" не знайдено. Перевірте правильність написання міста.'
+            }), 404
+        
+        # Add oblast info if available
+        if 'київ' in city.lower():
+            result['oblast'] = 'Київська'
+        elif 'одес' in city.lower():
+            result['oblast'] = 'Одеська'
+        elif 'харків' in city.lower():
+            result['oblast'] = 'Харківська'
+        elif 'дніпр' in city.lower():
+            result['oblast'] = 'Дніпропетровська'
+        elif 'львів' in city.lower():
+            result['oblast'] = 'Львівська'
+        else:
+            result['oblast'] = 'Україна'
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        logging.error(f"Error in get_schedule: {e}")
+        return jsonify({
+            'error': 'Помилка при отриманні графіку. Спробуйте ще раз.'
+        }), 500
+
+
+def get_schedule_fallback(city, street, building):
+    """Fallback method using static data if API client is unavailable"""
+    city_lower = city.lower()
+    street_lower = street.lower() if street else ''
+    
+    # Try to find matching address in static database
     best_match = None
     best_match_data = None
+    best_score = 0
     
     for address_key, data in BLACKOUT_ADDRESSES.items():
-        # Simple matching - check if key words are in the query
-        key_words = address_key.split()
-        matches = sum(1 for word in key_words if word in address)
+        key_parts = address_key.split()
+        key_city = key_parts[0] if len(key_parts) > 0 else ''
+        key_street = ' '.join(key_parts[1:]) if len(key_parts) > 1 else ''
         
-        if matches >= 2:  # At least 2 words match
-            if best_match is None or matches > sum(1 for word in best_match.split() if word in address):
-                best_match = address_key
-                best_match_data = data
+        score = 0
+        if city_lower in key_city or key_city in city_lower:
+            score += 2
+        if street_lower and (street_lower in key_street or key_street in street_lower):
+            score += 2
+        
+        if score > best_score:
+            best_score = score
+            best_match = address_key
+            best_match_data = data
     
-    if not best_match_data:
-        return jsonify({'error': 'Адресу не знайдено. Спробуйте інший варіант.'}), 404
+    if not best_match_data or best_score < 2:
+        return jsonify({'error': f'Адресу не знайдено для {city}. Спробуйте інше місто або вулицю.'}), 404
     
     # Reconstruct readable address
     parts = best_match.split()
-    city = parts[0].capitalize()
-    street = ' '.join(parts[1:]).capitalize()
-    readable_address = f'{city}, {street}'
+    city_name = parts[0].capitalize()
+    street_name = ' '.join(parts[1:]).capitalize() if len(parts) > 1 else ''
+    readable_address = f'{city_name}'
+    if street_name:
+        readable_address += f', {street_name}'
+    if building:
+        readable_address += f', {building}'
     
     # Get schedule for the group
     group = best_match_data['group']

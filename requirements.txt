@@ -3,5 +3,6 @@ telethon==1.35.0
 pytz==2024.1
 requests==2.32.3
 spacy==3.8.7
+geopy==2.4.1
 # Ukrainian SpaCy model - try direct URL installation
 https://github.com/explosion/spacy-models/releases/download/uk_core_news_sm-3.8.0/uk_core_news_sm-3.8.0-py3-none-any.whl

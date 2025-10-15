@@ -148,18 +148,32 @@
     
     .search-form {
       display: flex;
+      flex-direction: column;
       gap: 1rem;
       position: relative;
     }
     
+    .search-fields {
+      display: grid;
+      grid-template-columns: 1fr 2fr 1fr;
+      gap: 1rem;
+    }
+    
     .search-input-wrapper {
-      flex: 1;
       position: relative;
+    }
+    
+    .input-label {
+      display: block;
+      font-size: 0.875rem;
+      color: var(--text2);
+      margin-bottom: 0.5rem;
+      font-weight: 500;
     }
     
     .search-input {
       width: 100%;
-      padding: 1rem 1rem 1rem 3rem;
+      padding: 1rem;
       background: rgba(31, 41, 55, 0.5);
       border: 1px solid var(--border);
       border-radius: 0.75rem;
@@ -183,6 +197,7 @@
       transform: translateY(-50%);
       color: var(--text-muted);
       pointer-events: none;
+      display: none;
     }
     
     .search-btn {
@@ -196,9 +211,11 @@
       cursor: pointer;
       display: flex;
       align-items: center;
+      justify-content: center;
       gap: 0.5rem;
       transition: all 0.2s;
       white-space: nowrap;
+      align-self: flex-end;
     }
     
     .search-btn:hover {
@@ -726,6 +743,10 @@
         align-items: flex-start;
       }
       
+      .search-fields {
+        grid-template-columns: 1fr;
+      }
+      
       .stats-grid {
         grid-template-columns: 1fr;
       }
@@ -797,20 +818,53 @@
       </div>
       
       <form class="search-form" id="searchForm" onsubmit="return false;">
-        <div class="search-input-wrapper">
-          <span class="material-icons search-input-icon">location_on</span>
-          <input 
-            type="text" 
-            class="search-input" 
-            id="addressInput"
-            placeholder="Наприклад: Київ, вул. Хрещатик, 1"
-            autocomplete="off"
-          >
-          <div class="autocomplete-dropdown" id="autocompleteDropdown"></div>
+        <div class="search-fields">
+          <div class="search-input-wrapper">
+            <label class="input-label">
+              <span class="material-icons" style="font-size: 1rem; vertical-align: middle;">location_city</span>
+              Місто / Село
+            </label>
+            <input 
+              type="text" 
+              class="search-input" 
+              id="cityInput"
+              placeholder="Київ"
+              autocomplete="off"
+            >
+          </div>
+          
+          <div class="search-input-wrapper">
+            <label class="input-label">
+              <span class="material-icons" style="font-size: 1rem; vertical-align: middle;">add_road</span>
+              Вулиця
+            </label>
+            <input 
+              type="text" 
+              class="search-input" 
+              id="streetInput"
+              placeholder="вул. Хрещатик"
+              autocomplete="off"
+            >
+          </div>
+          
+          <div class="search-input-wrapper">
+            <label class="input-label">
+              <span class="material-icons" style="font-size: 1rem; vertical-align: middle;">home</span>
+              Будинок / Квартира
+            </label>
+            <input 
+              type="text" 
+              class="search-input" 
+              id="buildingInput"
+              placeholder="буд. 1"
+              autocomplete="off"
+            >
+          </div>
         </div>
+        
         <button type="submit" class="search-btn" id="searchBtn">
           <span class="material-icons">search</span>
-          Знайти
+          Знайти мій графік
         </button>
       </form>
     </div>
@@ -1153,112 +1207,48 @@
     }
 
     // Address Search Functions
-    let addressSearchTimeout = null;
     let selectedAddressData = null;
 
     // Initialize search form
     function initSearch() {
-      const input = document.getElementById('addressInput');
       const form = document.getElementById('searchForm');
-      const dropdown = document.getElementById('autocompleteDropdown');
-
-      input.addEventListener('input', handleAddressInput);
-      input.addEventListener('blur', () => setTimeout(() => hideAutocomplete(), 200));
-      
       form.addEventListener('submit', handleSearchSubmit);
-    }
-
-    // Handle address input with debounce
-    function handleAddressInput(e) {
-      const query = e.target.value.trim();
-      
-      clearTimeout(addressSearchTimeout);
-      
-      if (query.length < 3) {
-        hideAutocomplete();
-        return;
-      }
-
-      addressSearchTimeout = setTimeout(() => {
-        searchAddress(query);
-      }, 300);
-    }
-
-    // Search for address
-    async function searchAddress(query) {
-      try {
-        const response = await fetch(`/api/search_address?q=${encodeURIComponent(query)}`);
-        if (!response.ok) throw new Error('Search failed');
-        
-        const results = await response.json();
-        showAutocomplete(results);
-      } catch (error) {
-        console.error('Address search error:', error);
-      }
-    }
-
-    // Show autocomplete dropdown
-    function showAutocomplete(results) {
-      const dropdown = document.getElementById('autocompleteDropdown');
-      
-      if (!results || results.length === 0) {
-        hideAutocomplete();
-        return;
-      }
-
-      dropdown.innerHTML = results.map(result => `
-        <div class="autocomplete-item" onclick='selectAddress(${JSON.stringify(result)})'>
-          <span class="material-icons">location_on</span>
-          <div class="autocomplete-text">
-            <div class="autocomplete-address">${result.address}</div>
-            <div class="autocomplete-group">Черга ${result.group} • ${result.provider}</div>
-          </div>
-        </div>
-      `).join('');
-
-      dropdown.classList.add('show');
-    }
-
-    // Hide autocomplete dropdown
-    function hideAutocomplete() {
-      const dropdown = document.getElementById('autocompleteDropdown');
-      dropdown.classList.remove('show');
-    }
-
-    // Select address from autocomplete
-    function selectAddress(addressData) {
-      selectedAddressData = addressData;
-      document.getElementById('addressInput').value = addressData.address;
-      hideAutocomplete();
-      showMySchedule(addressData);
     }
 
     // Handle search form submit
     function handleSearchSubmit(e) {
       e.preventDefault();
       
-      const query = document.getElementById('addressInput').value.trim();
-      if (query.length < 3) {
-        alert('Будь ласка, введіть адресу (мінімум 3 символи)');
+      const city = document.getElementById('cityInput').value.trim();
+      const street = document.getElementById('streetInput').value.trim();
+      const building = document.getElementById('buildingInput').value.trim();
+      
+      if (!city || !street) {
+        alert('Будь ласка, вкажіть місто та вулицю');
         return;
       }
 
-      if (selectedAddressData) {
-        showMySchedule(selectedAddressData);
-      } else {
-        // Search directly if no address selected from dropdown
-        searchAndShowSchedule(query);
-      }
+      // Construct full address
+      const fullAddress = `${city}, ${street}${building ? ', ' + building : ''}`;
+      
+      // Search for schedule
+      searchAndShowSchedule(city, street, building);
     }
 
     // Search and show schedule for address
-    async function searchAndShowSchedule(query) {
+    async function searchAndShowSchedule(city, street, building) {
       const btn = document.getElementById('searchBtn');
       btn.disabled = true;
       btn.innerHTML = '<span class="material-icons">hourglass_empty</span> Пошук...';
 
       try {
-        const response = await fetch(`/api/get_schedule?address=${encodeURIComponent(query)}`);
+        const params = new URLSearchParams({
+          city: city,
+          street: street,
+          building: building || ''
+        });
+        
+        const response = await fetch(`/api/get_schedule?${params.toString()}`);
         if (!response.ok) throw new Error('Failed to get schedule');
         
         const data = await response.json();
@@ -1273,7 +1263,7 @@
         alert('Помилка при отриманні графіку. Спробуйте ще раз.');
       } finally {
         btn.disabled = false;
-        btn.innerHTML = '<span class="material-icons">search</span> Знайти';
+        btn.innerHTML = '<span class="material-icons">search</span> Знайти мій графік';
       }
     }
 
@@ -1324,7 +1314,9 @@
     function closeMySchedule() {
       const scheduleDiv = document.getElementById('mySchedule');
       scheduleDiv.classList.remove('show');
-      document.getElementById('addressInput').value = '';
+      document.getElementById('cityInput').value = '';
+      document.getElementById('streetInput').value = '';
+      document.getElementById('buildingInput').value = '';
       selectedAddressData = null;
     }
 
