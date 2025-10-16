@@ -203,6 +203,34 @@
       backdrop-filter: blur(4px);
     }
     
+    /* Donate button */
+    .donate-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.6rem 1.2rem;
+      background: linear-gradient(135deg, #fbbf24, #f59e0b);
+      border: 2px solid rgba(251, 191, 36, 0.3);
+      border-radius: 2rem;
+      color: #1f2937;
+      font-weight: 700;
+      font-size: 0.85rem;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 4px 12px rgba(251, 191, 36, 0.3);
+    }
+    
+    .donate-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(251, 191, 36, 0.4);
+      border-color: #fbbf24;
+    }
+    
+    .donate-btn .donate-icon {
+      font-size: 1.1rem;
+    }
+    
     /* Main Container */
     .container {
       max-width: 1400px;
@@ -1115,6 +1143,15 @@
       .live-users .live-label {
         display: none;
       }
+      
+      .donate-btn {
+        padding: 0.5rem 1rem;
+        font-size: 0.8rem;
+      }
+      
+      .donate-btn span:not(.donate-icon) {
+        display: none;
+      }
     }
     
     /* Empty State */
@@ -1146,10 +1183,16 @@
         <span class="logo-text">NEPTUN</span>
         <span class="page-title">• Графіки відключень</span>
       </div>
-      <a href="/" class="back-btn">
-        <span class="material-icons">arrow_back</span>
-        Повернутися на карту
-      </a>
+      <div style="display: flex; gap: 1rem; align-items: center;">
+        <a href="https://send.monobank.ua/jar/6Vi9TVzJZQ" target="_blank" class="donate-btn" title="Підтримай розробку NEPTUN">
+          <span class="donate-icon">☕</span>
+          <span>Підтримати</span>
+        </a>
+        <a href="/" class="back-btn">
+          <span class="material-icons">arrow_back</span>
+          Повернутися на карту
+        </a>
+      </div>
     </div>
   </header>
 

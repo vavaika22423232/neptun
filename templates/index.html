@@ -350,6 +350,79 @@
       background: rgba(59, 130, 246, 0.1);
     }
     
+    /* Donate button */
+    .donate-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.6rem 1.2rem;
+      background: linear-gradient(135deg, #fbbf24, #f59e0b);
+      border: 2px solid rgba(251, 191, 36, 0.3);
+      border-radius: 2rem;
+      color: #1f2937;
+      font-weight: 700;
+      font-size: 0.85rem;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 4px 12px rgba(251, 191, 36, 0.3);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .donate-btn::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+      transition: left 0.5s;
+    }
+    
+    .donate-btn:hover::before {
+      left: 100%;
+    }
+    
+    .donate-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(251, 191, 36, 0.4);
+      border-color: #fbbf24;
+    }
+    
+    .donate-btn:active {
+      transform: translateY(0);
+    }
+    
+    .donate-btn .donate-icon {
+      font-size: 1.1rem;
+      animation: heartbeat 1.5s ease-in-out infinite;
+    }
+    
+    @keyframes heartbeat {
+      0%, 100% { transform: scale(1); }
+      10%, 30% { transform: scale(1.1); }
+      20%, 40% { transform: scale(1); }
+    }
+    
+    .donate-count {
+      font-size: 0.7rem;
+      color: rgba(31, 41, 55, 0.7);
+      font-weight: 600;
+    }
+    
+    @media (max-width: 768px) {
+      .donate-btn {
+        padding: 0.5rem 1rem;
+        font-size: 0.8rem;
+      }
+      
+      .donate-btn .donate-text {
+        display: none;
+      }
+    }
+    
 
     
     @media (max-width: 480px) {
@@ -1818,6 +1891,10 @@
       <a href="#map" class="active"><i class="material-icons">map</i> Карта</a>
       <a href="#events"><i class="material-icons">notifications</i> Події</a>
       <a href="#about"><i class="material-icons">info</i> Інфо</a>
+      <a href="#" class="donate-btn" id="donateBtn" title="Підтримай розробку NEPTUN">
+        <span class="donate-icon">☕</span>
+        <span class="donate-text">Підтримати</span>
+      </a>
     </div>
     <div class="live-users desktop-live" id="liveUsersDesktop" title="Активні відвідувачі зараз онлайн • Оновлюється кожні 5 секунд">
       <span class="live-label">онлайн</span>
@@ -2134,6 +2211,18 @@
       el.style.display='flex';
     }
     document.addEventListener('DOMContentLoaded', showDisclaimer);
+    
+    // Donate button click handler
+    document.addEventListener('DOMContentLoaded', () => {
+      const donateBtn = document.getElementById('donateBtn');
+      if (donateBtn) {
+        donateBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          toggleDonate(true);
+        });
+      }
+    });
+    
     // Donation modal logic
     function toggleDonate(force){
       const ov = document.getElementById('donateModal');
