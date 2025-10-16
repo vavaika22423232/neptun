@@ -461,13 +461,93 @@
         margin-left: 0.15rem;
       }
     }
+    /* Ad blocks styling */
+    .ad-container {
+      background: linear-gradient(135deg, rgba(17, 24, 39, 0.6), rgba(31, 41, 55, 0.5));
+      border: 1px dashed rgba(59, 130, 246, 0.3);
+      border-radius: 0.75rem;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 250px;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .ad-container::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 50% 50%, rgba(59, 130, 246, 0.05), transparent);
+      animation: adPulse 3s ease-in-out infinite;
+    }
+    
+    @keyframes adPulse {
+      0%, 100% { opacity: 0.3; }
+      50% { opacity: 0.6; }
+    }
+    
+    .ad-placeholder {
+      color: rgba(148, 163, 184, 0.6);
+      font-size: 0.75rem;
+      text-align: center;
+      font-weight: 500;
+      z-index: 1;
+    }
+    
+    .ad-sidebar {
+      position: sticky;
+      top: 1rem;
+      width: 300px;
+      min-height: 600px;
+    }
+    
+    .ad-native {
+      margin: 2rem 0;
+      min-height: 280px;
+    }
+    
+    .ad-anchor {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 900;
+      min-height: 50px;
+      display: none;
+    }
+    
+    @media (max-width: 768px) {
+      .ad-sidebar {
+        display: none;
+      }
+      
+      .ad-anchor {
+        display: flex;
+      }
+    }
+    
+    @media (min-width: 769px) {
+      .ad-anchor {
+        display: none;
+      }
+    }
+    
     .main-content {
       display: grid;
-      grid-template-columns: minmax(320px, 400px) 1fr;
+      grid-template-columns: minmax(320px, 400px) 1fr 300px;
       gap: 2rem;
       padding: 2rem;
       max-width: 1920px;
       margin: 0 auto;
+    }
+    
+    @media (max-width: 1400px) {
+      .main-content {
+        grid-template-columns: minmax(320px, 400px) 1fr;
+      }
     }
     
     .card {
@@ -1953,6 +2033,17 @@
       <div class="event-list" id="eventList"></div>
     </div>
 
+    <!-- Native Ad Block (after events) -->
+    <div class="ad-container ad-native" id="adNative">
+      <ins class="adsbygoogle"
+           style="display:block"
+           data-ad-format="fluid"
+           data-ad-layout-key="-6t+ed+2i-1n-4w"
+           data-ad-client="ca-pub-XXXXXXXXXX"
+           data-ad-slot="XXXXXXXXXX"></ins>
+      <div class="ad-placeholder">📢 Реклама • Підтримує розробку NEPTUN</div>
+    </div>
+
     <div class="card" id="about">
       <h2>Про систему</h2>
       <div class="info-content">
@@ -1975,8 +2066,32 @@
       </div>
     </div>
 
+    <!-- Sidebar Ad Block (desktop only, sticky) -->
+    <div class="ad-container ad-sidebar" id="adSidebar">
+      <ins class="adsbygoogle"
+           style="display:block"
+           data-ad-client="ca-pub-XXXXXXXXXX"
+           data-ad-slot="XXXXXXXXXX"
+           data-ad-format="auto"
+           data-full-width-responsive="false"></ins>
+      <div class="ad-placeholder">
+        <div style="margin-bottom: 0.5rem;">📢</div>
+        <div>Реклама</div>
+        <div style="font-size: 0.65rem; opacity: 0.5; margin-top: 0.5rem;">Підтримує<br/>розробку NEPTUN</div>
+      </div>
+    </div>
 
+  </div>
 
+  <!-- Anchor Ad Block (mobile only, sticky bottom) -->
+  <div class="ad-container ad-anchor" id="adAnchor">
+    <ins class="adsbygoogle"
+         style="display:block"
+         data-ad-client="ca-pub-XXXXXXXXXX"
+         data-ad-slot="XXXXXXXXXX"
+         data-ad-format="auto"
+         data-full-width-responsive="true"></ins>
+    <div class="ad-placeholder" style="font-size: 0.7rem;">📢 Реклама</div>
   </div>
   <!-- Leaflet (OpenStreetMap) JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
@@ -4682,6 +4797,35 @@
       // API интеграция управляется из админ панели
       console.log('✅ Ukraine Alert API доступен через админ панель');
     })();
+  </script>
+
+  <!-- Google AdSense Script -->
+  <!-- INSTRUCTIONS: Replace 'ca-pub-XXXXXXXXXX' with your actual AdSense Publisher ID -->
+  <!-- Get your ID from: https://www.google.com/adsense -->
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXX" 
+          crossorigin="anonymous"></script>
+  
+  <script>
+    // Initialize AdSense ads when available
+    window.addEventListener('load', function() {
+      // Check if AdSense is loaded
+      if (typeof adsbygoogle !== 'undefined') {
+        try {
+          // Push all ad slots
+          const adSlots = document.querySelectorAll('.adsbygoogle');
+          adSlots.forEach(function(ad) {
+            if (!ad.getAttribute('data-adsbygoogle-status')) {
+              (adsbygoogle = window.adsbygoogle || []).push({});
+            }
+          });
+          console.log('✅ AdSense initialized:', adSlots.length, 'blocks');
+        } catch (e) {
+          console.log('⏳ AdSense loading...');
+        }
+      } else {
+        console.log('⏳ Waiting for AdSense approval. Replace Publisher ID in script tag.');
+      }
+    });
   </script>
 </body>
 </html>
