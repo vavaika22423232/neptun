@@ -2186,6 +2186,13 @@
   </div>
 
   <div class="main-content">
+    <!-- Ezoic Ad: incontent_5 (above map) -->
+    <div id="ezoic-pub-ad-placeholder-115" style="text-align: center; margin: 20px auto; max-width: 728px;">
+      <!-- Ezoic - incontent_5 - top_of_page -->
+      <div id="ezoic-pub-ad-placeholder-115" class="incontent_5"></div>
+      <!-- End Ezoic - incontent_5 - top_of_page -->
+    </div>
+    
     <!-- Map moved to top -->
     <div class="map-card">
       <div class="map-controls">
@@ -4124,14 +4131,6 @@
       const currentLayer = isDarkTheme ? window.darkLayer : window.lightLayer;
       currentLayer.addTo(map);
       
-      // Функция для обновления иконки кнопки темы
-      function updateMapThemeIcon(isDark) {
-        const icon = document.getElementById('mapThemeIcon');
-        if (icon) {
-          icon.textContent = isDark ? 'light_mode' : 'dark_mode';
-        }
-      }
-      
       // Обновляем иконку кнопки в соответствии с текущей темой
       updateMapThemeIcon(isDarkTheme);
       
@@ -4601,6 +4600,14 @@
   
   function toggleTextSize() {
     // Функция управления размером текста на карте удалена
+  }
+  
+  // Функция для обновления иконки кнопки темы (глобальная)
+  function updateMapThemeIcon(isDark) {
+    const icon = document.getElementById('mapThemeIcon');
+    if (icon) {
+      icon.textContent = isDark ? 'light_mode' : 'dark_mode';
+    }
   }
   
   // Map theme toggle functionality
