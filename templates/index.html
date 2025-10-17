@@ -566,7 +566,7 @@
     
     .main-content {
       display: grid;
-      grid-template-columns: minmax(280px, 320px) 1fr 260px;
+      grid-template-columns: minmax(280px, 320px) 1fr;
       gap: 1.5rem;
       padding: 2rem;
       max-width: 1920px;
@@ -1102,6 +1102,32 @@
       
       .info-section {
         padding: 1rem;
+      }
+    }
+    
+    /* Events section wrapper - below about section */
+    .events-section-wrapper {
+      max-width: 1400px;
+      margin: 2rem auto;
+      padding: 0 1.5rem;
+    }
+    
+    .events-section-wrapper .card {
+      background: var(--card-bg);
+      backdrop-filter: var(--card-blur);
+    }
+    
+    .events-section-wrapper h2 {
+      text-align: center;
+      margin-bottom: 1.5rem;
+      font-size: 1.75rem;
+      color: var(--accent);
+    }
+    
+    @media (max-width: 768px) {
+      .events-section-wrapper {
+        margin: 1rem auto;
+        padding: 0 1rem;
       }
     }
     
@@ -2100,37 +2126,6 @@
       </div>
     </div>
 
-    <div class="card" id="events">
-      <h2>Останні події</h2>
-      <div class="event-list" id="eventList"></div>
-    </div>
-
-    <!-- Native Ad Block (after events) - HIDDEN until AdSense approval -->
-    <div class="ad-container ad-native" id="adNative" style="display: none;">
-      <ins class="adsbygoogle"
-           style="display:block"
-           data-ad-format="fluid"
-           data-ad-layout-key="-6t+ed+2i-1n-4w"
-           data-ad-client="ca-pub-1995509849440582"
-           data-ad-slot="XXXXXXXXXX"></ins>
-      <div class="ad-placeholder">📢 Реклама • Підтримує розробку NEPTUN</div>
-    </div>
-
-    <!-- Sidebar Ad Block (desktop only, sticky) - HIDDEN until AdSense approval -->
-    <div class="ad-container ad-sidebar" id="adSidebar" style="display: none;">
-      <ins class="adsbygoogle"
-           style="display:block"
-           data-ad-client="ca-pub-1995509849440582"
-           data-ad-slot="XXXXXXXXXX"
-           data-ad-format="auto"
-           data-full-width-responsive="false"></ins>
-      <div class="ad-placeholder">
-        <div style="margin-bottom: 0.5rem;">📢</div>
-        <div>Реклама</div>
-        <div style="font-size: 0.65rem; opacity: 0.5; margin-top: 0.5rem;">Підтримує<br/>розробку NEPTUN</div>
-      </div>
-    </div>
-
   </div>
 
   <!-- About Section (below the map) -->
@@ -2155,6 +2150,14 @@
           <p>Проєкт <a href="https://t.me/+zFxu_4W_ishiNjli" target="_blank" class="accent-link">НЕПТУН <i class="material-icons">open_in_new</i></a></p>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Events Section (below about section) -->
+  <div class="events-section-wrapper">
+    <div class="card" id="events">
+      <h2>Останні події</h2>
+      <div class="event-list" id="eventList"></div>
     </div>
   </div>
 
