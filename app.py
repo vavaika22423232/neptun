@@ -12821,6 +12821,11 @@ if 'health' not in app.view_functions:
             visitors = len(ACTIVE_VISITORS)
         return jsonify({'status':'ok','messages':len(load_messages()), 'auth': AUTH_STATUS, 'visitors': visitors})
 
+@app.route('/ads.txt')
+def ads_txt():
+    """Serve ads.txt for Google AdSense verification"""
+    return send_from_directory('static', 'ads.txt', mimetype='text/plain')
+
 @app.route('/presence', methods=['POST'])
 def presence():
     # Rate limiting removed
