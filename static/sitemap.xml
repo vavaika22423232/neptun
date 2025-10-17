@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9
+        http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
+  
+  <!-- Главная страница - карта тревог -->
+  <url>
+    <loc>https://neptun.in.ua/</loc>
+    <lastmod>2025-10-17</lastmod>
+    <changefreq>always</changefreq>
+    <priority>1.0</priority>
+  </url>
+  
+  <!-- Страница отключений электричества -->
+  <url>
+    <loc>https://neptun.in.ua/blackouts</loc>
+    <lastmod>2025-10-17</lastmod>
+    <changefreq>hourly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  
+  <!-- Админ панель (закрытая, но для полноты) -->
+  <url>
+    <loc>https://neptun.in.ua/admin</loc>
+    <lastmod>2025-10-17</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.3</priority>
+  </url>
+
+</urlset>

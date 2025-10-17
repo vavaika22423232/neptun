@@ -12826,6 +12826,16 @@ def ads_txt():
     """Serve ads.txt for Google AdSense verification"""
     return send_from_directory('static', 'ads.txt', mimetype='text/plain')
 
+@app.route('/robots.txt')
+def robots_txt():
+    """Serve robots.txt for search engines"""
+    return send_from_directory('static', 'robots.txt', mimetype='text/plain')
+
+@app.route('/sitemap.xml')
+def sitemap_xml():
+    """Serve sitemap.xml for search engines"""
+    return send_from_directory('static', 'sitemap.xml', mimetype='application/xml')
+
 @app.route('/presence', methods=['POST'])
 def presence():
     # Rate limiting removed

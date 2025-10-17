@@ -1,0 +1,31 @@
+# robots.txt для NEPTUN - Карта тривог України
+# Дозволяємо індексацію всім пошуковим системам
+
+User-agent: *
+Allow: /
+Allow: /static/
+Allow: /blackouts
+
+# Закриваємо від індексації адмін панель
+Disallow: /admin
+Disallow: /auth/
+
+# Технічні файли
+Disallow: /api/
+Disallow: /*.json$
+
+# Sitemap для Google та інших пошукових систем
+Sitemap: https://neptun.in.ua/sitemap.xml
+
+# Спеціальні правила для основних ботів
+User-agent: Googlebot
+Allow: /
+Crawl-delay: 0
+
+User-agent: Bingbot
+Allow: /
+Crawl-delay: 0
+
+User-agent: Yandex
+Allow: /
+Crawl-delay: 1
