@@ -23,8 +23,8 @@ https://www.google.com/adsense
 ### 1.2 Натисни "Get Started" / "Почати"
 
 ### 1.3 Введи дані:
-- **Сайт:** `neptun-ua.onrender.com`
-- **Email:** твій Gmail
+- **Сайт:** `neptun-huxb.onrender.com`
+- **Email:** gesundheit.map@gmail.com
 - **Країна:** Україна
 - **Валюта:** USD (або UAH)
 
