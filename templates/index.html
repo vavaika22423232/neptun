@@ -506,13 +506,14 @@
     .ad-sidebar {
       position: sticky;
       top: 1rem;
-      width: 300px;
-      min-height: 600px;
+      width: 260px;
+      min-height: 500px;
     }
     
     .ad-native {
-      margin: 2rem 0;
-      min-height: 280px;
+      margin: 1rem 0;
+      min-height: 120px;
+      max-height: 200px;
     }
     
     .ad-anchor {
@@ -543,8 +544,8 @@
     
     .main-content {
       display: grid;
-      grid-template-columns: minmax(320px, 400px) 1fr 300px;
-      gap: 2rem;
+      grid-template-columns: minmax(280px, 320px) 1fr 260px;
+      gap: 1.5rem;
       padding: 2rem;
       max-width: 1920px;
       margin: 0 auto;
@@ -552,7 +553,7 @@
     
     @media (max-width: 1400px) {
       .main-content {
-        grid-template-columns: minmax(320px, 400px) 1fr;
+        grid-template-columns: minmax(280px, 320px) 1fr;
       }
     }
     
@@ -1977,10 +1978,7 @@
       <a href="#map" class="active"><i class="material-icons">map</i> Карта</a>
       <a href="#events"><i class="material-icons">notifications</i> Події</a>
       <a href="#about"><i class="material-icons">info</i> Інфо</a>
-      <a href="#" class="donate-btn" id="donateBtn" title="Підтримай розробку NEPTUN">
-        <span class="donate-icon">☕</span>
-        <span class="donate-text">Підтримати</span>
-      </a>
+      
     </div>
     <div class="live-users desktop-live" id="liveUsersDesktop" title="Активні відвідувачі зараз онлайн • Оновлюється кожні 5 секунд">
       <span class="live-label">онлайн</span>
