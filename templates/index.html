@@ -3,6 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="google-adsense-account" content="ca-pub-1995509849440582">
+  
+  <!-- Ezoic Privacy Scripts (MUST be first) -->
+  <script src="https://cmp.gatekeeperconsent.com/min.js" data-cfasync="false"></script>
+  <script src="https://the.gatekeeperconsent.com/cmp.min.js" data-cfasync="false"></script>
+  
+  <!-- Ezoic Header Script -->
+  <script async src="//www.ezojs.com/ezoic/sa.min.js"></script>
+  <script>
+    window.ezstandalone = window.ezstandalone || {};
+    ezstandalone.cmd = ezstandalone.cmd || [];
+  </script>
+  
   <title>Карта повітряних тривог України онлайн | NEPTUN</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   
@@ -41,7 +53,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   <style>
     :root {
-      /* Темная тема для сайта (как было) */
+      /* Темная тема для сайта */
       --main-bg: #0a0f1c;
       --panel-bg: #111827;
       --accent: #3b82f6;
@@ -56,8 +68,9 @@
       --danger: #ef4444;
       --warning: #f59e0b;
       --success: #10b981;
-      /* Только для карты - светлые фильтры */
-      --map-filter: brightness(1.05) contrast(0.95) saturate(1.1);
+      /* Простая серая карта */
+      --map-filter: grayscale(0.7) brightness(0.7);
+      --map-border-radius: 1.25rem;
     }
     
     body {
@@ -70,21 +83,92 @@
       line-height: 1.5;
     }
     
-    /* Стили карты - только карта светлая */
-    #map {
-      filter: var(--map-filter);
-      transition: filter 0.3s ease;
+    /* Фільтр тільки для світлої теми карти */
+    .ukraine-map-tiles.light-theme {
+      filter: grayscale(0.7) brightness(0.7);
     }
     
-    /* Стили для названий на карте - украинский язык */
+    /* Темна тема без фільтрів */
+    .ukraine-map-tiles.dark-theme {
+      filter: none;
+    }
+    
+    #map {
+      border-radius: var(--map-border-radius);
+      overflow: hidden;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), 
+                  0 0 0 1px rgba(255, 255, 255, 0.08);
+      transition: filter 0.3s ease, box-shadow 0.3s ease;
+    }
+    
+    #map:hover {
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2), 
+                  0 0 0 1px rgba(255, 255, 255, 0.08);
+    }
+    
+    /* Стили для названий на карте - чистый шрифт */
     .leaflet-container {
       font-family: 'Inter', 'Ubuntu', 'DejaVu Sans', sans-serif;
       font-feature-settings: "liga" 1, "calt" 1;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
+      background: #f8f9fa !important;
     }
     
-    /* Оптимизация производительности для изображений */
+    /* Скрываем лого Leaflet для чистоты */
+    .leaflet-control-attribution {
+      background: rgba(255, 255, 255, 0.9) !important;
+      backdrop-filter: blur(8px);
+      border-radius: 0.5rem;
+      padding: 0.25rem 0.5rem !important;
+      font-size: 0.7rem !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+    
+    /* Минималистичные контролы карты */
+    .leaflet-control-zoom {
+      border: none !important;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+      border-radius: 0.75rem !important;
+      overflow: hidden;
+    }
+    
+    .leaflet-control-zoom a {
+      background: rgba(255, 255, 255, 0.95) !important;
+      backdrop-filter: blur(8px);
+      color: #1f2937 !important;
+      border: none !important;
+      width: 36px !important;
+      height: 36px !important;
+      line-height: 36px !important;
+      font-size: 20px !important;
+      transition: background 0.2s ease, transform 0.2s ease;
+    }
+    
+    .leaflet-control-zoom a:hover {
+      background: rgba(255, 255, 255, 1) !important;
+      transform: scale(1.05);
+    }
+    
+    .leaflet-control-zoom a:first-child {
+      border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
+    }
+    
+    /* Попапы - минималистичный дизайн */
+    .leaflet-popup-content-wrapper {
+      background: rgba(255, 255, 255, 0.98) !important;
+      backdrop-filter: blur(12px);
+      border-radius: 1rem !important;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15) !important;
+      padding: 0 !important;
+    }
+    
+    .leaflet-popup-tip {
+      background: rgba(255, 255, 255, 0.98) !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+    }
+    
+    /* Оптимизация производительности */
     img {
       image-rendering: -webkit-optimize-contrast;
       image-rendering: crisp-edges;
@@ -1091,8 +1175,12 @@
     
     @media (max-width: 768px) {
       .about-section-wrapper {
-        margin: 1rem auto;
-        padding: 0 1rem;
+        margin: 1rem 0;
+        padding: 0;
+      }
+      
+      .about-section-wrapper .card {
+        margin: 0 1rem;
       }
       
       .info-content {
@@ -1126,8 +1214,12 @@
     
     @media (max-width: 768px) {
       .events-section-wrapper {
-        margin: 1rem auto;
-        padding: 0 1rem;
+        margin: 1rem 0;
+        padding: 0;
+      }
+      
+      .events-section-wrapper .card {
+        margin: 0 1rem;
       }
     }
     
@@ -4004,26 +4096,26 @@
         preferCanvas: true  // Используем canvas для лучшей производительности
       }).setView([48.3794,31.1656], 6);
       
-      // Светлая и темная темы карты
+      // Світла OSM карта
       window.lightLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 18,
         attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
         crossOrigin: true,
-        detectRetina: false,
-        subdomains: 'abc',
-        updateWhenIdle: true,
-        keepBuffer: 1,
+        detectRetina: true,
+        updateWhenIdle: false,
+        keepBuffer: 2,
         className: 'ukraine-map-tiles light-theme'
       });
       
+      // Темна CartoDB карта
       window.darkLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
         maxZoom: 18,
         attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/attributions">CARTO</a>',
         crossOrigin: true,
-        detectRetina: false,
+        detectRetina: true,
         subdomains: 'abcd',
-        updateWhenIdle: true,
-        keepBuffer: 1,
+        updateWhenIdle: false,
+        keepBuffer: 2,
         className: 'ukraine-map-tiles dark-theme'
       });
       
@@ -4043,18 +4135,28 @@
       // Обновляем иконку кнопки в соответствии с текущей темой
       updateMapThemeIcon(isDarkTheme);
       
-      // Добавляем кастомные стили для украинских названий через CSS
+      // Добавляем кастомные стили для сглаживания границ и улучшения визуала
       const mapStyle = document.createElement('style');
       mapStyle.textContent = `
         .leaflet-tile-pane {
           filter: brightness(1.05) contrast(0.98) saturate(1.08);
         }
         
-        /* Улучшаем читаемость украинских названий */
+        /* Збільшуємо розмір назв міст і сіл для кращої читабельності */
         .leaflet-container text {
           font-family: 'Inter', 'Ubuntu', 'DejaVu Sans', sans-serif !important;
-          font-weight: 500 !important;
-          text-shadow: 1px 1px 2px rgba(255, 255, 255, 0.8) !important;
+          font-weight: 600 !important;
+          font-size: 14px !important;
+          text-shadow: 1px 1px 3px rgba(255, 255, 255, 0.9), 
+                       0 0 4px rgba(255, 255, 255, 0.7) !important;
+        }
+        
+        /* Збільшені написи міст через tile layer */
+        .ukraine-map-tiles text,
+        .leaflet-tile-container text {
+          font-size: 15px !important;
+          font-weight: 600 !important;
+          letter-spacing: 0.3px !important;
         }
       `;
       document.head.appendChild(mapStyle);
@@ -4831,11 +4933,39 @@
           if(window.adm2Layer){ window.adm2Layer.setStyle(styleAdm2); }
         }catch(e){}
       }
-      function styleAdm1(f){ const n=((f.properties?.ADM1_UA||f.properties?.ADM1_UK||'')+'').toLowerCase(); const hit=[...activeOblasts].some(o=>n.includes(o.split(' ')[0])); return {color:'#444',weight:1,fillOpacity:hit?0.55:0.05,fillColor: hit?'#b30000':'#1e293b'}; }
-      function styleAdm2(f){ const n=(f.properties?.ADM2_UA||'').toLowerCase(); const hit=[...activeRaions].some(r=>n.startsWith(r.split(' ')[0])); return {color:'#333',weight:0.6,fillOpacity:hit?0.5:0,fillColor:hit?'#ff3b30':'#000'}; }
+      // Современные четкие границы
+      function styleAdm1(f){ 
+        const n=((f.properties?.ADM1_UA||f.properties?.ADM1_UK||'')+'').toLowerCase(); 
+        const hit=[...activeOblasts].some(o=>n.includes(o.split(' ')[0])); 
+        return {
+          color: hit ? '#ef4444' : 'rgba(148, 163, 184, 0.4)',
+          weight: hit ? 2.5 : 1,
+          fillOpacity: hit ? 0.3 : 0.04,
+          fillColor: hit ? '#dc2626' : '#1e293b',
+          smoothFactor: 1.0,
+          lineCap: 'round',
+          lineJoin: 'round',
+          className: hit ? 'region-active' : 'region-normal'
+        }; 
+      }
+      
+      function styleAdm2(f){ 
+        const n=(f.properties?.ADM2_UA||'').toLowerCase(); 
+        const hit=[...activeRaions].some(r=>n.startsWith(r.split(' ')[0])); 
+        return {
+          color: hit ? '#f87171' : 'rgba(100, 116, 139, 0.25)',
+          weight: hit ? 1.5 : 0.6,
+          fillOpacity: hit ? 0.25 : 0,
+          fillColor: hit ? '#fca5a5' : '#000',
+          smoothFactor: 1.0,
+          lineCap: 'round',
+          lineJoin: 'round'
+        }; 
+      }
+      
       // Optional loaders (comment out if not ready)
-  async function loadAdm1(){ try{ const r=await fetch('/static/adm1.json?v=' + Date.now()); if(!r.ok) return; const gj=await r.json(); window.adm1Layer = L.geoJSON(gj,{style:styleAdm1,interactive:false}).addTo(map); }catch(e){} }
-      async function loadAdm2(){ try{ const r=await fetch('/static/adm2.json'); if(!r.ok) return; const gj=await r.json(); window.adm2Layer = L.geoJSON(gj,{style:styleAdm2,interactive:false}).addTo(map); }catch(e){} }
+  async function loadAdm1(){ try{ const r=await fetch('/static/adm1.json?v=' + Date.now()); if(!r.ok) return; const gj=await r.json(); window.adm1Layer = L.geoJSON(gj,{style:styleAdm1,interactive:false,smoothFactor:1.0}).addTo(map); }catch(e){} }
+      async function loadAdm2(){ try{ const r=await fetch('/static/adm2.json'); if(!r.ok) return; const gj=await r.json(); window.adm2Layer = L.geoJSON(gj,{style:styleAdm2,interactive:false,smoothFactor:1.0}).addTo(map); }catch(e){} }
       // Kick off after map global is present
       function init(){ 
         if(typeof map==='undefined'){ 
