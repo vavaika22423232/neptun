@@ -1031,32 +1031,78 @@
       pointer-events: none;
     }
     
+    /* About section wrapper - below the map */
+    .about-section-wrapper {
+      max-width: 1400px;
+      margin: 2rem auto;
+      padding: 0 1.5rem;
+    }
+    
+    .about-section-wrapper .card {
+      background: var(--card-bg);
+      backdrop-filter: var(--card-blur);
+    }
+    
+    .about-section-wrapper h2 {
+      text-align: center;
+      margin-bottom: 2rem;
+      font-size: 1.75rem;
+      color: var(--accent);
+    }
+    
     .info-content {
       display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
       gap: 1.5rem;
     }
     
     .info-section {
       background: var(--panel-bg);
-      padding: 1rem;
+      padding: 1.5rem;
       border-radius: 0.75rem;
       border: 1px solid var(--border);
+      transition: transform 0.2s, border-color 0.2s;
+    }
+    
+    .info-section:hover {
+      transform: translateY(-2px);
+      border-color: var(--accent);
     }
     
     .info-section h3 {
-      margin: 0 0 0.75rem 0;
-      font-size: 1rem;
+      margin: 0 0 1rem 0;
+      font-size: 1.1rem;
       color: var(--accent);
       display: flex;
       align-items: center;
       gap: 0.5rem;
     }
     
+    .info-section h3 .material-icons {
+      font-size: 1.5rem;
+    }
+    
     .info-section p {
       margin: 0;
       color: var(--text2);
       font-size: 0.9375rem;
-      line-height: 1.5;
+      line-height: 1.6;
+    }
+    
+    @media (max-width: 768px) {
+      .about-section-wrapper {
+        margin: 1rem auto;
+        padding: 0 1rem;
+      }
+      
+      .info-content {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+      }
+      
+      .info-section {
+        padding: 1rem;
+      }
     }
     
     .accent-link {
@@ -2070,8 +2116,27 @@
       <div class="ad-placeholder">📢 Реклама • Підтримує розробку NEPTUN</div>
     </div>
 
+    <!-- Sidebar Ad Block (desktop only, sticky) - HIDDEN until AdSense approval -->
+    <div class="ad-container ad-sidebar" id="adSidebar" style="display: none;">
+      <ins class="adsbygoogle"
+           style="display:block"
+           data-ad-client="ca-pub-1995509849440582"
+           data-ad-slot="XXXXXXXXXX"
+           data-ad-format="auto"
+           data-full-width-responsive="false"></ins>
+      <div class="ad-placeholder">
+        <div style="margin-bottom: 0.5rem;">📢</div>
+        <div>Реклама</div>
+        <div style="font-size: 0.65rem; opacity: 0.5; margin-top: 0.5rem;">Підтримує<br/>розробку NEPTUN</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- About Section (below the map) -->
+  <div class="about-section-wrapper">
     <div class="card" id="about">
-      <h2>Про систему</h2>
+      <h2>Про систему NEPTUN</h2>
       <div class="info-content">
         <div class="info-section">
           <h3><i class="material-icons">security</i> Призначення</h3>
@@ -2091,22 +2156,6 @@
         </div>
       </div>
     </div>
-
-    <!-- Sidebar Ad Block (desktop only, sticky) - HIDDEN until AdSense approval -->
-    <div class="ad-container ad-sidebar" id="adSidebar" style="display: none;">
-      <ins class="adsbygoogle"
-           style="display:block"
-           data-ad-client="ca-pub-1995509849440582"
-           data-ad-slot="XXXXXXXXXX"
-           data-ad-format="auto"
-           data-full-width-responsive="false"></ins>
-      <div class="ad-placeholder">
-        <div style="margin-bottom: 0.5rem;">📢</div>
-        <div>Реклама</div>
-        <div style="font-size: 0.65rem; opacity: 0.5; margin-top: 0.5rem;">Підтримує<br/>розробку NEPTUN</div>
-      </div>
-    </div>
-
   </div>
 
   <!-- Anchor Ad Block (mobile only, sticky bottom) - HIDDEN until AdSense approval -->
