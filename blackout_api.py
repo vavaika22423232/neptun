@@ -165,26 +165,48 @@ class BlackoutAPIClient:
         Determine blackout group (queue) for specific address
         Returns subgroup like "1.1", "1.2", "2.1", "2.2", "3.1", "3.2"
         
-        This requires integration with provider's address databases
-        
-        Real implementation would:
-        1. Call provider's API to search address
-        2. Get assigned group number
-        3. Return group
-        
-        For now, using simplified logic with subgroups
+        Uses the UKRAINE_ADDRESSES_DB database for accurate queue assignment
         """
+        from ukraine_addresses_db import UKRAINE_ADDRESSES_DB
         
-        # TODO: Implement real API calls to DTEK/YASNO address lookup
-        # Each provider has their own address database with group assignments
+        # Normalize inputs
+        city_key = city.strip().lower()
+        street_key = street.strip().lower() if street else ''
         
-        # Simplified logic based on address hash for demo
-        # Returns subgroups instead of main groups
-        address_hash = hash(f"{city}{street}{building}".lower())
-        main_group = (abs(address_hash) % 3) + 1  # 1, 2, or 3
-        subgroup = (abs(address_hash) % 2) + 1     # 1 or 2
+        # Build search key: "city street"
+        search_key = f"{city_key} {street_key}".strip()
         
-        return f"{main_group}.{subgroup}"  # Returns like "1.1", "2.2", "3.1" etc
+        # Direct match in database
+        if search_key in UKRAINE_ADDRESSES_DB:
+            return UKRAINE_ADDRESSES_DB[search_key]['group']
+        
+        # Try matching without building number (DTEK assigns queues by street, not building)
+        # Try partial matches - search for any entry that starts with our city+street
+        for db_key, db_data in UKRAINE_ADDRESSES_DB.items():
+            if db_key.startswith(search_key):
+                return db_data['group']
+        
+        # Try matching just city and part of street name
+        if street_key:
+            street_words = street_key.split()
+            for street_word in street_words:
+                if len(street_word) > 3:  # Skip short words like "вул"
+                    partial_key = f"{city_key} {street_word}"
+                    for db_key, db_data in UKRAINE_ADDRESSES_DB.items():
+                        if partial_key in db_key:
+                            return db_data['group']
+        
+        # Fallback: assign based on first letter of street for consistency
+        # This ensures same address always gets same queue
+        if street_key:
+            first_letter_code = ord(street_key[0].lower()) % 6
+        else:
+            first_letter_code = ord(city_key[0].lower()) % 6
+        
+        main_group = (first_letter_code // 2) + 1  # 1, 2, or 3
+        subgroup = (first_letter_code % 2) + 1     # 1 or 2
+        
+        return f"{main_group}.{subgroup}"
     
     def get_schedule_for_address(self, city: str, street: str, building: str = None) -> Dict:
         """

@@ -2044,23 +2044,62 @@
       const groupBadge = document.getElementById('myScheduleGroup');
       const timeline = document.getElementById('myScheduleTimeline');
 
-      // Set address and group
-      addressText.textContent = data.address;
+      // Set address and group - PROMINENTLY DISPLAY THE QUEUE
+      addressText.textContent = data.address || `${data.city}, ${data.street || ''} ${data.building || ''}`.trim();
       groupBadge.textContent = `Черга ${data.group}`;
+      groupBadge.style.cssText = `
+        padding: 0.75rem 1.5rem;
+        background: linear-gradient(135deg, rgba(59, 130, 246, 0.25), rgba(16, 185, 129, 0.25));
+        border: 2px solid var(--accent);
+        border-radius: 0.75rem;
+        color: var(--accent);
+        font-size: 1.25rem;
+        font-weight: 700;
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        letter-spacing: 1px;
+      `;
 
       // Render timeline
       timeline.innerHTML = '';
       
       if (data.schedule && data.schedule.length > 0) {
+        // Get current hour to highlight active period
+        const now = new Date();
+        const currentHour = now.getHours();
+        
         data.schedule.forEach(slot => {
           const item = document.createElement('div');
-          item.className = `timeline-item ${slot.status}`;
           
-          const icon = slot.status === 'active' ? 'power_off' : 
-                      slot.status === 'upcoming' ? 'schedule' : 'power';
+          // Parse time range to check if it's current
+          const timeMatch = slot.time.match(/(\d+):(\d+)\s*-\s*(\d+):(\d+)/);
+          let isActive = false;
+          if (timeMatch) {
+            const startHour = parseInt(timeMatch[1]);
+            const endHour = parseInt(timeMatch[3]);
+            isActive = (currentHour >= startHour && currentHour < endHour);
+          }
+          
+          // Determine status based on label and current time
+          let status = 'normal';
+          const labelLower = slot.label.toLowerCase();
+          if (isActive && labelLower.includes('відключення')) {
+            status = 'active';
+          } else if (labelLower.includes('можливе') || labelLower.includes('активне')) {
+            status = slot.status || 'upcoming';
+          } else {
+            status = 'normal';
+          }
+          
+          item.className = `timeline-item ${status}`;
+          
+          const icon = status === 'active' ? 'power_off' : 
+                      status === 'upcoming' ? 'schedule' : 'power';
+          
+          const statusEmoji = status === 'active' ? '🔴' : 
+                             status === 'upcoming' ? '🟡' : '🟢';
           
           item.innerHTML = `
-            <div class="timeline-time">${slot.time}</div>
+            <div class="timeline-time">${statusEmoji} ${slot.time}</div>
             <div class="timeline-status">${slot.label}</div>
             <span class="material-icons timeline-icon">${icon}</span>
           `;
