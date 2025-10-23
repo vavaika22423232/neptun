@@ -8,6 +8,8 @@ __pycache__/
 # Telegram session artifacts
 new_session.txt
 *session*
+dtek_session.session
+*.session
 
 # Caches (keep messages.json tracked intentionally)
 opencage_cache.json

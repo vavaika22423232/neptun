@@ -1,6 +1,7 @@
 """
 Integration with Ukrainian energy providers APIs for blackout schedules
 Supports: DTEK, Ukrenergo, YASNO, and regional providers
+Includes Telegram Bot integration for official DTEK bots
 """
 
 import requests
@@ -11,6 +12,7 @@ from datetime import datetime, timedelta
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 import time
+import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -20,6 +22,13 @@ _yasno_schedule_cache = {
     'data': None,
     'timestamp': None,
     'ttl': 3600  # Cache for 1 hour
+}
+
+# Cache for Telegram bot responses
+_telegram_cache = {
+    'enabled': False,
+    'data': {},
+    'ttl': 7200  # 2 hours (longer than YASNO because bot requests are slower)
 }
 
 
@@ -34,6 +43,24 @@ class BlackoutAPIClient:
         
         # Initialize geocoder for address lookup
         self.geocoder = Nominatim(user_agent="neptun_blackout_app")
+        
+        # Initialize Telegram bot client (optional - only if credentials available)
+        self.telegram_client = None
+        if os.getenv('TELEGRAM_API_ID') and os.getenv('TELEGRAM_API_HASH'):
+            try:
+                from telegram_dtek_client import DTEKTelegramClientSync
+                self.telegram_client = DTEKTelegramClientSync(
+                    api_id=os.getenv('TELEGRAM_API_ID'),
+                    api_hash=os.getenv('TELEGRAM_API_HASH')
+                )
+                _telegram_cache['enabled'] = True
+                logger.info("✅ Telegram Bot integration enabled")
+            except ImportError:
+                logger.warning("⚠️  telethon not installed, Telegram Bot disabled")
+            except Exception as e:
+                logger.warning(f"⚠️  Telegram Bot initialization failed: {e}")
+        else:
+            logger.info("ℹ️  Telegram Bot credentials not found (optional feature)")
         
         # API endpoints for different providers
         self.providers = {
@@ -281,16 +308,33 @@ class BlackoutAPIClient:
         # Step 3: Determine blackout group
         group = self.determine_blackout_group(city, street, building)
         
-        # Step 4: Get schedule from provider
-        # Try to get real schedule from YASNO for Kiev/Dnipro
+        # Step 4: Get schedule from provider (Cascading approach)
         city_lower = city.lower()
+        schedule_data = None
+        data_source = 'fallback'
+        
+        # Priority 1: YASNO API (Kiev/Dnipro only)
         if any(keyword in city_lower for keyword in ['київ', 'киев', 'kyiv']):
             schedule_data = self._get_schedule_from_yasno(group, 'kiev')
+            if schedule_data:
+                data_source = 'yasno_api'
         elif any(keyword in city_lower for keyword in ['дніпро', 'днепр', 'dnipro']):
             schedule_data = self._get_schedule_from_yasno(group, 'dnipro')
-        else:
-            # Fallback for other cities
+            if schedule_data:
+                data_source = 'yasno_api'
+        
+        # Priority 2: Telegram Bot (if YASNO failed or not available for this city)
+        if not schedule_data and _telegram_cache['enabled'] and self.telegram_client:
+            schedule_data = self._get_schedule_from_telegram(full_address, city)
+            if schedule_data:
+                data_source = 'telegram_bot'
+        
+        # Priority 3: Fallback to sample schedules
+        if not schedule_data:
             schedule_data = self._get_sample_schedule(group)
+            data_source = 'fallback'
+        
+        logger.info(f"📊 Schedule source for {city}: {data_source}")
         
         # Build full address
         full_address = f"{city}"
@@ -379,6 +423,61 @@ class BlackoutAPIClient:
             })
         
         return result
+    
+    def _get_schedule_from_telegram(self, address: str, city: str) -> Optional[List[Dict]]:
+        """
+        Get schedule from Telegram Bot
+        
+        Args:
+            address: Full address
+            city: City name
+            
+        Returns:
+            List of schedule slots or None
+        """
+        if not self.telegram_client:
+            return None
+            
+        # Check cache first
+        cache_key = f"{city}:{address}"
+        if cache_key in _telegram_cache['data']:
+            cached = _telegram_cache['data'][cache_key]
+            if time.time() - cached['timestamp'] < _telegram_cache['ttl']:
+                logger.info(f"📦 Using cached Telegram schedule for {address}")
+                return cached['data']
+        
+        try:
+            logger.info(f"🤖 Querying Telegram bot for: {address}")
+            
+            # Get schedule from Telegram bot
+            result = self.telegram_client.get_schedule_for_address(address, city)
+            
+            if not result or 'schedule' not in result:
+                logger.warning(f"⚠️  No schedule from Telegram bot for {address}")
+                return None
+            
+            # Parse Telegram response to our format
+            schedule_data = []
+            for slot in result['schedule']:
+                schedule_data.append({
+                    'time': slot['time'],
+                    'label': 'Можливе відключення' if slot['status'] == 'off' else 'Електропостачання',
+                    'status': 'active' if slot['status'] == 'off' else 'normal',
+                    'period': slot['time'].split('-')[0].strip() if '-' in slot['time'] else ''
+                })
+            
+            # Cache the result
+            _telegram_cache['data'][cache_key] = {
+                'data': schedule_data,
+                'timestamp': time.time()
+            }
+            
+            logger.info(f"✅ Got schedule from Telegram bot: {len(schedule_data)} slots")
+            return schedule_data
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting schedule from Telegram: {e}")
+            return None
     
     def _get_sample_schedule(self, group: str) -> List[Dict]:
         """
