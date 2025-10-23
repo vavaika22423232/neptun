@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="google-adsense-account" content="ca-pub-1995509849440582">
+  <title>Часті питання (FAQ) - NEPTUN | Карта тривог та графіки відключень</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  
+  <!-- SEO Meta Tags -->
+  <meta name="description" content="Відповіді на найпоширеніші питання про NEPTUN: як працює карта тривог, як дізнатися графік відключень, що робити під час тривоги. Повний FAQ.">
+  <meta name="keywords" content="neptun faq, питання відповіді, як користуватись, тривоги, відключення світла, допомога">
+  <meta name="robots" content="index, follow">
+  
+  <!-- Google AdSense -->
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1995509849440582"
+     crossorigin="anonymous"></script>
+  
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --main-bg: #0a0f1c;
+      --panel-bg: #111827;
+      --accent: #3b82f6;
+      --text: #f3f4f6;
+      --text2: #d1d5db;
+      --border: #1f2937;
+      --success: #10b981;
+      --warning: #f59e0b;
+    }
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: var(--main-bg);
+      color: var(--text);
+      line-height: 1.8;
+    }
+    
+    .header {
+      background: linear-gradient(135deg, rgba(17, 24, 39, 0.95), rgba(31, 41, 55, 0.9));
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border);
+      padding: 1rem 0;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    
+    .header-content {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .logo {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--accent);
+      text-decoration: none;
+    }
+    
+    nav a {
+      color: var(--text2);
+      text-decoration: none;
+      margin-left: 2rem;
+      transition: color 0.2s;
+    }
+    
+    nav a:hover {
+      color: var(--accent);
+    }
+    
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem;
+    }
+    
+    h1 {
+      font-size: 2.5rem;
+      margin-bottom: 2rem;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    
+    .faq-intro {
+      background: var(--panel-bg);
+      padding: 2rem;
+      border-radius: 0.75rem;
+      border-left: 4px solid var(--accent);
+      margin-bottom: 3rem;
+    }
+    
+    .faq-category {
+      margin: 3rem 0;
+    }
+    
+    .category-title {
+      font-size: 1.8rem;
+      color: var(--accent);
+      margin-bottom: 2rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 2px solid var(--border);
+    }
+    
+    .faq-item {
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      margin-bottom: 1.5rem;
+      overflow: hidden;
+      transition: transform 0.2s;
+    }
+    
+    .faq-item:hover {
+      transform: translateX(5px);
+      border-color: var(--accent);
+    }
+    
+    .faq-question {
+      padding: 1.5rem;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 600;
+      font-size: 1.1rem;
+      color: var(--text);
+    }
+    
+    .faq-question:hover {
+      background: rgba(59, 130, 246, 0.1);
+    }
+    
+    .faq-icon {
+      color: var(--accent);
+      font-size: 1.5rem;
+      margin-right: 1rem;
+      flex-shrink: 0;
+    }
+    
+    .faq-arrow {
+      color: var(--accent);
+      font-size: 1.2rem;
+      transition: transform 0.3s;
+      flex-shrink: 0;
+    }
+    
+    .faq-answer {
+      padding: 0 1.5rem 1.5rem 1.5rem;
+      color: var(--text2);
+      line-height: 1.8;
+    }
+    
+    .faq-answer p {
+      margin-bottom: 1rem;
+    }
+    
+    .faq-answer ul {
+      list-style: none;
+      padding-left: 0;
+      margin: 1rem 0;
+    }
+    
+    .faq-answer li {
+      padding: 0.5rem 0 0.5rem 2rem;
+      position: relative;
+    }
+    
+    .faq-answer li:before {
+      content: "→";
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+      font-weight: bold;
+    }
+    
+    .highlight {
+      background: rgba(59, 130, 246, 0.15);
+      padding: 0.2rem 0.5rem;
+      border-radius: 0.25rem;
+      color: var(--accent);
+      font-weight: 600;
+    }
+    
+    .warning-box {
+      background: rgba(245, 158, 11, 0.1);
+      border-left: 4px solid var(--warning);
+      padding: 1rem;
+      margin: 1rem 0;
+      border-radius: 0.5rem;
+    }
+    
+    .success-box {
+      background: rgba(16, 185, 129, 0.1);
+      border-left: 4px solid var(--success);
+      padding: 1rem;
+      margin: 1rem 0;
+      border-radius: 0.5rem;
+    }
+    
+    footer {
+      background: var(--panel-bg);
+      border-top: 1px solid var(--border);
+      padding: 3rem 0 1.5rem;
+      margin-top: 4rem;
+    }
+    
+    .footer-content {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 2rem;
+    }
+    
+    .footer-section h4 {
+      color: var(--accent);
+      margin-bottom: 1rem;
+    }
+    
+    .footer-section a {
+      display: block;
+      color: var(--text2);
+      text-decoration: none;
+      padding: 0.3rem 0;
+      transition: color 0.2s;
+    }
+    
+    .footer-section a:hover {
+      color: var(--accent);
+    }
+    
+    .footer-bottom {
+      text-align: center;
+      padding-top: 2rem;
+      margin-top: 2rem;
+      border-top: 1px solid var(--border);
+      color: var(--text2);
+      font-size: 0.9rem;
+    }
+    
+    @media (max-width: 768px) {
+      h1 {
+        font-size: 2rem;
+      }
+      
+      .category-title {
+        font-size: 1.5rem;
+      }
+      
+      nav a {
+        margin-left: 1rem;
+        font-size: 0.9rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="header-content">
+      <a href="/" class="logo">🌊 NEPTUN</a>
+      <nav>
+        <a href="/">Головна</a>
+        <a href="/blackouts">Відключення</a>
+        <a href="/about">Про нас</a>
+        <a href="/faq">FAQ</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="container">
+    <h1>❓ Часті питання (FAQ)</h1>
+    
+    <div class="faq-intro">
+      <p style="font-size: 1.1rem; margin: 0;">
+        Тут ви знайдете відповіді на найпоширеніші питання про роботу NEPTUN, карту тривог та графіки відключень. Якщо ви не знайшли відповідь на своє питання - <a href="mailto:gesundheit.map@gmail.com" style="color: var(--accent);">напишіть нам</a>!
+      </p>
+    </div>
+
+    <!-- Загальні питання -->
+    <div class="faq-category">
+      <h2 class="category-title">🌊 Загальні питання</h2>
+      
+      <div class="faq-item">
+        <div class="faq-question">
+          <div style="display: flex; align-items: center; flex: 1;">
+            <span class="faq-icon">❓</span>
+            <span>Що таке NEPTUN і для чого він потрібен?</span>
+          </div>
+          <span class="faq-arrow">▼</span>
+        </div>
+        <div class="faq-answer">
+          <p>
+            <span class="highlight">NEPTUN</span> - це безкоштовна веб-платформа для моніторингу безпекової ситуації в Україні. Ми об'єднали дві критично важливі функції:
+          </p>
+          <ul>
+            <li><strong>Інтерактивна карта повітряних тривог</strong> - показує актуальний стан тривог по всій Україні в режимі реального часу</li>
+            <li><strong>Графіки планових відключень</strong> - дозволяє дізнатись розклад відключень електроенергії для вашої адреси</li>
+          </ul>
+          <p>
+            Це допомагає українцям залишатись у безпеці та ефективно планувати свій день в умовах війни.
+          </p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">
+          <div style="display: flex; align-items: center; flex: 1;">
+            <span class="faq-icon">💰</span>
+            <span>Чи платний цей сервіс?</span>
+          </div>
+          <span class="faq-arrow">▼</span>
+        </div>
+        <div class="faq-answer">
+          <p>
+            Ні, NEPTUN <span class="highlight">повністю безкоштовний</span> та завжди таким залишиться. Ми не стягуємо плату за використання, не продаємо підписки та не вимагаємо реєстрації.
+          </p>
+          <div class="success-box">
+            <strong>✓ Безкоштовно назавжди</strong><br>
+            Проект створений волонтерами для допомоги Україні. Ми віримо, що доступ до життєво важливої інформації має бути безкоштовним для кожного.
+          </div>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">
+          <div style="display: flex; align-items: center; flex: 1;">
+            <span class="faq-icon">🔒</span>
+            <span>Чи безпечно користуватись NEPTUN?</span>
+          </div>
+          <span class="faq-arrow">▼</span>
+        </div>
+        <div class="faq-answer">
+          <p>
+            Так, користуватись NEPTUN <span class="highlight">абсолютно безпечно</span>:
+          </p>
+          <ul>
+            <li>Ми не збираємо та не зберігаємо персональні дані користувачів</li>
+            <li>Не вимагаємо реєстрації або входу в систему</li>
+            <li>Не відстежуємо вашу геолокацію</li>
+            <li>Використовуємо HTTPS шифрування для всіх з'єднань</li>
+            <li>Весь код проекту відкритий та доступний на GitHub</li>
+          </ul>
+          <p>
+            Ви можете перевірити адресу, дізнатись графік відключень та переглядати карту тривог анонімно, без будь-яких ризиків для конфіденційності.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Карта тривог -->
+    <div class="faq-category">
+      <h2 class="category-title">🗺️ Карта повітряних тривог</h2>
+      
+      <div class="faq-item">
+        <div class="faq-question">
+          <div style="display: flex; align-items: center; flex: 1;">
+            <span class="faq-icon">📡</span>
+            <span>Звідки береться інформація про тривоги?</span>
+          </div>
+          <span class="faq-arrow">▼</span>
+        </div>
+        <div class="faq-answer">
+          <p>
+            Ми використовуємо офіційний <span class="highlight">Alerts.in.ua API</span> - державний сервіс моніторингу повітряних тривог України. Це той самий API, який використовують офіційні Telegram-боти та мобільні застосунки для тривог.
+          </p>
+          <p>
+            Дані оновлюються <strong>кожну секунду</strong>, забезпечуючи максимально актуальну інформацію про стан тривог по всій країні.
+          </p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">
+          <div style="display: flex; align-items: center; flex: 1;">
+            <span class="faq-icon">🎨</span>
+            <span>Що означають різні кольори та іконки на карті?</span>
+          </div>
+          <span class="faq-arrow">▼</span>
+        </div>
+        <div class="faq-answer">
+          <p>
+            Кожен тип загрози має свою унікальну іконку та колір:
+          </p>
+          <ul>
+            <li>🚨 <strong>Червоний (Повітряна тривога)</strong> - загальна тривога в регіоні</li>
+            <li>🚀 <strong>Ракетна небезпека</strong> - виявлено запуск ракет</li>
+            <li>🛩️ <strong>Авіація</strong> - загроза з боку ворожої авіації</li>
+            <li>🎯 <strong>БПЛА/Дрони</strong> - виявлено безпілотники</li>
+            <li>💥 <strong>Артилерія</strong> - артилерійські обстріли</li>
+            <li>⚡ <strong>Вибух</strong> - зафіксовано вибухи</li>
+            <li>🔍 <strong>Розвідка</strong> - ворожа розвідувальна активність</li>
+          </ul>
+          <p>
+            Це допомагає швидко оцінити тип та рівень загрози у вашому регіоні.
+          </p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">
+          <div style="display: flex; align-items: center; flex: 1;">
+            <span class="faq-icon">⏱️</span>
+            <span>Як часто оновлюється карта тривог?</span>
+          </div>
+          <span class="faq-arrow">▼</span>
+        </div>
+        <div class="faq-answer">
+          <p>
+            Карта оновлюється <span class="highlight">автоматично кожну секунду</span>. Це означає, що ви бачите актуальну інформацію практично в режимі реального часу, без необхідності перезавантажувати сторінку.
+          </p>
+          <div class="success-box">
+            <strong>💡 Підказка:</strong> Залиште вкладку з картою відкритою, і вона буде автоматично оновлюватись, показуючи всі зміни в тривогах миттєво.
+          </div>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">
+          <div style="display: flex; align-items: center; flex: 1;">
+            <span class="faq-icon">🛡️</span>
+            <span>Що робити під час повітряної тривоги?</span>
+          </div>
+          <span class="faq-arrow">▼</span>
+        </div>
+        <div class="faq-answer">
+          <div class="warning-box">
+            <strong>⚠️ ВАЖЛИВО! Правила безпеки:</strong>
+          </div>
+          <ul>
+            <li><strong>Негайно йдіть в укриття</strong> - метро, підвал, бомбосховище</li>
+            <li>Якщо укриття далеко - зайдіть у найближчу будівлю, підйїзд</li>
+            <li>Уникайте вікон - тримайтесь від них якнайдалі</li>
+            <li>Майте при собі документи, телефон, powerbank, воду</li>
+            <li>Не виходьте з укриття до відбою тривоги</li>
+            <li>Слідкуйте за офіційними каналами та застосунками</li>
+          </ul>
+          <p>
+            Пам'ятайте: ваше життя та безпека - найважливіше. Не ігноруйте тривоги!
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Графіки відключень -->
+    <div class="faq-category">
+      <h2 class="category-title">⚡ Графіки відключень електроенергії</h2>
+      
+      <div class="faq-item">
+        <div class="faq-question">
+          <div style="display: flex; align-items: center; flex: 1;">
+            <span class="faq-icon">🏠</span>
+            <span>Як дізнатися графік відключень для моєї адреси?</span>
+          </div>
+          <span class="faq-arrow">▼</span>
+        </div>
+        <div class="faq-answer">
+          <p>
+            Це дуже просто:
+          </p>
+          <ul>
+            <li>Перейдіть на сторінку <a href="/blackouts" style="color: var(--accent);">"Графіки відключень"</a></li>
+            <li>Введіть ваше <strong>місто</strong> (наприклад, "Київ")</li>
+            <li>Введіть <strong>вулицю та номер будинку</strong> (наприклад, "Хрещатик, 1")</li>
+            <li>Натисніть кнопку "Дізнатись графік"</li>
+          </ul>
+          <p>
+            Система автоматично визначить вашу <span class="highlight">чергу відключень</span> (від 1.1 до 6.2) та покаже детальний тижневий графік з точним розкладом.
+          </p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">
+          <div style="display: flex; align-items: center; flex: 1;">
+            <span class="faq-icon">🔢</span>
+            <span>Що означають черги 1.1, 1.2, 2.1 і так далі?</span>
+          </div>
+          <span class="faq-arrow">▼</span>
+        </div>
+        <div class="faq-answer">
+          <p>
+            Енергопостачальники розділили всі адреси на <span class="highlight">6 груп по 2 підгрупи</span> (всього 12 черг):
+          </p>
+          <ul>
+            <li>Група 1: підгрупи 1.1 та 1.2</li>
+            <li>Група 2: підгрупи 2.1 та 2.2</li>
+            <li>Група 3: підгрупи 3.1 та 3.2</li>
+            <li>Група 4: підгрупи 4.1 та 4.2</li>
+            <li>Група 5: підгрупи 5.1 та 5.2</li>
+            <li>Група 6: підгрупи 6.1 та 6.2</li>
+          </ul>
+          <p>
+            Кожна черга має свій <strong>унікальний графік відключень</strong>. Ваша адреса завжди прив'язана до однієї конкретної черги, яка визначається енергопостачальником.
+          </p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">
+          <div style="display: flex; align-items: center; flex: 1;">
+            <span class="faq-icon">📅</span>
+            <span>Як часто оновлюються графіки відключень?</span>
+          </div>
+          <span class="faq-arrow">▼</span>
+        </div>
+        <div class="faq-answer">
+          <p>
+            Ми отримуємо графіки безпосередньо від <span class="highlight">YASNO API</span> - офіційного постачальника електроенергії. Дані оновлюються:
+          </p>
+          <ul>
+            <li><strong>Автоматично щогодини</strong> - система перевіряє наявність нових графіків</li>
+            <li><strong>При змінах від YASNO</strong> - як тільки постачальник публікує нові дані</li>
+            <li><strong>Кешування 1 година</strong> - для швидкості завантаження</li>
+          </ul>
+          <p>
+            Зазвичай YASNO публікує нові графіки раз на тиждень або при значних змінах в енергосистемі.
+          </p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">
+          <div style="display: flex; align-items: center; flex: 1;">
+            <span class="faq-icon">❌</span>
+            <span>Чому для моєї адреси немає графіка?</span>
+          </div>
+          <span class="faq-arrow">▼</span>
+        </div>
+        <div class="faq-answer">
+          <p>
+            Це може бути з кількох причин:
+          </p>
+          <ul>
+            <li><strong>Ваше місто ще не підключено</strong> - наразі YASNO API покриває Київ, Дніпро та деякі інші міста</li>
+            <li><strong>Адреса написана некоректно</strong> - спробуйте інший формат (наприклад, "вул. Хрещатик, 1" замість "Хрещатик 1")</li>
+            <li><strong>Адреси немає в базі YASNO</strong> - для нових будинків може знадобитись час на додавання</li>
+          </ul>
+          <div class="warning-box">
+            <strong>💡 Рішення:</strong> Якщо ваша адреса не знайдена, спробуйте сусідню вулицю або зверніться до вашого енергопостачальника, щоб дізнатись вашу чергу напряму.
+          </div>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">
+          <div style="display: flex; align-items: center; flex: 1;">
+            <span class="faq-icon">🤔</span>
+            <span>Чому реальні відключення не збігаються з графіком?</span>
+          </div>
+          <span class="faq-arrow">▼</span>
+        </div>
+        <div class="faq-answer">
+          <p>
+            Графік показує <span class="highlight">планові відключення</span>, але реальна ситуація може відрізнятись:
+          </p>
+          <ul>
+            <li><strong>Аварійні відключення</strong> - через пошкодження обладнання</li>
+            <li><strong>Критичний дефіцит енергії</strong> - коли потрібні додаткові відключення</li>
+            <li><strong>Масштабні обстріли</strong> - ушкодження енергоінфраструктури</li>
+            <li><strong>Стабілізація мережі</strong> - технічні роботи поза графіком</li>
+          </ul>
+          <p>
+            Графік - це <strong>орієнтир</strong> для планування, але реальна ситуація залежить від багатьох факторів. Завжди майте запасні джерела живлення!
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Технічні питання -->
+    <div class="faq-category">
+      <h2 class="category-title">⚙️ Технічні питання</h2>
+      
+      <div class="faq-item">
+        <div class="faq-question">
+          <div style="display: flex; align-items: center; flex: 1;">
+            <span class="faq-icon">📱</span>
+            <span>Чи працює сайт на смартфонах?</span>
+          </div>
+          <span class="faq-arrow">▼</span>
+        </div>
+        <div class="faq-answer">
+          <p>
+            Так! NEPTUN повністю <span class="highlight">адаптований для мобільних пристроїв</span>. Ви можете користуватись всіма функціями на:
+          </p>
+          <ul>
+            <li>iOS (iPhone, iPad)</li>
+            <li>Android (смартфони та планшети)</li>
+            <li>Будь-які сучасні браузери (Chrome, Safari, Firefox)</li>
+          </ul>
+          <div class="success-box">
+            <strong>💡 Підказка:</strong> Додайте сайт на головний екран вашого телефону для швидкого доступу!
+          </div>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">
+          <div style="display: flex; align-items: center; flex: 1;">
+            <span class="faq-icon">🌐</span>
+            <span>Які браузери підтримуються?</span>
+          </div>
+          <span class="faq-arrow">▼</span>
+        </div>
+        <div class="faq-answer">
+          <p>
+            NEPTUN працює в усіх сучасних браузерах:
+          </p>
+          <ul>
+            <li>Google Chrome (рекомендується)</li>
+            <li>Mozilla Firefox</li>
+            <li>Safari (macOS, iOS)</li>
+            <li>Microsoft Edge</li>
+            <li>Opera</li>
+          </ul>
+          <p>
+            Рекомендуємо використовувати останні версії браузерів для найкращого досвіду.
+          </p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">
+          <div style="display: flex; align-items: center; flex: 1;">
+            <span class="faq-icon">🐛</span>
+            <span>Що робити, якщо знайшов помилку на сайті?</span>
+          </div>
+          <span class="faq-arrow">▼</span>
+        </div>
+        <div class="faq-answer">
+          <p>
+            Ми дуже цінуємо вашу допомогу! Якщо ви знайшли помилку:
+          </p>
+          <ul>
+            <li>Напишіть нам на <a href="mailto:gesundheit.map@gmail.com" style="color: var(--accent);">gesundheit.map@gmail.com</a></li>
+            <li>Опишіть проблему максимально детально</li>
+            <li>Додайте скріншот, якщо можливо</li>
+            <li>Вкажіть браузер та пристрій, на якому виникла помилка</li>
+          </ul>
+          <p>
+            Ми оперативно виправимо всі виявлені проблеми!
+          </p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">
+          <div style="display: flex; align-items: center; flex: 1;">
+            <span class="faq-icon">💡</span>
+            <span>Чи можу я запропонувати нову функцію?</span>
+          </div>
+          <span class="faq-arrow">▼</span>
+        </div>
+        <div class="faq-answer">
+          <p>
+            Звичайно! Ми завжди відкриті до нових ідей. Якщо у вас є пропозиція:
+          </p>
+          <ul>
+            <li>Напишіть нам на email: <a href="mailto:gesundheit.map@gmail.com" style="color: var(--accent);">gesundheit.map@gmail.com</a></li>
+            <li>Опишіть функцію та її корисність</li>
+            <li>Ми обговоримо можливість реалізації</li>
+          </ul>
+          <p>
+            Багато наших функцій з'явились саме завдяки пропозиціям користувачів!
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Не знайшли відповідь -->
+    <div style="background: var(--panel-bg); padding: 2rem; border-radius: 0.75rem; margin-top: 3rem; text-align: center;">
+      <h3 style="color: var(--accent); margin-bottom: 1rem;">❓ Не знайшли відповідь на своє питання?</h3>
+      <p style="margin-bottom: 1.5rem;">
+        Зв'яжіться з нами, і ми з радістю допоможемо!
+      </p>
+      <a href="mailto:gesundheit.map@gmail.com" style="display: inline-block; background: var(--accent); color: white; padding: 1rem 2rem; border-radius: 0.5rem; text-decoration: none; font-weight: 600;">
+        ✉️ Написати нам
+      </a>
+    </div>
+  </div>
+
+  <footer>
+    <div class="footer-content">
+      <div class="footer-section">
+        <h4>Про проект</h4>
+        <a href="/about">Про нас</a>
+        <a href="/faq">Часті питання</a>
+        <a href="/privacy">Конфіденційність</a>
+        <a href="/terms">Умови використання</a>
+      </div>
+      
+      <div class="footer-section">
+        <h4>Сервіси</h4>
+        <a href="/">Карта тривог</a>
+        <a href="/blackouts">Графіки відключень</a>
+      </div>
+      
+      <div class="footer-section">
+        <h4>Джерела даних</h4>
+        <a href="https://alerts.in.ua" target="_blank">Alerts.in.ua</a>
+        <a href="https://yasno.com.ua" target="_blank">YASNO</a>
+        <a href="https://t.me/air_alert_ua" target="_blank">Telegram</a>
+      </div>
+      
+      <div class="footer-section">
+        <h4>Контакти</h4>
+        <a href="mailto:gesundheit.map@gmail.com">Email</a>
+        <a href="https://t.me/neptun_alerts" target="_blank">Telegram</a>
+        <a href="https://github.com/vavaika22423232/neptun" target="_blank">GitHub</a>
+      </div>
+    </div>
+    
+    <div class="footer-bottom">
+      <p>&copy; 2024-2025 NEPTUN Alert. Всі права захищені.</p>
+      <p>Створено з ❤️ для України | Слава Україні! 🇺🇦</p>
+    </div>
+  </footer>
+
+  <!-- Google AdSense Auto ads -->
+  <script>
+    (adsbygoogle = window.adsbygoogle || []).push({});
+  </script>
+</body>
+</html>

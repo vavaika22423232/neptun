@@ -361,6 +361,35 @@ def init_scheduler():
             log.error(f"❌ Failed to start scheduler: {e}")
     else:
         log.warning("⚠ Schedule updater not available, skipping automatic updates")
+    
+    # YASNO API schedule refresh every hour
+    if BLACKOUT_API_AVAILABLE:
+        try:
+            # Schedule YASNO schedule refresh
+            scheduler.add_job(
+                func=refresh_yasno_schedules,
+                trigger='interval',
+                hours=1,
+                id='refresh_yasno',
+                name='Refresh YASNO API schedules cache',
+                replace_existing=True
+            )
+            log.info("✅ YASNO schedule refresh scheduled every hour")
+        except Exception as e:
+            log.error(f"❌ Failed to schedule YASNO refresh: {e}")
+
+def refresh_yasno_schedules():
+    """Background task to refresh YASNO schedules cache"""
+    try:
+        if BLACKOUT_API_AVAILABLE:
+            log.info("🔄 Refreshing YASNO schedules from API...")
+            result = blackout_client.fetch_yasno_schedule(force_refresh=True)
+            if result:
+                log.info(f"✅ YASNO schedules refreshed successfully")
+            else:
+                log.warning("⚠ Failed to refresh YASNO schedules")
+    except Exception as e:
+        log.error(f"❌ Error refreshing YASNO schedules: {e}")
 
 # Don't start scheduler immediately - wait for first request
 # init_scheduler()
@@ -11527,6 +11556,38 @@ def blackouts():
     response = render_template('blackouts.html')
     resp = app.response_class(response)
     resp.headers['Cache-Control'] = 'public, max-age=300'  # 5 minutes cache
+    return resp
+
+@app.route('/about')
+def about():
+    """About NEPTUN project page"""
+    response = render_template('about.html')
+    resp = app.response_class(response)
+    resp.headers['Cache-Control'] = 'public, max-age=3600'  # 1 hour cache
+    return resp
+
+@app.route('/faq')
+def faq():
+    """Frequently Asked Questions page"""
+    response = render_template('faq.html')
+    resp = app.response_class(response)
+    resp.headers['Cache-Control'] = 'public, max-age=3600'  # 1 hour cache
+    return resp
+
+@app.route('/privacy')
+def privacy():
+    """Privacy Policy page"""
+    response = render_template('privacy.html')
+    resp = app.response_class(response)
+    resp.headers['Cache-Control'] = 'public, max-age=86400'  # 24 hours cache
+    return resp
+
+@app.route('/terms')
+def terms():
+    """Terms of Service page"""
+    response = render_template('terms.html')
+    resp = app.response_class(response)
+    resp.headers['Cache-Control'] = 'public, max-age=86400'  # 24 hours cache
     return resp
 
 # Address database for blackout schedules with subgroups

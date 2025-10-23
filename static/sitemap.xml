@@ -7,7 +7,7 @@
   <!-- Главная страница - карта тревог -->
   <url>
     <loc>https://neptun.in.ua/</loc>
-    <lastmod>2025-10-17</lastmod>
+    <lastmod>2025-10-23</lastmod>
     <changefreq>always</changefreq>
     <priority>1.0</priority>
   </url>
@@ -15,15 +15,47 @@
   <!-- Страница отключений электричества -->
   <url>
     <loc>https://neptun.in.ua/blackouts</loc>
-    <lastmod>2025-10-17</lastmod>
+    <lastmod>2025-10-23</lastmod>
     <changefreq>hourly</changefreq>
     <priority>0.8</priority>
+  </url>
+  
+  <!-- О проекте NEPTUN -->
+  <url>
+    <loc>https://neptun.in.ua/about</loc>
+    <lastmod>2025-10-23</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  
+  <!-- Часто задаваемые вопросы -->
+  <url>
+    <loc>https://neptun.in.ua/faq</loc>
+    <lastmod>2025-10-23</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  
+  <!-- Политика конфиденциальности -->
+  <url>
+    <loc>https://neptun.in.ua/privacy</loc>
+    <lastmod>2025-10-23</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.4</priority>
+  </url>
+  
+  <!-- Условия использования -->
+  <url>
+    <loc>https://neptun.in.ua/terms</loc>
+    <lastmod>2025-10-23</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.4</priority>
   </url>
   
   <!-- Админ панель (закрытая, но для полноты) -->
   <url>
     <loc>https://neptun.in.ua/admin</loc>
-    <lastmod>2025-10-17</lastmod>
+    <lastmod>2025-10-23</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.3</priority>
   </url>

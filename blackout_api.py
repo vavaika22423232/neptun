@@ -7,12 +7,20 @@ import requests
 import json
 import logging
 from typing import Dict, List, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timedelta
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut, GeocoderServiceError
+import time
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Cache for YASNO schedules to avoid excessive API calls
+_yasno_schedule_cache = {
+    'data': None,
+    'timestamp': None,
+    'ttl': 3600  # Cache for 1 hour
+}
 
 
 class BlackoutAPIClient:
@@ -135,26 +143,65 @@ class BlackoutAPIClient:
             logger.error(f"Error fetching DTEK schedule: {e}")
             return None
     
-    def fetch_yasno_schedule(self, address: str) -> Optional[Dict]:
+    def fetch_yasno_schedule(self, force_refresh: bool = False) -> Optional[Dict]:
         """
-        Fetch schedule from YASNO API
-        YASNO uses group-based system (1-6)
+        Fetch schedule from YASNO API with caching
+        YASNO uses group-based system (1.1-6.2)
+        Cache is valid for 1 hour to reduce API load
+        
+        Args:
+            force_refresh: Force refresh cache even if still valid
+            
+        Returns:
+            Dict with schedules for all groups in Kiev and Dnipro regions
         """
+        global _yasno_schedule_cache
+        
+        # Check if cache is still valid
+        if not force_refresh and _yasno_schedule_cache['data'] is not None:
+            if _yasno_schedule_cache['timestamp'] is not None:
+                age = time.time() - _yasno_schedule_cache['timestamp']
+                if age < _yasno_schedule_cache['ttl']:
+                    logger.info(f"Using cached YASNO schedule (age: {int(age)}s)")
+                    return _yasno_schedule_cache['data']
+        
         try:
-            url = self.providers['yasno']['api']
-            response = self.session.get(url, timeout=10)
+            url = 'https://api.yasno.com.ua/api/v1/pages/home/schedule-turn-off-electricity'
+            logger.info(f"Fetching fresh YASNO schedule from API...")
+            
+            response = self.session.get(url, timeout=15)
             
             if response.status_code == 200:
                 data = response.json()
                 
-                # YASNO returns schedule for all groups
-                # Need to determine which group the address belongs to
+                # Extract schedule data from response
+                schedules = None
+                for component in data.get('components', []):
+                    if component.get('template_name') == 'electricity-outages-daily-schedule':
+                        schedules = component.get('schedule', {})
+                        break
                 
-                return {
-                    'provider': 'YASNO',
-                    'data': data,
-                    'source': 'yasno'
-                }
+                if schedules:
+                    result = {
+                        'provider': 'YASNO',
+                        'schedules': schedules,
+                        'last_update': data.get('components', [{}])[0].get('schedule', {}).get('lastRegistryUpdateTime'),
+                        'source': 'yasno_api',
+                        'fetched_at': datetime.now().isoformat()
+                    }
+                    
+                    # Update cache
+                    _yasno_schedule_cache['data'] = result
+                    _yasno_schedule_cache['timestamp'] = time.time()
+                    
+                    logger.info(f"Successfully fetched YASNO schedules for {len(schedules)} regions")
+                    return result
+                else:
+                    logger.warning("No schedule data found in YASNO API response")
+                    return None
+            else:
+                logger.error(f"YASNO API returned status {response.status_code}")
+                return None
             
         except Exception as e:
             logger.error(f"Error fetching YASNO schedule: {e}")
@@ -235,8 +282,15 @@ class BlackoutAPIClient:
         group = self.determine_blackout_group(city, street, building)
         
         # Step 4: Get schedule from provider
-        # TODO: Replace with real API calls
-        schedule_data = self._get_sample_schedule(group)
+        # Try to get real schedule from YASNO for Kiev/Dnipro
+        city_lower = city.lower()
+        if any(keyword in city_lower for keyword in ['київ', 'киев', 'kyiv']):
+            schedule_data = self._get_schedule_from_yasno(group, 'kiev')
+        elif any(keyword in city_lower for keyword in ['дніпро', 'днепр', 'dnipro']):
+            schedule_data = self._get_schedule_from_yasno(group, 'dnipro')
+        else:
+            # Fallback for other cities
+            schedule_data = self._get_sample_schedule(group)
         
         # Build full address
         full_address = f"{city}"
@@ -257,6 +311,72 @@ class BlackoutAPIClient:
             } if geo_result else None,
             'found': geo_result is not None
         }
+        
+        return result
+    
+    def _get_schedule_from_yasno(self, group: str, region: str = 'kiev') -> List[Dict]:
+        """
+        Get real schedule from YASNO API for specific group
+        
+        Args:
+            group: Queue group like "1.1", "2.2", etc.
+            region: Region name ('kiev' or 'dnipro')
+            
+        Returns:
+            List of schedule slots for the week
+        """
+        yasno_data = self.fetch_yasno_schedule()
+        
+        if not yasno_data or 'schedules' not in yasno_data:
+            logger.warning(f"No YASNO data available, using fallback schedule")
+            return self._get_sample_schedule(group)
+        
+        schedules = yasno_data['schedules']
+        region_schedules = schedules.get(region, schedules.get('kiev', {}))
+        
+        group_key = f"group_{group}"
+        week_schedule = region_schedules.get(group_key)
+        
+        if not week_schedule:
+            logger.warning(f"No schedule for group {group} in region {region}")
+            return self._get_sample_schedule(group)
+        
+        # Get today's schedule (day of week: 0=Monday, 6=Sunday)
+        today = datetime.now().weekday()
+        today_schedule = week_schedule[today] if today < len(week_schedule) else week_schedule[0]
+        
+        # Convert YASNO format to our format
+        result = []
+        for slot in today_schedule:
+            start_hour = int(slot['start'])
+            start_min = int((slot['start'] - start_hour) * 60)
+            end_hour = int(slot['end'])
+            end_min = int((slot['end'] - end_hour) * 60)
+            
+            time_str = f"{start_hour:02d}:{start_min:02d} - {end_hour:02d}:{end_min:02d}"
+            
+            # Determine status based on current time
+            now = datetime.now()
+            current_time = now.hour + now.minute / 60.0
+            
+            is_current = start_hour <= current_time < end_hour
+            
+            if slot['type'] == 'POSSIBLE_OUTAGE':
+                if is_current:
+                    status = 'active'
+                    label = 'Можливе відключення (зараз)'
+                else:
+                    status = 'upcoming' if start_hour > current_time else 'normal'
+                    label = 'Можливе відключення'
+            else:
+                status = 'normal'
+                label = 'Електропостачання'
+            
+            result.append({
+                'time': time_str,
+                'label': label,
+                'status': status
+            })
         
         return result
     
