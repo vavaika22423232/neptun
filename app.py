@@ -1485,6 +1485,9 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
     
     # FALLBACK: Original regex-based processing
     
+    # Initialize detected_oblast_key at function scope
+    detected_oblast_key = None
+    
     # First, if we have message text, try to extract oblast info and build specific city keys
     if message_text:
         message_lower = message_text.lower()
@@ -1514,8 +1517,6 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                 r'\bу\s+([а-яїіє]+щині)\b',   # "у Сумщині"
                 r'\bв\s+([а-яїіє]+щині)\b',   # "в Сумщині"
             ]
-            
-            detected_oblast_key = None
             
             for pattern in oblast_patterns:
                 matches = re.findall(pattern, context)  # Search in context, not full message
