@@ -1,0 +1,107 @@
+{
+  "dtek": {
+    "ДТЕК Київ": {
+      "base_url": "https://www.dtek-krem.com.ua",
+      "js_endpoints": [],
+      "working_endpoints": [
+        {
+          "url": "https://www.dtek-krem.com.ua/api/v1/address",
+          "method": "GET",
+          "status": 200,
+          "content_type": "text/html",
+          "sample": "<html style=\"height:100%\"><head><META NAME=\"ROBOTS\" CONTENT=\"NOINDEX, NOFOLLOW\"><meta name=\"format-detection\" content=\"telephone=no\"><meta name=\"viewport\" content=\"initial-scale=1.0\"><meta http-equiv="
+        },
+        {
+          "url": "https://www.dtek-krem.com.ua/api/v1/search",
+          "method": "GET",
+          "status": 200,
+          "content_type": "text/html",
+          "sample": "<html style=\"height:100%\"><head><META NAME=\"ROBOTS\" CONTENT=\"NOINDEX, NOFOLLOW\"><meta name=\"format-detection\" content=\"telephone=no\"><meta name=\"viewport\" content=\"initial-scale=1.0\"><meta http-equiv="
+        },
+        {
+          "url": "https://www.dtek-krem.com.ua/api/v1/blackout",
+          "method": "GET",
+          "status": 200,
+          "content_type": "text/html",
+          "sample": "<html style=\"height:100%\"><head><META NAME=\"ROBOTS\" CONTENT=\"NOINDEX, NOFOLLOW\"><meta name=\"format-detection\" content=\"telephone=no\"><meta name=\"viewport\" content=\"initial-scale=1.0\"><meta http-equiv="
+        },
+        {
+          "url": "https://www.dtek-krem.com.ua/api/v1/outage",
+          "method": "GET",
+          "status": 200,
+          "content_type": "text/html",
+          "sample": "<html style=\"height:100%\"><head><META NAME=\"ROBOTS\" CONTENT=\"NOINDEX, NOFOLLOW\"><meta name=\"format-detection\" content=\"telephone=no\"><meta name=\"viewport\" content=\"initial-scale=1.0\"><meta http-equiv="
+        },
+        {
+          "url": "https://www.dtek-krem.com.ua/api/v1/schedule",
+          "method": "GET",
+          "status": 200,
+          "content_type": "text/html",
+          "sample": "<html style=\"height:100%\"><head><META NAME=\"ROBOTS\" CONTENT=\"NOINDEX, NOFOLLOW\"><meta name=\"format-detection\" content=\"telephone=no\"><meta name=\"viewport\" content=\"initial-scale=1.0\"><meta http-equiv="
+        },
+        {
+          "url": "https://www.dtek-krem.com.ua/api/address/search",
+          "method": "GET",
+          "status": 200,
+          "content_type": "text/html",
+          "sample": "<html style=\"height:100%\"><head><META NAME=\"ROBOTS\" CONTENT=\"NOINDEX, NOFOLLOW\"><meta name=\"format-detection\" content=\"telephone=no\"><meta name=\"viewport\" content=\"initial-scale=1.0\"><meta http-equiv="
+        },
+        {
+          "url": "https://www.dtek-krem.com.ua/api/shutdowns",
+          "method": "GET",
+          "status": 200,
+          "content_type": "text/html",
+          "sample": "<html style=\"height:100%\"><head><META NAME=\"ROBOTS\" CONTENT=\"NOINDEX, NOFOLLOW\"><meta name=\"format-detection\" content=\"telephone=no\"><meta name=\"viewport\" content=\"initial-scale=1.0\"><meta http-equiv="
+        },
+        {
+          "url": "https://www.dtek-krem.com.ua/api/shutdowns/search",
+          "method": "GET",
+          "status": 200,
+          "content_type": "text/html",
+          "sample": "<html style=\"height:100%\"><head><META NAME=\"ROBOTS\" CONTENT=\"NOINDEX, NOFOLLOW\"><meta name=\"format-detection\" content=\"telephone=no\"><meta name=\"viewport\" content=\"initial-scale=1.0\"><meta http-equiv="
+        },
+        {
+          "url": "https://www.dtek-krem.com.ua/graphql",
+          "method": "GET",
+          "status": 200,
+          "content_type": "text/html",
+          "sample": "<html>\r\n<head>\r\n<META NAME=\"robots\" CONTENT=\"noindex,nofollow\">\r\n<script src=\"/_Incapsula_Resource?SWJIYLWA=5074a744e2e3d891814e9a2dace20bd4,719d34d31c8e3a6e6fffd425f7e032f3\">\r\n</script>\r\n<body>\r\n</bo"
+        },
+        {
+          "url": "https://www.dtek-krem.com.ua/rest/api/address",
+          "method": "GET",
+          "status": 200,
+          "content_type": "text/html",
+          "sample": "<html style=\"height:100%\"><head><META NAME=\"ROBOTS\" CONTENT=\"NOINDEX, NOFOLLOW\"><meta name=\"format-detection\" content=\"telephone=no\"><meta name=\"viewport\" content=\"initial-scale=1.0\"><meta http-equiv="
+        },
+        {
+          "url": "https://www.dtek-krem.com.ua/rest/v1/address",
+          "method": "GET",
+          "status": 200,
+          "content_type": "text/html",
+          "sample": "<html style=\"height:100%\"><head><META NAME=\"ROBOTS\" CONTENT=\"NOINDEX, NOFOLLOW\"><meta name=\"format-detection\" content=\"telephone=no\"><meta name=\"viewport\" content=\"initial-scale=1.0\"><meta http-equiv="
+        }
+      ]
+    },
+    "ДТЕК Дніпро": {
+      "base_url": "https://www.dtek-dnem.com.ua",
+      "js_endpoints": [],
+      "working_endpoints": [
+        {
+          "url": "https://www.dtek-dnem.com.ua/graphql",
+          "method": "GET",
+          "status": 200,
+          "content_type": "text/html",
+          "sample": "<html>\r\n<head>\r\n<META NAME=\"robots\" CONTENT=\"noindex,nofollow\">\r\n<script src=\"/_Incapsula_Resource?SWJIYLWA=5074a744e2e3d891814e9a2dace20bd4,719d34d31c8e3a6e6fffd425f7e032f3\">\r\n</script>\r\n<body>\r\n</bo"
+        }
+      ]
+    },
+    "ДТЕК Одеса": {
+      "base_url": "https://www.dtek-oem.com.ua",
+      "js_endpoints": [],
+      "working_endpoints": []
+    }
+  },
+  "ukrenergo": {},
+  "timestamp": "2025-10-22"
+}

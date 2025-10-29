@@ -11,25 +11,6 @@ import os, re, json, asyncio, threading, logging, pytz, time, subprocess, queue,
 from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify, request, Response, send_from_directory
 from telethon import TelegramClient
-from apscheduler.schedulers.background import BackgroundScheduler
-
-# Import blackout API client
-try:
-    from blackout_api import blackout_client
-    BLACKOUT_API_AVAILABLE = True
-    print("INFO: Blackout API client loaded successfully")
-except Exception as e:
-    BLACKOUT_API_AVAILABLE = False
-    print(f"WARNING: Blackout API client not available: {e}")
-
-# Import schedule updater
-try:
-    from schedule_updater import schedule_updater, start_schedule_updates
-    SCHEDULE_UPDATER_AVAILABLE = True
-    print("INFO: Schedule updater loaded successfully")
-except Exception as e:
-    SCHEDULE_UPDATER_AVAILABLE = False
-    print(f"WARNING: Schedule updater not available: {e}")
 
 # Import expanded Ukraine addresses database
 try:
@@ -328,86 +309,14 @@ log = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Initialize background scheduler for automatic schedule updates
-scheduler = BackgroundScheduler(daemon=True)
-scheduler_initialized = False
-
-def init_scheduler():
-    """Initialize the scheduler for automatic updates"""
-    global scheduler_initialized
-    
-    if scheduler_initialized:
-        return
-    
-    if SCHEDULE_UPDATER_AVAILABLE:
-        try:
-            # Run initial update
-            start_schedule_updates()
-            
-            # Schedule hourly updates
-            scheduler.add_job(
-                func=schedule_updater.update_all_schedules,
-                trigger='interval',
-                hours=1,
-                id='update_schedules',
-                name='Update blackout schedules from DTEK and Ukrenergo',
-                replace_existing=True
-            )
-            
-            scheduler.start()
-            scheduler_initialized = True
-            log.info("✅ Scheduler started: automatic updates every hour")
-        except Exception as e:
-            log.error(f"❌ Failed to start scheduler: {e}")
-    else:
-        log.warning("⚠ Schedule updater not available, skipping automatic updates")
-    
-    # YASNO API schedule refresh every hour
-    if BLACKOUT_API_AVAILABLE:
-        try:
-            # Schedule YASNO schedule refresh
-            scheduler.add_job(
-                func=refresh_yasno_schedules,
-                trigger='interval',
-                hours=1,
-                id='refresh_yasno',
-                name='Refresh YASNO API schedules cache',
-                replace_existing=True
-            )
-            log.info("✅ YASNO schedule refresh scheduled every hour")
-        except Exception as e:
-            log.error(f"❌ Failed to schedule YASNO refresh: {e}")
-
-def refresh_yasno_schedules():
-    """Background task to refresh YASNO schedules cache"""
-    try:
-        if BLACKOUT_API_AVAILABLE:
-            log.info("🔄 Refreshing YASNO schedules from API...")
-            result = blackout_client.fetch_yasno_schedule(force_refresh=True)
-            if result:
-                log.info(f"✅ YASNO schedules refreshed successfully")
-            else:
-                log.warning("⚠ Failed to refresh YASNO schedules")
-    except Exception as e:
-        log.error(f"❌ Error refreshing YASNO schedules: {e}")
-
-# Don't start scheduler immediately - wait for first request
-# init_scheduler()
+# Scheduler removed - no longer needed for blackout schedules
 
 # BANDWIDTH OPTIMIZATION: Rate limiting to prevent abuse
     # Rate limiting отключен: все пользователи имеют свободный доступ
 
 # BANDWIDTH OPTIMIZATION: Enable gzip compression globally
-from flask import Flask
 import gzip
 import io
-
-# Initialize scheduler on first request
-@app.before_request
-def ensure_scheduler_running():
-    """Ensure scheduler is initialized on first request"""
-    if not scheduler_initialized:
-        init_scheduler()
 
 # Add global response compression
 @app.after_request
@@ -11603,14 +11512,6 @@ def index():
     resp = app.response_class(response)
     resp.headers['Cache-Control'] = 'public, max-age=300'  # 5 minutes cache
     resp.headers['ETag'] = f'index-{int(time.time() // 300)}'
-    return resp
-
-@app.route('/blackouts')
-def blackouts():
-    """Power blackout schedules and information page"""
-    response = render_template('blackouts.html')
-    resp = app.response_class(response)
-    resp.headers['Cache-Control'] = 'public, max-age=300'  # 5 minutes cache
     return resp
 
 @app.route('/about')

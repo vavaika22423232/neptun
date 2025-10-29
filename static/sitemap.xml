@@ -7,23 +7,15 @@
   <!-- Главная страница - карта тревог -->
   <url>
     <loc>https://neptun.in.ua/</loc>
-    <lastmod>2025-10-23</lastmod>
+    <lastmod>2025-10-29</lastmod>
     <changefreq>always</changefreq>
     <priority>1.0</priority>
   </url>
   
-  <!-- Страница отключений электричества -->
-  <url>
-    <loc>https://neptun.in.ua/blackouts</loc>
-    <lastmod>2025-10-23</lastmod>
-    <changefreq>hourly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  
-  <!-- О проекте NEPTUN -->
+  <!-- Про проект -->
   <url>
     <loc>https://neptun.in.ua/about</loc>
-    <lastmod>2025-10-23</lastmod>
+    <lastmod>2025-10-29</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
@@ -31,7 +23,7 @@
   <!-- Часто задаваемые вопросы -->
   <url>
     <loc>https://neptun.in.ua/faq</loc>
-    <lastmod>2025-10-23</lastmod>
+    <lastmod>2025-10-29</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
