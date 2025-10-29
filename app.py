@@ -1487,10 +1487,34 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
     
     # Initialize detected_oblast_key at function scope
     detected_oblast_key = None
+    excluded_oblast = None  # Oblast to exclude (when "з [область]" pattern found)
     
     # First, if we have message text, try to extract oblast info and build specific city keys
     if message_text:
         message_lower = message_text.lower()
+        
+        # Check for "з [область]" pattern - this means the city is NOT in that oblast
+        from_oblast_pattern = r'з\s+([а-яїіє]+щини|[а-яїіє]+ської\s+обл)'
+        from_match = re.search(from_oblast_pattern, message_lower)
+        if from_match:
+            excluded_region = from_match.group(1).strip()
+            # Normalize to oblast name
+            if excluded_region.endswith('щини'):
+                excluded_region = excluded_region[:-1]  # миколаївщини -> миколаївщин
+            if excluded_region.endswith('н'):
+                excluded_region = excluded_region[:-1] + 'на'  # миколаївщин -> миколаївщина
+            
+            # Map to oblast key
+            excluded_oblast_map = {
+                'миколаївщина': 'миколаївська',
+                'одещина': 'одеська', 
+                'херсонщина': 'херсонська',
+                'дніпропетровщина': 'дніпропетровська',
+                'харківщина': 'харківська',
+            }
+            excluded_oblast = excluded_oblast_map.get(excluded_region)
+            if excluded_oblast:
+                print(f"DEBUG: Found 'з {excluded_region}' pattern - excluding {excluded_oblast} oblast for city '{name}'")
         
         # ENHANCED: Find the closest oblast to the specific city name
         city_pos = message_lower.find(name.lower())
@@ -1542,6 +1566,11 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                     
                     if match in regional_to_adjective:
                         match = regional_to_adjective[match]
+                    
+                    # Skip if this is the excluded oblast (from "з [область]" pattern)
+                    if excluded_oblast and match == excluded_oblast:
+                        print(f"DEBUG: Skipping {match} oblast - excluded by 'з {excluded_oblast}' pattern")
+                        continue
                     
                     # Create possible city+oblast combinations to search
                     city_variants = [
@@ -1599,6 +1628,29 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                     break
     
     # Second try: standard city lookup (without oblast context)
+    # BUT: if we have excluded_oblast, try to find variant NOT in that oblast
+    if excluded_oblast:
+        # Try to find specific city variants that are NOT in excluded oblast
+        name_lower = name.lower()
+        possible_coords = []
+        
+        # Check CITY_COORDS for variants with oblast disambiguation
+        for key, coords in CITY_COORDS.items():
+            if name_lower in key:
+                # Extract oblast from key (e.g., "березівка(миколаївська)" -> "миколаївська")
+                oblast_match = re.search(r'\(([^)]+)\)', key)
+                if oblast_match:
+                    key_oblast = oblast_match.group(1)
+                    if excluded_oblast not in key_oblast:
+                        possible_coords.append((coords, key))
+                        print(f"DEBUG: Found candidate '{key}' with coords {coords}, not in excluded oblast '{excluded_oblast}'")
+        
+        if possible_coords:
+            # Use the first non-excluded variant
+            coords, key = possible_coords[0]
+            print(f"DEBUG: Using non-excluded variant '{key}' -> {coords}")
+            return (coords[0], coords[1], False)
+    
     result = ensure_city_coords(name)
     if result:
         return result
@@ -2509,7 +2561,7 @@ CITY_COORDS = {
     'ямпіль вінницька': (48.1333, 28.2833), 'ямполь вінницька': (48.1333, 28.2833),
     'ямполю': (48.1333, 28.2833), 'ямполі': (48.1333, 28.2833),
     'дзигівка': (49.2167, 28.1500), 'дзигівку': (49.2167, 28.1500), 'дзигівці': (49.2167, 28.1500),
-    'березівка': (46.8167, 30.9167), 'березівку': (46.8167, 30.9167), 'березівці': (46.8167, 30.9167),
+    # березівка - removed duplicate, use Odesa region coordinates (47.2050, 30.9080) in Odesa section
     # 'миколаївка': Удалено - неоднозначное название, используется контекстный поиск
     'вільногірськ': (47.9333, 34.0167), 'вільногірську': (47.9333, 34.0167), 'вільногірська': (47.9333, 34.0167),
     'велика виска': (49.2333, 32.1833), 'великої виски': (49.2333, 32.1833), 'великій висці': (49.2333, 32.1833),
@@ -2625,7 +2677,7 @@ KHARKIV_CITY_COORDS = {
     'золочів(харківщина)': (50.2744, 36.3592),
     'золочів': (50.2744, 36.3592),  # may conflict with Львівська обл.; disambiguation via region context
     'великий бурлук': (50.0514, 37.3903),
-    'південне': (49.8667, 36.0500),
+    # 'південне': Removed from Kharkiv section - this is Odesa region (46.6226, 31.1013)
     'покотилівка': (49.9345, 36.0603),
     'манченки': (49.9840, 35.9680),
     'малинівка': (49.6550, 36.7060),
@@ -3048,6 +3100,7 @@ MYKOLAIV_CITY_COORDS = {
     # Додаткові населені пункти Миколаївської області
     'братське': (47.5333, 32.1667), 'братську': (47.5333, 32.1667), 'братського': (47.5333, 32.1667),
     'возсіятське': (46.8167, 32.0833), 'возсіятську': (46.8167, 32.0833), 'возсіятського': (46.8167, 32.0833),
+    'березівка(миколаївська)': (47.5167, 31.4500), 'березівку(миколаївська)': (47.5167, 31.4500), 'березівці(миколаївська)': (47.5167, 31.4500),
 }
 
 for _my_name, _my_coords in MYKOLAIV_CITY_COORDS.items():
@@ -3059,6 +3112,7 @@ ODESA_CITY_COORDS = {
     'одесса': (46.4825, 30.7233),  # russian variant
     'чорноморськ': (46.3019, 30.6548),
     'южне': (46.6226, 31.1013),
+    'південне': (46.6226, 31.1013),  # Ukrainian name for Южне (Odesa region)
     'білгород-дністровський': (46.1900, 30.3400),
     'білгород-дністровськ': (46.1900, 30.3400),
     'білгород-дністровську': (46.1900, 30.3400),
