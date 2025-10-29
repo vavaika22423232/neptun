@@ -1542,6 +1542,7 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
         # Try to find specific city variants that are NOT in excluded oblast
         name_lower = name.lower()
         possible_coords = []
+        excluded_keys = []
         
         # Check CITY_COORDS for variants with oblast disambiguation
         for key, coords in CITY_COORDS.items():
@@ -1550,9 +1551,15 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                 oblast_match = re.search(r'\(([^)]+)\)', key)
                 if oblast_match:
                     key_oblast = oblast_match.group(1)
-                    if excluded_oblast not in key_oblast:
+                    if excluded_oblast in key_oblast:
+                        excluded_keys.append(key)
+                        print(f"DEBUG: Excluding '{key}' - matches excluded oblast '{excluded_oblast}'")
+                    else:
                         possible_coords.append((coords, key))
                         print(f"DEBUG: Found candidate '{key}' with coords {coords}, not in excluded oblast '{excluded_oblast}'")
+                elif key == name_lower:
+                    # Plain key without oblast - might be ambiguous, skip if we have better options
+                    print(f"DEBUG: Found plain key '{key}' - will use only if no other options")
         
         if possible_coords:
             # Use the first non-excluded variant
@@ -3065,6 +3072,9 @@ ODESA_CITY_COORDS = {
     'ананьєв': (47.7244, 29.9686),
     'ананьєві': (47.7244, 29.9686),
     'ананьєву': (47.7244, 29.9686),
+    'березівка(одеська)': (47.2050, 30.9080),
+    'березівці(одеська)': (47.2050, 30.9080),
+    'березівку(одеська)': (47.2050, 30.9080),
     'березівка': (47.2050, 30.9080),
     'березівці': (47.2050, 30.9080),
     'березівку': (47.2050, 30.9080),
