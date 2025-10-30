@@ -12478,11 +12478,11 @@ def data():
     
     print(f"[DEBUG] Returning {len(out)} tracks and {len(events)} events")
     
-    # BANDWIDTH OPTIMIZATION: Minimize response size and add caching
+    # Return all data without limits
     response_data = {
-        'tracks': out[:100],  # Limit to 100 tracks max to reduce bandwidth
-        'events': events[:20],  # Limit to 20 events max
-        'all_sources': CHANNELS[:10],  # Limit sources
+        'tracks': out,  # All tracks without limit
+        'events': events,  # All events without limit
+        'all_sources': CHANNELS,  # All sources
         'trajectories': []
     }
     

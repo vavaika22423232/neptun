@@ -3472,10 +3472,6 @@
         console.log('updateMarkers: tracks массив:', data.tracks);
         console.log('updateMarkers: количество tracks:', (data.tracks || []).length);
         
-        // Показать уведомление если треки были ограничены
-        if (data.limited && data.total_tracks > data.tracks.length) {
-          console.log(`updateMarkers: отображено ${data.tracks.length} из ${data.total_tracks} треков для быстрой загрузки`);
-        }
   points = (data.tracks || []).filter(p => {
         console.log('updateMarkers: проверяем точку:', p);
         console.log('updateMarkers: threat_type точки:', p.threat_type, 'текст:', p.text);
