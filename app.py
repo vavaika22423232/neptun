@@ -10028,9 +10028,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 log.debug(f"multi_shah_ed tracks mid={mid} -> {[t['place'] for t in tracks]}")
                 return tracks
 
-    # --- Per-line UAV course / area city targeting ("БпЛА курсом на <місто>", "8х БпЛА в районі <міста>") ---
-    # Triggered when region multi list suppressed earlier due to presence of course lines.
-    if 'бпла' in lower and ('курс' in lower or 'в районі' in lower):
+    # --- Per-line UAV course / area city targeting ("БпЛА курсом на <місто>", "8х БпЛА в районі <міста>", "БпЛА на <місто>") ---
+    # Triggered when region multi list suppressed earlier due to presence of course lines or simple "на" pattern.
+    if 'бпла' in lower and ('курс' in lower or 'в районі' in lower or 'в напрямку' in lower or (re.search(r'\d+\s*[xх]?\s*бпла\s+на\s+', lower))):
         add_debug_log(f"UAV course parser triggered for message length: {len(text)} chars", "uav_course")
         original_text_norm = re.sub(r'(?i)(\b[А-Яа-яЇїІіЄєҐґ\-]{3,}(?:щина|область|обл\.)):(?!\s*\n)', r'\1:\n', original_text)
         lines_with_region = []
@@ -10076,6 +10076,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         pat_course = re.compile(r'бпла(?:\s+пролетіли)?.*?курс(?:ом)?\s+на\s+(?:н\.п\.?\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         pat_area = re.compile(r'(\d+)?[xх]?\s*бпла\s+в\s+районі\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         pat_napramku = re.compile(r'(\d+)?[xх]?\s*бпла\s+(?:в|у)\s+напрямку\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
+        pat_simple_na = re.compile(r'(\d+)?[xх]?\s*бпла\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         if re.search(r'бпла.*?курс(?:ом)?\s+на\s+кіпт[ії]', lower):
             coords = SETTLEMENT_FALLBACK.get('кіпті')
             if coords:
@@ -10123,6 +10124,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         m4 = pat_course.search(ln_low)
                         if m4:
                             city = m4.group(1)
+                        else:
+                            m5 = pat_simple_na.search(ln_low)
+                            if m5:
+                                if m5.group(1):
+                                    count = int(m5.group(1))
+                                city = m5.group(2)
             if not city:
                 add_debug_log("No city found in UAV line", "uav_course")
                 continue
