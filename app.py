@@ -10034,7 +10034,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
 
     # --- Per-line UAV course / area city targeting ("БпЛА курсом на <місто>", "8х БпЛА в районі <міста>", "БпЛА на <місто>") ---
     # Triggered when region multi list suppressed earlier due to presence of course lines or simple "на" pattern.
-    if 'бпла' in lower and ('курс' in lower or 'в районі' in lower or 'в напрямку' in lower or 'в бік' in lower or (re.search(r'\d+\s*[xх]?\s*бпла\s+на\s+', lower))):
+    if 'бпла' in lower and ('курс' in lower or 'в районі' in lower or 'в напрямку' in lower or 'в бік' in lower or 'від' in lower or 'околиц' in lower or (re.search(r'\d+\s*[xх]?\s*бпла\s+на\s+', lower))):
         add_debug_log(f"UAV course parser triggered for message length: {len(text)} chars", "uav_course")
         original_text_norm = re.sub(r'(?i)(\b[А-Яа-яЇїІіЄєҐґ\-]{3,}(?:щина|область|обл\.)):(?!\s*\n)', r'\1:\n', original_text)
         lines_with_region = []
@@ -10082,6 +10082,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         pat_napramku = re.compile(r'(\d+)?[xх]?\s*бпла\s+(?:в|у)\s+напрямку\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         pat_simple_na = re.compile(r'(\d+)?[xх]?\s*бпла\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         pat_complex_napramku = re.compile(r'(\d+)?[xх]?\s*бпла\s+на/через\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)\s+в\s+напрямку\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
+        pat_napramku_ta = re.compile(r'(\d+)?[xх]?\s*бпла\s+(?:в|у)\s+напрямку\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)\s+та\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
+        pat_okolytsi = re.compile(r'(\d+)?[xх]?\s*бпла\s+на\s+околицях\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
+        pat_vid_do = re.compile(r'(\d+)?[xх]?\s*бпла\s+від\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)\s+до\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         pat_vik = re.compile(r'(\d+)?[xх]?\s*бпла\s+в\s+бік\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s](3, 40)?)(?=\s+з\s+|[,\.\n;:!\?]|$)', re.IGNORECASE)
         if re.search(r'бпла.*?курс(?:ом)?\s+на\s+кіпт[ії]', lower):
             coords = SETTLEMENT_FALLBACK.get('кіпті')
@@ -10153,6 +10156,88 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             })
                 continue  # Skip to next line
             
+            # Check for "від X до Y" pattern (trajectory)
+            m_vid_do = pat_vid_do.search(ln_low)
+            if m_vid_do:
+                count = int(m_vid_do.group(1)) if m_vid_do.group(1) else 1
+                city1 = m_vid_do.group(2)  # від цього міста
+                city2 = m_vid_do.group(3)  # до цього міста
+                
+                # Process both cities
+                for city_raw in [city1, city2]:
+                    multi_norm = _resolve_city_candidate(city_raw)
+                    base = norm_city_token(multi_norm)
+                    coords = CITY_COORDS.get(base) or (SETTLEMENTS_INDEX.get(base) if SETTLEMENTS_INDEX else None)
+                    if not coords:
+                        try:
+                            coords = region_enhanced_coords(base, region_hint_override=region_hdr)
+                        except Exception:
+                            coords = None
+                    if not coords and NOMINATIM_AVAILABLE:
+                        try:
+                            nominatim_coords = get_coordinates_nominatim(base, region=region_hdr)
+                            if nominatim_coords:
+                                coords = nominatim_coords
+                                CITY_COORDS[base] = coords
+                        except Exception:
+                            pass
+                    if coords:
+                        lat, lng = coords
+                        threat_type, icon = classify(text)
+                        for i in range(1, count+1):
+                            label = base.title()
+                            if count > 1:
+                                label += f" ({i}/{count})"
+                            if region_hdr and region_hdr not in label.lower():
+                                label += f" [{region_hdr.title()}]"
+                            course_tracks.append({
+                                'id': f"{mid}_viddo_{base}_{i}", 'place': label, 'lat': lat, 'lng': lng,
+                                'threat_type': threat_type, 'text': ln[:500], 'date': date_str, 'channel': channel,
+                                'marker_icon': icon, 'source_match': 'uav_vid_do', 'count': 1
+                            })
+                continue
+            
+            # Check for "в напрямку X та Y" pattern (multiple cities)
+            m_ta = pat_napramku_ta.search(ln_low)
+            if m_ta:
+                count = int(m_ta.group(1)) if m_ta.group(1) else 1
+                city1 = m_ta.group(2)
+                city2 = m_ta.group(3)
+                
+                # Process both cities
+                for city_raw in [city1, city2]:
+                    multi_norm = _resolve_city_candidate(city_raw)
+                    base = norm_city_token(multi_norm)
+                    coords = CITY_COORDS.get(base) or (SETTLEMENTS_INDEX.get(base) if SETTLEMENTS_INDEX else None)
+                    if not coords:
+                        try:
+                            coords = region_enhanced_coords(base, region_hint_override=region_hdr)
+                        except Exception:
+                            coords = None
+                    if not coords and NOMINATIM_AVAILABLE:
+                        try:
+                            nominatim_coords = get_coordinates_nominatim(base, region=region_hdr)
+                            if nominatim_coords:
+                                coords = nominatim_coords
+                                CITY_COORDS[base] = coords
+                        except Exception:
+                            pass
+                    if coords:
+                        lat, lng = coords
+                        threat_type, icon = classify(text)
+                        for i in range(1, count+1):
+                            label = base.title()
+                            if count > 1:
+                                label += f" ({i}/{count})"
+                            if region_hdr and region_hdr not in label.lower():
+                                label += f" [{region_hdr.title()}]"
+                            course_tracks.append({
+                                'id': f"{mid}_ta_{base}_{i}", 'place': label, 'lat': lat, 'lng': lng,
+                                'threat_type': threat_type, 'text': ln[:500], 'date': date_str, 'channel': channel,
+                                'marker_icon': icon, 'source_match': 'uav_ta', 'count': 1
+                            })
+                continue
+            
             count = None; city = None; approx_flag = False
             m1 = pat_count_course.search(ln_low)
             if m1:
@@ -10174,17 +10259,23 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         if m4:
                             city = m4.group(1)
                         else:
-                            m5 = pat_simple_na.search(ln_low)
+                            m5 = pat_okolytsi.search(ln_low)
                             if m5:
                                 if m5.group(1):
                                     count = int(m5.group(1))
                                 city = m5.group(2)
                             else:
-                                m6 = pat_vik.search(ln_low)
+                                m6 = pat_simple_na.search(ln_low)
                                 if m6:
                                     if m6.group(1):
                                         count = int(m6.group(1))
                                     city = m6.group(2)
+                                else:
+                                    m7 = pat_vik.search(ln_low)
+                                    if m7:
+                                        if m7.group(1):
+                                            count = int(m7.group(1))
+                                        city = m7.group(2)
             if not city:
                 add_debug_log("No city found in UAV line", "uav_course")
                 continue
