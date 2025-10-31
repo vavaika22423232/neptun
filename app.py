@@ -5591,12 +5591,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                 marker_lat = lat
                                 marker_lng = lng
                                 if tracks_to_create > 1:
-                                    # Create a circular pattern around the target
-                                    import math
-                                    angle = (2 * math.pi * i) / tracks_to_create
-                                    offset_distance = 0.01  # ~1km offset
-                                    marker_lat += offset_distance * math.cos(angle)
-                                    marker_lng += offset_distance * math.sin(angle)
+                                    # Create a chain pattern - drones one after another
+                                    offset_distance = 0.03  # ~3km offset between each drone
+                                    marker_lat += offset_distance * i
+                                    marker_lng += offset_distance * i * 0.5
                                 
                                 threat_id = f"{mid}_imm_multi_{len(threats)}"
                                 threats.append({
@@ -7222,12 +7220,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     marker_lat = lat
                     marker_lng = lng
                     if tracks_to_create > 1:
-                        # Create a circular pattern around the target
-                        import math
-                        angle = (2 * math.pi * i) / tracks_to_create
-                        offset_distance = 0.01  # ~1km offset
-                        marker_lat += offset_distance * math.cos(angle)
-                        marker_lng += offset_distance * math.sin(angle)
+                        # Create a chain pattern - drones one after another
+                        offset_distance = 0.03  # ~3km offset between each drone
+                        marker_lat += offset_distance * i
+                        marker_lng += offset_distance * i * 0.5
                     
                     threat_data = {
                         'id': f"{mid}_{i+1}", 'place': track_name, 'lat': marker_lat, 'lng': marker_lng,
@@ -8167,12 +8163,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         marker_lat = lat
                         marker_lng = lng
                         if tracks_to_create > 1:
-                            # Create a circular pattern around the target
-                            import math
-                            angle = (2 * math.pi * i) / tracks_to_create
-                            offset_distance = 0.01  # ~1km offset
-                            marker_lat += offset_distance * math.cos(angle)
-                            marker_lng += offset_distance * math.sin(angle)
+                            # Create a chain pattern - drones one after another
+                            offset_distance = 0.03  # ~3km offset between each drone
+                            marker_lat += offset_distance * i
+                            marker_lng += offset_distance * i * 0.5
                         
                         multi_city_tracks.append({
                             'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': track_label, 'lat': marker_lat, 'lng': marker_lng,
@@ -8403,12 +8397,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     marker_lat = lat
                     marker_lng = lng
                     if tracks_to_create > 1:
-                        # Create a circular pattern around the target
-                        import math
-                        angle = (2 * math.pi * i) / tracks_to_create
-                        offset_distance = 0.01  # ~1km offset
-                        marker_lat += offset_distance * math.cos(angle)
-                        marker_lng += offset_distance * math.sin(angle)
+                        # Create a chain pattern - drones one after another
+                        offset_distance = 0.03  # ~3km offset between each drone
+                        marker_lat += offset_distance * i
+                        marker_lng += offset_distance * i * 0.5
                     
                     print(f"DEBUG: Creating track {i+1}/{tracks_to_create} with label '{track_label}' at {marker_lat}, {marker_lng}")
                     multi_city_tracks.append({
@@ -10675,12 +10667,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             marker_lat = lat
                             marker_lng = lng
                             if tracks_to_create > 1:
-                                # Create a circular pattern around the target
-                                import math
-                                angle = (2 * math.pi * i) / tracks_to_create
-                                offset_distance = 0.01  # ~1km offset
-                                marker_lat += offset_distance * math.cos(angle)
-                                marker_lng += offset_distance * math.sin(angle)
+                                # Create a chain pattern - drones one after another
+                                offset_distance = 0.03  # ~3km offset between each drone
+                                marker_lat += offset_distance * i
+                                marker_lng += offset_distance * i * 0.5
                                 
                             all_shahed_tracks.append({
                                 'id': f"{mid}_{pattern_type}_{len(all_shahed_tracks)}", 
@@ -11157,12 +11147,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 marker_lat = lat
                 marker_lng = lng
                 if tracks_to_create > 1:
-                    # Create a circular pattern around the target
-                    import math
-                    angle = (2 * math.pi * i) / tracks_to_create
-                    offset_distance = 0.01  # ~1km offset
-                    marker_lat += offset_distance * math.cos(angle)
-                    marker_lng += offset_distance * math.sin(angle)
+                    # Create a chain pattern - drones one after another
+                    offset_distance = 0.03  # ~3km offset between each drone
+                    marker_lat += offset_distance * i
+                    marker_lng += offset_distance * i * 0.5
                 
                 track = {
                     'id': f"{mid}_c{idx}_{i+1}", 'place': track_name, 'lat': marker_lat, 'lng': marker_lng,
