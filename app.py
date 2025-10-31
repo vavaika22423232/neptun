@@ -2702,7 +2702,6 @@ DNIPRO_CITY_COORDS = {
     'петриківка': (48.7330, 34.6300),  # present
     'підгородне': (48.5747, 35.1482),  # present
     'покровське (смт)': (48.1180, 36.2470),
-    'радушне': (47.9840, 33.4930),
     'самар': (48.6500, 35.4200),  # present
     'сурсько-литовське': (48.3720, 34.8130),
     'тернівські хутори': (48.6600, 34.9400),
@@ -2975,6 +2974,12 @@ MYKOLAIV_CITY_COORDS = {
     'вознесенськ': (47.5679, 31.3336),
     'южноукраїнськ': (47.8178, 31.1800),
     'новий буг': (47.6833, 32.5167),  # present
+    'нового буга': (47.6833, 32.5167),
+    'нового бугу': (47.6833, 32.5167),
+    'новому бугу': (47.6833, 32.5167),
+    'радушне': (47.9333, 32.5167),
+    'радушному': (47.9333, 32.5167),
+    'радушним': (47.9333, 32.5167),
     'нова одеса': (47.3100, 31.7830),
     'нову одесу': (47.3100, 31.7830),
     'новій одесі': (47.3100, 31.7830),
@@ -3262,6 +3267,12 @@ CHERKASY_CITY_COORDS = {
     'стеблеві': (49.3860, 31.0550),
     'єрки': (49.0950, 30.9817),
     'єрках': (49.0950, 30.9817),
+    'мошни': (49.1967, 30.8567),
+    'мошнах': (49.1967, 30.8567),
+    'мошни́': (49.1967, 30.8567),
+    'гельмязів': (49.0364, 31.2772),
+    'гельмязові': (49.0364, 31.2772),
+    'гельмязовом': (49.0364, 31.2772),
 }
 
 for _ck_name, _ck_coords in CHERKASY_CITY_COORDS.items():
@@ -10061,9 +10072,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         if expanded:
             lines_with_region = expanded
         course_tracks = []
-        pat_count_course = re.compile(r'^(\d+)\s*[xх]?\s*бпла.*?курс(?:ом)?\s+на\s+(?:н\.п\.?\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
-        pat_course = re.compile(r'бпла.*?курс(?:ом)?\s+на\s+(?:н\.п\.?\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
+        pat_count_course = re.compile(r'^(\d+)\s*[xх]?\s*бпла(?:\s+пролетіли)?.*?курс(?:ом)?\s+на\s+(?:н\.п\.?\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
+        pat_course = re.compile(r'бпла(?:\s+пролетіли)?.*?курс(?:ом)?\s+на\s+(?:н\.п\.?\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         pat_area = re.compile(r'(\d+)?[xх]?\s*бпла\s+в\s+районі\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
+        pat_napramku = re.compile(r'(\d+)?[xх]?\s*бпла\s+(?:в|у)\s+напрямку\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         if re.search(r'бпла.*?курс(?:ом)?\s+на\s+кіпт[ії]', lower):
             coords = SETTLEMENT_FALLBACK.get('кіпті')
             if coords:
@@ -10102,9 +10114,15 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         count = int(m2.group(1))
                     city = m2.group(2)
                 else:
-                    m3 = pat_course.search(ln_low)
+                    m3 = pat_napramku.search(ln_low)
                     if m3:
-                        city = m3.group(1)
+                        if m3.group(1):
+                            count = int(m3.group(1))
+                        city = m3.group(2)
+                    else:
+                        m4 = pat_course.search(ln_low)
+                        if m4:
+                            city = m4.group(1)
             if not city:
                 add_debug_log("No city found in UAV line", "uav_course")
                 continue
@@ -10119,6 +10137,17 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     coords = region_enhanced_coords(base, region_hint_override=region_hdr)
                 except Exception:
                     coords = None
+            # Try Nominatim API if still no coordinates
+            if not coords and NOMINATIM_AVAILABLE:
+                try:
+                    add_debug_log(f"Trying Nominatim API for city '{base}'", "uav_course")
+                    nominatim_coords = get_coordinates_nominatim(base, region=region_hdr)
+                    if nominatim_coords:
+                        coords = nominatim_coords
+                        CITY_COORDS[base] = coords  # Cache for future use
+                        add_debug_log(f"Nominatim found coordinates for '{base}': {coords}", "uav_course")
+                except Exception as e:
+                    add_debug_log(f"Nominatim API error for '{base}': {e}", "uav_course")
             if not coords:
                 # Fallback: if we have a region header, place placeholder near its oblast center with slight jitter
                 if region_hdr and region_hdr in OBLAST_CENTERS:
