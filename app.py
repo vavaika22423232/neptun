@@ -7676,6 +7676,199 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         # NEW: Check for specific direction patterns before falling back to general UAV activity
         import re
         ln_lower = ln.lower()
+        
+        # NEW: Pattern "кружляє над/над [city]"
+        if 'кружляє' in ln_lower or 'кружля' in ln_lower:
+            kruzhlia_match = re.search(r'кружля[єюя]\s+(?:над\s+)?([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*[\.\,\!\?;]|$)', ln, re.IGNORECASE)
+            if kruzhlia_match:
+                city_raw = kruzhlia_match.group(1).strip()
+                city_norm = normalize_city_name(city_raw)
+                city_norm = UA_CITY_NORMALIZE.get(city_norm, city_norm)
+                coords = CITY_COORDS.get(city_norm) or (SETTLEMENTS_INDEX.get(city_norm) if SETTLEMENTS_INDEX else None)
+                
+                if coords:
+                    lat, lng = coords
+                    threat_type, icon = classify(ln)
+                    count_match = re.search(r'(\d+)[xх]?\s*бпла', ln_lower)
+                    count = int(count_match.group(1)) if count_match else 1
+                    
+                    # Create multiple tracks if count > 1
+                    for i in range(count):
+                        place_label = city_norm.title()
+                        if count > 1:
+                            place_label += f" #{i+1} (кружляє)"
+                        else:
+                            place_label += f" (кружляє)"
+                        
+                        # Add offset for multiple drones
+                        marker_lat, marker_lng = lat, lng
+                        if count > 1:
+                            offset_distance = 0.03
+                            marker_lat += offset_distance * i
+                            marker_lng += offset_distance * i * 0.5
+                        
+                        multi_city_tracks.append({
+                            'id': f"{mid}_kruzhlia_{len(multi_city_tracks)+1}",
+                            'place': place_label,
+                            'lat': marker_lat,
+                            'lng': marker_lng,
+                            'threat_type': threat_type,
+                            'text': clean_text(ln)[:500],
+                            'date': date_str,
+                            'channel': channel,
+                            'marker_icon': icon,
+                            'source_match': 'kruzhlia_nad',
+                            'count': 1
+                        })
+                    add_debug_log(f"Created {count} marker(s) for 'кружляє': {city_norm.title()}", "kruzhlia")
+                    continue
+        
+        # NEW: Pattern "північніше/південніше/східніше/західніше [city]"
+        if any(direction in ln_lower for direction in ['північніше', 'південніше', 'східніше', 'західніше']):
+            direction_match = re.search(r'(північніше|південніше|східніше|західніше)\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*[\.\,\!\?;]|$)', ln, re.IGNORECASE)
+            if direction_match:
+                direction_type = direction_match.group(1).lower()
+                city_raw = direction_match.group(2).strip()
+                city_norm = normalize_city_name(city_raw)
+                city_norm = UA_CITY_NORMALIZE.get(city_norm, city_norm)
+                coords = CITY_COORDS.get(city_norm) or (SETTLEMENTS_INDEX.get(city_norm) if SETTLEMENTS_INDEX else None)
+                
+                if coords:
+                    lat, lng = coords
+                    # Apply directional offset based on direction type
+                    offset = 0.15  # ~15km
+                    if direction_type == 'північніше':
+                        lat += offset
+                    elif direction_type == 'південніше':
+                        lat -= offset
+                    elif direction_type == 'східніше':
+                        lng += offset
+                    elif direction_type == 'західніше':
+                        lng -= offset
+                    
+                    threat_type, icon = classify(ln)
+                    count_match = re.search(r'(\d+)[xх]?\s*бпла', ln_lower)
+                    count = int(count_match.group(1)) if count_match else 1
+                    
+                    # Create multiple tracks if count > 1
+                    for i in range(count):
+                        place_label = f"{direction_type.title()} {city_norm.title()}"
+                        if count > 1:
+                            place_label += f" #{i+1}"
+                        
+                        # Add offset for multiple drones
+                        marker_lat, marker_lng = lat, lng
+                        if count > 1:
+                            offset_distance = 0.03
+                            marker_lat += offset_distance * i
+                            marker_lng += offset_distance * i * 0.5
+                        
+                        multi_city_tracks.append({
+                            'id': f"{mid}_direction_{len(multi_city_tracks)+1}",
+                            'place': place_label,
+                            'lat': marker_lat,
+                            'lng': marker_lng,
+                            'threat_type': threat_type,
+                            'text': clean_text(ln)[:500],
+                            'date': date_str,
+                            'channel': channel,
+                            'marker_icon': icon,
+                            'source_match': f'directional_{direction_type}',
+                            'count': 1
+                        })
+                    add_debug_log(f"Created {count} marker(s) for '{direction_type}': {city_norm.title()}", "directional")
+                    continue
+        
+        # NEW: Pattern "на/через [city]" - combined "на" and "через"
+        if re.search(r'на/через\s+[А-ЯІЇЄЁа-яіїєё]', ln, re.IGNORECASE):
+            na_cherez_match = re.search(r'(\d+)[xх]?\s*бпла\s+на/через\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*[\.\,\!\?;]|$)', ln, re.IGNORECASE)
+            if na_cherez_match:
+                count = int(na_cherez_match.group(1)) if na_cherez_match.group(1) else 1
+                city_raw = na_cherez_match.group(2).strip()
+                city_norm = normalize_city_name(city_raw)
+                city_norm = UA_CITY_NORMALIZE.get(city_norm, city_norm)
+                coords = CITY_COORDS.get(city_norm) or (SETTLEMENTS_INDEX.get(city_norm) if SETTLEMENTS_INDEX else None)
+                
+                if coords:
+                    lat, lng = coords
+                    threat_type, icon = classify(ln)
+                    
+                    # Create multiple tracks if count > 1
+                    for i in range(count):
+                        place_label = city_norm.title()
+                        if count > 1:
+                            place_label += f" #{i+1} (на/через)"
+                        else:
+                            place_label += f" (на/через)"
+                        
+                        # Add offset for multiple drones
+                        marker_lat, marker_lng = lat, lng
+                        if count > 1:
+                            offset_distance = 0.03
+                            marker_lat += offset_distance * i
+                            marker_lng += offset_distance * i * 0.5
+                        
+                        multi_city_tracks.append({
+                            'id': f"{mid}_na_cherez_{len(multi_city_tracks)+1}",
+                            'place': place_label,
+                            'lat': marker_lat,
+                            'lng': marker_lng,
+                            'threat_type': threat_type,
+                            'text': clean_text(ln)[:500],
+                            'date': date_str,
+                            'channel': channel,
+                            'marker_icon': icon,
+                            'source_match': 'na_cherez',
+                            'count': 1
+                        })
+                    add_debug_log(f"Created {count} marker(s) for 'на/через': {city_norm.title()}", "na_cherez")
+                    continue
+        
+        # NEW: Pattern "з ТОТ в напрямку [city]" - drones from occupied territory
+        if 'з тот' in ln_lower or 'з tot' in ln_lower:
+            tot_match = re.search(r'(\d+)[xх]?\s*бпла\s+з\s+тот\s+(?:в\s+напрямку|на)\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*[\.\,\!\?;]|$)', ln, re.IGNORECASE)
+            if tot_match:
+                count = int(tot_match.group(1)) if tot_match.group(1) else 1
+                city_raw = tot_match.group(2).strip()
+                city_norm = normalize_city_name(city_raw)
+                city_norm = UA_CITY_NORMALIZE.get(city_norm, city_norm)
+                coords = CITY_COORDS.get(city_norm) or (SETTLEMENTS_INDEX.get(city_norm) if SETTLEMENTS_INDEX else None)
+                
+                if coords:
+                    lat, lng = coords
+                    threat_type, icon = classify(ln)
+                    
+                    # Create multiple tracks if count > 1
+                    for i in range(count):
+                        place_label = city_norm.title()
+                        if count > 1:
+                            place_label += f" #{i+1} (з ТОТ)"
+                        else:
+                            place_label += f" (з ТОТ)"
+                        
+                        # Add offset for multiple drones
+                        marker_lat, marker_lng = lat, lng
+                        if count > 1:
+                            offset_distance = 0.03
+                            marker_lat += offset_distance * i
+                            marker_lng += offset_distance * i * 0.5
+                        
+                        multi_city_tracks.append({
+                            'id': f"{mid}_tot_{len(multi_city_tracks)+1}",
+                            'place': place_label,
+                            'lat': marker_lat,
+                            'lng': marker_lng,
+                            'threat_type': threat_type,
+                            'text': clean_text(ln)[:500],
+                            'date': date_str,
+                            'channel': channel,
+                            'marker_icon': icon,
+                            'source_match': 'z_tot',
+                            'count': 1
+                        })
+                    add_debug_log(f"Created {count} marker(s) for 'з ТОТ': {city_norm.title()}", "z_tot")
+                    continue
+        
         # Check if line has БпЛА or starts with a number (implying drones)
         has_bpla = 'бпла' in ln_lower
         starts_with_number = re.match(r'^\d+', ln.strip())
@@ -12150,6 +12343,95 @@ def force_schedule_update():
             'success': False,
             'error': str(e)
         }), 500
+
+
+@app.route('/locate')
+def locate_place():
+    """Search for a city/settlement and return coordinates or suggestions"""
+    query = request.args.get('q', '').strip()
+    
+    if not query:
+        return jsonify({'status': 'error', 'message': 'No query provided'})
+    
+    query_lower = query.lower()
+    
+    # First, try exact match in CITY_COORDS
+    if query_lower in CITY_COORDS:
+        lat, lng = CITY_COORDS[query_lower]
+        return jsonify({
+            'status': 'ok',
+            'name': query.title(),
+            'lat': lat,
+            'lng': lng,
+            'source': 'city_coords'
+        })
+    
+    # Try exact match in SETTLEMENTS_INDEX
+    if query_lower in SETTLEMENTS_INDEX:
+        lat, lng = SETTLEMENTS_INDEX[query_lower]
+        return jsonify({
+            'status': 'ok',
+            'name': query.title(),
+            'lat': lat,
+            'lng': lng,
+            'source': 'settlements'
+        })
+    
+    # Try normalized version with UA_CITY_NORMALIZE
+    if query_lower in UA_CITY_NORMALIZE:
+        normalized = UA_CITY_NORMALIZE[query_lower]
+        if normalized in CITY_COORDS:
+            lat, lng = CITY_COORDS[normalized]
+            return jsonify({
+                'status': 'ok',
+                'name': normalized.title(),
+                'lat': lat,
+                'lng': lng,
+                'source': 'normalized'
+            })
+        if normalized in SETTLEMENTS_INDEX:
+            lat, lng = SETTLEMENTS_INDEX[normalized]
+            return jsonify({
+                'status': 'ok',
+                'name': normalized.title(),
+                'lat': lat,
+                'lng': lng,
+                'source': 'normalized'
+            })
+    
+    # If no exact match, return suggestions (prefix/substring match)
+    suggestions = []
+    
+    # Search in CITY_COORDS first (priority)
+    for city_name in CITY_COORDS.keys():
+        if query_lower in city_name:
+            suggestions.append(city_name.title())
+            if len(suggestions) >= 10:
+                break
+    
+    # Then search in SETTLEMENTS_INDEX
+    if len(suggestions) < 10:
+        for settlement_name in SETTLEMENTS_INDEX.keys():
+            city_title = settlement_name.title()
+            if query_lower in settlement_name and city_title not in suggestions:
+                suggestions.append(city_title)
+                if len(suggestions) >= 20:
+                    break
+    
+    # Sort suggestions by length (shorter = more relevant)
+    suggestions.sort(key=lambda x: (len(x), x))
+    
+    if suggestions:
+        return jsonify({
+            'status': 'suggest',
+            'matches': suggestions[:20]
+        })
+    
+    # No matches found
+    return jsonify({
+        'status': 'not_found',
+        'message': f'Не знайдено: {query}'
+    })
 
 
 def _prune_comments():
