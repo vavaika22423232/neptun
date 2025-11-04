@@ -10266,13 +10266,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             if m4:
                                 city = m4.group(1)
                             else:
-                            m5 = pat_okolytsi.search(ln_low)
-                            if m5:
-                                if m5.group(1):
-                                    count = int(m5.group(1))
-                                city = m5.group(2)
-                            else:
-                                m6 = pat_simple_na.search(ln_low)
+                                m5 = pat_okolytsi.search(ln_low)
+                                if m5:
+                                    if m5.group(1):
+                                        count = int(m5.group(1))
+                                    city = m5.group(2)
+                                else:
+                                    m6 = pat_simple_na.search(ln_low)
                                 if m6:
                                     if m6.group(1):
                                         count = int(m6.group(1))
