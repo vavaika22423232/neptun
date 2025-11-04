@@ -10034,7 +10034,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
 
     # --- Per-line UAV course / area city targeting ("БпЛА курсом на <місто>", "8х БпЛА в районі <міста>", "БпЛА на <місто>") ---
     # Triggered when region multi list suppressed earlier due to presence of course lines or simple "на" pattern.
-    if 'бпла' in lower and ('курс' in lower or 'в районі' in lower or 'в напрямку' in lower or 'в бік' in lower or 'від' in lower or 'околиц' in lower or (re.search(r'\d+\s*[xх]?\s*бпла\s+на\s+', lower))):
+    if 'бпла' in lower and ('курс' in lower or 'в районі' in lower or 'в напрямку' in lower or 'в бік' in lower or 'від' in lower or 'околиц' in lower or 'сектор' in lower or (re.search(r'\d+\s*[xх]?\s*бпла\s+на\s+', lower))):
         add_debug_log(f"UAV course parser triggered for message length: {len(text)} chars", "uav_course")
         original_text_norm = re.sub(r'(?i)(\b[А-Яа-яЇїІіЄєҐґ\-]{3,}(?:щина|область|обл\.)):(?!\s*\n)', r'\1:\n', original_text)
         lines_with_region = []
@@ -10080,6 +10080,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         pat_course = re.compile(r'бпла(?:\s+пролетіли)?.*?курс(?:ом)?\s+на\s+(?:н\.п\.?\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         pat_area = re.compile(r'(\d+)?[xх]?\s*бпла\s+в\s+районі\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         pat_napramku = re.compile(r'(\d+)?[xх]?\s*бпла\s+(?:в|у)\s+напрямку\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
+        pat_sektor = re.compile(r'(\d+)?[xх]?\s*бпла\s+в\s+секторі\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.
+;:!\?]|$)', re.IGNORECASE)
         pat_simple_na = re.compile(r'(\d+)?[xх]?\s*бпла\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         pat_complex_napramku = re.compile(r'(\d+)?[xх]?\s*бпла\s+на/через\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)\s+в\s+напрямку\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         pat_napramku_ta = re.compile(r'(\d+)?[xх]?\s*бпла\s+(?:в|у)\s+напрямку\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)\s+та\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
@@ -10255,10 +10257,16 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             count = int(m3.group(1))
                         city = m3.group(2)
                     else:
-                        m4 = pat_course.search(ln_low)
-                        if m4:
-                            city = m4.group(1)
+                        m3_sektor = pat_sektor.search(ln_low)
+                        if m3_sektor:
+                            if m3_sektor.group(1):
+                                count = int(m3_sektor.group(1))
+                            city = m3_sektor.group(2)
                         else:
+                            m4 = pat_course.search(ln_low)
+                            if m4:
+                                city = m4.group(1)
+                            else:
                             m5 = pat_okolytsi.search(ln_low)
                             if m5:
                                 if m5.group(1):
