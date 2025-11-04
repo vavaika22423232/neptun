@@ -10291,6 +10291,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             multi_norm = _resolve_city_candidate(city)
             base = norm_city_token(multi_norm)
             add_debug_log(f"City normalized to '{base}'", "uav_course")
+            
+            # FILTER: Skip oblast/region names (e.g., "БпЛА на Дніпропетровщині" should be regional threat, not city marker)
+            oblast_suffixes = ['щина', 'щині', 'область', 'обл']
+            if any(base.endswith(suffix) for suffix in oblast_suffixes):
+                add_debug_log(f"Skipping oblast name '{base}' - this is a regional threat, not a city target", "uav_course")
+                continue
+            
             coords = CITY_COORDS.get(base) or (SETTLEMENTS_INDEX.get(base) if SETTLEMENTS_INDEX else None)
             add_debug_log(f"Coordinates lookup for '{base}': {coords}", "uav_course")
             if not coords:
