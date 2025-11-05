@@ -3924,6 +3924,9 @@ HROMADA_FALLBACK = {
 # Specific settlement fallback for mis-localized parsing
 SETTLEMENT_FALLBACK = {
     'кипти': (51.2833, 31.2167),  # Russian / simplified spelling → 'кіпті'
+    'покровський район': (48.2767, 37.1763),  # Покровський район (Донецька область) - use Pokrovsk city coords as center
+    'покровський р-н': (48.2767, 37.1763),  # abbreviated form
+    'покровського району': (48.2767, 37.1763),  # genitive case
 }
 
 SETTLEMENTS_FILE = os.getenv('SETTLEMENTS_FILE', 'settlements_ua.json')
@@ -5354,6 +5357,29 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     # Clear any previous priority result
     globals()['_current_priority_result'] = None
     
+    # PRIORITY CHECK: Black Sea aquatory - must check BEFORE multi-regional processing
+    # Messages like "БпЛА курсом на Миколаїв з акваторії Чорного моря" should NOT place markers on cities
+    lower_text = original_text.lower()
+    if ('акватор' in lower_text or 'акваторії' in lower_text) and ('чорного моря' in lower_text or 'чорне море' in lower_text) and ('бпла' in lower_text or 'дрон' in lower_text):
+        # Extract target city if mentioned
+        m_target = re.search(r'курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,})', lower_text)
+        target_city = None
+        if m_target:
+            tc = m_target.group(1).lower()
+            tc = UA_CITY_NORMALIZE.get(tc, tc)
+            target_city = tc.title()
+        threat_type, icon = classify(original_text)
+        # Approx northern Black Sea central coords (between Odesa & Crimea offshore)
+        sea_lat, sea_lng = 45.3, 30.7
+        place_label = 'Акваторія Чорного моря'
+        if target_city:
+            place_label += f' (курс на {target_city})'
+        return [{
+            'id': str(mid), 'place': place_label, 'lat': sea_lat, 'lng': sea_lng,
+            'threat_type': threat_type, 'text': original_text[:500], 'date': date_str, 'channel': channel,
+            'marker_icon': icon, 'source_match': 'black_sea_course_priority'
+        }]
+    
     # IMMEDIATE CHECK: Multi-regional UAV messages (highest priority)
     text_lines = original_text.split('\n')
     region_count = sum(1 for line in text_lines if any(region in line.lower() for region in ['щина:', 'щина]', 'область:', 'край:']) or (
@@ -5478,8 +5504,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 patterns = [
                     # Pattern for markdown links: БпЛА курсом на [Бровари](link)
                     r'(\d+)?[xх]?\s*бпла\s+(?:курсом?)?\s*(?:на|над)\s+\[([А-ЯІЇЄЁа-яіїєёʼ\'\-\s]+?)\]',
-                    # Pattern for plain text: БпЛА курсом на Конотоп (improved to capture multi-word cities)
-                    r'(\d+)?[xх]?\s*бпла\s+.*?курс(?:ом)?\s+на\s+(?:н\.п\.?\s*)?([А-ЯІЇЄЁа-яіїєёʼ\'\-\s]+?)(?=\s*(?:\n|$|[,\.\!\?;]|\s+\d+[xх]?\s*бпла|\s+[А-ЯІЇЄЁа-яіїєё]+щина:))',
+                    # Pattern for plain text: БпЛА курсом на Конотоп (improved to capture multi-word cities + districts)
+                    # Fixed: Added " з " and " район" to lookahead to properly capture "Миколаїв з акваторії" and "Покровський район"
+                    r'(\d+)?[xх]?\s*бпла\s+.*?курс(?:ом)?\s+на\s+(?:н\.п\.?\s*)?([А-ЯІЇЄЁа-яіїєёʼ\'\-\s]+?(?:\s+район)?)(?=\s*(?:\n|$|[,\.\!\?;]|\s+з\s+|\s+\d+[xх]?\s*бпла|\s+[А-ЯІЇЄЁа-яіїєё]+щина:|\s+\())',
                     # Pattern for "повз" (e.g., "БпЛА повз Славутич в бік Білорусі")
                     r'(\d+)?[xх]?\s*бпла\s+(?:.*?)?повз\s+([А-ЯІЇЄЁа-яіїєёʼ\'\-\s]{3,50}?)(?=\s+(?:в\s+бік|до|на|через|$|[,\.\!\?;]))'
                 ]
