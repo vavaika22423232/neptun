@@ -10036,6 +10036,29 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     # Triggered when region multi list suppressed earlier due to presence of course lines or simple "на" pattern.
     if 'бпла' in lower and ('курс' in lower or 'в районі' in lower or 'в напрямку' in lower or 'в бік' in lower or 'від' in lower or 'околиц' in lower or 'сектор' in lower or (re.search(r'\d+\s*[xх]?\s*бпла\s+на\s+', lower))):
         add_debug_log(f"UAV course parser triggered for message length: {len(text)} chars", "uav_course")
+        
+        # --- EARLY CHECK: Black Sea aquatory (e.g. "курсом на Миколаїв з акваторії Чорного моря") ---
+        # Must check BEFORE "курсом на" parser to prevent placing marker on target city
+        if ('акватор' in lower or 'акваторії' in lower) and ('чорного моря' in lower or 'чорне море' in lower):
+            # Attempt to capture target city (optional)
+            m_target = re.search(r'курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,})', lower)
+            target_city = None
+            if m_target:
+                tc = m_target.group(1).lower()
+                tc = UA_CITY_NORMALIZE.get(tc, tc)
+                target_city = tc.title()
+            threat_type, icon = classify(text)
+            # Approx northern Black Sea central coords (between Odesa & Crimea offshore)
+            sea_lat, sea_lng = 45.3, 30.7
+            place_label = 'Акваторія Чорного моря'
+            if target_city:
+                place_label += f' (курс на {target_city})'
+            return [{
+                'id': str(mid), 'place': place_label, 'lat': sea_lat, 'lng': sea_lng,
+                'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                'marker_icon': icon, 'source_match': 'black_sea_course'
+            }]
+        
         original_text_norm = re.sub(r'(?i)(\b[А-Яа-яЇїІіЄєҐґ\-]{3,}(?:щина|область|обл\.)):(?!\s*\n)', r'\1:\n', original_text)
         lines_with_region = []
         current_region_hdr = None
