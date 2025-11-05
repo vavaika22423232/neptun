@@ -3023,6 +3023,7 @@ MYKOLAIV_CITY_COORDS = {
     'возсіятське': (46.8167, 32.0833), 'возсіятську': (46.8167, 32.0833), 'возсіятського': (46.8167, 32.0833),
     'березівка(миколаївська)': (47.5167, 31.4500), 'березівку(миколаївська)': (47.5167, 31.4500), 'березівці(миколаївська)': (47.5167, 31.4500),
     'дорошівка': (47.5000, 32.0500), 'дорошівки': (47.5000, 32.0500), 'дорошівку': (47.5000, 32.0500),
+    'шевченкове(миколаївська)': (47.45, 31.35), 'шевченкову(миколаївська)': (47.45, 31.35),  # Шевченкове, Вознесенський район
 }
 
 for _my_name, _my_coords in MYKOLAIV_CITY_COORDS.items():
@@ -10349,8 +10350,19 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 add_debug_log(f"Skipping oblast name '{base}' - this is a regional threat, not a city target", "uav_course")
                 continue
             
-            coords = CITY_COORDS.get(base) or (SETTLEMENTS_INDEX.get(base) if SETTLEMENTS_INDEX else None)
-            add_debug_log(f"Coordinates lookup for '{base}': {coords}", "uav_course")
+            # PRIORITY: Try region-specific variant first (e.g., "шевченкове(миколаївська)" for "шевченкове" with region_hdr="миколаївщина")
+            coords = None
+            if region_hdr:
+                # Try variant with region suffix
+                region_variant = f"{base}({region_hdr})"
+                coords = CITY_COORDS.get(region_variant)
+                if coords:
+                    add_debug_log(f"Found region-specific coordinates for '{region_variant}': {coords}", "uav_course")
+            
+            # Fallback to base name without region
+            if not coords:
+                coords = CITY_COORDS.get(base) or (SETTLEMENTS_INDEX.get(base) if SETTLEMENTS_INDEX else None)
+                add_debug_log(f"Coordinates lookup for '{base}': {coords}", "uav_course")
             if not coords:
                 try:
                     coords = region_enhanced_coords(base, region_hint_override=region_hdr)
