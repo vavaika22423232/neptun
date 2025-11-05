@@ -13316,9 +13316,9 @@ if 'health' not in app.view_functions:
 
 @app.route('/ads.txt')
 def ads_txt():
-    """Redirect to Ezoic ads.txt manager for automatic updates"""
-    from flask import redirect
-    return redirect('https://srv.adstxtmanager.com/19390/neptun.in.ua', code=301)
+    """Serve ads.txt for ad networks verification"""
+    from flask import send_from_directory
+    return send_from_directory('static', 'ads.txt', mimetype='text/plain')
 
 @app.route('/robots.txt')
 def robots_txt():
