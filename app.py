@@ -3927,6 +3927,8 @@ SETTLEMENT_FALLBACK = {
     'покровський район': (48.2767, 37.1763),  # Покровський район (Донецька область) - use Pokrovsk city coords as center
     'покровський р-н': (48.2767, 37.1763),  # abbreviated form
     'покровського району': (48.2767, 37.1763),  # genitive case
+    'краснопавлівка-олександрівка': (50.0167, 35.95),  # Харківська область - use Краснопавлівка coords
+    'краснопавлівка олександрівка': (50.0167, 35.95),  # without dash variant
 }
 
 SETTLEMENTS_FILE = os.getenv('SETTLEMENTS_FILE', 'settlements_ua.json')
@@ -10128,7 +10130,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         course_tracks = []
         pat_count_course = re.compile(r'^(\d+)\s*[xх]?\s*бпла(?:\s+пролетіли)?.*?курс(?:ом)?\s+на\s+(?:н\.п\.?\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         pat_course = re.compile(r'бпла(?:\s+пролетіли)?.*?курс(?:ом)?\s+на\s+(?:н\.п\.?\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
-        pat_area = re.compile(r'(\d+)?[xх]?\s*бпла\s+в\s+районі\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
+        pat_area = re.compile(r'(d+)?[xх]?s*бплаs+(?:.*?s+)?вs+районіs+(?:н\.п\.?s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-'ʼ`s]{3,60}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)  # Fixed: added н.п. support
         pat_napramku = re.compile(r'(\d+)?[xх]?\s*бпла\s+(?:в|у)\s+напрямку\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         pat_sektor = re.compile(r'(\d+)?[xх]?\s*бпла\s+в\s+секторі\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         pat_simple_na = re.compile(r'(\d+)?[xх]?\s*бпла\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
