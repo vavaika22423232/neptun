@@ -1323,6 +1323,24 @@
     }
   }
   
+  /* АНИМАЦИЯ ПОЛЁТА ШАХЕДА К ЦЕЛИ */
+  /* Шахед движется от источника (начало траектории) к цели (конец траектории) */
+  @keyframes shahed-flight {
+    0% {
+      transform: translate(0, 0) scale(0.8);
+      opacity: 0.6;
+    }
+    100% {
+      transform: translate(var(--flight-dx), var(--flight-dy)) scale(1);
+      opacity: 1;
+    }
+  }
+  
+  /* Класс для летящего Шахеда */
+  .shahed-flying {
+    animation: shahed-flight var(--flight-duration, 60s) linear infinite;
+  }
+  
   /* Маркер с пульсацией для активных БпЛА */
   .shahed-marker-active {
     animation: pulse-shahed 2s infinite;
@@ -3863,7 +3881,38 @@ e),x,g,d,n,G,A=c.body.clientHeight>e.innerHeight,h=e;for(;h;){try{var J=M(h.perf
     // Fallback на PNG при ошибке
     markerContent = '<img class="plain-marker-img" style="width:' + w + 'px;height:' + h + 'px;" src="' + iconUrl + '" alt="" loading="lazy">';
   }
-  const html = '<div class="tm-wrap shahed-marker-active marker-new" style="opacity:' + opacity + ';">' + markerContent + countBadge + '</div>';
+  
+  // АНИМАЦИЯ ПОЛЁТА: вычисляем параметры для движения Шахеда
+  let flightAnimation = '';
+  if (arrowDir && (p.threat_type === 'shahed' || /shahed|шахед|бпла/i.test(p.threat_type||''))) {
+    const dir = arrowDir.toLowerCase();
+    let dx=0, dy=0;
+    if (dir.includes('півд')) dy = -0.35;
+    if (dir.includes('північ')) dy = 0.35;
+    if (dir.includes('сход')) dx = -0.35;
+    if (dir.includes('зах')) dx = 0.35;
+    
+    if (dx !== 0 || dy !== 0) {
+      // Вычисляем расстояние в пикселях для анимации
+      const map_zoom = map.getZoom ? map.getZoom() : 6;
+      // Примерно 111 км на градус широты, масштабируем под текущий зум
+      const pixels_per_degree = 256 * Math.pow(2, map_zoom) / 360;
+      const flight_dx_px = dx * pixels_per_degree;
+      const flight_dy_px = -dy * pixels_per_degree; // инвертируем Y (на карте Y растёт вниз)
+      
+      // Скорость Шахеда ~220 км/ч = ~61 м/с = ~0.061 км/с
+      // Расстояние = sqrt(dx² + dy²) * 111 км/градус
+      const distance_km = Math.sqrt(dx*dx + dy*dy) * 111;
+      // Время полёта = расстояние / скорость (в секундах)
+      const flight_time_sec = (distance_km / 0.061); // реалистичное время
+      // Минимальная скорость для видимости: не менее 30 секунд даже для коротких дистанций
+      const animation_duration = Math.max(30, Math.min(flight_time_sec, 120)); // 30-120 секунд
+      
+      flightAnimation = ` style="--flight-dx: ${-flight_dx_px}px; --flight-dy: ${-flight_dy_px}px; --flight-duration: ${animation_duration}s;"`;
+    }
+  }
+  
+  const html = '<div class="tm-wrap shahed-marker-active shahed-flying marker-new"' + flightAnimation + ' style="opacity:' + opacity + ';">' + markerContent + countBadge + '</div>';
   // Anchor to visual center (half width/height) instead of bottom so geographic point stays stable when scaling
   const icon = L.divIcon({ html, className:'', iconSize:[w,h], iconAnchor:[w/2, h/2], popupAnchor:[0,-h/2] });
   const m = L.marker([p.lat, p.lng], { icon, riseOnHover:true });
