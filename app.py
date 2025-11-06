@@ -5214,6 +5214,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     if _is_general_warning_without_location(text):
         return []
     
+    # PRIORITY: Filter multi-regional ambiguous messages (мультирегіональне)
+    # These indicate the city name exists in multiple oblasts and exact location is unclear
+    if '(мультирегіональне)' in text.lower() or '(мультирегіональний)' in text.lower():
+        add_debug_log("FILTERED: Multi-regional ambiguous message - city exists in multiple oblasts", "multi_regional_filter")
+        return []
+    
     # AI ENHANCEMENT: Fix typos and improve text quality before parsing
     if GEMINI_ENABLED:
         try:
