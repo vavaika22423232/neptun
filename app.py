@@ -4968,7 +4968,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     
     # PRIORITY: Check for trajectory patterns FIRST (before any processing)
     # Pattern: "з [source_region] на [target_region(s)]" - trajectory, not multi-target
-    trajectory_pattern = r'(\d+)?\s*шахед[іївыиє]*\s+з\s+([а-яіїєґ]+(щин|ччин)[ауиі])\s+на\s+([а-яіїєґ/]+(щин|ччин)[ауиіу])'
+    trajectory_pattern = r'(\d+(?:-\d+)?)?\s*шахед[іївыиє]*\s+з\s+([а-яіїєґ]+(щин|ччин)[ауиі])\s+на\s+([а-яіїєґ/]+(щин|ччин)[ауиіу])'
     trajectory_match = re.search(trajectory_pattern, text.lower(), re.IGNORECASE)
     
     if trajectory_match:
@@ -5576,12 +5576,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 # Extract city name from patterns - handle both plain text and markdown links
                 patterns = [
                     # Pattern for markdown links: БпЛА курсом на [Бровари](link)
-                    r'(\d+)?[xх]?\s*бпла\s+(?:курсом?)?\s*(?:на|над)\s+\[([А-ЯІЇЄЁа-яіїєёʼ\'\-\s]+?)\]',
+                    r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+(?:курсом?)?\s*(?:на|над)\s+\[([А-ЯІЇЄЁа-яіїєёʼ\'\-\s]+?)\]',
                     # Pattern for plain text: БпЛА курсом на Конотоп (improved to capture multi-word cities + districts)
                     # Fixed: Added " з " and " район" to lookahead to properly capture "Миколаїв з акваторії" and "Покровський район"
-                    r'(\d+)?[xх]?\s*бпла\s+.*?курс(?:ом)?\s+на\s+(?:н\.п\.?\s*)?([А-ЯІЇЄЁа-яіїєёʼ\'\-\s]+?(?:\s+район)?)(?=\s*(?:\n|$|[,\.\!\?;]|\s+з\s+|\s+\d+[xх]?\s*бпла|\s+[А-ЯІЇЄЁа-яіїєё]+щина:|\s+\())',
+                    r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+.*?курс(?:ом)?\s+на\s+(?:н\.п\.?\s*)?([А-ЯІЇЄЁа-яіїєёʼ\'\-\s]+?(?:\s+район)?)(?=\s*(?:\n|$|[,\.\!\?;]|\s+з\s+|\s+\d+[xх×]?\s*бпла|\s+[А-ЯІЇЄЁа-яіїєё]+щина:|\s+\())',
                     # Pattern for "повз" (e.g., "БпЛА повз Славутич в бік Білорусі")
-                    r'(\d+)?[xх]?\s*бпла\s+(?:.*?)?повз\s+([А-ЯІЇЄЁа-яіїєёʼ\'\-\s]{3,50}?)(?=\s+(?:в\s+бік|до|на|через|$|[,\.\!\?;]))'
+                    r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+(?:.*?)?повз\s+([А-ЯІЇЄЁа-яіїєёʼ\'\-\s]{3,50}?)(?=\s+(?:в\s+бік|до|на|через|$|[,\.\!\?;]))'
                 ]
                 
                 # Also check for bracket city pattern like "Вилково (Одещина)"
@@ -7140,7 +7140,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             })
                     
                     # Pattern 1.5: "БпЛА повз [city1] курсом на [city2]" - extract both cities  
-                    povz_match = _re_multi.search(r'(\d+)?[xх]?\s*бпла\s+повз\s+([а-яіїєґ\'\-\s]+?)\s+курсом?\s+на\s+([а-яіїєґ\'\-\s]+?)(?:\s*$|\s*\|)', seg_lower)
+                    povz_match = _re_multi.search(r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+повз\s+([а-яіїєґ\'\-\s]+?)\s+курсом?\s+на\s+([а-яіїєґ\'\-\s]+?)(?:\s*$|\s*\|)', seg_lower)
                     if povz_match and not course_match:  # Don't double-process if already handled by Pattern 1
                         count_str, city1_name, city2_name = povz_match.groups()
                         count = int(count_str) if count_str and count_str.isdigit() else 1
@@ -7195,7 +7195,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                 })
                     
                     # Pattern 2: "[N]х БпЛА [location]" - extract cities
-                    location_match = _re_multi.search(r'(\d+)?[xх]?\s*бпла\s+(.+?)(?:\.|$)', seg_lower)
+                    location_match = _re_multi.search(r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+(.+?)(?:\.|$)', seg_lower)
                     if location_match and not course_match:  # Don't double-process course segments
                         count_str = location_match.group(1) or "1"
                         location_text = location_match.group(2).strip()
@@ -7827,7 +7827,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 if coords:
                     lat, lng = coords
                     threat_type, icon = classify(ln)
-                    count_match = re.search(r'(\d+)[xх]?\s*бпла', ln_lower)
+                    count_match = re.search(r'(\d+)[xх×]?\s*бпла', ln_lower)
                     count = int(count_match.group(1)) if count_match else 1
                     
                     # Create multiple tracks if count > 1
@@ -7885,7 +7885,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         lng -= offset
                     
                     threat_type, icon = classify(ln)
-                    count_match = re.search(r'(\d+)[xх]?\s*бпла', ln_lower)
+                    count_match = re.search(r'(\d+)[xх×]?\s*бпла', ln_lower)
                     count = int(count_match.group(1)) if count_match else 1
                     
                     # Create multiple tracks if count > 1
@@ -7919,7 +7919,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         
         # NEW: Pattern "на/через [city]" - combined "на" and "через"
         if re.search(r'на/через\s+[А-ЯІЇЄЁа-яіїєё]', ln, re.IGNORECASE):
-            na_cherez_match = re.search(r'(\d+)[xх]?\s*бпла\s+на/через\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*[\.\,\!\?;]|$)', ln, re.IGNORECASE)
+            na_cherez_match = re.search(r'(\d+)[xх×]?\s*бпла\s+на/через\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*[\.\,\!\?;]|$)', ln, re.IGNORECASE)
             if na_cherez_match:
                 count = int(na_cherez_match.group(1)) if na_cherez_match.group(1) else 1
                 city_raw = na_cherez_match.group(2).strip()
@@ -7964,7 +7964,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         
         # NEW: Pattern "з ТОТ в напрямку [city]" - drones from occupied territory
         if 'з тот' in ln_lower or 'з tot' in ln_lower:
-            tot_match = re.search(r'(\d+)[xх]?\s*бпла\s+з\s+тот\s+(?:в\s+напрямку|на)\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*[\.\,\!\?;]|$)', ln, re.IGNORECASE)
+            tot_match = re.search(r'(\d+)[xх×]?\s*бпла\s+з\s+тот\s+(?:в\s+напрямку|на)\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*[\.\,\!\?;]|$)', ln, re.IGNORECASE)
             if tot_match:
                 count = int(tot_match.group(1)) if tot_match.group(1) else 1
                 city_raw = tot_match.group(2).strip()
@@ -8247,10 +8247,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         # --- NEW: группы крылатых ракет ("Група/Групи КР курсом на <город>") ---
         kr_city = None; kr_count = 1
         # Primary straightforward pattern for "Група/Групи КР курсом на <місто>"
-        mkr = re.search(r'(?:^|\b)(?:([0-9]+)[xх]?\s*)?груп[аи]\s+кр\b.*?курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\!\?;]|$)', ln, re.IGNORECASE)
+        mkr = re.search(r'(?:^|\b)(?:([0-9]+)[xх×]?\s*)?груп[аи]\s+кр\b.*?курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\!\?;]|$)', ln, re.IGNORECASE)
         if not mkr:
             # Tolerant pattern allowing missing leading "г" or space glitches / lost letters
-            mkr = re.search(r'(?:^|\b)(?:([0-9]+)[xх]?\s*)?(?:г)?руп[аи]\s*(?:к)?р\b.*?курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\!\?;]|$)', ln, re.IGNORECASE)
+            mkr = re.search(r'(?:^|\b)(?:([0-9]+)[xх×]?\s*)?(?:г)?руп[аи]\s*(?:к)?р\b.*?курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\!\?;]|$)', ln, re.IGNORECASE)
         if not mkr and 'груп' in ln.lower() and 'курс' in ln.lower() and ' на ' in ln.lower():
             # Very loose fallback if 'КР' fragment dropped; capture after last 'на'
             after = ln.rsplit('на',1)[-1].strip()
@@ -8291,7 +8291,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         low_ln = ln.lower()
         if ('курс' in low_ln and ' на ' in low_ln and ('груп' in low_ln or ' кр' in low_ln)):
             # Extract count if present at start or before 'груп'
-            mcnt = re.search(r'^(\d+)[xх]?\s*', low_ln)
+            mcnt = re.search(r'^(\d+(?:-\d+)?)[xх×]?\s*', low_ln)
             count_guess = 1
             if mcnt:
                 try: count_guess = int(mcnt.group(1))
@@ -8427,7 +8427,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     })
                     continue
         # Разрешаем многословные названия (до 3 слов) до конца строки / знака препинания
-        m = re.search(r'(\d+)[xх]?\s*бпла.*?курс(?:ом)?\s+на\s+(?:н\.п\.?\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\!\?;]|$)', ln, re.IGNORECASE)
+        m = re.search(r'(\d+)[xх×]?\s*бпла.*?курс(?:ом)?\s+на\s+(?:н\.п\.?\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\!\?;]|$)', ln, re.IGNORECASE)
         if m:
             count = int(m.group(1))
             city = m.group(2)
@@ -8438,7 +8438,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 count = 1
                 city = m2.group(1)
             else:
-                m3 = re.search(r'(\d+)[xх]?\s*бпла.*?повз\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\!\?;]|$)', ln, re.IGNORECASE)
+                m3 = re.search(r'(\d+)[xх×]?\s*бпла.*?повз\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\!\?;]|$)', ln, re.IGNORECASE)
                 if m3:
                     count = int(m3.group(1))
                     city = m3.group(2)
@@ -8448,7 +8448,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     city = m4.group(1) if m4 else None
         # --- NEW: Shahed lines inside multi-line block (e.g. '2 шахеди на Старий Салтів', '1 шахед на Мерефа / Борки') ---
         if not city:
-            m_sha = re.search(r'^(?:([0-9]+)\s*[xх]?\s*)?шахед(?:и|ів)?\s+на\s+(.+)$', ln.strip(), re.IGNORECASE)
+            m_sha = re.search(r'^(?:([0-9]+)\s*[xх×]?\s*)?шахед(?:и|ів)?\s+на\s+(.+)$', ln.strip(), re.IGNORECASE)
             if m_sha:
                 try:
                     scount = int(m_sha.group(1) or '1')
@@ -8633,7 +8633,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         label += f" [{oblast_hdr.title()}]"
                     
                     # Extract count from beginning of line if present
-                    count_match = re.search(r'^(\d+)\s*бпла', ln, re.IGNORECASE)
+                    count_match = re.search(r'^(\d+(?:-\d+)?)\s*бпла', ln, re.IGNORECASE)
                     count = int(count_match.group(1)) if count_match else 1
                     
                     multi_city_tracks.append({
@@ -8649,7 +8649,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             if m_near:
                 city = m_near.group(1).strip()
                 # Extract count from beginning of line if present
-                count_match = re.search(r'^(\d+)\s*бпла', ln, re.IGNORECASE)
+                count_match = re.search(r'^(\d+(?:-\d+)?)\s*бпла', ln, re.IGNORECASE)
                 count = int(count_match.group(1)) if count_match else 1
         
         # --- NEW: Handle "в районі X" pattern (e.g. "в районі Конотопу") ---
@@ -8658,7 +8658,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             if m_area:
                 city = m_area.group(1).strip()
                 # Extract count from beginning of line if present
-                count_match = re.search(r'^(\d+)\s*бпла', ln, re.IGNORECASE)
+                count_match = re.search(r'^(\d+(?:-\d+)?)\s*бпла', ln, re.IGNORECASE)
                 count = int(count_match.group(1)) if count_match else 1
         
         if city:
@@ -9153,7 +9153,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         
                         # Extract count from text context (look for patterns like "15х БпЛА через")
                         count = 1
-                        count_match = _re_route.search(rf'(\d+)[xх]?\s*бпла.*?через.*?{re.escape(city_clean)}', text, re.IGNORECASE)
+                        count_match = _re_route.search(rf'(\d+)[xх×]?\s*бпла.*?через.*?{re.escape(city_clean)}', text, re.IGNORECASE)
                         if count_match:
                             count = int(count_match.group(1))
                         
@@ -9211,7 +9211,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         
                         # Extract count from text context (look for patterns like "4х БпЛА повз")
                         count = 1
-                        count_match = _re_route.search(rf'(\d+)[xх]?\s*бпла.*?повз.*?{re.escape(city_clean)}', text, re.IGNORECASE)
+                        count_match = _re_route.search(rf'(\d+)[xх×]?\s*бпла.*?повз.*?{re.escape(city_clean)}', text, re.IGNORECASE)
                         if count_match:
                             count = int(count_match.group(1))
                     
@@ -9408,9 +9408,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 if 'бпла' in line_lower and ('курс' in line_lower or ' на ' in line_lower):
                     # Extract city name from patterns like "БпЛА курсом на Конотоп" or "2х БпЛА курсом на Велику Димерку"
                     patterns = [
-                        r'(\d+)?[xх]?\s*бпла\s+курсом?\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*$|\s*[,\.\!\?\|])',
+                        r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+курсом?\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*$|\s*[,\.\!\?\|])',
                         r'бпла\s+курсом?\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*$|\s*[,\.\!\?\|])',
-                        r'(\d+)?[xх]?\s*бпла\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*$|\s*[,\.\!\?\|])'
+                        r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*$|\s*[,\.\!\?\|])'
                     ]
                     
                     for pattern in patterns:
@@ -9475,9 +9475,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         
         # Look for UAV course patterns in the entire message
         patterns = [
-            r'(\d+)?[xх]?\s*бпла\s+курсом?\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*$|\s*[,\.\!\?\|\(])',
+            r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+курсом?\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*$|\s*[,\.\!\?\|\(])',
             r'бпла\s+курсом?\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*$|\s*[,\.\!\?\|\(])',
-            r'(\d+)?[xх]?\s*бпла\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*$|\s*[,\.\!\?\|\(])'
+            r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*$|\s*[,\.\!\?\|\(])'
         ]
         
         for pattern in patterns:
@@ -9942,7 +9942,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     
     # PRIORITY: Detect trajectory patterns BEFORE multi-region processing
     # Pattern: "з [source_region] на [target_region(s)]" - trajectory, not multi-target
-    trajectory_pattern = r'(\d+)?\s*шахед[іївыиє]*\s+з\s+([а-яіїєґ]+(щин|ччин)[ауиі])\s+на\s+([а-яіїєґ/]+(щин|ччин)[ауиіу])'
+    trajectory_pattern = r'(\d+(?:-\d+)?)?\s*шахед[іївыиє]*\s+з\s+([а-яіїєґ]+(щин|ччин)[ауиі])\s+на\s+([а-яіїєґ/]+(щин|ччин)[ауиіу])'
     trajectory_match = re.search(trajectory_pattern, text.lower(), re.IGNORECASE)
     
     if trajectory_match:
@@ -10157,7 +10157,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
 
     # --- Per-line UAV course / area city targeting ("БпЛА курсом на <місто>", "8х БпЛА в районі <міста>", "БпЛА на <місто>") ---
     # Triggered when region multi list suppressed earlier due to presence of course lines or simple "на" pattern.
-    if 'бпла' in lower and ('курс' in lower or 'в районі' in lower or 'в напрямку' in lower or 'в бік' in lower or 'від' in lower or 'околиц' in lower or 'сектор' in lower or (re.search(r'\d+\s*[xх]?\s*бпла\s+на\s+', lower))):
+    if 'бпла' in lower and ('курс' in lower or 'в районі' in lower or 'в напрямку' in lower or 'в бік' in lower or 'від' in lower or 'околиц' in lower or 'сектор' in lower or (re.search(r'\d+\s*[xх×]?\s*бпла\s+на\s+', lower))):
         add_debug_log(f"UAV course parser triggered for message length: {len(text)} chars", "uav_course")
         
         # --- EARLY CHECK: Black Sea aquatory (e.g. "курсом на Миколаїв з акваторії Чорного моря") ---
@@ -10205,7 +10205,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             for part in subparts:
                 lines_with_region.append((part, current_region_hdr))
         # Further split segments that contain multiple "БпЛА курс" phrases glued together
-        multi_start_re = re.compile(r'(?:\d+\s*[xх]?\s*)?бпла\s*курс', re.IGNORECASE)
+        multi_start_re = re.compile(r'(?:\d+\s*[xх×]?\s*)?бпла\s*курс', re.IGNORECASE)
         expanded = []
         for part, region_hdr in lines_with_region:
             low_part = part.lower()
@@ -10222,17 +10222,17 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         if expanded:
             lines_with_region = expanded
         course_tracks = []
-        pat_count_course = re.compile(r'^(\d+)\s*[xх]?\s*бпла(?:\s+пролетіли)?.*?курс(?:ом)?\s+на\s+(?:н\.п\.?\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
+        pat_count_course = re.compile(r'^(\d+(?:-\d+)?)\s*[xх×]?\s*бпла(?:\s+пролетіли)?.*?курс(?:ом)?\s+на\s+(?:н\.п\.?\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         pat_course = re.compile(r'бпла(?:\s+пролетіли)?.*?курс(?:ом)?\s+на\s+(?:н\.п\.?\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
-        pat_area = re.compile(r'(\d+)?[xх]?\s*бпла\s+(?:.*?\s+)?в\s+районі\s+(?:н\.п\.?\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,60}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)  # Fixed: added н.п. support
-        pat_napramku = re.compile(r'(\d+)?[xх]?\s*бпла\s+(?:в|у)\s+напрямку\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
-        pat_sektor = re.compile(r'(\d+)?[xх]?\s*бпла\s+в\s+секторі\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
-        pat_simple_na = re.compile(r'(\d+)?[xх]?\s*бпла\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
-        pat_complex_napramku = re.compile(r'(\d+)?[xх]?\s*бпла\s+на/через\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)\s+в\s+напрямку\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
-        pat_napramku_ta = re.compile(r'(\d+)?[xх]?\s*бпла\s+(?:в|у)\s+напрямку\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)\s+та\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
-        pat_okolytsi = re.compile(r'(\d+)?[xх]?\s*бпла\s+на\s+околицях\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
-        pat_vid_do = re.compile(r'(\d+)?[xх]?\s*бпла\s+від\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)\s+до\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
-        pat_vik = re.compile(r'(\d+)?[xх]?\s*бпла\s+в\s+бік\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s](3, 40)?)(?=\s+з\s+|[,\.\n;:!\?]|$)', re.IGNORECASE)
+        pat_area = re.compile(r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+(?:.*?\s+)?в\s+районі\s+(?:н\.п\.?\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,60}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)  # Fixed: added н.п. support
+        pat_napramku = re.compile(r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+(?:в|у)\s+напрямку\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
+        pat_sektor = re.compile(r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+в\s+секторі\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
+        pat_simple_na = re.compile(r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
+        pat_complex_napramku = re.compile(r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+на/через\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)\s+в\s+напрямку\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
+        pat_napramku_ta = re.compile(r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+(?:в|у)\s+напрямку\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)\s+та\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
+        pat_okolytsi = re.compile(r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+на\s+околицях\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
+        pat_vid_do = re.compile(r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+від\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)\s+до\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
+        pat_vik = re.compile(r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+в\s+бік\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s](3, 40)?)(?=\s+з\s+|[,\.\n;:!\?]|$)', re.IGNORECASE)
         if re.search(r'бпла.*?курс(?:ом)?\s+на\s+кіпт[ії]', lower):
             coords = SETTLEMENT_FALLBACK.get('кіпті')
             if coords:
@@ -10514,7 +10514,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         try:
             ll_full = text.lower()
             if course_tracks == [] and ll_full.count('бпла') >= 5 and ll_full.count('курс') >= 5:
-                pat_salv = re.compile(r'(?:\d+\s*[xх]?\s*)?бпла[^\n]{0,60}?курс(?:ом)?\s+на\s+([a-zа-яіїєґ\-ʼ"“”\'`\s]{3,40})', re.IGNORECASE)
+                pat_salv = re.compile(r'(?:\d+\s*[xх×]?\s*)?бпла[^\n]{0,60}?курс(?:ом)?\s+на\s+([a-zа-яіїєґ\-ʼ"“”\'`\s]{3,40})', re.IGNORECASE)
                 raw_hits = [m.group(1).strip() for m in pat_salv.finditer(ll_full)]
                 uniq = []
                 for h in raw_hits:
