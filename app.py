@@ -5341,10 +5341,21 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         text_lines = (text or '').split('\n')
         threat_lines = []
         
+        # Track current oblast context from headers like "Полтавщина:", "Харківщина:"
+        current_oblast = None
+        oblast_header_pattern = re.compile(r'^([а-яіїєґ]+(?:щина|ська\s+обл(?:асть)?\.?)):?\s*$', re.IGNORECASE)
+        
         # Look for lines that contain threats with quantities and targets
         for line in text_lines:
             line_stripped = line.strip()
             if not line_stripped:
+                continue
+            
+            # Check if this line is an oblast header
+            oblast_match = oblast_header_pattern.match(line_stripped)
+            if oblast_match:
+                current_oblast = oblast_match.group(1).lower()
+                add_debug_log(f"MULTI-LINE: Detected oblast header: {current_oblast}", "multi_line_oblast")
                 continue
                 
             line_lower = line_stripped.lower()
@@ -5370,7 +5381,14 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             )
             
             if has_threat_pattern:
-                threat_lines.append(line_stripped)
+                # If we have oblast context, prepend it to the line
+                if current_oblast:
+                    # Add oblast context to help city resolution
+                    enhanced_line = f"{current_oblast}: {line_stripped}"
+                    threat_lines.append(enhanced_line)
+                    add_debug_log(f"MULTI-LINE: Added threat with oblast context: {current_oblast} -> {line_stripped[:50]}", "multi_line_context")
+                else:
+                    threat_lines.append(line_stripped)
         
         # If we have multiple threat lines, process them separately
         if len(threat_lines) >= 2:
