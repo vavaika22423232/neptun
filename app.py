@@ -1552,14 +1552,6 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                         detected_oblast_key = oblast_normalizations[match]
                     elif match in OBLAST_CENTERS:
                         detected_oblast_key = match
-                    
-                    # If we found a valid oblast, stop searching
-                    if detected_oblast_key:
-                        break
-                
-                # If we found oblast in this pattern, stop searching other patterns 
-                if detected_oblast_key:
-                    break
     
     # Second try: standard city lookup (without oblast context)
     # BUT: if we have excluded_oblast, try to find variant NOT in that oblast
