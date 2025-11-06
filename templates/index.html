@@ -1285,6 +1285,149 @@
   .disclaimer-actions a:hover {background:#3b4b63;color:#fff;}
   @media (max-width:720px){.disclaimer-bar{flex-direction:row;align-items:flex-start;font-size:.72rem;padding:.75rem .85rem;} .disclaimer-icon{width:26px;height:26px;font-size:14px;} .disclaimer-close{width:26px;height:26px;font-size:12px;} }
     
+  /* === СТИЛИ ДЛЯ АНІМАЦІЇ ШАХЕДІВ (ТРАЄКТОРІЇ ТА СТРІЛКИ) === */
+  
+  /* Пульсация маркера БпЛА */
+  @keyframes pulse-shahed {
+    0% {
+      box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+    }
+    50% {
+      box-shadow: 0 0 0 15px rgba(239, 68, 68, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+    }
+  }
+  
+  /* Вращение стрелки направления */
+  @keyframes rotate-arrow {
+    0% {
+      transform: rotate(0deg) scale(1);
+    }
+    50% {
+      transform: rotate(0deg) scale(1.1);
+    }
+    100% {
+      transform: rotate(0deg) scale(1);
+    }
+  }
+  
+  /* Анимация траектории (пунктирная линия) */
+  @keyframes dash-trajectory {
+    0% {
+      stroke-dashoffset: 20;
+    }
+    100% {
+      stroke-dashoffset: 0;
+    }
+  }
+  
+  /* Маркер с пульсацией для активных БпЛА */
+  .shahed-marker-active {
+    animation: pulse-shahed 2s infinite;
+    border-radius: 50%;
+  }
+  
+  /* Стрелка направления полёта */
+  .direction-arrow {
+    position: absolute;
+    width: 40px;
+    height: 40px;
+    pointer-events: none;
+    z-index: 1000;
+    animation: rotate-arrow 1.5s ease-in-out infinite;
+  }
+  
+  /* SVG траектория полёта */
+  .trajectory-line {
+    stroke: #ef4444;
+    stroke-width: 2;
+    stroke-dasharray: 10, 5;
+    stroke-linecap: round;
+    fill: none;
+    opacity: 0.8;
+    animation: dash-trajectory 1s linear infinite;
+  }
+  
+  /* Градиент для траектории (от источника к цели) */
+  .trajectory-gradient {
+    --color-start: rgba(239, 68, 68, 0.9);
+    --color-end: rgba(239, 68, 68, 0.2);
+  }
+  
+  /* Всплывающее окно с информацией о БпЛА */
+  .shahed-popup {
+    background: rgba(17, 24, 39, 0.98);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 12px;
+    padding: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    color: #f3f4f6;
+    font-size: 14px;
+    min-width: 200px;
+  }
+  
+  .shahed-popup .popup-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(239, 68, 68, 0.2);
+  }
+  
+  .shahed-popup .popup-icon {
+    font-size: 20px;
+  }
+  
+  .shahed-popup .popup-title {
+    font-weight: 600;
+    color: #ef4444;
+  }
+  
+  .shahed-popup .popup-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 13px;
+  }
+  
+  .shahed-popup .popup-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  
+  .shahed-popup .popup-label {
+    color: #9ca3af;
+  }
+  
+  .shahed-popup .popup-value {
+    color: #f3f4f6;
+    font-weight: 500;
+  }
+  
+  /* Анимация появления маркера */
+  @keyframes marker-appear {
+    0% {
+      opacity: 0;
+      transform: scale(0.5) translateY(-20px);
+    }
+    60% {
+      transform: scale(1.1) translateY(0);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+  
+  .marker-new {
+    animation: marker-appear 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  
   </style>
 </head>
 <body>
@@ -3720,24 +3863,47 @@ e),x,g,d,n,G,A=c.body.clientHeight>e.innerHeight,h=e;for(;h;){try{var J=M(h.perf
     // Fallback на PNG при ошибке
     markerContent = '<img class="plain-marker-img" style="width:' + w + 'px;height:' + h + 'px;" src="' + iconUrl + '" alt="" loading="lazy">';
   }
-  const html = '<div class="tm-wrap" style="opacity:' + opacity + ';">' + markerContent + countBadge + '</div>';
+  const html = '<div class="tm-wrap shahed-marker-active marker-new" style="opacity:' + opacity + ';">' + markerContent + countBadge + '</div>';
   // Anchor to visual center (half width/height) instead of bottom so geographic point stays stable when scaling
   const icon = L.divIcon({ html, className:'', iconSize:[w,h], iconAnchor:[w/2, h/2], popupAnchor:[0,-h/2] });
   const m = L.marker([p.lat, p.lng], { icon, riseOnHover:true });
-        // Optional short polyline showing nominal approach direction (simple cardinal/ordinal mapping)
+        // УЛУЧШЕННАЯ ТРАЕКТОРИЯ: анимированная стрелка направления полёта
         if (arrowDir) {
           const dir = arrowDir.toLowerCase();
           let dx=0, dy=0;
-          if (dir.includes('півд')) dy = -0.25; // tail origin south of marker => movement northwards
-          if (dir.includes('північ')) dy = 0.25;
-          if (dir.includes('сход')) dx = -0.25; // east origin => movement westwards
-          if (dir.includes('зах')) dx = 0.25;
+          if (dir.includes('півд')) dy = -0.35; // tail origin south of marker => movement northwards
+          if (dir.includes('північ')) dy = 0.35;
+          if (dir.includes('сход')) dx = -0.35; // east origin => movement westwards
+          if (dir.includes('зах')) dx = 0.35;
           if (dx !==0 || dy !==0) {
             const tailStart=[p.lat+dy, p.lng+dx];
-            // Simple static direction hint line with age-based opacity
-            const polylineOpacity = opacity * 0.55; // Умножаем базовую прозрачность на возрастную
-            L.polyline([tailStart,[p.lat,p.lng]], {color:'#f59e0b', weight:2, opacity:polylineOpacity, dashArray:'4 3'}).addTo(markerLayer);
-            // Отключили анимированные траектории для производительности
+            // Анимированная траектория с градиентом
+            const polylineOpacity = opacity * 0.7;
+            const trajectory = L.polyline([tailStart,[p.lat,p.lng]], {
+              color:'#ef4444', 
+              weight:3, 
+              opacity:polylineOpacity, 
+              dashArray:'8 4',
+              className:'trajectory-line'
+            }).addTo(markerLayer);
+            
+            // Добавляем стрелку направления на конце траектории
+            const angle = Math.atan2(p.lat - tailStart[0], p.lng - tailStart[1]) * 180 / Math.PI + 90;
+            const arrowIcon = L.divIcon({
+              html: `<div class="direction-arrow" style="transform: rotate(${angle}deg);">
+                       <svg width="40" height="40" viewBox="0 0 40 40">
+                         <path d="M 20 5 L 30 20 L 20 17 L 10 20 Z" 
+                               fill="#ef4444" 
+                               stroke="#ffffff" 
+                               stroke-width="1.5" 
+                               opacity="${polylineOpacity}"/>
+                       </svg>
+                     </div>`,
+              className: '',
+              iconSize: [40, 40],
+              iconAnchor: [20, 20]
+            });
+            L.marker([p.lat, p.lng], {icon: arrowIcon}).addTo(markerLayer);
           }
         }
         
