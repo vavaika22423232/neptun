@@ -1445,54 +1445,69 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
             end_pos = min(len(message_lower), city_pos + len(name) + 100)
             context = message_lower[start_pos:end_pos]
             
-            # Enhanced regional context detection - try parenthetical oblast first
-            oblast_patterns = [
-                # Parenthetical oblast: "(Oblast обл.)" - most specific
-                r'\(([^)]+)\s+обл\.\)',
-                r'\(([^)]+)\s+область\)',
-                # Oblast adjective forms: "харківська обл."
-                r'\b([а-яїіє]+ська)\s+обл(?:\.|асть)?\b',
-                r'\b([а-яїіє]+цька)\s+обл(?:\.|асть)?\b', 
-                # Regional names: "харківщина", "полтавщина", etc.
-                r'\b([а-яїіє]+щина)\b',
-                r'\b([а-яїіє]+щині)\b',
-                r'\b([а-яїіє]+щину)\b',
-                # Additional patterns for regional context
-                r'\bна\s+([а-яїіє]+щині)\b',  # "на Сумщині"
-                r'\bу\s+([а-яїіє]+щині)\b',   # "у Сумщині"
-                r'\bв\s+([а-яїіє]+щині)\b',   # "в Сумщині"
-            ]
+            # PRIORITY: Check for oblast at the START of the line with colon (e.g., "Дніпропетровщина: БпЛА...")
+            # This is most reliable indicator in multi-region messages
+            line_start_oblast = re.match(r'^([а-яїіє]+щина|[а-яїіє]+ська\s+обл(?:\.|асть)?):?\s+', context.lstrip())
+            if line_start_oblast:
+                match = line_start_oblast.group(1).strip().lower()
+                add_debug_log(f"OBLAST CONTEXT: Found line-start oblast '{match}' for city '{name}'", "oblast_line_start")
+            else:
+                # Enhanced regional context detection - try parenthetical oblast first
+                oblast_patterns = [
+                    # Parenthetical oblast: "(Oblast обл.)" - most specific
+                    r'\(([^)]+)\s+обл\.\)',
+                    r'\(([^)]+)\s+область\)',
+                    # Oblast adjective forms: "харківська обл."
+                    r'\b([а-яїіє]+ська)\s+обл(?:\.|асть)?\b',
+                    r'\b([а-яїіє]+цька)\s+обл(?:\.|асть)?\b', 
+                    # Regional names: "харківщина", "полтавщина", etc.
+                    r'\b([а-яїіє]+щина)\b',
+                    r'\b([а-яїіє]+щині)\b',
+                    r'\b([а-яїіє]+щину)\b',
+                    # Additional patterns for regional context
+                    r'\bна\s+([а-яїіє]+щині)\b',  # "на Сумщині"
+                    r'\bу\s+([а-яїіє]+щині)\b',   # "у Сумщині"
+                    r'\bв\s+([а-яїіє]+щині)\b',   # "в Сумщині"
+                ]
+                
+                match = None
+                for pattern in oblast_patterns:
+                    matches = re.findall(pattern, context)  # Search in context, not full message
+                    if matches:
+                        match = matches[0].strip().lower()
+                        break
             
-            for pattern in oblast_patterns:
-                matches = re.findall(pattern, context)  # Search in context, not full message
-                for match in matches:
-                    match = match.strip().lower()
+            if match:
                     
-                    # Normalize regional names to nominative case AND adjective form
-                    if match.endswith('щині'):
-                        match = match[:-2] + 'на'  # сумщині -> сумщина
-                    elif match.endswith('щину'):
-                        match = match[:-2] + 'на'  # сумщину -> сумщина
-                    
-                    # Convert regional names to adjective forms for city lookup
-                    regional_to_adjective = {
-                        'сумщина': 'сумська',
-                        'харківщина': 'харківська',
-                        'чернігівщина': 'чернігівська',
-                        'полтавщина': 'полтавська',
-                        'дніпропетровщина': 'дніпропетровська',
-                        'херсонщина': 'херсонська',
-                        'миколаївщина': 'миколаївська',
-                    }
-                    
-                    if match in regional_to_adjective:
-                        match = regional_to_adjective[match]
-                    
-                    # Skip if this is the excluded oblast (from "з [область]" pattern)
-                    if excluded_oblast and match == excluded_oblast:
-                        print(f"DEBUG: Skipping {match} oblast - excluded by 'з {excluded_oblast}' pattern")
-                        continue
-                    
+            if match:
+                # Normalize regional names to nominative case AND adjective form
+                if match.endswith('щині'):
+                    match = match[:-2] + 'на'  # сумщині -> сумщина
+                elif match.endswith('щину'):
+                    match = match[:-2] + 'на'  # сумщину -> сумщина
+                
+                # Convert regional names to adjective forms for city lookup
+                regional_to_adjective = {
+                    'сумщина': 'сумська',
+                    'харківщина': 'харківська',
+                    'чернігівщина': 'чернігівська',
+                    'полтавщина': 'полтавська',
+                    'дніпропетровщина': 'дніпропетровська',
+                    'херсонщина': 'херсонська',
+                    'миколаївщина': 'миколаївська',
+                    'одещина': 'одеська',
+                    'київщина': 'київська',
+                    'житомирщина': 'житомирська',
+                    'рівненщина': 'рівненська',
+                }
+                
+                if match in regional_to_adjective:
+                    match = regional_to_adjective[match]
+                
+                # Skip if this is the excluded oblast (from "з [область]" pattern)
+                if excluded_oblast and match == excluded_oblast:
+                    print(f"DEBUG: Skipping {match} oblast - excluded by 'з {excluded_oblast}' pattern")
+                elif match:  # Only process if we have a valid match
                     # Create possible city+oblast combinations to search
                     city_variants = [
                         f"{name.lower()}({match})",  # миколаївка(сумська)
@@ -1502,7 +1517,7 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                         f"{name.lower()} {match} область",
                     ]
                     
-                    print(f"DEBUG: Checking variants for {name} with closest oblast {match}: {city_variants}")
+                    print(f"DEBUG: Checking variants for {name} with oblast {match}: {city_variants}")
                     
                     # Try to find coordinates using these specific combinations
                     for variant in city_variants:
@@ -2357,7 +2372,11 @@ CITY_COORDS = {
         'чорнобаївка': (46.6964, 32.5469),  # Херсонська область
     
     # Недостающие города из UAV сообщений (сентябрь 2025)
-    'зарічне': (51.2167, 26.0833),      # Рівненська область
+    'зарічне': (51.2167, 26.0833),      # Рівненська область (default - first in alphabetical order)
+    'зарічне(дніпропетровська)': (48.15, 35.2),  # Зарічне, Дніпропетровська область
+    'зарічне (дніпропетровська)': (48.15, 35.2),  # With space
+    'зарічне(рівненська)': (51.2167, 26.0833),  # Explicit Рівненська
+    'зарічне (рівненська)': (51.2167, 26.0833),  # With space
     'сенкевичівка': (51.5667, 25.8333), # Волинська область
     'голоби': (50.7833, 25.2167),       # Волинська область
     
@@ -5212,12 +5231,6 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         return []
         
     if _is_general_warning_without_location(text):
-        return []
-    
-    # PRIORITY: Filter multi-regional ambiguous messages (мультирегіональне)
-    # These indicate the city name exists in multiple oblasts and exact location is unclear
-    if '(мультирегіональне)' in text.lower() or '(мультирегіональний)' in text.lower():
-        add_debug_log("FILTERED: Multi-regional ambiguous message - city exists in multiple oblasts", "multi_regional_filter")
         return []
     
     # AI ENHANCEMENT: Fix typos and improve text quality before parsing
