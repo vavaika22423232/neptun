@@ -1478,8 +1478,6 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                         break
             
             if match:
-                    
-            if match:
                 # Normalize regional names to nominative case AND adjective form
                 if match.endswith('щині'):
                     match = match[:-2] + 'на'  # сумщині -> сумщина
