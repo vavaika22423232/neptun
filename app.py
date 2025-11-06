@@ -61,7 +61,6 @@ except ImportError as e:
     def extract_city_from_text(text, region=None): return None
     def classify_threat_type(text): return None
     def get_ai_stats(): return {'enabled': False}
-        return None
 
 # Context-aware geocoding integration
 try:
