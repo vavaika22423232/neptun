@@ -771,6 +771,22 @@
       color: var(--text);
       font-size: 0.9375rem;
       line-height: 1.5;
+      /* Limit to 3 lines on desktop */
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    /* Show full text on mobile */
+    @media (max-width: 768px) {
+      .event .event-info {
+        -webkit-line-clamp: unset;
+        line-clamp: unset;
+        display: block;
+      }
     }
     
     .event .event-time {
