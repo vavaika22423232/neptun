@@ -1517,56 +1517,41 @@
   </div>
 
   <style>
-    /* Responsive Ad Container */
+    /* Responsive Ad Container - only limit width on mobile, allow full height */
     .ad-container-responsive {
       text-align: center;
       margin: 10px auto;
       max-width: 100%;
-      overflow: hidden;
+      overflow: visible;
     }
     
-    /* Mobile: small banner */
+    /* Mobile: limit width for horizontal banners */
     @media (max-width: 767px) {
       .ad-container-responsive {
         max-width: 320px;
-        max-height: 100px;
         margin: 8px auto;
       }
       
       .ad-container-responsive > div,
       .ad-container-responsive iframe {
         max-width: 320px !important;
-        max-height: 100px !important;
+        width: auto !important;
       }
     }
     
-    /* Tablet: medium banner */
+    /* Tablet: allow medium and large ads */
     @media (min-width: 768px) and (max-width: 1023px) {
       .ad-container-responsive {
-        max-width: 468px;
-        max-height: 90px;
+        max-width: 728px;
         margin: 12px auto;
-      }
-      
-      .ad-container-responsive > div,
-      .ad-container-responsive iframe {
-        max-width: 468px !important;
-        max-height: 90px !important;
       }
     }
     
-    /* Desktop: full banner */
+    /* Desktop: allow all ad sizes */
     @media (min-width: 1024px) {
       .ad-container-responsive {
-        max-width: 728px;
-        max-height: 90px;
+        max-width: 970px;
         margin: 15px auto;
-      }
-      
-      .ad-container-responsive > div,
-      .ad-container-responsive iframe {
-        max-width: 728px !important;
-        max-height: 90px !important;
       }
     }
     
