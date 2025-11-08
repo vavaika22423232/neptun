@@ -1533,6 +1533,60 @@
   </div>
 
   <style>
+    /* Premium Ad Wrapper - Beautiful styling */
+    .ad-wrapper-premium {
+      position: relative;
+      margin: 15px auto 20px;
+      max-width: 970px;
+      padding: 15px;
+      background: linear-gradient(135deg, rgba(17, 24, 39, 0.6), rgba(31, 41, 55, 0.4));
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(59, 130, 246, 0.15);
+      border-radius: 16px;
+      box-shadow: 
+        0 4px 24px -8px rgba(0, 0, 0, 0.3),
+        0 0 0 1px rgba(255, 255, 255, 0.03) inset,
+        0 8px 32px -12px rgba(59, 130, 246, 0.08);
+      transition: all 0.3s ease;
+    }
+    
+    .ad-wrapper-premium:hover {
+      border-color: rgba(59, 130, 246, 0.25);
+      box-shadow: 
+        0 8px 32px -10px rgba(0, 0, 0, 0.4),
+        0 0 0 1px rgba(255, 255, 255, 0.05) inset,
+        0 12px 40px -14px rgba(59, 130, 246, 0.15);
+      transform: translateY(-2px);
+    }
+    
+    .ad-label {
+      position: absolute;
+      top: -10px;
+      left: 20px;
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      padding: 4px 12px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 
+        0 2px 8px rgba(0, 0, 0, 0.3),
+        0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+      z-index: 10;
+    }
+    
+    .ad-label svg {
+      opacity: 0.7;
+      width: 12px;
+      height: 12px;
+    }
+    
     /* Responsive Ad Container - compact on mobile, full size on desktop */
     .ad-container-responsive {
       text-align: center;
@@ -1570,35 +1624,6 @@
       .ad-container-responsive {
         max-width: 970px;
         margin: 15px auto;
-      }
-    }
-    
-    /* Sticky Sidebar Ad - Desktop only */
-    .ad-sidebar-sticky {
-      display: none;
-    }
-    
-    @media (min-width: 1400px) {
-      .ad-sidebar-sticky {
-        display: block;
-        position: fixed;
-        right: 20px;
-        top: 120px;
-        width: 300px;
-        z-index: 900;
-        animation: fadeIn 0.5s ease-out;
-      }
-      
-      /* Make room for sidebar on wide screens */
-      .main-content {
-        max-width: calc(100% - 340px);
-        margin-right: 340px;
-      }
-    }
-    
-    @media (min-width: 1600px) {
-      .ad-sidebar-sticky {
-        right: calc((100vw - 1400px) / 2 - 320px);
       }
     }
     
@@ -2442,14 +2467,23 @@
   </div>
 
   <div class="main-content">
-    <!-- Recreativ Ad: Display Banner (above map) - Responsive -->
-    <div id="ezoic-pub-ad-placeholder-115" class="ad-container-responsive">
-      <div id="bn_803ca4ce1d"></div><script>'use strict';(function(e,c,p,q){function v(){c.removeEventListener("scroll",v);k()}function z(){w=new IntersectionObserver(function(a){a.forEach(function(b){b.isIntersecting&&(w.unobserve(b.target),A?r(c,"scroll",v):k())})},{root:null,rootMargin:"400px 200px",threshold:0});w.observe(f)}function k(){if(f=f||c.getElementById("bn_"+p)){f.innerHTML="";f.id="bn_"+B;if(e.name&&"google_ads_iframe_/"==e.name.substring(0,19)){var a=e.parent.document,b=a.createElement("div");a=a.getElementById(e.name).parentNode;
+    <!-- Recreativ Ad: Display Banner (above map) - Styled -->
+    <div class="ad-wrapper-premium">
+      <div class="ad-label">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect>
+          <polyline points="17 2 12 7 7 2"></polyline>
+        </svg>
+        <span>Реклама</span>
+      </div>
+      <div id="ezoic-pub-ad-placeholder-115" class="ad-container-responsive">
+        <div id="bn_803ca4ce1d"></div><script>'use strict';(function(e,c,p,q){function v(){c.removeEventListener("scroll",v);k()}function z(){w=new IntersectionObserver(function(a){a.forEach(function(b){b.isIntersecting&&(w.unobserve(b.target),A?r(c,"scroll",v):k())})},{root:null,rootMargin:"400px 200px",threshold:0});w.observe(f)}function k(){if(f=f||c.getElementById("bn_"+p)){f.innerHTML="";f.id="bn_"+B;if(e.name&&"google_ads_iframe_/"==e.name.substring(0,19)){var a=e.parent.document,b=a.createElement("div");a=a.getElementById(e.name).parentNode;
 a.parentNode.appendChild(b);b.style.setProperty("margin-top",-a.offsetHeight+"px","important");b.append(f);q+=".dfp"}(g=C.getElementById("rcMain"))?d=g.contentWindow:I(C);x={act:"init",id:p,rnd:B,ms:D,lt:q,tms:J,ta:K==top};d.rcMain?d.postMessage(x,E):d.rcBuf.push(x)}else l("!bn")}function L(a,b,y,t){function F(){var u=b.createElement("script");u.src=a;u.onerror=function(){m++;5>m?setTimeout(F,10):l(m+"!"+a)};u.onload=function(){t&&t();m&&l(m+"!"+a)};y.appendChild(u)}var m=0;F()}function I(a){try{g=
 a.createElement("iframe"),g.style.setProperty("display","none","important"),g.id="rcMain",a.body.insertBefore(g,a.body.children[0]),d=g.contentWindow,n=d.document,n.open(),n.close(),G=n.body,Object.defineProperty(d,"rcBuf",{enumerable:!1,configurable:!1,writable:!1,value:[]}),L("https://go.rcvlink.com/static/main.js",n,G,function(){for(var b;d.rcBuf&&(b=d.rcBuf.shift());)d.postMessage(b,E)})}catch(b){H(b)}}function r(a,b,y,t){a.addEventListener(b,y,t)}function M(a,b){b=b||0;return Math.round(a*Math.pow(10,b))/
 Math.pow(10,b)}function H(a){l(a.name+": "+a.message+"\t"+(a.stack?a.stack.replace(a.name+": "+a.message,""):""))}function l(a){console.error(a);(new Image).src="https://go.rcvlinks.com/err/?code="+p+"&ms="+((new Date).getTime()-D)+"&ver="+N+"&text="+encodeURIComponent(a)}try{var N="251015-0118",E=location.origin||location.protocol+"//"+location.hostname+(location.port?":"+location.port:""),f=c.getElementById("bn_"+p),B=Math.random().toString(36).substring(2,15),D=(new Date).getTime(),w,O=!("IntersectionObserver"in
 e),x,g,d,n,G,A=c.body.clientHeight>e.innerHeight,h=e;for(;h;){try{var J=M(h.performance.now());var K=h;var C=h.document}catch(a){}if(h==top)break;h=h.parent}f?"scroll"==q?A?r(c,"scroll",v):k():"lazy"==q?O?k():"loading"==c.readyState?r(c,"DOMContentLoaded",z):z():k():"loading"==c.readyState?r(c,"DOMContentLoaded",k):l("!bn")}catch(a){H(a)}})(window,document,"803ca4ce1d","{LOADTYPE}");
 </script>
+      </div>
     </div>
     
     <!-- Map moved to top -->
@@ -2509,15 +2543,6 @@ e),x,g,d,n,G,A=c.body.clientHeight>e.innerHeight,h=e;for(;h;){try{var J=M(h.perf
         </div>
       </div>
     </div>
-    
-    <!-- Ad Block 2: After About Section -->
-    <div class="ad-container-responsive" style="margin: 25px auto;">
-      <!-- TODO: Add Recreativ ad code here when you create new placement -->
-      <div style="background: rgba(59, 130, 246, 0.1); border: 2px dashed rgba(59, 130, 246, 0.3); border-radius: 12px; padding: 60px 20px; text-align: center; color: #9ca3af;">
-        <i class="material-icons" style="font-size: 48px; opacity: 0.5;">ad_units</i>
-        <p style="margin: 10px 0 0 0; font-size: 14px;">Рекламний блок #2<br><small>Створи новий Display Banner в Recreativ і вставь код сюди</small></p>
-      </div>
-    </div>
   </div>
 
   <!-- Events Section (below about section) -->
@@ -2525,26 +2550,6 @@ e),x,g,d,n,G,A=c.body.clientHeight>e.innerHeight,h=e;for(;h;){try{var J=M(h.perf
     <div class="card" id="events">
       <h2>Останні події</h2>
       <div class="event-list" id="eventList"></div>
-    </div>
-    
-    <!-- Ad Block 3: After Events -->
-    <div class="ad-container-responsive" style="margin: 25px auto;">
-      <!-- TODO: Add Recreativ ad code here when you create new placement -->
-      <div style="background: rgba(16, 185, 129, 0.1); border: 2px dashed rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 60px 20px; text-align: center; color: #9ca3af;">
-        <i class="material-icons" style="font-size: 48px; opacity: 0.5;">monetization_on</i>
-        <p style="margin: 10px 0 0 0; font-size: 14px;">Рекламний блок #3<br><small>Створи новий Display Banner в Recreativ і вставь код сюди</small></p>
-      </div>
-    </div>
-  </div>
-
-  <!-- Sticky Sidebar Ad (Desktop only) -->
-  <div class="ad-sidebar-sticky" id="adSidebarSticky">
-    <div class="ad-container-responsive">
-      <!-- TODO: Add Recreativ ad code here (300x600 or 300x250) -->
-      <div style="background: rgba(245, 158, 11, 0.1); border: 2px dashed rgba(245, 158, 11, 0.3); border-radius: 12px; padding: 100px 20px; text-align: center; color: #9ca3af;">
-        <i class="material-icons" style="font-size: 48px; opacity: 0.5;">view_sidebar</i>
-        <p style="margin: 10px 0 0 0; font-size: 14px;">Sticky Sidebar<br><small>300x600 або 300x250</small></p>
-      </div>
     </div>
   </div>
 
@@ -5668,25 +5673,6 @@ e),x,g,d,n,G,A=c.body.clientHeight>e.innerHeight,h=e;for(;h;){try{var J=M(h.perf
       adContainers.forEach(container => {
         adObserver.observe(container);
       });
-      
-      // Sticky sidebar visibility optimization
-      const sidebar = document.getElementById('adSidebarSticky');
-      if (sidebar && window.innerWidth >= 1400) {
-        // Track sidebar visibility separately (high-value placement)
-        const sidebarObserver = new IntersectionObserver((entries) => {
-          entries.forEach(entry => {
-            if (entry.isIntersecting && typeof gtag !== 'undefined') {
-              gtag('event', 'ad_impression_sidebar', {
-                'event_category': 'ads',
-                'event_label': 'sticky_sidebar',
-                'value': 2 // Higher value for sticky placement
-              });
-            }
-          });
-        }, { threshold: [0.7] });
-        
-        sidebarObserver.observe(sidebar);
-      }
       
       // Page engagement tracking for better ad targeting
       let engagementTime = 0;
