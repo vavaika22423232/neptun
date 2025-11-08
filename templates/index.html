@@ -1533,24 +1533,26 @@
   </div>
 
   <style>
-    /* Responsive Ad Container - only limit width on mobile, allow full height */
+    /* Responsive Ad Container - compact on mobile, full size on desktop */
     .ad-container-responsive {
       text-align: center;
       margin: 10px auto;
       max-width: 100%;
-      overflow: visible;
+      overflow: hidden;
     }
     
-    /* Mobile: limit width for horizontal banners */
+    /* Mobile: compact banner - max 1 row (100px height) */
     @media (max-width: 767px) {
       .ad-container-responsive {
         max-width: 320px;
+        max-height: 100px;
         margin: 8px auto;
       }
       
       .ad-container-responsive > div,
       .ad-container-responsive iframe {
         max-width: 320px !important;
+        max-height: 100px !important;
         width: auto !important;
       }
     }
@@ -1568,6 +1570,35 @@
       .ad-container-responsive {
         max-width: 970px;
         margin: 15px auto;
+      }
+    }
+    
+    /* Sticky Sidebar Ad - Desktop only */
+    .ad-sidebar-sticky {
+      display: none;
+    }
+    
+    @media (min-width: 1400px) {
+      .ad-sidebar-sticky {
+        display: block;
+        position: fixed;
+        right: 20px;
+        top: 120px;
+        width: 300px;
+        z-index: 900;
+        animation: fadeIn 0.5s ease-out;
+      }
+      
+      /* Make room for sidebar on wide screens */
+      .main-content {
+        max-width: calc(100% - 340px);
+        margin-right: 340px;
+      }
+    }
+    
+    @media (min-width: 1600px) {
+      .ad-sidebar-sticky {
+        right: calc((100vw - 1400px) / 2 - 320px);
       }
     }
     
@@ -2478,6 +2509,15 @@ e),x,g,d,n,G,A=c.body.clientHeight>e.innerHeight,h=e;for(;h;){try{var J=M(h.perf
         </div>
       </div>
     </div>
+    
+    <!-- Ad Block 2: After About Section -->
+    <div class="ad-container-responsive" style="margin: 25px auto;">
+      <!-- TODO: Add Recreativ ad code here when you create new placement -->
+      <div style="background: rgba(59, 130, 246, 0.1); border: 2px dashed rgba(59, 130, 246, 0.3); border-radius: 12px; padding: 60px 20px; text-align: center; color: #9ca3af;">
+        <i class="material-icons" style="font-size: 48px; opacity: 0.5;">ad_units</i>
+        <p style="margin: 10px 0 0 0; font-size: 14px;">Рекламний блок #2<br><small>Створи новий Display Banner в Recreativ і вставь код сюди</small></p>
+      </div>
+    </div>
   </div>
 
   <!-- Events Section (below about section) -->
@@ -2485,6 +2525,26 @@ e),x,g,d,n,G,A=c.body.clientHeight>e.innerHeight,h=e;for(;h;){try{var J=M(h.perf
     <div class="card" id="events">
       <h2>Останні події</h2>
       <div class="event-list" id="eventList"></div>
+    </div>
+    
+    <!-- Ad Block 3: After Events -->
+    <div class="ad-container-responsive" style="margin: 25px auto;">
+      <!-- TODO: Add Recreativ ad code here when you create new placement -->
+      <div style="background: rgba(16, 185, 129, 0.1); border: 2px dashed rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 60px 20px; text-align: center; color: #9ca3af;">
+        <i class="material-icons" style="font-size: 48px; opacity: 0.5;">monetization_on</i>
+        <p style="margin: 10px 0 0 0; font-size: 14px;">Рекламний блок #3<br><small>Створи новий Display Banner в Recreativ і вставь код сюди</small></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sticky Sidebar Ad (Desktop only) -->
+  <div class="ad-sidebar-sticky" id="adSidebarSticky">
+    <div class="ad-container-responsive">
+      <!-- TODO: Add Recreativ ad code here (300x600 or 300x250) -->
+      <div style="background: rgba(245, 158, 11, 0.1); border: 2px dashed rgba(245, 158, 11, 0.3); border-radius: 12px; padding: 100px 20px; text-align: center; color: #9ca3af;">
+        <i class="material-icons" style="font-size: 48px; opacity: 0.5;">view_sidebar</i>
+        <p style="margin: 10px 0 0 0; font-size: 14px;">Sticky Sidebar<br><small>300x600 або 300x250</small></p>
+      </div>
     </div>
   </div>
 
@@ -5561,6 +5621,91 @@ e),x,g,d,n,G,A=c.body.clientHeight>e.innerHeight,h=e;for(;h;){try{var J=M(h.perf
       <p>Створено з ❤️ для України | Слава Україні! 🇺🇦</p>
     </div>
   </footer>
+
+  <!-- Ad Revenue Optimization Script -->
+  <script>
+    // Ad viewability tracking and auto-refresh for better revenue
+    (function() {
+      const AD_REFRESH_INTERVAL = 45000; // 45 seconds - optimal for RPM
+      const adContainers = document.querySelectorAll('.ad-container-responsive');
+      const refreshedAds = new Set();
+      
+      // Intersection Observer for viewability tracking
+      const adObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting && entry.intersectionRatio > 0.5) {
+            const adId = entry.target.id || entry.target.className;
+            
+            // Track ad impression in Google Analytics
+            if (typeof gtag !== 'undefined') {
+              gtag('event', 'ad_impression', {
+                'event_category': 'ads',
+                'event_label': adId,
+                'value': 1
+              });
+            }
+            
+            // Schedule auto-refresh after initial view (once per session)
+            if (!refreshedAds.has(adId)) {
+              refreshedAds.add(adId);
+              setTimeout(() => {
+                // Recreativ ads auto-refresh themselves, just track it
+                if (typeof gtag !== 'undefined') {
+                  gtag('event', 'ad_refresh', {
+                    'event_category': 'ads',
+                    'event_label': adId
+                  });
+                }
+              }, AD_REFRESH_INTERVAL);
+            }
+          }
+        });
+      }, {
+        threshold: [0.5] // 50% visibility triggers tracking
+      });
+      
+      // Observe all ad containers
+      adContainers.forEach(container => {
+        adObserver.observe(container);
+      });
+      
+      // Sticky sidebar visibility optimization
+      const sidebar = document.getElementById('adSidebarSticky');
+      if (sidebar && window.innerWidth >= 1400) {
+        // Track sidebar visibility separately (high-value placement)
+        const sidebarObserver = new IntersectionObserver((entries) => {
+          entries.forEach(entry => {
+            if (entry.isIntersecting && typeof gtag !== 'undefined') {
+              gtag('event', 'ad_impression_sidebar', {
+                'event_category': 'ads',
+                'event_label': 'sticky_sidebar',
+                'value': 2 // Higher value for sticky placement
+              });
+            }
+          });
+        }, { threshold: [0.7] });
+        
+        sidebarObserver.observe(sidebar);
+      }
+      
+      // Page engagement tracking for better ad targeting
+      let engagementTime = 0;
+      const engagementTimer = setInterval(() => {
+        engagementTime += 10;
+        if (engagementTime === 30 && typeof gtag !== 'undefined') {
+          gtag('event', 'engaged_user_30s', {
+            'event_category': 'engagement',
+            'value': 30
+          });
+        }
+      }, 10000);
+      
+      // Cleanup on page unload
+      window.addEventListener('beforeunload', () => {
+        clearInterval(engagementTimer);
+      });
+    })();
+  </script>
 
 </body>
 </html>
