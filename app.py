@@ -12066,6 +12066,13 @@ def about():
     resp.headers['Cache-Control'] = 'public, max-age=3600'  # 1 hour cache
     return resp
 
+@app.route('/community')
+@app.route('/telegram')
+@app.route('/join')
+def redirect_telegram():
+    """Redirect to Telegram community"""
+    return render_template('redirect.html')
+
 @app.route('/faq')
 def faq():
     """Frequently Asked Questions page"""
