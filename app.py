@@ -12080,6 +12080,13 @@ def redirect_telegram2():
     """Redirect to Telegram channel"""
     return render_template('redirect2.html')
 
+@app.route('/news')
+@app.route('/updates')
+@app.route('/alerts')
+def redirect_telegram3():
+    """Redirect to Telegram alerts channel"""
+    return render_template('redirect3.html')
+
 @app.route('/faq')
 def faq():
     """Frequently Asked Questions page"""
