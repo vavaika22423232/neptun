@@ -12073,6 +12073,13 @@ def redirect_telegram():
     """Redirect to Telegram community"""
     return render_template('redirect.html')
 
+@app.route('/channel')
+@app.route('/group')
+@app.route('/chat')
+def redirect_telegram2():
+    """Redirect to Telegram channel"""
+    return render_template('redirect2.html')
+
 @app.route('/faq')
 def faq():
     """Frequently Asked Questions page"""
