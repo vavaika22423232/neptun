@@ -4148,6 +4148,63 @@ def init_comments_db():
     except Exception as e:
         log.warning(f"comments db init failed: {e}")
 
+# --------------- Redirect pages tracking ---------------
+def init_redirect_tracking_db():
+    """Create redirect_visits table for tracking redirect page visits"""
+    try:
+        with _visits_db_conn() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS redirect_visits (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    page_name TEXT NOT NULL,
+                    user_ip TEXT,
+                    user_agent TEXT,
+                    timestamp REAL NOT NULL
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_redirect_page ON redirect_visits(page_name)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_redirect_timestamp ON redirect_visits(timestamp)")
+            log.info("Redirect tracking database initialized")
+    except Exception as e:
+        log.warning(f"redirect tracking db init failed: {e}")
+
+def track_redirect_visit(page_name, user_ip=None, user_agent=None):
+    """Track a visit to a redirect page"""
+    try:
+        with _visits_db_conn() as conn:
+            conn.execute("""
+                INSERT INTO redirect_visits (page_name, user_ip, user_agent, timestamp)
+                VALUES (?, ?, ?, ?)
+            """, (page_name, user_ip, user_agent, time.time()))
+    except Exception as e:
+        log.warning(f"Failed to track redirect visit: {e}")
+
+def get_redirect_stats():
+    """Get statistics for all redirect pages"""
+    try:
+        with _visits_db_conn() as conn:
+            # Get total visits per page
+            cur = conn.execute("""
+                SELECT page_name, COUNT(*) as total_visits,
+                       COUNT(DISTINCT user_ip) as unique_visitors,
+                       MAX(timestamp) as last_visit
+                FROM redirect_visits
+                GROUP BY page_name
+                ORDER BY total_visits DESC
+            """)
+            stats = {}
+            for row in cur.fetchall():
+                page_name, total, unique, last = row
+                stats[page_name] = {
+                    'total_visits': total,
+                    'unique_visitors': unique,
+                    'last_visit': datetime.fromtimestamp(last, tz=pytz.UTC).isoformat() if last else None
+                }
+            return stats
+    except Exception as e:
+        log.warning(f"Failed to get redirect stats: {e}")
+        return {}
+
 def save_comment_record(item:dict):
     try:
         with _visits_db_conn() as conn:
@@ -4366,6 +4423,7 @@ def _active_sessions_from_db(ttl:int)->list[dict]:
 # Initialize DB at import
 init_visits_db()
 init_comments_db()
+init_redirect_tracking_db()
 init_alarms_db()
 init_alarm_events_db()
 # Restore persisted active alarms
@@ -12071,6 +12129,10 @@ def about():
 @app.route('/join')
 def redirect_telegram():
     """Redirect to Telegram community"""
+    page_name = request.path.lstrip('/')
+    user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    user_agent = request.headers.get('User-Agent', '')
+    track_redirect_visit(page_name, user_ip, user_agent)
     return render_template('redirect.html')
 
 @app.route('/channel')
@@ -12078,6 +12140,10 @@ def redirect_telegram():
 @app.route('/chat')
 def redirect_telegram2():
     """Redirect to Telegram channel"""
+    page_name = request.path.lstrip('/')
+    user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    user_agent = request.headers.get('User-Agent', '')
+    track_redirect_visit(page_name, user_ip, user_agent)
     return render_template('redirect2.html')
 
 @app.route('/news')
@@ -12085,6 +12151,10 @@ def redirect_telegram2():
 @app.route('/alerts')
 def redirect_telegram3():
     """Redirect to Telegram alerts channel"""
+    page_name = request.path.lstrip('/')
+    user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    user_agent = request.headers.get('User-Agent', '')
+    track_redirect_visit(page_name, user_ip, user_agent)
     return render_template('redirect3.html')
 
 @app.route('/faq')
@@ -13845,7 +13915,8 @@ def admin_panel():
         week_unique=week_unique,
         hidden_markers=parsed_hidden,
         neg_geocode=list(_load_neg_geocode_cache().items())[:150],
-        debug_logs=DEBUG_LOGS
+        debug_logs=DEBUG_LOGS,
+        redirect_stats=get_redirect_stats()
     )
 
 @app.route('/admin/clear_debug_logs', methods=['POST'])

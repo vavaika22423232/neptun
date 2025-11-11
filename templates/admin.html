@@ -827,6 +827,81 @@ body {
         </div>
       </div>
 
+      <!-- Redirect Pages Statistics -->
+      <div class="card fade-in">
+        <div class="card-header">
+          <h2 class="card-title">
+            📱 Telegram Redirect Pages Statistics
+          </h2>
+        </div>
+        <div class="card-body">
+          {% if redirect_stats %}
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>📄 Page</th>
+                  <th>👥 Total Visits</th>
+                  <th>🔗 Unique Visitors</th>
+                  <th>🕒 Last Visit</th>
+                  <th>📊 CTR</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for page_name, stats in redirect_stats.items() | sort(attribute='1.total_visits', reverse=True) %}
+                <tr>
+                  <td>
+                    <span class="badge info">
+                      /{{ page_name }}
+                    </span>
+                  </td>
+                  <td>
+                    <strong>{{ stats.total_visits }}</strong>
+                  </td>
+                  <td>
+                    {{ stats.unique_visitors }}
+                  </td>
+                  <td>
+                    {% if stats.last_visit %}
+                      {{ stats.last_visit[:16].replace('T', ' ') }}
+                    {% else %}
+                      -
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if stats.total_visits > 0 %}
+                      <span class="badge success">
+                        {{ "%.1f"|format((stats.unique_visitors / stats.total_visits * 100)) }}%
+                      </span>
+                    {% else %}
+                      -
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+              <tfoot>
+                <tr style="background: rgba(59, 130, 246, 0.1); font-weight: 600;">
+                  <td>📊 <strong>Total</strong></td>
+                  <td>
+                    <strong>{{ redirect_stats.values() | sum(attribute='total_visits') }}</strong>
+                  </td>
+                  <td>
+                    {{ redirect_stats.values() | sum(attribute='unique_visitors') }}
+                  </td>
+                  <td colspan="2">-</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          {% else %}
+          <div style="text-align: center; padding: 2rem; color: var(--text-muted);">
+            <p>📊 No redirect page visits yet</p>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
       <!-- Live Map -->
       <div class="card fade-in">
         <div class="card-header">
