@@ -164,7 +164,7 @@
     <h1>Переадресація на Telegram</h1>
     <p>Зараз ви будете автоматично перенаправлені до нашої спільноти в Telegram. Якщо цього не сталося, натисніть кнопку нижче.</p>
     
-    <a href="https://t.me/+zFxu_4W_ishiNjli" class="redirect-link">
+    <a href="https://t.me/+zFxu_4W_ishiNjli" class="redirect-link" onclick="trackClick('redirect1')">
       Перейти в Telegram
     </a>
     
@@ -178,6 +178,21 @@
   </div>
   
   <script>
+    // Track button click
+    function trackClick(pageName) {
+      try {
+        fetch('/track_redirect_click', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ page: pageName })
+        }).catch(err => console.log('Track error:', err));
+      } catch (e) {
+        console.log('Track error:', e);
+      }
+    }
+    
     // Backup redirect after 1 second
     setTimeout(() => {
       window.location.href = 'https://t.me/+zFxu_4W_ishiNjli';

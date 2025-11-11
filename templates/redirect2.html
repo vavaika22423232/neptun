@@ -224,7 +224,7 @@
       <h1>Переадресація на Telegram</h1>
       <p>Зачекайте, зараз ви будете перенаправлені до нашого Telegram каналу...</p>
       <div class="loader"></div>
-      <a href="https://t.me/+yBSPgt6TroFmNzZi" class="telegram-btn">
+      <a href="https://t.me/+yBSPgt6TroFmNzZi" class="telegram-btn" onclick="trackClick('redirect2')">
         <span>📱</span>
         Відкрити Telegram
       </a>
@@ -233,6 +233,21 @@
   </div>
   
   <script>
+    // Track button click
+    function trackClick(pageName) {
+      try {
+        fetch('/track_redirect_click', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ page: pageName })
+        }).catch(err => console.log('Track error:', err));
+      } catch (e) {
+        console.log('Track error:', e);
+      }
+    }
+    
     // Backup redirect in case meta refresh doesn't work
     setTimeout(function() {
       window.location.href = 'https://t.me/+yBSPgt6TroFmNzZi';

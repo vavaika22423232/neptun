@@ -12157,6 +12157,23 @@ def redirect_telegram3():
     track_redirect_visit(page_name, user_ip, user_agent)
     return render_template('redirect3.html')
 
+@app.route('/track_redirect_click', methods=['POST'])
+def track_redirect_click():
+    """Track button click on redirect page"""
+    try:
+        data = request.get_json() or {}
+        page_name = data.get('page', 'unknown')
+        user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        user_agent = request.headers.get('User-Agent', '')
+        
+        # Track as click (we'll add a suffix to differentiate)
+        track_redirect_visit(f"{page_name}_click", user_ip, user_agent)
+        
+        return jsonify({'status': 'ok'})
+    except Exception as e:
+        log.warning(f"Failed to track redirect click: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 @app.route('/faq')
 def faq():
     """Frequently Asked Questions page"""
