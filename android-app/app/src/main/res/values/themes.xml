@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Base.Theme.NeptunAlarmMap" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/neptun_blue</item>
+        <item name="colorPrimaryVariant">@color/neptun_cyan</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <item name="android:statusBarColor">@color/dark_background</item>
+        <item name="android:navigationBarColor">@color/dark_background</item>
+    </style>
+
+    <style name="Theme.NeptunAlarmMap" parent="Base.Theme.NeptunAlarmMap" />
+</resources>
