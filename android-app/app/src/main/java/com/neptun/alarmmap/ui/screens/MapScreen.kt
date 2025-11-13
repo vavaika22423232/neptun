@@ -1,12 +1,7 @@
 package com.neptun.alarmmap.ui.screens
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.Paint
-import android.graphics.Color as AndroidColor
-import android.util.Log
+import android.graphics.drawable.BitmapDrawable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
@@ -26,19 +21,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.neptun.alarmmap.R
 import com.neptun.alarmmap.ui.theme.DarkBackground
 import com.neptun.alarmmap.ui.theme.NeptunBlue
 import com.neptun.alarmmap.ui.viewmodel.MapViewModel
+import com.neptun.alarmmap.ui.map.ThreatIconLoader
+import com.neptun.alarmmap.ui.map.UkraineBorderLoader
+import kotlinx.coroutines.launch
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
-import org.osmdroid.views.overlay.Polygon
-import org.json.JSONObject
-import java.io.BufferedReader
-import java.io.InputStreamReader
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,14 +40,17 @@ fun MapScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     
     // Configure OSMDroid
     LaunchedEffect(Unit) {
         Configuration.getInstance().userAgentValue = "NEPTUN/1.0"
+        // Preload common icons
+        ThreatIconLoader.preloadCommonIcons()
     }
     
     Box(modifier = Modifier.fillMaxSize()) {
-        // OpenStreetMap with Ukraine borders and markers
+        // OpenStreetMap
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
@@ -67,99 +63,47 @@ fun MapScreen(
                     minZoomLevel = 5.0
                     maxZoomLevel = 18.0
                     
-                    // Add Ukraine border
-                    addUkraineBorder(this, ctx)
+                    // Load Ukraine border
+                    coroutineScope.launch {
+                        UkraineBorderLoader.loadAndDisplayBorder(this@apply)
+                    }
                 }
             },
             update = { mapView ->
-                // Clear existing markers (but keep border)
-                val borderOverlays = mapView.overlays.filterIsInstance<Polygon>()
+                // Clear existing markers (but keep mask and border - first 2 overlays)
+                val maskAndBorder = mapView.overlays.take(2)
                 mapView.overlays.clear()
-                mapView.overlays.addAll(borderOverlays)
+                maskAndBorder.forEach { mapView.overlays.add(it) }
                 
-                // Group events by location to show count
-                val groupedEvents = uiState.events.groupBy { 
-                    "${it.latitude},${it.longitude}" 
-                }
-                
-                // Add markers for each location
-                groupedEvents.forEach { (_, events) ->
-                    val event = events.first()
-                    val count = events.sumOf { it.count ?: 1 }
-                    
-                    val marker = Marker(mapView).apply {
-                        position = GeoPoint(event.latitude, event.longitude)
+                // Add markers for each track
+                android.util.Log.d("MapScreen", "Adding ${uiState.tracks.size} markers")
+                uiState.tracks.forEach { track ->
+                    coroutineScope.launch {
+                        // Determine icon URL (priority: marker_icon > threat_type)
+                        val iconUrl = ThreatIconLoader.getIconUrlFromMarkerIcon(track.markerIcon)
+                            ?: ThreatIconLoader.getIconUrl(track.threatType)
                         
-                        // Get icon based on threat type
-                        val iconRes = when(event.actualType.lowercase()) {
-                            "shahed" -> R.drawable.shahed
-                            "avia" -> R.drawable.avia
-                            "raketa", "missile" -> R.drawable.raketa
-                            "fpv" -> R.drawable.fpv
-                            "artillery" -> R.drawable.artillery
-                            "pusk" -> R.drawable.pusk
-                            "obstril" -> R.drawable.obstril
-                            "rszv" -> R.drawable.rszv
-                            "rozved" -> R.drawable.rozved
-                            "vibuh" -> R.drawable.vibuh
-                            "vidboi" -> R.drawable.vidboi
-                            "trivoga" -> R.drawable.trivoga
-                            else -> R.drawable.marker_default
-                        }
+                        // Load icon bitmap
+                        val bitmap = ThreatIconLoader.loadBitmap(iconUrl)
                         
-                        try {
-                            // Create icon with count badge
-                            icon = createMarkerIcon(mapView.context, iconRes, count)
-                        } catch (e: Exception) {
-                            Log.e("MapScreen", "Error loading icon: $iconRes", e)
-                        }
-                        
-                        title = event.place ?: event.text.take(50)
-                        snippet = if (count > 1) {
-                            "x$count: ${event.text}"
-                        } else {
-                            event.text
-                        }
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                    }
-                    mapView.overlays.add(marker)
-                    
-                    Log.d("MapScreen", "Added marker: ${event.place} (${event.actualType}) (x$count)")
-                }
-                
-                // Add trajectories (flight paths)
-                uiState.trajectories.forEach { trajectory ->
-                    try {
-                        val points = trajectory.path.map { coord ->
-                            GeoPoint(coord[0], coord[1]) // [lat, lng]
-                        }
-                        
-                        if (points.size >= 2) {
-                            val polyline = org.osmdroid.views.overlay.Polyline(mapView).apply {
-                                setPoints(points)
-                                
-                                // Color based on threat type
-                                val color = when(trajectory.actualType.lowercase()) {
-                                    "shahed" -> AndroidColor.argb(200, 239, 68, 68) // Red
-                                    "avia" -> AndroidColor.argb(200, 59, 130, 246) // Blue
-                                    "raketa", "missile" -> AndroidColor.argb(200, 245, 158, 11) // Orange
-                                    else -> AndroidColor.argb(200, 156, 163, 175) // Gray
-                                }
-                                
-                                outlinePaint.color = color
-                                outlinePaint.strokeWidth = 4f
-                                outlinePaint.isAntiAlias = true
-                            }
+                        val marker = Marker(mapView).apply {
+                            position = GeoPoint(track.latitude, track.longitude)
+                            title = track.place ?: track.threatType ?: "Загроза"
+                            snippet = track.text
+                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                             
-                            mapView.overlays.add(polyline)
-                            Log.d("MapScreen", "Added trajectory: ${trajectory.id} with ${points.size} points")
+                            // Set custom icon if loaded
+                            if (bitmap != null) {
+                                icon = BitmapDrawable(context.resources, bitmap)
+                            }
                         }
-                    } catch (e: Exception) {
-                        Log.e("MapScreen", "Error adding trajectory: ${trajectory.id}", e)
+                        
+                        mapView.overlays.add(marker)
+                        mapView.invalidate()
+                        
+                        android.util.Log.d("MapScreen", "Added marker: ${track.place} (${track.threatType}) with icon: $iconUrl")
                     }
                 }
-                
-                mapView.invalidate()
             }
         )
         
@@ -208,7 +152,7 @@ fun MapScreen(
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Text(
-                                    text = "${uiState.events.size}",
+                                    text = "${uiState.tracks.size}",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = Color.White
                                 )
@@ -232,11 +176,11 @@ fun MapScreen(
                     }
                 }
                 
-                // Active alarms count
-                if (uiState.activeAlarms.isNotEmpty()) {
+                // Tracks count
+                if (uiState.tracks.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "🚨 Активні тривоги: ${uiState.activeAlarms.count { it.active }}",
+                        text = "� Загроз на карті: ${uiState.tracks.size}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color(0xFFEF4444)
                     )
@@ -290,183 +234,5 @@ fun MapScreen(
                 )
             }
         }
-    }
-}
-
-// Helper function to load Ukraine border from GeoJSON
-private fun addUkraineBorder(mapView: MapView, context: Context) {
-    try {
-        val inputStream = context.assets.open("geoBoundaries-UKR-ADM0_simplified.geojson")
-        val reader = BufferedReader(InputStreamReader(inputStream))
-        val geoJsonString = reader.readText()
-        reader.close()
-        
-        val jsonObject = JSONObject(geoJsonString)
-        val features = jsonObject.getJSONArray("features")
-        
-        if (features.length() > 0) {
-            val feature = features.getJSONObject(0)
-            val geometry = feature.getJSONObject("geometry")
-            val coordinates = geometry.getJSONArray("coordinates")
-            
-            // Collect Ukraine polygon points for mask
-            val ukrainePolygons = mutableListOf<List<GeoPoint>>()
-            
-            // Handle Polygon or MultiPolygon
-            when (geometry.getString("type")) {
-                "Polygon" -> {
-                    val points = extractPolygonPoints(coordinates)
-                    if (points.isNotEmpty()) {
-                        ukrainePolygons.add(points)
-                        addPolygonBorder(mapView, coordinates)
-                    }
-                }
-                "MultiPolygon" -> {
-                    for (i in 0 until coordinates.length()) {
-                        val polyCoords = coordinates.getJSONArray(i)
-                        val points = extractPolygonPoints(polyCoords)
-                        if (points.isNotEmpty()) {
-                            ukrainePolygons.add(points)
-                            addPolygonBorder(mapView, polyCoords)
-                        }
-                    }
-                }
-            }
-            
-            // Add world mask (darkened area outside Ukraine)
-            if (ukrainePolygons.isNotEmpty()) {
-                addWorldMask(mapView, ukrainePolygons)
-            }
-        }
-    } catch (e: Exception) {
-        Log.e("MapScreen", "Error loading Ukraine border", e)
-    }
-}
-
-// Extract points from polygon coordinates
-private fun extractPolygonPoints(coordinates: org.json.JSONArray): List<GeoPoint> {
-    return try {
-        val outerRing = coordinates.getJSONArray(0)
-        val points = mutableListOf<GeoPoint>()
-        
-        for (i in 0 until outerRing.length()) {
-            val coord = outerRing.getJSONArray(i)
-            val lng = coord.getDouble(0)
-            val lat = coord.getDouble(1)
-            points.add(GeoPoint(lat, lng))
-        }
-        points
-    } catch (e: Exception) {
-        Log.e("MapScreen", "Error extracting polygon points", e)
-        emptyList()
-    }
-}
-
-// Add world mask (darkened overlay outside Ukraine borders)
-private fun addWorldMask(mapView: MapView, ukrainePolygons: List<List<GeoPoint>>) {
-    try {
-        // Create world bounding box
-        val worldRing = listOf(
-            GeoPoint(85.0, -180.0),
-            GeoPoint(85.0, 180.0),
-            GeoPoint(-85.0, 180.0),
-            GeoPoint(-85.0, -180.0),
-            GeoPoint(85.0, -180.0)
-        )
-        
-        // Create polygon with world as outer ring and Ukraine as holes
-        val maskPolygon = Polygon(mapView).apply {
-            // Add world boundary
-            points = worldRing
-            
-            // Add Ukraine borders as holes (inverse mask)
-            holes = ukrainePolygons
-            
-            // Style
-            fillPaint.color = AndroidColor.argb(180, 15, 23, 42) // Dark blue overlay
-            outlinePaint.color = AndroidColor.TRANSPARENT
-            outlinePaint.strokeWidth = 0f
-        }
-        
-        mapView.overlays.add(0, maskPolygon) // Add as first overlay (bottom layer)
-        Log.d("MapScreen", "Added world mask with ${ukrainePolygons.size} Ukraine polygons")
-    } catch (e: Exception) {
-        Log.e("MapScreen", "Error adding world mask", e)
-    }
-}
-
-private fun addPolygonBorder(mapView: MapView, coordinates: org.json.JSONArray) {
-    try {
-        // Get outer ring (first array)
-        val outerRing = coordinates.getJSONArray(0)
-        val points = mutableListOf<GeoPoint>()
-        
-        for (i in 0 until outerRing.length()) {
-            val coord = outerRing.getJSONArray(i)
-            val lng = coord.getDouble(0)
-            val lat = coord.getDouble(1)
-            points.add(GeoPoint(lat, lng))
-        }
-        
-        // Create polygon overlay
-        val polygon = Polygon(mapView).apply {
-            this.points = points
-            fillPaint.color = AndroidColor.TRANSPARENT
-            outlinePaint.color = AndroidColor.argb(180, 59, 130, 246) // Blue border
-            outlinePaint.strokeWidth = 3f
-        }
-        
-        mapView.overlays.add(0, polygon) // Add as first overlay (bottom layer)
-        Log.d("MapScreen", "Added Ukraine border with ${points.size} points")
-    } catch (e: Exception) {
-        Log.e("MapScreen", "Error adding polygon border", e)
-    }
-}
-
-// Helper function to create marker icon with count badge
-private fun createMarkerIcon(context: Context, iconRes: Int, count: Int): android.graphics.drawable.BitmapDrawable? {
-    return try {
-        // Load base icon
-        val baseBitmap = BitmapFactory.decodeResource(context.resources, iconRes)
-        
-        // Scale to reasonable size
-        val size = 64
-        val scaledBitmap = Bitmap.createScaledBitmap(baseBitmap, size, size, true)
-        
-        val finalBitmap = if (count > 1) {
-            // Create mutable copy to draw badge
-            val mutableBitmap = scaledBitmap.copy(Bitmap.Config.ARGB_8888, true)
-            val canvas = Canvas(mutableBitmap)
-            
-            // Draw count badge
-            val paint = Paint().apply {
-                isAntiAlias = true
-            }
-            
-            // Badge background
-            paint.color = AndroidColor.RED
-            val badgeRadius = 14f
-            val badgeX = size - badgeRadius - 2f
-            val badgeY = badgeRadius + 2f
-            canvas.drawCircle(badgeX, badgeY, badgeRadius, paint)
-            
-            // Badge text
-            paint.color = AndroidColor.WHITE
-            paint.textSize = 18f
-            paint.textAlign = Paint.Align.CENTER
-            paint.isFakeBoldText = true
-            val countText = if (count > 99) "99+" else count.toString()
-            val textY = badgeY + 6f
-            canvas.drawText(countText, badgeX, textY, paint)
-            
-            mutableBitmap
-        } else {
-            scaledBitmap
-        }
-        
-        android.graphics.drawable.BitmapDrawable(context.resources, finalBitmap)
-    } catch (e: Exception) {
-        Log.e("MapScreen", "Error creating marker icon", e)
-        null
     }
 }

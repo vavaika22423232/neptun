@@ -1,0 +1,256 @@
+package com.neptun.alarmmap.ui.screens
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.neptun.alarmmap.R
+import com.neptun.alarmmap.data.PreferencesManager
+import com.neptun.alarmmap.ui.theme.NeptunBlue
+import com.neptun.alarmmap.ui.viewmodel.MapViewModel
+import com.mapbox.maps.MapView
+import com.mapbox.maps.CameraOptions
+import com.mapbox.maps.plugin.annotation.annotations
+import com.mapbox.maps.plugin.annotation.generated.PointAnnotationOptions
+import com.mapbox.maps.plugin.annotation.generated.createPointAnnotationManager
+import com.mapbox.geojson.Point
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MapScreenMapbox(viewModel: MapViewModel = viewModel()) {
+    val context = LocalContext.current
+    val prefsManager = remember { PreferencesManager.getInstance(context) }
+    
+    val uiState by viewModel.uiState.collectAsState()
+    val autoRefreshEnabled by prefsManager.autoRefreshEnabled.collectAsState()
+    val refreshInterval by prefsManager.refreshInterval.collectAsState()
+    
+    var mapView by remember { mutableStateOf<MapView?>(null) }
+    var styleLoaded by remember { mutableStateOf(false) }
+    
+    LaunchedEffect(Unit) {
+        viewModel.loadEvents()
+    }
+    
+    LaunchedEffect(autoRefreshEnabled, refreshInterval) {
+        if (autoRefreshEnabled) {
+            while (true) {
+                kotlinx.coroutines.delay((refreshInterval * 1000).toLong())
+                viewModel.loadEvents()
+            }
+        }
+    }
+    
+    // Update markers when events change and style is loaded
+    LaunchedEffect(uiState.events, styleLoaded) {
+        if (styleLoaded) {
+            mapView?.let { mv ->
+                updateMarkers(mv, uiState.events, context)
+            }
+        }
+    }
+    
+    Box(modifier = Modifier.fillMaxSize()) {
+        Card(
+            modifier = Modifier.fillMaxSize(),
+            shape = RoundedCornerShape(0.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { ctx ->
+                    MapView(ctx).apply {
+                        // Use OpenStreetMap style with Ukrainian labels
+                        mapboxMap.loadStyle("https://api.maptiler.com/maps/openstreetmap/style.json?key=m8zW2kq1Ta7cw9nODPXo") { style ->
+                            // Add all icon images to the style
+                            android.util.Log.d("MapScreen", "Style loaded, adding icons...")
+                            try {
+                                addIconsToStyle(style, ctx)
+                                styleLoaded = true
+                                android.util.Log.d("MapScreen", "Icons added successfully, styleLoaded=$styleLoaded")
+                            } catch (e: Exception) {
+                                android.util.Log.e("MapScreen", "Error adding icons: ${e.message}", e)
+                            }
+                        }
+                        
+                        // Set camera to Ukraine center
+                        mapboxMap.setCamera(
+                            CameraOptions.Builder()
+                                .center(Point.fromLngLat(31.1656, 48.3794))
+                                .zoom(5.5)
+                                .build()
+                        )
+                        
+                        mapView = this
+                    }
+                }
+            )
+        }
+        
+        // Header with logo and refresh button
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+                .align(Alignment.TopCenter),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = Color(0xCC0f172a)
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "⚡ NEPTUN",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = NeptunBlue,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = "${uiState.events.size}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+                    }
+                    
+                    IconButton(
+                        onClick = { viewModel.loadEvents() },
+                        enabled = !uiState.isLoading
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Refresh",
+                            tint = if (uiState.isLoading) Color.Gray else Color.White
+                        )
+                    }
+                }
+            }
+        }
+        
+        if (uiState.isLoading) {
+            CircularProgressIndicator(
+                modifier = Modifier
+                    .size(48.dp)
+                    .align(Alignment.Center),
+                color = NeptunBlue
+            )
+        }
+    }
+}
+
+private fun addIconsToStyle(style: com.mapbox.maps.Style, context: Context) {
+    android.util.Log.d("MapScreen", "addIconsToStyle called")
+    val iconTypes = mapOf(
+        "shahed" to R.drawable.shahed,
+        "raketa" to R.drawable.raketa,
+        "artillery" to R.drawable.artillery,
+        "avia" to R.drawable.avia,
+        "fpv" to R.drawable.fpv,
+        "kab" to R.drawable.kab,
+        "rszv" to R.drawable.rszv,
+        "pusk" to R.drawable.pusk,
+        "obstril" to R.drawable.obstril,
+        "vibuh" to R.drawable.vibuh,
+        "vidboi" to R.drawable.vidboi,
+        "rozved" to R.drawable.rozved,
+        "trivoga" to R.drawable.trivoga
+    )
+    
+    iconTypes.forEach { (name, resId) ->
+        try {
+            val bitmap = createIconBitmap(context, resId)
+            style.addImage(name, bitmap)
+            android.util.Log.d("MapScreen", "Added icon: $name (${bitmap.width}x${bitmap.height})")
+        } catch (e: Exception) {
+            android.util.Log.e("MapScreen", "Failed to add icon $name: ${e.message}")
+        }
+    }
+    android.util.Log.d("MapScreen", "All icons added")
+}
+
+private fun updateMarkers(mapView: MapView, events: List<com.neptun.alarmmap.data.model.AlarmEvent>, context: Context) {
+    android.util.Log.d("MapScreen", "updateMarkers called with ${events.size} events")
+    val annotationApi = mapView.annotations
+    val pointAnnotationManager = annotationApi.createPointAnnotationManager()
+    
+    // Clear existing annotations
+    pointAnnotationManager.deleteAll()
+    
+    // Add each event as a separate marker
+    events.forEach { event ->
+        val iconName = when(event.actualType.lowercase()) {
+            "shahed" -> "shahed"
+            "avia" -> "avia"
+            "raketa", "missile" -> "raketa"
+            "fpv" -> "fpv"
+            "kab" -> "kab"
+            "artillery" -> "artillery"
+            "pusk" -> "pusk"
+            "obstril" -> "obstril"
+            "rszv" -> "rszv"
+            "rozved" -> "rozved"
+            "vibuh" -> "vibuh"
+            "vidboi" -> "vidboi"
+            "trivoga" -> "trivoga"
+            else -> "trivoga"
+        }
+        
+        android.util.Log.d("MapScreen", "Creating marker: ${event.place} type=${event.actualType} icon=$iconName at ${event.latitude},${event.longitude}")
+        
+        val pointAnnotationOptions = PointAnnotationOptions()
+            .withPoint(Point.fromLngLat(event.longitude, event.latitude))
+            .withIconImage(iconName)
+            .withIconSize(1.0)
+        
+        pointAnnotationManager.create(pointAnnotationOptions)
+    }
+    android.util.Log.d("MapScreen", "All markers created")
+}
+
+private fun createIconBitmap(context: Context, iconResId: Int): Bitmap {
+    val iconSize = 48
+    
+    val bitmap = Bitmap.createBitmap(iconSize, iconSize, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    
+    // Draw icon
+    val drawable = ContextCompat.getDrawable(context, iconResId)
+    drawable?.setBounds(0, 0, iconSize, iconSize)
+    drawable?.draw(canvas)
+    
+    return bitmap
+}

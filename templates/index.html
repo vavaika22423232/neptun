@@ -4571,17 +4571,12 @@
             return;
           }
           let visitors = (j && typeof j.visitors !== 'undefined') ? j.visitors : undefined;
-          let webCount = (j && typeof j.web !== 'undefined') ? j.web : undefined;
-          let androidCount = (j && typeof j.android !== 'undefined') ? j.android : undefined;
-          
           if (typeof visitors === 'undefined' || visitors === null) {
             try {
               const hr = await fetch('/health');
               if (hr.ok) {
                 const hj = await hr.json();
                 if (typeof hj.visitors !== 'undefined') visitors = hj.visitors;
-                if (typeof hj.web !== 'undefined') webCount = hj.web;
-                if (typeof hj.android !== 'undefined') androidCount = hj.android;
               }
             } catch(e) { /* ignore */ }
           }
@@ -4599,12 +4594,7 @@
                   setTimeout(() => countEl.classList.remove('updating'), 600);
                 }
                 
-                // Update with detailed stats
-                let displayText = visitors;
-                if (typeof webCount !== 'undefined' && typeof androidCount !== 'undefined') {
-                  displayText += ` (🌐${webCount} 📱${androidCount})`;
-                }
-                countEl.textContent = displayText; 
+                countEl.textContent = visitors; 
               }
             }
             
@@ -4621,16 +4611,11 @@
                   setTimeout(() => countEl.classList.remove('updating'), 600);
                 }
                 
-                // Update with detailed stats
-                let displayText = visitors;
-                if (typeof webCount !== 'undefined' && typeof androidCount !== 'undefined') {
-                  displayText += ` (🌐${webCount} 📱${androidCount})`;
-                }
-                countEl.textContent = displayText; 
+                countEl.textContent = visitors; 
               }
             }
             
-            console.log('pingPresence: обновлен счетчик онлайн пользователей:', visitors, 'web:', webCount, 'android:', androidCount);
+            console.log('pingPresence: обновлен счетчик онлайн пользователей:', visitors);
           }
         } catch(e){
           console.error('pingPresence: ошибка при загрузке данных о пользователях:', e);
@@ -5592,6 +5577,30 @@
       window.addEventListener('beforeunload', () => {
         clearInterval(engagementTimer);
       });
+    })();
+  </script>
+
+  <!-- Visitor Counter Script -->
+  <script>
+    (function() {
+      async function updateVisitorCount() {
+        try {
+          const response = await fetch('/api/visitor_count');
+          const count = await response.text();
+          const formattedCount = parseInt(count).toLocaleString('uk-UA');
+          
+          document.getElementById('liveCount').textContent = formattedCount;
+          document.getElementById('liveCountDesktop').textContent = formattedCount;
+        } catch (error) {
+          console.log('Error loading visitor count:', error);
+        }
+      }
+      
+      // Update on page load
+      updateVisitorCount();
+      
+      // Update every 30 seconds
+      setInterval(updateVisitorCount, 30000);
     })();
   </script>
 

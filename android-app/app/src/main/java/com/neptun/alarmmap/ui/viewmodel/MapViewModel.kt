@@ -2,9 +2,7 @@ package com.neptun.alarmmap.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.neptun.alarmmap.data.model.AlarmEvent
-import com.neptun.alarmmap.data.model.AlarmRegion
-import com.neptun.alarmmap.data.model.Trajectory
+import com.neptun.alarmmap.data.model.AlarmTrack
 import com.neptun.alarmmap.data.repository.AlarmRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -15,9 +13,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 data class MapUiState(
-    val events: List<AlarmEvent> = emptyList(),
-    val trajectories: List<Trajectory> = emptyList(),
-    val activeAlarms: List<AlarmRegion> = emptyList(),
+    val tracks: List<AlarmTrack> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null,
     val isAutoRefreshEnabled: Boolean = true
@@ -44,9 +40,7 @@ class MapViewModel(
             repository.getAlarmEvents()
                 .onSuccess { response ->
                     _uiState.value = _uiState.value.copy(
-                        events = response.allEvents,
-                        trajectories = response.trajectories ?: emptyList(),
-                        activeAlarms = response.activeAlarms ?: emptyList(),
+                        tracks = response.tracks ?: emptyList(),
                         isLoading = false,
                         error = null
                     )
