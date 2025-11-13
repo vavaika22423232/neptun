@@ -13576,8 +13576,20 @@ if 'health' not in app.view_functions:
                 ts = meta if isinstance(meta,(int,float)) else meta.get('ts',0)
                 if now - ts > ACTIVE_TTL:
                     del ACTIVE_VISITORS[vid]
+            
+            # Count by platform
             visitors = len(ACTIVE_VISITORS)
-        return jsonify({'status':'ok','messages':len(load_messages()), 'auth': AUTH_STATUS, 'visitors': visitors})
+            web_count = sum(1 for v in ACTIVE_VISITORS.values() if isinstance(v, dict) and v.get('platform') == 'web')
+            android_count = sum(1 for v in ACTIVE_VISITORS.values() if isinstance(v, dict) and v.get('platform') == 'android')
+            
+        return jsonify({
+            'status': 'ok',
+            'messages': len(load_messages()),
+            'auth': AUTH_STATUS,
+            'visitors': visitors,
+            'web': web_count,
+            'android': android_count
+        })
 
 @app.route('/ads.txt')
 def ads_txt():
@@ -13600,8 +13612,9 @@ def presence():
     # Rate limiting removed
     data = request.get_json(silent=True) or {}
     vid = data.get('id')
+    platform = data.get('platform', 'web')  # Default to 'web' for browser visits
     client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
-    print(f"[DEBUG] /presence called with id={vid} from IP {client_ip}")
+    print(f"[DEBUG] /presence called with id={vid}, platform={platform} from IP {client_ip}")
     if not vid:
         return jsonify({'status':'error','error':'id required'}), 400
     now = time.time()
@@ -13623,86 +13636,25 @@ def presence():
         _update_recent_visits(vid)
     except Exception as e:
         log.warning(f"recent visits update failed: {e}")
-    # Record in SQLite persistent store
-    try:
-        record_visit_sql(vid, now)
-    except Exception:
-        pass
-    # Query DB for persistent first_seen to avoid resetting session on process restart
-    db_first = None
+    # Record in SQLite persistent store with platform
     try:
         with _visits_db_conn() as conn:
-            cur = conn.execute("SELECT first_seen FROM visits WHERE id=?", (vid,))
-            row = cur.fetchone()
-            if row and row[0]:
-                try:
-                    db_first = float(row[0])
-                except Exception:
-                    db_first = None
-    except Exception:
-        pass
-    with ACTIVE_LOCK:
-        prev = ACTIVE_VISITORS.get(vid) if isinstance(ACTIVE_VISITORS.get(vid), dict) else {}
-        first_seen = prev.get('first') or db_first or stats.get(vid) or now
-        ACTIVE_VISITORS[vid] = {'ts': now, 'first': first_seen, 'ip': remote_ip, 'ua': prev.get('ua') or ua}
-        # prune
-        for k, meta in list(ACTIVE_VISITORS.items()):
-            ts = meta if isinstance(meta,(int,float)) else meta.get('ts',0)
-            if now - ts > ACTIVE_TTL:
-                del ACTIVE_VISITORS[k]
-        count = len(ACTIVE_VISITORS)
-    print(f"[DEBUG] Returning visitors count: {count}")
-    return jsonify({'status':'ok','visitors': count})
-def presence():
-    # CRITICAL BANDWIDTH PROTECTION: Rate limit presence endpoint
-    client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
-    presence_requests = request_counts.get(f"{client_ip}_presence", [])
-    now_time = time.time()
-    
-    # Clean old requests (last 120 seconds - allow every 2 minutes)
-    presence_requests = [req_time for req_time in presence_requests if now_time - req_time < 120]
-    
-    # Allow only 1 presence request per 2 minutes per IP
-    if len(presence_requests) >= 1:
-        return jsonify({'error': 'Presence endpoint rate limited - wait 2 minutes'}), 429
-    
-    presence_requests.append(now_time)
-    request_counts[f"{client_ip}_presence"] = presence_requests
-    
-    data = request.get_json(silent=True) or {}
-    vid = data.get('id')
-    print(f"[DEBUG] /presence called with id={vid} from IP {client_ip}")
-    if not vid:
-        return jsonify({'status':'error','error':'id required'}), 400
-    now = time.time()
-    blocked = set(load_blocked())
-    if vid in blocked:
-        return jsonify({'status':'blocked'})
-    remote_ip = request.headers.get('X-Forwarded-For', request.remote_addr or '')
-    ua = request.headers.get('User-Agent', '')[:300]
-    # Load stats and register first-seen if new
-    stats = _load_visit_stats()
-    if vid not in stats:
-        stats[vid] = now
-        # prune occasionally (1/200 probability)
-        if int(now) % 200 == 0:
-            _prune_visit_stats()
-        _save_visit_stats()
-    # Update rolling today/week stats (independent persistence)
-    try:
-        _update_recent_visits(vid)
+            conn.execute("""
+                INSERT INTO visits (id, timestamp, first_seen, platform, ip, user_agent)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id, timestamp) DO UPDATE SET
+                    platform=excluded.platform,
+                    ip=excluded.ip,
+                    user_agent=excluded.user_agent
+            """, (vid, now, stats.get(vid, now), platform, remote_ip, ua))
     except Exception as e:
-        log.warning(f"recent visits update failed: {e}")
-    # Record in SQLite persistent store
-    try:
-        record_visit_sql(vid, now)
-    except Exception:
-        pass
+        log.warning(f"Failed to record visit: {e}")
+    
     # Query DB for persistent first_seen to avoid resetting session on process restart
     db_first = None
     try:
         with _visits_db_conn() as conn:
-            cur = conn.execute("SELECT first_seen FROM visits WHERE id=?", (vid,))
+            cur = conn.execute("SELECT first_seen FROM visits WHERE id=? ORDER BY timestamp LIMIT 1", (vid,))
             row = cur.fetchone()
             if row and row[0]:
                 try:
@@ -13714,15 +13666,31 @@ def presence():
     with ACTIVE_LOCK:
         prev = ACTIVE_VISITORS.get(vid) if isinstance(ACTIVE_VISITORS.get(vid), dict) else {}
         first_seen = prev.get('first') or db_first or stats.get(vid) or now
-        ACTIVE_VISITORS[vid] = {'ts': now, 'first': first_seen, 'ip': remote_ip, 'ua': prev.get('ua') or ua}
+        ACTIVE_VISITORS[vid] = {
+            'ts': now,
+            'first': first_seen,
+            'ip': remote_ip,
+            'ua': prev.get('ua') or ua,
+            'platform': platform
+        }
         # prune
         for k, meta in list(ACTIVE_VISITORS.items()):
             ts = meta if isinstance(meta,(int,float)) else meta.get('ts',0)
             if now - ts > ACTIVE_TTL:
                 del ACTIVE_VISITORS[k]
-        count = len(ACTIVE_VISITORS)
-    print(f"[DEBUG] Returning visitors count: {count}")
-    return jsonify({'status':'ok','visitors': count})
+        
+        # Count by platform
+        total_count = len(ACTIVE_VISITORS)
+        web_count = sum(1 for v in ACTIVE_VISITORS.values() if isinstance(v, dict) and v.get('platform') == 'web')
+        android_count = sum(1 for v in ACTIVE_VISITORS.values() if isinstance(v, dict) and v.get('platform') == 'android')
+    
+    print(f"[DEBUG] Returning visitors - total: {total_count}, web: {web_count}, android: {android_count}")
+    return jsonify({
+        'status': 'ok',
+        'visitors': total_count,
+        'web': web_count,
+        'android': android_count
+    })
 
 @app.route('/raion_alarms')
 def raion_alarms():
