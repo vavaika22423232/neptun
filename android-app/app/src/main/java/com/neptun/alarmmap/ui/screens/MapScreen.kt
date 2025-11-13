@@ -1,5 +1,6 @@
 package com.neptun.alarmmap.ui.screens
 
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
@@ -14,17 +15,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.google.android.gms.maps.model.CameraPosition
-import com.google.android.gms.maps.model.LatLng
-import com.google.android.gms.maps.model.BitmapDescriptorFactory
-import com.google.maps.android.compose.*
-import com.neptun.alarmmap.data.model.AlarmEvent
 import com.neptun.alarmmap.ui.theme.DarkBackground
 import com.neptun.alarmmap.ui.theme.NeptunBlue
 import com.neptun.alarmmap.ui.viewmodel.MapViewModel
+import org.osmdroid.config.Configuration
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.Marker
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,40 +35,46 @@ fun MapScreen(
     viewModel: MapViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
     
-    // Ukraine center coordinates
-    val ukraineCenter = LatLng(48.3794, 31.1656)
-    val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(ukraineCenter, 6f)
+    // Configure OSMDroid
+    LaunchedEffect(Unit) {
+        Configuration.getInstance().userAgentValue = "NEPTUN/1.0"
     }
     
     Box(modifier = Modifier.fillMaxSize()) {
-        // Google Map
-        GoogleMap(
+        // OpenStreetMap
+        AndroidView(
             modifier = Modifier.fillMaxSize(),
-            cameraPositionState = cameraPositionState,
-            properties = MapProperties(
-                mapType = MapType.NORMAL,
-                isMyLocationEnabled = false
-            ),
-            uiSettings = MapUiSettings(
-                zoomControlsEnabled = false,
-                myLocationButtonEnabled = false
-            )
-        ) {
-            // Draw markers for each event
-            uiState.events.forEach { event ->
-                val position = LatLng(event.latitude, event.longitude)
-                val markerColor = getMarkerColor(event.type)
+            factory = { ctx ->
+                MapView(ctx).apply {
+                    setTileSource(TileSourceFactory.MAPNIK)
+                    setMultiTouchControls(true)
+                    controller.setZoom(6.0)
+                    // Ukraine center
+                    controller.setCenter(GeoPoint(48.3794, 31.1656))
+                    minZoomLevel = 5.0
+                    maxZoomLevel = 18.0
+                }
+            },
+            update = { mapView ->
+                // Clear existing markers
+                mapView.overlays.clear()
                 
-                Marker(
-                    state = MarkerState(position = position),
-                    title = event.type,
-                    snippet = event.text,
-                    icon = BitmapDescriptorFactory.defaultMarker(markerColor)
-                )
+                // Add markers for each event
+                uiState.events.forEach { event ->
+                    val marker = Marker(mapView).apply {
+                        position = GeoPoint(event.latitude, event.longitude)
+                        title = event.type
+                        snippet = event.text
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                    }
+                    mapView.overlays.add(marker)
+                }
+                
+                mapView.invalidate()
             }
-        }
+        )
         
         // Top Header
         Surface(
@@ -194,16 +203,5 @@ fun MapScreen(
                 )
             }
         }
-    }
-}
-
-fun getMarkerColor(eventType: String): Float {
-    return when {
-        eventType.contains("ракет", ignoreCase = true) -> BitmapDescriptorFactory.HUE_RED
-        eventType.contains("БПЛА", ignoreCase = true) -> BitmapDescriptorFactory.HUE_ORANGE
-        eventType.contains("авіа", ignoreCase = true) -> BitmapDescriptorFactory.HUE_YELLOW
-        eventType.contains("артилері", ignoreCase = true) -> BitmapDescriptorFactory.HUE_VIOLET
-        eventType.contains("вибух", ignoreCase = true) -> BitmapDescriptorFactory.HUE_ROSE
-        else -> BitmapDescriptorFactory.HUE_BLUE
     }
 }
