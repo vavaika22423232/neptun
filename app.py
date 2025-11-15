@@ -8,6 +8,7 @@
 # ...existing code...
 
 import os, re, json, asyncio, threading, logging, pytz, time, subprocess, queue, sys, platform, traceback, uuid
+from collections import defaultdict
 from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify, request, Response, send_from_directory
 from telethon import TelegramClient
@@ -321,6 +322,14 @@ log = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# Shared rate tracking for lightweight bandwidth protection rules
+request_counts = defaultdict(list)
+
+# Presence counter configuration
+VALID_PLATFORMS = {'web', 'android', 'ios'}
+PRESENCE_RATE_WINDOW = 30  # seconds
+PRESENCE_RATE_LIMIT = 3    # max requests per window per IP
+
 # Scheduler removed - no longer needed for blackout schedules
 
 # BANDWIDTH OPTIMIZATION: Rate limiting to prevent abuse
@@ -495,6 +504,20 @@ MAX_DEBUG_LOGS = 100
 # Cache for fallback reparse to avoid duplicate processing
 FALLBACK_REPARSE_CACHE = set()  # message IDs that have been reparsed
 MAX_REPARSE_CACHE_SIZE = 1000  # Limit cache size to prevent memory growth
+
+
+def _normalize_platform(platform_hint: str, ua: str) -> str:
+    """Map arbitrary client hints to canonical platform buckets."""
+    candidate = (platform_hint or '').strip().lower()
+    if candidate in VALID_PLATFORMS:
+        return candidate
+
+    ua_lower = (ua or '').lower()
+    if 'android' in ua_lower:
+        return 'android'
+    if any(token in ua_lower for token in ('iphone', 'ipad', 'ios', 'cfnetwork')):
+        return 'ios'
+    return 'web'
 
 def add_debug_log(message, category="general"):
     """Add debug message to global debug storage for admin panel."""
@@ -13320,9 +13343,16 @@ def android_visitor_count():
         conn = sqlite3.connect('visits.db')
         cursor = conn.cursor()
         
-        # Get Android app visitors (platform = 'android')
-        cursor.execute('SELECT COUNT(DISTINCT ip) FROM visits WHERE platform = ?', ('android',))
-        android_visitors = cursor.fetchone()[0]
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS app_visits (
+                device_id TEXT PRIMARY KEY,
+                platform TEXT,
+                ip TEXT,
+                last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        cursor.execute('SELECT COUNT(*) FROM app_visits WHERE platform = ?', ('android',))
+        android_visitors = cursor.fetchone()[0] or 0
         
         conn.close()
         
@@ -13340,31 +13370,38 @@ def track_android_visit():
     """Track Android app visitor."""
     try:
         import sqlite3
+        payload = request.get_json(silent=True) or {}
         client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
+        device_id = str(payload.get('device_id') or '').strip() or client_ip
+        platform_hint = payload.get('platform') or 'android'
+        ua = request.headers.get('User-Agent', '')
+        platform_label = _normalize_platform(platform_hint, ua)
         
         conn = sqlite3.connect('visits.db')
         cursor = conn.cursor()
         
-        # Create visits table if not exists
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS visits (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                ip TEXT NOT NULL,
-                platform TEXT DEFAULT 'web',
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            CREATE TABLE IF NOT EXISTS app_visits (
+                device_id TEXT PRIMARY KEY,
+                platform TEXT,
+                ip TEXT,
+                last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         
-        # Insert or update Android visit
         cursor.execute('''
-            INSERT OR REPLACE INTO visits (ip, platform, timestamp)
-            VALUES (?, ?, CURRENT_TIMESTAMP)
-        ''', (client_ip, 'android'))
+            INSERT INTO app_visits (device_id, platform, ip, last_seen)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(device_id) DO UPDATE SET
+                platform=excluded.platform,
+                ip=excluded.ip,
+                last_seen=CURRENT_TIMESTAMP
+        ''', (device_id, platform_label, client_ip))
         
         conn.commit()
         conn.close()
         
-        return jsonify({'ok': True}), 200
+        return jsonify({'ok': True, 'platform': platform_label}), 200
     except Exception as e:
         print(f"[ERROR] Failed to track Android visit: {e}")
         return jsonify({'ok': False}), 500
@@ -13677,108 +13714,47 @@ def sitemap_xml():
 
 @app.route('/presence', methods=['POST'])
 def presence():
-    # Rate limiting removed
-    data = request.get_json(silent=True) or {}
-    vid = data.get('id')
-    client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
-    print(f"[DEBUG] /presence called with id={vid} from IP {client_ip}")
-    if not vid:
-        return jsonify({'status':'error','error':'id required'}), 400
-    now = time.time()
-    blocked = set(load_blocked())
-    if vid in blocked:
-        return jsonify({'status':'blocked'})
-    remote_ip = request.headers.get('X-Forwarded-For', request.remote_addr or '')
-    ua = request.headers.get('User-Agent', '')[:300]
-    # Load stats and register first-seen if new
-    stats = _load_visit_stats()
-    if vid not in stats:
-        stats[vid] = now
-        # prune occasionally (1/200 probability)
-        if int(now) % 200 == 0:
-            _prune_visit_stats()
-        _save_visit_stats()
-    # Update rolling today/week stats (independent persistence)
-    try:
-        _update_recent_visits(vid)
-    except Exception as e:
-        log.warning(f"recent visits update failed: {e}")
-    # Record in SQLite persistent store
-    try:
-        record_visit_sql(vid, now)
-    except Exception:
-        pass
-    # Query DB for persistent first_seen to avoid resetting session on process restart
-    db_first = None
-    try:
-        with _visits_db_conn() as conn:
-            cur = conn.execute("SELECT first_seen FROM visits WHERE id=?", (vid,))
-            row = cur.fetchone()
-            if row and row[0]:
-                try:
-                    db_first = float(row[0])
-                except Exception:
-                    db_first = None
-    except Exception:
-        pass
-    with ACTIVE_LOCK:
-        prev = ACTIVE_VISITORS.get(vid) if isinstance(ACTIVE_VISITORS.get(vid), dict) else {}
-        first_seen = prev.get('first') or db_first or stats.get(vid) or now
-        ACTIVE_VISITORS[vid] = {'ts': now, 'first': first_seen, 'ip': remote_ip, 'ua': prev.get('ua') or ua}
-        # prune
-        for k, meta in list(ACTIVE_VISITORS.items()):
-            ts = meta if isinstance(meta,(int,float)) else meta.get('ts',0)
-            if now - ts > ACTIVE_TTL:
-                del ACTIVE_VISITORS[k]
-        count = len(ACTIVE_VISITORS)
-    print(f"[DEBUG] Returning visitors count: {count}")
-    return jsonify({'status':'ok','visitors': count})
-def presence():
-    # CRITICAL BANDWIDTH PROTECTION: Rate limit presence endpoint
-    client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
-    presence_requests = request_counts.get(f"{client_ip}_presence", [])
+    """Register active viewers and return synchronized counts per platform."""
+    client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr) or 'unknown'
+    rate_key = f"{client_ip}_presence"
     now_time = time.time()
-    
-    # Clean old requests (last 120 seconds - allow every 2 minutes)
-    presence_requests = [req_time for req_time in presence_requests if now_time - req_time < 120]
-    
-    # Allow only 1 presence request per 2 minutes per IP
-    if len(presence_requests) >= 1:
-        return jsonify({'error': 'Presence endpoint rate limited - wait 2 minutes'}), 429
-    
-    presence_requests.append(now_time)
-    request_counts[f"{client_ip}_presence"] = presence_requests
-    
+    recent = [ts for ts in request_counts[rate_key] if now_time - ts < PRESENCE_RATE_WINDOW]
+    if len(recent) >= PRESENCE_RATE_LIMIT:
+        return jsonify({'error': 'presence rate limited', 'retry_after': PRESENCE_RATE_WINDOW}), 429
+    recent.append(now_time)
+    request_counts[rate_key] = recent
+
     data = request.get_json(silent=True) or {}
-    vid = data.get('id')
-    print(f"[DEBUG] /presence called with id={vid} from IP {client_ip}")
+    vid = str(data.get('id') or '').strip()
     if not vid:
-        return jsonify({'status':'error','error':'id required'}), 400
+        return jsonify({'status': 'error', 'error': 'id required'}), 400
+
     now = time.time()
     blocked = set(load_blocked())
     if vid in blocked:
-        return jsonify({'status':'blocked'})
+        return jsonify({'status': 'blocked'})
+
     remote_ip = request.headers.get('X-Forwarded-For', request.remote_addr or '')
     ua = request.headers.get('User-Agent', '')[:300]
-    # Load stats and register first-seen if new
+    platform_label = _normalize_platform(data.get('platform') or '', ua)
+
     stats = _load_visit_stats()
     if vid not in stats:
         stats[vid] = now
-        # prune occasionally (1/200 probability)
         if int(now) % 200 == 0:
             _prune_visit_stats()
         _save_visit_stats()
-    # Update rolling today/week stats (independent persistence)
+
     try:
         _update_recent_visits(vid)
     except Exception as e:
         log.warning(f"recent visits update failed: {e}")
-    # Record in SQLite persistent store
+
     try:
         record_visit_sql(vid, now)
     except Exception:
         pass
-    # Query DB for persistent first_seen to avoid resetting session on process restart
+
     db_first = None
     try:
         with _visits_db_conn() as conn:
@@ -13791,18 +13767,41 @@ def presence():
                     db_first = None
     except Exception:
         pass
+
     with ACTIVE_LOCK:
         prev = ACTIVE_VISITORS.get(vid) if isinstance(ACTIVE_VISITORS.get(vid), dict) else {}
         first_seen = prev.get('first') or db_first or stats.get(vid) or now
-        ACTIVE_VISITORS[vid] = {'ts': now, 'first': first_seen, 'ip': remote_ip, 'ua': prev.get('ua') or ua}
-        # prune
-        for k, meta in list(ACTIVE_VISITORS.items()):
-            ts = meta if isinstance(meta,(int,float)) else meta.get('ts',0)
+        ACTIVE_VISITORS[vid] = {
+            'ts': now,
+            'first': first_seen,
+            'ip': remote_ip,
+            'ua': prev.get('ua') or ua,
+            'platform': platform_label
+        }
+        for key, meta in list(ACTIVE_VISITORS.items()):
+            ts = meta if isinstance(meta, (int, float)) else meta.get('ts', 0)
             if now - ts > ACTIVE_TTL:
-                del ACTIVE_VISITORS[k]
-        count = len(ACTIVE_VISITORS)
-    print(f"[DEBUG] Returning visitors count: {count}")
-    return jsonify({'status':'ok','visitors': count})
+                del ACTIVE_VISITORS[key]
+
+        platform_counts = {}
+        for meta in ACTIVE_VISITORS.values():
+            bucket = meta.get('platform') or 'web'
+            platform_counts[bucket] = platform_counts.get(bucket, 0) + 1
+        total = sum(platform_counts.values())
+
+    apps_total = platform_counts.get('android', 0) + platform_counts.get('ios', 0)
+    payload = {
+        'status': 'ok',
+        'visitors': total,
+        'platforms': {
+            'web': platform_counts.get('web', 0),
+            'android': platform_counts.get('android', 0),
+            'ios': platform_counts.get('ios', 0),
+            'other': sum(v for k, v in platform_counts.items() if k not in VALID_PLATFORMS)
+        },
+        'apps': apps_total
+    }
+    return jsonify(payload)
 
 @app.route('/raion_alarms')
 def raion_alarms():

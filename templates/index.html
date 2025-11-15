@@ -309,41 +309,37 @@
 
   /* Современный счетчик пользователей - темная тема */
   .live-users {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.6rem 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+    padding: 0.65rem 1rem;
     background: linear-gradient(145deg, #0f172a 0%, #1e293b 40%, #334155 100%);
     border: 1px solid rgba(59, 130, 246, 0.2);
-    border-radius: 1.5rem;
+    border-radius: 1.25rem;
     font-size: 0.75rem;
     font-weight: 600;
     letter-spacing: 0.5px;
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
+    position: relative;
     box-shadow: 
       0 0 0 1px rgba(59, 130, 246, 0.1),
       0 8px 25px -8px rgba(0, 0, 0, 0.6),
       inset 0 1px 0 rgba(255, 255, 255, 0.1);
-    white-space: nowrap;
     backdrop-filter: blur(12px) saturate(150%);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    min-width: 200px;
   }
   
   /* Desktop live counter - visible by default */
   .desktop-live {
-    display: inline-flex;
+    display: flex;
   }
   
-  /* Mobile live counter - hidden by default */
   .mobile-live {
     display: none;
   }
   
   .live-users:hover {
-    transform: translate(-50%, -50%) translateY(-2px);
     box-shadow: 
       0 0 0 1px rgba(59, 130, 246, 0.3),
       0 12px 35px -10px rgba(0, 0, 0, 0.7),
@@ -361,7 +357,9 @@
       0 0 12px 3px rgba(16, 185, 129, 0.6),
       inset 0 1px 2px rgba(255, 255, 255, 0.3);
     animation: livePulse 2.5s ease-in-out infinite;
-    position: relative;
+    position: absolute;
+    top: 0.65rem;
+    right: 0.65rem;
   }
   
   @keyframes livePulse {
@@ -385,6 +383,14 @@
     }
   }
   
+  .live-header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
   .live-users .live-label {
     color: #cbd5e1;
     font-weight: 500;
@@ -394,7 +400,7 @@
   .live-users .live-count {
     color: #10b981;
     font-weight: 800;
-    font-size: 0.85rem;
+    font-size: 1rem;
     min-width: 20px;
     text-align: center;
     transition: all 0.3s ease;
@@ -414,36 +420,61 @@
   .live-users .live-beta {
     color: #fbbf24;
     font-weight: 700;
-    font-size: 0.65rem;
+    font-size: 0.55rem;
     letter-spacing: 0.8px;
-    padding: 0.15rem 0.4rem;
-    background: linear-gradient(135deg, rgba(251, 191, 36, 0.15), rgba(245, 158, 11, 0.1));
-    border: 1px solid rgba(251, 191, 36, 0.3);
-    border-radius: 0.5rem;
+    padding: 0.1rem 0.35rem;
+    background: rgba(251, 191, 36, 0.08);
+    border: 1px solid rgba(251, 191, 36, 0.25);
+    border-radius: 999px;
     text-transform: uppercase;
     backdrop-filter: blur(4px);
+  }
+
+  .live-breakdown {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .live-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    background: rgba(148, 163, 184, 0.12);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+  }
+
+  .live-chip strong {
+    color: #f8fafc;
+    font-weight: 700;
+  }
+
+  .live-mini-breakdown {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.6rem;
+    color: #94a3b8;
+    opacity: 0.9;
   }
   
   /* Responsive adjustments */
   @media (max-width: 768px) {
     .live-users {
       font-size: 0.7rem;
-      padding: 0.5rem 0.8rem;
-      gap: 0.4rem;
+      padding: 0.55rem 0.85rem;
     }
-    
-    .live-users::before {
-      width: 10px;
-      height: 10px;
-    }
-    
     .live-users .live-count {
-      font-size: 0.8rem;
+      font-size: 0.9rem;
     }
-    
-    .live-users .live-beta {
-      font-size: 0.6rem;
-      padding: 0.1rem 0.3rem;
+    .live-mini-breakdown {
+      font-size: 0.55rem;
+      flex-direction: column;
+      gap: 0.2rem;
     }
   }
   
@@ -451,10 +482,10 @@
     .live-users {
       font-size: 0.65rem;
       padding: 0.45rem 0.7rem;
+      min-width: 170px;
     }
-    
-    .live-users .live-label {
-      display: none; /* Hide "онлайн" text on very small screens */
+    .live-breakdown {
+      flex-direction: column;
     }
   }
     
@@ -1047,13 +1078,7 @@
         left: auto;
         top: auto;
         margin: 0;
-        background: rgba(34, 197, 94, 0.15);
-        border: 1px solid rgba(34, 197, 94, 0.3);
-        border-radius: 0.6rem;
-        padding: 0.3rem 0.6rem;
-        font-size: 0.7rem;
-        backdrop-filter: blur(8px);
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        width: 100%;
       }
       
       /* Ensure logo has proper flex layout on mobile */
@@ -2341,10 +2366,24 @@
   <div class="navbar">
     <div class="logo">
       <span class="logo-text">NEPTUN</span>
-      <div class="live-users mobile-live" id="liveUsers" title="Активні відвідувачі зараз онлайн • Оновлюється кожні 5 секунд">
-        <span class="live-label">онлайн</span>
-        <span class="live-count" id="liveCount">0</span>
-        <span class="live-beta">BETA</span>
+      <div class="live-users mobile-live" id="liveUsers" title="Активні відвідувачі зараз онлайн • Оновлюється кожні 30 секунд">
+        <div class="live-header">
+          <span class="live-label">онлайн</span>
+          <span class="live-beta">sync</span>
+        </div>
+        <span class="live-count" data-role="live-total">0</span>
+        <div class="live-breakdown">
+          <span class="live-chip">
+            🌐 web <strong data-role="live-web">0</strong>
+          </span>
+          <span class="live-chip">
+            📱 app <strong data-role="live-apps">0</strong>
+          </span>
+        </div>
+        <div class="live-mini-breakdown">
+          <span data-role="live-android">Android · 0</span>
+          <span data-role="live-ios">iOS · 0</span>
+        </div>
       </div>
     </div>
     <div class="nav-links">
@@ -2353,10 +2392,24 @@
       <a href="#about"><i class="material-icons">info</i> Інфо</a>
       
     </div>
-    <div class="live-users desktop-live" id="liveUsersDesktop" title="Активні відвідувачі зараз онлайн • Оновлюється кожні 5 секунд">
-      <span class="live-label">онлайн</span>
-      <span class="live-count" id="liveCountDesktop">0</span>
-      <span class="live-beta">BETA</span>
+    <div class="live-users desktop-live" id="liveUsersDesktop" title="Активні відвідувачі зараз онлайн • Оновлюється кожні 30 секунд">
+      <div class="live-header">
+        <span class="live-label">онлайн</span>
+        <span class="live-beta">sync</span>
+      </div>
+      <span class="live-count" data-role="live-total">0</span>
+      <div class="live-breakdown">
+        <span class="live-chip">
+          🌐 web <strong data-role="live-web">0</strong>
+        </span>
+        <span class="live-chip">
+          📱 app <strong data-role="live-apps">0</strong>
+        </span>
+      </div>
+      <div class="live-mini-breakdown">
+        <span data-role="live-android">Android · 0</span>
+        <span data-role="live-ios">iOS · 0</span>
+      </div>
     </div>
   </div>
 
@@ -4559,10 +4612,35 @@
       // ---- Presence (active users) ----
       const uid = localStorage.getItem('presence_id') || (self.crypto?.randomUUID ? crypto.randomUUID() : (Date.now()+""+Math.random()).replace(/\D/g,''));
       localStorage.setItem('presence_id', uid);
+
+      const totalTargets = document.querySelectorAll('[data-role="live-total"]');
+      const webTargets = document.querySelectorAll('[data-role="live-web"]');
+      const appTargets = document.querySelectorAll('[data-role="live-apps"]');
+      const androidTargets = document.querySelectorAll('[data-role="live-android"]');
+      const iosTargets = document.querySelectorAll('[data-role="live-ios"]');
+
+      const formatNumber = (value) => Number(value || 0).toLocaleString('uk-UA');
+      const animateUpdate = (node) => {
+        node.classList.add('updating');
+        setTimeout(() => node.classList.remove('updating'), 600);
+      };
+
+      const updateNodes = (nodes, value, formatter = formatNumber) => {
+        nodes.forEach(node => {
+          const nextValue = formatter(value);
+          if (node.textContent === nextValue) return;
+          animateUpdate(node);
+          node.textContent = nextValue;
+        });
+      };
       async function pingPresence(){
         console.log('pingPresence: отправляем запрос к /presence...');
         try {
-          const r = await fetch('/presence', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id:uid})});
+          const r = await fetch('/presence', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({id:uid, platform:'web'})
+          });
           console.log('pingPresence: получен ответ, статус:', r.status);
           const j = await r.json();
           console.log('pingPresence: данные:', j);
@@ -4585,41 +4663,19 @@
             } catch(e) { /* ignore */ }
           }
           if(typeof visitors !== 'undefined'){
-            // Update mobile live counter
-            const mobileEl = document.getElementById('liveUsers');
-            if(mobileEl){ 
-              const countEl = mobileEl.querySelector('.live-count') || mobileEl.querySelector('strong');
-              if (countEl) {
-                const oldValue = parseInt(countEl.textContent) || 0;
-                const newValue = parseInt(visitors) || 0;
-                
-                if (oldValue !== newValue) {
-                  countEl.classList.add('updating');
-                  setTimeout(() => countEl.classList.remove('updating'), 600);
-                }
-                
-                countEl.textContent = visitors; 
-              }
-            }
-            
-            // Update desktop live counter
-            const desktopEl = document.getElementById('liveUsersDesktop');
-            if(desktopEl){ 
-              const countEl = desktopEl.querySelector('.live-count') || desktopEl.querySelector('strong');
-              if (countEl) {
-                const oldValue = parseInt(countEl.textContent) || 0;
-                const newValue = parseInt(visitors) || 0;
-                
-                if (oldValue !== newValue) {
-                  countEl.classList.add('updating');
-                  setTimeout(() => countEl.classList.remove('updating'), 600);
-                }
-                
-                countEl.textContent = visitors; 
-              }
-            }
-            
-            console.log('pingPresence: обновлен счетчик онлайн пользователей:', visitors);
+            const platforms = j.platforms || {};
+            const androidCount = platforms.android ?? 0;
+            const iosCount = platforms.ios ?? 0;
+            const webCount = platforms.web ?? 0;
+            const appsCount = (typeof j.apps === 'number') ? j.apps : (androidCount + iosCount);
+
+            updateNodes(totalTargets, visitors);
+            updateNodes(webTargets, webCount);
+            updateNodes(appTargets, appsCount);
+            updateNodes(androidTargets, androidCount, value => `Android · ${formatNumber(value)}`);
+            updateNodes(iosTargets, iosCount, value => `iOS · ${formatNumber(value)}`);
+
+            console.log('pingPresence: обновлен счетчик онлайн пользователей:', {total: visitors, web: webCount, apps: appsCount});
           }
         } catch(e){
           console.error('pingPresence: ошибка при загрузке данных о пользователях:', e);
@@ -5581,30 +5637,6 @@
       window.addEventListener('beforeunload', () => {
         clearInterval(engagementTimer);
       });
-    })();
-  </script>
-
-  <!-- Visitor Counter Script -->
-  <script>
-    (function() {
-      async function updateVisitorCount() {
-        try {
-          const response = await fetch('/api/visitor_count');
-          const count = await response.text();
-          const formattedCount = parseInt(count).toLocaleString('uk-UA');
-          
-          document.getElementById('liveCount').textContent = formattedCount;
-          document.getElementById('liveCountDesktop').textContent = formattedCount;
-        } catch (error) {
-          console.log('Error loading visitor count:', error);
-        }
-      }
-      
-      // Update on page load
-      updateVisitorCount();
-      
-      // Update every 30 seconds
-      setInterval(updateVisitorCount, 30000);
     })();
   </script>
 
