@@ -24,3 +24,9 @@ venv/
 Thumbs.db
 .DS_Store
 
+# Mobile apps - Android & iOS
+android-app/
+app-ios/
+ios-app/
+NeptunAlarmMapiOS/
+

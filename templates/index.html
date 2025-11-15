@@ -287,25 +287,83 @@
       border: 1px solid var(--border) !important;
     }
     
-  .navbar {width:100%;background:var(--panel-bg);color:var(--text);font-weight:600;font-size:1.15rem;padding:.7rem 1.1rem;box-shadow:0 4px 20px var(--shadow);display:flex;align-items:center;gap:1.5rem;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);}    
-    .navbar .logo {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-    }
+  /* Modern Navbar with gradient background */
+  .navbar {
+    width: 100%;
+    background: linear-gradient(145deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+    color: var(--text);
+    font-weight: 600;
+    font-size: 1rem;
+    padding: 0.85rem 1.5rem;
+    box-shadow: 
+      0 4px 24px rgba(0, 0, 0, 0.4),
+      0 2px 8px rgba(0, 0, 0, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid rgba(59, 130, 246, 0.15);
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    backdrop-filter: blur(16px) saturate(180%);
+    transition: all 0.3s ease;
+  }
+  
+  .navbar::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, 
+      transparent 0%, 
+      rgba(59, 130, 246, 0.03) 25%, 
+      rgba(59, 130, 246, 0.05) 50%, 
+      rgba(59, 130, 246, 0.03) 75%, 
+      transparent 100%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+  }
+  
+  .navbar:hover::before {
+    opacity: 1;
+  }
     
-    .navbar .logo img {
-      width: 2.5rem;
-      height: 2.5rem;
-      border-radius: 0.75rem;
-      background: var(--accent);
-      box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
-      transition: transform 0.2s;
-    }
-    
-    .navbar .logo img:hover {
-      transform: scale(1.05);
-    }
+  .navbar .logo {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-shrink: 0;
+  }
+  
+  .logo-text {
+    font-size: 1.35rem;
+    font-weight: 800;
+    letter-spacing: 1px;
+    background: linear-gradient(135deg, #3b82f6 0%, #06b6d4 50%, #3b82f6 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+    position: relative;
+    transition: all 0.3s ease;
+  }
+  
+  .logo-text::after {
+    content: "";
+    position: absolute;
+    bottom: -4px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #3b82f6, transparent);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+  
+  .logo-text:hover::after {
+    opacity: 1;
+  }
 
   /* Современный счетчик пользователей - темная тема */
   .live-users {
@@ -489,19 +547,80 @@
     }
   }
     
-  .navbar .nav-links {display:flex;gap:.75rem;font-size:.85rem;flex-wrap:wrap;align-items:center;}
-    
-  .navbar .nav-links a {color:var(--text2);text-decoration:none;font-weight:500;transition:all .2s;padding:.45rem .75rem;border-radius:.5rem;line-height:1;display:flex;align-items:center;gap:.25rem;}
-    
-    .navbar .nav-links a:hover {
-      color: var(--text);
-      background: var(--border);
-    }
-    
-    .navbar .nav-links a.active {
-      color: var(--accent);
-      background: rgba(59, 130, 246, 0.1);
-    }
+  .navbar .nav-links {
+    display: flex;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    align-items: center;
+    flex: 1;
+    justify-content: center;
+    max-width: 600px;
+  }
+  
+  .navbar .nav-links a {
+    color: #94a3b8;
+    text-decoration: none;
+    font-weight: 600;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    padding: 0.6rem 1.1rem;
+    border-radius: 0.75rem;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    position: relative;
+    overflow: hidden;
+    backdrop-filter: blur(8px);
+  }
+  
+  .navbar .nav-links a::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(6, 182, 212, 0.1));
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    border-radius: 0.75rem;
+  }
+  
+  .navbar .nav-links a:hover {
+    color: #e2e8f0;
+    transform: translateY(-2px);
+  }
+  
+  .navbar .nav-links a:hover::before {
+    opacity: 1;
+  }
+  
+  .navbar .nav-links a.active {
+    color: #ffffff;
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.25), rgba(6, 182, 212, 0.15));
+    box-shadow: 
+      0 0 0 1px rgba(59, 130, 246, 0.3),
+      0 4px 12px rgba(59, 130, 246, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
+  
+  .navbar .nav-links a.active::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #3b82f6, transparent);
+    border-radius: 2px;
+  }
+  
+  .navbar .nav-links a i {
+    font-size: 1.1rem;
+    transition: transform 0.3s ease;
+  }
+  
+  .navbar .nav-links a:hover i {
+    transform: scale(1.1);
+  }
     
     /* Donate button */
     .donate-btn {
@@ -581,37 +700,36 @@
     @media (max-width: 480px) {
       /* Extra compact mobile styles */
       .navbar {
-        padding: 0.5rem 0.8rem;
-        height: 3rem;
+        padding: 0.5rem 0.75rem;
+        gap: 0.4rem;
       }
       
       .navbar .logo {
         gap: 0.5rem;
       }
       
-      .navbar .logo img {
-        width: 2rem;
-        height: 2rem;
+      .navbar .logo .logo-text {
+        font-size: 0.95rem;
+        letter-spacing: 0.5px;
       }
       
-      .navbar .live-users {
-        padding: 0.25rem 0.5rem;
-        font-size: 0.65rem;
-        border-radius: 0.5rem;
-      }
-      
-      .navbar .live-count {
-        font-size: 0.75rem;
-      }
-      
-      .navbar .live-label {
+      .live-users {
+        padding: 0.4rem 0.65rem;
         font-size: 0.6rem;
+        border-radius: 0.75rem;
+        min-width: 0;
+        max-width: 200px;
       }
       
-      .navbar .live-beta {
-        font-size: 0.45rem;
-        padding: 0.05rem 0.25rem;
-        margin-left: 0.15rem;
+      .live-users .live-count {
+        font-size: 0.85rem;
+      }
+      
+      .live-users::before {
+        width: 10px;
+        height: 10px;
+        top: 0.5rem;
+        right: 0.5rem;
       }
     }
     /* Ad blocks styling */
@@ -1058,12 +1176,13 @@
     
     @media (max-width: 700px) {
       .navbar {
-        padding: 0.75rem 1rem;
+        padding: 0.65rem 1rem;
+        gap: 0.5rem;
       }
       
       /* Hide NEPTUN text on mobile */
       .navbar .logo .logo-text {
-        display: none;
+        font-size: 1.1rem;
       }
       
       /* Show mobile live counter, hide desktop one */
@@ -1079,6 +1198,8 @@
         top: auto;
         margin: 0;
         width: 100%;
+        min-width: 0;
+        max-width: 240px;
       }
       
       /* Ensure logo has proper flex layout on mobile */
@@ -1086,26 +1207,7 @@
         display: flex;
         align-items: center;
         gap: 0.75rem;
-      }
-      
-      .navbar .live-count {
-        font-size: 0.8rem;
-        font-weight: 700;
-        color: #22c55e;
-      }
-      
-      .navbar .live-label {
-        color: #86efac;
-        font-size: 0.65rem;
-      }
-      
-      .navbar .live-beta {
-        font-size: 0.5rem;
-        color: #4ade80;
-        background: rgba(34, 197, 94, 0.2);
-        padding: 0.1rem 0.3rem;
-        border-radius: 0.3rem;
-        margin-left: 0.2rem;
+        flex: 1;
       }
       
       .navbar .nav-links {
