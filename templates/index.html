@@ -4514,13 +4514,17 @@
             worldMaskLayer = L.polygon([worldRing, ...rings], {
               stroke:false,
               fill:true,
-              fillColor:'#0f172a',
-              fillOpacity:0.70,
+              fillColor:'#071b35',
+              fillOpacity:1,
               interactive:false,
               className:'world-mask'
             }).addTo(map);
             const el = worldMaskLayer.getElement();
-            if(el){ el.style.pointerEvents='none'; el.style.mixBlendMode='multiply'; }
+            if(el){
+              el.style.pointerEvents = 'none';
+              el.style.mixBlendMode = 'normal';
+              el.style.opacity = '1';
+            }
         }
         // Initial quick mask
         drawMask([fallbackRing]);
