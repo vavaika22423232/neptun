@@ -4560,13 +4560,13 @@
         
         // Определяем цветовую схему в зависимости от типа угрозы
         const threatColors = {
-          shahed: { gradient: 'linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)', border: '#dc2626', icon: '🛩️', label: 'БПЛА' },
-          rocket: { gradient: 'linear-gradient(135deg, #fed7aa 0%, #fdba74 100%)', border: '#ea580c', icon: '🚀', label: 'Ракета' },
-          avia: { gradient: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)', border: '#d97706', icon: '✈️', label: 'Авіація' },
-          artillery: { gradient: 'linear-gradient(135deg, #fef9c3 0%, #fef08a 100%)', border: '#ca8a04', icon: '💥', label: 'Артилерія' },
-          fpv: { gradient: 'linear-gradient(135deg, #e9d5ff 0%, #d8b4fe 100%)', border: '#9333ea', icon: '🎯', label: 'FPV-дрон' },
-          alarm_cancel: { gradient: 'linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)', border: '#10b981', icon: '✅', label: 'Відбій' },
-          default: { gradient: 'linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%)', border: '#3b82f6', icon: 'ℹ️', label: 'Інформація' }
+          shahed: { gradient: 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)', accent: '#dc2626', icon: '🛩️' },
+          rocket: { gradient: 'linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%)', accent: '#ea580c', icon: '🚀' },
+          avia: { gradient: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)', accent: '#d97706', icon: '✈️' },
+          artillery: { gradient: 'linear-gradient(135deg, #fefce8 0%, #fef9c3 100%)', accent: '#ca8a04', icon: '💥' },
+          fpv: { gradient: 'linear-gradient(135deg, #faf5ff 0%, #e9d5ff 100%)', accent: '#9333ea', icon: '🎯' },
+          alarm_cancel: { gradient: 'linear-gradient(135deg, #f0fdf4 0%, #d1fae5 100%)', accent: '#10b981', icon: '✅' },
+          default: { gradient: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)', accent: '#3b82f6', icon: 'ℹ️' }
         };
         
         const threatType = (p.threat_type || 'default').toLowerCase();
@@ -4575,115 +4575,71 @@
         const popupHtml = `
           <div style="
             background: ${colors.gradient};
-            border: 2px solid ${colors.border};
-            border-radius: 16px;
+            border: 1.5px solid ${colors.accent}30;
+            border-radius: 12px;
             padding: 0;
-            min-width: 280px;
-            max-width: 360px;
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            min-width: 200px;
+            max-width: 280px;
+            font-family: 'Inter', -apple-system, sans-serif;
             box-shadow: 
-              0 0 0 1px ${colors.border}20,
-              0 20px 25px -5px rgba(0, 0, 0, 0.15),
-              0 10px 10px -5px rgba(0, 0, 0, 0.1);
+              0 4px 6px -1px rgba(0,0,0,0.1),
+              0 2px 4px -1px rgba(0,0,0,0.06),
+              0 0 0 1px ${colors.accent}10;
             overflow: hidden;
-            position: relative;
           ">
-            <!-- Декоративный фоновый градиент -->
+            <!-- Верхняя акцентная полоса -->
             <div style="
-              position: absolute;
-              top: -50%;
-              right: -20%;
-              width: 200px;
-              height: 200px;
-              background: radial-gradient(circle, ${colors.border}15, transparent);
-              border-radius: 50%;
-              pointer-events: none;
+              height: 2px;
+              background: ${colors.accent};
             "></div>
             
-            <!-- Заголовок с иконкой типа угрозы -->
-            <div style="
-              background: linear-gradient(135deg, ${colors.border}15, ${colors.border}05);
-              padding: 14px 18px;
-              border-bottom: 1px solid ${colors.border}25;
-              position: relative;
-              z-index: 1;
-            ">
-              <div style="display: flex; align-items: center; gap: 10px;">
+            <!-- Основной контент -->
+            <div style="padding: 10px 12px;">
+              <div style="display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px;">
                 <div style="
-                  font-size: 28px;
+                  font-size: 20px;
                   line-height: 1;
-                  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+                  flex-shrink: 0;
                 ">${colors.icon}</div>
-                <div style="flex: 1;">
-                  <div style="
-                    font-size: 0.75rem;
-                    font-weight: 600;
-                    text-transform: uppercase;
-                    letter-spacing: 0.05em;
-                    color: ${colors.border};
-                    opacity: 0.8;
-                    margin-bottom: 2px;
-                  ">${colors.label}</div>
+                <div style="flex: 1; min-width: 0;">
                   ${placeUA ? `<div style="
-                    font-size: 1.25rem;
+                    font-size: 0.95rem;
                     font-weight: 700;
                     color: #1e293b;
                     line-height: 1.3;
+                    margin-bottom: 2px;
                   ">${placeUA}</div>` : ''}
+                  ${p.count ? `<div style="
+                    display: inline-block;
+                    background: ${colors.accent};
+                    color: white;
+                    font-weight: 700;
+                    font-size: 0.75rem;
+                    padding: 2px 6px;
+                    border-radius: 4px;
+                    margin-top: 2px;
+                  ">×${p.count}</div>` : ''}
                 </div>
               </div>
-            </div>
-            
-            <!-- Основной контент -->
-            <div style="padding: 16px 18px; position: relative; z-index: 1;">
-              ${p.count ? `
-                <div style="
-                  display: inline-flex;
-                  align-items: center;
-                  gap: 6px;
-                  background: ${colors.border};
-                  color: white;
-                  font-weight: 700;
-                  font-size: 0.95rem;
-                  padding: 6px 12px;
-                  border-radius: 8px;
-                  margin-bottom: 12px;
-                  box-shadow: 0 2px 8px ${colors.border}40;
-                ">
-                  <span style="font-size: 1.2em;">×</span>
-                  <span>${p.count}</span>
-                  <span style="opacity: 0.9; font-weight: 600; font-size: 0.85rem;">об'єктів</span>
-                </div>
-              ` : ''}
               
               <div style="
-                color: #334155;
-                font-size: 1rem;
-                line-height: 1.6;
-                white-space: pre-wrap;
-                margin-bottom: 12px;
+                color: #475569;
+                font-size: 0.85rem;
+                line-height: 1.4;
+                margin-bottom: 6px;
               ">${cleanMessage(p.text||'')}</div>
               
-              <!-- Время с иконкой -->
               <div style="
+                font-size: 0.7rem;
+                color: #94a3b8;
                 display: flex;
                 align-items: center;
-                gap: 6px;
-                font-size: 0.8rem;
-                color: #64748b;
-                padding-top: 8px;
-                border-top: 1px solid ${colors.border}20;
+                gap: 4px;
               ">
-                <span style="opacity: 0.7;">🕐</span>
+                <span>🕐</span>
                 <span>${p.date || ''}</span>
               </div>
             </div>
-            
-            <!-- Нижняя декоративная полоса -->
-            <div style="
-              height: 3px;
-              background: linear-gradient(90deg, ${colors.border}, ${colors.border}60, ${colors.border});
-            "></div>
           </div>
         `;
         
@@ -5119,10 +5075,12 @@
         // Логування успішного завантаження
         map.on('load', () => {
           console.log('MapLibre GL loaded successfully');
-          // Ініціалізуємо маску світу після завантаження стилю
-          if (typeof initWorldMask === 'function') {
-            initWorldMask();
-          }
+          // Ініціалізуємо маску світу після завантаження стилю з небольшой задержкой
+          setTimeout(() => {
+            if (typeof initWorldMask === 'function') {
+              initWorldMask();
+            }
+          }, 100);
         });
         
         // Додаємо контролі навігації
@@ -5400,41 +5358,45 @@
                 coordinates = [coords];
               }
               
-              if (!map.getSource(this._layerId)) {
-                map.addSource(this._layerId, {
-                  type: 'geojson',
-                  data: {
-                    type: 'Feature',
-                    geometry: {
-                      type: 'Polygon',
-                      coordinates: coordinates
+              try {
+                if (!map.getSource(this._layerId)) {
+                  map.addSource(this._layerId, {
+                    type: 'geojson',
+                    data: {
+                      type: 'Feature',
+                      geometry: {
+                        type: 'Polygon',
+                        coordinates: coordinates
+                      }
                     }
+                  });
+                  
+                  if (this._options.fillColor || this._options.fillOpacity) {
+                    map.addLayer({
+                      id: this._layerId,
+                      type: 'fill',
+                      source: this._layerId,
+                      paint: {
+                        'fill-color': this._options.fillColor || '#ff0000',
+                        'fill-opacity': this._options.fillOpacity || 0.3
+                      }
+                    });
                   }
-                });
-                
-                if (this._options.fillColor || this._options.fillOpacity) {
-                  map.addLayer({
-                    id: this._layerId,
-                    type: 'fill',
-                    source: this._layerId,
-                    paint: {
-                      'fill-color': this._options.fillColor || '#ff0000',
-                      'fill-opacity': this._options.fillOpacity || 0.3
-                    }
-                  });
+                  
+                  if (this._options.stroke !== false) {
+                    map.addLayer({
+                      id: this._layerId + '-outline',
+                      type: 'line',
+                      source: this._layerId,
+                      paint: {
+                        'line-color': this._options.color || '#ff0000',
+                        'line-width': this._options.weight || 2
+                      }
+                    });
+                  }
                 }
-                
-                if (this._options.stroke !== false) {
-                  map.addLayer({
-                    id: this._layerId + '-outline',
-                    type: 'line',
-                    source: this._layerId,
-                    paint: {
-                      'line-color': this._options.color || '#ff0000',
-                      'line-width': this._options.weight || 2
-                    }
-                  });
-                }
+              } catch(e) {
+                console.warn('Error adding polygon layer:', e);
               }
               return this;
             },
@@ -5678,8 +5640,8 @@
               el.style.opacity = '1';
             }
         }
-        // Initial quick mask
-        drawMask([fallbackRing]);
+        // Не показываем fallback маску - ждем точную границу
+        // drawMask([fallbackRing]);
         // Try precise GeoJSON (place file at /static/ukraine_border.geojson)
         try {
           const resp = await fetch('/static/geoBoundaries-UKR-ADM0_simplified.geojson');
@@ -5691,21 +5653,26 @@
               const geom = feats[0].geometry;
               let rings=[];
               if(geom.type==='Polygon'){
+                // Берём все кольца полигона
                 rings = geom.coordinates.map(r=> r.map(([lng,lat])=>[lat,lng]));
               } else if(geom.type==='MultiPolygon'){
-                // Merge outer boundaries; treat each outer ring as separate hole (rare) or pick largest
-                const polys = geom.coordinates.map(poly=> poly[0]); // first ring of each polygon
-                // Choose largest by number of points (likely mainland) and treat others as islands (append too)
-                polys.sort((a,b)=>b.length-a.length);
-                rings = polys.map(r=> r.map(([lng,lat])=>[lat,lng]));
+                // Для MultiPolygon берём все внешние кольца
+                rings = geom.coordinates.map(poly=> poly[0].map(([lng,lat])=>[lat,lng]));
               }
               if(rings.length){
-                // Use only first ring as hole if performance needed; or all rings
-                drawMask(rings.slice(0,3));
+                // Используем все кольца для точной границы
+                drawMask(rings);
               }
             }
+          } else {
+            // Если не удалось загрузить точную границу, используем fallback
+            console.warn('Failed to load precise border, using fallback');
+            drawMask([fallbackRing]);
           }
-        } catch(e){ console.warn('Precise border load failed, using fallback ring', e); }
+        } catch(e){ 
+          console.warn('Precise border load failed, using fallback ring', e);
+          drawMask([fallbackRing]);
+        }
       }
       
       // ---- Presence (active users) ----
