@@ -5139,13 +5139,20 @@
         // Змінюємо стиль
         map.setStyle(getMapStyle(newTheme === 'dark'));
         
-        // Після завантаження стилю відновлюємо маркери
+        // Після завантаження стилю відновлюємо все
         map.once('styledata', () => {
           forceUkrainianLabels();
-          // Тут буде код для відновлення маркерів
-          if (window.updateMarkers) {
-            window.updateMarkers();
-          }
+          
+          // Відновлюємо маркери
+          setTimeout(() => {
+            if (typeof updateMarkers === 'function') {
+              updateMarkers();
+            }
+            // Відновлюємо маску світу
+            if (typeof initWorldMask === 'function') {
+              initWorldMask();
+            }
+          }, 100);
         });
         
         updateMapThemeIcon(newTheme === 'dark');

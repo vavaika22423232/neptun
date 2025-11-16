@@ -1566,17 +1566,123 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                         'полтавська': 'полтавська область',
                         'дніпропетровська': 'дніпропетровська область',
                         'сумська': 'сумська область',
-                        'харківщина': 'харківська',
-                        'чернігівщина': 'чернігівська',
-                        'полтавщина': 'полтавська',
-                        'дніпропетровщина': 'дніпропетровська',
-                        'сумщина': 'сумська',
+                        'миколаївська': 'миколаївська обл.',
+                        'одеська': 'одеська обл.',
+                        'запорізька': 'запорізька область',
+                        'херсонська': 'херсонська обл.',
+                        'київська': 'київська обл.',
+                        'черкаська': 'черкаська область',
+                        'вінницька': 'вінницька область',
+                        'харківщина': 'харківська обл.',
+                        'чернігівщина': 'чернігівська обл.',
+                        'полтавщина': 'полтавська область',
+                        'дніпропетровщина': 'дніпропетровська область',
+                        'сумщина': 'сумська область',
+                        'миколаївщина': 'миколаївська обл.',
+                        'одещина': 'одеська обл.',
+                        'запоріжжя': 'запорізька область',
+                        'херсонщина': 'херсонська обл.',
+                        'київщина': 'київська обл.',
+                        'черкащина': 'черкаська область',
+                        'вінниччина': 'вінницька область',
                     }
                     
                     if match in oblast_normalizations:
                         detected_oblast_key = oblast_normalizations[match]
                     elif match in OBLAST_CENTERS:
                         detected_oblast_key = match
+    
+    # CRITICAL: Try Photon API with region filtering for multi-regional cities
+    # This handles cases like "Ольшанське" which exists in multiple oblasts
+    if detected_oblast_key and message_text:
+        try:
+            import requests
+            
+            # Map oblast key to region name for API filtering
+            oblast_to_region_map = {
+                'харківська обл.': 'Харківська область',
+                'чернігівська обл.': 'Чернігівська область',
+                'полтавська область': 'Полтавська область',
+                'дніпропетровська область': 'Дніпропетровська область',
+                'сумська область': 'Сумська область',
+                'миколаївська обл.': 'Миколаївська область',
+                'одеська обл.': 'Одеська область',
+                'запорізька область': 'Запорізька область',
+                'херсонська обл.': 'Херсонська область',
+                'київська обл.': 'Київська область',
+                'черкаська область': 'Черкаська область',
+                'вінницька область': 'Вінницька область',
+                'хмельницька область': 'Хмельницька область',
+                'житомирська область': 'Житомирська область',
+                'рівненська область': 'Рівненська область',
+                'волинська область': 'Волинська область',
+                'львівська область': 'Львівська область',
+                'тернопільська область': 'Тернопільська область',
+                'івано-франківська область': 'Івано-Франківська область',
+                'закарпатська область': 'Закарпатська область',
+                'чернівецька область': 'Чернівецька область',
+            }
+            
+            region_name = oblast_to_region_map.get(detected_oblast_key)
+            
+            # Try Photon API first (fastest and most reliable for Ukrainian cities)
+            photon_url = 'https://photon.komoot.io/api/'
+            params = {
+                'q': name,
+                'limit': 10  # Get multiple results to filter by region
+            }
+            
+            response = requests.get(photon_url, params=params, timeout=3)
+            if response.ok:
+                data = response.json()
+                for feature in data.get('features', []):
+                    props = feature.get('properties', {})
+                    state = props.get('state', '')
+                    country = props.get('country', '')
+                    
+                    # Filter by Ukraine and detected region
+                    if (country == 'Україна' or country == 'Ukraine'):
+                        # Check if state matches detected oblast
+                        if region_name and region_name in state:
+                            coords_arr = feature.get('geometry', {}).get('coordinates', [])
+                            if coords_arr and len(coords_arr) >= 2:
+                                lat, lng = coords_arr[1], coords_arr[0]
+                                print(f"DEBUG: Photon API found '{name}' in {state} -> ({lat}, {lng})")
+                                return (lat, lng, False)
+            
+            # Fallback to Nominatim API if Photon didn't find the city
+            if region_name:
+                nominatim_url = 'https://nominatim.openstreetmap.org/search'
+                params = {
+                    'q': f'{name}, {region_name}, Ukraine',
+                    'format': 'json',
+                    'limit': 5,
+                    'accept-language': 'uk',
+                    'addressdetails': 1
+                }
+                headers = {
+                    'User-Agent': 'NeptunAlarmMap/1.0 (https://neptun-alarm.onrender.com)'
+                }
+                
+                response = requests.get(nominatim_url, params=params, headers=headers, timeout=4)
+                if response.ok:
+                    results = response.json()
+                    for result in results:
+                        # Verify it's in the correct oblast
+                        address = result.get('address', {})
+                        result_state = address.get('state', '')
+                        
+                        if region_name in result_state or result_state in region_name:
+                            lat = float(result['lat'])
+                            lng = float(result['lon'])
+                            display_name = result.get('display_name', '')
+                            print(f"DEBUG: Nominatim API found '{name}' in {result_state} -> ({lat}, {lng})")
+                            return (lat, lng, False)
+        except Exception as e:
+            print(f"DEBUG: Multi-regional API lookup error: {e}")
+                                return (lat, lng, False)
+        except Exception as e:
+            print(f"DEBUG: Photon API error for multi-regional lookup: {e}")
     
     # Second try: standard city lookup (without oblast context)
     # BUT: if we have excluded_oblast, try to find variant NOT in that oblast
@@ -5606,8 +5712,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         import re
         
         # Define essential functions inline for immediate processing
-        def get_city_coords_quick(city_name):
-            """Quick coordinate lookup with accusative case normalization"""
+        def get_city_coords_quick(city_name, region_hint=None):
+            """Quick coordinate lookup with accusative case normalization and regional context"""
             city_norm = city_name.strip().lower()
             
             # Handle specific multi-word cities in accusative case
@@ -5636,12 +5742,16 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             if city_norm in UA_CITY_NORMALIZE:
                 city_norm = UA_CITY_NORMALIZE[city_norm]
             
-            # Try direct lookup
-            coords = CITY_COORDS.get(city_norm)
-            if not coords:
-                coords = ensure_city_coords_with_message_context(city_norm, text)
+            # CRITICAL: For multi-regional cities, ALWAYS use message context + API
+            # Don't rely on CITY_COORDS as it may have wrong coordinates for multi-region names
+            # ЗАВЖДИ використовуємо контекст повідомлення для точного визначення
+            coords = ensure_city_coords_with_message_context(city_norm, text)
             
-            add_debug_log(f"Coord lookup: '{city_name}' -> '{city_norm}' -> {bool(coords)}", "multi_regional")
+            # Fallback to CITY_COORDS only if API failed
+            if not coords:
+                coords = CITY_COORDS.get(city_norm)
+            
+            add_debug_log(f"Coord lookup: '{city_name}' -> '{city_norm}' -> {coords}", "multi_regional")
             return coords
         
         threats = []
