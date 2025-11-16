@@ -2240,8 +2240,8 @@ function forceReloadAllUsers() {
   })
   .then(data => {
     if (data.success) {
-      alert('✅ Force reload активовано!\n\nВсі користувачі отримають команду на перезавантаження при наступній перевірці статусу (протягом 30 секунд).');
-      console.log('Force reload triggered successfully');
+      alert('✅ Force reload активовано!\n\nВсі користувачі отримають команду на перезавантаження протягом наступних 2 хвилин.\n\nКожен користувач буде перезавантажений при наступній перевірці статусу (кожні 30 секунд).');
+      console.log('Force reload triggered successfully:', data);
     } else {
       alert('❌ Помилка активації force reload: ' + (data.message || 'Unknown error'));
     }

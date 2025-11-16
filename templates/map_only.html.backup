@@ -49,76 +49,104 @@
       box-shadow: 0 2px 8px rgba(0,0,0,0.12);
       min-width: 160px;
       max-width: 240px;
-      overflow: hidden;
+      border: none;
+    }
+    
+    .maplibregl-popup-close-button {
+      display: none;
     }
     
     .maplibregl-popup-tip {
-      border-top-color: #fff !important;
+      display: none;
     }
     
     .popup-content {
-      padding: 12px;
-      border-left: 3px solid #e74c3c;
+      padding: 10px;
+      border-left: 3px solid #3b82f6;
     }
     
-    .popup-content.shahed { border-left-color: #e74c3c; }
-    .popup-content.missile { border-left-color: #c0392b; }
-    .popup-content.artillery { border-left-color: #f39c12; }
-    .popup-content.aviation { border-left-color: #3498db; }
-    .popup-content.alarm { border-left-color: #e67e22; }
+    .popup-content.shahed {
+      border-left-color: #ef4444;
+    }
+    
+    .popup-content.missile {
+      border-left-color: #f59e0b;
+    }
+    
+    .popup-content.missile_s300 {
+      border-left-color: #8b5cf6;
+    }
     
     .popup-title {
-      font-size: 13px;
       font-weight: 600;
-      color: #2c3e50;
+      font-size: 0.9rem;
       margin-bottom: 4px;
+      color: #1f2937;
     }
     
     .popup-text {
-      font-size: 12px;
-      color: #7f8c8d;
-      margin-bottom: 4px;
+      font-size: 0.8rem;
+      color: #6b7280;
       line-height: 1.3;
+      margin-bottom: 4px;
     }
     
     .popup-date {
-      font-size: 11px;
-      color: #95a5a6;
-      margin-top: 6px;
-      padding-top: 6px;
-      border-top: 1px solid #ecf0f1;
+      font-size: 0.7rem;
+      color: #9ca3af;
+      margin-top: 4px;
     }
     
-    /* Count badge on markers */
+    /* Marker badge styles */
     .tm-badge {
       position: absolute;
-      top: -6px;
-      right: -6px;
-      background: #e74c3c;
+      top: -8px;
+      right: -8px;
+      background: linear-gradient(135deg, #ef4444, #dc2626);
       color: white;
-      border-radius: 10px;
-      padding: 2px 6px;
-      font-size: 10px;
-      font-weight: bold;
-      min-width: 18px;
-      text-align: center;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+      border-radius: 50%;
+      min-width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      box-shadow: 0 2px 6px rgba(239, 68, 68, 0.4), 0 0 0 2px white;
       z-index: 10;
+      pointer-events: none;
+      animation: pulse 2s ease-in-out infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.1); opacity: 0.9; }
     }
     
     /* Loading indicator */
     .loading {
-      position: fixed;
+      position: absolute;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
       background: rgba(255,255,255,0.95);
-      padding: 20px 40px;
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      font-size: 16px;
-      color: #2c3e50;
-      z-index: 10000;
+      padding: 20px 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      font-size: 14px;
+      color: #374151;
+      z-index: 9999;
+    }
+    
+    .loading::after {
+      content: '...';
+      animation: dots 1.5s steps(4, end) infinite;
+    }
+    
+    @keyframes dots {
+      0%, 20% { content: '.'; }
+      40% { content: '..'; }
+      60%, 100% { content: '...'; }
     }
   </style>
 </head>
@@ -135,7 +163,7 @@
     
     let map;
     let markers = [];
-    let ukraineMaskLayer = null;
+    let clusterIndex;
     
     // Get map style URL
     function getMapStyle(isDark) {
@@ -151,19 +179,16 @@
       map = new maplibregl.Map({
         container: 'map',
         style: getMapStyle(isDark),
-        center: [31.1656, 48.3794], // Ukraine center
-        zoom: 6,
-        minZoom: 5,
-        maxZoom: 18
+        center: [31.1656, 48.3794],
+        zoom: 5.5,
+        attributionControl: false
       });
       
       map.on('load', () => {
         document.getElementById('loading').style.display = 'none';
         
         // Force Ukrainian labels
-        setTimeout(() => {
-          forceUkrainianLabels();
-        }, 100);
+        forceUkrainianLabels();
         
         // Add world mask (dimming outside Ukraine)
         addWorldMask();
@@ -174,6 +199,9 @@
         // Start auto-update
         setInterval(updateMarkers, UPDATE_INTERVAL);
       });
+      
+      // Re-apply Ukrainian labels when style changes
+      map.on('styledata', forceUkrainianLabels);
       
       map.on('error', (e) => {
         console.warn('Map error (non-critical):', e);
@@ -186,20 +214,23 @@
         const response = await fetch('/static/geoBoundaries-UKR-ADM0_simplified.geojson');
         const ukraineGeoJSON = await response.json();
         
-        // Create world polygon with Ukraine hole
+        // World bbox coordinates (covering everything except Ukraine)
         const worldBbox = [[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]];
         
-        // Extract Ukraine coordinates (handle multi-polygon)
-        let ukraineHoles = [];
+        // Extract Ukraine coordinates
+        let ukraineRings = [];
         if (ukraineGeoJSON.features && ukraineGeoJSON.features[0]) {
-          const coords = ukraineGeoJSON.features[0].geometry.coordinates;
-          ukraineHoles = coords.map(polygon => polygon[0]);
+          const geom = ukraineGeoJSON.features[0].geometry;
+          if (geom.type === 'Polygon') {
+            ukraineRings = geom.coordinates;
+          } else if (geom.type === 'MultiPolygon') {
+            ukraineRings = geom.coordinates.map(poly => poly[0]);
+          }
         }
         
-        // Create mask geometry
-        const maskCoordinates = [worldBbox, ...ukraineHoles];
+        // Create mask: world bbox with Ukraine holes
+        const maskCoordinates = [worldBbox, ...ukraineRings];
         
-        // Add source
         map.addSource('world-mask', {
           type: 'geojson',
           data: {
@@ -211,18 +242,15 @@
           }
         });
         
-        // Add layer
         map.addLayer({
           id: 'world-mask-layer',
           type: 'fill',
           source: 'world-mask',
           paint: {
-            'fill-color': '#000',
-            'fill-opacity': 0.5
+            'fill-color': '#071b35',
+            'fill-opacity': 1
           }
         });
-        
-        ukraineMaskLayer = 'world-mask-layer';
         
       } catch (error) {
         console.error('Error loading Ukraine mask:', error);
@@ -231,20 +259,43 @@
     
     // Force Ukrainian labels on all text layers
     function forceUkrainianLabels() {
-      if (!map || !map.isStyleLoaded()) return;
-      
-      const style = map.getStyle();
-      if (!style || !style.layers) return;
-      
-      style.layers.forEach(layer => {
-        if (layer.type === 'symbol' && layer.layout && layer.layout['text-field']) {
-          try {
-            map.setLayoutProperty(layer.id, 'text-field', ['coalesce', ['get', 'name:uk'], ['get', 'name']]);
-          } catch (e) {
-            // Skip if property cannot be set
+      try {
+        if (!map || !map.isStyleLoaded()) return;
+        
+        const style = map.getStyle();
+        if (!style || !style.layers) return;
+        
+        style.layers.forEach(layer => {
+          if (layer.type === 'symbol' && layer.layout && layer.layout['text-field']) {
+            const textField = layer.layout['text-field'];
+            
+            if (typeof textField === 'string') {
+              // Replace all name variants with Ukrainian
+              let newField = textField;
+              newField = newField.replace(/\{name:latin\}/g, '{name:uk}');
+              newField = newField.replace(/\{name:en\}/g, '{name:uk}');
+              newField = newField.replace(/\{name_en\}/g, '{name:uk}');
+              newField = newField.replace(/\{name_int\}/g, '{name:uk}');
+              newField = newField.replace(/\{name\}/g, '{name:uk}');
+              if (newField !== textField) {
+                map.setLayoutProperty(layer.id, 'text-field', newField);
+              }
+            } else if (Array.isArray(textField)) {
+              // For expressions, replace all name variants with "name:uk"
+              let jsonStr = JSON.stringify(textField);
+              jsonStr = jsonStr.replace(/"name:latin"/g, '"name:uk"');
+              jsonStr = jsonStr.replace(/"name:en"/g, '"name:uk"');
+              jsonStr = jsonStr.replace(/"name_en"/g, '"name:uk"');
+              jsonStr = jsonStr.replace(/"name_int"/g, '"name:uk"');
+              jsonStr = jsonStr.replace(/"name"/g, '"name:uk"');
+              const newField = JSON.parse(jsonStr);
+              map.setLayoutProperty(layer.id, 'text-field', newField);
+            }
           }
-        }
-      });
+        });
+      } catch (e) {
+        console.warn('Error setting Ukrainian labels:', e);
+      }
     }
     
     // Fetch threat data

@@ -486,7 +486,8 @@ BLOCKED_FILE = 'blocked_ids.json'
 STATS_FILE = 'visits_stats.json'  # persistent first-seen timestamps per visitor id
 RECENT_VISITS_FILE = 'visits_recent.json'  # stores rolling today/week visitor id sets for fast counts
 VISIT_STATS = None  # lazy-loaded dict: {id: first_seen_epoch}
-FORCE_RELOAD_FLAG = False  # Flag to trigger force reload for all users
+FORCE_RELOAD_TIMESTAMP = 0  # Timestamp when force reload was triggered
+FORCE_RELOAD_DURATION = 120  # Duration in seconds to keep force reload active (2 minutes)
 FORCE_RELOAD_LOCK = threading.Lock()
 client = None
 session_str = os.getenv('TELEGRAM_SESSION')  # Telethon string session (recommended for Render)
@@ -5644,25 +5645,73 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     # PRIORITY CHECK: Black Sea aquatory - must check BEFORE multi-regional processing
     # Messages like "БпЛА курсом на Миколаїв з акваторії Чорного моря" should NOT place markers on cities
     lower_text = original_text.lower()
-    if ('акватор' in lower_text or 'акваторії' in lower_text) and ('чорного моря' in lower_text or 'чорне море' in lower_text) and ('бпла' in lower_text or 'дрон' in lower_text):
-        # Extract target city if mentioned
+    if ('акватор' in lower_text or 'акваторії' in lower_text) and ('чорного моря' in lower_text or 'чорне море' in lower_text or 'чорному морі' in lower_text):
+        # Extract target region/direction if mentioned
         m_target = re.search(r'курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,})', lower_text)
-        target_city = None
+        m_direction = re.search(r'на\s+(північ|південь|схід|захід|північний\s+схід|північний\s+захід|південний\s+схід|південний\s+захід)', lower_text)
+        m_region = re.search(r'(одещин|одеськ|миколаїв|херсон)', lower_text)
+        
+        target_info = None
+        sea_lat, sea_lng = 45.3, 30.7  # Default: northern Black Sea central coords
+        
+        # Adjust position based on direction/region
+        if m_direction:
+            direction = m_direction.group(1)
+            if 'південь' in direction:
+                sea_lat = 45.0  # Further south
+            elif 'північ' in direction:
+                sea_lat = 45.6  # Further north
+            if 'схід' in direction:
+                sea_lng = 31.2  # Further east
+            elif 'захід' in direction:
+                sea_lng = 30.2  # Further west
+        
+        if m_region:
+            region_name = m_region.group(1)
+            if 'одещин' in region_name or 'одеськ' in region_name:
+                # South of Odesa region - in the sea 50km offshore
+                sea_lat, sea_lng = 45.7, 30.7
+                target_info = 'Одещини'
+            elif 'миколаїв' in region_name:
+                sea_lat, sea_lng = 45.9, 31.4
+                target_info = 'Миколаївщини'
+            elif 'херсон' in region_name:
+                sea_lat, sea_lng = 45.7, 32.5
+                target_info = 'Херсонщини'
+        
         if m_target:
             tc = m_target.group(1).lower()
             tc = UA_CITY_NORMALIZE.get(tc, tc)
-            target_city = tc.title()
+            target_info = tc.title()
+        
         threat_type, icon = classify(original_text)
-        # Approx northern Black Sea central coords (between Odesa & Crimea offshore)
-        sea_lat, sea_lng = 45.3, 30.7
         place_label = 'Акваторія Чорного моря'
-        if target_city:
-            place_label += f' (курс на {target_city})'
-        return [{
+        if target_info:
+            place_label += f' (на {target_info})'
+        
+        # Try to find target city coordinates for trajectory
+        target_coords = None
+        if m_target:
+            tc_normalized = m_target.group(1).lower()
+            tc_normalized = UA_CITY_NORMALIZE.get(tc_normalized, tc_normalized)
+            if tc_normalized in CITY_COORDS:
+                target_coords = CITY_COORDS[tc_normalized]
+        
+        result = {
             'id': str(mid), 'place': place_label, 'lat': sea_lat, 'lng': sea_lng,
             'threat_type': threat_type, 'text': original_text[:500], 'date': date_str, 'channel': channel,
             'marker_icon': icon, 'source_match': 'black_sea_course_priority'
-        }]
+        }
+        
+        # Add trajectory data if we have target coordinates
+        if target_coords:
+            result['trajectory'] = {
+                'start': [sea_lat, sea_lng],
+                'end': list(target_coords),
+                'target': target_info
+            }
+        
+        return [result]
     
     # IMMEDIATE CHECK: Multi-regional UAV messages (highest priority)
     text_lines = original_text.split('\n')
@@ -10377,25 +10426,73 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         
         # --- EARLY CHECK: Black Sea aquatory (e.g. "курсом на Миколаїв з акваторії Чорного моря") ---
         # Must check BEFORE "курсом на" parser to prevent placing marker on target city
-        if ('акватор' in lower or 'акваторії' in lower) and ('чорного моря' in lower or 'чорне море' in lower):
-            # Attempt to capture target city (optional)
+        if ('акватор' in lower or 'акваторії' in lower) and ('чорного моря' in lower or 'чорне море' in lower or 'чорному морі' in lower):
+            # Extract target region/direction if mentioned
             m_target = re.search(r'курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,})', lower)
-            target_city = None
+            m_direction = re.search(r'на\s+(північ|південь|схід|захід|північний\s+схід|північний\s+захід|південний\s+схід|південний\s+захід)', lower)
+            m_region = re.search(r'(одещин|одеськ|миколаїв|херсон)', lower)
+            
+            target_info = None
+            sea_lat, sea_lng = 45.3, 30.7  # Default: northern Black Sea central coords
+            
+            # Adjust position based on direction/region
+            if m_direction:
+                direction = m_direction.group(1)
+                if 'південь' in direction:
+                    sea_lat = 45.0  # Further south
+                elif 'північ' in direction:
+                    sea_lat = 45.6  # Further north
+                if 'схід' in direction:
+                    sea_lng = 31.2  # Further east
+                elif 'захід' in direction:
+                    sea_lng = 30.2  # Further west
+            
+            if m_region:
+                region_name = m_region.group(1)
+                if 'одещин' in region_name or 'одеськ' in region_name:
+                    # South of Odesa region - in the sea 50km offshore
+                    sea_lat, sea_lng = 45.7, 30.7
+                    target_info = 'Одещини'
+                elif 'миколаїв' in region_name:
+                    sea_lat, sea_lng = 45.9, 31.4
+                    target_info = 'Миколаївщини'
+                elif 'херсон' in region_name:
+                    sea_lat, sea_lng = 45.7, 32.5
+                    target_info = 'Херсонщини'
+            
             if m_target:
                 tc = m_target.group(1).lower()
                 tc = UA_CITY_NORMALIZE.get(tc, tc)
-                target_city = tc.title()
+                target_info = tc.title()
+            
             threat_type, icon = classify(text)
-            # Approx northern Black Sea central coords (between Odesa & Crimea offshore)
-            sea_lat, sea_lng = 45.3, 30.7
             place_label = 'Акваторія Чорного моря'
-            if target_city:
-                place_label += f' (курс на {target_city})'
-            return [{
+            if target_info:
+                place_label += f' (на {target_info})'
+            
+            # Try to find target city coordinates for trajectory
+            target_coords = None
+            if m_target:
+                tc_normalized = m_target.group(1).lower()
+                tc_normalized = UA_CITY_NORMALIZE.get(tc_normalized, tc_normalized)
+                if tc_normalized in CITY_COORDS:
+                    target_coords = CITY_COORDS[tc_normalized]
+            
+            result = {
                 'id': str(mid), 'place': place_label, 'lat': sea_lat, 'lng': sea_lng,
                 'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
                 'marker_icon': icon, 'source_match': 'black_sea_course'
-            }]
+            }
+            
+            # Add trajectory data if we have target coordinates
+            if target_coords:
+                result['trajectory'] = {
+                    'start': [sea_lat, sea_lng],
+                    'end': list(target_coords),
+                    'target': target_info
+                }
+            
+            return [result]
         
         original_text_norm = re.sub(r'(?i)(\b[А-Яа-яЇїІіЄєҐґ\-]{3,}(?:щина|область|обл\.)):(?!\s*\n)', r'\1:\n', original_text)
         lines_with_region = []
@@ -11047,25 +11144,73 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
 
     # --- Black Sea aquatory: place marker in sea, not on target city (e.g. "в акваторії чорного моря, курсом на одесу") ---
     lower_sea = text.lower()
-    if ('акватор' in lower_sea or 'акваторії' in lower_sea) and ('чорного моря' in lower_sea or 'чорне море' in lower_sea) and ('бпла' in lower_sea or 'дрон' in lower_sea):
-        # Attempt to capture target city (optional)
+    if ('акватор' in lower_sea or 'акваторії' in lower_sea) and ('чорного моря' in lower_sea or 'чорне море' in lower_sea or 'чорному морі' in lower_sea):
+        # Extract target region/direction if mentioned
         m_target = re.search(r'курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,})', lower_sea)
-        target_city = None
+        m_direction = re.search(r'на\s+(північ|південь|схід|захід|північний\s+схід|північний\s+захід|південний\s+схід|південний\s+захід)', lower_sea)
+        m_region = re.search(r'(одещин|одеськ|миколаїв|херсон)', lower_sea)
+        
+        target_info = None
+        sea_lat, sea_lng = 45.3, 30.7  # Default: northern Black Sea central coords
+        
+        # Adjust position based on direction/region
+        if m_direction:
+            direction = m_direction.group(1)
+            if 'південь' in direction:
+                sea_lat = 45.0  # Further south
+            elif 'північ' in direction:
+                sea_lat = 45.6  # Further north
+            if 'схід' in direction:
+                sea_lng = 31.2  # Further east
+            elif 'захід' in direction:
+                sea_lng = 30.2  # Further west
+        
+        if m_region:
+            region_name = m_region.group(1)
+            if 'одещин' in region_name or 'одеськ' in region_name:
+                # South of Odesa region - in the sea 50km offshore
+                sea_lat, sea_lng = 45.7, 30.7
+                target_info = 'Одещини'
+            elif 'миколаїв' in region_name:
+                sea_lat, sea_lng = 45.9, 31.4
+                target_info = 'Миколаївщини'
+            elif 'херсон' in region_name:
+                sea_lat, sea_lng = 45.7, 32.5
+                target_info = 'Херсонщини'
+        
         if m_target:
             tc = m_target.group(1).lower()
             tc = UA_CITY_NORMALIZE.get(tc, tc)
-            target_city = tc.title()
+            target_info = tc.title()
+        
         threat_type, icon = classify(text)
-        # Approx northern Black Sea central coords (between Odesa & Crimea offshore)
-        sea_lat, sea_lng = 45.3, 30.7
         place_label = 'Акваторія Чорного моря'
-        if target_city:
-            place_label += f' (курс на {target_city})'
-        return [{
+        if target_info:
+            place_label += f' (на {target_info})'
+        
+        # Try to find target city coordinates for trajectory
+        target_coords = None
+        if m_target:
+            tc_normalized = m_target.group(1).lower()
+            tc_normalized = UA_CITY_NORMALIZE.get(tc_normalized, tc_normalized)
+            if tc_normalized in CITY_COORDS:
+                target_coords = CITY_COORDS[tc_normalized]
+        
+        result = {
             'id': str(mid), 'place': place_label, 'lat': sea_lat, 'lng': sea_lng,
             'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
             'marker_icon': icon, 'source_match': 'black_sea_course'
-        }]
+        }
+        
+        # Add trajectory data if we have target coordinates
+        if target_coords:
+            result['trajectory'] = {
+                'start': [sea_lat, sea_lng],
+                'end': list(target_coords),
+                'target': target_info
+            }
+        
+        return [result]
 
     # --- Bilhorod-Dnistrovskyi coastal UAV patrol ("вздовж узбережжя Білгород-Дністровського району") ---
     if (('узбереж' in lower_sea or 'вздовж узбереж' in lower_sea) and
@@ -14909,12 +15054,12 @@ import signal
 @app.route('/api/force-reload-status')
 def force_reload_status():
     """Check if force reload flag is active"""
-    global FORCE_RELOAD_FLAG
+    global FORCE_RELOAD_TIMESTAMP
     with FORCE_RELOAD_LOCK:
-        should_reload = FORCE_RELOAD_FLAG
-        # Reset flag after client receives it
-        if should_reload:
-            FORCE_RELOAD_FLAG = False
+        current_time = time.time()
+        # Check if force reload is still active (within duration window)
+        should_reload = (FORCE_RELOAD_TIMESTAMP > 0 and 
+                        (current_time - FORCE_RELOAD_TIMESTAMP) < FORCE_RELOAD_DURATION)
     return jsonify({'reload': should_reload})
 
 @app.route('/admin/trigger-force-reload', methods=['POST'])
@@ -14923,12 +15068,12 @@ def trigger_force_reload():
     if not _require_secret(request):
         return Response('Forbidden', status=403)
     
-    global FORCE_RELOAD_FLAG
+    global FORCE_RELOAD_TIMESTAMP
     with FORCE_RELOAD_LOCK:
-        FORCE_RELOAD_FLAG = True
+        FORCE_RELOAD_TIMESTAMP = time.time()
     
-    log.info("🔄 ADMIN: Force reload triggered for all users")
-    return jsonify({'success': True, 'message': 'Force reload activated'})
+    log.info("🔄 ADMIN: Force reload triggered for all users (active for {} seconds)".format(FORCE_RELOAD_DURATION))
+    return jsonify({'success': True, 'message': 'Force reload activated for {} seconds'.format(FORCE_RELOAD_DURATION)})
 
 def shutdown_scheduler():
     """Shutdown scheduler gracefully"""
