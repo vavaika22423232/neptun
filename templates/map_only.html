@@ -193,6 +193,9 @@
           forceUkrainianLabels();
         }, 100);
         
+        // Add world mask (dimming outside Ukraine)
+        addWorldMask();
+        
         // Load initial data
         updateMarkers();
         
@@ -203,6 +206,53 @@
       map.on('error', (e) => {
         console.warn('Map error (non-critical):', e);
       });
+    }
+    
+    // Add world mask to dim everything except Ukraine
+    async function addWorldMask() {
+      try {
+        const response = await fetch('/static/geoBoundaries-UKR-ADM0_simplified.geojson');
+        const ukraineGeoJSON = await response.json();
+        
+        // Create world polygon with Ukraine hole
+        const worldBbox = [[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]];
+        
+        // Extract Ukraine coordinates (handle multi-polygon)
+        let ukraineHoles = [];
+        if (ukraineGeoJSON.features && ukraineGeoJSON.features[0]) {
+          const coords = ukraineGeoJSON.features[0].geometry.coordinates;
+          ukraineHoles = coords.map(polygon => polygon[0]);
+        }
+        
+        // Create mask geometry
+        const maskCoordinates = [worldBbox, ...ukraineHoles];
+        
+        // Add source
+        map.addSource('world-mask', {
+          type: 'geojson',
+          data: {
+            type: 'Feature',
+            geometry: {
+              type: 'Polygon',
+              coordinates: maskCoordinates
+            }
+          }
+        });
+        
+        // Add layer
+        map.addLayer({
+          id: 'world-mask-layer',
+          type: 'fill',
+          source: 'world-mask',
+          paint: {
+            'fill-color': '#000',
+            'fill-opacity': 0.5
+          }
+        });
+        
+      } catch (error) {
+        console.error('Error loading Ukraine mask:', error);
+      }
     }
     
     // Force Ukrainian labels on all text layers
