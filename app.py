@@ -5643,9 +5643,14 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     globals()['_current_priority_result'] = None
     
     # PRIORITY CHECK: Black Sea aquatory - must check BEFORE multi-regional processing
-    # Messages like "БпЛА курсом на Миколаїв з акваторії Чорного моря" should NOT place markers on cities
+    # Messages like "БпЛА курсом на Миколаїв з акваторії Чорного моря" or "15 шахедів з моря на Ізмаїл" should NOT place markers on cities
     lower_text = original_text.lower()
-    if ('акватор' in lower_text or 'акваторії' in lower_text) and ('чорного моря' in lower_text or 'чорне море' in lower_text or 'чорному морі' in lower_text):
+    # Check for Black Sea references: акваторія OR "з моря" OR "з чорного моря"
+    is_black_sea = (('акватор' in lower_text or 'акваторії' in lower_text) and ('чорного моря' in lower_text or 'чорне море' in lower_text or 'чорному морі' in lower_text)) or \
+                   ('з моря' in lower_text and ('курс' in lower_text or 'на ' in lower_text)) or \
+                   ('з чорного моря' in lower_text)
+    
+    if is_black_sea:
         # Extract target region/direction if mentioned
         m_target = re.search(r'курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,})', lower_text)
         m_direction = re.search(r'на\s+(північ|південь|схід|захід|північний\s+схід|північний\s+захід|південний\s+схід|південний\s+захід)', lower_text)
@@ -7991,10 +7996,21 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         else:
             add_debug_log(f"REGION-CITY pattern NOT FOUND for line: '{ln_lower}'", "region_city_debug")
         
+        # NEW: Check for regional direction patterns WITHOUT specific city (e.g. "БпЛА на сході Сумщини ➡️ курсом на південь")
+        # These should create regional markers, not skip
+        region_direction_pattern = re.search(r'(бпла|безпілотник|шахед|дрон).*(на\s+(півночі|півдні|сході|заході)).*([а-яіїєґ]+щин[іуиа])', ln_lower, re.IGNORECASE)
+        if region_direction_pattern and not region_city_match:
+            add_debug_log(f"REGIONAL DIRECTION pattern detected (no specific city): {ln[:100]}", "regional_direction")
+            # This line should be processed by regional parser - don't add to multi_city_tracks yet
+            # Instead, extract the region and direction to create a regional marker later
+            # For now, just mark it for special processing
+        
         # Check if line contains БпЛА information without specific course
         ln_lower = ln.lower()
-        if 'бпла' in ln_lower or 'безпілотник' in ln_lower or 'дрон' in ln_lower:
-            add_debug_log(f"Line contains UAV keywords: {[k for k in ['бпла', 'безпілотник', 'дрон'] if k in ln_lower]}", "multi_region")
+        # Support both Cyrillic БпЛА and Latin-mixed БпЛA variants
+        has_uav = 'бпла' in ln_lower or 'бпла' in ln_lower or 'безпілотник' in ln_lower or 'дрон' in ln_lower or 'bpla' in ln_lower
+        if has_uav:
+            add_debug_log(f"Line contains UAV keywords", "multi_region")
             if not any(keyword in ln_lower for keyword in ['курс', 'на ', 'районі']):
                 add_debug_log(f"UAV line lacks direction keywords (курс/на/районі) - general activity message", "multi_region")
         else:
@@ -9014,6 +9030,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             add_debug_log(f"Combined priority result ({len(priority_result)}) with multi-city tracks ({len(multi_city_tracks)}) = {len(combined_result)} total", "priority_combine")
             return combined_result
         return multi_city_tracks
+    else:
+        # If no multi-city tracks were created, continue with main parsing logic
+        # This allows regional direction messages like "БпЛА на сході Сумщини" to be processed by regional parser
+        add_debug_log(f"No multi-city tracks created, continuing to main parser", "multi_region_fallback")
     # --- Detect and split multiple city targets in one message ---
     import re
     multi_city_tracks = []
@@ -10424,9 +10444,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     if 'бпла' in lower and ('курс' in lower or 'в районі' in lower or 'в напрямку' in lower or 'в бік' in lower or 'від' in lower or 'околиц' in lower or 'сектор' in lower or (re.search(r'\d+\s*[xх×]?\s*бпла\s+на\s+', lower))):
         add_debug_log(f"UAV course parser triggered for message length: {len(text)} chars", "uav_course")
         
-        # --- EARLY CHECK: Black Sea aquatory (e.g. "курсом на Миколаїв з акваторії Чорного моря") ---
+        # --- EARLY CHECK: Black Sea aquatory (e.g. "курсом на Миколаїв з акваторії Чорного моря" or "15 шахедів з моря на Ізмаїл") ---
         # Must check BEFORE "курсом на" parser to prevent placing marker on target city
-        if ('акватор' in lower or 'акваторії' in lower) and ('чорного моря' in lower or 'чорне море' in lower or 'чорному морі' in lower):
+        is_black_sea = (('акватор' in lower or 'акваторії' in lower) and ('чорного моря' in lower or 'чорне море' in lower or 'чорному морі' in lower)) or \
+                       ('з моря' in lower and ('курс' in lower or 'на ' in lower)) or \
+                       ('з чорного моря' in lower)
+        
+        if is_black_sea:
             # Extract target region/direction if mentioned
             m_target = re.search(r'курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,})', lower)
             m_direction = re.search(r'на\s+(північ|південь|схід|захід|північний\s+схід|північний\s+захід|південний\s+схід|південний\s+захід)', lower)
@@ -11142,9 +11166,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             if tracks:
                 return tracks
 
-    # --- Black Sea aquatory: place marker in sea, not on target city (e.g. "в акваторії чорного моря, курсом на одесу") ---
+    # --- Black Sea aquatory: place marker in sea, not on target city (e.g. "в акваторії чорного моря, курсом на одесу" or "з моря на Ізмаїл") ---
     lower_sea = text.lower()
-    if ('акватор' in lower_sea or 'акваторії' in lower_sea) and ('чорного моря' in lower_sea or 'чорне море' in lower_sea or 'чорному морі' in lower_sea):
+    is_black_sea = (('акватор' in lower_sea or 'акваторії' in lower_sea) and ('чорного моря' in lower_sea or 'чорне море' in lower_sea or 'чорному морі' in lower_sea)) or \
+                   ('з моря' in lower_sea and ('курс' in lower_sea or 'на ' in lower_sea)) or \
+                   ('з чорного моря' in lower_sea)
+    
+    if is_black_sea:
         # Extract target region/direction if mentioned
         m_target = re.search(r'курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,})', lower_sea)
         m_direction = re.search(r'на\s+(північ|південь|схід|захід|північний\s+схід|північний\s+захід|південний\s+схід|південний\s+захід)', lower_sea)

@@ -1958,18 +1958,76 @@
     height: 40px;
     pointer-events: none;
     z-index: 1000;
-    animation: rotate-arrow 1.5s ease-in-out infinite;
+  }
+  
+  /* Анимация пульсации стрелки */
+  @keyframes pulse-arrow {
+    0%, 100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+    50% {
+      transform: scale(1.15);
+      opacity: 0.85;
+    }
+  }
+  
+  /* Дополнительная анимация для траекторий */
+  .animated-trajectory {
+    transition: opacity 0.3s ease, stroke-width 0.2s ease;
+  }
+  
+  .animated-trajectory:hover {
+    opacity: 1 !important;
+    stroke-width: 5;
+  }
+  
+  /* Черноморские траектории */
+  .black-sea-trajectory {
+    stroke: #ef4444;
+    stroke-width: 4;
+    stroke-dasharray: 10, 6;
+    stroke-linecap: round;
+    fill: none;
+    opacity: 0.85;
+    animation: dash-trajectory 2.5s linear infinite;
+    filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.7));
+  }
+  
+  /* Метка целевого города */
+  .trajectory-target-label {
+    animation: pulse-target-label 3s ease-in-out infinite;
+  }
+  
+  @keyframes pulse-target-label {
+    0%, 100% {
+      transform: scale(1) translateY(0);
+    }
+    50% {
+      transform: scale(1.05) translateY(-2px);
+    }
   }
   
   /* SVG траектория полёта */
   .trajectory-line {
     stroke: #ef4444;
-    stroke-width: 2;
-    stroke-dasharray: 10, 5;
+    stroke-width: 3;
+    stroke-dasharray: 8, 4;
     stroke-linecap: round;
     fill: none;
-    opacity: 0.8;
-    animation: dash-trajectory 1s linear infinite;
+    opacity: 0.9;
+    animation: dash-trajectory 2s linear infinite;
+    filter: drop-shadow(0 0 3px rgba(239, 68, 68, 0.6));
+  }
+  
+  /* Анимация движения пунктира */
+  @keyframes dash-trajectory {
+    0% {
+      stroke-dashoffset: 0;
+    }
+    100% {
+      stroke-dashoffset: -24;
+    }
   }
   
   /* Градиент для траектории (от источника к цели) */
@@ -4699,37 +4757,48 @@
         if (arrowDir) {
           const dir = arrowDir.toLowerCase();
           let dx=0, dy=0;
-          if (dir.includes('півд')) dy = -0.35; // tail origin south of marker => movement northwards
-          if (dir.includes('північ')) dy = 0.35;
-          if (dir.includes('сход')) dx = -0.35; // east origin => movement westwards
-          if (dir.includes('зах')) dx = 0.35;
+          // Увеличиваем длину траектории для лучшей видимости
+          if (dir.includes('півд')) dy = -0.5; // tail origin south of marker => movement northwards
+          if (dir.includes('північ')) dy = 0.5;
+          if (dir.includes('сход')) dx = -0.5; // east origin => movement westwards
+          if (dir.includes('зах')) dx = 0.5;
           if (dx !==0 || dy !==0) {
             const tailStart=[p.lat+dy, p.lng+dx];
-            // Анимированная траектория с градиентом
-            const polylineOpacity = opacity * 0.7;
+            // Анимированная траектория с градиентом и пульсацией
+            const polylineOpacity = opacity * 0.85;
             const trajectory = L.polyline([tailStart,[p.lat,p.lng]], {
               color:'#ef4444', 
-              weight:3, 
+              weight:4, 
               opacity:polylineOpacity, 
-              dashArray:'8 4',
-              className:'trajectory-line'
+              dashArray:'10 6',
+              className:'trajectory-line animated-trajectory'
             }).addTo(markerLayer);
             
             // Добавляем стрелку направления на конце траектории
             const angle = Math.atan2(p.lat - tailStart[0], p.lng - tailStart[1]) * 180 / Math.PI + 90;
             const arrowIcon = L.divIcon({
-              html: `<div class="direction-arrow" style="transform: rotate(${angle}deg);">
-                       <svg width="40" height="40" viewBox="0 0 40 40">
-                         <path d="M 20 5 L 30 20 L 20 17 L 10 20 Z" 
+              html: `<div class="direction-arrow" style="transform: rotate(${angle}deg); animation: pulse-arrow 2s ease-in-out infinite;">
+                       <svg width="44" height="44" viewBox="0 0 44 44">
+                         <defs>
+                           <filter id="glow">
+                             <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+                             <feMerge>
+                               <feMergeNode in="coloredBlur"/>
+                               <feMergeNode in="SourceGraphic"/>
+                             </feMerge>
+                           </filter>
+                         </defs>
+                         <path d="M 22 6 L 32 22 L 22 19 L 12 22 Z" 
                                fill="#ef4444" 
                                stroke="#ffffff" 
-                               stroke-width="1.5" 
-                               opacity="${polylineOpacity}"/>
+                               stroke-width="2" 
+                               opacity="${polylineOpacity}"
+                               filter="url(#glow)"/>
                        </svg>
                      </div>`,
               className: '',
-              iconSize: [40, 40],
-              iconAnchor: [20, 20]
+              iconSize: [44, 44],
+              iconAnchor: [22, 22]
             });
             L.marker([p.lat, p.lng], {icon: arrowIcon}).addTo(markerLayer);
           }
@@ -4811,35 +4880,45 @@
             const targetName = p.trajectory.target || '';
             
             // Вычисляем прозрачность траектории на основе прозрачности маркера
-            const trajectoryOpacity = opacity * 0.75;
+            const trajectoryOpacity = opacity * 0.85;
             
-            // Создаем пунктирную линию от точки в море до целевого города
+            // Создаем анимированную пунктирную линию от точки в море до целевого города
             const trajectoryLine = L.polyline(
               [[startLat, startLng], [endLat, endLng]], 
               {
                 color: '#ef4444',      // Красный цвет для опасности
-                weight: 3,             // Толщина линии
+                weight: 4,             // Толщина линии (увеличена)
                 opacity: trajectoryOpacity,
-                dashArray: '6 6',      // Пунктирная линия (6px черточка, 6px пробел)
-                className: 'black-sea-trajectory'
+                dashArray: '10 6',     // Пунктирная линия (10px черточка, 6px пробел)
+                className: 'black-sea-trajectory animated-trajectory'
               }
             ).addTo(markerLayer);
             
             // Добавляем стрелку направления на конце траектории (около целевого города)
             const angle = Math.atan2(endLat - startLat, endLng - startLng) * 180 / Math.PI + 90;
             const arrowIcon = L.divIcon({
-              html: `<div class="trajectory-arrow" style="transform: rotate(${angle}deg);">
-                       <svg width="32" height="32" viewBox="0 0 32 32">
-                         <path d="M 16 4 L 24 16 L 16 13 L 8 16 Z" 
+              html: `<div class="trajectory-arrow" style="transform: rotate(${angle}deg); animation: pulse-arrow 2s ease-in-out infinite;">
+                       <svg width="36" height="36" viewBox="0 0 36 36">
+                         <defs>
+                           <filter id="glow-sea">
+                             <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+                             <feMerge>
+                               <feMergeNode in="coloredBlur"/>
+                               <feMergeNode in="SourceGraphic"/>
+                             </feMerge>
+                           </filter>
+                         </defs>
+                         <path d="M 18 5 L 27 18 L 18 15 L 9 18 Z" 
                                fill="#ef4444" 
                                stroke="#ffffff" 
-                               stroke-width="1.5" 
-                               opacity="${trajectoryOpacity}"/>
+                               stroke-width="2" 
+                               opacity="${trajectoryOpacity}"
+                               filter="url(#glow-sea)"/>
                        </svg>
                      </div>`,
               className: '',
-              iconSize: [32, 32],
-              iconAnchor: [16, 16]
+              iconSize: [36, 36],
+              iconAnchor: [18, 18]
             });
             const arrowMarker = L.marker([endLat, endLng], {icon: arrowIcon, interactive: false}).addTo(markerLayer);
             
@@ -4847,19 +4926,21 @@
             if (targetName) {
               const targetLabelIcon = L.divIcon({
                 html: `<div class="trajectory-target-label" style="
-                  background: rgba(239, 68, 68, 0.95);
+                  background: linear-gradient(135deg, rgba(239, 68, 68, 0.95), rgba(220, 38, 38, 0.95));
                   color: white;
-                  padding: 4px 8px;
-                  border-radius: 4px;
-                  font-size: 0.75rem;
-                  font-weight: 600;
+                  padding: 5px 10px;
+                  border-radius: 6px;
+                  font-size: 0.8rem;
+                  font-weight: 700;
                   white-space: nowrap;
-                  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+                  box-shadow: 0 3px 8px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.3) inset;
                   opacity: ${trajectoryOpacity};
+                  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+                  letter-spacing: 0.3px;
                 ">${targetName}</div>`,
                 className: '',
                 iconSize: [1, 1],
-                iconAnchor: [0, -10]
+                iconAnchor: [0, -12]
               });
               L.marker([endLat, endLng], {icon: targetLabelIcon, interactive: false}).addTo(markerLayer);
             }
