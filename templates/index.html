@@ -5388,8 +5388,17 @@
             _options: options,
             
             addTo: function(m) {
-              const coordinates = points.map(p => [p[1], p[0]]);
-              coordinates.push(coordinates[0]); // Замикаємо полігон
+              // Поддержка нескольких колец для маски (world ring + Ukraine hole)
+              let coordinates;
+              if (Array.isArray(points[0][0])) {
+                // Массив массивов - несколько колец
+                coordinates = points.map(ring => ring.map(p => [p[1], p[0]]));
+              } else {
+                // Простой массив точек - одно кольцо
+                const coords = points.map(p => [p[1], p[0]]);
+                coords.push(coords[0]); // Замикаємо полігон
+                coordinates = [coords];
+              }
               
               if (!map.getSource(this._layerId)) {
                 map.addSource(this._layerId, {
@@ -5398,7 +5407,7 @@
                     type: 'Feature',
                     geometry: {
                       type: 'Polygon',
-                      coordinates: [coordinates]
+                      coordinates: coordinates
                     }
                   }
                 });
@@ -5434,6 +5443,11 @@
               if (map.getLayer(this._layerId)) map.removeLayer(this._layerId);
               if (map.getLayer(this._layerId + '-outline')) map.removeLayer(this._layerId + '-outline');
               if (map.getSource(this._layerId)) map.removeSource(this._layerId);
+            },
+            
+            getElement: function() {
+              // Заглушка для совместимости с кодом маски
+              return null;
             }
           };
         },
