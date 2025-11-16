@@ -4979,8 +4979,8 @@
         zoomDelta: 0.5
       }).setView([48.3794,31.1656], 6);
       
-      // MapTiler Streets (світла тема) - швидкі vector tiles
-      window.lightLayer = L.tileLayer('https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=m8zW2kq1Ta7cw9nODPXo', {
+      // MapTiler Streets v2 (світла тема) - з українською локалізацією
+      window.lightLayer = L.tileLayer('https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=m8zW2kq1Ta7cw9nODPXo&language=uk', {
         maxZoom: 20,
         attribution: '© <a href="https://www.maptiler.com/copyright/">MapTiler</a> © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
         crossOrigin: true,
@@ -4992,8 +4992,8 @@
         className: 'ukraine-map-tiles light-theme'
       });
       
-      // MapTiler Voyager Dark (темна тема) - швидкі vector tiles
-      window.darkLayer = L.tileLayer('https://api.maptiler.com/maps/voyager-dark/{z}/{x}/{y}.png?key=m8zW2kq1Ta7cw9nODPXo', {
+      // MapTiler Streets v2 Dark (темна тема) - з українською локалізацією
+      window.darkLayer = L.tileLayer('https://api.maptiler.com/maps/streets-v2-dark/{z}/{x}/{y}.png?key=m8zW2kq1Ta7cw9nODPXo&language=uk', {
         maxZoom: 20,
         attribution: '© <a href="https://www.maptiler.com/copyright/">MapTiler</a> © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
         crossOrigin: true,
