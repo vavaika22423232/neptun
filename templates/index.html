@@ -1425,7 +1425,7 @@
     .leaflet-container a{color:#2563eb;}
   /* Simplified marker: only raw PNG image (no styled container) */
   .plain-marker-img{width:34px;height:34px;object-fit:contain;image-rendering:auto;filter:drop-shadow(0 1px 2px rgba(0,0,0,.45));}
-  .tm-badge{position:absolute;top:-6px;right:-6px;background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;font-size:11px;font-weight:700;padding:2px 5px;border-radius:12px;box-shadow:0 2px 6px -1px rgba(0,0,0,.5);font-family:Inter,system-ui,sans-serif;line-height:1;}
+  .tm-badge{position:absolute;top:-6px;right:-6px;background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;font-size:11px;font-weight:700;padding:2px 5px;border-radius:12px;box-shadow:0 2px 6px -1px rgba(0,0,0,.5);font-family:Inter,system-ui,sans-serif;line-height:1;z-index:10;pointer-events:none;}
   .tm-wrap{position:relative;display:inline-block;}
   
   /* Упрощенные стили для маркеров - без анимаций */
@@ -4159,7 +4159,7 @@
       console.log('updateMarkers: начинаем загрузку данных...');
       // НЕ используем timeRange - пусть сервер использует настройку из админки (MONITOR_PERIOD_MINUTES)
       const threatType = ''; // фиксированное значение - все типы угроз
-      const maxTracks = 100; // уменьшено с 150 до 100 для быстрой загрузки
+      const maxTracks = 500; // увеличено со 100 до 500 для показа всех меток
       console.log('updateMarkers: параметры фильтрации - используем MONITOR_PERIOD_MINUTES с сервера, threatType:', threatType || 'все типы', 'maxTracks:', maxTracks);
       const params = new URLSearchParams({ confRange: 0, maxTracks });
   const overlay = document.getElementById('markerLoadingOverlay');
@@ -4557,14 +4557,137 @@
         // Отключили Shahed course visualization для производительності
         
         const placeUA = translatePlace(p.place);
-        const popupHtml = '<div style="background:#ffffff;color:#1e293b;border:1px solid #d7dde3;border-radius:12px;padding:12px 14px;min-width:220px;font-size:1rem;line-height:1.4;box-shadow:0 4px 14px -4px rgba(0,0,0,.18);">'
-          + (placeUA ? '<div style="font-size:1.3rem;font-weight:700;margin-bottom:6px;color:#1e293b;">' + placeUA + '</div>' : '')
-          + (p.count ? '<div style="margin-bottom:6px;font-weight:700;font-size:1.1rem;color:#b91c1c;">Кількість: ' + p.count + '×</div>' : '')
-          + '<div style="white-space:pre-wrap;font-size:1rem;">' + cleanMessage(p.text||'') + '</div>'
-          + '<div style="margin-top:8px;font-size:.75rem;opacity:.6;">' + (p.date || '') + '</div>'
-          + '</div>';
+        
+        // Определяем цветовую схему в зависимости от типа угрозы
+        const threatColors = {
+          shahed: { gradient: 'linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)', border: '#dc2626', icon: '🛩️', label: 'БПЛА' },
+          rocket: { gradient: 'linear-gradient(135deg, #fed7aa 0%, #fdba74 100%)', border: '#ea580c', icon: '🚀', label: 'Ракета' },
+          avia: { gradient: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)', border: '#d97706', icon: '✈️', label: 'Авіація' },
+          artillery: { gradient: 'linear-gradient(135deg, #fef9c3 0%, #fef08a 100%)', border: '#ca8a04', icon: '💥', label: 'Артилерія' },
+          fpv: { gradient: 'linear-gradient(135deg, #e9d5ff 0%, #d8b4fe 100%)', border: '#9333ea', icon: '🎯', label: 'FPV-дрон' },
+          alarm_cancel: { gradient: 'linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)', border: '#10b981', icon: '✅', label: 'Відбій' },
+          default: { gradient: 'linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%)', border: '#3b82f6', icon: 'ℹ️', label: 'Інформація' }
+        };
+        
+        const threatType = (p.threat_type || 'default').toLowerCase();
+        const colors = threatColors[threatType] || threatColors.default;
+        
+        const popupHtml = `
+          <div style="
+            background: ${colors.gradient};
+            border: 2px solid ${colors.border};
+            border-radius: 16px;
+            padding: 0;
+            min-width: 280px;
+            max-width: 360px;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            box-shadow: 
+              0 0 0 1px ${colors.border}20,
+              0 20px 25px -5px rgba(0, 0, 0, 0.15),
+              0 10px 10px -5px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            position: relative;
+          ">
+            <!-- Декоративный фоновый градиент -->
+            <div style="
+              position: absolute;
+              top: -50%;
+              right: -20%;
+              width: 200px;
+              height: 200px;
+              background: radial-gradient(circle, ${colors.border}15, transparent);
+              border-radius: 50%;
+              pointer-events: none;
+            "></div>
+            
+            <!-- Заголовок с иконкой типа угрозы -->
+            <div style="
+              background: linear-gradient(135deg, ${colors.border}15, ${colors.border}05);
+              padding: 14px 18px;
+              border-bottom: 1px solid ${colors.border}25;
+              position: relative;
+              z-index: 1;
+            ">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="
+                  font-size: 28px;
+                  line-height: 1;
+                  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+                ">${colors.icon}</div>
+                <div style="flex: 1;">
+                  <div style="
+                    font-size: 0.75rem;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                    color: ${colors.border};
+                    opacity: 0.8;
+                    margin-bottom: 2px;
+                  ">${colors.label}</div>
+                  ${placeUA ? `<div style="
+                    font-size: 1.25rem;
+                    font-weight: 700;
+                    color: #1e293b;
+                    line-height: 1.3;
+                  ">${placeUA}</div>` : ''}
+                </div>
+              </div>
+            </div>
+            
+            <!-- Основной контент -->
+            <div style="padding: 16px 18px; position: relative; z-index: 1;">
+              ${p.count ? `
+                <div style="
+                  display: inline-flex;
+                  align-items: center;
+                  gap: 6px;
+                  background: ${colors.border};
+                  color: white;
+                  font-weight: 700;
+                  font-size: 0.95rem;
+                  padding: 6px 12px;
+                  border-radius: 8px;
+                  margin-bottom: 12px;
+                  box-shadow: 0 2px 8px ${colors.border}40;
+                ">
+                  <span style="font-size: 1.2em;">×</span>
+                  <span>${p.count}</span>
+                  <span style="opacity: 0.9; font-weight: 600; font-size: 0.85rem;">об'єктів</span>
+                </div>
+              ` : ''}
+              
+              <div style="
+                color: #334155;
+                font-size: 1rem;
+                line-height: 1.6;
+                white-space: pre-wrap;
+                margin-bottom: 12px;
+              ">${cleanMessage(p.text||'')}</div>
+              
+              <!-- Время с иконкой -->
+              <div style="
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 0.8rem;
+                color: #64748b;
+                padding-top: 8px;
+                border-top: 1px solid ${colors.border}20;
+              ">
+                <span style="opacity: 0.7;">🕐</span>
+                <span>${p.date || ''}</span>
+              </div>
+            </div>
+            
+            <!-- Нижняя декоративная полоса -->
+            <div style="
+              height: 3px;
+              background: linear-gradient(90deg, ${colors.border}, ${colors.border}60, ${colors.border});
+            "></div>
+          </div>
+        `;
+        
         m.bindPopup(popupHtml, { closeButton:false, autoPan:true });
-  if (p.count && p.count > 1) { m.openPopup(); }
         
         // Шахеди додаємо до окремого шару без кластеризації
         const isShahed = (p.threat_type || '').toLowerCase() === 'shahed' || /шахед/i.test(p.threat_type || '');
@@ -4996,6 +5119,10 @@
         // Логування успішного завантаження
         map.on('load', () => {
           console.log('MapLibre GL loaded successfully');
+          // Ініціалізуємо маску світу після завантаження стилю
+          if (typeof initWorldMask === 'function') {
+            initWorldMask();
+          }
         });
         
         // Додаємо контролі навігації
@@ -5178,6 +5305,13 @@
               if (this._element) {
                 this._element.remove();
               }
+            },
+            
+            openPopup: function() {
+              if (this._element && this._element.getPopup()) {
+                this._element.togglePopup();
+              }
+              return this;
             }
           };
           return marker;
@@ -5353,32 +5487,43 @@
         .maplibre-marker {
           cursor: pointer;
         }
+        
+        /* Стили для popup */
         .mapboxgl-popup-content,
         .maplibregl-popup-content {
-          background: linear-gradient(145deg, 
-            rgba(15, 23, 42, 0.98) 0%, 
-            rgba(30, 41, 59, 0.98) 50%, 
-            rgba(17, 24, 39, 0.98) 100%);
-          color: #e2e8f0;
-          border: 1px solid rgba(59, 130, 246, 0.25);
-          border-radius: 1.2rem;
-          box-shadow: 
-            0 0 0 1px rgba(59, 130, 246, 0.15),
-            0 12px 48px -12px rgba(0, 0, 0, 0.65),
-            0 8px 24px -8px rgba(0, 0, 0, 0.45);
-          padding: 12px 16px;
-          font-family: 'Inter', sans-serif;
+          background: transparent !important;
+          padding: 0 !important;
+          box-shadow: none !important;
+          border: none !important;
+          border-radius: 0 !important;
+          max-width: 380px !important;
         }
+        
+        .mapboxgl-popup-tip,
+        .maplibregl-popup-tip {
+          display: none !important;
+        }
+        
         .mapboxgl-popup-close-button,
         .maplibregl-popup-close-button {
-          color: #94a3b8;
-          font-size: 24px;
-          padding: 4px 8px;
+          display: none !important;
         }
-        .mapboxgl-popup-close-button:hover,
-        .maplibregl-popup-close-button:hover {
-          background: rgba(59, 130, 246, 0.1);
-          color: #3b82f6;
+        
+        /* Анимация появления popup */
+        .mapboxgl-popup,
+        .maplibregl-popup {
+          animation: popupFadeIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        
+        @keyframes popupFadeIn {
+          from {
+            opacity: 0;
+            transform: translateY(-10px) scale(0.95);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
         }
       `;
       document.head.appendChild(markerStyle);
@@ -5548,7 +5693,7 @@
           }
         } catch(e){ console.warn('Precise border load failed, using fallback ring', e); }
       }
-      initWorldMask();
+      
       // ---- Presence (active users) ----
       const uid = localStorage.getItem('presence_id') || (self.crypto?.randomUUID ? crypto.randomUUID() : (Date.now()+""+Math.random()).replace(/\D/g,''));
       localStorage.setItem('presence_id', uid);
