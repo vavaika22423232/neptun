@@ -189,9 +189,7 @@
         document.getElementById('loading').style.display = 'none';
         
         // Force Ukrainian labels
-        setTimeout(() => {
-          forceUkrainianLabels();
-        }, 100);
+        forceUkrainianLabels();
         
         // Add world mask (dimming outside Ukraine)
         addWorldMask();
@@ -202,6 +200,9 @@
         // Start auto-update
         setInterval(updateMarkers, UPDATE_INTERVAL);
       });
+      
+      // Re-apply Ukrainian labels when style changes
+      map.on('styledata', forceUkrainianLabels);
       
       map.on('error', (e) => {
         console.warn('Map error (non-critical):', e);
@@ -259,20 +260,43 @@
     
     // Force Ukrainian labels on all text layers
     function forceUkrainianLabels() {
-      if (!map || !map.isStyleLoaded()) return;
-      
-      const style = map.getStyle();
-      if (!style || !style.layers) return;
-      
-      style.layers.forEach(layer => {
-        if (layer.type === 'symbol' && layer.layout && layer.layout['text-field']) {
-          try {
-            map.setLayoutProperty(layer.id, 'text-field', ['coalesce', ['get', 'name:uk'], ['get', 'name']]);
-          } catch (e) {
-            // Skip if property cannot be set
+      try {
+        if (!map || !map.isStyleLoaded()) return;
+        
+        const style = map.getStyle();
+        if (!style || !style.layers) return;
+        
+        style.layers.forEach(layer => {
+          if (layer.type === 'symbol' && layer.layout && layer.layout['text-field']) {
+            const textField = layer.layout['text-field'];
+            
+            if (typeof textField === 'string') {
+              // Replace all name variants with Ukrainian
+              let newField = textField;
+              newField = newField.replace(/\{name:latin\}/g, '{name:uk}');
+              newField = newField.replace(/\{name:en\}/g, '{name:uk}');
+              newField = newField.replace(/\{name_en\}/g, '{name:uk}');
+              newField = newField.replace(/\{name_int\}/g, '{name:uk}');
+              newField = newField.replace(/\{name\}/g, '{name:uk}');
+              if (newField !== textField) {
+                map.setLayoutProperty(layer.id, 'text-field', newField);
+              }
+            } else if (Array.isArray(textField)) {
+              // For expressions, replace all name variants with "name:uk"
+              let jsonStr = JSON.stringify(textField);
+              jsonStr = jsonStr.replace(/"name:latin"/g, '"name:uk"');
+              jsonStr = jsonStr.replace(/"name:en"/g, '"name:uk"');
+              jsonStr = jsonStr.replace(/"name_en"/g, '"name:uk"');
+              jsonStr = jsonStr.replace(/"name_int"/g, '"name:uk"');
+              jsonStr = jsonStr.replace(/"name"/g, '"name:uk"');
+              const newField = JSON.parse(jsonStr);
+              map.setLayoutProperty(layer.id, 'text-field', newField);
+            }
           }
-        }
-      });
+        });
+      } catch (e) {
+        console.warn('Error setting Ukrainian labels:', e);
+      }
     }
     
     // Fetch threat data
