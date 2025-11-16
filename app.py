@@ -12965,39 +12965,90 @@ def locate_place():
             if query_lower in city.lower():
                 suggestions.add(city)
     
-    # Use Nominatim API for suggestions if we have less than 10 results
-    if len(suggestions) < 10:
-        try:
-            import requests
-            nominatim_url = 'https://nominatim.openstreetmap.org/search'
-            params = {
-                'q': query,
-                'country': 'Ukraine',
-                'format': 'json',
-                'limit': 20,
-                'accept-language': 'uk'
-            }
-            headers = {
-                'User-Agent': 'NeptunAlarmMap/1.0 (https://neptun-alarm.onrender.com)'
-            }
-            
-            response = requests.get(nominatim_url, params=params, headers=headers, timeout=3)
-            if response.ok:
-                results = response.json()
-                for result in results:
-                    place_name = result.get('display_name', '').split(',')[0]
-                    if place_name:
-                        suggestions.add(place_name)
-        except Exception as e:
-            log.warning(f'Nominatim API suggestions error: {e}')
+    # ВСЕГДА используем несколько API для максимальной полноты поиска
+    api_suggestions = set()
     
-    # Convert to sorted list (shorter = more relevant)
-    suggestions_list = sorted(list(suggestions), key=lambda x: (len(x), x))
+    # 1. Nominatim API (OpenStreetMap)
+    try:
+        import requests
+        nominatim_url = 'https://nominatim.openstreetmap.org/search'
+        params = {
+            'q': query,
+            'country': 'Ukraine',
+            'format': 'json',
+            'limit': 30,
+            'accept-language': 'uk'
+        }
+        headers = {
+            'User-Agent': 'NeptunAlarmMap/1.0 (https://neptun-alarm.onrender.com)'
+        }
+        
+        response = requests.get(nominatim_url, params=params, headers=headers, timeout=4)
+        if response.ok:
+            results = response.json()
+            for result in results:
+                display_name = result.get('display_name', '')
+                place_name = display_name.split(',')[0].strip()
+                if place_name:
+                    api_suggestions.add(place_name)
+    except Exception as e:
+        log.warning(f'Nominatim API error: {e}')
+    
+    # 2. Photon API (альтернативный геокодер на основе OSM)
+    try:
+        photon_url = 'https://photon.komoot.io/api/'
+        params = {
+            'q': query,
+            'lang': 'uk',
+            'limit': 20
+        }
+        
+        response = requests.get(photon_url, params=params, timeout=3)
+        if response.ok:
+            data = response.json()
+            features = data.get('features', [])
+            for feature in features:
+                props = feature.get('properties', {})
+                # Проверяем что это в Украине
+                if props.get('country') == 'Ukraine' or props.get('country') == 'Україна':
+                    name = props.get('name')
+                    if name:
+                        api_suggestions.add(name)
+    except Exception as e:
+        log.warning(f'Photon API error: {e}')
+    
+    # 3. Geonames API (бесплатный, но требует регистрации - используем demo username)
+    try:
+        geonames_url = 'http://api.geonames.org/searchJSON'
+        params = {
+            'q': query,
+            'country': 'UA',
+            'maxRows': 20,
+            'username': 'demo',  # В продакшене заменить на свой username
+            'lang': 'uk'
+        }
+        
+        response = requests.get(geonames_url, params=params, timeout=3)
+        if response.ok:
+            data = response.json()
+            geonames = data.get('geonames', [])
+            for item in geonames:
+                name = item.get('name') or item.get('toponymName')
+                if name:
+                    api_suggestions.add(name)
+    except Exception as e:
+        log.warning(f'Geonames API error: {e}')
+    
+    # Объединяем локальные и API результаты
+    suggestions.update(api_suggestions)
+    
+    # Sort and limit
+    suggestions_list = sorted(list(suggestions), key=lambda x: (len(x), x))[:50]
     
     if suggestions_list:
         return jsonify({
             'status': 'suggest',
-            'matches': suggestions_list[:50]
+            'matches': suggestions_list
         })
     
     # No matches found

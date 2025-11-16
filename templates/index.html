@@ -4558,15 +4558,15 @@
         
         const placeUA = translatePlace(p.place);
         
-        // Определяем цветовую схему в зависимости от типа угрозы
+        // Минималистичная цветовая схема
         const threatColors = {
-          shahed: { gradient: 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)', accent: '#dc2626', icon: '🛩️' },
-          rocket: { gradient: 'linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%)', accent: '#ea580c', icon: '🚀' },
-          avia: { gradient: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)', accent: '#d97706', icon: '✈️' },
-          artillery: { gradient: 'linear-gradient(135deg, #fefce8 0%, #fef9c3 100%)', accent: '#ca8a04', icon: '💥' },
-          fpv: { gradient: 'linear-gradient(135deg, #faf5ff 0%, #e9d5ff 100%)', accent: '#9333ea', icon: '🎯' },
-          alarm_cancel: { gradient: 'linear-gradient(135deg, #f0fdf4 0%, #d1fae5 100%)', accent: '#10b981', icon: '✅' },
-          default: { gradient: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)', accent: '#3b82f6', icon: 'ℹ️' }
+          shahed: { bg: '#fee2e2', accent: '#dc2626' },
+          rocket: { bg: '#fed7aa', accent: '#ea580c' },
+          avia: { bg: '#fef3c7', accent: '#d97706' },
+          artillery: { bg: '#fef9c3', accent: '#ca8a04' },
+          fpv: { bg: '#e9d5ff', accent: '#9333ea' },
+          alarm_cancel: { bg: '#d1fae5', accent: '#10b981' },
+          default: { bg: '#dbeafe', accent: '#3b82f6' }
         };
         
         const threatType = (p.threat_type || 'default').toLowerCase();
@@ -4574,72 +4574,38 @@
         
         const popupHtml = `
           <div style="
-            background: ${colors.gradient};
-            border: 1.5px solid ${colors.accent}30;
-            border-radius: 12px;
-            padding: 0;
-            min-width: 200px;
-            max-width: 280px;
-            font-family: 'Inter', -apple-system, sans-serif;
-            box-shadow: 
-              0 4px 6px -1px rgba(0,0,0,0.1),
-              0 2px 4px -1px rgba(0,0,0,0.06),
-              0 0 0 1px ${colors.accent}10;
-            overflow: hidden;
+            background: white;
+            border-left: 3px solid ${colors.accent};
+            border-radius: 6px;
+            padding: 8px 10px;
+            min-width: 160px;
+            max-width: 240px;
+            font-family: -apple-system, sans-serif;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.12);
           ">
-            <!-- Верхняя акцентная полоса -->
-            <div style="
-              height: 2px;
-              background: ${colors.accent};
-            "></div>
+            ${placeUA ? `<div style="
+              font-size: 0.9rem;
+              font-weight: 600;
+              color: #1e293b;
+              margin-bottom: 4px;
+            ">${placeUA}</div>` : ''}
             
-            <!-- Основной контент -->
-            <div style="padding: 10px 12px;">
-              <div style="display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px;">
-                <div style="
-                  font-size: 20px;
-                  line-height: 1;
-                  flex-shrink: 0;
-                ">${colors.icon}</div>
-                <div style="flex: 1; min-width: 0;">
-                  ${placeUA ? `<div style="
-                    font-size: 0.95rem;
-                    font-weight: 700;
-                    color: #1e293b;
-                    line-height: 1.3;
-                    margin-bottom: 2px;
-                  ">${placeUA}</div>` : ''}
-                  ${p.count ? `<div style="
-                    display: inline-block;
-                    background: ${colors.accent};
-                    color: white;
-                    font-weight: 700;
-                    font-size: 0.75rem;
-                    padding: 2px 6px;
-                    border-radius: 4px;
-                    margin-top: 2px;
-                  ">×${p.count}</div>` : ''}
-                </div>
-              </div>
-              
-              <div style="
-                color: #475569;
-                font-size: 0.85rem;
-                line-height: 1.4;
-                margin-bottom: 6px;
-              ">${cleanMessage(p.text||'')}</div>
-              
-              <div style="
-                font-size: 0.7rem;
-                color: #94a3b8;
-                display: flex;
-                align-items: center;
-                gap: 4px;
-              ">
-                <span>🕐</span>
-                <span>${p.date || ''}</span>
-              </div>
-            </div>
+            <div style="
+              font-size: 0.8rem;
+              color: #64748b;
+              line-height: 1.4;
+              ${p.count ? 'margin-bottom: 4px;' : ''}
+            ">${cleanMessage(p.text||'')}</div>
+            
+            ${p.count ? `<div style="
+              display: inline-block;
+              background: ${colors.bg};
+              color: ${colors.accent};
+              font-weight: 600;
+              font-size: 0.7rem;
+              padding: 2px 5px;
+              border-radius: 3px;
+            ">×${p.count}</div>` : ''}
           </div>
         `;
         
