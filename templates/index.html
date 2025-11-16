@@ -367,18 +367,64 @@
       border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
     }
     
-    /* Попапы - минималистичный дизайн */
+    /* Попапы - красивий градієнтний дизайн */
     .leaflet-popup-content-wrapper {
-      background: rgba(255, 255, 255, 0.98) !important;
-      backdrop-filter: blur(12px);
-      border-radius: 1rem !important;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15) !important;
+      background: linear-gradient(145deg, 
+        rgba(255, 255, 255, 0.98) 0%, 
+        rgba(249, 250, 251, 0.98) 50%, 
+        rgba(243, 244, 246, 0.98) 100%) !important;
+      backdrop-filter: blur(16px) saturate(180%);
+      border-radius: 1.2rem !important;
+      box-shadow: 
+        0 0 0 1px rgba(59, 130, 246, 0.1),
+        0 12px 48px -12px rgba(0, 0, 0, 0.25),
+        0 8px 24px -8px rgba(0, 0, 0, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
       padding: 0 !important;
+      border: 1px solid rgba(203, 213, 225, 0.4) !important;
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .leaflet-popup-content-wrapper::before {
+      content: "";
+      position: absolute;
+      top: -2px;
+      left: -2px;
+      right: -2px;
+      bottom: -2px;
+      background: linear-gradient(135deg, 
+        rgba(59, 130, 246, 0.15) 0%, 
+        rgba(147, 51, 234, 0.1) 50%, 
+        rgba(236, 72, 153, 0.12) 100%);
+      border-radius: 1.2rem;
+      z-index: -1;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    
+    .leaflet-popup-content-wrapper:hover::before {
+      opacity: 1;
+    }
+    
+    .leaflet-popup-content-wrapper:hover {
+      transform: translateY(-2px);
+      box-shadow: 
+        0 0 0 1px rgba(59, 130, 246, 0.2),
+        0 16px 64px -16px rgba(0, 0, 0, 0.3),
+        0 12px 32px -12px rgba(0, 0, 0, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
     }
     
     .leaflet-popup-tip {
-      background: rgba(255, 255, 255, 0.98) !important;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+      background: linear-gradient(145deg, 
+        rgba(255, 255, 255, 0.98) 0%, 
+        rgba(249, 250, 251, 0.98) 100%) !important;
+      box-shadow: 
+        0 4px 12px rgba(0, 0, 0, 0.12),
+        inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
+      border: 1px solid rgba(203, 213, 225, 0.4) !important;
     }
     
     /* Оптимизация производительности */
@@ -475,19 +521,65 @@
       text-decoration: underline !important;
     }
     
-    /* Улучшенная читаемость меток */
+    /* Улучшенная читаемость меток - темная тема с градиентами */
     .leaflet-popup-content-wrapper {
-      background: var(--card-bg) !important;
+      background: linear-gradient(145deg, 
+        rgba(15, 23, 42, 0.98) 0%, 
+        rgba(30, 41, 59, 0.98) 50%, 
+        rgba(17, 24, 39, 0.98) 100%) !important;
       color: var(--text) !important;
-      border: 1px solid var(--border) !important;
-      border-radius: 12px !important;
-      box-shadow: 0 8px 32px var(--shadow) !important;
-      backdrop-filter: var(--card-blur);
+      border: 1px solid rgba(59, 130, 246, 0.25) !important;
+      border-radius: 1.2rem !important;
+      box-shadow: 
+        0 0 0 1px rgba(59, 130, 246, 0.15),
+        0 12px 48px -12px rgba(0, 0, 0, 0.65),
+        0 8px 24px -8px rgba(0, 0, 0, 0.45),
+        inset 0 1px 0 rgba(59, 130, 246, 0.1) !important;
+      backdrop-filter: blur(20px) saturate(180%);
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .leaflet-popup-content-wrapper::before {
+      content: "";
+      position: absolute;
+      top: -2px;
+      left: -2px;
+      right: -2px;
+      bottom: -2px;
+      background: linear-gradient(135deg, 
+        rgba(59, 130, 246, 0.2) 0%, 
+        rgba(147, 51, 234, 0.15) 50%, 
+        rgba(236, 72, 153, 0.18) 100%);
+      border-radius: 1.2rem;
+      z-index: -1;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    
+    .leaflet-popup-content-wrapper:hover::before {
+      opacity: 1;
+    }
+    
+    .leaflet-popup-content-wrapper:hover {
+      transform: translateY(-2px);
+      border-color: rgba(59, 130, 246, 0.4) !important;
+      box-shadow: 
+        0 0 0 1px rgba(59, 130, 246, 0.3),
+        0 16px 64px -16px rgba(0, 0, 0, 0.75),
+        0 12px 32px -12px rgba(0, 0, 0, 0.55),
+        inset 0 1px 0 rgba(59, 130, 246, 0.15) !important;
     }
     
     .leaflet-popup-tip {
-      background: var(--card-bg) !important;
-      border: 1px solid var(--border) !important;
+      background: linear-gradient(145deg, 
+        rgba(15, 23, 42, 0.98) 0%, 
+        rgba(30, 41, 59, 0.98) 100%) !important;
+      border: 1px solid rgba(59, 130, 246, 0.25) !important;
+      box-shadow: 
+        0 4px 12px rgba(0, 0, 0, 0.35),
+        inset 0 1px 0 rgba(59, 130, 246, 0.1) !important;
     }
     
   /* Modern Navbar - compact version */
@@ -3908,20 +4000,20 @@
         }
       });
       
-      // Popup с детальной информацией
+      // Popup с детальной информацією
       const threatDetails = text.length > 100 ? text.substring(0, 100) + '...' : text;
       const popupContent = `
         <div style="
-          font-size: 0.9rem; 
-          line-height: 1.4; 
-          max-width: 280px; 
+          font-size: 1.05rem; 
+          line-height: 1.5; 
+          max-width: 300px; 
           font-family: 'Inter', system-ui, sans-serif;
         ">
           <div style="
             font-weight: 700; 
             color: ${color}; 
             margin-bottom: 10px; 
-            font-size: 1rem;
+            font-size: 1.3rem;
             display: flex;
             align-items: center;
             gap: 8px;
@@ -3929,19 +4021,19 @@
             ${icon} ${threatName}
           </div>
           <div style="
-            font-weight: 600; 
+            font-weight: 700; 
             margin-bottom: 8px; 
             color: #334155;
-            font-size: 0.95rem;
+            font-size: 1.2rem;
           ">
             📍 ${regionalInfo.regionName}
           </div>
           <div style="
             color: #64748b; 
-            font-size: 0.8rem; 
-            line-height: 1.3;
+            font-size: 1rem; 
+            line-height: 1.4;
             background: #f8fafc;
-            padding: 8px;
+            padding: 10px;
             border-radius: 6px;
             border-left: 3px solid ${color};
           ">
@@ -3949,7 +4041,7 @@
           </div>
           <div style="
             margin-top: 8px;
-            font-size: 0.7rem;
+            font-size: 0.85rem;
             color: #94a3b8;
             font-style: italic;
           ">
@@ -4147,9 +4239,17 @@
           isInitialLoad = false; // Отмечаем, что первоначальная загрузка завершена
         }
       }
+      
+      // Окремий шар для шахедів (без кластеризації)
+      if (!window.shahedLayer) {
+        window.shahedLayer = L.layerGroup().addTo(map);
+      } else {
+        window.shahedLayer.clearLayers();
+      }
+      
       if (markerLayer) { markerLayer.clearLayers(); }
       else { 
-        // Використовуємо MarkerCluster для оптимізації
+        // Використовуємо MarkerCluster для оптимізації (крім шахедів)
         markerLayer = L.markerClusterGroup({
           chunkedLoading: true,
           chunkInterval: 200,
@@ -4180,7 +4280,18 @@
       
       // --------- Performance adaptive mode ---------
       const MAX_DIRECT_MARKERS = 650; // threshold where we switch to clustered fast mode
-      const useFastMode = points.length > MAX_DIRECT_MARKERS;
+      
+      // Розділяємо шахеди та інші загрози
+      const shahedPoints = points.filter(p => {
+        const tt = (p.threat_type || '').toLowerCase();
+        return tt === 'shahed' || /шахед/i.test(p.threat_type || '');
+      });
+      const otherPoints = points.filter(p => {
+        const tt = (p.threat_type || '').toLowerCase();
+        return tt !== 'shahed' && !/шахед/i.test(p.threat_type || '');
+      });
+      
+      const useFastMode = otherPoints.length > MAX_DIRECT_MARKERS;
       if (useFastMode) {
         const z = map.getZoom();
         // cell size (degrees) shrinks with zoom to gradually reveal more detail
@@ -4188,7 +4299,7 @@
         if (z >= 7) cell = 0.32; if (z >= 8) cell = 0.18; if (z >= 9) cell = 0.11; if (z >= 10) cell = 0.06;
         const keyFn = p => Math.floor(p.lat / cell) + '_' + Math.floor(p.lng / cell);
         const buckets = new Map();
-        for (const p of points){
+        for (const p of otherPoints){
           const k = keyFn(p);
             let b = buckets.get(k);
             if(!b){ b = { items:[], latSum:0, lngSum:0, types: new Map(), latest:0 }; buckets.set(k,b); }
@@ -4235,8 +4346,8 @@
           const icon = L.divIcon({ html, className:'', iconSize:[44,52], iconAnchor:[22,48] });
           const m = L.marker([lat,lng], {icon});
           // Popup summary
-          const typeLines = [...b.types.entries()].sort((a,b)=>b[1]-a[1]).slice(0,6).map(([t,c])=>'<div>' + (t||'—') + ': ' + c + '</div>').join('');
-          m.bindPopup('<div style="font-size:.7rem;line-height:1.25;"><b>' + count + '</b> подій<br>' + typeLines + '<div style="margin-top:4px;opacity:.55;">кластер (деталі при збільшенні)</div></div>');
+          const typeLines = [...b.types.entries()].sort((a,b)=>b[1]-a[1]).slice(0,6).map(([t,c])=>'<div style="font-size:1rem;">' + (t||'—') + ': ' + c + '</div>').join('');
+          m.bindPopup('<div style="font-size:1rem;line-height:1.4;padding:8px;"><b style="font-size:1.2rem;">' + count + '</b> <span style="font-size:1rem;">подій</span><br>' + typeLines + '<div style="margin-top:6px;opacity:.6;font-size:.85rem;">кластер (деталі при збільшенні)</div></div>');
           m.addTo(markerLayer); markers.push(m);
         });
         // Style inject (once)
@@ -4256,14 +4367,19 @@
           overlay.classList.add('hidden');
           if (isInitialLoad) {
             console.log('updateMarkers: скрываем экран загрузки после первоначальной загрузки (fast mode)');
-            isInitialLoad = false; // Отмечаем, что первоначальная загрузка завершена
+            isInitialLoad = false; // Отмечаем, що первоначальна загрузка завершена
           }
         }
-        return; // exit early in fast mode
+        // Відображаємо шахеди окремо навіть у fast mode
+        // (вони не входять в кластери)
+        // Використовуємо той же код що й нижче, але тільки для shahedPoints
+        // Щоб не дублювати код, не викликаємо return тут, а продовжуємо з shahedPoints
       }
+      
   // Container for border-shelling overlays (semi-circles)
   let borderShellingDrawn = false;
-      points.forEach(async p => {
+      const pointsToRender = useFastMode ? shahedPoints : points;
+      pointsToRender.forEach(async p => {
         console.log('updateMarkers: создаем маркер для точки с threat_type:', p.threat_type, 'текст:', p.text);
         
         // === ПРОВЕРКА НА РЕГИОНАЛЬНЫЕ УГРОЗЫ ===
@@ -4441,18 +4557,25 @@
           }
         }
         
-        // Отключили Shahed course visualization для производительности
+        // Отключили Shahed course visualization для производительності
         
         const placeUA = translatePlace(p.place);
-        const popupHtml = '<div style="background:#ffffff;color:#1e293b;border:1px solid #d7dde3;border-radius:12px;padding:10px 10px;min-width:190px;font-size:.8rem;line-height:1.35;box-shadow:0 4px 14px -4px rgba(0,0,0,.18);">'
-          + (placeUA ? '<div style="font-size:.9rem;font-weight:600;margin-bottom:4px;">' + placeUA + '</div>' : '')
-          + (p.count ? '<div style="margin-bottom:4px;font-weight:600;color:#b91c1c;">Кількість: ' + p.count + '×</div>' : '')
-          + '<div style="white-space:pre-wrap;">' + cleanMessage(p.text||'') + '</div>'
-          + '<div style="margin-top:6px;font-size:.6rem;opacity:.55;">' + (p.date || '') + '</div>'
+        const popupHtml = '<div style="background:#ffffff;color:#1e293b;border:1px solid #d7dde3;border-radius:12px;padding:12px 14px;min-width:220px;font-size:1rem;line-height:1.4;box-shadow:0 4px 14px -4px rgba(0,0,0,.18);">'
+          + (placeUA ? '<div style="font-size:1.3rem;font-weight:700;margin-bottom:6px;color:#1e293b;">' + placeUA + '</div>' : '')
+          + (p.count ? '<div style="margin-bottom:6px;font-weight:700;font-size:1.1rem;color:#b91c1c;">Кількість: ' + p.count + '×</div>' : '')
+          + '<div style="white-space:pre-wrap;font-size:1rem;">' + cleanMessage(p.text||'') + '</div>'
+          + '<div style="margin-top:8px;font-size:.75rem;opacity:.6;">' + (p.date || '') + '</div>'
           + '</div>';
         m.bindPopup(popupHtml, { closeButton:false, autoPan:true });
   if (p.count && p.count > 1) { m.openPopup(); }
-        markerLayer.addLayer(m);
+        
+        // Шахеди додаємо до окремого шару без кластеризації
+        const isShahed = (p.threat_type || '').toLowerCase() === 'shahed' || /шахед/i.test(p.threat_type || '');
+        if (isShahed) {
+          window.shahedLayer.addLayer(m);
+        } else {
+          markerLayer.addLayer(m);
+        }
         markers.push(m);
 
         // Red semi-circle (sector) for border shelling alerts (visualizing incoming danger from external border)
@@ -5260,7 +5383,7 @@
           // Represent district area with a translucent red circle (radius ~20km) placeholder
             const circle = L.circle([lat,lng], { radius: 20000, color:'#b91c1c', weight:1, fillColor:'#dc2626', fillOpacity:0.2 });
             circle.addTo(raionAlarmLayer);
-            circle.bindPopup(`<b>${f.properties.place}</b><br>Повітряна тривога (район)`);
+            circle.bindPopup(`<div style="font-size:1.1rem;padding:6px;line-height:1.4;"><b style="font-size:1.3rem;">${f.properties.place}</b><br><span style="font-size:1rem;">Повітряна тривога (район)</span></div>`);
             // Add animated hatch overlay using a custom divIcon centered
             const Hatch = L.Marker.extend({ options:{ } });
             const hatchSize = 20000; // we adapt via CSS scale after projection

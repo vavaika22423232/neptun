@@ -2224,24 +2224,31 @@ function forceReloadAllUsers() {
     return;
   }
   
-  fetch('/admin/trigger-force-reload', {
+  const secret = new URLSearchParams(location.search).get('secret') || '';
+  
+  fetch('/admin/trigger-force-reload?secret=' + encodeURIComponent(secret), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
     }
   })
-  .then(response => response.json())
+  .then(response => {
+    if (!response.ok) {
+      throw new Error('HTTP error ' + response.status);
+    }
+    return response.json();
+  })
   .then(data => {
     if (data.success) {
       alert('✅ Force reload активовано!\n\nВсі користувачі отримають команду на перезавантаження при наступній перевірці статусу (протягом 30 секунд).');
       console.log('Force reload triggered successfully');
     } else {
-      alert('❌ Помилка активації force reload');
+      alert('❌ Помилка активації force reload: ' + (data.message || 'Unknown error'));
     }
   })
   .catch(error => {
     console.error('Error triggering force reload:', error);
-    alert('❌ Помилка з\'єднання');
+    alert('❌ Помилка з\'єднання: ' + error.message);
   });
 }
 
