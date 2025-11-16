@@ -12251,6 +12251,16 @@ def index():
     resp.headers['ETag'] = f'index-{int(time.time() // 300)}'
     return resp
 
+@app.route('/map-only')
+def map_only():
+    """Map-only view for embedding in mobile apps (iOS/Android WebView)"""
+    response = render_template('map_only.html')
+    resp = app.response_class(response)
+    resp.headers['Cache-Control'] = 'public, max-age=300'  # 5 minutes cache
+    resp.headers['X-Frame-Options'] = 'ALLOWALL'  # Allow embedding in iframes/WebView
+    resp.headers['Access-Control-Allow-Origin'] = '*'  # Allow cross-origin requests
+    return resp
+
 @app.route('/about')
 def about():
     """About NEPTUN project page"""

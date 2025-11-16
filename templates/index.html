@@ -5961,28 +5961,12 @@
   
   // Map theme toggle functionality
   function toggleMapTheme() {
-    const isDarkTheme = localStorage.getItem('mapTheme') === 'dark';
-    const newTheme = isDarkTheme ? 'light' : 'dark';
-    
-    // Сохраняем новую тему
-    localStorage.setItem('mapTheme', newTheme);
-    
-    // Переключаем слои карты
-    if (newTheme === 'dark') {
-      map.removeLayer(window.lightLayer);
-      window.darkLayer.addTo(map);
+    // Используем правильную функцию для MapLibre GL
+    if (typeof window.switchMapTheme === 'function') {
+      window.switchMapTheme();
     } else {
-      map.removeLayer(window.darkLayer);
-      window.lightLayer.addTo(map);
+      console.error('switchMapTheme function not available');
     }
-    
-    // Обновляем иконку кнопки
-    updateMapThemeIcon(newTheme === 'dark');
-    
-    // Обновляем стили меток для лучшей видимости на темной теме
-    updateMarkerStyles(newTheme === 'dark');
-    
-    console.log(`Переключено на ${newTheme === 'dark' ? 'темную' : 'светлую'} тему карты`);
   }
   
 
