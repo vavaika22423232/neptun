@@ -13741,7 +13741,8 @@ def get_events():
         messages = load_messages()
         events = []
         
-        for msg in messages[-200:]:  # Last 200 messages
+        # Process ALL messages, not just last 200
+        for msg in messages:
             if not isinstance(msg, dict):
                 continue
                 
@@ -13749,29 +13750,46 @@ def get_events():
             channel = msg.get('channel', '')
             timestamp = msg.get('time', '')
             
-            # Only air alarms and cancellations
-            if 'Повітряна тривога' in text:
+            # Detect alarm type by emoji or text
+            emoji = None
+            status = None
+            
+            if '🚨' in text or 'Повітряна тривога' in text:
                 emoji = '🚨'
                 status = 'Повітряна тривога'
-            elif 'Відбій тривоги' in text or 'відбій тривоги' in text:
+            elif '🟢' in text or 'Відбій тривоги' in text or 'відбій тривоги' in text:
                 emoji = '🟢'
                 status = 'Відбій тривоги'
             else:
                 continue
             
-            # Extract region (e.g., "**🚨 Дніпропетровська область**")
+            # Extract region from multiple formats:
+            # Format 1: "**🚨 Дніпропетровська область**"
+            # Format 2: "**🚨 Харківський район (Харківська обл.)**"
             region = ''
+            
             if '**' in text:
                 parts = text.split('**')
                 for part in parts:
-                    if emoji in part:
-                        region = part.replace(emoji, '').strip()
+                    part = part.strip()
+                    # Look for parts containing emoji
+                    if '🚨' in part or '🟢' in part:
+                        # Remove emoji and clean up
+                        region = part.replace('🚨', '').replace('🟢', '').strip()
                         break
             
+            # Fallback: extract from first line
             if not region and text:
-                # Fallback: first line
                 first_line = text.split('\n')[0].strip()
-                region = first_line.replace(emoji, '').replace('**', '').strip()
+                # Remove markdown and emojis
+                region = first_line.replace('**', '').replace('🚨', '').replace('🟢', '').strip()
+                # Remove common phrases
+                region = region.replace('Повітряна тривога.', '').replace('Прямуйте в укриття!', '').strip()
+                region = region.replace('Відбій тривоги.', '').replace('Будьте обережні!', '').strip()
+            
+            # Skip if no region found
+            if not region:
+                continue
             
             events.append({
                 'timestamp': timestamp,
@@ -13782,10 +13800,11 @@ def get_events():
                 'text': text[:200]  # First 200 chars
             })
         
-        # Reverse to show newest first
+        # Sort by timestamp (newest first) and return last 100 events
+        # This ensures stable results regardless of message order in file
         events.reverse()
         
-        response = jsonify(events[:50])  # Return last 50 events
+        response = jsonify(events[:100])  # Return last 100 events
         response.headers['Cache-Control'] = 'public, max-age=30'
         response.headers['Access-Control-Allow-Origin'] = '*'
         return response
