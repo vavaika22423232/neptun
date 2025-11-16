@@ -4973,41 +4973,72 @@
         return `https://api.maptiler.com/maps/${baseStyle}/style.json?key=${mapTilerApiKey}`;
       };
       
-      // Ініціалізуємо MapLibre GL
-      map = new maplibregl.Map({
-        container: 'map',
-        style: getMapStyle(isDarkTheme),
-        center: [31.1656, 48.3794], // lng, lat (зверніть увагу на порядок!)
-        zoom: 5.5,
-        attributionControl: true,
-        locale: {
-          'NavigationControl.ResetBearing': 'Скинути орієнтацію',
-          'NavigationControl.ZoomIn': 'Збільшити',
-          'NavigationControl.ZoomOut': 'Зменшити',
+      try {
+        // Ініціалізуємо MapLibre GL
+        map = new maplibregl.Map({
+          container: 'map',
+          style: getMapStyle(isDarkTheme),
+          center: [31.1656, 48.3794], // lng, lat (зверніть увагу на порядок!)
+          zoom: 5.5,
+          attributionControl: true,
+          locale: {
+            'NavigationControl.ResetBearing': 'Скинути орієнтацію',
+            'NavigationControl.ZoomIn': 'Збільшити',
+            'NavigationControl.ZoomOut': 'Зменшити',
+          }
+        });
+        
+        // Обробка помилок завантаження
+        map.on('error', (e) => {
+          console.error('MapLibre GL error:', e);
+        });
+        
+        // Логування успішного завантаження
+        map.on('load', () => {
+          console.log('MapLibre GL loaded successfully');
+        });
+        
+        // Додаємо контролі навігації
+        map.addControl(new maplibregl.NavigationControl({
+          showCompass: true,
+          showZoom: true,
+          visualizePitch: true
+        }), 'top-right');
+        
+        // Додаємо attribution
+        map.addControl(new maplibregl.AttributionControl({
+          compact: true,
+          customAttribution: '© <a href="https://www.maptiler.com/copyright/">MapTiler</a> © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        }));
+      } catch (error) {
+        console.error('Failed to initialize MapLibre GL:', error);
+        // Показуємо повідомлення користувачу
+        const mapContainer = document.getElementById('map');
+        if (mapContainer) {
+          mapContainer.innerHTML = `
+            <div style="display: flex; align-items: center; justify-content: center; height: 100%; background: #0f172a; color: #e2e8f0; font-family: Inter, sans-serif;">
+              <div style="text-align: center; padding: 2rem;">
+                <h2 style="color: #ef4444; margin-bottom: 1rem;">❌ Помилка завантаження карти</h2>
+                <p style="margin-bottom: 1rem;">Не вдалося ініціалізувати MapLibre GL</p>
+                <button onclick="location.reload()" style="background: #3b82f6; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 0.5rem; cursor: pointer; font-size: 1rem;">
+                  🔄 Перезавантажити сторінку
+                </button>
+              </div>
+            </div>
+          `;
         }
-      });
-      
-      // Додаємо контролі навігації
-      map.addControl(new maplibregl.NavigationControl({
-        showCompass: true,
-        showZoom: true,
-        visualizePitch: true
-      }), 'top-right');
-      
-      // Додаємо attribution
-      map.addControl(new maplibregl.AttributionControl({
-        compact: true,
-        customAttribution: '© <a href="https://www.maptiler.com/copyright/">MapTiler</a> © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-      }));
+        return;
+      }
       
       // Функція для примусового встановлення української мови на всіх текстових шарах
       const forceUkrainianLabels = () => {
-        const style = map.getStyle();
-        if (!style || !style.layers) return;
-        
-        style.layers.forEach(layer => {
-          if (layer.type === 'symbol' && layer.layout && layer.layout['text-field']) {
-            // Змінюємо text-field для використання name:uk
+        try {
+          const style = map.getStyle();
+          if (!style || !style.layers) return;
+          
+          style.layers.forEach(layer => {
+            if (layer.type === 'symbol' && layer.layout && layer.layout['text-field']) {
+              // Змінюємо text-field для використання name:uk
             const textField = layer.layout['text-field'];
             
             if (typeof textField === 'string') {
@@ -5043,6 +5074,9 @@
             }
           }
         });
+        } catch (e) {
+          console.warn('Error setting Ukrainian labels:', e);
+        }
       };
       
       // Застосовуємо українську мову після завантаження стилю
@@ -5357,11 +5391,6 @@
         }
       `;
       document.head.appendChild(markerStyle);
-          font-weight: 600 !important;
-          letter-spacing: 0.3px !important;
-        }
-      `;
-      document.head.appendChild(mapStyle);
       
       // Упрощенный поиск мест без дополнительных функций
       // --- Place search wiring ---
@@ -5762,6 +5791,7 @@
         map.on('zoomend', onZoomEnd);
       })();
     }
+    
   function openWarn(){const o=document.getElementById('warnModal'); if(o) o.style.display='flex';}
   function closeWarn(){const o=document.getElementById('warnModal'); if(o) o.style.display='none';}
   function ackWarn(){ closeWarn(); }
