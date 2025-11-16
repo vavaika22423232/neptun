@@ -198,11 +198,17 @@
         // Add world mask (dimming outside Ukraine)
         addWorldMask();
         
-        // Load initial data
-        updateMarkers();
-        
-        // Start auto-update
-        setInterval(updateMarkers, UPDATE_INTERVAL);
+        // iOS WebView fix: wait for map to fully render before adding markers
+        setTimeout(() => {
+          // Force map resize (fixes iOS WebView projection issues)
+          map.resize();
+          
+          // Load initial data
+          updateMarkers();
+          
+          // Start auto-update
+          setInterval(updateMarkers, UPDATE_INTERVAL);
+        }, 300);
       });
       
       // Re-apply Ukrainian labels when style changes
