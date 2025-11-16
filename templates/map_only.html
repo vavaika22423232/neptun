@@ -815,19 +815,13 @@
             }
           }
           
-          let markerContent = '';
-          try {
-            const svgIcon = SVGMarkers.createSVG(p.threat_type || 'default', w);
-            if (typeof svgIcon === 'string' && svgIcon.includes('<svg')) {
-              markerContent = svgIcon;
-            } else {
-              markerContent = '<img class="plain-marker-img" style="width:' + w + 'px;height:' + h + 'px;" src="' + iconUrl + '" alt="" loading="lazy">';
-            }
-          } catch (e) {
-            markerContent = '<img class="plain-marker-img" style="width:' + w + 'px;height:' + h + 'px;" src="' + iconUrl + '" alt="" loading="lazy">';
-          }
-          
-          let flightAnimation = '';
+        }
+        
+        // For mobile apps, always use PNG icons for better compatibility
+        const markerContent = '<img class="plain-marker-img" style="width:' + w + 'px;height:' + h + 'px;" src="' + iconUrl + '" alt="">';
+        
+        let flightAnimation = '';
+        if (arrowDir && (p.threat_type === 'shahed' || /shahed|шахед|бпла/i.test(p.threat_type || ''))) {          let flightAnimation = '';
           if (arrowDir && (p.threat_type === 'shahed' || /shahed|шахед|бпла/i.test(p.threat_type || ''))) {
             const dir = arrowDir.toLowerCase();
             let dx = 0, dy = 0;
