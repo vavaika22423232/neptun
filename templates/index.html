@@ -5042,12 +5042,25 @@
             const textField = layer.layout['text-field'];
             
             if (typeof textField === 'string') {
-              if (textField.includes('{name}')) {
-                map.setLayoutProperty(layer.id, 'text-field', textField.replace('{name}', '{name:uk}'));
+              // Замінюємо всі варіанти назв на українську
+              let newField = textField;
+              newField = newField.replace(/\{name:latin\}/g, '{name:uk}');
+              newField = newField.replace(/\{name:en\}/g, '{name:uk}');
+              newField = newField.replace(/\{name_en\}/g, '{name:uk}');
+              newField = newField.replace(/\{name_int\}/g, '{name:uk}');
+              newField = newField.replace(/\{name\}/g, '{name:uk}');
+              if (newField !== textField) {
+                map.setLayoutProperty(layer.id, 'text-field', newField);
               }
             } else if (Array.isArray(textField)) {
-              // Для expressions замінюємо "name" на "name:uk"
-              const newField = JSON.parse(JSON.stringify(textField).replace(/"name"/g, '"name:uk"'));
+              // Для expressions замінюємо всі варіанти на "name:uk"
+              let jsonStr = JSON.stringify(textField);
+              jsonStr = jsonStr.replace(/"name:latin"/g, '"name:uk"');
+              jsonStr = jsonStr.replace(/"name:en"/g, '"name:uk"');
+              jsonStr = jsonStr.replace(/"name_en"/g, '"name:uk"');
+              jsonStr = jsonStr.replace(/"name_int"/g, '"name:uk"');
+              jsonStr = jsonStr.replace(/"name"/g, '"name:uk"');
+              const newField = JSON.parse(jsonStr);
               map.setLayoutProperty(layer.id, 'text-field', newField);
             }
           }
