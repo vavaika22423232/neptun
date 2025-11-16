@@ -179,25 +179,13 @@
       map = new maplibregl.Map({
         container: 'map',
         style: getMapStyle(isDark),
-        center: [31.1656, 48.3794], // Ukraine center
-        zoom: 6,
-        minZoom: 5,
-        maxZoom: 18,
-        pixelRatio: 1 // Fix for mobile WebView projection issues
+        center: [31.1656, 48.3794],
+        zoom: 5.5,
+        attributionControl: false
       });
       
       map.on('load', () => {
         document.getElementById('loading').style.display = 'none';
-        
-        // Force correct bounds (fixes WebView marker positioning on Android/iOS)
-        map.fitBounds([
-          [22.0, 44.0], // Southwest
-          [40.0, 53.0]  // Northeast (Ukraine bounds)
-        ], {
-          padding: 20,
-          maxZoom: 6,
-          duration: 0 // Instant, no animation
-        });
         
         // Force Ukrainian labels
         forceUkrainianLabels();
@@ -205,17 +193,11 @@
         // Add world mask (dimming outside Ukraine)
         addWorldMask();
         
-        // iOS WebView fix: wait for map to fully render before adding markers
-        setTimeout(() => {
-          // Force map resize (fixes iOS WebView projection issues)
-          map.resize();
-          
-          // Load initial data
-          updateMarkers();
-          
-          // Start auto-update
-          setInterval(updateMarkers, UPDATE_INTERVAL);
-        }, 300);
+        // Load initial data
+        updateMarkers();
+        
+        // Start auto-update
+        setInterval(updateMarkers, UPDATE_INTERVAL);
       });
       
       // Re-apply Ukrainian labels when style changes
