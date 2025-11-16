@@ -12901,13 +12901,15 @@ def locate_place():
                 'source': 'normalized'
             })
     
-    # Try Nominatim API for exact match
+    # Try API sources for exact match (используем 3 API параллельно)
+    api_results = []
+    
+    # 1. Nominatim API (добавляем Ukraine в строку запроса)
     try:
         import requests
         nominatim_url = 'https://nominatim.openstreetmap.org/search'
         params = {
-            'q': query,
-            'country': 'Ukraine',
+            'q': f'{query}, Ukraine',
             'format': 'json',
             'limit': 1,
             'accept-language': 'uk'
@@ -12921,15 +12923,57 @@ def locate_place():
             results = response.json()
             if results and len(results) > 0:
                 result = results[0]
-                return jsonify({
-                    'status': 'ok',
+                api_results.append({
                     'name': result.get('display_name', query).split(',')[0],
                     'lat': float(result['lat']),
                     'lng': float(result['lon']),
                     'source': 'nominatim'
                 })
     except Exception as e:
-        log.warning(f'Nominatim API error: {e}')
+        log.warning(f'Nominatim exact match error: {e}')
+    
+    # 2. Photon API (самый быстрый и надёжный для украинских сел)
+    try:
+        photon_url = 'https://photon.komoot.io/api/'
+        params = {
+            'q': query,
+            'limit': 1
+        }
+        
+        response = requests.get(photon_url, params=params, timeout=3)
+        if response.ok:
+            data = response.json()
+            features = data.get('features', [])
+            if features:
+                feature = features[0]
+                props = feature.get('properties', {})
+                coords = feature.get('geometry', {}).get('coordinates', [])
+                if coords and len(coords) >= 2 and (props.get('country') == 'Україна' or props.get('country') == 'Ukraine'):
+                    api_results.append({
+                        'name': props.get('name', query),
+                        'lat': coords[1],
+                        'lng': coords[0],
+                        'source': 'photon'
+                    })
+    except Exception as e:
+        log.warning(f'Photon exact match error: {e}')
+    
+    # 3. GeoNames API отключён (требует регистрацию, demo лимит исчерпан)
+    # Photon + Nominatim дают полное покрытие всех украинских населённых пунктов
+    
+    # Если хотя бы один API вернул результат, используем его
+    if api_results:
+        # Приоритет: Photon (самый точный для украинских сел) > Nominatim
+        for source_priority in ['photon', 'nominatim']:
+            for result in api_results:
+                if result['source'] == source_priority:
+                    return jsonify({
+                        'status': 'ok',
+                        'name': result['name'],
+                        'lat': result['lat'],
+                        'lng': result['lng'],
+                        'source': result['source']
+                    })
     
     # If no exact match, return suggestions (prefix/substring match)
     suggestions = set()
@@ -12968,16 +13012,37 @@ def locate_place():
     # ВСЕГДА используем несколько API для максимальной полноты поиска
     api_suggestions = set()
     
-    # 1. Nominatim API (OpenStreetMap)
+    # 1. Photon API (быстрее чем Nominatim, использует OpenStreetMap данные)
+    try:
+        import requests
+        photon_url = 'https://photon.komoot.io/api/'
+        params = {
+            'q': query,
+            'limit': 20
+        }
+        
+        response = requests.get(photon_url, params=params, timeout=3)
+        if response.ok:
+            data = response.json()
+            for feature in data.get('features', []):
+                props = feature.get('properties', {})
+                name = props.get('name', '')
+                country = props.get('country', '')
+                if country == 'Україна' and name:
+                    api_suggestions.add(name)
+    except Exception as e:
+        log.warning(f'Photon API error: {e}')
+    
+    # 2. Nominatim API (OpenStreetMap)
     try:
         import requests
         nominatim_url = 'https://nominatim.openstreetmap.org/search'
         params = {
-            'q': query,
-            'country': 'Ukraine',
+            'q': f'{query}, Ukraine',
             'format': 'json',
             'limit': 30,
-            'accept-language': 'uk'
+            'accept-language': 'uk',
+            'addressdetails': 1
         }
         headers = {
             'User-Agent': 'NeptunAlarmMap/1.0 (https://neptun-alarm.onrender.com)'
@@ -12987,57 +13052,28 @@ def locate_place():
         if response.ok:
             results = response.json()
             for result in results:
-                display_name = result.get('display_name', '')
-                place_name = display_name.split(',')[0].strip()
-                if place_name:
-                    api_suggestions.add(place_name)
-    except Exception as e:
-        log.warning(f'Nominatim API error: {e}')
-    
-    # 2. Photon API (альтернативный геокодер на основе OSM)
-    try:
-        photon_url = 'https://photon.komoot.io/api/'
-        params = {
-            'q': query,
-            'lang': 'uk',
-            'limit': 20
-        }
-        
-        response = requests.get(photon_url, params=params, timeout=3)
-        if response.ok:
-            data = response.json()
-            features = data.get('features', [])
-            for feature in features:
-                props = feature.get('properties', {})
-                # Проверяем что это в Украине
-                if props.get('country') == 'Ukraine' or props.get('country') == 'Україна':
-                    name = props.get('name')
-                    if name:
-                        api_suggestions.add(name)
-    except Exception as e:
-        log.warning(f'Photon API error: {e}')
-    
-    # 3. Geonames API (бесплатный, но требует регистрации - используем demo username)
-    try:
-        geonames_url = 'http://api.geonames.org/searchJSON'
-        params = {
-            'q': query,
-            'country': 'UA',
-            'maxRows': 20,
-            'username': 'demo',  # В продакшене заменить на свой username
-            'lang': 'uk'
-        }
-        
-        response = requests.get(geonames_url, params=params, timeout=3)
-        if response.ok:
-            data = response.json()
-            geonames = data.get('geonames', [])
-            for item in geonames:
-                name = item.get('name') or item.get('toponymName')
+                # Пробуем разные поля для названия
+                name = None
+                address = result.get('address', {})
+                
+                # Приоритет полям
+                for field in ['village', 'town', 'city', 'hamlet', 'suburb', 'municipality']:
+                    if field in address:
+                        name = address[field]
+                        break
+                
+                if not name:
+                    display_name = result.get('display_name', '')
+                    if display_name:
+                        name = display_name.split(',')[0]
+                
                 if name:
                     api_suggestions.add(name)
     except Exception as e:
-        log.warning(f'Geonames API error: {e}')
+        log.warning(f'Nominatim API error: {e}')
+    
+    # 3. GeoNames API отключён (требует регистрацию, demo лимит 20к/день исчерпан)
+    # Photon + Nominatim дают полное покрытие всех украинских населённых пунктов
     
     # Объединяем локальные и API результаты
     suggestions.update(api_suggestions)
