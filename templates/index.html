@@ -264,6 +264,10 @@
   <!-- Leaflet MarkerCluster CSS для оптимізації -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" crossorigin=""/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" crossorigin=""/>
+  <!-- MapLibre GL JS для векторних карт з українською локалізацією -->
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.0.20/leaflet-maplibre-gl.js"></script>
   <style>
     :root {
       /* Темная тема для сайта */
@@ -4979,31 +4983,121 @@
         zoomDelta: 0.5
       }).setView([48.3794,31.1656], 6);
       
-      // MapTiler Streets v2 (світла тема) - з українською локалізацією
-      window.lightLayer = L.tileLayer('https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=m8zW2kq1Ta7cw9nODPXo&language=uk', {
-        maxZoom: 20,
+      // MapLibre GL векторні карти з українською локалізацією (100% гарантія на всіх зумах)
+      const mapTilerApiKey = 'm8zW2kq1Ta7cw9nODPXo';
+      
+      // Світла тема - векторна карта з українською мовою
+      window.lightLayer = L.maplibreGL({
+        style: `https://api.maptiler.com/maps/streets-v2/style.json?key=${mapTilerApiKey}`,
         attribution: '© <a href="https://www.maptiler.com/copyright/">MapTiler</a> © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-        crossOrigin: true,
-        tileSize: 512,
-        zoomOffset: -1,
-        detectRetina: true,
-        updateWhenIdle: false,
-        keepBuffer: 3,
-        className: 'ukraine-map-tiles light-theme'
+        transformRequest: (url, resourceType) => {
+          // Форсуємо українську мову для всіх текстових шарів
+          if (resourceType === 'Style' && !url.includes('language=')) {
+            return {
+              url: url + (url.includes('?') ? '&' : '?') + 'language=uk'
+            };
+          }
+          return { url };
+        }
       });
       
-      // MapTiler Streets v2 Dark (темна тема) - з українською локалізацією
-      window.darkLayer = L.tileLayer('https://api.maptiler.com/maps/streets-v2-dark/{z}/{x}/{y}.png?key=m8zW2kq1Ta7cw9nODPXo&language=uk', {
-        maxZoom: 20,
+      // Темна тема - векторна карта з українською мовою  
+      window.darkLayer = L.maplibreGL({
+        style: `https://api.maptiler.com/maps/streets-v2-dark/style.json?key=${mapTilerApiKey}`,
         attribution: '© <a href="https://www.maptiler.com/copyright/">MapTiler</a> © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-        crossOrigin: true,
-        tileSize: 512,
-        zoomOffset: -1,
-        detectRetina: true,
-        updateWhenIdle: false,
-        keepBuffer: 3,
-        className: 'ukraine-map-tiles dark-theme'
+        transformRequest: (url, resourceType) => {
+          // Форсуємо українську мову для всіх текстових шарів
+          if (resourceType === 'Style' && !url.includes('language=')) {
+            return {
+              url: url + (url.includes('?') ? '&' : '?') + 'language=uk'
+            };
+          }
+          return { url };
+        }
       });
+      
+      // Додаємо обробник завантаження стилю для форсування української мови
+      const setUkrainianLanguage = (maplibreMap) => {
+        if (!maplibreMap || !maplibreMap._glMap) return;
+        const glMap = maplibreMap._glMap;
+        
+        glMap.on('styledata', () => {
+          const style = glMap.getStyle();
+          if (!style || !style.layers) return;
+          
+          // Змінюємо всі текстові шари на використання name:uk ТА збільшуємо розмір тексту
+          style.layers.forEach(layer => {
+            if (layer.type === 'symbol' && layer.layout && layer.layout['text-field']) {
+              const textField = layer.layout['text-field'];
+              
+              // Збільшуємо розмір шрифту для міст та населених пунктів
+              const currentSize = layer.layout['text-size'];
+              if (currentSize) {
+                let newSize;
+                if (typeof currentSize === 'number') {
+                  // Збільшуємо на 50% для кращої читабельності
+                  newSize = currentSize * 1.5;
+                  glMap.setLayoutProperty(layer.id, 'text-size', newSize);
+                } else if (Array.isArray(currentSize)) {
+                  // Для інтерполяції збільшуємо всі значення
+                  const newSizeArray = JSON.parse(JSON.stringify(currentSize));
+                  for (let i = 0; i < newSizeArray.length; i++) {
+                    if (typeof newSizeArray[i] === 'number') {
+                      newSizeArray[i] = newSizeArray[i] * 1.5;
+                    }
+                  }
+                  glMap.setLayoutProperty(layer.id, 'text-size', newSizeArray);
+                }
+              }
+              
+              // Замінюємо {name} на {name:uk}
+              if (typeof textField === 'string' && textField.includes('{name}')) {
+                glMap.setLayoutProperty(layer.id, 'text-field', textField.replace('{name}', '{name:uk}'));
+              } else if (Array.isArray(textField)) {
+                // Для складних виразів шукаємо "name" і замінюємо на "name:uk"
+                const newTextField = JSON.parse(JSON.stringify(textField).replace(/"name"/g, '"name:uk"'));
+                glMap.setLayoutProperty(layer.id, 'text-field', newTextField);
+              }
+              
+              // Додаємо жирність для кращої видимості
+              try {
+                const textFont = layer.layout['text-font'];
+                if (textFont && Array.isArray(textFont)) {
+                  const newFont = textFont.map(font => 
+                    font.includes('Regular') ? font.replace('Regular', 'Bold') : 
+                    font.includes('Medium') ? font.replace('Medium', 'Bold') : font
+                  );
+                  glMap.setLayoutProperty(layer.id, 'text-font', newFont);
+                }
+              } catch (e) {
+                // Якщо не вдалося змінити шрифт, пропускаємо
+              }
+              
+              // Збільшуємо halo (обводку) для кращої читабельності
+              const textHaloWidth = layer.paint && layer.paint['text-halo-width'];
+              if (textHaloWidth !== undefined) {
+                const newHaloWidth = typeof textHaloWidth === 'number' ? textHaloWidth * 1.3 : textHaloWidth;
+                try {
+                  glMap.setPaintProperty(layer.id, 'text-halo-width', newHaloWidth);
+                } catch (e) {}
+              }
+            }
+          });
+        });
+      };
+      
+      // Застосовуємо налаштування мови після завантаження шарів
+      if (window.lightLayer._glMap) {
+        setUkrainianLanguage(window.lightLayer);
+      } else {
+        window.lightLayer.on('add', () => setUkrainianLanguage(window.lightLayer));
+      }
+      
+      if (window.darkLayer._glMap) {
+        setUkrainianLanguage(window.darkLayer);
+      } else {
+        window.darkLayer.on('add', () => setUkrainianLanguage(window.darkLayer));
+      }
       
       // Проверяем сохраненную тему или используем светлую по умолчанию
       const isDarkTheme = localStorage.getItem('mapTheme') === 'dark';
@@ -5123,16 +5217,16 @@
           for(const m of (window.__lastPoints||[])){
             const place = (m.place||'').trim(); if(!place) continue; const norm = place.toLowerCase();
             if(norm.includes(v)) set.add(place);
-            if(set.size>=12) break;
+            if(set.size>=25) break;
           }
           psHistory.filter(h=>h.toLowerCase().includes(v)).forEach(h=> set.add(h));
           let list = [...set];
-          // Backend suggestions (prefix) merge
-          if(v.length>=2){
+          // Backend suggestions (prefix) merge - always query backend for comprehensive search
+          if(v.length>=1){
             const backend = await fetchBackendSuggest(v);
-            for(const name of backend){ if(!list.includes(name)) list.push(name); if(list.length>=20) break; }
+            for(const name of backend){ if(!list.includes(name)) list.push(name); if(list.length>=40) break; }
           }
-          if(list.length){ showSuggest(list.slice(0,20)); } else hideSuggest();
+          if(list.length){ showSuggest(list.slice(0,30)); } else hideSuggest();
         }, 180));
       }
       if(psSuggest){

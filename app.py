@@ -12863,6 +12863,22 @@ def locate_place():
             'source': 'settlements'
         })
     
+    # Try exact match in UKRAINE_ADDRESSES_DB (extract city names)
+    if UKRAINE_ADDRESSES_DB:
+        for key, value in UKRAINE_ADDRESSES_DB.items():
+            city_name = value.get('city', '').lower()
+            if city_name == query_lower:
+                # Use CITY_COORDS or SETTLEMENTS_INDEX for this city
+                if city_name in CITY_COORDS:
+                    lat, lng = CITY_COORDS[city_name]
+                    return jsonify({
+                        'status': 'ok',
+                        'name': value.get('city'),
+                        'lat': lat,
+                        'lng': lng,
+                        'source': 'addresses_db'
+                    })
+    
     # Try normalized version with UA_CITY_NORMALIZE
     if query_lower in UA_CITY_NORMALIZE:
         normalized = UA_CITY_NORMALIZE[query_lower]
@@ -12886,31 +12902,46 @@ def locate_place():
             })
     
     # If no exact match, return suggestions (prefix/substring match)
-    suggestions = []
+    suggestions = set()
     
     # Search in CITY_COORDS first (priority)
     for city_name in CITY_COORDS.keys():
         if query_lower in city_name:
-            suggestions.append(city_name.title())
-            if len(suggestions) >= 10:
+            suggestions.add(city_name.title())
+            if len(suggestions) >= 30:
                 break
     
     # Then search in SETTLEMENTS_INDEX
-    if len(suggestions) < 10:
+    if len(suggestions) < 30:
         for settlement_name in SETTLEMENTS_INDEX.keys():
             city_title = settlement_name.title()
-            if query_lower in settlement_name and city_title not in suggestions:
-                suggestions.append(city_title)
-                if len(suggestions) >= 20:
+            if query_lower in settlement_name:
+                suggestions.add(city_title)
+                if len(suggestions) >= 50:
                     break
     
-    # Sort suggestions by length (shorter = more relevant)
-    suggestions.sort(key=lambda x: (len(x), x))
+    # Also search in UKRAINE_ADDRESSES_DB cities
+    if len(suggestions) < 50 and UKRAINE_ADDRESSES_DB:
+        cities_from_db = set()
+        for value in UKRAINE_ADDRESSES_DB.values():
+            city_name = value.get('city', '').strip()
+            if city_name and query_lower in city_name.lower():
+                cities_from_db.add(city_name)
+        suggestions.update(cities_from_db)
     
-    if suggestions:
+    # Add UKRAINE_CITIES if available
+    if len(suggestions) < 50 and UKRAINE_CITIES:
+        for city in UKRAINE_CITIES:
+            if query_lower in city.lower():
+                suggestions.add(city)
+    
+    # Convert to sorted list (shorter = more relevant)
+    suggestions_list = sorted(list(suggestions), key=lambda x: (len(x), x))
+    
+    if suggestions_list:
         return jsonify({
             'status': 'suggest',
-            'matches': suggestions[:20]
+            'matches': suggestions_list[:30]
         })
     
     # No matches found
