@@ -13709,6 +13709,66 @@ def track_android_visit():
         print(f"[ERROR] Failed to track Android visit: {e}")
         return jsonify({'ok': False}), 500
 
+@app.route('/api/events')
+def get_events():
+    """Get recent air alarm events from Telegram."""
+    try:
+        messages = load_messages()
+        events = []
+        
+        for msg in messages[-200:]:  # Last 200 messages
+            if not isinstance(msg, dict):
+                continue
+                
+            text = msg.get('text', '').strip()
+            channel = msg.get('channel', '')
+            timestamp = msg.get('time', '')
+            
+            # Only air alarms and cancellations
+            if 'Повітряна тривога' in text:
+                emoji = '🚨'
+                status = 'Повітряна тривога'
+            elif 'Відбій тривоги' in text or 'відбій тривоги' in text:
+                emoji = '🟢'
+                status = 'Відбій тривоги'
+            else:
+                continue
+            
+            # Extract region (e.g., "**🚨 Дніпропетровська область**")
+            region = ''
+            if '**' in text:
+                parts = text.split('**')
+                for part in parts:
+                    if emoji in part:
+                        region = part.replace(emoji, '').strip()
+                        break
+            
+            if not region and text:
+                # Fallback: first line
+                first_line = text.split('\n')[0].strip()
+                region = first_line.replace(emoji, '').replace('**', '').strip()
+            
+            events.append({
+                'timestamp': timestamp,
+                'channel': channel,
+                'emoji': emoji,
+                'region': region,
+                'status': status,
+                'text': text[:200]  # First 200 chars
+            })
+        
+        # Reverse to show newest first
+        events.reverse()
+        
+        response = jsonify(events[:50])  # Return last 50 events
+        response.headers['Cache-Control'] = 'public, max-age=30'
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        return response
+        
+    except Exception as e:
+        print(f"[ERROR] /api/events failed: {e}")
+        return jsonify([]), 500
+
 @app.route('/test_parse')
 def test_parse():
     """Test endpoint to manually test message parsing without auth."""

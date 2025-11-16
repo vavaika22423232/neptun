@@ -45,7 +45,7 @@
     ezstandalone.cmd = ezstandalone.cmd || [];
   </script>
   
-  <title>🔴 Карта тривог України ОНЛАЙН 24/7 | Шахеди, Ракети, Обстріли в Реальному Часі | NEPTUN</title>
+  <title>Карта шахедів</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   
   <!-- SEO Meta Tags -->
@@ -6701,6 +6701,68 @@
       window.addEventListener('beforeunload', () => {
         clearInterval(engagementTimer);
       });
+    })();
+  </script>
+
+  <!-- Events Section Script -->
+  <script>
+    (function() {
+      const eventList = document.getElementById('eventList');
+      if (!eventList) return;
+      
+      function fetchEvents() {
+        fetch('/api/events')
+          .then(res => res.json())
+          .then(events => {
+            if (!Array.isArray(events) || events.length === 0) {
+              eventList.innerHTML = '<p style="text-align: center; color: #94a3b8; padding: 2rem;">Немає нових подій</p>';
+              return;
+            }
+            
+            eventList.innerHTML = events.map(event => {
+              const isAlarm = event.emoji === '🚨';
+              const bgColor = isAlarm ? 'rgba(239, 68, 68, 0.1)' : 'rgba(34, 197, 94, 0.1)';
+              const borderColor = isAlarm ? '#ef4444' : '#22c65b';
+              const statusColor = isAlarm ? '#fca5a5' : '#86efac';
+              
+              return `
+                <div class="event-card" style="
+                  background: linear-gradient(135deg, ${bgColor}, rgba(15, 23, 42, 0.8));
+                  border: 1px solid ${borderColor};
+                  border-radius: 12px;
+                  padding: 1.5rem;
+                  transition: transform 0.2s, box-shadow 0.2s;
+                ">
+                  <div style="display: flex; align-items: start; gap: 1rem;">
+                    <div style="font-size: 2rem; line-height: 1;">${event.emoji}</div>
+                    <div style="flex: 1;">
+                      <h3 style="color: ${statusColor}; font-size: 1.25rem; margin: 0 0 0.5rem 0; font-weight: 600;">
+                        ${event.region || event.status}
+                      </h3>
+                      <p style="color: #cbd5e1; margin: 0 0 0.5rem 0; font-size: 0.95rem;">
+                        ${event.status}
+                      </p>
+                      <p style="color: #64748b; margin: 0; font-size: 0.85rem;">
+                        <i class="material-icons" style="font-size: 0.85rem; vertical-align: middle;">schedule</i>
+                        ${event.timestamp}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join('');
+          })
+          .catch(err => {
+            console.error('Failed to fetch events:', err);
+            eventList.innerHTML = '<p style="text-align: center; color: #ef4444; padding: 2rem;">Помилка завантаження подій</p>';
+          });
+      }
+      
+      // Initial fetch
+      fetchEvents();
+      
+      // Auto-refresh every 30 seconds
+      setInterval(fetchEvents, 30000);
     })();
   </script>
 
