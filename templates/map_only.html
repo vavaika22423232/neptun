@@ -182,15 +182,22 @@
         center: [31.1656, 48.3794], // Ukraine center
         zoom: 6,
         minZoom: 5,
-        maxZoom: 18
+        maxZoom: 18,
+        pixelRatio: 1 // Fix for mobile WebView projection issues
       });
       
       map.on('load', () => {
         document.getElementById('loading').style.display = 'none';
         
-        // Force correct zoom and center immediately (fixes iOS marker positioning)
-        map.setCenter([31.1656, 48.3794]);
-        map.setZoom(6);
+        // Force correct bounds (fixes WebView marker positioning on Android/iOS)
+        map.fitBounds([
+          [22.0, 44.0], // Southwest
+          [40.0, 53.0]  // Northeast (Ukraine bounds)
+        ], {
+          padding: 20,
+          maxZoom: 6,
+          duration: 0 // Instant, no animation
+        });
         
         // Force Ukrainian labels
         forceUkrainianLabels();
