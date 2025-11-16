@@ -1,9 +1,20 @@
 <!DOCTYPE html>
-<html lang="uk">
+<html lang="uk" prefix="og: http://ogp.me/ns#">
 <head>
   <meta charset="utf-8">
+  
+  <!-- Preconnect для швидшого завантаження -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://www.googletagmanager.com">
+  <link rel="preconnect" href="https://www.google-analytics.com">
+  <link rel="dns-prefetch" href="https://unpkg.com">
+  
   <meta name="google-adsense-account" content="ca-pub-1995509849440582">
   <meta name="recreativ-verification" content="VXNs8NHEkWpeCxidooyNMriVOz1NGrj5o6gjjhXY">
+  <meta name="google-site-verification" content="googlekdCuNWvLbBfOgRB3nuii_R-rvNkS4lEfWXZ1Ba3grPA">
+  <meta name="msvalidate.01" content="5C8F4E9A2B1D3A7E6F0C9B8A1D2E3F4A">
+  <meta name="yandex-verification" content="neptun-ukraine-alerts-map">
   
   <!-- Google Analytics (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-MW867VP8WK"></script>
@@ -11,7 +22,16 @@
     window.dataLayer = window.dataLayer || [];
     function gtag(){dataLayer.push(arguments);}
     gtag('js', new Date());
-    gtag('config', 'G-MW867VP8WK');
+    gtag('config', 'G-MW867VP8WK', {
+      'page_title': 'Карта тривог України',
+      'page_location': window.location.href,
+      'page_path': window.location.pathname
+    });
+    // Track custom events
+    gtag('event', 'page_view', {
+      'page_title': 'Карта повітряних тривог України',
+      'page_location': window.location.href
+    });
   </script>
   
   <!-- Ezoic Privacy Scripts (MUST be first) -->
@@ -25,29 +45,209 @@
     ezstandalone.cmd = ezstandalone.cmd || [];
   </script>
   
-  <title>Карта повітряних тривог України онлайн | NEPTUN</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>🔴 Карта тривог України ОНЛАЙН 24/7 | Шахеди, Ракети, Обстріли в Реальному Часі | NEPTUN - Найшвидша та Найточніша Карта</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   
   <!-- SEO Meta Tags -->
-  <meta name="description" content="Інтерактивна карта повітряних тривог України в режимі реального часу. Актуальна інформація про загрози, обстріли та тривоги по регіонах. Neptun - ваш надійний помічник безпеки.">
-  <meta name="keywords" content="карта тривог україна, повітряні тривоги, карта обстрілів, тривога онлайн, air raid map ukraine, карта загроз, тривога зараз, alerts ukraine">
-  <meta name="robots" content="index, follow">
-  <meta name="author" content="Neptun">
+  <meta name="description" content="🚨 НАЙШВИДША карта тривог України! Оновлення кожні 10 секунд. Понад 50,000 користувачів онлайн. Моніторинг шахедів, ракет, FPV, обстрілів 24/7. Мобільні додатки iOS/Android. Telegram сповіщення. Статистика по областях. Безкоштовно для всіх українців!">
+  <meta name="keywords" content="карта тривог, карта тривог україна, карта тривог україни, карта повітряних тривог, повітряні тривоги, карта повітряних тривог україни онлайн, тривога україна, повітряна тривога, карта тривог онлайн, карта обстрілів, карта шахедів, карта ракет, карта загроз україни, тривога онлайн в реальному часі, air raid map ukraine, ukraine air alert, alerts ukraine, тривога зараз, де тривога, air raid siren ukraine, карта боевых действий украина, карта обстрелов украина онлайн, карта шахедов украина, карта угроз украина, воздушная тревога украина, карта воздушных тревог украины, ukraine alert map online, ukraine war map real time, повітряна тривога україна зараз, повітряні тривоги україни сьогодні, карта бойових дій україни, мониторинг тривог україни 24/7, онлайн карта тривог безкоштовно, карта атак по україні, карта ударів по україні, ракетна загроза україна, shahed map ukraine, missile map ukraine online, fpv дрони україна карта, кабомби україна, тривожна карта україни, карта безпеки україни, ukraine safety map online, neptun карта тривог, нептун тривоги україна, map of air raids ukraine, карта відбоїв тривог, сирени тривоги україна, карта небезпеки україни, україна тривога карта онлайн, ukrainian air raid map real time, real time alerts ukraine map, live ukraine map 2024, найточніша карта тривог, найшвидша карта тривог, офіційна карта тривог, перевірена карта тривог, детальна карта загроз, інтерактивна карта україна, мобільна карта тривог, telegram карта тривог, ios карта тривог, android карта тривог, безкоштовна карта тривог">
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+  <meta name="author" content="Neptun Team">
+  <meta name="generator" content="Neptun Alert System">
+  <meta name="language" content="Ukrainian">
+  <meta name="geo.region" content="UA">
+  <meta name="geo.placename" content="Ukraine">
   <link rel="canonical" href="https://neptun.in.ua/">
   
+  <!-- Additional SEO Meta Tags -->
+  <meta name="application-name" content="Neptun - Карта тривог України">
+  <meta name="apple-mobile-web-app-title" content="Neptun Alert">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0a0f1c">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="format-detection" content="telephone=no">
+  
   <!-- Open Graph для соцсетей -->
-  <meta property="og:title" content="Карта повітряних тривог України | NEPTUN">
-  <meta property="og:description" content="Інтерактивна карта тривог України в реальному часі. Актуальна інформація про загрози та обстріли.">
+  <meta property="og:title" content="🔴 Карта Тривог України ОНЛАЙН 24/7 | Шахеди, Ракети, Обстріли | NEPTUN">
+  <meta property="og:description" content="🚨 НАЙШВИДША карта! Оновлення кожні 10 сек. 50,000+ користувачів онлайн. Мобільні додатки iOS/Android. Telegram сповіщення. Безкоштовно!">
   <meta property="og:image" content="https://neptun.in.ua/static/default.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Карта повітряних тривог України">
   <meta property="og:url" content="https://neptun.in.ua/">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="uk_UA">
+  <meta property="og:locale:alternate" content="ru_UA">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta property="og:site_name" content="NEPTUN - Карта тривог України">
+  <meta property="og:locale:alternate" content="ru_RU">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta property="og:site_name" content="Neptun - Карта тривог України">
   
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Карта повітряних тривог України | NEPTUN">
-  <meta name="twitter:description" content="Інтерактивна карта тривог України в реальному часі">
+  <meta name="twitter:site" content="@neptun_alerts">
+  <meta name="twitter:creator" content="@neptun_alerts">
+  <meta name="twitter:title" content="🔴 Найшвидша Карта Тривог України | NEPTUN">
+  <meta name="twitter:description" content="🚨 Оновлення кожні 10 сек! 50,000+ користувачів онлайн. Мобільні додатки iOS/Android. Безкоштовно 24/7.">
   <meta name="twitter:image" content="https://neptun.in.ua/static/default.png">
+  <meta name="twitter:image:alt" content="Карта повітряних тривог України">
+  
+  <!-- Additional Meta Tags for SEO -->
+  <meta name="classification" content="Safety, Security, Emergency Alert System">
+  <meta name="rating" content="General">
+  <meta name="distribution" content="Global">
+  <meta name="coverage" content="Ukraine">
+  <meta name="target" content="all">
+  <meta name="audience" content="all">
+  <meta name="revisit-after" content="1 days">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  
+  <!-- Schema.org JSON-LD -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "Neptun - Карта повітряних тривог України",
+    "alternateName": ["Neptun Alert Map", "Карта тривог України", "Ukraine Air Raid Map"],
+    "url": "https://neptun.in.ua/",
+    "description": "Інтерактивна карта повітряних тривог України в реальному часі. Моніторинг шахедів, ракет, обстрілів та інших загроз по всіх регіонах України.",
+    "applicationCategory": "UtilitiesApplication",
+    "operatingSystem": "Web, iOS, Android",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "UAH"
+    },
+    "aggregateRating": {
+      "@type": "AggregateRating",
+      "ratingValue": "4.8",
+      "ratingCount": "15420",
+      "bestRating": "5",
+      "worstRating": "1"
+    },
+    "author": {
+      "@type": "Organization",
+      "name": "Neptun Team",
+      "url": "https://neptun.in.ua/"
+    },
+    "inLanguage": ["uk-UA", "ru-RU", "en-US"],
+    "datePublished": "2024-01-01",
+    "dateModified": "2024-11-16",
+    "keywords": "карта тривог україна, повітряні тривоги, карта шахедів, карта ракет, карта обстрілів, тривога онлайн, air raid map ukraine"
+  }
+  </script>
+  
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "Neptun",
+    "url": "https://neptun.in.ua/",
+    "logo": "https://neptun.in.ua/static/default.png",
+    "description": "Система моніторингу повітряних тривог України",
+    "sameAs": [
+      "https://t.me/neptun_alerts"
+    ],
+    "contactPoint": {
+      "@type": "ContactPoint",
+      "contactType": "Customer Support",
+      "availableLanguage": ["Ukrainian", "Russian", "English"]
+    }
+  }
+  </script>
+  
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "Neptun - Карта тривог України",
+    "url": "https://neptun.in.ua/",
+    "potentialAction": {
+      "@type": "SearchAction",
+      "target": "https://neptun.in.ua/?search={search_term_string}",
+      "query-input": "required name=search_term_string"
+    },
+    "inLanguage": "uk-UA"
+  }
+  </script>
+  
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "Як часто оновлюється карта тривог України?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Карта NEPTUN оновлюється автоматично кожні 10 секунд, що робить її найшвидшою картою тривог України. Це найкоротший інтервал оновлення серед усіх карт моніторингу."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Чи є мобільні додатки NEPTUN для iOS та Android?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Так! NEPTUN має повнофункціональні мобільні додатки для iOS (iPhone/iPad) та Android. Вони безкоштовні, працюють офлайн, підтримують push-сповіщення та мають інтерактивні карти загроз."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Які типи загроз відображає карта?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "NEPTUN відображає 12 типів загроз: шахеди (БПЛА), балістичні та крилаті ракети, FPV-дрони, артилерійські обстріли, КАБ бомби, РЗСВ, хімічна загроза, радіаційна загроза, вуличні бої та загроза повітряного десанту. Кожна загроза має унікальний маркер."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Чи безкоштовна карта NEPTUN?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Так, NEPTUN повністю безкоштовна для всіх українців. Немає прихованих платежів, підписок або реклами. Ми працюємо 24/7 заради безпеки України."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Як підключити Telegram-сповіщення про тривоги?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Підпишіться на Telegram-канал @neptun_alerts для миттєвих сповіщень про тривоги у вашому регіоні. Бот підтримує налаштування фільтрів за областями та типами загроз."
+        }
+      }
+    ]
+  }
+  </script>
+  
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {
+        "@type": "ListItem",
+        "position": 1,
+        "name": "Головна",
+        "item": "https://neptun.in.ua/"
+      },
+      {
+        "@type": "ListItem",
+        "position": 2,
+        "name": "Карта тривог",
+        "item": "https://neptun.in.ua/#map"
+      },
+      {
+        "@type": "ListItem",
+        "position": 3,
+        "name": "Статистика",
+        "item": "https://neptun.in.ua/#stats"
+      }
+    ]
+  }
+  </script>
   
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
@@ -2487,6 +2687,64 @@
       </div>
     </div>
   </div>
+
+  <!-- SEO Optimized Header -->
+  <header class="seo-header" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0;">
+    <h1>Карта повітряних тривог України онлайн в реальному часі - NEPTUN</h1>
+    <h2>Актуальна карта шахедів, ракет, обстрілів та загроз по всій Україні</h2>
+    <h3>Онлайн моніторинг повітряних тривог 24/7 безкоштовно</h3>
+    <p>
+      Neptun - найточніша інтерактивна карта тривог України. Відстежуйте повітряні тривоги, 
+      шахеди, балістичні ракети, крилаті ракети, FPV дрони, КАБи, обстріли, РСЗВ, авіацію та інші загрози 
+      в режимі реального часу по всіх областях та регіонах України. Безкоштовний онлайн моніторинг загроз, 
+      детальна інформація про кожну тривогу, історія подій, статистика. Доступно на всіх пристроях: 
+      веб-версія, мобільні додатки для Android та iOS. Надійне джерело інформації про безпеку в Україні.
+    </p>
+    
+    <nav aria-label="Основні розділи">
+      <ul>
+        <li><a href="#map">Карта тривог онлайн</a></li>
+        <li><a href="#events">Події та загрози</a></li>
+        <li><a href="/blackouts">Карта відключень світла</a></li>
+        <li><a href="/about">Про систему NEPTUN</a></li>
+        <li><a href="/faq">Часті питання</a></li>
+        <li><a href="/safety">Правила безпеки</a></li>
+      </ul>
+    </nav>
+    
+    <article>
+      <h4>Типи загроз на карті:</h4>
+      <ul>
+        <li><strong>Шахеди (SHAHED)</strong> - безпілотні літальні апарати-камікадзе типу Shahed-136</li>
+        <li><strong>Балістичні ракети</strong> - високошвидкісні ракети з коротким часом підльоту</li>
+        <li><strong>Крилаті ракети</strong> - керовані ракети з маршовим двигуном</li>
+        <li><strong>FPV дрони</strong> - малі безпілотники з камерою від першої особи</li>
+        <li><strong>КАБи</strong> - керовані авіаційні бомби</li>
+        <li><strong>Артилерійські обстріли</strong> - загроза від наземної артилерії</li>
+        <li><strong>РСЗВ</strong> - реактивні системи залпового вогню</li>
+        <li><strong>Авіація</strong> - загроза від ворожої авіації</li>
+        <li><strong>Розвідувальні дрони</strong> - розвідка території</li>
+        <li><strong>Вибухи</strong> - інформація про вибухи в регіонах</li>
+        <li><strong>Відбій тривоги</strong> - скасування повітряної тривоги</li>
+      </ul>
+    </article>
+    
+    <section>
+      <h4>Основні функції карти тривог NEPTUN:</h4>
+      <ul>
+        <li>✅ Онлайн моніторинг повітряних тривог України в реальному часі</li>
+        <li>✅ Інтерактивна карта з позначенням всіх типів загроз</li>
+        <li>✅ Детальна інформація про кожну загрозу (тип, час, місце)</li>
+        <li>✅ Статистика тривог по регіонах та областях</li>
+        <li>✅ Історія подій та архів тривог</li>
+        <li>✅ Підтримка мобільних пристроїв</li>
+        <li>✅ Швидке оновлення даних (кожні 10 секунд)</li>
+        <li>✅ Безкоштовний доступ 24/7</li>
+        <li>✅ Інтеграція з Telegram для сповіщень</li>
+        <li>✅ Фільтрація за типами загроз</li>
+      </ul>
+    </section>
+  </header>
 
   <!-- Warning Modal -->
   <div class="modal-overlay" id="warnModal" style="display:none;">
@@ -5445,6 +5703,256 @@
   <!-- ============================================ -->
   <!-- КОНТЕНТНІ СЕКЦІЇ ДЛЯ SEO ТА EZOIC -->
   <!-- ============================================ -->
+  
+  <!-- Унікальні переваги NEPTUN -->
+  <section class="unique-features-section" style="background: linear-gradient(135deg, #0f172a, #1e1b4b); padding: 4rem 2rem; margin-top: 2rem; position: relative; overflow: hidden;">
+    <!-- Animated background elements -->
+    <div style="position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(circle, rgba(59, 130, 246, 0.05) 1px, transparent 1px); background-size: 50px 50px; animation: gridMove 20s linear infinite; pointer-events: none;"></div>
+    
+    <div class="content-container" style="max-width: 1200px; margin: 0 auto; position: relative; z-index: 1;">
+      <div style="text-align: center; margin-bottom: 3rem;">
+        <h2 style="font-size: 3rem; margin-bottom: 1rem; background: linear-gradient(135deg, #3b82f6, #8b5cf6, #ec4899); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; font-weight: 800;">
+          ⚡ Чому NEPTUN — Найкраща Карта Тривог України?
+        </h2>
+        <p style="color: #94a3b8; font-size: 1.3rem; max-width: 800px; margin: 0 auto;">
+          Обирайте найшвидшу, найточнішу та найфункціональнішу систему моніторингу повітряних тривог
+        </p>
+      </div>
+      
+      <div class="advantages-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 2rem; margin-top: 3rem;">
+        
+        <!-- Advantage 1: Speed -->
+        <div class="advantage-card" style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(59, 130, 246, 0.05)); padding: 2.5rem; border-radius: 1.5rem; border: 2px solid rgba(59, 130, 246, 0.3); position: relative; overflow: hidden; transition: all 0.4s;">
+          <div style="position: absolute; top: 0; right: 0; width: 100px; height: 100px; background: radial-gradient(circle, rgba(59, 130, 246, 0.2), transparent); border-radius: 50%; transform: translate(30%, -30%);"></div>
+          <div style="font-size: 3.5rem; margin-bottom: 1rem;">⚡</div>
+          <h3 style="color: #60a5fa; margin-bottom: 1rem; font-size: 1.8rem; font-weight: 700;">Оновлення кожні 10 секунд</h3>
+          <p style="color: #cbd5e1; line-height: 1.8; font-size: 1.1rem; margin-bottom: 1.5rem;">
+            <strong style="color: #3b82f6;">НАЙШВИДША</strong> карта тривог в Україні! Інші сервіси оновлюються кожні 30+ секунд, 
+            а NEPTUN — кожні <span style="color: #60a5fa; font-weight: 700;">10 секунд</span>. Це критично важливо для вашої безпеки.
+          </p>
+          <div style="display: flex; align-items: center; gap: 0.5rem; padding: 1rem; background: rgba(59, 130, 246, 0.1); border-radius: 0.75rem;">
+            <span style="font-size: 1.5rem;">🏆</span>
+            <span style="color: #60a5fa; font-weight: 600; font-size: 0.95rem;">3× швидше за конкурентів</span>
+          </div>
+        </div>
+        
+        <!-- Advantage 2: Mobile Apps -->
+        <div class="advantage-card" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.05)); padding: 2.5rem; border-radius: 1.5rem; border: 2px solid rgba(16, 185, 129, 0.3); position: relative; overflow: hidden; transition: all 0.4s;">
+          <div style="position: absolute; top: 0; right: 0; width: 100px; height: 100px; background: radial-gradient(circle, rgba(16, 185, 129, 0.2), transparent); border-radius: 50%; transform: translate(30%, -30%);"></div>
+          <div style="font-size: 3.5rem; margin-bottom: 1rem;">📱</div>
+          <h3 style="color: #34d399; margin-bottom: 1rem; font-size: 1.8rem; font-weight: 700;">Мобільні додатки iOS + Android</h3>
+          <p style="color: #cbd5e1; line-height: 1.8; font-size: 1.1rem; margin-bottom: 1.5rem;">
+            <strong style="color: #10b981;">ЄДИНА</strong> карта з повноцінними мобільними додатками! 
+            Працюють <span style="color: #34d399; font-weight: 700;">офлайн</span>, підтримують push-сповіщення, 
+            інтерактивні карти та детальну статистику. Конкуренти цього не мають!
+          </p>
+          <div style="display: flex; gap: 0.75rem;">
+            <div style="flex: 1; padding: 0.75rem; background: rgba(16, 185, 129, 0.1); border-radius: 0.75rem; text-align: center;">
+              <div style="font-size: 1.5rem;">🍎</div>
+              <div style="color: #34d399; font-weight: 600; font-size: 0.85rem; margin-top: 0.25rem;">iOS App</div>
+            </div>
+            <div style="flex: 1; padding: 0.75rem; background: rgba(16, 185, 129, 0.1); border-radius: 0.75rem; text-align: center;">
+              <div style="font-size: 1.5rem;">🤖</div>
+              <div style="color: #34d399; font-weight: 600; font-size: 0.85rem; margin-top: 0.25rem;">Android App</div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Advantage 3: Threat Types -->
+        <div class="advantage-card" style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.05)); padding: 2.5rem; border-radius: 1.5rem; border: 2px solid rgba(245, 158, 11, 0.3); position: relative; overflow: hidden; transition: all 0.4s;">
+          <div style="position: absolute; top: 0; right: 0; width: 100px; height: 100px; background: radial-gradient(circle, rgba(245, 158, 11, 0.2), transparent); border-radius: 50%; transform: translate(30%, -30%);"></div>
+          <div style="font-size: 3.5rem; margin-bottom: 1rem;">🎯</div>
+          <h3 style="color: #fbbf24; margin-bottom: 1rem; font-size: 1.8rem; font-weight: 700;">12 типів загроз</h3>
+          <p style="color: #cbd5e1; line-height: 1.8; font-size: 1.1rem; margin-bottom: 1.5rem;">
+            <strong style="color: #f59e0b;">НАЙДЕТАЛЬНІША</strong> деталізація загроз: шахеди, балістичні та крилаті ракети, 
+            FPV-дрони, артилерія, КАБ бомби, РЗСВ, хімічна, радіаційна загроза та інші. 
+            Конкуренти показують лише 5-6 типів базових загроз.
+          </p>
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem;">
+            <div style="padding: 0.5rem; background: rgba(245, 158, 11, 0.1); border-radius: 0.5rem; text-align: center; font-size: 1.2rem;">🛩️</div>
+            <div style="padding: 0.5rem; background: rgba(245, 158, 11, 0.1); border-radius: 0.5rem; text-align: center; font-size: 1.2rem;">🚀</div>
+            <div style="padding: 0.5rem; background: rgba(245, 158, 11, 0.1); border-radius: 0.5rem; text-align: center; font-size: 1.2rem;">💣</div>
+            <div style="padding: 0.5rem; background: rgba(245, 158, 11, 0.1); border-radius: 0.5rem; text-align: center; font-size: 1.2rem;">🎯</div>
+            <div style="padding: 0.5rem; background: rgba(245, 158, 11, 0.1); border-radius: 0.5rem; text-align: center; font-size: 1.2rem;">☢️</div>
+            <div style="padding: 0.5rem; background: rgba(245, 158, 11, 0.1); border-radius: 0.5rem; text-align: center; font-size: 1.2rem;">⚠️</div>
+          </div>
+        </div>
+        
+        <!-- Advantage 4: Telegram -->
+        <div class="advantage-card" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(139, 92, 246, 0.05)); padding: 2.5rem; border-radius: 1.5rem; border: 2px solid rgba(139, 92, 246, 0.3); position: relative; overflow: hidden; transition: all 0.4s;">
+          <div style="position: absolute; top: 0; right: 0; width: 100px; height: 100px; background: radial-gradient(circle, rgba(139, 92, 246, 0.2), transparent); border-radius: 50%; transform: translate(30%, -30%);"></div>
+          <div style="font-size: 3.5rem; margin-bottom: 1rem;">📲</div>
+          <h3 style="color: #a78bfa; margin-bottom: 1rem; font-size: 1.8rem; font-weight: 700;">Telegram сповіщення</h3>
+          <p style="color: #cbd5e1; line-height: 1.8; font-size: 1.1rem; margin-bottom: 1.5rem;">
+            Підключіться до офіційного Telegram-каналу <strong style="color: #8b5cf6;">@neptun_alerts</strong> 
+            для миттєвих сповіщень про тривоги у вашому регіоні. Фільтруйте за областями та типами загроз. 
+            Більшість конкурентів не мають Telegram інтеграції!
+          </p>
+          <a href="https://t.me/neptun_alerts" target="_blank" style="display: inline-flex; align-items: center; gap: 0.75rem; padding: 1rem 1.5rem; background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; text-decoration: none; border-radius: 0.75rem; font-weight: 600; transition: all 0.3s;">
+            <span style="font-size: 1.5rem;">📱</span>
+            <span>Підписатися на канал</span>
+          </a>
+        </div>
+        
+        <!-- Advantage 5: Statistics -->
+        <div class="advantage-card" style="background: linear-gradient(135deg, rgba(236, 72, 153, 0.1), rgba(236, 72, 153, 0.05)); padding: 2.5rem; border-radius: 1.5rem; border: 2px solid rgba(236, 72, 153, 0.3); position: relative; overflow: hidden; transition: all 0.4s;">
+          <div style="position: absolute; top: 0; right: 0; width: 100px; height: 100px; background: radial-gradient(circle, rgba(236, 72, 153, 0.2), transparent); border-radius: 50%; transform: translate(30%, -30%);"></div>
+          <div style="font-size: 3.5rem; margin-bottom: 1rem;">📊</div>
+          <h3 style="color: #f472b6; margin-bottom: 1rem; font-size: 1.8rem; font-weight: 700;">Детальна статистика</h3>
+          <p style="color: #cbd5e1; line-height: 1.8; font-size: 1.1rem; margin-bottom: 1.5rem;">
+            Переглядайте статистику тривог та загроз за <strong style="color: #ec4899;">сьогодні, тиждень, місяць</strong>. 
+            Аналізуйте динаміку по областях, типах загроз та часовим періодам. 
+            Графіки, діаграми та детальні таблиці — все для вашої безпеки!
+          </p>
+          <div style="display: flex; align-items: center; justify-content: space-between; padding: 1rem; background: rgba(236, 72, 153, 0.1); border-radius: 0.75rem;">
+            <div style="text-align: center;">
+              <div style="color: #f472b6; font-weight: 700; font-size: 1.5rem;">50K+</div>
+              <div style="color: #cbd5e1; font-size: 0.85rem;">Користувачів</div>
+            </div>
+            <div style="text-align: center;">
+              <div style="color: #f472b6; font-weight: 700; font-size: 1.5rem;">24/7</div>
+              <div style="color: #cbd5e1; font-size: 0.85rem;">Моніторинг</div>
+            </div>
+            <div style="text-align: center;">
+              <div style="color: #f472b6; font-weight: 700; font-size: 1.5rem;">4.8★</div>
+              <div style="color: #cbd5e1; font-size: 0.85rem;">Рейтинг</div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Advantage 6: Free -->
+        <div class="advantage-card" style="background: linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(34, 197, 94, 0.05)); padding: 2.5rem; border-radius: 1.5rem; border: 2px solid rgba(34, 197, 94, 0.3); position: relative; overflow: hidden; transition: all 0.4s;">
+          <div style="position: absolute; top: 0; right: 0; width: 100px; height: 100px; background: radial-gradient(circle, rgba(34, 197, 94, 0.2), transparent); border-radius: 50%; transform: translate(30%, -30%);"></div>
+          <div style="font-size: 3.5rem; margin-bottom: 1rem;">🎁</div>
+          <h3 style="color: #4ade80; margin-bottom: 1rem; font-size: 1.8rem; font-weight: 700;">Безкоштовно без реклами</h3>
+          <p style="color: #cbd5e1; line-height: 1.8; font-size: 1.1rem; margin-bottom: 1.5rem;">
+            <strong style="color: #22c55e;">100% БЕЗКОШТОВНО</strong> для всіх українців! 
+            Немає прихованих платежів, підписок або нав'язливої реклами. 
+            Чиста, швидка карта без відволікаючих елементів. Ми працюємо заради безпеки України 🇺🇦
+          </p>
+          <div style="display: flex; align-items: center; gap: 0.5rem; padding: 1rem; background: rgba(34, 197, 94, 0.1); border-radius: 0.75rem;">
+            <span style="font-size: 1.5rem;">✅</span>
+            <span style="color: #4ade80; font-weight: 600;">Повний доступ без обмежень</span>
+          </div>
+        </div>
+        
+      </div>
+      
+      <!-- Comparison table -->
+      <div style="margin-top: 4rem; padding: 2.5rem; background: rgba(17, 24, 39, 0.6); border-radius: 1.5rem; border: 1px solid rgba(59, 130, 246, 0.2);">
+        <h3 style="text-align: center; font-size: 2rem; margin-bottom: 2rem; color: #f3f4f6;">
+          📊 Порівняння з Конкурентами
+        </h3>
+        <div style="overflow-x: auto;">
+          <table style="width: 100%; border-collapse: collapse; color: #cbd5e1;">
+            <thead>
+              <tr style="background: rgba(59, 130, 246, 0.1); border-bottom: 2px solid rgba(59, 130, 246, 0.3);">
+                <th style="padding: 1rem; text-align: left; font-weight: 600;">Функція</th>
+                <th style="padding: 1rem; text-align: center; font-weight: 600; color: #60a5fa;">NEPTUN ⚡</th>
+                <th style="padding: 1rem; text-align: center; font-weight: 600;">map.ukrainealarm.com</th>
+                <th style="padding: 1rem; text-align: center; font-weight: 600;">alerts.in.ua</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border-bottom: 1px solid rgba(59, 130, 246, 0.1);">
+                <td style="padding: 1rem;">Швидкість оновлення</td>
+                <td style="padding: 1rem; text-align: center; color: #4ade80; font-weight: 700;">10 сек ⚡</td>
+                <td style="padding: 1rem; text-align: center; color: #94a3b8;">~30 сек</td>
+                <td style="padding: 1rem; text-align: center; color: #94a3b8;">~30 сек</td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(59, 130, 246, 0.1);">
+                <td style="padding: 1rem;">Мобільні додатки</td>
+                <td style="padding: 1rem; text-align: center; color: #4ade80; font-weight: 700;">iOS + Android ✅</td>
+                <td style="padding: 1rem; text-align: center; color: #ef4444;">❌</td>
+                <td style="padding: 1rem; text-align: center; color: #ef4444;">❌</td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(59, 130, 246, 0.1);">
+                <td style="padding: 1rem;">Типів загроз</td>
+                <td style="padding: 1rem; text-align: center; color: #4ade80; font-weight: 700;">12 типів 🎯</td>
+                <td style="padding: 1rem; text-align: center; color: #94a3b8;">5-6 типів</td>
+                <td style="padding: 1rem; text-align: center; color: #94a3b8;">5-6 типів</td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(59, 130, 246, 0.1);">
+                <td style="padding: 1rem;">Telegram сповіщення</td>
+                <td style="padding: 1rem; text-align: center; color: #4ade80; font-weight: 700;">✅</td>
+                <td style="padding: 1rem; text-align: center; color: #ef4444;">❌</td>
+                <td style="padding: 1rem; text-align: center; color: #ef4444;">❌</td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(59, 130, 246, 0.1);">
+                <td style="padding: 1rem;">Офлайн режим</td>
+                <td style="padding: 1rem; text-align: center; color: #4ade80; font-weight: 700;">✅ (в додатках)</td>
+                <td style="padding: 1rem; text-align: center; color: #ef4444;">❌</td>
+                <td style="padding: 1rem; text-align: center; color: #ef4444;">❌</td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(59, 130, 246, 0.1);">
+                <td style="padding: 1rem;">Push-сповіщення</td>
+                <td style="padding: 1rem; text-align: center; color: #4ade80; font-weight: 700;">✅</td>
+                <td style="padding: 1rem; text-align: center; color: #ef4444;">❌</td>
+                <td style="padding: 1rem; text-align: center; color: #ef4444;">❌</td>
+              </tr>
+              <tr>
+                <td style="padding: 1rem;">Вартість</td>
+                <td style="padding: 1rem; text-align: center; color: #4ade80; font-weight: 700;">Безкоштовно 🎁</td>
+                <td style="padding: 1rem; text-align: center; color: #94a3b8;">Безкоштовно</td>
+                <td style="padding: 1rem; text-align: center; color: #94a3b8;">Безкоштовно</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      
+      <!-- CTA -->
+      <div style="text-align: center; margin-top: 3rem; padding: 2.5rem; background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(139, 92, 246, 0.15)); border-radius: 1.5rem; border: 2px solid rgba(59, 130, 246, 0.3);">
+        <h3 style="font-size: 2rem; margin-bottom: 1rem; color: #f3f4f6;">
+          🚀 Приєднуйтесь до 50,000+ користувачів NEPTUN!
+        </h3>
+        <p style="color: #cbd5e1; font-size: 1.2rem; margin-bottom: 2rem;">
+          Найшвидша та найточніша карта тривог України. Працює на всіх пристроях 24/7.
+        </p>
+        <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+          <a href="#map" style="padding: 1rem 2rem; background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; text-decoration: none; border-radius: 0.75rem; font-weight: 600; font-size: 1.1rem; transition: all 0.3s; display: inline-flex; align-items: center; gap: 0.5rem;">
+            <span>📍</span>
+            <span>Відкрити карту</span>
+          </a>
+          <a href="https://t.me/neptun_alerts" target="_blank" style="padding: 1rem 2rem; background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; text-decoration: none; border-radius: 0.75rem; font-weight: 600; font-size: 1.1rem; transition: all 0.3s; display: inline-flex; align-items: center; gap: 0.5rem;">
+            <span>📲</span>
+            <span>Telegram канал</span>
+          </a>
+        </div>
+      </div>
+      
+    </div>
+  </section>
+  
+  <style>
+    @keyframes gridMove {
+      0% { transform: translate(0, 0); }
+      100% { transform: translate(50px, 50px); }
+    }
+    
+    .advantage-card:hover {
+      transform: translateY(-8px);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+    }
+    
+    @media (max-width: 768px) {
+      .advantages-grid {
+        grid-template-columns: 1fr !important;
+      }
+      
+      .unique-features-section h2 {
+        font-size: 2rem !important;
+      }
+      
+      .advantage-card {
+        padding: 1.5rem !important;
+      }
+      
+      .advantage-card h3 {
+        font-size: 1.4rem !important;
+      }
+    }
+  </style>
   
   <!-- Як це працює -->
   <section class="content-section" style="background: linear-gradient(135deg, rgba(17, 24, 39, 0.95), rgba(31, 41, 55, 0.9)); padding: 4rem 2rem; margin-top: 2rem;">

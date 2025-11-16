@@ -71,6 +71,13 @@ dependencies {
     // OpenStreetMap (osmdroid) instead of Google Maps
     implementation("org.osmdroid:osmdroid-android:6.1.18")
     
+    // Google Maps
+    implementation("com.google.android.gms:play-services-maps:18.2.0")
+    implementation("com.google.maps.android:maps-compose:4.3.0")
+    
+    // Mapbox Maps SDK (старий, можна видалити)
+    // implementation("com.mapbox.maps:android:11.0.0")
+    
     // AppCompat for themes
     implementation("androidx.appcompat:appcompat:1.6.1")
     
@@ -87,6 +94,9 @@ dependencies {
     // ViewModel
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.2")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.6.2")
+    
+    // DataStore
+    implementation("androidx.datastore:datastore-preferences:1.0.0")
     
     // JSON parsing
     implementation("com.google.code.gson:gson:2.10.1")

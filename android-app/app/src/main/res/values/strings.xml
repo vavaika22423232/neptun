@@ -7,4 +7,5 @@
     <string name="auto_refresh">Авто-оновлення</string>
     <string name="active_alarms">Активні тривоги</string>
     <string name="events_count">Подій</string>
+    <string name="mapbox_access_token" translatable="false">pk.eyJ1IjoidmF2YWlrYTIyNDIzMjMyIiwiYSI6ImNtM2RhNWlxdTBmdW8yam9qNnZveGN1NXoifQ.OP0EYvVbqU6vH-b4VHkBKg</string>
 </resources>

@@ -1,10 +1,16 @@
-# robots.txt для NEPTUN - Карта тривог України
+# robots.txt для NEPTUN - Карта повітряних тривог України
 # Дозволяємо індексацію всім пошуковим системам
+# Актуальна карта тривог, шахедів, ракет, обстрілів України онлайн
 
 User-agent: *
 Allow: /
 Allow: /static/
 Allow: /blackouts
+Allow: /about
+Allow: /faq
+Allow: /privacy
+Allow: /terms
+Allow: /safety
 
 # Закриваємо від індексації адмін панель
 Disallow: /admin
@@ -13,6 +19,7 @@ Disallow: /auth/
 # Технічні файли
 Disallow: /api/
 Disallow: /*.json$
+Disallow: /data
 
 # Sitemap для Google та інших пошукових систем
 Sitemap: https://neptun.in.ua/sitemap.xml
@@ -21,6 +28,10 @@ Sitemap: https://neptun.in.ua/sitemap.xml
 User-agent: Googlebot
 Allow: /
 Crawl-delay: 0
+Allow: /static/
+
+User-agent: Googlebot-Image
+Allow: /static/
 
 User-agent: Bingbot
 Allow: /
@@ -28,4 +39,17 @@ Crawl-delay: 0
 
 User-agent: Yandex
 Allow: /
+Crawl-delay: 1
+
+User-agent: Slurp
+Allow: /
+
+User-agent: DuckDuckBot
+Allow: /
+
+User-agent: Baiduspider
+Allow: /
+
+# Оптимізація для пошукових систем
+# neptun.in.ua - карта тривог україни, карта шахедів, повітряні тривоги
 Crawl-delay: 1

@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
-import com.neptun.alarmmap.ui.screens.MapScreen
+import com.neptun.alarmmap.ui.screens.MainScreenWithNavigation
 import com.neptun.alarmmap.ui.theme.NeptunAlarmMapTheme
 
 class MainActivity : ComponentActivity() {
@@ -22,7 +22,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    MapScreen()
+                    MainScreenWithNavigation()
                 }
             }
         }

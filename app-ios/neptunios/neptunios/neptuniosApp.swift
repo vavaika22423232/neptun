@@ -9,9 +9,20 @@ import SwiftUI
 
 @main
 struct neptuniosApp: App {
+    
+    init() {
+        // Налаштування мережі
+        configureNetworking()
+    }
+    
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            MainNavigationView()
         }
+    }
+    
+    private func configureNetworking() {
+        // Дозволяємо HTTP запити (якщо потрібно)
+        // В Info.plist додано NSAppTransportSecurity
     }
 }

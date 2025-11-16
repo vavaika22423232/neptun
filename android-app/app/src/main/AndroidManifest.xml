@@ -17,6 +17,11 @@
         android:theme="@style/Theme.AppCompat.DayNight.NoActionBar"
         android:usesCleartextTraffic="true">
 
+        <!-- Google Maps API Key -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="AIzaSyDummyKeyForDevelopment"/>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
