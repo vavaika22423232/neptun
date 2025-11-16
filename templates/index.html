@@ -5594,23 +5594,6 @@
         .maplibregl-popup-close-button {
           display: none !important;
         }
-        
-        /* Анимация появления popup */
-        .mapboxgl-popup,
-        .maplibregl-popup {
-          animation: popupFadeIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-        }
-        
-        @keyframes popupFadeIn {
-          from {
-            opacity: 0;
-            transform: translateY(-10px) scale(0.95);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0) scale(1);
-          }
-        }
       `;
       document.head.appendChild(markerStyle);
       
