@@ -570,17 +570,6 @@
         
         map.on('styledata', forceUkrainianLabels);
         
-        map.addControl(new maplibregl.NavigationControl({
-          showCompass: true,
-          showZoom: true,
-          visualizePitch: true
-        }), 'top-right');
-        
-        map.addControl(new maplibregl.AttributionControl({
-          compact: true,
-          customAttribution: '© <a href="https://www.maptiler.com/copyright/">MapTiler</a> © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        }));
-        
         map.setView = function(latlng, zoom, options = {}) {
           const animate = options.animate !== false;
           this.flyTo({
@@ -814,37 +803,34 @@
               opacity = 1.0;
             }
           }
-          
-        }
         
         // For mobile apps, always use PNG icons for better compatibility
         const markerContent = '<img class="plain-marker-img" style="width:' + w + 'px;height:' + h + 'px;" src="' + iconUrl + '" alt="">';
         
         let flightAnimation = '';
-        if (arrowDir && (p.threat_type === 'shahed' || /shahed|шахед|бпла/i.test(p.threat_type || ''))) {          let flightAnimation = '';
-          if (arrowDir && (p.threat_type === 'shahed' || /shahed|шахед|бпла/i.test(p.threat_type || ''))) {
-            const dir = arrowDir.toLowerCase();
-            let dx = 0, dy = 0;
-            if (dir.includes('півд')) dy = -0.35;
-            if (dir.includes('північ')) dy = 0.35;
-            if (dir.includes('сход')) dx = -0.35;
-            if (dir.includes('зах')) dx = 0.35;
-            
-            if (dx !== 0 || dy !== 0) {
-              const map_zoom = map.getZoom ? map.getZoom() : 6;
-              const pixels_per_degree = 256 * Math.pow(2, map_zoom) / 360;
-              const flight_dx_px = dx * pixels_per_degree;
-              const flight_dy_px = -dy * pixels_per_degree;
-              
-              const distance_km = Math.sqrt(dx * dx + dy * dy) * 111;
-              const flight_time_sec = (distance_km / 0.061);
-              const animation_duration = Math.max(30, Math.min(flight_time_sec, 120));
-              
-              flightAnimation = ` style="--flight-dx: ${-flight_dx_px}px; --flight-dy: ${-flight_dy_px}px; --flight-duration: ${animation_duration}s;"`;
-            }
-          }
+        if (arrowDir && (p.threat_type === 'shahed' || /shahed|шахед|бпла/i.test(p.threat_type || ''))) {
+          const dir = arrowDir.toLowerCase();
+          let dx = 0, dy = 0;
+          if (dir.includes('півд')) dy = -0.35;
+          if (dir.includes('північ')) dy = 0.35;
+          if (dir.includes('сход')) dx = -0.35;
+          if (dir.includes('зах')) dx = 0.35;
           
-          const html = '<div class="tm-wrap shahed-marker-active shahed-flying marker-new"' + flightAnimation + ' style="opacity:' + opacity + ';">' + markerContent + countBadge + '</div>';
+          if (dx !== 0 || dy !== 0) {
+            const map_zoom = map.getZoom ? map.getZoom() : 6;
+            const pixels_per_degree = 256 * Math.pow(2, map_zoom) / 360;
+            const flight_dx_px = dx * pixels_per_degree;
+            const flight_dy_px = -dy * pixels_per_degree;
+            
+            const distance_km = Math.sqrt(dx * dx + dy * dy) * 111;
+            const flight_time_sec = (distance_km / 0.061);
+            const animation_duration = Math.max(30, Math.min(flight_time_sec, 120));
+            
+            flightAnimation = ` style="--flight-dx: ${-flight_dx_px}px; --flight-dy: ${-flight_dy_px}px; --flight-duration: ${animation_duration}s;"`;
+          }
+        }
+          
+        const html = '<div class="tm-wrap shahed-marker-active shahed-flying marker-new"' + flightAnimation + ' style="opacity:' + opacity + ';">' + markerContent + countBadge + '</div>';
           const icon = L.divIcon({ html, className: '', iconSize: [w, h], iconAnchor: [w / 2, h / 2], popupAnchor: [0, -h / 2] });
           const m = L.marker([p.lat, p.lng], { icon });
           

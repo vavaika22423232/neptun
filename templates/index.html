@@ -2826,15 +2826,23 @@
     .copy-toast.show{display:block;animation:fadeIn .25s ease, fadeOut .4s linear 2.4s forwards;}
     @keyframes fadeOut{to{opacity:0;transform:translateY(4px);}}
     
-    /* Support floating button */
-
-    
-    .support-fab{position:fixed;bottom:1.4rem;right:1.4rem;z-index:1300;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;border:none;border-radius:1.1rem;padding:.95rem 1.15rem;display:flex;align-items:center;gap:.55rem;font-weight:600;font-size:.85rem;cursor:pointer;letter-spacing:.5px;box-shadow:0 10px 28px -8px rgba(37,99,235,.55),0 0 0 1px rgba(255,255,255,.12) inset;transition:.25s;backdrop-filter:blur(6px) saturate(1.2);} 
-    .support-fab i{font-size:18px;}
-    .support-fab:hover{transform:translateY(-4px) scale(1.03);box-shadow:0 14px 34px -8px rgba(37,99,235,.65),0 0 0 1px rgba(255,255,255,.18) inset;}
-    .support-fab:active{transform:translateY(0) scale(.98);}    
-    @media (max-width:700px){.support-fab{bottom:1rem;right:.9rem;padding:.8rem .95rem;border-radius:.9rem;font-size:.75rem;}}
-    @media (max-width:900px){ .support-fab{ right:1rem; bottom:1rem; } }
+    /* Support banner */
+    .support-banner{position:fixed;bottom:1.4rem;right:1.4rem;z-index:1300;background:linear-gradient(135deg,#dc2626 0%,#ef4444 50%,#f59e0b 100%);color:#fff;border:none;border-radius:1rem;padding:1.1rem 1.3rem;max-width:340px;cursor:pointer;box-shadow:0 12px 32px -10px rgba(220,38,38,.65),0 0 0 1px rgba(255,255,255,.15) inset,0 2px 8px rgba(0,0,0,.1);transition:.3s cubic-bezier(.34,1.56,.64,1);backdrop-filter:blur(8px);animation:pulse-glow 3s ease-in-out infinite;}
+    .support-banner:hover{transform:translateY(-6px) scale(1.02);box-shadow:0 18px 42px -10px rgba(220,38,38,.75),0 0 0 1px rgba(255,255,255,.25) inset,0 4px 12px rgba(0,0,0,.15);}
+    .support-banner:active{transform:translateY(-2px) scale(.99);}
+    .support-banner-header{display:flex;align-items:center;gap:.6rem;margin-bottom:.65rem;}
+    .support-banner-icon{font-size:24px;animation:heartbeat 1.5s ease-in-out infinite;}
+    .support-banner-title{font-size:1rem;font-weight:700;letter-spacing:.3px;text-shadow:0 1px 3px rgba(0,0,0,.3);}
+    .support-banner-text{font-size:.75rem;line-height:1.35;opacity:.95;margin-bottom:.7rem;font-weight:500;text-shadow:0 1px 2px rgba(0,0,0,.2);}
+    .support-banner-reasons{display:flex;flex-direction:column;gap:.4rem;margin-bottom:.75rem;}
+    .support-reason{display:flex;align-items:center;gap:.45rem;font-size:.72rem;font-weight:600;opacity:.92;}
+    .support-reason i{font-size:14px;opacity:.8;}
+    .support-banner-cta{background:rgba(255,255,255,.95);color:#dc2626;padding:.65rem 1rem;border-radius:.7rem;font-size:.8rem;font-weight:700;text-align:center;letter-spacing:.5px;box-shadow:0 2px 8px rgba(0,0,0,.15);transition:.2s;}
+    .support-banner-cta:hover{background:#fff;transform:scale(1.02);}
+    @keyframes pulse-glow{0%,100%{box-shadow:0 12px 32px -10px rgba(220,38,38,.65),0 0 0 1px rgba(255,255,255,.15) inset,0 2px 8px rgba(0,0,0,.1);}50%{box-shadow:0 12px 36px -8px rgba(220,38,38,.8),0 0 0 1px rgba(255,255,255,.25) inset,0 2px 10px rgba(0,0,0,.15);}}
+    @keyframes heartbeat{0%,100%{transform:scale(1);}10%{transform:scale(1.15);}20%{transform:scale(1);}30%{transform:scale(1.15);}40%{transform:scale(1);}}
+    @media (max-width:700px){.support-banner{bottom:1rem;right:.9rem;max-width:280px;padding:.9rem 1rem;}.support-banner-title{font-size:.9rem;}.support-banner-text{font-size:.7rem;}.support-reason{font-size:.68rem;}}
+    @media (max-width:900px){.support-banner{right:1rem;bottom:1rem;}}
     
     .map-theme-fab{position:fixed;bottom:4.8rem;right:1.4rem;z-index:1300;background:linear-gradient(135deg,#1f2937,#4b5563);color:#fff;border:none;border-radius:50%;width:3.5rem;height:3.5rem;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 10px 28px -8px rgba(31,41,55,.55),0 0 0 1px rgba(255,255,255,.12) inset;transition:.25s;backdrop-filter:blur(6px) saturate(1.2);}
     .map-theme-fab i{font-size:20px;}
@@ -2920,7 +2928,19 @@
 
   </style>
 
-  <button class="support-fab" id="supportFab" aria-haspopup="dialog" aria-controls="donateModal" onclick="toggleDonate()"><i class="material-icons">volunteer_activism</i><span>Підтримати</span></button>
+  <div class="support-banner" id="supportBanner" onclick="toggleDonate()" role="button" tabindex="0" aria-haspopup="dialog" aria-controls="donateModal">
+    <div class="support-banner-header">
+      <i class="material-icons support-banner-icon">favorite</i>
+      <div class="support-banner-title">Підтримай Neptun</div>
+    </div>
+    <div class="support-banner-text">Кожен донат рятує життя українців! Ваша підтримка допомагає:</div>
+    <div class="support-banner-reasons">
+      <div class="support-reason"><i class="material-icons">⚡</i>Швидше оповіщення про загрози</div>
+      <div class="support-reason"><i class="material-icons">🎯</i>Точніше визначення місць атак</div>
+      <div class="support-reason"><i class="material-icons">🛡️</i>Більше часу дістатися укриття</div>
+    </div>
+    <div class="support-banner-cta">💙💛 ПІДТРИМАТИ ЗАРАЗ</div>
+  </div>
   <button class="map-theme-fab" id="mapThemeFab" onclick="toggleMapTheme()" title="Переключити тему карти"><i class="material-icons" id="mapThemeIcon">dark_mode</i></button>
   <div class="donate-modal-overlay" id="donateModal" role="dialog" aria-labelledby="donateTitle" aria-modal="true">
     <div class="donate-modal">
