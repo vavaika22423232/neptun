@@ -1033,6 +1033,9 @@ body {
             <button type="button" class="btn btn-purple btn-sm" onclick="toggleFullscreenMap()" id="fullscreenBtn">
               🔲 Fullscreen
             </button>
+            <button type="button" class="btn btn-danger btn-sm" onclick="forceReloadAllUsers()" title="Примусово перезавантажити сторінку у всіх користувачів">
+              💥 Force Reload Users
+            </button>
           </div>
         </div>
         <div class="card-body compact">
@@ -2214,6 +2217,32 @@ function reinitAdminMap() {
       console.error('Failed to reinitialize map:', error);
     }
   }, 100);
+}
+
+function forceReloadAllUsers() {
+  if (!confirm('⚠️ УВАГА! Це примусово перезавантажить сторінку у ВСІХ активних користувачів.\n\nПродовжити?')) {
+    return;
+  }
+  
+  fetch('/admin/trigger-force-reload', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      alert('✅ Force reload активовано!\n\nВсі користувачі отримають команду на перезавантаження при наступній перевірці статусу (протягом 30 секунд).');
+      console.log('Force reload triggered successfully');
+    } else {
+      alert('❌ Помилка активації force reload');
+    }
+  })
+  .catch(error => {
+    console.error('Error triggering force reload:', error);
+    alert('❌ Помилка з\'єднання');
+  });
 }
 
 function testJS() {

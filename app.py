@@ -486,6 +486,8 @@ BLOCKED_FILE = 'blocked_ids.json'
 STATS_FILE = 'visits_stats.json'  # persistent first-seen timestamps per visitor id
 RECENT_VISITS_FILE = 'visits_recent.json'  # stores rolling today/week visitor id sets for fast counts
 VISIT_STATS = None  # lazy-loaded dict: {id: first_seen_epoch}
+FORCE_RELOAD_FLAG = False  # Flag to trigger force reload for all users
+FORCE_RELOAD_LOCK = threading.Lock()
 client = None
 session_str = os.getenv('TELEGRAM_SESSION')  # Telethon string session (recommended for Render)
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')  # optional bot token fallback
@@ -14497,6 +14499,31 @@ def startup_init():
 # Graceful shutdown handler
 import atexit
 import signal
+
+# Force reload endpoints for admin
+@app.route('/api/force-reload-status')
+def force_reload_status():
+    """Check if force reload flag is active"""
+    global FORCE_RELOAD_FLAG
+    with FORCE_RELOAD_LOCK:
+        should_reload = FORCE_RELOAD_FLAG
+        # Reset flag after client receives it
+        if should_reload:
+            FORCE_RELOAD_FLAG = False
+    return jsonify({'reload': should_reload})
+
+@app.route('/admin/trigger-force-reload', methods=['POST'])
+def trigger_force_reload():
+    """Admin endpoint to trigger force reload for all users"""
+    if not _require_secret(request):
+        return Response('Forbidden', status=403)
+    
+    global FORCE_RELOAD_FLAG
+    with FORCE_RELOAD_LOCK:
+        FORCE_RELOAD_FLAG = True
+    
+    log.info("🔄 ADMIN: Force reload triggered for all users")
+    return jsonify({'success': True, 'message': 'Force reload activated'})
 
 def shutdown_scheduler():
     """Shutdown scheduler gracefully"""
