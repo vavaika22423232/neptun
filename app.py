@@ -714,7 +714,7 @@ OPENCAGE_CACHE_FILE = 'opencage_cache.json'
 OPENCAGE_TTL = 60 * 60 * 24 * 30  # 30 days
 NEG_GEOCODE_FILE = 'negative_geocode_cache.json'
 NEG_GEOCODE_TTL = 60 * 60 * 24 * 3  # 3 days for 'not found' entries
-MESSAGES_RETENTION_MINUTES = int(os.getenv('MESSAGES_RETENTION_MINUTES', '120'))  # 2 hours retention by default
+MESSAGES_RETENTION_MINUTES = int(os.getenv('MESSAGES_RETENTION_MINUTES', '1440'))  # 24 hours retention by default
 MESSAGES_MAX_COUNT = int(os.getenv('MESSAGES_MAX_COUNT', '0'))  # 0 = unlimited
 
 def _startup_diagnostics():
@@ -1343,6 +1343,31 @@ def ensure_city_coords(name: str):
     if not name:
         return None
     n = name.strip().lower()
+    
+    # Apply UA_CITY_NORMALIZE before any lookups
+    if n in UA_CITY_NORMALIZE:
+        n = UA_CITY_NORMALIZE[n]
+        print(f"DEBUG: Normalized '{name.lower()}' -> '{n}'")
+    
+    # PRIORITY FIX: Check for "City + Oblast" pattern (e.g., "Вилково Одещини")
+    # Split on space and check if we have both a city and oblast
+    words = n.split()
+    if len(words) >= 2:
+        # Try first word as city (with normalization)
+        potential_city = words[0]
+        if potential_city in UA_CITY_NORMALIZE:
+            potential_city = UA_CITY_NORMALIZE[potential_city]
+        
+        potential_oblast = ' '.join(words[1:])
+        
+        # Check if first word is a known city
+        if potential_city in CITY_COORDS:
+            # Check if remaining words match an oblast
+            if potential_oblast in OBLAST_CENTERS or any(potential_oblast in oblast_key for oblast_key in OBLAST_CENTERS.keys()):
+                # This is "City Oblast" pattern - use city coordinates!
+                lat, lng = CITY_COORDS[potential_city]
+                print(f"DEBUG: Found 'City+Oblast' pattern: '{potential_city}' + '{potential_oblast}' -> using city coords {(lat, lng)}")
+                return (lat, lng, False)
     
     # Quick check in existing coordinates first
     if n in CITY_COORDS:
