@@ -5050,28 +5050,6 @@
               const newField = JSON.parse(JSON.stringify(textField).replace(/"name"/g, '"name:uk"'));
               map.setLayoutProperty(layer.id, 'text-field', newField);
             }
-            
-            // Збільшуємо розмір шрифту на 50%
-            const currentSize = map.getLayoutProperty(layer.id, 'text-size');
-            if (currentSize) {
-              if (typeof currentSize === 'number') {
-                map.setLayoutProperty(layer.id, 'text-size', currentSize * 1.5);
-              } else if (Array.isArray(currentSize)) {
-                const newSize = JSON.parse(JSON.stringify(currentSize));
-                for (let i = 0; i < newSize.length; i++) {
-                  if (typeof newSize[i] === 'number') {
-                    newSize[i] = newSize[i] * 1.5;
-                  }
-                }
-                map.setLayoutProperty(layer.id, 'text-size', newSize);
-              }
-            }
-            
-            // Збільшуємо text-halo для кращої видимості
-            const haloWidth = map.getPaintProperty(layer.id, 'text-halo-width');
-            if (haloWidth !== undefined && typeof haloWidth === 'number') {
-              map.setPaintProperty(layer.id, 'text-halo-width', haloWidth * 1.3);
-            }
           }
         });
         } catch (e) {
