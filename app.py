@@ -12901,6 +12901,36 @@ def locate_place():
                 'source': 'normalized'
             })
     
+    # Try Nominatim API for exact match
+    try:
+        import requests
+        nominatim_url = 'https://nominatim.openstreetmap.org/search'
+        params = {
+            'q': query,
+            'country': 'Ukraine',
+            'format': 'json',
+            'limit': 1,
+            'accept-language': 'uk'
+        }
+        headers = {
+            'User-Agent': 'NeptunAlarmMap/1.0 (https://neptun-alarm.onrender.com)'
+        }
+        
+        response = requests.get(nominatim_url, params=params, headers=headers, timeout=3)
+        if response.ok:
+            results = response.json()
+            if results and len(results) > 0:
+                result = results[0]
+                return jsonify({
+                    'status': 'ok',
+                    'name': result.get('display_name', query).split(',')[0],
+                    'lat': float(result['lat']),
+                    'lng': float(result['lon']),
+                    'source': 'nominatim'
+                })
+    except Exception as e:
+        log.warning(f'Nominatim API error: {e}')
+    
     # If no exact match, return suggestions (prefix/substring match)
     suggestions = set()
     
@@ -12908,20 +12938,20 @@ def locate_place():
     for city_name in CITY_COORDS.keys():
         if query_lower in city_name:
             suggestions.add(city_name.title())
-            if len(suggestions) >= 30:
+            if len(suggestions) >= 50:
                 break
     
     # Then search in SETTLEMENTS_INDEX
-    if len(suggestions) < 30:
+    if len(suggestions) < 50:
         for settlement_name in SETTLEMENTS_INDEX.keys():
             city_title = settlement_name.title()
             if query_lower in settlement_name:
                 suggestions.add(city_title)
-                if len(suggestions) >= 50:
+                if len(suggestions) >= 100:
                     break
     
     # Also search in UKRAINE_ADDRESSES_DB cities
-    if len(suggestions) < 50 and UKRAINE_ADDRESSES_DB:
+    if len(suggestions) < 100 and UKRAINE_ADDRESSES_DB:
         cities_from_db = set()
         for value in UKRAINE_ADDRESSES_DB.values():
             city_name = value.get('city', '').strip()
@@ -12930,10 +12960,36 @@ def locate_place():
         suggestions.update(cities_from_db)
     
     # Add UKRAINE_CITIES if available
-    if len(suggestions) < 50 and UKRAINE_CITIES:
+    if len(suggestions) < 100 and UKRAINE_CITIES:
         for city in UKRAINE_CITIES:
             if query_lower in city.lower():
                 suggestions.add(city)
+    
+    # Use Nominatim API for suggestions if we have less than 10 results
+    if len(suggestions) < 10:
+        try:
+            import requests
+            nominatim_url = 'https://nominatim.openstreetmap.org/search'
+            params = {
+                'q': query,
+                'country': 'Ukraine',
+                'format': 'json',
+                'limit': 20,
+                'accept-language': 'uk'
+            }
+            headers = {
+                'User-Agent': 'NeptunAlarmMap/1.0 (https://neptun-alarm.onrender.com)'
+            }
+            
+            response = requests.get(nominatim_url, params=params, headers=headers, timeout=3)
+            if response.ok:
+                results = response.json()
+                for result in results:
+                    place_name = result.get('display_name', '').split(',')[0]
+                    if place_name:
+                        suggestions.add(place_name)
+        except Exception as e:
+            log.warning(f'Nominatim API suggestions error: {e}')
     
     # Convert to sorted list (shorter = more relevant)
     suggestions_list = sorted(list(suggestions), key=lambda x: (len(x), x))
@@ -12941,7 +12997,7 @@ def locate_place():
     if suggestions_list:
         return jsonify({
             'status': 'suggest',
-            'matches': suggestions_list[:30]
+            'matches': suggestions_list[:50]
         })
     
     # No matches found
