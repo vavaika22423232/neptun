@@ -1680,9 +1680,6 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                             return (lat, lng, False)
         except Exception as e:
             print(f"DEBUG: Multi-regional API lookup error: {e}")
-                                return (lat, lng, False)
-        except Exception as e:
-            print(f"DEBUG: Photon API error for multi-regional lookup: {e}")
     
     # Second try: standard city lookup (without oblast context)
     # BUT: if we have excluded_oblast, try to find variant NOT in that oblast
