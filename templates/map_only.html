@@ -2,17 +2,14 @@
 <html lang="uk">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Neptun Alarm Map</title>
   
   <!-- MapLibre GL -->
   <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
   <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet">
   
-  <!-- Supercluster for marker clustering -->
-  <script src="https://unpkg.com/supercluster@7.1.5/dist/supercluster.min.js"></script>
-  
-  <!-- Turf.js for geometry operations -->
+  <!-- Turf.js -->
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
   
   <style>
@@ -27,6 +24,8 @@
       height: 100%;
       overflow: hidden;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
     
     #map {
@@ -37,67 +36,45 @@
       left: 0;
     }
     
-    /* Popup styles - ultra minimal */
-    .maplibregl-popup {
-      z-index: 10000;
+    .maplibre-marker {
+      cursor: pointer;
     }
     
+    .mapboxgl-popup-content,
     .maplibregl-popup-content {
-      background: #fff;
-      border-radius: 8px;
-      padding: 0;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
-      min-width: 160px;
-      max-width: 240px;
-      border: none;
+      background: transparent !important;
+      padding: 0 !important;
+      box-shadow: none !important;
+      border: none !important;
+      border-radius: 0 !important;
+      max-width: 380px !important;
     }
     
-    .maplibregl-popup-close-button {
-      display: none;
-    }
-    
+    .mapboxgl-popup-tip,
     .maplibregl-popup-tip {
-      display: none;
+      display: none !important;
     }
     
-    .popup-content {
-      padding: 10px;
-      border-left: 3px solid #3b82f6;
+    .mapboxgl-popup-close-button,
+    .maplibregl-popup-close-button {
+      display: none !important;
     }
     
-    .popup-content.shahed {
-      border-left-color: #ef4444;
+    .mapboxgl-popup,
+    .maplibregl-popup {
+      animation: popupFadeIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
     }
     
-    .popup-content.missile {
-      border-left-color: #f59e0b;
+    @keyframes popupFadeIn {
+      from { opacity: 0; transform: translateY(-10px) scale(0.95); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
     }
     
-    .popup-content.missile_s300 {
-      border-left-color: #8b5cf6;
+    .tm-wrap {
+      position: relative;
+      display: inline-block;
     }
     
-    .popup-title {
-      font-weight: 600;
-      font-size: 0.9rem;
-      margin-bottom: 4px;
-      color: #1f2937;
-    }
-    
-    .popup-text {
-      font-size: 0.8rem;
-      color: #6b7280;
-      line-height: 1.3;
-      margin-bottom: 4px;
-    }
-    
-    .popup-date {
-      font-size: 0.7rem;
-      color: #9ca3af;
-      margin-top: 4px;
-    }
-    
-    /* Marker badge styles */
     .tm-badge {
       position: absolute;
       top: -8px;
@@ -123,7 +100,71 @@
       50% { transform: scale(1.1); opacity: 0.9; }
     }
     
-    /* Loading indicator */
+    .shahed-flying {
+      animation: shahedFlight var(--flight-duration, 60s) linear infinite;
+    }
+    
+    @keyframes shahedFlight {
+      0% { transform: translate(var(--flight-dx, 0), var(--flight-dy, 0)); }
+      100% { transform: translate(0, 0); }
+    }
+    
+    .cluster {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(145deg, #1e293b, #0f172a);
+      border: 2px solid #334155;
+      border-radius: 18px;
+      padding: 4px 6px 6px;
+      box-shadow: 0 4px 12px -3px rgba(0,0,0,.4);
+    }
+    
+    .cluster svg, .cluster img {
+      width: 26px;
+      height: 26px;
+      object-fit: contain;
+      filter: drop-shadow(0 0 4px rgba(0,0,0,.5));
+      margin-right: 2px;
+    }
+    
+    .cluster b {
+      font-size: .8rem;
+      font-family: Inter, system-ui, sans-serif;
+      color: #fff;
+      text-shadow: 0 1px 2px #000;
+    }
+    
+    .cluster-fresh {
+      background: linear-gradient(160deg, #164e63, #0f2d40);
+      border-color: #155e75;
+    }
+    
+    .cluster-stale {
+      background: linear-gradient(160deg, #3f3f46, #27272a);
+      border-color: #52525b;
+    }
+    
+    .cluster-old {
+      background: linear-gradient(160deg, #1e1b4b, #0f172a);
+      border-color: #312e81;
+      opacity: .72;
+    }
+    
+    .trajectory-line {
+      animation: trajectoryPulse 2s ease-in-out infinite;
+    }
+    
+    @keyframes trajectoryPulse {
+      0%, 100% { opacity: 0.7; }
+      50% { opacity: 0.4; }
+    }
+    
+    .direction-arrow {
+      pointer-events: none;
+    }
+    
     .loading {
       position: absolute;
       top: 50%;
@@ -148,120 +189,68 @@
       40% { content: '..'; }
       60%, 100% { content: '...'; }
     }
+    
+    .hidden {
+      display: none !important;
+    }
   </style>
 </head>
 <body>
   <div id="map"></div>
-  <div class="loading" id="loading">Завантаження карти</div>
+  <div class="loading hidden" id="markerLoadingOverlay">Завантаження даних</div>
   
   <script>
-    // Configuration
+    const mapTilerApiKey = 'm8zW2kq1Ta7cw9nODPXo';
     const API_BASE = window.location.origin;
-    const MAPTILER_KEY = 'm8zW2kq1Ta7cw9nODPXo';
-    const UPDATE_INTERVAL = 30000; // 30 seconds
+    const UPDATE_INTERVAL = 30000;
     const MAX_TRACKS = 500;
+    const CACHE_DURATION = 60000;
     
-    let map;
-    let markers = [];
-    let clusterIndex;
+    const ICONS = {
+      shahed: '/static/shahed.png',
+      rocket: '/static/rocket.png',
+      raketa: '/static/rocket.png',
+      missile: '/static/rocket.png',
+      missile_s300: '/static/missile_s300.png',
+      avia: '/static/avia.png',
+      artillery: '/static/artillery.png',
+      fpv: '/static/fpv.png',
+      alarm_cancel: '/static/alarm_cancel.png',
+      default: '/static/default.png'
+    };
     
-    // Get map style URL
+    const PLACEHOLDER_ICON = '/static/placeholders/placeholder.png';
+    const FALLBACK_ICON = '/static/default.png';
+    
+    const SVGMarkers = {
+      createSVG(type, size = 32) {
+        const icons = {
+          shahed: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#ef4444" stroke="#fff" stroke-width="2"/><path d="M16 10 L12 16 L16 22 L20 16 Z" fill="#fff"/></svg>`,
+          rocket: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#f59e0b" stroke="#fff" stroke-width="2"/><path d="M16 8 L18 16 L16 24 L14 16 Z" fill="#fff"/></svg>`,
+          raketa: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#f59e0b" stroke="#fff" stroke-width="2"/><path d="M16 8 L18 16 L16 24 L14 16 Z" fill="#fff"/></svg>`,
+          missile: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#f59e0b" stroke="#fff" stroke-width="2"/><path d="M16 8 L18 16 L16 24 L14 16 Z" fill="#fff"/></svg>`,
+          missile_s300: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#8b5cf6" stroke="#fff" stroke-width="2"/><path d="M16 8 L18 16 L16 24 L14 16 Z" fill="#fff"/></svg>`,
+          avia: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#06b6d4" stroke="#fff" stroke-width="2"/><path d="M16 12 L8 16 L16 20 L24 16 Z" fill="#fff"/></svg>`,
+          artillery: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#84cc16" stroke="#fff" stroke-width="2"/><circle cx="16" cy="16" r="4" fill="#fff"/></svg>`,
+          fpv: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#a855f7" stroke="#fff" stroke-width="2"/><rect x="10" y="10" width="12" height="12" fill="#fff" rx="2"/></svg>`,
+          alarm_cancel: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#10b981" stroke="#fff" stroke-width="2"/><path d="M10 16 L14 20 L22 12" stroke="#fff" stroke-width="3" fill="none"/></svg>`,
+          default: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#3b82f6" stroke="#fff" stroke-width="2"/><circle cx="16" cy="16" r="6" fill="#fff"/></svg>`
+        };
+        return icons[type] || icons.default;
+      }
+    };
+    
+    let map, markers = [], markerLayer = null, worldMaskLayer = null;
+    let isInitialLoad = true, dataCache = null, cacheTimestamp = 0;
+    
     function getMapStyle(isDark) {
       const style = isDark ? 'streets-v2-dark' : 'streets-v2';
-      return `https://api.maptiler.com/maps/${style}/style.json?key=${MAPTILER_KEY}&language=uk`;
+      return `https://api.maptiler.com/maps/${style}/style.json?key=${mapTilerApiKey}`;
     }
     
-    // Initialize map
-    function initMap() {
-      const savedTheme = localStorage.getItem('mapTheme') || 'light';
-      const isDark = savedTheme === 'dark';
-      
-      map = new maplibregl.Map({
-        container: 'map',
-        style: getMapStyle(isDark),
-        center: [31.1656, 48.3794],
-        zoom: 5.5,
-        attributionControl: false
-      });
-      
-      map.on('load', () => {
-        document.getElementById('loading').style.display = 'none';
-        
-        // Force Ukrainian labels
-        forceUkrainianLabels();
-        
-        // Add world mask (dimming outside Ukraine)
-        addWorldMask();
-        
-        // Load initial data
-        updateMarkers();
-        
-        // Start auto-update
-        setInterval(updateMarkers, UPDATE_INTERVAL);
-      });
-      
-      // Re-apply Ukrainian labels when style changes
-      map.on('styledata', forceUkrainianLabels);
-      
-      map.on('error', (e) => {
-        console.warn('Map error (non-critical):', e);
-      });
-    }
-    
-    // Add world mask to dim everything except Ukraine
-    async function addWorldMask() {
-      try {
-        const response = await fetch('/static/geoBoundaries-UKR-ADM0_simplified.geojson');
-        const ukraineGeoJSON = await response.json();
-        
-        // World bbox coordinates (covering everything except Ukraine)
-        const worldBbox = [[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]];
-        
-        // Extract Ukraine coordinates
-        let ukraineRings = [];
-        if (ukraineGeoJSON.features && ukraineGeoJSON.features[0]) {
-          const geom = ukraineGeoJSON.features[0].geometry;
-          if (geom.type === 'Polygon') {
-            ukraineRings = geom.coordinates;
-          } else if (geom.type === 'MultiPolygon') {
-            ukraineRings = geom.coordinates.map(poly => poly[0]);
-          }
-        }
-        
-        // Create mask: world bbox with Ukraine holes
-        const maskCoordinates = [worldBbox, ...ukraineRings];
-        
-        map.addSource('world-mask', {
-          type: 'geojson',
-          data: {
-            type: 'Feature',
-            geometry: {
-              type: 'Polygon',
-              coordinates: maskCoordinates
-            }
-          }
-        });
-        
-        map.addLayer({
-          id: 'world-mask-layer',
-          type: 'fill',
-          source: 'world-mask',
-          paint: {
-            'fill-color': '#071b35',
-            'fill-opacity': 1
-          }
-        });
-        
-      } catch (error) {
-        console.error('Error loading Ukraine mask:', error);
-      }
-    }
-    
-    // Force Ukrainian labels on all text layers
-    function forceUkrainianLabels() {
+    const forceUkrainianLabels = () => {
       try {
         if (!map || !map.isStyleLoaded()) return;
-        
         const style = map.getStyle();
         if (!style || !style.layers) return;
         
@@ -270,7 +259,6 @@
             const textField = layer.layout['text-field'];
             
             if (typeof textField === 'string') {
-              // Replace all name variants with Ukrainian
               let newField = textField;
               newField = newField.replace(/\{name:latin\}/g, '{name:uk}');
               newField = newField.replace(/\{name:en\}/g, '{name:uk}');
@@ -281,7 +269,6 @@
                 map.setLayoutProperty(layer.id, 'text-field', newField);
               }
             } else if (Array.isArray(textField)) {
-              // For expressions, replace all name variants with "name:uk"
               let jsonStr = JSON.stringify(textField);
               jsonStr = jsonStr.replace(/"name:latin"/g, '"name:uk"');
               jsonStr = jsonStr.replace(/"name:en"/g, '"name:uk"');
@@ -293,106 +280,651 @@
             }
           }
         });
-      } catch (e) {
-        console.warn('Error setting Ukrainian labels:', e);
-      }
-    }
+      } catch (e) {}
+    };
     
-    // Fetch threat data
-    async function fetchThreats() {
+    async function initWorldMask() {
+      const worldRing = [[85, -180], [85, 180], [-85, 180], [-85, -180]];
+      const fallbackRing = [
+        [52.37, 23.60], [51.90, 23.60], [51.90, 24.00], [51.50, 24.50], [51.90, 25.30],
+        [51.90, 26.00], [51.60, 26.60], [51.50, 27.50], [51.60, 28.20], [51.30, 29.20],
+        [51.60, 30.60], [52.30, 31.80], [52.10, 32.70], [52.40, 34.40], [52.30, 35.90],
+        [52.00, 37.40], [51.20, 38.20], [50.30, 39.70], [49.10, 40.10], [48.30, 39.70],
+        [47.10, 38.50], [46.00, 38.20], [45.35, 37.40], [45.40, 36.60], [45.20, 34.90],
+        [45.35, 33.30], [46.07, 30.95], [46.58, 30.06], [47.80, 29.48], [48.37, 28.05],
+        [48.47, 27.53], [48.27, 26.86], [47.74, 26.63], [47.85, 24.96], [48.15, 23.53],
+        [48.62, 22.57], [49.90, 22.09], [51.94, 22.93], [52.37, 23.60]
+      ];
+      
+      function drawMask(rings) {
+        if (worldMaskLayer) {
+          try {
+            if (map.getLayer('world-mask-layer')) map.removeLayer('world-mask-layer');
+            if (map.getSource('world-mask')) map.removeSource('world-mask');
+          } catch(e) {}
+          worldMaskLayer = null;
+        }
+        
+        const maskCoordinates = [
+          worldRing.map(p => [p[1], p[0]]),
+          ...rings.map(ring => ring.map(p => [p[1], p[0]]))
+        ];
+        
+        try {
+          map.addSource('world-mask', {
+            type: 'geojson',
+            data: {
+              type: 'Feature',
+              geometry: {
+                type: 'Polygon',
+                coordinates: maskCoordinates
+              }
+            }
+          });
+          
+          map.addLayer({
+            id: 'world-mask-layer',
+            type: 'fill',
+            source: 'world-mask',
+            paint: {
+              'fill-color': '#071b35',
+              'fill-opacity': 1
+            }
+          });
+          
+          worldMaskLayer = true;
+        } catch(e) {}
+      }
+      
       try {
-        const response = await fetch(`${API_BASE}/data?timeRange=40`);
-        if (!response.ok) throw new Error('Failed to fetch data');
-        const data = await response.json();
-        return data.tracks || [];
-      } catch (error) {
-        console.error('Error fetching threats:', error);
-        return [];
+        const resp = await fetch('/static/geoBoundaries-UKR-ADM0_simplified.geojson');
+        if (resp.ok) {
+          const gj = await resp.json();
+          const feats = (gj.features || []);
+          if (feats.length) {
+            const geom = feats[0].geometry;
+            let rings = [];
+            if (geom.type === 'Polygon') {
+              rings = geom.coordinates.map(r => r.map(([lng, lat]) => [lat, lng]));
+            } else if (geom.type === 'MultiPolygon') {
+              rings = geom.coordinates.map(poly => poly[0].map(([lng, lat]) => [lat, lng]));
+            }
+            if (rings.length) {
+              drawMask(rings);
+              return;
+            }
+          }
+        }
+        drawMask([fallbackRing]);
+      } catch(e) {
+        drawMask([fallbackRing]);
       }
     }
     
-    // Update markers on map
-    async function updateMarkers() {
-      const threats = await fetchThreats();
-      
-      // Clear existing markers
-      markers.forEach(m => m.remove());
-      markers = [];
-      
-      // Limit tracks
-      const limitedThreats = threats.slice(0, MAX_TRACKS);
-      
-      // Group by coordinates to create clusters manually
-      const coordGroups = {};
-      limitedThreats.forEach(threat => {
-        const key = `${threat.lat.toFixed(4)},${threat.lng.toFixed(4)}`;
-        if (!coordGroups[key]) {
-          coordGroups[key] = [];
-        }
-        coordGroups[key].push(threat);
+    async function getIconUrl(type) {
+      return new Promise((resolve) => {
+        const url = ICONS[type] || ICONS.default;
+        const img = new Image();
+        img.onload = () => resolve(url);
+        img.onerror = () => resolve(FALLBACK_ICON);
+        img.src = url;
       });
-      
-      // Create markers
-      Object.values(coordGroups).forEach(group => {
-        const threat = group[0];
-        const count = group.length;
-        
-        // Create marker element
-        const el = document.createElement('div');
-        el.style.width = '32px';
-        el.style.height = '32px';
-        el.style.position = 'relative';
-        el.style.cursor = 'pointer';
-        
-        const img = document.createElement('img');
-        img.src = `/static/${threat.marker_icon || 'shahed.png'}`;
-        img.style.width = '100%';
-        img.style.height = '100%';
-        img.style.display = 'block';
-        el.appendChild(img);
-        
-        // Add count badge if multiple threats
-        if (count > 1) {
-          const badge = document.createElement('div');
-          badge.className = 'tm-badge';
-          badge.textContent = count;
-          el.appendChild(badge);
-        }
-        
-        // Create popup HTML
-        const popupHTML = `
-          <div class="popup-content ${threat.threat_type || 'shahed'}">
-            <div class="popup-title">${threat.place || 'Невідомо'}</div>
-            <div class="popup-text">${threat.text || ''}</div>
-            ${count > 1 ? `<div class="popup-text"><strong>Кількість:</strong> ${count}</div>` : ''}
-            <div class="popup-date">${threat.date || ''}</div>
-          </div>
-        `;
-        
-        const popup = new maplibregl.Popup({
-          offset: 25,
-          closeButton: false,
-          closeOnClick: true,
-          className: 'threat-popup'
-        }).setHTML(popupHTML);
-        
-        // Create marker
-        const marker = new maplibregl.Marker({
-          element: el,
-          anchor: 'bottom'
-        })
-          .setLngLat([threat.lng, threat.lat])
-          .setPopup(popup)
-          .addTo(map);
-        
-        markers.push(marker);
-      });
-      
-      console.log(`Updated ${markers.length} markers from ${limitedThreats.length} threats`);
     }
     
-    // Initialize on load
+    function cleanMessage(text) {
+      return (text || '').replace(/<[^>]*>/g, '').trim();
+    }
+    
+    function translatePlace(place) {
+      return (place || '').trim();
+    }
+    
+    function isFPVThreat(place, text, type) {
+      const fpvKeywords = ['fpv', 'фпв', 'дрон', 'бпла'];
+      const combined = ((place || '') + ' ' + (text || '') + ' ' + (type || '')).toLowerCase();
+      return fpvKeywords.some(kw => combined.includes(kw));
+    }
+    
+    window.L = {
+      marker: function(latlng, options = {}) {
+        const marker = {
+          _latlng: latlng,
+          _options: options,
+          _popup: null,
+          _element: null,
+          
+          bindPopup: function(content) {
+            this._popup = content;
+            return this;
+          },
+          
+          addTo: function(layer) {
+            const el = document.createElement('div');
+            el.className = 'maplibre-marker';
+            
+            if (this._options.icon && this._options.icon.options) {
+              el.innerHTML = this._options.icon.options.html || '';
+              el.style.width = (this._options.icon.options.iconSize?.[0] || 32) + 'px';
+              el.style.height = (this._options.icon.options.iconSize?.[1] || 32) + 'px';
+            }
+            
+            const mlMarker = new maplibregl.Marker({
+              element: el,
+              anchor: this._options.icon?.options?.iconAnchor ? 'center' : 'bottom'
+            }).setLngLat([this._latlng[1], this._latlng[0]]);
+            
+            if (this._popup) {
+              const popup = new maplibregl.Popup({
+                offset: 25,
+                closeButton: false,
+                closeOnClick: true
+              }).setHTML(this._popup);
+              mlMarker.setPopup(popup);
+            }
+            
+            mlMarker.addTo(map);
+            this._element = mlMarker;
+            return this;
+          },
+          
+          remove: function() {
+            if (this._element) this._element.remove();
+          }
+        };
+        return marker;
+      },
+      
+      divIcon: function(options = {}) {
+        return { options: options };
+      },
+      
+      layerGroup: function() {
+        return {
+          _layers: [],
+          addTo: function(m) { return this; },
+          clearLayers: function() {
+            this._layers.forEach(l => l.remove && l.remove());
+            this._layers = [];
+          },
+          addLayer: function(layer) {
+            this._layers.push(layer);
+            layer.addTo && layer.addTo(map);
+          }
+        };
+      },
+      
+      markerClusterGroup: function(options = {}) {
+        return {
+          _markers: [],
+          _options: options,
+          addTo: function(m) { return this; },
+          clearLayers: function() {
+            this._markers.forEach(m => m.remove && m.remove());
+            this._markers = [];
+          },
+          addLayer: function(marker) {
+            this._markers.push(marker);
+            marker.addTo(map);
+          },
+          refreshClusters: function() {}
+        };
+      },
+      
+      polyline: function(points, options = {}) {
+        const layerId = 'polyline-' + Date.now() + '-' + Math.random();
+        const coords = points.map(p => [p[1], p[0]]);
+        
+        return {
+          _layerId: layerId,
+          addTo: function(m) {
+            try {
+              if (!map.getSource(this._layerId)) {
+                map.addSource(this._layerId, {
+                  type: 'geojson',
+                  data: {
+                    type: 'Feature',
+                    geometry: {
+                      type: 'LineString',
+                      coordinates: coords
+                    }
+                  }
+                });
+                
+                map.addLayer({
+                  id: this._layerId,
+                  type: 'line',
+                  source: this._layerId,
+                  paint: {
+                    'line-color': options.color || '#3b82f6',
+                    'line-width': options.weight || 2,
+                    'line-opacity': options.opacity || 1,
+                    'line-dasharray': options.dashArray ? options.dashArray.split(' ').map(Number) : undefined
+                  }
+                });
+              }
+            } catch(e) {}
+            return this;
+          },
+          remove: function() {
+            if (map.getLayer(this._layerId)) map.removeLayer(this._layerId);
+            if (map.getSource(this._layerId)) map.removeSource(this._layerId);
+          }
+        };
+      }
+    };
+    
+    function initMap() {
+      const savedTheme = localStorage.getItem('mapTheme') || 'light';
+      const isDark = savedTheme === 'dark';
+      
+      try {
+        map = new maplibregl.Map({
+          container: 'map',
+          style: getMapStyle(isDark),
+          center: [31.1656, 48.3794],
+          zoom: 5.5,
+          attributionControl: true,
+          locale: {
+            'NavigationControl.ResetBearing': 'Скинути орієнтацію',
+            'NavigationControl.ZoomIn': 'Збільшити',
+            'NavigationControl.ZoomOut': 'Зменшити'
+          }
+        });
+        
+        map.on('error', (e) => {});
+        
+        map.on('load', () => {
+          document.getElementById('markerLoadingOverlay').classList.add('hidden');
+          forceUkrainianLabels();
+          setTimeout(() => initWorldMask(), 100);
+          updateMarkers();
+          setInterval(updateMarkers, UPDATE_INTERVAL);
+        });
+        
+        map.on('styledata', forceUkrainianLabels);
+        
+        map.addControl(new maplibregl.NavigationControl({
+          showCompass: true,
+          showZoom: true,
+          visualizePitch: true
+        }), 'top-right');
+        
+        map.addControl(new maplibregl.AttributionControl({
+          compact: true,
+          customAttribution: '© <a href="https://www.maptiler.com/copyright/">MapTiler</a> © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        }));
+        
+        map.setView = function(latlng, zoom, options = {}) {
+          const animate = options.animate !== false;
+          this.flyTo({
+            center: [latlng[1], latlng[0]],
+            zoom: zoom || this.getZoom(),
+            essential: true,
+            duration: animate ? 1000 : 0
+          });
+        };
+        
+        map.invalidateSize = function() {
+          this.resize();
+        };
+        
+        map.removeLayer = function(layer) {
+          if (layer && layer.remove) layer.remove();
+        };
+        
+      } catch (error) {
+        const mapContainer = document.getElementById('map');
+        if (mapContainer) {
+          mapContainer.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; background: #0f172a; color: #e2e8f0;"><div style="text-align: center; padding: 2rem;"><h2 style="color: #ef4444;">❌ Помилка завантаження карти</h2><p>Не вдалося ініціалізувати карту</p><button onclick="location.reload()" style="background: #3b82f6; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 0.5rem; cursor: pointer; margin-top: 1rem;">🔄 Перезавантажити</button></div></div>';
+        }
+      }
+    }
+    
+    async function updateMarkers() {
+      const params = new URLSearchParams({ confRange: 0, maxTracks: MAX_TRACKS });
+      const overlay = document.getElementById('markerLoadingOverlay');
+      
+      if (overlay && isInitialLoad) overlay.classList.remove('hidden');
+      
+      let points = [];
+      
+      try {
+        let data;
+        const now = Date.now();
+        
+        if (dataCache && (now - cacheTimestamp) < CACHE_DURATION) {
+          data = dataCache;
+        } else {
+          const res = await fetch('/data?' + params.toString());
+          data = await res.json();
+          dataCache = data;
+          cacheTimestamp = now;
+        }
+        
+        points = (data.tracks || []).filter(p => {
+          if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return false;
+          if (isNaN(p.lat) || isNaN(p.lng)) return false;
+          if (Math.abs(p.lat) < 1 && Math.abs(p.lng) < 1) return false;
+          if (p.lat < 43 || p.lat > 53.5 || p.lng < 21 || p.lng > 41) return false;
+          const vague = ['схід','захід','північ','південь','восток','запад','север','юг'];
+          if (p.place && vague.includes((p.place||'').toLowerCase())) return false;
+          return true;
+        });
+        
+        window.__lastPoints = points;
+        
+        if (overlay) {
+          overlay.classList.add('hidden');
+          if (isInitialLoad) isInitialLoad = false;
+        }
+        
+        if (!window.shahedLayer) {
+          window.shahedLayer = L.layerGroup().addTo(map);
+        } else {
+          window.shahedLayer.clearLayers();
+        }
+        
+        if (markerLayer) {
+          markerLayer.clearLayers();
+        } else {
+          markerLayer = L.markerClusterGroup({
+            chunkedLoading: true,
+            chunkInterval: 200,
+            chunkDelay: 50,
+            maxClusterRadius: 80,
+            spiderfyOnMaxZoom: true,
+            showCoverageOnHover: false,
+            zoomToBoundsOnClick: true,
+            disableClusteringAtZoom: 12,
+            animate: true,
+            animateAddingMarkers: false,
+            removeOutsideVisibleBounds: true
+          }).addTo(map);
+        }
+        
+        markers = [];
+        
+        const MAX_DIRECT_MARKERS = 650;
+        
+        const shahedPoints = points.filter(p => {
+          const tt = (p.threat_type || '').toLowerCase();
+          return tt === 'shahed' || /шахед/i.test(p.threat_type || '');
+        });
+        
+        const otherPoints = points.filter(p => {
+          const tt = (p.threat_type || '').toLowerCase();
+          return tt !== 'shahed' && !/шахед/i.test(p.threat_type || '');
+        });
+        
+        const useFastMode = otherPoints.length > MAX_DIRECT_MARKERS;
+        
+        if (useFastMode) {
+          const z = map.getZoom();
+          let cell = 0.55;
+          if (z >= 7) cell = 0.32;
+          if (z >= 8) cell = 0.18;
+          if (z >= 9) cell = 0.11;
+          if (z >= 10) cell = 0.06;
+          
+          const keyFn = p => Math.floor(p.lat / cell) + '_' + Math.floor(p.lng / cell);
+          const buckets = new Map();
+          
+          for (const p of otherPoints) {
+            const k = keyFn(p);
+            let b = buckets.get(k);
+            if (!b) {
+              b = { items: [], latSum: 0, lngSum: 0, types: new Map(), latest: 0 };
+              buckets.set(k, b);
+            }
+            b.items.push(p);
+            b.latSum += p.lat;
+            b.lngSum += p.lng;
+            const tt = (p.threat_type || '').toLowerCase();
+            b.types.set(tt, (b.types.get(tt) || 0) + 1);
+            const ts = Date.parse((p.date || '').replace(/-/g, '/')) || 0;
+            if (ts > b.latest) b.latest = ts;
+          }
+          
+          buckets.forEach(b => {
+            const lat = b.latSum / b.items.length;
+            const lng = b.lngSum / b.items.length;
+            let dominant = 'default';
+            let maxc = 0;
+            b.types.forEach((c, t) => {
+              if (c > maxc) {
+                maxc = c;
+                dominant = t;
+              }
+            });
+            
+            const count = b.items.length;
+            const ageMin = (Date.now() - b.latest) / 60000;
+            const freshness = ageMin < 8 ? 'fresh' : ageMin < 20 ? 'stale' : 'old';
+            
+            let clusterOpacity = 1.0;
+            if (ageMin <= 30) {
+              clusterOpacity = 1.0;
+            } else if (ageMin <= 120) {
+              clusterOpacity = 1.0 - ((ageMin - 30) / 90) * 0.4;
+            } else {
+              const extraMinutes = Math.min(ageMin - 120, 120);
+              clusterOpacity = 0.6 - (extraMinutes / 120) * 0.3;
+            }
+            clusterOpacity = Math.max(0.3, Math.min(1.0, clusterOpacity));
+            
+            const mostCommonType = [...b.types.entries()].sort((a, b) => b[1] - a[1])[0][0] || 'default';
+            const clusterSvg = SVGMarkers.createSVG(mostCommonType, 32);
+            const html = '<div class="cluster cluster-' + freshness + '" style="opacity:' + clusterOpacity + ';">' + clusterSvg + '<b>' + count + '</b></div>';
+            const icon = L.divIcon({ html, className: '', iconSize: [44, 52], iconAnchor: [22, 48] });
+            const m = L.marker([lat, lng], { icon });
+            
+            const typeLines = [...b.types.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([t, c]) => '<div style="font-size:1rem;">' + (t || '—') + ': ' + c + '</div>').join('');
+            m.bindPopup('<div style="font-size:1rem;line-height:1.4;padding:8px;"><b style="font-size:1.2rem;">' + count + '</b> <span style="font-size:1rem;">подій</span><br>' + typeLines + '<div style="margin-top:6px;opacity:.6;font-size:.85rem;">кластер</div></div>');
+            m.addTo(markerLayer);
+            markers.push(m);
+          });
+        }
+        
+        const pointsToRender = useFastMode ? shahedPoints : points;
+        
+        for (const p of pointsToRender) {
+          let iconUrl = ICONS[p.threat_type] || ICONS.default;
+          let useCustomIcon = false;
+          
+          if (p.marker_icon) {
+            iconUrl = (p.marker_icon.startsWith('http') || p.marker_icon.startsWith('/')) ? p.marker_icon : '/static/' + p.marker_icon;
+            useCustomIcon = true;
+          }
+          
+          if (!useCustomIcon && isFPVThreat(p.place, p.text, p.threat_type)) {
+            iconUrl = ICONS.fpv || iconUrl;
+          }
+          
+          if (!useCustomIcon) {
+            try {
+              iconUrl = await getIconUrl(p.threat_type || 'default');
+            } catch (error) {
+              iconUrl = FALLBACK_ICON;
+            }
+          }
+          
+          if (!p.count && p.place) {
+            const m = p.place.match(/\((\d{1,3})\)/);
+            if (m) p.count = parseInt(m[1]);
+          }
+          
+          let arrowDir = null;
+          if (p.place && p.place.includes('←')) {
+            arrowDir = p.place.split('←').pop().trim();
+          }
+          
+          const countBadge = (p.threat_type === 'shahed' || /shahed|шахед|бпла/i.test(p.threat_type || '')) && p.count && p.count > 1 ? '<div class="tm-badge">' + p.count + '×</div>' : '';
+          
+          let z = map.getZoom ? map.getZoom() : 6;
+          let base = 34;
+          let factor = z >= 9 ? 1.25 : z >= 7 ? 1.0 : z >= 6 ? 0.85 : z >= 5 ? 0.7 : 0.55;
+          const w = Math.round(base * factor);
+          const h = Math.round(w * 1.15);
+          
+          let opacity = 1.0;
+          if (p.date) {
+            try {
+              const markerDate = new Date(p.date);
+              const now = new Date();
+              const ageInMinutes = (now - markerDate) / (1000 * 60);
+              
+              if (ageInMinutes <= 30) {
+                opacity = 1.0;
+              } else if (ageInMinutes <= 120) {
+                opacity = 1.0 - ((ageInMinutes - 30) / 90) * 0.4;
+              } else {
+                const extraMinutes = Math.min(ageInMinutes - 120, 120);
+                opacity = 0.6 - (extraMinutes / 120) * 0.3;
+              }
+              
+              opacity = Math.max(0.3, Math.min(1.0, opacity));
+            } catch (e) {
+              opacity = 1.0;
+            }
+          }
+          
+          let markerContent = '';
+          try {
+            const svgIcon = SVGMarkers.createSVG(p.threat_type || 'default', w);
+            if (typeof svgIcon === 'string' && svgIcon.includes('<svg')) {
+              markerContent = svgIcon;
+            } else {
+              markerContent = '<img class="plain-marker-img" style="width:' + w + 'px;height:' + h + 'px;" src="' + iconUrl + '" alt="" loading="lazy">';
+            }
+          } catch (e) {
+            markerContent = '<img class="plain-marker-img" style="width:' + w + 'px;height:' + h + 'px;" src="' + iconUrl + '" alt="" loading="lazy">';
+          }
+          
+          let flightAnimation = '';
+          if (arrowDir && (p.threat_type === 'shahed' || /shahed|шахед|бпла/i.test(p.threat_type || ''))) {
+            const dir = arrowDir.toLowerCase();
+            let dx = 0, dy = 0;
+            if (dir.includes('півд')) dy = -0.35;
+            if (dir.includes('північ')) dy = 0.35;
+            if (dir.includes('сход')) dx = -0.35;
+            if (dir.includes('зах')) dx = 0.35;
+            
+            if (dx !== 0 || dy !== 0) {
+              const map_zoom = map.getZoom ? map.getZoom() : 6;
+              const pixels_per_degree = 256 * Math.pow(2, map_zoom) / 360;
+              const flight_dx_px = dx * pixels_per_degree;
+              const flight_dy_px = -dy * pixels_per_degree;
+              
+              const distance_km = Math.sqrt(dx * dx + dy * dy) * 111;
+              const flight_time_sec = (distance_km / 0.061);
+              const animation_duration = Math.max(30, Math.min(flight_time_sec, 120));
+              
+              flightAnimation = ` style="--flight-dx: ${-flight_dx_px}px; --flight-dy: ${-flight_dy_px}px; --flight-duration: ${animation_duration}s;"`;
+            }
+          }
+          
+          const html = '<div class="tm-wrap shahed-marker-active shahed-flying marker-new"' + flightAnimation + ' style="opacity:' + opacity + ';">' + markerContent + countBadge + '</div>';
+          const icon = L.divIcon({ html, className: '', iconSize: [w, h], iconAnchor: [w / 2, h / 2], popupAnchor: [0, -h / 2] });
+          const m = L.marker([p.lat, p.lng], { icon });
+          
+          if (arrowDir) {
+            const dir = arrowDir.toLowerCase();
+            let dx = 0, dy = 0;
+            if (dir.includes('півд')) dy = -0.35;
+            if (dir.includes('північ')) dy = 0.35;
+            if (dir.includes('сход')) dx = -0.35;
+            if (dir.includes('зах')) dx = 0.35;
+            
+            if (dx !== 0 || dy !== 0) {
+              const tailStart = [p.lat + dy, p.lng + dx];
+              const polylineOpacity = opacity * 0.7;
+              const trajectory = L.polyline([tailStart, [p.lat, p.lng]], {
+                color: '#ef4444',
+                weight: 3,
+                opacity: polylineOpacity,
+                dashArray: '8 4',
+                className: 'trajectory-line'
+              }).addTo(markerLayer);
+              
+              const angle = Math.atan2(p.lat - tailStart[0], p.lng - tailStart[1]) * 180 / Math.PI + 90;
+              const arrowIcon = L.divIcon({
+                html: `<div class="direction-arrow" style="transform: rotate(${angle}deg);"><svg width="40" height="40" viewBox="0 0 40 40"><path d="M 20 5 L 30 20 L 20 17 L 10 20 Z" fill="#ef4444" stroke="#ffffff" stroke-width="1.5" opacity="${polylineOpacity}"/></svg></div>`,
+                className: '',
+                iconSize: [40, 40],
+                iconAnchor: [20, 20]
+              });
+              L.marker([p.lat, p.lng], { icon: arrowIcon }).addTo(markerLayer);
+            }
+          }
+          
+          const placeUA = translatePlace(p.place);
+          
+          const threatColors = {
+            shahed: { bg: '#fee2e2', accent: '#dc2626' },
+            rocket: { bg: '#fed7aa', accent: '#ea580c' },
+            avia: { bg: '#fef3c7', accent: '#d97706' },
+            artillery: { bg: '#fef9c3', accent: '#ca8a04' },
+            fpv: { bg: '#e9d5ff', accent: '#9333ea' },
+            alarm_cancel: { bg: '#d1fae5', accent: '#10b981' },
+            default: { bg: '#dbeafe', accent: '#3b82f6' }
+          };
+          
+          const threatType = (p.threat_type || 'default').toLowerCase();
+          const colors = threatColors[threatType] || threatColors.default;
+          
+          const popupHtml = `
+            <div style="background: white; border-left: 3px solid ${colors.accent}; border-radius: 6px; padding: 8px 10px; min-width: 160px; max-width: 240px; font-family: -apple-system, sans-serif; box-shadow: 0 2px 8px rgba(0,0,0,0.12);">
+              ${placeUA ? `<div style="font-size: 0.9rem; font-weight: 600; color: #1e293b; margin-bottom: 4px;">${placeUA}</div>` : ''}
+              <div style="font-size: 0.8rem; color: #64748b; line-height: 1.4; ${p.count ? 'margin-bottom: 4px;' : ''}">${cleanMessage(p.text || '')}</div>
+              ${p.count ? `<div style="display: inline-block; background: ${colors.bg}; color: ${colors.accent}; font-weight: 600; font-size: 0.7rem; padding: 2px 5px; border-radius: 3px;">×${p.count}</div>` : ''}
+            </div>
+          `;
+          
+          m.bindPopup(popupHtml, { closeButton: false, autoPan: true });
+          
+          const isShahed = (p.threat_type || '').toLowerCase() === 'shahed' || /шахед/i.test(p.threat_type || '');
+          if (isShahed) {
+            window.shahedLayer.addLayer(m);
+          } else {
+            markerLayer.addLayer(m);
+          }
+          markers.push(m);
+        }
+        
+        if (overlay) {
+          overlay.classList.add('hidden');
+          if (isInitialLoad) isInitialLoad = false;
+        }
+        
+      } catch (error) {
+        const overlay = document.getElementById('markerLoadingOverlay');
+        if (overlay) {
+          overlay.classList.add('hidden');
+          if (isInitialLoad) isInitialLoad = false;
+        }
+      }
+    }
+    
     initMap();
+    
+    let zoomRedrawTimer = null;
+    let lastZoom = 5.5;
+    
+    setTimeout(() => {
+      if (map) {
+        map.on('zoomend', () => {
+          const z = map.getZoom();
+          if (z === lastZoom) return;
+          lastZoom = z;
+          if (zoomRedrawTimer) clearTimeout(zoomRedrawTimer);
+          zoomRedrawTimer = setTimeout(() => {
+            try {
+              if (markerLayer && markerLayer.refreshClusters) markerLayer.refreshClusters();
+            } catch(e) {}
+          }, 150);
+        });
+      }
+    }, 1000);
   </script>
 </body>
 </html>

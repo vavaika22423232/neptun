@@ -4156,17 +4156,14 @@
     const CACHE_DURATION = 60000; // 60 секунд кеш (увеличено с 30)
     
     async function updateMarkers() {
-      console.log('updateMarkers: начинаем загрузку данных...');
       // НЕ используем timeRange - пусть сервер использует настройку из админки (MONITOR_PERIOD_MINUTES)
-      const threatType = ''; // фиксированное значение - все типы угроз
-      const maxTracks = 500; // увеличено со 100 до 500 для показа всех меток
-      console.log('updateMarkers: параметры фильтрации - используем MONITOR_PERIOD_MINUTES с сервера, threatType:', threatType || 'все типы', 'maxTracks:', maxTracks);
+      const threatType = '';
+      const maxTracks = 500;
       const params = new URLSearchParams({ confRange: 0, maxTracks });
   const overlay = document.getElementById('markerLoadingOverlay');
   // Показываем экран загрузки только при первоначальной загрузке
   if (overlay && isInitialLoad) {
     overlay.classList.remove('hidden');
-    console.log('updateMarkers: показываем экран загрузки для первоначальной загрузки');
   }
   
       let points = []; // Объявляем переменную перед try блоком
@@ -4176,53 +4173,24 @@
         // Проверяем кеш
         const now = Date.now();
         if (dataCache && (now - cacheTimestamp) < CACHE_DURATION) {
-          console.log('updateMarkers: используем кешированные данные');
           data = dataCache;
         } else {
-          console.log('updateMarkers: отправляем запрос к /data?' + params.toString());
           const res = await fetch('/data?' + params.toString());
-          console.log('updateMarkers: получен ответ, статус:', res.status);
           data = await res.json();
-          
           // Кешируем данные
           dataCache = data;
           cacheTimestamp = now;
-          console.log('updateMarkers: данные закешированы');
         }
-        console.log('updateMarkers: данные распарсены:', data);
-        console.log('updateMarkers: tracks массив:', data.tracks);
-        console.log('updateMarkers: количество tracks:', (data.tracks || []).length);
         
   points = (data.tracks || []).filter(p => {
-        console.log('updateMarkers: проверяем точку:', p);
-        console.log('updateMarkers: threat_type точки:', p.threat_type, 'текст:', p.text);
-        console.log('updateMarkers: время события:', p.date, 'сейчас:', new Date().toISOString().slice(0, 19));
-        if (typeof p.lat !== 'number' || typeof p.lng !== 'number') {
-          console.log('updateMarkers: пропускаем - неправильный тип координат:', p.lat, p.lng);
-          return false;
-        }
-        if (isNaN(p.lat) || isNaN(p.lng)) {
-          console.log('updateMarkers: пропускаем - NaN координаты:', p.lat, p.lng);
-          return false;
-        }
-        if (Math.abs(p.lat) < 1 && Math.abs(p.lng) < 1) {
-          console.log('updateMarkers: пропускаем - слишком маленькие координаты:', p.lat, p.lng);
-          return false;
-        }
-        if (p.lat < 43 || p.lat > 53.5 || p.lng < 21 || p.lng > 41) {
-          console.log('updateMarkers: пропускаем - координаты вне Украины:', p.lat, p.lng);
-          return false;
-        }
-    const vague = ['схід','захід','північ','південь','восток','запад','север','юг'];
-    // allow markers without place label; only skip if place exists and is too vague
-    if (p.place && vague.includes((p.place||'').toLowerCase())) {
-      console.log('updateMarkers: пропускаем - слишком общее место:', p.place);
-      return false;
-    }
-        console.log('updateMarkers: точка прошла фильтрацию:', p);
+        if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return false;
+        if (isNaN(p.lat) || isNaN(p.lng)) return false;
+        if (Math.abs(p.lat) < 1 && Math.abs(p.lng) < 1) return false;
+        if (p.lat < 43 || p.lat > 53.5 || p.lng < 21 || p.lng > 41) return false;
+        const vague = ['схід','захід','північ','південь','восток','запад','север','юг'];
+        if (p.place && vague.includes((p.place||'').toLowerCase())) return false;
         return true;
       });
-      console.log('updateMarkers: количество точек после фильтрации:', points.length);
       
       // Expose current points for search suggestions
       window.__lastPoints = points;
@@ -4232,8 +4200,7 @@
       if (overlay) { 
         overlay.classList.add('hidden'); 
         if (isInitialLoad) {
-          console.log('updateMarkers: скрываем экран загрузки после первоначальной загрузки');
-          isInitialLoad = false; // Отмечаем, что первоначальная загрузка завершена
+          isInitialLoad = false;
         }
       }
       
@@ -5867,16 +5834,21 @@
           } catch(e){}
         };
       } catch(e) {}
-      setInterval(updateMarkers, 60000); // Увеличено с 30 до 60 секунд
-      // --- Re-cluster / re-render markers on zoom (debounced) so fast-mode buckets follow zoom level ---
+      setInterval(updateMarkers, 30000); // 30 секунд для актуальности данных
+      // --- Re-cluster markers on zoom (no full data reload) ---
       (function(){
         let zoomRedrawTimer=null; let lastZoom=map.getZoom();
         function onZoomEnd(){
           const z = map.getZoom();
-            if(z===lastZoom) return; // no change
-            lastZoom = z;
-            if(zoomRedrawTimer){ clearTimeout(zoomRedrawTimer); }
-            zoomRedrawTimer = setTimeout(()=>{ try { updateMarkers(); } catch(e){} }, 180);
+          if(z===lastZoom) return;
+          lastZoom = z;
+          if(zoomRedrawTimer){ clearTimeout(zoomRedrawTimer); }
+          // Only re-cluster existing markers, don't fetch new data
+          zoomRedrawTimer = setTimeout(()=>{ 
+            try { 
+              if(markerLayer && markerLayer.refreshClusters) markerLayer.refreshClusters(); 
+            } catch(e){} 
+          }, 150);
         }
         map.on('zoomend', onZoomEnd);
       })();
@@ -5906,26 +5878,31 @@
     updateMarkers();
   }
 
+  let resizeTimeout;
   function toggleMapExpand(){
     const body = document.body;
     const btn = document.getElementById('expandBtn');
     const icon = document.getElementById('expandIcon');
     const mapCard = document.querySelector('.map-card');
     const wasExpanded = body.classList.contains('map-expanded');
+    
+    // Clear any pending resize to avoid double-processing
+    if(resizeTimeout) clearTimeout(resizeTimeout);
+    
     if(wasExpanded){
       body.classList.remove('map-expanded');
       if(btn){ btn.title='Розгорнути карту'; btn.setAttribute('aria-label','Розгорнути карту'); }
       if(icon){ icon.textContent='fullscreen'; }
-  if(mapCard){ mapCard.style.height=''; }
-      // restore map size
-  setTimeout(()=>{ if(map){ map.invalidateSize(); } },150);
+      if(mapCard){ mapCard.style.height=''; }
+      // Debounced resize
+      resizeTimeout = setTimeout(()=>{ if(map){ map.invalidateSize(); } },300);
     } else {
       body.classList.add('map-expanded');
       if(btn){ btn.title='Згорнути карту'; btn.setAttribute('aria-label','Згорнути карту'); }
       if(icon){ icon.textContent='fullscreen_exit'; }
-      // Set explicit height for iOS Safari dynamic bars
       if(mapCard){ mapCard.style.height= window.innerHeight + 'px'; }
-  setTimeout(()=>{ if(map){ map.invalidateSize(); map.setView([UKRAINE_CENTER.lat, UKRAINE_CENTER.lng]); } },200);
+      // Debounced resize - removed setView to reduce lag
+      resizeTimeout = setTimeout(()=>{ if(map){ map.invalidateSize(); } },300);
     }
   }
   
