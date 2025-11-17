@@ -6,8 +6,8 @@
   <title>Neptun Alarm Map</title>
   
   <!-- Mapbox GL JS для підтримки Mapbox стилів -->
-  <script src="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.js"></script>
-  <link href="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.css" rel="stylesheet">
+  <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
   
   <!-- Turf.js -->
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
@@ -543,6 +543,12 @@
     function initMap() {
       const mapboxToken = 'pk.eyJ1IjoidmF2YWlrYSIsImEiOiJjbWkzNXBiMW4wa3pmMndxdjhqc2l1eWxqIn0.Kc0YFVmy2F96jtF80o97Bw';
       mapboxgl.accessToken = mapboxToken;
+      
+      // Перевірка WebGL для iOS
+      if (!mapboxgl.supported()) {
+        alert('Ваш браузер не підтримує WebGL. Спробуйте оновити iOS або використати інший браузер.');
+        return;
+      }
       
       try {
         map = new mapboxgl.Map({
