@@ -5338,18 +5338,12 @@
     async function initMap() {
       const isDarkTheme = localStorage.getItem('mapTheme') === 'dark';
       
-      // Використовуємо OpenMapTiles з українською мовою (безкоштовно)
+      // Використовуємо OSM raster tiles (безкоштовно)
       const getMapStyle = (dark = false) => {
         return {
           version: 8,
           name: dark ? 'Dark Ukraine' : 'Light Ukraine',
-          glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
           sources: {
-            'openmaptiles': {
-              type: 'vector',
-              tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-              tileSize: 256
-            },
             'osm-raster': {
               type: 'raster',
               tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
@@ -5359,24 +5353,13 @@
           },
           layers: [
             {
-              id: 'background',
-              type: 'background',
-              paint: {
-                'background-color': dark ? '#1a1a1a' : '#f8f8f8'
-              }
-            },
-            {
               id: 'osm-tiles',
               type: 'raster',
               source: 'osm-raster',
               minzoom: 0,
-              maxzoom: 22
+              maxzoom: 19
             }
-          ],
-          // Українська локалізація назв
-          metadata: {
-            'mapbox:language': 'uk'
-          }
+          ]
         };
       };
       
