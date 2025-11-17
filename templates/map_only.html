@@ -544,11 +544,7 @@
       const mapboxToken = 'pk.eyJ1IjoidmF2YWlrYSIsImEiOiJjbWkzNXBiMW4wa3pmMndxdjhqc2l1eWxqIn0.Kc0YFVmy2F96jtF80o97Bw';
       mapboxgl.accessToken = mapboxToken;
       
-      // Перевірка WebGL для iOS
-      if (!mapboxgl.supported()) {
-        alert('Ваш браузер не підтримує WebGL. Спробуйте оновити iOS або використати інший браузер.');
-        return;
-      }
+      console.log('Mapbox GL supported:', mapboxgl.supported());
       
       try {
         map = new mapboxgl.Map({
@@ -556,16 +552,13 @@
           style: 'mapbox://styles/vavaika/cmi35uav600gi01r45sfk14q2',
           center: [31.1656, 48.3794],
           zoom: 5.5,
-          language: 'uk',
-          attributionControl: false,
-          locale: {
-            'NavigationControl.ResetBearing': 'Скинути орієнтацію',
-            'NavigationControl.ZoomIn': 'Збільшити',
-            'NavigationControl.ZoomOut': 'Зменшити'
-          }
+          attributionControl: false
         });
         
-        map.on('error', (e) => {});
+        map.on('error', (e) => {
+          console.error('Map error:', e.error);
+          alert('Помилка завантаження карти: ' + (e.error.message || 'Невідома помилка'));
+        });
         
         map.on('load', () => {
           document.getElementById('markerLoadingOverlay').classList.add('hidden');
