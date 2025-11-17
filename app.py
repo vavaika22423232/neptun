@@ -5583,6 +5583,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             
             # Check if line contains threat patterns with quantities and targets
             has_threat_pattern = (
+                # Pattern: "Ціль на [target]" - target city for missiles/drones
+                (re.search(r'ціль\s+на\s+([а-яіїєё\'\-\s]+)', line_lower, re.IGNORECASE)) or
                 # Pattern: "N x/× БпЛА курсом на [target]"
                 (re.search(r'\d+\s*[xх×]\s*бпла.*?(курс|на)\s+([а-яіїєё\'\-\s]+)', line_lower)) or
                 # Pattern: "N шахедів/шахеди на [target]" - all forms of Shahed
@@ -8787,16 +8789,27 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 continue
         
         # --- NEW: Simple "X БпЛА на <city>" pattern (e.g. '1 БпЛА на Козелець', '2 БпЛА на Куликівку') ---
+        # Also handle "Ціль на <city>" pattern for missile/rocket targets
         if not city:
-            print(f"DEBUG: Checking simple БпЛА pattern for line: '{ln}'")
-            m_simple = re.search(r'(\d+)\s+бпла\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=\s|$|[,\.\!\?;])', ln, re.IGNORECASE)
-            if m_simple:
-                try:
-                    count = int(m_simple.group(1))
-                except Exception:
-                    count = 1
-                city = m_simple.group(2).strip()
-                print(f"DEBUG: Found simple БпЛА pattern - count: {count}, city: '{city}'")
+            print(f"DEBUG: Checking simple БпЛА/Ціль pattern for line: '{ln}'")
+            
+            # Pattern 1: "Ціль на <city>" - rocket/missile target
+            m_target = re.search(r'ціль\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=\s|$|[,\.\!\?;\[])', ln, re.IGNORECASE)
+            if m_target:
+                city = m_target.group(1).strip()
+                count = 1  # Default count for target
+                print(f"DEBUG: Found 'Ціль на' pattern - city: '{city}'")
+            # Pattern 2: "X БпЛА на <city>"
+            elif re.search(r'(\d+)\s+бпла\s+на\s+', ln, re.IGNORECASE):
+                m_simple = re.search(r'(\d+)\s+бпла\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=\s|$|[,\.\!\?;])', ln, re.IGNORECASE)
+                if m_simple:
+                    try:
+                        count = int(m_simple.group(1))
+                    except Exception:
+                        count = 1
+                    city = m_simple.group(2).strip()
+                    print(f"DEBUG: Found simple БпЛА pattern - count: {count}, city: '{city}'")
+            # Pattern 3: "БпЛА на <city>" without count
             elif re.search(r'бпла\s+на\s+[A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,}', ln, re.IGNORECASE):
                 # Fallback for "БпЛА на <city>" without count - handle cities with parentheses like "Кривий ріг (Дніпропетровщина)"
                 m_simple_no_count = re.search(r'бпла\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,}?)(?:\s*\([^)]*\))?(?=\s*$|[,\.\!\?;])', ln, re.IGNORECASE)
