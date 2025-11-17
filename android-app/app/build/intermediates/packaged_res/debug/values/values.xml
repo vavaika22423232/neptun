@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#000000</color>
+    <color name="dark_background">#0F172A</color>
+    <color name="dark_border">#334155</color>
+    <color name="dark_surface">#1E293B</color>
+    <color name="neptun_blue">#3B82F6</color>
+    <color name="neptun_cyan">#06B6D4</color>
+    <color name="white">#FFFFFF</color>
+    <string name="active_alarms">Активні тривоги</string>
+    <string name="app_name">NEPTUN Alarm Map</string>
+    <string name="auto_refresh">Авто-оновлення</string>
+    <string name="error_loading">Помилка завантаження даних</string>
+    <string name="events_count">Подій</string>
+    <string name="loading">Завантаження...</string>
+    <string name="mapbox_access_token" translatable="false">pk.eyJ1IjoidmF2YWlrYTIyNDIzMjMyIiwiYSI6ImNtM2RhNWlxdTBmdW8yam9qNnZveGN1NXoifQ.OP0EYvVbqU6vH-b4VHkBKg</string>
+    <string name="refresh">Оновити</string>
+    <style name="Base.Theme.NeptunAlarmMap" parent="android:Theme.Material.Light.NoActionBar">
+    </style>
+    <style name="Theme.NeptunAlarmMap" parent="Base.Theme.NeptunAlarmMap"/>
+</resources>

@@ -12,21 +12,32 @@ android {
         minSdk = 24
         targetSdk = 34
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
         }
+        
+        // Add these for Google Play requirements
+        manifestPlaceholders["appName"] = "@string/app_name"
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            
+            // Signing config required for release
+            signingConfig = signingConfigs.getByName("debug") // Replace with release signing
+        }
+        debug {
+            isMinifyEnabled = false
+            isDebuggable = true
         }
     }
     
