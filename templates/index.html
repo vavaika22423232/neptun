@@ -259,9 +259,9 @@
   
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-  <!-- MapLibre GL JS для векторних карт -->
-  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
-  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+  <!-- Mapbox GL JS для підтримки Mapbox стилів -->
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.js"></script>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.css" rel="stylesheet" />
   <!-- Leaflet MarkerCluster CSS для оптимізації (адаптуємо для MapLibre) -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" crossorigin=""/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" crossorigin=""/>
@@ -5338,19 +5338,17 @@
     async function initMap() {
       const isDarkTheme = localStorage.getItem('mapTheme') === 'dark';
       
-      // Використовуємо Mapbox стиль з українською мовою
-      const getMapStyle = (dark = false) => {
-        const mapboxToken = 'pk.eyJ1IjoidmF2YWlrYSIsImEiOiJjbWkzNXBiMW4wa3pmMndxdjhqc2l1eWxqIn0.Kc0YFVmy2F96jtF80o97Bw';
-        return `https://api.mapbox.com/styles/v1/vavaika/cmi35uav600gi01r45sfk14q2?access_token=${mapboxToken}&language=uk`;
-      };
+      const mapboxToken = 'pk.eyJ1IjoidmF2YWlrYSIsImEiOiJjbWkzNXBiMW4wa3pmMndxdjhqc2l1eWxqIn0.Kc0YFVmy2F96jtF80o97Bw';
+      mapboxgl.accessToken = mapboxToken;
       
       try {
-        // Ініціалізуємо MapLibre GL
-        map = new maplibregl.Map({
+        // Ініціалізуємо Mapbox GL
+        map = new mapboxgl.Map({
           container: 'map',
-          style: getMapStyle(isDarkTheme),
+          style: 'mapbox://styles/vavaika/cmi35uav600gi01r45sfk14q2',
           center: [31.1656, 48.3794], // lng, lat (зверніть увагу на порядок!)
           zoom: 5.5,
+          language: 'uk',
           attributionControl: false,
           locale: {
             'NavigationControl.ResetBearing': 'Скинути орієнтацію',
@@ -5457,8 +5455,8 @@
         const center = map.getCenter();
         const zoom = map.getZoom();
         
-        // Змінюємо стиль
-        map.setStyle(getMapStyle(newTheme === 'dark'));
+        // Змінюємо стиль (для Mapbox theme toggle не потрібен, оскільки стиль один)
+        // map.setStyle('mapbox://styles/vavaika/cmi35uav600gi01r45sfk14q2');
         
         // Після завантаження стилю відновлюємо все
         map.once('styledata', () => {
