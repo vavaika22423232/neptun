@@ -260,8 +260,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
   <!-- Mapbox GL JS для підтримки Mapbox стилів -->
-  <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
-  <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.js"></script>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.css" rel="stylesheet" />
   <!-- Leaflet MarkerCluster CSS для оптимізації (адаптуємо для MapLibre) -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" crossorigin=""/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" crossorigin=""/>
@@ -5341,11 +5341,7 @@
       const mapboxToken = 'pk.eyJ1IjoidmF2YWlrYSIsImEiOiJjbWkzNXBiMW4wa3pmMndxdjhqc2l1eWxqIn0.Kc0YFVmy2F96jtF80o97Bw';
       mapboxgl.accessToken = mapboxToken;
       
-      // Перевірка WebGL для iOS
-      if (!mapboxgl.supported()) {
-        alert('Ваш браузер не підтримує WebGL. Спробуйте оновити iOS.');
-        return;
-      }
+      console.log('Mapbox GL supported:', mapboxgl.supported());
       
       try {
         // Ініціалізуємо Mapbox GL
