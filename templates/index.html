@@ -5393,7 +5393,14 @@
         
         // Обробка помилок завантаження
         map.on('error', (e) => {
-          console.error('MapLibre GL error:', e);
+          console.error('MapLibre GL error:', e.error || e);
+          if (e.error) {
+            console.error('Error details:', {
+              message: e.error.message,
+              status: e.error.status,
+              url: e.error.url
+            });
+          }
         });
         
         // Логування успішного завантаження
