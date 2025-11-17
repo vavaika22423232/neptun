@@ -11768,10 +11768,11 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     start_direction = 'w'
                 
                 # Detect course direction (курсом на направление)
-                # Support patterns: "курсом на", "рух на", "продовжує рух на", "прямують на"
+                # Support patterns: "курсом на", "рух на", "продовжує рух на", "прямують на", "в напрямку"
                 has_direction_keyword = ('курс' in lower and 'напрямок' in lower) or ('➡' in lower or '→' in lower) or \
                                        ('рух' in lower and 'на' in lower) or ('прямують' in lower and 'на' in lower) or \
-                                       ('продовжує' in lower and ('рух' in lower or 'на' in lower))
+                                       ('продовжує' in lower and ('рух' in lower or 'на' in lower)) or \
+                                       ('в' in lower and ('напрямку' in lower or 'напрямок' in lower or 'напрям' in lower))
                 
                 if has_direction_keyword:
                     if 'північно-західн' in lower or 'північно-захід' in lower:
@@ -11782,14 +11783,14 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         course_direction = 'ne'
                     elif 'південно-східн' in lower or 'південно-схід' in lower:
                         course_direction = 'se'
-                    # Single directions in course - support both "курсом на" and "рух на"
-                    elif re.search(r'(курс\w*|рух|прямують|продовжує)\s+(на\s+)?північ', lower):
+                    # Single directions in course - support "курсом на", "рух на", "в [напрямок] напрямку"
+                    elif re.search(r'(курс\w*|рух|прямують|продовжує)\s+(на\s+)?північ', lower) or re.search(r'в\s+північн\w*\s+напрям', lower):
                         course_direction = 'n'
-                    elif re.search(r'(курс\w*|рух|прямують|продовжує)\s+(на\s+)?південь', lower):
+                    elif re.search(r'(курс\w*|рух|прямують|продовжує)\s+(на\s+)?південь|півд', lower) or re.search(r'в\s+півден\w*\s+напрям', lower):
                         course_direction = 's'
-                    elif re.search(r'(курс\w*|рух|прямують|продовжує)\s+(на\s+)?схід', lower):
+                    elif re.search(r'(курс\w*|рух|прямують|продовжує)\s+(на\s+)?схід', lower) or re.search(r'в\s+східн\w*\s+напрям', lower):
                         course_direction = 'e'
-                    elif re.search(r'(курс\w*|рух|прямують|продовжує)\s+(на\s+)?захід', lower):
+                    elif re.search(r'(курс\w*|рух|прямують|продовжує)\s+(на\s+)?захід', lower) or re.search(r'в\s+захід\w*\s+напрям', lower):
                         course_direction = 'w'
                 
                 # If we have both start position and course direction, apply them sequentially
@@ -11829,6 +11830,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
                         'marker_icon': icon, 'source_match': 'region_start_course', 'count': drone_count
                     }]
+                
+                # If only course_direction (no start position), use it as the direction
+                if course_direction and not start_direction:
+                    direction_code = course_direction
                 
                 # смещение ~50-70 км в сторону указанного направления (fallback for single direction)
                 lat_o, lng_o = offset(base_lat, base_lng, direction_code)
@@ -11878,16 +11883,53 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             cond_split = True
                 if cond_split:
                     (n1,(a1,b1)), (n2,(a2,b2)) = matched_regions
-                    lat = (a1+a2)/2; lng = (b1+b2)/2
-                    # Slight bias toward destination (second region) if arrow or 'курс' present
-                    if 'курс' in lower or '➡' in lower or '→' in lower:
-                        lat = (a1*0.45 + a2*0.55)
-                        lng = (b1*0.45 + b2*0.55)
+                    
+                    # Determine source and target based on text order
+                    # Region mentioned first (before курс/arrow) = source (start position)
+                    # Region mentioned after курс/arrow = target (destination)
+                    source_region = n1.split()[0].title()
+                    target_region = n2.split()[0].title()
+                    
+                    # Calculate direction from source to target for arrow label
+                    dlat = a2 - a1
+                    dlng = b2 - b1
+                    
+                    # Determine cardinal/intercardinal direction
+                    arrow_direction = ''
+                    if abs(dlat) > abs(dlng) * 1.5:  # predominantly N/S
+                        if dlat > 0:
+                            arrow_direction = 'північ'
+                        else:
+                            arrow_direction = 'півдня'
+                    elif abs(dlng) > abs(dlat) * 1.5:  # predominantly E/W
+                        if dlng > 0:
+                            arrow_direction = 'сходу'
+                        else:
+                            arrow_direction = 'заходу'
+                    else:  # diagonal
+                        if dlat > 0 and dlng > 0:
+                            arrow_direction = 'північного сходу'
+                        elif dlat > 0 and dlng < 0:
+                            arrow_direction = 'північного заходу'
+                        elif dlat < 0 and dlng > 0:
+                            arrow_direction = 'південного сходу'
+                        else:
+                            arrow_direction = 'південного заходу'
+                    
+                    # Position marker closer to border between regions (60% toward target)
+                    lat = (a1*0.40 + a2*0.60)
+                    lng = (b1*0.40 + b2*0.60)
+                    
+                    # Create place name with arrow for trajectory visualization
+                    place_name = f"{source_region} → {target_region}"
+                    if arrow_direction:
+                        place_name += f" ←{arrow_direction}"
+                    
                     threat_type, icon = classify(text)
                     return [{
-                        'id': str(mid), 'place': f"Між {n1.split()[0].title()} та {n2.split()[0].title()} (курс)", 'lat': lat, 'lng': lng,
+                        'id': str(mid), 'place': place_name, 'lat': lat, 'lng': lng,
                         'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                        'marker_icon': icon, 'source_match': 'region_course_midpoint', 'count': drone_count
+                        'marker_icon': icon, 'source_match': 'region_course_trajectory', 'count': drone_count
                     }]
 
     if len(matched_regions) == 2 and any(w in lower for w in ['межі','межу','межа','между','границі','граница']):

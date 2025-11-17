@@ -4661,7 +4661,12 @@
           arrowDir = p.place.split('←').pop().trim();
           console.log('🎯 СТРЕЛКА НАЙДЕНА! place:', p.place, 'arrowDir:', arrowDir, 'threat_type:', p.threat_type);
         } else {
-          console.log('❌ Стрелка НЕ найдена. place:', p.place);
+          // Проверяем наличие trajectory для Черного моря
+          if (p.trajectory && p.trajectory.start && p.trajectory.end) {
+            console.log('🌊 Траектория из ЧЁРНОГО МОРЯ найдена:', p.trajectory, 'place:', p.place);
+          } else {
+            console.log('❌ Стрелка НЕ найдена и нет trajectory. place:', p.place);
+          }
         }
   const threatClass = (p.threat_type||'default').toLowerCase();
   const countBadge = (p.threat_type==='shahed' || /shahed|шахед|бпла/i.test(p.threat_type||'')) && p.count && p.count>1 ? '<div class="tm-badge">' + p.count + '×</div>' : '';
