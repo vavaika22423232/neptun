@@ -4575,10 +4575,8 @@
           }
           clusterOpacity = Math.max(0.3, Math.min(1.0, clusterOpacity));
           
-          // Use most common threat type for cluster SVG icon
-          const mostCommonType = [...b.types.entries()].sort((a,b)=>b[1]-a[1])[0][0] || 'default';
-          const clusterSvg = SVGMarkers.createSVG(mostCommonType, 32);
-          const html = '<div class="cluster cluster-' + freshness + '" style="opacity:' + clusterOpacity + ';">' + clusterSvg + '<b>' + count + '</b></div>';
+          // Simple cluster without SVG icon
+          const html = '<div class="cluster cluster-' + freshness + '" style="opacity:' + clusterOpacity + ';"><b>' + count + '</b></div>';
           const icon = L.divIcon({ html, className:'', iconSize:[44,52], iconAnchor:[22,48] });
           const m = L.marker([lat,lng], {icon});
           // Popup summary
@@ -4661,6 +4659,9 @@
         let arrowDir = null;
         if (p.place && p.place.includes('←')) {
           arrowDir = p.place.split('←').pop().trim();
+          console.log('🎯 СТРЕЛКА НАЙДЕНА! place:', p.place, 'arrowDir:', arrowDir, 'threat_type:', p.threat_type);
+        } else {
+          console.log('❌ Стрелка НЕ найдена. place:', p.place);
         }
   const threatClass = (p.threat_type||'default').toLowerCase();
   const countBadge = (p.threat_type==='shahed' || /shahed|шахед|бпла/i.test(p.threat_type||'')) && p.count && p.count>1 ? '<div class="tm-badge">' + p.count + '×</div>' : '';
@@ -4703,21 +4704,8 @@
     }
   }
   
-  // Use SVG markers instead of PNG images for better performance
-  let markerContent = '';
-  try {
-    const svgIcon = SVGMarkers.createSVG(p.threat_type || 'default', w);
-    // Проверяем что получили строку а не объект
-    if (typeof svgIcon === 'string' && svgIcon.includes('<svg')) {
-      markerContent = svgIcon;
-    } else {
-      // Fallback на PNG если SVG не работает
-      markerContent = '<img class="plain-marker-img" style="width:' + w + 'px;height:' + h + 'px;" src="' + iconUrl + '" alt="" loading="lazy">';
-    }
-  } catch (e) {
-    // Fallback на PNG при ошибке
-    markerContent = '<img class="plain-marker-img" style="width:' + w + 'px;height:' + h + 'px;" src="' + iconUrl + '" alt="" loading="lazy">';
-  }
+  // Use PNG markers for better compatibility
+  let markerContent = '<img class="plain-marker-img" style="width:' + w + 'px;height:' + h + 'px;" src="' + iconUrl + '" alt="" loading="lazy">';
   
   // АНИМАЦИЯ ПОЛЁТА: вычисляем параметры для движения Шахеда
   let flightAnimation = '';
@@ -4755,6 +4743,7 @@
   const m = L.marker([p.lat, p.lng], { icon, riseOnHover:true });
         // УЛУЧШЕННАЯ ТРАЕКТОРИЯ: анимированная стрелка направления полёта
         if (arrowDir) {
+          console.log('🚀 РИСУЕМ ТРАЕКТОРИЮ! arrowDir:', arrowDir, 'place:', p.place);
           const dir = arrowDir.toLowerCase();
           let dx=0, dy=0;
           // Увеличиваем длину траектории для лучшей видимости
@@ -4762,7 +4751,9 @@
           if (dir.includes('північ')) dy = 0.5;
           if (dir.includes('сход')) dx = -0.5; // east origin => movement westwards
           if (dir.includes('зах')) dx = 0.5;
+          console.log('📐 Координаты смещения: dx=', dx, 'dy=', dy, 'dir=', dir);
           if (dx !==0 || dy !==0) {
+            console.log('✅ СОЗДАЁМ ЛИНИЮ! tailStart:', [p.lat+dy, p.lng+dx], 'marker:', [p.lat, p.lng]);
             const tailStart=[p.lat+dy, p.lng+dx];
             // Анимированная траектория с градиентом и пульсацией
             const polylineOpacity = opacity * 0.85;
@@ -4773,6 +4764,7 @@
               dashArray:'10 6',
               className:'trajectory-line animated-trajectory'
             }).addTo(markerLayer);
+            console.log('🎨 ЛИНИЯ ДОБАВЛЕНА НА КАРТУ!', trajectory);
             
             // Добавляем стрелку направления на конце траектории
             const angle = Math.atan2(p.lat - tailStart[0], p.lng - tailStart[1]) * 180 / Math.PI + 90;
@@ -5317,15 +5309,16 @@
         
         const isCancel = ev.threat_type === 'alarm_cancel';
         const placeLine = (ev.place && !isCancel) ? `<b style="color: #60a5fa;">${translatePlace(ev.place)}</b><br>` : '';
-        const eventSvg = SVGMarkers.createSVG(ev.threat_type || 'default', 32);
+        // Use emoji icon instead of SVG
+        const iconEmoji = ev.threat_type === 'shahed' ? '🛸' : ev.threat_type === 'rocket' ? '🚀' : ev.threat_type === 'avia' ? '✈️' : ev.threat_type === 'artillery' ? '💥' : '⚠️';
         const gradient = gradients[ev.threat_type] || gradients.default;
         const borderColor = borderColors[ev.threat_type] || borderColors.default;
         
         return `<div class='event' style="background: ${gradient}; padding: 1.5rem; border-radius: 1rem; border: 2px solid ${borderColor}; position: relative; overflow: hidden; transition: all 0.4s; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
           <div style="position: absolute; top: 0; right: 0; width: 80px; height: 80px; background: radial-gradient(circle, ${borderColor.replace('0.3', '0.15')}, transparent); border-radius: 50%; transform: translate(30%, -30%);"></div>
           <div style="display: flex; gap: 1.25rem; align-items: flex-start; position: relative; z-index: 1;">
-            <div class='event-icon' style="flex-shrink: 0; width: 3rem; height: 3rem; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.1); border-radius: 0.75rem; padding: 0.5rem;">
-              ${eventSvg}
+            <div class='event-icon' style="flex-shrink: 0; width: 3rem; height: 3rem; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.1); border-radius: 0.75rem; padding: 0.5rem; font-size: 1.5rem;">
+              ${iconEmoji}
             </div>
             <div class='event-info' style="flex: 1; color: #cbd5e1; font-size: 1.05rem; line-height: 1.6;">
               ${placeLine}
