@@ -5530,14 +5530,14 @@
                 el.style.height = (this._options.icon.options.iconSize?.[1] || 32) + 'px';
               }
               
-              const mlMarker = new maplibregl.Marker({
+              const mlMarker = new mapboxgl.Marker({
                 element: el,
                 anchor: 'center'
               })
               .setLngLat([this._latlng[1], this._latlng[0]]);
               
               if (this._popup) {
-                const popup = new maplibregl.Popup({
+                const popup = new mapboxgl.Popup({
                   offset: 25,
                   closeButton: true,
                   closeOnClick: true
