@@ -5295,17 +5295,6 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         ]
         has_informational_content = any(phrase in t_lower for phrase in informational_phrases)
         
-        # Check for short tactical messages that are likely informational updates
-        # These patterns suggest updates rather than active threats
-        brief_tactical_patterns = [
-            'бпла курсом на',
-            'бпла на ',
-            'повз .* курсом на'
-        ]
-        # But only filter if the message is relatively short (likely an update, not detailed threat)
-        is_brief_message = len(t.strip()) < 100
-        has_brief_tactical = any(re.search(pattern, t_lower) for pattern in brief_tactical_patterns)
-        
         # Check if this is actually a current location message (not brief update)
         current_location_phrases = [
             'над',
@@ -5314,14 +5303,23 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             'вибухи в',
             'влучання в',
             'збито в',
-            'знищено в'
+            'знищено в',
+            'на херсонщині',
+            'на дніпропетровщині',
+            'на запоріжжі',
+            'на харківщині',
+            'в області',
+            'область',
+            'щині'
         ]
         has_current_location = any(phrase in t_lower for phrase in current_location_phrases)
         
-        # Filter brief tactical messages - these are often status updates
-        # BUT not if they describe current location/events
-        if is_brief_message and has_brief_tactical and not has_current_location:
-            return True
+        # Check for count prefix (e.g., "16х БпЛА", "3х БпЛА") - these are real threats
+        has_count_prefix = re.search(r'\d+\s*[xх]\s*бпла', t_lower)
+        
+        # If message has threat count or current location, do NOT filter it
+        if has_count_prefix or has_current_location:
+            return False
         
         # Check for general status messages that contain tactical terms but are informational
         status_phrases = [
@@ -5585,6 +5583,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             has_threat_pattern = (
                 # Pattern: "Ціль на [target]" - target city for missiles/drones
                 (re.search(r'ціль\s+на\s+([а-яіїєё\'\-\s]+)', line_lower, re.IGNORECASE)) or
+                # Pattern: "N БпЛА на [region]щині" - regional threats like "16х БпЛА на Херсонщині"
+                (re.search(r'\d+\s*[xх×]?\s*бпла\s+на\s+([а-яіїєё]+щині)', line_lower, re.IGNORECASE)) or
                 # Pattern: "БпЛА на [direction] [region]" - regional directional threats
                 (re.search(r'бпла\s+на\s+(півночі|півдні|сході|заході|північ|південь|схід|захід)\s+([а-яіїєё]+щин[іауи]?)', line_lower, re.IGNORECASE)) or
                 # Pattern: "БпЛА ... з акваторії Чорного моря" - Black Sea threats
