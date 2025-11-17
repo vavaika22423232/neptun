@@ -5855,9 +5855,75 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     # Pattern for plain text: БпЛА курсом на Конотоп (improved to capture multi-word cities + districts)
                     # Fixed: Added " з " and " район" to lookahead to properly capture "Миколаїв з акваторії" and "Покровський район"
                     r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+.*?курс(?:ом)?\s+на\s+(?:н\.п\.?\s*)?([А-ЯІЇЄЁа-яіїєёʼ\'\-\s]+?(?:\s+район)?)(?=\s*(?:\n|$|[,\.\!\?;]|\s+з\s+|\s+\d+[xх×]?\s*бпла|\s+[А-ЯІЇЄЁа-яіїєё]+щина:|\s+\())',
-                    # Pattern for "повз" (e.g., "БпЛА повз Славутич в бік Білорусі")
-                    r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+(?:.*?)?повз\s+([А-ЯІЇЄЁа-яіїєёʼ\'\-\s]{3,50}?)(?=\s+(?:в\s+бік|до|на|через|$|[,\.\!\?;]))'
+                    # PRIORITY: Pattern for "повз ... курсом на" (e.g., "БпЛА повз Юріївку курсом на Павлоград")
+                    # Must be BEFORE the simple "повз" pattern to capture both cities correctly
+                    # Ignored for marker creation - handled separately below to create marker at bypass city with trajectory
                 ]
+                
+                # SPECIAL HANDLING: "повз ... курсом на" pattern - create marker at bypass city with trajectory to target
+                povz_course_match = re.search(r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+повз\s+([А-ЯІЇЄЁа-яіїєёʼ\'\-\s]{3,50}?)\s+курсом?\s+на\s+([А-ЯІЇЄЁа-яіїєёʼ\'\-\s]{3,50}?)(?=\s*(?:\n|$|[,\.\!\?;]))', line_lower, re.IGNORECASE)
+                if povz_course_match:
+                    count_str, bypass_city_raw, target_city_raw = povz_course_match.groups()
+                    
+                    # Normalize bypass city name
+                    bypass_city = bypass_city_raw.strip()
+                    bypass_norm = bypass_city.lower()
+                    if bypass_norm.endswith('у') and len(bypass_norm) > 3:
+                        bypass_norm = bypass_norm[:-1] + 'а'
+                    elif bypass_norm.endswith('ку') and len(bypass_norm) > 4:
+                        bypass_norm = bypass_norm[:-2] + 'ка'
+                    if bypass_norm in UA_CITY_NORMALIZE:
+                        bypass_norm = UA_CITY_NORMALIZE[bypass_norm]
+                    
+                    # Normalize target city name
+                    target_city = target_city_raw.strip()
+                    target_norm = target_city.lower()
+                    if target_norm.endswith('у') and len(target_norm) > 3:
+                        target_norm = target_norm[:-1] + 'а'
+                    elif target_norm.endswith('ку') and len(target_norm) > 4:
+                        target_norm = target_norm[:-2] + 'ка'
+                    if target_norm in UA_CITY_NORMALIZE:
+                        target_norm = UA_CITY_NORMALIZE[target_norm]
+                    
+                    # Get coordinates for bypass city using full message context for better accuracy
+                    bypass_coords = ensure_city_coords_with_message_context(bypass_norm, text)
+                    
+                    if bypass_coords:
+                        if len(bypass_coords) == 3:
+                            lat, lng, approx = bypass_coords
+                        else:
+                            lat, lng = bypass_coords
+                        
+                        uav_count = 1
+                        if count_str and count_str.isdigit():
+                            uav_count = int(count_str)
+                        
+                        # Create marker at bypass city with trajectory info
+                        threat_id = f"{mid}_povz_course_{len(threats)}"
+                        threats.append({
+                            'id': threat_id,
+                            'place': bypass_norm.title(),
+                            'lat': lat,
+                            'lng': lng,
+                            'threat_type': 'shahed',
+                            'text': f"Повз {bypass_norm.title()} → {target_norm.title()}",
+                            'date': date_str,
+                            'channel': channel,
+                            'marker_icon': 'shahed.png',
+                            'source_match': 'immediate_povz_course',
+                            'count': uav_count,
+                            'course_source': bypass_norm,
+                            'course_target': target_norm
+                        })
+                        
+                        add_debug_log(f"Повз курсом на: {bypass_norm} -> {target_norm} at {bypass_coords}", "povz_course")
+                        continue  # Skip normal processing for this line
+                
+                # Normal patterns (after special handling)
+                patterns.append(
+                    # Pattern for "повз" without "курсом на" (e.g., "БпЛА повз Славутич в бік Білорусі")
+                    r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+(?:.*?)?повз\s+([А-ЯІЇЄЁа-яіїєёʼ\'\-\s]{3,50}?)(?=\s+(?:в\s+бік|до|на|через|$|[,\.\!\?;]))'
+                )
                 
                 # Also check for bracket city pattern like "Вилково (Одещина)"
                 bracket_matches = re.finditer(r'([А-ЯІЇЄЁа-яіїєё\'\-\s]{3,30})\s*\(([А-ЯІЇЄЁа-яіїєё\'\-\s]+щина|[А-ЯІЇЄЁа-яіїєё\'\-\s]+обл\.?)\)', line_stripped, re.IGNORECASE)
