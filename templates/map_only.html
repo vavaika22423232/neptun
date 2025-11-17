@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Neptun Alarm Map</title>
   
-  <!-- MapLibre GL -->
-  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
-  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet">
+  <!-- Mapbox GL JS для підтримки Mapbox стилів -->
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.js"></script>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.css" rel="stylesheet">
   
   <!-- Turf.js -->
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
@@ -426,7 +426,7 @@
           
           addTo: function(layer) {
             const el = document.createElement('div');
-            el.className = 'maplibre-marker';
+            el.className = 'mapboxgl-marker';
             el.style.cursor = 'pointer';
             
             if (this._options.icon && this._options.icon.options) {
@@ -435,13 +435,13 @@
               const iconAnchor = this._options.icon.options.iconAnchor || [iconSize[0]/2, iconSize[1]/2];
               el.style.width = iconSize[0] + 'px';
               el.style.height = iconSize[1] + 'px';
-            }            const mlMarker = new maplibregl.Marker({
+            }            const mlMarker = new mapboxgl.Marker({
               element: el,
               anchor: this._options.icon?.options?.iconAnchor ? 'center' : 'bottom'
             }).setLngLat([this._latlng[1], this._latlng[0]]);
             
             if (this._popup) {
-              const popup = new maplibregl.Popup({
+              const popup = new mapboxgl.Popup({
                 offset: 25,
                 closeButton: false,
                 closeOnClick: true
@@ -541,15 +541,16 @@
     };
     
     function initMap() {
-      const savedTheme = localStorage.getItem('mapTheme') || 'light';
-      const isDark = savedTheme === 'dark';
+      const mapboxToken = 'pk.eyJ1IjoidmF2YWlrYSIsImEiOiJjbWkzNXBiMW4wa3pmMndxdjhqc2l1eWxqIn0.Kc0YFVmy2F96jtF80o97Bw';
+      mapboxgl.accessToken = mapboxToken;
       
       try {
-        map = new maplibregl.Map({
+        map = new mapboxgl.Map({
           container: 'map',
-          style: getMapStyle(isDark),
+          style: 'mapbox://styles/vavaika/cmi35uav600gi01r45sfk14q2',
           center: [31.1656, 48.3794],
           zoom: 5.5,
+          language: 'uk',
           attributionControl: false,
           locale: {
             'NavigationControl.ResetBearing': 'Скинути орієнтацію',
