@@ -9,6 +9,13 @@
   <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
   
+  <!-- Leaflet бібліотеки для маркерів -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  
   <!-- Turf.js -->
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
   
@@ -231,6 +238,86 @@
     const UPDATE_INTERVAL = 30000;
     const MAX_TRACKS = 500;
     const CACHE_DURATION = 60000;
+    
+    // Leaflet адаптер для Mapbox GL
+    if (typeof L !== 'undefined') {
+      L.mapboxGL = L.Layer.extend({
+        options: {
+          updateInterval: 32
+        },
+        initialize: function(options) {
+          L.setOptions(this, options);
+          if (options.accessToken) {
+            mapboxgl.accessToken = options.accessToken;
+          } else if (options.style && typeof options.style === 'string' && options.style.indexOf('mapbox://') === 0) {
+            throw new Error('mapbox access token required');
+          }
+        },
+        onAdd: function(map) {
+          if (!this._glMap) {
+            this._glMap = map._glMap || map;
+          }
+          this._container = this._glMap.getContainer();
+          
+          // Monkey-patch Leaflet methods
+          L.Marker.prototype._setPos = function(pos) {
+            if (!this._glMarker) {
+              const el = this._icon || this._shadow;
+              if (!el) return;
+              
+              this._glMarker = new mapboxgl.Marker(el)
+                .setLngLat([this._latlng.lng, this._latlng.lat])
+                .addTo(this._map._glMap || this._map);
+              
+              if (this._popup) {
+                const popupEl = this._popup._container;
+                const glPopup = new mapboxgl.Popup({
+                  closeButton: true,
+                  closeOnClick: false,
+                  maxWidth: 'none'
+                })
+                .setLngLat([this._latlng.lng, this._latlng.lat])
+                .setDOMContent(popupEl);
+                
+                this._glMarker.setPopup(glPopup);
+              }
+            } else {
+              this._glMarker.setLngLat([this._latlng.lng, this._latlng.lat]);
+            }
+          };
+          
+          return this._container;
+        },
+        onRemove: function() {
+          // cleanup if needed
+        }
+      });
+      
+      L.markerClusterGroup.prototype.addTo = function(map) {
+        map._glMap = map;
+        this._map = map;
+        this._featureGroup = L.featureGroup();
+        this._featureGroup._glMap = map;
+        
+        this._nonPointGroup = L.featureGroup();
+        this._nonPointGroup._glMap = map;
+        
+        map.on('zoomend', this._zoomEnd, this);
+        map.on('moveend', this._moveEnd, this);
+        
+        this._spiderfierOnAdd && this._spiderfierOnAdd();
+        this._bindEvents();
+        
+        this._zoom = map.getZoom();
+        this._currentShownBounds = this._getExpandedVisibleBounds();
+        
+        this._throttledZoomEnd = L.Util.throttle(this._zoomEnd, 100, this);
+        this._throttledMoveEnd = L.Util.throttle(this._moveEnd, 100, this);
+        
+        return this;
+      };
+    }
+
     
     const ICONS = {
       shahed: '/static/shahed.png',
