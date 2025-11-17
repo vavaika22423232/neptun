@@ -5585,6 +5585,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             has_threat_pattern = (
                 # Pattern: "Ціль на [target]" - target city for missiles/drones
                 (re.search(r'ціль\s+на\s+([а-яіїєё\'\-\s]+)', line_lower, re.IGNORECASE)) or
+                # Pattern: "БпЛА на [direction] [region]" - regional directional threats
+                (re.search(r'бпла\s+на\s+(півночі|півдні|сході|заході|північ|південь|схід|захід)\s+([а-яіїєё]+щин[іауи]?)', line_lower, re.IGNORECASE)) or
+                # Pattern: "БпЛА ... з акваторії Чорного моря" - Black Sea threats
+                (re.search(r'бпла.*?(з\s+акваторії|з\s+моря|з\s+чорного\s+моря)', line_lower, re.IGNORECASE)) or
                 # Pattern: "N x/× БпЛА курсом на [target]"
                 (re.search(r'\d+\s*[xх×]\s*бпла.*?(курс|на)\s+([а-яіїєё\'\-\s]+)', line_lower)) or
                 # Pattern: "N шахедів/шахеди на [target]" - all forms of Shahed
@@ -11764,7 +11768,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     start_direction = 'w'
                 
                 # Detect course direction (курсом на направление)
-                if ('курс' in lower and 'напрямок' in lower) or ('➡' in lower or '→' in lower):
+                # Support patterns: "курсом на", "рух на", "продовжує рух на", "прямують на"
+                has_direction_keyword = ('курс' in lower and 'напрямок' in lower) or ('➡' in lower or '→' in lower) or \
+                                       ('рух' in lower and 'на' in lower) or ('прямують' in lower and 'на' in lower) or \
+                                       ('продовжує' in lower and ('рух' in lower or 'на' in lower))
+                
+                if has_direction_keyword:
                     if 'північно-західн' in lower or 'північно-захід' in lower:
                         course_direction = 'nw'
                     elif 'південно-західн' in lower or 'південно-захід' in lower:
@@ -11773,14 +11782,14 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         course_direction = 'ne'
                     elif 'південно-східн' in lower or 'південно-схід' in lower:
                         course_direction = 'se'
-                    # Single directions in course
-                    elif re.search(r'курс\w*\s+на\s+північ', lower):
+                    # Single directions in course - support both "курсом на" and "рух на"
+                    elif re.search(r'(курс\w*|рух|прямують|продовжує)\s+(на\s+)?північ', lower):
                         course_direction = 'n'
-                    elif re.search(r'курс\w*\s+на\s+південь', lower):
+                    elif re.search(r'(курс\w*|рух|прямують|продовжує)\s+(на\s+)?південь', lower):
                         course_direction = 's'
-                    elif re.search(r'курс\w*\s+на\s+схід', lower):
+                    elif re.search(r'(курс\w*|рух|прямують|продовжує)\s+(на\s+)?схід', lower):
                         course_direction = 'e'
-                    elif re.search(r'курс\w*\s+на\s+захід', lower):
+                    elif re.search(r'(курс\w*|рух|прямують|продовжує)\s+(на\s+)?захід', lower):
                         course_direction = 'w'
                 
                 # If we have both start position and course direction, apply them sequentially
@@ -11790,20 +11799,32 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     # Second offset: apply course direction from start position  
                     lat_final, lng_final = offset(lat_start, lng_start, course_direction)
                     
-                    # Create descriptive label
+                    # Create descriptive label with arrow for trajectory visualization
                     start_labels = {'n':'півночі', 's':'півдні', 'e':'сході', 'w':'заході'}
                     course_labels = {
                         'n':'північ', 's':'південь', 'e':'схід', 'w':'захід',
                         'ne':'північний схід', 'nw':'північний захід', 
                         'se':'південний схід', 'sw':'південний захід'
                     }
+                    # Direction labels for arrow (Ukrainian names compatible with frontend)
+                    arrow_labels = {
+                        'n':'північ', 's':'півдня', 'e':'сходу', 'w':'заходу',
+                        'ne':'північного сходу', 'nw':'північного заходу',
+                        'se':'південного сходу', 'sw':'південного заходу'
+                    }
                     start_label = start_labels.get(start_direction, 'області')
                     course_label = course_labels.get(course_direction, 'напрямок')
+                    arrow_label = arrow_labels.get(course_direction, '')
                     base_disp = reg_name.split()[0].title()
+                    
+                    # Add arrow to place name for trajectory visualization in frontend
+                    place_name = f"{base_disp} (з {start_label})"
+                    if arrow_label:
+                        place_name += f" ←{arrow_label}"
                     
                     threat_type, icon = classify(text)
                     return [{
-                        'id': str(mid), 'place': f"{base_disp} (з {start_label} на {course_label})", 
+                        'id': str(mid), 'place': place_name, 
                         'lat': lat_final, 'lng': lng_final,
                         'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
                         'marker_icon': icon, 'source_match': 'region_start_course', 'count': drone_count
@@ -11817,10 +11838,23 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     'ne':'північно-східна частина', 'nw':'північно-західна частина',
                     'se':'південно-східна частина', 'sw':'південно-західна частина'
                 }
+                # Direction labels for arrow (Ukrainian names compatible with frontend)
+                arrow_labels = {
+                    'n':'північ', 's':'півдня', 'e':'сходу', 'w':'заходу',
+                    'ne':'північного сходу', 'nw':'північного заходу',
+                    'se':'південного сходу', 'sw':'південного заходу'
+                }
                 dir_phrase = dir_label_map.get(direction_code, 'частина')
+                arrow_label = arrow_labels.get(direction_code, '')
                 base_disp = reg_name.split()[0].title()
+                
+                # Add arrow to place name for trajectory visualization
+                place_name = f"{base_disp} ({dir_phrase})"
+                if arrow_label:
+                    place_name += f" ←{arrow_label}"
+                
                 return [{
-                    'id': str(mid), 'place': f"{base_disp} ({dir_phrase})", 'lat': lat_o, 'lng': lng_o,
+                    'id': str(mid), 'place': place_name, 'lat': lat_o, 'lng': lng_o,
                     'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
                     'marker_icon': icon, 'source_match': 'region_direction', 'count': drone_count
                 }]
