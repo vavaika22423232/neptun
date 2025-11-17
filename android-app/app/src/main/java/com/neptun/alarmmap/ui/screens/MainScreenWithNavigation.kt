@@ -307,127 +307,11 @@ fun StatsScreen() {
                 }
             }
             
-            // Live Counters
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    LiveCounterCard(
-                        title = "Активні",
-                        count = uiState.todayCount,
-                        icon = "🚨",
-                        gradient = listOf(Color(0xFFef4444), Color(0xFFdc2626)),
-                        modifier = Modifier.weight(1f)
-                    )
-                    LiveCounterCard(
-                        title = "За тиждень",
-                        count = uiState.weekCount,
-                        icon = "📊",
-                        gradient = listOf(Color(0xFFf59e0b), Color(0xFFd97706)),
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
+
             
-            // Quick Stats Grid
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFF1e293b)
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-                ) {
-                    Column(modifier = Modifier.padding(20.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Швидкі показники",
-                                color = Color.White,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Surface(
-                                shape = CircleShape,
-                                color = NeptunBlue.copy(alpha = 0.2f),
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Text(text = "⚡", fontSize = 16.sp)
-                                }
-                            }
-                        }
-                        
-                        androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(16.dp))
-                        
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            QuickStatItem(
-                                label = "Місяць",
-                                value = uiState.monthCount.toString(),
-                                modifier = Modifier.weight(1f)
-                            )
-                            QuickStatItem(
-                                label = "Всього",
-                                value = uiState.totalCount.toString(),
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-                }
-            }
+
             
-            // Most Active Regions
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1e293b)),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-                ) {
-                    Column(modifier = Modifier.padding(20.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Найбільш активні регіони",
-                                color = Color.White,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(text = "🗺️", fontSize = 20.sp)
-                        }
-                        
-                        androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(16.dp))
-                        
-                        if (uiState.isLoading) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(120.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CircularProgressIndicator(color = NeptunBlue, strokeWidth = 3.dp)
-                            }
-                        } else {
-                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                RegionActivityBar("Київська обл.", 85, Color(0xFFef4444))
-                                RegionActivityBar("Одеська обл.", 72, Color(0xFFf59e0b))
-                                RegionActivityBar("Дніпропетровська обл.", 68, Color(0xFF3b82f6))
-                            }
-                        }
-                    }
-                }
-            }
+
             
             // Threat types statistics
             item {
@@ -765,7 +649,7 @@ fun SettingsScreenContent() {
     
     val scope = rememberCoroutineScope()
     
-    var showDonateDialog by remember { mutableStateOf(false) }
+
     
     Box(
         modifier = Modifier
@@ -824,52 +708,10 @@ fun SettingsScreenContent() {
                             scope.launch { prefsManager.setAutoRefresh(enabled) }
                         }
                     )
-                    
-                    androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(12.dp))
-                    
-                    SettingSwitchItem(
-                        title = "Показувати траєкторії",
-                        description = "Відображати шляхи польоту загроз",
-                        checked = true,
-                        onCheckedChange = { }
-                    )
                 }
             }
             
-            // Notifications Settings
-            item {
-                SettingsSection(
-                    title = "Сповіщення",
-                    icon = "🔔"
-                ) {
-                    SettingSwitchItem(
-                        title = "Звукові сповіщення",
-                        description = "Відтворювати звук при нових загрозах",
-                        checked = uiState.isSoundEnabled,
-                        onCheckedChange = { enabled ->
-                            scope.launch { prefsManager.setSoundEnabled(enabled) }
-                        }
-                    )
-                    
-                    androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(12.dp))
-                    
-                    SettingSwitchItem(
-                        title = "Push-повідомлення",
-                        description = "Отримувати сповіщення про нові загрози",
-                        checked = false,
-                        onCheckedChange = { }
-                    )
-                    
-                    androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(12.dp))
-                    
-                    SettingSwitchItem(
-                        title = "Вібрація",
-                        description = "Вібрувати при сповіщеннях",
-                        checked = true,
-                        onCheckedChange = { }
-                    )
-                }
-            }
+
             
             // Threat Filters
             item {
@@ -893,27 +735,7 @@ fun SettingsScreenContent() {
                 }
             }
             
-            // Appearance
-            item {
-                SettingsSection(
-                    title = "Вигляд",
-                    icon = "🎨"
-                ) {
-                    SettingClickableItem(
-                        title = "Темна тема",
-                        description = "Активна",
-                        onClick = { }
-                    )
-                    
-                    androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(12.dp))
-                    
-                    SettingClickableItem(
-                        title = "Розмір маркерів",
-                        description = "Середній",
-                        onClick = { }
-                    )
-                }
-            }
+
             
             // Support Section
             item {
@@ -932,7 +754,10 @@ fun SettingsScreenContent() {
                                     listOf(Color(0xFFef4444), Color(0xFFdc2626))
                                 )
                             )
-                            .clickable { showDonateDialog = true }
+                            .clickable {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://send.monobank.ua/jar/6Vi9TVzJZQ"))
+                                context.startActivity(intent)
+                            }
                             .padding(20.dp)
                     ) {
                         Row(

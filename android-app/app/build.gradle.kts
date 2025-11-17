@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -6,6 +9,13 @@ plugins {
 android {
     namespace = "com.neptun.alarmmap"
     compileSdk = 34
+    
+    // Load keystore properties
+    val keystorePropertiesFile = rootProject.file("keystore.properties")
+    val keystoreProperties = Properties()
+    if (keystorePropertiesFile.exists()) {
+        keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
+    }
 
     defaultConfig {
         applicationId = "com.neptun.alarmmap"
@@ -22,6 +32,17 @@ android {
         // Add these for Google Play requirements
         manifestPlaceholders["appName"] = "@string/app_name"
     }
+    
+    signingConfigs {
+        create("release") {
+            if (keystoreProperties.isNotEmpty()) {
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+                storeFile = file("../" + keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+            }
+        }
+    }
 
     buildTypes {
         release {
@@ -32,8 +53,8 @@ android {
                 "proguard-rules.pro"
             )
             
-            // Signing config required for release
-            signingConfig = signingConfigs.getByName("debug") // Replace with release signing
+            // Use release signing config
+            signingConfig = signingConfigs.getByName("release")
         }
         debug {
             isMinifyEnabled = false
@@ -108,6 +129,10 @@ dependencies {
     
     // DataStore
     implementation("androidx.datastore:datastore-preferences:1.0.0")
+    
+    // In-app updates
+    implementation("com.google.android.play:app-update:2.1.0")
+    implementation("com.google.android.play:app-update-ktx:2.1.0")
     
     // JSON parsing
     implementation("com.google.code.gson:gson:2.10.1")

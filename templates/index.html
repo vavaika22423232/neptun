@@ -5336,13 +5336,48 @@
     }
     
     async function initMap() {
-      const mapTilerApiKey = 'm8zW2kq1Ta7cw9nODPXo';
       const isDarkTheme = localStorage.getItem('mapTheme') === 'dark';
       
-      // Створюємо стиль з українською локалізацією
+      // Використовуємо OpenMapTiles з українською мовою (безкоштовно)
       const getMapStyle = (dark = false) => {
-        const baseStyle = dark ? 'streets-v2-dark' : 'streets-v2';
-        return `https://api.maptiler.com/maps/${baseStyle}/style.json?key=${mapTilerApiKey}`;
+        return {
+          version: 8,
+          name: dark ? 'Dark Ukraine' : 'Light Ukraine',
+          glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
+          sources: {
+            'openmaptiles': {
+              type: 'vector',
+              tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+              tileSize: 256
+            },
+            'osm-raster': {
+              type: 'raster',
+              tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+              tileSize: 256,
+              attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }
+          },
+          layers: [
+            {
+              id: 'background',
+              type: 'background',
+              paint: {
+                'background-color': dark ? '#1a1a1a' : '#f8f8f8'
+              }
+            },
+            {
+              id: 'osm-tiles',
+              type: 'raster',
+              source: 'osm-raster',
+              minzoom: 0,
+              maxzoom: 22
+            }
+          ],
+          // Українська локалізація назв
+          metadata: {
+            'mapbox:language': 'uk'
+          }
+        };
       };
       
       try {
