@@ -3028,7 +3028,7 @@ DNIPRO_CITY_COORDS = {
     'нікополь': (47.5667, 34.4061),  # present
     'марганець': (47.6433, 34.6289),  # present
     'покров': (47.6542, 34.1167),
-    'тернівка': (48.5319, 36.0681),
+    # 'тернівка' - REMOVED: Now handled via Photon/Nominatim API with military context priority
     'першотравенськ': (48.3460, 36.4030),
     'вільногірськ': (48.4850, 34.0300),
     'жовті': (48.3456, 33.5022),  # truncated mention mapping
