@@ -63,6 +63,27 @@ except ImportError as e:
     def classify_threat_type(text): return None
     def get_ai_stats(): return {'enabled': False}
 
+# Groq AI integration for intelligent geocoding
+GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')
+GROQ_ENABLED = bool(GROQ_API_KEY)
+
+if GROQ_ENABLED:
+    try:
+        from groq import Groq
+        groq_client = Groq(api_key=GROQ_API_KEY)
+        print("INFO: Groq AI initialized successfully")
+    except ImportError:
+        GROQ_ENABLED = False
+        groq_client = None
+        print("WARNING: Groq library not installed. Run: pip install groq")
+    except Exception as e:
+        GROQ_ENABLED = False
+        groq_client = None
+        print(f"WARNING: Groq initialization failed: {e}")
+else:
+    groq_client = None
+    print("INFO: Groq AI disabled (no API key)")
+
 # Context-aware geocoding integration
 try:
     from context_aware_geocoder import get_context_aware_geocoding
@@ -1338,6 +1359,268 @@ PROBLEMATIC_ENTRIES = [
 for entry in PROBLEMATIC_ENTRIES:
     NAME_REGION_MAP.pop(entry, None)
 
+def extract_location_with_groq_ai(message_text: str):
+    """Use Groq AI (Llama 3.1 70B) to intelligently extract location from Ukrainian military message.
+    
+    Returns dict with:
+    - city: settlement name (normalized to nominative case)
+    - district: district name if mentioned (or None)
+    - oblast: oblast name (or None)
+    - confidence: AI confidence score 0-1
+    
+    Examples:
+    - "Дніпропетровщина: БпЛА маневрує в районі Юріївки" 
+      -> {city: "Юріївка", district: None, oblast: "Дніпропетровська область", confidence: 0.95}
+    - "БпЛА в Павлоградському районі курсом на Тернівку"
+      -> {city: "Тернівка", district: "Павлоградський", oblast: None, confidence: 0.9}
+    """
+    if not GROQ_ENABLED or not message_text:
+        return None
+    
+    try:
+        prompt = f"""Ти експерт з аналізу повідомлень про повітряні тривоги в Україні.
+
+Витягни з повідомлення:
+1. Назву населеного пункту (місто/село) - ОБОВ'ЯЗКОВО в називному відмінку (Юріївка, а не Юріївки)
+2. Назву району (якщо вказано явно, наприклад "Павлоградський район")
+3. Назву області
+
+ВАЖЛИВО:
+- "в районі X" означає "біля X", а НЕ назву району
+- "Павлоградський район" - це назва району
+- Нормалізуй назви до називного відмінку (Юріївки → Юріївка, Тернівку → Тернівка)
+- "Дніпропетровщина" → "Дніпропетровська область"
+
+Повідомлення:
+{message_text}
+
+Відповідь ТІЛЬКИ у форматі JSON (без markdown, без пояснень):
+{{"city": "назва або null", "district": "назва або null", "oblast": "назва або null", "confidence": 0.95}}"""
+
+        response = groq_client.chat.completions.create(
+            model="llama-3.1-70b-versatile",
+            messages=[
+                {"role": "system", "content": "Ти аналізуєш повідомлення про повітряні тривоги. Відповідай ТІЛЬКИ валідним JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.1,
+            max_tokens=300,
+            top_p=0.9
+        )
+        
+        result_text = response.choices[0].message.content.strip()
+        
+        # Remove markdown code blocks if present
+        if result_text.startswith('```'):
+            result_text = re.sub(r'^```(?:json)?\s*', '', result_text)
+            result_text = re.sub(r'\s*```$', '', result_text)
+        
+        result = json.loads(result_text)
+        
+        # Validate and normalize result
+        if not isinstance(result, dict):
+            return None
+        
+        city = result.get('city')
+        district = result.get('district')
+        oblast = result.get('oblast')
+        confidence = result.get('confidence', 0.5)
+        
+        # Skip if no useful info extracted
+        if not city and not oblast:
+            return None
+        
+        # Convert null strings to None
+        if city in ['null', 'None', '']:
+            city = None
+        if district in ['null', 'None', '']:
+            district = None
+        if oblast in ['null', 'None', '']:
+            oblast = None
+        
+        print(f"DEBUG Groq AI: city='{city}', district='{district}', oblast='{oblast}', confidence={confidence}")
+        
+        return {
+            'city': city.strip() if city else None,
+            'district': district.strip() if district else None,
+            'oblast': oblast.strip() if oblast else None,
+            'confidence': float(confidence)
+        }
+        
+    except json.JSONDecodeError as e:
+        print(f"WARNING: Groq AI returned invalid JSON: {e}")
+        print(f"Response: {result_text[:200]}")
+        return None
+    except Exception as e:
+        print(f"WARNING: Groq AI extraction failed: {e}")
+        return None
+
+def geocode_with_context(city: str, oblast_key: str, district: str = None):
+    """Geocode city using Photon API with oblast and optional district context.
+    Returns (lat, lng, is_approx) or None."""
+    if not city:
+        return None
+    
+    try:
+        import requests
+        
+        # Map oblast key to full region name for Photon
+        oblast_to_region_map = {
+            'дніпропетровська область': 'Дніпропетровська область',
+            'харківська обл.': 'Харківська область',
+            'полтавська область': 'Полтавська область',
+            'сумська область': 'Сумська область',
+            'чернігівська обл.': 'Чернігівська область',
+            'миколаївська обл.': 'Миколаївська область',
+            'одеська обл.': 'Одеська область',
+            'запорізька область': 'Запорізька область',
+            'херсонська обл.': 'Херсонська область',
+            'київська обл.': 'Київська область',
+            'донецька область': 'Донецька область',
+            'луганська область': 'Луганська область',
+        }
+        
+        region_name = oblast_to_region_map.get(oblast_key.lower(), oblast_key)
+        
+        photon_url = 'https://photon.komoot.io/api/'
+        params = {'q': city, 'limit': 15}
+        
+        response = requests.get(photon_url, params=params, timeout=3)
+        if response.ok:
+            data = response.json()
+            
+            for feature in data.get('features', []):
+                props = feature.get('properties', {})
+                state = props.get('state', '')
+                county = props.get('county', '')
+                country = props.get('country', '')
+                osm_key = props.get('osm_key', '')
+                osm_value = props.get('osm_value', '')
+                
+                # Filter out POIs
+                if osm_key not in ['place', 'boundary']:
+                    continue
+                valid_place_types = ['city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood', 'administrative']
+                if osm_key == 'place' and osm_value not in valid_place_types:
+                    continue
+                
+                # Filter by Ukraine and oblast
+                if (country == 'Україна' or country == 'Ukraine'):
+                    if region_name in state:
+                        coords_arr = feature.get('geometry', {}).get('coordinates', [])
+                        if coords_arr and len(coords_arr) >= 2:
+                            lat, lng = coords_arr[1], coords_arr[0]
+                            
+                            # If district provided, prefer district match
+                            if district:
+                                county_lower = county.lower()
+                                district_lower = district.lower()
+                                
+                                if district_lower in county_lower or county_lower.startswith(district_lower):
+                                    print(f"DEBUG Groq+Photon: '{city}' in {county}, {state} (district match!) -> ({lat}, {lng})")
+                                    return (lat, lng, False)
+                                else:
+                                    continue  # Keep looking for district match
+                            
+                            # No district filter or found oblast match
+                            print(f"DEBUG Groq+Photon: '{city}' in {state} -> ({lat}, {lng})")
+                            return (lat, lng, False)
+        
+    except Exception as e:
+        print(f"DEBUG: geocode_with_context error: {e}")
+    
+    return None
+
+def extract_district_and_oblast_context(message_text: str):
+    """Extract district (район) and oblast context from message.
+    Returns dict with 'district', 'oblast_key', 'excluded_oblast'.
+    
+    Examples:
+    - "БпЛА маневрує в районі Юріївки" -> Павлоградський район (from context)
+    - "БпЛА в Покровському районі" -> Покровський район
+    - "Дніпропетровщина: БпЛА..." -> Дніпропетровська область
+    """
+    if not message_text:
+        return {'district': None, 'oblast_key': None, 'excluded_oblast': None}
+    
+    message_lower = message_text.lower()
+    result = {'district': None, 'oblast_key': None, 'excluded_oblast': None}
+    
+    # Extract explicit district mentions
+    # Pattern: "[назва] район", "в [назва] районі", "[назва]ський район"
+    # BUT NOT: "в районі [село]" - this means "near [village]", not district name
+    district_patterns = [
+        r'([а-яїієґ]{3,}ськ(?:ий|ому|ого))\s+район',  # "павлоградський район" (min 3 chars before "ськ")
+        r'([а-яїієґ]{3,})\s+район(?:і)?(?:\s|$)',      # "покровський район" (min 3 chars)
+    ]
+    
+    # Don't extract "в районі X" as district - this means "near X"
+    # Only extract explicit district names like "павлоградський район"
+    
+    for pattern in district_patterns:
+        match = re.search(pattern, message_lower)
+        if match:
+            district = match.group(1).strip()
+            
+            # Skip common prepositions and short words
+            skip_words = ['в', 'на', 'за', 'до', 'від', 'при', 'під', 'над', 'між', 'про', 'для']
+            if district in skip_words or len(district) < 3:
+                continue
+            
+            # Normalize district name
+            if district.endswith('ому') or district.endswith('ого'):
+                district = district[:-3] + 'ий'
+            result['district'] = district
+            print(f"DEBUG: Extracted district: '{district}'")
+            break
+    
+    # Extract oblast (same logic as before)
+    # Check for "з [область]" pattern - city is NOT in that oblast
+    from_oblast_pattern = r'з\s+([а-яїіє]+щини|[а-яїіє]+ської\s+обл)'
+    from_match = re.search(from_oblast_pattern, message_lower)
+    if from_match:
+        excluded = from_match.group(1).strip()
+        result['excluded_oblast'] = excluded
+    
+    # Look for oblast mention in header or text
+    oblast_patterns = [
+        r'^([а-яїіє]+щина):',  # "Дніпропетровщина:"
+        r'([а-яїіє]+ська\s+обл\.?)',  # "Харківська обл."
+        r'([а-яїіє]+ська\s+область)',  # "Полтавська область"
+    ]
+    
+    for pattern in oblast_patterns:
+        match = re.search(pattern, message_lower, re.MULTILINE)
+        if match:
+            oblast_mention = match.group(1).strip()
+            
+            # Normalize oblast names
+            oblast_normalizations = {
+                'харківщина': 'харківська обл.',
+                'чернігівщина': 'чернігівська обл.',
+                'полтавщина': 'полтавська область',
+                'дніпропетровщина': 'дніпропетровська область',
+                'сумщина': 'сумська область',
+                'миколаївщина': 'миколаївська обл.',
+                'одещина': 'одеська обл.',
+                'запоріжжя': 'запорізька область',
+                'херсонщина': 'херсонська обл.',
+                'київщина': 'київська обл.',
+                'черкащина': 'черкаська область',
+                'вінниччина': 'вінницька область',
+                'донеччина': 'донецька область',
+                'луганщина': 'луганська область',
+            }
+            
+            if oblast_mention in oblast_normalizations:
+                result['oblast_key'] = oblast_normalizations[oblast_mention]
+            elif oblast_mention in OBLAST_CENTERS:
+                result['oblast_key'] = oblast_mention
+            
+            break
+    
+    return result
+
 def ensure_city_coords(name: str):
     """Return (lat,lng,approx_bool) for settlement using Photon/Nominatim APIs.
     approx_bool True means we used oblast center fallback (low precision)."""
@@ -1504,6 +1787,58 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
     """Enhanced version that tries to extract oblast from message if city not found.
     Returns (lat,lng,approx_bool) - approx_bool True means used oblast fallback."""
     
+    # PRIORITY 1: Try Groq AI for intelligent context understanding
+    if GROQ_ENABLED and message_text:
+        try:
+            ai_result = extract_location_with_groq_ai(message_text)
+            if ai_result and ai_result.get('confidence', 0) > 0.7:
+                ai_city = ai_result.get('city')
+                ai_district = ai_result.get('district')
+                ai_oblast = ai_result.get('oblast')
+                
+                # Use AI-extracted city name if provided and confident
+                if ai_city:
+                    target_city = ai_city.lower()
+                    print(f"DEBUG Groq: Using AI-extracted city '{target_city}' (confidence: {ai_result['confidence']})")
+                    
+                    # Build context for geocoding
+                    oblast_key = None
+                    if ai_oblast:
+                        # Normalize oblast name
+                        oblast_normalizations = {
+                            'дніпропетровська область': 'дніпропетровська область',
+                            'харківська область': 'харківська обл.',
+                            'полтавська область': 'полтавська область',
+                            'сумська область': 'сумська область',
+                            'чернігівська область': 'чернігівська обл.',
+                            'миколаївська область': 'миколаївська обл.',
+                            'одеська область': 'одеська обл.',
+                            'запорізька область': 'запорізька область',
+                            'херсонська область': 'херсонська обл.',
+                            'київська область': 'київська обл.',
+                            'донецька область': 'донецька область',
+                            'луганська область': 'луганська область',
+                        }
+                        ai_oblast_lower = ai_oblast.lower()
+                        oblast_key = oblast_normalizations.get(ai_oblast_lower, ai_oblast_lower)
+                    
+                    # Try geocoding with AI-provided context
+                    if oblast_key:
+                        # Use Photon API with oblast + optional district filtering
+                        coords = geocode_with_context(target_city, oblast_key, ai_district)
+                        if coords:
+                            return coords
+                    
+                    # Fallback to basic geocoding with AI city name
+                    coords = ensure_city_coords(target_city)
+                    if coords:
+                        return coords
+                        
+        except Exception as e:
+            print(f"DEBUG: Groq AI geocoding attempt failed: {e}")
+            # Continue to fallback methods
+    
+    # PRIORITY 2: Original declension normalization and processing
     # Normalize Ukrainian city name declensions FIRST
     original_name = name
     name_lower = name.strip().lower()
@@ -1546,6 +1881,13 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
     
     # FALLBACK: Original regex-based processing
     
+    # SMART CONTEXT EXTRACTION: Extract district and oblast from message
+    context = extract_district_and_oblast_context(message_text)
+    district_hint = context.get('district')
+    detected_oblast_key = context.get('oblast_key')
+    excluded_oblast = context.get('excluded_oblast')
+    
+    # Legacy oblast detection (kept for backward compatibility)
     # Initialize detected_oblast_key at function scope
     detected_oblast_key = None
     excluded_oblast = None  # Oblast to exclude (when "з [область]" pattern found)
@@ -1733,9 +2075,13 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
             response = requests.get(photon_url, params=params, timeout=3)
             if response.ok:
                 data = response.json()
+                best_match = None
+                district_match = None
+                
                 for feature in data.get('features', []):
                     props = feature.get('properties', {})
                     state = props.get('state', '')
+                    county = props.get('county', '')  # district/район
                     country = props.get('country', '')
                     osm_key = props.get('osm_key', '')
                     osm_value = props.get('osm_value', '')
@@ -1754,8 +2100,33 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                             coords_arr = feature.get('geometry', {}).get('coordinates', [])
                             if coords_arr and len(coords_arr) >= 2:
                                 lat, lng = coords_arr[1], coords_arr[0]
-                                print(f"DEBUG: Photon API found '{name}' in {state} -> ({lat}, {lng})")
-                                return (lat, lng, False)
+                                
+                                # PRIORITY: If district hint exists, check if it matches
+                                if district_hint:
+                                    county_lower = county.lower()
+                                    district_lower = district_hint.lower()
+                                    
+                                    # Normalize both for comparison
+                                    # "Павлоградський район" should match "павлоградський"
+                                    if district_lower in county_lower or county_lower.startswith(district_lower):
+                                        print(f"DEBUG: Photon API found '{name}' in {county}, {state} (district match!) -> ({lat}, {lng})")
+                                        return (lat, lng, False)
+                                    else:
+                                        # Store as potential match but keep looking for district match
+                                        if not district_match:
+                                            district_match = (lat, lng)
+                                        continue
+                                
+                                # No district hint or no match yet - use this result
+                                if not best_match:
+                                    best_match = (lat, lng)
+                                    print(f"DEBUG: Photon API found '{name}' in {state} -> ({lat}, {lng})")
+                
+                # Return best match (district match preferred, then first oblast match)
+                if district_match:
+                    return (district_match[0], district_match[1], False)
+                if best_match:
+                    return (best_match[0], best_match[1], False)
             
             # Fallback to Nominatim API if Photon didn't find the city
             # NOTE: Nominatim doesn't support Cyrillic in query, need transliteration
