@@ -6281,6 +6281,109 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                           ('щина' in line.lower() or 'щину' in line.lower() or 'щині' in line.lower())]
     shahed_count = len(shahed_region_lines)
     
+    # NEW: Check for multiple regional aviation/БПЛА threats in one message
+    # Pattern: "🛫 Донеччина та Дніпропетровщина - загроза застосування авіаційних засобів ураження. 🛵 Харківщина - загроза застосування ударних БпЛА"
+    aviation_threat_lines = []
+    for line in text_lines:
+        line_lower = line.lower().strip()
+        if not line_lower:
+            continue
+        # Check if line contains region + aviation/БПЛА threat
+        has_region = any(region in line_lower for region in ['щина', 'область'])
+        has_aviation = any(pattern in line_lower for pattern in ['авіаційних засобів', 'авіації', 'тактична авіація'])
+        has_bpla = 'бпла' in line_lower or 'безпілотн' in line_lower
+        
+        if has_region and (has_aviation or has_bpla):
+            aviation_threat_lines.append(line)
+    
+    aviation_threat_count = len(aviation_threat_lines)
+    
+    add_debug_log(f"DEBUG COUNT CHECK: {region_count} regions, {uav_count} UAV lines, {shahed_count} Shahed+region lines, {aviation_threat_count} aviation threat lines", "count_check")
+    
+    # Process multiple regional aviation threats
+    if aviation_threat_count >= 1:
+        add_debug_log(f"MULTI-REGIONAL AVIATION THREATS: {aviation_threat_count} lines detected", "multi_aviation")
+        
+        all_tracks = []
+        
+        # Regional aviation coordinates mapping (Black Sea / oblast centers)
+        region_aviation_coords = {
+            'одещина': (46.373528, 31.284023),  # Black Sea near Odesa
+            'одесщина': (46.373528, 31.284023),
+            'донеччина': (48.5, 37.8),  # Donetsk oblast center
+            'дніпропетровщина': (48.45, 35.0),  # Dnipro
+            'харківщина': (49.9935, 36.2304),  # Kharkiv
+            'луганщина': (48.567, 39.317),  # Luhansk oblast
+            'запорожжя': (47.8388, 35.1396),  # Zaporizhzhia
+            'херсонщина': (46.6354, 32.6169),  # Kherson
+            'миколаївщина': (46.975, 32.0),  # Mykolaiv oblast
+        }
+        
+        for line in aviation_threat_lines:
+            line_stripped = line.strip()
+            line_lower = line_stripped.lower()
+            
+            # Split by emoji or sentence patterns to separate different threats
+            # Pattern: "🛫 Region - threat. 🛵 Region - threat"
+            import re
+            
+            # Split by emoji patterns or full stops followed by emoji
+            segments = re.split(r'[\.\!]\s*(?=[🛫🛵🛸⚠️])|(?<=[🛫🛵🛸⚠️])\s+(?=[А-ЯІЇЄа-яіїє])', line_stripped)
+            if len(segments) <= 1:
+                # No clear segments, treat as one line
+                segments = [line_stripped]
+            
+            for segment in segments:
+                segment = segment.strip()
+                if not segment or len(segment) < 10:
+                    continue
+                    
+                segment_lower = segment.lower()
+                
+                # Extract all regions from this segment
+                regions_found = re.findall(r'(одещина|одесщина|донеччина|дніпропетровщина|харківщина|луганщина|запорожжя|херсонщина|миколаївщина)', segment_lower)
+                
+                # Determine threat type from segment content
+                is_aviation = any(pattern in segment_lower for pattern in ['авіаційних засобів', 'авіації', 'тактична авіація'])
+                is_bpla = 'бпла' in segment_lower or 'безпілотн' in segment_lower
+                is_strike_bpla = 'ударних бпла' in segment_lower or 'ударних безпілотн' in segment_lower
+                
+                threat_type = 'avia' if is_aviation else ('shahed' if is_bpla else 'artillery')
+                icon = 'avia.png' if is_aviation else ('shahed.png' if is_bpla else 'artillery.png')
+                threat_label = 'Авіація' if is_aviation else ('Ударні БпЛА' if is_strike_bpla else 'БпЛА')
+                
+                # Create marker for each region mentioned in this segment
+                for region in regions_found:
+                    if region in region_aviation_coords:
+                        coords = region_aviation_coords[region]
+                        lat, lng = coords
+                        
+                        region_display = region.title()
+                        place_name = f"{threat_label} [{region_display}]"
+                        
+                        track = {
+                            'id': f"{mid}_aviation_{region}_{len(all_tracks)}",
+                            'place': place_name,
+                            'lat': lat,
+                            'lng': lng,
+                            'threat_type': threat_type,
+                            'text': segment[:500],
+                            'date': date_str,
+                            'channel': channel,
+                            'marker_icon': icon,
+                            'source_match': 'multi_regional_aviation',
+                            'count': 1
+                        }
+                        
+                        all_tracks.append(track)
+                        add_debug_log(f"Aviation threat: {place_name} at {coords} (segment: {segment[:50]})", "multi_aviation")
+                    else:
+                        add_debug_log(f"No coords for region: {region}", "multi_aviation")
+        
+        if all_tracks:
+            add_debug_log(f"Multi-regional aviation processing complete: {len(all_tracks)} total tracks", "multi_aviation_complete")
+            return all_tracks
+    
     add_debug_log(f"DEBUG COUNT CHECK: {region_count} regions, {uav_count} UAV lines, {shahed_count} Shahed+region lines", "count_check")
     
     # If we have multiple Shahed lines with regions, process them separately
