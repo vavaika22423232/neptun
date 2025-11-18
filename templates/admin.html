@@ -13,7 +13,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:linear-gradient(135deg,
 .container{max-width:1600px;margin:0 auto;padding:1.5rem}
 .header{background:linear-gradient(135deg,rgba(59,130,246,0.1),rgba(139,92,246,0.1));backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:1rem;padding:1.5rem 2rem;margin-bottom:2rem;box-shadow:0 8px 32px rgba(0,0,0,0.4)}
 .header-content{display:flex;align-items:center;justify-content:space-between;gap:1.5rem;flex-wrap:wrap}
-.header-title h1{font-size:2rem;font-weight:800;background:linear-gradient(135deg,var(--blue),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:-0.5px}
+.header-title h1{font-size:2rem;font-weight:800;background:linear-gradient(135deg,var(--blue),var(--purple));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:-0.5px}
 .status-badges{display:flex;gap:0.75rem;flex-wrap:wrap}
 .badge{display:inline-flex;align-items:center;gap:0.5rem;padding:0.5rem 1rem;border-radius:0.5rem;font-size:0.875rem;font-weight:600;border:1px solid}
 .badge.success{background:rgba(16,185,129,0.2);border-color:rgba(16,185,129,0.5);color:#10b981}
@@ -50,7 +50,7 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 .stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--blue),var(--purple));opacity:0;transition:opacity 0.3s}
 .stat-card:hover{transform:translateY(-4px);border-color:var(--blue);box-shadow:0 8px 24px rgba(0,0,0,0.4)}
 .stat-card:hover::before{opacity:1}
-.stat-value{font-size:2.5rem;font-weight:800;background:linear-gradient(135deg,var(--blue),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:0.5rem;line-height:1}
+.stat-value{font-size:2.5rem;font-weight:800;background:linear-gradient(135deg,var(--blue),var(--purple));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:0.5rem;line-height:1}
 .stat-label{font-size:0.875rem;color:var(--muted);font-weight:500}
 .table-container{overflow-x:auto;border-radius:0.75rem;border:1px solid var(--border)}
 .table{width:100%;border-collapse:collapse;font-size:0.875rem}
@@ -299,7 +299,7 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 <td><span class="badge {% if m.threat_type=='shahed' %}info{% elif m.threat_type=='raketa' %}danger{% else %}warning{% endif %}">{{ m.threat_type }}</span></td>
 <td style="font-weight:600">{{ m.place }}</td>
 <td class="truncate" style="max-width:400px" title="{{ m.text }}">{{ (m.text or '')[:100] }}{% if (m.text|length or 0)>100 %}...{% endif %}</td>
-<td><button class="btn btn-danger btn-sm" onclick="hideMarker({{ m.lat }},{{ m.lng }},'{{ (m.text or '')|e }}','{{ (m.channel or m.source)|e }}')">👁️ Hide</button></td>
+<td><button class="btn btn-danger btn-sm" data-lat="{{ m.lat }}" data-lng="{{ m.lng }}" data-text="{{ (m.text or '')|e }}" data-source="{{ (m.channel or m.source)|e }}" onclick="hideMarker(this.dataset.lat,this.dataset.lng,this.dataset.text,this.dataset.source)">👁️ Hide</button></td>
 </tr>
 {% endfor %}
 </tbody>
