@@ -4830,31 +4830,13 @@
             }).addTo(markerLayer);
             console.log('🎨 ЛИНИЯ ДОБАВЛЕНА НА КАРТУ!', trajectory);
             
-            // Добавляем стрелку направления на конце траектории
+            // Добавляем стрелку направления на конце траектории (simple version from map_only)
             const angle = Math.atan2(p.lat - tailStart[0], p.lng - tailStart[1]) * 180 / Math.PI + 90;
             const arrowIcon = L.divIcon({
-              html: `<div class="direction-arrow" style="transform: rotate(${angle}deg); animation: pulse-arrow 2s ease-in-out infinite;">
-                       <svg width="44" height="44" viewBox="0 0 44 44">
-                         <defs>
-                           <filter id="glow">
-                             <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
-                             <feMerge>
-                               <feMergeNode in="coloredBlur"/>
-                               <feMergeNode in="SourceGraphic"/>
-                             </feMerge>
-                           </filter>
-                         </defs>
-                         <path d="M 22 6 L 32 22 L 22 19 L 12 22 Z" 
-                               fill="#ef4444" 
-                               stroke="#ffffff" 
-                               stroke-width="2" 
-                               opacity="${polylineOpacity}"
-                               filter="url(#glow)"/>
-                       </svg>
-                     </div>`,
+              html: `<div class="direction-arrow" style="transform: rotate(${angle}deg);"><svg width="40" height="40" viewBox="0 0 40 40"><path d="M 20 5 L 30 20 L 20 17 L 10 20 Z" fill="#ef4444" stroke="#ffffff" stroke-width="1.5" opacity="${polylineOpacity}"/></svg></div>`,
               className: '',
-              iconSize: [44, 44],
-              iconAnchor: [22, 22]
+              iconSize: [40, 40],
+              iconAnchor: [20, 20]
             });
             L.marker([p.lat, p.lng], {icon: arrowIcon}).addTo(markerLayer);
           }
