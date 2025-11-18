@@ -8583,6 +8583,29 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         n = name.lower().strip()
         n = n.replace('ʼ', "'").replace('’', "'").replace('`', "'")
         n = unicodedata.normalize('NFC', n)
+        
+        # Convert mixed Latin/Cyrillic to full Cyrillic (e.g. "Kov'яги" -> "ков'яги")
+        # Common Latin-Cyrillic lookalikes in Ukrainian city names
+        latin_to_cyrillic = {
+            'a': 'а', 'e': 'е', 'i': 'і', 'o': 'о', 'p': 'р', 'c': 'с', 
+            'y': 'у', 'x': 'х', 'k': 'к', 'h': 'н', 't': 'т', 'm': 'м',
+            'b': 'в', 'v': 'в', 'n': 'н', 's': 'с', 'r': 'р'
+        }
+        
+        # Only convert if string contains mixed Latin + Cyrillic (heuristic: has both ranges)
+        has_cyrillic = any(ord(c) >= 0x0400 and ord(c) <= 0x04FF for c in n)
+        has_latin = any('a' <= c <= 'z' for c in n)
+        
+        if has_cyrillic and has_latin:
+            # Convert Latin lookalikes to Cyrillic
+            n_converted = ''
+            for c in n:
+                if 'a' <= c <= 'z':
+                    n_converted += latin_to_cyrillic.get(c, c)
+                else:
+                    n_converted += c
+            n = n_converted
+        
         return n
     # Если сообщение содержит несколько строк с заголовками-областями и городами
     # Предварительно уберём чисто донатные/подписи строки из многострочного блока, чтобы они не мешали
@@ -9581,6 +9604,96 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             'marker_icon': 'shahed.png', 'source_match': 'multiline_oblast_city_shahed', 'count': 1
                         })
                 continue
+        
+        # --- NEW: Pattern "N на City1 N на City2..." (e.g. "Харківщина 1 на Вільшани 1 на Kov'яги 1 на Бірки") ---
+        # Handles multiple "number + на + city" sequences in a single line WITHOUT repeating "БпЛА"
+        # IMPORTANT: Pattern supports mixed Cyrillic/Latin city names (e.g. "Kov'яги")
+        if re.search(r'(\d+)\s+на\s+[A-ZА-ЯІЇЄa-zа-яіїєґ\'\-]+', ln, re.IGNORECASE):
+            # Find all "N на City" patterns in the line (supports mixed Cyrillic/Latin)
+            multi_na_pattern = re.findall(r'(\d+)\s+на\s+([A-ZА-ЯІЇЄa-zа-яіїєґ\'\-]+(?:/[A-ZА-ЯІЇЄa-zа-яіїєґ\'\-]+)?)', ln, re.IGNORECASE)
+            
+            if len(multi_na_pattern) > 1:  # Multiple "N на City" patterns found - this is our case!
+                add_debug_log(f"MULTI-NA pattern found {len(multi_na_pattern)} cities in line: '{ln}'", "multi_na")
+                add_debug_log(f"MULTI-NA current region header (oblast_hdr): '{oblast_hdr}'", "multi_na")
+                
+                # Regional overrides for cities with duplicate names in different oblasts
+                REGIONAL_CITY_COORDS = {
+                    'харківщина': {
+                        'вільшани': (50.177, 35.398),  # Вільшани, Харківська обл., Богодухівський район
+                        'ковяги': (49.75, 36.12),       # Ков'яги, Харківська обл.
+                        'березівка': (49.583, 36.450),  # Березівка, Харківська обл.
+                    },
+                    # Add more regional overrides as needed
+                }
+                
+                for count_str, city_raw in multi_na_pattern:
+                    count = int(count_str) if count_str.isdigit() else 1
+                    city_name = city_raw.strip()
+                    
+                    # Normalize city name (handle Latin/Cyrillic mix)
+                    city_norm = normalize_city_name(city_name)
+                    city_norm = UA_CITY_NORMALIZE.get(city_norm, city_norm)
+                    
+                    # TRY 1: Regional override if oblast_hdr is set (e.g. "Харківщина:")
+                    coords = None
+                    if oblast_hdr and oblast_hdr in REGIONAL_CITY_COORDS:
+                        region_coords = REGIONAL_CITY_COORDS[oblast_hdr]
+                        coords = region_coords.get(city_norm)
+                        if coords:
+                            add_debug_log(f"  Multi-NA city: '{city_name}' ({count}x) -> norm: '{city_norm}' -> REGIONAL OVERRIDE coords: {coords} (oblast: {oblast_hdr})", "multi_na")
+                    
+                    # TRY 2: Default database lookup if no regional override
+                    if not coords:
+                        coords = CITY_COORDS.get(city_norm)
+                        if coords:
+                            add_debug_log(f"  Multi-NA city: '{city_name}' ({count}x) -> norm: '{city_norm}' -> DATABASE coords: {coords}", "multi_na")
+                    
+                    # TRY 3: Settlements index fallback
+                    if not coords and SETTLEMENTS_INDEX:
+                        coords = SETTLEMENTS_INDEX.get(city_norm)
+                        if coords:
+                            add_debug_log(f"  Multi-NA city: '{city_name}' ({count}x) -> norm: '{city_norm}' -> SETTLEMENTS coords: {coords}", "multi_na")
+                    
+                    if not coords:
+                        add_debug_log(f"  WARNING: No coordinates for '{city_name}' (normalized: '{city_norm}', oblast: {oblast_hdr})", "multi_na")
+                        continue
+                    
+                    if coords:
+                        lat, lng = coords
+                        threat_type, icon = classify(ln)
+                        
+                        # Create separate markers for each count
+                        for i in range(count):
+                            place_label = city_norm.title()
+                            if count > 1:
+                                place_label += f" #{i+1}"
+                            
+                            # Add offset for multiple drones at same location
+                            marker_lat, marker_lng = lat, lng
+                            if count > 1:
+                                offset_distance = 0.03  # ~3km offset
+                                marker_lat += offset_distance * i
+                                marker_lng += offset_distance * i * 0.5
+                            
+                            multi_city_tracks.append({
+                                'id': f"{mid}_multi_na_{len(multi_city_tracks)+1}",
+                                'place': place_label,
+                                'lat': marker_lat,
+                                'lng': marker_lng,
+                                'threat_type': threat_type,
+                                'text': clean_text(ln)[:500],
+                                'date': date_str,
+                                'channel': channel,
+                                'marker_icon': icon,
+                                'source_match': 'multi_na_pattern',
+                                'count': 1
+                            })
+                        add_debug_log(f"  Created {count} marker(s) for '{city_norm.title()}'", "multi_na")
+                    else:
+                        add_debug_log(f"  WARNING: No coordinates for '{city_name}' (normalized: '{city_norm}')", "multi_na")
+                
+                add_debug_log(f"Multi-NA pattern processed: {len(multi_city_tracks)} total markers created", "multi_na")
+                continue  # Skip further processing of this line
         
         # --- NEW: Simple "X БпЛА на <city>" pattern (e.g. '1 БпЛА на Козелець', '2 БпЛА на Куликівку') ---
         # Also handle "Ціль на <city>" pattern for missile/rocket targets
