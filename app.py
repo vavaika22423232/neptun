@@ -2267,7 +2267,7 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                 city_name, confidence = ai_result
                 add_debug_log(f"AI: Extracted city '{city_name}' from message (confidence: {confidence:.2f})", "ai_city_extract")
                 
-                # Try to geocode the AI-extracted city via API
+                # Try to geocode the AI-extracted city via API (no fallback)
                 ai_coords = ensure_city_coords(city_name)
                 if ai_coords:
                     add_debug_log(f"AI: Successfully geocoded AI-extracted city '{city_name}' via API -> {ai_coords[:2]}", "ai_geocode_success")
@@ -2851,36 +2851,17 @@ def get_coordinates_enhanced(city_name: str, region: str = None, context: str = 
         else:
             print(f"DEBUG Enhanced coord lookup: Nominatim could not find '{city_name}' in {nominatim_region}")
     
-    # Try basic local lookup (only if no region specified or Nominatim failed)
-    coords = CITY_COORDS.get(city_name)
+    # API-only geocoding - NO local database fallback
+    coords = ensure_city_coords(city_name)
     if coords:
-        print(f"DEBUG Enhanced coord lookup: Found '{city_name}' in local database -> {coords}")
+        print(f"DEBUG Enhanced coord lookup: API found '{city_name}' -> {coords}")
         return coords
     
-    # Try settlements index if available
-    if 'SETTLEMENTS_INDEX' in globals() and globals().get('SETTLEMENTS_INDEX'):
-        coords = globals()['SETTLEMENTS_INDEX'].get(city_name)
-        if coords:
-            print(f"DEBUG Enhanced coord lookup: Found '{city_name}' in settlements index -> {coords}")
-            return coords
-    
-    # Try with region specification in local database
-    if region:
-        # Normalize region name
-        region_lower = region.lower().replace('область', '').replace('обл.', '').replace('обл', '').strip()
-        search_keys = [
-            f"{city_name} {region_lower}",
-            f"{city_name} {region_lower} область",
-            f"{city_name} {region_lower} обл",
-            f"{city_name} ({region_lower})",
-            f"{city_name} ({region})"
-        ]
-        
-        for key in search_keys:
-            coords = CITY_COORDS.get(key)
-            if coords:
-                print(f"DEBUG Enhanced coord lookup: Found '{city_name}' using regional key '{key}' -> {coords}")
-                return coords
+    # API-only geocoding - NO local database fallback
+    coords = ensure_city_coords(city_name)
+    if coords:
+        print(f"DEBUG Enhanced coord lookup: API found '{city_name}' -> {coords}")
+        return coords
     
     # Fallback to Nominatim API for precise geocoding
     if NOMINATIM_AVAILABLE:
@@ -6383,16 +6364,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             if city_norm in UA_CITY_NORMALIZE:
                 city_norm = UA_CITY_NORMALIZE[city_norm]
             
-            # CRITICAL: For multi-regional cities, ALWAYS use message context + API
-            # Don't rely on CITY_COORDS as it may have wrong coordinates for multi-region names
-            # ЗАВЖДИ використовуємо контекст повідомлення для точного визначення
+            # Use ONLY API geocoding with message context - NO CITY_COORDS fallback
             coords = ensure_city_coords_with_message_context(city_norm, text)
             
-            # Fallback to CITY_COORDS only if API failed
-            if not coords:
-                coords = CITY_COORDS.get(city_norm)
-            
-            add_debug_log(f"Coord lookup: '{city_name}' -> '{city_norm}' -> {coords}", "multi_regional")
+            add_debug_log(f"API-only lookup: '{city_name}' -> '{city_norm}' -> {coords}", "multi_regional")
             return coords
         
         threats = []
@@ -7102,14 +7077,17 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         
         add_debug_log(f"PRIORITY REGION-DISTRICT pattern FOUND: region='{region_raw}', district='{district_raw}'", "priority_region_district")
         
-        # Normalize city name and try to find coordinates
+        # Normalize city name and try to find coordinates via API
         city_norm = target_city.lower()
         # Apply UA_CITY_NORMALIZE rules if available
         if 'UA_CITY_NORMALIZE' in globals():
             city_norm = UA_CITY_NORMALIZE.get(city_norm, city_norm)
-        coords = CITY_COORDS.get(city_norm)
         
-        add_debug_log(f"Priority district city lookup: '{target_city}' -> '{city_norm}' -> {coords}", "priority_region_district")
+        # Use API geocoding with message context
+        coords_result = ensure_city_coords_with_message_context(city_norm, original_text)
+        coords = (coords_result[0], coords_result[1]) if coords_result else None
+        
+        add_debug_log(f"Priority district city API lookup: '{target_city}' -> '{city_norm}' -> {coords}", "priority_region_district")
         
         if coords:
             lat, lng = coords
