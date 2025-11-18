@@ -9050,7 +9050,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 # Find the main city of the region to place the marker
                 region_cities = {
                     'сумщина': 'суми',
-                    'чернігівщина': 'чернігів', 
+                    'чернігівщина': 'чернігів',
                     'херсонщина': 'херсон',
                     'харківщина': 'харків',
                     'донеччина': 'краматорськ',  # safer than донецьк
@@ -9073,6 +9073,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     'одещина': 'одеса'
                 }
                 
+                # Special coordinates for aviation threats over regions (e.g., aircraft over Black Sea for Odesa)
+                region_aviation_coords = {
+                    'одещина': (46.373528, 31.284023),  # Black Sea near Odesa for aviation threats
+                    'одесщина': (46.373528, 31.284023),
+                }
+                
                 region_city = region_cities.get(oblast_hdr)
                 if region_city:
                     # Check if message refers to entire region rather than specific city
@@ -9086,22 +9092,34 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         f'для {genitive_form}', f'по {dative_form}'
                     ])
                     
-                    # For KAB/aviation bombs, always create marker even for regional threats
+                    # For KAB/aviation bombs and aviation threats, always create marker even for regional threats
                     has_kab = any(kab_word in ln_lower for kab_word in ['каб', 'авіабомб', 'авиабомб'])
+                    has_aviation_threat = any(avia_word in ln_lower for avia_word in [
+                        'авіаційних засобів ураження', 'авіаційних засобів', 'застосування авіації',
+                        'тактична авіація', 'тактичної авіації'
+                    ])
                     
-                    if is_regional_threat and not has_kab:
+                    if is_regional_threat and not has_kab and not has_aviation_threat:
                         add_debug_log(f"Skipping regional threat marker - affects entire region: {oblast_hdr} (found: {[ref for ref in [f'на {oblast_hdr}', accusative_form, genitive_form, dative_form] if ref in ln_lower]})", "multi_region")
                         continue
                     
-                    # Try to find coordinates for the region's main city
-                    base_city = normalize_city_name(region_city)
-                    base_city = UA_CITY_NORMALIZE.get(base_city, base_city)
-                    coords = CITY_COORDS.get(base_city) or (SETTLEMENTS_INDEX.get(base_city) if SETTLEMENTS_INDEX else None)
+                    # Check if this is an aviation threat and use special coordinates if available
+                    coords = None
+                    if has_aviation_threat and oblast_hdr in region_aviation_coords:
+                        coords = region_aviation_coords[oblast_hdr]
+                        label = f"Авіація [{oblast_hdr.title()}]"
+                        add_debug_log(f"Using aviation coordinates for {oblast_hdr}: {coords}", "aviation_region")
+                    
+                    # Otherwise, try to find coordinates for the region's main city
+                    if not coords:
+                        base_city = normalize_city_name(region_city)
+                        base_city = UA_CITY_NORMALIZE.get(base_city, base_city)
+                        coords = CITY_COORDS.get(base_city) or (SETTLEMENTS_INDEX.get(base_city) if SETTLEMENTS_INDEX else None)
+                        label = base_city.title()
+                        label += f" [{oblast_hdr.title()}]"
                     
                     if coords:
                         lat, lng = coords
-                        label = base_city.title()
-                        label += f" [{oblast_hdr.title()}]"
                         
                         # Determine threat type based on message content using classify function
                         threat_type, icon = classify(ln)
