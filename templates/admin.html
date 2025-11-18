@@ -1,2774 +1,477 @@
 <!DOCTYPE html>
 <html lang="uk">
 <head>
-<meta charset="utf-8" />
-<meta name="recreativ-verification" content="VXNs8NHEkWpeCxidooyNMriVOz1NGrj5o6gjjhXY">
-<title>Neptun Admin Dashboard</title>
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>🌊 Neptun Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <style>
-:root {
-  --bg-primary: #0f172a;
-  --bg-secondary: #1e293b;
-  --bg-tertiary: #334155;
-  --bg-accent: #0ea5e9;
-  --bg-success: #10b981;
-  --bg-warning: #f59e0b;
-  --bg-danger: #ef4444;
-  --text-primary: #f8fafc;
-  --text-secondary: #cbd5e1;
-  --text-muted: #64748b;
-  --border-primary: #334155;
-  --border-secondary: #475569;
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
-  --radius-sm: 0.375rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.75rem;
-  --radius-xl: 1rem;
-}
-
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background: linear-gradient(135deg, var(--bg-primary) 0%, #1a202c 100%);
-  color: var(--text-primary);
-  line-height: 1.6;
-  min-height: 100vh;
-}
-
-.container {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 1.5rem;
-}
-
-.header {
-  background: rgba(30, 41, 59, 0.8);
-  backdrop-filter: blur(12px);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-xl);
-  padding: 1.5rem 2rem;
-  margin-bottom: 2rem;
-  box-shadow: var(--shadow-lg);
-}
-
-.header-content {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 1rem;
-}
-
-.header-title {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.header-title h1 {
-  font-size: 2rem;
-  font-weight: 700;
-  background: linear-gradient(135deg, #0ea5e9, #3b82f6);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.status-badges {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  border-radius: var(--radius-md);
-  font-size: 0.875rem;
-  font-weight: 500;
-  border: 1px solid;
-}
-
-.badge.success {
-  background: rgba(16, 185, 129, 0.1);
-  border-color: rgba(16, 185, 129, 0.3);
-  color: #10b981;
-}
-
-.badge.danger {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.3);
-  color: #ef4444;
-}
-
-.badge.info {
-  background: rgba(14, 165, 233, 0.1);
-  border-color: rgba(14, 165, 233, 0.3);
-  color: #0ea5e9;
-}
-
-.badge.threat-shahed {
-  background: rgba(147, 51, 234, 0.1);
-  border-color: rgba(147, 51, 234, 0.3);
-  color: #9333ea;
-}
-
-.badge.threat-raketa {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.3);
-  color: #ef4444;
-}
-
-.badge.threat-artillery, .badge.threat-obstril, .badge.threat-rszv {
-  background: rgba(251, 146, 60, 0.1);
-  border-color: rgba(251, 146, 60, 0.3);
-  color: #fb923c;
-}
-
-.badge.threat-vibuh {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.3);
-  color: #ef4444;
-}
-
-.badge.threat-avia {
-  background: rgba(99, 102, 241, 0.1);
-  border-color: rgba(99, 102, 241, 0.3);
-  color: #6366f1;
-}
-
-.auth-form {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.input {
-  background: rgba(15, 23, 42, 0.8);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-md);
-  padding: 0.75rem 1rem;
-  color: var(--text-primary);
-  font-size: 0.875rem;
-  transition: all 0.2s;
-}
-
-.input:focus {
-  outline: none;
-  border-color: var(--bg-accent);
-  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
-}
-
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem 1.5rem;
-  border: none;
-  border-radius: var(--radius-md);
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  text-decoration: none;
-}
-
-.btn-primary {
-  background: var(--bg-accent);
-  color: white;
-}
-
-.btn-primary:hover {
-  background: #0284c7;
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
-}
-
-.btn-success {
-  background: var(--bg-success);
-  color: white;
-}
-
-.btn-success:hover {
-  background: #059669;
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
-}
-
-.btn-secondary {
-  background: rgba(51, 65, 85, 0.8);
-  color: var(--text-primary);
-  border: 1px solid var(--border-primary);
-}
-
-.btn-secondary:hover {
-  background: rgba(51, 65, 85, 1);
-  border-color: var(--bg-accent);
-  transform: translateY(-1px);
-}
-
-.btn-warning {
-  background: #f59e0b;
-  color: white;
-}
-
-.btn-warning:hover {
-  background: #d97706;
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
-}
-
-.btn-info {
-  background: #0ea5e9;
-  color: white;
-}
-
-.btn-info:hover {
-  background: #0284c7;
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
-}
-
-.btn-purple {
-  background: #8b5cf6;
-  color: white;
-}
-
-.btn-purple:hover {
-  background: #7c3aed;
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
-}
-
-.btn-danger {
-  background: var(--bg-danger);
-  color: white;
-}
-
-.btn-danger:hover {
-  background: #dc2626;
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
-}
-
-.btn-sm {
-  padding: 0.5rem 1rem;
-  font-size: 0.8rem;
-}
-
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  transform: none !important;
-}
-
-
-.btn-success:hover {
-  background: #059669;
-  transform: translateY(-1px);
-}
-
-.btn-danger {
-  background: var(--bg-danger);
-  color: white;
-}
-
-.btn-danger:hover {
-  background: #dc2626;
-  transform: translateY(-1px);
-}
-
-.btn-secondary {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  border: 1px solid var(--border-primary);
-}
-
-.btn-secondary:hover {
-  background: var(--bg-tertiary);
-  transform: translateY(-1px);
-}
-
-.btn-sm {
-  padding: 0.5rem 1rem;
-  font-size: 0.8rem;
-}
-
-.grid {
-  display: grid;
-  gap: 2rem;
-}
-
-.grid-2 {
-  grid-template-columns: repeat(auto-fit, minmax(600px, 1fr));
-}
-
-.grid-3 {
-  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-}
-
-.card {
-  background: rgba(30, 41, 59, 0.6);
-  backdrop-filter: blur(8px);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  box-shadow: var(--shadow-md);
-  transition: all 0.3s;
-}
-
-.card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-xl);
-  border-color: var(--border-secondary);
-}
-
-.card-header {
-  background: rgba(51, 65, 85, 0.3);
-  padding: 1.5rem 2rem;
-  border-bottom: 1px solid var(--border-primary);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 1rem;
-}
-
-.card-title {
-  font-size: 1.25rem;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.card-body {
-  padding: 2rem;
-}
-
-.card-body.compact {
-  padding: 1rem;
-}
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1rem;
-  margin-bottom: 2rem;
-}
-
-.stat-card {
-  background: rgba(15, 23, 42, 0.8);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-lg);
-  padding: 1.5rem;
-  text-align: center;
-  transition: all 0.2s;
-}
-
-.stat-card:hover {
-  transform: translateY(-2px);
-  border-color: var(--bg-accent);
-}
-
-.stat-value {
-  font-size: 2rem;
-  font-weight: 700;
-  color: var(--bg-accent);
-  margin-bottom: 0.5rem;
-}
-
-.stat-label {
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-  font-weight: 500;
-}
-
-.table-container {
-  overflow: hidden;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-primary);
-}
-
-.table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.875rem;
-}
-
-.table th {
-  background: rgba(51, 65, 85, 0.5);
-  padding: 1rem;
-  text-align: left;
-  font-weight: 600;
-  color: var(--text-primary);
-  border-bottom: 1px solid var(--border-primary);
-}
-
-.table td {
-  padding: 1rem;
-  border-bottom: 1px solid rgba(51, 65, 85, 0.3);
-  color: var(--text-secondary);
-}
-
-.table tbody tr {
-  transition: all 0.2s;
-}
-
-.table tbody tr:hover {
-  background: rgba(51, 65, 85, 0.2);
-}
-
-.debug-console {
-  background: rgba(15, 23, 42, 0.95);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-lg);
-  max-height: 500px;
-  overflow-y: auto;
-  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', monospace;
-  font-size: 0.8rem;
-  line-height: 1.4;
-}
-
-.debug-entry {
-  padding: 0.75rem 1.5rem;
-  border-bottom: 1px solid rgba(51, 65, 85, 0.2);
-  display: flex;
-  gap: 1rem;
-  align-items: flex-start;
-}
-
-.debug-entry:last-child {
-  border-bottom: none;
-}
-
-.debug-timestamp {
-  color: var(--text-muted);
-  font-size: 0.75rem;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.debug-category {
-  background: rgba(14, 165, 233, 0.2);
-  color: #0ea5e9;
-  padding: 0.25rem 0.5rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.7rem;
-  font-weight: 600;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.debug-message {
-  color: var(--text-primary);
-  flex: 1;
-  word-break: break-word;
-}
-
-.empty-state {
-  text-align: center;
-  padding: 3rem 2rem;
-  color: var(--text-muted);
-}
-
-.empty-state-icon {
-  font-size: 3rem;
-  margin-bottom: 1rem;
-  opacity: 0.5;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.form-label {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1rem;
-  align-items: end;
-}
-
-.icon {
-  width: 1.25rem;
-  height: 1.25rem;
-  display: inline-block;
-}
-
-.status-indicator {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  display: inline-block;
-  margin-right: 0.5rem;
-}
-
-.status-online {
-  background: var(--bg-success);
-  box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
-}
-
-.status-offline {
-  background: var(--text-muted);
-}
-
-.truncate {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 300px;
-}
-
-.message-text {
-  position: relative;
-}
-
-.message-preview {
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.message-preview:hover {
-  background: rgba(51, 65, 85, 0.2);
-  border-radius: var(--radius-sm);
-  padding: 0.25rem;
-  margin: -0.25rem;
-}
-
-.truncated {
-  color: var(--text-secondary);
-  line-height: 1.4;
-}
-
-.full-message {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  z-index: 1000;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
-  padding: 1rem;
-  margin-top: 0.5rem;
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-.message-full {
-  color: var(--text-primary);
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-/* Responsive design improvements */
-@media (min-width: 1200px) {
-  /* On very large screens, allow some sections to be side by side */
-  .tools-section {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 2rem;
-    align-items: start;
-  }
-}
-
-@media (max-width: 768px) {
-  .container {
-    padding: 1rem;
-  }
-  
-  .header-content {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  
-  .stats-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 1rem;
-  }
-  
-  .form-grid {
-    grid-template-columns: 1fr;
-  }
-  
-  .table-container {
-    overflow-x: auto;
-  }
-  
-  .card-header {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 1rem;
-  }
-  
-  .card-title {
-    font-size: 1.1rem;
-  }
-  
-  .stat-card {
-    padding: 1rem;
-  }
-  
-  .stat-value {
-    font-size: 1.5rem;
-  }
-}
-
-.fade-in {
-  animation: fadeIn 0.5s ease-in;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.pulse {
-  animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-/* Map Styles */
-#adminMap {
-  height: 500px;
-  width: 100%;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-primary);
-  transition: all 0.3s ease;
-}
-
-/* Fullscreen Map Styles */
-.map-fullscreen {
-  position: fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  width: 100vw !important;
-  height: 100vh !important;
-  z-index: 9999 !important;
-  border-radius: 0 !important;
-  border: none !important;
-  background: #1a202c !important;
-}
-
-.fullscreen-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0, 0, 0, 0.95);
-  backdrop-filter: blur(10px);
-  z-index: 9998;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.fullscreen-controls {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  z-index: 10000;
-  display: flex;
-  gap: 10px;
-}
-
-.fullscreen-controls button {
-  background: rgba(30, 41, 59, 0.9);
-  border: 1px solid var(--border-primary);
-  color: white;
-  padding: 8px 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  backdrop-filter: blur(10px);
-  transition: all 0.2s;
-}
-
-.fullscreen-controls button:hover {
-  background: rgba(51, 65, 85, 0.9);
-  transform: translateY(-1px);
-}
-
-#adminMap.loading {
-  background: linear-gradient(45deg, #0ea5e9, #3b82f6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-weight: bold;
-}
-
-#adminMap.loading::before {
-  content: "📍 Загрузка карты...";
-  animation: pulse 2s infinite;
-}
-
-.map-toolbar {
-  display: flex;
-  gap: 0.75rem;
-  margin-top: 1rem;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.map-stats {
-  background: rgba(15, 23, 42, 0.8);
-  padding: 0.5rem 1rem;
-  border-radius: var(--radius-md);
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  border: 1px solid var(--border-primary);
-}
-
-.admin-marker-wrap {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
-}
-
-.admin-marker-wrap svg {
-  width: 100%;
-  height: 100%;
-}
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0e1a;--card:#141b2d;--border:#1e2942;--blue:#3b82f6;--purple:#8b5cf6;--green:#10b981;--red:#ef4444;--yellow:#f59e0b;--text:#f1f5f9;--muted:#64748b}
+body{font-family:'Inter',system-ui,sans-serif;background:linear-gradient(135deg,#0a0e1a,#1a1f35);color:var(--text);min-height:100vh;line-height:1.6}
+.container{max-width:1600px;margin:0 auto;padding:1.5rem}
+.header{background:linear-gradient(135deg,rgba(59,130,246,0.1),rgba(139,92,246,0.1));backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:1rem;padding:1.5rem 2rem;margin-bottom:2rem;box-shadow:0 8px 32px rgba(0,0,0,0.4)}
+.header-content{display:flex;align-items:center;justify-content:space-between;gap:1.5rem;flex-wrap:wrap}
+.header-title h1{font-size:2rem;font-weight:800;background:linear-gradient(135deg,var(--blue),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:-0.5px}
+.status-badges{display:flex;gap:0.75rem;flex-wrap:wrap}
+.badge{display:inline-flex;align-items:center;gap:0.5rem;padding:0.5rem 1rem;border-radius:0.5rem;font-size:0.875rem;font-weight:600;border:1px solid}
+.badge.success{background:rgba(16,185,129,0.2);border-color:rgba(16,185,129,0.5);color:#10b981}
+.badge.danger{background:rgba(239,68,68,0.2);border-color:rgba(239,68,68,0.5);color:#ef4444}
+.badge.info{background:rgba(59,130,246,0.2);border-color:rgba(59,130,246,0.5);color:#3b82f6}
+.badge.warning{background:rgba(245,158,11,0.2);border-color:rgba(245,158,11,0.5);color:#f59e0b}
+.status-dot{width:8px;height:8px;border-radius:50%;animation:pulse 2s infinite}
+.status-dot.online{background:#10b981;box-shadow:0 0 12px rgba(16,185,129,0.8)}
+.status-dot.offline{background:var(--muted)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+.btn{display:inline-flex;align-items:center;gap:0.5rem;padding:0.75rem 1.25rem;border:none;border-radius:0.5rem;font-size:0.875rem;font-weight:600;cursor:pointer;transition:all 0.2s;text-decoration:none;white-space:nowrap}
+.btn:disabled{opacity:0.5;cursor:not-allowed}
+.btn-primary{background:linear-gradient(135deg,var(--blue),#6366f1);color:#fff}
+.btn-primary:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 8px 24px rgba(59,130,246,0.5)}
+.btn-success{background:linear-gradient(135deg,var(--green),#059669);color:#fff}
+.btn-success:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 8px 24px rgba(16,185,129,0.5)}
+.btn-danger{background:linear-gradient(135deg,var(--red),#dc2626);color:#fff}
+.btn-danger:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 8px 24px rgba(239,68,68,0.5)}
+.btn-warning{background:linear-gradient(135deg,var(--yellow),#d97706);color:#fff}
+.btn-secondary{background:var(--card);color:var(--text);border:1px solid var(--border)}
+.btn-secondary:hover:not(:disabled){border-color:var(--blue);transform:translateY(-2px)}
+.btn-sm{padding:0.5rem 0.875rem;font-size:0.8rem}
+.input{background:rgba(10,14,26,0.8);border:1px solid var(--border);border-radius:0.5rem;padding:0.75rem 1rem;color:var(--text);font-size:0.875rem;transition:all 0.2s;width:100%}
+.input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(59,130,246,0.2)}
+textarea.input{resize:vertical;min-height:80px;font-family:inherit}
+.card{background:linear-gradient(135deg,rgba(20,27,45,0.8),rgba(30,41,66,0.6));backdrop-filter:blur(10px);border:1px solid var(--border);border-radius:1rem;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.3);transition:all 0.3s;margin-bottom:2rem}
+.card:hover{transform:translateY(-4px);box-shadow:0 8px 32px rgba(0,0,0,0.5);border-color:rgba(59,130,246,0.3)}
+.card-header{background:rgba(30,41,66,0.5);padding:1.25rem 1.75rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem}
+.card-title{font-size:1.125rem;font-weight:700;display:flex;align-items:center;gap:0.5rem}
+.card-body{padding:1.75rem}
+.card-body.compact{padding:1rem}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1.25rem;margin-bottom:2rem}
+.stat-card{background:linear-gradient(135deg,rgba(20,27,45,0.9),rgba(30,41,66,0.7));border:1px solid var(--border);border-radius:1rem;padding:1.5rem;text-align:center;transition:all 0.3s;position:relative;overflow:hidden}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--blue),var(--purple));opacity:0;transition:opacity 0.3s}
+.stat-card:hover{transform:translateY(-4px);border-color:var(--blue);box-shadow:0 8px 24px rgba(0,0,0,0.4)}
+.stat-card:hover::before{opacity:1}
+.stat-value{font-size:2.5rem;font-weight:800;background:linear-gradient(135deg,var(--blue),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:0.5rem;line-height:1}
+.stat-label{font-size:0.875rem;color:var(--muted);font-weight:500}
+.table-container{overflow-x:auto;border-radius:0.75rem;border:1px solid var(--border)}
+.table{width:100%;border-collapse:collapse;font-size:0.875rem}
+.table th{background:rgba(30,41,66,0.6);padding:1rem;text-align:left;font-weight:700;border-bottom:1px solid var(--border);white-space:nowrap}
+.table td{padding:1rem;border-bottom:1px solid rgba(30,41,66,0.3);color:#cbd5e1}
+.table tbody tr{transition:all 0.2s}
+.table tbody tr:hover{background:rgba(30,41,66,0.4)}
+.table tbody tr:last-child td{border-bottom:none}
+.truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.form-group{display:flex;flex-direction:column;gap:0.5rem}
+.form-label{font-size:0.875rem;font-weight:600;color:#cbd5e1}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1.25rem;align-items:end}
+.debug-console{background:rgba(10,14,26,0.95);border:1px solid var(--border);border-radius:0.75rem;max-height:500px;overflow-y:auto;font-family:Monaco,monospace;font-size:0.8rem}
+.debug-entry{padding:0.75rem 1.25rem;border-bottom:1px solid rgba(30,41,66,0.2);display:flex;gap:1rem;align-items:flex-start}
+.debug-entry:last-child{border-bottom:none}
+.debug-timestamp{color:var(--muted);font-size:0.75rem;flex-shrink:0}
+.debug-category{background:rgba(59,130,246,0.2);color:var(--blue);padding:0.25rem 0.625rem;border-radius:0.375rem;font-size:0.7rem;font-weight:700;flex-shrink:0;text-transform:uppercase;letter-spacing:0.5px}
+.debug-message{color:var(--text);flex:1;word-break:break-word}
+#adminMap{height:600px;width:100%;border-radius:0.75rem;border:1px solid var(--border);transition:all 0.3s}
+.map-toolbar{display:flex;gap:0.75rem;margin-top:1rem;flex-wrap:wrap;align-items:center}
+.map-stats{background:rgba(10,14,26,0.9);padding:0.5rem 1rem;border-radius:0.5rem;font-size:0.8rem;color:#cbd5e1;border:1px solid var(--border);font-weight:600}
+.empty-state{text-align:center;padding:3rem 2rem;color:var(--muted)}
+.empty-state-icon{font-size:3rem;margin-bottom:1rem;opacity:0.5}
+.notification{position:fixed;top:20px;right:20px;padding:1rem 1.5rem;border-radius:0.75rem;color:#fff;font-size:0.9rem;font-weight:600;z-index:10000;max-width:400px;box-shadow:0 8px 32px rgba(0,0,0,0.5);animation:slideIn 0.3s}
+.notification-success{background:linear-gradient(135deg,var(--green),#059669)}
+.notification-error{background:linear-gradient(135deg,var(--red),#dc2626)}
+.notification-warning{background:linear-gradient(135deg,var(--yellow),#d97706)}
+.notification-info{background:linear-gradient(135deg,var(--blue),#6366f1)}
+@keyframes slideIn{from{opacity:0;transform:translateX(100px)}to{opacity:1;transform:translateX(0)}}
+@media(max-width:768px){.container{padding:1rem}.header-content{flex-direction:column;align-items:stretch}.stats-grid{grid-template-columns:repeat(2,1fr)}.form-grid{grid-template-columns:1fr}}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--card);border-radius:5px}
+::-webkit-scrollbar-thumb:hover{background:var(--border)}
 </style>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css'"/>
 </head>
 <body>
-  <div class="container">
-    <!-- Header -->
-    <header class="header fade-in">
-      <div class="header-content">
-        <div class="header-title">
-          <h1>🌊 Neptun Admin</h1>
-        </div>
-        
-        <div class="status-badges">
-          {% if secret %}
-            <span class="badge success">
-              <span class="status-indicator status-online"></span>
-              Authenticated
-            </span>
-          {% else %}
-            <span class="badge danger">
-              <span class="status-indicator status-offline"></span>
-              No Auth
-            </span>
-          {% endif %}
-          
-          <span class="badge info">
-            📅 Today: {{ daily_unique }}
-          </span>
-          
-          <span class="badge info">
-            📊 Week: {{ week_unique }}
-          </span>
-        </div>
-        
-        <form method="get" action="/admin" class="auth-form">
-          <input type="text" name="secret" placeholder="Enter secret key" value="{{ secret }}" class="input" />
-          <button type="submit" class="btn btn-primary">
-            🔐 Authenticate
-          </button>
-        </form>
-      </div>
-    </header>
-    <!-- Main Content -->
-    <main style="display: flex; flex-direction: column; gap: 2rem;">
-      <!-- System Configuration -->
-      <div class="card fade-in">
-        <div class="card-header">
-          <h2 class="card-title">
-            ⚙️ System Configuration
-          </h2>
-        </div>
-        <div class="card-body">
-          <div class="form-grid">
-            <div class="form-group">
-              <label class="form-label">Monitoring Period (minutes)</label>
-              <input type="number" id="monPeriod" value="{{ monitor_period }}" min="1" max="360" class="input" />
-            </div>
-            <div style="display: flex; align-items: end; gap: 0.75rem;">
-              <button type="button" class="btn btn-success" onclick="saveMonPeriod()">
-                💾 Save Changes
-              </button>
-              <span id="monStatus" class="badge info" style="display: none;"></span>
-            </div>
-          </div>
-        </div>
-      </div>
+<div class="container">
+<header class="header">
+<div class="header-content">
+<div class="header-title"><h1>🌊 Neptun Admin Dashboard</h1></div>
+<div class="status-badges">
+{% if secret %}
+<span class="badge success"><span class="status-dot online"></span>Authenticated</span>
+{% else %}
+<span class="badge danger"><span class="status-dot offline"></span>Not Authorized</span>
+{% endif %}
+<span class="badge info">📅 Today: {{ daily_unique }}</span>
+<span class="badge info">📊 Week: {{ week_unique }}</span>
+</div>
+<form method="get" action="/admin" style="display:flex;gap:0.75rem;align-items:center">
+<input type="text" name="secret" placeholder="Secret key..." value="{{ secret }}" class="input" style="min-width:200px;width:auto">
+<button type="submit" class="btn btn-primary btn-sm">🔐 Login</button>
+</form>
+</div>
+</header>
 
-      <!-- Redirect Pages Statistics -->
-      <div class="card fade-in">
-        <div class="card-header">
-          <h2 class="card-title">
-            📱 Telegram Redirect Pages Statistics
-          </h2>
-        </div>
-        <div class="card-body">
-          {% if redirect_stats %}
-          <div class="table-responsive">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>📄 Page</th>
-                  <th>👥 Total Visits</th>
-                  <th>🔗 Unique Visitors</th>
-                  <th>🕒 Last Visit</th>
-                  <th>📊 CTR</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for page_name, stats in redirect_stats.items() | sort(attribute='1.total_visits', reverse=True) %}
-                <tr>
-                  <td>
-                    <span class="badge info">
-                      /{{ page_name }}
-                    </span>
-                  </td>
-                  <td>
-                    <strong>{{ stats.total_visits }}</strong>
-                  </td>
-                  <td>
-                    {{ stats.unique_visitors }}
-                  </td>
-                  <td>
-                    {% if stats.last_visit %}
-                      {{ stats.last_visit[:16].replace('T', ' ') }}
-                    {% else %}
-                      -
-                    {% endif %}
-                  </td>
-                  <td>
-                    {% if stats.total_visits > 0 %}
-                      <span class="badge success">
-                        {{ "%.1f"|format((stats.unique_visitors / stats.total_visits * 100)) }}%
-                      </span>
-                    {% else %}
-                      -
-                    {% endif %}
-                  </td>
-                </tr>
-                {% endfor %}
-              </tbody>
-              <tfoot>
-                <tr style="background: rgba(59, 130, 246, 0.1); font-weight: 600;">
-                  <td>📊 <strong>Total</strong></td>
-                  <td>
-                    <strong>{{ redirect_stats.values() | sum(attribute='total_visits') }}</strong>
-                  </td>
-                  <td>
-                    {{ redirect_stats.values() | sum(attribute='unique_visitors') }}
-                  </td>
-                  <td colspan="2">-</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-          {% else %}
-          <div style="text-align: center; padding: 2rem; color: var(--text-muted);">
-            <p>📊 No redirect page visits yet</p>
-          </div>
-          {% endif %}
-        </div>
-      </div>
-
-      <!-- Redirect Pages Statistics -->
-      <div class="card fade-in">
-        <div class="card-header">
-          <h2 class="card-title">
-            📱 Telegram Redirect Statistics
-          </h2>
-        </div>
-        <div class="card-body">
-          {% if redirect_stats %}
-            <div style="display: flex; flex-direction: column; gap: 1rem;">
-              {% set redirect1_visits = (redirect_stats.get('community', {}).get('total_visits', 0) + 
-                                        redirect_stats.get('telegram', {}).get('total_visits', 0) + 
-                                        redirect_stats.get('join', {}).get('total_visits', 0)) %}
-              {% set redirect1_clicks = redirect_stats.get('redirect1_click', {}).get('total_visits', 0) %}
-              
-              {% set redirect2_visits = (redirect_stats.get('channel', {}).get('total_visits', 0) + 
-                                      redirect_stats.get('group', {}).get('total_visits', 0) + 
-                                      redirect_stats.get('chat', {}).get('total_visits', 0)) %}
-              {% set redirect2_clicks = redirect_stats.get('redirect2_click', {}).get('total_visits', 0) %}
-              
-              {% set redirect3_visits = (redirect_stats.get('news', {}).get('total_visits', 0) + 
-                                   redirect_stats.get('updates', {}).get('total_visits', 0) + 
-                                   redirect_stats.get('alerts', {}).get('total_visits', 0)) %}
-              {% set redirect3_clicks = redirect_stats.get('redirect3_click', {}).get('total_visits', 0) %}
-              
-              <div style="background: rgba(59, 130, 246, 0.1); padding: 1.25rem; border-radius: 0.5rem; border: 1px solid rgba(59, 130, 246, 0.3);">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                  <strong style="color: #3b82f6; font-size: 1.1rem;">redirect (/community, /telegram, /join)</strong>
-                </div>
-                <div style="color: #9ca3af; font-size: 0.9rem;">
-                  📊 Відвідування сторінки: <strong style="color: #fff;">{{ redirect1_visits }}</strong>
-                </div>
-                <div style="color: #9ca3af; font-size: 0.9rem;">
-                  🖱️ Кліки по кнопці: <strong style="color: #10b981;">{{ redirect1_clicks }}</strong>
-                  {% if redirect1_visits > 0 %}
-                    <span style="color: #f59e0b;">({{ "%.1f"|format((redirect1_clicks / redirect1_visits * 100) if redirect1_visits > 0 else 0) }}%)</span>
-                  {% endif %}
-                </div>
-              </div>
-              
-              <div style="background: rgba(16, 185, 129, 0.1); padding: 1.25rem; border-radius: 0.5rem; border: 1px solid rgba(16, 185, 129, 0.3);">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                  <strong style="color: #10b981; font-size: 1.1rem;">redirect2 (/channel, /group, /chat)</strong>
-                </div>
-                <div style="color: #9ca3af; font-size: 0.9rem;">
-                  📊 Відвідування сторінки: <strong style="color: #fff;">{{ redirect2_visits }}</strong>
-                </div>
-                <div style="color: #9ca3af; font-size: 0.9rem;">
-                  🖱️ Кліки по кнопці: <strong style="color: #10b981;">{{ redirect2_clicks }}</strong>
-                  {% if redirect2_visits > 0 %}
-                    <span style="color: #f59e0b;">({{ "%.1f"|format((redirect2_clicks / redirect2_visits * 100) if redirect2_visits > 0 else 0) }}%)</span>
-                  {% endif %}
-                </div>
-              </div>
-              
-              <div style="background: rgba(245, 158, 11, 0.1); padding: 1.25rem; border-radius: 0.5rem; border: 1px solid rgba(245, 158, 11, 0.3);">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                  <strong style="color: #f59e0b; font-size: 1.1rem;">redirect3 (/news, /updates, /alerts)</strong>
-                </div>
-                <div style="color: #9ca3af; font-size: 0.9rem;">
-                  📊 Відвідування сторінки: <strong style="color: #fff;">{{ redirect3_visits }}</strong>
-                </div>
-                <div style="color: #9ca3af; font-size: 0.9rem;">
-                  🖱️ Кліки по кнопці: <strong style="color: #10b981;">{{ redirect3_clicks }}</strong>
-                  {% if redirect3_visits > 0 %}
-                    <span style="color: #f59e0b;">({{ "%.1f"|format((redirect3_clicks / redirect3_visits * 100) if redirect3_visits > 0 else 0) }}%)</span>
-                  {% endif %}
-                </div>
-              </div>
-              
-              <div style="background: rgba(139, 92, 246, 0.1); padding: 1.5rem; border-radius: 0.5rem; border: 2px solid rgba(139, 92, 246, 0.4); margin-top: 0.5rem;">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                  <div>
-                    <div style="color: #9ca3af; font-size: 0.9rem;">� Всього відвідувань:</div>
-                    <div style="color: #fff; font-size: 1.3rem; font-weight: 600;">{{ redirect1_visits + redirect2_visits + redirect3_visits }}</div>
-                  </div>
-                  <div>
-                    <div style="color: #9ca3af; font-size: 0.9rem;">🎯 Всього кліків:</div>
-                    <div style="color: #10b981; font-size: 1.3rem; font-weight: 600;">{{ redirect1_clicks + redirect2_clicks + redirect3_clicks }}</div>
-                  </div>
-                </div>
-                {% set total_visits = redirect1_visits + redirect2_visits + redirect3_visits %}
-                {% set total_clicks = redirect1_clicks + redirect2_clicks + redirect3_clicks %}
-                {% if total_visits > 0 %}
-                <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(139, 92, 246, 0.3);">
-                  <strong style="color: #8b5cf6;">📈 Загальна конверсія:</strong> 
-                  <span style="color: #f59e0b; font-size: 1.2rem; font-weight: 600;">{{ "%.1f"|format((total_clicks / total_visits * 100) if total_visits > 0 else 0) }}%</span>
-                </div>
-                {% endif %}
-              </div>
-            </div>
-          {% else %}
-            <p style="color: var(--text-muted);">Поки що немає відвідувань redirect-сторінок</p>
-          {% endif %}
-        </div>
-      </div>
-
-      <!-- Live Map -->
-      <div class="card fade-in">
-        <div class="card-header">
-          <h2 class="card-title">
-            🗺️ Live Operations Map
-          </h2>
-          <div class="map-toolbar">
-            <button type="button" class="btn btn-secondary btn-sm" onclick="reloadAdminMarkers()">
-              🔄 Refresh
-            </button>
-            <button type="button" class="btn btn-success btn-sm" onclick="toggleAutoAdmin()" id="autoBtn">
-              🔁 Auto: ON
-            </button>
-            <button type="button" class="btn btn-info btn-sm" onclick="debugAdminMap()">
-              🔍 Debug
-            </button>
-            <button type="button" class="btn btn-warning btn-sm" onclick="reinitAdminMap()">
-              🔧 Reinit
-            </button>
-            <button type="button" class="btn btn-success btn-sm" onclick="testJS()">
-              🧪 Test JS
-            </button>
-            <button type="button" class="btn btn-primary btn-sm" onclick="forceReloadLeaflet()">
-              🔄 Reload Leaflet
-            </button>
-            <button type="button" class="btn btn-warning btn-sm" onclick="toggleAPIAlerts()" id="apiAlertsBtn">
-              🇺🇦 API: OFF
-            </button>
-            <button type="button" class="btn btn-info btn-sm" onclick="testAPIConnection()">
-              🔗 Test API
-            </button>
-            <button type="button" class="btn btn-purple btn-sm" onclick="toggleFullscreenMap()" id="fullscreenBtn">
-              🔲 Fullscreen
-            </button>
-            <button type="button" class="btn btn-danger btn-sm" onclick="forceReloadAllUsers()" title="Примусово перезавантажити сторінку у всіх користувачів">
-              💥 Force Reload Users
-            </button>
-          </div>
-        </div>
-        <div class="card-body compact">
-          <div id="adminMap"></div>
-          <div class="map-toolbar">
-            <span class="map-stats" id="adminMapStats">—</span>
-            <span class="map-stats">💡 Right click marker → Hide</span>
-          </div>
-        </div>
-      </div>
-    </main>
-
-    <!-- Statistics Overview -->
-    <div class="stats-grid fade-in" style="margin-top: 2rem;">
-      <div class="stat-card">
-        <div class="stat-value">{{ visitors|length }}</div>
-        <div class="stat-label">👥 Active Users</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value">{{ blocked|length }}</div>
-        <div class="stat-label">🚫 Blocked IPs</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value">{{ raw_count }}</div>
-        <div class="stat-label">⏳ Pending Geo</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value">{{ markers|length }}</div>
-        <div class="stat-label">📍 Recent Markers</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value">{{ debug_logs|length }}</div>
-        <div class="stat-label">🐛 Debug Entries</div>
-      </div>
-    </div>
-
-    <!-- Data Tables Grid -->
-    <div class="fade-in" style="margin-top: 2rem; display: flex; flex-direction: column; gap: 2rem;">
-      <!-- Active Visitors -->
-      <div class="card">
-        <div class="card-header">
-          <h2 class="card-title">
-            👥 Active Visitors
-            <span class="badge info">{{ visitors|length }}</span>
-          </h2>
-        </div>
-        <div class="card-body compact">
-          {% if visitors %}
-            <div class="table-container">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>Session ID</th>
-                    <th>IP Address</th>
-                    <th>Device</th>
-                    <th>Duration</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for v in visitors %}
-                  <tr>
-                    <td class="truncate" title="{{ v.id }}">{{ v.id[:12] }}...</td>
-                    <td>{{ v.ip }}</td>
-                    <td class="truncate" title="{{ v.ua }}">{{ v.ua_short }}</td>
-                    <td>
-                      <span class="badge info">{{ v.age_fmt }}</span>
-                    </td>
-                    <td>
-                      <button class="btn btn-danger btn-sm" onclick="blockId('{{ v.id }}')">
-                        🚫 Block
-                      </button>
-                    </td>
-                  </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-          {% else %}
-            <div class="empty-state">
-              <div class="empty-state-icon">👤</div>
-              <p>No active visitors</p>
-            </div>
-          {% endif %}
-        </div>
-      </div>
-
-      <!-- Blocked Users -->
-      <div class="card">
-        <div class="card-header">
-          <h2 class="card-title">
-            🚫 Blocked Users
-            <span class="badge danger">{{ blocked|length }}</span>
-          </h2>
-        </div>
-        <div class="card-body compact">
-          {% if blocked %}
-            <div class="table-container">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>Blocked ID</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for b in blocked %}
-                  <tr>
-                    <td class="truncate" title="{{ b }}">{{ b[:20] }}...</td>
-                    <td>
-                      <button class="btn btn-success btn-sm" onclick="unblockId('{{ b }}')">
-                        ✅ Unblock
-                      </button>
-                    </td>
-                  </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-          {% else %}
-            <div class="empty-state">
-              <div class="empty-state-icon">🔓</div>
-              <p>No blocked users</p>
-            </div>
-          {% endif %}
-        </div>
-      </div>
-
-      <!-- Debug Information -->
-      <div class="card">
-        <div class="card-header">
-          <h2 class="card-title">
-            🐛 Debug Console
-            <span class="badge info">{{ debug_logs|length }}</span>
-          </h2>
-          <button type="button" class="btn btn-danger btn-sm" onclick="clearDebugLogs()">
-            🗑️ Clear Logs
-          </button>
-        </div>
-        <div class="card-body compact">
-          {% if debug_logs %}
-            <div class="debug-console">
-              {% for log in debug_logs %}
-                <div class="debug-entry">
-                  <span class="debug-timestamp">{{ log.timestamp[-8:] }}</span>
-                  <span class="debug-category">{{ log.category }}</span>
-                  <span class="debug-message">{{ log.message }}</span>
-                </div>
-              {% endfor %}
-            </div>
-          {% else %}
-            <div class="empty-state">
-              <div class="empty-state-icon">📝</div>
-              <p>No debug logs available</p>
-            </div>
-          {% endif %}
-        </div>
-      </div>
-    </div>
-    <!-- Data Management Grid -->
-    <div class="fade-in" style="margin-top: 2rem; display: flex; flex-direction: column; gap: 2rem;">
-      <!-- Raw Messages -->
-      <div class="card">
-        <div class="card-header">
-          <h2 class="card-title">
-            📨 Raw Messages (Pending Geo)
-            <span class="badge warning" id="raw-header-count">{{ raw_count }}</span>
-          </h2>
-        </div>
-        <div class="card-body compact">
-          {% if raw_msgs %}
-            <div class="table-container">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>Time</th>
-                    <th>Channel</th>
-                    <th>Message Content</th>
-                  </tr>
-                </thead>
-                <tbody id="raw-tbody">
-                  {% for r in raw_msgs %}
-                  <tr>
-                    <td style="white-space:nowrap; font-size: 0.8rem;">{{ r.date }}</td>
-                    <td style="white-space:nowrap;">
-                      <span class="badge info">{{ r.channel }}</span>
-                    </td>
-                    <td class="truncate" style="max-width: 400px;" title="{{ r.text }}">{{ r.text }}</td>
-                  </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-          {% else %}
-            <div class="empty-state">
-              <div class="empty-state-icon">📬</div>
-              <p>No pending messages</p>
-            </div>
-          {% endif %}
-        </div>
-      </div>
-
-      <!-- Recent Markers -->
-      <div class="card">
-        <div class="card-header">
-          <h2 class="card-title">
-            📍 Recent Markers
-            <span class="badge success">{{ markers|length }}</span>
-          </h2>
-        </div>
-        <div class="card-body compact">
-          {% if markers %}
-            <div class="table-container">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>Time</th>
-                    <th>Type</th>
-                    <th>Location</th>
-                    <th>Original Message</th>
-                    <th>Channel</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for m in markers %}
-                  <tr>
-                    <td style="white-space:nowrap; font-size: 0.8rem;">{{ m.date }}</td>
-                    <td>
-                      <span class="badge threat-{{ m.threat_type }}">
-                        {% if m.threat_type == 'shahed' %}🛸
-                        {% elif m.threat_type == 'raketa' %}🚀
-                        {% elif m.threat_type == 'artillery' %}💥
-                        {% elif m.threat_type == 'obstril' %}🎯
-                        {% elif m.threat_type == 'vibuh' %}💥
-                        {% elif m.threat_type == 'avia' %}✈️
-                        {% elif m.threat_type == 'rszv' %}🎯
-                        {% else %}⚠️
-                        {% endif %}
-                        {{ m.threat_type }}
-                      </span>
-                    </td>
-                    <td style="white-space:nowrap; font-weight: 500;">{{ m.place }}</td>
-                    <td class="message-text" style="max-width: 500px;">
-                      <div class="message-preview" onclick="toggleMessage(this)">
-                        <span class="truncated" title="{{ m.text }}">{{ (m.text or 'No text')[:150] }}{% if (m.text|length or 0) > 150 %}...{% endif %}</span>
-                        {% if (m.text|length or 0) > 150 %}
-                        <div class="full-message" style="display: none;">
-                          <div class="message-full">{{ m.text or 'No text' }}</div>
-                        </div>
-                        {% endif %}
-                      </div>
-                    </td>
-                    <td style="white-space:nowrap; font-size: 0.8rem;">{{ m.channel or m.source or 'Unknown' }}</td>
-                    <td>
-                      <button class="btn btn-danger btn-sm" 
-                        data-lat="{{ m.lat }}" 
-                        data-lng="{{ m.lng }}" 
-                        data-text="{{ (m.text or '')|e }}" 
-                        data-source="{{ (m.channel or m.source)|e }}"
-                        onclick="hideMarker(this.dataset.lat,this.dataset.lng,this.dataset.text,this.dataset.source)">
-                        👁️ Hide
-                      </button>
-                    </td>
-                  </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-          {% else %}
-            <div class="empty-state">
-              <div class="empty-state-icon">📌</div>
-              <p>No recent markers</p>
-            </div>
-          {% endif %}
-        </div>
-      </div>
-    </div>
-
-    <!-- Tools and Forms -->
-    <div class="fade-in tools-section" style="margin-top: 2rem; display: flex; flex-direction: column; gap: 2rem;">
-      <!-- Manual Marker Tool -->
-      <div class="card">
-        <div class="card-header">
-          <h2 class="card-title">
-            📌 Add Manual Marker
-          </h2>
-        </div>
-        <div class="card-body">
-          <form onsubmit="return addManualMarker(event)" class="form-grid">
-            <div class="form-group">
-              <label class="form-label">Latitude</label>
-              <input type="text" required id="mmLat" placeholder="48.45" class="input" />
-            </div>
-            <div class="form-group">
-              <label class="form-label">Longitude</label>
-              <input type="text" required id="mmLng" placeholder="31.12" class="input" />
-            </div>
-            <div class="form-group">
-              <label class="form-label">Location Name</label>
-              <input type="text" id="mmPlace" placeholder="Київ" class="input" />
-            </div>
-            <div class="form-group">
-              <label class="form-label">Threat Type</label>
-              <select id="mmType" class="input">
-                <option value="shahed">Shahed</option>
-                <option value="raketa">Rocket</option>
-                <option value="rszv">Artillery</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Icon Filename</label>
-              <input type="text" id="mmIcon" placeholder="shahed.png" class="input" />
-            </div>
-            <div class="form-group">
-              <label class="form-label">Description</label>
-              <textarea id="mmText" placeholder="Threat description..." class="input" rows="2"></textarea>
-            </div>
-            <div style="grid-column: 1 / -1; display: flex; gap: 1rem; align-items: center;">
-              <button type="submit" class="btn btn-primary">
-                ➕ Add Marker
-              </button>
-              <button type="button" class="btn btn-secondary" onclick="togglePickMap()">
-                🗺️ Pick on Map
-              </button>
-              <span id="mmStatus" class="badge info" style="display: none;"></span>
-            </div>
-          </form>
-          
-          <div id="pickMap" style="height: 300px; margin-top: 1rem; border-radius: var(--radius-lg); overflow: hidden; display: none;"></div>
-          <div class="pick-hint" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem; display: none;" id="pickHint">
-            💡 Click on the map to select coordinates
-          </div>
-        </div>
-      </div>
-
-      <!-- Cache Management -->
-      <div class="card">
-        <div class="card-header">
-          <h2 class="card-title">
-            🗃️ Cache Management
-          </h2>
-        </div>
-        <div class="card-body">
-          {% if neg_geocode %}
-            <div style="margin-bottom: 1.5rem;">
-              <h3 style="font-size: 1rem; margin-bottom: 1rem; color: var(--text-secondary);">
-                🚫 Negative Geocode Cache ({{ neg_geocode|length }})
-              </h3>
-              <div class="table-container" style="max-height: 300px; overflow-y: auto;">
-                <table class="table">
-                  <thead>
-                    <tr>
-                      <th>City Name</th>
-                      <th>Region</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% for name, region in neg_geocode %}
-                    <tr>
-                      <td>{{ name }}</td>
-                      <td>{{ region or "—" }}</td>
-                      <td>
-                        <button class="btn btn-danger btn-sm" onclick="delNeg('{{ name }}')">
-                          🗑️ Delete
-                        </button>
-                      </td>
-                    </tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
-              </div>
-              <div style="margin-top: 1rem;">
-                <button class="btn btn-danger" onclick="clearNegCache()">
-                  🗑️ Clear All Cache
-                </button>
-              </div>
-            </div>
-          {% else %}
-            <div class="empty-state">
-              <div class="empty-state-icon">🗂️</div>
-              <p>Negative geocode cache is empty</p>
-            </div>
-          {% endif %}
-        </div>
-      </div>
-    </div>
-
-    {% if hidden_markers %}
-    <!-- Hidden Markers -->
-    <div class="card fade-in" style="margin-top: 2rem;">
-      <div class="card-header">
-        <h2 class="card-title">
-          👁️‍🗨️ Hidden Markers
-          <span class="badge warning">{{ hidden_markers|length }}</span>
-        </h2>
-        <button class="btn btn-success btn-sm" onclick="bulkUnhide()">
-          👁️ Unhide All
-        </button>
-      </div>
-      <div class="card-body compact">
-        <div class="table-container">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>Coordinates</th>
-                <th>Text</th>
-                <th>Source</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for h in hidden_markers %}
-              <tr>
-                <td style="white-space: nowrap;">{{ h.lat }}, {{ h.lng }}</td>
-                <td class="truncate" style="max-width: 300px;">{{ h.text }}</td>
-                <td>{{ h.source }}</td>
-                <td>
-                  <button class="btn btn-success btn-sm" onclick="unhideKey('{{ h.key }}')">
-                    👁️ Unhide
-                  </button>
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-    {% endif %}
-  </div>
-      <label style="display:flex;flex-direction:column;font-size:.65rem;gap:4px;">
-        <span>Type</span>
-        <select id="mmType">
-          <option value="shahed">shahed</option>
-          <option value="raketa">raketa</option>
-          <option value="avia">avia</option>
-          <option value="pvo">pvo</option>
-          <option value="vibuh">vibuh</option>
-          <option value="mlrs">mlrs</option>
-          <option value="artillery">artillery</option>
-          <option value="obstril">obstril</option>
-          <option value="fpv">fpv</option>
-          <option value="pusk">pusk</option>
-          <option value="manual" selected>manual</option>
-        </select>
-      </label>
-      <label style="display:flex;flex-direction:column;font-size:.65rem;gap:4px;">
-        <span>Icon (optional)</span>
-        <input type="text" id="mmIcon" placeholder="custom.png" />
-      </label>
-      <label style="display:flex;flex-direction:column;font-size:.65rem;gap:4px;grid-column:1 / -1;">
-        <span>Text</span>
-        <textarea id="mmText" required placeholder="Опис події" style="min-height:60px;background:#0f1d33;border:1px solid #1e2f43;color:#fff;padding:6px 8px;border-radius:5px;font-family:inherit;font-size:.7rem;"></textarea>
-      </label>
-      <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;grid-column:1 / -1;">
-        <button type="submit" class="ok">Створити</button>
-        <span id="mmStatus" style="font-size:.65rem;opacity:.8;"></span>
-      </div>
-    </form>
-        </div>
-      </div>
-
-  <!-- Advanced Tools -->
-  <div class="card fade-in" style="margin-top: 2rem;">
-    <div class="card-header">
-      <h2 class="card-title">
-        🛠️ Advanced Tools
-      </h2>
-    </div>
-    <div class="card-body">
-      <div class="form-grid">
-        <!-- System Statistics -->
-        <div class="form-group">
-          <label class="form-label">System Statistics</label>
-          <button type="button" class="btn btn-info" onclick="loadSystemStats()">
-            📊 Load Stats
-          </button>
-        </div>
-        
-        <!-- Data Cleanup -->
-        <div class="form-group">
-          <label class="form-label">Data Cleanup (Keep Days)</label>
-          <div style="display: flex; gap: 0.5rem; align-items: center;">
-            <input type="number" id="cleanupDays" value="7" min="1" max="30" class="input" style="width: 80px;" />
-            <button type="button" class="btn btn-warning" onclick="performCleanup()">
-              🧹 Clean Old Data
-            </button>
-          </div>
-        </div>
-        
-        <!-- Export Data -->
-        <div class="form-group">
-          <label class="form-label">Export Data</label>
-          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-            <button type="button" class="btn btn-secondary" onclick="exportData('messages')">
-              📝 Export Messages
-            </button>
-            <button type="button" class="btn btn-secondary" onclick="exportData('stats')">
-              📈 Export Stats
-            </button>
-          </div>
-        </div>
-        
-        <!-- Status Display -->
-        <div style="grid-column: 1 / -1;">
-          <div id="advancedStatus" class="debug-console" style="max-height: 200px; display: none;">
-            <div class="debug-entry">
-              <span class="debug-message" id="advancedStatusText">Ready...</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
+<div class="stats-grid">
+<div class="stat-card">
+<div class="stat-value" id="statActive">{{ visitors|length }}</div>
+<div class="stat-label">👥 Active Users</div>
+</div>
+<div class="stat-card">
+<div class="stat-value" id="statBlocked">{{ blocked|length }}</div>
+<div class="stat-label">🚫 Blocked</div>
+</div>
+<div class="stat-card">
+<div class="stat-value" id="statPending">{{ raw_count }}</div>
+<div class="stat-label">⏳ Pending Geo</div>
+</div>
+<div class="stat-card">
+<div class="stat-value" id="statMarkers">{{ markers|length }}</div>
+<div class="stat-label">📍 Markers</div>
+</div>
+<div class="stat-card">
+<div class="stat-value" id="statDebug">{{ debug_logs|length }}</div>
+<div class="stat-label">🐛 Debug Logs</div>
+</div>
 </div>
 
+<div class="card">
+<div class="card-header">
+<h2 class="card-title">⚙️ System Configuration</h2>
+</div>
+<div class="card-body">
+<div class="form-grid">
+<div class="form-group">
+<label class="form-label">Monitor Period (minutes)</label>
+<input type="number" id="monPeriod" value="{{ monitor_period }}" min="1" max="360" class="input">
+</div>
+<div style="display:flex;align-items:flex-end;gap:0.75rem">
+<button class="btn btn-success" onclick="saveMonPeriod()">💾 Save Changes</button>
+<span id="monStatus" class="badge info" style="display:none"></span>
+</div>
+</div>
+</div>
+</div>
+
+<div class="card">
+<div class="card-header">
+<h2 class="card-title">🗺️ Live Operations Map</h2>
+<div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+<button class="btn btn-secondary btn-sm" onclick="reloadMarkers()">🔄 Refresh</button>
+<button class="btn btn-success btn-sm" onclick="toggleAuto()" id="autoBtn">🔁 Auto: ON</button>
+<button class="btn btn-danger btn-sm" onclick="forceReload()">💥 Force Reload Users</button>
+</div>
+</div>
+<div class="card-body compact">
+<div id="adminMap"></div>
+<div class="map-toolbar">
+<span class="map-stats" id="mapStats">Loading map...</span>
+</div>
+</div>
+</div>
+
+<div class="card">
+<div class="card-header">
+<h2 class="card-title">👥 Active Visitors <span class="badge info">{{ visitors|length }}</span></h2>
+</div>
+<div class="card-body compact">
+{% if visitors %}
+<div class="table-container">
+<table class="table">
+<thead>
+<tr>
+<th>Session ID</th>
+<th>IP Address</th>
+<th>Device</th>
+<th>Duration</th>
+<th>Last Seen</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+{% for v in visitors %}
+<tr>
+<td class="truncate" style="max-width:150px" title="{{ v.id }}">{{ v.id[:16] }}...</td>
+<td>{{ v.ip or 'N/A' }}</td>
+<td class="truncate" style="max-width:200px" title="{{ v.ua }}">{{ v.ua_short }}</td>
+<td><span class="badge info">{{ v.age_fmt }}</span></td>
+<td><span class="badge warning">{{ v.last_seen }}</span></td>
+<td><button class="btn btn-danger btn-sm" onclick="blockUser('{{ v.id }}')">🚫 Block</button></td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% else %}
+<div class="empty-state">
+<div class="empty-state-icon">👤</div>
+<p>No active visitors</p>
+</div>
+{% endif %}
+</div>
+</div>
+
+<div class="card">
+<div class="card-header">
+<h2 class="card-title">🚫 Blocked Users <span class="badge danger">{{ blocked|length }}</span></h2>
+</div>
+<div class="card-body compact">
+{% if blocked %}
+<div class="table-container">
+<table class="table">
+<thead>
+<tr>
+<th>Blocked ID</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+{% for b in blocked %}
+<tr>
+<td class="truncate" style="max-width:400px" title="{{ b }}">{{ b[:30] }}...</td>
+<td><button class="btn btn-success btn-sm" onclick="unblockUser('{{ b }}')">✅ Unblock</button></td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% else %}
+<div class="empty-state">
+<div class="empty-state-icon">🔓</div>
+<p>No blocked users</p>
+</div>
+{% endif %}
+</div>
+</div>
+
+<div class="card">
+<div class="card-header">
+<h2 class="card-title">📨 Raw Messages (Pending Geo) <span class="badge warning" id="rawCount">{{ raw_count }}</span></h2>
+</div>
+<div class="card-body compact">
+{% if raw_msgs %}
+<div class="table-container">
+<table class="table">
+<thead>
+<tr>
+<th>Time</th>
+<th>Channel</th>
+<th>Message</th>
+</tr>
+</thead>
+<tbody id="rawTable">
+{% for r in raw_msgs %}
+<tr>
+<td style="white-space:nowrap;font-size:0.8rem">{{ r.date }}</td>
+<td><span class="badge info">{{ r.channel }}</span></td>
+<td class="truncate" style="max-width:500px" title="{{ r.text }}">{{ r.text }}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% else %}
+<div class="empty-state">
+<div class="empty-state-icon">📬</div>
+<p>No pending messages</p>
+</div>
+{% endif %}
+</div>
+</div>
+
+<div class="card">
+<div class="card-header">
+<h2 class="card-title">📍 Recent Markers <span class="badge success">{{ markers|length }}</span></h2>
+</div>
+<div class="card-body compact">
+{% if markers %}
+<div class="table-container">
+<table class="table">
+<thead>
+<tr>
+<th>Time</th>
+<th>Type</th>
+<th>Location</th>
+<th>Message</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+{% for m in markers %}
+<tr>
+<td style="white-space:nowrap;font-size:0.8rem">{{ m.date }}</td>
+<td><span class="badge {% if m.threat_type=='shahed' %}info{% elif m.threat_type=='raketa' %}danger{% else %}warning{% endif %}">{{ m.threat_type }}</span></td>
+<td style="font-weight:600">{{ m.place }}</td>
+<td class="truncate" style="max-width:400px" title="{{ m.text }}">{{ (m.text or '')[:100] }}{% if (m.text|length or 0)>100 %}...{% endif %}</td>
+<td><button class="btn btn-danger btn-sm" onclick="hideMarker({{ m.lat }},{{ m.lng }},'{{ (m.text or '')|e }}','{{ (m.channel or m.source)|e }}')">👁️ Hide</button></td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% else %}
+<div class="empty-state">
+<div class="empty-state-icon">📌</div>
+<p>No recent markers</p>
+</div>
+{% endif %}
+</div>
+</div>
+
+<div class="card">
+<div class="card-header">
+<h2 class="card-title">📌 Add Manual Marker</h2>
+</div>
+<div class="card-body">
+<form id="markerForm" class="form-grid">
+<div class="form-group">
+<label class="form-label">Latitude</label>
+<input type="number" step="0.000001" required id="mmLat" placeholder="48.4500" class="input">
+</div>
+<div class="form-group">
+<label class="form-label">Longitude</label>
+<input type="number" step="0.000001" required id="mmLng" placeholder="31.1200" class="input">
+</div>
+<div class="form-group">
+<label class="form-label">Location Name</label>
+<input type="text" id="mmPlace" placeholder="Київ" class="input">
+</div>
+<div class="form-group">
+<label class="form-label">Threat Type</label>
+<select id="mmType" class="input">
+<option value="shahed">Shahed</option>
+<option value="raketa">Rocket</option>
+<option value="artillery">Artillery</option>
+<option value="manual">Manual</option>
+</select>
+</div>
+<div class="form-group" style="grid-column:1/-1">
+<label class="form-label">Description</label>
+<textarea id="mmText" required placeholder="Event description..." class="input"></textarea>
+</div>
+<div style="grid-column:1/-1;display:flex;gap:1rem">
+<button type="submit" class="btn btn-primary">➕ Add Marker</button>
+<span id="mmStatus" class="badge info" style="display:none"></span>
+</div>
+</form>
+</div>
+</div>
+
+<div class="card">
+<div class="card-header">
+<h2 class="card-title">🗃️ Cache Management <span class="badge warning">{{ neg_geocode|length }}</span></h2>
+<button class="btn btn-danger btn-sm" onclick="clearCache()">🗑️ Clear All</button>
+</div>
+<div class="card-body compact">
+{% if neg_geocode %}
+<div class="table-container" style="max-height:400px;overflow-y:auto">
+<table class="table">
+<thead>
+<tr>
+<th>City Name</th>
+<th>Region</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+{% for name,region in neg_geocode %}
+<tr>
+<td>{{ name }}</td>
+<td>{{ region or "—" }}</td>
+<td><button class="btn btn-danger btn-sm" onclick="delCache('{{ name }}')">🗑️ Delete</button></td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% else %}
+<div class="empty-state">
+<div class="empty-state-icon">🗂️</div>
+<p>Cache is empty</p>
+</div>
+{% endif %}
+</div>
+</div>
+
+<div class="card">
+<div class="card-header">
+<h2 class="card-title">🐛 Debug Console <span class="badge info">{{ debug_logs|length }}</span></h2>
+<button class="btn btn-danger btn-sm" onclick="clearLogs()">🗑️ Clear Logs</button>
+</div>
+<div class="card-body compact">
+{% if debug_logs %}
+<div class="debug-console">
+{% for log in debug_logs[-100:] %}
+<div class="debug-entry">
+<span class="debug-timestamp">{{ log.timestamp[-8:] }}</span>
+<span class="debug-category">{{ log.category }}</span>
+<span class="debug-message">{{ log.message }}</span>
+</div>
+{% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+<div class="empty-state-icon">📝</div>
+<p>No debug logs available</p>
+</div>
+{% endif %}
+</div>
+</div>
+
+<div class="card">
+<div class="card-header">
+<h2 class="card-title">🛠️ Advanced Tools</h2>
+</div>
+<div class="card-body">
+<div class="form-grid">
+<div class="form-group">
+<label class="form-label">System Statistics</label>
+<button class="btn btn-info" onclick="loadStats()">📊 Load Stats</button>
+</div>
+<div class="form-group">
+<label class="form-label">Data Cleanup (Keep Days)</label>
+<div style="display:flex;gap:0.5rem">
+<input type="number" id="cleanDays" value="7" min="1" max="30" class="input" style="width:100px">
+<button class="btn btn-warning" onclick="cleanup()">🧹 Clean</button>
+</div>
+</div>
+<div class="form-group">
+<label class="form-label">Export Data</label>
+<div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+<button class="btn btn-secondary btn-sm" onclick="exportData('messages')">📝 Messages</button>
+<button class="btn btn-secondary btn-sm" onclick="exportData('stats')">📈 Stats</button>
+</div>
+</div>
+</div>
+<div id="advStatus" class="debug-console" style="margin-top:1rem;display:none"></div>
+</div>
+</div>
+
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-// --- Toggle message display in Recent Markers ---
-function toggleMessage(element) {
-  const fullMessage = element.querySelector('.full-message');
-  if (fullMessage) {
-    if (fullMessage.style.display === 'none') {
-      // Close all other open messages first
-      document.querySelectorAll('.full-message').forEach(msg => {
-        msg.style.display = 'none';
-      });
-      // Show this message
-      fullMessage.style.display = 'block';
-    } else {
-      fullMessage.style.display = 'none';
-    }
-  }
-}
-
-// Close message when clicking outside
-document.addEventListener('click', function(event) {
-  if (!event.target.closest('.message-preview')) {
-    document.querySelectorAll('.full-message').forEach(msg => {
-      msg.style.display = 'none';
-    });
-  }
-});
-
-// Enhanced UI helpers
-function showNotification(message, type = 'info') {
-  // Create notification element
-  const notification = document.createElement('div');
-  notification.className = `notification notification-${type}`;
-  notification.style.cssText = `
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    padding: 1rem 1.5rem;
-    border-radius: 8px;
-    color: white;
-    font-size: 0.9rem;
-    z-index: 9999;
-    opacity: 0;
-    transform: translateX(100%);
-    transition: all 0.3s ease;
-    max-width: 400px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-  `;
-  
-  // Set background color based on type
-  const colors = {
-    success: '#10b981',
-    error: '#ef4444',
-    warning: '#f59e0b',
-    info: '#0ea5e9'
-  };
-  notification.style.background = colors[type] || colors.info;
-  
-  notification.textContent = message;
-  document.body.appendChild(notification);
-  
-  // Animate in
-  setTimeout(() => {
-    notification.style.opacity = '1';
-    notification.style.transform = 'translateX(0)';
-  }, 10);
-  
-  // Auto remove
-  setTimeout(() => {
-    notification.style.opacity = '0';
-    notification.style.transform = 'translateX(100%)';
-    setTimeout(() => {
-      if (notification.parentNode) {
-        notification.parentNode.removeChild(notification);
-      }
-    }, 300);
-  }, 4000);
-}
-
-// Enhanced error handling for all admin functions
-const originalFetch = window.fetch;
-window.fetch = function(...args) {
-  return originalFetch.apply(this, args)
-    .catch(error => {
-      showNotification('Network error: ' + error.message, 'error');
-      throw error;
-    });
-};
-
-// Add loading states to buttons
-function setButtonLoading(button, loading = true) {
-  if (loading) {
-    button.disabled = true;
-    button.originalText = button.textContent;
-    button.textContent = '⏳ Loading...';
-  } else {
-    button.disabled = false;
-    if (button.originalText) {
-      button.textContent = button.originalText;
-      delete button.originalText;
-    }
-  }
-}
-
-// Add confirmation dialogs for destructive actions
-function confirmAction(message, callback) {
-  if (confirm(message)) {
-    callback();
-  }
-}
-
-// --- Real-time update for Raw (pending geo) ---
-async function updateRawSection() {
-  try {
-    const secret = new URLSearchParams(location.search).get('secret')||'';
-    const r = await fetch('/admin/raw_msgs?secret='+encodeURIComponent(secret));
-    if (!r.ok) return;
-    const js = await r.json();
-    
-    // Update header count
-    const headerCount = document.querySelector('.badge.warning#raw-header-count');
-    if(headerCount && js.raw_count !== undefined) {
-      headerCount.textContent = js.raw_count;
-      // Add pulse animation for new messages
-      if(parseInt(headerCount.textContent) !== js.raw_count) {
-        headerCount.classList.add('pulse');
-        setTimeout(() => headerCount.classList.remove('pulse'), 2000);
-      }
-    }
-    
-    // Update table body
-    const tbody = document.getElementById('raw-tbody');
-    if(tbody && Array.isArray(js.raw_msgs)) {
-      tbody.innerHTML = js.raw_msgs.map(r =>
-        `<tr>
-          <td style='white-space:nowrap; font-size: 0.8rem;'>${r.date}</td>
-          <td style='white-space:nowrap;'>
-            <span class="badge info">${r.channel}</span>
-          </td>
-          <td class="truncate" style='max-width:400px;' title="${r.text}">${r.text}</td>
-        </tr>`
-      ).join('');
-    }
-  } catch(e) {
-    console.warn('Raw section update failed:', e);
-  }
-}
-
-// Update stats in real-time
-async function updateStatsCards() {
-  try {
-    const secret = new URLSearchParams(location.search).get('secret')||'';
-    const r = await fetch('/admin/stats?secret='+encodeURIComponent(secret));
-    if (!r.ok) return;
-    const data = await r.json();
-    
-    if(data.status === 'ok') {
-      const stats = data.stats;
-      
-      // Update stat cards with smooth transitions
-      const updateStatCard = (selector, value) => {
-        const card = document.querySelector(selector);
-        if(card && card.textContent !== value.toString()) {
-          card.style.transform = 'scale(1.1)';
-          card.textContent = value;
-          setTimeout(() => card.style.transform = 'scale(1)', 200);
-        }
-      };
-      
-      // Map stats to cards (this depends on the exact structure)
-      const statCards = document.querySelectorAll('.stat-value');
-      if(statCards.length >= 5) {
-        updateStatCard('.stat-value:nth-child(1)', stats.system.active_users);
-        updateStatCard('.stat-value:nth-child(2)', stats.system.blocked_users);
-        updateStatCard('.stat-value:nth-child(3)', stats.messages.pending_geo);
-        updateStatCard('.stat-value:nth-child(4)', stats.messages.with_coordinates);
-        updateStatCard('.stat-value:nth-child(5)', stats.system.debug_logs);
-      }
-    }
-  } catch(e) {
-    console.warn('Stats update failed:', e);
-  }
-}
-
-// Enhanced update intervals
-setInterval(updateRawSection, 10000); // every 10 seconds
-setInterval(updateStatsCards, 20000); // every 20 seconds
-document.addEventListener('DOMContentLoaded', () => { 
-  setTimeout(updateRawSection, 2000);
-  setTimeout(updateStatsCards, 3000);
-});
-async function blockId(id){
-  const secret = new URLSearchParams(location.search).get('secret')||'';
-  try {
-    const r = await fetch('/block?secret='+encodeURIComponent(secret), {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
-    if(r.ok) {
-      showNotification('User blocked successfully', 'success');
-      setTimeout(() => location.reload(), 1000);
-    } else {
-      showNotification('Failed to block user', 'error');
-    }
-  } catch(e) {
-    showNotification('Error blocking user: ' + e.message, 'error');
-  }
-}
-
-async function unblockId(id){
-  const secret = new URLSearchParams(location.search).get('secret')||'';
-  try {
-    const r = await fetch('/unblock?secret='+encodeURIComponent(secret), {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
-    if(r.ok) {
-      showNotification('User unblocked successfully', 'success');
-      setTimeout(() => location.reload(), 1000);
-    } else {
-      showNotification('Failed to unblock user', 'error');
-    }
-  } catch(e) {
-    showNotification('Error unblocking user: ' + e.message, 'error');
-  }
-}
-async function saveMonPeriod(){
-  const secret = new URLSearchParams(location.search).get('secret')||'';
-  const val = document.getElementById('monPeriod').value;
-  const statusEl = document.getElementById('monStatus');
-  statusEl.textContent='Saving...';
-  try{
-    const r = await fetch('/admin/set_monitor_period?secret='+encodeURIComponent(secret), {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:val})});
-    const js = await r.json();
-    if(js.status==='ok'){
-      statusEl.textContent='OK ('+js.monitor_period+')';
-      statusEl.style.color='#10b981';
-    }else{
-      statusEl.textContent='Error';
-      statusEl.style.color='#dc2626';
-    }
-  }catch(e){
-    statusEl.textContent='Error';
-    statusEl.style.color='#dc2626';
-  }
-}
-async function hideMarker(lat,lng,text,source){
-  const secret = new URLSearchParams(location.search).get('secret')||'';
-  // Server hide endpoint does not need secret, but we keep secret param for possible future auth
-  try{
-    const r = await fetch('/hide_marker?secret='+encodeURIComponent(secret), {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,text,source})});
-    if(r.ok){ location.reload(); }
-  }catch(e){}
-}
-async function unhideKey(key){
-  try{
-    const r = await fetch('/unhide_marker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key})});
-    if(r.ok) location.reload();
-  }catch(e){}
-}
-async function bulkUnhide(){
-  // naive: iterate all keys in the table
-  const rows = document.querySelectorAll('.hidden-box tbody tr button.ok');
-  for(const btn of rows){
-    const key = btn.getAttribute('onclick').match(/unhideKey\('(.*)'\)/)[1];
-    try{ await fetch('/unhide_marker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key})}); }catch(e){}
-  }
-  location.reload();
-}
-async function clearNegCache(){
-  confirmAction('Clear all negative geocode entries? This cannot be undone.', async () => {
-    const secret = new URLSearchParams(location.search).get('secret')||'';
-    try { 
-      const r = await fetch('/admin/neg_geocode_clear?secret='+encodeURIComponent(secret),{method:'POST'}); 
-      if(r.ok) {
-        showNotification('Negative geocode cache cleared', 'success');
-        setTimeout(() => location.reload(), 1000);
-      } else {
-        showNotification('Failed to clear cache', 'error');
-      }
-    } catch(e) {
-      showNotification('Error clearing cache: ' + e.message, 'error');
-    }
-  });
-}
-
-async function clearDebugLogs(){
-  confirmAction('Clear all debug logs? This cannot be undone.', async () => {
-    const secret = new URLSearchParams(location.search).get('secret')||'';
-    try { 
-      const r = await fetch('/admin/clear_debug_logs?secret='+encodeURIComponent(secret),{method:'POST'}); 
-      if(r.ok) {
-        showNotification('Debug logs cleared', 'success');
-        setTimeout(() => location.reload(), 1000);
-      } else {
-        showNotification('Failed to clear debug logs', 'error');
-      }
-    } catch(e) {
-      showNotification('Error clearing logs: ' + e.message, 'error');
-    }
-  });
-}
-async function delNeg(name){
-  const secret = new URLSearchParams(location.search).get('secret')||'';
-  try{ const r=await fetch('/admin/neg_geocode_delete?secret='+encodeURIComponent(secret),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})}); if(r.ok) location.reload(); }catch(e){}
-}
-async function addManualMarker(ev){
-  ev.preventDefault();
-  const secret = new URLSearchParams(location.search).get('secret')||'';
-  const lat = document.getElementById('mmLat').value.trim();
-  const lng = document.getElementById('mmLng').value.trim();
-  const place = document.getElementById('mmPlace').value.trim();
-  const type = document.getElementById('mmType').value;
-  const icon = document.getElementById('mmIcon').value.trim();
-  const text = document.getElementById('mmText').value.trim();
-  const status = document.getElementById('mmStatus');
-  status.textContent='Saving...'; status.style.color='#94a3b8';
-  try{
-    const r = await fetch('/admin/add_manual_marker?secret='+encodeURIComponent(secret),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,place,threat_type:type,text,icon})});
-    const js = await r.json();
-    if(js.status==='ok'){
-      status.textContent='OK'; status.style.color='#10b981';
-      setTimeout(()=>location.reload(),600);
-    } else {
-      status.textContent='ERR: '+js.error; status.style.color='#dc2626';
-    }
-  }catch(e){
-    status.textContent='ERR'; status.style.color='#dc2626';
-  }
-  return false;
-}
-
-// --- Coordinate picker map ---
-let pickMapInstance=null; let pickMarker=null;
-function togglePickMap(){
-  const box=document.getElementById('pickMap');
-  const btn=document.getElementById('pickBtn');
-  if(box.classList.contains('active')){ box.classList.remove('active'); btn.textContent='Обрати на мапі'; return; }
-  box.classList.add('active'); btn.textContent='Сховати мапу';
-  // lazy init
-  if(!pickMapInstance){
-    pickMapInstance = L.map('pickMap',{attributionControl:false,zoomControl:true}).setView([48.9,32.0],6);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:11}).addTo(pickMapInstance);
-    const placeMarker = (latlng)=>{
-      const lat = latlng.lat.toFixed(5); const lng = latlng.lng.toFixed(5);
-      document.getElementById('mmLat').value=lat; document.getElementById('mmLng').value=lng;
-      if(!pickMarker){ pickMarker = L.marker(latlng,{draggable:true}).addTo(pickMapInstance); pickMarker.on('dragend',e=>{const ll=e.target.getLatLng(); document.getElementById('mmLat').value=ll.lat.toFixed(5); document.getElementById('mmLng').value=ll.lng.toFixed(5);}); }
-      else { pickMarker.setLatLng(latlng); }
-    };
-    pickMapInstance.on('click', e=>placeMarker(e.latlng));
-    pickMapInstance.on('contextmenu', e=>{placeMarker(e.latlng);});
-  }
-  setTimeout(()=>{try{pickMapInstance.invalidateSize();}catch(e){}},220);
-}
-// -------- Live admin map with markers --------
-let adminMap=null; let adminMarkersLayer=null; let adminAuto=true; let lastAdminFetch=0; let adminMarkerIndex={};
-const ICON_MAP = {
-  shahed:'shahed.png', raketa:'raketa.png', avia:'avia.png', pvo:'rozved.png', vibuh:'vibuh.png', artillery:'obstril.png', obstril:'obstril.png', mlrs:'rszv.png', fpv:'fpv.png', pusk:'pusk.png', alarm:'trivoga.png', alarm_cancel:'vidboi.png', manual:'raketa.png', kab:'rszv.png'
-};
-function initAdminMap(){
-  if(adminMap) return;
-  
-  try {
-    const mapElement = document.getElementById('adminMap');
-    if(!mapElement) {
-      console.error('Admin map element not found');
-      alert('Элемент карты не найден!');
-      return;
-    }
-    
-    // Show loading state
-    mapElement.classList.add('loading');
-    
-    // Initialize map
-    adminMap = L.map('adminMap', {
-      attributionControl: false,
-      zoomControl: true,
-      preferCanvas: true
-    }).setView([49.0, 31.3], 6);
-    
-    // Add tile layer
-    const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 11,
-      attribution: '© OpenStreetMap contributors'
-    });
-    
-    tileLayer.on('loading', () => {
-      console.log('Tiles loading...');
-    });
-    
-    tileLayer.on('load', () => {
-      console.log('Tiles loaded successfully');
-      mapElement.classList.remove('loading');
-    });
-    
-    tileLayer.addTo(adminMap);
-    
-    // Add markers layer
-    adminMarkersLayer = L.layerGroup().addTo(adminMap);
-    
-    // Map event handlers
-    adminMap.on('contextmenu', e => { /* placeholder for future */ });
-    
-    // Remove loading state after initialization
-    setTimeout(() => {
-      mapElement.classList.remove('loading');
-    }, 2000);
-    
-    // Initial marker load
-    setTimeout(() => {
-      reloadAdminMarkers();
-      console.log('Admin map initialized successfully');
-    }, 500);
-    
-  } catch(error) {
-    const mapElement = document.getElementById('adminMap');
-    if(mapElement) {
-      mapElement.classList.remove('loading');
-      mapElement.innerHTML = '<div style="padding:2rem;text-align:center;color:#ef4444;">❌ Ошибка загрузки карты: ' + error.message + '</div>';
-    }
-    console.error('Failed to initialize admin map:', error);
-    alert('Ошибка инициализации карты: ' + error.message);
-  }
-}
-function markerIconFor(t){
-  // Use PNG markers for consistency with main map
-  const type = t || 'default';
-  const iconPath = `/static/${type}.png`;
-  return L.icon({
-    iconUrl: iconPath,
-    iconSize: [34, 34],
-    iconAnchor: [17, 17],
-    popupAnchor: [0, -17],
-    className: 'plain-marker-img'
-  });
-}
-async function reloadAdminMarkers(){
-  if(!adminMap || !adminMarkersLayer) {
-    console.warn('Admin map not initialized, skipping marker reload');
-    return;
-  }
-  
-  try{
-    // Загружаем данные без передачи timeRange - пусть сервер использует MONITOR_PERIOD_MINUTES из админки
-    const params = new URLSearchParams({ 
-      confRange: 0, 
-      maxTracks: 100,
-      ts: Date.now()
-    });
-    const r = await fetch('/data?' + params.toString());
-    if(!r.ok) {
-      console.error('Failed to fetch markers:', r.status, r.statusText);
-      return;
-    }
-    
-    const js = await r.json();
-    lastAdminFetch = Date.now();
-    
-    let allTracks = js.tracks && Array.isArray(js.tracks) ? js.tracks : [];
-    
-    // Если включен API, загружаем и данные API
-    if (apiAlertsEnabled) {
-      try {
-        const apiResponse = await fetch('/api_alerts?ts='+(Date.now()));
-        if (apiResponse.ok) {
-          const apiData = await apiResponse.json();
-          const apiMarkers = apiData.markers || [];
-          
-          // Конвертируем API маркеры в формат совместимый с админ панелью
-          const convertedApiMarkers = apiMarkers.map(marker => ({
-            ...marker,
-            threat_type: marker.threat_type,
-            coordinates: [marker.lat, marker.lng],
-            region_name: marker.region,
-            message_text: `🇺🇦 API: ${marker.message}`,
-            timestamp_dt: marker.timestamp,
-            isAPIAlert: true
-          }));
-          
-          allTracks = [...allTracks, ...convertedApiMarkers];
-          console.log(`📊 Admin markers: ${js.tracks?.length || 0} Telegram + ${apiMarkers.length} API = ${allTracks.length} total`);
-        } else {
-          console.warn('⚠️ API данные недоступны:', apiResponse.status);
-        }
-      } catch (apiError) {
-        console.error('❌ Error loading API data:', apiError);
-      }
-    }
-    
-    renderAdminMarkers(allTracks);
-    console.log(`Loaded ${allTracks.length} markers on admin map`);
-    
-  } catch(e) {
-    console.error('Error reloading admin markers:', e);
-  }
-}
-function renderAdminMarkers(tracks){
-  if(!adminMarkersLayer) {
-    console.error('Admin markers layer not initialized');
-    return;
-  }
-  
-  try {
-    adminMarkersLayer.clearLayers();
-    adminMarkerIndex = {};
-    let cnt = 0;
-    
-    if(!Array.isArray(tracks)) {
-      console.warn('Invalid tracks data:', tracks);
-      tracks = [];
-    }
-    
-    tracks.forEach(t => {
-      try {
-        if(!t.lat || !t.lng) return;
-        
-        // Validate coordinates
-        const lat = parseFloat(t.lat);
-        const lng = parseFloat(t.lng);
-        if(isNaN(lat) || isNaN(lng)) return;
-        
-        const ico = markerIconFor(t.threat_type || 'shahed');
-        const m = L.marker([lat, lng], {icon: ico}).addTo(adminMarkersLayer);
-        
-        const safeText = (t.text || '').replace(/</g,'&lt;').replace(/>/g,'&gt;').slice(0, 200);
-        const place = (t.place || 'Unknown location');
-        const time = t.date || '';
-        const source = t.channel || t.source || '';
-        
-        const popupContent = `
-          <div style='font-size:0.75rem;max-width:250px;line-height:1.4;'>
-            <strong style='color:#0ea5e9;'>${place}</strong><br>
-            <div style='margin:4px 0;'>${safeText}</div>
-            <div style='opacity:0.7;font-size:0.65rem;margin:4px 0;'>${time}</div>
-            <button 
-              style='margin-top:6px;font-size:0.65rem;padding:4px 8px;background:#ef4444;color:white;border:none;border-radius:3px;cursor:pointer;' 
-              onclick="hideMarkerMap(${lat},${lng},'${encodeURIComponent(safeText)}','${encodeURIComponent(source)}', this)"
-            >
-              🗑️ Hide
-            </button>
-          </div>
-        `;
-        
-        m.bindPopup(popupContent);
-        m.on('contextmenu', () => hideMarkerMap(lat, lng, encodeURIComponent(safeText), encodeURIComponent(source)));
-        
-        cnt++;
-      } catch(markerError) {
-        console.warn('Error rendering marker:', markerError, t);
-      }
-    });
-    
-    // Update stats
-    const statEl = document.getElementById('adminMapStats');
-    if(statEl) { 
-      statEl.textContent = `📍 Markers: ${cnt}`;
-      if(cnt > 0) {
-        statEl.style.color = '#10b981';
-      } else {
-        statEl.style.color = '#94a3b8';
-      }
-    }
-    
-    console.log(`Rendered ${cnt} markers on admin map`);
-  } catch(error) {
-    console.error('Error in renderAdminMarkers:', error);
-  }
-}
-async function hideMarkerMap(lat,lng,txtEnc,srcEnc, btn){
-  try{
-    const text = decodeURIComponent(txtEnc);
-    const source = decodeURIComponent(srcEnc);
-    const r = await fetch('/hide_marker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,text,source})});
-    if(r.ok){ if(btn){ btn.textContent='Hidden'; btn.disabled=true; } reloadAdminMarkers(); }
-  }catch(e){}
-}
-function toggleAutoAdmin(){ 
-  adminAuto=!adminAuto; 
-  const btn = document.getElementById('autoBtn');
-  if(btn) {
-    btn.textContent = '🔁 Auto: '+(adminAuto?'ON':'OFF');
-    btn.className = adminAuto ? 'btn btn-success btn-sm' : 'btn btn-secondary btn-sm';
-  }
-  console.log('Auto-refresh toggled:', adminAuto);
-}
-
-function debugAdminMap() {
-  console.log('=== Admin Map Debug Info ===');
-  console.log('adminMap initialized:', !!adminMap);
-  console.log('adminMarkersLayer initialized:', !!adminMarkersLayer);
-  console.log('Auto-refresh enabled:', adminAuto);
-  console.log('Last fetch time:', new Date(lastAdminFetch));
-  
-  const mapElement = document.getElementById('adminMap');
-  console.log('Map element found:', !!mapElement);
-  
-  if(mapElement) {
-    console.log('Map element dimensions:', {
-      width: mapElement.offsetWidth,
-      height: mapElement.offsetHeight,
-      visible: mapElement.offsetParent !== null
-    });
-  }
-  
-  if(adminMap) {
-    console.log('Map center:', adminMap.getCenter());
-    console.log('Map zoom:', adminMap.getZoom());
-    
-    try {
-      adminMap.invalidateSize();
-      console.log('Map size invalidated successfully');
-    } catch(e) {
-      console.error('Error invalidating map size:', e);
-    }
-  }
-  
-  if(adminMarkersLayer) {
-    const layerCount = adminMarkersLayer.getLayers().length;
-    console.log('Current markers on map:', layerCount);
-  }
-  
-  // Test data fetch
-  const testParams = new URLSearchParams({ 
-    timeRange: 40, 
-    confRange: 0, 
-    maxTracks: 100,
-    ts: Date.now()
-  });
-  fetch('/data?' + testParams.toString())
-    .then(r => {
-      console.log('Data fetch response:', r.status, r.statusText);
-      return r.json();
-    })
-    .then(data => {
-      console.log('Data received:', {
-        tracks: data.tracks ? data.tracks.length : 'none',
-        sample: data.tracks ? data.tracks[0] : null
-      });
-    })
-    .catch(e => console.error('Data fetch error:', e));
-}
-
-function reinitAdminMap() {
-  console.log('Reinitializing admin map...');
-  
-  // Clean up existing map
-  if(adminMap) {
-    try {
-      adminMap.remove();
-      console.log('Previous map removed');
-    } catch(e) {
-      console.warn('Error removing previous map:', e);
-    }
-  }
-  
-  // Reset variables
-  adminMap = null;
-  adminMarkersLayer = null;
-  adminMarkerIndex = {};
-  
-  // Reinitialize after a short delay
-  setTimeout(() => {
-    try {
-      initAdminMap();
-      console.log('Map reinitialized successfully');
-    } catch(error) {
-      console.error('Failed to reinitialize map:', error);
-    }
-  }, 100);
-}
-
-function forceReloadAllUsers() {
-  if (!confirm('⚠️ УВАГА! Це примусово перезавантажить сторінку у ВСІХ активних користувачів.\n\nПродовжити?')) {
-    return;
-  }
-  
-  const secret = new URLSearchParams(location.search).get('secret') || '';
-  
-  fetch('/admin/trigger-force-reload?secret=' + encodeURIComponent(secret), {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    }
-  })
-  .then(response => {
-    if (!response.ok) {
-      throw new Error('HTTP error ' + response.status);
-    }
-    return response.json();
-  })
-  .then(data => {
-    if (data.success) {
-      alert('✅ Force reload активовано!\n\nВсі користувачі отримають команду на перезавантаження протягом наступних 2 хвилин.\n\nКожен користувач буде перезавантажений при наступній перевірці статусу (кожні 30 секунд).');
-      console.log('Force reload triggered successfully:', data);
-    } else {
-      alert('❌ Помилка активації force reload: ' + (data.message || 'Unknown error'));
-    }
-  })
-  .catch(error => {
-    console.error('Error triggering force reload:', error);
-    alert('❌ Помилка з\'єднання: ' + error.message);
-  });
-}
-
-function testJS() {
-  const leafletOK = typeof L !== 'undefined';
-  const message = `JavaScript работает!
-Leaflet: ${leafletOK ? 'ДА ✅' : 'НЕТ ❌'}
-${leafletOK ? 'Версия Leaflet: ' + L.version : 'Leaflet не загружен!'}
-Карта инициализирована: ${adminMap ? 'ДА ✅' : 'НЕТ ❌'}`;
-  
-  alert(message);
-  
-  console.log('=== JavaScript Test ===');
-  console.log('Leaflet available:', leafletOK);
-  if(leafletOK) console.log('Leaflet version:', L.version);
-  console.log('Document ready state:', document.readyState);
-  console.log('Location:', window.location.href);
-  console.log('Admin map initialized:', !!adminMap);
-  console.log('Admin markers layer:', !!adminMarkersLayer);
-  
-  // Test all main functions
-  const functions = ['initAdminMap', 'debugAdminMap', 'reloadAdminMarkers', 'toggleAutoAdmin'];
-  functions.forEach(fname => {
-    console.log(`Function ${fname} defined:`, typeof window[fname] === 'function');
-  });
-  
-  // Test critical elements
-  const elements = ['adminMap', 'autoBtn', 'adminMapStats'];
-  elements.forEach(id => {
-    const el = document.getElementById(id);
-    console.log(`Element ${id}:`, el ? 'FOUND' : 'MISSING');
-  });
-}
-
-function forceReloadLeaflet() {
-  console.log('Force reloading Leaflet...');
-  
-  // Remove existing Leaflet if present
-  if(typeof L !== 'undefined') {
-    console.log('Leaflet already loaded, cleaning up...');
-    if(adminMap) {
-      try {
-        adminMap.remove();
-        adminMap = null;
-        adminMarkersLayer = null;
-      } catch(e) {
-        console.warn('Error cleaning up map:', e);
-      }
-    }
-  }
-  
-  // Try alternative CDNs
-  const cdnUrls = [
-    'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
-    'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js',
-    'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js'
-  ];
-  
-  let currentCdn = 0;
-  
-  function tryLoadLeaflet() {
-    if(currentCdn >= cdnUrls.length) {
-      console.error('All CDNs failed');
-      alert('Не удалось загрузить Leaflet из всех доступных CDN. Проверьте интернет соединение.');
-      return;
-    }
-    
-    const script = document.createElement('script');
-    script.src = cdnUrls[currentCdn];
-    script.crossOrigin = '';
-    
-    script.onload = () => {
-      console.log(`Leaflet loaded successfully from CDN ${currentCdn + 1}!`);
-      alert('Leaflet перезагружен успешно! Теперь попробуйте инициализировать карту.');
-      
-      setTimeout(() => {
-        try {
-          initAdminMap();
-        } catch(error) {
-          console.error('Still failed after reload:', error);
-          alert('Ошибка после перезагрузки: ' + error.message);
-        }
-      }, 100);
-    };
-    
-    script.onerror = () => {
-      console.warn(`Failed to load from CDN ${currentCdn + 1}, trying next...`);
-      currentCdn++;
-      tryLoadLeaflet();
-    };
-    
-    document.head.appendChild(script);
-  }
-  
-  tryLoadLeaflet();
-}
-
-// Fullscreen Map Functions
-let isMapFullscreen = false;
-let fullscreenOverlay = null;
-let fullscreenControls = null;
-
-function toggleFullscreenMap() {
-  const mapElement = document.getElementById('adminMap');
-  const btn = document.getElementById('fullscreenBtn');
-  
-  if (!mapElement) {
-    console.error('Map element not found');
-    return;
-  }
-  
-  if (!isMapFullscreen) {
-    enterFullscreenMap(mapElement, btn);
-  } else {
-    exitFullscreenMap(mapElement, btn);
-  }
-}
-
-function enterFullscreenMap(mapElement, btn) {
-  console.log('Entering fullscreen mode...');
-  
-  // Create overlay
-  fullscreenOverlay = document.createElement('div');
-  fullscreenOverlay.className = 'fullscreen-overlay';
-  
-  // Create controls
-  fullscreenControls = document.createElement('div');
-  fullscreenControls.className = 'fullscreen-controls';
-  fullscreenControls.innerHTML = `
-    <button onclick="exitFullscreenMap(document.getElementById('adminMap'), document.getElementById('fullscreenBtn'))">
-      ❌ Close
-    </button>
-    <button onclick="reloadAdminMarkers()">
-      🔄 Refresh
-    </button>
-    <button onclick="debugAdminMap()">
-      🔍 Debug
-    </button>
-  `;
-  
-  // Add elements to body
-  document.body.appendChild(fullscreenOverlay);
-  document.body.appendChild(fullscreenControls);
-  
-  // Add fullscreen class to map
-  mapElement.classList.add('map-fullscreen');
-  
-  // Update button
-  if (btn) {
-    btn.textContent = '🔳 Exit';
-    btn.className = 'btn btn-warning btn-sm';
-  }
-  
-  isMapFullscreen = true;
-  
-  // Invalidate map size after transition
-  setTimeout(() => {
-    if (adminMap) {
-      adminMap.invalidateSize();
-      console.log('Map size invalidated for fullscreen');
-    }
-  }, 350);
-  
-  // Add ESC key handler
-  document.addEventListener('keydown', handleFullscreenEscape);
-}
-
-function exitFullscreenMap(mapElement, btn) {
-  console.log('Exiting fullscreen mode...');
-  
-  // Remove fullscreen class
-  if (mapElement) {
-    mapElement.classList.remove('map-fullscreen');
-  }
-  
-  // Remove overlay and controls
-  if (fullscreenOverlay) {
-    document.body.removeChild(fullscreenOverlay);
-    fullscreenOverlay = null;
-  }
-  
-  if (fullscreenControls) {
-    document.body.removeChild(fullscreenControls);
-    fullscreenControls = null;
-  }
-  
-  // Update button
-  if (btn) {
-    btn.textContent = '🔲 Fullscreen';
-    btn.className = 'btn btn-purple btn-sm';
-  }
-  
-  isMapFullscreen = false;
-  
-  // Invalidate map size after transition
-  setTimeout(() => {
-    if (adminMap) {
-      adminMap.invalidateSize();
-      console.log('Map size invalidated for normal view');
-    }
-  }, 350);
-  
-  // Remove ESC key handler
-  document.removeEventListener('keydown', handleFullscreenEscape);
-}
-
-function handleFullscreenEscape(e) {
-  if (e.key === 'Escape' && isMapFullscreen) {
-    toggleFullscreenMap();
-  }
-}
-
-// Advanced Tools Functions
-async function loadSystemStats() {
-  const secret = new URLSearchParams(location.search).get('secret')||'';
-  const statusDiv = document.getElementById('advancedStatus');
-  const statusText = document.getElementById('advancedStatusText');
-  
-  statusDiv.style.display = 'block';
-  statusText.textContent = 'Loading system statistics...';
-  
-  try {
-    const r = await fetch('/admin/stats?secret='+encodeURIComponent(secret));
-    const data = await r.json();
-    
-    if(data.status === 'ok') {
-      const stats = data.stats;
-      let html = '<div class="debug-entry"><span class="debug-category">MESSAGES</span><span class="debug-message">';
-      html += `Total: ${stats.messages.total}, Geo: ${stats.messages.with_coordinates}, Pending: ${stats.messages.pending_geo}, Recent 24h: ${stats.messages.recent_24h}`;
-      html += '</span></div>';
-      
-      html += '<div class="debug-entry"><span class="debug-category">THREATS</span><span class="debug-message">';
-      const threats = Object.entries(stats.threats).map(([type, count]) => `${type}: ${count}`).join(', ');
-      html += threats || 'No threat data';
-      html += '</span></div>';
-      
-      html += '<div class="debug-entry"><span class="debug-category">SYSTEM</span><span class="debug-message">';
-      html += `Users: ${stats.system.active_users}, Blocked: ${stats.system.blocked_users}, Hidden: ${stats.system.hidden_markers}, Cache: ${stats.system.neg_cache_size}`;
-      html += '</span></div>';
-      
-      statusDiv.innerHTML = html;
-    } else {
-      statusText.textContent = 'Error: ' + (data.error || 'Unknown error');
-    }
-  } catch(e) {
-    statusText.textContent = 'Error loading stats: ' + e.message;
-  }
-}
-
-async function performCleanup() {
-  const secret = new URLSearchParams(location.search).get('secret')||'';
-  const days = document.getElementById('cleanupDays').value;
-  const statusDiv = document.getElementById('advancedStatus');
-  const statusText = document.getElementById('advancedStatusText');
-  
-  if(!confirm(`Clean up data older than ${days} days? This action cannot be undone.`)) return;
-  
-  statusDiv.style.display = 'block';
-  statusText.textContent = 'Cleaning up old data...';
-  
-  try {
-    const r = await fetch('/admin/cleanup?secret='+encodeURIComponent(secret), {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({days: parseInt(days)})
-    });
-    const data = await r.json();
-    
-    if(data.status === 'ok') {
-      let html = '<div class="debug-entry"><span class="debug-category">CLEANED</span><span class="debug-message">';
-      html += `Messages: ${data.cleaned.messages}, Debug logs: ${data.cleaned.debug_logs}, Visitor records: ${data.cleaned.visitor_records}`;
-      html += '</span></div>';
-      
-      html += '<div class="debug-entry"><span class="debug-category">REMAINING</span><span class="debug-message">';
-      html += `Messages: ${data.remaining.messages}, Debug logs: ${data.remaining.debug_logs}`;
-      html += '</span></div>';
-      
-      statusDiv.innerHTML = html;
-      
-      // Refresh page after cleanup
-      setTimeout(() => location.reload(), 2000);
-    } else {
-      statusText.textContent = 'Error: ' + (data.error || 'Unknown error');
-    }
-  } catch(e) {
-    statusText.textContent = 'Error during cleanup: ' + e.message;
-  }
-}
-
-async function exportData(type) {
-  const secret = new URLSearchParams(location.search).get('secret')||'';
-  const statusDiv = document.getElementById('advancedStatus');
-  const statusText = document.getElementById('advancedStatusText');
-  
-  statusDiv.style.display = 'block';
-  statusText.textContent = `Exporting ${type} data...`;
-  
-  try {
-    const r = await fetch(`/admin/export?type=${type}&secret=${encodeURIComponent(secret)}`);
-    const data = await r.json();
-    
-    if(data.status === 'ok') {
-      // Create and download file
-      const blob = new Blob([JSON.stringify(data.data, null, 2)], {type: 'application/json'});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `neptun_${type}_${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      
-      statusText.textContent = `Exported ${data.count || 'data'} ${type} entries successfully`;
-    } else {
-      statusText.textContent = 'Error: ' + (data.error || 'Unknown error');
-    }
-  } catch(e) {
-    statusText.textContent = 'Error during export: ' + e.message;
-  }
-}
-
-// Enhanced auto-refresh with better intervals
-setInterval(()=>{ if(adminAuto && adminMap){ reloadAdminMarkers(); } }, 30000);
-setInterval(updateRawSection, 15000); // Update raw messages more frequently
-
-// Initialize everything
-document.addEventListener('DOMContentLoaded', () => { 
-  console.log('DOM loaded, initializing admin panel...');
-  console.log('Leaflet available:', typeof L !== 'undefined');
-  
-  if(typeof L === 'undefined') {
-    console.error('Leaflet not available!');
-    alert('Ошибка: библиотека карт не загружена. Обновите страницу.');
-    return;
-  }
-  
-  // Initialize map after a short delay to ensure DOM is ready
-  setTimeout(() => {
-    try {
-      console.log('Starting map initialization...');
-      initAdminMap();
-    } catch(error) {
-      console.error('Failed to initialize admin map:', error);
-      alert('Ошибка инициализации карты: ' + error.message);
-    }
-  }, 100);
-  
-  // Auto-load stats on page load
-  setTimeout(() => {
-    try {
-      loadSystemStats();
-    } catch(error) {
-      console.error('Failed to load stats:', error);
-    }
-  }, 1500);
-  
-  // Test UI elements
-  setTimeout(() => {
-    const elements = [
-      'autoBtn', 'adminMap', 'adminMapStats', 'advancedStatus', 
-      'mmLat', 'mmLng', 'mmText', 'monPeriod'
-    ];
-    
-    elements.forEach(id => {
-      const el = document.getElementById(id);
-      console.log(`Element ${id}:`, el ? 'FOUND' : 'MISSING');
-    });
-  }, 200);
-});
-</script>
-
-<!-- Load Leaflet synchronously before our scripts -->
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" onerror="loadLeafletFallback()"></script>
-
-<script>
-// Fallback function to load from alternative CDN
-function loadLeafletFallback() {
-  console.warn('Primary CDN failed, trying fallback...');
-  const script = document.createElement('script');
-  script.src = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js';
-  script.crossOrigin = '';
-  script.onload = () => {
-    console.log('Leaflet loaded from fallback CDN');
-    verifyLeaflet();
-  };
-  script.onerror = () => {
-    console.error('Fallback CDN also failed');
-    alert('Не удалось загрузить библиотеку карт. Проверьте интернет соединение.');
-  };
-  document.head.appendChild(script);
-}
-
-function verifyLeaflet() {
-  if (typeof L === 'undefined') {
-    console.error('Leaflet failed to load!');
-    alert('Ошибка загрузки библиотеки карт. Нажмите "🔄 Reload Leaflet" для повторной загрузки.');
-  } else {
-    console.log('Leaflet loaded successfully, version:', L.version);
-  }
-}
-
-// Verify Leaflet is loaded (with delay for fallback)
-setTimeout(verifyLeaflet, 100);
-
-// Ukraine Alert API Management Functions
-let apiAlertsEnabled = localStorage.getItem('apiAlertsEnabled') === 'true';
-
-function toggleAPIAlerts() {
-  apiAlertsEnabled = !apiAlertsEnabled;
-  localStorage.setItem('apiAlertsEnabled', apiAlertsEnabled);
-  
-  const btn = document.getElementById('apiAlertsBtn');
-  
-  if (apiAlertsEnabled) {
-    btn.classList.remove('btn-warning');
-    btn.classList.add('btn-success');
-    btn.innerHTML = '🇺🇦 API: ON';
-    btn.title = 'Вимкнути Ukraine Alert API';
-    console.log('🇺🇦 Ukraine Alert API увімкнено');
-    showAdminMessage('Ukraine Alert API увімкнено', 'success');
-  } else {
-    btn.classList.remove('btn-success');
-    btn.classList.add('btn-warning');
-    btn.innerHTML = '🇺🇦 API: OFF';
-    btn.title = 'Увімкнути Ukraine Alert API';
-    console.log('❌ Ukraine Alert API вимкнено');
-    showAdminMessage('Ukraine Alert API вимкнено', 'warning');
-  }
-  
-  // Перезагрузить данные если автообновление включено
-  if (autoRefreshEnabled) {
-    reloadAdminMarkers();
-  }
-}
-
-async function testAPIConnection() {
-  const btn = document.querySelector('[onclick="testAPIConnection()"]');
-  const originalText = btn.innerHTML;
-  btn.innerHTML = '⏳ Testing...';
-  btn.disabled = true;
-  
-  try {
-    console.log('🧪 Тестирование Ukraine Alert API...');
-    
-    const response = await fetch('/api_alerts');
-    
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-    
-    const data = await response.json();
-    
-    const message = `API тест успешен!
-📊 Всего тревог: ${data.total_api_alerts || 0}
-🗺️ С координатами: ${data.mapped_alerts || 0}
-⏰ Время: ${new Date().toLocaleTimeString()}`;
-    
-    console.log('✅ API тест успешен:', data);
-    showAdminMessage(message, 'success');
-    
-  } catch (error) {
-    console.error('❌ API тест неудачен:', error);
-    showAdminMessage(`API тест неудачен: ${error.message}`, 'error');
-  } finally {
-    btn.innerHTML = originalText;
-    btn.disabled = false;
-  }
-}
-
-function showAdminMessage(message, type = 'info') {
-  // Создаем уведомление в админ панели
-  const alert = document.createElement('div');
-  alert.className = `alert alert-${type === 'error' ? 'danger' : type} alert-dismissible fade show`;
-  alert.style.cssText = `
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    z-index: 9999;
-    min-width: 300px;
-    max-width: 500px;
-  `;
-  
-  alert.innerHTML = `
-    <div class="d-flex align-items-start">
-      <div class="me-2">
-        ${type === 'success' ? '✅' : type === 'warning' ? '⚠️' : type === 'error' ? '❌' : 'ℹ️'}
-      </div>
-      <div class="flex-grow-1">
-        <pre style="margin: 0; white-space: pre-wrap; font-family: inherit;">${message}</pre>
-      </div>
-      <button type="button" class="btn-close" onclick="this.parentElement.parentElement.remove()"></button>
-    </div>
-  `;
-  
-  document.body.appendChild(alert);
-  
-  // Автоматически убираем через 5 секунд
-  setTimeout(() => {
-    if (alert.parentElement) {
-      alert.remove();
-    }
-  }, 5000);
-}
-
-// Инициализация состояния кнопки API при загрузке страницы
-document.addEventListener('DOMContentLoaded', function() {
-  const btn = document.getElementById('apiAlertsBtn');
-  if (btn) {
-    if (apiAlertsEnabled) {
-      btn.classList.remove('btn-warning');
-      btn.classList.add('btn-success');
-      btn.innerHTML = '🇺🇦 API: ON';
-    } else {
-      btn.classList.remove('btn-success');
-      btn.classList.add('btn-warning');
-      btn.innerHTML = '🇺🇦 API: OFF';
-    }
-  }
-});
+const S=new URLSearchParams(location.search).get('secret')||'';
+let map=null,layer=null,auto=true;
+function notif(m,t='info'){const n=document.createElement('div');n.className='notification notification-'+t;n.textContent=m;document.body.appendChild(n);setTimeout(()=>{n.style.opacity='0';n.style.transform='translateX(100px)';setTimeout(()=>n.remove(),300)},4000)}
+async function api(e,o={}){try{const u=e.includes('?')?`${e}&secret=${encodeURIComponent(S)}`:`${e}?secret=${encodeURIComponent(S)}`;const r=await fetch(u,o);if(!r.ok)throw new Error(`HTTP ${r.status}`);return await r.json()}catch(err){notif(`Error: ${err.message}`,'error');throw err}}
+function initMap(){if(map)return;try{map=L.map('adminMap',{attributionControl:false,zoomControl:true}).setView([49,31.3],6);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:11}).addTo(map);layer=L.layerGroup().addTo(map);console.log('✅ Map initialized');reloadMarkers()}catch(e){console.error('❌ Map failed:',e);notif('Map initialization failed','error')}}
+async function reloadMarkers(){if(!map||!layer)return;try{const d=await fetch(`/data?timeRange=40&confRange=0&maxTracks=100&ts=${Date.now()}`).then(r=>r.json());const t=d.tracks||[];layer.clearLayers();t.forEach(m=>{if(!m.lat||!m.lng)return;const i=L.icon({iconUrl:`/static/${m.threat_type||'shahed'}.png`,iconSize:[34,34],iconAnchor:[17,17]});const k=L.marker([m.lat,m.lng],{icon:i}).addTo(layer);const p=`<div style="font-size:0.85rem;max-width:250px"><strong style="color:#3b82f6">${m.place||'Unknown'}</strong><br><div style="margin:6px 0">${(m.text||'').slice(0,200)}</div><div style="opacity:0.7;font-size:0.75rem">${m.date||''}</div></div>`;k.bindPopup(p)});document.getElementById('mapStats').textContent=`📍 Markers: ${t.length}`;console.log(`✅ Loaded ${t.length} markers`)}catch(e){console.error('❌ Load failed:',e);notif('Failed to load markers','error')}}
+function toggleAuto(){auto=!auto;const b=document.getElementById('autoBtn');b.textContent=`🔁 Auto: ${auto?'ON':'OFF'}`;b.className=auto?'btn btn-success btn-sm':'btn btn-secondary btn-sm'}
+async function blockUser(id){try{await api('/block',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});notif('User blocked successfully','success');setTimeout(()=>location.reload(),1000)}catch(e){}}
+async function unblockUser(id){try{await api('/unblock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});notif('User unblocked successfully','success');setTimeout(()=>location.reload(),1000)}catch(e){}}
+async function saveMonPeriod(){const v=document.getElementById('monPeriod').value;const s=document.getElementById('monStatus');s.style.display='inline-flex';s.textContent='Saving...';try{await api('/admin/set_monitor_period',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:parseInt(v)})});s.textContent='✅ Saved';notif('Monitor period updated','success')}catch(e){s.textContent='❌ Error'}}
+document.getElementById('markerForm').addEventListener('submit',async(e)=>{e.preventDefault();const lat=document.getElementById('mmLat').value;const lng=document.getElementById('mmLng').value;const place=document.getElementById('mmPlace').value;const threat_type=document.getElementById('mmType').value;const text=document.getElementById('mmText').value;const s=document.getElementById('mmStatus');s.style.display='inline-flex';s.textContent='Creating...';try{await api('/admin/add_manual_marker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,place,threat_type,text})});s.textContent='✅ Created';notif('Marker created successfully','success');setTimeout(()=>location.reload(),1000)}catch(e){s.textContent='❌ Error'}});
+async function hideMarker(lat,lng,text,source){try{await fetch('/hide_marker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,text,source})});notif('Marker hidden','success');setTimeout(()=>location.reload(),1000)}catch(e){}}
+async function clearCache(){if(!confirm('Clear all negative geocode cache? This cannot be undone.'))return;try{await api('/admin/neg_geocode_clear',{method:'POST'});notif('Cache cleared successfully','success');setTimeout(()=>location.reload(),1000)}catch(e){}}
+async function delCache(name){try{await api('/admin/neg_geocode_delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});notif('Cache entry deleted','success');setTimeout(()=>location.reload(),1000)}catch(e){}}
+async function clearLogs(){if(!confirm('Clear all debug logs? This cannot be undone.'))return;try{await api('/admin/clear_debug_logs',{method:'POST'});notif('Debug logs cleared','success');setTimeout(()=>location.reload(),1000)}catch(e){}}
+async function loadStats(){const s=document.getElementById('advStatus');s.style.display='block';try{const d=await api('/admin/stats');const t=d.stats;let h='';h+=`<div class="debug-entry"><span class="debug-category">MESSAGES</span><span class="debug-message">Total: ${t.messages.total}, Geo: ${t.messages.with_coordinates}, Pending: ${t.messages.pending_geo}, Recent 24h: ${t.messages.recent_24h}</span></div>`;h+=`<div class="debug-entry"><span class="debug-category">SYSTEM</span><span class="debug-message">Active Users: ${t.system.active_users}, Blocked: ${t.system.blocked_users}, Hidden Markers: ${t.system.hidden_markers}, Cache Size: ${t.system.neg_cache_size}</span></div>`;s.innerHTML=h}catch(e){s.innerHTML=`<div class="debug-entry"><span class="debug-message">Error: ${e.message}</span></div>`}}
+async function cleanup(){const d=document.getElementById('cleanDays').value;if(!confirm(`Clean up data older than ${d} days? This cannot be undone.`))return;const s=document.getElementById('advStatus');s.style.display='block';s.innerHTML='<div class="debug-entry"><span class="debug-message">Cleaning up old data...</span></div>';try{const r=await api('/admin/cleanup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({days:parseInt(d)})});s.innerHTML=`<div class="debug-entry"><span class="debug-category">CLEANED</span><span class="debug-message">Messages: ${r.cleaned.messages}, Debug Logs: ${r.cleaned.debug_logs}, Visitor Records: ${r.cleaned.visitor_records}</span></div>`;s.innerHTML+=`<div class="debug-entry"><span class="debug-category">REMAINING</span><span class="debug-message">Messages: ${r.remaining.messages}, Debug Logs: ${r.remaining.debug_logs}</span></div>`;notif('Cleanup completed successfully','success');setTimeout(()=>location.reload(),2000)}catch(e){s.innerHTML=`<div class="debug-entry"><span class="debug-message">Error: ${e.message}</span></div>`}}
+async function exportData(type){try{const d=await api(`/admin/export?type=${type}`);const b=new Blob([JSON.stringify(d.data,null,2)],{type:'application/json'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=`neptun_${type}_${new Date().toISOString().split('T')[0]}.json`;a.click();URL.revokeObjectURL(u);notif(`Exported ${type} data successfully`,'success')}catch(e){}}
+async function forceReload(){if(!confirm('⚠️ WARNING: This will force reload the page for ALL active users!\n\nContinue?'))return;try{await api('/admin/trigger-force-reload',{method:'POST'});notif('Force reload activated for all users','success')}catch(e){}}
+async function updateRaw(){try{const d=await api('/admin/raw_msgs');document.getElementById('rawCount').textContent=d.raw_count;const t=document.getElementById('rawTable');if(t&&d.raw_msgs.length>0){t.innerHTML=d.raw_msgs.map(r=>`<tr><td style="white-space:nowrap;font-size:0.8rem">${r.date}</td><td><span class="badge info">${r.channel}</span></td><td class="truncate" style="max-width:500px" title="${r.text}">${r.text}</td></tr>`).join('')}}catch(e){console.warn('Raw messages update failed:',e)}}
+async function updateStats(){try{const d=await api('/admin/stats');const s=d.stats;document.getElementById('statActive').textContent=s.system.active_users;document.getElementById('statBlocked').textContent=s.system.blocked_users;document.getElementById('statPending').textContent=s.messages.pending_geo;document.getElementById('statMarkers').textContent=s.messages.with_coordinates;document.getElementById('statDebug').textContent=s.system.debug_logs}catch(e){console.warn('Stats update failed:',e)}}
+setInterval(()=>{if(auto&&map)reloadMarkers()},30000);
+setInterval(updateRaw,15000);
+setInterval(updateStats,20000);
+document.addEventListener('DOMContentLoaded',()=>{console.log('🌊 Neptun Admin Dashboard initialized');if(typeof L==='undefined'){notif('Leaflet library failed to load','error');return}setTimeout(()=>{initMap();updateStats();updateRaw()},100)});
 </script>
 </body>
 </html>
