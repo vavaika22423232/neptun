@@ -1398,7 +1398,7 @@ def extract_location_with_groq_ai(message_text: str):
 {{"city": "назва або null", "district": "назва або null", "oblast": "назва або null", "confidence": 0.95}}"""
 
         response = groq_client.chat.completions.create(
-            model="llama-3.1-70b-versatile",
+            model="llama-3.3-70b-versatile",  # Updated model (llama-3.1 decommissioned)
             messages=[
                 {"role": "system", "content": "Ти аналізуєш повідомлення про повітряні тривоги. Відповідай ТІЛЬКИ валідним JSON."},
                 {"role": "user", "content": prompt}
