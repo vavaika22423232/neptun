@@ -5563,6 +5563,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         # Track current oblast context from headers like "Полтавщина:", "Харківщина:"
         current_oblast = None
         oblast_header_pattern = re.compile(r'^([а-яіїєґ]+(?:щина|ська\s+обл(?:асть)?\.?)):?\s*$', re.IGNORECASE)
+        # Pattern for inline oblast: "Сумщина: 2 шахеди на Лебедин"
+        inline_oblast_pattern = re.compile(r'^([а-яіїєґ]+(?:щина|ська\s+обл(?:асть)?\.?)):\s+(.+)$', re.IGNORECASE)
         
         # Look for lines that contain threats with quantities and targets
         for line in text_lines:
@@ -5570,7 +5572,19 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             if not line_stripped:
                 continue
             
-            # Check if this line is an oblast header
+            # Check if this line has inline oblast format: "Область: threat text"
+            inline_match = inline_oblast_pattern.match(line_stripped)
+            if inline_match:
+                oblast_name = inline_match.group(1).lower()
+                threat_text = inline_match.group(2).strip()
+                
+                # Add the threat with oblast context
+                enhanced_line = f"{oblast_name}: {threat_text}"
+                threat_lines.append(enhanced_line)
+                add_debug_log(f"MULTI-LINE: Detected inline oblast threat: {oblast_name} -> {threat_text[:50]}", "multi_line_inline_oblast")
+                continue
+            
+            # Check if this line is a standalone oblast header
             oblast_match = oblast_header_pattern.match(line_stripped)
             if oblast_match:
                 current_oblast = oblast_match.group(1).lower()
@@ -5595,6 +5609,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 (re.search(r'\d+\s+шахед[а-яіїєёыийї]*\s+на\s+([а-яіїєё\'\-\s]+)', line_lower)) or
                 # Pattern: "N шахедів/шахеди біля [target]" - near target
                 (re.search(r'\d+\s+шахед[а-яіїєёыийї]*\s+біля\s+([а-яіїєё\'\-\s]+)', line_lower)) or
+                # Pattern: "N шахед маневрує в районі [target]" - maneuvering in area
+                (re.search(r'\d+\s+шахед[а-яіїєёыийї]*\s+маневру[юєї]+\s+в\s+район[іуи]\s+([а-яіїєё\'\-\s]+)', line_lower)) or
                 # Pattern: "N ударних БпЛА на [target]"
                 (re.search(r'\d+\s+ударн.*?бпла.*?на\s+([а-яіїєё\'\-\s]+)', line_lower)) or
                 # Pattern: "N БпЛА на [target]" or "N бпла на [target]"  
