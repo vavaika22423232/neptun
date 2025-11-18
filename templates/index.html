@@ -4934,12 +4934,15 @@
         m.bindPopup(popupHtml, { closeButton:false, autoPan:true });
         
         // Додаємо подвійне натискання для швидкого видалення
-        m.on('dblclick', function(e) {
-          L.DomEvent.stopPropagation(e);
-          if (confirm('Приховати цю метку?')) {
-            hideMarkerFromMap(p.lat, p.lng, p.text||'', p.channel||p.source||'');
-          }
-        });
+        // ВАЖЛИВО: додаємо обробник ДО додавання маркера в шар
+        if (m && typeof m.on === 'function') {
+          m.on('dblclick', function(e) {
+            L.DomEvent.stopPropagation(e);
+            if (confirm('Приховати цю метку?')) {
+              hideMarkerFromMap(p.lat, p.lng, p.text||'', p.channel||p.source||'');
+            }
+          });
+        }
         
         // Шахеди додаємо до окремого шару без кластеризації
         const isShahed = (p.threat_type || '').toLowerCase() === 'shahed' || /шахед/i.test(p.threat_type || '');
