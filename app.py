@@ -1339,7 +1339,7 @@ for entry in PROBLEMATIC_ENTRIES:
     NAME_REGION_MAP.pop(entry, None)
 
 def ensure_city_coords(name: str):
-    """Return (lat,lng,approx_bool) for settlement, performing lazy geocoding.
+    """Return (lat,lng,approx_bool) for settlement using Photon/Nominatim APIs.
     approx_bool True means we used oblast center fallback (low precision)."""
     if not name:
         return None
@@ -1353,6 +1353,7 @@ def ensure_city_coords(name: str):
     # PRIORITY FIX: Check for "City + Oblast" pattern (e.g., "Вилково Одещини")
     # Split on space and check if we have both a city and oblast
     words = n.split()
+    region_context = None
     if len(words) >= 2:
         # Try first word as city (with normalization)
         potential_city = words[0]
@@ -1361,69 +1362,97 @@ def ensure_city_coords(name: str):
         
         potential_oblast = ' '.join(words[1:])
         
-        # Check if first word is a known city
-        if potential_city in CITY_COORDS:
-            # Check if remaining words match an oblast
-            if potential_oblast in OBLAST_CENTERS or any(potential_oblast in oblast_key for oblast_key in OBLAST_CENTERS.keys()):
-                # This is "City Oblast" pattern - use city coordinates!
-                lat, lng = CITY_COORDS[potential_city]
-                print(f"DEBUG: Found 'City+Oblast' pattern: '{potential_city}' + '{potential_oblast}' -> using city coords {(lat, lng)}")
-                return (lat, lng, False)
+        # Check if remaining words match an oblast
+        if potential_oblast in OBLAST_CENTERS or any(potential_oblast in oblast_key for oblast_key in OBLAST_CENTERS.keys()):
+            # This is "City+Oblast" pattern - extract region for API query
+            n = potential_city
+            region_context = potential_oblast
+            print(f"DEBUG: Found 'City+Oblast' pattern: '{potential_city}' + '{potential_oblast}' -> will search API with region filter")
     
-    # Quick check in existing coordinates first
-    if n in CITY_COORDS:
-        lat,lng = CITY_COORDS[n]; return (lat,lng,False)
     # Check if it's a direct oblast/region name
     if n in OBLAST_CENTERS:
         lat,lng = OBLAST_CENTERS[n]; return (lat,lng,True)
     if 'SETTLEMENTS_INDEX' in globals() and n in (globals().get('SETTLEMENTS_INDEX') or {}):
         lat,lng = globals()['SETTLEMENTS_INDEX'][n]; return (lat,lng,False)
     
-    # Try SpaCy normalization for single city names (with limited context)
-    if SPACY_AVAILABLE:
-        try:
-            # Create a simple test message to leverage SpaCy normalization
-            # NOTE: This should only find exact matches for the specific city
-            test_message = f"на {name}"
-            spacy_results = spacy_enhanced_geocoding(test_message)
-            
-            for result in spacy_results:
-                if (result['coords'] and 
-                    result['normalized'] == n and 
-                    result['name'].lower() == n):  # Ensure exact name match
-                    lat, lng = result['coords']
-                    print(f"DEBUG SpaCy single city: Found {name} -> {result['normalized']} -> ({lat}, {lng})")
+    # Use Photon API (supports Cyrillic, fast, finds villages)
+    try:
+        import requests
+        
+        # Get region hint from NAME_REGION_MAP or extracted region_context
+        region_hint = region_context or NAME_REGION_MAP.get(n)
+        
+        # Try Photon first (supports Cyrillic)
+        photon_url = 'https://photon.komoot.io/api/'
+        photon_params = {'q': n, 'limit': 10}
+        
+        photon_response = requests.get(photon_url, params=photon_params, timeout=3)
+        if photon_response.ok:
+            photon_data = photon_response.json()
+            for feature in photon_data.get('features', []):
+                props = feature.get('properties', {})
+                state = props.get('state', '')
+                country = props.get('country', '')
+                
+                # Filter by Ukraine
+                if country in ['Україна', 'Ukraine']:
+                    # If we have region hint, filter by it
+                    if region_hint:
+                        if region_hint in state.lower() or state.lower() in region_hint:
+                            coords_arr = feature.get('geometry', {}).get('coordinates', [])
+                            if coords_arr and len(coords_arr) >= 2:
+                                lng, lat = coords_arr[0], coords_arr[1]
+                                print(f"DEBUG Photon: Found '{n}' in {state} -> ({lat}, {lng})")
+                                return (lat, lng, False)
+                    else:
+                        # No region hint, use first Ukraine result
+                        coords_arr = feature.get('geometry', {}).get('coordinates', [])
+                        if coords_arr and len(coords_arr) >= 2:
+                            lng, lat = coords_arr[0], coords_arr[1]
+                            print(f"DEBUG Photon: Found '{n}' in {state} -> ({lat}, {lng})")
+                            return (lat, lng, False)
+        
+        # Fallback to Nominatim with transliteration
+        def transliterate_ua_to_latin(text):
+            translit_map = {
+                'а': 'a', 'б': 'b', 'в': 'v', 'г': 'h', 'ґ': 'g', 'д': 'd', 'е': 'e', 'є': 'ye',
+                'ж': 'zh', 'з': 'z', 'и': 'y', 'і': 'i', 'ї': 'yi', 'й': 'y', 'к': 'k', 'л': 'l',
+                'м': 'm', 'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
+                'ф': 'f', 'х': 'kh', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'shch', 'ь': '', 'ю': 'yu', 'я': 'ya',
+                'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'H', 'Ґ': 'G', 'Д': 'D', 'Е': 'E', 'Є': 'Ye',
+                'Ж': 'Zh', 'З': 'Z', 'И': 'Y', 'І': 'I', 'Ї': 'Yi', 'Й': 'Y', 'К': 'K', 'Л': 'L',
+                'М': 'M', 'Н': 'N', 'О': 'O', 'П': 'P', 'Р': 'R', 'С': 'S', 'Т': 'T', 'У': 'U',
+                'Ф': 'F', 'Х': 'Kh', 'Ц': 'Ts', 'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Shch', 'Ь': '', 'Ю': 'Yu', 'Я': 'Ya'
+            }
+            return ''.join(translit_map.get(c, c) for c in text)
+        
+        name_latin = transliterate_ua_to_latin(n)
+        nominatim_url = 'https://nominatim.openstreetmap.org/search'
+        params = {'q': f'{name_latin}, Ukraine', 'format': 'json', 'limit': 5, 'addressdetails': 1}
+        headers = {'User-Agent': 'NeptunAlarmMap/1.0 (https://neptun.in.ua)'}
+        
+        response = requests.get(nominatim_url, params=params, headers=headers, timeout=4)
+        if response.ok:
+            results = response.json()
+            for result in results:
+                if region_hint:
+                    address = result.get('address', {})
+                    result_state = address.get('state', '')
+                    if region_hint in result_state.lower() or result_state.lower() in region_hint:
+                        lat = float(result['lat'])
+                        lng = float(result['lon'])
+                        print(f"DEBUG Nominatim: Found '{n}' -> '{name_latin}' in {result_state} -> ({lat}, {lng})")
+                        return (lat, lng, False)
+                elif results:
+                    # No region hint, use first result
+                    first = results[0]
+                    lat = float(first['lat'])
+                    lng = float(first['lon'])
+                    print(f"DEBUG Nominatim: Found '{n}' -> '{name_latin}' -> ({lat}, {lng})")
                     return (lat, lng, False)
                     
-        except Exception as e:
-            print(f"DEBUG SpaCy single city error: {e}")
-            # Continue to existing logic
-    
-    region_hint = NAME_REGION_MAP.get(n)
-    # Attempt precise geocode if API key
-    if region_hint and OPENCAGE_API_KEY:
-        q = f"{n} {region_hint} Україна"
-        coords = geocode_opencage(q)
-        if coords:
-            # store in both for fast reuse
-            CITY_COORDS[n] = coords
-            try:
-                if 'SETTLEMENTS_INDEX' in globals():
-                    globals()['SETTLEMENTS_INDEX'][n] = coords
-            except Exception:
-                pass
-            return (coords[0], coords[1], False)
-    # Fallback: try geocode without region if key exists
-    if OPENCAGE_API_KEY:
-        coords = geocode_opencage(f"{n} Україна")
-        if coords:
-            CITY_COORDS[n] = coords
-            try:
-                if 'SETTLEMENTS_INDEX' in globals():
-                    globals()['SETTLEMENTS_INDEX'][n] = coords
-            except Exception:
-                pass
-            return (coords[0], coords[1], False)
+    except Exception as e:
+        print(f"DEBUG API geocoding error in ensure_city_coords: {e}")
     # Approximate fallback: oblast center (if region hint matches an oblast name substring)
     if region_hint:
         reg_low = region_hint.lower()
@@ -1566,24 +1595,7 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                         f"{name.lower()} {match} область",
                     ]
                     
-                    print(f"DEBUG: Checking variants for {name} with oblast {match}: {city_variants}")
-                    
-                    # Try to find coordinates using these specific combinations
-                    for variant in city_variants:
-                        if variant in CITY_COORDS:
-                            coords = CITY_COORDS[variant]
-                            print(f"DEBUG: Found exact match for '{variant}' -> {coords}")
-                            return (coords[0], coords[1], False)
-                        
-                        # Also try SETTLEMENTS_INDEX if available
-                        if 'SETTLEMENTS_INDEX' in globals():
-                            settlements = globals().get('SETTLEMENTS_INDEX') or {}
-                            if variant in settlements:
-                                coords = settlements[variant]
-                                print(f"DEBUG: Found settlement match for '{variant}' -> {coords}")
-                                return (coords[0], coords[1], False)
-                    
-                    print(f"DEBUG: No exact match found for variants: {city_variants}")
+                    print(f"DEBUG: Checking variants for {name} with oblast {match}: trying API with region filter")
                     
                     # Store oblast key for potential fallback
                     oblast_normalizations = {
@@ -1677,13 +1689,30 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                                 return (lat, lng, False)
             
             # Fallback to Nominatim API if Photon didn't find the city
+            # NOTE: Nominatim doesn't support Cyrillic in query, need transliteration
             if region_name:
+                # Transliterate to Latin for Nominatim (it rejects Cyrillic with HTTP 400)
+                def transliterate_ua_to_latin(text):
+                    """Ukrainian to Latin transliteration for Nominatim API"""
+                    translit_map = {
+                        'а': 'a', 'б': 'b', 'в': 'v', 'г': 'h', 'ґ': 'g', 'д': 'd', 'е': 'e', 'є': 'ye',
+                        'ж': 'zh', 'з': 'z', 'и': 'y', 'і': 'i', 'ї': 'yi', 'й': 'y', 'к': 'k', 'л': 'l',
+                        'м': 'm', 'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
+                        'ф': 'f', 'х': 'kh', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'shch', 'ь': '', 'ю': 'yu', 'я': 'ya',
+                        'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'H', 'Ґ': 'G', 'Д': 'D', 'Е': 'E', 'Є': 'Ye',
+                        'Ж': 'Zh', 'З': 'Z', 'И': 'Y', 'І': 'I', 'Ї': 'Yi', 'Й': 'Y', 'К': 'K', 'Л': 'L',
+                        'М': 'M', 'Н': 'N', 'О': 'O', 'П': 'P', 'Р': 'R', 'С': 'S', 'Т': 'T', 'У': 'U',
+                        'Ф': 'F', 'Х': 'Kh', 'Ц': 'Ts', 'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Shch', 'Ь': '', 'Ю': 'Yu', 'Я': 'Ya'
+                    }
+                    return ''.join(translit_map.get(c, c) for c in text)
+                
+                name_latin = transliterate_ua_to_latin(name)
+                
                 nominatim_url = 'https://nominatim.openstreetmap.org/search'
                 params = {
-                    'q': f'{name}, {region_name}, Ukraine',
+                    'q': f'{name_latin}, Ukraine',
                     'format': 'json',
                     'limit': 5,
-                    'accept-language': 'uk',
                     'addressdetails': 1
                 }
                 headers = {
@@ -1702,42 +1731,42 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                             lat = float(result['lat'])
                             lng = float(result['lon'])
                             display_name = result.get('display_name', '')
-                            print(f"DEBUG: Nominatim API found '{name}' in {result_state} -> ({lat}, {lng})")
+                            print(f"DEBUG: Nominatim API found '{name}' -> '{name_latin}' in {result_state} -> ({lat}, {lng})")
                             return (lat, lng, False)
         except Exception as e:
             print(f"DEBUG: Multi-regional API lookup error: {e}")
     
-    # Second try: standard city lookup (without oblast context)
-    # BUT: if we have excluded_oblast, try to find variant NOT in that oblast
-    if excluded_oblast:
-        # Try to find specific city variants that are NOT in excluded oblast
-        name_lower = name.lower()
-        possible_coords = []
-        excluded_keys = []
+    # Second try: standard city lookup via API (without oblast context but with excluded_oblast filter)
+    try:
+        import requests
         
-        # Check CITY_COORDS for variants with oblast disambiguation
-        for key, coords in CITY_COORDS.items():
-            if name_lower in key:
-                # Extract oblast from key (e.g., "березівка(миколаївська)" -> "миколаївська")
-                oblast_match = re.search(r'\(([^)]+)\)', key)
-                if oblast_match:
-                    key_oblast = oblast_match.group(1)
-                    if excluded_oblast in key_oblast:
-                        excluded_keys.append(key)
-                        print(f"DEBUG: Excluding '{key}' - matches excluded oblast '{excluded_oblast}'")
-                    else:
-                        possible_coords.append((coords, key))
-                        print(f"DEBUG: Found candidate '{key}' with coords {coords}, not in excluded oblast '{excluded_oblast}'")
-                elif key == name_lower:
-                    # Plain key without oblast - might be ambiguous, skip if we have better options
-                    print(f"DEBUG: Found plain key '{key}' - will use only if no other options")
+        # Try Photon API (supports Cyrillic)
+        photon_url = 'https://photon.komoot.io/api/'
+        photon_params = {'q': name, 'limit': 10}
         
-        if possible_coords:
-            # Use the first non-excluded variant
-            coords, key = possible_coords[0]
-            print(f"DEBUG: Using non-excluded variant '{key}' -> {coords}")
-            return (coords[0], coords[1], False)
+        photon_response = requests.get(photon_url, params=photon_params, timeout=3)
+        if photon_response.ok:
+            photon_data = photon_response.json()
+            for feature in photon_data.get('features', []):
+                props = feature.get('properties', {})
+                state = props.get('state', '')
+                country = props.get('country', '')
+                
+                if country in ['Україна', 'Ukraine']:
+                    # If we have excluded_oblast, skip results from that oblast
+                    if excluded_oblast and excluded_oblast in state.lower():
+                        print(f"DEBUG: Skipping Photon result in excluded oblast: {state}")
+                        continue
+                    
+                    coords_arr = feature.get('geometry', {}).get('coordinates', [])
+                    if coords_arr and len(coords_arr) >= 2:
+                        lng, lat = coords_arr[0], coords_arr[1]
+                        print(f"DEBUG Photon: Found '{name}' in {state} (excluded={excluded_oblast}) -> ({lat}, {lng})")
+                        return (lat, lng, False)
+    except Exception as e:
+        print(f"DEBUG: Photon fallback error: {e}")
     
+    # Try ensure_city_coords as final fallback
     result = ensure_city_coords(name)
     if result:
         return result
@@ -1754,10 +1783,10 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                 city_name, confidence = ai_result
                 add_debug_log(f"AI: Extracted city '{city_name}' from message (confidence: {confidence:.2f})", "ai_city_extract")
                 
-                # Try to geocode the AI-extracted city
+                # Try to geocode the AI-extracted city via API
                 ai_coords = ensure_city_coords(city_name)
                 if ai_coords:
-                    add_debug_log(f"AI: Successfully geocoded AI-extracted city '{city_name}' -> {ai_coords[:2]}", "ai_geocode_success")
+                    add_debug_log(f"AI: Successfully geocoded AI-extracted city '{city_name}' via API -> {ai_coords[:2]}", "ai_geocode_success")
                     return ai_coords
         except Exception as e:
             add_debug_log(f"AI: Error extracting city: {e}", "ai_error")
@@ -1958,7 +1987,7 @@ def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = Non
     
     Args:
         message_text: Original message text
-        existing_city_coords: CITY_COORDS dict (defaults to global CITY_COORDS)
+        existing_city_coords: deprecated parameter (now uses API instead of local dict)
         existing_normalizer: UA_CITY_NORMALIZE dict (defaults to global UA_CITY_NORMALIZE)
         
     Returns:
@@ -1976,8 +2005,7 @@ def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = Non
     if not SPACY_AVAILABLE:
         return []
     
-    if existing_city_coords is None:
-        existing_city_coords = CITY_COORDS
+    # existing_city_coords is deprecated - we use API now
     if existing_normalizer is None:
         existing_normalizer = UA_CITY_NORMALIZE
         
@@ -2159,16 +2187,18 @@ def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = Non
 
 def _find_coordinates_multiple_formats(city_name: str, detected_regions: list, existing_city_coords: dict) -> tuple:
     """
-    Try to find coordinates using multiple key formats
+    Try to find coordinates using API with regional filtering
     Returns coordinates tuple (lat, lng) or None
-    """
-    # List of key formats to try
-    search_keys = [city_name]
     
-    # Add regional variants if regions detected
-    if detected_regions:
-        for region in detected_regions:
-            # Convert region names to adjective forms for coordinate lookup
+    Note: existing_city_coords parameter is deprecated but kept for backward compatibility
+    """
+    try:
+        import requests
+        
+        # Build region context from detected_regions
+        region_context = None
+        if detected_regions:
+            # Convert region names to adjective forms
             region_adj_map = {
                 'сумщина': 'сумська',
                 'чернігівщина': 'чернігівська', 
@@ -2182,26 +2212,43 @@ def _find_coordinates_multiple_formats(city_name: str, detected_regions: list, e
                 'луганщина': 'луганська'
             }
             
-            region_adj = region_adj_map.get(region, region)
-            
-            # Try various formats
-            search_keys.extend([
-                f"{city_name} {region}",           # миколаївка сумщина
-                f"{city_name}({region_adj})",      # миколаївка(сумська)
-                f"{city_name} ({region_adj})",     # миколаївка (сумська)  
-                f"{city_name} {region_adj}",       # миколаївка сумська
-                f"{city_name} {region_adj} обл",   # миколаївка сумська обл
-                f"{city_name} {region_adj} область" # миколаївка сумська область
-            ])
+            for region in detected_regions:
+                region_adj = region_adj_map.get(region, region)
+                region_context = region_adj + ' область'
+                break
+        
+        # Try Photon API (supports Cyrillic)
+        photon_url = 'https://photon.komoot.io/api/'
+        photon_params = {'q': city_name, 'limit': 10}
+        
+        photon_response = requests.get(photon_url, params=photon_params, timeout=3)
+        if photon_response.ok:
+            photon_data = photon_response.json()
+            for feature in photon_data.get('features', []):
+                props = feature.get('properties', {})
+                state = props.get('state', '')
+                country = props.get('country', '')
+                
+                if country in ['Україна', 'Ukraine']:
+                    # Filter by region if available
+                    if region_context and region_context in state:
+                        coords_arr = feature.get('geometry', {}).get('coordinates', [])
+                        if coords_arr and len(coords_arr) >= 2:
+                            lng, lat = coords_arr[0], coords_arr[1]
+                            print(f"DEBUG SpaCy Photon: Found '{city_name}' in {state} -> ({lat}, {lng})")
+                            return (lat, lng)
+                    elif not region_context:
+                        # No region filter, use first Ukraine result
+                        coords_arr = feature.get('geometry', {}).get('coordinates', [])
+                        if coords_arr and len(coords_arr) >= 2:
+                            lng, lat = coords_arr[0], coords_arr[1]
+                            print(f"DEBUG SpaCy Photon: Found '{city_name}' in {state} -> ({lat}, {lng})")
+                            return (lat, lng)
     
-    # Try each key format
-    for key in search_keys:
-        coords = existing_city_coords.get(key)
-        if coords:
-            print(f"DEBUG SpaCy coord lookup: Found '{city_name}' using key '{key}' -> {coords}")
-            return coords
+    except Exception as e:
+        print(f"DEBUG SpaCy API lookup error: {e}")
     
-    print(f"DEBUG SpaCy coord lookup: No coordinates found for '{city_name}' (tried {len(search_keys)} keys)")
+    print(f"DEBUG SpaCy coord lookup: No coordinates found via API for '{city_name}'")
     return None
 
 def get_coordinates_enhanced(city_name: str, region: str = None, context: str = "") -> tuple:
@@ -2456,7 +2503,10 @@ def _extract_city_after_preposition_spacy(doc, prep_index: int, detected_regions
         'case': case_info
     }
 
-# Consolidated static fallback coordinates
+# DEPRECATED: CITY_COORDS dictionary is no longer used for primary geocoding
+# The system now uses Photon/Nominatim APIs for real-time geocoding
+# This dictionary is kept only for backward compatibility and as fallback
+# See ensure_city_coords() and ensure_city_coords_with_message_context() for current API-based implementation
 CITY_COORDS = {
         # Core cities
         'київ': (50.4501, 30.5234), 'харків': (49.9935, 36.2304), 'одеса': (46.4825, 30.7233), 'дніпро': (48.4647, 35.0462),
