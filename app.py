@@ -1423,6 +1423,15 @@ def ensure_city_coords(name: str):
                 props = feature.get('properties', {})
                 state = props.get('state', '')
                 country = props.get('country', '')
+                osm_key = props.get('osm_key', '')
+                osm_value = props.get('osm_value', '')
+                
+                # Filter out POIs and tourism - only settlements
+                if osm_key not in ['place', 'boundary']:
+                    continue
+                valid_place_types = ['city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood', 'administrative']
+                if osm_key == 'place' and osm_value not in valid_place_types:
+                    continue
                 
                 # Filter by Ukraine
                 if country in ['Україна', 'Ukraine']:
@@ -1728,6 +1737,15 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                     props = feature.get('properties', {})
                     state = props.get('state', '')
                     country = props.get('country', '')
+                    osm_key = props.get('osm_key', '')
+                    osm_value = props.get('osm_value', '')
+                    
+                    # Filter out POIs - only settlements
+                    if osm_key not in ['place', 'boundary']:
+                        continue
+                    valid_place_types = ['city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood', 'administrative']
+                    if osm_key == 'place' and osm_value not in valid_place_types:
+                        continue
                     
                     # Filter by Ukraine and detected region
                     if (country == 'Україна' or country == 'Ukraine'):
@@ -1811,6 +1829,18 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                 props = feature.get('properties', {})
                 state = props.get('state', '')
                 country = props.get('country', '')
+                osm_key = props.get('osm_key', '')
+                osm_value = props.get('osm_value', '')
+                
+                # CRITICAL: Filter out POIs and tourism objects - only accept actual settlements
+                # This fixes issue where "Тернівка" matched tourism POI "Красивый вид на Терновку" in Crimea
+                if osm_key not in ['place', 'boundary']:
+                    continue  # Skip tourism, amenity, etc.
+                
+                # Only accept settlement types
+                valid_place_types = ['city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood', 'administrative']
+                if osm_key == 'place' and osm_value not in valid_place_types:
+                    continue
                 
                 if country in ['Україна', 'Ukraine']:
                     # If we have excluded_oblast, skip results from that oblast
@@ -2311,6 +2341,15 @@ def _find_coordinates_multiple_formats(city_name: str, detected_regions: list, e
                 props = feature.get('properties', {})
                 state = props.get('state', '')
                 country = props.get('country', '')
+                osm_key = props.get('osm_key', '')
+                osm_value = props.get('osm_value', '')
+                
+                # Filter out POIs - only settlements
+                if osm_key not in ['place', 'boundary']:
+                    continue
+                valid_place_types = ['city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood', 'administrative']
+                if osm_key == 'place' and osm_value not in valid_place_types:
+                    continue
                 
                 if country in ['Україна', 'Ukraine']:
                     # Filter by region if available
