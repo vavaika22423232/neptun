@@ -1385,9 +1385,11 @@ def extract_location_with_groq_ai(message_text: str):
 2. Назву району (якщо вказано явно, наприклад "Павлоградський район")
 3. Назву області
 
-ВАЖЛИВО:
+КРИТИЧНО ВАЖЛИВО:
+- "курсом на X", "напрямок на X", "ціль на X" - X це МІСТО (city), а НЕ район!
 - "в районі X" означає "біля X", а НЕ назву району
 - "Павлоградський район" - це назва району
+- "курсом на Павлоград" - Павлоград це МІСТО (city="Павлоград", district=null)
 - Нормалізуй назви до називного відмінку (Юріївки → Юріївка, Тернівку → Тернівка)
 - "Дніпропетровщина" → "Дніпропетровська область"
 
@@ -9028,6 +9030,20 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         # NEW: Create markers for general UAV activity messages (without specific direction)
         if 'бпла' in ln_lower or 'безпілотник' in ln_lower or 'дрон' in ln_lower:
             add_debug_log(f"UAV activity detected in line: '{ln}', oblast_hdr: '{oblast_hdr}'", "uav_processing")
+            
+            # CRITICAL: Check if message has specific directional patterns - if yes, skip general marker
+            # Let the main parser handle "курсом на", "напрямок на", "у напрямку", etc.
+            has_directional_pattern = any(pattern in ln_lower for pattern in [
+                'курсом на', 'курс на', 'напрямок на', 'напрямку на', 
+                'ціль на', 'у напрямку', 'через', 'повз',
+                'маневрує в районі', 'в районі'
+            ])
+            
+            if has_directional_pattern:
+                add_debug_log(f"SKIP general UAV marker - has directional pattern: '{ln}'", "uav_processing")
+                # Don't create general marker - let main parser extract specific city
+                continue
+            
             # Check if we have a region and this is a UAV message
             if oblast_hdr:
                 add_debug_log(f"Processing UAV with region context: '{oblast_hdr}'", "uav_processing")
