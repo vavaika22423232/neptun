@@ -382,6 +382,7 @@
                 map.setLayoutProperty(layer.id, 'text-field', newField);
               }
             } else if (Array.isArray(textField)) {
+              // Для expressions замінюємо всі варіанти на "name:uk"
               let jsonStr = JSON.stringify(textField);
               jsonStr = jsonStr.replace(/"name:latin"/g, '"name:uk"');
               jsonStr = jsonStr.replace(/"name:en"/g, '"name:uk"');
@@ -393,7 +394,9 @@
             }
           }
         });
-      } catch (e) {}
+      } catch (e) {
+        console.warn('Error setting Ukrainian labels:', e);
+      }
     };
     
     async function initWorldMask() {
@@ -639,7 +642,13 @@
           style: 'mapbox://styles/vavaika/cmi35uav600gi01r45sfk14q2',
           center: [31.1656, 48.3794],
           zoom: 5.5,
-          attributionControl: false
+          language: 'uk',
+          attributionControl: false,
+          locale: {
+            'NavigationControl.ResetBearing': 'Скинути орієнтацію',
+            'NavigationControl.ZoomIn': 'Збільшити',
+            'NavigationControl.ZoomOut': 'Зменшити'
+          }
         });
         
         map.on('error', (e) => {
