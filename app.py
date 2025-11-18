@@ -12645,6 +12645,14 @@ def about():
     resp.headers['Cache-Control'] = 'public, max-age=3600'  # 1 hour cache
     return resp
 
+@app.route('/analytics')
+def analytics():
+    """Analytics and statistics page with original content analysis"""
+    response = render_template('analytics.html')
+    resp = app.response_class(response)
+    resp.headers['Cache-Control'] = 'public, max-age=300'  # 5 minutes cache
+    return resp
+
 @app.route('/community')
 @app.route('/telegram')
 @app.route('/join')
@@ -12715,6 +12723,14 @@ def privacy():
 def terms():
     """Terms of Service page"""
     response = render_template('terms.html')
+    resp = app.response_class(response)
+    resp.headers['Cache-Control'] = 'public, max-age=86400'  # 24 hours cache
+    return resp
+
+@app.route('/contact')
+def contact():
+    """Contact page"""
+    response = render_template('contact.html')
     resp = app.response_class(response)
     resp.headers['Cache-Control'] = 'public, max-age=86400'  # 24 hours cache
     return resp
