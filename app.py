@@ -1350,6 +1350,36 @@ def ensure_city_coords(name: str):
         n = UA_CITY_NORMALIZE[n]
         print(f"DEBUG: Normalized '{name.lower()}' -> '{n}'")
     
+    # Normalize Ukrainian city name declensions to nominative case
+    # This fixes issues like "Тернівку" (accusative) -> "Тернівка" (nominative)
+    # for consistent API geocoding results
+    original_n = n
+    if n.endswith('ку') and len(n) > 4:
+        # Accusative ending: Тернівку -> Тернівка
+        n = n[:-2] + 'ка'
+    elif n.endswith('цю') and len(n) > 4:
+        # Accusative ending: Вінницю -> Вінниця
+        n = n[:-2] + 'ця'
+    elif n.endswith('у') and len(n) > 3:
+        # Check if it's likely accusative (not ending in consonant+у)
+        if n[-2] in 'аеиоуяюєї':
+            pass  # Likely nominative already (e.g., "Суму")
+        else:
+            # Try: Київу -> Київ, but preserve: Суму, Ромну (already nominative)
+            test_form = n[:-1]
+            # Only convert if it looks like a valid city name
+            if test_form and test_form[-1] in 'вгджзклмнпрстфхцчшщ':
+                n = test_form
+    elif n.endswith('ові') and len(n) > 5:
+        # Dative ending: Києву -> Київ
+        n = n[:-3]
+    elif n.endswith('ом') and len(n) > 4:
+        # Instrumental ending: Київом -> Київ
+        n = n[:-2]
+    
+    if n != original_n:
+        print(f"DEBUG: Declension normalized '{original_n}' -> '{n}'")
+    
     # PRIORITY FIX: Check for "City + Oblast" pattern (e.g., "Вилково Одещини")
     # Split on space and check if we have both a city and oblast
     words = n.split()
@@ -1464,6 +1494,27 @@ def ensure_city_coords(name: str):
 def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
     """Enhanced version that tries to extract oblast from message if city not found.
     Returns (lat,lng,approx_bool) - approx_bool True means used oblast fallback."""
+    
+    # Normalize Ukrainian city name declensions FIRST
+    original_name = name
+    name_lower = name.strip().lower()
+    
+    # Normalize declensions to nominative case for consistent API results
+    if name_lower.endswith('ку') and len(name_lower) > 4:
+        name_lower = name_lower[:-2] + 'ка'
+    elif name_lower.endswith('цю') and len(name_lower) > 4:
+        name_lower = name_lower[:-2] + 'ця'
+    elif name_lower.endswith('у') and len(name_lower) > 3:
+        if name_lower[-2] not in 'аеиоуяюєї' and name_lower[-2] in 'вгджзклмнпрстфхцчшщ':
+            name_lower = name_lower[:-1]
+    elif name_lower.endswith('ові') and len(name_lower) > 5:
+        name_lower = name_lower[:-3]
+    elif name_lower.endswith('ом') and len(name_lower) > 4:
+        name_lower = name_lower[:-2]
+    
+    if name_lower != original_name.lower():
+        print(f"DEBUG: Declension '{original_name}' -> '{name_lower}'")
+        name = name_lower  # Update name for further processing
     
     # PRIORITY: Try SpaCy first if available
     if SPACY_AVAILABLE and message_text:
@@ -1747,6 +1798,15 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
         photon_response = requests.get(photon_url, params=photon_params, timeout=3)
         if photon_response.ok:
             photon_data = photon_response.json()
+            
+            # Military context priority: if message contains UAV/shahed keywords,
+            # prioritize oblasts closer to frontline (Dnipropetrovska, Donetska, Zaporizka, Khersonska)
+            military_keywords = ['бпла', 'шахед', 'shahed', 'дрон', 'курс', 'напрямок']
+            is_military_context = any(kw in message_text.lower() for kw in military_keywords) if message_text else False
+            frontline_oblasts = ['дніпропетровська', 'донецька', 'запорізька', 'херсонська', 'миколаївська', 'харківська', 'луганська']
+            
+            # Collect all results
+            ukraine_results = []
             for feature in photon_data.get('features', []):
                 props = feature.get('properties', {})
                 state = props.get('state', '')
@@ -1761,8 +1821,31 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                     coords_arr = feature.get('geometry', {}).get('coordinates', [])
                     if coords_arr and len(coords_arr) >= 2:
                         lng, lat = coords_arr[0], coords_arr[1]
-                        print(f"DEBUG Photon: Found '{name}' in {state} (excluded={excluded_oblast}) -> ({lat}, {lng})")
-                        return (lat, lng, False)
+                        
+                        # Check if this is a frontline oblast
+                        is_frontline = any(oblast in state.lower() for oblast in frontline_oblasts)
+                        
+                        ukraine_results.append({
+                            'lat': lat,
+                            'lng': lng,
+                            'state': state,
+                            'is_frontline': is_frontline
+                        })
+            
+            # Select best result based on context
+            if ukraine_results:
+                # If military context, prioritize frontline oblasts
+                if is_military_context:
+                    frontline_results = [r for r in ukraine_results if r['is_frontline']]
+                    if frontline_results:
+                        best = frontline_results[0]
+                        print(f"DEBUG Photon (military priority): Found '{name}' in {best['state']} -> ({best['lat']}, {best['lng']})")
+                        return (best['lat'], best['lng'], False)
+                
+                # Otherwise use first result
+                best = ukraine_results[0]
+                print(f"DEBUG Photon: Found '{name}' in {best['state']} (excluded={excluded_oblast}) -> ({best['lat']}, {best['lng']})")
+                return (best['lat'], best['lng'], False)
     except Exception as e:
         print(f"DEBUG: Photon fallback error: {e}")
     
@@ -5911,6 +5994,56 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 continue
             
             line_lower = line_stripped.lower()
+            
+            # PRIORITY: Handle "напрямок м.X" or "напрямок на X" pattern first
+            napryamok_match = re.search(r'напрямок\s+(?:м\.|місто|на)?\s*([а-яїієґ\-]+)', line_lower)
+            if napryamok_match:
+                target_city = napryamok_match.group(1).strip()
+                target_norm = target_city
+                if target_norm.endswith('у') and len(target_norm) > 3:
+                    target_norm = target_norm[:-1] + 'а'
+                elif target_norm.endswith('ку') and len(target_norm) > 4:
+                    target_norm = target_norm[:-2] + 'ка'
+                if target_norm in UA_CITY_NORMALIZE:
+                    target_norm = UA_CITY_NORMALIZE[target_norm]
+                
+                # Get coordinates using full message context
+                target_coords = ensure_city_coords_with_message_context(target_norm, text)
+                
+                if target_coords:
+                    if len(target_coords) == 3:
+                        lat, lng, approx = target_coords
+                    else:
+                        lat, lng = target_coords[:2]
+                    
+                    # Check if not already processed
+                    city_key = target_norm
+                    if city_key not in processed_cities:
+                        processed_cities.add(city_key)
+                        
+                        uav_count = 1
+                        # Try to extract UAV count from line
+                        count_match = re.search(r'(\d+)\s*[xх×]?\s*бпла', line_lower)
+                        if count_match:
+                            uav_count = int(count_match.group(1))
+                        
+                        threat_id = f"{mid}_napryamok_{len(threats)}"
+                        threats.append({
+                            'id': threat_id,
+                            'place': target_norm.title(),
+                            'lat': lat,
+                            'lng': lng,
+                            'threat_type': 'shahed',
+                            'text': f"Напрямок → {target_norm.title()}",
+                            'date': date_str,
+                            'channel': channel,
+                            'marker_icon': 'shahed.png',
+                            'source_match': 'immediate_napryamok',
+                            'count': uav_count
+                        })
+                        
+                        add_debug_log(f"Напрямок pattern: {target_norm} at {target_coords}", "napryamok")
+                        continue  # Skip other processing for this line
             
             # Look for UAV course patterns
             if 'бпла' in line_lower and ('курс' in line_lower or ' на ' in line_lower or 'над' in line_lower or 'повз' in line_lower):
