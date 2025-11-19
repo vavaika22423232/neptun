@@ -8676,9 +8676,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     
     oblast_hdr = None
     multi_city_tracks = []
+    processed_lines_count = 0
     add_debug_log(f"Processing {len(lines)} cleaned lines for multi-city tracks", "multi_region")
+    
     for ln in lines:
-        add_debug_log(f"Processing line: '{ln}'", "multi_region")
+        processed_lines_count += 1
+        add_debug_log(f"Processing line {processed_lines_count}/{len(lines)}: '{ln[:80]}...'", "multi_region")
         
         # PRIORITY: Check for specific region-city patterns FIRST
         import re as _re_region_city
@@ -8783,10 +8786,78 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         else:
             add_debug_log(f"REGION-CITY pattern NOT FOUND for line: '{ln_lower}'", "region_city_debug")
         
+        # NEW: Pattern "БпЛА на [direction] [region_genitive] курсом на [target]"
+        # Example: "БпЛА на півночі Херсонщини курсом на Миколаївщину"
+        regional_course_pattern = re.search(r'(бпла|безпілотник|шахед|дрон).*(на\s+(півночі|півдні|сході|заході|центрі))?\s*([а-яіїєґ]+щин[іуиа])\s*.*курсом\s+на\s+([а-яіїєґ\'\-\s]+)', ln_lower, re.IGNORECASE)
+        if regional_course_pattern:
+            direction_part = regional_course_pattern.group(3) if regional_course_pattern.group(2) else None
+            region_genitive = regional_course_pattern.group(4)
+            target_raw = regional_course_pattern.group(5).strip()
+            
+            # Normalize target (could be city or region)
+            target_norm = target_raw.replace('щину', 'щина').replace('щини', 'щина').strip()
+            
+            add_debug_log(f"REGIONAL COURSE pattern: direction={direction_part}, region={region_genitive}, target={target_raw} -> {target_norm}", "regional_course")
+            
+            # Try to find coordinates for target
+            target_city = normalize_city_name(target_norm)
+            target_city = UA_CITY_NORMALIZE.get(target_city, target_city)
+            coords = CITY_COORDS.get(target_city)
+            if not coords and SETTLEMENTS_INDEX:
+                coords = SETTLEMENTS_INDEX.get(target_city)
+            
+            # If target is a region (щина), use region center
+            if not coords and ('щина' in target_city or 'щини' in target_city):
+                # Try to get region center coordinates
+                region_centers = {
+                    'миколаївщина': (46.975, 31.995),
+                    'херсонщина': (46.635, 32.617),
+                    'чернігівщина': (51.4982, 31.2893),
+                    'сумщина': (50.9077, 34.7981),
+                    'полтавщина': (49.5883, 34.5514),
+                    'харківщина': (49.9935, 36.2304),
+                    'дніпропетровщина': (48.4647, 35.0462),
+                    'запоріжжя': (47.8388, 35.1396),
+                    'донеччина': (48.0159, 37.8028),
+                }
+                coords = region_centers.get(target_city)
+                if coords:
+                    add_debug_log(f"Using region center for '{target_city}': {coords}", "regional_course")
+            
+            if coords:
+                lat, lng = coords
+                threat_type, icon = classify(ln)
+                
+                # Extract count if present
+                count_match = re.search(r'(\d+)\s*[xх×]?\s*(бпла|шахед)', ln_lower)
+                count = int(count_match.group(1)) if count_match else 1
+                
+                place_label = target_norm.title()
+                if direction_part:
+                    place_label += f" ({direction_part})"
+                
+                multi_city_tracks.append({
+                    'id': f"{mid}_regional_course_{len(multi_city_tracks)+1}",
+                    'place': place_label,
+                    'lat': lat,
+                    'lng': lng,
+                    'threat_type': threat_type,
+                    'text': clean_text(ln)[:500],
+                    'date': date_str,
+                    'channel': channel,
+                    'marker_icon': icon,
+                    'source_match': 'regional_course',
+                    'count': count
+                })
+                add_debug_log(f"Created regional course marker: {place_label} at {lat}, {lng}", "regional_course")
+                continue
+            else:
+                add_debug_log(f"No coordinates for regional course target: '{target_raw}' (norm: '{target_city}')", "regional_course")
+        
         # NEW: Check for regional direction patterns WITHOUT specific city (e.g. "БпЛА на сході Сумщини ➡️ курсом на південь")
         # These should create regional markers, not skip
         region_direction_pattern = re.search(r'(бпла|безпілотник|шахед|дрон).*(на\s+(півночі|півдні|сході|заході)).*([а-яіїєґ]+щин[іуиа])', ln_lower, re.IGNORECASE)
-        if region_direction_pattern and not region_city_match:
+        if region_direction_pattern and not region_city_match and not regional_course_pattern:
             add_debug_log(f"REGIONAL DIRECTION pattern detected (no specific city): {ln[:100]}", "regional_direction")
             # This line should be processed by regional parser - don't add to multi_city_tracks yet
             # Instead, extract the region and direction to create a regional marker later
@@ -9311,6 +9382,63 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     })
                     add_debug_log(f"Created city threat marker: {label} ({threat_type})", "multi_region")
                     continue  # move to next line
+        
+        # --- NEW: БпЛА курсом на [city] pattern (e.g., "4х БпЛА курсом на Конотоп") ---
+        # ВАЖЛИВО: Підтримка багатослівних назв міст (наприклад "Жовті Води")
+        uav_course_city = None
+        uav_course_count = 1
+        # Pattern: "Nх БпЛА курсом на [city]" or "БпЛА курсом на [city]"
+        # Захоплює назву міста до кінця рядка або до розділових знаків
+        m_uav_course = re.search(r'(?:^|\b)(?:([0-9]+)[xх×]?\s*)?бпла\s+курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]+?)(?:\s*$|[,\.\!\?;])', ln, re.IGNORECASE)
+        if m_uav_course:
+            if m_uav_course.group(1):
+                try:
+                    uav_course_count = int(m_uav_course.group(1))
+                except:
+                    uav_course_count = 1
+            uav_course_city = m_uav_course.group(2).strip()
+            
+            add_debug_log(f"UAV course pattern found: {uav_course_count}x БпЛА курсом на '{uav_course_city}'", "multi_region")
+        
+        if uav_course_city:
+            base_uav = normalize_city_name(uav_course_city)
+            base_uav = UA_CITY_NORMALIZE.get(base_uav, base_uav)
+            coords_uav = CITY_COORDS.get(base_uav) or (SETTLEMENTS_INDEX.get(base_uav) if SETTLEMENTS_INDEX else None)
+            
+            # Try region-specific lookup if oblast_hdr is set
+            if not coords_uav and oblast_hdr:
+                combo_uav = f"{base_uav} {oblast_hdr}"
+                coords_uav = CITY_COORDS.get(combo_uav) or (SETTLEMENTS_INDEX.get(combo_uav) if SETTLEMENTS_INDEX else None)
+                add_debug_log(f"Trying region combo: '{combo_uav}' -> {coords_uav}", "multi_region")
+            
+            if coords_uav:
+                lat, lng = coords_uav
+                label = UA_CITY_NORMALIZE.get(base_uav, base_uav).title()
+                if uav_course_count > 1:
+                    label += f" ({uav_course_count}x)"
+                if oblast_hdr and oblast_hdr not in label.lower():
+                    label += f" [{oblast_hdr.title()}]"
+                
+                multi_city_tracks.append({
+                    'id': f"{mid}_mc{len(multi_city_tracks)+1}",
+                    'place': label,
+                    'lat': lat,
+                    'lng': lng,
+                    'threat_type': 'shahed',
+                    'text': clean_text(ln)[:500],
+                    'date': date_str,
+                    'channel': channel,
+                    'marker_icon': 'shahed.png',
+                    'source_match': 'multiline_uav_course',
+                    'count': uav_course_count
+                })
+                add_debug_log(f"Created UAV course marker: {label}", "multi_region")
+                continue  # move to next line
+            else:
+                add_debug_log(f"No coordinates found for UAV course city: '{uav_course_city}' (normalized: '{base_uav}')", "multi_region")
+        
+        # Continue processing other patterns even if UAV course didn't match
+        # Don't skip the line completely
         
         # Пытаемся найти город и количество (например, "2х БпЛА курсом на Десну")
         import re
@@ -9942,8 +10070,11 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             else:
                 print(f"DEBUG: No coordinates found for city '{base}'")
     print(f"DEBUG: Multi-city tracks processing complete. Found {len(multi_city_tracks)} tracks")
+    add_debug_log(f"Multi-region processing complete: {len(multi_city_tracks)} markers from {processed_lines_count} lines", "multi_region")
+    
     if multi_city_tracks:
         print(f"DEBUG: Returning {len(multi_city_tracks)} multi-city tracks")
+        add_debug_log(f"Returning {len(multi_city_tracks)} multi-city tracks: {[t['place'] for t in multi_city_tracks]}", "multi_region")
         # Combine with priority result if available
         if 'priority_result' in locals() and priority_result:
             combined_result = priority_result + multi_city_tracks
