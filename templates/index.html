@@ -3503,68 +3503,6 @@
     }
     document.addEventListener('DOMContentLoaded', showDisclaimer);
     
-    // Hide marker from map function
-    async function hideMarkerFromMap(lat, lng, text, source) {
-      try {
-        const response = await fetch('/hide_marker', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            lat: lat,
-            lng: lng,
-            text: text,
-            source: source
-          })
-        });
-        
-        if (response.ok) {
-          // Show success message
-          const notification = document.createElement('div');
-          notification.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: #10b981;
-            color: white;
-            padding: 12px 20px;
-            border-radius: 8px;
-            font-size: 0.9rem;
-            font-weight: 600;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            z-index: 10000;
-            animation: slideIn 0.3s ease-out;
-          `;
-          notification.textContent = '✅ Метку приховано';
-          document.body.appendChild(notification);
-          
-          // Remove notification after 3 seconds
-          setTimeout(() => {
-            notification.style.animation = 'slideOut 0.3s ease-out';
-            setTimeout(() => notification.remove(), 300);
-          }, 3000);
-          
-          // Reload map data to reflect changes
-          setTimeout(() => {
-            if (typeof updateMarkers === 'function') {
-              updateMarkers();
-            } else {
-              location.reload();
-            }
-          }, 500);
-        } else {
-          throw new Error('Failed to hide marker');
-        }
-      } catch (error) {
-        console.error('Error hiding marker:', error);
-        alert('Помилка при приховуванні мітки. Спробуйте ще раз.');
-      }
-    }
-    
-    // Expose function globally
-    window.hideMarkerFromMap = hideMarkerFromMap;
-    
     // Donate button click handler
     document.addEventListener('DOMContentLoaded', () => {
       const donateBtn = document.getElementById('donateBtn');
@@ -4894,37 +4832,10 @@
               padding: 2px 5px;
               border-radius: 3px;
             ">×${p.count}</div>` : ''}
-            
-            <button onclick="hideMarkerFromMap(${p.lat}, ${p.lng}, '${(p.text||'').replace(/'/g, "\\'")}', '${(p.channel||p.source||'').replace(/'/g, "\\'")}'); return false;" style="
-              margin-top: 8px;
-              background: #ef4444;
-              color: white;
-              border: none;
-              padding: 6px 12px;
-              border-radius: 4px;
-              font-size: 0.75rem;
-              font-weight: 600;
-              cursor: pointer;
-              width: 100%;
-              transition: background 0.2s;
-            " onmouseover="this.style.background='#dc2626'" onmouseout="this.style.background='#ef4444'">
-              🗑️ Приховати метку
-            </button>
           </div>
         `;
         
         m.bindPopup(popupHtml, { closeButton:false, autoPan:true });
-        
-        // Додаємо подвійне натискання для швидкого видалення
-        // ВАЖЛИВО: додаємо обробник ДО додавання маркера в шар
-        if (m && typeof m.on === 'function') {
-          m.on('dblclick', function(e) {
-            L.DomEvent.stopPropagation(e);
-            if (confirm('Приховати цю метку?')) {
-              hideMarkerFromMap(p.lat, p.lng, p.text||'', p.channel||p.source||'');
-            }
-          });
-        }
         
         // Шахеди додаємо до окремого шару без кластеризації
         const isShahed = (p.threat_type || '').toLowerCase() === 'shahed' || /шахед/i.test(p.threat_type || '');
