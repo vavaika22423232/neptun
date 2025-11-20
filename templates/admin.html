@@ -316,6 +316,21 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 
 <div class="card">
 <div class="card-header">
+<h2 class="card-title">👁️ Hidden Markers <span id="hiddenCount" class="badge danger">0</span></h2>
+<button class="btn btn-sm btn-secondary" onclick="loadHiddenMarkers()">🔄 Refresh</button>
+</div>
+<div class="card-body">
+<div id="hiddenMarkersContainer">
+<div class="empty-state">
+<div class="empty-state-icon">👁️</div>
+<p>No hidden markers</p>
+</div>
+</div>
+</div>
+</div>
+
+<div class="card">
+<div class="card-header">
 <h2 class="card-title">📌 Add Manual Marker</h2>
 </div>
 <div class="card-body">
@@ -460,6 +475,8 @@ async function unblockUser(id){try{await api('/unblock',{method:'POST',headers:{
 async function saveMonPeriod(){const v=document.getElementById('monPeriod').value;const s=document.getElementById('monStatus');s.style.display='inline-flex';s.textContent='Saving...';try{await api('/admin/set_monitor_period',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:parseInt(v)})});s.textContent='✅ Saved';notif('Monitor period updated','success')}catch(e){s.textContent='❌ Error'}}
 document.getElementById('markerForm').addEventListener('submit',async(e)=>{e.preventDefault();const lat=document.getElementById('mmLat').value;const lng=document.getElementById('mmLng').value;const place=document.getElementById('mmPlace').value;const threat_type=document.getElementById('mmType').value;const text=document.getElementById('mmText').value;const s=document.getElementById('mmStatus');s.style.display='inline-flex';s.textContent='Creating...';try{await api('/admin/add_manual_marker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,place,threat_type,text})});s.textContent='✅ Created';notif('Marker created successfully','success');setTimeout(()=>location.reload(),1000)}catch(e){s.textContent='❌ Error'}});
 async function hideMarker(lat,lng,text,source){try{await fetch('/hide_marker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,text,source})});notif('Marker hidden','success');setTimeout(()=>location.reload(),1000)}catch(e){}}
+async function loadHiddenMarkers(){try{const d=await api('/admin/hidden_markers');const h=d.hidden||[];document.getElementById('hiddenCount').textContent=h.length;const c=document.getElementById('hiddenMarkersContainer');if(h.length===0){c.innerHTML='<div class="empty-state"><div class="empty-state-icon">👁️</div><p>No hidden markers</p></div>';return}let html='<div style="max-height:400px;overflow-y:auto"><table class="table"><thead><tr><th>Location</th><th>Text</th><th>Hidden Date</th><th>Action</th></tr></thead><tbody>';h.forEach(m=>{html+=`<tr><td>${m.lat.toFixed(4)}, ${m.lng.toFixed(4)}</td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">${(m.text||'').substring(0,100)}</td><td>${m.hidden_date||''}</td><td><button class="btn btn-success btn-sm" onclick="unhideMarker(${m.lat},${m.lng},'${(m.text||'').replace(/'/g,"\\'")}','${m.source||''}')">↩️ Restore</button></td></tr>`});html+='</tbody></table></div>';c.innerHTML=html}catch(e){console.error('Failed to load hidden markers:',e);notif('Failed to load hidden markers','error')}}
+async function unhideMarker(lat,lng,text,source){try{await api('/admin/unhide_marker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,text,source})});notif('Marker restored','success');loadHiddenMarkers();reloadMarkers()}catch(e){notif('Failed to restore marker','error')}}
 async function clearCache(){if(!confirm('Clear all negative geocode cache? This cannot be undone.'))return;try{await api('/admin/neg_geocode_clear',{method:'POST'});notif('Cache cleared successfully','success');setTimeout(()=>location.reload(),1000)}catch(e){}}
 async function delCache(name){try{await api('/admin/neg_geocode_delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});notif('Cache entry deleted','success');setTimeout(()=>location.reload(),1000)}catch(e){}}
 async function clearLogs(){if(!confirm('Clear all debug logs? This cannot be undone.'))return;try{await api('/admin/clear_debug_logs',{method:'POST'});notif('Debug logs cleared','success');setTimeout(()=>location.reload(),1000)}catch(e){}}
@@ -472,7 +489,7 @@ async function updateStats(){try{const d=await api('/admin/stats');const s=d.sta
 setInterval(()=>{if(auto&&map)reloadMarkers()},30000);
 setInterval(updateRaw,15000);
 setInterval(updateStats,20000);
-document.addEventListener('DOMContentLoaded',()=>{console.log('🌊 Neptun Admin Dashboard initialized');if(typeof L==='undefined'){notif('Leaflet library failed to load','error');return}setTimeout(()=>{initMap();updateStats();updateRaw()},100)});
+document.addEventListener('DOMContentLoaded',()=>{console.log('🌊 Neptun Admin Dashboard initialized');if(typeof L==='undefined'){notif('Leaflet library failed to load','error');return}setTimeout(()=>{initMap();updateStats();updateRaw();loadHiddenMarkers()},100)});
 </script>
 </body>
 </html>

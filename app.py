@@ -1586,7 +1586,7 @@ def extract_district_and_oblast_context(message_text: str):
     
     # Look for oblast mention in header or text
     oblast_patterns = [
-        r'^([а-яїіє]+щина):',  # "Дніпропетровщина:"
+        r'^([а-яїіє]+(?:ч)?чина|[а-яїіє]+щина|волинь):',  # "Хмельниччина:", "Вінниччина:", "Дніпропетровщина:", "Волинь:"
         r'([а-яїіє]+ська\s+обл\.?)',  # "Харківська обл."
         r'([а-яїіє]+ська\s+область)',  # "Полтавська область"
     ]
@@ -1610,6 +1610,10 @@ def extract_district_and_oblast_context(message_text: str):
                 'київщина': 'київська обл.',
                 'черкащина': 'черкаська область',
                 'вінниччина': 'вінницька область',
+                'хмельниччина': 'хмельницька область',
+                'тернопільщина': 'тернопільська область',
+                'житомирщина': 'житомирська область',
+                'волинь': 'волинська область',
                 'донеччина': 'донецька область',
                 'луганщина': 'луганська область',
             }
@@ -4774,10 +4778,15 @@ def _seed_recent_from_sql():
 def init_visits_db():
     try:
         with _visits_db_conn() as conn:
-            conn.execute("CREATE TABLE IF NOT EXISTS visits (id TEXT PRIMARY KEY, first_seen REAL, last_seen REAL)")
+            conn.execute("CREATE TABLE IF NOT EXISTS visits (id TEXT PRIMARY KEY, ip TEXT, first_seen REAL, last_seen REAL)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_visits_first ON visits(first_seen)")
             # Helpful for fast lookups of currently active users by recent activity window
             conn.execute("CREATE INDEX IF NOT EXISTS idx_visits_last ON visits(last_seen)")
+            # Add ip column if missing (for existing databases)
+            try:
+                conn.execute("ALTER TABLE visits ADD COLUMN ip TEXT")
+            except:
+                pass  # Column already exists
     except Exception as e:
         log.warning(f"visits db init failed: {e}")
 
@@ -5055,14 +5064,14 @@ def toggle_comment_reaction(comment_id: str, emoji: str, user_ip: str) -> dict:
         log.warning(f"toggle_comment_reaction failed: {e}")
         return {'action': 'error', 'reactions': {}}
 
-def record_visit_sql(id_:str, now_ts:float):
+def record_visit_sql(id_:str, now_ts:float, ip_addr:str=None):
     if not id_:
         return
     try:
         with _visits_db_conn() as conn:
             # Use upsert pattern to avoid race between SELECT and INSERT under concurrent requests
-            conn.execute("INSERT OR IGNORE INTO visits (id,first_seen,last_seen) VALUES (?,?,?)", (id_, now_ts, now_ts))
-            conn.execute("UPDATE visits SET last_seen=? WHERE id=?", (now_ts, id_))
+            conn.execute("INSERT OR IGNORE INTO visits (id,ip,first_seen,last_seen) VALUES (?,?,?,?)", (id_, ip_addr, now_ts, now_ts))
+            conn.execute("UPDATE visits SET last_seen=?, ip=? WHERE id=?", (now_ts, ip_addr, id_))
     except Exception as e:
         log.warning(f"record_visit_sql failed: {e}")
 
@@ -8865,8 +8874,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         
         # Check if line contains БпЛА information without specific course
         ln_lower = ln.lower()
-        # Support both Cyrillic БпЛА and Latin-mixed БпЛA variants
-        has_uav = 'бпла' in ln_lower or 'бпла' in ln_lower or 'безпілотник' in ln_lower or 'дрон' in ln_lower or 'bpla' in ln_lower
+        # Support both Cyrillic БпЛА and Latin-mixed БпЛA variants, and also Shahed
+        has_uav = 'бпла' in ln_lower or 'бпла' in ln_lower or 'безпілотник' in ln_lower or 'дрон' in ln_lower or 'bpla' in ln_lower or 'шахед' in ln_lower or 'shahed' in ln_lower
         if has_uav:
             add_debug_log(f"Line contains UAV keywords", "multi_region")
             if not any(keyword in ln_lower for keyword in ['курс', 'на ', 'районі']):
@@ -14303,7 +14312,14 @@ def locate_place():
     if not query:
         return jsonify({'status': 'error', 'message': 'No query provided'})
     
-    query_lower = query.lower()
+    # Clean query from region suffixes before searching
+    query_clean = query
+    for suffix in [' область', ' Область', 'область', 'Область', 'ська область', 'цька область']:
+        if suffix in query_clean:
+            query_clean = query_clean.split(suffix)[0].strip()
+            break
+    
+    query_lower = query_clean.lower()
     
     # First, try exact match in CITY_COORDS
     if query_lower in CITY_COORDS:
@@ -15470,7 +15486,7 @@ def presence():
         log.warning(f"recent visits update failed: {e}")
 
     try:
-        record_visit_sql(vid, now)
+        record_visit_sql(vid, now, remote_ip)
     except Exception:
         pass
 
@@ -15969,6 +15985,37 @@ def unblock_id():
         blocked.remove(vid)
         save_blocked(blocked)
     return jsonify({'status':'ok','blocked':blocked})
+
+@app.route('/admin/hidden_markers')
+def admin_hidden_markers():
+    """Return list of all hidden markers with metadata."""
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    hidden_keys = load_hidden()
+    hidden_list = []
+    for key in hidden_keys:
+        try:
+            parts = key.split('|', 2)
+            if len(parts) >= 3:
+                lat_lng, text, source = parts
+                lat_str, lng_str = lat_lng.split(',')
+                hidden_list.append({
+                    'lat': float(lat_str),
+                    'lng': float(lng_str),
+                    'text': text,
+                    'source': source,
+                    'key': key
+                })
+        except Exception as e:
+            log.warning(f"Failed to parse hidden marker key: {key}, error: {e}")
+    return jsonify({'status':'ok', 'hidden': hidden_list, 'count': len(hidden_list)})
+
+@app.route('/admin/unhide_marker', methods=['POST'])
+def admin_unhide_marker():
+    """Unhide a marker (alias for /unhide_marker with auth check)."""
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    return unhide_marker()
 
 def _fmt_age(age_seconds:int)->str:
     # Format seconds to H:MM:SS (or M:SS if <1h)
