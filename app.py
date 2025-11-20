@@ -13569,6 +13569,11 @@ def start_session_watcher():
             time.sleep(SESSION_WATCH_INTERVAL)
     threading.Thread(target=_watch, daemon=True).start()
 
+@app.route('/google2848d36b38653ede.html')
+def google_verification():
+    """Google Search Console verification file"""
+    return send_from_directory('static', 'google2848d36b38653ede.html')
+
 @app.route('/')
 def index():
     # BANDWIDTH OPTIMIZATION: Add caching headers for main page
