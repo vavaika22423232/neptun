@@ -9268,7 +9268,17 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 'курсом на', 'курс на', 'напрямок на', 'напрямку на', 
                 'ціль на', 'у напрямку', 'у бік', 'в бік', 'через', 'повз',
                 'маневрує в районі', 'в районі', 'бпла на ', 'дрон на '
-            ]) or '➡' in ln  # emoji arrows like ➡️
+            ])
+            
+            # Check for emoji arrows BUT only if there's actual text (city name) after the arrow
+            if '➡' in ln and not has_directional_pattern:
+                # Extract text after arrow to see if there's a city name
+                arrow_match = re.search(r'➡[️\s]*(.{3,})', ln)
+                if arrow_match:
+                    text_after_arrow = arrow_match.group(1).strip().strip('ㅤ️ ').strip()
+                    # If there's meaningful text after arrow (not just punctuation/links), treat as directional
+                    if text_after_arrow and len(text_after_arrow) > 1 and not text_after_arrow.startswith(('http', '[', '**', '➡')):
+                        has_directional_pattern = True
             
             if has_directional_pattern:
                 add_debug_log(f"SKIP general UAV marker - has directional pattern: '{ln}'", "uav_processing")
@@ -11556,7 +11566,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
 
     # --- Per-line UAV course / area city targeting ("БпЛА курсом на <місто>", "8х БпЛА в районі <міста>", "БпЛА на <місто>") ---
     # Triggered when region multi list suppressed earlier due to presence of course lines or simple "на" pattern.
-    if 'бпла' in lower and ('курс' in lower or 'в районі' in lower or 'в напрямку' in lower or 'в бік' in lower or 'від' in lower or 'околиц' in lower or 'сектор' in lower or (re.search(r'\d+\s*[xх×]?\s*бпла\s+на\s+', lower))):
+    if 'бпла' in lower and ('курс' in lower or 'в районі' in lower or 'в напрямку' in lower or 'в бік' in lower or 'від' in lower or 'околиц' in lower or 'сектор' in lower or 'бпла на ' in lower or (re.search(r'\d+\s*[xх×]?\s*бпла\s+на\s+', lower))):
         add_debug_log(f"UAV course parser triggered for message length: {len(text)} chars", "uav_course")
         
         # --- EARLY CHECK: Black Sea aquatory (e.g. "курсом на Миколаїв з акваторії Чорного моря" or "15 шахедів з моря на Ізмаїл") ---
