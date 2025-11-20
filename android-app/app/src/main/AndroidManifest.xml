@@ -35,6 +35,11 @@
         <meta-data
             android:name="com.google.android.geo.API_KEY"
             android:value="AIzaSyDummyKeyForDevelopment"/>
+        
+        <!-- AdMob App ID -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-6427297104531436~4804891690"/>
 
         <activity
             android:name=".MainActivity"

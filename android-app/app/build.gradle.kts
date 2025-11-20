@@ -134,6 +134,9 @@ dependencies {
     implementation("com.google.android.play:app-update:2.1.0")
     implementation("com.google.android.play:app-update-ktx:2.1.0")
     
+    // AdMob
+    implementation("com.google.android.gms:play-services-ads:22.6.0")
+    
     // JSON parsing
     implementation("com.google.code.gson:gson:2.10.1")
     

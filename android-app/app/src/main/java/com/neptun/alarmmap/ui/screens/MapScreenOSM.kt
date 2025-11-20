@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
+import com.neptun.alarmmap.ui.components.AdMobBanner
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -664,6 +665,17 @@ fun MapScreenOSM(
                     }
                 }
             }
+        }
+
+        // AdMob banner at bottom
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+        ) {
+            AdMobBanner(
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 }

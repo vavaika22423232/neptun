@@ -9263,12 +9263,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             add_debug_log(f"UAV activity detected in line: '{ln}', oblast_hdr: '{oblast_hdr}'", "uav_processing")
             
             # CRITICAL: Check if message has specific directional patterns - if yes, skip general marker
-            # Let the main parser handle "курсом на", "напрямок на", "у напрямку", etc.
+            # Let the main parser handle "курсом на", "напрямок на", "у напрямку", "на [місто]" etc.
             has_directional_pattern = any(pattern in ln_lower for pattern in [
                 'курсом на', 'курс на', 'напрямок на', 'напрямку на', 
-                'ціль на', 'у напрямку', 'через', 'повз',
-                'маневрує в районі', 'в районі'
-            ])
+                'ціль на', 'у напрямку', 'у бік', 'в бік', 'через', 'повз',
+                'маневрує в районі', 'в районі', 'бпла на ', 'дрон на '
+            ]) or '➡' in ln  # emoji arrows like ➡️
             
             if has_directional_pattern:
                 add_debug_log(f"SKIP general UAV marker - has directional pattern: '{ln}'", "uav_processing")
@@ -10159,6 +10159,19 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     def _resolve_city_candidate(raw: str):
         cand = raw.strip().lower()
         cand = re.sub(r'["“”«»\(\)\[\]]','', cand)
+        
+        # CRITICAL: Remove trailing geographic qualifiers (e.g., "Канів по межі з Київщиною" → "Канів")
+        trailing_patterns = [
+            r'\s+по\s+межі\s+з\s+.*$',
+            r'\s+на\s+межі\s+з\s+.*$',
+            r'\s+в\s+районі\s+.*$',
+            r'\s+біля\s+кордону\s+.*$',
+            r'\s+на\s+околицях\s+.*$',
+            r'\s+поблизу\s+.*$',
+        ]
+        for pattern in trailing_patterns:
+            cand = re.sub(pattern, '', cand).strip()
+        
         cand = re.sub(r'\s+',' ', cand)
         # Пробуем от длинного к короткому (до 3 слов достаточно для наших случаев)
         words = cand.split()
@@ -11663,14 +11676,14 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         pat_count_course = re.compile(r'^(\d+(?:-\d+)?)\s*[xх×]?\s*бпла(?:\s+пролетіли)?.*?курс(?:ом)?\s+на\s+(?:н\.п\.?\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         pat_course = re.compile(r'бпла(?:\s+пролетіли)?.*?курс(?:ом)?\s+на\s+(?:н\.п\.?\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-’ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         pat_area = re.compile(r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+(?:.*?\s+)?в\s+районі\s+(?:н\.п\.?\s*)?([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,60}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)  # Fixed: added н.п. support
-        pat_napramku = re.compile(r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+(?:в|у)\s+напрямку\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
+        pat_napramku = re.compile(r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+[➡️⬆️⬇️⬅️↗️↘️↙️↖️]*\s*(?:в|у)\s+напрямку\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         pat_sektor = re.compile(r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+в\s+секторі\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         pat_simple_na = re.compile(r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         pat_complex_napramku = re.compile(r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+на/через\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)\s+в\s+напрямку\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         pat_napramku_ta = re.compile(r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+(?:в|у)\s+напрямку\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)\s+та\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         pat_okolytsi = re.compile(r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+на\s+околицях\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         pat_vid_do = re.compile(r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+від\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)\s+до\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
-        pat_vik = re.compile(r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+в\s+бік\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s](3, 40)?)(?=\s+з\s+|[,\.\n;:!\?]|$)', re.IGNORECASE)
+        pat_vik = re.compile(r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+[➡️⬆️⬇️⬅️↗️↘️↙️↖️]*\s*(?:в|у)\s+бік\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', re.IGNORECASE)
         if re.search(r'бпла.*?курс(?:ом)?\s+на\s+кіпт[ії]', lower):
             coords = SETTLEMENT_FALLBACK.get('кіпті')
             if coords:
@@ -11857,16 +11870,16 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                     city = m5.group(2)
                                 else:
                                     m6 = pat_simple_na.search(ln_low)
-                                if m6:
-                                    if m6.group(1):
-                                        count = int(m6.group(1))
-                                    city = m6.group(2)
-                                else:
-                                    m7 = pat_vik.search(ln_low)
-                                    if m7:
-                                        if m7.group(1):
-                                            count = int(m7.group(1))
-                                        city = m7.group(2)
+                                    if m6:
+                                        if m6.group(1):
+                                            count = int(m6.group(1))
+                                        city = m6.group(2)
+                                    else:
+                                        m7 = pat_vik.search(ln_low)
+                                        if m7:
+                                            if m7.group(1):
+                                                count = int(m7.group(1))
+                                            city = m7.group(2)
             if not city:
                 add_debug_log("No city found in UAV line", "uav_course")
                 continue
