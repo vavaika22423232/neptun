@@ -2025,6 +2025,18 @@
     filter: drop-shadow(0 0 3px rgba(239, 68, 68, 0.6));
   }
   
+  /* Multi-region trajectory lines */
+  .multi-region-trajectory {
+    stroke: #00d4ff;
+    stroke-width: 4;
+    stroke-dasharray: 10, 6;
+    stroke-linecap: round;
+    fill: none;
+    opacity: 0.8;
+    animation: dash-trajectory 2.5s linear infinite;
+    filter: drop-shadow(0 0 4px rgba(0, 212, 255, 0.7));
+  }
+  
   /* Анимация движения пунктира */
   @keyframes dash-trajectory {
     0% {
@@ -4780,7 +4792,14 @@
           }
         }
         
-        // Отключили Shahed course visualization для производительності
+        // Shahed course visualization - re-enabled to show movement vectors
+        if (p.course_direction || p.course_target || p.course_source) {
+          try {
+            addShahedCourseVisualization(p);
+          } catch(e) {
+            console.warn('Failed to add course visualization:', e);
+          }
+        }
         
         const placeUA = translatePlace(p.place);
         
@@ -5007,6 +5026,63 @@
       updateEventList(data.events || []);
       // Notify listeners (banner heuristics etc.)
       try { document.dispatchEvent(new CustomEvent('markersUpdated', {detail: data})); } catch(e){}
+      
+      // Draw trajectory lines between waypoints for multi-region threats
+      try {
+        const trajectoryMarkers = points.filter(p => p.source_match === 'trajectory_phrase');
+        if (trajectoryMarkers.length >= 2) {
+          // Group by message ID (extract from marker ID like "59633_t1", "59633_t2")
+          const trajectoryGroups = new Map();
+          trajectoryMarkers.forEach(p => {
+            const match = p.id.match(/^(\d+)_t(\d+)$/);
+            if (match) {
+              const msgId = match[1];
+              const seqNum = parseInt(match[2]);
+              if (!trajectoryGroups.has(msgId)) {
+                trajectoryGroups.set(msgId, []);
+              }
+              trajectoryGroups.get(msgId).push({marker: p, seq: seqNum});
+            }
+          });
+          
+          // Draw lines for each trajectory group
+          trajectoryGroups.forEach((group, msgId) => {
+            // Sort by sequence number
+            group.sort((a, b) => a.seq - b.seq);
+            if (group.length >= 2) {
+              // Draw polyline connecting all waypoints
+              const waypoints = group.map(item => [item.marker.lat, item.marker.lng]);
+              const trajectoryLine = L.polyline(waypoints, {
+                color: '#00d4ff',
+                weight: 4,
+                opacity: 0.8,
+                dashArray: '10 6',
+                className: 'multi-region-trajectory'
+              }).addTo(markerLayer);
+              
+              // Add arrows between each pair of waypoints
+              for (let i = 0; i < group.length - 1; i++) {
+                const start = group[i].marker;
+                const end = group[i + 1].marker;
+                const angle = Math.atan2(end.lat - start.lat, end.lng - start.lng) * 180 / Math.PI + 90;
+                const midLat = (start.lat + end.lat) / 2;
+                const midLng = (start.lng + end.lng) / 2;
+                
+                const arrowIcon = L.divIcon({
+                  html: `<div class="trajectory-arrow" style="transform: rotate(${angle}deg);"><svg width="36" height="36" viewBox="0 0 36 36"><path d="M 18 5 L 27 18 L 18 15 L 9 18 Z" fill="#00d4ff" stroke="#ffffff" stroke-width="2" opacity="0.9"/></svg></div>`,
+                  className: '',
+                  iconSize: [36, 36],
+                  iconAnchor: [18, 18]
+                });
+                L.marker([midLat, midLng], {icon: arrowIcon, interactive: false}).addTo(markerLayer);
+              }
+            }
+          });
+        }
+      } catch(e) {
+        console.warn('Failed to draw trajectory lines:', e);
+      }
+      
       if (overlay) { 
         overlay.classList.add('hidden'); // всегда скрывать экран загрузки после обработки
         if (isInitialLoad) {

@@ -8616,6 +8616,31 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             n = n_converted
         
         return n
+
+    def sanitize_course_destination(name: str) -> str:
+        if not name:
+            return ''
+        cleaned = name.strip()
+        cleaned = re.sub(r'[\\/|]+', ' ', cleaned)
+        cleaned = re.sub(r'\s+', ' ', cleaned)
+        cleaned = re.sub(r'(район|району|районі|районів|района|р-н|область|області|обл\.|громада|громаді|громади|community|district|sector|сектор|місто|місті)$', '', cleaned, flags=re.IGNORECASE).strip()
+        cleaned = re.sub(r'\b(район|району|районі|района|р-н|область|області|обл\.|громада|громади|community|district|sector|сектор|місто|місті)\b', '', cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip(" .,'-\"")
+        return cleaned
+
+    def extract_course_targets(raw: str):
+        if not raw:
+            return []
+        parts = re.split(r'\s*(?:[\\/|,;]|\s+та\s+|\s+і\s+|\s+и\s+|\s+або\s+|\s+or\s+)\s*', raw, flags=re.IGNORECASE)
+        targets = []
+        for part in parts:
+            candidate = sanitize_course_destination(part)
+            if candidate:
+                targets.append(candidate)
+        if targets:
+            return targets
+        cleaned = sanitize_course_destination(raw)
+        return [cleaned] if cleaned else []
     # Если сообщение содержит несколько строк с заголовками-областями и городами
     # Предварительно уберём чисто донатные/подписи строки из многострочного блока, чтобы они не мешали
     raw_lines = text.splitlines()
@@ -9398,7 +9423,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         uav_course_count = 1
         # Pattern: "Nх БпЛА курсом на [city]" or "БпЛА курсом на [city]"
         # Захоплює назву міста до кінця рядка або до розділових знаків
-        m_uav_course = re.search(r'(?:^|\b)(?:([0-9]+)[xх×]?\s*)?бпла\s+курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]+?)(?:\s*$|[,\.\!\?;])', ln, re.IGNORECASE)
+        m_uav_course = re.search(r'(?:^|\b)(?:([0-9]+)[xх×]?\s*)?(?:бпла|шахед(?:и|ів)?|дрон(?:и)?)\s+курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]+?)(?:\s*$|[,\.\!\?;])', ln, re.IGNORECASE)
         if m_uav_course:
             if m_uav_course.group(1):
                 try:
@@ -9410,21 +9435,32 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             add_debug_log(f"UAV course pattern found: {uav_course_count}x БпЛА курсом на '{uav_course_city}'", "multi_region")
         
         if uav_course_city:
-            base_uav = normalize_city_name(uav_course_city)
-            base_uav = UA_CITY_NORMALIZE.get(base_uav, base_uav)
-            coords_uav = CITY_COORDS.get(base_uav) or (SETTLEMENTS_INDEX.get(base_uav) if SETTLEMENTS_INDEX else None)
-            
-            # Try region-specific lookup if oblast_hdr is set
-            if not coords_uav and oblast_hdr:
-                combo_uav = f"{base_uav} {oblast_hdr}"
-                coords_uav = CITY_COORDS.get(combo_uav) or (SETTLEMENTS_INDEX.get(combo_uav) if SETTLEMENTS_INDEX else None)
-                add_debug_log(f"Trying region combo: '{combo_uav}' -> {coords_uav}", "multi_region")
-            
-            if coords_uav:
+            candidate_cities = extract_course_targets(uav_course_city)
+            add_debug_log(f"extract_course_targets('{uav_course_city}') returned: {candidate_cities}", "multi_region")
+            per_marker_count = uav_course_count if len(candidate_cities) <= 1 else 1
+            created_course_markers = False
+            for dest_city in candidate_cities or [uav_course_city]:
+                if not dest_city:
+                    continue
+                base_uav = normalize_city_name(dest_city)
+                base_uav = UA_CITY_NORMALIZE.get(base_uav, base_uav)
+                coords_uav = CITY_COORDS.get(base_uav) or (SETTLEMENTS_INDEX.get(base_uav) if SETTLEMENTS_INDEX else None)
+                add_debug_log(f"Geocoding '{dest_city}' -> normalized: '{base_uav}' -> coords: {coords_uav}", "multi_region")
+                
+                # Try region-specific lookup if oblast_hdr is set
+                if not coords_uav and oblast_hdr:
+                    combo_uav = f"{base_uav} {oblast_hdr}"
+                    coords_uav = CITY_COORDS.get(combo_uav) or (SETTLEMENTS_INDEX.get(combo_uav) if SETTLEMENTS_INDEX else None)
+                    add_debug_log(f"Trying region combo: '{combo_uav}' -> {coords_uav}", "multi_region")
+                
+                if not coords_uav:
+                    add_debug_log(f"No coords found for '{dest_city}' (normalized: '{base_uav}', oblast: '{oblast_hdr}')", "multi_region")
+                    continue
+                created_course_markers = True
                 lat, lng = coords_uav
                 label = UA_CITY_NORMALIZE.get(base_uav, base_uav).title()
-                if uav_course_count > 1:
-                    label += f" ({uav_course_count}x)"
+                if per_marker_count > 1:
+                    label += f" ({per_marker_count}x)"
                 if oblast_hdr and oblast_hdr not in label.lower():
                     label += f" [{oblast_hdr.title()}]"
                 
@@ -9439,11 +9475,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     'channel': channel,
                     'marker_icon': 'shahed.png',
                     'source_match': 'multiline_uav_course',
-                    'count': uav_course_count
+                    'count': per_marker_count
                 })
                 add_debug_log(f"Created UAV course marker: {label}", "multi_region")
+            if created_course_markers:
                 continue  # move to next line
             else:
+                base_uav = normalize_city_name(sanitize_course_destination(uav_course_city))
                 add_debug_log(f"No coordinates found for UAV course city: '{uav_course_city}' (normalized: '{base_uav}')", "multi_region")
         
         # Continue processing other patterns even if UAV course didn't match
@@ -9691,7 +9729,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 except Exception:
                     scount = 1
                 cities_part = m_sha.group(2)
-                raw_parts = re.split(r'\s*/\s*|\s*,\s*|\s*;\s*|\s+і\s+|\s+та\s+', cities_part, flags=re.IGNORECASE)
+                # Apply extract_course_targets to properly sanitize destinations (removes /район, etc.)
+                raw_parts = extract_course_targets(cities_part)
+                add_debug_log(f"Shahed pattern: '{cities_part}' -> sanitized targets: {raw_parts}", "multi_region")
                 for ci in raw_parts:
                     c_raw = ci.strip().strip('.').strip()
                     if not c_raw or len(c_raw) < 2:
@@ -9699,6 +9739,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     cbase = normalize_city_name(c_raw)
                     cbase = UA_CITY_NORMALIZE.get(cbase, cbase)
                     coords_s = CITY_COORDS.get(cbase) or (SETTLEMENTS_INDEX.get(cbase) if SETTLEMENTS_INDEX else None)
+                    add_debug_log(f"Shahed geocoding: '{ci}' -> normalized '{cbase}' -> coords {coords_s}", "multi_region")
                     if not coords_s and oblast_hdr:
                         combo_s = f"{cbase} {oblast_hdr}"
                         coords_s = CITY_COORDS.get(combo_s) or (SETTLEMENTS_INDEX.get(combo_s) if SETTLEMENTS_INDEX else None)
@@ -9712,6 +9753,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             if coords_try:
                                 cbase = test; coords_s = coords_try; break
                     if not coords_s:
+                        add_debug_log(f"No coords found for shahed dest '{ci}' (norm: '{cbase}')", "multi_region")
                         continue
                     lat, lng = coords_s
                     label = UA_CITY_NORMALIZE.get(cbase, cbase).title()
