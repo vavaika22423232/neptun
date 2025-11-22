@@ -832,7 +832,16 @@
       }
     }
     
-    initMap();
+    // Чекаємо поки завантажаться Leaflet та DOM
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => {
+        console.log('DOMContentLoaded, L available:', typeof L !== 'undefined');
+        initMap();
+      });
+    } else {
+      console.log('Document already ready, L available:', typeof L !== 'undefined');
+      initMap();
+    }
     
     let zoomRedrawTimer = null;
     let lastZoom = 5.5;
