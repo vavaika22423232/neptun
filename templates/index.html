@@ -5949,25 +5949,29 @@
           [48.47,27.53],[48.27,26.86],[47.74,26.63],[47.85,24.96],[48.15,23.53],
           [48.62,22.57],[49.90,22.09],[51.94,22.93],[52.37,23.60]
         ];
+        
         function drawMask(rings){
-          if(worldMaskLayer){ worldMaskLayer.remove(); worldMaskLayer=null; }
-            worldMaskLayer = L.polygon([worldRing, ...rings], {
-              stroke:false,
-              fill:true,
-              fillColor:'#071b35',
-              fillOpacity:1,
-              interactive:false,
-              className:'world-mask'
-            }).addTo(map);
-            const el = worldMaskLayer.getElement();
-            if(el){
-              el.style.pointerEvents = 'none';
-              el.style.mixBlendMode = 'normal';
-              el.style.opacity = '1';
-            }
+          if(worldMaskLayer){ 
+            map.removeLayer(worldMaskLayer); 
+            worldMaskLayer = null; 
+          }
+          
+          // Створюємо polygon з дірками (world - ukraine = mask)
+          worldMaskLayer = L.polygon([worldRing, ...rings], {
+            stroke: false,
+            fill: true,
+            fillColor: '#0a0f1c',
+            fillOpacity: 0.85,
+            interactive: false,
+            pane: 'overlayPane'
+          }).addTo(map);
+          
+          // Переміщуємо на задній план
+          if (worldMaskLayer._path) {
+            worldMaskLayer._path.style.pointerEvents = 'none';
+          }
         }
-        // Не показываем fallback маску - ждем точную границу
-        // drawMask([fallbackRing]);
+        
         // Try precise GeoJSON (place file at /static/ukraine_border.geojson)
         try {
           const resp = await fetch('/static/geoBoundaries-UKR-ADM0_simplified.geojson');

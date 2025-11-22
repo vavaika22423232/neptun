@@ -306,42 +306,24 @@
       
       function drawMask(rings) {
         if (worldMaskLayer) {
-          try {
-            if (map.getLayer('world-mask-layer')) map.removeLayer('world-mask-layer');
-            if (map.getSource('world-mask')) map.removeSource('world-mask');
-          } catch(e) {}
+          map.removeLayer(worldMaskLayer);
           worldMaskLayer = null;
         }
         
-        const maskCoordinates = [
-          worldRing.map(p => [p[1], p[0]]),
-          ...rings.map(ring => ring.map(p => [p[1], p[0]]))
-        ];
+        // Створюємо polygon з дірками (world - ukraine = mask)
+        worldMaskLayer = L.polygon([worldRing, ...rings], {
+          stroke: false,
+          fill: true,
+          fillColor: '#0a0f1c',
+          fillOpacity: 0.85,
+          interactive: false,
+          pane: 'overlayPane'
+        }).addTo(map);
         
-        try {
-          map.addSource('world-mask', {
-            type: 'geojson',
-            data: {
-              type: 'Feature',
-              geometry: {
-                type: 'Polygon',
-                coordinates: maskCoordinates
-              }
-            }
-          });
-          
-          map.addLayer({
-            id: 'world-mask-layer',
-            type: 'fill',
-            source: 'world-mask',
-            paint: {
-              'fill-color': '#071b35',
-              'fill-opacity': 1
-            }
-          });
-          
-          worldMaskLayer = true;
-        } catch(e) {}
+        // Переміщуємо на задній план
+        if (worldMaskLayer._path) {
+          worldMaskLayer._path.style.pointerEvents = 'none';
+        }
       }
       
       try {
@@ -476,45 +458,7 @@
       },
       
       polyline: function(points, options = {}) {
-        const layerId = 'polyline-' + Date.now() + '-' + Math.random();
-        const coords = points.map(p => [p[1], p[0]]);
-        
-        return {
-          _layerId: layerId,
-          addTo: function(m) {
-            try {
-              if (!map.getSource(this._layerId)) {
-                map.addSource(this._layerId, {
-                  type: 'geojson',
-                  data: {
-                    type: 'Feature',
-                    geometry: {
-                      type: 'LineString',
-                      coordinates: coords
-                    }
-                  }
-                });
-                
-                map.addLayer({
-                  id: this._layerId,
-                  type: 'line',
-                  source: this._layerId,
-                  paint: {
-                    'line-color': options.color || '#3b82f6',
-                    'line-width': options.weight || 2,
-                    'line-opacity': options.opacity || 1,
-                    'line-dasharray': options.dashArray ? options.dashArray.split(' ').map(Number) : undefined
-                  }
-                });
-              }
-            } catch(e) {}
-            return this;
-          },
-          remove: function() {
-            if (map.getLayer(this._layerId)) map.removeLayer(this._layerId);
-            if (map.getSource(this._layerId)) map.removeSource(this._layerId);
-          }
-        };
+        return L.polyline(points, options);
       }
     };
     
@@ -548,26 +492,6 @@
           updateMarkers();
           setInterval(updateMarkers, UPDATE_INTERVAL);
         });
-        
-        map.on('styledata', forceUkrainianLabels);
-        
-        map.setView = function(latlng, zoom, options = {}) {
-          const animate = options.animate !== false;
-          this.flyTo({
-            center: [latlng[1], latlng[0]],
-            zoom: zoom || this.getZoom(),
-            essential: true,
-            duration: animate ? 1000 : 0
-          });
-        };
-        
-        map.invalidateSize = function() {
-          this.resize();
-        };
-        
-        map.removeLayer = function(layer) {
-          if (layer && layer.remove) layer.remove();
-        };
         
       } catch (error) {
         const mapContainer = document.getElementById('map');
