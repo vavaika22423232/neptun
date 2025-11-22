@@ -238,8 +238,13 @@
   <div class="loading hidden" id="markerLoadingOverlay">Завантаження даних</div>
   
   <script>
-  // Весь код тут - v3.0 FINAL FIX
-  (function() {
+  // Чекаємо завантаження DOM
+  document.addEventListener('DOMContentLoaded', function() {
+    if (typeof L === 'undefined') {
+      alert('Leaflet не завантажився!');
+      return;
+    }
+    console.log('Leaflet loaded:', L.version);
     const mapTilerApiKey = 'm8zW2kq1Ta7cw9nODPXo';
     const API_BASE = window.location.origin;
     const UPDATE_INTERVAL = 30000;
@@ -380,93 +385,6 @@
       const combined = ((place || '') + ' ' + (text || '') + ' ' + (type || '')).toLowerCase();
       return fpvKeywords.some(kw => combined.includes(kw));
     }
-    
-    window.L = {
-        marker: function(latlng, options = {}) {
-        const marker = {
-          _latlng: latlng,
-          _options: options,
-          _popup: null,
-          _element: null,
-          
-          bindPopup: function(content) {
-            this._popup = content;
-            return this;
-          },
-          
-          addTo: function(layer) {
-            // Створюємо Leaflet marker з custom icon
-            let icon = L.divIcon({
-              className: 'custom-div-icon',
-              html: this._options.icon?.options?.html || '',
-              iconSize: this._options.icon?.options?.iconSize || [34, 34],
-              iconAnchor: this._options.icon?.options?.iconAnchor || [17, 17]
-            });
-            
-            const leafletMarker = L.marker(
-              [this._latlng[0], this._latlng[1]],
-              { icon: icon }
-            );
-            
-            if (this._popup) {
-              leafletMarker.bindPopup(this._popup, {
-                maxWidth: 300,
-                closeButton: false
-              });
-            }
-            
-            leafletMarker.addTo(map);
-            this._element = leafletMarker;
-            return this;
-          },
-          
-          remove: function() {
-            if (this._element) map.removeLayer(this._element);
-          }
-        };
-        return marker;
-      },
-      
-      divIcon: function(options = {}) {
-        return { options: options };
-      },
-      
-      layerGroup: function() {
-        return {
-          _layers: [],
-          addTo: function(m) { return this; },
-          clearLayers: function() {
-            this._layers.forEach(l => l.remove && l.remove());
-            this._layers = [];
-          },
-          addLayer: function(layer) {
-            this._layers.push(layer);
-            layer.addTo && layer.addTo(map);
-          }
-        };
-      },
-      
-      markerClusterGroup: function(options = {}) {
-        return {
-          _markers: [],
-          _options: options,
-          addTo: function(m) { return this; },
-          clearLayers: function() {
-            this._markers.forEach(m => m.remove && m.remove());
-            this._markers = [];
-          },
-          addLayer: function(marker) {
-            this._markers.push(marker);
-            marker.addTo(map);
-          },
-          refreshClusters: function() {}
-        };
-      },
-      
-      polyline: function(points, options = {}) {
-        return L.polyline(points, options);
-      }
-    };
     
     function initMap() {
       console.log('Initializing Leaflet with OpenStreetMap');
@@ -855,7 +773,7 @@
         });
       }
     }, 1000);
-  })(); // end of IIFE
+  }); // end DOMContentLoaded
   </script>
 </body>
 </html>
