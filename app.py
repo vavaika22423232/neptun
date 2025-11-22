@@ -15338,7 +15338,7 @@ def add_channel():
 @app.route('/admin/add_manual_marker', methods=['POST'])
 def admin_add_manual_marker():
     """Add a manual marker via admin panel.
-    JSON body: {"lat":..., "lng":..., "text":"...", "place":"...", "threat_type":"shahed", "icon":"optional.png"}
+    JSON body: {"lat":..., "lng":..., "text":"...", "place":"...", "threat_type":"shahed", "icon":"optional.png", "rotation":0}
     Requires secret if configured.
     """
     if not _require_secret(request):
@@ -15358,6 +15358,11 @@ def admin_add_manual_marker():
         if threat_type not in allowed_types:
             threat_type = 'manual'
         icon = (payload.get('icon') or '').strip()
+        rotation = payload.get('rotation', 0)
+        try:
+            rotation = float(rotation)
+        except:
+            rotation = 0
         now_dt = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
         mid = 'manual-' + uuid.uuid4().hex[:12]
         messages = load_messages()
@@ -15371,6 +15376,7 @@ def admin_add_manual_marker():
             'lng': round(lng, 6),
             'threat_type': threat_type,
             'marker_icon': icon or None,
+            'rotation': rotation,
             'manual': True,
             'channel': 'manual',
             'source': 'manual'
