@@ -491,8 +491,13 @@
         }).addTo(map);
         
         map.whenReady(() => {
+          console.log('Map is ready!');
           document.getElementById('markerLoadingOverlay').classList.add('hidden');
-          setTimeout(() => initWorldMask(), 100);
+          console.log('About to call initWorldMask');
+          setTimeout(() => {
+            console.log('Timeout fired, calling initWorldMask');
+            initWorldMask();
+          }, 100);
           updateMarkers();
           setInterval(updateMarkers, UPDATE_INTERVAL);
         });
