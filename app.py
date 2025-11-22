@@ -1253,6 +1253,10 @@ UA_CITY_NORMALIZE = {
     'вознесенська':'вознесенськ',
     # Mykolaiv variants  
     'миколаєва':'миколаїв',
+    'корабел':'корабельний район херсон',
+    'корабельний':'корабельний район херсон',
+    'корабельному':'корабельний район херсон',
+    'корабельному херсоні':'корабельний район херсон',
     # Novoukrainka variants
     'новоукраїнку':'новоукраїнка',
     'старому салтову':'старий салтів','старому салтові':'старий салтів','карлівку':'карлівка','магдалинівку':'магдалинівка',
@@ -1502,7 +1506,7 @@ def geocode_with_context(city: str, oblast_key: str, district: str = None):
                 # Filter out POIs
                 if osm_key not in ['place', 'boundary']:
                     continue
-                valid_place_types = ['city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood', 'administrative']
+                valid_place_types = ['city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood', 'administrative', 'borough', 'quarter', 'district']
                 if osm_key == 'place' and osm_value not in valid_place_types:
                     continue
                 
@@ -1627,7 +1631,7 @@ def extract_district_and_oblast_context(message_text: str):
     
     return result
 
-def ensure_city_coords(name: str):
+def ensure_city_coords(name: str, region_hint: str = None):
     """Return (lat,lng,approx_bool) for settlement using Photon/Nominatim APIs.
     approx_bool True means we used oblast center fallback (low precision)."""
     if not name:
@@ -1698,8 +1702,10 @@ def ensure_city_coords(name: str):
     try:
         import requests
         
-        # Get region hint from NAME_REGION_MAP or extracted region_context
-        region_hint = region_context or NAME_REGION_MAP.get(n)
+        # Get region hint from explicit parameter, extracted context, or NAME_REGION_MAP
+        region_hint = region_hint or region_context or NAME_REGION_MAP.get(n)
+        if isinstance(region_hint, str):
+            region_hint = region_hint.lower()
         
         # Try Photon first (supports Cyrillic)
         photon_url = 'https://photon.komoot.io/api/'
@@ -1836,7 +1842,7 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                             return coords
                     
                     # Fallback to basic geocoding with AI city name
-                    coords = ensure_city_coords(target_city)
+                    coords = ensure_city_coords(target_city, oblast_key.lower() if isinstance(oblast_key, str) else None)
                     if coords:
                         return coords
                         
@@ -1896,34 +1902,38 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
     # Legacy oblast detection (kept for backward compatibility)
     # Initialize detected_oblast_key at function scope
     detected_oblast_key = None
-    excluded_oblast = None  # Oblast to exclude (when "з [область]" pattern found)
+    from_region_hint = None  # Additional region hint from "з [область]" pattern
     
     # First, if we have message text, try to extract oblast info and build specific city keys
     if message_text:
         message_lower = message_text.lower()
         
-        # Check for "з [область]" pattern - this means the city is NOT in that oblast
+        # Check for "з [область]" pattern - use as ADDITIONAL region hint (not exclusion)
+        # Example: "БпЛА на Юріївку з Харківщини" - Yuriivka is likely IN Kharkiv region
         from_oblast_pattern = r'з\s+([а-яїіє]+щини|[а-яїіє]+ської\s+обл)'
         from_match = re.search(from_oblast_pattern, message_lower)
         if from_match:
-            excluded_region = from_match.group(1).strip()
+            from_region = from_match.group(1).strip()
             # Normalize to oblast name
-            if excluded_region.endswith('щини'):
-                excluded_region = excluded_region[:-1]  # миколаївщини -> миколаївщин
-            if excluded_region.endswith('н'):
-                excluded_region = excluded_region[:-1] + 'на'  # миколаївщин -> миколаївщина
+            if from_region.endswith('щини'):
+                from_region = from_region[:-1]  # миколаївщини -> миколаївщин
+            if from_region.endswith('н'):
+                from_region = from_region[:-1] + 'на'  # миколаївщин -> миколаївщина
             
             # Map to oblast key
-            excluded_oblast_map = {
+            from_region_map = {
                 'миколаївщина': 'миколаївська',
                 'одещина': 'одеська', 
                 'херсонщина': 'херсонська',
                 'дніпропетровщина': 'дніпропетровська',
                 'харківщина': 'харківська',
+                'сумщина': 'сумська',
+                'чернігівщина': 'чернігівська',
+                'полтавщина': 'полтавська',
             }
-            excluded_oblast = excluded_oblast_map.get(excluded_region)
-            if excluded_oblast:
-                print(f"DEBUG: Found 'з {excluded_region}' pattern - excluding {excluded_oblast} oblast for city '{name}'")
+            from_region_hint = from_region_map.get(from_region)
+            if from_region_hint:
+                print(f"DEBUG: Found 'з {from_region}' pattern - using {from_region_hint} oblast as region hint for '{name}'")
         
         # ENHANCED: Find the closest oblast to the specific city name
         city_pos = message_lower.find(name.lower())
@@ -1990,10 +2000,12 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                 if match in regional_to_adjective:
                     match = regional_to_adjective[match]
                 
-                # Skip if this is the excluded oblast (from "з [область]" pattern)
-                if excluded_oblast and match == excluded_oblast:
-                    print(f"DEBUG: Skipping {match} oblast - excluded by 'з {excluded_oblast}' pattern")
-                elif match:  # Only process if we have a valid match
+                # Priority: use from_region_hint if present (from "з [область]" pattern)
+                if from_region_hint:
+                    print(f"DEBUG: Prioritizing 'з [область]' hint: {from_region_hint} for city '{name}'")
+                    match = from_region_hint
+                
+                if match:  # Only process if we have a valid match
                     # Create possible city+oblast combinations to search
                     city_variants = [
                         f"{name.lower()}({match})",  # миколаївка(сумська)
@@ -2257,7 +2269,7 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
         print(f"DEBUG: Photon fallback error: {e}")
     
     # Try ensure_city_coords as final fallback
-    result = ensure_city_coords(name)
+    result = ensure_city_coords(name, detected_oblast_key.lower() if isinstance(detected_oblast_key, str) else None)
     if result:
         return result
     
@@ -2274,7 +2286,7 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                 add_debug_log(f"AI: Extracted city '{city_name}' from message (confidence: {confidence:.2f})", "ai_city_extract")
                 
                 # Try to geocode the AI-extracted city via API (no fallback)
-                ai_coords = ensure_city_coords(city_name)
+                ai_coords = ensure_city_coords(city_name, region_hint.lower() if isinstance(region_hint, str) else None)
                 if ai_coords:
                     add_debug_log(f"AI: Successfully geocoded AI-extracted city '{city_name}' via API -> {ai_coords[:2]}", "ai_geocode_success")
                     return ai_coords
@@ -2858,13 +2870,13 @@ def get_coordinates_enhanced(city_name: str, region: str = None, context: str = 
             print(f"DEBUG Enhanced coord lookup: Nominatim could not find '{city_name}' in {nominatim_region}")
     
     # API-only geocoding - NO local database fallback
-    coords = ensure_city_coords(city_name)
+    coords = ensure_city_coords(city_name, region.lower() if isinstance(region, str) else None)
     if coords:
         print(f"DEBUG Enhanced coord lookup: API found '{city_name}' -> {coords}")
         return coords
     
     # API-only geocoding - NO local database fallback
-    coords = ensure_city_coords(city_name)
+    coords = ensure_city_coords(city_name, region.lower() if isinstance(region, str) else None)
     if coords:
         print(f"DEBUG Enhanced coord lookup: API found '{city_name}' -> {coords}")
         return coords
@@ -3042,6 +3054,7 @@ CITY_COORDS = {
         'ужгород': (48.6208, 22.2879), 'кропивницький': (48.5079, 32.2623), 'кременчук': (49.0670, 33.4204), 'краматорськ': (48.7389, 37.5848),
         'мелітополь': (46.8489, 35.3650), 'бердянськ': (46.7553, 36.7885), 'павлоград': (48.5350, 35.8700), 'нікополь': (47.5667, 34.4061),
         'марганець': (47.6433, 34.6289), 'херсон': (46.6350, 32.6169),
+        'корабельний район херсон': (46.6578, 32.5099),
         'білозерка': (46.64, 32.88),  # Херсонська область
         'чорнобаївка': (46.6964, 32.5469),  # Херсонська область
     
@@ -3306,6 +3319,9 @@ KHARKIV_CITY_COORDS = {
     'ізюм': (49.2103, 37.2483),
     'куп\'янськ': (49.7106, 37.6156),
     'купянськ': (49.7106, 37.6156),  # variant without apostrophe
+    'юріївка': (50.131641, 37.394371),  # Kupiansk district, near Russian border
+    'юріївка харків': (50.131641, 37.394371),
+    'юріївка харківська': (50.131641, 37.394371),
     'лозова': (48.8897, 36.3175),
     'липці': (50.3061, 36.7597),  # село біля кордону з Росією
     'первомайський': (49.3914, 36.2147),
