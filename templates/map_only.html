@@ -238,19 +238,31 @@
     return new Promise((resolve, reject) => {
       const script = document.createElement('script');
       script.src = src;
-      script.onload = () => resolve();
+      script.async = false; // Важливо! Синхронне виконання
+      script.onload = () => {
+        console.log('Loaded:', src);
+        resolve();
+      };
       script.onerror = () => reject(new Error(`Failed to load ${src}`));
-      document.head.appendChild(script);
+      document.body.appendChild(script);
     });
   }
 
-  // Завантажуємо всі необхідні бібліотеки
-  Promise.all([
-    loadScript('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'),
-    loadScript('https://unpkg.com/@turf/turf@6.5.0/turf.min.js')
-  ])
-  .then(() => loadScript('https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js'))
+  // Завантажуємо всі необхідні бібліотеки ПОСЛІДОВНО
+  loadScript('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js')
   .then(() => {
+    console.log('Leaflet loaded, L exists:', typeof L !== 'undefined');
+    return loadScript('https://unpkg.com/@turf/turf@6.5.0/turf.min.js');
+  })
+  .then(() => {
+    console.log('Turf loaded');
+    return loadScript('https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js');
+  })
+  .then(() => {
+    console.log('MarkerCluster loaded');
+    if (typeof L === 'undefined') {
+      throw new Error('Leaflet (L) is still undefined after loading!');
+    }
     console.log('All libraries loaded, Leaflet version:', L.version);
     startApp();
   })
