@@ -4490,32 +4490,8 @@
       
       if (markerLayer) { markerLayer.clearLayers(); }
       else { 
-        // Використовуємо MarkerCluster для оптимізації (крім шахедів)
-        markerLayer = L.markerClusterGroup({
-          chunkedLoading: true,
-          chunkInterval: 200,
-          chunkDelay: 50,
-          maxClusterRadius: 80,
-          spiderfyOnMaxZoom: true,
-          showCoverageOnHover: false,
-          zoomToBoundsOnClick: true,
-          disableClusteringAtZoom: 12,
-          animate: true,
-          animateAddingMarkers: false,
-          removeOutsideVisibleBounds: true,
-          iconCreateFunction: function(cluster) {
-            const count = cluster.getChildCount();
-            let className = 'marker-cluster-';
-            if (count < 10) className += 'small';
-            else if (count < 50) className += 'medium';
-            else className += 'large';
-            return L.divIcon({ 
-              html: '<div><span>' + count + '</span></div>',
-              className: 'marker-cluster ' + className,
-              iconSize: L.point(40, 40)
-            });
-          }
-        }).addTo(map);
+        // Звичайна layer group без кластеризації
+        markerLayer = L.layerGroup().addTo(map);
       }
       markers = [];
       

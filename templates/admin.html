@@ -163,13 +163,55 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 <div class="card-header">
 <h2 class="card-title">🗺️ Live Operations Map</h2>
 <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+<button class="btn btn-primary btn-sm" id="addModeBtn" onclick="toggleAddMode()">➕ Add Mode: OFF</button>
+<button class="btn btn-secondary btn-sm" onclick="copySelectedMarker()" id="copyBtn" disabled>📋 Copy</button>
+<button class="btn btn-secondary btn-sm" onclick="pasteMarker()" id="pasteBtn" disabled>📌 Paste</button>
+<button class="btn btn-warning btn-sm" onclick="rotateSelected(-15)">↶ -15°</button>
+<button class="btn btn-warning btn-sm" onclick="rotateSelected(15)">↷ +15°</button>
+<button class="btn btn-danger btn-sm" onclick="deleteSelected()">🗑️ Delete</button>
 <button class="btn btn-secondary btn-sm" onclick="reloadMarkers()">🔄 Refresh</button>
 <button class="btn btn-success btn-sm" onclick="toggleAuto()" id="autoBtn">🔁 Auto: ON</button>
 <button class="btn btn-danger btn-sm" onclick="forceReload()">💥 Force Reload Users</button>
 </div>
 </div>
-<div class="card-body compact">
+<div class="card-body" style="padding:0;position:relative">
 <div id="adminMap"></div>
+<div id="markerEditor" class="marker-editor" style="display:none">
+<h3>✏️ Edit Marker</h3>
+<div class="marker-editor-field">
+<label>Latitude</label>
+<input type="number" step="0.000001" id="editLat" class="input">
+</div>
+<div class="marker-editor-field">
+<label>Longitude</label>
+<input type="number" step="0.000001" id="editLng" class="input">
+</div>
+<div class="marker-editor-field">
+<label>Location</label>
+<input type="text" id="editPlace" class="input">
+</div>
+<div class="marker-editor-field">
+<label>Rotation (degrees)</label>
+<input type="number" id="editRotation" value="0" min="-180" max="180" step="15" class="input" oninput="updateSelectedRotation(this.value)">
+</div>
+<div class="marker-editor-field">
+<label>Type</label>
+<select id="editType" class="input">
+<option value="shahed">Shahed</option>
+<option value="raketa">Rocket</option>
+<option value="artillery">Artillery</option>
+<option value="manual">Manual</option>
+</select>
+</div>
+<div class="marker-editor-field">
+<label>Description</label>
+<textarea id="editText" class="input" rows="3"></textarea>
+</div>
+<div class="marker-editor-buttons">
+<button class="btn btn-success" style="background:#10b981" onclick="saveMarkerEdit()">💾 Save</button>
+<button class="btn btn-secondary" style="background:#64748b" onclick="closeMarkerEditor()">✖ Cancel</button>
+</div>
+</div>
 <div class="map-toolbar">
 <span class="map-stats" id="mapStats">Loading map...</span>
 </div>
@@ -334,60 +376,6 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 <div class="empty-state">
 <div class="empty-state-icon">👁️</div>
 <p>No hidden markers</p>
-</div>
-</div>
-</div>
-</div>
-
-<div class="card">
-<div class="card-header">
-<h2 class="card-title">🗺️ Interactive Map Editor</h2>
-<div class="map-toolbar">
-<button class="btn btn-primary btn-sm" id="addModeBtn" onclick="toggleAddMode()">➕ Add Mode: OFF</button>
-<button class="btn btn-secondary btn-sm" onclick="copySelectedMarker()" id="copyBtn" disabled>📋 Copy</button>
-<button class="btn btn-secondary btn-sm" onclick="pasteMarker()" id="pasteBtn" disabled>📌 Paste</button>
-<button class="btn btn-warning btn-sm" onclick="rotateSelected(-15)">↶ -15°</button>
-<button class="btn btn-warning btn-sm" onclick="rotateSelected(15)">↷ +15°</button>
-<button class="btn btn-danger btn-sm" onclick="deleteSelected()">🗑️ Delete</button>
-<span id="mapStats" class="map-stats">📍 Markers: 0</span>
-</div>
-</div>
-<div class="card-body" style="padding:0;position:relative">
-<div id="adminMap"></div>
-<div id="markerEditor" class="marker-editor" style="display:none">
-<h3>✏️ Edit Marker</h3>
-<div class="marker-editor-field">
-<label>Latitude</label>
-<input type="number" step="0.000001" id="editLat" class="input">
-</div>
-<div class="marker-editor-field">
-<label>Longitude</label>
-<input type="number" step="0.000001" id="editLng" class="input">
-</div>
-<div class="marker-editor-field">
-<label>Location</label>
-<input type="text" id="editPlace" class="input">
-</div>
-<div class="marker-editor-field">
-<label>Rotation (degrees)</label>
-<input type="number" id="editRotation" value="0" min="-180" max="180" step="15" class="input" oninput="updateSelectedRotation(this.value)">
-</div>
-<div class="marker-editor-field">
-<label>Type</label>
-<select id="editType" class="input">
-<option value="shahed">Shahed</option>
-<option value="raketa">Rocket</option>
-<option value="artillery">Artillery</option>
-<option value="manual">Manual</option>
-</select>
-</div>
-<div class="marker-editor-field">
-<label>Description</label>
-<textarea id="editText" class="input" rows="3"></textarea>
-</div>
-<div class="marker-editor-buttons">
-<button class="btn btn-success" style="background:#10b981" onclick="saveMarkerEdit()">💾 Save</button>
-<button class="btn btn-secondary" style="background:#64748b" onclick="closeMarkerEditor()">✖ Cancel</button>
 </div>
 </div>
 </div>
