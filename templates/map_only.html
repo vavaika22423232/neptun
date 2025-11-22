@@ -846,9 +846,15 @@
       }
     }
     
-    // Ініціалізуємо карту (Leaflet вже завантажений синхронно)
-    console.log('Starting initMap, L.version:', L.version);
-    initMap();
+    // Чекаємо повного завантаження сторінки та всіх скриптів
+    window.addEventListener('load', function() {
+      console.log('Window loaded, L available:', typeof L !== 'undefined', 'L.version:', typeof L !== 'undefined' ? L.version : 'N/A');
+      if (typeof L === 'undefined') {
+        document.getElementById('map').innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; background: #0f172a; color: #e2e8f0; text-align: center; padding: 2rem;"><div><h2 style="color: #ef4444;">❌ Leaflet не завантажився</h2><p>Спробуйте очистити кеш браузера (Ctrl+Shift+R)</p><button onclick="location.reload(true)" style="background: #3b82f6; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 0.5rem; cursor: pointer; margin-top: 1rem;">🔄 Перезавантажити</button></div></div>';
+        return;
+      }
+      initMap();
+    });
     
     let zoomRedrawTimer = null;
     let lastZoom = 5.5;
