@@ -292,6 +292,7 @@
     const forceUkrainianLabels = () => {};
     
     async function initWorldMask() {
+      console.log('initWorldMask called, map exists:', !!map);
       const worldRing = [[85, -180], [85, 180], [-85, 180], [-85, -180]];
       const fallbackRing = [
         [52.37, 23.60], [51.90, 23.60], [51.90, 24.00], [51.50, 24.50], [51.90, 25.30],
@@ -305,6 +306,7 @@
       ];
       
       function drawMask(rings) {
+        console.log('drawMask called with', rings.length, 'rings');
         if (worldMaskLayer) {
           map.removeLayer(worldMaskLayer);
           worldMaskLayer = null;
@@ -319,6 +321,8 @@
           interactive: false,
           pane: 'overlayPane'
         }).addTo(map);
+        
+        console.log('World mask layer added:', !!worldMaskLayer);
         
         // Переміщуємо на задній план
         if (worldMaskLayer._path) {

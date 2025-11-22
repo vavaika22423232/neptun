@@ -4271,21 +4271,7 @@
         className: `regional-threat-glow ${regionalInfo.region}`
       });
       
-      // Добавляем анимацию пульсации
-      polygon.on('add', function() {
-        const element = polygon.getElement();
-        if (element) {
-          element.style.animation = 'regionalPulse 4s ease-in-out infinite';
-          element.style.filter = `drop-shadow(0 0 8px ${color}40)`;
-        }
-      });
-      
-      glowPolygon.on('add', function() {
-        const element = glowPolygon.getElement();
-        if (element) {
-          element.style.animation = 'regionalGlow 3s ease-in-out infinite alternate';
-        }
-      });
+      // Leaflet polygons don't have 'add' event or getElement() - styling handled via CSS
       
       // Popup с детальной информацією
       const threatDetails = text.length > 100 ? text.substring(0, 100) + '...' : text;
@@ -5390,6 +5376,77 @@
       }).join('');
     }
     
+    // --- Darken all non-Ukraine territory (dynamic mask loading precise border if available) ---
+    let worldMaskLayer = null;
+    async function initWorldMask(){
+      const worldRing = [ [85,-180],[85,180],[-85,180],[-85,-180] ];
+      // Fallback simplified Ukraine ring (used until precise GeoJSON loads)
+      const fallbackRing = [
+        [52.37,23.60],[51.90,23.60],[51.90,24.00],[51.50,24.50],[51.90,25.30],
+        [51.90,26.00],[51.60,26.60],[51.50,27.50],[51.60,28.20],[51.30,29.20],
+        [51.60,30.60],[52.30,31.80],[52.10,32.70],[52.40,34.40],[52.30,35.90],
+        [52.00,37.40],[51.20,38.20],[50.30,39.70],[49.10,40.10],[48.30,39.70],
+        [47.10,38.50],[46.00,38.20],[45.35,37.40],[45.40,36.60],[45.20,34.90],
+        [45.35,33.30],[46.07,30.95],[46.58,30.06],[47.80,29.48],[48.37,28.05],
+        [48.47,27.53],[48.27,26.86],[47.74,26.63],[47.85,24.96],[48.15,23.53],
+        [48.62,22.57],[49.90,22.09],[51.94,22.93],[52.37,23.60]
+      ];
+      
+      function drawMask(rings){
+        if(worldMaskLayer){ 
+          map.removeLayer(worldMaskLayer); 
+          worldMaskLayer = null; 
+        }
+        
+        // Створюємо polygon з дірками (world - ukraine = mask)
+        worldMaskLayer = L.polygon([worldRing, ...rings], {
+          stroke: false,
+          fill: true,
+          fillColor: '#0a0f1c',
+          fillOpacity: 0.85,
+          interactive: false,
+          pane: 'overlayPane'
+        }).addTo(map);
+        
+        // Переміщуємо на задній план
+        if (worldMaskLayer._path) {
+          worldMaskLayer._path.style.pointerEvents = 'none';
+        }
+      }
+      
+      // Try precise GeoJSON (place file at /static/ukraine_border.geojson)
+      try {
+        const resp = await fetch('/static/geoBoundaries-UKR-ADM0_simplified.geojson');
+        if(resp.ok){
+          const gj = await resp.json();
+          // Expect first feature Polygon or MultiPolygon in lon/lat
+          const feats = (gj.features||[]);
+          if(feats.length){
+            const geom = feats[0].geometry;
+            let rings=[];
+            if(geom.type==='Polygon'){
+              // Берём все кольца полигона
+              rings = geom.coordinates.map(r=> r.map(([lng,lat])=>[lat,lng]));
+            } else if(geom.type==='MultiPolygon'){
+              // Для MultiPolygon берём все внешние кольца
+              rings = geom.coordinates.map(poly=> poly[0].map(([lng,lat])=>[lat,lng]));
+            }
+            if(rings.length){
+              // Используем все кольца для точной границы
+              drawMask(rings);
+            }
+          }
+        } else {
+          // Если не удалось загрузить точную границу, используем fallback
+          console.warn('Failed to load precise border, using fallback');
+          drawMask([fallbackRing]);
+        }
+      } catch(e){ 
+        console.warn('Precise border load failed, using fallback ring', e);
+        drawMask([fallbackRing]);
+      }
+    }
+    
     async function initMap() {
       const isDarkTheme = localStorage.getItem('mapTheme') === 'dark';
       
@@ -5494,8 +5551,7 @@
         }
       };
       
-      // Застосовуємо українську мову після завантаження стилю
-      map.on('styledata', forceUkrainianLabels);
+      // OSM tiles don't need label forcing
       
       // Зберігаємо функції перемикання теми
       window.currentMapStyle = isDarkTheme ? 'dark' : 'light';
@@ -5532,269 +5588,7 @@
       // Обновляем иконку кнопки в соответствии с текущей темой
       updateMapThemeIcon(isDarkTheme);
       
-      // Додаємо методи сумісності з Leaflet API
-      map.setView = function(latlng, zoom, options = {}) {
-        const animate = options.animate !== false;
-        this.flyTo({
-          center: [latlng[1], latlng[0]],
-          zoom: zoom || this.getZoom(),
-          essential: true,
-          duration: animate ? 1000 : 0
-        });
-      };
-      
-      map.invalidateSize = function() {
-        this.resize();
-      };
-      
-      map.removeLayer = function(layer) {
-        if (layer && layer.remove) {
-          layer.remove();
-        }
-      };
-      
-      // Ініціалізуємо систему маркерів для MapLibre GL
-      window.mapMarkers = [];
-      window.mapPopups = [];
-      
-      // Емулятор Leaflet API для сумісності з існуючим кодом
-      window.L = {
-        marker: function(latlng, options = {}) {
-          const marker = {
-            _latlng: latlng,
-            _options: options,
-            _popup: null,
-            _element: null,
-            
-            bindPopup: function(content) {
-              this._popup = content;
-              return this;
-            },
-            
-            addTo: function(layer) {
-              // Створюємо HTML маркер для Leaflet
-              let icon = L.divIcon({
-                className: 'custom-div-icon',
-                html: this._options.icon?.options?.html || '',
-                iconSize: this._options.icon?.options?.iconSize || [32, 32],
-                iconAnchor: [16, 16]
-              });
-              
-              const leafletMarker = L.marker(
-                [this._latlng[0], this._latlng[1]],
-                { icon: icon }
-              );
-              
-              if (this._popup) {
-                leafletMarker.bindPopup(this._popup, {
-                  maxWidth: 300,
-                  closeButton: true
-                });
-              }
-              
-              leafletMarker.addTo(map);
-              window.mapMarkers.push(leafletMarker);
-              this._element = leafletMarker;
-              return this;
-            },
-            
-            remove: function() {
-              if (this._element) {
-                map.removeLayer(this._element);
-              }
-            },
-            
-            openPopup: function() {
-              if (this._element && this._element.getPopup()) {
-                this._element.togglePopup();
-              }
-              return this;
-            }
-          };
-          return marker;
-        },
-        
-        circle: function(latlng, options = {}) {
-          // Для кіл створюємо GeoJSON
-          const radiusInMeters = options.radius || 1000;
-          const circleGeoJSON = turf.circle([latlng[1], latlng[0]], radiusInMeters / 1000, {steps: 64, units: 'kilometers'});
-          
-          const circle = {
-            _latlng: latlng,
-            _options: options,
-            _layerId: 'circle-' + Date.now() + '-' + Math.random(),
-            
-            addTo: function(m) {
-              if (!map.getSource(this._layerId)) {
-                map.addSource(this._layerId, {
-                  type: 'geojson',
-                  data: circleGeoJSON
-                });
-                
-                map.addLayer({
-                  id: this._layerId,
-                  type: 'fill',
-                  source: this._layerId,
-                  paint: {
-                    'fill-color': this._options.fillColor || '#3b82f6',
-                    'fill-opacity': this._options.fillOpacity || 0.15
-                  }
-                });
-                
-                if (this._options.weight) {
-                  map.addLayer({
-                    id: this._layerId + '-outline',
-                    type: 'line',
-                    source: this._layerId,
-                    paint: {
-                      'line-color': this._options.color || '#3b82f6',
-                      'line-width': this._options.weight || 2
-                    }
-                  });
-                }
-              }
-              return this;
-            },
-            
-            remove: function() {
-              if (map.getLayer(this._layerId)) map.removeLayer(this._layerId);
-              if (map.getLayer(this._layerId + '-outline')) map.removeLayer(this._layerId + '-outline');
-              if (map.getSource(this._layerId)) map.removeSource(this._layerId);
-            },
-            
-            setStyle: function(style) {
-              if (map.getLayer(this._layerId)) {
-                if (style.opacity !== undefined) {
-                  map.setPaintProperty(this._layerId, 'fill-opacity', style.opacity);
-                }
-                if (style.fillOpacity !== undefined) {
-                  map.setPaintProperty(this._layerId, 'fill-opacity', style.fillOpacity);
-                }
-              }
-            }
-          };
-          
-          return circle;
-        },
-        
-        polygon: function(points, options = {}) {
-          const layerId = 'polygon-' + Date.now() + '-' + Math.random();
-          
-          return {
-            _layerId: layerId,
-            _options: options,
-            
-            addTo: function(m) {
-              // Поддержка нескольких колец для маски (world ring + Ukraine hole)
-              let coordinates;
-              if (Array.isArray(points[0][0])) {
-                // Массив массивов - несколько колец
-                coordinates = points.map(ring => ring.map(p => [p[1], p[0]]));
-              } else {
-                // Простой массив точек - одно кольцо
-                const coords = points.map(p => [p[1], p[0]]);
-                coords.push(coords[0]); // Замикаємо полігон
-                coordinates = [coords];
-              }
-              
-              try {
-                if (!map.getSource(this._layerId)) {
-                  map.addSource(this._layerId, {
-                    type: 'geojson',
-                    data: {
-                      type: 'Feature',
-                      geometry: {
-                        type: 'Polygon',
-                        coordinates: coordinates
-                      }
-                    }
-                  });
-                  
-                  if (this._options.fillColor || this._options.fillOpacity) {
-                    map.addLayer({
-                      id: this._layerId,
-                      type: 'fill',
-                      source: this._layerId,
-                      paint: {
-                        'fill-color': this._options.fillColor || '#ff0000',
-                        'fill-opacity': this._options.fillOpacity || 0.3
-                      }
-                    });
-                  }
-                  
-                  if (this._options.stroke !== false) {
-                    map.addLayer({
-                      id: this._layerId + '-outline',
-                      type: 'line',
-                      source: this._layerId,
-                      paint: {
-                        'line-color': this._options.color || '#ff0000',
-                        'line-width': this._options.weight || 2
-                      }
-                    });
-                  }
-                }
-              } catch(e) {
-                console.warn('Error adding polygon layer:', e);
-              }
-              return this;
-            },
-            
-            remove: function() {
-              if (map.getLayer(this._layerId)) map.removeLayer(this._layerId);
-              if (map.getLayer(this._layerId + '-outline')) map.removeLayer(this._layerId + '-outline');
-              if (map.getSource(this._layerId)) map.removeSource(this._layerId);
-            },
-            
-            getElement: function() {
-              // Заглушка для совместимости с кодом маски
-              return null;
-            }
-          };
-        },
-        
-        layerGroup: function() {
-          return {
-            _layers: [],
-            addTo: function(m) { return this; },
-            clearLayers: function() {
-              this._layers.forEach(l => l.remove && l.remove());
-              this._layers = [];
-            },
-            addLayer: function(layer) {
-              this._layers.push(layer);
-              layer.addTo && layer.addTo(map);
-            }
-          };
-        },
-        
-        markerClusterGroup: function(options = {}) {
-          return {
-            _markers: [],
-            _options: options,
-            
-            addTo: function(m) { return this; },
-            
-            clearLayers: function() {
-              this._markers.forEach(m => m.remove && m.remove());
-              this._markers = [];
-            },
-            
-            addLayer: function(marker) {
-              this._markers.push(marker);
-              marker.addTo(map);
-            }
-          };
-        },
-        
-        divIcon: function(options = {}) {
-          return { options: options };
-        },
-        
-        icon: function(options = {}) {
-          return { options: options };
-        }
-      };
+      // Map is ready for use - using native Leaflet (no emulator needed)
       
       // Додаємо CSS для Leaflet маркерів
       const markerStyle = document.createElement('style');
@@ -5933,77 +5727,6 @@
         });
       }
       document.addEventListener('click', e=>{ if(!psWrap.contains(e.target)) hideSuggest(); });
-      
-      // --- Darken all non-Ukraine territory (dynamic mask loading precise border if available) ---
-      let worldMaskLayer = null;
-      async function initWorldMask(){
-        const worldRing = [ [85,-180],[85,180],[-85,180],[-85,-180] ];
-        // Fallback simplified Ukraine ring (used until precise GeoJSON loads)
-        const fallbackRing = [
-          [52.37,23.60],[51.90,23.60],[51.90,24.00],[51.50,24.50],[51.90,25.30],
-          [51.90,26.00],[51.60,26.60],[51.50,27.50],[51.60,28.20],[51.30,29.20],
-          [51.60,30.60],[52.30,31.80],[52.10,32.70],[52.40,34.40],[52.30,35.90],
-          [52.00,37.40],[51.20,38.20],[50.30,39.70],[49.10,40.10],[48.30,39.70],
-          [47.10,38.50],[46.00,38.20],[45.35,37.40],[45.40,36.60],[45.20,34.90],
-          [45.35,33.30],[46.07,30.95],[46.58,30.06],[47.80,29.48],[48.37,28.05],
-          [48.47,27.53],[48.27,26.86],[47.74,26.63],[47.85,24.96],[48.15,23.53],
-          [48.62,22.57],[49.90,22.09],[51.94,22.93],[52.37,23.60]
-        ];
-        
-        function drawMask(rings){
-          if(worldMaskLayer){ 
-            map.removeLayer(worldMaskLayer); 
-            worldMaskLayer = null; 
-          }
-          
-          // Створюємо polygon з дірками (world - ukraine = mask)
-          worldMaskLayer = L.polygon([worldRing, ...rings], {
-            stroke: false,
-            fill: true,
-            fillColor: '#0a0f1c',
-            fillOpacity: 0.85,
-            interactive: false,
-            pane: 'overlayPane'
-          }).addTo(map);
-          
-          // Переміщуємо на задній план
-          if (worldMaskLayer._path) {
-            worldMaskLayer._path.style.pointerEvents = 'none';
-          }
-        }
-        
-        // Try precise GeoJSON (place file at /static/ukraine_border.geojson)
-        try {
-          const resp = await fetch('/static/geoBoundaries-UKR-ADM0_simplified.geojson');
-          if(resp.ok){
-            const gj = await resp.json();
-            // Expect first feature Polygon or MultiPolygon in lon/lat
-            const feats = (gj.features||[]);
-            if(feats.length){
-              const geom = feats[0].geometry;
-              let rings=[];
-              if(geom.type==='Polygon'){
-                // Берём все кольца полигона
-                rings = geom.coordinates.map(r=> r.map(([lng,lat])=>[lat,lng]));
-              } else if(geom.type==='MultiPolygon'){
-                // Для MultiPolygon берём все внешние кольца
-                rings = geom.coordinates.map(poly=> poly[0].map(([lng,lat])=>[lat,lng]));
-              }
-              if(rings.length){
-                // Используем все кольца для точной границы
-                drawMask(rings);
-              }
-            }
-          } else {
-            // Если не удалось загрузить точную границу, используем fallback
-            console.warn('Failed to load precise border, using fallback');
-            drawMask([fallbackRing]);
-          }
-        } catch(e){ 
-          console.warn('Precise border load failed, using fallback ring', e);
-          drawMask([fallbackRing]);
-        }
-      }
       
       // ---- Presence (active users) ----
       const uid = localStorage.getItem('presence_id') || (self.crypto?.randomUUID ? crypto.randomUUID() : (Date.now()+""+Math.random()).replace(/\D/g,''));
