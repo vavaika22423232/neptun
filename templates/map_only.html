@@ -232,47 +232,25 @@
   <div id="map"></div>
   <div class="loading hidden" id="markerLoadingOverlay">Завантаження даних</div>
   
+  <!-- Завантажуємо бібліотеки синхронно -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  
+  <!-- Перевірка завантаження -->
   <script>
-  // Функція для динамічного завантаження скриптів
-  function loadScript(src) {
-    return new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = src;
-      script.async = false; // Важливо! Синхронне виконання
-      script.onload = () => {
-        console.log('Loaded:', src);
-        resolve();
-      };
-      script.onerror = () => reject(new Error(`Failed to load ${src}`));
-      document.body.appendChild(script);
-    });
-  }
-
-  // Завантажуємо всі необхідні бібліотеки ПОСЛІДОВНО
-  loadScript('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js')
-  .then(() => {
-    console.log('Leaflet loaded, L exists:', typeof L !== 'undefined');
-    return loadScript('https://unpkg.com/@turf/turf@6.5.0/turf.min.js');
-  })
-  .then(() => {
-    console.log('Turf loaded');
-    return loadScript('https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js');
-  })
-  .then(() => {
-    console.log('MarkerCluster loaded');
     if (typeof L === 'undefined') {
-      throw new Error('Leaflet (L) is still undefined after loading!');
+      alert('КРИТИЧНА ПОМИЛКА: Leaflet не завантажився!\n\nПерезавантажте сторінку з очищенням кешу (Ctrl+Shift+R)');
+      throw new Error('Leaflet not loaded');
     }
-    console.log('All libraries loaded, Leaflet version:', L.version);
-    startApp();
-  })
-  .catch(error => {
-    console.error('Failed to load libraries:', error);
-    document.getElementById('map').innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; background: #0f172a; color: #e2e8f0; text-align: center; padding: 2rem;"><div><h2 style="color: #ef4444;">❌ Помилка завантаження бібліотек</h2><p>' + error.message + '</p><button onclick="location.reload()" style="background: #3b82f6; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 0.5rem; cursor: pointer; margin-top: 1rem;">🔄 Перезавантажити</button></div></div>';
-  });
-
-  function startApp() {
-    console.log('Starting app...');
+    console.log('✓ Leaflet version:', L.version);
+    console.log('✓ L.map type:', typeof L.map);
+    console.log('✓ L.markerClusterGroup type:', typeof L.markerClusterGroup);
+  </script>
+  
+  <script>
+  // Весь код тут
+  (function() {
     const mapTilerApiKey = 'm8zW2kq1Ta7cw9nODPXo';
     const API_BASE = window.location.origin;
     const UPDATE_INTERVAL = 30000;
@@ -888,7 +866,10 @@
         });
       }
     }, 1000);
-  } // end of startApp()
+    
+    // Запускаємо ініціалізацію
+    initMap();
+  })(); // end of IIFE
   </script>
 </body>
 </html>
