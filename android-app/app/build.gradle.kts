@@ -8,7 +8,7 @@ plugins {
 
 android {
     namespace = "com.neptun.alarmmap"
-    compileSdk = 34
+    compileSdk = 35
     
     // Load keystore properties
     val keystorePropertiesFile = rootProject.file("keystore.properties")
@@ -20,9 +20,9 @@ android {
     defaultConfig {
         applicationId = "com.neptun.alarmmap"
         minSdk = 24
-        targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        targetSdk = 35
+        versionCode = 2
+        versionName = "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

@@ -262,10 +262,10 @@
   
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-  <!-- Mapbox GL JS для підтримки Mapbox стилів -->
-  <script src="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.js"></script>
-  <link href="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.css" rel="stylesheet" />
-  <!-- Leaflet MarkerCluster CSS для оптимізації (адаптуємо для MapLibre) -->
+  <!-- Leaflet JS для OpenStreetMap -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <!-- Leaflet MarkerCluster CSS для оптимізації -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" crossorigin=""/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" crossorigin=""/>
   <style>
@@ -5393,43 +5393,40 @@
     async function initMap() {
       const isDarkTheme = localStorage.getItem('mapTheme') === 'dark';
       
-      const mapboxToken = 'pk.eyJ1IjoidmF2YWlrYSIsImEiOiJjbWkzNXBiMW4wa3pmMndxdjhqc2l1eWxqIn0.Kc0YFVmy2F96jtF80o97Bw';
-      mapboxgl.accessToken = mapboxToken;
-      
-      console.log('Mapbox GL supported:', mapboxgl.supported());
+      console.log('Initializing Leaflet with OpenStreetMap');
       
       try {
-        // Ініціалізуємо Mapbox GL
-        map = new mapboxgl.Map({
-          container: 'map',
-          style: 'mapbox://styles/vavaika/cmi35uav600gi01r45sfk14q2',
-          center: [31.1656, 48.3794], // lng, lat (зверніть увагу на порядок!)
-          zoom: 5.5,
-          language: 'uk',
-          attributionControl: false,
-          locale: {
-            'NavigationControl.ResetBearing': 'Скинути орієнтацію',
-            'NavigationControl.ZoomIn': 'Збільшити',
-            'NavigationControl.ZoomOut': 'Зменшити',
-          }
+        // Ініціалізуємо Leaflet з OpenStreetMap
+        map = L.map('map', {
+          center: [48.3794, 31.1656], // lat, lng
+          zoom: 6,
+          zoomControl: false,
+          attributionControl: true
         });
         
+        // Додаємо OpenStreetMap tile layer
+        const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap contributors',
+          maxZoom: 19,
+          className: isDarkTheme ? 'dark-tiles' : ''
+        }).addTo(map);
+        
+        // Додаємо zoom контрол
+        L.control.zoom({
+          position: 'topright',
+          zoomInTitle: 'Збільшити',
+          zoomOutTitle: 'Зменшити'
+        }).addTo(map);
+        
         // Обробка помилок завантаження
-        map.on('error', (e) => {
-          console.error('MapLibre GL error:', e.error || e);
-          if (e.error) {
-            console.error('Error details:', {
-              message: e.error.message,
-              status: e.error.status,
-              url: e.error.url
-            });
-          }
+        map.on('tileerror', (e) => {
+          console.error('Leaflet tile error:', e);
         });
         
         // Логування успішного завантаження
-        map.on('load', () => {
-          console.log('MapLibre GL loaded successfully');
-          // Ініціалізуємо маску світу після завантаження стилю з небольшой задержкой
+        map.whenReady(() => {
+          console.log('Leaflet loaded successfully');
+          // Ініціалізуємо маску світу
           setTimeout(() => {
             if (typeof initWorldMask === 'function') {
               initWorldMask();
@@ -5508,28 +5505,26 @@
         window.currentMapStyle = newTheme;
         localStorage.setItem('mapTheme', newTheme);
         
-        // Зберігаємо поточний стан (центр, зум, маркери)
-        const center = map.getCenter();
-        const zoom = map.getZoom();
+        // Для Leaflet просто змінюємо CSS фільтр для темної теми
+        const tileLayer = map._layers[Object.keys(map._layers)[0]];
+        if (tileLayer && tileLayer._container) {
+          if (newTheme === 'dark') {
+            tileLayer._container.classList.add('dark-tiles');
+          } else {
+            tileLayer._container.classList.remove('dark-tiles');
+          }
+        }
         
-        // Змінюємо стиль (для Mapbox theme toggle не потрібен, оскільки стиль один)
-        // map.setStyle('mapbox://styles/vavaika/cmi35uav600gi01r45sfk14q2');
-        
-        // Після завантаження стилю відновлюємо все
-        map.once('styledata', () => {
-          forceUkrainianLabels();
-          
-          // Відновлюємо маркери
-          setTimeout(() => {
-            if (typeof updateMarkers === 'function') {
-              updateMarkers();
-            }
-            // Відновлюємо маску світу
-            if (typeof initWorldMask === 'function') {
-              initWorldMask();
-            }
-          }, 100);
-        });
+        // Оновлюємо маркери
+        setTimeout(() => {
+          if (typeof updateMarkers === 'function') {
+            updateMarkers();
+          }
+          // Відновлюємо маску світу
+          if (typeof initWorldMask === 'function') {
+            initWorldMask();
+          }
+        }, 100);
         
         updateMapThemeIcon(newTheme === 'dark');
       };
@@ -5577,40 +5572,35 @@
             },
             
             addTo: function(layer) {
-              // Створюємо HTML маркер
-              const el = document.createElement('div');
-              el.className = 'maplibre-marker';
+              // Створюємо HTML маркер для Leaflet
+              let icon = L.divIcon({
+                className: 'custom-div-icon',
+                html: this._options.icon?.options?.html || '',
+                iconSize: this._options.icon?.options?.iconSize || [32, 32],
+                iconAnchor: [16, 16]
+              });
               
-              if (this._options.icon && this._options.icon.options) {
-                el.innerHTML = this._options.icon.options.html || '';
-                el.style.width = (this._options.icon.options.iconSize?.[0] || 32) + 'px';
-                el.style.height = (this._options.icon.options.iconSize?.[1] || 32) + 'px';
-              }
-              
-              const mlMarker = new mapboxgl.Marker({
-                element: el,
-                anchor: 'center'
-              })
-              .setLngLat([this._latlng[1], this._latlng[0]]);
+              const leafletMarker = L.marker(
+                [this._latlng[0], this._latlng[1]],
+                { icon: icon }
+              );
               
               if (this._popup) {
-                const popup = new mapboxgl.Popup({
-                  offset: 25,
-                  closeButton: true,
-                  closeOnClick: true
-                }).setHTML(this._popup);
-                mlMarker.setPopup(popup);
+                leafletMarker.bindPopup(this._popup, {
+                  maxWidth: 300,
+                  closeButton: true
+                });
               }
               
-              mlMarker.addTo(map);
-              window.mapMarkers.push(mlMarker);
-              this._element = mlMarker;
+              leafletMarker.addTo(map);
+              window.mapMarkers.push(leafletMarker);
+              this._element = leafletMarker;
               return this;
             },
             
             remove: function() {
               if (this._element) {
-                this._element.remove();
+                map.removeLayer(this._element);
               }
             },
             
@@ -5806,16 +5796,17 @@
         }
       };
       
-      // Додаємо CSS для MapLibre маркерів
+      // Додаємо CSS для Leaflet маркерів
       const markerStyle = document.createElement('style');
       markerStyle.textContent = `
-        .maplibre-marker {
-          cursor: pointer;
+        .custom-div-icon {
+          background: transparent;
+          border: none;
         }
         
         /* Стили для popup */
-        .mapboxgl-popup-content,
-        .maplibregl-popup-content {
+        .leaflet-popup-content-wrapper,
+        .leaflet-popup-content {
           background: transparent !important;
           padding: 0 !important;
           box-shadow: none !important;
@@ -5824,14 +5815,17 @@
           max-width: 380px !important;
         }
         
-        .mapboxgl-popup-tip,
-        .maplibregl-popup-tip {
+        .leaflet-popup-tip {
           display: none !important;
         }
         
-        .mapboxgl-popup-close-button,
-        .maplibregl-popup-close-button {
+        .leaflet-popup-close-button {
           display: none !important;
+        }
+        
+        /* Темна тема для тайлів */
+        .dark-tiles {
+          filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
         }
       `;
       document.head.appendChild(markerStyle);

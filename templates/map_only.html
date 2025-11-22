@@ -5,13 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Neptun Alarm Map</title>
   
-  <!-- Mapbox GL JS для підтримки Mapbox стилів -->
-  <script src="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.js"></script>
-  <link href="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.css" rel="stylesheet">
+  <!-- Leaflet JS для OpenStreetMap -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   
-  <!-- Leaflet бібліотеки для маркерів -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Leaflet MarkerCluster -->
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
@@ -47,8 +45,13 @@
       cursor: pointer;
     }
     
-    .mapboxgl-popup-content,
-    .maplibregl-popup-content {
+    .custom-div-icon {
+      background: transparent;
+      border: none;
+    }
+    
+    .leaflet-popup-content-wrapper,
+    .leaflet-popup-content {
       background: transparent !important;
       padding: 0 !important;
       box-shadow: none !important;
@@ -57,19 +60,21 @@
       max-width: 380px !important;
     }
     
-    .mapboxgl-popup-tip,
-    .maplibregl-popup-tip {
+    .leaflet-popup-tip {
       display: none !important;
     }
     
-    .mapboxgl-popup-close-button,
-    .maplibregl-popup-close-button {
+    .leaflet-popup-close-button {
       display: none !important;
     }
     
-    .mapboxgl-popup,
-    .maplibregl-popup {
+    .leaflet-popup {
       animation: popupFadeIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    
+    /* Темна тема для тайлів */
+    .dark-tiles {
+      filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
     }
     
     @keyframes popupFadeIn {
@@ -239,85 +244,7 @@
     const MAX_TRACKS = 500;
     const CACHE_DURATION = 60000;
     
-    // Leaflet адаптер для Mapbox GL
-    if (typeof L !== 'undefined') {
-      L.mapboxGL = L.Layer.extend({
-        options: {
-          updateInterval: 32
-        },
-        initialize: function(options) {
-          L.setOptions(this, options);
-          if (options.accessToken) {
-            mapboxgl.accessToken = options.accessToken;
-          } else if (options.style && typeof options.style === 'string' && options.style.indexOf('mapbox://') === 0) {
-            throw new Error('mapbox access token required');
-          }
-        },
-        onAdd: function(map) {
-          if (!this._glMap) {
-            this._glMap = map._glMap || map;
-          }
-          this._container = this._glMap.getContainer();
-          
-          // Monkey-patch Leaflet methods
-          L.Marker.prototype._setPos = function(pos) {
-            if (!this._glMarker) {
-              const el = this._icon || this._shadow;
-              if (!el) return;
-              
-              this._glMarker = new mapboxgl.Marker(el)
-                .setLngLat([this._latlng.lng, this._latlng.lat])
-                .addTo(this._map._glMap || this._map);
-              
-              if (this._popup) {
-                const popupEl = this._popup._container;
-                const glPopup = new mapboxgl.Popup({
-                  closeButton: true,
-                  closeOnClick: false,
-                  maxWidth: 'none'
-                })
-                .setLngLat([this._latlng.lng, this._latlng.lat])
-                .setDOMContent(popupEl);
-                
-                this._glMarker.setPopup(glPopup);
-              }
-            } else {
-              this._glMarker.setLngLat([this._latlng.lng, this._latlng.lat]);
-            }
-          };
-          
-          return this._container;
-        },
-        onRemove: function() {
-          // cleanup if needed
-        }
-      });
-      
-      L.markerClusterGroup.prototype.addTo = function(map) {
-        map._glMap = map;
-        this._map = map;
-        this._featureGroup = L.featureGroup();
-        this._featureGroup._glMap = map;
-        
-        this._nonPointGroup = L.featureGroup();
-        this._nonPointGroup._glMap = map;
-        
-        map.on('zoomend', this._zoomEnd, this);
-        map.on('moveend', this._moveEnd, this);
-        
-        this._spiderfierOnAdd && this._spiderfierOnAdd();
-        this._bindEvents();
-        
-        this._zoom = map.getZoom();
-        this._currentShownBounds = this._getExpandedVisibleBounds();
-        
-        this._throttledZoomEnd = L.Util.throttle(this._zoomEnd, 100, this);
-        this._throttledMoveEnd = L.Util.throttle(this._moveEnd, 100, this);
-        
-        return this;
-      };
-    }
-
+    // Leaflet вже завантажено, не потрібен адаптер
     
     const ICONS = {
       shahed: '/static/shahed.png',
@@ -361,43 +288,8 @@
       return `https://api.maptiler.com/maps/${style}/style.json?key=${mapTilerApiKey}`;
     }
     
-    const forceUkrainianLabels = () => {
-      try {
-        if (!map || !map.isStyleLoaded()) return;
-        const style = map.getStyle();
-        if (!style || !style.layers) return;
-        
-        style.layers.forEach(layer => {
-          if (layer.type === 'symbol' && layer.layout && layer.layout['text-field']) {
-            const textField = layer.layout['text-field'];
-            
-            if (typeof textField === 'string') {
-              let newField = textField;
-              newField = newField.replace(/\{name:latin\}/g, '{name:uk}');
-              newField = newField.replace(/\{name:en\}/g, '{name:uk}');
-              newField = newField.replace(/\{name_en\}/g, '{name:uk}');
-              newField = newField.replace(/\{name_int\}/g, '{name:uk}');
-              newField = newField.replace(/\{name\}/g, '{name:uk}');
-              if (newField !== textField) {
-                map.setLayoutProperty(layer.id, 'text-field', newField);
-              }
-            } else if (Array.isArray(textField)) {
-              // Для expressions замінюємо всі варіанти на "name:uk"
-              let jsonStr = JSON.stringify(textField);
-              jsonStr = jsonStr.replace(/"name:latin"/g, '"name:uk"');
-              jsonStr = jsonStr.replace(/"name:en"/g, '"name:uk"');
-              jsonStr = jsonStr.replace(/"name_en"/g, '"name:uk"');
-              jsonStr = jsonStr.replace(/"name_int"/g, '"name:uk"');
-              jsonStr = jsonStr.replace(/"name"/g, '"name:uk"');
-              const newField = JSON.parse(jsonStr);
-              map.setLayoutProperty(layer.id, 'text-field', newField);
-            }
-          }
-        });
-      } catch (e) {
-        console.warn('Error setting Ukrainian labels:', e);
-      }
-    };
+    // OpenStreetMap не потребує форсування українських підписів
+    const forceUkrainianLabels = () => {};
     
     async function initWorldMask() {
       const worldRing = [[85, -180], [85, 180], [-85, 180], [-85, -180]];
@@ -515,37 +407,33 @@
           },
           
           addTo: function(layer) {
-            const el = document.createElement('div');
-            el.className = 'mapboxgl-marker';
-            el.style.cursor = 'pointer';
+            // Створюємо Leaflet marker з custom icon
+            let icon = L.divIcon({
+              className: 'custom-div-icon',
+              html: this._options.icon?.options?.html || '',
+              iconSize: this._options.icon?.options?.iconSize || [34, 34],
+              iconAnchor: this._options.icon?.options?.iconAnchor || [17, 17]
+            });
             
-            if (this._options.icon && this._options.icon.options) {
-              el.innerHTML = this._options.icon.options.html || '';
-              const iconSize = this._options.icon.options.iconSize || [34, 34];
-              const iconAnchor = this._options.icon.options.iconAnchor || [iconSize[0]/2, iconSize[1]/2];
-              el.style.width = iconSize[0] + 'px';
-              el.style.height = iconSize[1] + 'px';
-            }            const mlMarker = new mapboxgl.Marker({
-              element: el,
-              anchor: this._options.icon?.options?.iconAnchor ? 'center' : 'bottom'
-            }).setLngLat([this._latlng[1], this._latlng[0]]);
+            const leafletMarker = L.marker(
+              [this._latlng[0], this._latlng[1]],
+              { icon: icon }
+            );
             
             if (this._popup) {
-              const popup = new mapboxgl.Popup({
-                offset: 25,
-                closeButton: false,
-                closeOnClick: true
-              }).setHTML(this._popup);
-              mlMarker.setPopup(popup);
+              leafletMarker.bindPopup(this._popup, {
+                maxWidth: 300,
+                closeButton: false
+              });
             }
             
-            mlMarker.addTo(map);
-            this._element = mlMarker;
+            leafletMarker.addTo(map);
+            this._element = leafletMarker;
             return this;
           },
           
           remove: function() {
-            if (this._element) this._element.remove();
+            if (this._element) map.removeLayer(this._element);
           }
         };
         return marker;
@@ -631,34 +519,31 @@
     };
     
     function initMap() {
-      const mapboxToken = 'pk.eyJ1IjoidmF2YWlrYSIsImEiOiJjbWkzNXBiMW4wa3pmMndxdjhqc2l1eWxqIn0.Kc0YFVmy2F96jtF80o97Bw';
-      mapboxgl.accessToken = mapboxToken;
-      
-      console.log('Mapbox GL supported:', mapboxgl.supported());
+      console.log('Initializing Leaflet with OpenStreetMap');
       
       try {
-        map = new mapboxgl.Map({
-          container: 'map',
-          style: 'mapbox://styles/vavaika/cmi35uav600gi01r45sfk14q2',
-          center: [31.1656, 48.3794],
-          zoom: 5.5,
-          language: 'uk',
-          attributionControl: false,
-          locale: {
-            'NavigationControl.ResetBearing': 'Скинути орієнтацію',
-            'NavigationControl.ZoomIn': 'Збільшити',
-            'NavigationControl.ZoomOut': 'Зменшити'
-          }
+        map = L.map('map', {
+          center: [48.3794, 31.1656],
+          zoom: 6,
+          zoomControl: false,
+          attributionControl: true
         });
         
-        map.on('error', (e) => {
-          console.error('Map error:', e.error);
-          alert('Помилка завантаження карти: ' + (e.error.message || 'Невідома помилка'));
-        });
+        // Додаємо OpenStreetMap tile layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap contributors',
+          maxZoom: 19
+        }).addTo(map);
         
-        map.on('load', () => {
+        // Додаємо zoom control
+        L.control.zoom({
+          position: 'topright',
+          zoomInTitle: 'Збільшити',
+          zoomOutTitle: 'Зменшити'
+        }).addTo(map);
+        
+        map.whenReady(() => {
           document.getElementById('markerLoadingOverlay').classList.add('hidden');
-          forceUkrainianLabels();
           setTimeout(() => initWorldMask(), 100);
           updateMarkers();
           setInterval(updateMarkers, UPDATE_INTERVAL);
