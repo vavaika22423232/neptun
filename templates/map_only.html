@@ -232,26 +232,35 @@
   <div id="map"></div>
   <div class="loading hidden" id="markerLoadingOverlay">Завантаження даних</div>
   
-  <!-- Leaflet JS (завантажується перед нашим кодом) -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  
-  <!-- Leaflet MarkerCluster -->
-  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-  
-  <!-- Turf.js -->
-  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
-  
-  <!-- Чекаємо завантаження бібліотек -->
   <script>
-    // Перевіряємо чи завантажилися бібліотеки
-    if (typeof L === 'undefined') {
-      document.body.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100vh; background: #0f172a; color: #e2e8f0; text-align: center; padding: 2rem;"><div><h2 style="color: #ef4444;">❌ Помилка завантаження Leaflet</h2><p>Не вдалося завантажити бібліотеку карт</p><button onclick="location.reload()" style="background: #3b82f6; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 0.5rem; cursor: pointer; margin-top: 1rem;">🔄 Перезавантажити</button></div></div>';
-      throw new Error('Leaflet not loaded');
-    }
-    console.log('Leaflet loaded successfully, version:', L.version);
-  </script>
-  
-  <script>
+  // Функція для динамічного завантаження скриптів
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = src;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error(`Failed to load ${src}`));
+      document.head.appendChild(script);
+    });
+  }
+
+  // Завантажуємо всі необхідні бібліотеки
+  Promise.all([
+    loadScript('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'),
+    loadScript('https://unpkg.com/@turf/turf@6.5.0/turf.min.js')
+  ])
+  .then(() => loadScript('https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js'))
+  .then(() => {
+    console.log('All libraries loaded, Leaflet version:', L.version);
+    startApp();
+  })
+  .catch(error => {
+    console.error('Failed to load libraries:', error);
+    document.getElementById('map').innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; background: #0f172a; color: #e2e8f0; text-align: center; padding: 2rem;"><div><h2 style="color: #ef4444;">❌ Помилка завантаження бібліотек</h2><p>' + error.message + '</p><button onclick="location.reload()" style="background: #3b82f6; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 0.5rem; cursor: pointer; margin-top: 1rem;">🔄 Перезавантажити</button></div></div>';
+  });
+
+  function startApp() {
+    console.log('Starting app...');
     const mapTilerApiKey = 'm8zW2kq1Ta7cw9nODPXo';
     const API_BASE = window.location.origin;
     const UPDATE_INTERVAL = 30000;
@@ -846,15 +855,8 @@
       }
     }
     
-    // Чекаємо повного завантаження сторінки та всіх скриптів
-    window.addEventListener('load', function() {
-      console.log('Window loaded, L available:', typeof L !== 'undefined', 'L.version:', typeof L !== 'undefined' ? L.version : 'N/A');
-      if (typeof L === 'undefined') {
-        document.getElementById('map').innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; background: #0f172a; color: #e2e8f0; text-align: center; padding: 2rem;"><div><h2 style="color: #ef4444;">❌ Leaflet не завантажився</h2><p>Спробуйте очистити кеш браузера (Ctrl+Shift+R)</p><button onclick="location.reload(true)" style="background: #3b82f6; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 0.5rem; cursor: pointer; margin-top: 1rem;">🔄 Перезавантажити</button></div></div>';
-        return;
-      }
-      initMap();
-    });
+    // Запускаємо ініціалізацію карти
+    initMap();
     
     let zoomRedrawTimer = null;
     let lastZoom = 5.5;
@@ -874,6 +876,7 @@
         });
       }
     }, 1000);
+  } // end of startApp()
   </script>
 </body>
 </html>
