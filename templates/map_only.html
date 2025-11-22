@@ -470,18 +470,22 @@
       console.log('Initializing Leaflet with OpenStreetMap');
       
       try {
+        console.log('Creating L.map...');
         map = L.map('map', {
           center: [48.3794, 31.1656],
           zoom: 6,
           zoomControl: false,
           attributionControl: true
         });
+        console.log('Map created:', !!map);
         
         // Додаємо OpenStreetMap tile layer
+        console.log('Adding tile layer...');
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           attribution: '© OpenStreetMap contributors',
           maxZoom: 19
         }).addTo(map);
+        console.log('Tile layer added');
         
         // Додаємо zoom control
         L.control.zoom({
@@ -489,6 +493,7 @@
           zoomInTitle: 'Збільшити',
           zoomOutTitle: 'Зменшити'
         }).addTo(map);
+        console.log('Zoom control added');
         
         map.whenReady(() => {
           console.log('Map is ready!');
@@ -503,9 +508,10 @@
         });
         
       } catch (error) {
+        console.error('ERROR in initMap:', error);
         const mapContainer = document.getElementById('map');
         if (mapContainer) {
-          mapContainer.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; background: #0f172a; color: #e2e8f0;"><div style="text-align: center; padding: 2rem;"><h2 style="color: #ef4444;">❌ Помилка завантаження карти</h2><p>Не вдалося ініціалізувати карту</p><button onclick="location.reload()" style="background: #3b82f6; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 0.5rem; cursor: pointer; margin-top: 1rem;">🔄 Перезавантажити</button></div></div>';
+          mapContainer.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; background: #0f172a; color: #e2e8f0;"><div style="text-align: center; padding: 2rem;"><h2 style="color: #ef4444;">❌ Помилка завантаження карти</h2><p>Не вдалося ініціалізувати карту</p><p style="color: #94a3b8; font-size: 0.875rem; margin-top: 0.5rem;">' + error.message + '</p><button onclick="location.reload()" style="background: #3b82f6; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 0.5rem; cursor: pointer; margin-top: 1rem;">🔄 Перезавантажити</button></div></div>';
         }
       }
     }
