@@ -15485,7 +15485,8 @@ def admin_add_manual_marker():
         course_source = (payload.get('course_source') or '').strip() or (place or None)
         course_type = (payload.get('course_type') or '').strip() or None
 
-        now_dt = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        tz = pytz.timezone('Europe/Kyiv')
+        now_dt = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
         mid = 'manual-' + uuid.uuid4().hex[:12]
         messages = load_messages()
         # Build message dict similar to parsed messages
