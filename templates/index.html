@@ -1417,7 +1417,7 @@
     .leaflet-popup-tip{background:#ffffff;border:1px solid #d7dde3;}
   .leaflet-container a{color:#2563eb;}
 /* Simplified marker: only raw PNG image (no styled container) */
-.plain-marker-img{width:34px;height:34px;object-fit:contain;image-rendering:auto;filter:drop-shadow(0 1px 2px rgba(0,0,0,.45));}
+.plain-marker-img{width:100%;height:100%;object-fit:contain;image-rendering:auto;filter:drop-shadow(0 1px 2px rgba(0,0,0,.45));}
 
 /* White outline for Shahed markers specifically */
 .shahed-marker-active .plain-marker-img,
@@ -1439,6 +1439,7 @@
 
 .tm-badge{position:absolute;top:-6px;right:-6px;background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;font-size:11px;font-weight:700;padding:2px 5px;border-radius:12px;box-shadow:0 2px 6px -1px rgba(0,0,0,.5);font-family:Inter,system-ui,sans-serif;line-height:1;z-index:10;pointer-events:none;}
 .tm-wrap{position:relative;display:inline-block;}  /* Упрощенные стили для маркеров - без анимаций */
+.marker-rotator{display:inline-flex;align-items:center;justify-content:center;transform-origin:center center;transition:transform 0.2s ease;}
   
   @keyframes popIn{from{transform:scale(.5);opacity:0;}to{transform:scale(1);opacity:1;}}
   @keyframes slideIn{from{opacity:0;transform:translateX(100px);}to{opacity:1;transform:translateX(0);}}
@@ -4681,8 +4682,16 @@
     }
   }
   
-  // Use PNG markers for better compatibility
-  let markerContent = '<img class="plain-marker-img" style="width:' + w + 'px;height:' + h + 'px;" src="' + iconUrl + '" alt="" loading="lazy">';
+  // Use PNG markers for better compatibility (wrap with rotator div for manual bearing)
+  let rotationDeg = 0;
+  if (typeof p.rotation === 'number' && isFinite(p.rotation)) {
+    rotationDeg = p.rotation;
+  } else if (p.rotation !== undefined) {
+    const parsedRot = parseFloat(p.rotation);
+    rotationDeg = isFinite(parsedRot) ? parsedRot : 0;
+  }
+  const markerImg = '<img class="plain-marker-img" src="' + iconUrl + '" alt="" loading="lazy">';
+  let markerContent = '<div class="marker-rotator" style="width:' + w + 'px;height:' + h + 'px;transform:rotate(' + rotationDeg + 'deg);">' + markerImg + '</div>';
   
   // АНИМАЦИЯ ПОЛЁТА: вычисляем параметры для движения Шахеда
   let flightAnimation = '';

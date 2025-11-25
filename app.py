@@ -12947,12 +12947,25 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     if arrow_label:
                         place_name += f" ←{arrow_label}"
                     
+                    trajectory = {
+                        'start': [lat_start, lng_start],
+                        'end': [lat_final, lng_final],
+                        'source': base_disp,
+                        'target': course_label,
+                        'kind': 'region_start_course'
+                    }
+
                     threat_type, icon = classify(text)
                     return [{
                         'id': str(mid), 'place': place_name, 
                         'lat': lat_final, 'lng': lng_final,
                         'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                        'marker_icon': icon, 'source_match': 'region_start_course', 'count': drone_count
+                        'marker_icon': icon, 'source_match': 'region_start_course', 'count': drone_count,
+                        'trajectory': trajectory,
+                        'course_direction': f"курс на {course_label}",
+                        'course_source': base_disp,
+                        'course_target': course_label,
+                        'course_type': 'region_start_course'
                     }]
                 
                 # If only course_direction (no start position), use it as the direction
@@ -13007,54 +13020,128 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             cond_split = True
                 if cond_split:
                     (n1,(a1,b1)), (n2,(a2,b2)) = matched_regions
-                    
-                    # Determine source and target based on text order
-                    # Region mentioned first (before курс/arrow) = source (start position)
-                    # Region mentioned after курс/arrow = target (destination)
-                    source_region = n1.split()[0].title()
-                    target_region = n2.split()[0].title()
-                    
-                    # Calculate direction from source to target for arrow label
-                    dlat = a2 - a1
-                    dlng = b2 - b1
-                    
-                    # Determine cardinal/intercardinal direction
-                    arrow_direction = ''
-                    if abs(dlat) > abs(dlng) * 1.5:  # predominantly N/S
-                        if dlat > 0:
-                            arrow_direction = 'північ'
-                        else:
-                            arrow_direction = 'півдня'
-                    elif abs(dlng) > abs(dlat) * 1.5:  # predominantly E/W
-                        if dlng > 0:
-                            arrow_direction = 'сходу'
-                        else:
-                            arrow_direction = 'заходу'
-                    else:  # diagonal
-                        if dlat > 0 and dlng > 0:
-                            arrow_direction = 'північного сходу'
-                        elif dlat > 0 and dlng < 0:
-                            arrow_direction = 'північного заходу'
-                        elif dlat < 0 and dlng > 0:
-                            arrow_direction = 'південного сходу'
-                        else:
-                            arrow_direction = 'південного заходу'
-                    
-                    # Position marker closer to border between regions (60% toward target)
-                    lat = (a1*0.40 + a2*0.60)
-                    lng = (b1*0.40 + b2*0.60)
-                    
+
+                    def region_variants(name: str):
+                        base = name.split()[0].lower()
+                        variants = {base}
+                        cleaned = base.replace('область', '').replace('області', '').strip()
+                        if cleaned:
+                            variants.add(cleaned)
+                        if cleaned.endswith('ська'):
+                            stem = cleaned[:-4]
+                            variants.update({stem + 'щина', stem + 'щини', stem + 'щин', stem})
+                        elif cleaned.endswith('ської'):
+                            stem = cleaned[:-5]
+                            variants.update({stem + 'щина', stem + 'щини', stem + 'щин', stem})
+                        return [v for v in variants if v]
+
+                    def segment_has(segment: str, name: str) -> bool:
+                        for variant in region_variants(name):
+                            if variant in segment:
+                                return True
+                        return False
+
+                    def region_position(full_text: str, name: str) -> int:
+                        positions = []
+                        for variant in region_variants(name):
+                            idx = full_text.find(variant)
+                            if idx != -1:
+                                positions.append(idx)
+                        return min(positions) if positions else 10**6
+
+                    # Determine source and target based on message structure
+                    source_entry = matched_regions[0]
+                    target_entry = matched_regions[1]
+                    before_region = next((entry for entry in matched_regions if segment_has(before, entry[0])), None)
+                    after_region = next((entry for entry in matched_regions if segment_has(after_part, entry[0])), None)
+
+                    if before_region and after_region and before_region != after_region:
+                        source_entry = before_region
+                        target_entry = after_region
+                    elif before_region and not after_region:
+                        source_entry = before_region
+                        target_entry = next(entry for entry in matched_regions if entry != source_entry)
+                    elif after_region and not before_region:
+                        target_entry = after_region
+                        source_entry = next(entry for entry in matched_regions if entry != target_entry)
+                    else:
+                        # fallback to textual order
+                        ordered = sorted(matched_regions, key=lambda entry: region_position(lower, entry[0]))
+                        if len(ordered) == 2 and ordered[0] != ordered[1]:
+                            source_entry, target_entry = ordered[0], ordered[1]
+
+                    (source_name, (src_lat, src_lng)) = source_entry
+                    (target_name, (tgt_lat, tgt_lng)) = target_entry
+
+                    source_region = source_name.split()[0].title()
+                    target_region = target_name.split()[0].title()
+
+                    # Calculate direction from source to target for arrow labels
+                    dlat = tgt_lat - src_lat
+                    dlng = tgt_lng - src_lng
+
+                    def direction_token(dy: float, dx: float):
+                        if abs(dy) < 1e-6 and abs(dx) < 1e-6:
+                            return None
+                        if abs(dy) > abs(dx) * 1.4:
+                            return 'n' if dy > 0 else 's'
+                        if abs(dx) > abs(dy) * 1.4:
+                            return 'e' if dx > 0 else 'w'
+                        if dy >= 0 and dx >= 0:
+                            return 'ne'
+                        if dy >= 0 and dx < 0:
+                            return 'nw'
+                        if dy < 0 and dx >= 0:
+                            return 'se'
+                        return 'sw'
+
+                    dir_token = direction_token(dlat, dlng)
+                    arrow_label_map = {
+                        'n': 'півночі', 's': 'півдня', 'e': 'сходу', 'w': 'заходу',
+                        'ne': 'північного сходу', 'nw': 'північного заходу',
+                        'se': 'південного сходу', 'sw': 'південного заходу'
+                    }
+                    course_label_map = {
+                        'n': 'північ', 's': 'південь', 'e': 'схід', 'w': 'захід',
+                        'ne': "північний схід", 'nw': "північний захід",
+                        'se': "південний схід", 'sw': "південний захід"
+                    }
+                    arrow_direction = arrow_label_map.get(dir_token, '')
+                    course_direction_text = course_label_map.get(dir_token)
+
+                    # Position marker near the border (keep bias toward source to avoid city centers)
+                    border_bias = 0.7  # 70% source, 30% target
+                    lat = src_lat * border_bias + tgt_lat * (1 - border_bias)
+                    lng = src_lng * border_bias + tgt_lng * (1 - border_bias)
+
                     # Create place name with arrow for trajectory visualization
                     place_name = f"{source_region} → {target_region}"
                     if arrow_direction:
                         place_name += f" ←{arrow_direction}"
-                    
+
+                    trajectory = {
+                        'start': [src_lat, src_lng],
+                        'end': [tgt_lat, tgt_lng],
+                        'target': target_region,
+                        'source': source_region,
+                        'kind': 'region_course'
+                    }
+
                     threat_type, icon = classify(text)
-                    return [{
+                    result = {
                         'id': str(mid), 'place': place_name, 'lat': lat, 'lng': lng,
                         'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-                        'marker_icon': icon, 'source_match': 'region_course_trajectory', 'count': drone_count
-                    }]
+                        'marker_icon': icon, 'source_match': 'region_course_trajectory', 'count': drone_count,
+                        'trajectory': trajectory,
+                        'course_source': source_region,
+                        'course_target': target_region,
+                        'course_type': 'region_to_region'
+                    }
+                    if course_direction_text:
+                        result['course_direction'] = f"курс на {course_direction_text}"
+                    else:
+                        result['course_direction'] = f"курс на {target_region}"
+                    return [result]
 
     if len(matched_regions) == 2 and any(w in lower for w in ['межі','межу','межа','между','границі','граница']):
             (n1,(a1,b1)), (n2,(a2,b2)) = matched_regions
@@ -15335,6 +15422,35 @@ def add_channel():
     return jsonify({'status':'ok','added':False,'message':'exists','total':len(CHANNELS)})
 
 # ---------------- Manual marker management -----------------
+
+def _normalize_admin_trajectory(raw_traj):
+    """Sanitize trajectory payload coming from admin UI."""
+    if not isinstance(raw_traj, dict):
+        return None
+
+    def _pt(val):
+        if not isinstance(val, (list, tuple)) or len(val) != 2:
+            return None
+        try:
+            lat = float(val[0])
+            lng = float(val[1])
+            return [round(lat, 6), round(lng, 6)]
+        except (TypeError, ValueError):
+            return None
+
+    start = _pt(raw_traj.get('start'))
+    end = _pt(raw_traj.get('end'))
+    if not (start and end):
+        return None
+
+    traj = {'start': start, 'end': end}
+    for key in ('source', 'target', 'kind'):
+        value = raw_traj.get(key)
+        if isinstance(value, str):
+            value = value.strip()
+            if value:
+                traj[key] = value[:160]
+    return traj
 @app.route('/admin/add_manual_marker', methods=['POST'])
 def admin_add_manual_marker():
     """Add a manual marker via admin panel.
@@ -15363,6 +15479,12 @@ def admin_add_manual_marker():
             rotation = float(rotation)
         except:
             rotation = 0
+        trajectory = _normalize_admin_trajectory(payload.get('trajectory'))
+        course_direction = (payload.get('course_direction') or '').strip() or None
+        course_target = (payload.get('course_target') or '').strip() or None
+        course_source = (payload.get('course_source') or '').strip() or (place or None)
+        course_type = (payload.get('course_type') or '').strip() or None
+
         now_dt = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
         mid = 'manual-' + uuid.uuid4().hex[:12]
         messages = load_messages()
@@ -15381,6 +15503,16 @@ def admin_add_manual_marker():
             'channel': 'manual',
             'source': 'manual'
         }
+        if trajectory:
+            msg['trajectory'] = trajectory
+        if course_direction:
+            msg['course_direction'] = course_direction
+        if course_target:
+            msg['course_target'] = course_target
+        if course_source:
+            msg['course_source'] = course_source
+        if course_type:
+            msg['course_type'] = course_type
         messages.append(msg)
         save_messages(messages)
         return jsonify({'status':'ok','id':mid})
@@ -15417,6 +15549,12 @@ def admin_update_manual_marker():
         except Exception:
             rotation = 0
 
+        trajectory = _normalize_admin_trajectory(payload.get('trajectory'))
+        course_direction = (payload.get('course_direction') or '').strip()
+        course_target = (payload.get('course_target') or '').strip()
+        course_source = (payload.get('course_source') or '').strip()
+        course_type = (payload.get('course_type') or '').strip()
+
         messages = load_messages()
         updated = False
         for msg in messages:
@@ -15429,6 +15567,32 @@ def admin_update_manual_marker():
             msg['threat_type'] = threat_type
             msg['rotation'] = rotation
             msg['manual'] = msg.get('manual', True)
+
+            if 'trajectory' in payload:
+                if trajectory:
+                    msg['trajectory'] = trajectory
+                else:
+                    msg.pop('trajectory', None)
+            if 'course_direction' in payload:
+                if course_direction:
+                    msg['course_direction'] = course_direction
+                else:
+                    msg.pop('course_direction', None)
+            if 'course_target' in payload:
+                if course_target:
+                    msg['course_target'] = course_target
+                else:
+                    msg.pop('course_target', None)
+            if 'course_source' in payload:
+                if course_source:
+                    msg['course_source'] = course_source
+                else:
+                    msg.pop('course_source', None)
+            if 'course_type' in payload:
+                if course_type:
+                    msg['course_type'] = course_type
+                else:
+                    msg.pop('course_type', None)
             updated = True
             break
 
