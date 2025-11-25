@@ -4167,6 +4167,26 @@
       pts.unshift([lat,lng]);
       return pts;
     }
+
+    // Normalize trajectory point (array [lat,lng] or object {lat,lng})
+    function normalizeTrajectoryPoint(pt) {
+      if (!pt) return null;
+      if (Array.isArray(pt) && pt.length >= 2) {
+        const lat = parseFloat(pt[0]);
+        const lng = parseFloat(pt[1]);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          return [lat, lng];
+        }
+      }
+      if (typeof pt === 'object' && pt.lat !== undefined && pt.lng !== undefined) {
+        const lat = parseFloat(pt.lat);
+        const lng = parseFloat(pt.lng);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          return [lat, lng];
+        }
+      }
+      return null;
+    }
     
     // === РЕГИОНАЛЬНЫЕ УГРОЗЫ ===
     // Функция для определения региональных угроз
@@ -4630,12 +4650,14 @@
           if (m) { p.count = parseInt(m[1]); }
         }
         let arrowDir = null;
+        const trajectoryStart = normalizeTrajectoryPoint(p.trajectory && p.trajectory.start ? p.trajectory.start : null);
+        const trajectoryEnd = normalizeTrajectoryPoint(p.trajectory && p.trajectory.end ? p.trajectory.end : null);
         if (p.place && p.place.includes('←')) {
           arrowDir = p.place.split('←').pop().trim();
           console.log('🎯 СТРЕЛКА НАЙДЕНА! place:', p.place, 'arrowDir:', arrowDir, 'threat_type:', p.threat_type);
         } else {
           // Проверяем наличие trajectory для Черного моря
-          if (p.trajectory && p.trajectory.start && p.trajectory.end) {
+          if (trajectoryStart && trajectoryEnd) {
             console.log('🌊 Траектория из ЧЁРНОГО МОРЯ найдена:', p.trajectory, 'place:', p.place);
           } else {
             console.log('❌ Стрелка НЕ найдена и нет trajectory. place:', p.place);
@@ -4838,12 +4860,12 @@
         markers.push(m);
         
         // ТРАЕКТОРИЯ ДЛЯ ЧЕРНОМОРСКИХ БпЛА (пунктирная линия до целевого города)
-        if (p.trajectory && p.trajectory.start && p.trajectory.end) {
+        if (trajectoryStart && trajectoryEnd) {
           try {
-            const startLat = p.trajectory.start[0];
-            const startLng = p.trajectory.start[1];
-            const endLat = p.trajectory.end[0];
-            const endLng = p.trajectory.end[1];
+            const startLat = trajectoryStart[0];
+            const startLng = trajectoryStart[1];
+            const endLat = trajectoryEnd[0];
+            const endLng = trajectoryEnd[1];
             const targetName = p.trajectory.target || '';
             
             // Вычисляем прозрачность траектории на основе прозрачности маркера
