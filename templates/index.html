@@ -4559,7 +4559,7 @@
           
           // Simple cluster without SVG icon
           const html = '<div class="cluster cluster-' + freshness + '" style="opacity:' + clusterOpacity + ';"><b>' + count + '</b></div>';
-          const icon = L.divIcon({ html, className:'', iconSize:[44,52], iconAnchor:[22,48] });
+          const icon = L.divIcon({ html, className:'', iconSize:[36,42], iconAnchor:[18,38] });
           const m = L.marker([lat,lng], {icon});
           // Popup summary
           const typeLines = [...b.types.entries()].sort((a,b)=>b[1]-a[1]).slice(0,6).map(([t,c])=>'<div style="font-size:1rem;">' + (t||'—') + ': ' + c + '</div>').join('');
@@ -4645,11 +4645,11 @@
   const countBadge = (p.threat_type==='shahed' || /shahed|шахед|бпла/i.test(p.threat_type||'')) && p.count && p.count>1 ? '<div class="tm-badge">' + p.count + '×</div>' : '';
   // Dynamic scale: keep screen footprint smaller on distant zooms so visual offset feels minimal
   let z = map.getZoom ? map.getZoom() : 6;
-  let base = 34; // base size at mid zoom
-  // scale factor: grow slightly after zoom 7, shrink under 5
-  let factor = z >= 9 ? 1.25 : z >= 7 ? 1.0 : z >= 6 ? 0.85 : z >=5 ? 0.7 : 0.55;
+  let base = 26; // base size at mid zoom (smaller footprint)
+  // scale factor: gentle scaling so markers stay compact on distant zooms
+  let factor = z >= 9 ? 1.05 : z >= 7 ? 0.9 : z >= 6 ? 0.8 : z >=5 ? 0.65 : 0.5;
   const w = Math.round(base * factor);
-  const h = Math.round(w * 1.15);
+  const h = Math.round(w * 1.05);
   
   // Вычисление прозрачности на основе возраста маркера
   let opacity = 1.0;
