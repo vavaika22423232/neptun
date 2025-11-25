@@ -72,7 +72,7 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 #adminMap{height:600px;width:100%;border-radius:0.75rem;border:1px solid var(--border);transition:all 0.3s;cursor:crosshair}
 .map-toolbar{display:flex;gap:0.75rem;margin-top:1rem;flex-wrap:wrap;align-items:center}
 .map-stats{background:rgba(10,14,26,0.9);padding:0.5rem 1rem;border-radius:0.5rem;font-size:0.8rem;color:#cbd5e1;border:1px solid var(--border);font-weight:600}
-.marker-editor{position:absolute;top:10px;right:10px;background:rgba(10,14,26,0.95);border:1px solid var(--border);border-radius:0.75rem;padding:1rem;z-index:1000;min-width:280px;box-shadow:0 8px 32px rgba(0,0,0,0.6)}
+.marker-editor{position:absolute;top:10px;right:10px;background:rgba(10,14,26,0.95);border:1px solid var(--border);border-radius:0.75rem;padding:1rem;z-index:1000;min-width:280px;max-height:calc(100vh - 40px);overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.6)}
 .marker-editor h3{margin:0 0 0.75rem;font-size:0.9rem;color:var(--blue);font-weight:700}
 .marker-editor-field{margin-bottom:0.75rem}
 .marker-editor-field label{display:block;font-size:0.75rem;color:#cbd5e1;margin-bottom:0.25rem;font-weight:600}
@@ -226,6 +226,45 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 <div class="map-toolbar">
 <span class="map-stats" id="mapStats">Loading map...</span>
 </div>
+</div>
+</div>
+
+<div class="card">
+<div class="card-header">
+<h2 class="card-title">📌 Add Manual Marker</h2>
+</div>
+<div class="card-body">
+<form id="markerForm" class="form-grid">
+<div class="form-group">
+<label class="form-label">Latitude</label>
+<input type="number" step="0.000001" required id="mmLat" placeholder="48.4500" class="input">
+</div>
+<div class="form-group">
+<label class="form-label">Longitude</label>
+<input type="number" step="0.000001" required id="mmLng" placeholder="31.1200" class="input">
+</div>
+<div class="form-group">
+<label class="form-label">Location Name</label>
+<input type="text" id="mmPlace" placeholder="Київ" class="input">
+</div>
+<div class="form-group">
+<label class="form-label">Threat Type</label>
+<select id="mmType" class="input">
+<option value="shahed">Shahed</option>
+<option value="raketa">Rocket</option>
+<option value="artillery">Artillery</option>
+<option value="manual">Manual</option>
+</select>
+</div>
+<div class="form-group" style="grid-column:1/-1">
+<label class="form-label">Description</label>
+<textarea id="mmText" required placeholder="Event description..." class="input"></textarea>
+</div>
+<div style="grid-column:1/-1;display:flex;gap:1rem">
+<button type="submit" class="btn btn-primary">➕ Add Marker</button>
+<span id="mmStatus" class="badge info" style="display:none"></span>
+</div>
+</form>
 </div>
 </div>
 
@@ -389,45 +428,6 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 <p>No hidden markers</p>
 </div>
 </div>
-</div>
-</div>
-
-<div class="card">
-<div class="card-header">
-<h2 class="card-title">📌 Add Manual Marker</h2>
-</div>
-<div class="card-body">
-<form id="markerForm" class="form-grid">
-<div class="form-group">
-<label class="form-label">Latitude</label>
-<input type="number" step="0.000001" required id="mmLat" placeholder="48.4500" class="input">
-</div>
-<div class="form-group">
-<label class="form-label">Longitude</label>
-<input type="number" step="0.000001" required id="mmLng" placeholder="31.1200" class="input">
-</div>
-<div class="form-group">
-<label class="form-label">Location Name</label>
-<input type="text" id="mmPlace" placeholder="Київ" class="input">
-</div>
-<div class="form-group">
-<label class="form-label">Threat Type</label>
-<select id="mmType" class="input">
-<option value="shahed">Shahed</option>
-<option value="raketa">Rocket</option>
-<option value="artillery">Artillery</option>
-<option value="manual">Manual</option>
-</select>
-</div>
-<div class="form-group" style="grid-column:1/-1">
-<label class="form-label">Description</label>
-<textarea id="mmText" required placeholder="Event description..." class="input"></textarea>
-</div>
-<div style="grid-column:1/-1;display:flex;gap:1rem">
-<button type="submit" class="btn btn-primary">➕ Add Marker</button>
-<span id="mmStatus" class="badge info" style="display:none"></span>
-</div>
-</form>
 </div>
 </div>
 
