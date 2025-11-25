@@ -208,6 +208,26 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 <div id="vectorSummary" class="vector-summary">—</div>
 </div>
 <div class="marker-editor-field">
+<label>Animation Target (Lat, Lng)</label>
+<div style="display:flex;gap:0.5rem">
+<input type="number" step="0.000001" id="animTargetLat" class="input" placeholder="50.000000" oninput="storeAnimationTarget()">
+<input type="number" step="0.000001" id="animTargetLng" class="input" placeholder="30.000000" oninput="storeAnimationTarget()">
+</div>
+</div>
+<div class="marker-editor-field">
+<label>Animation Duration (sec)</label>
+<input type="number" id="animDuration" class="input" min="0.5" step="0.5" value="4" oninput="storeAnimationTarget()">
+</div>
+<div class="marker-editor-field">
+<label>Animation Actions</label>
+<div style="display:flex;flex-wrap:wrap;gap:0.5rem">
+<button type="button" class="btn btn-secondary btn-sm" onclick="setAnimationTargetFromMarker()">📍 Use Current Point</button>
+<button type="button" class="btn btn-secondary btn-sm" onclick="useVectorForAnimation()">🎯 Use Vector Target</button>
+<button type="button" class="btn btn-success btn-sm" onclick="animateSelectedMarker()">▶️ Animate</button>
+<button type="button" id="cancelAnimBtn" class="btn btn-danger btn-sm" onclick="cancelMarkerAnimation()" disabled>⏹ Stop</button>
+</div>
+</div>
+<div class="marker-editor-field">
 <label>Type</label>
 <select id="editType" class="input">
 <option value="shahed">Shahed</option>
@@ -535,6 +555,7 @@ let autoMarkerWarningAt=0;
 let tempNewMarker=null;
 let vectorMode=false;
 const markerVectors=new Map();
+let markerAnimation=null;
 function notif(m,t='info'){const n=document.createElement('div');n.className='notification notification-'+t;n.textContent=m;document.body.appendChild(n);setTimeout(()=>{n.style.opacity='0';n.style.transform='translateX(100px)';setTimeout(()=>n.remove(),300)},4000)}
 async function api(e,o={}){try{const u=e.includes('?')?`${e}&secret=${encodeURIComponent(S)}`:`${e}?secret=${encodeURIComponent(S)}`;const r=await fetch(u,o);if(!r.ok)throw new Error(`HTTP ${r.status}`);return await r.json()}catch(err){notif(`Error: ${err.message}`,'error');throw err}}
 function initMap(){if(map)return;try{map=L.map('adminMap',{attributionControl:false,zoomControl:true}).setView([49,31.3],6);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18}).addTo(map);vectorLayer=L.layerGroup().addTo(map);layer=L.layerGroup().addTo(map);map.on('click',onMapClick);console.log('✅ Map initialized');reloadMarkers()}catch(e){console.error('❌ Map failed:',e);notif('Map initialization failed','error')}}
@@ -583,13 +604,36 @@ function applyVectorToMarker(marker,latlng){
 	}
 	renderVectorForMarker(marker);
 	updateVectorSummary(data);
+	if(selectedMarker===marker){setAnimationInputsFromTarget({lat:end[0],lng:end[1]});}
 	notif('Vector updated. Не забудьте сохранить метку.','success');
 	setVectorMode(false);
 }
 
 function updateMarkerVectorLabel(value){if(!selectedMarker)return;const data=selectedMarker._markerData||{};const v=(value||'').trim();data.course_target=v||null;if(data.trajectory){data.trajectory.target=v||null;}updateVectorSummary(data);}
 
-async function reloadMarkers(){if(!map||!layer)return;if(tempNewMarker&&tempNewMarker._isNew){console.log('⏸️ Reload paused: new marker in progress');return}try{const d=await fetch(`/data?timeRange=40&confRange=0&maxTracks=100&ts=${Date.now()}`).then(r=>r.json());const t=d.tracks||[];layer.clearLayers();markerRotations.clear();if(vectorLayer){vectorLayer.clearLayers();markerVectors.clear();}t.forEach(m=>{if(!m.lat||!m.lng)return;const rotation=m.rotation||0;const k=createRotatableMarker(m.lat,m.lng,`/static/${m.threat_type||'shahed'}.png`,rotation);k.addTo(layer);k._markerData={id:m.id||null,lat:m.lat,lng:m.lng,place:m.place||'',type:m.threat_type||'shahed',text:m.text||'',rotation:rotation,channel:m.channel||'admin',manual:!!m.manual,trajectory:m.trajectory||null,course_direction:m.course_direction||null,course_target:m.course_target||null,course_source:m.course_source||null,course_type:m.course_type||null};markerRotations.set(k._leaflet_id,rotation);if(k._markerData.trajectory)renderVectorForMarker(k);k.on('click',function(e){L.DomEvent.stopPropagation(e);selectMarker(k)});k.on('drag',function(){const pos=k.getLatLng();if(selectedMarker===k){document.getElementById('editLat').value=pos.lat.toFixed(6);document.getElementById('editLng').value=pos.lng.toFixed(6)}});k.on('dragend',function(){const pos=k.getLatLng();k._markerData.lat=pos.lat;k._markerData.lng=pos.lng;if(k._markerData.trajectory&&k._markerData.trajectory.start){k._markerData.trajectory.start=[pos.lat,pos.lng];renderVectorForMarker(k);}if(selectedMarker===k){document.getElementById('editLat').value=pos.lat.toFixed(6);document.getElementById('editLng').value=pos.lng.toFixed(6);}persistMarkerPosition(k);});const p=`<div style="font-size:0.85rem;max-width:250px"><strong style="color:#3b82f6">${m.place||'Unknown'}</strong><br><div style="margin:6px 0">${(m.text||'').slice(0,200)}</div><div style="opacity:0.7;font-size:0.75rem">${m.date||''}</div></div>`;k.bindPopup(p)});document.getElementById('mapStats').textContent=`📍 Markers: ${t.length}`;console.log(`✅ Loaded ${t.length} markers`)}catch(e){console.error('❌ Load failed:',e);notif('Failed to load markers','error')}}
+function getAnimationControls(){return{latInput:document.getElementById('animTargetLat'),lngInput:document.getElementById('animTargetLng'),durationInput:document.getElementById('animDuration'),cancelBtn:document.getElementById('cancelAnimBtn')}}
+
+function getPreferredAnimationTarget(data){if(!data)return null;if(data.animation_target&&typeof data.animation_target.lat==='number'&&typeof data.animation_target.lng==='number')return data.animation_target;if(data.trajectory&&data.trajectory.end&&typeof data.trajectory.end[0]==='number'&&typeof data.trajectory.end[1]==='number'){return{lat:data.trajectory.end[0],lng:data.trajectory.end[1]}}return null}
+
+function populateAnimationInputs(data){const{latInput,lngInput,durationInput}=getAnimationControls();if(!latInput||!lngInput||!durationInput)return;const target=getPreferredAnimationTarget(data);if(target){latInput.value=target.lat.toFixed(6);lngInput.value=target.lng.toFixed(6)}else{latInput.value='';lngInput.value='';}const duration=(data&&data.animation_duration)||4;durationInput.value=duration}
+
+function setAnimationInputsFromTarget(target){const{latInput,lngInput}=getAnimationControls();if(!latInput||!lngInput)return;if(target){latInput.value=target.lat.toFixed(6);lngInput.value=target.lng.toFixed(6)}else{latInput.value='';lngInput.value='';}storeAnimationTarget()}
+
+function storeAnimationTarget(){if(!selectedMarker)return;const{latInput,lngInput,durationInput}=getAnimationControls();if(!latInput||!lngInput||!durationInput)return;const data=selectedMarker._markerData=selectedMarker._markerData||{};const lat=parseFloat(latInput.value);const lng=parseFloat(lngInput.value);const duration=parseFloat(durationInput.value)||4;if(!Number.isNaN(lat)&&!Number.isNaN(lng)){data.animation_target={lat,lng}}else{delete data.animation_target}data.animation_duration=Math.max(0.5,duration)}
+
+function setAnimationTargetFromMarker(){if(!selectedMarker){notif('Select a marker first','warning');return;}const pos=selectedMarker.getLatLng();setAnimationInputsFromTarget({lat:pos.lat,lng:pos.lng});notif('Цель анимации обновлена текущими координатами','info')}
+
+function useVectorForAnimation(){if(!selectedMarker){notif('Select a marker first','warning');return;}const data=selectedMarker._markerData||{};const traj=data.trajectory; if(!traj||!traj.end){notif('Сначала задайте направление','warning');return;}setAnimationInputsFromTarget({lat:traj.end[0],lng:traj.end[1]});notif('Цель анимации скопирована из вектора','success')}
+
+function updateAnimationButtonState(running){const{cancelBtn}=getAnimationControls();if(cancelBtn){cancelBtn.disabled=!running}}
+
+function finalizeMarkerAnimation(){if(markerAnimation&&markerAnimation.marker&&markerAnimation.marker.dragging){markerAnimation.marker.dragging.enable();}markerAnimation=null;updateAnimationButtonState(false)}
+
+function cancelMarkerAnimation(silent=false){if(!markerAnimation)return;if(markerAnimation.frame)cancelAnimationFrame(markerAnimation.frame);finalizeMarkerAnimation();if(!silent)notif('Анимация остановлена','info')}
+
+function animateSelectedMarker(){if(!selectedMarker){notif('Select a marker first','warning');return;}const{latInput,lngInput,durationInput}=getAnimationControls();if(!latInput||!lngInput||!durationInput){notif('Контролы анимации недоступны','error');return;}const targetLat=parseFloat(latInput.value);const targetLng=parseFloat(lngInput.value);if(Number.isNaN(targetLat)||Number.isNaN(targetLng)){notif('Укажите конечные координаты анимации','warning');return;}const durationSec=Math.max(0.5,parseFloat(durationInput.value)||4);const current=selectedMarker.getLatLng();if(Math.abs(current.lat-targetLat)<1e-6&&Math.abs(current.lng-targetLng)<1e-6){notif('Метка уже находится в этой точке','info');return;}cancelMarkerAnimation(true);const data=selectedMarker._markerData=selectedMarker._markerData||{};const start={lat:current.lat,lng:current.lng};const end={lat:targetLat,lng:targetLng};markerAnimation={marker:selectedMarker,start,end,duration:durationSec*1000,startTime:null,frame:null,data};if(selectedMarker.dragging)selectedMarker.dragging.disable();updateAnimationButtonState(true);const easeOut=t=>1-Math.pow(1-t,3);const step=timestamp=>{if(!markerAnimation||markerAnimation.marker!==selectedMarker)return;if(!markerAnimation.startTime)markerAnimation.startTime=timestamp;const progress=Math.min((timestamp-markerAnimation.startTime)/markerAnimation.duration,1);const eased=easeOut(progress);const lat=start.lat+(end.lat-start.lat)*eased;const lng=start.lng+(end.lng-start.lng)*eased;selectedMarker.setLatLng([lat,lng]);data.lat=lat;data.lng=lng;if(data.trajectory&&data.trajectory.start){data.trajectory.start=[lat,lng];}document.getElementById('editLat').value=lat.toFixed(6);document.getElementById('editLng').value=lng.toFixed(6);if(progress<1){markerAnimation.frame=requestAnimationFrame(step);}else{finalizeMarkerAnimation();if(data.trajectory)renderVectorForMarker(selectedMarker);notif('Метка перемещена в точку назначения','success');}};markerAnimation.frame=requestAnimationFrame(step)}
+
+async function reloadMarkers(){if(!map||!layer)return;if(markerAnimation){console.log('⏸️ Reload paused: animation in progress');return}if(tempNewMarker&&tempNewMarker._isNew){console.log('⏸️ Reload paused: new marker in progress');return}try{const d=await fetch(`/data?timeRange=40&confRange=0&maxTracks=100&ts=${Date.now()}`).then(r=>r.json());const t=d.tracks||[];layer.clearLayers();markerRotations.clear();if(vectorLayer){vectorLayer.clearLayers();markerVectors.clear();}t.forEach(m=>{if(!m.lat||!m.lng)return;const rotation=m.rotation||0;const k=createRotatableMarker(m.lat,m.lng,`/static/${m.threat_type||'shahed'}.png`,rotation);k.addTo(layer);k._markerData={id:m.id||null,lat:m.lat,lng:m.lng,place:m.place||'',type:m.threat_type||'shahed',text:m.text||'',rotation:rotation,channel:m.channel||'admin',manual:!!m.manual,trajectory:m.trajectory||null,course_direction:m.course_direction||null,course_target:m.course_target||null,course_source:m.course_source||null,course_type:m.course_type||null};markerRotations.set(k._leaflet_id,rotation);if(k._markerData.trajectory)renderVectorForMarker(k);k.on('click',function(e){L.DomEvent.stopPropagation(e);selectMarker(k)});k.on('drag',function(){const pos=k.getLatLng();if(selectedMarker===k){document.getElementById('editLat').value=pos.lat.toFixed(6);document.getElementById('editLng').value=pos.lng.toFixed(6)}});k.on('dragend',function(){const pos=k.getLatLng();k._markerData.lat=pos.lat;k._markerData.lng=pos.lng;if(k._markerData.trajectory&&k._markerData.trajectory.start){k._markerData.trajectory.start=[pos.lat,pos.lng];renderVectorForMarker(k);}if(selectedMarker===k){document.getElementById('editLat').value=pos.lat.toFixed(6);document.getElementById('editLng').value=pos.lng.toFixed(6);}persistMarkerPosition(k);});const p=`<div style="font-size:0.85rem;max-width:250px"><strong style="color:#3b82f6">${m.place||'Unknown'}</strong><br><div style="margin:6px 0">${(m.text||'').slice(0,200)}</div><div style="opacity:0.7;font-size:0.75rem">${m.date||''}</div></div>`;k.bindPopup(p)});document.getElementById('mapStats').textContent=`📍 Markers: ${t.length}`;console.log(`✅ Loaded ${t.length} markers`)}catch(e){console.error('❌ Load failed:',e);notif('Failed to load markers','error')}}
 
 async function persistMarkerPosition(marker){const data=marker?._markerData||{};if(!data.manual){const now=Date.now();if(now-autoMarkerWarningAt>5000){notif('This marker comes from live feed; drag changes reset on refresh. Save manual markers instead.','warning');autoMarkerWarningAt=now;}setTimeout(()=>reloadMarkers(),500);return;}if(!data.id){console.warn('Cannot persist marker without id');return;}const payload={id:data.id,lat:data.lat,lng:data.lng,place:data.place||'',threat_type:data.type||'manual',text:data.text||'',rotation:data.rotation||0,trajectory:data.trajectory||null,course_direction:data.course_direction||null,course_target:data.course_target||null,course_source:data.course_source||null,course_type:data.course_type||null};try{const response=await fetch('/admin/update_manual_marker?secret='+encodeURIComponent(S),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});if(!response.ok){const txt=await response.text();throw new Error(txt||'Failed to save position');}console.log(`💾 Position saved for manual marker ${data.id}`);}catch(err){console.error('Position save failed:',err);notif('Failed to save marker position: '+err.message,'error');setTimeout(()=>reloadMarkers(),800);}}
 
@@ -598,9 +642,9 @@ function toggleAddMode(){setAddMode(!addMode)}
 
 function onMapClick(e){if(vectorMode){if(!selectedMarker){notif('Select a marker first','warning');setVectorMode(false);return;}applyVectorToMarker(selectedMarker,e.latlng);return;}if(!addMode)return;const lat=e.latlng.lat;const lng=e.latlng.lng;if(tempNewMarker){layer.removeLayer(tempNewMarker);}const iconUrl='/static/shahed.png';tempNewMarker=createRotatableMarker(lat,lng,iconUrl,0);tempNewMarker._markerData={id:null,lat:lat,lng:lng,place:'',type:'manual',text:'',rotation:0,channel:'admin',manual:true,trajectory:null,course_direction:null,course_target:null,course_source:null,course_type:null};tempNewMarker._isNew=true;tempNewMarker.addTo(layer);tempNewMarker.on('drag',function(){const pos=tempNewMarker.getLatLng();document.getElementById('editLat').value=pos.lat.toFixed(6);document.getElementById('editLng').value=pos.lng.toFixed(6)});tempNewMarker.on('dragend',function(){const pos=tempNewMarker.getLatLng();tempNewMarker._markerData.lat=pos.lat;tempNewMarker._markerData.lng=pos.lng;if(tempNewMarker._markerData.trajectory){tempNewMarker._markerData.trajectory.start=[pos.lat,pos.lng];renderVectorForMarker(tempNewMarker);}document.getElementById('editLat').value=pos.lat.toFixed(6);document.getElementById('editLng').value=pos.lng.toFixed(6)});setAddMode(false,{keepTemp:true});const latFixed=lat.toFixed(6);const lngFixed=lng.toFixed(6);document.getElementById('mmLat').value=latFixed;document.getElementById('mmLng').value=lngFixed;if(document.getElementById('mmPlace'))document.getElementById('mmPlace').value='';document.getElementById('mmText').value=`Marker at ${latFixed}, ${lngFixed}`;selectMarker(tempNewMarker);document.getElementById('editPlace').value='';document.getElementById('editType').value='manual';document.getElementById('editText').value='';document.getElementById('editRotation').value=0;notif('Новая метка создана. Заполните поля и нажмите Создать.','success')}
 
-function selectMarker(marker){if(selectedMarker&&selectedMarker!==marker){selectedMarker.setOpacity(1)}selectedMarker=marker;marker.setOpacity(0.7);const data=marker._markerData||{};const isNew=!data.id;document.getElementById('editLat').value=data.lat||marker.getLatLng().lat.toFixed(6);document.getElementById('editLng').value=data.lng||marker.getLatLng().lng.toFixed(6);document.getElementById('editPlace').value=data.place||'';document.getElementById('editType').value=data.type||'shahed';document.getElementById('editText').value=data.text||'';document.getElementById('editRotation').value=data.rotation||0;const labelInput=document.getElementById('editVectorLabel');if(labelInput){labelInput.value=data.course_target||'';}updateVectorSummary(data);document.getElementById('clearVectorBtn').disabled=!(data&&data.trajectory);document.getElementById('markerEditor').style.display='block';const saveBtn=document.getElementById('editSaveBtn');if(saveBtn){saveBtn.textContent=isNew?'➕ Создать':'💾 Сохранить'}document.getElementById('copyBtn').disabled=isNew;notif(isNew?'Новая метка готова к заполнению.':'Marker selected. Edit or copy it.','info')}
+function selectMarker(marker){cancelMarkerAnimation(true);if(selectedMarker&&selectedMarker!==marker){selectedMarker.setOpacity(1)}selectedMarker=marker;marker.setOpacity(0.7);const data=marker._markerData||{};const isNew=!data.id;document.getElementById('editLat').value=data.lat||marker.getLatLng().lat.toFixed(6);document.getElementById('editLng').value=data.lng||marker.getLatLng().lng.toFixed(6);document.getElementById('editPlace').value=data.place||'';document.getElementById('editType').value=data.type||'shahed';document.getElementById('editText').value=data.text||'';document.getElementById('editRotation').value=data.rotation||0;const labelInput=document.getElementById('editVectorLabel');if(labelInput){labelInput.value=data.course_target||'';}updateVectorSummary(data);populateAnimationInputs(data);document.getElementById('clearVectorBtn').disabled=!(data&&data.trajectory);document.getElementById('markerEditor').style.display='block';const saveBtn=document.getElementById('editSaveBtn');if(saveBtn){saveBtn.textContent=isNew?'➕ Создать':'💾 Сохранить'}document.getElementById('copyBtn').disabled=isNew;notif(isNew?'Новая метка готова к заполнению.':'Marker selected. Edit or copy it.','info')}
 
-function closeMarkerEditor(){document.getElementById('markerEditor').style.display='none';if(selectedMarker){if(selectedMarker._isNew&&layer){layer.removeLayer(selectedMarker);tempNewMarker=null;}selectedMarker.setOpacity(1);selectedMarker=null}document.getElementById('copyBtn').disabled=true;const labelInput=document.getElementById('editVectorLabel');if(labelInput)labelInput.value='';updateVectorSummary(null);setVectorMode(false)}
+function closeMarkerEditor(){document.getElementById('markerEditor').style.display='none';cancelMarkerAnimation(true);if(selectedMarker){if(selectedMarker._isNew&&layer){layer.removeLayer(selectedMarker);tempNewMarker=null;}selectedMarker.setOpacity(1);selectedMarker=null}document.getElementById('copyBtn').disabled=true;const labelInput=document.getElementById('editVectorLabel');if(labelInput)labelInput.value='';updateVectorSummary(null);setVectorMode(false);populateAnimationInputs(null)}
 
 function updateSelectedRotation(angle){if(!selectedMarker)return;const currentLatLng=selectedMarker.getLatLng();const iconUrl=`/static/${selectedMarker._markerData?.type||'shahed'}.png`;const iconSize=34;const icon=L.divIcon({html:`<div class="rotatable-marker" style="transform:rotate(${angle}deg);width:${iconSize}px;height:${iconSize}px"><img src="${iconUrl}" style="width:100%;height:100%;display:block"/></div>`,className:'',iconSize:[iconSize,iconSize],iconAnchor:[iconSize/2,iconSize/2]});selectedMarker.setIcon(icon);selectedMarker.setLatLng(currentLatLng);if(selectedMarker._markerData){selectedMarker._markerData.rotation=parseFloat(angle)}markerRotations.set(selectedMarker._leaflet_id,parseFloat(angle))}
 
@@ -614,7 +658,57 @@ document.addEventListener('keydown',function(e){const active=document.activeElem
 
 async function deleteSelected(){if(!selectedMarker){notif('Select a marker first','warning');return}if(selectedMarker._isNew){closeMarkerEditor();notif('Новая метка отменена','info');return}if(!confirm('Delete this marker?'))return;const data=selectedMarker._markerData||{};try{await fetch('/hide_marker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat:data.lat,lng:data.lng,text:data.text,source:data.channel||'admin'})});notif('Marker deleted','success');closeMarkerEditor();reloadMarkers()}catch(e){notif('Failed to delete marker','error')}}
 
-async function saveMarkerEdit(){if(!selectedMarker){notif('No marker selected','warning');return}const newLat=parseFloat(document.getElementById('editLat').value);const newLng=parseFloat(document.getElementById('editLng').value);const newPlace=(document.getElementById('editPlace').value||'').trim();const newType=document.getElementById('editType').value;const newText=(document.getElementById('editText').value||'').trim();const newRotation=parseFloat(document.getElementById('editRotation').value)||0;if(Number.isNaN(newLat)||Number.isNaN(newLng)){notif('Укажите корректные координаты','warning');return}if(!newText){notif('Добавьте описание события','warning');return}const oldData=selectedMarker._markerData||{};const markerId=oldData.id;const isNew=!markerId;const endpoint=isNew?'/admin/add_manual_marker':'/admin/update_manual_marker';if(selectedMarker._markerData){selectedMarker._markerData.lat=newLat;selectedMarker._markerData.lng=newLng;selectedMarker._markerData.place=newPlace;selectedMarker._markerData.type=newType;selectedMarker._markerData.text=newText;selectedMarker._markerData.rotation=newRotation;if(newPlace){selectedMarker._markerData.course_source=newPlace;}}const payload=isNew?{lat:newLat,lng:newLng,place:newPlace,threat_type:newType,text:newText,rotation:newRotation}:{id:markerId,lat:newLat,lng:newLng,place:newPlace,threat_type:newType,text:newText,rotation:newRotation};payload.trajectory=oldData.trajectory||null;payload.course_direction=oldData.course_direction||null;payload.course_target=oldData.course_target||null;payload.course_source=oldData.course_source||null;payload.course_type=oldData.course_type||null;try{const response=await fetch(`${endpoint}?secret=${encodeURIComponent(S)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});if(!response.ok){const errTxt=await response.text();let message=errTxt||'Failed to save';try{const parsed=JSON.parse(errTxt);if(parsed.error)message=parsed.error}catch(_){}throw new Error(message);}notif(isNew?'Метка создана':'Marker updated successfully','success');closeMarkerEditor();tempNewMarker=null;setTimeout(()=>reloadMarkers(),400)}catch(e){console.error('Save error:',e);notif('Failed to save marker: '+e.message,'error')}}
+async function saveMarkerEdit(){
+	if(!selectedMarker){notif('No marker selected','warning');return}
+	const newLat=parseFloat(document.getElementById('editLat').value);
+	const newLng=parseFloat(document.getElementById('editLng').value);
+	const newPlace=(document.getElementById('editPlace').value||'').trim();
+	const newType=document.getElementById('editType').value;
+	const newText=(document.getElementById('editText').value||'').trim();
+	const newRotation=parseFloat(document.getElementById('editRotation').value)||0;
+	if(Number.isNaN(newLat)||Number.isNaN(newLng)){notif('Укажите корректные координаты','warning');return}
+	if(!newText){notif('Добавьте описание события','warning');return}
+	const markerData=selectedMarker._markerData=selectedMarker._markerData||{};
+	const markerId=markerData.id;
+	const isNew=!markerId;
+	const endpoint=isNew?'/admin/add_manual_marker':'/admin/update_manual_marker';
+	markerData.lat=newLat;
+	markerData.lng=newLng;
+	markerData.place=newPlace;
+	markerData.type=newType;
+	markerData.text=newText;
+	markerData.rotation=newRotation;
+	if(newPlace){markerData.course_source=newPlace;}
+	const basePayload={lat:newLat,lng:newLng,place:newPlace,threat_type:newType,text:newText,rotation:newRotation,trajectory:markerData.trajectory||null,course_direction:markerData.course_direction||null,course_target:markerData.course_target||null,course_source:markerData.course_source||null,course_type:markerData.course_type||null};
+	const payload=isNew?basePayload:{id:markerId,...basePayload};
+	const requestInit={method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)};
+	const sendRequest=url=>fetch(`${url}?secret=${encodeURIComponent(S)}`,requestInit);
+	const parseError=async response=>{const errTxt=await response.text();try{const parsed=JSON.parse(errTxt);return parsed.error||parsed.message||'Failed to save'}catch(_){return errTxt||'Failed to save'}};
+	const handleSuccess=message=>{notif(message,'success');closeMarkerEditor();tempNewMarker=null;setTimeout(()=>reloadMarkers(),400)};
+	try{
+		let response=await sendRequest(endpoint);
+		if(!response.ok){
+			const errorMessage=await parseError(response);
+			const isMissingInsert=!isNew&&response.status===404&&(errorMessage||'').toLowerCase().includes('not found');
+			if(isMissingInsert){
+				notif('Оригинальная метка не найдена, создаю новую запись','warning');
+				const recreateInit={...requestInit,body:JSON.stringify(basePayload)};
+				const recreateResponse=await fetch(`/admin/add_manual_marker?secret=${encodeURIComponent(S)}`,recreateInit);
+				if(!recreateResponse.ok){
+					const recreateError=await parseError(recreateResponse);
+					throw new Error(recreateError);
+				}
+				handleSuccess('Метка создана заново');
+				return;
+			}
+			throw new Error(errorMessage);
+		}
+		handleSuccess(isNew?'Метка создана':'Marker updated successfully');
+	}catch(e){
+		console.error('Save error:',e);
+		notif('Failed to save marker: '+e.message,'error');
+	}
+}
 async function deleteMarkerFromMap(lat,lng,text,source){try{await fetch('/hide_marker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,text,source})});notif('Marker deleted','success');reloadMarkers()}catch(e){notif('Failed to delete marker','error')}}
 function toggleAuto(){auto=!auto;const b=document.getElementById('autoBtn');b.textContent=`🔁 Auto: ${auto?'ON':'OFF'}`;b.className=auto?'btn btn-success btn-sm':'btn btn-secondary btn-sm'}
 async function blockUser(id){try{await api('/block',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});notif('User blocked successfully','success');setTimeout(()=>location.reload(),1000)}catch(e){}}

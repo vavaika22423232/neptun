@@ -772,6 +772,9 @@ def _prune_messages(data):
         cutoff = datetime.utcnow() - timedelta(minutes=MESSAGES_RETENTION_MINUTES)
         pruned = []
         for m in data:
+            if m.get('manual'):
+                pruned.append(m)
+                continue
             try:
                 dt = datetime.strptime(m.get('date',''), '%Y-%m-%d %H:%M:%S')
             except Exception:
@@ -784,8 +787,13 @@ def _prune_messages(data):
     # Count based pruning (keep newest by date)
     if MESSAGES_MAX_COUNT > 0 and len(data) > MESSAGES_MAX_COUNT:
         try:
-            data_sorted = sorted(data, key=lambda x: x.get('date',''))
-            data = data_sorted[-MESSAGES_MAX_COUNT:]
+            manual_items = [m for m in data if m.get('manual')]
+            auto_items = [m for m in data if not m.get('manual')]
+            allow_auto = max(0, MESSAGES_MAX_COUNT - len(manual_items))
+            if len(auto_items) > allow_auto:
+                auto_items = sorted(auto_items, key=lambda x: x.get('date',''))[-allow_auto:]
+            combined = manual_items + auto_items
+            data = sorted(combined, key=lambda x: x.get('date',''))
         except Exception:
             data = data[-MESSAGES_MAX_COUNT:]
     return data
@@ -805,6 +813,23 @@ def save_messages(data):
         data = _prune_messages(data)
     except Exception as e:
         log.debug(f'Retention prune error: {e}')
+    # Reload current file to preserve manual markers added after this snapshot was loaded
+    try:
+        existing = load_messages()
+    except Exception as e:
+        log.debug(f'Failed to reload existing messages before save: {e}')
+        existing = []
+    if existing:
+        existing_manual = [m for m in existing if m.get('manual')]
+        data_ids = {m.get('id') for m in data if m.get('id')}
+        restored = 0
+        for manual_msg in existing_manual:
+            mid = manual_msg.get('id')
+            if mid and mid not in data_ids:
+                data.append(manual_msg)
+                restored += 1
+        if restored:
+            log.debug(f'Restored {restored} manual markers during save merge')
     print(f"DEBUG: Saving {len(data)} messages to file")
     with open(MESSAGES_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
