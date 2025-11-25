@@ -15387,6 +15387,59 @@ def admin_add_manual_marker():
     except Exception as e:
         return jsonify({'status':'error','error':str(e)}), 400
 
+@app.route('/admin/update_manual_marker', methods=['POST'])
+def admin_update_manual_marker():
+    """Update existing manual marker coordinates/text/type."""
+    if not _require_secret(request):
+        return jsonify({'status': 'forbidden'}), 403
+
+    payload = request.get_json(silent=True) or {}
+    marker_id = (payload.get('id') or '').strip()
+    if not marker_id:
+        return jsonify({'status': 'error', 'error': 'missing_id'}), 400
+
+    try:
+        lat = float(payload.get('lat'))
+        lng = float(payload.get('lng'))
+        if not (43 <= lat <= 53.8 and 21 <= lng <= 41.5):
+            raise ValueError('out_of_bounds')
+        place = (payload.get('place') or '').strip()
+        text = (payload.get('text') or '').strip()
+        if not text:
+            raise ValueError('empty_text')
+        threat_type = (payload.get('threat_type') or '').strip().lower() or 'manual'
+        allowed_types = {'shahed','raketa','avia','pvo','vibuh','alarm','alarm_cancel','mlrs','artillery','obstril','fpv','pusk','manual'}
+        if threat_type not in allowed_types:
+            threat_type = 'manual'
+        rotation = payload.get('rotation', 0)
+        try:
+            rotation = float(rotation)
+        except Exception:
+            rotation = 0
+
+        messages = load_messages()
+        updated = False
+        for msg in messages:
+            if msg.get('id') != marker_id:
+                continue
+            msg['lat'] = round(lat, 6)
+            msg['lng'] = round(lng, 6)
+            msg['place'] = place
+            msg['text'] = text
+            msg['threat_type'] = threat_type
+            msg['rotation'] = rotation
+            msg['manual'] = msg.get('manual', True)
+            updated = True
+            break
+
+        if not updated:
+            return jsonify({'status': 'error', 'error': 'not_found'}), 404
+
+        save_messages(messages)
+        return jsonify({'status': 'ok', 'id': marker_id})
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 400
+
 @app.route('/admin/markers')
 def admin_markers():
     """API endpoint to get recent markers for admin map"""
