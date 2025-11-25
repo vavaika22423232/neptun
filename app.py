@@ -695,6 +695,7 @@ if _dyn:
 # ---------------- Monitoring period global config (admin editable) ----------------
 CONFIG_FILE = 'config.json'
 MONITOR_PERIOD_MINUTES = 30  # default; editable only via admin panel
+MANUAL_MARKER_WINDOW_MINUTES = int(os.getenv('MANUAL_MARKER_WINDOW_MINUTES', '720'))  # manual markers stay visible at least 12h
 
 def load_config():
     """Load persisted configuration (currently only monitor period)."""
@@ -14951,6 +14952,7 @@ def data():
     tz = pytz.timezone('Europe/Kyiv')
     now = datetime.now(tz).replace(tzinfo=None)
     min_time = now - timedelta(minutes=time_range)
+    manual_cutoff = now - timedelta(minutes=max(time_range, MANUAL_MARKER_WINDOW_MINUTES))
     print(f"[DEBUG] Filtering messages since {min_time} (last {time_range} minutes)")
     hidden = set(load_hidden())
     out = []  # geo tracks
@@ -14960,7 +14962,8 @@ def data():
             dt = datetime.strptime(m.get('date',''), '%Y-%m-%d %H:%M:%S')
         except Exception:
             continue
-        if dt >= min_time:
+        manual_marker = bool(m.get('manual'))
+        if dt >= min_time or (manual_marker and dt >= manual_cutoff):
             # Fallback reparse: if message lacks geo but contains course pattern, try to derive markers now
             txt_low = (m.get('text') or '').lower()
             msg_id = m.get('id')
@@ -15053,6 +15056,8 @@ def data():
             if m.get('source_match','').startswith('region') and not any(k in low_txt for k in ['бпла','дрон','шахед','shahed','geran','ракета','ракети','missile','iskander','s-300','s300','каб','артил','града','смерч','ураган','mlrs','avia','авіа','авиа','бомба']):
                 continue
             out.append(m)
+        else:
+            continue
     # Sort events by time desc (latest first) like markers implicitly (messages stored chronological)
     try:
         events.sort(key=lambda x: x.get('date',''), reverse=True)
