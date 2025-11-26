@@ -6117,9 +6117,7 @@
     startDeploymentMonitoring();
     
     // Start background preloading after initial load
-    setTimeout(() => {
-      preloadRemainingIcons();
-    }, 2000); // Wait 2 seconds to avoid interfering with initial page load
+    preloadRemainingIcons();
   };
   
   // Deployment monitoring system

@@ -750,7 +750,7 @@ async function updateStats(){try{const d=await api('/admin/stats');const s=d.sta
 setInterval(()=>{if(auto&&map)reloadMarkers()},30000);
 setInterval(updateRaw,15000);
 setInterval(updateStats,20000);
-document.addEventListener('DOMContentLoaded',()=>{console.log('🌊 Neptun Admin Dashboard initialized');if(typeof L==='undefined'){notif('Leaflet library failed to load','error');return}setTimeout(()=>{initMap();updateStats();updateRaw();loadHiddenMarkers()},100)});
+document.addEventListener('DOMContentLoaded',()=>{console.log('🌊 Neptun Admin Dashboard initialized');if(typeof L==='undefined'){notif('Leaflet library failed to load','error');return}initMap();updateStats();updateRaw();loadHiddenMarkers()});
 </script>
 </body>
 </html>
