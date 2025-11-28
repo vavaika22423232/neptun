@@ -4080,6 +4080,8 @@
   let map;
     let markerLayer = null;
     let markers = [];
+    const DEBUG_MARKER_LOGS = false;
+    const markerDebugLog = (...args) => { if (DEBUG_MARKER_LOGS) { console.debug(...args); } };
     // Проста мапа транслітерації/перекладу російських / застарілих назв на українські
     const PLACE_UA_MAP = (()=>{
       const m = new Map([
@@ -4654,13 +4656,13 @@
         const trajectoryEnd = normalizeTrajectoryPoint(p.trajectory && p.trajectory.end ? p.trajectory.end : null);
         if (p.place && p.place.includes('←')) {
           arrowDir = p.place.split('←').pop().trim();
-          console.log('🎯 СТРЕЛКА НАЙДЕНА! place:', p.place, 'arrowDir:', arrowDir, 'threat_type:', p.threat_type);
+          markerDebugLog('🎯 СТРЕЛКА НАЙДЕНА! place:', p.place, 'arrowDir:', arrowDir, 'threat_type:', p.threat_type);
         } else {
           // Проверяем наличие trajectory для Черного моря
           if (trajectoryStart && trajectoryEnd) {
-            console.log('🌊 Траектория из ЧЁРНОГО МОРЯ найдена:', p.trajectory, 'place:', p.place);
+            markerDebugLog('🌊 Траектория из ЧЁРНОГО МОРЯ найдена:', p.trajectory, 'place:', p.place);
           } else {
-            console.log('❌ Стрелка НЕ найдена и нет trajectory. place:', p.place);
+            markerDebugLog('❌ Стрелка НЕ найдена и нет trajectory. place:', p.place);
           }
         }
   const threatClass = (p.threat_type||'default').toLowerCase();
@@ -4751,7 +4753,7 @@
   const m = L.marker([p.lat, p.lng], { icon, riseOnHover:true });
         // УЛУЧШЕННАЯ ТРАЕКТОРИЯ: анимированная стрелка направления полёта
         if (arrowDir) {
-          console.log('🚀 РИСУЕМ ТРАЕКТОРИЮ! arrowDir:', arrowDir, 'place:', p.place);
+          markerDebugLog('🚀 РИСУЕМ ТРАЕКТОРИЮ! arrowDir:', arrowDir, 'place:', p.place);
           const dir = arrowDir.toLowerCase();
           let dx=0, dy=0;
           // Увеличиваем длину траектории для лучшей видимости
@@ -4759,9 +4761,9 @@
           if (dir.includes('північ')) dy = 0.5;
           if (dir.includes('сход')) dx = -0.5; // east origin => movement westwards
           if (dir.includes('зах')) dx = 0.5;
-          console.log('📐 Координаты смещения: dx=', dx, 'dy=', dy, 'dir=', dir);
+          markerDebugLog('📐 Координаты смещения: dx=', dx, 'dy=', dy, 'dir=', dir);
           if (dx !==0 || dy !==0) {
-            console.log('✅ СОЗДАЁМ ЛИНИЮ! tailStart:', [p.lat+dy, p.lng+dx], 'marker:', [p.lat, p.lng]);
+            markerDebugLog('✅ СОЗДАЁМ ЛИНИЮ! tailStart:', [p.lat+dy, p.lng+dx], 'marker:', [p.lat, p.lng]);
             const tailStart=[p.lat+dy, p.lng+dx];
             // Анимированная траектория с градиентом и пульсацией
             const polylineOpacity = opacity * 0.85;
@@ -4772,7 +4774,7 @@
               dashArray:'10 6',
               className:'trajectory-line animated-trajectory'
             }).addTo(markerLayer);
-            console.log('🎨 ЛИНИЯ ДОБАВЛЕНА НА КАРТУ!', trajectory);
+            markerDebugLog('🎨 ЛИНИЯ ДОБАВЛЕНА НА КАРТУ!', trajectory);
             
             // Добавляем стрелку направления на конце траектории (simple version from map_only)
             const angle = Math.atan2(p.lat - tailStart[0], p.lng - tailStart[1]) * 180 / Math.PI + 90;
