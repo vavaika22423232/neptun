@@ -4082,6 +4082,53 @@
     let markers = [];
     const DEBUG_MARKER_LOGS = false;
     const markerDebugLog = (...args) => { if (DEBUG_MARKER_LOGS) { console.debug(...args); } };
+    const MARKER_UPDATE_MIN_INTERVAL = 5000; // debounce full redraws triggered by SSE
+    let lastMarkerUpdateAt = 0;
+    let markerUpdateRunning = false;
+    let markerUpdateQueued = false;
+    let markerUpdateTimer = null;
+    let markerUpdatePromise = null;
+
+    function requestMarkerUpdate(options = {}) {
+      const force = !!options.force;
+      const now = Date.now();
+      if (markerUpdateRunning) {
+        markerUpdateQueued = true;
+        return;
+      }
+      const since = now - lastMarkerUpdateAt;
+      if (!force && since < MARKER_UPDATE_MIN_INTERVAL) {
+        if (!markerUpdateTimer) {
+          markerUpdateTimer = setTimeout(() => {
+            markerUpdateTimer = null;
+            requestMarkerUpdate({ force: true });
+          }, MARKER_UPDATE_MIN_INTERVAL - since);
+        }
+        return;
+      }
+      if (markerUpdateTimer) {
+        clearTimeout(markerUpdateTimer);
+        markerUpdateTimer = null;
+      }
+      runMarkerUpdate();
+    }
+
+    function runMarkerUpdate() {
+      if (markerUpdateRunning && markerUpdatePromise) {
+        return markerUpdatePromise;
+      }
+      markerUpdateRunning = true;
+      markerUpdatePromise = updateMarkers().finally(() => {
+        lastMarkerUpdateAt = Date.now();
+        markerUpdateRunning = false;
+        markerUpdatePromise = null;
+        if (markerUpdateQueued) {
+          markerUpdateQueued = false;
+          requestMarkerUpdate({ force: true });
+        }
+      });
+      return markerUpdatePromise;
+    }
     // Проста мапа транслітерації/перекладу російських / застарілих назв на українські
     const PLACE_UA_MAP = (()=>{
       const m = new Map([
@@ -4511,10 +4558,23 @@
         window.shahedLayer.clearLayers();
       }
       
-      if (markerLayer) { markerLayer.clearLayers(); }
-      else { 
-        // Звичайна layer group без кластеризації
-        markerLayer = L.layerGroup().addTo(map);
+      if (markerLayer) { 
+        markerLayer.clearLayers(); 
+      } else { 
+        // Використовуємо markerClusterGroup для оптимізації FPS (як у map_only)
+        markerLayer = L.markerClusterGroup({
+          chunkedLoading: true,
+          chunkInterval: 200,
+          chunkDelay: 50,
+          maxClusterRadius: 80,
+          spiderfyOnMaxZoom: true,
+          showCoverageOnHover: false,
+          zoomToBoundsOnClick: true,
+          disableClusteringAtZoom: 12,
+          animate: true,
+          animateAddingMarkers: false,
+          removeOutsideVisibleBounds: true
+        }).addTo(map);
       }
       markers = [];
       
@@ -5107,7 +5167,7 @@
       if(!map) return;
       map.on('zoomend', ()=>{
         if(_zoomRedrawTimer) clearTimeout(_zoomRedrawTimer);
-        _zoomRedrawTimer = setTimeout(()=>updateMarkers(), 40);
+        _zoomRedrawTimer = setTimeout(()=>requestMarkerUpdate(), 40);
       });
     }
     // Create a curved arc (quadratic bezier approximation) and fading tail
@@ -5583,9 +5643,7 @@
         
         // Оновлюємо маркери
         setTimeout(() => {
-          if (typeof updateMarkers === 'function') {
-            updateMarkers();
-          }
+          requestMarkerUpdate({ force: true });
           // Відновлюємо маску світу
           if (typeof initWorldMask === 'function') {
             initWorldMask();
@@ -5936,14 +5994,14 @@
       updateRaionAlarms();
       setInterval(updateRaionAlarms, 60000); // Увеличено с 15 до 60 секунд
 
-      await updateMarkers();
+      await runMarkerUpdate();
       try {
     const es = new EventSource('/stream');
     const uid2 = localStorage.getItem('presence_id');
     es.onmessage = ev => {
           try {
             const p = JSON.parse(ev.data);
-      if (p.tracks && p.tracks.length) { updateMarkers(); }
+      if (p.tracks && p.tracks.length) { requestMarkerUpdate(); }
       if (p.control && p.control.type === 'block' && p.control.id && uid2 && p.control.id === uid2) {
                // show block overlay instantly
                const ov = document.createElement('div');
@@ -5955,7 +6013,7 @@
           } catch(e){}
         };
       } catch(e) {}
-      setInterval(updateMarkers, 15000); // 15 секунд для актуальности данных
+      setInterval(()=>requestMarkerUpdate({ force:true }), 15000); // 15 секунд для актуальности данных
       // --- Re-cluster markers on zoom (no full data reload) ---
       (function(){
         let zoomRedrawTimer=null; let lastZoom=map.getZoom();
@@ -5996,7 +6054,7 @@
     
     // Обновляем маркеры
     console.log('Updating time period to:', newValue, 'minutes');
-    updateMarkers();
+    requestMarkerUpdate({ force:true });
   }
 
   let resizeTimeout;
@@ -6205,7 +6263,7 @@
       // Принудительно запускаем загрузку меток
       if (typeof updateMarkers === 'function') {
         isInitialLoad = true; // Помечаем как первоначальную загрузку
-        updateMarkers().then(() => {
+        runMarkerUpdate().then(() => {
           // Экран будет скрыт в updateMarkers после успешной загрузки меток
           console.log('Markers loaded after server restoration');
         }).catch(error => {
