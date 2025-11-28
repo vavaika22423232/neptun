@@ -16590,6 +16590,35 @@ def startup_diag():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
+@app.route('/healthz')
+def healthz():
+    """Lightweight health endpoint for uptime monitors."""
+    try:
+        messages = load_messages()
+        file_exists = os.path.exists(MESSAGES_FILE)
+        latest_date = None
+        for m in messages:
+            candidate = m.get('date')
+            if candidate and (latest_date is None or candidate > latest_date):
+                latest_date = candidate
+        payload = {
+            'status': 'ok',
+            'messages_count': len(messages),
+            'manual_count': sum(1 for m in messages if m.get('manual')),
+            'messages_file_size': os.path.getsize(MESSAGES_FILE) if file_exists else 0,
+            'messages_file_present': file_exists,
+            'latest_message_at': latest_date,
+            'fetch_thread_started': FETCH_THREAD_STARTED,
+            'retention': {
+                'minutes': MESSAGES_RETENTION_MINUTES,
+                'max_count': MESSAGES_MAX_COUNT,
+            },
+        }
+        return jsonify(payload)
+    except Exception as exc:
+        return jsonify({'status': 'error', 'error': str(exc)}), 500
+
 # Manual trigger (idempotent) if needed before first page hit
 @app.route('/startup_init', methods=['POST'])
 def startup_init():
