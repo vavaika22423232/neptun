@@ -12,6 +12,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify, request, Response, send_from_directory
 from telethon import TelegramClient
+from core.message_store import MessageStore
 
 # Import expanded Ukraine addresses database
 try:
@@ -740,10 +741,6 @@ NEG_GEOCODE_TTL = 60 * 60 * 24 * 3  # 3 days for 'not found' entries
 MESSAGES_RETENTION_MINUTES = int(os.getenv('MESSAGES_RETENTION_MINUTES', '1440'))  # 24 hours retention by default
 MESSAGES_MAX_COUNT = int(os.getenv('MESSAGES_MAX_COUNT', '500'))  # Default limit 500 to prevent memory issues
 
-# Message cache to avoid repeated file reads
-_messages_cache = None
-_messages_cache_mtime = 0
-
 def _startup_diagnostics():
     """Log one-time startup diagnostics to help investigate early exit issues on hosting platforms."""
     try:
@@ -802,59 +799,32 @@ def _prune_messages(data):
             data = data[-MESSAGES_MAX_COUNT:]
     return data
 
+
+MESSAGE_STORE = MessageStore(
+    MESSAGES_FILE,
+    prune_fn=_prune_messages,
+    preserve_manual=True,
+    backup_count=3,
+)
+
 def load_messages():
-    global _messages_cache, _messages_cache_mtime
-    if os.path.exists(MESSAGES_FILE):
-        try:
-            # Check if file was modified since last cache
-            current_mtime = os.path.getmtime(MESSAGES_FILE)
-            if _messages_cache is not None and current_mtime == _messages_cache_mtime:
-                return _messages_cache
-            # Read and cache
-            with open(MESSAGES_FILE, encoding='utf-8') as f:
-                data = json.load(f)
-                _messages_cache = data
-                _messages_cache_mtime = current_mtime
-                return data
-        except Exception:
-            return []
-    return []
+    return MESSAGE_STORE.load()
+
 
 def save_messages(data):
-    global _messages_cache, _messages_cache_mtime
-    # Apply retention before persistence
     try:
-        data = _prune_messages(data)
-    except Exception as e:
-        log.debug(f'Retention prune error: {e}')
-    # Reload current file to preserve manual markers added after this snapshot was loaded
-    try:
-        existing = load_messages()
-    except Exception as e:
-        log.debug(f'Failed to reload existing messages before save: {e}')
-        existing = []
-    if existing:
-        existing_manual = [m for m in existing if m.get('manual')]
-        data_ids = {m.get('id') for m in data if m.get('id')}
-        restored = 0
-        for manual_msg in existing_manual:
-            mid = manual_msg.get('id')
-            if mid and mid not in data_ids:
-                data.append(manual_msg)
-                restored += 1
-        if restored:
-            log.debug(f'Restored {restored} manual markers during save merge')
-    print(f"DEBUG: Saving {len(data)} messages to file")
-    with open(MESSAGES_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    # Invalidate cache after save
-    _messages_cache = None
-    _messages_cache_mtime = 0
+        saved = MESSAGE_STORE.save(data)
+    except Exception as exc:
+        log.error('Failed to persist messages: %s', exc)
+        saved = data
+    else:
+        print(f"DEBUG: Saving {len(saved)} messages to file")
     # After each save attempt optional git auto-commit
     try:
         maybe_git_autocommit()
     except Exception as e:
         log.debug(f'git auto-commit skipped: {e}')
+    return saved
 
 # ---------------- Deduplication / merge of near-duplicate geo events -----------------
 # Two messages that refer to the same object coming almost back-to-back should not

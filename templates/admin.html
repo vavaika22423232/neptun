@@ -229,7 +229,7 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 </div>
 <div class="marker-editor-field">
 <label>Type</label>
-<select id="editType" class="input">
+<select id="editType" class="input" onchange="updateMarkerIcon(this.value)">
 <option value="shahed">Shahed</option>
 <option value="raketa">Rocket</option>
 <option value="avia">Aviation</option>
@@ -245,6 +245,13 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 <option value="trivoga">Alarm</option>
 <option value="manual">Manual</option>
 </select>
+</div>
+<div class="marker-editor-field">
+<label>Icon Preview</label>
+<div style="display:flex;align-items:center;gap:0.5rem">
+<img id="markerIconPreview" src="/static/shahed.png" alt="Marker icon" style="width:36px;height:36px;border-radius:4px;border:1px solid #e2e8f0;background:#fff;padding:2px">
+<span id="markerIconLabel" class="badge">shahed.png</span>
+</div>
 </div>
 <div class="marker-editor-field">
 <label>Description</label>
@@ -580,7 +587,9 @@ function notif(m,t='info'){const n=document.createElement('div');n.className='no
 async function api(e,o={}){try{const u=e.includes('?')?`${e}&secret=${encodeURIComponent(S)}`:`${e}?secret=${encodeURIComponent(S)}`;const r=await fetch(u,o);if(!r.ok)throw new Error(`HTTP ${r.status}`);return await r.json()}catch(err){notif(`Error: ${err.message}`,'error');throw err}}
 function initMap(){if(map)return;try{map=L.map('adminMap',{attributionControl:false,zoomControl:true}).setView([49,31.3],6);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18}).addTo(map);vectorLayer=L.layerGroup().addTo(map);layer=L.layerGroup().addTo(map);map.on('click',onMapClick);console.log('✅ Map initialized');reloadMarkers()}catch(e){console.error('❌ Map failed:',e);notif('Map initialization failed','error')}}
 
-function createRotatableMarker(lat,lng,iconUrl,rotation=0){const iconSize=34;const angle=rotation||0;const icon=L.divIcon({html:`<div class="rotatable-marker" style="transform:rotate(${angle}deg);width:${iconSize}px;height:${iconSize}px"><img src="${iconUrl}" style="width:100%;height:100%;display:block"/></div>`,className:'',iconSize:[iconSize,iconSize],iconAnchor:[iconSize/2,iconSize/2]});return L.marker([lat,lng],{icon:icon,draggable:true});}
+function buildMarkerIcon(iconUrl,rotation=0){const iconSize=34;const angle=rotation||0;return L.divIcon({html:`<div class="rotatable-marker" style="transform:rotate(${angle}deg);width:${iconSize}px;height:${iconSize}px"><img src="${iconUrl}" style="width:100%;height:100%;display:block"/></div>`,className:'',iconSize:[iconSize,iconSize],iconAnchor:[iconSize/2,iconSize/2]});}
+function createRotatableMarker(lat,lng,iconUrl,rotation=0){return L.marker([lat,lng],{icon:buildMarkerIcon(iconUrl,rotation),draggable:true});}
+function updateMarkerIcon(type,markerOverride=null){const iconUrl=`/static/${type}.png`;const preview=document.getElementById('markerIconPreview');if(preview){preview.src=iconUrl;preview.alt=`${type} icon`;}const label=document.getElementById('markerIconLabel');if(label){label.textContent=`${type}.png`;}const markerTarget=markerOverride||selectedMarker;if(markerTarget&&markerTarget._markerData){markerTarget._markerData.type=type;const rotation=markerTarget._markerData.rotation||0;markerTarget.setIcon(buildMarkerIcon(iconUrl,rotation));}}
 
 function updateVectorSummary(data){const summary=document.getElementById('vectorSummary');const clearBtn=document.getElementById('clearVectorBtn');if(!summary)return;const hasVector=data&&data.trajectory&&data.trajectory.end;const label=(data&&data.course_target)||'';const coords=hasVector?`${data.trajectory.end[0].toFixed(2)}, ${data.trajectory.end[1].toFixed(2)}`:'';const dir=data&&data.course_direction?` (${data.course_direction})`:'';summary.textContent=hasVector?(label?`${label}${dir}`:`${coords}${dir}`):'—';if(clearBtn){clearBtn.disabled=!hasVector}}
 
@@ -662,11 +671,11 @@ function toggleAddMode(){setAddMode(!addMode)}
 
 function onMapClick(e){if(vectorMode){if(!selectedMarker){notif('Select a marker first','warning');setVectorMode(false);return;}applyVectorToMarker(selectedMarker,e.latlng);return;}if(!addMode)return;const lat=e.latlng.lat;const lng=e.latlng.lng;if(tempNewMarker){layer.removeLayer(tempNewMarker);}const iconUrl='/static/shahed.png';tempNewMarker=createRotatableMarker(lat,lng,iconUrl,0);tempNewMarker._markerData={id:null,lat:lat,lng:lng,place:'',type:'manual',text:'',rotation:0,channel:'admin',manual:true,trajectory:null,course_direction:null,course_target:null,course_source:null,course_type:null};tempNewMarker._isNew=true;tempNewMarker.addTo(layer);tempNewMarker.on('drag',function(){const pos=tempNewMarker.getLatLng();document.getElementById('editLat').value=pos.lat.toFixed(6);document.getElementById('editLng').value=pos.lng.toFixed(6)});tempNewMarker.on('dragend',function(){const pos=tempNewMarker.getLatLng();tempNewMarker._markerData.lat=pos.lat;tempNewMarker._markerData.lng=pos.lng;if(tempNewMarker._markerData.trajectory){tempNewMarker._markerData.trajectory.start=[pos.lat,pos.lng];renderVectorForMarker(tempNewMarker);}document.getElementById('editLat').value=pos.lat.toFixed(6);document.getElementById('editLng').value=pos.lng.toFixed(6)});setAddMode(false,{keepTemp:true});const latFixed=lat.toFixed(6);const lngFixed=lng.toFixed(6);document.getElementById('mmLat').value=latFixed;document.getElementById('mmLng').value=lngFixed;if(document.getElementById('mmPlace'))document.getElementById('mmPlace').value='';document.getElementById('mmText').value=`Marker at ${latFixed}, ${lngFixed}`;selectMarker(tempNewMarker);document.getElementById('editPlace').value='';document.getElementById('editType').value='manual';document.getElementById('editText').value='';document.getElementById('editRotation').value=0;notif('Новая метка создана. Заполните поля и нажмите Создать.','success')}
 
-function selectMarker(marker){cancelMarkerAnimation(true);if(selectedMarker&&selectedMarker!==marker){selectedMarker.setOpacity(1)}selectedMarker=marker;marker.setOpacity(0.7);const data=marker._markerData||{};const isNew=!data.id;document.getElementById('editLat').value=data.lat||marker.getLatLng().lat.toFixed(6);document.getElementById('editLng').value=data.lng||marker.getLatLng().lng.toFixed(6);document.getElementById('editPlace').value=data.place||'';document.getElementById('editType').value=data.type||'shahed';document.getElementById('editText').value=data.text||'';document.getElementById('editRotation').value=data.rotation||0;const labelInput=document.getElementById('editVectorLabel');if(labelInput){labelInput.value=data.course_target||'';}updateVectorSummary(data);populateAnimationInputs(data);document.getElementById('clearVectorBtn').disabled=!(data&&data.trajectory);document.getElementById('markerEditor').style.display='block';const saveBtn=document.getElementById('editSaveBtn');if(saveBtn){saveBtn.textContent=isNew?'➕ Создать':'💾 Сохранить'}document.getElementById('copyBtn').disabled=isNew;notif(isNew?'Новая метка готова к заполнению.':'Marker selected. Edit or copy it.','info')}
+function selectMarker(marker){cancelMarkerAnimation(true);if(selectedMarker&&selectedMarker!==marker){selectedMarker.setOpacity(1)}selectedMarker=marker;marker.setOpacity(0.7);const data=marker._markerData||{};const isNew=!data.id;document.getElementById('editLat').value=data.lat||marker.getLatLng().lat.toFixed(6);document.getElementById('editLng').value=data.lng||marker.getLatLng().lng.toFixed(6);document.getElementById('editPlace').value=data.place||'';document.getElementById('editType').value=data.type||'shahed';updateMarkerIcon(data.type||'shahed',marker);document.getElementById('editText').value=data.text||'';document.getElementById('editRotation').value=data.rotation||0;const labelInput=document.getElementById('editVectorLabel');if(labelInput){labelInput.value=data.course_target||'';}updateVectorSummary(data);populateAnimationInputs(data);document.getElementById('clearVectorBtn').disabled=!(data&&data.trajectory);document.getElementById('markerEditor').style.display='block';const saveBtn=document.getElementById('editSaveBtn');if(saveBtn){saveBtn.textContent=isNew?'➕ Создать':'💾 Сохранить'}document.getElementById('copyBtn').disabled=isNew;notif(isNew?'Новая метка готова к заполнению.':'Marker selected. Edit or copy it.','info')}
 
 function closeMarkerEditor(){document.getElementById('markerEditor').style.display='none';cancelMarkerAnimation(true);if(selectedMarker){if(selectedMarker._isNew&&layer){layer.removeLayer(selectedMarker);tempNewMarker=null;}selectedMarker.setOpacity(1);selectedMarker=null}document.getElementById('copyBtn').disabled=true;const labelInput=document.getElementById('editVectorLabel');if(labelInput)labelInput.value='';updateVectorSummary(null);setVectorMode(false);populateAnimationInputs(null)}
 
-function updateSelectedRotation(angle){if(!selectedMarker)return;const currentLatLng=selectedMarker.getLatLng();const iconUrl=`/static/${selectedMarker._markerData?.type||'shahed'}.png`;const iconSize=34;const icon=L.divIcon({html:`<div class="rotatable-marker" style="transform:rotate(${angle}deg);width:${iconSize}px;height:${iconSize}px"><img src="${iconUrl}" style="width:100%;height:100%;display:block"/></div>`,className:'',iconSize:[iconSize,iconSize],iconAnchor:[iconSize/2,iconSize/2]});selectedMarker.setIcon(icon);selectedMarker.setLatLng(currentLatLng);if(selectedMarker._markerData){selectedMarker._markerData.rotation=parseFloat(angle)}markerRotations.set(selectedMarker._leaflet_id,parseFloat(angle))}
+function updateSelectedRotation(angle){if(!selectedMarker)return;const rotation=parseFloat(angle);const currentLatLng=selectedMarker.getLatLng();const iconUrl=`/static/${selectedMarker._markerData?.type||'shahed'}.png`;selectedMarker.setIcon(buildMarkerIcon(iconUrl,rotation));selectedMarker.setLatLng(currentLatLng);if(selectedMarker._markerData){selectedMarker._markerData.rotation=rotation}markerRotations.set(selectedMarker._leaflet_id,rotation)}
 
 function rotateSelected(delta){if(!selectedMarker){notif('Select a marker first','warning');return}const current=parseFloat(document.getElementById('editRotation').value)||0;const newAngle=current+delta;document.getElementById('editRotation').value=newAngle;updateSelectedRotation(newAngle);notif(`Rotated to ${newAngle}°`,'success')}
 
@@ -750,7 +759,7 @@ async function updateStats(){try{const d=await api('/admin/stats');const s=d.sta
 setInterval(()=>{if(auto&&map)reloadMarkers()},30000);
 setInterval(updateRaw,15000);
 setInterval(updateStats,20000);
-document.addEventListener('DOMContentLoaded',()=>{console.log('🌊 Neptun Admin Dashboard initialized');if(typeof L==='undefined'){notif('Leaflet library failed to load','error');return}initMap();updateStats();updateRaw();loadHiddenMarkers()});
+document.addEventListener('DOMContentLoaded',()=>{console.log('🌊 Neptun Admin Dashboard initialized');if(typeof L==='undefined'){notif('Leaflet library failed to load','error');return}initMap();updateStats();updateRaw();loadHiddenMarkers();const typeSelect=document.getElementById('editType');if(typeSelect){updateMarkerIcon(typeSelect.value||'shahed');}});
 </script>
 </body>
 </html>
