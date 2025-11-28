@@ -523,11 +523,11 @@ CHANNELS_FILE = 'channels_dynamic.json'
 
 # Global debug storage for admin panel
 DEBUG_LOGS = []
-MAX_DEBUG_LOGS = 100
+MAX_DEBUG_LOGS = 50  # Reduced from 100 to save memory
 
 # Cache for fallback reparse to avoid duplicate processing
 FALLBACK_REPARSE_CACHE = set()  # message IDs that have been reparsed
-MAX_REPARSE_CACHE_SIZE = 1000  # Limit cache size to prevent memory growth
+MAX_REPARSE_CACHE_SIZE = 500  # Reduced from 1000 to save memory
 
 
 def _normalize_platform(platform_hint: str, ua: str) -> str:
@@ -738,7 +738,11 @@ OPENCAGE_TTL = 60 * 60 * 24 * 30  # 30 days
 NEG_GEOCODE_FILE = 'negative_geocode_cache.json'
 NEG_GEOCODE_TTL = 60 * 60 * 24 * 3  # 3 days for 'not found' entries
 MESSAGES_RETENTION_MINUTES = int(os.getenv('MESSAGES_RETENTION_MINUTES', '1440'))  # 24 hours retention by default
-MESSAGES_MAX_COUNT = int(os.getenv('MESSAGES_MAX_COUNT', '0'))  # 0 = unlimited
+MESSAGES_MAX_COUNT = int(os.getenv('MESSAGES_MAX_COUNT', '500'))  # Default limit 500 to prevent memory issues
+
+# Message cache to avoid repeated file reads
+_messages_cache = None
+_messages_cache_mtime = 0
 
 def _startup_diagnostics():
     """Log one-time startup diagnostics to help investigate early exit issues on hosting platforms."""
@@ -799,15 +803,25 @@ def _prune_messages(data):
     return data
 
 def load_messages():
+    global _messages_cache, _messages_cache_mtime
     if os.path.exists(MESSAGES_FILE):
         try:
+            # Check if file was modified since last cache
+            current_mtime = os.path.getmtime(MESSAGES_FILE)
+            if _messages_cache is not None and current_mtime == _messages_cache_mtime:
+                return _messages_cache
+            # Read and cache
             with open(MESSAGES_FILE, encoding='utf-8') as f:
-                return json.load(f)
+                data = json.load(f)
+                _messages_cache = data
+                _messages_cache_mtime = current_mtime
+                return data
         except Exception:
             return []
     return []
 
 def save_messages(data):
+    global _messages_cache, _messages_cache_mtime
     # Apply retention before persistence
     try:
         data = _prune_messages(data)
@@ -833,6 +847,9 @@ def save_messages(data):
     print(f"DEBUG: Saving {len(data)} messages to file")
     with open(MESSAGES_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+    # Invalidate cache after save
+    _messages_cache = None
+    _messages_cache_mtime = 0
     # After each save attempt optional git auto-commit
     try:
         maybe_git_autocommit()
@@ -980,8 +997,8 @@ def _save_visit_stats():
     except Exception as e:
         log.warning(f'Failed saving {STATS_FILE}: {e}')
 
-def _prune_visit_stats(days:int=45):
-    # remove entries older than N days to limit file growth
+def _prune_visit_stats(days:int=30):
+    # remove entries older than N days to limit file growth - reduced from 45 to 30 days
     if VISIT_STATS is None:
         return
     cutoff = time.time() - days*86400
@@ -1130,8 +1147,14 @@ def _save_opencage_cache():
     if _opencage_cache is None:
         return
     try:
+        # Limit cache size to prevent memory issues
+        cache_to_save = _opencage_cache
+        if len(_opencage_cache) > 1000:
+            # Keep only the 1000 most recent entries (approximate)
+            items = list(_opencage_cache.items())
+            cache_to_save = dict(items[-1000:])
         with open(OPENCAGE_CACHE_FILE, 'w', encoding='utf-8') as f:
-            json.dump(_opencage_cache, f, ensure_ascii=False, indent=2)
+            json.dump(cache_to_save, f, ensure_ascii=False, indent=2)
     except Exception as e:
         log.warning(f"Failed saving OpenCage cache: {e}")
 
@@ -1153,8 +1176,14 @@ def _save_neg_geocode_cache():
     if _neg_geocode_cache is None:
         return
     try:
+        # Limit cache size to prevent memory issues
+        cache_to_save = _neg_geocode_cache
+        if len(_neg_geocode_cache) > 500:
+            # Keep only the 500 most recent entries (approximate)
+            items = list(_neg_geocode_cache.items())
+            cache_to_save = dict(items[-500:])
         with open(NEG_GEOCODE_FILE,'w',encoding='utf-8') as f:
-            json.dump(_neg_geocode_cache,f,ensure_ascii=False,indent=2)
+            json.dump(cache_to_save,f,ensure_ascii=False,indent=2)
     except Exception as e:
         log.warning(f"Failed saving negative geocode cache: {e}")
 
@@ -7061,18 +7090,18 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         # РСЗВ (MLRS, град, ураган, смерч) -> rszv.png
         if any(k in l for k in ['рсзв','mlrs','град','ураган','смерч','рсув','tор','tорнадо','торнадо']):
             return 'rszv', 'rszv.png'
-        # Korabel (naval/ship-related threats) -> korabel.png
+        # Korabel (naval/ship-related threats) -> use raketa.png as fallback
         if any(k in l for k in ['корабел','флот','корабл','ship','fleet','морськ','naval']):
-            return 'korabel', 'korabel.png'
+            return 'raketa', 'raketa.png'
         # Artillery
         if any(k in l for k in ['арт','artillery','гармат','гаубиц','минометн','howitzer']):
             return 'artillery', 'artillery.png'
-        # PVO (air defense activity) -> pvo.png
+        # PVO (air defense activity) -> use vidboi.png as fallback
         if any(k in l for k in ['ппо','pvo','defense','оборон','зенітн','с-','patriot']):
-            return 'pvo', 'pvo.png'
-        # Naval mines -> neptun
+            return 'vidboi', 'vidboi.png'
+        # Naval mines -> use raketa.png as fallback
         if any(k in l for k in ['міна','мін ','mine','neptun','нептун','противокорабел']):
-            return 'neptun', 'neptun.jpg'
+            return 'raketa', 'raketa.png'
         # FPV drones -> fpv.png
         if any(k in l for k in ['fpv','фпв','камікадз','kamikaze']):
             print(f"[CLASSIFY DEBUG] Classified as fpv")
