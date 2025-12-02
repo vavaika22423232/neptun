@@ -13101,6 +13101,47 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     source_region = source_name.split()[0].title()
                     target_region = target_name.split()[0].title()
 
+                    def offset(lat, lng, code):
+                        import math
+                        lat_step = 0.35
+                        lng_step = 0.55 / max(0.2, abs(math.cos(math.radians(lat))))
+                        if code == 'n': return lat+lat_step, lng
+                        if code == 's': return lat-lat_step, lng
+                        if code == 'e': return lat, lng+lng_step
+                        if code == 'w': return lat, lng-lng_step
+                        lat_diag = lat_step * 0.8
+                        lng_diag = lng_step * 0.8
+                        if code == 'ne': return lat+lat_diag, lng+lng_diag
+                        if code == 'nw': return lat+lat_diag, lng-lng_diag
+                        if code == 'se': return lat-lat_diag, lng+lng_diag
+                        if code == 'sw': return lat-lat_diag, lng-lng_diag
+                        return lat, lng
+
+                    def detect_region_direction(text_block: str, region_label: str):
+                        base = region_label.split()[0].lower()
+                        region_variants = [base]
+                        if base.endswith('ська'):
+                            region_variants.append(base[:-4] + 'щині')
+                            region_variants.append(base[:-4] + 'щини')
+                            region_variants.append(base[:-4] + 'щина')
+                        tokens = {
+                            'північ': 'n',
+                            'півден': 's',
+                            'схід': 'e',
+                            'захід': 'w'
+                        }
+                        for variant in region_variants:
+                            for needle, code in tokens.items():
+                                pattern = rf'(?:на|у|в)\s+{needle}\w*\s+(?:частин\w*\s+)?{variant}'
+                                if re.search(pattern, text_block):
+                                    return code
+                        return None
+
+                    source_lat_adj, source_lng_adj = src_lat, src_lng
+                    source_direction_hint = detect_region_direction(lower, source_name)
+                    if source_direction_hint:
+                        source_lat_adj, source_lng_adj = offset(source_lat_adj, source_lng_adj, source_direction_hint)
+
                     # Calculate direction from source to target for arrow labels
                     dlat = tgt_lat - src_lat
                     dlng = tgt_lng - src_lng
@@ -13134,10 +13175,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     arrow_direction = arrow_label_map.get(dir_token, '')
                     course_direction_text = course_label_map.get(dir_token)
 
-                    # Position marker near the border (keep bias toward source to avoid city centers)
-                    border_bias = 0.7  # 70% source, 30% target
-                    lat = src_lat * border_bias + tgt_lat * (1 - border_bias)
-                    lng = src_lng * border_bias + tgt_lng * (1 - border_bias)
+                    # Position marker at the (optionally offset) source to avoid teleporting to the target city
+                    lat = source_lat_adj
+                    lng = source_lng_adj
 
                     # Create place name with arrow for trajectory visualization
                     place_name = f"{source_region} → {target_region}"
@@ -13145,7 +13185,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         place_name += f" ←{arrow_direction}"
 
                     trajectory = {
-                        'start': [src_lat, src_lng],
+                        'start': [lat, lng],
                         'end': [tgt_lat, tgt_lng],
                         'target': target_region,
                         'source': source_region,
