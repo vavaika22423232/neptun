@@ -4561,20 +4561,8 @@
       if (markerLayer) { 
         markerLayer.clearLayers(); 
       } else { 
-        // Використовуємо markerClusterGroup для оптимізації FPS (як у map_only)
-        markerLayer = L.markerClusterGroup({
-          chunkedLoading: true,
-          chunkInterval: 200,
-          chunkDelay: 50,
-          maxClusterRadius: 80,
-          spiderfyOnMaxZoom: true,
-          showCoverageOnHover: false,
-          zoomToBoundsOnClick: true,
-          disableClusteringAtZoom: 12,
-          animate: true,
-          animateAddingMarkers: false,
-          removeOutsideVisibleBounds: true
-        }).addTo(map);
+        // Звичайна layer group без кластеризації
+        markerLayer = L.layerGroup().addTo(map);
       }
       markers = [];
       
