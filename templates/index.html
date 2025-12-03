@@ -1846,10 +1846,6 @@
     
   /* === СТИЛИ ДЛЯ ТРАЄКТОРІЙ === */
   
-  /* Класс для летящего Шахеда - DISABLED FOR PERFORMANCE */
-  .shahed-flying {
-  }
-  
   /* Маркер с пульсацией для активных БпЛА - DISABLED FOR PERFORMANCE */
   .shahed-marker-active {
     border-radius: 50%;
@@ -1883,10 +1879,6 @@
     fill: none;
     opacity: 0.85;
     filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.7));
-  }
-  
-  /* Метка целевого города */
-  .trajectory-target-label {
   }
   
   /* SVG траектория полёта */
@@ -5808,7 +5800,7 @@
           } catch(e){}
         };
       } catch(e) {}
-      setInterval(()=>requestMarkerUpdate({ force:true }), 120000); // Increased to 120s for FPS optimization
+      setInterval(()=>requestMarkerUpdate({ force:true }), 30000); // 30s forced update
       // --- Re-cluster markers on zoom (no full data reload) ---
       (function(){
         let zoomRedrawTimer=null; let lastZoom=map.getZoom();
