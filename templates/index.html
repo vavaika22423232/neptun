@@ -2051,16 +2051,89 @@
   </div>
 
   <style>
+    /* Mass Attack Banner - Beautiful White Design */
+    .mass-attack-banner{
+      position:fixed;
+      top:4.5rem;
+      left:50%;
+      transform:translateX(-50%);
+      width:min(720px,94%);
+      background:linear-gradient(135deg, #ffffff 0%, #fafafa 100%);
+      border:2px solid #ef4444;
+      border-radius:1.2rem;
+      padding:1.2rem 1.4rem;
+      display:flex;
+      gap:1rem;
+      z-index:1400;
+      box-shadow:0 20px 50px -12px rgba(0,0,0,.15),
+                 0 0 0 1px rgba(239,68,68,.1) inset,
+                 0 8px 32px rgba(239,68,68,.2);
+      color:#1e293b;
+      animation:maSlide .55s cubic-bezier(.4,0,.2,1);
+    }
     .mass-attack-banner.hidden{display:none;}
-    .ma-icon{flex:0 0 auto;font-size:2rem;line-height:1;filter:drop-shadow(0 2px 6px rgba(0,0,0,.45));}
+    .ma-icon{
+      flex:0 0 auto;
+      font-size:2.2rem;
+      line-height:1;
+      filter:drop-shadow(0 2px 4px rgba(239,68,68,.3));
+    }
     .ma-content{flex:1;min-width:0;}
-  .ma-title{font-size:1.05rem;font-weight:700;letter-spacing:.5px;margin-bottom:.4rem;background:linear-gradient(90deg,#fde68a,#fbcfe8 45%,#93c5fd);-webkit-background-clip:text;background-clip:text;color:transparent;}
-    .ma-text{font-size:.9rem;font-weight:500;line-height:1.45;}
-    .ma-meta{margin-top:.55rem;font-size:.65rem;letter-spacing:.5px;text-transform:uppercase;display:flex;flex-wrap:wrap;gap:.45rem;}
-    .ma-close{background:#1e293b;border:1px solid #334155;color:#cbd5e1;width:34px;height:34px;border-radius:.75rem;font-size:18px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-weight:600;transition:.18s;}
-    .ma-close:hover{background:#334155;color:#fff;}
+    .ma-title{
+      font-size:1.15rem;
+      font-weight:800;
+      letter-spacing:.3px;
+      margin-bottom:.5rem;
+      color:#dc2626;
+      text-shadow:0 1px 2px rgba(220,38,38,.1);
+    }
+    .ma-text{
+      font-size:.95rem;
+      font-weight:500;
+      line-height:1.5;
+      color:#334155;
+    }
+    .ma-meta{
+      margin-top:.6rem;
+      font-size:.7rem;
+      letter-spacing:.8px;
+      text-transform:uppercase;
+      display:flex;
+      flex-wrap:wrap;
+      gap:.5rem;
+      color:#64748b;
+      font-weight:600;
+    }
+    .ma-close{
+      background:#f1f5f9;
+      border:1px solid #e2e8f0;
+      color:#64748b;
+      width:36px;
+      height:36px;
+      border-radius:.8rem;
+      font-size:20px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      cursor:pointer;
+      font-weight:600;
+      transition:.2s;
+      flex-shrink:0;
+    }
+    .ma-close:hover{
+      background:#dc2626;
+      border-color:#dc2626;
+      color:#fff;
+      transform:scale(1.05);
+    }
     @keyframes maSlide{from{opacity:0;transform:translate(-50%,-12px);}to{opacity:1;transform:translate(-50%,0);} }
-    @media(max-width:680px){.mass-attack-banner{top:3.6rem;padding:.85rem 1.05rem;border-radius:.9rem;} .ma-title{font-size:.95rem;} .ma-icon{font-size:1.6rem;} }
+    @media(max-width:680px){
+      .mass-attack-banner{top:3.8rem;padding:1rem 1.1rem;border-radius:1rem;width:min(680px,92%);}
+      .ma-title{font-size:1rem;}
+      .ma-icon{font-size:1.8rem;}
+      .ma-text{font-size:.88rem;}
+    }
+  </style>
 
     /* Donation Banner Styles */
     .donation-banner {
