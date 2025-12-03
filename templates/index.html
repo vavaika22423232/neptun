@@ -4993,9 +4993,66 @@
     
     // --- Shahed course visualization ---
     function addShahedCourseVisualization(p) {
-      const { course_source, course_target, course_direction, course_type } = p;
+      const { course_source, course_target, course_direction, course_type, trajectory } = p;
       
-      // If we have specific source and target cities, try to draw a path between them
+      // Priority 1: Use explicit trajectory coordinates if available
+      if (trajectory && trajectory.start && trajectory.end) {
+        const [startLat, startLng] = trajectory.start;
+        const [endLat, endLng] = trajectory.end;
+        
+        // Draw trajectory line
+        const trajectoryLine = L.polyline([
+          [startLat, startLng],
+          [endLat, endLng]
+        ], {
+          color: '#00d4ff',
+          weight: 4,
+          opacity: 0.85,
+          dashArray: '10 6',
+          className: 'multi-region-trajectory'
+        }).addTo(markerLayer);
+        
+        // Add direction arrow
+        const angle = Math.atan2(endLat - startLat, endLng - startLng) * 180 / Math.PI + 90;
+        const arrowIcon = L.divIcon({
+          html: `<div class="trajectory-arrow" style="transform: rotate(${angle}deg);">
+                   <svg width="36" height="36" viewBox="0 0 36 36">
+                     <path d="M 18 5 L 27 18 L 18 15 L 9 18 Z" 
+                           fill="#00d4ff" 
+                           stroke="#ffffff" 
+                           stroke-width="2" 
+                           opacity="0.9"/>
+                   </svg>
+                 </div>`,
+          className: '',
+          iconSize: [36, 36],
+          iconAnchor: [18, 18]
+        });
+        L.marker([endLat, endLng], {icon: arrowIcon, interactive: false}).addTo(markerLayer);
+        
+        // Add source/target labels if available
+        if (trajectory.source) {
+          const sourceLabel = L.divIcon({
+            html: `<div style="background:rgba(0,212,255,0.2);border:2px solid #00d4ff;padding:4px 8px;border-radius:8px;font-size:0.7rem;font-weight:700;color:#00d4ff;white-space:nowrap;">${trajectory.source}</div>`,
+            className: '',
+            iconSize: [1, 1],
+            iconAnchor: [0, 0]
+          });
+          L.marker([startLat, startLng], {icon: sourceLabel, interactive: false}).addTo(markerLayer);
+        }
+        if (trajectory.target) {
+          const targetLabel = L.divIcon({
+            html: `<div style="background:rgba(0,212,255,0.2);border:2px solid #00d4ff;padding:4px 8px;border-radius:8px;font-size:0.7rem;font-weight:700;color:#00d4ff;white-space:nowrap;">→ ${trajectory.target}</div>`,
+            className: '',
+            iconSize: [1, 1],
+            iconAnchor: [0, 0]
+          });
+          L.marker([endLat, endLng], {icon: targetLabel, interactive: false}).addTo(markerLayer);
+        }
+        return;
+      }
+      
+      // Priority 2: If we have specific source and target cities, try to draw a path between them
       if (course_source && course_target) {
         // This would require city coordinates lookup on frontend
         // For now, we'll use the direction information

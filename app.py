@@ -11243,7 +11243,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         'сумщині': 'сумщина',
         'харківщині': 'харківщина',
         'чернігівщині': 'чернігівщина',
-        'миколаївщині': 'миколаївщина'
+        'миколаївщині': 'миколаївщина',
+        'херсонщині': 'херсонщина',
+        'запоріжжі': 'запоріжжя'
     }
     for lform, base_form in LOCATIVE_NORMALIZE.items():
         if lform in lower:
