@@ -1260,7 +1260,7 @@ UA_CITIES = [
     'павлоград','ніжин','шостка','короп','кролевець'
 ]
 UA_CITY_NORMALIZE = {
-    'одесса':'одеса','запорожье':'запоріжжя','дніпропетровськ':'дніпро','кировоград':'кропивницький','кіровоград':'кропивницький',
+    'одесса':'одеса','запорожье':'запоріжжя','запоріжжі':'запоріжжя','дніпропетровськ':'дніпро','кировоград':'кропивницький','кіровоград':'кропивницький',
     'николаев':'миколаїв','чернигов':'чернігів',
     # Accusative / variant forms
     'липову долину':'липова долина','липову долина':'липова долина',
@@ -8085,10 +8085,17 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     'marker_icon': icon, 'source_match': 'city_dash_uav'
                 }]
         # NEW: pattern "БпЛА на <city>" or "бпла на <city>" -> marker at city
-        uav_cities = _re_rel.findall(r"бпла\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ\`\s/]+?)(?=\s+(?:з|на|до|від|через|повз|курсом|напрям)\s|[,\.\!\?;:\n]|$)", low_txt)
+        uav_city_pattern = _re_rel.compile(r"бпла\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ\`\s/]+?)(?=\s+(?:з|на|до|від|через|повз|курсом|напрям)\s|[,\.\!\?;:\n]|$)")
+        uav_cities = list(uav_city_pattern.finditer(low_txt))
         if uav_cities:
             threats = []
-            for idx, rc in enumerate(uav_cities):
+            for idx, match in enumerate(uav_cities):
+                rc = match.group(1)
+                # If the message continues with course wording immediately after this fragment,
+                # treat it as a transit description (let region-course logic handle it)
+                tail = low_txt[match.end():match.end()+80]
+                if 'курс' in tail:
+                    continue
                 rc = rc.replace('\u02bc',"'").replace('ʼ',"'").replace("'","'").replace('`',"'")
                 
                 # Handle cities separated by slash (e.g., "вишгород/петрівці")
@@ -11088,9 +11095,122 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         # normalize accusative -> nominative
         dest_norm = dest.replace('щину','щина').replace('щини','щина')
         if dest_norm in OBLAST_CENTERS:
-            lat, lng = OBLAST_CENTERS[dest_norm]
+            dest_lat, dest_lng = OBLAST_CENTERS[dest_norm]
+
+            def _region_key_from_stem(stem: str):
+                for key in OBLAST_CENTERS.keys():
+                    if stem and stem in key:
+                        return key
+                return None
+
+            def _resolve_location_token(token: str):
+                if not token:
+                    return None
+                cleaned = token.strip(" .,:;!?\n\t'`\"-»«")
+                if not cleaned:
+                    return None
+                cleaned = ' '.join(cleaned.split())
+                variants = [cleaned]
+                def _add_variant(val: str):
+                    v = val.strip()
+                    if v and v not in variants:
+                        variants.append(v)
+                suffix_map = {
+                    'щину': 'щина', 'щини': 'щина', 'щині': 'щина',
+                    ' область': ' область', ' обл.': ' область', ' обл': ' область'
+                }
+                for suffix, repl in suffix_map.items():
+                    if cleaned.endswith(suffix):
+                        _add_variant(cleaned[:-len(suffix)] + repl)
+                loc_endings = [('і','ь'),('і','а'),('і','я'),('ї','я'),('ю','я'),('у','а')]
+                for ending, replacement in loc_endings:
+                    if cleaned.endswith(ending):
+                        _add_variant(cleaned[:-len(ending)] + replacement)
+                for variant in list(variants):
+                    normalized = UA_CITY_NORMALIZE.get(variant, variant)
+                    if normalized in OBLAST_CENTERS:
+                        plat, plng = OBLAST_CENTERS[normalized]
+                        return {'label': normalized.split()[0].title(), 'lat': plat, 'lng': plng}
+                    if normalized in CITY_TO_OBLAST:
+                        stem = CITY_TO_OBLAST[normalized]
+                        reg_key = _region_key_from_stem(stem)
+                        if reg_key:
+                            plat, plng = OBLAST_CENTERS[reg_key]
+                            return {'label': reg_key.split()[0].title(), 'lat': plat, 'lng': plng}
+                    if normalized in CITY_COORDS:
+                        plat, plng = CITY_COORDS[normalized]
+                        return {'label': normalized.title(), 'lat': plat, 'lng': plng}
+                return None
+
+            prefix = lower[:m_dir_oblast.start()]
+            source_candidate = None
+            src_pattern = _re_one.compile(r'(?:на|у|в|із|зі|з)\s+([a-zа-яїієґ\-\'ʼ`\s]{3,40})')
+            for sm in src_pattern.finditer(prefix):
+                resolved = _resolve_location_token(sm.group(1))
+                if resolved:
+                    source_candidate = resolved
+            if not source_candidate:
+                header_match = _re_one.match(r'^\s*([a-zа-яїієґ\-\'ʼ`\s]{3,})[:—-]', lower)
+                if header_match:
+                    resolved = _resolve_location_token(header_match.group(1))
+                    if resolved:
+                        source_candidate = resolved
+            if source_candidate:
+                src_lat, src_lng = source_candidate['lat'], source_candidate['lng']
+                dest_label = dest_norm.split()[0].title()
+
+                def _direction_token(dlat: float, dlng: float):
+                    if abs(dlat) < 1e-6 and abs(dlng) < 1e-6:
+                        return None
+                    if abs(dlat) > abs(dlng) * 1.4:
+                        return 'n' if dlat > 0 else 's'
+                    if abs(dlng) > abs(dlat) * 1.4:
+                        return 'e' if dlng > 0 else 'w'
+                    if dlat >= 0 and dlng >= 0:
+                        return 'ne'
+                    if dlat >= 0 and dlng < 0:
+                        return 'nw'
+                    if dlat < 0 and dlng >= 0:
+                        return 'se'
+                    return 'sw'
+
+                dir_token = _direction_token(dest_lat - src_lat, dest_lng - src_lng)
+                arrow_label_map = {
+                    'n': 'півночі', 's': 'півдня', 'e': 'сходу', 'w': 'заходу',
+                    'ne': 'північного сходу', 'nw': 'північного заходу',
+                    'se': 'південного сходу', 'sw': 'південного заходу'
+                }
+                course_direction_map = {
+                    'n': 'північ', 's': 'південь', 'e': 'схід', 'w': 'захід',
+                    'ne': 'північний схід', 'nw': 'північний захід',
+                    'se': 'південний схід', 'sw': 'південний захід'
+                }
+                arrow_label = arrow_label_map.get(dir_token, '')
+                course_direction_text = course_direction_map.get(dir_token, dest_label)
+
+                place_name = f"{source_candidate['label']} → {dest_label}"
+                if arrow_label:
+                    place_name += f" ←{arrow_label}"
+
+                trajectory = {
+                    'start': [src_lat, src_lng],
+                    'end': [dest_lat, dest_lng],
+                    'source': source_candidate['label'],
+                    'target': dest_label,
+                    'kind': 'singleline_region_course'
+                }
+
+                threat_type, icon = classify(original_text)
+                return [{
+                    'id': f"{mid}_dir_oblast", 'place': place_name, 'lat': src_lat, 'lng': src_lng,
+                    'threat_type': threat_type, 'text': original_text[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': 'singleline_region_course', 'trajectory': trajectory,
+                    'course_source': source_candidate['label'], 'course_target': dest_label,
+                    'course_direction': f"курс на {course_direction_text}", 'course_type': 'region_to_region'
+                }]
+
             return [{
-                'id': f"{mid}_dir_oblast", 'place': dest_norm.title(), 'lat': lat, 'lng': lng,
+                'id': f"{mid}_dir_oblast", 'place': dest_norm.title(), 'lat': dest_lat, 'lng': dest_lng,
                 'threat_type': 'uav', 'text': original_text[:500], 'date': date_str, 'channel': channel,
                 'marker_icon': 'shahed.png', 'source_match': 'singleline_oblast_course'
             }]
