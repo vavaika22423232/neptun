@@ -1281,6 +1281,7 @@
       position:relative;
     }
   /* Marker loading overlay */
+  #markerLoadingOverlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(140deg,rgba(10,15,28,.94),rgba(17,24,39,.94));z-index:1200;color:#e2e8f0;gap:1.1rem;font-family:Inter,system-ui,sans-serif;transition:opacity .4s ease, visibility .4s ease;}
   #markerLoadingOverlay.hidden{opacity:0;visibility:hidden;pointer-events:none;}
   #markerLoadingOverlay .spinner{width:60px;height:60px;border:6px solid rgba(255,255,255,.15);border-top-color:#3b82f6;border-radius:50%;animation:spin 1s linear infinite;box-shadow:0 0 18px -4px rgba(59,130,246,.55);} 
   #markerLoadingOverlay h3{margin:0;font-size:1.1rem;font-weight:600;letter-spacing:.4px;background:linear-gradient(90deg,#3b82f6,#06b6d4);-webkit-background-clip:text;background-clip:text;color:transparent;text-align:center;}
