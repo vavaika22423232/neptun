@@ -11154,7 +11154,20 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 if header_match:
                     resolved = _resolve_location_token(header_match.group(1))
                     if resolved:
-                        source_candidate = resolved
+                        # Skip if header is just an oblast/region marker (not a specific city)
+                        # When destination is also an oblast, this indicates region-level info without specific location
+                        header_text = header_match.group(1).strip()
+                        header_normalized = LOCATIVE_NORMALIZE.get(header_text, header_text)
+                        is_region_header = (
+                            header_normalized in OBLAST_CENTERS or
+                            header_normalized in CITY_TO_OBLAST or
+                            'область' in header_normalized or 'обл' in header_normalized or
+                            header_text.endswith(('щина', 'щині', 'щину', 'щиною'))
+                        )
+                        dest_is_oblast = dest_norm in OBLAST_CENTERS
+                        # Only use header as source if it's a specific city OR if destination is a city (not oblast)
+                        if not (is_region_header and dest_is_oblast):
+                            source_candidate = resolved
             if source_candidate:
                 src_lat, src_lng = source_candidate['lat'], source_candidate['lng']
                 dest_label = dest_norm.split()[0].title()
@@ -15504,6 +15517,83 @@ def get_events():
     except Exception as e:
         print(f"[ERROR] /api/events failed: {e}")
         return jsonify([]), 500
+
+@app.route('/api/messages')
+def get_messages():
+    """Get recent alarm messages with coordinates for mobile apps."""
+    try:
+        messages = load_messages()
+        result_messages = []
+        
+        for msg in messages[-200:]:  # Last 200 messages
+            if not isinstance(msg, dict):
+                continue
+            
+            text = msg.get('text', '').strip()
+            
+            # Detect alarm type
+            alarm_type = 'Тривога'
+            if 'БпЛА' in text or 'дрон' in text:
+                alarm_type = 'БпЛА/Дрони'
+            elif 'ракет' in text or 'балістич' in text:
+                alarm_type = 'Ракетна загроза'
+            elif 'Повітряна тривога' in text:
+                alarm_type = 'Повітряна тривога'
+            
+            # Try to extract location and coordinates
+            location = ''
+            latitude = 48.3794  # Default: center of Ukraine
+            longitude = 31.1656
+            
+            # Extract region/city from text
+            if '**' in text:
+                parts = text.split('**')
+                for part in parts:
+                    part = part.strip()
+                    if '🚨' in part or '🟢' in part or 'область' in part.lower():
+                        location = part.replace('🚨', '').replace('🟢', '').strip()
+                        break
+            
+            # If no location found, try first line
+            if not location and text:
+                first_line = text.split('\n')[0].strip()
+                location = first_line.replace('**', '').replace('🚨', '').replace('🟢', '').strip()[:100]
+            
+            # Try to get coordinates from UKRAINE_ADDRESSES_DB
+            if location:
+                location_lower = location.lower()
+                for city_name, coords in UKRAINE_ADDRESSES_DB.items():
+                    if city_name.lower() in location_lower or location_lower in city_name.lower():
+                        latitude = coords['lat']
+                        longitude = coords['lon']
+                        if not location:
+                            location = city_name
+                        break
+            
+            result_messages.append({
+                'type': alarm_type,
+                'location': location or 'Україна',
+                'timestamp': msg.get('time', ''),
+                'text': text[:300],  # First 300 chars
+                'latitude': latitude,
+                'longitude': longitude,
+                'channel': msg.get('channel', ''),
+            })
+        
+        response = jsonify({
+            'messages': result_messages,
+            'count': len(result_messages),
+            'timestamp': datetime.now().isoformat()
+        })
+        response.headers['Cache-Control'] = 'public, max-age=30'
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        return response
+        
+    except Exception as e:
+        print(f"[ERROR] /api/messages failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'messages': [], 'count': 0, 'error': str(e)}), 500
 
 @app.route('/test_parse')
 def test_parse():
