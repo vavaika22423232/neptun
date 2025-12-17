@@ -16911,13 +16911,12 @@ def trigger_force_reload():
 
 def shutdown_scheduler():
     """Shutdown scheduler gracefully"""
-    if SCHEDULE_UPDATER_AVAILABLE and 'scheduler' in globals():
-        try:
-            if scheduler.running:
-                log.info("Shutting down scheduler...")
-                scheduler.shutdown(wait=False)
-                log.info("✅ Scheduler shutdown complete")
-        except Exception as e:
+    try:
+        if 'scheduler' in globals() and hasattr(scheduler, 'running') and scheduler.running:
+            log.info("Shutting down scheduler...")
+            scheduler.shutdown(wait=False)
+            log.info("✅ Scheduler shutdown complete")
+    except Exception as e:
             log.error(f"Error shutting down scheduler: {e}")
 
 # Register shutdown handlers
