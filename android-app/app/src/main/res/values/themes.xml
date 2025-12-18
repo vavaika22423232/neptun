@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <style name="Base.Theme.NeptunAlarmMap" parent="android:Theme.Material.Light.NoActionBar">
-    </style>
-
-    <style name="Theme.NeptunAlarmMap" parent="Base.Theme.NeptunAlarmMap" />
-</resources>

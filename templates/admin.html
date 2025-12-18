@@ -328,6 +328,7 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 <thead>
 <tr>
 <th>Session ID</th>
+<th>Nickname</th>
 <th>IP Address</th>
 <th>Device</th>
 <th>Duration</th>
@@ -339,6 +340,13 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 {% for v in visitors %}
 <tr>
 <td class="truncate" style="max-width:150px" title="{{ v.id }}">{{ v.id[:16] }}...</td>
+<td>
+  {% if v.nickname %}
+  <span class="badge success" title="User nickname">👤 {{ v.nickname }}</span>
+  {% else %}
+  <span style="color:#888">—</span>
+  {% endif %}
+</td>
 <td>{{ v.ip or 'N/A' }}</td>
 <td class="truncate" style="max-width:200px" title="{{ v.ua }}">{{ v.ua_short }}</td>
 <td><span class="badge info">{{ v.age_fmt }}</span></td>

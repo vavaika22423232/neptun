@@ -16063,6 +16063,7 @@ def presence():
     remote_ip = request.headers.get('X-Forwarded-For', request.remote_addr or '')
     ua = request.headers.get('User-Agent', '')[:300]
     platform_label = _normalize_platform(data.get('platform') or '', ua)
+    nickname = data.get('nickname', '')[:20] if data.get('nickname') else ''  # Max 20 chars
 
     stats = _load_visit_stats()
     if vid not in stats:
@@ -16102,7 +16103,8 @@ def presence():
             'first': first_seen,
             'ip': remote_ip,
             'ua': prev.get('ua') or ua,
-            'platform': platform_label
+            'platform': platform_label,
+            'nickname': nickname if nickname else prev.get('nickname', '')
         }
         for key, meta in list(ACTIVE_VISITORS.items()):
             ts = meta if isinstance(meta, (int, float)) else meta.get('ts', 0)
@@ -16277,6 +16279,7 @@ def admin_panel():
             idle_age = int(now - last_ts)
             ua = (meta.get('ua') if isinstance(meta, dict) else '') or ''
             ip = (meta.get('ip') if isinstance(meta, dict) else '') or ''
+            nickname = (meta.get('nickname') if isinstance(meta, dict) else '') or ''
             visitors.append({
                 'id': vid,
                 'ip': ip,
@@ -16284,7 +16287,8 @@ def admin_panel():
                 'age_fmt': _fmt_age(sess_age),
                 'ua': ua,
                 'ua_short': _ua_label(ua) if ua else '',
-                'last_seen': _fmt_age(idle_age)
+                'last_seen': _fmt_age(idle_age),
+                'nickname': nickname
             })
     blocked = load_blocked()
     # Load raw (pending geo) messages
