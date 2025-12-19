@@ -4,11 +4,21 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:in_app_update/in_app_update.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'dart:convert';
 import 'dart:io';
+import 'services/notification_service.dart';
+import 'pages/settings_page.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize Firebase
+  await Firebase.initializeApp();
+  
+  // Initialize notifications
+  await NotificationService().initialize();
+  
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
@@ -40,7 +50,7 @@ class NeptunAlarmApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Neptun',
+      title: 'Dron Alerts',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         fontFamily: 'SF Pro Display',
@@ -123,6 +133,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver, Single
   final List<Widget> _pages = [
     const MapPage(),
     const MessagesPage(),
+    const SettingsPage(),
   ];
 
   @override
@@ -272,17 +283,20 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver, Single
         duration: const Duration(milliseconds: 300),
         child: _pages[_selectedIndex],
       ),
-      bottomNavigationBar: Padding(
-        padding: const EdgeInsets.all(20),
-        child: NeumorphicContainer(
-          borderRadius: 30,
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildNavItem(Icons.map_rounded, 'Карта', 0),
-              _buildNavItem(Icons.notifications_active_rounded, 'Тривоги', 1),
-            ],
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: NeumorphicContainer(
+            borderRadius: 30,
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildNavItem(Icons.map_rounded, 'Карта', 0),
+                _buildNavItem(Icons.notifications_active_rounded, 'Тривоги', 1),
+                _buildNavItem(Icons.settings_rounded, 'Налаштування', 2),
+              ],
+            ),
           ),
         ),
       ),

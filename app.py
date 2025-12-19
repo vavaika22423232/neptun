@@ -12,7 +12,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify, request, Response, send_from_directory
 from telethon import TelegramClient
-from core.message_store import MessageStore
+from core.message_store import MessageStore, DeviceStore
 
 # Import expanded Ukraine addresses database
 try:
@@ -343,6 +343,45 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(mess
 log = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# Firebase Admin initialization
+device_store = DeviceStore()
+firebase_initialized = False
+
+def init_firebase():
+    """Initialize Firebase Admin SDK."""
+    global firebase_initialized
+    if firebase_initialized:
+        return True
+    
+    try:
+        import firebase_admin
+        from firebase_admin import credentials, messaging
+        
+        # Try to load from environment variable (Render deployment)
+        cred_json = os.environ.get('FIREBASE_CREDENTIALS')
+        if cred_json:
+            import base64
+            cred_dict = json.loads(base64.b64decode(cred_json))
+            cred = credentials.Certificate(cred_dict)
+        else:
+            # Try to load from file (local development)
+            if os.path.exists('firebase-credentials.json'):
+                cred = credentials.Certificate('firebase-credentials.json')
+            else:
+                print("WARNING: Firebase credentials not found")
+                return False
+        
+        firebase_admin.initialize_app(cred)
+        firebase_initialized = True
+        print("INFO: Firebase Admin SDK initialized successfully")
+        return True
+    except Exception as e:
+        print(f"ERROR: Failed to initialize Firebase: {e}")
+        return False
+
+# Initialize Firebase on startup
+init_firebase()
 
 # Shared rate tracking for lightweight bandwidth protection rules
 request_counts = defaultdict(list)
@@ -813,7 +852,20 @@ def load_messages():
 
 def save_messages(data):
     try:
+        # Check for new messages to send notifications
+        existing = MESSAGE_STORE.load()
+        existing_ids = {msg.get('id') for msg in existing}
+        new_messages = [msg for msg in data if msg.get('id') and msg.get('id') not in existing_ids]
+        
         saved = MESSAGE_STORE.save(data)
+        
+        # Send FCM notifications for new messages
+        for msg in new_messages:
+            if not msg.get('manual'):  # Skip manual markers
+                try:
+                    send_fcm_notification(msg)
+                except Exception as e:
+                    log.error(f"Failed to send FCM notification: {e}")
     except Exception as exc:
         log.error('Failed to persist messages: %s', exc)
         saved = data
@@ -16927,6 +16979,169 @@ def shutdown_scheduler():
 atexit.register(shutdown_scheduler)
 signal.signal(signal.SIGTERM, lambda sig, frame: shutdown_scheduler())
 signal.signal(signal.SIGINT, lambda sig, frame: shutdown_scheduler())
+
+
+# ========== Firebase Cloud Messaging Endpoints ==========
+
+@app.route('/api/register-device', methods=['POST'])
+def register_device():
+    """Register a device for push notifications."""
+    try:
+        data = request.get_json()
+        token = data.get('token')
+        regions = data.get('regions', [])
+        device_id = data.get('device_id', token)
+
+        if not token or not regions:
+            return jsonify({'error': 'Missing token or regions'}), 400
+
+        device_store.register_device(token, regions, device_id)
+        return jsonify({'success': True, 'device_id': device_id})
+    except Exception as e:
+        log.error(f"Error registering device: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/update-regions', methods=['POST'])
+def update_regions():
+    """Update regions for an existing device."""
+    try:
+        data = request.get_json()
+        device_id = data.get('device_id')
+        regions = data.get('regions', [])
+
+        if not device_id or not regions:
+            return jsonify({'error': 'Missing device_id or regions'}), 400
+
+        device_store.update_regions(device_id, regions)
+        return jsonify({'success': True})
+    except Exception as e:
+        log.error(f"Error updating regions: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/test-notification', methods=['POST'])
+def test_notification():
+    """Send a test notification to a device."""
+    if not firebase_initialized:
+        return jsonify({'error': 'Firebase not initialized'}), 500
+
+    try:
+        from firebase_admin import messaging
+        
+        data = request.get_json()
+        token = data.get('token')
+
+        if not token:
+            return jsonify({'error': 'Missing token'}), 400
+
+        message = messaging.Message(
+            notification=messaging.Notification(
+                title='🧪 Тестове сповіщення',
+                body='Dron Alerts працює коректно! Ви отримуватимете сповіщення про загрози.',
+            ),
+            data={
+                'type': 'test',
+                'timestamp': datetime.now(pytz.UTC).isoformat(),
+            },
+            token=token,
+        )
+
+        response = messaging.send(message)
+        log.info(f"Test notification sent successfully: {response}")
+        return jsonify({'success': True, 'message_id': response})
+    except Exception as e:
+        log.error(f"Error sending test notification: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+def send_fcm_notification(message_data: dict):
+    """Send FCM notification for a new threat message."""
+    if not firebase_initialized:
+        log.warning("Firebase not initialized, skipping notifications")
+        return
+
+    try:
+        from firebase_admin import messaging
+        
+        # Extract region from location
+        location = message_data.get('location', '')
+        threat_type = message_data.get('type', '')
+        
+        # Find matching region
+        region = None
+        for r in ['Київ', 'Київська область', 'Дніпропетровська область', 'Харківська область',
+                  'Одеська область', 'Львівська область', 'Донецька область', 'Запорізька область',
+                  'Вінницька область', 'Житомирська область', 'Черкаська область', 'Чернігівська область',
+                  'Полтавська область', 'Сумська область', 'Миколаївська область', 'Херсонська область',
+                  'Кіровоградська область', 'Хмельницька область', 'Рівненська область', 'Волинська область',
+                  'Тернопільська область', 'Івано-Франківська область', 'Закарпатська область',
+                  'Чернівецька область', 'Луганська область']:
+            if r.lower() in location.lower():
+                region = r
+                break
+        
+        if not region:
+            log.debug(f"Could not determine region for location: {location}")
+            return
+
+        # Get devices subscribed to this region
+        devices = device_store.get_devices_for_region(region)
+        if not devices:
+            log.debug(f"No devices subscribed to region: {region}")
+            return
+
+        # Determine if critical
+        is_critical = 'ракет' in threat_type.lower() or 'балістич' in threat_type.lower()
+        
+        # Create notification
+        title = f"{'🚨' if is_critical else '⚠️'} {threat_type}"
+        body = f"{location}"
+
+        # Send to each device
+        success_count = 0
+        for device in devices:
+            try:
+                message = messaging.Message(
+                    notification=messaging.Notification(
+                        title=title,
+                        body=body,
+                    ),
+                    data={
+                        'type': 'rocket' if is_critical else 'drone',
+                        'location': location,
+                        'threat_type': threat_type,
+                        'region': region,
+                        'timestamp': message_data.get('timestamp', ''),
+                    },
+                    android=messaging.AndroidConfig(
+                        priority='high' if is_critical else 'normal',
+                        notification=messaging.AndroidNotification(
+                            channel_id='critical_alerts' if is_critical else 'normal_alerts',
+                            priority='max' if is_critical else 'high',
+                        ),
+                    ),
+                    apns=messaging.APNSConfig(
+                        payload=messaging.APNSPayload(
+                            aps=messaging.Aps(
+                                alert=messaging.ApsAlert(title=title, body=body),
+                                sound='default',
+                            ),
+                        ),
+                    ),
+                    token=device['token'],
+                )
+                
+                response = messaging.send(message)
+                success_count += 1
+                log.info(f"Notification sent to device {device['device_id'][:20]}...: {response}")
+            except Exception as e:
+                log.error(f"Failed to send to device {device['device_id'][:20]}...: {e}")
+        
+        log.info(f"Sent {success_count}/{len(devices)} notifications for region: {region}")
+    except Exception as e:
+        log.error(f"Error in send_fcm_notification: {e}")
+
 
 if __name__ == '__main__':
     # Local / container direct run (not needed if a WSGI server like gunicorn is used)
