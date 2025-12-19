@@ -857,12 +857,16 @@ def save_messages(data):
         existing_ids = {msg.get('id') for msg in existing}
         new_messages = [msg for msg in data if msg.get('id') and msg.get('id') not in existing_ids]
         
+        if new_messages:
+            log.info(f"Found {len(new_messages)} new messages to process for notifications")
+        
         saved = MESSAGE_STORE.save(data)
         
         # Send FCM notifications for new messages
         for msg in new_messages:
             if not msg.get('manual'):  # Skip manual markers
                 try:
+                    log.info(f"Sending FCM for message: {msg.get('location', 'unknown')} - {msg.get('type', 'unknown')}")
                     send_fcm_notification(msg)
                 except Exception as e:
                     log.error(f"Failed to send FCM notification: {e}")
@@ -17068,21 +17072,52 @@ def send_fcm_notification(message_data: dict):
         location = message_data.get('location', '')
         threat_type = message_data.get('type', '')
         
-        # Find matching region
+        log.info(f"Processing notification for location: {location}, type: {threat_type}")
+        
+        # Find matching region - handle both full names and abbreviations
         region = None
-        for r in ['Київ', 'Київська область', 'Дніпропетровська область', 'Харківська область',
-                  'Одеська область', 'Львівська область', 'Донецька область', 'Запорізька область',
-                  'Вінницька область', 'Житомирська область', 'Черкаська область', 'Чернігівська область',
-                  'Полтавська область', 'Сумська область', 'Миколаївська область', 'Херсонська область',
-                  'Кіровоградська область', 'Хмельницька область', 'Рівненська область', 'Волинська область',
-                  'Тернопільська область', 'Івано-Франківська область', 'Закарпатська область',
-                  'Чернівецька область', 'Луганська область']:
-            if r.lower() in location.lower():
-                region = r
+        location_lower = location.lower()
+        
+        # Region mapping with abbreviations
+        regions_map = {
+            'Київ': ['київ', 'києв'],
+            'Київська область': ['київська', 'києвська'],
+            'Дніпропетровська область': ['дніпропетровська', 'днепропетровская', 'днепропетровськ', 'дніпропетровськ'],
+            'Харківська область': ['харківська', 'харьковская', 'харків'],
+            'Одеська область': ['одеська', 'одесская', 'одес'],
+            'Львівська область': ['львівська', 'львовская', 'львів'],
+            'Донецька область': ['донецька', 'донецкая', 'донецьк', 'донець'],
+            'Запорізька область': ['запорізька', 'запорожская', 'запоріз'],
+            'Вінницька область': ['вінницька', 'винницкая', 'вінниц'],
+            'Житомирська область': ['житомирська', 'житомирская', 'житомир'],
+            'Черкаська область': ['черкаська', 'черкасская', 'черкас'],
+            'Чернігівська область': ['чернігівська', 'черниговская', 'чернігів'],
+            'Полтавська область': ['полтавська', 'полтавская', 'полтав'],
+            'Сумська область': ['сумська', 'сумская', 'сум'],
+            'Миколаївська область': ['миколаївська', 'николаевская', 'миколаїв'],
+            'Херсонська область': ['херсонська', 'херсонская', 'херсон'],
+            'Кіровоградська область': ['кіровоградська', 'кировоградская', 'кіровоград', 'кропивниц'],
+            'Хмельницька область': ['хмельницька', 'хмельницкая', 'хмельниц'],
+            'Рівненська область': ['рівненська', 'ровенская', 'рівн'],
+            'Волинська область': ['волинська', 'волынская', 'волин', 'луцьк'],
+            'Тернопільська область': ['тернопільська', 'тернопольская', 'тернопіль'],
+            'Івано-Франківська область': ['івано-франківська', 'ивано-франковская', 'івано-франків'],
+            'Закарпатська область': ['закарпатська', 'закарпатская', 'закарпат', 'ужгород'],
+            'Чернівецька область': ['чернівецька', 'черновицкая', 'чернівц'],
+            'Луганська область': ['луганська', 'луганская', 'луган'],
+        }
+        
+        for region_name, keywords in regions_map.items():
+            for keyword in keywords:
+                if keyword in location_lower:
+                    region = region_name
+                    log.info(f"Matched region: {region} (keyword: {keyword})")
+                    break
+            if region:
                 break
         
         if not region:
-            log.debug(f"Could not determine region for location: {location}")
+            log.warning(f"Could not determine region for location: {location}")
             return
 
         # Get devices subscribed to this region
