@@ -692,6 +692,19 @@ class _MessagesPageState extends State<MessagesPage> {
           _messages = (data['messages'] as List)
               .map((m) => AlarmMessage.fromJson(m))
               .toList();
+          
+          // Sort messages: newest first (reverse chronological order)
+          _messages.sort((a, b) {
+            // Parse timestamps and compare
+            try {
+              final aTime = DateTime.parse(a.timestamp);
+              final bTime = DateTime.parse(b.timestamp);
+              return bTime.compareTo(aTime); // Descending order (newest first)
+            } catch (e) {
+              return 0; // If parsing fails, keep original order
+            }
+          });
+          
           _isLoading = false;
         });
       }
