@@ -457,6 +457,13 @@
         map = L.map('map', {
           center: [48.3794, 31.1656],
           zoom: 6,
+          minZoom: 5,
+          maxZoom: 18,
+          maxBounds: [
+            [43.0, 20.0],  // Southwest coordinates (bottom-left corner)
+            [53.0, 42.0]   // Northeast coordinates (top-right corner)
+          ],
+          maxBoundsViscosity: 1.0,
           zoomControl: false,
           attributionControl: true
         });
