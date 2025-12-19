@@ -43,6 +43,69 @@
       border-radius: 0;
     }
     
+    /* Neumorphism для контролів карти */
+    .leaflet-control-zoom,
+    .leaflet-bar {
+      border: none !important;
+      box-shadow: 
+        8px 8px 15px #A3B1C6,
+        -8px -8px 15px #FFFFFF !important;
+      border-radius: 15px !important;
+      background: #E0E5EC !important;
+      overflow: hidden;
+    }
+    
+    .leaflet-control-zoom a,
+    .leaflet-bar a {
+      background: #E0E5EC !important;
+      border: none !important;
+      color: #4A90E2 !important;
+      font-size: 20px !important;
+      font-weight: 600 !important;
+      width: 40px !important;
+      height: 40px !important;
+      line-height: 40px !important;
+      transition: all 0.2s ease;
+    }
+    
+    .leaflet-control-zoom a:hover,
+    .leaflet-bar a:hover {
+      background: #E0E5EC !important;
+      box-shadow: 
+        inset 4px 4px 8px #A3B1C6,
+        inset -4px -4px 8px #FFFFFF !important;
+      color: #2E5C8A !important;
+    }
+    
+    .leaflet-control-zoom a:active,
+    .leaflet-bar a:active {
+      box-shadow: 
+        inset 6px 6px 10px #A3B1C6,
+        inset -6px -6px 10px #FFFFFF !important;
+    }
+    
+    .leaflet-control-zoom a.leaflet-disabled,
+    .leaflet-bar a.leaflet-disabled {
+      opacity: 0.4 !important;
+      cursor: not-allowed !important;
+    }
+    
+    .leaflet-control-attribution {
+      background: #E0E5EC !important;
+      box-shadow: 
+        4px 4px 8px #A3B1C6,
+        -4px -4px 8px #FFFFFF !important;
+      border-radius: 8px !important;
+      padding: 4px 8px !important;
+      border: none !important;
+      color: #718096 !important;
+      font-size: 11px !important;
+    }
+    
+    .leaflet-control-attribution a {
+      color: #4A90E2 !important;
+    }
+    
     .maplibre-marker {
       cursor: pointer;
     }
