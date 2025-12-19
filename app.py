@@ -17046,6 +17046,25 @@ def update_regions():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/registered-devices', methods=['GET'])
+def get_registered_devices():
+    """Get all registered devices (for debugging)."""
+    try:
+        devices = device_store._load()
+        # Mask tokens for security (show only last 10 chars)
+        for device_id, data in devices.items():
+            if 'token' in data:
+                token = data['token']
+                data['token'] = '...' + token[-10:] if len(token) > 10 else token
+        return jsonify({
+            'count': len(devices),
+            'devices': devices
+        })
+    except Exception as e:
+        log.error(f"Error getting devices: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/test-notification', methods=['POST'])
 def test_notification():
     """Send a test notification to a device."""
@@ -17094,7 +17113,10 @@ def send_fcm_notification(message_data: dict):
         location = message_data.get('location', '')
         threat_type = message_data.get('type', '')
         
-        log.info(f"Processing notification for location: {location}, type: {threat_type}")
+        log.info(f"=== FCM NOTIFICATION TRIGGERED ===")
+        log.info(f"Location: {location}")
+        log.info(f"Threat type: {threat_type}")
+        log.info(f"Full message data: {message_data}")
         
         # Find matching region - handle both full names and abbreviations
         region = None
@@ -17144,8 +17166,13 @@ def send_fcm_notification(message_data: dict):
 
         # Get devices subscribed to this region
         devices = device_store.get_devices_for_region(region)
+        log.info(f"=== DEVICE LOOKUP ===")
+        log.info(f"Region: {region}")
+        log.info(f"Devices found: {len(devices)}")
+        log.info(f"Device details: {devices}")
+        
         if not devices:
-            log.debug(f"No devices subscribed to region: {region}")
+            log.warning(f"No devices subscribed to region: {region}")
             return
 
         # Determine if critical
