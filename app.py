@@ -15626,10 +15626,32 @@ def get_messages():
                             location = city_name
                         break
             
+            # Get timestamp in Kyiv time
+            import pytz
+            kyiv_tz = pytz.timezone('Europe/Kiev')
+            msg_time = msg.get('time', '') or msg.get('timestamp', '') or msg.get('date', '')
+            
+            # If no timestamp from message, use current time
+            if not msg_time:
+                msg_time = datetime.now(kyiv_tz).strftime('%d.%m.%Y %H:%M')
+            else:
+                # Try to parse and convert to Kyiv time if needed
+                try:
+                    # If it's a string, keep it as is (assuming it's already formatted)
+                    if not isinstance(msg_time, str):
+                        dt = datetime.fromtimestamp(msg_time, tz=pytz.UTC)
+                        msg_time = dt.astimezone(kyiv_tz).strftime('%d.%m.%Y %H:%M')
+                except:
+                    # Fallback to original or current time
+                    if isinstance(msg_time, str):
+                        pass  # Keep original string
+                    else:
+                        msg_time = datetime.now(kyiv_tz).strftime('%d.%m.%Y %H:%M')
+            
             result_messages.append({
                 'type': alarm_type,
                 'location': location or 'Україна',
-                'timestamp': msg.get('time', ''),
+                'timestamp': msg_time,
                 'text': text[:300],  # First 300 chars
                 'latitude': latitude,
                 'longitude': longitude,
