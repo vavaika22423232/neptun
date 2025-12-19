@@ -201,6 +201,15 @@ class NotificationService {
   }
 
   Future<void> sendTestNotification() async {
+    // First show local test notification immediately
+    await _showTestLocalNotification();
+    
+    // Then try to send via backend (if Firebase is configured)
+    if (_fcmToken == null) {
+      debugPrint('No FCM token available');
+      return;
+    }
+    
     try {
       final response = await http.post(
         Uri.parse('https://neptun.in.ua/api/test-notification'),
@@ -209,10 +218,43 @@ class NotificationService {
       );
 
       if (response.statusCode == 200) {
-        debugPrint('Test notification sent');
+        debugPrint('Test notification sent to backend');
+      } else {
+        debugPrint('Backend test notification failed: ${response.statusCode}');
       }
     } catch (e) {
-      debugPrint('Error sending test notification: $e');
+      debugPrint('Error sending test notification to backend: $e');
     }
+  }
+
+  Future<void> _showTestLocalNotification() async {
+    const androidDetails = AndroidNotificationDetails(
+      'normal_alerts',
+      'Звичайні тривоги',
+      channelDescription: 'Сповіщення про дрони',
+      importance: Importance.high,
+      priority: Priority.high,
+      icon: '@mipmap/ic_launcher',
+      color: Color(0xFF4A90E2),
+    );
+
+    const iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
+
+    const details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+
+    await flutterLocalNotificationsPlugin.show(
+      999, // Test notification ID
+      '🧪 Тестове сповіщення',
+      'Dron Alerts працює коректно! Ви отримуватимете сповіщення про загрози.',
+      details,
+      payload: jsonEncode({'type': 'test'}),
+    );
   }
 }

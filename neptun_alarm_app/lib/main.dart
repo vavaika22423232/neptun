@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:in_app_update/in_app_update.dart';
@@ -13,11 +14,22 @@ import 'pages/settings_page.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Initialize Firebase
-  await Firebase.initializeApp();
+  // Initialize Firebase (handle errors gracefully)
+  try {
+    await Firebase.initializeApp();
+    debugPrint('Firebase initialized successfully');
+  } catch (e) {
+    debugPrint('Firebase initialization failed: $e');
+    // Continue without Firebase - local notifications will still work
+  }
   
   // Initialize notifications
-  await NotificationService().initialize();
+  try {
+    await NotificationService().initialize();
+    debugPrint('NotificationService initialized successfully');
+  } catch (e) {
+    debugPrint('NotificationService initialization failed: $e');
+  }
   
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
