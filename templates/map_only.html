@@ -457,13 +457,12 @@
         });
         console.log('Map created:', !!map);
         
-        // Додаємо tile layer з м'якими кольорами (Voyager - менш білий ніж Light)
+        // Додаємо tile layer
         console.log('Adding tile layer...');
         
-        const baseLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-          attribution: '© OpenStreetMap © CARTO',
-          maxZoom: 19,
-          subdomains: 'abcd'
+        const baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap contributors',
+          maxZoom: 19
         }).addTo(map);
         
         console.log('Tile layer added');
