@@ -1,13 +1,14 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 // Background message handler
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  print('Background message: ${message.notification?.title}');
+  debugPrint('Background message: ${message.notification?.title}');
 }
 
 class NotificationService {
@@ -31,7 +32,7 @@ class NotificationService {
     );
 
     if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-      print('User granted permission');
+      debugPrint('User granted permission');
     }
 
     // Initialize local notifications
@@ -54,7 +55,7 @@ class NotificationService {
     await flutterLocalNotificationsPlugin.initialize(
       initializationSettings,
       onDidReceiveNotificationResponse: (NotificationResponse response) {
-        print('Notification clicked: ${response.payload}');
+        debugPrint('Notification clicked: ${response.payload}');
       },
     );
 
@@ -88,7 +89,7 @@ class NotificationService {
 
     // Get FCM token
     _fcmToken = await _firebaseMessaging.getToken();
-    print('FCM Token: $_fcmToken');
+    debugPrint('FCM Token: $_fcmToken');
 
     // Listen to token refresh
     _firebaseMessaging.onTokenRefresh.listen((newToken) {
@@ -106,7 +107,7 @@ class NotificationService {
 
     // Handle notification taps when app is in background
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      print('Message clicked: ${message.notification?.title}');
+      debugPrint('Message clicked: ${message.notification?.title}');
     });
 
     // Register device with backend
@@ -160,7 +161,7 @@ class NotificationService {
     final notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
 
     if (!notificationsEnabled || selectedRegions.isEmpty) {
-      print('Notifications disabled or no regions selected');
+      debugPrint('Notifications disabled or no regions selected');
       return;
     }
 
@@ -176,12 +177,12 @@ class NotificationService {
       );
 
       if (response.statusCode == 200) {
-        print('Device registered successfully');
+        debugPrint('Device registered successfully');
       } else {
-        print('Failed to register device: ${response.statusCode}');
+        debugPrint('Failed to register device: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error registering device: $e');
+      debugPrint('Error registering device: $e');
     }
   }
 
@@ -208,10 +209,10 @@ class NotificationService {
       );
 
       if (response.statusCode == 200) {
-        print('Test notification sent');
+        debugPrint('Test notification sent');
       }
     } catch (e) {
-      print('Error sending test notification: $e');
+      debugPrint('Error sending test notification: $e');
     }
   }
 }
