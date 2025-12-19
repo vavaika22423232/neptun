@@ -464,11 +464,12 @@
         });
         console.log('Map created:', !!map);
         
-        // Додаємо OpenStreetMap tile layer
+        // Додаємо красивий tile layer з м'якими кольорами (Neumorphism style)
         console.log('Adding tile layer...');
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '© OpenStreetMap contributors',
-          maxZoom: 19
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+          attribution: '© OpenStreetMap © CARTO',
+          maxZoom: 19,
+          subdomains: 'abcd'
         }).addTo(map);
         console.log('Tile layer added');
         
