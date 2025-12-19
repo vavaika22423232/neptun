@@ -5,12 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Neptun Alarm Map</title>
   
-  <!-- MapLibre GL CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" crossorigin=""/>
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
   
-  <!-- MapLibre GL JS -->
-  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js" crossorigin=""></script>
+  <!-- Leaflet MarkerCluster CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" crossorigin=""/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" crossorigin=""/>
+  
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js" crossorigin=""></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" crossorigin=""></script>
   
   <style>
     * {
@@ -40,9 +45,9 @@
       filter: brightness(0.9) contrast(1.05) saturate(1.1);
     }
     
-    /* Neumorphism для контролів MapLibre GL */
-    .maplibregl-ctrl-group,
-    .maplibregl-ctrl {
+    /* Neumorphism для контролів карти */
+    .leaflet-control-zoom,
+    .leaflet-bar {
       border: none !important;
       box-shadow: 
         8px 8px 15px #A3B1C6,
@@ -52,38 +57,42 @@
       overflow: hidden;
     }
     
-    .maplibregl-ctrl-group button,
-    .maplibregl-ctrl button {
+    .leaflet-control-zoom a,
+    .leaflet-bar a {
       background: #E0E5EC !important;
       border: none !important;
       color: #4A90E2 !important;
+      font-size: 20px !important;
+      font-weight: 600 !important;
       width: 40px !important;
       height: 40px !important;
+      line-height: 40px !important;
       transition: all 0.2s ease;
     }
     
-    .maplibregl-ctrl-group button:hover,
-    .maplibregl-ctrl button:hover {
+    .leaflet-control-zoom a:hover,
+    .leaflet-bar a:hover {
       background: #E0E5EC !important;
       box-shadow: 
         inset 4px 4px 8px #A3B1C6,
         inset -4px -4px 8px #FFFFFF !important;
+      color: #2E5C8A !important;
     }
     
-    .maplibregl-ctrl-group button:active,
-    .maplibregl-ctrl button:active {
+    .leaflet-control-zoom a:active,
+    .leaflet-bar a:active {
       box-shadow: 
         inset 6px 6px 10px #A3B1C6,
         inset -6px -6px 10px #FFFFFF !important;
     }
     
-    .maplibregl-ctrl-group button:disabled,
-    .maplibregl-ctrl button:disabled {
+    .leaflet-control-zoom a.leaflet-disabled,
+    .leaflet-bar a.leaflet-disabled {
       opacity: 0.4 !important;
       cursor: not-allowed !important;
     }
     
-    .maplibregl-ctrl-attrib {
+    .leaflet-control-attribution {
       background: #E0E5EC !important;
       box-shadow: 
         4px 4px 8px #A3B1C6,
@@ -95,13 +104,8 @@
       font-size: 11px !important;
     }
     
-    .maplibregl-ctrl-attrib a {
+    .leaflet-control-attribution a {
       color: #4A90E2 !important;
-    }
-    
-    .maplibre-marker,
-    .maplibregl-marker {
-      cursor: pointer;
     }
     
     .custom-div-icon {
@@ -109,7 +113,8 @@
       border: none;
     }
     
-    .maplibregl-popup-content {
+    .leaflet-popup-content-wrapper,
+    .leaflet-popup-content {
       background: transparent !important;
       padding: 0 !important;
       box-shadow: none !important;
