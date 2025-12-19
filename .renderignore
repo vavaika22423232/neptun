@@ -1,0 +1,26 @@
+# Ignore test and documentation files
+test_*.py
+tests/
+*.md
+!README.md
+
+# Ignore old app directories
+android-app/
+app-ios/
+neptun_alarm_app/
+
+# Ignore session files
+*.session
+*.session-journal
+
+# Ignore build artifacts
+*.apk
+*.aab
+*.ipa
+build/
+dist/
+
+# Ignore IDE and OS files
+.vscode/
+.idea/
+.DS_Store

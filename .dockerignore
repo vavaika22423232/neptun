@@ -1,0 +1,75 @@
+# Git
+.git
+.gitignore
+.github
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+.pytest_cache
+.coverage
+
+# Virtual environments
+venv
+env
+ENV
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local development files
+*.session
+*.session-journal
+anon.session
+channel_forwarder.session
+test_session.session
+
+# Logs and temp files
+*.log
+*.tmp
+
+# Documentation and guides
+*.md
+!README.md
+QUICKSTART.md
+SEO_*.md
+TELEGRAM_*.md
+BUILD_*.md
+ADSENSE_*.md
+
+# Test files
+test_*.py
+tests/
+
+# Old app directories (if not needed)
+android-app/
+app-ios/
+
+# Build outputs
+neptun_alarm_app/build/
+neptun_alarm_app/.gradle/
+*.apk
+*.aab
+*.ipa
+
+# Other unnecessary files
+visits_recent.json
+visits_stats.json
+api_research_results.json
+bandwidth_config.json

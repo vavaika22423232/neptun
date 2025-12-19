@@ -2,12 +2,14 @@ flask==3.0.3
 telethon==1.35.0
 pytz==2024.1
 requests==2.32.3
-spacy==3.8.7
 geopy==2.4.1
 beautifulsoup4==4.12.3
 apscheduler==3.10.4
 google-generativeai==0.8.3
-groq==0.11.0
-# Ukrainian SpaCy model - try direct URL installation
-https://github.com/explosion/spacy-models/releases/download/uk_core_news_sm-3.8.0/uk_core_news_sm-3.8.0-py3-none-any.whl
+
+# Optional heavy dependencies - comment out to speed up deployment
+# groq==0.11.0
+# spacy==3.8.7
+# https://github.com/explosion/spacy-models/releases/download/uk_core_news_sm-3.8.0/uk_core_news_sm-3.8.0-py3-none-any.whl
+
 pytest>=8.4,<9
