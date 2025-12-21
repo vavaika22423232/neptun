@@ -16767,11 +16767,50 @@ SETTLEMENTS_ORDERED = []  # (RAION_FALLBACK consolidated earlier; duplicate defi
 GIT_AUTO_COMMIT = os.getenv('GIT_AUTO_COMMIT', '0') not in ('0','false','False','')
 GIT_REPO_SLUG = os.getenv('GIT_REPO_SLUG')  # e.g. 'vavaika22423232/neptun'
 GIT_SYNC_TOKEN = os.getenv('GIT_SYNC_TOKEN')  # GitHub PAT (classic or fine-grained) with repo write
-GIT_COMMIT_INTERVAL = int(os.getenv('GIT_COMMIT_INTERVAL', '180'))  # seconds between commits
+GIT_COMMIT_INTERVAL = int(os.getenv('GIT_COMMIT_INTERVAL', '60'))  # seconds between commits (reduced for chat)
 _last_git_commit = 0
+_git_pull_done = False  # Track if initial pull was done
 
 # Delay before first Telegram connect (helps избежать пересечения старого и нового инстанса при деплое)
 FETCH_START_DELAY = int(os.getenv('FETCH_START_DELAY', '0'))  # seconds
+
+def git_pull_on_startup():
+    """Pull latest data from GitHub on startup to restore chat messages."""
+    global _git_pull_done
+    if _git_pull_done:
+        return
+    if not GIT_AUTO_COMMIT or not GIT_REPO_SLUG or not GIT_SYNC_TOKEN:
+        log.info("Git sync not configured, skipping pull on startup")
+        return
+    if not os.path.isdir('.git'):
+        log.warning("Not a git repo, skipping pull")
+        return
+    try:
+        def run(cmd):
+            return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        
+        run('git config user.email "bot@local"')
+        run('git config user.name "Auto Sync Bot"')
+        
+        safe_remote = f'https://x-access-token:{GIT_SYNC_TOKEN}@github.com/{GIT_REPO_SLUG}.git'
+        remotes = run('git remote -v').stdout
+        if 'origin' not in remotes or GIT_REPO_SLUG not in remotes:
+            run('git remote remove origin')
+            run(f'git remote add origin "{safe_remote}"')
+        
+        # Stash any local changes, pull, then pop
+        run('git stash')
+        pull_result = run('git pull origin main --rebase')
+        run('git stash pop')
+        
+        if pull_result.returncode == 0:
+            log.info("Git pull on startup successful - chat messages restored")
+        else:
+            log.warning(f"Git pull failed: {pull_result.stderr}")
+        
+        _git_pull_done = True
+    except Exception as e:
+        log.error(f"Git pull on startup error: {e}")
 
 def maybe_git_autocommit():
     """If enabled, commit & push updated messages.json back to GitHub.
@@ -17260,10 +17299,20 @@ def send_fcm_notification(message_data: dict):
 
 # ============== ANONYMOUS CHAT API ==============
 MAX_CHAT_MESSAGES = 500  # Keep last 500 messages
+_chat_initialized = False
 
 def load_chat_messages():
-    """Load chat messages from file."""
+    """Load chat messages from file. On first call, try git pull to restore from repo."""
+    global _chat_initialized
     try:
+        # On first load, try to pull latest from git
+        if not _chat_initialized:
+            _chat_initialized = True
+            try:
+                git_pull_on_startup()
+            except Exception as e:
+                log.warning(f"Git pull on chat init failed: {e}")
+        
         if os.path.exists(CHAT_MESSAGES_FILE):
             with open(CHAT_MESSAGES_FILE, 'r', encoding='utf-8') as f:
                 return json.load(f)
