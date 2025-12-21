@@ -17095,7 +17095,17 @@ def test_notification():
         response = messaging.send(message)
         log.info(f"Test notification sent successfully: {response}")
         return jsonify({'success': True, 'message_id': response})
+    except messaging.UnregisteredError:
+        # Token is invalid - remove device from store
+        log.warning(f"Token is invalid (UnregisteredError), removing device...")
+        device_store.remove_device(token)
+        return jsonify({'error': 'NotRegistered', 'message': 'Token is invalid and was removed. Please re-register the device.'}), 410
     except Exception as e:
+        error_msg = str(e)
+        if 'NotRegistered' in error_msg or 'not registered' in error_msg.lower():
+            log.warning(f"Token not registered, removing device...")
+            device_store.remove_device(token)
+            return jsonify({'error': 'NotRegistered', 'message': 'Token is invalid and was removed. Please re-register the device.'}), 410
         log.error(f"Error sending test notification: {e}")
         return jsonify({'error': str(e)}), 500
 
@@ -17219,8 +17229,18 @@ def send_fcm_notification(message_data: dict):
                 response = messaging.send(message)
                 success_count += 1
                 log.info(f"Notification sent to device {device['device_id'][:20]}...: {response}")
+            except messaging.UnregisteredError:
+                # Token is invalid - remove device from store
+                log.warning(f"Device {device['device_id'][:20]}... has invalid token (UnregisteredError), removing...")
+                device_store.remove_device(device['device_id'])
             except Exception as e:
-                log.error(f"Failed to send to device {device['device_id'][:20]}...: {e}")
+                error_msg = str(e)
+                # Also check for NotRegistered in error message
+                if 'NotRegistered' in error_msg or 'not registered' in error_msg.lower():
+                    log.warning(f"Device {device['device_id'][:20]}... not registered, removing...")
+                    device_store.remove_device(device['device_id'])
+                else:
+                    log.error(f"Failed to send to device {device['device_id'][:20]}...: {e}")
         
         log.info(f"Sent {success_count}/{len(devices)} notifications for region: {region}")
     except Exception as e:
