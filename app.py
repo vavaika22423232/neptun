@@ -15659,6 +15659,9 @@ def get_messages():
                 'channel': msg.get('channel', ''),
             })
         
+        # Sort by timestamp (newest first)
+        result_messages.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+        
         response = jsonify({
             'messages': result_messages,
             'count': len(result_messages),
