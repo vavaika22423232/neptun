@@ -17124,18 +17124,24 @@ def send_fcm_notification(message_data: dict):
     try:
         from firebase_admin import messaging
         
-        # Extract region from location
-        location = message_data.get('location', '')
-        threat_type = message_data.get('type', '')
+        # Extract location from multiple possible fields
+        location = message_data.get('location', '') or message_data.get('place', '') or message_data.get('text', '')[:100]
+        threat_type = message_data.get('type', '') or message_data.get('threat_type', '') or 'Загроза'
+        
+        # Also check 'text' field for region info if location is empty
+        text = message_data.get('text', '')
+        if not location and text:
+            location = text[:100]
         
         log.info(f"=== FCM NOTIFICATION TRIGGERED ===")
         log.info(f"Location: {location}")
         log.info(f"Threat type: {threat_type}")
-        log.info(f"Full message data: {message_data}")
+        log.info(f"Full message data keys: {list(message_data.keys())}")
         
         # Find matching region - handle both full names and abbreviations
         region = None
-        location_lower = location.lower()
+        # Search in both location and text
+        search_text = f"{location} {text}".lower()
         
         # Region mapping with abbreviations
         regions_map = {
@@ -17168,7 +17174,7 @@ def send_fcm_notification(message_data: dict):
         
         for region_name, keywords in regions_map.items():
             for keyword in keywords:
-                if keyword in location_lower:
+                if keyword in search_text:
                     region = region_name
                     log.info(f"Matched region: {region} (keyword: {keyword})")
                     break
@@ -17176,7 +17182,7 @@ def send_fcm_notification(message_data: dict):
                 break
         
         if not region:
-            log.warning(f"Could not determine region for location: {location}")
+            log.warning(f"Could not determine region for location: {location}, text: {text[:100]}")
             return
 
         # Get devices subscribed to this region
