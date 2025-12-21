@@ -17061,9 +17061,16 @@ def register_device():
         token = data.get('token')
         regions = data.get('regions', [])
         device_id = data.get('device_id', token)
+        enabled = data.get('enabled', True)  # Support disabling notifications
 
-        if not token or not regions:
-            return jsonify({'error': 'Missing token or regions'}), 400
+        if not token and not device_id:
+            return jsonify({'error': 'Missing token or device_id'}), 400
+
+        # If notifications disabled or no regions, remove device
+        if not enabled or not regions:
+            device_store.remove_device(device_id)
+            log.info(f"Device {device_id[:20]}... unregistered (notifications disabled)")
+            return jsonify({'success': True, 'device_id': device_id, 'status': 'unregistered'})
 
         device_store.register_device(token, regions, device_id)
         return jsonify({'success': True, 'device_id': device_id})
