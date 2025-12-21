@@ -56,7 +56,7 @@ android {
             isMinifyEnabled = false
             isShrinkResources = false
             ndk {
-                debugSymbolLevel = "FULL"
+                debugSymbolLevel = "SYMBOL_TABLE"
             }
         }
     }

@@ -17227,6 +17227,103 @@ def send_fcm_notification(message_data: dict):
         log.error(f"Error in send_fcm_notification: {e}")
 
 
+# ============== ANONYMOUS CHAT API ==============
+CHAT_MESSAGES_FILE = 'chat_messages.json'
+MAX_CHAT_MESSAGES = 500  # Keep last 500 messages
+
+def load_chat_messages():
+    """Load chat messages from file."""
+    try:
+        if os.path.exists(CHAT_MESSAGES_FILE):
+            with open(CHAT_MESSAGES_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        log.error(f"Error loading chat messages: {e}")
+    return []
+
+def save_chat_messages(messages):
+    """Save chat messages to file."""
+    try:
+        # Keep only last MAX_CHAT_MESSAGES
+        messages = messages[-MAX_CHAT_MESSAGES:]
+        with open(CHAT_MESSAGES_FILE, 'w', encoding='utf-8') as f:
+            json.dump(messages, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log.error(f"Error saving chat messages: {e}")
+
+@app.route('/api/chat/messages', methods=['GET'])
+def get_chat_messages():
+    """Get chat messages, optionally after a specific timestamp."""
+    try:
+        messages = load_chat_messages()
+        
+        # Optional: get only messages after timestamp
+        after = request.args.get('after')
+        if after:
+            try:
+                after_ts = float(after)
+                messages = [m for m in messages if m.get('timestamp', 0) > after_ts]
+            except:
+                pass
+        
+        # Return last 100 messages by default
+        limit = min(int(request.args.get('limit', 100)), 500)
+        messages = messages[-limit:]
+        
+        return jsonify({
+            'success': True,
+            'messages': messages,
+            'count': len(messages)
+        })
+    except Exception as e:
+        log.error(f"Error getting chat messages: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/chat/send', methods=['POST'])
+def send_chat_message():
+    """Send a new chat message."""
+    try:
+        data = request.get_json()
+        
+        user_id = data.get('userId', '')
+        message = data.get('message', '').strip()
+        
+        if not user_id or not message:
+            return jsonify({'error': 'Missing userId or message'}), 400
+        
+        # Sanitize message (basic)
+        if len(message) > 1000:
+            message = message[:1000]
+        
+        # Create message object
+        kyiv_tz = pytz.timezone('Europe/Kiev')
+        now = datetime.now(kyiv_tz)
+        
+        new_message = {
+            'id': str(uuid.uuid4()),
+            'userId': user_id,
+            'message': message,
+            'timestamp': now.timestamp(),
+            'time': now.strftime('%H:%M'),
+            'date': now.strftime('%d.%m.%Y')
+        }
+        
+        # Load, append, save
+        messages = load_chat_messages()
+        messages.append(new_message)
+        save_chat_messages(messages)
+        
+        log.info(f"Chat message from {user_id[:20]}: {message[:50]}...")
+        
+        return jsonify({
+            'success': True,
+            'message': new_message
+        })
+    except Exception as e:
+        log.error(f"Error sending chat message: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     # Local / container direct run (not needed if a WSGI server like gunicorn is used)
     port = int(os.getenv('PORT', '5000'))

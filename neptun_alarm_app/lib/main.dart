@@ -6,10 +6,12 @@ import 'package:http/http.dart' as http;
 import 'package:in_app_update/in_app_update.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'services/notification_service.dart';
 import 'pages/settings_page.dart';
+import 'pages/chat_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,16 +37,11 @@ void main() async {
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.dark,
-    ),
-  );
+  
   runApp(const NeptunAlarmApp());
 }
 
-// Neumorphic кольори
+// Neumorphic кольори для світлої теми
 class AppColors {
   static const background = Color(0xFFE0E5EC);
   static const darkShadow = Color(0xFFA3B1C6);
@@ -54,20 +51,98 @@ class AppColors {
   static const danger = Color(0xFFE63946);
   static const warning = Color(0xFFFF9500);
   static const success = Color(0xFF30D158);
+  
+  // Темна тема
+  static const darkBackground = Color(0xFF1E1E1E);
+  static const darkSurface = Color(0xFF2D2D2D);
+  static const darkCard = Color(0xFF3D3D3D);
 }
 
-class NeptunAlarmApp extends StatelessWidget {
+class NeptunAlarmApp extends StatefulWidget {
   const NeptunAlarmApp({super.key});
+  
+  static _NeptunAlarmAppState? of(BuildContext context) =>
+      context.findAncestorStateOfType<_NeptunAlarmAppState>();
+
+  @override
+  State<NeptunAlarmApp> createState() => _NeptunAlarmAppState();
+}
+
+class _NeptunAlarmAppState extends State<NeptunAlarmApp> {
+  ThemeMode _themeMode = ThemeMode.light;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTheme();
+  }
+
+  Future<void> _loadTheme() async {
+    final prefs = await SharedPreferences.getInstance();
+    final isDark = prefs.getBool('dark_theme') ?? false;
+    setState(() {
+      _themeMode = isDark ? ThemeMode.dark : ThemeMode.light;
+    });
+    _updateSystemUI(isDark);
+  }
+
+  void toggleTheme() async {
+    final prefs = await SharedPreferences.getInstance();
+    final isDark = _themeMode == ThemeMode.light;
+    await prefs.setBool('dark_theme', isDark);
+    setState(() {
+      _themeMode = isDark ? ThemeMode.dark : ThemeMode.light;
+    });
+    _updateSystemUI(isDark);
+  }
+
+  void _updateSystemUI(bool isDark) {
+    SystemChrome.setSystemUIOverlayStyle(
+      SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+        systemNavigationBarColor: isDark ? AppColors.darkBackground : AppColors.background,
+        systemNavigationBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+      ),
+    );
+  }
+
+  bool get isDarkMode => _themeMode == ThemeMode.dark;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Dron Alerts',
       debugShowCheckedModeBanner: false,
+      themeMode: _themeMode,
       theme: ThemeData(
         fontFamily: 'SF Pro Display',
         scaffoldBackgroundColor: AppColors.background,
         useMaterial3: true,
+        brightness: Brightness.light,
+        primaryColor: AppColors.accent,
+        colorScheme: ColorScheme.light(
+          primary: AppColors.accent,
+          secondary: AppColors.accentDark,
+          surface: AppColors.background,
+        ),
+      ),
+      darkTheme: ThemeData(
+        fontFamily: 'SF Pro Display',
+        scaffoldBackgroundColor: AppColors.darkBackground,
+        useMaterial3: true,
+        brightness: Brightness.dark,
+        primaryColor: AppColors.accent,
+        colorScheme: ColorScheme.dark(
+          primary: AppColors.accent,
+          secondary: AppColors.accentDark,
+          surface: AppColors.darkSurface,
+        ),
+        cardColor: AppColors.darkCard,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: AppColors.darkSurface,
+          foregroundColor: Colors.white,
+        ),
       ),
       home: const MainPage(),
     );
@@ -91,36 +166,45 @@ class NeumorphicContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bgColor = isDark ? AppColors.darkCard : AppColors.background;
+    final darkShadowColor = isDark 
+        ? Colors.black.withValues(alpha: 0.4)
+        : AppColors.darkShadow;
+    final lightShadowColor = isDark 
+        ? Colors.white.withValues(alpha: 0.05)
+        : AppColors.lightShadow;
+    
     return Container(
       padding: padding,
       decoration: BoxDecoration(
-        color: AppColors.background,
+        color: bgColor,
         borderRadius: BorderRadius.circular(borderRadius),
         boxShadow: isPressed
             ? [
-                const BoxShadow(
-                  color: AppColors.darkShadow,
-                  offset: Offset(2, 2),
+                BoxShadow(
+                  color: darkShadowColor,
+                  offset: const Offset(2, 2),
                   blurRadius: 5,
                   spreadRadius: 1,
                 ),
-                const BoxShadow(
-                  color: AppColors.lightShadow,
-                  offset: Offset(-2, -2),
+                BoxShadow(
+                  color: lightShadowColor,
+                  offset: const Offset(-2, -2),
                   blurRadius: 5,
                   spreadRadius: 1,
                 ),
               ]
             : [
-                const BoxShadow(
-                  color: AppColors.darkShadow,
-                  offset: Offset(8, 8),
+                BoxShadow(
+                  color: darkShadowColor,
+                  offset: const Offset(8, 8),
                   blurRadius: 15,
                   spreadRadius: 1,
                 ),
-                const BoxShadow(
-                  color: AppColors.lightShadow,
-                  offset: Offset(-8, -8),
+                BoxShadow(
+                  color: lightShadowColor,
+                  offset: const Offset(-8, -8),
                   blurRadius: 15,
                   spreadRadius: 1,
                 ),
@@ -145,6 +229,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver, Single
   final List<Widget> _pages = [
     const MapPage(),
     const MessagesPage(),
+    const ChatPage(),
     const SettingsPage(),
   ];
 
@@ -157,6 +242,104 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver, Single
       duration: const Duration(milliseconds: 200),
     );
     _checkForUpdate();
+    _checkFirstLaunch();
+  }
+
+  Future<void> _checkFirstLaunch() async {
+    final prefs = await SharedPreferences.getInstance();
+    final isFirstLaunch = prefs.getBool('first_launch') ?? true;
+    final selectedRegions = prefs.getStringList('selected_regions') ?? [];
+
+    if (isFirstLaunch || selectedRegions.isEmpty) {
+      // Wait a bit for the UI to load
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      if (mounted) {
+        _showWelcomeDialog();
+        await prefs.setBool('first_launch', false);
+      }
+    }
+  }
+
+  void _showWelcomeDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+        backgroundColor: AppColors.background,
+        elevation: 0,
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: AppColors.accent,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.notifications_active_rounded,
+                  color: Colors.white,
+                  size: 40,
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Налаштуйте сповіщення',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF2D3748),
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Оберіть регіони, про які ви хочете отримувати повідомлення про повітряні тривоги',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Color(0xFF718096),
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 32),
+              GestureDetector(
+                onTap: () {
+                  Navigator.of(context).pop();
+                  setState(() => _selectedIndex = 3); // Go to Settings
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 32),
+                  decoration: BoxDecoration(
+                    color: AppColors.accent,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.accent.withValues(alpha: 0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: const Text(
+                    'Налаштувати зараз',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -300,13 +483,14 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver, Single
           padding: const EdgeInsets.all(20),
           child: NeumorphicContainer(
             borderRadius: 30,
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 _buildNavItem(Icons.map_rounded, 'Карта', 0),
                 _buildNavItem(Icons.notifications_active_rounded, 'Тривоги', 1),
-                _buildNavItem(Icons.settings_rounded, 'Налаштування', 2),
+                _buildNavItem(Icons.chat_bubble_rounded, 'Чат', 2),
+                _buildNavItem(Icons.settings_rounded, 'Ще', 3),
               ],
             ),
           ),
@@ -714,6 +898,29 @@ class _MessagesPageState extends State<MessagesPage> {
     }
   }
 
+  String _formatTimestamp(String timestamp) {
+    try {
+      final dt = DateTime.parse(timestamp);
+      final now = DateTime.now();
+      final diff = now.difference(dt);
+      
+      if (diff.inMinutes < 1) {
+        return 'Щойно';
+      } else if (diff.inMinutes < 60) {
+        return '${diff.inMinutes} хв тому';
+      } else if (diff.inHours < 24) {
+        return '${diff.inHours} год тому';
+      } else {
+        // Format as "19 грудня, 19:32"
+        final months = ['січня', 'лютого', 'березня', 'квітня', 'травня', 'червня',
+                       'липня', 'серпня', 'вересня', 'жовтня', 'листопада', 'грудня'];
+        return '${dt.day} ${months[dt.month - 1]}, ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+      }
+    } catch (e) {
+      return timestamp; // Return original if parsing fails
+    }
+  }
+
   IconData _getIconForType(String type) {
     if (type.contains('БпЛА') || type.contains('дрон')) return Icons.airplanemode_active_rounded;
     if (type.contains('ракет')) return Icons.rocket_launch_rounded;
@@ -984,7 +1191,7 @@ class _MessagesPageState extends State<MessagesPage> {
                                                 ),
                                                 const SizedBox(width: 4),
                                                 Text(
-                                                  message.timestamp,
+                                                  _formatTimestamp(message.timestamp),
                                                   style: const TextStyle(
                                                     fontSize: 12,
                                                     color: Color(0xFF718096),

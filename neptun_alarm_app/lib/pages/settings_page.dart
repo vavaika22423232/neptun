@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/notification_service.dart';
+import '../main.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -40,6 +41,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Set<String> _selectedRegions = {};
   bool _notificationsEnabled = true;
+  bool _darkModeEnabled = false;
   bool _isLoading = true;
   String? _fcmToken;
 
@@ -53,11 +55,13 @@ class _SettingsPageState extends State<SettingsPage> {
     final prefs = await SharedPreferences.getInstance();
     final savedRegions = prefs.getStringList('selected_regions') ?? [];
     final enabled = prefs.getBool('notifications_enabled') ?? true;
+    final darkMode = prefs.getBool('dark_theme') ?? false;
     final token = NotificationService().fcmToken;
 
     setState(() {
       _selectedRegions = savedRegions.toSet();
       _notificationsEnabled = enabled;
+      _darkModeEnabled = darkMode;
       _fcmToken = token;
       _isLoading = false;
     });
@@ -137,6 +141,32 @@ class _SettingsPageState extends State<SettingsPage> {
                 });
                 NotificationService().setNotificationsEnabled(value);
                 _saveSettings();
+              },
+            ),
+          ),
+          
+          const SizedBox(height: 8),
+
+          // Dark mode toggle
+          Card(
+            child: SwitchListTile(
+              title: const Text('Темна тема'),
+              subtitle: Text(
+                _darkModeEnabled 
+                    ? 'Для нічного використання'
+                    : 'Світла тема активна',
+              ),
+              secondary: Icon(
+                _darkModeEnabled ? Icons.dark_mode : Icons.light_mode,
+                color: _darkModeEnabled ? Colors.amber : Colors.orange,
+              ),
+              value: _darkModeEnabled,
+              onChanged: (value) {
+                setState(() {
+                  _darkModeEnabled = value;
+                });
+                // Call the theme toggle through NeptunAlarmApp
+                NeptunAlarmApp.of(context)?.toggleTheme();
               },
             ),
           ),
