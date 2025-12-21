@@ -772,6 +772,7 @@ if API_ID and API_HASH:
         client = TelegramClient('anon', API_ID, API_HASH)
 
 MESSAGES_FILE = 'messages.json'
+CHAT_MESSAGES_FILE = 'chat_messages.json'  # Anonymous chat messages
 HIDDEN_FILE = 'hidden_markers.json'
 OPENCAGE_CACHE_FILE = 'opencage_cache.json'
 OPENCAGE_TTL = 60 * 60 * 24 * 30  # 30 days
@@ -16801,10 +16802,11 @@ def maybe_git_autocommit():
         run(f'git remote add origin "{safe_remote}"')
     # Stage & commit if there is a change
     run(f'git add {MESSAGES_FILE}')
+    run(f'git add {CHAT_MESSAGES_FILE}')  # Also sync chat messages
     status = run('git status --porcelain').stdout
-    if MESSAGES_FILE not in status:
+    if MESSAGES_FILE not in status and CHAT_MESSAGES_FILE not in status:
         return  # no actual diff
-    commit_msg = f'Update {MESSAGES_FILE} (auto)'  # no secrets
+    commit_msg = f'Update messages (auto)'  # no secrets
     run(f'git commit -m "{commit_msg}"')
     push_res = run('git push origin HEAD:main')
     if push_res.returncode == 0:
@@ -17248,7 +17250,6 @@ def send_fcm_notification(message_data: dict):
 
 
 # ============== ANONYMOUS CHAT API ==============
-CHAT_MESSAGES_FILE = 'chat_messages.json'
 MAX_CHAT_MESSAGES = 500  # Keep last 500 messages
 
 def load_chat_messages():
@@ -17332,6 +17333,12 @@ def send_chat_message():
         messages = load_chat_messages()
         messages.append(new_message)
         save_chat_messages(messages)
+        
+        # Trigger git sync for persistence
+        try:
+            maybe_git_autocommit()
+        except Exception as git_err:
+            log.warning(f"Git autocommit failed for chat: {git_err}")
         
         log.info(f"Chat message from {user_id[:20]}: {message[:50]}...")
         
