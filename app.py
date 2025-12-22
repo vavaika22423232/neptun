@@ -5272,54 +5272,8 @@ _last_git_commit = 0
 # Delay before first Telegram connect (helps избежать пересечения старого и нового инстанса при деплое)
 FETCH_START_DELAY = int(os.getenv('FETCH_START_DELAY', '0'))  # seconds
 
-def maybe_git_autocommit():
-    """If enabled, commit & push updated messages.json back to GitHub.
-    Requirements:
-      - Set GIT_AUTO_COMMIT=1
-      - Provide GIT_REPO_SLUG (owner/repo)
-      - Provide GIT_SYNC_TOKEN (PAT with repo write)
-    The container build must include git (Render base images do).
-    Commits throttled by GIT_COMMIT_INTERVAL seconds.
-    """
-    global _last_git_commit
-    if not GIT_AUTO_COMMIT or not GIT_REPO_SLUG or not GIT_SYNC_TOKEN:
-        return
-    now = time.time()
-    if now - _last_git_commit < GIT_COMMIT_INTERVAL:
-        return
-    if not os.path.isdir('.git'):
-        raise RuntimeError('Not a git repo')
-    # Configure user (once)
-    def run(cmd):
-        return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    run('git config user.email "bot@local"')
-    run('git config user.name "Auto Sync Bot"')
-    # Set remote URL embedding token (avoid logging token!)
-    safe_remote = f'https://x-access-token:{GIT_SYNC_TOKEN}@github.com/{GIT_REPO_SLUG}.git'
-    # Do not print safe_remote (contains secret)
-    # Update origin only if needed
-    remotes = run('git remote -v').stdout
-    if 'origin' not in remotes or GIT_REPO_SLUG not in remotes:
-        run('git remote remove origin')
-        run(f'git remote add origin "{safe_remote}"')
-    # Stage & commit if there is a change
-    run(f'git add {MESSAGES_FILE}')
-    status = run('git status --porcelain').stdout
-    if MESSAGES_FILE not in status:
-        return  # no actual diff
-    commit_msg = f'Update {MESSAGES_FILE} (auto)'  # no secrets
-    run(f'git commit -m "{commit_msg}"')
-    push_res = run('git push origin HEAD:main')
-    if push_res.returncode == 0:
-        _last_git_commit = now
-    else:
-        # If push fails (e.g., diverged), attempt pull+rebase then push
-        run('git fetch origin')
-        run('git rebase origin/main || git rebase --abort')
-        push_res2 = run('git push origin HEAD:main')
-        if push_res2.returncode == 0:
-            _last_git_commit = now
-        # else: give up silently to avoid spamming logs
+# NOTE: maybe_git_autocommit() is defined later in the file (near line 16860)
+# with full support for chat_messages.json and devices.json
 
 def _download_settlements():
     if not SETTLEMENTS_URL or os.path.exists(SETTLEMENTS_FILE):
