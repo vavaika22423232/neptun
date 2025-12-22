@@ -847,6 +847,42 @@ MESSAGE_STORE = MessageStore(
     backup_count=3,
 )
 
+# Cache for sent FCM notifications to prevent duplicates
+# Format: {notification_hash: timestamp}
+SENT_NOTIFICATIONS_CACHE = {}
+NOTIFICATION_CACHE_TTL = 3600  # 1 hour - don't send same notification within this time
+
+def _get_notification_hash(msg: dict) -> str:
+    """Generate a unique hash for a notification based on content."""
+    import hashlib
+    # Use location + type + first 50 chars of text as unique key
+    location = (msg.get('location', '') or msg.get('place', '') or '')[:100]
+    msg_type = (msg.get('type', '') or msg.get('threat_type', '') or '')[:50]
+    text = (msg.get('text', '') or '')[:50]
+    content = f"{location}|{msg_type}|{text}".lower()
+    return hashlib.md5(content.encode()).hexdigest()
+
+def _should_send_notification(msg: dict) -> bool:
+    """Check if notification should be sent (not a duplicate)."""
+    global SENT_NOTIFICATIONS_CACHE
+    
+    msg_hash = _get_notification_hash(msg)
+    now = time.time()
+    
+    # Clean old entries from cache
+    SENT_NOTIFICATIONS_CACHE = {
+        h: t for h, t in SENT_NOTIFICATIONS_CACHE.items() 
+        if now - t < NOTIFICATION_CACHE_TTL
+    }
+    
+    if msg_hash in SENT_NOTIFICATIONS_CACHE:
+        log.info(f"Skipping duplicate notification (hash: {msg_hash[:8]}...)")
+        return False
+    
+    # Mark as sent
+    SENT_NOTIFICATIONS_CACHE[msg_hash] = now
+    return True
+
 def load_messages():
     return MESSAGE_STORE.load()
 
@@ -863,9 +899,13 @@ def save_messages(data):
         
         saved = MESSAGE_STORE.save(data)
         
-        # Send FCM notifications for new messages
+        # Send FCM notifications for new messages (with deduplication)
         for msg in new_messages:
             if not msg.get('manual'):  # Skip manual markers
+                # Check if this notification was already sent recently
+                if not _should_send_notification(msg):
+                    log.info(f"Skipping duplicate FCM for: {msg.get('location', 'unknown')}")
+                    continue
                 try:
                     log.info(f"Sending FCM for message: {msg.get('location', 'unknown')} - {msg.get('type', 'unknown')}")
                     send_fcm_notification(msg)
