@@ -16110,6 +16110,11 @@ def ads_txt():
     from flask import send_from_directory
     return send_from_directory('static', 'ads.txt', mimetype='text/plain')
 
+@app.route('/app-ads.txt')
+def app_ads_txt():
+    """Serve app-ads.txt for mobile app ad networks verification (Google AdMob)"""
+    return send_from_directory('.', 'app-ads.txt', mimetype='text/plain')
+
 @app.route('/robots.txt')
 def robots_txt():
     """Serve robots.txt for search engines"""
