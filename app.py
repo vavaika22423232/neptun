@@ -16890,8 +16890,9 @@ def maybe_git_autocommit():
     # Stage & commit if there is a change
     run(f'git add {MESSAGES_FILE}')
     run(f'git add {CHAT_MESSAGES_FILE}')  # Also sync chat messages
+    run('git add devices.json')  # Sync registered devices for push notifications
     status = run('git status --porcelain').stdout
-    if MESSAGES_FILE not in status and CHAT_MESSAGES_FILE not in status:
+    if MESSAGES_FILE not in status and CHAT_MESSAGES_FILE not in status and 'devices.json' not in status:
         return  # no actual diff
     commit_msg = f'Update messages (auto)'  # no secrets
     run(f'git commit -m "{commit_msg}"')
