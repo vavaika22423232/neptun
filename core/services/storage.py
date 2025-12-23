@@ -105,17 +105,27 @@ class MessageStore:
     def get_messages(self) -> List[Dict]:
         """Get all messages"""
         data = self.store.load()
+        # Handle both old format (list) and new format (dict)
+        if isinstance(data, list):
+            return data
         return data.get('messages', [])
     
     def get_tracks(self) -> List[Dict]:
         """Get all tracks"""
         data = self.store.load()
+        # Handle both old format (list) and new format (dict)
+        if isinstance(data, list):
+            return []
         return data.get('tracks', [])
     
     def add_message(self, message: Dict):
         """Add new message"""
         data = self.store.load()
-        messages = data.get('messages', [])
+        # Handle both old format (list) and new format (dict)
+        if isinstance(data, list):
+            messages = data
+        else:
+            messages = data.get('messages', [])
         
         # Check for duplicate
         for existing in messages:
