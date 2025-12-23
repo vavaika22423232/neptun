@@ -52,18 +52,6 @@ except ImportError:
     def get_coordinates_nominatim(city_name, region=None):
         return None
 
-# Gemini AI integration for message enhancement
-try:
-    from gemini_helper import fix_message_typos, extract_city_from_text, classify_threat_type, get_ai_stats, GEMINI_ENABLED
-    print(f"INFO: Gemini AI helper loaded - {'ENABLED' if GEMINI_ENABLED else 'DISABLED (no API key)'}")
-except ImportError as e:
-    GEMINI_ENABLED = False
-    print(f"WARNING: Gemini AI helper not available: {e}")
-    def fix_message_typos(text): return text
-    def extract_city_from_text(text, region=None): return None
-    def classify_threat_type(text): return None
-    def get_ai_stats(): return {'enabled': False}
-
 # Groq AI integration for intelligent geocoding
 GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')
 GROQ_ENABLED = bool(GROQ_API_KEY)
@@ -2359,25 +2347,7 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
     if result:
         return result
     
-    # AI FALLBACK: Try to extract city using AI if standard lookup failed
-    if GEMINI_ENABLED and message_text:
-        try:
-            # Extract oblast from message if available
-            region_match = re.search(r'([а-яїіє]+щині|[а-яїіє]+щина|[а-яїіє]+ська обл)', message_text.lower())
-            region_hint = region_match.group(1) if region_match else None
-            
-            ai_result = extract_city_from_text(message_text, region_hint)
-            if ai_result:
-                city_name, confidence = ai_result
-                add_debug_log(f"AI: Extracted city '{city_name}' from message (confidence: {confidence:.2f})", "ai_city_extract")
-                
-                # Try to geocode the AI-extracted city via API (no fallback)
-                ai_coords = ensure_city_coords(city_name, region_hint.lower() if isinstance(region_hint, str) else None)
-                if ai_coords:
-                    add_debug_log(f"AI: Successfully geocoded AI-extracted city '{city_name}' via API -> {ai_coords[:2]}", "ai_geocode_success")
-                    return ai_coords
-        except Exception as e:
-            add_debug_log(f"AI: Error extracting city: {e}", "ai_error")
+
     
     # Third try: if we have oblast key, return oblast center as fallback
     if message_text and detected_oblast_key and detected_oblast_key in OBLAST_CENTERS:
@@ -5967,17 +5937,6 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     if _is_general_warning_without_location(text):
         return []
     
-    # AI ENHANCEMENT: Fix typos and improve text quality before parsing
-    if GEMINI_ENABLED:
-        try:
-            original_text = text
-            text = fix_message_typos(text)
-            if text != original_text:
-                add_debug_log(f"AI: Fixed typos in message (length: {len(original_text)} -> {len(text)})", "ai_typo_fix")
-        except Exception as e:
-            add_debug_log(f"AI: Error fixing typos: {e}", "ai_error")
-            # Continue with original text if AI fails
-    
     # PRIORITY: Handle directional movement patterns (у напрямку, в направлении)
     # These should show trajectory/direction, not markers at destination
     def _is_directional_movement_message(t: str) -> bool:
@@ -7034,28 +6993,6 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         if any(k in l for k in ['fpv','фпв','камікадз','kamikaze']):
             print(f"[CLASSIFY DEBUG] Classified as fpv")
             return 'fpv', 'fpv.png'
-        
-        # AI ENHANCEMENT: Try to classify using AI if no pattern matched
-        if GEMINI_ENABLED:
-            try:
-                ai_threat = classify_threat_type(th)
-                if ai_threat:
-                    threat_icon_map = {
-                        'shahed': 'shahed.png',
-                        'cruise_missile': 'raketa.png',
-                        'ballistic_missile': 'raketa.png',
-                        'aviation': 'avia.png',
-                        'artillery': 'obstril.png',
-                        'fpv_drone': 'fpv.png',
-                        'reconnaissance': 'rozved.png',
-                        'kab': 'rszv.png',
-                        'mlrs': 'rszv.png'
-                    }
-                    icon = threat_icon_map.get(ai_threat, 'shahed.png')
-                    add_debug_log(f"AI: Classified threat as '{ai_threat}' -> {icon}", "ai_classify")
-                    return ai_threat, icon
-            except Exception as e:
-                add_debug_log(f"AI: Error classifying threat: {e}", "ai_error")
         
         # General fallback for unclassified threats
         print(f"[CLASSIFY DEBUG] Using default fallback: shahed")
