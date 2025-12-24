@@ -838,16 +838,18 @@ MESSAGE_STORE = MessageStore(
 # Cache for sent FCM notifications to prevent duplicates
 # Format: {notification_hash: timestamp}
 SENT_NOTIFICATIONS_CACHE = {}
-NOTIFICATION_CACHE_TTL = 3600  # 1 hour - don't send same notification within this time
+NOTIFICATION_CACHE_TTL = 7200  # 2 hours - don't send same notification within this time
 
 def _get_notification_hash(msg: dict) -> str:
     """Generate a unique hash for a notification based on content."""
     import hashlib
-    # Use location + type + first 50 chars of text as unique key
-    location = (msg.get('location', '') or msg.get('place', '') or '')[:100]
-    msg_type = (msg.get('type', '') or msg.get('threat_type', '') or '')[:50]
-    text = (msg.get('text', '') or '')[:50]
-    content = f"{location}|{msg_type}|{text}".lower()
+    # Use place + coordinates + threat_type as unique key
+    place = (msg.get('place', '') or msg.get('location', '') or '')[:100]
+    msg_type = (msg.get('threat_type', '') or msg.get('type', '') or '')[:50]
+    # Round coordinates to reduce duplicates for nearby locations
+    lat = round(msg.get('lat', 0) or 0, 2)
+    lng = round(msg.get('lng', 0) or 0, 2)
+    content = f"{place}|{msg_type}|{lat}|{lng}".lower()
     return hashlib.md5(content.encode()).hexdigest()
 
 def _should_send_notification(msg: dict) -> bool:
@@ -875,7 +877,7 @@ def load_messages():
     return MESSAGE_STORE.load()
 
 
-def save_messages(data):
+def save_messages(data, send_notifications=True):
     try:
         # Check for new messages to send notifications
         existing = MESSAGE_STORE.load()
@@ -888,14 +890,30 @@ def save_messages(data):
         saved = MESSAGE_STORE.save(data)
         
         # Send FCM notifications for new messages (with deduplication)
-        for msg in new_messages:
-            if not msg.get('manual'):  # Skip manual markers
+        if send_notifications:
+            for msg in new_messages:
+                # Skip messages that should NOT trigger notifications:
+                # 1. Manual markers
+                # 2. Messages without coordinates (pending_geo or no lat/lng)
+                # 3. Messages without threat_type
+                if msg.get('manual'):
+                    log.debug(f"Skipping FCM for manual marker: {msg.get('id')}")
+                    continue
+                if msg.get('pending_geo') or not msg.get('lat') or not msg.get('lng'):
+                    log.debug(f"Skipping FCM for message without coordinates: {msg.get('id')}")
+                    continue
+                if not msg.get('threat_type') and not msg.get('type'):
+                    log.debug(f"Skipping FCM for message without threat type: {msg.get('id')}")
+                    continue
+                    
                 # Check if this notification was already sent recently
                 if not _should_send_notification(msg):
-                    log.info(f"Skipping duplicate FCM for: {msg.get('location', 'unknown')}")
+                    log.info(f"Skipping duplicate FCM for: {msg.get('place', msg.get('location', 'unknown'))}")
                     continue
                 try:
-                    log.info(f"Sending FCM for message: {msg.get('location', 'unknown')} - {msg.get('type', 'unknown')}")
+                    location = msg.get('place') or msg.get('location') or ''
+                    threat = msg.get('threat_type') or msg.get('type') or 'загроза'
+                    log.info(f"Sending FCM for message: {location} - {threat}")
                     send_fcm_notification(msg)
                 except Exception as e:
                     log.error(f"Failed to send FCM notification: {e}")
