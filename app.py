@@ -16010,7 +16010,14 @@ if 'health' not in app.view_functions:
                 if now - ts > ACTIVE_TTL:
                     del ACTIVE_VISITORS[vid]
             visitors = len(ACTIVE_VISITORS)
-        return jsonify({'status':'ok','messages':len(load_messages()), 'auth': AUTH_STATUS, 'visitors': visitors})
+        return jsonify({
+            'status':'ok',
+            'messages':len(load_messages()), 
+            'auth': AUTH_STATUS, 
+            'visitors': visitors,
+            'firebase_initialized': firebase_initialized,
+            'devices_count': len(device_store._load()) if device_store else 0
+        })
 
 @app.route('/ads.txt')
 def ads_txt():
