@@ -16944,80 +16944,91 @@ def send_fcm_notification(message_data: dict):
     try:
         from firebase_admin import messaging
         
-        # Extract location from multiple possible fields
-        location = message_data.get('location', '') or message_data.get('place', '') or message_data.get('text', '')[:100]
-        threat_type = message_data.get('type', '') or message_data.get('threat_type', '') or 'Загроза'
+        # Check if this is a real threat (not just informational message)
+        threat_type = message_data.get('threat_type', '') or message_data.get('type', '') or ''
+        text = message_data.get('text', '') or ''
         
-        # Also check 'text' field for region info if location is empty
-        text = message_data.get('text', '')
-        if not location and text:
-            location = text[:100]
+        # Skip informational messages (no real threat)
+        skip_keywords = ['відбій', 'скасовано', 'завершено', 'немає загрози', 'безпечно', 
+                         'інформація', 'увага!', 'попередження']
+        text_lower = text.lower()
+        if any(kw in text_lower for kw in skip_keywords):
+            log.info(f"Skipping FCM for informational message: {text[:50]}...")
+            return
+            
+        # Skip if no threat type detected
+        if not threat_type:
+            log.info(f"Skipping FCM for message without threat type")
+            return
+        
+        # Use 'place' field for location (it's the geocoded place name)
+        location = message_data.get('place', '') or message_data.get('location', '') or ''
+        if not location:
+            log.info(f"Skipping FCM for message without place")
+            return
         
         log.info(f"=== FCM NOTIFICATION TRIGGERED ===")
-        log.info(f"Location: {location}")
+        log.info(f"Place: {location}")
         log.info(f"Threat type: {threat_type}")
-        log.info(f"Full message data keys: {list(message_data.keys())}")
         
-        # Find matching region - handle both full names and abbreviations
+        # Find matching region - use ONLY place field, not full text
+        # to avoid false positives from mentions of other regions
         region = None
-        # Search in both location and text
-        search_text = f"{location} {text}".lower()
+        place_lower = location.lower()
         
-        # Region mapping with abbreviations
+        # Region mapping - keywords to match ONLY in place name
         regions_map = {
             'Київ': ['київ', 'києв'],
-            'Київська область': ['київська', 'києвська'],
-            'Дніпропетровська область': ['дніпропетровська', 'днепропетровская', 'днепропетровськ', 'дніпропетровськ'],
-            'Харківська область': ['харківська', 'харьковская', 'харків'],
-            'Одеська область': ['одеська', 'одесская', 'одес'],
-            'Львівська область': ['львівська', 'львовская', 'львів'],
-            'Донецька область': ['донецька', 'донецкая', 'донецьк', 'донець'],
-            'Запорізька область': ['запорізька', 'запорожская', 'запоріз'],
-            'Вінницька область': ['вінницька', 'винницкая', 'вінниц'],
-            'Житомирська область': ['житомирська', 'житомирская', 'житомир'],
-            'Черкаська область': ['черкаська', 'черкасская', 'черкас'],
-            'Чернігівська область': ['чернігівська', 'черниговская', 'чернігів'],
-            'Полтавська область': ['полтавська', 'полтавская', 'полтав'],
-            'Сумська область': ['сумська', 'сумская', 'сум'],
-            'Миколаївська область': ['миколаївська', 'николаевская', 'миколаїв'],
-            'Херсонська область': ['херсонська', 'херсонская', 'херсон'],
-            'Кіровоградська область': ['кіровоградська', 'кировоградская', 'кіровоград', 'кропивниц'],
-            'Хмельницька область': ['хмельницька', 'хмельницкая', 'хмельниц'],
-            'Рівненська область': ['рівненська', 'ровенская', 'рівн'],
-            'Волинська область': ['волинська', 'волынская', 'волин', 'луцьк'],
-            'Тернопільська область': ['тернопільська', 'тернопольская', 'тернопіль'],
-            'Івано-Франківська область': ['івано-франківська', 'ивано-франковская', 'івано-франків'],
-            'Закарпатська область': ['закарпатська', 'закарпатская', 'закарпат', 'ужгород'],
-            'Чернівецька область': ['чернівецька', 'черновицкая', 'чернівц'],
-            'Луганська область': ['луганська', 'луганская', 'луган'],
+            'Київська область': ['київська обл', 'київщин', 'бориспіль', 'бровар', 'ірпін', 'буча', 'вишгород', 'фастів', 'біла церква'],
+            'Дніпропетровська область': ['дніпропетровськ', 'дніпро', 'кривий ріг', 'кам\'янськ', 'нікополь', 'павлоград'],
+            'Харківська область': ['харків', 'харьков', 'ізюм', 'куп\'янськ', 'чугуїв', 'лозова'],
+            'Одеська область': ['одес', 'одещин', 'ізмаїл', 'білгород-дністровськ', 'чорноморськ'],
+            'Львівська область': ['львів', 'львівщин', 'дрогобич', 'стрий', 'червоноград'],
+            'Донецька область': ['донецьк', 'донеч', 'маріуполь', 'краматорськ', 'слов\'янськ', 'бахмут', 'покровськ'],
+            'Запорізька область': ['запоріж', 'мелітополь', 'бердянськ', 'енергодар'],
+            'Вінницька область': ['вінниц', 'жмеринка', 'козятин', 'хмільник'],
+            'Житомирська область': ['житомир', 'бердичів', 'коростень', 'новоград'],
+            'Черкаська область': ['черкас', 'умань', 'сміла', 'золотоноша'],
+            'Чернігівська область': ['чернігів', 'ніжин', 'прилуки'],
+            'Полтавська область': ['полтав', 'кременчук', 'миргород', 'лубни'],
+            'Сумська область': ['сум', 'конотоп', 'шостка', 'ромни', 'охтирка'],
+            'Миколаївська область': ['миколаїв', 'миколаєв', 'первомайськ', 'вознесенськ'],
+            'Херсонська область': ['херсон', 'нова каховка', 'каховка'],
+            'Кіровоградська область': ['кіровоград', 'кропивниц', 'олександрія', 'знам\'янка'],
+            'Хмельницька область': ['хмельниц', 'кам\'янець-подільськ', 'шепетівка'],
+            'Рівненська область': ['рівн', 'рівне', 'дубно', 'костопіль'],
+            'Волинська область': ['волин', 'луцьк', 'ковель', 'нововолинськ'],
+            'Тернопільська область': ['тернопіль', 'чортків', 'кременець'],
+            'Івано-Франківська область': ['івано-франків', 'калуш', 'коломия', 'надвірна'],
+            'Закарпатська область': ['закарпат', 'ужгород', 'мукачево', 'хуст', 'берегово'],
+            'Чернівецька область': ['чернівц', 'кам\'янка', 'новодністровськ'],
+            'Луганська область': ['луганськ', 'луганщин', 'сєвєродонецьк', 'лисичанськ'],
         }
         
         for region_name, keywords in regions_map.items():
             for keyword in keywords:
-                if keyword in search_text:
+                if keyword in place_lower:
                     region = region_name
-                    log.info(f"Matched region: {region} (keyword: {keyword})")
+                    log.info(f"Matched region: {region} (keyword: {keyword} in place: {location})")
                     break
             if region:
                 break
         
         if not region:
-            log.warning(f"Could not determine region for location: {location}, text: {text[:100]}")
+            log.info(f"Could not determine region for place: {location}")
             return
 
         # Get devices subscribed to this region
         devices = device_store.get_devices_for_region(region)
-        log.info(f"=== DEVICE LOOKUP ===")
-        log.info(f"Region: {region}")
-        log.info(f"Devices found: {len(devices)}")
-        log.info(f"Device details: {devices}")
+        log.info(f"Region: {region}, Devices found: {len(devices)}")
         
         if not devices:
-            log.warning(f"No devices subscribed to region: {region}")
+            log.info(f"No devices subscribed to region: {region}")
             return
 
         # Determine if critical
-        is_critical = 'ракет' in threat_type.lower() or 'балістич' in threat_type.lower()
+        threat_lower = threat_type.lower()
+        is_critical = any(kw in threat_lower for kw in ['ракет', 'балістич', 'кабах', 'кап', 'cruise', 'ballistic'])
         
         # Create notification
         title = f"{'🚨' if is_critical else '⚠️'} {threat_type}"
@@ -17037,7 +17048,7 @@ def send_fcm_notification(message_data: dict):
                         'location': location,
                         'threat_type': threat_type,
                         'region': region,
-                        'timestamp': message_data.get('timestamp', ''),
+                        'timestamp': message_data.get('date', ''),
                     },
                     android=messaging.AndroidConfig(
                         priority='high' if is_critical else 'normal',
@@ -17061,12 +17072,10 @@ def send_fcm_notification(message_data: dict):
                 success_count += 1
                 log.info(f"Notification sent to device {device['device_id'][:20]}...: {response}")
             except messaging.UnregisteredError:
-                # Token is invalid - remove device from store
-                log.warning(f"Device {device['device_id'][:20]}... has invalid token (UnregisteredError), removing...")
+                log.warning(f"Device {device['device_id'][:20]}... has invalid token, removing...")
                 device_store.remove_device(device['device_id'])
             except Exception as e:
                 error_msg = str(e)
-                # Also check for NotRegistered in error message
                 if 'NotRegistered' in error_msg or 'not registered' in error_msg.lower():
                     log.warning(f"Device {device['device_id'][:20]}... not registered, removing...")
                     device_store.remove_device(device['device_id'])
