@@ -138,11 +138,19 @@ class MessageStore:
                     continue
 
 
+def _get_persistent_path(filename: str) -> str:
+    """Get the path for persistent storage, using /data on Render if available."""
+    persistent_dir = os.getenv('PERSISTENT_DATA_DIR', '/data')
+    if persistent_dir and os.path.isdir(persistent_dir):
+        return os.path.join(persistent_dir, filename)
+    return filename
+
+
 class DeviceStore:
     """Storage for FCM device tokens and their region preferences."""
 
-    def __init__(self, path: str = "devices.json"):
-        self.path = path
+    def __init__(self, path: str = None):
+        self.path = path if path else _get_persistent_path("devices.json")
         self._lock = threading.RLock()
 
     def register_device(self, token: str, regions: List[str], device_id: str) -> None:

@@ -759,9 +759,18 @@ if API_ID and API_HASH:
         log.info('Initializing Telegram client with local session file (may not persist on Render).')
         client = TelegramClient('anon', API_ID, API_HASH)
 
-MESSAGES_FILE = 'messages.json'
-CHAT_MESSAGES_FILE = 'chat_messages.json'  # Anonymous chat messages
-HIDDEN_FILE = 'hidden_markers.json'
+# Use persistent disk on Render for data that should survive deploys
+PERSISTENT_DATA_DIR = os.getenv('PERSISTENT_DATA_DIR', '/data')
+# Ensure the directory exists
+if PERSISTENT_DATA_DIR and os.path.isdir(PERSISTENT_DATA_DIR):
+    MESSAGES_FILE = os.path.join(PERSISTENT_DATA_DIR, 'messages.json')
+    CHAT_MESSAGES_FILE = os.path.join(PERSISTENT_DATA_DIR, 'chat_messages.json')
+    HIDDEN_FILE = os.path.join(PERSISTENT_DATA_DIR, 'hidden_markers.json')
+else:
+    # Fallback to local files (for development)
+    MESSAGES_FILE = 'messages.json'
+    CHAT_MESSAGES_FILE = 'chat_messages.json'  # Anonymous chat messages
+    HIDDEN_FILE = 'hidden_markers.json'
 OPENCAGE_CACHE_FILE = 'opencage_cache.json'
 OPENCAGE_TTL = 60 * 60 * 24 * 30  # 30 days
 NEG_GEOCODE_FILE = 'negative_geocode_cache.json'
