@@ -142,7 +142,16 @@ def _get_persistent_path(filename: str) -> str:
     """Get the path for persistent storage, using /data on Render if available."""
     persistent_dir = os.getenv('PERSISTENT_DATA_DIR', '/data')
     if persistent_dir and os.path.isdir(persistent_dir):
-        return os.path.join(persistent_dir, filename)
+        persistent_path = os.path.join(persistent_dir, filename)
+        # Migrate from old location if exists
+        if os.path.exists(filename) and not os.path.exists(persistent_path):
+            try:
+                import shutil
+                shutil.copy2(filename, persistent_path)
+                log.info(f"Migrated {filename} to {persistent_path}")
+            except Exception as e:
+                log.warning(f"Failed to migrate {filename}: {e}")
+        return persistent_path
     return filename
 
 
