@@ -900,11 +900,17 @@ def save_messages(data, send_notifications=True):
         
         # Send FCM notifications for new messages (with deduplication)
         if send_notifications:
+            # Get current Kyiv time for freshness check
+            kyiv_tz = pytz.timezone('Europe/Kyiv')
+            now_kyiv = datetime.now(kyiv_tz)
+            max_age_minutes = 5  # Only send notifications for messages less than 5 minutes old
+            
             for msg in new_messages:
                 # Skip messages that should NOT trigger notifications:
                 # 1. Manual markers
                 # 2. Messages without coordinates (pending_geo or no lat/lng)
                 # 3. Messages without threat_type
+                # 4. Old messages (more than 5 minutes old)
                 if msg.get('manual'):
                     log.debug(f"Skipping FCM for manual marker: {msg.get('id')}")
                     continue
@@ -914,6 +920,27 @@ def save_messages(data, send_notifications=True):
                 if not msg.get('threat_type') and not msg.get('type'):
                     log.debug(f"Skipping FCM for message without threat type: {msg.get('id')}")
                     continue
+                
+                # Check message age - skip old messages
+                msg_date = msg.get('date', '')
+                if msg_date:
+                    try:
+                        # Parse message date (format: "24.12.2025 14:30" or similar)
+                        if ' ' in msg_date:
+                            msg_time = datetime.strptime(msg_date, '%d.%m.%Y %H:%M')
+                        else:
+                            msg_time = datetime.strptime(msg_date, '%d.%m.%Y')
+                        msg_time = kyiv_tz.localize(msg_time)
+                        age_minutes = (now_kyiv - msg_time).total_seconds() / 60
+                        
+                        if age_minutes > max_age_minutes:
+                            log.info(f"Skipping FCM for old message ({age_minutes:.1f} min old): {msg.get('place', 'unknown')}")
+                            continue
+                        log.info(f"Message is fresh ({age_minutes:.1f} min old), sending notification")
+                    except Exception as e:
+                        log.warning(f"Could not parse message date '{msg_date}': {e}")
+                        # If we can't parse the date, skip notification to be safe
+                        continue
                     
                 # Check if this notification was already sent recently
                 if not _should_send_notification(msg):
@@ -13773,7 +13800,7 @@ async def fetch_loop():
         else:
             # If only merges happened (no brand-new tracks), still persist periodically
             save_messages(all_data)
-        await asyncio.sleep(60)
+        await asyncio.sleep(30)  # Check every 30 seconds for faster notifications
 
 def start_fetch_thread():
     global FETCH_THREAD_STARTED
@@ -17058,19 +17085,26 @@ def send_fcm_notification(message_data: dict):
                         'threat_type': threat_type,
                         'region': region,
                         'timestamp': message_data.get('date', ''),
+                        'click_action': 'FLUTTER_NOTIFICATION_CLICK',
                     },
                     android=messaging.AndroidConfig(
-                        priority='high' if is_critical else 'normal',
+                        priority='high',  # Always high priority for immediate delivery
+                        ttl=timedelta(seconds=300),  # 5 min TTL - old alerts not useful
                         notification=messaging.AndroidNotification(
                             channel_id='critical_alerts' if is_critical else 'normal_alerts',
                             priority='max' if is_critical else 'high',
                         ),
                     ),
                     apns=messaging.APNSConfig(
+                        headers={
+                            'apns-priority': '10',  # Immediate delivery on iOS
+                            'apns-push-type': 'alert',
+                        },
                         payload=messaging.APNSPayload(
                             aps=messaging.Aps(
                                 alert=messaging.ApsAlert(title=title, body=body),
                                 sound='default',
+                                content_available=True,
                             ),
                         ),
                     ),
