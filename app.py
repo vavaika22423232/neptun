@@ -909,42 +909,58 @@ def save_messages(data, send_notifications=True):
                 # Skip messages that should NOT trigger notifications:
                 # 1. Manual markers
                 # 2. Messages without coordinates (pending_geo or no lat/lng)
-                # 3. Messages without threat_type
+                # 3. Messages without threat_type/type
                 # 4. Old messages (more than 5 minutes old)
                 if msg.get('manual'):
                     log.debug(f"Skipping FCM for manual marker: {msg.get('id')}")
                     continue
-                if msg.get('pending_geo') or not msg.get('lat') or not msg.get('lng'):
+                    
+                # Check for coordinates - field names may vary
+                lat = msg.get('lat') or msg.get('latitude')
+                lng = msg.get('lng') or msg.get('longitude')
+                if msg.get('pending_geo') or not lat or not lng:
                     log.debug(f"Skipping FCM for message without coordinates: {msg.get('id')}")
                     continue
+                    
                 if not msg.get('threat_type') and not msg.get('type'):
                     log.debug(f"Skipping FCM for message without threat type: {msg.get('id')}")
                     continue
                 
                 # Check message age - skip old messages
-                msg_date = msg.get('date', '')
+                # Try multiple date formats: 'timestamp', 'date'
+                msg_date = msg.get('timestamp') or msg.get('date', '')
                 if msg_date:
                     try:
-                        # Parse message date (format: "24.12.2025 14:30" or similar)
-                        if ' ' in msg_date:
-                            msg_time = datetime.strptime(msg_date, '%d.%m.%Y %H:%M')
-                        else:
-                            msg_time = datetime.strptime(msg_date, '%d.%m.%Y')
-                        msg_time = kyiv_tz.localize(msg_time)
-                        age_minutes = (now_kyiv - msg_time).total_seconds() / 60
+                        # Try different date formats
+                        msg_time = None
+                        for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%d.%m.%Y %H:%M:%S', '%d.%m.%Y %H:%M', '%d.%m.%Y']:
+                            try:
+                                msg_time = datetime.strptime(msg_date, fmt)
+                                break
+                            except ValueError:
+                                continue
                         
-                        if age_minutes > max_age_minutes:
-                            log.info(f"Skipping FCM for old message ({age_minutes:.1f} min old): {msg.get('place', 'unknown')}")
+                        if msg_time:
+                            msg_time = kyiv_tz.localize(msg_time)
+                            age_minutes = (now_kyiv - msg_time).total_seconds() / 60
+                            
+                            if age_minutes > max_age_minutes:
+                                log.info(f"Skipping FCM for old message ({age_minutes:.1f} min old): {msg.get('location', 'unknown')}")
+                                continue
+                            log.info(f"Message is fresh ({age_minutes:.1f} min old), sending notification")
+                        else:
+                            log.warning(f"Could not parse message date '{msg_date}' with any format")
                             continue
-                        log.info(f"Message is fresh ({age_minutes:.1f} min old), sending notification")
                     except Exception as e:
-                        log.warning(f"Could not parse message date '{msg_date}': {e}")
-                        # If we can't parse the date, skip notification to be safe
+                        log.warning(f"Error parsing message date '{msg_date}': {e}")
                         continue
+                else:
+                    log.debug(f"Message has no timestamp, skipping FCM")
+                    continue
                     
                 # Check if this notification was already sent recently
                 if not _should_send_notification(msg):
-                    log.info(f"Skipping duplicate FCM for: {msg.get('place', msg.get('location', 'unknown'))}")
+                    log.info(f"Skipping duplicate FCM for: {msg.get('location', 'unknown')}")
                     continue
                 try:
                     location = msg.get('place') or msg.get('location') or ''
