@@ -317,7 +317,7 @@ _load_local_env()
 
 API_ID = int(os.getenv('TELEGRAM_API_ID', '0') or '0')
 API_HASH = os.getenv('TELEGRAM_API_HASH', '')
-_DEFAULT_CHANNELS = 'UkraineAlarmSignal,kpszsu,war_monitor,napramok,raketa_trevoga'
+_DEFAULT_CHANNELS = 'mapstransler'
 # TELEGRAM_CHANNELS env var (comma-separated) overrides; fallback includes numeric channel ID.
 CHANNELS = [c.strip() for c in os.getenv('TELEGRAM_CHANNELS', _DEFAULT_CHANNELS).split(',') if c.strip()]
 

@@ -15,7 +15,7 @@ services:
       - key: TELEGRAM_API_HASH
         sync: false
       - key: TELEGRAM_CHANNELS
-        value: UkraineAlarmSignal,war_monitor
+        value: mapstransler
       - key: GOOGLE_MAPS_KEY
         sync: false
       - key: VISITS_DB
