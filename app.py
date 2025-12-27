@@ -23,6 +23,14 @@ except Exception as e:
     UKRAINE_CITIES = []
     print(f"WARNING: Ukraine addresses database not available: {e}")
 
+# Import comprehensive Ukrainian settlements database (26000+ entries)
+try:
+    from ukraine_all_settlements import UKRAINE_ALL_SETTLEMENTS
+    print(f"INFO: Ukraine ALL settlements loaded: {len(UKRAINE_ALL_SETTLEMENTS)} entries")
+except Exception as e:
+    UKRAINE_ALL_SETTLEMENTS = {}
+    print(f"WARNING: Ukraine ALL settlements not available: {e}")
+
 # SpaCy integration for enhanced Ukrainian NLP
 try:
     import spacy
@@ -1253,6 +1261,7 @@ import sqlite3
 
 _opencage_cache = None
 _neg_geocode_cache = None
+_mapstransler_geocode_cache = {}  # In-memory cache for mapstransler geocoding
 
 def _load_opencage_cache():
     global _opencage_cache
@@ -1782,10 +1791,19 @@ def ensure_city_coords(name: str, region_hint: str = None):
         return None
     n = name.strip().lower()
     
+    # PRIORITY 0: Check UKRAINE_ALL_SETTLEMENTS first (26000+ entries, BEST coverage)
+    if n in UKRAINE_ALL_SETTLEMENTS:
+        coords = UKRAINE_ALL_SETTLEMENTS[n]
+        return (coords[0], coords[1], False)
+    
     # Apply UA_CITY_NORMALIZE before any lookups
     if n in UA_CITY_NORMALIZE:
         n = UA_CITY_NORMALIZE[n]
         print(f"DEBUG: Normalized '{name.lower()}' -> '{n}'")
+        # Check again after normalization
+        if n in UKRAINE_ALL_SETTLEMENTS:
+            coords = UKRAINE_ALL_SETTLEMENTS[n]
+            return (coords[0], coords[1], False)
     
     # Normalize Ukrainian city name declensions to nominative case
     # This fixes issues like "Тернівку" (accusative) -> "Тернівка" (nominative)
@@ -1942,6 +1960,20 @@ def ensure_city_coords(name: str, region_hint: str = None):
 def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
     """Enhanced version that tries to extract oblast from message if city not found.
     Returns (lat,lng,approx_bool) - approx_bool True means used oblast fallback."""
+    
+    # Normalize name for lookup
+    name_lower = name.strip().lower()
+    
+    # PRIORITY 0: Check UKRAINE_ALL_SETTLEMENTS first (26000+ entries, BEST coverage)
+    if name_lower in UKRAINE_ALL_SETTLEMENTS:
+        coords = UKRAINE_ALL_SETTLEMENTS[name_lower]
+        return (coords[0], coords[1], False)
+    
+    # Also check CITY_COORDS for legacy entries
+    if name_lower in CITY_COORDS:
+        coords = CITY_COORDS[name_lower]
+        if len(coords) >= 2:
+            return (coords[0], coords[1], False)
     
     # CRITICAL: If message_text contains explicit oblast name, use it directly
     # This handles cases like "Київська область: БпЛА курсом на Димер"
@@ -4000,6 +4032,13 @@ MYKOLAIV_CITY_COORDS = {
     'березівка(миколаївська)': (47.5167, 31.4500), 'березівку(миколаївська)': (47.5167, 31.4500), 'березівці(миколаївська)': (47.5167, 31.4500),
     'дорошівка': (47.5000, 32.0500), 'дорошівки': (47.5000, 32.0500), 'дорошівку': (47.5000, 32.0500),
     'шевченкове(миколаївська)': (47.45, 31.35), 'шевченкову(миколаївська)': (47.45, 31.35),  # Шевченкове, Вознесенський район
+    # Часто вживані в повідомленнях mapstransler_bot
+    'широколанівка': (47.25, 31.65), 'широколанівки': (47.25, 31.65), 'широколанівку': (47.25, 31.65), 'широколанівці': (47.25, 31.65),
+    'дільниче': (47.65, 32.25), 'дільничому': (47.65, 32.25), 'дільничого': (47.65, 32.25),
+    'веселинове': (47.3667, 31.2333), 'веселинового': (47.3667, 31.2333), 'веселинову': (47.3667, 31.2333),
+    'білозірка': (47.7833, 32.3500), 'білозірки': (47.7833, 32.3500), 'білозірку': (47.7833, 32.3500), 'білозірці': (47.7833, 32.3500),
+    'григорівка(миколаївська)': (47.4167, 32.2833), 'григорівку(миколаївська)': (47.4167, 32.2833),
+    'рябоконове': (47.3833, 32.2500), 'рябоконового': (47.3833, 32.2500), 'рябоконову': (47.3833, 32.2500),
 }
 
 for _my_name, _my_coords in MYKOLAIV_CITY_COORDS.items():
@@ -6626,6 +6665,25 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             if city_norm in UA_CITY_NORMALIZE:
                 city_norm = UA_CITY_NORMALIZE[city_norm]
             
+            # PRIORITY 0: Check UKRAINE_ALL_SETTLEMENTS first (26000+ entries, fastest)
+            if city_norm in UKRAINE_ALL_SETTLEMENTS:
+                coords = UKRAINE_ALL_SETTLEMENTS[city_norm]
+                add_debug_log(f"UKRAINE_ALL_SETTLEMENTS HIT: '{city_norm}' -> {coords}", "multi_regional")
+                return coords
+            
+            # Also try original city name (without normalization)
+            city_orig = city_name.strip().lower()
+            if city_orig in UKRAINE_ALL_SETTLEMENTS:
+                coords = UKRAINE_ALL_SETTLEMENTS[city_orig]
+                add_debug_log(f"UKRAINE_ALL_SETTLEMENTS HIT (orig): '{city_orig}' -> {coords}", "multi_regional")
+                return coords
+            
+            # PRIORITY 1: Check CITY_COORDS (legacy, smaller set)
+            if city_norm in CITY_COORDS:
+                coords = CITY_COORDS[city_norm]
+                add_debug_log(f"CITY_COORDS HIT: '{city_norm}' -> {coords}", "multi_regional")
+                return coords
+            
             # CRITICAL FIX: If region_hint is provided, build a context string with it
             # This ensures the city is geocoded in the correct oblast
             if region_hint:
@@ -6634,10 +6692,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             else:
                 context_text = text
             
-            # Use API geocoding with proper regional context
+            # FALLBACK: Use API geocoding with proper regional context
             coords = ensure_city_coords_with_message_context(city_norm, context_text)
             
-            add_debug_log(f"API-only lookup: '{city_name}' -> '{city_norm}' (region={region_hint}) -> {coords}", "multi_regional")
+            add_debug_log(f"API lookup: '{city_name}' -> '{city_norm}' (region={region_hint}) -> {coords}", "multi_regional")
             return coords
         
         # Map regional header patterns to oblast names for API
@@ -8030,8 +8088,34 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             
             coords = None
             
+            # Check in-memory cache first
+            cache_key = f"{city_norm}|{target_state}"
+            if cache_key in _mapstransler_geocode_cache:
+                cached = _mapstransler_geocode_cache[cache_key]
+                if cached:
+                    coords = cached
+                    add_debug_log(f"Cache HIT: {city_norm} -> ({coords[0]}, {coords[1]})", "mapstransler")
+                else:
+                    add_debug_log(f"Cache HIT (negative): {city_norm} not found previously", "mapstransler")
+            
+            # PRIORITY 0: Check UKRAINE_ALL_SETTLEMENTS first (26000+ entries, BEST coverage)
+            if not coords and cache_key not in _mapstransler_geocode_cache:
+                city_norm_lower = city_norm.lower()
+                if city_norm_lower in UKRAINE_ALL_SETTLEMENTS:
+                    coords = UKRAINE_ALL_SETTLEMENTS[city_norm_lower]
+                    _mapstransler_geocode_cache[cache_key] = coords
+                    add_debug_log(f"UKRAINE_ALL_SETTLEMENTS HIT: {city_norm} -> ({coords[0]}, {coords[1]})", "mapstransler")
+            
+            # PRIORITY 0.5: Check CITY_COORDS (legacy, smaller set but has special entries)
+            if not coords and cache_key not in _mapstransler_geocode_cache:
+                city_norm_lower = city_norm.lower()
+                if city_norm_lower in CITY_COORDS:
+                    coords = CITY_COORDS[city_norm_lower]
+                    _mapstransler_geocode_cache[cache_key] = coords
+                    add_debug_log(f"CITY_COORDS HIT: {city_norm} -> ({coords[0]}, {coords[1]})", "mapstransler")
+            
             # PRIORITY 1: Nominatim API (best for Ukrainian cities)
-            if target_state:
+            if not coords and target_state and cache_key not in _mapstransler_geocode_cache:
                 try:
                     import requests
                     
@@ -8266,6 +8350,14 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 except Exception as e:
                     add_debug_log(f"Overpass API error: {e}", "mapstransler")
             
+            # Save to cache (both positive and negative results)
+            if coords:
+                _mapstransler_geocode_cache[cache_key] = coords
+                add_debug_log(f"Cache SAVED: {city_norm} -> ({coords[0]}, {coords[1]})", "mapstransler")
+            elif cache_key not in _mapstransler_geocode_cache:
+                _mapstransler_geocode_cache[cache_key] = None  # Negative cache
+                add_debug_log(f"Cache SAVED (negative): {city_norm} not found", "mapstransler")
+            
             # NO FALLBACK TO OBLAST CENTER - if not found, skip this city
             if not coords:
                 add_debug_log(f"City NOT FOUND after all APIs, skipping: {city_raw} ({oblast_raw})", "mapstransler")
@@ -8426,6 +8518,17 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             par = cleaned.find('(')
             if par > 1:
                 city_candidate = cleaned[:par].strip()
+                
+                # CRITICAL FIX: Remove BPLA/count prefixes that should NOT be part of city name
+                # Examples: "БПЛА Васильків" -> "Васильків", "2х БПЛА Ніжин" -> "Ніжин"
+                city_candidate = _re_early.sub(r'^[^а-яіїєґА-ЯІЇЄҐ]*(\d+[xхX×]?\s*)?БПЛА\s+', '', city_candidate, flags=_re_early.IGNORECASE)
+                city_candidate = _re_early.sub(r'^[^а-яіїєґА-ЯІЇЄҐ]*(\d+[xхX×]?\s*)?бпла\s+', '', city_candidate, flags=_re_early.IGNORECASE)
+                # Also remove "біля" prefix (e.g., "біля Нового Буга" -> "Нового Буга")
+                city_candidate = _re_early.sub(r'^біля\s+', '', city_candidate, flags=_re_early.IGNORECASE)
+                # Remove "/груп транзитом" and similar routing noise
+                city_candidate = _re_early.sub(r'^/\s*груп\s+транзитом\s+', '', city_candidate, flags=_re_early.IGNORECASE)
+                city_candidate = city_candidate.strip()
+                
                 if 2 <= len(city_candidate) <= 40:
                     base = city_candidate.lower().replace('\u02bc',"'").replace('ʼ',"'").replace('’',"'").replace('`',"'")
                     base = _re_early.sub(r'\s+',' ', base)
