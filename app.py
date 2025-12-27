@@ -4094,8 +4094,19 @@ for _od_name, _od_coords in ODESA_CITY_COORDS.items():
 KYIV_OBLAST_CITY_COORDS = {
     'біла церква': (49.7950, 30.1310),  # present
     'бровари': (50.5110, 30.7909),  # present
+    'броварах': (50.5110, 30.7909),
+    'броварів': (50.5110, 30.7909),
+    'броварам': (50.5110, 30.7909),
     'бориспіль': (50.3527, 30.9550),  # present
     'гнідин': (50.3722, 30.8639),  # село біля Борисполя
+    'бішів': (50.2666, 29.8869),  # село Бишів, Фастівський район
+    'бишів': (50.2666, 29.8869),  # альтернативне написання
+    'бишева': (50.2666, 29.8869),
+    'бишеві': (50.2666, 29.8869),
+    'бишеву': (50.2666, 29.8869),
+    'димер': (50.7500, 30.3167),  # смт Димер
+    'димері': (50.7500, 30.3167),
+    'димеру': (50.7500, 30.3167),
     'ірпінь': (50.5218, 30.2506),
     'ірпеня': (50.5218, 30.2506),
     'буча': (50.5436, 30.2120),
@@ -7928,35 +7939,336 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 uav_count = 1
         
         if city_raw and oblast_raw:
-            # Normalize city name (accusative -> nominative)
+            # Normalize city name (accusative -> nominative) - COMPREHENSIVE
             city_norm = city_raw.lower().replace('\u02bc',"'").replace('ʼ',"'").replace("'","'").replace('`',"'")
-            city_norm = re.sub(r'\s+',' ', city_norm)
+            city_norm = re.sub(r'\s+',' ', city_norm).strip()
             
-            # Handle accusative case endings
-            if city_norm.endswith('у') and len(city_norm) > 3:
-                city_norm = city_norm[:-1] + 'а'
-            elif city_norm.endswith('ю') and len(city_norm) > 3:
-                city_norm = city_norm[:-1] + 'я'
-            elif city_norm.endswith('ку') and len(city_norm) > 4:
-                city_norm = city_norm[:-2] + 'ка'
+            # Store original for API search
+            city_original = city_norm
+            
+            # COMPOUND NAMES: Handle "Adjective + Noun" patterns (e.g., "Малу Дівицю" -> "Мала Дівиця")
+            # Split into words and normalize each
+            words = city_norm.split()
+            if len(words) == 2:
+                adj, noun = words[0], words[1]
+                
+                # Normalize adjective (feminine accusative -> nominative)
+                # -у → -а (Малу → Мала, Велику → Велика, Нову → Нова)
+                if adj.endswith('у') and len(adj) > 3:
+                    adj = adj[:-1] + 'а'
+                # -ю → -я (Синю → Синя)
+                elif adj.endswith('ю') and len(adj) > 3:
+                    adj = adj[:-1] + 'я'
+                
+                # Normalize noun
+                # -ку → -ка (Дівицку → Дівицка? No, Дівицю → Дівиця)
+                if noun.endswith('ку') and len(noun) > 4:
+                    noun = noun[:-2] + 'ка'
+                elif noun.endswith('цю') and len(noun) > 3:
+                    noun = noun[:-1] + 'я'  # Дівицю → Дівиця
+                elif noun.endswith('ну') and len(noun) > 4:
+                    noun = noun[:-2] + 'на'
+                elif noun.endswith('у') and len(noun) > 3:
+                    noun = noun[:-1] + 'а'
+                elif noun.endswith('ю') and len(noun) > 3:
+                    noun = noun[:-1] + 'я'
+                
+                city_norm = f"{adj} {noun}"
+            else:
+                # Single word - apply standard normalization
+                # -ку → -ка (Юріївку → Юріївка, Сахновщину → Сахновщина)
+                if city_norm.endswith('ку') and len(city_norm) > 4:
+                    city_norm = city_norm[:-2] + 'ка'
+                # -ну → -на (Сахновщину → Сахновщина)  
+                elif city_norm.endswith('ну') and len(city_norm) > 4:
+                    city_norm = city_norm[:-2] + 'на'
+                # -у → -а (Одесу → Одеса)
+                elif city_norm.endswith('у') and len(city_norm) > 3:
+                    city_norm = city_norm[:-1] + 'а'
+                # -ю → -я (Балаклію → Балаклія)
+                elif city_norm.endswith('ю') and len(city_norm) > 3:
+                    city_norm = city_norm[:-1] + 'я'
             
             city_norm = UA_CITY_NORMALIZE.get(city_norm, city_norm)
             
-            # Build context with oblast for geocoding
-            oblast_context = f"{oblast_raw}: БПЛА курсом на {city_norm}"
+            # Extract oblast name for Photon API filtering
+            oblast_lower = oblast_raw.lower()
+            oblast_to_state = {
+                'дніпропетровська': 'Дніпропетровська область',
+                'харківська': 'Харківська область', 
+                'київська': 'Київська область',
+                'чернігівська': 'Чернігівська область',
+                'сумська': 'Сумська область',
+                'полтавська': 'Полтавська область',
+                'миколаївська': 'Миколаївська область',
+                'одеська': 'Одеська область',
+                'херсонська': 'Херсонська область',
+                'запорізька': 'Запорізька область',
+                'донецька': 'Донецька область',
+                'луганська': 'Луганська область',
+                'черкаська': 'Черкаська область',
+                'вінницька': 'Вінницька область',
+                'житомирська': 'Житомирська область',
+                'рівненська': 'Рівненська область',
+                'волинська': 'Волинська область',
+                'львівська': 'Львівська область',
+                'тернопільська': 'Тернопільська область',
+                'хмельницька': 'Хмельницька область',
+                'івано-франківська': 'Івано-Франківська область',
+                'закарпатська': 'Закарпатська область',
+                'чернівецька': 'Чернівецька область',
+                'кіровоградська': 'Кіровоградська область',
+            }
             
-            add_debug_log(f"Mapstransler pattern: city='{city_raw}' -> norm='{city_norm}', oblast='{oblast_raw}', count={uav_count}", "mapstransler")
+            target_state = None
+            for key, state in oblast_to_state.items():
+                if key in oblast_lower:
+                    target_state = state
+                    break
             
-            # Try API geocoding with oblast context
-            coords = ensure_city_coords_with_message_context(city_norm, oblast_context)
+            add_debug_log(f"Mapstransler pattern: city='{city_raw}' -> norm='{city_norm}', oblast='{oblast_raw}' -> state='{target_state}', count={uav_count}", "mapstransler")
             
+            coords = None
+            
+            # PRIORITY 1: Nominatim API (best for Ukrainian cities)
+            if target_state:
+                try:
+                    import requests
+                    
+                    # Build search query with oblast context
+                    oblast_name = target_state.replace('область', '').strip()
+                    # Use title case for better Nominatim matching
+                    city_norm_title = city_norm.title()
+                    search_queries = [
+                        f"{city_norm_title}, {oblast_name} область, Україна",  # normalized first
+                        f"{city_raw}, {oblast_name} область, Україна",
+                        f"{city_norm_title}, Ukraine",
+                        f"{city_raw}, Ukraine",
+                    ]
+                    
+                    nominatim_url = 'https://nominatim.openstreetmap.org/search'
+                    headers = {'User-Agent': 'NeptunAlarm/1.0'}
+                    
+                    for search_q in search_queries:
+                        params = {
+                            'q': search_q,
+                            'format': 'json',
+                            'limit': 5,
+                            'addressdetails': 1,
+                            'countrycodes': 'ua'
+                        }
+                        
+                        response = requests.get(nominatim_url, params=params, headers=headers, timeout=4)
+                        if response.ok:
+                            data = response.json()
+                            
+                            for item in data:
+                                item_type = item.get('type', '')
+                                item_class = item.get('class', '')
+                                display_name = item.get('display_name', '')
+                                
+                                # Filter: only settlements (village, town, city, hamlet, etc)
+                                valid_types = ['village', 'town', 'city', 'hamlet', 'suburb', 'neighbourhood', 'residential', 'administrative']
+                                if item_type not in valid_types and item_class != 'place':
+                                    continue
+                                
+                                # Check oblast match in display_name
+                                oblast_keywords = [oblast_name.lower(), target_state.lower()]
+                                display_lower = display_name.lower()
+                                
+                                oblast_match = any(kw in display_lower for kw in oblast_keywords)
+                                if not oblast_match:
+                                    continue
+                                
+                                lat = float(item.get('lat', 0))
+                                lon = float(item.get('lon', 0))
+                                
+                                if lat and lon:
+                                    coords = (lat, lon)
+                                    add_debug_log(f"Nominatim FOUND: '{search_q}' -> '{display_name[:60]}' ({lat}, {lon})", "mapstransler")
+                                    break
+                            
+                            if coords:
+                                break  # Found, stop searching
+                                
+                except Exception as e:
+                    add_debug_log(f"Nominatim API error: {e}", "mapstransler")
+            
+            # PRIORITY 2: Photon API as backup
+            if not coords and target_state:
+                try:
+                    import requests
+                    
+                    name_variants = [city_norm, city_raw.lower()]
+                    name_variants = list(dict.fromkeys(name_variants))
+                    
+                    for search_name in name_variants:
+                        photon_url = 'https://photon.komoot.io/api/'
+                        params = {'q': search_name, 'limit': 15}
+                        
+                        response = requests.get(photon_url, params=params, timeout=3)
+                        if response.ok:
+                            data = response.json()
+                            
+                            for feature in data.get('features', []):
+                                props = feature.get('properties', {})
+                                state = props.get('state', '')
+                                country = props.get('country', '')
+                                osm_key = props.get('osm_key', '')
+                                osm_value = props.get('osm_value', '')
+                                name_found = props.get('name', '')
+                                
+                                if osm_key not in ['place', 'boundary']:
+                                    continue
+                                valid_types = ['city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood', 'administrative']
+                                if osm_key == 'place' and osm_value not in valid_types:
+                                    continue
+                                
+                                if (country == 'Україна' or country == 'Ukraine') and target_state in state:
+                                    coords_arr = feature.get('geometry', {}).get('coordinates', [])
+                                    if coords_arr and len(coords_arr) >= 2:
+                                        lat, lng = coords_arr[1], coords_arr[0]
+                                        coords = (lat, lng)
+                                        add_debug_log(f"Photon FOUND: '{search_name}' -> '{name_found}' ({lat}, {lng})", "mapstransler")
+                                        break
+                            
+                            if coords:
+                                break
+                                
+                except Exception as e:
+                    add_debug_log(f"Photon API error: {e}", "mapstransler")
+            
+            # PRIORITY 3: GeoNames API (free, good coverage of settlements)
+            if not coords and target_state:
+                try:
+                    import requests
+                    
+                    # GeoNames search - uses username 'demo' or can set GEONAMES_USER env var
+                    geonames_user = os.environ.get('GEONAMES_USER', 'demo')
+                    geonames_url = 'http://api.geonames.org/searchJSON'
+                    
+                    city_norm_title = city_norm.title()
+                    for search_name in [city_norm_title, city_raw]:
+                        params = {
+                            'q': search_name,
+                            'country': 'UA',
+                            'featureClass': 'P',  # populated places only
+                            'maxRows': 10,
+                            'username': geonames_user
+                        }
+                        
+                        response = requests.get(geonames_url, params=params, timeout=4)
+                        if response.ok:
+                            data = response.json()
+                            oblast_name = target_state.replace('область', '').strip().lower()
+                            
+                            for place in data.get('geonames', []):
+                                admin_name = place.get('adminName1', '').lower()
+                                
+                                # Check oblast match
+                                if oblast_name not in admin_name and target_state.lower() not in admin_name:
+                                    continue
+                                
+                                lat = float(place.get('lat', 0))
+                                lng = float(place.get('lng', 0))
+                                place_name = place.get('name', '')
+                                
+                                if lat and lng:
+                                    coords = (lat, lng)
+                                    add_debug_log(f"GeoNames FOUND: '{search_name}' -> '{place_name}' in {admin_name} ({lat}, {lng})", "mapstransler")
+                                    break
+                            
+                            if coords:
+                                break
+                                
+                except Exception as e:
+                    add_debug_log(f"GeoNames API error: {e}", "mapstransler")
+            
+            # PRIORITY 4: Nominatim with looser search (just city name + Ukraine)
             if not coords:
-                # Fallback to CITY_COORDS
-                coords = CITY_COORDS.get(city_norm)
+                try:
+                    import requests
+                    
+                    nominatim_url = 'https://nominatim.openstreetmap.org/search'
+                    headers = {'User-Agent': 'NeptunAlarm/1.0'}
+                    
+                    city_norm_title = city_norm.title()
+                    # Looser search without strict oblast matching
+                    params = {
+                        'q': f"{city_norm_title}",
+                        'format': 'json',
+                        'limit': 20,
+                        'addressdetails': 1,
+                        'countrycodes': 'ua'
+                    }
+                    
+                    response = requests.get(nominatim_url, params=params, headers=headers, timeout=4)
+                    if response.ok:
+                        data = response.json()
+                        oblast_name = target_state.replace('область', '').strip().lower() if target_state else ''
+                        
+                        for item in data:
+                            item_type = item.get('type', '')
+                            display_name = item.get('display_name', '').lower()
+                            
+                            valid_types = ['village', 'town', 'city', 'hamlet', 'suburb', 'neighbourhood', 'residential', 'administrative']
+                            if item_type not in valid_types:
+                                continue
+                            
+                            # Looser oblast check - also accept if no oblast specified
+                            if oblast_name and oblast_name not in display_name:
+                                continue
+                            
+                            lat = float(item.get('lat', 0))
+                            lon = float(item.get('lon', 0))
+                            
+                            if lat and lon:
+                                coords = (lat, lon)
+                                add_debug_log(f"Nominatim LOOSE: '{city_norm_title}' -> '{display_name[:50]}' ({lat}, {lon})", "mapstransler")
+                                break
+                                
+                except Exception as e:
+                    add_debug_log(f"Nominatim loose search error: {e}", "mapstransler")
             
-            if not coords and 'SETTLEMENTS_INDEX' in globals():
-                idx_map = globals().get('SETTLEMENTS_INDEX') or {}
-                coords = idx_map.get(city_norm)
+            # PRIORITY 5: OSM Overpass API for small villages (last resort)
+            if not coords and target_state:
+                try:
+                    import requests
+                    
+                    city_norm_title = city_norm.title()
+                    # Overpass query for place nodes with name
+                    overpass_url = 'https://overpass-api.de/api/interpreter'
+                    query = f'''
+                    [out:json][timeout:10];
+                    area["name"="Україна"]->.ua;
+                    (
+                      node["place"~"village|hamlet|town|city"]["name"~"{city_norm_title}",i](area.ua);
+                    );
+                    out center 5;
+                    '''
+                    
+                    response = requests.post(overpass_url, data={'data': query}, timeout=12)
+                    if response.ok:
+                        data = response.json()
+                        oblast_name = target_state.replace('область', '').strip().lower() if target_state else ''
+                        
+                        for element in data.get('elements', []):
+                            lat = element.get('lat')
+                            lon = element.get('lon')
+                            tags = element.get('tags', {})
+                            name = tags.get('name', '')
+                            
+                            if lat and lon:
+                                coords = (lat, lon)
+                                add_debug_log(f"Overpass FOUND: '{city_norm_title}' -> '{name}' ({lat}, {lon})", "mapstransler")
+                                break
+                                
+                except Exception as e:
+                    add_debug_log(f"Overpass API error: {e}", "mapstransler")
+            
+            # NO FALLBACK TO OBLAST CENTER - if not found, skip this city
+            if not coords:
+                add_debug_log(f"City NOT FOUND after all APIs, skipping: {city_raw} ({oblast_raw})", "mapstransler")
             
             if coords:
                 if len(coords) == 3:
