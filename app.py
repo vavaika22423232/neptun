@@ -25,10 +25,11 @@ except Exception as e:
 
 # Import comprehensive Ukrainian settlements database (26000+ entries)
 try:
-    from ukraine_all_settlements import UKRAINE_ALL_SETTLEMENTS
-    print(f"INFO: Ukraine ALL settlements loaded: {len(UKRAINE_ALL_SETTLEMENTS)} entries")
+    from ukraine_all_settlements import UKRAINE_ALL_SETTLEMENTS, UKRAINE_SETTLEMENTS_BY_OBLAST
+    print(f"INFO: Ukraine ALL settlements loaded: {len(UKRAINE_ALL_SETTLEMENTS)} simple + {len(UKRAINE_SETTLEMENTS_BY_OBLAST)} oblast-aware entries")
 except Exception as e:
     UKRAINE_ALL_SETTLEMENTS = {}
+    UKRAINE_SETTLEMENTS_BY_OBLAST = {}
     print(f"WARNING: Ukraine ALL settlements not available: {e}")
 
 # SpaCy integration for enhanced Ukrainian NLP
@@ -8098,10 +8099,21 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 else:
                     add_debug_log(f"Cache HIT (negative): {city_norm} not found previously", "mapstransler")
             
-            # PRIORITY 0: Check UKRAINE_ALL_SETTLEMENTS first (26000+ entries, BEST coverage)
+            # PRIORITY 0: Check UKRAINE_SETTLEMENTS_BY_OBLAST first (oblast-aware, BEST for disambiguation)
             if not coords and cache_key not in _mapstransler_geocode_cache:
                 city_norm_lower = city_norm.lower()
-                if city_norm_lower in UKRAINE_ALL_SETTLEMENTS:
+                # Extract oblast key from target_state (e.g., "Миколаївська область" -> "миколаївська")
+                oblast_key = None
+                if target_state:
+                    oblast_key = target_state.lower().replace(' область', '').replace('область', '').strip()
+                
+                # Try oblast-aware lookup first
+                if oblast_key and (city_norm_lower, oblast_key) in UKRAINE_SETTLEMENTS_BY_OBLAST:
+                    coords = UKRAINE_SETTLEMENTS_BY_OBLAST[(city_norm_lower, oblast_key)]
+                    _mapstransler_geocode_cache[cache_key] = coords
+                    add_debug_log(f"UKRAINE_SETTLEMENTS_BY_OBLAST HIT: ({city_norm}, {oblast_key}) -> ({coords[0]}, {coords[1]})", "mapstransler")
+                # Fallback to simple lookup
+                elif city_norm_lower in UKRAINE_ALL_SETTLEMENTS:
                     coords = UKRAINE_ALL_SETTLEMENTS[city_norm_lower]
                     _mapstransler_geocode_cache[cache_key] = coords
                     add_debug_log(f"UKRAINE_ALL_SETTLEMENTS HIT: {city_norm} -> ({coords[0]}, {coords[1]})", "mapstransler")
@@ -8533,7 +8545,32 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     base = city_candidate.lower().replace('\u02bc',"'").replace('ʼ',"'").replace('’',"'").replace('`',"'")
                     base = _re_early.sub(r'\s+',' ', base)
                     norm = UA_CITY_NORMALIZE.get(base, base)
-                    coords = CITY_COORDS.get(norm)
+                    
+                    # CRITICAL: Extract oblast from parentheses for oblast-aware lookup
+                    # Format: "City (Oblast обл.)" - extract oblast to disambiguate same-name cities
+                    coords = None
+                    oblast_key_early = None
+                    par_end = cleaned.find(')', par)
+                    if par_end > par:
+                        oblast_raw_early = cleaned[par+1:par_end].strip()
+                        # Extract oblast key: "Миколаївська обл." -> "миколаївська"
+                        oblast_lower_early = oblast_raw_early.lower()
+                        if ' обл' in oblast_lower_early:
+                            oblast_key_early = oblast_lower_early.split(' обл')[0].strip()
+                        elif 'область' in oblast_lower_early:
+                            oblast_key_early = oblast_lower_early.replace('область', '').strip()
+                        
+                        # PRIORITY 0: Oblast-aware lookup in UKRAINE_SETTLEMENTS_BY_OBLAST
+                        if oblast_key_early and 'UKRAINE_SETTLEMENTS_BY_OBLAST' in globals():
+                            settlements_by_oblast = globals().get('UKRAINE_SETTLEMENTS_BY_OBLAST') or {}
+                            lookup_key_early = (norm, oblast_key_early)
+                            if lookup_key_early in settlements_by_oblast:
+                                coords = settlements_by_oblast[lookup_key_early]
+                                _log(f"[single_city_simple_early] OBLAST-AWARE HIT: {lookup_key_early} -> {coords}")
+                    
+                    # Fallback to simple lookup if oblast-aware failed
+                    if not coords:
+                        coords = CITY_COORDS.get(norm)
                     if not coords and 'SETTLEMENTS_INDEX' in globals():
                         idx = globals().get('SETTLEMENTS_INDEX') or {}
                         coords = idx.get(norm)
