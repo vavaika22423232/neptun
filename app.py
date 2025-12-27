@@ -1943,6 +1943,115 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
     """Enhanced version that tries to extract oblast from message if city not found.
     Returns (lat,lng,approx_bool) - approx_bool True means used oblast fallback."""
     
+    # CRITICAL: If message_text contains explicit oblast name, use it directly
+    # This handles cases like "Київська область: БпЛА курсом на Димер"
+    if message_text:
+        message_lower = message_text.lower()
+        
+        # Direct oblast name patterns
+        direct_oblast_patterns = {
+            'київська область': 'київська обл.',
+            'київська обл': 'київська обл.',
+            'харківська область': 'харківська обл.',
+            'харківська обл': 'харківська обл.',
+            'чернігівська область': 'чернігівська обл.',
+            'чернігівська обл': 'чернігівська обл.',
+            'сумська область': 'сумська область',
+            'сумська обл': 'сумська область',
+            'полтавська область': 'полтавська область',
+            'полтавська обл': 'полтавська область',
+            'дніпропетровська область': 'дніпропетровська область',
+            'дніпропетровська обл': 'дніпропетровська область',
+            'миколаївська область': 'миколаївська обл.',
+            'миколаївська обл': 'миколаївська обл.',
+            'одеська область': 'одеська обл.',
+            'одеська обл': 'одеська обл.',
+            'херсонська область': 'херсонська обл.',
+            'херсонська обл': 'херсонська обл.',
+            'запорізька область': 'запорізька область',
+            'запорізька обл': 'запорізька область',
+            'черкаська область': 'черкаська область',
+            'черкаська обл': 'черкаська область',
+            'житомирська область': 'житомирська область',
+            'житомирська обл': 'житомирська область',
+            'вінницька область': 'вінницька область',
+            'вінницька обл': 'вінницька область',
+            'донецька область': 'донецька область',
+            'донецька обл': 'донецька область',
+            'луганська область': 'луганська область',
+            'луганська обл': 'луганська область',
+        }
+        
+        explicit_oblast = None
+        for pattern, oblast_key in direct_oblast_patterns.items():
+            if pattern in message_lower:
+                explicit_oblast = oblast_key
+                print(f"DEBUG: Found explicit oblast '{pattern}' -> '{oblast_key}' for city '{name}'")
+                break
+        
+        if explicit_oblast:
+            # Try Photon API with explicit oblast filtering
+            try:
+                import requests
+                
+                oblast_to_region_map = {
+                    'харківська обл.': 'Харківська область',
+                    'чернігівська обл.': 'Чернігівська область',
+                    'полтавська область': 'Полтавська область',
+                    'дніпропетровська область': 'Дніпропетровська область',
+                    'сумська область': 'Сумська область',
+                    'миколаївська обл.': 'Миколаївська область',
+                    'одеська обл.': 'Одеська область',
+                    'запорізька область': 'Запорізька область',
+                    'херсонська обл.': 'Херсонська область',
+                    'київська обл.': 'Київська область',
+                    'черкаська область': 'Черкаська область',
+                    'вінницька область': 'Вінницька область',
+                    'житомирська область': 'Житомирська область',
+                    'донецька область': 'Донецька область',
+                    'луганська область': 'Луганська область',
+                }
+                
+                region_name = oblast_to_region_map.get(explicit_oblast)
+                
+                if region_name:
+                    # Normalize city name first
+                    name_normalized = name.strip().lower()
+                    if name_normalized.endswith('ку') and len(name_normalized) > 4:
+                        name_normalized = name_normalized[:-2] + 'ка'
+                    elif name_normalized.endswith('у') and len(name_normalized) > 3:
+                        name_normalized = name_normalized[:-1] + 'а'
+                    
+                    photon_url = 'https://photon.komoot.io/api/'
+                    params = {'q': name_normalized, 'limit': 10}
+                    
+                    response = requests.get(photon_url, params=params, timeout=3)
+                    if response.ok:
+                        data = response.json()
+                        
+                        for feature in data.get('features', []):
+                            props = feature.get('properties', {})
+                            state = props.get('state', '')
+                            country = props.get('country', '')
+                            osm_key = props.get('osm_key', '')
+                            osm_value = props.get('osm_value', '')
+                            
+                            # Filter: only settlements in Ukraine
+                            if osm_key not in ['place', 'boundary']:
+                                continue
+                            valid_types = ['city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood', 'administrative']
+                            if osm_key == 'place' and osm_value not in valid_types:
+                                continue
+                            
+                            if (country == 'Україна' or country == 'Ukraine') and region_name in state:
+                                coords_arr = feature.get('geometry', {}).get('coordinates', [])
+                                if coords_arr and len(coords_arr) >= 2:
+                                    lat, lng = coords_arr[1], coords_arr[0]
+                                    print(f"DEBUG: Photon EXPLICIT OBLAST: '{name}' in {state} -> ({lat}, {lng})")
+                                    return (lat, lng, False)
+            except Exception as e:
+                print(f"DEBUG: Explicit oblast geocoding error: {e}")
+    
     # PRIORITY 1: Try Groq AI for intelligent context understanding
     if GROQ_ENABLED and message_text:
         try:
@@ -6506,19 +6615,72 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             if city_norm in UA_CITY_NORMALIZE:
                 city_norm = UA_CITY_NORMALIZE[city_norm]
             
-            # Use ONLY API geocoding with message context - NO CITY_COORDS fallback
-            coords = ensure_city_coords_with_message_context(city_norm, text)
+            # CRITICAL FIX: If region_hint is provided, build a context string with it
+            # This ensures the city is geocoded in the correct oblast
+            if region_hint:
+                context_text = f"{region_hint}: БпЛА курсом на {city_norm}"
+                add_debug_log(f"Using region context: '{region_hint}' for city '{city_norm}'", "multi_regional")
+            else:
+                context_text = text
             
-            add_debug_log(f"API-only lookup: '{city_name}' -> '{city_norm}' -> {coords}", "multi_regional")
+            # Use API geocoding with proper regional context
+            coords = ensure_city_coords_with_message_context(city_norm, context_text)
+            
+            add_debug_log(f"API-only lookup: '{city_name}' -> '{city_norm}' (region={region_hint}) -> {coords}", "multi_regional")
             return coords
+        
+        # Map regional header patterns to oblast names for API
+        region_header_to_oblast = {
+            'сумщина': 'Сумська область',
+            'чернігівщина': 'Чернігівська область',
+            'київщина': 'Київська область',
+            'полтавщина': 'Полтавська область',
+            'дніпропетровщина': 'Дніпропетровська область',
+            'харківщина': 'Харківська область',
+            'миколаївщина': 'Миколаївська область',
+            'одещина': 'Одеська область',
+            'запоріжжя': 'Запорізька область',
+            'херсонщина': 'Херсонська область',
+            'черкащина': 'Черкаська область',
+            'вінниччина': 'Вінницька область',
+            'житомирщина': 'Житомирська область',
+            'рівненщина': 'Рівненська область',
+            'волинь': 'Волинська область',
+            'львівщина': 'Львівська область',
+            'донеччина': 'Донецька область',
+            'луганщина': 'Луганська область',
+        }
         
         threats = []
         processed_cities = set()  # Избегаем дубликатов
+        current_region = None  # Track current region from headers
         
         for line in text_lines:
             line_stripped = line.strip()
-            if not line_stripped or ':' in line_stripped[:20]:  # Skip region headers
+            if not line_stripped:
                 continue
+            
+            line_lower = line_stripped.lower()
+            
+            # CHECK FOR REGION HEADER (e.g., "Київщина:", "Харківщина:")
+            # This is CRITICAL for multi-regional messages
+            region_header_match = re.match(r'^([а-яіїєґ]+щина|[а-яіїєґ]+ь):?\s*$', line_lower)
+            if region_header_match:
+                region_name = region_header_match.group(1)
+                if region_name in region_header_to_oblast:
+                    current_region = region_header_to_oblast[region_name]
+                    add_debug_log(f"REGION HEADER detected: '{line_stripped}' -> current_region = '{current_region}'", "multi_regional")
+                continue  # Skip processing the header line itself
+            
+            # Also check for inline region header like "Сумщина: БпЛА..."
+            inline_region_match = re.match(r'^([а-яіїєґ]+щина|[а-яіїєґ]+ь):\s*(.+)$', line_lower)
+            if inline_region_match:
+                region_name = inline_region_match.group(1)
+                if region_name in region_header_to_oblast:
+                    current_region = region_header_to_oblast[region_name]
+                    line_stripped = inline_region_match.group(2).strip()  # Process the rest of the line
+                    line_lower = line_stripped.lower()
+                    add_debug_log(f"INLINE REGION HEADER: '{region_name}' -> current_region = '{current_region}', processing: '{line_stripped}'", "multi_regional")
             
             line_lower = line_stripped.lower()
             
@@ -6534,8 +6696,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 if target_norm in UA_CITY_NORMALIZE:
                     target_norm = UA_CITY_NORMALIZE[target_norm]
                 
-                # Get coordinates using full message context
-                target_coords = ensure_city_coords_with_message_context(target_norm, text)
+                # Get coordinates using region context from headers
+                target_coords = get_city_coords_quick(target_norm, current_region)
                 
                 if target_coords:
                     if len(target_coords) == 3:
@@ -6611,8 +6773,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     if target_norm in UA_CITY_NORMALIZE:
                         target_norm = UA_CITY_NORMALIZE[target_norm]
                     
-                    # Get coordinates for bypass city using full message context for better accuracy
-                    bypass_coords = ensure_city_coords_with_message_context(bypass_norm, text)
+                    # Get coordinates for bypass city using region context
+                    bypass_coords = get_city_coords_quick(bypass_norm, current_region)
                     
                     if bypass_coords:
                         if len(bypass_coords) == 3:
@@ -6665,8 +6827,16 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         continue
                     processed_cities.add(city_key)
                     
-                    # Try to get coordinates
-                    coords = get_city_coords_quick(city_clean)
+                    # Try to get coordinates using region from bracket or current_region
+                    # Extract oblast from bracket (e.g., "Одещина" -> "Одеська область")
+                    bracket_region = None
+                    region_info_lower = region_info.lower()
+                    if region_info_lower in region_header_to_oblast:
+                        bracket_region = region_header_to_oblast[region_info_lower]
+                    elif region_info_lower.replace('щина', 'щина') in region_header_to_oblast:
+                        bracket_region = region_header_to_oblast.get(region_info_lower)
+                    
+                    coords = get_city_coords_quick(city_clean, bracket_region or current_region)
                     
                     if coords:
                         if len(coords) == 3:
@@ -6748,8 +6918,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             continue
                         processed_cities.add(city_key)
                         
-                        # Try to get coordinates
-                        coords = get_city_coords_quick(city_clean)
+                        # Try to get coordinates using current region context
+                        coords = get_city_coords_quick(city_clean, current_region)
                         
                         if coords:
                             if len(coords) == 3:
@@ -7722,6 +7892,92 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     try:
         orig = text
         head = orig.split('\n',1)[0][:160]
+        
+        # PRIORITY: Handle mapstransler_bot format: "[count]х БПЛА Місто (Область обл.) Загроза застосування БПЛА"
+        # Examples:
+        #   "2х БПЛА Барвінкове (Харківська обл.) Загроза застосування БПЛА."
+        #   "БПЛА Єланець (Миколаївська обл.) Загроза застосування БПЛА."
+        #   "Димер (Київська обл.) Загроза застосування БПЛА."
+        mapstransler_pattern = r'^[^\w]*(\d+)[xх×]?\s*БПЛА\s+([А-ЯІЇЄЁа-яіїєё\'\'\-\s]+?)\s*\(([^)]+обл[^)]*)\)'
+        mapstransler_match = re.search(mapstransler_pattern, head, re.IGNORECASE)
+        
+        # Also try without count prefix
+        if not mapstransler_match:
+            mapstransler_pattern2 = r'^[^\w]*БПЛА\s+([А-ЯІЇЄЁа-яіїєё\'\'\-\s]+?)\s*\(([^)]+обл[^)]*)\)'
+            mapstransler_match2 = re.search(mapstransler_pattern2, head, re.IGNORECASE)
+            if mapstransler_match2:
+                city_raw = mapstransler_match2.group(1).strip()
+                oblast_raw = mapstransler_match2.group(2).strip()
+                uav_count = 1
+            else:
+                city_raw = None
+                oblast_raw = None
+                uav_count = 1
+        else:
+            uav_count = int(mapstransler_match.group(1))
+            city_raw = mapstransler_match.group(2).strip()
+            oblast_raw = mapstransler_match.group(3).strip()
+        
+        # Also try format without БПЛА prefix: "Димер (Київська обл.) Загроза..."
+        if not city_raw:
+            no_bpla_pattern = r'^[^\w]*([А-ЯІЇЄЁа-яіїєё][А-ЯІЇЄЁа-яіїєё\'\'\-\s]+?)\s*\(([^)]+обл[^)]*)\)\s*загроза'
+            no_bpla_match = re.search(no_bpla_pattern, head, re.IGNORECASE)
+            if no_bpla_match:
+                city_raw = no_bpla_match.group(1).strip()
+                oblast_raw = no_bpla_match.group(2).strip()
+                uav_count = 1
+        
+        if city_raw and oblast_raw:
+            # Normalize city name (accusative -> nominative)
+            city_norm = city_raw.lower().replace('\u02bc',"'").replace('ʼ',"'").replace("'","'").replace('`',"'")
+            city_norm = re.sub(r'\s+',' ', city_norm)
+            
+            # Handle accusative case endings
+            if city_norm.endswith('у') and len(city_norm) > 3:
+                city_norm = city_norm[:-1] + 'а'
+            elif city_norm.endswith('ю') and len(city_norm) > 3:
+                city_norm = city_norm[:-1] + 'я'
+            elif city_norm.endswith('ку') and len(city_norm) > 4:
+                city_norm = city_norm[:-2] + 'ка'
+            
+            city_norm = UA_CITY_NORMALIZE.get(city_norm, city_norm)
+            
+            # Build context with oblast for geocoding
+            oblast_context = f"{oblast_raw}: БПЛА курсом на {city_norm}"
+            
+            add_debug_log(f"Mapstransler pattern: city='{city_raw}' -> norm='{city_norm}', oblast='{oblast_raw}', count={uav_count}", "mapstransler")
+            
+            # Try API geocoding with oblast context
+            coords = ensure_city_coords_with_message_context(city_norm, oblast_context)
+            
+            if not coords:
+                # Fallback to CITY_COORDS
+                coords = CITY_COORDS.get(city_norm)
+            
+            if not coords and 'SETTLEMENTS_INDEX' in globals():
+                idx_map = globals().get('SETTLEMENTS_INDEX') or {}
+                coords = idx_map.get(city_norm)
+            
+            if coords:
+                if len(coords) == 3:
+                    lat, lon = coords[0], coords[1]
+                else:
+                    lat, lon = coords[:2]
+                
+                threat_type, icon = classify(text)
+                track = {
+                    'id': f"{mid}_mapstransler_{city_norm.replace(' ','_')}",
+                    'place': city_raw.title(),
+                    'lat': lat, 'lng': lon,
+                    'threat_type': threat_type,
+                    'text': clean_text(orig)[:500], 'date': date_str, 'channel': channel,
+                    'marker_icon': icon, 'source_match': 'mapstransler_format',
+                    'count': uav_count
+                }
+                add_debug_log(f'Mapstransler parser SUCCESS: {city_raw} ({oblast_raw}) -> {coords}, count={uav_count}', "mapstransler")
+                return [track]  # Early return
+            else:
+                add_debug_log(f'Mapstransler parser: No coords for {city_norm} ({oblast_raw})', "mapstransler")
         
         # NEW: Handle emoji-prefixed threat messages like "🛸 Звягель (Житомирська обл.) Загроза застосування БПЛА"
         emoji_threat_pattern = r'^[^\w\s]*\s*([А-ЯІЇЄЁа-яіїєё\'\-\s]+)\s*\([^)]*обл[^)]*\)\s*загроза\s+застосування\s+бпла'
