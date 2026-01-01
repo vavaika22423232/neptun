@@ -17407,12 +17407,48 @@ def git_pull_on_startup():
         
         if pull_result.returncode == 0:
             log.info("Git pull on startup successful - chat messages restored")
+            # Copy pulled files to persistent storage if using /data directory
+            _copy_git_files_to_persistent_storage()
         else:
             log.warning(f"Git pull failed: {pull_result.stderr}")
         
         _git_pull_done = True
     except Exception as e:
         log.error(f"Git pull on startup error: {e}")
+
+
+def _copy_git_files_to_persistent_storage():
+    """Copy files from git repo to persistent storage directory after pull."""
+    import shutil
+    persistent_dir = os.getenv('PERSISTENT_DATA_DIR', '/data')
+    if not os.path.isdir(persistent_dir):
+        log.info(f"No persistent storage at {persistent_dir}, skipping copy")
+        return
+    
+    # Files to copy from repo root to persistent storage
+    files_to_copy = ['chat_messages.json', 'messages.json', 'devices.json']
+    
+    for filename in files_to_copy:
+        src = filename  # In repo root
+        dst = os.path.join(persistent_dir, filename)
+        
+        if os.path.exists(src):
+            try:
+                # Only copy if source is newer or destination doesn't exist
+                if not os.path.exists(dst):
+                    shutil.copy2(src, dst)
+                    log.info(f"Copied {src} to {dst}")
+                else:
+                    # Compare file sizes - copy if source has more data
+                    src_size = os.path.getsize(src)
+                    dst_size = os.path.getsize(dst)
+                    if src_size > dst_size:
+                        shutil.copy2(src, dst)
+                        log.info(f"Updated {dst} from git (src={src_size}b, dst={dst_size}b)")
+                    else:
+                        log.info(f"Keeping existing {dst} (src={src_size}b, dst={dst_size}b)")
+            except Exception as e:
+                log.error(f"Error copying {src} to {dst}: {e}")
 
 def maybe_git_autocommit():
     """If enabled, commit & push updated messages.json back to GitHub.
@@ -17431,6 +17467,10 @@ def maybe_git_autocommit():
         return
     if not os.path.isdir('.git'):
         raise RuntimeError('Not a git repo')
+    
+    # Copy files from persistent storage to repo root before committing
+    _copy_persistent_files_to_git_repo()
+    
     # Configure user (once)
     def run(cmd):
         return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -17444,18 +17484,19 @@ def maybe_git_autocommit():
     if 'origin' not in remotes or GIT_REPO_SLUG not in remotes:
         run('git remote remove origin')
         run(f'git remote add origin "{safe_remote}"')
-    # Stage & commit if there is a change
-    run(f'git add {MESSAGES_FILE}')
-    run(f'git add {CHAT_MESSAGES_FILE}')  # Also sync chat messages
-    run('git add devices.json')  # Sync registered devices for push notifications
+    # Stage & commit if there is a change (use repo root filenames, not /data paths)
+    run('git add messages.json')
+    run('git add chat_messages.json')
+    run('git add devices.json')
     status = run('git status --porcelain').stdout
-    if MESSAGES_FILE not in status and CHAT_MESSAGES_FILE not in status and 'devices.json' not in status:
+    if 'messages.json' not in status and 'chat_messages.json' not in status and 'devices.json' not in status:
         return  # no actual diff
     commit_msg = f'Update messages (auto)'  # no secrets
     run(f'git commit -m "{commit_msg}"')
     push_res = run('git push origin HEAD:main')
     if push_res.returncode == 0:
         _last_git_commit = now
+        log.info("Git autocommit successful")
     else:
         # If push fails (e.g., diverged), attempt pull+rebase then push
         run('git fetch origin')
@@ -17464,6 +17505,26 @@ def maybe_git_autocommit():
         if push_res2.returncode == 0:
             _last_git_commit = now
         # else: give up silently to avoid spamming logs
+
+
+def _copy_persistent_files_to_git_repo():
+    """Copy files from persistent storage to repo root for git commit."""
+    import shutil
+    persistent_dir = os.getenv('PERSISTENT_DATA_DIR', '/data')
+    if not os.path.isdir(persistent_dir):
+        return  # Not using persistent storage
+    
+    files_to_copy = ['chat_messages.json', 'messages.json', 'devices.json']
+    
+    for filename in files_to_copy:
+        src = os.path.join(persistent_dir, filename)
+        dst = filename  # Repo root
+        
+        if os.path.exists(src):
+            try:
+                shutil.copy2(src, dst)
+            except Exception as e:
+                log.error(f"Error copying {src} to {dst} for git: {e}")
 
 # NOTE: _load_settlements() defined and called earlier in the file
 
