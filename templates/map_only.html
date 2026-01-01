@@ -456,8 +456,8 @@
         console.log('Creating L.map...');
         map = L.map('map', {
           center: [48.3794, 31.1656],
-          zoom: 6,
-          minZoom: 6,
+          zoom: 5.5,
+          minZoom: 5.5,
           maxZoom: 18,
           maxBounds: [
             [43.0, 20.0],  // Southwest coordinates (bottom-left corner)
@@ -497,6 +497,62 @@
           }, 100);
           updateMarkers();
           setInterval(updateMarkers, UPDATE_INTERVAL);
+          
+          // Блокуємо вихід за межі України під час pinch zoom
+          const ukraineBounds = L.latLngBounds(
+            [43.0, 20.0],  // Southwest
+            [53.0, 42.0]   // Northeast
+          );
+          
+          // Жорстко обмежуємо zoom під час touchmove (pinch)
+          let lastValidZoom = map.getZoom();
+          let lastValidCenter = map.getCenter();
+          
+          map.on('zoomstart', function() {
+            lastValidZoom = map.getZoom();
+            lastValidCenter = map.getCenter();
+          });
+          
+          // Перехоплюємо zoom щоб заблокувати зменшення нижче minZoom
+          map.on('zoom', function() {
+            const zoom = map.getZoom();
+            const currentBounds = map.getBounds();
+            
+            // Якщо zoom менший за мінімальний - повертаємо
+            if (zoom < 5.5) {
+              map.setZoom(5.5, { animate: false });
+              return;
+            }
+            
+            // Якщо виходимо за межі - повертаємо в межі
+            if (!ukraineBounds.contains(currentBounds)) {
+              map.panInsideBounds(ukraineBounds, { animate: false });
+            }
+          });
+          
+          // Перехоплюємо move щоб миттєво повертати в межі
+          map.on('move', function() {
+            const center = map.getCenter();
+            const clampedLat = Math.max(43.5, Math.min(52.5, center.lat));
+            const clampedLng = Math.max(21.0, Math.min(41.0, center.lng));
+            if (center.lat !== clampedLat || center.lng !== clampedLng) {
+              map.setView([clampedLat, clampedLng], map.getZoom(), { animate: false });
+            }
+          });
+          
+          // Додатковий захист - перехоплюємо touchend для фінальної корекції
+          map.getContainer().addEventListener('touchend', function() {
+            setTimeout(function() {
+              const zoom = map.getZoom();
+              if (zoom < 5.5) {
+                map.setZoom(5.5, { animate: true });
+              }
+              const currentBounds = map.getBounds();
+              if (!ukraineBounds.contains(currentBounds)) {
+                map.panInsideBounds(ukraineBounds, { animate: true });
+              }
+            }, 50);
+          }, { passive: true });
         });
         
       } catch (error) {
@@ -779,11 +835,38 @@
           const threatType = (p.threat_type || 'default').toLowerCase();
           const colors = threatColors[threatType] || threatColors.default;
           
+          // Calculate marker age
+          let ageText = '';
+          if (p.date) {
+            try {
+              const markerDate = new Date(p.date);
+              const now = new Date();
+              const ageMinutes = Math.floor((now - markerDate) / (1000 * 60));
+              
+              if (ageMinutes < 1) {
+                ageText = 'щойно';
+              } else if (ageMinutes < 60) {
+                ageText = `${ageMinutes} хв тому`;
+              } else {
+                const hours = Math.floor(ageMinutes / 60);
+                const mins = ageMinutes % 60;
+                if (mins > 0) {
+                  ageText = `${hours} год ${mins} хв тому`;
+                } else {
+                  ageText = `${hours} год тому`;
+                }
+              }
+            } catch (e) {}
+          }
+          
           const popupHtml = `
             <div style="background: white; border-left: 3px solid ${colors.accent}; border-radius: 6px; padding: 8px 10px; min-width: 160px; max-width: 240px; font-family: -apple-system, sans-serif; box-shadow: 0 2px 8px rgba(0,0,0,0.12);">
               ${placeUA ? `<div style="font-size: 0.9rem; font-weight: 600; color: #1e293b; margin-bottom: 4px;">${placeUA}</div>` : ''}
-              <div style="font-size: 0.8rem; color: #64748b; line-height: 1.4; ${p.count ? 'margin-bottom: 4px;' : ''}">${cleanMessage(p.text || '')}</div>
-              ${p.count ? `<div style="display: inline-block; background: ${colors.bg}; color: ${colors.accent}; font-weight: 600; font-size: 0.7rem; padding: 2px 5px; border-radius: 3px;">×${p.count}</div>` : ''}
+              <div style="font-size: 0.8rem; color: #64748b; line-height: 1.4; margin-bottom: 4px;">${cleanMessage(p.text || '')}</div>
+              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                ${p.count ? `<span style="display: inline-block; background: ${colors.bg}; color: ${colors.accent}; font-weight: 600; font-size: 0.7rem; padding: 2px 5px; border-radius: 3px;">×${p.count}</span>` : ''}
+                ${ageText ? `<span style="font-size: 0.7rem; color: #94a3b8;">🕐 ${ageText}</span>` : ''}
+              </div>
             </div>
           `;
           

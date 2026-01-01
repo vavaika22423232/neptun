@@ -1762,36 +1762,6 @@
       }
     }
     
-    /* Events section wrapper - below about section */
-    .events-section-wrapper {
-      max-width: 1400px;
-      margin: 2rem auto;
-      padding: 0 1.5rem;
-    }
-    
-    .events-section-wrapper .card {
-      background: var(--card-bg);
-    }
-    
-    .events-section-wrapper h2 {
-      text-align: center;
-      margin-bottom: 1.5rem;
-      font-size: 1.75rem;
-      color: var(--accent);
-    }
-    
-    @media (max-width: 768px) {
-      .events-section-wrapper {
-        margin: 1rem 0;
-        padding: 2rem 1rem !important;
-      }
-      
-      .events-section-wrapper .card {
-        margin: 0 !important;
-        padding: 1rem;
-      }
-    }
-    
     .accent-link {
       color: var(--accent);
       text-decoration: none;
@@ -1814,8 +1784,8 @@
       html, body { width:100%; max-width:100%; overflow-x:hidden; }
       .main-content { display:block; padding:0 !important; margin:0 !important; width:100vw; max-width:100vw; }
       .map-card { width:100vw; max-width:100vw; margin:0 !important; border-radius:0; }
-      .about-section-wrapper, .events-section-wrapper { padding-left: 1rem !important; padding-right: 1rem !important; }
-      .about-section-wrapper .card, .events-section-wrapper .card { width:100% !important; max-width:100% !important; margin:0 !important; }
+      .about-section-wrapper { padding-left: 1rem !important; padding-right: 1rem !important; }
+      .about-section-wrapper .card { width:100% !important; max-width:100% !important; margin:0 !important; }
       #map { width:100%; max-width:100%; border-radius:0; }
     }
     /* --- Fullscreen map (custom) --- */
@@ -3161,15 +3131,6 @@
           <p style="color: #cbd5e1; line-height: 1.8; font-size: 1.1rem;">Проєкт <a href="https://t.me/+zFxu_4W_ishiNjli" target="_blank" class="accent-link" style="color: #a78bfa; text-decoration: none; font-weight: 600; transition: color 0.3s;">НЕПТУН <i class="material-icons" style="font-size: 1rem; vertical-align: middle;">open_in_new</i></a></p>
         </div>
       </div>
-    </div>
-  </div>
-
-  <!-- Events Section (below about section) -->
-  <div class="events-section-wrapper" style="background: linear-gradient(135deg, #1e1b4b, #0f172a); padding: 4rem 1rem; position: relative; overflow: hidden;">
-    
-    <div class="card" id="events" style="max-width: 1200px; margin: 0 auto; background: transparent; border: none; box-shadow: none; position: relative; z-index: 1;">
-      <h2 style="text-align: center; font-size: 3rem; margin-bottom: 3rem; background: linear-gradient(135deg, #ec4899, #8b5cf6, #3b82f6); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; font-weight: 800;">📋 Останні події</h2>
-      <div class="event-list" id="eventList" style="display: grid; gap: 1.5rem;"></div>
     </div>
   </div>
 
@@ -4746,6 +4707,30 @@
         const threatType = (p.threat_type || 'default').toLowerCase();
         const colors = threatColors[threatType] || threatColors.default;
         
+        // Calculate marker age
+        let ageText = '';
+        if (p.date) {
+          try {
+            const markerDate = new Date(p.date);
+            const now = new Date();
+            const ageMinutes = Math.floor((now - markerDate) / (1000 * 60));
+            
+            if (ageMinutes < 1) {
+              ageText = 'щойно';
+            } else if (ageMinutes < 60) {
+              ageText = `${ageMinutes} хв тому`;
+            } else {
+              const hours = Math.floor(ageMinutes / 60);
+              const mins = ageMinutes % 60;
+              if (mins > 0) {
+                ageText = `${hours} год ${mins} хв тому`;
+              } else {
+                ageText = `${hours} год тому`;
+              }
+            }
+          } catch (e) {}
+        }
+        
         const popupHtml = `
           <div style="
             background: white;
@@ -4768,18 +4753,21 @@
               font-size: 0.8rem;
               color: #64748b;
               line-height: 1.4;
-              ${p.count ? 'margin-bottom: 4px;' : ''}
+              margin-bottom: 4px;
             ">${cleanMessage(p.text||'')}</div>
             
-            ${p.count ? `<div style="
-              display: inline-block;
-              background: ${colors.bg};
-              color: ${colors.accent};
-              font-weight: 600;
-              font-size: 0.7rem;
-              padding: 2px 5px;
-              border-radius: 3px;
-            ">×${p.count}</div>` : ''}
+            <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+              ${p.count ? `<span style="
+                display: inline-block;
+                background: ${colors.bg};
+                color: ${colors.accent};
+                font-weight: 600;
+                font-size: 0.7rem;
+                padding: 2px 5px;
+                border-radius: 3px;
+              ">×${p.count}</span>` : ''}
+              ${ageText ? `<span style="font-size: 0.7rem; color: #94a3b8;">🕐 ${ageText}</span>` : ''}
+            </div>
           </div>
         `;
         
@@ -6490,225 +6478,6 @@
   }
   </script>
 
-  <!-- ============================================ -->
-  <!-- КОНТЕНТНІ СЕКЦІЇ ДЛЯ SEO ТА EZOIC -->
-  <!-- ============================================ -->
-  
-  <!-- Унікальні переваги NEPTUN -->
-  <section class="unique-features-section" style="background: linear-gradient(135deg, #0f172a, #1e1b4b); padding: 4rem 2rem; margin-top: 2rem; position: relative;">
-    <div class="content-container" style="max-width: 1200px; margin: 0 auto;">
-      <div style="text-align: center; margin-bottom: 3rem;">
-        <h2 style="font-size: 3rem; margin-bottom: 1rem; background: linear-gradient(135deg, #3b82f6, #8b5cf6, #ec4899); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; font-weight: 800;">
-          ⚡ Про NEPTUN
-        </h2>
-        <p style="color: #94a3b8; font-size: 1.3rem; max-width: 800px; margin: 0 auto;">
-          Разом працюємо для безпеки України — сучасна система моніторингу повітряних тривог
-        </p>
-      </div>
-      
-      <div class="advantages-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 2rem; margin-top: 3rem;">
-        
-        <!-- Advantage 1: Speed -->
-        <div class="advantage-card" style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(59, 130, 246, 0.05)); padding: 2.5rem; border-radius: 1.5rem; border: 2px solid rgba(59, 130, 246, 0.3); position: relative; overflow: hidden; transition: all 0.4s;">
-          <div style="position: absolute; top: 0; right: 0; width: 100px; height: 100px; background: radial-gradient(circle, rgba(59, 130, 246, 0.2), transparent); border-radius: 50%; transform: translate(30%, -30%);"></div>
-          <div style="font-size: 3.5rem; margin-bottom: 1rem;">⚡</div>
-          <h3 style="color: #60a5fa; margin-bottom: 1rem; font-size: 1.8rem; font-weight: 700;">Оновлення кожні 10 секунд</h3>
-          <p style="color: #cbd5e1; line-height: 1.8; font-size: 1.1rem; margin-bottom: 1.5rem;">
-            <strong style="color: #3b82f6;">ШВИДКЕ ОНОВЛЕННЯ</strong> для вашої безпеки! 
-            NEPTUN оновлюється кожні <span style="color: #60a5fa; font-weight: 700;">10 секунд</span>, що дозволяє миттєво реагувати на зміни ситуації.
-          </p>
-          <div style="display: flex; align-items: center; gap: 0.5rem; padding: 1rem; background: rgba(59, 130, 246, 0.1); border-radius: 0.75rem;">
-            <span style="font-size: 1.5rem;">🚀</span>
-            <span style="color: #60a5fa; font-weight: 600; font-size: 0.95rem;">Швидке оновлення в режимі реального часу</span>
-          </div>
-        </div>
-        
-        <!-- Advantage 2: Mobile Apps -->
-        <div class="advantage-card" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.05)); padding: 2.5rem; border-radius: 1.5rem; border: 2px solid rgba(16, 185, 129, 0.3); position: relative; overflow: hidden; transition: all 0.4s;">
-          <div style="position: absolute; top: 0; right: 0; width: 100px; height: 100px; background: radial-gradient(circle, rgba(16, 185, 129, 0.2), transparent); border-radius: 50%; transform: translate(30%, -30%);"></div>
-          <div style="font-size: 3.5rem; margin-bottom: 1rem;">📱</div>
-          <h3 style="color: #34d399; margin-bottom: 1rem; font-size: 1.8rem; font-weight: 700;">Мобільні додатки iOS + Android</h3>
-          <p style="color: #cbd5e1; line-height: 1.8; font-size: 1.1rem; margin-bottom: 1.5rem;">
-            <strong style="color: #10b981;">МОБІЛЬНІ ДОДАТКИ</strong> для зручності користувачів! 
-            Працюють <span style="color: #34d399; font-weight: 700;">офлайн</span>, підтримують push-сповіщення, 
-            інтерактивні карти та детальну статистику завжди під рукою.
-          </p>
-          <div style="display: flex; gap: 0.75rem;">
-            <div style="flex: 1; padding: 0.75rem; background: rgba(16, 185, 129, 0.1); border-radius: 0.75rem; text-align: center;">
-              <div style="font-size: 1.5rem;">🍎</div>
-              <div style="color: #34d399; font-weight: 600; font-size: 0.85rem; margin-top: 0.25rem;">iOS App</div>
-            </div>
-            <div style="flex: 1; padding: 0.75rem; background: rgba(16, 185, 129, 0.1); border-radius: 0.75rem; text-align: center;">
-              <div style="font-size: 1.5rem;">🤖</div>
-              <div style="color: #34d399; font-weight: 600; font-size: 0.85rem; margin-top: 0.25rem;">Android App</div>
-            </div>
-          </div>
-        </div>
-        
-        <!-- Advantage 3: Threat Types -->
-        <div class="advantage-card" style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.05)); padding: 2.5rem; border-radius: 1.5rem; border: 2px solid rgba(245, 158, 11, 0.3); position: relative; overflow: hidden; transition: all 0.4s;">
-          <div style="position: absolute; top: 0; right: 0; width: 100px; height: 100px; background: radial-gradient(circle, rgba(245, 158, 11, 0.2), transparent); border-radius: 50%; transform: translate(30%, -30%);"></div>
-          <div style="font-size: 3.5rem; margin-bottom: 1rem;">🎯</div>
-          <h3 style="color: #fbbf24; margin-bottom: 1rem; font-size: 1.8rem; font-weight: 700;">12 типів загроз</h3>
-          <p style="color: #cbd5e1; line-height: 1.8; font-size: 1.1rem; margin-bottom: 1.5rem;">
-            <strong style="color: #f59e0b;">ДЕТАЛЬНА КЛАСИФІКАЦІЯ</strong> загроз для вашої безпеки: шахеди, балістичні та крилаті ракети, 
-            FPV-дрони, артилерія, КАБ бомби, РЗСВ, хімічна, радіаційна загроза та інші. 
-            Разом з партнерами працюємо над покращенням системи моніторингу.
-          </p>
-          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem;">
-            <div style="padding: 0.5rem; background: rgba(245, 158, 11, 0.1); border-radius: 0.5rem; text-align: center; font-size: 1.2rem;">🛩️</div>
-            <div style="padding: 0.5rem; background: rgba(245, 158, 11, 0.1); border-radius: 0.5rem; text-align: center; font-size: 1.2rem;">🚀</div>
-            <div style="padding: 0.5rem; background: rgba(245, 158, 11, 0.1); border-radius: 0.5rem; text-align: center; font-size: 1.2rem;">💣</div>
-            <div style="padding: 0.5rem; background: rgba(245, 158, 11, 0.1); border-radius: 0.5rem; text-align: center; font-size: 1.2rem;">🎯</div>
-            <div style="padding: 0.5rem; background: rgba(245, 158, 11, 0.1); border-radius: 0.5rem; text-align: center; font-size: 1.2rem;">☢️</div>
-            <div style="padding: 0.5rem; background: rgba(245, 158, 11, 0.1); border-radius: 0.5rem; text-align: center; font-size: 1.2rem;">⚠️</div>
-          </div>
-        </div>
-        
-        <!-- Advantage 4: Telegram -->
-        <div class="advantage-card" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(139, 92, 246, 0.05)); padding: 2.5rem; border-radius: 1.5rem; border: 2px solid rgba(139, 92, 246, 0.3); position: relative; overflow: hidden; transition: all 0.4s;">
-          <div style="position: absolute; top: 0; right: 0; width: 100px; height: 100px; background: radial-gradient(circle, rgba(139, 92, 246, 0.2), transparent); border-radius: 50%; transform: translate(30%, -30%);"></div>
-          <div style="font-size: 3.5rem; margin-bottom: 1rem;">📲</div>
-          <h3 style="color: #a78bfa; margin-bottom: 1rem; font-size: 1.8rem; font-weight: 700;">Telegram сповіщення</h3>
-          <p style="color: #cbd5e1; line-height: 1.8; font-size: 1.1rem; margin-bottom: 1.5rem;">
-            Підключіться до офіційного Telegram-каналу <strong style="color: #8b5cf6;">NEPTUN</strong> 
-            для миттєвих сповіщень про тривоги у вашому регіоні. 
-            Фільтруйте за областями та типами загроз. Разом з іншими проектами допомагаємо українцям бути в безпеці.
-          </p>
-          <a href="https://t.me/+aBR79kExNQM1ZjZi" target="_blank" style="display: inline-flex; align-items: center; gap: 0.75rem; padding: 1rem 1.5rem; background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; text-decoration: none; border-radius: 0.75rem; font-weight: 600; transition: all 0.3s;">
-            <span style="font-size: 1.5rem;">📱</span>
-            <span>Підписатися на канал</span>
-          </a>
-        </div>
-        
-        <!-- Advantage 5: Statistics -->
-        <div class="advantage-card" style="background: linear-gradient(135deg, rgba(236, 72, 153, 0.1), rgba(236, 72, 153, 0.05)); padding: 2.5rem; border-radius: 1.5rem; border: 2px solid rgba(236, 72, 153, 0.3); position: relative; overflow: hidden; transition: all 0.4s;">
-          <div style="position: absolute; top: 0; right: 0; width: 100px; height: 100px; background: radial-gradient(circle, rgba(236, 72, 153, 0.2), transparent); border-radius: 50%; transform: translate(30%, -30%);"></div>
-          <div style="font-size: 3.5rem; margin-bottom: 1rem;">📊</div>
-          <h3 style="color: #f472b6; margin-bottom: 1rem; font-size: 1.8rem; font-weight: 700;">Детальна статистика</h3>
-          <p style="color: #cbd5e1; line-height: 1.8; font-size: 1.1rem; margin-bottom: 1.5rem;">
-            Переглядайте статистику тривог та загроз за <strong style="color: #ec4899;">сьогодні, тиждень, місяць</strong>. 
-            Аналізуйте динаміку по областях, типах загроз та часовим періодам. 
-            Графіки, діаграми та детальні таблиці — все для вашої безпеки!
-          </p>
-          <div style="display: flex; align-items: center; justify-content: space-between; padding: 1rem; background: rgba(236, 72, 153, 0.1); border-radius: 0.75rem;">
-            <div style="text-align: center;">
-              <div style="color: #f472b6; font-weight: 700; font-size: 1.5rem;">50K+</div>
-              <div style="color: #cbd5e1; font-size: 0.85rem;">Користувачів</div>
-            </div>
-            <div style="text-align: center;">
-              <div style="color: #f472b6; font-weight: 700; font-size: 1.5rem;">24/7</div>
-              <div style="color: #cbd5e1; font-size: 0.85rem;">Моніторинг</div>
-            </div>
-            <div style="text-align: center;">
-              <div style="color: #f472b6; font-weight: 700; font-size: 1.5rem;">4.8★</div>
-              <div style="color: #cbd5e1; font-size: 0.85rem;">Рейтинг</div>
-            </div>
-          </div>
-        </div>
-        
-        <!-- Advantage 6: Free -->
-        <div class="advantage-card" style="background: linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(34, 197, 94, 0.05)); padding: 2.5rem; border-radius: 1.5rem; border: 2px solid rgba(34, 197, 94, 0.3); position: relative; overflow: hidden; transition: all 0.4s;">
-          <div style="position: absolute; top: 0; right: 0; width: 100px; height: 100px; background: radial-gradient(circle, rgba(34, 197, 94, 0.2), transparent); border-radius: 50%; transform: translate(30%, -30%);"></div>
-          <div style="font-size: 3.5rem; margin-bottom: 1rem;">🎁</div>
-          <h3 style="color: #4ade80; margin-bottom: 1rem; font-size: 1.8rem; font-weight: 700;">Безкоштовно без реклами</h3>
-          <p style="color: #cbd5e1; line-height: 1.8; font-size: 1.1rem; margin-bottom: 1.5rem;">
-            <strong style="color: #22c55e;">100% БЕЗКОШТОВНО</strong> для всіх українців! 
-            Немає прихованих платежів, підписок або нав'язливої реклами. 
-            Чиста, швидка карта без відволікаючих елементів. Ми працюємо заради безпеки України 🇺🇦
-          </p>
-          <div style="display: flex; align-items: center; gap: 0.5rem; padding: 1rem; background: rgba(34, 197, 94, 0.1); border-radius: 0.75rem;">
-            <span style="font-size: 1.5rem;">✅</span>
-            <span style="color: #4ade80; font-weight: 600;">Повний доступ без обмежень</span>
-          </div>
-        </div>
-        
-      </div>
-      
-      <!-- CTA -->
-      <div style="text-align: center; margin-top: 3rem; padding: 2.5rem; background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(139, 92, 246, 0.15)); border-radius: 1.5rem; border: 2px solid rgba(59, 130, 246, 0.3);">
-        <h3 style="font-size: 2rem; margin-bottom: 1rem; color: #f3f4f6;">
-          🚀 Приєднуйтесь до 50,000+ користувачів NEPTUN!
-        </h3>
-        <p style="color: #cbd5e1; font-size: 1.2rem; margin-bottom: 2rem;">
-          Найшвидша та точна карта тривог України. Працює на всіх пристроях 24/7.
-        </p>
-        <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
-          <a href="#map" style="padding: 1rem 2rem; background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; text-decoration: none; border-radius: 0.75rem; font-weight: 600; font-size: 1.1rem; transition: all 0.3s; display: inline-flex; align-items: center; gap: 0.5rem;">
-            <span>📍</span>
-            <span>Відкрити карту</span>
-          </a>
-          <a href="https://t.me/+aBR79kExNQM1ZjZi" target="_blank" style="padding: 1rem 2rem; background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; text-decoration: none; border-radius: 0.75rem; font-weight: 600; font-size: 1.1rem; transition: all 0.3s; display: inline-flex; align-items: center; gap: 0.5rem;">
-            <span>📲</span>
-            <span>Telegram канал</span>
-          </a>
-        </div>
-      </div>
-      
-    </div>
-  </section>
-  
-  <style>
-    .advantage-card:hover {
-      transform: translateY(-8px);
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-    }
-    
-    @media (max-width: 768px) {
-      .advantages-grid {
-        grid-template-columns: 1fr !important;
-      }
-      
-      .unique-features-section h2 {
-        font-size: 2rem !important;
-      }
-      
-      .advantage-card {
-        padding: 1.5rem !important;
-      }
-      
-      .advantage-card h3 {
-        font-size: 1.4rem !important;
-      }
-    }
-  </style>
-  
-  <!-- Footer -->
-  <footer style="background: linear-gradient(135deg, #0f172a, #1e1b4b); border-top: 2px solid rgba(59, 130, 246, 0.2); padding: 4rem 2rem 2rem;">
-    <div class="footer-content" style="max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 3rem; margin-bottom: 3rem;">
-      <div class="footer-section" style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(59, 130, 246, 0.05)); padding: 2rem; border-radius: 1rem; border: 1px solid rgba(59, 130, 246, 0.2);">
-        <h4 style="color: #60a5fa; margin-bottom: 1.5rem; font-size: 1.3rem; font-weight: 700;">📚 Про проект</h4>
-        <a href="/about" style="display: block; color: #cbd5e1; text-decoration: none; padding: 0.5rem 0; transition: all 0.3s; font-size: 1.05rem;">Про нас</a>
-        <a href="/faq" style="display: block; color: #cbd5e1; text-decoration: none; padding: 0.5rem 0; transition: all 0.3s; font-size: 1.05rem;">Часті питання</a>
-        <a href="/privacy" style="display: block; color: #cbd5e1; text-decoration: none; padding: 0.5rem 0; transition: all 0.3s; font-size: 1.05rem;">Конфіденційність</a>
-        <a href="/terms" style="display: block; color: #cbd5e1; text-decoration: none; padding: 0.5rem 0; transition: all 0.3s; font-size: 1.05rem;">Умови використання</a>
-      </div>
-      
-      <div class="footer-section" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.05)); padding: 2rem; border-radius: 1rem; border: 1px solid rgba(16, 185, 129, 0.2);">
-        <h4 style="color: #34d399; margin-bottom: 1.5rem; font-size: 1.3rem; font-weight: 700;">🗺️ Сервіси</h4>
-        <a href="/" style="display: block; color: #cbd5e1; text-decoration: none; padding: 0.5rem 0; transition: all 0.3s; font-size: 1.05rem;">Карта тривог</a>
-      </div>
-      
-      <div class="footer-section" style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.05)); padding: 2rem; border-radius: 1rem; border: 1px solid rgba(245, 158, 11, 0.2);">
-        <h4 style="color: #fbbf24; margin-bottom: 1.5rem; font-size: 1.3rem; font-weight: 700;">📡 Джерела даних</h4>
-        <a href="https://t.me/air_alert_ua" target="_blank" style="display: block; color: #cbd5e1; text-decoration: none; padding: 0.5rem 0; transition: all 0.3s; font-size: 1.05rem;">Telegram боти</a>
-      </div>
-      
-      <div class="footer-section" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(139, 92, 246, 0.05)); padding: 2rem; border-radius: 1rem; border: 1px solid rgba(139, 92, 246, 0.2);">
-        <h4 style="color: #a78bfa; margin-bottom: 1.5rem; font-size: 1.3rem; font-weight: 700;">📞 Контакти</h4>
-        <a href="/contact" style="display: block; color: #cbd5e1; text-decoration: none; padding: 0.5rem 0; transition: all 0.3s; font-size: 1.05rem;">Контактна інформація</a>
-        <a href="mailto:support@neptun.in.ua" style="display: block; color: #cbd5e1; text-decoration: none; padding: 0.5rem 0; transition: all 0.3s; font-size: 1.05rem;">Email підтримка</a>
-        <a href="https://t.me/neptunsupport" target="_blank" style="display: block; color: #cbd5e1; text-decoration: none; padding: 0.5rem 0; transition: all 0.3s; font-size: 1.05rem;">Telegram підтримка</a>
-       
-      </div>
-    </div>
-    
-    <div style="text-align: center; padding-top: 2rem; border-top: 1px solid rgba(59, 130, 246, 0.2); position: relative; z-index: 1;">
-      <p style="margin-bottom: 0.5rem; color: #94a3b8; font-size: 1rem; font-weight: 500;">&copy; 2024-2025 NEPTUN Alert. Всі права захищені.</p>
-      <p style="font-size: 1.1rem; background: linear-gradient(135deg, #3b82f6, #8b5cf6, #ec4899); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; font-weight: 700;">Створено з ❤️ для України | Слава Україні! 🇺🇦</p>
-    </div>
-  </footer>
-
   <!-- Ad Revenue Optimization Script -->
   <script>
     // Ad viewability tracking and auto-refresh for better revenue
@@ -6762,119 +6531,6 @@
       window.addEventListener('beforeunload', () => {
         clearInterval(engagementTimer);
       });
-    })();
-  </script>
-
-  <!-- Events Section Script -->
-  <script>
-    (function() {
-      const eventList = document.getElementById('eventList');
-      if (!eventList) return;
-      
-      // Cache to store all unique events and prevent flickering
-      const eventsCache = new Map();
-      const MAX_EVENTS = 50;
-      
-      function createEventKey(event) {
-        // Create unique key based on region + status + timestamp
-        return `${event.region || ''}_${event.status}_${event.timestamp}`;
-      }
-      
-      function renderEvents() {
-        // Sort by timestamp (newest first)
-        const sortedEvents = Array.from(eventsCache.values())
-          .sort((a, b) => {
-            // Parse timestamps for proper sorting
-            const timeA = new Date(a.timestamp.replace(/(\d{2})\.(\d{2})\.(\d{4}) (\d{2}):(\d{2}):(\d{2})/, '$3-$2-$1T$4:$5:$6'));
-            const timeB = new Date(b.timestamp.replace(/(\d{2})\.(\d{2})\.(\d{4}) (\d{2}):(\d{2}):(\d{2})/, '$3-$2-$1T$4:$5:$6'));
-            return timeB - timeA;
-          })
-          .slice(0, MAX_EVENTS);
-        
-        if (sortedEvents.length === 0) {
-          eventList.innerHTML = '<p style="text-align: center; color: #94a3b8; padding: 2rem;">Немає нових подій</p>';
-          return;
-        }
-        
-        eventList.innerHTML = sortedEvents.map(event => {
-          const isAlarm = event.emoji === '🚨';
-          const bgColor = isAlarm ? 'rgba(239, 68, 68, 0.1)' : 'rgba(34, 197, 94, 0.1)';
-          const borderColor = isAlarm ? '#ef4444' : '#22c65b';
-          const statusColor = isAlarm ? '#fca5a5' : '#86efac';
-          
-          return `
-            <div class="event-card" style="
-              background: linear-gradient(135deg, ${bgColor}, rgba(15, 23, 42, 0.8));
-              border: 1px solid ${borderColor};
-              border-radius: 12px;
-              padding: 1.5rem;
-              transition: transform 0.2s, box-shadow 0.2s;
-            ">
-              <div style="display: flex; align-items: start; gap: 1rem;">
-                <div style="font-size: 2rem; line-height: 1;">${event.emoji}</div>
-                <div style="flex: 1;">
-                  <h3 style="color: ${statusColor}; font-size: 1.25rem; margin: 0 0 0.5rem 0; font-weight: 600;">
-                    ${event.region || event.status}
-                  </h3>
-                  <p style="color: #cbd5e1; margin: 0 0 0.5rem 0; font-size: 0.95rem;">
-                    ${event.status}
-                  </p>
-                  <p style="color: #64748b; margin: 0; font-size: 0.85rem;">
-                    <i class="material-icons" style="font-size: 0.85rem; vertical-align: middle;">schedule</i>
-                    ${event.timestamp}
-                  </p>
-                </div>
-              </div>
-            </div>
-          `;
-        }).join('');
-      }
-      
-      function fetchEvents() {
-        fetch('/api/events')
-          .then(res => res.json())
-          .then(events => {
-            if (!Array.isArray(events)) return;
-            
-            // Add new events to cache (deduplicate)
-            events.forEach(event => {
-              const key = createEventKey(event);
-              if (!eventsCache.has(key)) {
-                eventsCache.set(key, event);
-              }
-            });
-            
-            // Clean old events (keep only last 24 hours)
-            const now = new Date();
-            const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-            
-            for (const [key, event] of eventsCache.entries()) {
-              try {
-                const eventTime = new Date(event.timestamp.replace(/(\d{2})\.(\d{2})\.(\d{4}) (\d{2}):(\d{2}):(\d{2})/, '$3-$2-$1T$4:$5:$6'));
-                if (eventTime < oneDayAgo) {
-                  eventsCache.delete(key);
-                }
-              } catch (e) {
-                // Keep events with unparseable timestamps
-              }
-            }
-            
-            // Render stable list
-            renderEvents();
-          })
-          .catch(err => {
-            console.error('Failed to fetch events:', err);
-            if (eventsCache.size === 0) {
-              eventList.innerHTML = '<p style="text-align: center; color: #ef4444; padding: 2rem;">Помилка завантаження подій</p>';
-            }
-          });
-      }
-      
-      // Initial fetch
-      fetchEvents();
-      
-      // Auto-refresh every 30 seconds
-      setInterval(fetchEvents, 120000);
     })();
   </script>
 
