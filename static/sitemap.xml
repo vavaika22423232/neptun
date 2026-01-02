@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
         xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml"
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9
         http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
@@ -8,28 +9,55 @@
   <!-- Головна сторінка - карта тривог України -->
   <url>
     <loc>https://neptun.in.ua/</loc>
-    <lastmod>2024-11-16</lastmod>
+    <lastmod>2026-01-02</lastmod>
     <changefreq>always</changefreq>
     <priority>1.0</priority>
     <image:image>
       <image:loc>https://neptun.in.ua/static/default.png</image:loc>
-      <image:title>Карта повітряних тривог України онлайн</image:title>
-      <image:caption>Актуальна карта тривог, шахедів, ракет України в реальному часі</image:caption>
+      <image:title>Карта тривог України онлайн - NEPTUN</image:title>
+      <image:caption>Карта тривог, шахедів, ракет України в реальному часі. Найточніша карта тревог України 24/7</image:caption>
     </image:image>
+    <xhtml:link rel="alternate" hreflang="uk" href="https://neptun.in.ua/"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://neptun.in.ua/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://neptun.in.ua/"/>
+  </url>
+  
+  <!-- Карта тривог - основна сторінка з хешем -->
+  <url>
+    <loc>https://neptun.in.ua/#map</loc>
+    <lastmod>2026-01-02</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.95</priority>
   </url>
   
   <!-- Карта відключень світла -->
   <url>
     <loc>https://neptun.in.ua/blackouts</loc>
-    <lastmod>2024-11-16</lastmod>
+    <lastmod>2026-01-02</lastmod>
     <changefreq>hourly</changefreq>
     <priority>0.9</priority>
+  </url>
+  
+  <!-- Аналітика тривог -->
+  <url>
+    <loc>https://neptun.in.ua/analytics</loc>
+    <lastmod>2026-01-02</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.85</priority>
   </url>
   
   <!-- Про проект -->
   <url>
     <loc>https://neptun.in.ua/about</loc>
-    <lastmod>2024-11-16</lastmod>
+    <lastmod>2026-01-02</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  
+  <!-- Про систему NEPTUN (хеш) -->
+  <url>
+    <loc>https://neptun.in.ua/#about</loc>
+    <lastmod>2026-01-02</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
@@ -37,7 +65,7 @@
   <!-- Часто задавані питання -->
   <url>
     <loc>https://neptun.in.ua/faq</loc>
-    <lastmod>2024-11-16</lastmod>
+    <lastmod>2026-01-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
@@ -45,7 +73,7 @@
   <!-- Політика конфіденційності -->
   <url>
     <loc>https://neptun.in.ua/privacy</loc>
-    <lastmod>2024-11-16</lastmod>
+    <lastmod>2026-01-02</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.4</priority>
   </url>
@@ -53,7 +81,7 @@
   <!-- Умови використання -->
   <url>
     <loc>https://neptun.in.ua/terms</loc>
-    <lastmod>2024-11-16</lastmod>
+    <lastmod>2026-01-02</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.4</priority>
   </url>
@@ -61,7 +89,7 @@
   <!-- Правила безпеки -->
   <url>
     <loc>https://neptun.in.ua/safety</loc>
-    <lastmod>2024-11-16</lastmod>
+    <lastmod>2026-01-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.3</priority>
   </url>

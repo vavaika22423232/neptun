@@ -14617,11 +14617,15 @@ def google_verification():
 
 @app.route('/')
 def index():
+    """Main page - Карта тривог України онлайн"""
     # BANDWIDTH OPTIMIZATION: Add caching headers for main page
     response = render_template('index.html')
     resp = app.response_class(response)
     resp.headers['Cache-Control'] = 'public, max-age=300'  # 5 minutes cache
     resp.headers['ETag'] = f'index-{int(time.time() // 300)}'
+    # SEO Headers for search engines
+    resp.headers['X-Robots-Tag'] = 'index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1'
+    resp.headers['Link'] = '<https://neptun.in.ua/>; rel="canonical"'
     return resp
 
 @app.route('/map-only')
@@ -16740,13 +16744,101 @@ def app_ads_txt():
 
 @app.route('/robots.txt')
 def robots_txt():
-    """Serve robots.txt for search engines"""
-    return send_from_directory('static', 'robots.txt', mimetype='text/plain')
+    """Serve robots.txt for search engines with proper SEO headers"""
+    response = send_from_directory('static', 'robots.txt', mimetype='text/plain')
+    response.headers['Cache-Control'] = 'public, max-age=86400'  # 24 hours
+    response.headers['X-Robots-Tag'] = 'noindex'  # Don't index robots.txt itself
+    return response
 
 @app.route('/sitemap.xml')
 def sitemap_xml():
-    """Serve sitemap.xml for search engines"""
-    return send_from_directory('static', 'sitemap.xml', mimetype='application/xml')
+    """Serve dynamic sitemap.xml for search engines with proper headers"""
+    from datetime import datetime
+    today = datetime.now().strftime('%Y-%m-%d')
+    
+    sitemap_content = f'''<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  
+  <!-- Головна сторінка - карта тривог України -->
+  <url>
+    <loc>https://neptun.in.ua/</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>always</changefreq>
+    <priority>1.0</priority>
+    <image:image>
+      <image:loc>https://neptun.in.ua/static/default.png</image:loc>
+      <image:title>Карта тривог України онлайн - NEPTUN</image:title>
+      <image:caption>Карта тривог, шахедів, ракет України в реальному часі 24/7</image:caption>
+    </image:image>
+    <xhtml:link rel="alternate" hreflang="uk" href="https://neptun.in.ua/"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://neptun.in.ua/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://neptun.in.ua/"/>
+  </url>
+  
+  <url>
+    <loc>https://neptun.in.ua/#map</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.95</priority>
+  </url>
+  
+  <url>
+    <loc>https://neptun.in.ua/blackouts</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>hourly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  
+  <url>
+    <loc>https://neptun.in.ua/analytics</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.85</priority>
+  </url>
+  
+  <url>
+    <loc>https://neptun.in.ua/about</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  
+  <url>
+    <loc>https://neptun.in.ua/#about</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  
+  <url>
+    <loc>https://neptun.in.ua/faq</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  
+  <url>
+    <loc>https://neptun.in.ua/privacy</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.4</priority>
+  </url>
+  
+  <url>
+    <loc>https://neptun.in.ua/terms</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.4</priority>
+  </url>
+
+</urlset>'''
+    
+    response = Response(sitemap_content, mimetype='application/xml')
+    response.headers['Cache-Control'] = 'public, max-age=3600'  # 1 hour
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    return response
 
 @app.route('/presence', methods=['POST'])
 def presence():
