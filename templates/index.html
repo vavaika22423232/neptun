@@ -718,7 +718,7 @@
     0% { left: -100%; }
     100% { left: 100%; }
   }
-  }
+  
   
   /* Desktop live counter - visible by default */
   .desktop-live {
@@ -3146,66 +3146,48 @@
     .copy-toast.show{display:block;animation:fadeIn .25s ease, fadeOut .4s linear 2.4s forwards;}
     @keyframes fadeOut{to{opacity:0;transform:translateY(4px);}}
     
-    /* Support banner - Premium Design */
-    .support-banner{
-      position:fixed;
-      bottom:1.5rem;
-      right:1.5rem;
-      z-index:1300;
-      background:linear-gradient(135deg,#ef4444 0%,#f97316 50%,#eab308 100%);
-      color:#fff;
-      border:none;
-      border-radius:16px;
-      padding:0;
-      max-width:200px;
-      cursor:pointer;
-      box-shadow:0 10px 40px -10px rgba(239,68,68,.5),0 0 0 1px rgba(255,255,255,.1) inset;
-      transition:.3s cubic-bezier(.34,1.56,.64,1);
-      overflow:hidden;
-      animation:supportPulse 3s ease-in-out infinite;
+    /* Support button in navbar */
+    .support-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      box-shadow: 0 2px 10px rgba(255, 107, 107, 0.3);
     }
-    @keyframes supportPulse{
-      0%,100%{box-shadow:0 10px 40px -10px rgba(239,68,68,.5),0 0 0 1px rgba(255,255,255,.1) inset;}
-      50%{box-shadow:0 15px 50px -10px rgba(239,68,68,.7),0 0 0 1px rgba(255,255,255,.2) inset;}
+    .support-btn i {
+      font-size: 16px;
+      animation: heartPulse 1.5s ease infinite;
     }
-    .support-banner::before{
-      content:"";
-      position:absolute;
-      top:0;
-      left:-100%;
-      width:100%;
-      height:100%;
-      background:linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent);
-      animation:supportShine 3s ease infinite;
+    @keyframes heartPulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.15); }
     }
-    @keyframes supportShine{
-      0%{left:-100%;}
-      100%{left:100%;}
+    .support-btn:hover {
+      background: linear-gradient(135deg, #ff7b7b 0%, #ff6b6b 100%);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
     }
-    .support-banner:hover{transform:translateY(-4px) scale(1.03);box-shadow:0 15px 50px -10px rgba(239,68,68,.6),0 0 0 1px rgba(255,255,255,.2) inset;}
-    .support-banner:active{transform:translateY(-2px) scale(.98);}
-    .support-banner-header{display:flex;align-items:center;gap:.5rem;padding:.75rem 1rem .4rem;}
-    .support-banner-icon{font-size:20px;animation:heartBeat 1.5s ease infinite;}
-    @keyframes heartBeat{0%,100%{transform:scale(1);}15%{transform:scale(1.2);}30%{transform:scale(1);}45%{transform:scale(1.15);}60%{transform:scale(1);}}
-    .support-banner-title{font-size:.9rem;font-weight:700;letter-spacing:.3px;text-shadow:0 2px 4px rgba(0,0,0,.2);}
-    .support-banner-text{display:none;}
-    .support-banner-reasons{display:none;}
-    .support-reason{display:flex;align-items:center;gap:.45rem;font-size:.72rem;font-weight:600;opacity:.92;}
-    .support-reason i{font-size:14px;opacity:.8;}
-    .support-banner-cta{
-      background:rgba(0,0,0,.2);
-      color:#fff;
-      padding:.65rem 1rem;
-      font-size:.75rem;
-      font-weight:700;
-      text-align:center;
-      letter-spacing:.5px;
-      transition:.2s;
-      border-top:1px solid rgba(255,255,255,.1);
+    .support-btn:active {
+      transform: translateY(0) scale(0.98);
     }
-    .support-banner:hover .support-banner-cta{background:rgba(0,0,0,.3);}
-    @media (max-width:700px){.support-banner{bottom:1rem;right:.9rem;max-width:170px;border-radius:14px;}.support-banner-title{font-size:.82rem;}.support-banner-cta{font-size:.7rem;padding:.55rem .8rem;}.support-banner-header{padding:.6rem .8rem .35rem;}}
-    @media (max-width:900px){.support-banner{right:1rem;bottom:1rem;}}
+    @media (max-width: 700px) {
+      .support-btn {
+        padding: 6px 12px;
+        font-size: 12px;
+        border-radius: 8px;
+      }
+      .support-btn i {
+        font-size: 14px;
+      }
+    }
     
     .map-theme-fab{position:fixed;bottom:5rem;right:1.5rem;z-index:1300;background:linear-gradient(135deg,rgba(30,41,59,.95),rgba(51,65,85,.95));backdrop-filter:blur(10px);color:#fff;border:1px solid rgba(255,255,255,.1);border-radius:14px;width:3.2rem;height:3.2rem;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 8px 25px -8px rgba(0,0,0,.4);transition:.25s;}
     .map-theme-fab i{font-size:18px;}
@@ -3291,19 +3273,7 @@
 
   </style>
 
-  <div class="support-banner" id="supportBanner" onclick="toggleDonate()" role="button" tabindex="0" aria-haspopup="dialog" aria-controls="donateModal">
-    <div class="support-banner-header">
-      <i class="material-icons support-banner-icon">favorite</i>
-      <div class="support-banner-title">Підтримай Neptun</div>
-    </div>
-    <div class="support-banner-text">Кожен донат рятує життя українців! Ваша підтримка допомагає:</div>
-    <div class="support-banner-reasons">
-      <div class="support-reason"><i class="material-icons">⚡</i>Швидше оповіщення про загрози</div>
-      <div class="support-reason"><i class="material-icons">🎯</i>Точніше визначення місць атак</div>
-      <div class="support-reason"><i class="material-icons">🛡️</i>Більше часу дістатися укриття</div>
-    </div>
-    <div class="support-banner-cta">💙💛 ПІДТРИМАТИ ЗАРАЗ</div>
-  </div>
+
   <button class="map-theme-fab" id="mapThemeFab" onclick="toggleMapTheme()" title="Переключити тему карти"><i class="material-icons" id="mapThemeIcon">dark_mode</i></button>
   <div class="donate-modal-overlay" id="donateModal" role="dialog" aria-labelledby="donateTitle" aria-modal="true">
     <div class="donate-modal">
@@ -3379,7 +3349,7 @@
       <a href="#map" class="active"><i class="material-icons">map</i> Карта</a>
       <a href="/analytics" target="_blank"><i class="material-icons">analytics</i> Аналітика</a>
       <a href="#about"><i class="material-icons">info</i> Інфо</a>
-      
+      <button class="support-btn" onclick="toggleDonate()" title="Підтримати проєкт"><i class="material-icons">favorite</i> Підтримати</button>
     </div>
     <div class="live-users desktop-live" id="liveUsersDesktop" title="Активні відвідувачі зараз онлайн • Оновлюється кожні 30 секунд">
       <div class="live-header">
@@ -3502,18 +3472,20 @@
         display: flex;
         position: relative;
         width: 100%;
-        background: linear-gradient(135deg, #0088cc 0%, #229ed9 50%, #2aabee 100%);
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        border: 1px solid rgba(255, 107, 107, 0.4);
         border-radius: 16px;
         padding: 14px 20px;
         margin-bottom: 16px;
         text-decoration: none;
         overflow: hidden;
-        box-shadow: 0 4px 20px rgba(42, 171, 238, 0.3);
+        box-shadow: 0 4px 20px rgba(255, 107, 107, 0.2), inset 0 1px 0 rgba(255,255,255,0.05);
         transition: all 0.3s ease;
       }
       .tg-banner:hover {
         transform: translateY(-2px);
-        box-shadow: 0 8px 30px rgba(42, 171, 238, 0.4);
+        border-color: rgba(255, 107, 107, 0.6);
+        box-shadow: 0 8px 30px rgba(255, 107, 107, 0.3), inset 0 1px 0 rgba(255,255,255,0.05);
       }
       .tg-banner-bg {
         position: absolute;
@@ -3566,19 +3538,20 @@
         display: flex;
         align-items: center;
         gap: 6px;
-        background: white;
-        color: #0088cc;
+        background: linear-gradient(135deg, #00d4aa 0%, #00b894 100%);
+        color: white;
         padding: 10px 18px;
         border-radius: 10px;
         font-size: 14px;
         font-weight: 600;
         flex-shrink: 0;
         transition: all 0.2s;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        box-shadow: 0 2px 10px rgba(0, 212, 170, 0.3);
       }
       .tg-banner:hover .tg-banner-btn {
-        background: #f0f9ff;
-        transform: scale(1.02);
+        background: linear-gradient(135deg, #00e4ba 0%, #00d4aa 100%);
+        transform: scale(1.03);
+        box-shadow: 0 4px 15px rgba(0, 212, 170, 0.4);
       }
       .tg-banner-close {
         position: absolute;
@@ -3587,7 +3560,7 @@
         width: 24px;
         height: 24px;
         border: none;
-        background: rgba(255,255,255,0.2);
+        background: rgba(255,255,255,0.1);
         border-radius: 50%;
         color: white;
         font-size: 16px;
