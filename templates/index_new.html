@@ -1186,10 +1186,10 @@
             const regionName = feature.properties.NL_NAME_1 || feature.properties.NAME_1;
             const isAlarm = alarmRegions[regionName];
             return {
-              fillColor: isAlarm ? '#9b2c2c' : 'transparent',
-              fillOpacity: isAlarm ? 0.6 : 0,
-              color: isAlarm ? '#c53030' : 'transparent',
-              weight: isAlarm ? 2 : 0
+              fillColor: isAlarm ? '#991b1b' : 'transparent',
+              fillOpacity: isAlarm ? 1 : 0,
+              color: isAlarm ? '#7f1d1d' : 'transparent',
+              weight: isAlarm ? 1 : 0
             };
           },
           onEachFeature: function(feature, layer) {
@@ -1204,10 +1204,10 @@
             const districtName = feature.properties.name;
             const isAlarm = alarmDistricts[districtName];
             return {
-              fillColor: isAlarm ? '#dc2626' : 'transparent',
-              fillOpacity: isAlarm ? 0.5 : 0,
-              color: isAlarm ? '#ef4444' : 'transparent',
-              weight: isAlarm ? 1.5 : 0
+              fillColor: isAlarm ? '#b91c1c' : 'transparent',
+              fillOpacity: isAlarm ? 1 : 0,
+              color: isAlarm ? '#7f1d1d' : 'transparent',
+              weight: isAlarm ? 1 : 0
             };
           },
           onEachFeature: function(feature, layer) {
@@ -1375,10 +1375,10 @@
           const regionNameEng = feature.properties.NAME_1;
           const isAlarm = alarmRegions[regionNameUkr] || alarmRegions[regionNameEng];
           return {
-            fillColor: isAlarm ? '#9b2c2c' : 'transparent',
-            fillOpacity: isAlarm ? 0.5 : 0,
-            color: isAlarm ? '#c53030' : 'transparent',
-            weight: isAlarm ? 2 : 0
+            fillColor: isAlarm ? '#991b1b' : 'transparent',
+            fillOpacity: isAlarm ? 1 : 0,
+            color: isAlarm ? '#7f1d1d' : 'transparent',
+            weight: isAlarm ? 1 : 0
           };
         });
       }
@@ -1389,10 +1389,10 @@
           const districtName = feature.properties.name;
           const isAlarm = alarmDistricts[districtName];
           return {
-            fillColor: isAlarm ? '#dc2626' : 'transparent',
-            fillOpacity: isAlarm ? 0.5 : 0,
-            color: isAlarm ? '#ef4444' : 'transparent',
-            weight: isAlarm ? 1.5 : 0
+            fillColor: isAlarm ? '#b91c1c' : 'transparent',
+            fillOpacity: isAlarm ? 1 : 0,
+            color: isAlarm ? '#7f1d1d' : 'transparent',
+            weight: isAlarm ? 1 : 0
           };
         });
       }
