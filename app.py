@@ -998,16 +998,31 @@ if API_ID and API_HASH:
 
 # Use persistent disk on Render for data that should survive deploys
 PERSISTENT_DATA_DIR = os.getenv('PERSISTENT_DATA_DIR', '/data')
-# Ensure the directory exists
+
+# Log persistent storage status
+log.info(f'PERSISTENT_DATA_DIR: {PERSISTENT_DATA_DIR}')
+log.info(f'Directory exists: {os.path.isdir(PERSISTENT_DATA_DIR)}')
+
+# Try to create the directory if it doesn't exist (Render disk should be mounted)
+try:
+    if PERSISTENT_DATA_DIR and not os.path.isdir(PERSISTENT_DATA_DIR):
+        os.makedirs(PERSISTENT_DATA_DIR, exist_ok=True)
+        log.info(f'Created directory: {PERSISTENT_DATA_DIR}')
+except Exception as e:
+    log.warning(f'Could not create persistent directory: {e}')
+
+# Check again after attempting to create
 if PERSISTENT_DATA_DIR and os.path.isdir(PERSISTENT_DATA_DIR):
     MESSAGES_FILE = os.path.join(PERSISTENT_DATA_DIR, 'messages.json')
     CHAT_MESSAGES_FILE = os.path.join(PERSISTENT_DATA_DIR, 'chat_messages.json')
     HIDDEN_FILE = os.path.join(PERSISTENT_DATA_DIR, 'hidden_markers.json')
+    log.info(f'Using PERSISTENT storage: {CHAT_MESSAGES_FILE}')
 else:
     # Fallback to local files (for development)
     MESSAGES_FILE = 'messages.json'
     CHAT_MESSAGES_FILE = 'chat_messages.json'  # Anonymous chat messages
     HIDDEN_FILE = 'hidden_markers.json'
+    log.warning(f'Using LOCAL storage (will be lost on redeploy): {CHAT_MESSAGES_FILE}')
 OPENCAGE_CACHE_FILE = 'opencage_cache.json'
 OPENCAGE_TTL = 60 * 60 * 24 * 30  # 30 days
 NEG_GEOCODE_FILE = 'negative_geocode_cache.json'
