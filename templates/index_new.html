@@ -422,6 +422,18 @@
       font-size: 13px;
     }
     
+    /* City labels - prevent offset issues on zoom */
+    .city-label {
+      background: transparent !important;
+      border: none !important;
+      transform: translateX(-50%);
+    }
+    
+    .city-dot {
+      background: transparent !important;
+      border: none !important;
+    }
+
     .popup-title {
       font-weight: 700;
       font-size: 14px;
@@ -990,6 +1002,41 @@
       default: '/static/default.png'
     };
     
+    // ===== ALARM API CONFIG =====
+    const ALARM_API_KEY = '57fe8a39:7698ad50f0f15d502b280a83019bab25';
+    const ALARM_API_URL = 'https://api.ukrainealarm.com/api/v3/alerts';
+    const ALARM_UPDATE_INTERVAL = 30000; // 30 seconds
+    
+    // Mapping from API regionName to GeoJSON NL_NAME_1 (Ukrainian name)
+    const REGION_MAPPING = {
+      "Вінницька область": "Вінницька",
+      "Волинська область": "Волинська",
+      "Дніпропетровська область": "Дніпропетровська",
+      "Донецька область": "Донецька",
+      "Житомирська область": "Житомирська",
+      "Закарпатська область": "Закарпатська",
+      "Запорізька область": "Запорізька",
+      "Івано-Франківська область": "Івано-Франківська",
+      "Київська область": "Київська",
+      "Кіровоградська область": "Кіровоградська",
+      "Луганська область": "Луганська",
+      "Львівська область": "Львівська",
+      "Миколаївська область": "Миколаївська",
+      "Одеська область": "Одеська",
+      "Полтавська область": "Полтавська",
+      "Рівненська область": "Рівненська",
+      "Сумська область": "Сумська",
+      "Тернопільська область": "Тернопільська",
+      "Харківська область": "Харківська",
+      "Херсонська область": "Херсонська",
+      "Хмельницька область": "Хмельницька",
+      "Черкаська область": "Черкаська",
+      "Чернівецька область": "Чернівецька",
+      "Чернігівська область": "Чернігівська",
+      "м. Київ": "Київ",
+      "Автономна Республіка Крим": "Crimea"
+    };
+
     // ===== STATE =====
     let sidebarOpen = true;
     let currentData = [];
@@ -997,6 +1044,9 @@
     let markerLayer = null;
     let svgOverlay = null;
     let cityLabelsLayer = null;
+    let alarmLayer = null;
+    let alarmRegions = {}; // Store active alarm regions
+    let geojsonData = null; // Store GeoJSON data
 
     // City coordinates for labels
     const CITIES = [
@@ -1094,6 +1144,123 @@
       
       console.log('Leaflet map initialized with SVG overlay');
       console.log('Bounds:', SVG_BOUNDS);
+      
+      // Load GeoJSON and start alarm updates
+      loadGeoJSONAndAlarms();
+    }
+    
+    // Load GeoJSON data and initialize alarm layer
+    async function loadGeoJSONAndAlarms() {
+      try {
+        // Load GeoJSON for Ukraine oblasts
+        const response = await fetch('/static/ukraine_oblasts.geojson');
+        if (!response.ok) throw new Error('Failed to load GeoJSON');
+        geojsonData = await response.json();
+        console.log('GeoJSON loaded:', geojsonData.features?.length, 'features');
+        
+        // Create alarm layer (add it below markers but above SVG)
+        alarmLayer = L.geoJSON(geojsonData, {
+          style: function(feature) {
+            const regionName = feature.properties.NL_NAME_1 || feature.properties.NAME_1;
+            const isAlarm = alarmRegions[regionName];
+            return {
+              fillColor: isAlarm ? '#9b2c2c' : 'transparent',
+              fillOpacity: isAlarm ? 0.6 : 0,
+              color: isAlarm ? '#c53030' : 'transparent',
+              weight: isAlarm ? 2 : 0
+            };
+          },
+          onEachFeature: function(feature, layer) {
+            const regionName = feature.properties.NL_NAME_1 || feature.properties.NAME_1;
+            layer.bindPopup(`<b>${regionName}</b>`);
+          }
+        }).addTo(map);
+        
+        // Move alarm layer to back (but above SVG)
+        alarmLayer.bringToBack();
+        
+        // Fetch initial alarms
+        await fetchAlarms();
+        
+        // Start regular alarm updates
+        setInterval(fetchAlarms, ALARM_UPDATE_INTERVAL);
+        
+      } catch (error) {
+        console.error('Error loading GeoJSON or alarms:', error);
+      }
+    }
+    
+    // Fetch alarms from ukrainealarm API
+    async function fetchAlarms() {
+      try {
+        // Use CORS proxy or direct call (depends on your backend setup)
+        // For direct call, you need a proxy or backend endpoint
+        const response = await fetch('/api/alarms/proxy');
+        
+        if (!response.ok) {
+          // Try direct API call as fallback (may fail due to CORS)
+          console.log('Proxy failed, trying direct API...');
+          const directResponse = await fetch(ALARM_API_URL, {
+            headers: {
+              'Authorization': ALARM_API_KEY
+            }
+          });
+          if (!directResponse.ok) throw new Error('API error');
+          const data = await directResponse.json();
+          updateAlarmLayer(data);
+          return;
+        }
+        
+        const data = await response.json();
+        updateAlarmLayer(data);
+        
+      } catch (error) {
+        console.error('Error fetching alarms:', error);
+      }
+    }
+    
+    // Update alarm layer based on API response
+    function updateAlarmLayer(alertsData) {
+      if (!alarmLayer || !alertsData) return;
+      
+      // Reset alarm regions
+      alarmRegions = {};
+      
+      // Process alerts - API returns array of regions with activeAlerts
+      alertsData.forEach(region => {
+        if (region.activeAlerts && region.activeAlerts.length > 0) {
+          // Map API region name to GeoJSON region name
+          const geoJsonName = REGION_MAPPING[region.regionName];
+          if (geoJsonName) {
+            alarmRegions[geoJsonName] = {
+              alerts: region.activeAlerts,
+              regionType: region.regionType
+            };
+          }
+        }
+      });
+      
+      // Count alarm regions
+      const alarmCount = Object.keys(alarmRegions).length;
+      console.log('Active alarms in', alarmCount, 'regions:', Object.keys(alarmRegions));
+      
+      // Update GeoJSON layer style
+      alarmLayer.setStyle(function(feature) {
+        const regionName = feature.properties.NL_NAME_1 || feature.properties.NAME_1;
+        const isAlarm = alarmRegions[regionName];
+        return {
+          fillColor: isAlarm ? '#9b2c2c' : 'transparent',
+          fillOpacity: isAlarm ? 0.5 : 0,
+          color: isAlarm ? '#c53030' : 'transparent',
+          weight: isAlarm ? 2 : 0
+        };
+      });
+      
+      // Update alarm counter in sidebar if exists
+      const alarmCounter = document.getElementById('alarmCount');
+      if (alarmCounter) {
+        alarmCounter.textContent = alarmCount;
+      }
     }
     
     // Add city labels to map
@@ -1131,12 +1298,13 @@
         
         L.marker([city.lat, city.lng], { icon: dotIcon, interactive: false }).addTo(cityLabelsLayer);
         
-        // Add city label (offset from dot)
+        // Add city label (offset from dot) - fixed anchor for proper alignment
+        const labelOffset = dotSize + 4; // offset below dot
         const labelIcon = L.divIcon({
           className: 'city-label',
-          html: '<div style="font-size:' + fontSize + 'px;font-weight:' + fontWeight + ';color:' + color + ';text-shadow:2px 2px 4px rgba(0,0,0,0.9),-2px -2px 4px rgba(0,0,0,0.9);white-space:nowrap;">' + city.name + '</div>',
-          iconSize: [150, 24],
-          iconAnchor: [75, -dotSize/2 - 2]
+          html: '<div style="font-size:' + fontSize + 'px;font-weight:' + fontWeight + ';color:' + color + ';text-shadow:2px 2px 4px rgba(0,0,0,0.9),-2px -2px 4px rgba(0,0,0,0.9);white-space:nowrap;text-align:center;">' + city.name + '</div>',
+          iconSize: [0, 0],
+          iconAnchor: [0, -labelOffset]
         });
         
         L.marker([city.lat, city.lng], { icon: labelIcon, interactive: false }).addTo(cityLabelsLayer);
