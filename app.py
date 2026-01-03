@@ -584,7 +584,7 @@ DISTRICT_TO_OBLAST = {
 
 @app.route('/api/alarms/proxy')
 def alarm_proxy():
-    """Proxy for ukrainealarm.com API to bypass CORS - aggregates to oblast level"""
+    """Proxy for ukrainealarm.com API - returns only OBLAST-WIDE (State) alerts"""
     try:
         response = http_requests.get(
             f'{ALARM_API_BASE}/alerts',
@@ -593,43 +593,54 @@ def alarm_proxy():
         )
         if response.ok:
             data = response.json()
-            # Aggregate district-level alerts to oblast level
-            oblasts_with_alarms = set()
+            # Return only State-level alerts (whole oblast alarms)
+            # Don't color oblast if only some districts have alarm
+            result = []
             
             for region in data:
                 if region.get('activeAlerts') and len(region['activeAlerts']) > 0:
-                    region_name = region.get('regionName', '')
                     region_type = region.get('regionType', '')
                     
                     if region_type == 'State':
-                        # Direct oblast alert
-                        oblasts_with_alarms.add(region_name)
-                    elif region_type == 'District':
-                        # Map district to oblast
-                        oblast = DISTRICT_TO_OBLAST.get(region_name)
-                        if oblast:
-                            oblasts_with_alarms.add(oblast)
-                        else:
-                            # Fallback: try to find oblast from name pattern
-                            for key, val in DISTRICT_TO_OBLAST.items():
-                                if key in region_name or region_name in key:
-                                    oblasts_with_alarms.add(val)
-                                    break
-            
-            # Return aggregated oblast-level data
-            result = []
-            for oblast in oblasts_with_alarms:
-                result.append({
-                    'regionName': oblast,
-                    'regionType': 'State',
-                    'activeAlerts': [{'type': 'AIR'}]  # Simplified alert type
-                })
+                        # Only full oblast alerts
+                        result.append({
+                            'regionName': region.get('regionName'),
+                            'regionType': 'State',
+                            'activeAlerts': region.get('activeAlerts')
+                        })
             
             return jsonify(result)
         else:
             return jsonify({'error': 'API error', 'status': response.status_code}), 502
     except Exception as e:
         print(f"Alarm proxy error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/alarms/all')
+def alarm_all():
+    """Returns ALL alerts (State, District, Community) for detailed view"""
+    try:
+        response = http_requests.get(
+            f'{ALARM_API_BASE}/alerts',
+            headers={'Authorization': ALARM_API_KEY},
+            timeout=10
+        )
+        if response.ok:
+            data = response.json()
+            # Return all active alerts
+            result = []
+            for region in data:
+                if region.get('activeAlerts') and len(region['activeAlerts']) > 0:
+                    result.append({
+                        'regionName': region.get('regionName'),
+                        'regionType': region.get('regionType'),
+                        'activeAlerts': region.get('activeAlerts')
+                    })
+            return jsonify(result)
+        else:
+            return jsonify({'error': 'API error', 'status': response.status_code}), 502
+    except Exception as e:
+        print(f"Alarm all error: {e}")
         return jsonify({'error': str(e)}), 500
 
 # Custom route for serving pre-compressed static files

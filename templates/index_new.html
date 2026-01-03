@@ -1008,11 +1008,12 @@
     const ALARM_UPDATE_INTERVAL = 30000; // 30 seconds
     
     // Mapping from API regionName to GeoJSON NL_NAME_1 (Ukrainian name)
+    // Note: GeoJSON has some names with accents (Дніпропетро́вська, Доне́цька)
     const REGION_MAPPING = {
       "Вінницька область": "Вінницька",
       "Волинська область": "Волинська",
-      "Дніпропетровська область": "Дніпропетровська",
-      "Донецька область": "Донецька",
+      "Дніпропетровська область": "Дніпропетро́вська",
+      "Донецька область": "Доне́цька",
       "Житомирська область": "Житомирська",
       "Закарпатська область": "Закарпатська",
       "Запорізька область": "Запорізька",
@@ -1020,7 +1021,7 @@
       "Київська область": "Київська",
       "Кіровоградська область": "Кіровоградська",
       "Луганська область": "Луганська",
-      "Львівська область": "Львівська",
+      "Львівська область": "Львівська",  // GeoJSON has NA for Lviv, use NAME_1
       "Миколаївська область": "Миколаївська",
       "Одеська область": "Одеська",
       "Полтавська область": "Полтавська",
@@ -1034,7 +1035,8 @@
       "Чернівецька область": "Чернівецька",
       "Чернігівська область": "Чернігівська",
       "м. Київ": "Київ",
-      "Автономна Республіка Крим": "Crimea"
+      "Автономна Республіка Крим": "Крим",
+      "Севастополь": "Севастополь"
     };
 
     // ===== STATE =====
@@ -1226,13 +1228,54 @@
       // Reset alarm regions
       alarmRegions = {};
       
+      // Fallback mapping for English names (NAME_1 in GeoJSON)
+      const ENGLISH_MAPPING = {
+        "Автономна Республіка Крим": "Crimea",
+        "Львівська область": "L'viv",
+        "Дніпропетровська область": "Dnipropetrovs'k",
+        "Донецька область": "Donets'k",
+        "Харківська область": "Kharkiv",
+        "Київська область": "Kiev",
+        "м. Київ": "KievCity",
+        "Одеська область": "Odessa",
+        "Запорізька область": "Zaporizhia",
+        "Луганська область": "Luhans'k",
+        "Миколаївська область": "Mykolayiv",
+        "Херсонська область": "Kherson",
+        "Полтавська область": "Poltava",
+        "Черкаська область": "Cherkasy",
+        "Чернігівська область": "Chernihiv",
+        "Сумська область": "Sumy",
+        "Житомирська область": "Zhytomyr",
+        "Вінницька область": "Vinnytsya",
+        "Хмельницька область": "Khmel'nyts'kyy",
+        "Рівненська область": "Rivne",
+        "Волинська область": "Volyn",
+        "Тернопільська область": "Ternopil'",
+        "Івано-Франківська область": "Ivano-Frankivs'k",
+        "Закарпатська область": "Zakarpattia",
+        "Чернівецька область": "Chernivtsi",
+        "Кіровоградська область": "Kirovohrad",
+        "Севастополь": "Sevastopol'"
+      };
+      
       // Process alerts - API returns array of regions with activeAlerts
+      // Now only State-level alerts (whole oblast)
       alertsData.forEach(region => {
         if (region.activeAlerts && region.activeAlerts.length > 0) {
-          // Map API region name to GeoJSON region name
-          const geoJsonName = REGION_MAPPING[region.regionName];
-          if (geoJsonName) {
-            alarmRegions[geoJsonName] = {
+          // Map API region name to GeoJSON region name (Ukrainian)
+          const geoJsonNameUkr = REGION_MAPPING[region.regionName];
+          // Also get English name as fallback
+          const geoJsonNameEng = ENGLISH_MAPPING[region.regionName];
+          
+          if (geoJsonNameUkr) {
+            alarmRegions[geoJsonNameUkr] = {
+              alerts: region.activeAlerts,
+              regionType: region.regionType
+            };
+          }
+          if (geoJsonNameEng) {
+            alarmRegions[geoJsonNameEng] = {
               alerts: region.activeAlerts,
               regionType: region.regionType
             };
@@ -1241,13 +1284,14 @@
       });
       
       // Count alarm regions
-      const alarmCount = Object.keys(alarmRegions).length;
-      console.log('Active alarms in', alarmCount, 'regions:', Object.keys(alarmRegions));
+      const alarmCount = Object.keys(alarmRegions).length / 2; // Divided by 2 because we store both ukr and eng
+      console.log('Active alarms in', Math.ceil(alarmCount), 'oblasts:', Object.keys(alarmRegions));
       
       // Update GeoJSON layer style
       alarmLayer.setStyle(function(feature) {
-        const regionName = feature.properties.NL_NAME_1 || feature.properties.NAME_1;
-        const isAlarm = alarmRegions[regionName];
+        const regionNameUkr = feature.properties.NL_NAME_1;
+        const regionNameEng = feature.properties.NAME_1;
+        const isAlarm = alarmRegions[regionNameUkr] || alarmRegions[regionNameEng];
         return {
           fillColor: isAlarm ? '#9b2c2c' : 'transparent',
           fillOpacity: isAlarm ? 0.5 : 0,
@@ -1259,7 +1303,7 @@
       // Update alarm counter in sidebar if exists
       const alarmCounter = document.getElementById('alarmCount');
       if (alarmCounter) {
-        alarmCounter.textContent = alarmCount;
+        alarmCounter.textContent = Math.ceil(alarmCount);
       }
     }
     
