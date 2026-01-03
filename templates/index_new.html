@@ -1124,8 +1124,7 @@
         maxZoom: 10,
         zoomControl: true,
         attributionControl: false,
-        crs: L.CRS.EPSG3857, // Standard Web Mercator
-        preferCanvas: true // Use Canvas renderer for better polygon fill
+        crs: L.CRS.EPSG3857 // Standard Web Mercator
       });
       
       // Add SVG overlay as the base map (covers Ukraine bounds)
@@ -1199,20 +1198,21 @@
           }
         }).addTo(map);
         
+        // Create SVG renderer for districts (Canvas may have fill issues)
+        const svgRenderer = L.svg();
+        
         // Create district alarm layer (for District-level alarms)
-        // DEBUG: Force all districts to show as red to test fill
         districtAlarmLayer = L.geoJSON(districtsGeojsonData, {
+          renderer: svgRenderer,
           style: function(feature) {
             const districtName = feature.properties.name;
             const isAlarm = alarmDistricts[districtName];
-            // DEBUG: Force red fill for ALL districts to test
-            const forceShow = true; // Set to false in production
-            const showAlarm = isAlarm || forceShow;
             return {
-              fillColor: showAlarm ? '#b91c1c' : 'transparent',
-              fillOpacity: showAlarm ? 0.7 : 0,
-              color: showAlarm ? '#7f1d1d' : 'transparent',
-              weight: showAlarm ? 1 : 0
+              fillColor: isAlarm ? '#dc2626' : 'transparent',
+              fillOpacity: isAlarm ? 0.8 : 0,
+              color: isAlarm ? '#991b1b' : 'transparent',
+              weight: isAlarm ? 2 : 0,
+              opacity: 1
             };
           },
           onEachFeature: function(feature, layer) {
