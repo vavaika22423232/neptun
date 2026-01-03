@@ -1200,17 +1200,19 @@
         }).addTo(map);
         
         // Create district alarm layer (for District-level alarms)
+        // DEBUG: Force all districts to show as red to test fill
         districtAlarmLayer = L.geoJSON(districtsGeojsonData, {
           style: function(feature) {
             const districtName = feature.properties.name;
             const isAlarm = alarmDistricts[districtName];
+            // DEBUG: Force red fill for ALL districts to test
+            const forceShow = true; // Set to false in production
+            const showAlarm = isAlarm || forceShow;
             return {
-              fillColor: isAlarm ? '#b91c1c' : 'transparent',
-              fillOpacity: isAlarm ? 1 : 0,
-              color: isAlarm ? '#7f1d1d' : 'transparent',
-              weight: isAlarm ? 2 : 0,
-              fill: true,
-              stroke: true
+              fillColor: showAlarm ? '#b91c1c' : 'transparent',
+              fillOpacity: showAlarm ? 0.7 : 0,
+              color: showAlarm ? '#7f1d1d' : 'transparent',
+              weight: showAlarm ? 1 : 0
             };
           },
           onEachFeature: function(feature, layer) {
