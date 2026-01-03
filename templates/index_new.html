@@ -1124,7 +1124,8 @@
         maxZoom: 10,
         zoomControl: true,
         attributionControl: false,
-        crs: L.CRS.EPSG3857 // Standard Web Mercator
+        crs: L.CRS.EPSG3857, // Standard Web Mercator
+        preferCanvas: true // Use Canvas renderer for better polygon fill
       });
       
       // Add SVG overlay as the base map (covers Ukraine bounds)
@@ -1207,7 +1208,9 @@
               fillColor: isAlarm ? '#b91c1c' : 'transparent',
               fillOpacity: isAlarm ? 1 : 0,
               color: isAlarm ? '#7f1d1d' : 'transparent',
-              weight: isAlarm ? 1 : 0
+              weight: isAlarm ? 2 : 0,
+              fill: true,
+              stroke: true
             };
           },
           onEachFeature: function(feature, layer) {
