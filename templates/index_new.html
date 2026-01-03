@@ -944,6 +944,17 @@
         </div>
       </div>
       
+      <!-- Air Raid Alerts Section -->
+      <div class="alarms-section" id="alarmsSection" style="display: none;">
+        <div class="alarms-header" style="padding: 12px 16px; background: rgba(155, 44, 44, 0.2); border-bottom: 1px solid rgba(197, 48, 48, 0.3);">
+          <span style="color: #f87171; font-weight: 600; font-size: 14px;">🚨 Повітряна тривога</span>
+          <span id="alarmCount" style="background: #dc2626; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; margin-left: 8px;">0</span>
+        </div>
+        <div class="alarms-list" id="alarmsList" style="max-height: 200px; overflow-y: auto; padding: 8px 0;">
+          <!-- Alarm regions will be listed here -->
+        </div>
+      </div>
+      
       <div class="events-list" id="eventsList">
         <!-- Events will be loaded here -->
         <div style="padding: 20px; text-align: center; color: var(--text2);">
@@ -1200,33 +1211,75 @@
         const response = await fetch('/api/alarms/proxy');
         
         if (!response.ok) {
-          // Try direct API call as fallback (may fail due to CORS)
-          console.log('Proxy failed, trying direct API...');
-          const directResponse = await fetch(ALARM_API_URL, {
-            headers: {
-              'Authorization': ALARM_API_KEY
-            }
-          });
-          if (!directResponse.ok) throw new Error('API error');
-          const data = await directResponse.json();
-          updateAlarmLayer(data);
-          return;
+          throw new Error('Proxy failed');
         }
         
         const data = await response.json();
         updateAlarmLayer(data);
+        updateAlarmsList(data);
         
       } catch (error) {
         console.error('Error fetching alarms:', error);
       }
     }
     
+    // Update alarms list in sidebar
+    function updateAlarmsList(alertsData) {
+      const alarmsSection = document.getElementById('alarmsSection');
+      const alarmsList = document.getElementById('alarmsList');
+      const alarmCount = document.getElementById('alarmCount');
+      
+      if (!alertsData || (!alertsData.states?.length && !alertsData.districts?.length)) {
+        alarmsSection.style.display = 'none';
+        return;
+      }
+      
+      alarmsSection.style.display = 'block';
+      const totalAlerts = (alertsData.states?.length || 0) + (alertsData.districts?.length || 0);
+      alarmCount.textContent = totalAlerts;
+      
+      let html = '';
+      
+      // Show State (oblast) alerts first
+      if (alertsData.states?.length > 0) {
+        alertsData.states.forEach(state => {
+          html += `<div style="padding: 8px 16px; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; align-items: center; gap: 8px;">
+            <span style="color: #ef4444; font-size: 14px;">🔴</span>
+            <span style="color: #fca5a5; font-size: 13px; font-weight: 500;">${state.regionName}</span>
+            <span style="color: #6b7280; font-size: 11px; margin-left: auto;">вся область</span>
+          </div>`;
+        });
+      }
+      
+      // Group districts by oblast
+      if (alertsData.districts?.length > 0) {
+        const byOblast = {};
+        alertsData.districts.forEach(d => {
+          const oblast = d.oblast || 'Інше';
+          if (!byOblast[oblast]) byOblast[oblast] = [];
+          byOblast[oblast].push(d.regionName);
+        });
+        
+        Object.entries(byOblast).forEach(([oblast, districts]) => {
+          html += `<div style="padding: 8px 16px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+            <div style="color: #fbbf24; font-size: 12px; font-weight: 600; margin-bottom: 4px;">${oblast || 'Район'}</div>
+            <div style="color: #94a3b8; font-size: 12px; line-height: 1.4;">${districts.join(', ')}</div>
+          </div>`;
+        });
+      }
+      
+      alarmsList.innerHTML = html;
+    }
+    
     // Update alarm layer based on API response
     function updateAlarmLayer(alertsData) {
-      if (!alarmLayer || !alertsData) return;
+      if (!alarmLayer) return;
       
       // Reset alarm regions
       alarmRegions = {};
+      
+      // Only process State-level alerts for map coloring
+      const states = alertsData?.states || [];
       
       // Fallback mapping for English names (NAME_1 in GeoJSON)
       const ENGLISH_MAPPING = {
@@ -1259,9 +1312,8 @@
         "Севастополь": "Sevastopol'"
       };
       
-      // Process alerts - API returns array of regions with activeAlerts
-      // Now only State-level alerts (whole oblast)
-      alertsData.forEach(region => {
+      // Process State alerts for map coloring
+      states.forEach(region => {
         if (region.activeAlerts && region.activeAlerts.length > 0) {
           // Map API region name to GeoJSON region name (Ukrainian)
           const geoJsonNameUkr = REGION_MAPPING[region.regionName];
@@ -1284,8 +1336,8 @@
       });
       
       // Count alarm regions
-      const alarmCount = Object.keys(alarmRegions).length / 2; // Divided by 2 because we store both ukr and eng
-      console.log('Active alarms in', Math.ceil(alarmCount), 'oblasts:', Object.keys(alarmRegions));
+      const alarmStateCount = states.length;
+      console.log('Active State alarms:', alarmStateCount, 'oblasts:', Object.keys(alarmRegions));
       
       // Update GeoJSON layer style
       alarmLayer.setStyle(function(feature) {
@@ -1299,12 +1351,6 @@
           weight: isAlarm ? 2 : 0
         };
       });
-      
-      // Update alarm counter in sidebar if exists
-      const alarmCounter = document.getElementById('alarmCount');
-      if (alarmCounter) {
-        alarmCounter.textContent = Math.ceil(alarmCount);
-      }
     }
     
     // Add city labels to map

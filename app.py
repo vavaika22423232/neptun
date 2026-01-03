@@ -584,7 +584,7 @@ DISTRICT_TO_OBLAST = {
 
 @app.route('/api/alarms/proxy')
 def alarm_proxy():
-    """Proxy for ukrainealarm.com API - returns only OBLAST-WIDE (State) alerts"""
+    """Proxy for ukrainealarm.com API - returns ALL active alerts with type info"""
     try:
         response = http_requests.get(
             f'{ALARM_API_BASE}/alerts',
@@ -593,23 +593,34 @@ def alarm_proxy():
         )
         if response.ok:
             data = response.json()
-            # Return only State-level alerts (whole oblast alarms)
-            # Don't color oblast if only some districts have alarm
-            result = []
+            # Separate State (oblast) and District alerts
+            states = []
+            districts = []
             
             for region in data:
                 if region.get('activeAlerts') and len(region['activeAlerts']) > 0:
                     region_type = region.get('regionType', '')
+                    region_name = region.get('regionName', '')
+                    
+                    alert_info = {
+                        'regionName': region_name,
+                        'regionType': region_type,
+                        'activeAlerts': region.get('activeAlerts')
+                    }
                     
                     if region_type == 'State':
-                        # Only full oblast alerts
-                        result.append({
-                            'regionName': region.get('regionName'),
-                            'regionType': 'State',
-                            'activeAlerts': region.get('activeAlerts')
-                        })
+                        states.append(alert_info)
+                    elif region_type == 'District':
+                        # For districts, also include parent oblast
+                        oblast = DISTRICT_TO_OBLAST.get(region_name, '')
+                        alert_info['oblast'] = oblast
+                        districts.append(alert_info)
             
-            return jsonify(result)
+            return jsonify({
+                'states': states,      # Full oblast alerts (color whole oblast)
+                'districts': districts, # District-level alerts (show in list)
+                'totalAlerts': len(states) + len(districts)
+            })
         else:
             return jsonify({'error': 'API error', 'status': response.status_code}), 502
     except Exception as e:
