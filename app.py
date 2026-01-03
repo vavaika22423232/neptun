@@ -582,50 +582,75 @@ DISTRICT_TO_OBLAST = {
     "Дністровський район": "Чернівецька область",
 }
 
+# Cache for alarm API responses
+_alarm_cache = {'data': None, 'time': 0}
+ALARM_CACHE_TTL = 30  # seconds
+
 @app.route('/api/alarms/proxy')
 def alarm_proxy():
     """Proxy for ukrainealarm.com API - returns ALL active alerts with type info"""
-    try:
-        response = http_requests.get(
-            f'{ALARM_API_BASE}/alerts',
-            headers={'Authorization': ALARM_API_KEY},
-            timeout=10
-        )
-        if response.ok:
-            data = response.json()
-            # Separate State (oblast) and District alerts
-            states = []
-            districts = []
-            
-            for region in data:
-                if region.get('activeAlerts') and len(region['activeAlerts']) > 0:
-                    region_type = region.get('regionType', '')
-                    region_name = region.get('regionName', '')
-                    
-                    alert_info = {
-                        'regionName': region_name,
-                        'regionType': region_type,
-                        'activeAlerts': region.get('activeAlerts')
-                    }
-                    
-                    if region_type == 'State':
-                        states.append(alert_info)
-                    elif region_type == 'District':
-                        # For districts, also include parent oblast
-                        oblast = DISTRICT_TO_OBLAST.get(region_name, '')
-                        alert_info['oblast'] = oblast
-                        districts.append(alert_info)
-            
-            return jsonify({
-                'states': states,      # Full oblast alerts (color whole oblast)
-                'districts': districts, # District-level alerts (show in list)
-                'totalAlerts': len(states) + len(districts)
-            })
-        else:
-            return jsonify({'error': 'API error', 'status': response.status_code}), 502
-    except Exception as e:
-        print(f"Alarm proxy error: {e}")
-        return jsonify({'error': str(e)}), 500
+    import time as _time
+    now = _time.time()
+    
+    # Return cached data if fresh
+    if _alarm_cache['data'] and (now - _alarm_cache['time']) < ALARM_CACHE_TTL:
+        return jsonify(_alarm_cache['data'])
+    
+    # Try to fetch fresh data with retries
+    for attempt in range(3):
+        try:
+            response = http_requests.get(
+                f'{ALARM_API_BASE}/alerts',
+                headers={'Authorization': ALARM_API_KEY},
+                timeout=8
+            )
+            if response.ok:
+                data = response.json()
+                # Separate State (oblast) and District alerts
+                states = []
+                districts = []
+                
+                for region in data:
+                    if region.get('activeAlerts') and len(region['activeAlerts']) > 0:
+                        region_type = region.get('regionType', '')
+                        region_name = region.get('regionName', '')
+                        
+                        alert_info = {
+                            'regionName': region_name,
+                            'regionType': region_type,
+                            'activeAlerts': region.get('activeAlerts')
+                        }
+                        
+                        if region_type == 'State':
+                            states.append(alert_info)
+                        elif region_type == 'District':
+                            # For districts, also include parent oblast
+                            oblast = DISTRICT_TO_OBLAST.get(region_name, '')
+                            alert_info['oblast'] = oblast
+                            districts.append(alert_info)
+                
+                result = {
+                    'states': states,
+                    'districts': districts,
+                    'totalAlerts': len(states) + len(districts)
+                }
+                
+                # Update cache
+                _alarm_cache['data'] = result
+                _alarm_cache['time'] = now
+                
+                return jsonify(result)
+        except Exception as e:
+            print(f"Alarm proxy attempt {attempt+1} failed: {e}")
+            if attempt < 2:
+                _time.sleep(1)  # Wait before retry
+    
+    # All retries failed - return cached data if available
+    if _alarm_cache['data']:
+        print("Returning cached alarm data after failures")
+        return jsonify(_alarm_cache['data'])
+    
+    return jsonify({'states': [], 'districts': [], 'totalAlerts': 0, 'error': 'API unavailable'})
 
 @app.route('/api/alarms/all')
 def alarm_all():
