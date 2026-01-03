@@ -14615,6 +14615,14 @@ def google_verification():
     """Google Search Console verification file"""
     return send_from_directory('static', 'google2848d36b38653ede.html')
 
+@app.route('/new')
+def index_new():
+    """New UI - ukrainealarm style"""
+    response = render_template('index_new.html')
+    resp = app.response_class(response)
+    resp.headers['Cache-Control'] = 'public, max-age=300'
+    return resp
+
 @app.route('/')
 def index():
     """Main page - Карта тривог України онлайн"""
@@ -15852,7 +15860,8 @@ def data():
             ))
             uav_count = sum(1 for line in text_lines if 'бпла' in line.lower() and ('курс' in line.lower() or 'на ' in line.lower()))
             
-            if (not m.get('lat')) and (not m.get('lng')) and ('бпла' in txt_low and 'курс' in txt_low and ' на ' in txt_low):
+            # Process ALL messages without coordinates through process_message()
+            if (not m.get('lat')) and (not m.get('lng')):
                 # Skip if this is a multi-regional UAV message (already processed immediately)
                 if region_count >= 2 and uav_count >= 3:
                     add_debug_log(f"Skipping fallback reparse for multi-regional UAV message ID {msg_id}", "reparse")
