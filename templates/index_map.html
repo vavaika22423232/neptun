@@ -2,7 +2,11 @@
 <html lang="uk">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#0a0e17">
   <title>Карта тривог України | NEPTUN</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;600&display=swap" rel="stylesheet">
@@ -46,6 +50,9 @@
       justify-content: center;
       position: relative;
       overflow: hidden;
+      touch-action: none; /* Prevent default touch behaviors */
+      -webkit-user-select: none;
+      user-select: none;
     }
     
     #map-wrapper {
@@ -55,6 +62,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
+      touch-action: none;
     }
     
     /* Container for SVG layers */
@@ -64,6 +72,12 @@
       max-width: 1400px;
       aspect-ratio: 260 / 175;
       filter: drop-shadow(0 0 40px rgba(0, 212, 255, 0.15));
+      will-change: transform;
+      transform-origin: center center;
+    }
+    
+    .svg-container.animating {
+      transition: transform 0.2s ease-out;
     }
     
     .svg-container svg {
@@ -411,6 +425,219 @@
       width: 18px;
       height: 18px;
     }
+    
+    /* ========== MOBILE OPTIMIZATION ========== */
+    
+    /* Small phones */
+    @media screen and (max-width: 480px) {
+      /* Logo smaller on mobile */
+      .neptun-logo h1 {
+        font-size: 18px;
+        letter-spacing: 4px;
+      }
+      .neptun-logo .subtitle {
+        font-size: 8px;
+        letter-spacing: 2px;
+      }
+      .neptun-logo {
+        top: 10px;
+      }
+      
+      /* Status panel compact */
+      .status-panel {
+        top: auto;
+        bottom: 10px;
+        left: 10px;
+        right: auto;
+        padding: 10px 14px;
+        min-width: auto;
+        border-radius: 10px;
+      }
+      .status-panel h3 {
+        font-size: 9px;
+        letter-spacing: 1px;
+        margin-bottom: 4px;
+      }
+      .alarm-count {
+        font-size: 28px;
+      }
+      .last-update {
+        font-size: 9px;
+        margin-top: 6px;
+      }
+      .api-status {
+        font-size: 8px;
+      }
+      .markers-info {
+        display: none !important;
+      }
+      
+      /* Zoom controls smaller */
+      .zoom-controls {
+        bottom: 10px;
+        right: 10px;
+        gap: 6px;
+      }
+      .zoom-btn {
+        width: 36px;
+        height: 36px;
+        font-size: 18px;
+        border-radius: 6px;
+      }
+      
+      /* Map fills screen */
+      .svg-container {
+        width: 100vw;
+        max-width: none;
+        filter: none;
+      }
+      
+      /* Smaller markers */
+      .threat-marker {
+        width: 24px;
+        height: 24px;
+      }
+      
+      /* No hover effects on touch */
+      #districts-layer .dist:hover {
+        fill: transparent;
+        stroke: rgba(0, 212, 255, 0.15);
+      }
+      
+      /* Disable background grid for performance */
+      #map-container::before {
+        display: none;
+      }
+      
+      /* Tooltip smaller */
+      .marker-tooltip {
+        font-size: 11px;
+        padding: 8px 10px;
+        max-width: 200px;
+      }
+    }
+    
+    /* Tablets */
+    @media screen and (max-width: 768px) and (min-width: 481px) {
+      .neptun-logo h1 {
+        font-size: 22px;
+        letter-spacing: 5px;
+      }
+      .neptun-logo .subtitle {
+        font-size: 9px;
+      }
+      
+      .status-panel {
+        top: 70px;
+        left: 15px;
+        padding: 12px 16px;
+      }
+      .alarm-count {
+        font-size: 32px;
+      }
+      
+      .zoom-controls {
+        bottom: 20px;
+        right: 15px;
+      }
+      .zoom-btn {
+        width: 40px;
+        height: 40px;
+      }
+      
+      .svg-container {
+        width: 95vw;
+      }
+      
+      .threat-marker {
+        width: 28px;
+        height: 28px;
+      }
+    }
+    
+    /* Landscape mobile */
+    @media screen and (max-height: 500px) and (orientation: landscape) {
+      .neptun-logo {
+        top: 5px;
+      }
+      .neptun-logo h1 {
+        font-size: 16px;
+      }
+      .neptun-logo .subtitle {
+        display: none;
+      }
+      
+      .status-panel {
+        top: 5px;
+        left: 5px;
+        padding: 8px 12px;
+      }
+      .status-panel h3 {
+        display: none;
+      }
+      .alarm-count {
+        font-size: 24px;
+      }
+      .last-update, .api-status, .markers-info {
+        display: none !important;
+      }
+      
+      .zoom-controls {
+        bottom: 5px;
+        right: 5px;
+        flex-direction: row;
+      }
+      .zoom-btn {
+        width: 32px;
+        height: 32px;
+        font-size: 16px;
+      }
+      
+      .svg-container {
+        width: 100vw;
+        height: 100vh;
+        aspect-ratio: auto;
+      }
+    }
+    
+    /* Touch device optimizations */
+    @media (hover: none) and (pointer: coarse) {
+      /* Larger touch targets */
+      .zoom-btn {
+        min-width: 44px;
+        min-height: 44px;
+      }
+      
+      /* Disable hover effects */
+      .zoom-btn:hover {
+        transform: none;
+        box-shadow: none;
+      }
+      
+      #states-layer .stateObject:hover,
+      #districts-layer .dist:hover {
+        fill: inherit;
+        stroke: inherit;
+      }
+      
+      /* Prevent text selection on long press */
+      * {
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+    }
+    
+    /* Safe area for notched phones */
+    @supports (padding: max(0px)) {
+      .status-panel {
+        left: max(10px, env(safe-area-inset-left));
+      }
+      .zoom-controls {
+        right: max(10px, env(safe-area-inset-right));
+        bottom: max(10px, env(safe-area-inset-bottom));
+      }
+    }
   </style>
 </head>
 <body>
@@ -679,7 +906,6 @@
           const secondsAgo = Math.round((new Date() - lastSuccessfulFetch) / 1000);
           updateEl.textContent = `Дані: ${secondsAgo}с тому`;
           updateEl.className = 'last-update stale';
-          statusEl.textContent = `⚠️ API тимчасово недоступний (${consecutiveFailures} спроб)`;
         } else {
           updateEl.textContent = 'Не вдалося завантажити';
           updateEl.className = 'last-update error';
@@ -875,32 +1101,60 @@
     // Zoom functions
     function zoomIn() {
       currentScale = Math.min(currentScale * 1.3, 5);
-      updateTransform();
+      updateTransform(true);
     }
     
     function zoomOut() {
       currentScale = Math.max(currentScale / 1.3, 0.5);
-      updateTransform();
+      updateTransform(true);
     }
     
     function resetZoom() {
       currentScale = 1;
       currentX = 0;
       currentY = 0;
-      updateTransform();
+      updateTransform(true);
     }
     
-    function updateTransform() {
+    function updateTransform(animate = false) {
       const container = document.getElementById('svg-container');
       if (container) {
+        if (animate) {
+          container.classList.add('animating');
+          setTimeout(() => container.classList.remove('animating'), 200);
+        } else {
+          container.classList.remove('animating');
+        }
         container.style.transform = `scale(${currentScale}) translate(${currentX}px, ${currentY}px)`;
       }
     }
     
     // Drag functionality
+    let lastTouchDistance = 0;
+    let lastTouchCenter = { x: 0, y: 0 };
+    let isTouching = false;
+    
+    function getTouchDistance(touches) {
+      if (touches.length < 2) return 0;
+      const dx = touches[0].clientX - touches[1].clientX;
+      const dy = touches[0].clientY - touches[1].clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+    
+    function getTouchCenter(touches) {
+      if (touches.length < 2) {
+        return { x: touches[0].clientX, y: touches[0].clientY };
+      }
+      return {
+        x: (touches[0].clientX + touches[1].clientX) / 2,
+        y: (touches[0].clientY + touches[1].clientY) / 2
+      };
+    }
+    
     function setupDrag() {
       const wrapper = document.getElementById('map-wrapper');
       
+      // Mouse events for desktop
       wrapper.addEventListener('mousedown', (e) => {
         isDragging = true;
         startX = e.clientX - currentX * currentScale;
@@ -933,6 +1187,94 @@
         } else {
           zoomOut();
         }
+      }, { passive: false });
+      
+      // Touch events for mobile
+      wrapper.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 1) {
+          // Single touch - drag
+          isTouching = true;
+          isDragging = true;
+          startX = e.touches[0].clientX - currentX * currentScale;
+          startY = e.touches[0].clientY - currentY * currentScale;
+        } else if (e.touches.length === 2) {
+          // Two fingers - pinch zoom
+          e.preventDefault();
+          lastTouchDistance = getTouchDistance(e.touches);
+          lastTouchCenter = getTouchCenter(e.touches);
+        }
+      }, { passive: false });
+      
+      wrapper.addEventListener('touchmove', (e) => {
+        if (e.touches.length === 1 && isDragging) {
+          // Single touch drag
+          e.preventDefault();
+          currentX = (e.touches[0].clientX - startX) / currentScale;
+          currentY = (e.touches[0].clientY - startY) / currentScale;
+          updateTransform();
+        } else if (e.touches.length === 2) {
+          // Pinch to zoom
+          e.preventDefault();
+          const newDistance = getTouchDistance(e.touches);
+          const newCenter = getTouchCenter(e.touches);
+          
+          if (lastTouchDistance > 0) {
+            const scale = newDistance / lastTouchDistance;
+            const newScale = Math.min(Math.max(currentScale * scale, 0.5), 5);
+            
+            // Zoom toward center of pinch
+            if (newScale !== currentScale) {
+              currentScale = newScale;
+              updateTransform();
+            }
+          }
+          
+          lastTouchDistance = newDistance;
+          lastTouchCenter = newCenter;
+        }
+      }, { passive: false });
+      
+      wrapper.addEventListener('touchend', (e) => {
+        if (e.touches.length === 0) {
+          isDragging = false;
+          isTouching = false;
+          lastTouchDistance = 0;
+        } else if (e.touches.length === 1) {
+          // Went from 2 touches to 1 - restart drag
+          isDragging = true;
+          startX = e.touches[0].clientX - currentX * currentScale;
+          startY = e.touches[0].clientY - currentY * currentScale;
+          lastTouchDistance = 0;
+        }
+      });
+      
+      wrapper.addEventListener('touchcancel', () => {
+        isDragging = false;
+        isTouching = false;
+        lastTouchDistance = 0;
+      });
+      
+      // Double tap to reset zoom on mobile
+      let lastTap = 0;
+      wrapper.addEventListener('touchend', (e) => {
+        if (e.touches.length !== 0) return;
+        
+        const currentTime = new Date().getTime();
+        const tapLength = currentTime - lastTap;
+        
+        if (tapLength < 300 && tapLength > 0) {
+          // Double tap detected
+          e.preventDefault();
+          if (currentScale > 1.2) {
+            // Zoom out to 1
+            resetZoom();
+          } else {
+            // Zoom in to 2
+            currentScale = 2;
+            updateTransform(true);
+          }
+        }
+        lastTap = currentTime;
       });
       
       wrapper.style.cursor = 'grab';
