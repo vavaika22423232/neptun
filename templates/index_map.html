@@ -64,25 +64,21 @@
       align-items: center;
       justify-content: center;
       touch-action: none;
+      overflow: hidden;
     }
     
     /* Container for SVG layers */
     .svg-container {
-      position: relative;
-      width: 90vw;
-      max-width: 1400px;
-      aspect-ratio: 260 / 175;
+      position: absolute;
+      /* Will be positioned via JS for pan/zoom */
       filter: drop-shadow(0 0 40px rgba(0, 212, 255, 0.15));
-      will-change: transform;
-      transform-origin: center center;
-      /* High quality rendering */
+      /* High quality vector rendering */
       -webkit-backface-visibility: hidden;
       backface-visibility: hidden;
-      -webkit-transform: translateZ(0);
     }
     
     .svg-container.animating {
-      transition: transform 0.2s ease-out;
+      transition: width 0.2s ease-out, height 0.2s ease-out, left 0.2s ease-out, top 0.2s ease-out;
     }
     
     .svg-container svg {
@@ -91,11 +87,10 @@
       left: 0;
       width: 100%;
       height: 100%;
-      /* Crisp rendering for sharp edges on mobile */
-      shape-rendering: geometricPrecision;
-      text-rendering: geometricPrecision;
-      image-rendering: -webkit-optimize-contrast;
-      -webkit-font-smoothing: antialiased;
+      /* Vector-crisp rendering at any zoom */
+      shape-rendering: crispEdges;
+      text-rendering: optimizeLegibility;
+      overflow: visible;
     }
     
     /* States (oblasts) layer */
@@ -769,7 +764,7 @@
     };
     
     // Cache buster version - change this to force reload SVG files
-    const CACHE_VERSION = 'v3';
+    const CACHE_VERSION = 'v4';
     
     // Load both SVG maps
     async function loadMaps() {
@@ -1126,35 +1121,64 @@
       summary.innerHTML = html;
     }
     
-    // Zoom functions
+    // Zoom functions - using size-based zoom for vector crispness
+    const BASE_WIDTH = window.innerWidth * 0.9;
+    const ASPECT_RATIO = 260 / 175;
+    let containerWidth = Math.min(BASE_WIDTH, 1400);
+    let containerHeight = containerWidth / ASPECT_RATIO;
+    let offsetX = 0;
+    let offsetY = 0;
+    
     function zoomIn() {
       currentScale = Math.min(currentScale * 1.3, 5);
-      updateTransform(true);
+      updateZoom(true);
     }
     
     function zoomOut() {
       currentScale = Math.max(currentScale / 1.3, 0.5);
-      updateTransform(true);
+      updateZoom(true);
     }
     
     function resetZoom() {
       currentScale = 1;
       currentX = 0;
       currentY = 0;
-      updateTransform(true);
+      offsetX = 0;
+      offsetY = 0;
+      updateZoom(true);
     }
     
-    function updateTransform(animate = false) {
+    function updateZoom(animate = false) {
       const container = document.getElementById('svg-container');
-      if (container) {
-        if (animate) {
-          container.classList.add('animating');
-          setTimeout(() => container.classList.remove('animating'), 200);
-        } else {
-          container.classList.remove('animating');
-        }
-        container.style.transform = `scale(${currentScale}) translate(${currentX}px, ${currentY}px)`;
+      const wrapper = document.getElementById('map-wrapper');
+      if (!container || !wrapper) return;
+      
+      if (animate) {
+        container.classList.add('animating');
+        setTimeout(() => container.classList.remove('animating'), 200);
+      } else {
+        container.classList.remove('animating');
       }
+      
+      // Calculate new dimensions
+      const newWidth = containerWidth * currentScale;
+      const newHeight = containerHeight * currentScale;
+      
+      // Center position with offset
+      const wrapperRect = wrapper.getBoundingClientRect();
+      const centerX = (wrapperRect.width - newWidth) / 2 + offsetX;
+      const centerY = (wrapperRect.height - newHeight) / 2 + offsetY;
+      
+      // Apply size (vector stays crisp!)
+      container.style.width = newWidth + 'px';
+      container.style.height = newHeight + 'px';
+      container.style.left = centerX + 'px';
+      container.style.top = centerY + 'px';
+    }
+    
+    // Legacy transform function for compatibility
+    function updateTransform(animate = false) {
+      updateZoom(animate);
     }
     
     // Drag functionality
@@ -1181,20 +1205,23 @@
     
     function setupDrag() {
       const wrapper = document.getElementById('map-wrapper');
+      let dragStartX, dragStartY, dragStartOffsetX, dragStartOffsetY;
       
       // Mouse events for desktop
       wrapper.addEventListener('mousedown', (e) => {
         isDragging = true;
-        startX = e.clientX - currentX * currentScale;
-        startY = e.clientY - currentY * currentScale;
+        dragStartX = e.clientX;
+        dragStartY = e.clientY;
+        dragStartOffsetX = offsetX;
+        dragStartOffsetY = offsetY;
         wrapper.style.cursor = 'grabbing';
       });
       
       wrapper.addEventListener('mousemove', (e) => {
         if (!isDragging) return;
-        currentX = (e.clientX - startX) / currentScale;
-        currentY = (e.clientY - startY) / currentScale;
-        updateTransform();
+        offsetX = dragStartOffsetX + (e.clientX - dragStartX);
+        offsetY = dragStartOffsetY + (e.clientY - dragStartY);
+        updateZoom();
       });
       
       wrapper.addEventListener('mouseup', () => {
@@ -1223,11 +1250,14 @@
           // Single touch - drag
           isTouching = true;
           isDragging = true;
-          startX = e.touches[0].clientX - currentX * currentScale;
-          startY = e.touches[0].clientY - currentY * currentScale;
+          dragStartX = e.touches[0].clientX;
+          dragStartY = e.touches[0].clientY;
+          dragStartOffsetX = offsetX;
+          dragStartOffsetY = offsetY;
         } else if (e.touches.length === 2) {
           // Two fingers - pinch zoom
           e.preventDefault();
+          isDragging = false;
           lastTouchDistance = getTouchDistance(e.touches);
           lastTouchCenter = getTouchCenter(e.touches);
         }
@@ -1237,28 +1267,25 @@
         if (e.touches.length === 1 && isDragging) {
           // Single touch drag
           e.preventDefault();
-          currentX = (e.touches[0].clientX - startX) / currentScale;
-          currentY = (e.touches[0].clientY - startY) / currentScale;
-          updateTransform();
+          offsetX = dragStartOffsetX + (e.touches[0].clientX - dragStartX);
+          offsetY = dragStartOffsetY + (e.touches[0].clientY - dragStartY);
+          updateZoom();
         } else if (e.touches.length === 2) {
           // Pinch to zoom
           e.preventDefault();
           const newDistance = getTouchDistance(e.touches);
-          const newCenter = getTouchCenter(e.touches);
           
           if (lastTouchDistance > 0) {
             const scale = newDistance / lastTouchDistance;
             const newScale = Math.min(Math.max(currentScale * scale, 0.5), 5);
             
-            // Zoom toward center of pinch
             if (newScale !== currentScale) {
               currentScale = newScale;
-              updateTransform();
+              updateZoom();
             }
           }
           
           lastTouchDistance = newDistance;
-          lastTouchCenter = newCenter;
         }
       }, { passive: false });
       
@@ -1270,8 +1297,10 @@
         } else if (e.touches.length === 1) {
           // Went from 2 touches to 1 - restart drag
           isDragging = true;
-          startX = e.touches[0].clientX - currentX * currentScale;
-          startY = e.touches[0].clientY - currentY * currentScale;
+          dragStartX = e.touches[0].clientX;
+          dragStartY = e.touches[0].clientY;
+          dragStartOffsetX = offsetX;
+          dragStartOffsetY = offsetY;
           lastTouchDistance = 0;
         }
       });
@@ -1294,18 +1323,19 @@
           // Double tap detected
           e.preventDefault();
           if (currentScale > 1.2) {
-            // Zoom out to 1
             resetZoom();
           } else {
-            // Zoom in to 2
             currentScale = 2;
-            updateTransform(true);
+            updateZoom(true);
           }
         }
         lastTap = currentTime;
       });
       
       wrapper.style.cursor = 'grab';
+      
+      // Initial positioning
+      updateZoom();
     }
     
     // Init
