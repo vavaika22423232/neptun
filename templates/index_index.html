@@ -473,7 +473,33 @@
     
     /* ========== MOBILE OPTIMIZATION ========== */
     
-    /* Small phones */
+    /* Very small phones (320px) */
+    @media screen and (max-width: 360px) {
+      .status-panel {
+        bottom: 65px;
+        right: 8px;
+        padding: 6px 10px;
+      }
+      .status-panel h3 {
+        font-size: 7px;
+      }
+      .alarm-count {
+        font-size: 20px;
+      }
+      .last-update {
+        font-size: 7px;
+      }
+      .zoom-controls {
+        bottom: 65px;
+        left: 8px;
+      }
+      .zoom-btn {
+        width: 34px;
+        height: 34px;
+        font-size: 16px;
+      }
+    }
+        /* Small phones */
     @media screen and (max-width: 480px) {
       /* Logo smaller on mobile */
       .neptun-logo h1 {
@@ -488,46 +514,58 @@
         top: 10px;
       }
       
-      /* Status panel compact */
+      /* Status panel compact - mobile optimized */
       .status-panel {
         top: auto;
-        bottom: 10px;
-        left: 10px;
-        right: auto;
-        padding: 10px 14px;
+        bottom: 70px;
+        left: auto;
+        right: 10px;
+        padding: 8px 12px;
         min-width: auto;
-        border-radius: 10px;
+        border-radius: 12px;
+        background: rgba(10, 25, 47, 0.95);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+      }
+      .status-panel::before {
+        display: none;
       }
       .status-panel h3 {
-        font-size: 9px;
+        font-size: 8px;
         letter-spacing: 1px;
-        margin-bottom: 4px;
+        margin-bottom: 2px;
+        text-align: center;
       }
       .alarm-count {
-        font-size: 28px;
+        font-size: 24px;
+        line-height: 1;
       }
       .last-update {
-        font-size: 9px;
-        margin-top: 6px;
+        font-size: 8px;
+        margin-top: 4px;
+        text-align: center;
       }
       .api-status {
-        font-size: 8px;
+        display: none;
       }
       .markers-info {
         display: none !important;
       }
       
-      /* Zoom controls smaller */
+      /* Zoom controls smaller - left bottom */
       .zoom-controls {
-        bottom: 10px;
-        right: 10px;
+        bottom: 70px;
+        left: 10px;
+        right: auto;
         gap: 6px;
       }
       .zoom-btn {
-        width: 36px;
-        height: 36px;
+        width: 38px;
+        height: 38px;
         font-size: 18px;
-        border-radius: 6px;
+        border-radius: 8px;
       }
       
       /* Map fills screen */
@@ -613,15 +651,20 @@
       }
       
       .status-panel {
-        top: 5px;
-        left: 5px;
-        padding: 8px 12px;
+        top: auto;
+        bottom: 5px;
+        left: auto;
+        right: 50px;
+        padding: 6px 10px;
+        flex-direction: row;
+        gap: 8px;
+        align-items: center;
       }
       .status-panel h3 {
         display: none;
       }
       .alarm-count {
-        font-size: 24px;
+        font-size: 20px;
       }
       .last-update, .api-status, .markers-info {
         display: none !important;
@@ -739,108 +782,7 @@
       }
     }
     
-    /* ========== CITIES LAYER ========== */
-    #cities-layer {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-      z-index: 15;
-      opacity: 0;
-      transition: opacity 0.3s ease;
-    }
-    
-    #cities-layer.visible {
-      opacity: 1;
-    }
-    
-    .city-marker {
-      position: absolute;
-      transform: translate(-50%, -50%);
-      pointer-events: auto;
-      cursor: pointer;
-    }
-    
-    .city-dot {
-      width: 6px;
-      height: 6px;
-      background: rgba(255, 255, 255, 0.9);
-      border: 1px solid rgba(0, 180, 220, 0.8);
-      border-radius: 50%;
-      box-shadow: 0 0 4px rgba(0, 212, 255, 0.5);
-    }
-    
-    .city-dot.capital {
-      width: 10px;
-      height: 10px;
-      background: #ffd700;
-      border: 2px solid #fff;
-      box-shadow: 0 0 8px rgba(255, 215, 0, 0.8);
-    }
-    
-    .city-dot.regional {
-      width: 8px;
-      height: 8px;
-      background: rgba(0, 212, 255, 0.9);
-      border: 1.5px solid #fff;
-    }
-    
-    .city-label {
-      position: absolute;
-      left: 10px;
-      top: 50%;
-      transform: translateY(-50%);
-      font-size: 9px;
-      font-weight: 600;
-      color: #fff;
-      text-shadow: 
-        -1px -1px 2px rgba(0,0,0,0.8),
-        1px -1px 2px rgba(0,0,0,0.8),
-        -1px 1px 2px rgba(0,0,0,0.8),
-        1px 1px 2px rgba(0,0,0,0.8);
-      white-space: nowrap;
-      pointer-events: none;
-    }
-    
-    .city-label.capital {
-      font-size: 12px;
-      font-weight: 800;
-      color: #ffd700;
-    }
-    
-    .city-label.regional {
-      font-size: 10px;
-      font-weight: 700;
-      color: #00d4ff;
-    }
-    
-    @media (max-width: 768px) {
-      .city-label {
-        font-size: 7px;
-      }
-      .city-label.capital {
-        font-size: 10px;
-      }
-      .city-label.regional {
-        font-size: 8px;
-      }
-      .city-dot {
-        width: 4px;
-        height: 4px;
-      }
-      .city-dot.regional {
-        width: 6px;
-        height: 6px;
-      }
-      .city-dot.capital {
-        width: 8px;
-        height: 8px;
-      }
-    }
-    
-    /* ========== NAVBAR STYLES ========== */
+    /* ========== NAVBAR STYLES ========== */ */
     .navbar {
       width: 100%;
       background: linear-gradient(180deg, rgba(10, 14, 23, 0.98) 0%, rgba(10, 14, 23, 0.95) 100%);
@@ -1308,99 +1250,6 @@
       color: #fbbf24;
     }
     
-    /* Search box */
-    .place-search {
-      position: fixed;
-      top: 70px;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      gap: 0.5rem;
-      background: rgba(10, 14, 23, 0.95);
-      padding: 0.6rem 0.9rem;
-      border-radius: 14px;
-      border: 1px solid rgba(0, 212, 255, 0.2);
-      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
-      z-index: 950;
-      align-items: center;
-    }
-    
-    .place-search input {
-      background: rgba(0, 212, 255, 0.08);
-      border: 1px solid rgba(0, 212, 255, 0.2);
-      color: #e2e8f0;
-      padding: 0.5rem 0.75rem;
-      border-radius: 10px;
-      font-size: 0.85rem;
-      width: 280px;
-      outline: none;
-      font-weight: 500;
-    }
-    
-    .place-search input::placeholder {
-      color: rgba(148, 163, 184, 0.5);
-    }
-    
-    .place-search input:focus {
-      border-color: rgba(0, 212, 255, 0.5);
-      background: rgba(0, 212, 255, 0.12);
-    }
-    
-    .place-search button {
-      background: linear-gradient(135deg, #00d4ff, #0099cc);
-      border: none;
-      color: #0a0e17;
-      padding: 0.5rem 0.8rem;
-      border-radius: 10px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 0.3rem;
-      font-size: 0.8rem;
-      font-weight: 700;
-      transition: all 0.2s;
-    }
-    
-    .place-search button:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 4px 15px rgba(0, 212, 255, 0.4);
-    }
-    
-    .ps-suggest {
-      position: absolute;
-      top: 100%;
-      left: 0;
-      right: 0;
-      margin-top: 0.5rem;
-      background: rgba(10, 14, 23, 0.98);
-      border: 1px solid rgba(0, 212, 255, 0.2);
-      border-radius: 12px;
-      max-height: 300px;
-      overflow-y: auto;
-      display: none;
-    }
-    
-    .ps-item {
-      padding: 0.5rem 0.75rem;
-      font-size: 0.8rem;
-      cursor: pointer;
-      color: #e2e8f0;
-      display: flex;
-      justify-content: space-between;
-      transition: all 0.15s;
-    }
-    
-    .ps-item:hover, .ps-item.active {
-      background: rgba(0, 212, 255, 0.1);
-    }
-    
-    .ps-empty {
-      padding: 0.6rem;
-      font-size: 0.75rem;
-      color: rgba(148, 163, 184, 0.6);
-      text-align: center;
-    }
-    
     /* Telegram Banner - Premium Design */
     .tg-banner {
       display: flex;
@@ -1577,21 +1426,6 @@
         display: none;
       }
       
-      .place-search {
-        top: auto;
-        bottom: 120px;
-        left: 10px;
-        right: 10px;
-        transform: none;
-        max-width: none;
-      }
-      
-      .place-search input {
-        width: 150px;
-        flex: 1;
-        font-size: 0.8rem;
-      }
-      
       .tg-banner {
         bottom: auto;
         top: 60px;
@@ -1679,13 +1513,6 @@
     </button>
   </div>
   
-  <!-- Search Box -->
-  <div class="place-search" id="placeSearch">
-    <input type="text" id="psInput" placeholder="Пошук міста..." autocomplete="off">
-    <button id="psBtn"><i class="material-icons" style="font-size:18px;">search</i></button>
-    <div class="ps-suggest" id="psSuggest"></div>
-  </div>
-  
   <!-- Donate Modal -->
   <div class="donate-modal-overlay" id="donateModal">
     <div class="donate-modal">
@@ -1762,8 +1589,6 @@
         <div id="districts-layer"></div>
         <!-- Names SVG will be loaded here -->
         <div id="names-layer"></div>
-        <!-- Cities layer -->
-        <div id="cities-layer"></div>
         <!-- Threat markers layer -->
         <div id="markers-layer"></div>
       </div>
@@ -1914,140 +1739,6 @@
       '112': '9999', '113': '9999', '114': '9999', '115': '9999', '116': '9999', '117': '9999'
     };
     
-    // ========== CITIES DATA (100+ cities) ==========
-    const UKRAINE_CITIES = [
-      // Столиця
-      { name: 'Київ', lat: 50.4501, lng: 30.5234, type: 'capital' },
-      
-      // Обласні центри
-      { name: 'Харків', lat: 49.9935, lng: 36.2304, type: 'regional' },
-      { name: 'Одеса', lat: 46.4825, lng: 30.7233, type: 'regional' },
-      { name: 'Дніпро', lat: 48.4647, lng: 35.0462, type: 'regional' },
-      { name: 'Донецьк', lat: 48.0159, lng: 37.8028, type: 'regional' },
-      { name: 'Запоріжжя', lat: 47.8388, lng: 35.1396, type: 'regional' },
-      { name: 'Львів', lat: 49.8397, lng: 24.0297, type: 'regional' },
-      { name: 'Кривий Ріг', lat: 47.9105, lng: 33.3918, type: 'regional' },
-      { name: 'Миколаїв', lat: 46.9750, lng: 31.9946, type: 'regional' },
-      { name: 'Маріуполь', lat: 47.0951, lng: 37.5498, type: 'regional' },
-      { name: 'Луганськ', lat: 48.5740, lng: 39.3078, type: 'regional' },
-      { name: 'Вінниця', lat: 49.2331, lng: 28.4682, type: 'regional' },
-      { name: 'Херсон', lat: 46.6354, lng: 32.6169, type: 'regional' },
-      { name: 'Полтава', lat: 49.5883, lng: 34.5514, type: 'regional' },
-      { name: 'Чернігів', lat: 51.4982, lng: 31.2893, type: 'regional' },
-      { name: 'Черкаси', lat: 49.4444, lng: 32.0598, type: 'regional' },
-      { name: 'Суми', lat: 50.9077, lng: 34.7981, type: 'regional' },
-      { name: 'Житомир', lat: 50.2547, lng: 28.6587, type: 'regional' },
-      { name: 'Хмельницький', lat: 49.4229, lng: 26.9871, type: 'regional' },
-      { name: 'Рівне', lat: 50.6199, lng: 26.2516, type: 'regional' },
-      { name: 'Івано-Франківськ', lat: 48.9226, lng: 24.7111, type: 'regional' },
-      { name: 'Тернопіль', lat: 49.5535, lng: 25.5948, type: 'regional' },
-      { name: 'Луцьк', lat: 50.7472, lng: 25.3254, type: 'regional' },
-      { name: 'Ужгород', lat: 48.6208, lng: 22.2879, type: 'regional' },
-      { name: 'Чернівці', lat: 48.2920, lng: 25.9358, type: 'regional' },
-      { name: 'Кропивницький', lat: 48.5079, lng: 32.2623, type: 'regional' },
-      
-      // Великі міста (50k+)
-      { name: 'Біла Церква', lat: 49.7986, lng: 30.1156, type: 'city' },
-      { name: 'Кременчук', lat: 49.0659, lng: 33.4102, type: 'city' },
-      { name: 'Краматорськ', lat: 48.7236, lng: 37.5564, type: 'city' },
-      { name: 'Мелітополь', lat: 46.8489, lng: 35.3675, type: 'city' },
-      { name: 'Нікополь', lat: 47.5718, lng: 34.3957, type: 'city' },
-      { name: 'Бердянськ', lat: 46.7596, lng: 36.7840, type: 'city' },
-      { name: 'Павлоград', lat: 48.5333, lng: 35.8703, type: 'city' },
-      { name: 'Сєвєродонецьк', lat: 48.9484, lng: 38.4911, type: 'city' },
-      { name: 'Лисичанськ', lat: 48.9040, lng: 38.4281, type: 'city' },
-      { name: 'Кам\'янське', lat: 48.5186, lng: 34.6139, type: 'city' },
-      { name: 'Слов\'янськ', lat: 48.8506, lng: 37.6167, type: 'city' },
-      { name: 'Ужгород', lat: 48.6208, lng: 22.2879, type: 'city' },
-      { name: 'Мукачево', lat: 48.4414, lng: 22.7136, type: 'city' },
-      { name: 'Рубіжне', lat: 49.0139, lng: 38.3778, type: 'city' },
-      { name: 'Бровари', lat: 50.5111, lng: 30.7900, type: 'city' },
-      { name: 'Конотоп', lat: 51.2403, lng: 33.2028, type: 'city' },
-      { name: 'Шостка', lat: 51.8656, lng: 33.4764, type: 'city' },
-      { name: 'Ніжин', lat: 51.0461, lng: 31.8836, type: 'city' },
-      { name: 'Прилуки', lat: 50.5925, lng: 32.3864, type: 'city' },
-      { name: 'Умань', lat: 48.7494, lng: 30.2214, type: 'city' },
-      { name: 'Коростень', lat: 50.9519, lng: 28.6531, type: 'city' },
-      { name: 'Бердичів', lat: 49.8994, lng: 28.5839, type: 'city' },
-      { name: 'Новоград-Волинський', lat: 50.5900, lng: 27.6200, type: 'city' },
-      { name: 'Коломия', lat: 48.5306, lng: 25.0383, type: 'city' },
-      { name: 'Калуш', lat: 49.0131, lng: 24.3592, type: 'city' },
-      { name: 'Дрогобич', lat: 49.3492, lng: 23.5064, type: 'city' },
-      { name: 'Стрий', lat: 49.2617, lng: 23.8547, type: 'city' },
-      { name: 'Червоноград', lat: 50.3872, lng: 24.2317, type: 'city' },
-      { name: 'Самбір', lat: 49.5183, lng: 23.2042, type: 'city' },
-      { name: 'Нововолинськ', lat: 50.7283, lng: 24.1619, type: 'city' },
-      { name: 'Ковель', lat: 51.2153, lng: 24.7089, type: 'city' },
-      { name: 'Кузнецовськ', lat: 51.3456, lng: 25.8481, type: 'city' },
-      { name: 'Дубно', lat: 50.4153, lng: 25.7331, type: 'city' },
-      { name: 'Костопіль', lat: 50.8833, lng: 26.4500, type: 'city' },
-      { name: 'Шепетівка', lat: 50.1833, lng: 27.0667, type: 'city' },
-      { name: 'Нетішин', lat: 50.3361, lng: 26.6406, type: 'city' },
-      { name: 'Кам\'янець-Подільський', lat: 48.6844, lng: 26.5856, type: 'city' },
-      { name: 'Козятин', lat: 49.7181, lng: 28.8281, type: 'city' },
-      { name: 'Могилів-Подільський', lat: 48.4500, lng: 27.7833, type: 'city' },
-      { name: 'Жмеринка', lat: 49.0333, lng: 28.1167, type: 'city' },
-      { name: 'Олександрія', lat: 48.6697, lng: 33.1139, type: 'city' },
-      { name: 'Світловодськ', lat: 49.0500, lng: 33.2333, type: 'city' },
-      { name: 'Знам\'янка', lat: 48.7167, lng: 32.6667, type: 'city' },
-      { name: 'Новомосковськ', lat: 48.6333, lng: 35.2167, type: 'city' },
-      { name: 'Синельникове', lat: 48.3167, lng: 35.5167, type: 'city' },
-      { name: 'Жовті Води', lat: 48.3500, lng: 33.5000, type: 'city' },
-      { name: 'Марганець', lat: 47.6333, lng: 34.6167, type: 'city' },
-      { name: 'Покров', lat: 47.6500, lng: 34.0833, type: 'city' },
-      { name: 'Енергодар', lat: 47.4989, lng: 34.6575, type: 'city' },
-      { name: 'Токмак', lat: 47.2500, lng: 35.7000, type: 'city' },
-      { name: 'Пологи', lat: 47.4833, lng: 36.2500, type: 'city' },
-      { name: 'Гуляйполе', lat: 47.6500, lng: 36.2667, type: 'city' },
-      { name: 'Вознесенськ', lat: 47.5667, lng: 31.3333, type: 'city' },
-      { name: 'Первомайськ', lat: 48.0500, lng: 30.8500, type: 'city' },
-      { name: 'Южноукраїнськ', lat: 47.8167, lng: 31.1833, type: 'city' },
-      { name: 'Очаків', lat: 46.6167, lng: 31.5333, type: 'city' },
-      { name: 'Білгород-Дністровський', lat: 46.1939, lng: 30.3489, type: 'city' },
-      { name: 'Ізмаїл', lat: 45.3500, lng: 28.8333, type: 'city' },
-      { name: 'Рені', lat: 45.4500, lng: 28.2833, type: 'city' },
-      { name: 'Кілія', lat: 45.4500, lng: 29.2667, type: 'city' },
-      { name: 'Чорноморськ', lat: 46.3000, lng: 30.6500, type: 'city' },
-      { name: 'Нова Каховка', lat: 46.7564, lng: 33.3486, type: 'city' },
-      { name: 'Каховка', lat: 46.8167, lng: 33.4833, type: 'city' },
-      { name: 'Генічеськ', lat: 46.1667, lng: 34.8167, type: 'city' },
-      { name: 'Скадовськ', lat: 46.1167, lng: 32.9000, type: 'city' },
-      { name: 'Лозова', lat: 48.8833, lng: 36.3167, type: 'city' },
-      { name: 'Ізюм', lat: 49.2000, lng: 37.2833, type: 'city' },
-      { name: 'Куп\'янськ', lat: 49.7167, lng: 37.6167, type: 'city' },
-      { name: 'Чугуїв', lat: 49.8333, lng: 36.6833, type: 'city' },
-      { name: 'Балаклія', lat: 49.4667, lng: 36.8500, type: 'city' },
-      { name: 'Первомайський', lat: 49.4000, lng: 36.2333, type: 'city' },
-      { name: 'Лубни', lat: 50.0167, lng: 32.9833, type: 'city' },
-      { name: 'Миргород', lat: 49.9667, lng: 33.6000, type: 'city' },
-      { name: 'Гадяч', lat: 50.3667, lng: 34.0167, type: 'city' },
-      { name: 'Горішні Плавні', lat: 49.0000, lng: 33.6333, type: 'city' },
-      { name: 'Охтирка', lat: 50.3000, lng: 34.9000, type: 'city' },
-      { name: 'Ромни', lat: 50.7500, lng: 33.4833, type: 'city' },
-      { name: 'Глухів', lat: 51.6833, lng: 33.9167, type: 'city' },
-      { name: 'Смілa', lat: 49.2333, lng: 31.8667, type: 'city' },
-      { name: 'Золотоноша', lat: 49.6667, lng: 32.0333, type: 'city' },
-      { name: 'Канів', lat: 49.7500, lng: 31.4667, type: 'city' },
-      { name: 'Ватутіне', lat: 49.0167, lng: 32.0500, type: 'city' },
-      { name: 'Бахмут', lat: 48.5953, lng: 38.0008, type: 'city' },
-      { name: 'Костянтинівка', lat: 48.5333, lng: 37.7167, type: 'city' },
-      { name: 'Дружківка', lat: 48.6167, lng: 37.5333, type: 'city' },
-      { name: 'Покровськ', lat: 48.2833, lng: 37.1833, type: 'city' },
-      { name: 'Селидове', lat: 48.1500, lng: 37.3000, type: 'city' },
-      { name: 'Торецьк', lat: 48.4000, lng: 37.8500, type: 'city' },
-      { name: 'Волноваха', lat: 47.6000, lng: 37.4833, type: 'city' },
-      { name: 'Авдіївка', lat: 48.1333, lng: 37.7500, type: 'city' },
-      
-      // Крим
-      { name: 'Сімферополь', lat: 44.9521, lng: 34.1024, type: 'city' },
-      { name: 'Севастополь', lat: 44.6167, lng: 33.5254, type: 'city' },
-      { name: 'Керч', lat: 45.3531, lng: 36.4747, type: 'city' },
-      { name: 'Євпаторія', lat: 45.1908, lng: 33.3669, type: 'city' },
-      { name: 'Ялта', lat: 44.4952, lng: 34.1664, type: 'city' },
-      { name: 'Феодосія', lat: 45.0317, lng: 35.3825, type: 'city' },
-      { name: 'Джанкой', lat: 45.7083, lng: 34.3917, type: 'city' },
-    ];
-    
     // Cache buster version - change this to force reload SVG files
     const CACHE_VERSION = 'v4';
     
@@ -2076,10 +1767,6 @@
         
         // Setup drag functionality
         setupDrag();
-        
-        // Render cities on map
-        renderCities();
-        updateCitiesVisibility();
         
         // Fetch alarms immediately
         await fetchAlarms();
@@ -2443,66 +2130,6 @@
       updateZoom(true);
     }
     
-    // ========== CITIES RENDERING ==========
-    let citiesRendered = false;
-    
-    function renderCities() {
-      if (citiesRendered) return;
-      
-      const citiesLayer = document.getElementById('cities-layer');
-      if (!citiesLayer) return;
-      
-      citiesLayer.innerHTML = '';
-      
-      UKRAINE_CITIES.forEach(city => {
-        const pos = latLngToSvgPercent(city.lat, city.lng);
-        
-        const marker = document.createElement('div');
-        marker.className = 'city-marker';
-        marker.style.left = `${pos.x}%`;
-        marker.style.top = `${pos.y}%`;
-        marker.dataset.type = city.type;
-        
-        const dot = document.createElement('div');
-        dot.className = `city-dot ${city.type}`;
-        
-        const label = document.createElement('span');
-        label.className = `city-label ${city.type}`;
-        label.textContent = city.name;
-        
-        marker.appendChild(dot);
-        marker.appendChild(label);
-        citiesLayer.appendChild(marker);
-      });
-      
-      citiesRendered = true;
-      console.log(`Rendered ${UKRAINE_CITIES.length} cities`);
-    }
-    
-    function updateCitiesVisibility() {
-      const citiesLayer = document.getElementById('cities-layer');
-      if (!citiesLayer) return;
-      
-      // Show cities when zoomed in (scale >= 1.3)
-      // Show regional centers always at scale >= 1.0
-      if (currentScale >= 1.3) {
-        citiesLayer.classList.add('visible');
-        // Show all cities
-        citiesLayer.querySelectorAll('.city-marker').forEach(m => {
-          m.style.display = 'block';
-        });
-      } else if (currentScale >= 1.0) {
-        citiesLayer.classList.add('visible');
-        // Show only capital and regional centers
-        citiesLayer.querySelectorAll('.city-marker').forEach(m => {
-          const type = m.dataset.type;
-          m.style.display = (type === 'capital' || type === 'regional') ? 'block' : 'none';
-        });
-      } else {
-        citiesLayer.classList.remove('visible');
-      }
-    }
-    
     // Use requestAnimationFrame for smooth updates
     let zoomRAF = null;
     
@@ -2536,9 +2163,6 @@
         container.style.left = centerX + 'px';
         container.style.top = centerY + 'px';
         container.style.transform = '';
-        
-        // Update cities visibility based on zoom level
-        updateCitiesVisibility();
         
         zoomRAF = null;
       });
@@ -2815,167 +2439,10 @@
       }
     }
     
-    // ========== PLACE SEARCH ==========
-    let searchSuggestions = [];
-    let selectedSuggestion = -1;
-    
-    async function searchPlace(query) {
-      if (!query || query.length < 2) {
-        hideSuggestions();
-        return;
-      }
-      
-      try {
-        const response = await fetch(`/locate?q=${encodeURIComponent(query)}&limit=8`);
-        if (response.ok) {
-          const data = await response.json();
-          showSuggestions(data.results || []);
-        }
-      } catch (e) {
-        console.log('Search error:', e);
-      }
-    }
-    
-    function showSuggestions(results) {
-      const suggestEl = document.getElementById('psSuggest');
-      if (!suggestEl) return;
-      
-      searchSuggestions = results;
-      selectedSuggestion = -1;
-      
-      if (results.length === 0) {
-        suggestEl.innerHTML = '<div class="ps-empty">Нічого не знайдено</div>';
-        suggestEl.style.display = 'block';
-        return;
-      }
-      
-      suggestEl.innerHTML = results.map((r, i) => `
-        <div class="ps-item" data-idx="${i}">
-          <span>${r.name}</span>
-          <span style="color:#94a3b8;font-size:0.7rem;">${r.region || ''}</span>
-        </div>
-      `).join('');
-      
-      suggestEl.style.display = 'block';
-      
-      // Add click handlers
-      suggestEl.querySelectorAll('.ps-item').forEach(item => {
-        item.addEventListener('click', () => {
-          const idx = parseInt(item.dataset.idx);
-          selectPlace(searchSuggestions[idx]);
-        });
-      });
-    }
-    
-    function hideSuggestions() {
-      const suggestEl = document.getElementById('psSuggest');
-      if (suggestEl) suggestEl.style.display = 'none';
-      searchSuggestions = [];
-      selectedSuggestion = -1;
-    }
-    
-    function selectPlace(place) {
-      if (!place) return;
-      
-      hideSuggestions();
-      document.getElementById('psInput').value = place.name;
-      
-      // Navigate to location on SVG map
-      if (place.lat && place.lng) {
-        navigateToLocation(place.lat, place.lng);
-      }
-    }
-    
-    function navigateToLocation(lat, lng) {
-      // Convert lat/lng to SVG coordinates and zoom
-      const pos = latLngToSvgPercent(lat, lng);
-      
-      // Set zoom and center
-      currentScale = 2.5;
-      
-      const wrapper = document.querySelector('.map-wrapper');
-      if (!wrapper) return;
-      
-      const rect = wrapper.getBoundingClientRect();
-      const centerX = rect.width / 2;
-      const centerY = rect.height / 2;
-      
-      // Calculate offset to center the point
-      offsetX = centerX - (pos.x / 100 * rect.width * currentScale);
-      offsetY = centerY - (pos.y / 100 * rect.height * currentScale);
-      
-      updateZoom(true);
-    }
-    
-    // Search input handlers
-    function initSearch() {
-      const input = document.getElementById('psInput');
-      const btn = document.getElementById('psBtn');
-      
-      if (!input || !btn) return;
-      
-      let debounceTimer;
-      
-      input.addEventListener('input', (e) => {
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => {
-          searchPlace(e.target.value.trim());
-        }, 300);
-      });
-      
-      input.addEventListener('keydown', (e) => {
-        const suggestEl = document.getElementById('psSuggest');
-        
-        if (e.key === 'ArrowDown') {
-          e.preventDefault();
-          if (selectedSuggestion < searchSuggestions.length - 1) {
-            selectedSuggestion++;
-            updateSuggestionHighlight();
-          }
-        } else if (e.key === 'ArrowUp') {
-          e.preventDefault();
-          if (selectedSuggestion > 0) {
-            selectedSuggestion--;
-            updateSuggestionHighlight();
-          }
-        } else if (e.key === 'Enter') {
-          e.preventDefault();
-          if (selectedSuggestion >= 0 && searchSuggestions[selectedSuggestion]) {
-            selectPlace(searchSuggestions[selectedSuggestion]);
-          } else if (input.value.trim()) {
-            searchPlace(input.value.trim());
-          }
-        } else if (e.key === 'Escape') {
-          hideSuggestions();
-        }
-      });
-      
-      btn.addEventListener('click', () => {
-        if (selectedSuggestion >= 0 && searchSuggestions[selectedSuggestion]) {
-          selectPlace(searchSuggestions[selectedSuggestion]);
-        }
-      });
-      
-      // Close suggestions when clicking outside
-      document.addEventListener('click', (e) => {
-        if (!e.target.closest('.place-search')) {
-          hideSuggestions();
-        }
-      });
-    }
-    
-    function updateSuggestionHighlight() {
-      const items = document.querySelectorAll('.ps-item');
-      items.forEach((item, i) => {
-        item.classList.toggle('active', i === selectedSuggestion);
-      });
-    }
-    
     // Init
     document.addEventListener('DOMContentLoaded', () => {
       loadMaps();
       initBanners();
-      initSearch();
       
       // Start presence tracking
       pingPresence();
