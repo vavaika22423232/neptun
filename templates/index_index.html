@@ -1,0 +1,2604 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes, viewport-fit=cover, shrink-to-fit=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#0a0e17">
+  <meta name="format-detection" content="telephone=no">
+  <title>Карта тривог України | NEPTUN</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;600&family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  
+  <!-- Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-MW867VP8WK"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-MW867VP8WK');
+  </script>
+  
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      /* Disable all selection and tap highlight */
+      -webkit-tap-highlight-color: transparent !important;
+      -webkit-touch-callout: none !important;
+      -webkit-user-select: none !important;
+      -moz-user-select: none !important;
+      -ms-user-select: none !important;
+      user-select: none !important;
+      -webkit-user-drag: none !important;
+      outline: none !important;
+    }
+    
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: linear-gradient(135deg, #0a0e17 0%, #0d1929 50%, #0a192f 100%);
+      font-family: 'Inter', 'Exo 2', -apple-system, sans-serif;
+      -webkit-tap-highlight-color: transparent !important;
+      -webkit-touch-callout: none !important;
+      -webkit-user-select: none !important;
+      user-select: none !important;
+    }
+    
+    /* SVG elements - disable highlight */
+    svg, svg *, img, div, path, g, text {
+      -webkit-tap-highlight-color: transparent !important;
+      -webkit-touch-callout: none !important;
+      -webkit-user-select: none !important;
+      user-select: none !important;
+      outline: none !important;
+      -webkit-user-drag: none !important;
+    }
+    
+    /* Animated background grid */
+    #map-container::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-image: 
+        linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
+      background-size: 50px 50px;
+      pointer-events: none;
+      z-index: 0;
+    }
+    
+    #map-container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      touch-action: none; /* Prevent default touch behaviors */
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    
+    #map-wrapper {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      touch-action: none;
+      overflow: hidden;
+    }
+    
+    /* Container for SVG layers */
+    .svg-container {
+      position: absolute;
+      /* GPU acceleration */
+      will-change: transform;
+      transform-origin: center center;
+      -webkit-backface-visibility: hidden;
+      backface-visibility: hidden;
+    }
+    
+    /* Only show shadow on desktop - too heavy for mobile */
+    @media (min-width: 769px) {
+      .svg-container {
+        filter: drop-shadow(0 0 40px rgba(0, 212, 255, 0.15));
+      }
+    }
+    
+    .svg-container.animating {
+      transition: transform 0.2s ease-out;
+    }
+    
+    .svg-container svg {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      /* Vector-crisp rendering at any zoom */
+      shape-rendering: crispEdges;
+      text-rendering: optimizeLegibility;
+      overflow: visible;
+    }
+    
+    /* States (oblasts) layer */
+    #states-layer {
+      z-index: 1;
+    }
+    
+    /* Districts layer */
+    #districts-layer {
+      z-index: 2;
+    }
+    
+    /* Names layer */
+    #names-layer {
+      z-index: 3;
+      pointer-events: none;
+    }
+    
+    #names-layer text {
+      fill: rgba(255, 255, 255, 0.9);
+      font-family: 'Exo 2', sans-serif;
+      font-weight: 400;
+      text-shadow: 
+        0 0 10px rgba(0, 212, 255, 0.5),
+        0 2px 4px rgba(0, 0, 0, 0.8);
+    }
+    
+    /* NEPTUN style - Oblast regions */
+    #states-layer .stateObject {
+      fill: linear-gradient(180deg, #1a2744 0%, #0f1a2e 100%);
+      fill: #162236;
+      stroke: #00d4ff;
+      stroke-width: 0.4;
+      stroke-opacity: 0.3;
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    #states-layer .stateObject:hover {
+      fill: #1e3050;
+      stroke-opacity: 0.6;
+    }
+    
+    #states-layer .stateObject.alarm {
+      fill: #7f1d1d;
+      stroke: #ff4444;
+      stroke-opacity: 0.8;
+      animation: alarmPulse 2s ease-in-out infinite;
+    }
+    
+    /* NEPTUN style - District regions */
+    #districts-layer .dist {
+      fill: transparent;
+      stroke: rgba(0, 212, 255, 0.15);
+      stroke-width: 0.1;
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      pointer-events: all;
+    }
+    
+    #districts-layer .dist:hover {
+      fill: rgba(0, 212, 255, 0.1);
+      stroke: rgba(0, 212, 255, 0.4);
+      cursor: pointer;
+    }
+    
+    #districts-layer .dist.alarm {
+      fill: #dc2626;
+      stroke: #ff6b6b;
+      stroke-width: 0.2;
+      animation: districtAlarm 1.5s ease-in-out infinite;
+    }
+    
+    @keyframes alarmPulse {
+      0%, 100% { 
+        fill: #7f1d1d;
+        filter: drop-shadow(0 0 8px rgba(255, 68, 68, 0.4));
+      }
+      50% { 
+        fill: #991b1b;
+        filter: drop-shadow(0 0 15px rgba(255, 68, 68, 0.7));
+      }
+    }
+    
+    @keyframes districtAlarm {
+      0%, 100% { 
+        fill: #dc2626;
+        opacity: 0.9;
+      }
+      50% { 
+        fill: #ef4444;
+        opacity: 1;
+      }
+    }
+    
+    /* NEPTUN Logo & Branding */
+    .neptun-logo {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1001;
+      text-align: center;
+    }
+    
+    .neptun-logo h1 {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 28px;
+      font-weight: 900;
+      background: linear-gradient(135deg, #00d4ff 0%, #0099cc 50%, #00d4ff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: 8px;
+      text-shadow: 0 0 30px rgba(0, 212, 255, 0.5);
+      margin: 0;
+    }
+    
+    .neptun-logo .subtitle {
+      font-family: 'Exo 2', sans-serif;
+      font-size: 10px;
+      color: rgba(0, 212, 255, 0.6);
+      letter-spacing: 4px;
+      margin-top: 4px;
+      text-transform: uppercase;
+    }
+    
+    /* Zoom controls - NEPTUN style */
+    .zoom-controls {
+      position: fixed;
+      bottom: 30px;
+      right: 30px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 1000;
+    }
+    
+    .zoom-btn {
+      width: 44px;
+      height: 44px;
+      background: rgba(10, 25, 47, 0.9);
+      border: 1px solid rgba(0, 212, 255, 0.3);
+      border-radius: 8px;
+      color: #00d4ff;
+      font-size: 20px;
+      font-weight: bold;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.3s ease;
+      backdrop-filter: blur(10px);
+    }
+    
+    .zoom-btn:hover {
+      background: rgba(0, 212, 255, 0.15);
+      border-color: #00d4ff;
+      box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+      transform: scale(1.05);
+    }
+    
+    /* Status panel - NEPTUN style */
+    .status-panel {
+      position: fixed;
+      top: 80px;
+      left: 20px;
+      background: rgba(10, 25, 47, 0.9);
+      border: 1px solid rgba(0, 212, 255, 0.2);
+      border-radius: 12px;
+      padding: 16px 20px;
+      color: white;
+      z-index: 1000;
+      backdrop-filter: blur(10px);
+      min-width: 160px;
+    }
+    
+    .status-panel::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #00d4ff, transparent);
+      border-radius: 12px 12px 0 0;
+    }
+    
+    .status-panel h3 {
+      font-family: 'Exo 2', sans-serif;
+      font-size: 11px;
+      font-weight: 400;
+      margin-bottom: 8px;
+      color: rgba(0, 212, 255, 0.8);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+    
+    .alarm-count {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 36px;
+      font-weight: 700;
+      color: #ff4444;
+      text-shadow: 0 0 20px rgba(255, 68, 68, 0.5);
+      line-height: 1;
+    }
+    
+    .alarm-count.safe {
+      color: #00ff88;
+      text-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
+    }
+    
+    .last-update {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.5);
+      margin-top: 10px;
+      font-weight: 300;
+    }
+    
+    .last-update.stale {
+      color: #ffaa00;
+    }
+    
+    .last-update.error {
+      color: #ff4444;
+    }
+    
+    .api-status {
+      font-size: 9px;
+      color: rgba(0, 212, 255, 0.5);
+      margin-top: 4px;
+    }
+
+    /* Threat markers layer */
+    #markers-layer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 10;
+      pointer-events: none;
+    }
+    
+    .threat-marker {
+      position: absolute;
+      width: 32px;
+      height: 32px;
+      transform: translate(-50%, -50%);
+      pointer-events: auto;
+      cursor: pointer;
+      filter: drop-shadow(0 0 8px rgba(255, 100, 100, 0.8));
+      animation: markerPulse 2s ease-in-out infinite;
+      transition: transform 0.2s ease;
+    }
+    
+    .threat-marker:hover {
+      transform: translate(-50%, -50%) scale(1.3);
+      z-index: 100;
+    }
+    
+    .threat-marker img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    
+    @keyframes markerPulse {
+      0%, 100% { 
+        opacity: 1;
+        filter: drop-shadow(0 0 8px rgba(255, 100, 100, 0.8));
+      }
+      50% { 
+        opacity: 0.85;
+        filter: drop-shadow(0 0 15px rgba(255, 100, 100, 1));
+      }
+    }
+    
+    /* Marker tooltip */
+    .marker-tooltip {
+      position: fixed;
+      background: rgba(10, 25, 47, 0.95);
+      border: 1px solid rgba(0, 212, 255, 0.4);
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: white;
+      font-size: 12px;
+      max-width: 280px;
+      z-index: 2000;
+      pointer-events: none;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    }
+    
+    .marker-tooltip .tooltip-type {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 11px;
+      color: #00d4ff;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 6px;
+    }
+    
+    .marker-tooltip .tooltip-place {
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    
+    .marker-tooltip .tooltip-time {
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.5);
+    }
+    
+    /* Markers counter in status panel */
+    .markers-info {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(0, 212, 255, 0.2);
+    }
+    
+    .markers-info h4 {
+      font-size: 10px;
+      color: rgba(0, 212, 255, 0.7);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 6px;
+    }
+    
+    .marker-type-count {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.8);
+      margin: 4px 0;
+    }
+    
+    .marker-type-count img {
+      width: 18px;
+      height: 18px;
+    }
+    
+    /* ========== MOBILE OPTIMIZATION ========== */
+    
+    /* Small phones */
+    @media screen and (max-width: 480px) {
+      /* Logo smaller on mobile */
+      .neptun-logo h1 {
+        font-size: 18px;
+        letter-spacing: 4px;
+      }
+      .neptun-logo .subtitle {
+        font-size: 8px;
+        letter-spacing: 2px;
+      }
+      .neptun-logo {
+        top: 10px;
+      }
+      
+      /* Status panel compact */
+      .status-panel {
+        top: auto;
+        bottom: 10px;
+        left: 10px;
+        right: auto;
+        padding: 10px 14px;
+        min-width: auto;
+        border-radius: 10px;
+      }
+      .status-panel h3 {
+        font-size: 9px;
+        letter-spacing: 1px;
+        margin-bottom: 4px;
+      }
+      .alarm-count {
+        font-size: 28px;
+      }
+      .last-update {
+        font-size: 9px;
+        margin-top: 6px;
+      }
+      .api-status {
+        font-size: 8px;
+      }
+      .markers-info {
+        display: none !important;
+      }
+      
+      /* Zoom controls smaller */
+      .zoom-controls {
+        bottom: 10px;
+        right: 10px;
+        gap: 6px;
+      }
+      .zoom-btn {
+        width: 36px;
+        height: 36px;
+        font-size: 18px;
+        border-radius: 6px;
+      }
+      
+      /* Map fills screen */
+      .svg-container {
+        width: 100vw;
+        max-width: none;
+        filter: none;
+      }
+      
+      /* Smaller markers */
+      .threat-marker {
+        width: 24px;
+        height: 24px;
+      }
+      
+      /* No hover effects on touch */
+      #districts-layer .dist:hover {
+        fill: transparent;
+        stroke: rgba(0, 212, 255, 0.15);
+      }
+      
+      /* Disable background grid for performance */
+      #map-container::before {
+        display: none;
+      }
+      
+      /* Tooltip smaller */
+      .marker-tooltip {
+        font-size: 11px;
+        padding: 8px 10px;
+        max-width: 200px;
+      }
+    }
+    
+    /* Tablets */
+    @media screen and (max-width: 768px) and (min-width: 481px) {
+      .neptun-logo h1 {
+        font-size: 22px;
+        letter-spacing: 5px;
+      }
+      .neptun-logo .subtitle {
+        font-size: 9px;
+      }
+      
+      .status-panel {
+        top: 70px;
+        left: 15px;
+        padding: 12px 16px;
+      }
+      .alarm-count {
+        font-size: 32px;
+      }
+      
+      .zoom-controls {
+        bottom: 20px;
+        right: 15px;
+      }
+      .zoom-btn {
+        width: 40px;
+        height: 40px;
+      }
+      
+      .svg-container {
+        width: 95vw;
+      }
+      
+      .threat-marker {
+        width: 28px;
+        height: 28px;
+      }
+    }
+    
+    /* Landscape mobile */
+    @media screen and (max-height: 500px) and (orientation: landscape) {
+      .neptun-logo {
+        top: 5px;
+      }
+      .neptun-logo h1 {
+        font-size: 16px;
+      }
+      .neptun-logo .subtitle {
+        display: none;
+      }
+      
+      .status-panel {
+        top: 5px;
+        left: 5px;
+        padding: 8px 12px;
+      }
+      .status-panel h3 {
+        display: none;
+      }
+      .alarm-count {
+        font-size: 24px;
+      }
+      .last-update, .api-status, .markers-info {
+        display: none !important;
+      }
+      
+      .zoom-controls {
+        bottom: 5px;
+        right: 5px;
+        flex-direction: row;
+      }
+      .zoom-btn {
+        width: 32px;
+        height: 32px;
+        font-size: 16px;
+      }
+      
+      .svg-container {
+        width: 100vw;
+        height: 100vh;
+        aspect-ratio: auto;
+      }
+    }
+    
+    /* Touch device optimizations */
+    @media (hover: none) and (pointer: coarse) {
+      /* Disable tap highlight on Android/mobile */
+      * {
+        -webkit-tap-highlight-color: transparent;
+        -webkit-touch-callout: none;
+        tap-highlight-color: transparent;
+      }
+      
+      /* Larger touch targets */
+      .zoom-btn {
+        min-width: 44px;
+        min-height: 44px;
+      }
+      
+      /* Disable hover effects completely on touch */
+      .zoom-btn:hover {
+        transform: none;
+        box-shadow: none;
+      }
+      
+      /* Keep normal state colors on touch - don't change fill */
+      #states-layer .stateObject:hover {
+        fill: #162236;
+        stroke-opacity: 0.3;
+      }
+      
+      #states-layer .stateObject.alarm:hover {
+        fill: #7f1d1d;
+        stroke-opacity: 0.8;
+      }
+      
+      #districts-layer .dist:hover {
+        fill: transparent;
+        stroke: rgba(0, 212, 255, 0.15);
+      }
+      
+      #districts-layer .dist.alarm:hover {
+        fill: #dc2626;
+        stroke: #ff6b6b;
+      }
+      
+      /* Prevent text selection on long press */
+      * {
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+    }
+    
+    /* Android-specific optimizations */
+    .android-device .svg-container {
+      /* Disable transitions completely on Android */
+      transition: none !important;
+    }
+    
+    .android-device .svg-container.animating {
+      transition: none !important;
+    }
+    
+    .android-device #states-layer .stateObject,
+    .android-device #districts-layer .dist {
+      /* Disable all transitions on Android */
+      transition: none !important;
+    }
+    
+    .android-device #states-layer .stateObject.alarm,
+    .android-device #districts-layer .dist.alarm {
+      /* Disable pulse animations on Android */
+      animation: none !important;
+    }
+    
+    .android-device .threat-marker {
+      /* Disable marker pulse on Android */
+      animation: none !important;
+      filter: drop-shadow(0 0 4px rgba(255, 100, 100, 0.6));
+    }
+    
+    .android-device #map-container::before {
+      /* Disable background grid on Android */
+      display: none;
+    }
+    
+    /* Safe area for notched phones */
+    @supports (padding: max(0px)) {
+      .status-panel {
+        left: max(10px, env(safe-area-inset-left));
+      }
+      .zoom-controls {
+        right: max(10px, env(safe-area-inset-right));
+        bottom: max(10px, env(safe-area-inset-bottom));
+      }
+    }
+    
+    /* ========== NAVBAR STYLES ========== */
+    .navbar {
+      width: 100%;
+      background: linear-gradient(180deg, rgba(10, 14, 23, 0.98) 0%, rgba(10, 14, 23, 0.95) 100%);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      color: #e2e8f0;
+      font-weight: 600;
+      font-size: 1rem;
+      padding: 0.6rem 1.2rem;
+      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(0, 212, 255, 0.15);
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 1000;
+    }
+    
+    .navbar::after {
+      content: "";
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.5), transparent);
+    }
+    
+    .navbar .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    
+    .logo-text {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 1.3rem;
+      font-weight: 900;
+      background: linear-gradient(135deg, #00d4ff 0%, #0099cc 50%, #00d4ff 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      letter-spacing: 4px;
+    }
+    
+    .nav-links {
+      display: flex;
+      gap: 0.3rem;
+      align-items: center;
+    }
+    
+    .nav-links a {
+      color: rgba(148, 163, 184, 0.9);
+      text-decoration: none;
+      font-weight: 600;
+      padding: 0.5rem 0.9rem;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: all 0.2s ease;
+      border: 1px solid transparent;
+    }
+    
+    .nav-links a:hover {
+      color: #fff;
+      background: rgba(0, 212, 255, 0.1);
+      border-color: rgba(0, 212, 255, 0.2);
+    }
+    
+    .nav-links a.active {
+      color: #00d4ff;
+      background: rgba(0, 212, 255, 0.15);
+      border-color: rgba(0, 212, 255, 0.3);
+    }
+    
+    .nav-links a i {
+      font-size: 1.1rem;
+    }
+    
+    /* Live users counter */
+    .live-users {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.45rem 0.85rem;
+      background: rgba(0, 212, 255, 0.08);
+      border: 1px solid rgba(0, 212, 255, 0.2);
+      border-radius: 12px;
+      font-size: 0.7rem;
+    }
+    
+    .live-header {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+    
+    .live-label {
+      color: rgba(0, 212, 255, 0.8);
+      font-weight: 500;
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .live-count {
+      color: #00ff88;
+      font-weight: 800;
+      font-size: 0.85rem;
+      font-family: 'Orbitron', sans-serif;
+    }
+    
+    .live-count.updating {
+      animation: countUpdate 0.5s ease;
+    }
+    
+    @keyframes countUpdate {
+      50% { transform: scale(1.2); color: #00ffaa; }
+    }
+    
+    .live-breakdown {
+      display: flex;
+      gap: 0.25rem;
+    }
+    
+    .live-chip {
+      display: flex;
+      align-items: center;
+      gap: 0.15rem;
+      padding: 0.1rem 0.35rem;
+      border-radius: 6px;
+      font-size: 0.6rem;
+      background: rgba(0, 212, 255, 0.05);
+      border: 1px solid rgba(0, 212, 255, 0.1);
+    }
+    
+    .live-chip strong {
+      color: #e2e8f0;
+      font-weight: 700;
+    }
+    
+    /* Support button */
+    .support-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+      color: white;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 10px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 2px 10px rgba(255, 107, 107, 0.3);
+    }
+    
+    .support-btn i {
+      font-size: 16px;
+      animation: heartPulse 1.5s ease infinite;
+    }
+    
+    @keyframes heartPulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.15); }
+    }
+    
+    .support-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+    }
+    
+    /* Donate Modal */
+    .donate-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.85);
+      backdrop-filter: blur(8px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+    }
+    
+    .donate-modal-overlay.active {
+      display: flex;
+      animation: fadeIn 0.3s ease;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    
+    .donate-modal {
+      width: min(500px, 92vw);
+      background: linear-gradient(160deg, #0a0e17 0%, #0d1929 50%, #0a192f 100%);
+      border: 1px solid rgba(0, 212, 255, 0.25);
+      border-radius: 20px;
+      padding: 2rem;
+      position: relative;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6), 0 0 80px rgba(0, 212, 255, 0.1);
+      animation: modalSlide 0.4s ease;
+    }
+    
+    @keyframes modalSlide {
+      from { transform: translateY(30px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    
+    .donate-title {
+      margin: 0 0 1rem;
+      font-size: 1.4rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #00d4ff, #00ff88);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .donate-sub {
+      color: rgba(148, 163, 184, 0.9);
+      font-size: 0.9rem;
+      line-height: 1.5;
+      margin-bottom: 1.5rem;
+    }
+    
+    .donate-grid {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      margin-bottom: 1.5rem;
+    }
+    
+    .donate-card {
+      background: rgba(0, 212, 255, 0.05);
+      border: 1px solid rgba(0, 212, 255, 0.15);
+      border-radius: 14px;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    
+    .donate-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      font-weight: 700;
+      color: #00d4ff;
+    }
+    
+    .donate-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: #e2e8f0;
+      word-break: break-all;
+    }
+    
+    .donate-actions {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: auto;
+    }
+    
+    .btn-mini {
+      background: linear-gradient(135deg, #00d4ff, #0099cc);
+      color: #0a0e17;
+      border: none;
+      border-radius: 8px;
+      padding: 0.45rem 0.75rem;
+      font-size: 0.7rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      transition: all 0.2s;
+    }
+    
+    .btn-mini:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 15px rgba(0, 212, 255, 0.3);
+    }
+    
+    .btn-mini.alt {
+      background: rgba(148, 163, 184, 0.2);
+      color: #e2e8f0;
+    }
+    
+    .donate-close {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      width: 36px;
+      height: 36px;
+      background: rgba(0, 212, 255, 0.1);
+      border: 1px solid rgba(0, 212, 255, 0.2);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #94a3b8;
+      cursor: pointer;
+      font-size: 18px;
+      transition: all 0.2s;
+    }
+    
+    .donate-close:hover {
+      background: rgba(255, 107, 107, 0.2);
+      border-color: rgba(255, 107, 107, 0.3);
+      color: #ff6b6b;
+    }
+    
+    .jar-link-button {
+      width: 100%;
+      background: linear-gradient(135deg, #00d4ff, #00ff88);
+      color: #0a0e17;
+      border: none;
+      border-radius: 14px;
+      padding: 1rem;
+      font-size: 0.95rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    
+    .jar-link-button:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 10px 30px rgba(0, 212, 255, 0.3);
+    }
+    
+    .donate-footer {
+      font-size: 0.65rem;
+      color: rgba(100, 116, 139, 0.7);
+      margin-top: 1rem;
+      text-align: center;
+    }
+    
+    /* Copy toast */
+    .copy-toast {
+      position: fixed;
+      bottom: 80px;
+      right: 20px;
+      background: rgba(0, 212, 255, 0.15);
+      border: 1px solid rgba(0, 212, 255, 0.3);
+      color: #00d4ff;
+      padding: 0.7rem 1rem;
+      border-radius: 10px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      display: none;
+      z-index: 2100;
+      backdrop-filter: blur(10px);
+    }
+    
+    .copy-toast.show {
+      display: block;
+      animation: fadeIn 0.25s ease, fadeOut 0.4s linear 2.4s forwards;
+    }
+    
+    @keyframes fadeOut {
+      to { opacity: 0; }
+    }
+    
+    /* Disclaimer bar */
+    .disclaimer-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 1100;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.85rem 1.2rem;
+      background: rgba(10, 14, 23, 0.98);
+      border-top: 1px solid rgba(251, 191, 36, 0.3);
+      backdrop-filter: blur(20px);
+      font-size: 0.75rem;
+      color: #e2e8f0;
+      line-height: 1.5;
+    }
+    
+    .disclaimer-bar.hidden { display: none !important; }
+    
+    .disclaimer-bar b { color: #fbbf24; font-weight: 700; }
+    
+    .disclaimer-icon {
+      flex: 0 0 auto;
+      width: 32px;
+      height: 32px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      color: #fff;
+    }
+    
+    .disclaimer-text { flex: 1; }
+    
+    .disclaimer-close {
+      background: rgba(148, 163, 184, 0.15);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      color: #94a3b8;
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+    
+    .disclaimer-close:hover {
+      background: rgba(251, 191, 36, 0.2);
+      border-color: rgba(251, 191, 36, 0.3);
+      color: #fbbf24;
+    }
+    
+    .disclaimer-actions {
+      margin-top: 0.4rem;
+      display: flex;
+      gap: 0.5rem;
+    }
+    
+    .disclaimer-actions a {
+      text-decoration: none;
+      background: rgba(148, 163, 184, 0.1);
+      color: #e2e8f0;
+      font-size: 0.65rem;
+      padding: 0.35rem 0.6rem;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      transition: all 0.2s;
+    }
+    
+    .disclaimer-actions a:hover {
+      background: rgba(251, 191, 36, 0.15);
+      border-color: rgba(251, 191, 36, 0.25);
+      color: #fbbf24;
+    }
+    
+    /* Search box */
+    .place-search {
+      position: fixed;
+      top: 70px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 0.5rem;
+      background: rgba(10, 14, 23, 0.95);
+      padding: 0.6rem 0.9rem;
+      border-radius: 14px;
+      border: 1px solid rgba(0, 212, 255, 0.2);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+      z-index: 950;
+      align-items: center;
+    }
+    
+    .place-search input {
+      background: rgba(0, 212, 255, 0.08);
+      border: 1px solid rgba(0, 212, 255, 0.2);
+      color: #e2e8f0;
+      padding: 0.5rem 0.75rem;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      width: 280px;
+      outline: none;
+      font-weight: 500;
+    }
+    
+    .place-search input::placeholder {
+      color: rgba(148, 163, 184, 0.5);
+    }
+    
+    .place-search input:focus {
+      border-color: rgba(0, 212, 255, 0.5);
+      background: rgba(0, 212, 255, 0.12);
+    }
+    
+    .place-search button {
+      background: linear-gradient(135deg, #00d4ff, #0099cc);
+      border: none;
+      color: #0a0e17;
+      padding: 0.5rem 0.8rem;
+      border-radius: 10px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.8rem;
+      font-weight: 700;
+      transition: all 0.2s;
+    }
+    
+    .place-search button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 15px rgba(0, 212, 255, 0.4);
+    }
+    
+    .ps-suggest {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      margin-top: 0.5rem;
+      background: rgba(10, 14, 23, 0.98);
+      border: 1px solid rgba(0, 212, 255, 0.2);
+      border-radius: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+      display: none;
+    }
+    
+    .ps-item {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.8rem;
+      cursor: pointer;
+      color: #e2e8f0;
+      display: flex;
+      justify-content: space-between;
+      transition: all 0.15s;
+    }
+    
+    .ps-item:hover, .ps-item.active {
+      background: rgba(0, 212, 255, 0.1);
+    }
+    
+    .ps-empty {
+      padding: 0.6rem;
+      font-size: 0.75rem;
+      color: rgba(148, 163, 184, 0.6);
+      text-align: center;
+    }
+    
+    /* Telegram Banner */
+    .tg-banner {
+      display: flex;
+      position: fixed;
+      bottom: 60px;
+      left: 20px;
+      right: 20px;
+      max-width: 500px;
+      background: linear-gradient(135deg, #0088cc 0%, #00aaff 100%);
+      border-radius: 14px;
+      padding: 0.8rem 1rem;
+      text-decoration: none;
+      color: white;
+      z-index: 1050;
+      box-shadow: 0 8px 30px rgba(0, 136, 204, 0.4);
+      align-items: center;
+      gap: 0.8rem;
+      transition: all 0.3s;
+    }
+    
+    .tg-banner:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 12px 40px rgba(0, 136, 204, 0.5);
+    }
+    
+    .tg-banner.hidden { display: none !important; }
+    
+    .tg-banner-icon {
+      width: 36px;
+      height: 36px;
+      flex-shrink: 0;
+    }
+    
+    .tg-banner-text {
+      flex: 1;
+    }
+    
+    .tg-banner-title {
+      font-weight: 700;
+      font-size: 0.9rem;
+      display: block;
+    }
+    
+    .tg-banner-desc {
+      font-size: 0.7rem;
+      opacity: 0.9;
+      display: block;
+    }
+    
+    .tg-banner-btn {
+      background: rgba(255, 255, 255, 0.2);
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      flex-shrink: 0;
+    }
+    
+    .tg-banner-close {
+      position: absolute;
+      top: -8px;
+      right: -8px;
+      width: 24px;
+      height: 24px;
+      background: #fff;
+      color: #0088cc;
+      border: none;
+      border-radius: 50%;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    /* Mobile adjustments */
+    @media (max-width: 768px) {
+      .navbar {
+        padding: 0.5rem 0.8rem;
+      }
+      
+      .logo-text {
+        font-size: 1rem;
+        letter-spacing: 2px;
+      }
+      
+      .nav-links {
+        display: none;
+      }
+      
+      .live-users {
+        padding: 0.35rem 0.6rem;
+        font-size: 0.6rem;
+      }
+      
+      .live-breakdown {
+        display: none;
+      }
+      
+      .support-btn {
+        padding: 6px 10px;
+        font-size: 0.75rem;
+      }
+      
+      .support-btn span {
+        display: none;
+      }
+      
+      .place-search {
+        top: auto;
+        bottom: 120px;
+        left: 10px;
+        right: 10px;
+        transform: none;
+        max-width: none;
+      }
+      
+      .place-search input {
+        width: 150px;
+        flex: 1;
+        font-size: 0.8rem;
+      }
+      
+      .tg-banner {
+        bottom: auto;
+        top: 55px;
+        left: 10px;
+        right: 10px;
+        max-width: none;
+        padding: 0.6rem 0.8rem;
+      }
+      
+      .tg-banner-desc {
+        display: none;
+      }
+      
+      .disclaimer-bar {
+        font-size: 0.7rem;
+        padding: 0.6rem 0.8rem;
+      }
+      
+      .disclaimer-icon {
+        width: 28px;
+        height: 28px;
+        font-size: 14px;
+      }
+    }
+    
+    /* Adjust map container for navbar */
+    #map-container {
+      padding-top: 55px;
+    }
+    
+    .status-panel {
+      top: 70px;
+    }
+  </style>
+</head>
+<body>
+  <!-- NAVBAR -->
+  <div class="navbar">
+    <div class="logo">
+      <span class="logo-text">NEPTUN</span>
+      <div class="live-users" id="liveUsers" title="Активні користувачі онлайн">
+        <div class="live-header">
+          <span class="live-label">онлайн</span>
+          <span class="live-count" data-role="live-total">0</span>
+        </div>
+        <div class="live-breakdown">
+          <span class="live-chip">🌐 <strong data-role="live-web">0</strong></span>
+          <span class="live-chip">📱 <strong data-role="live-apps">0</strong></span>
+        </div>
+      </div>
+    </div>
+    <div class="nav-links">
+      <a href="#" class="active"><i class="material-icons">map</i> Карта</a>
+      <a href="/analytics" target="_blank"><i class="material-icons">analytics</i> Аналітика</a>
+      <a href="#about"><i class="material-icons">info</i> Інфо</a>
+    </div>
+    <button class="support-btn" onclick="toggleDonate()" title="Підтримати проєкт">
+      <i class="material-icons">favorite</i>
+      <span>Підтримати</span>
+    </button>
+  </div>
+  
+  <!-- Search Box -->
+  <div class="place-search" id="placeSearch">
+    <input type="text" id="psInput" placeholder="Пошук міста..." autocomplete="off">
+    <button id="psBtn"><i class="material-icons" style="font-size:18px;">search</i></button>
+    <div class="ps-suggest" id="psSuggest"></div>
+  </div>
+  
+  <!-- Donate Modal -->
+  <div class="donate-modal-overlay" id="donateModal">
+    <div class="donate-modal">
+      <button class="donate-close" onclick="toggleDonate(false)">×</button>
+      <h3 class="donate-title"><i class="material-icons" style="font-size:24px;">favorite</i> Підтримати NEPTUN</h3>
+      <p class="donate-sub">Ваша допомога дозволяє нам розвивати карту та робити її ще кращою для всіх українців.</p>
+      <div class="donate-grid">
+        <div class="donate-card">
+          <div class="donate-label">Моно (UAH)</div>
+          <div class="donate-value">4441 1111 2110 7290</div>
+          <div class="donate-actions">
+            <button class="btn-mini" onclick="copyDonate('4441111121107290')"><i class="material-icons" style="font-size:14px;">content_copy</i> Копіювати</button>
+          </div>
+        </div>
+        <div class="donate-card">
+          <div class="donate-label">Приват (UAH)</div>
+          <div class="donate-value">5168 7451 5313 3886</div>
+          <div class="donate-actions">
+            <button class="btn-mini" onclick="copyDonate('5168745153133886')"><i class="material-icons" style="font-size:14px;">content_copy</i> Копіювати</button>
+          </div>
+        </div>
+        <div class="donate-card">
+          <div class="donate-label">Monobank Банка</div>
+          <div class="donate-value" style="font-size:0.8rem;">send.monobank.ua/jar/6Vi9TVzJZQ</div>
+          <div class="donate-actions">
+            <button class="btn-mini" onclick="openJar()"><i class="material-icons" style="font-size:14px;">open_in_new</i> Відкрити</button>
+            <button class="btn-mini alt" onclick="copyDonate('https://send.monobank.ua/jar/6Vi9TVzJZQ')"><i class="material-icons" style="font-size:14px;">content_copy</i></button>
+          </div>
+        </div>
+      </div>
+      <button class="jar-link-button" onclick="openJar()"><i class="material-icons">rocket_launch</i> Задонатити зараз</button>
+      <div class="donate-footer">Дякуємо за підтримку! 💙💛</div>
+    </div>
+  </div>
+  <div class="copy-toast" id="copyToast">✓ Скопійовано</div>
+  
+  <!-- Telegram Banner -->
+  <a href="https://t.me/+aBR79kExNQM1ZjZi" target="_blank" class="tg-banner" id="tgBanner">
+    <svg class="tg-banner-icon" viewBox="0 0 48 48" fill="white">
+      <path d="M41.42 7.31L3.92 22.27c-2.56 1.03-2.55 2.46-.47 3.1l9.62 3 3.72 11.42c.45 1.25.23 1.75 1.52 1.75.99 0 1.43-.45 1.98-1l3.94-3.83 8.2 6.05c1.51.83 2.6.4 2.98-1.4l5.4-25.44c.55-2.2-.84-3.2-2.39-2.61z"/>
+    </svg>
+    <div class="tg-banner-text">
+      <span class="tg-banner-title">📢 Telegram канал NEPTUN</span>
+      <span class="tg-banner-desc">⚡ Більше інформації • 💬 Спілкування</span>
+    </div>
+    <div class="tg-banner-btn">
+      <span>Підписатися</span>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/>
+      </svg>
+    </div>
+    <button class="tg-banner-close" onclick="event.preventDefault(); event.stopPropagation(); closeTgBanner();">×</button>
+  </a>
+  
+  <!-- Disclaimer Bar -->
+  <div id="disclaimerBar" class="disclaimer-bar" style="display:none;">
+    <div class="disclaimer-icon">!</div>
+    <div class="disclaimer-text">
+      <div><b>УВАГА:</b> Дані формуються автоматично з відкритих джерел (Telegram тощо) та можуть містити похибки. Сервіс <b>не є</b> офіційною системою оповіщення.</div>
+      <div class="disclaimer-actions">
+        <a href="#about"><span class="material-icons" style="font-size:13px;">info</span> Докладніше</a>
+        <a href="https://t.me/+zFxu_4W_ishiNjli" target="_blank"><span class="material-icons" style="font-size:13px;">group</span> Спільнота</a>
+      </div>
+    </div>
+    <button class="disclaimer-close" onclick="hideDisclaimer()">×</button>
+  </div>
+  
+  <div id="map-container">
+    <div id="map-wrapper">
+      <div class="svg-container" id="svg-container">
+        <!-- States SVG will be loaded here -->
+        <div id="states-layer"></div>
+        <!-- Districts SVG will be loaded here -->
+        <div id="districts-layer"></div>
+        <!-- Names SVG will be loaded here -->
+        <div id="names-layer"></div>
+        <!-- Threat markers layer -->
+        <div id="markers-layer"></div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="status-panel">
+    <h3>Активні тривоги</h3>
+    <div class="alarm-count" id="alarm-count">0</div>
+    <div class="last-update" id="last-update">Завантаження...</div>
+    <div class="api-status" id="api-status"></div>
+    
+    <!-- Threat markers info -->
+    <div class="markers-info" id="markers-info" style="display: none;">
+      <h4>Загрози на карті</h4>
+      <div id="markers-summary"></div>
+    </div>
+  </div>
+  
+  <div class="zoom-controls">
+    <button class="zoom-btn" onclick="zoomIn()">+</button>
+    <button class="zoom-btn" onclick="zoomOut()">−</button>
+    <button class="zoom-btn" onclick="resetZoom()">⟲</button>
+  </div>
+
+  <script>
+    // ===== CONFIG =====
+    const ALARM_UPDATE_INTERVAL = 5000; // 5 seconds
+    const MARKERS_UPDATE_INTERVAL = 10000; // 10 seconds for threat markers
+    const MAX_RETRIES = 3;
+    
+    // Get timeRange from URL or use default (same as index.html)
+    const urlParams = new URLSearchParams(window.location.search);
+    const TIME_RANGE = parseInt(urlParams.get('timeRange')) || 40;
+    
+    // SVG map bounds (Ukraine approximate bounds)
+    const MAP_BOUNDS = {
+      minLat: 44.2,
+      maxLat: 52.4,
+      minLng: 22.0,
+      maxLng: 40.2
+    };
+    
+    let currentScale = 1;
+    let currentX = 0;
+    let currentY = 0;
+    let isDragging = false;
+    let startX, startY;
+    let lastSuccessfulFetch = null;
+    let consecutiveFailures = 0;
+    let activeTooltip = null;
+    
+    // Android detection for performance optimizations
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    if (isAndroid) {
+      document.body.classList.add('android-device');
+      console.log('Android detected - applying performance optimizations');
+    }
+    
+    // Icon mapping for threat types
+    const THREAT_ICONS = {
+      'shahed': 'shahed.png',
+      'raketa': 'raketa.png',
+      'avia': 'avia.png',
+      'artillery': 'artillery.png',
+      'obstril': 'obstril.png',
+      'fpv': 'fpv.png',
+      'pusk': 'pusk.png',
+      'kab': 'rszv.png',
+      'rszv': 'rszv.png',
+      'rozved': 'rozved.png',
+      'vibuh': 'vibuh.png',
+      'alarm': 'trivoga.png',
+      'alarm_cancel': 'vidboi.png',
+      'default': 'default.png'
+    };
+    
+    // Threat type names for display
+    const THREAT_NAMES = {
+      'shahed': '🛩️ Шахеди/БПЛА',
+      'raketa': '🚀 Ракети',
+      'avia': '✈️ Авіація',
+      'artillery': '💥 Артилерія',
+      'obstril': '💥 Обстріл',
+      'fpv': '🎯 FPV дрони',
+      'pusk': '🚀 Пуски',
+      'kab': '💣 КАБи',
+      'rszv': '💣 РСЗВ',
+      'rozved': '🔍 Розвідники',
+      'vibuh': '💥 Вибухи',
+      'alarm': '🚨 Тривога',
+      'alarm_cancel': '✅ Відбій'
+    };
+    
+    // District ID to State ID mapping (for counting oblasts with alarms)
+    const DISTRICT_TO_STATE = {
+      // Чернігівська область (State ID: 25)
+      '140': '25', '141': '25', '142': '25', '143': '25', '144': '25',
+      // Донецька область (State ID: 8)
+      '49': '8', '50': '8', '51': '8', '52': '8', '53': '8', '54': '8', '55': '8', '56': '8',
+      // Запорізька область (State ID: 10)
+      '145': '10', '146': '10', '147': '10', '148': '10', '149': '10',
+      // Луганська область (State ID: 16)
+      '89': '16', '90': '16', '91': '16', '92': '16',
+      // Харківська область (State ID: 22)
+      '125': '22', '126': '22', '127': '22', '128': '22', '129': '22', '130': '22', '131': '22',
+      // Дніпропетровська область (State ID: 7)
+      '44': '7', '45': '7', '46': '7', '47': '7', '48': '7',
+      // Херсонська область (State ID: 23)
+      '132': '23', '133': '23', '134': '23', '135': '23', '136': '23',
+      // Миколаївська область (State ID: 17)
+      '93': '17', '94': '17', '95': '17', '96': '17',
+      // Одеська область (State ID: 18)
+      '97': '18', '98': '18', '99': '18', '100': '18', '101': '18', '102': '18', '103': '18',
+      // Сумська область (State ID: 21)
+      '118': '21', '119': '21', '120': '21', '121': '21', '122': '21', '123': '21',
+      // Київська область (State ID: 14)
+      '77': '14', '78': '14', '79': '14', '80': '14', '81': '14', '82': '14',
+      // Полтавська область (State ID: 19)
+      '104': '19', '105': '19', '106': '19', '107': '19',
+      // Вінницька область (State ID: 2)
+      '27': '2', '28': '2', '29': '2', '30': '2', '31': '2', '32': '2',
+      // Черкаська область (State ID: 24)
+      '137': '24', '138': '24', '139': '24',
+      // Кіровоградська область (State ID: 15)
+      '83': '15', '84': '15', '85': '15', '86': '15',
+      // Житомирська область (State ID: 9)
+      '57': '9', '58': '9', '59': '9', '60': '9',
+      // Хмельницька область (State ID: 4)
+      '33': '4', '34': '4', '35': '4', '36': '4',
+      // Рівненська область (State ID: 20)
+      '108': '20', '109': '20', '110': '20', '111': '20',
+      // Волинська область (State ID: 3)
+      '37': '3', '38': '3', '39': '3', '40': '3',
+      // Львівська область (State ID: 5)
+      '61': '5', '62': '5', '63': '5', '64': '5', '65': '5', '66': '5', '67': '5',
+      // Івано-Франківська область (State ID: 11)
+      '68': '11', '69': '11', '70': '11', '71': '11', '72': '11', '73': '11',
+      // Тернопільська область (State ID: 6)
+      '41': '6', '42': '6', '43': '6',
+      // Закарпатська область (State ID: 12)
+      '74': '12', '75': '12', '76': '12', '124': '12',
+      // Чернівецька область (State ID: 26)
+      '150': '26', '151': '26', '152': '26',
+      // м. Київ (State ID: 13)
+      '87': '13', '88': '13',
+      // Крим (State ID: 9999)
+      '112': '9999', '113': '9999', '114': '9999', '115': '9999', '116': '9999', '117': '9999'
+    };
+    
+    // Cache buster version - change this to force reload SVG files
+    const CACHE_VERSION = 'v4';
+    
+    // Load both SVG maps
+    async function loadMaps() {
+      try {
+        // Load states (oblasts) SVG
+        const statesResponse = await fetch(`/static/ukraine_states.svg?${CACHE_VERSION}`);
+        const statesText = await statesResponse.text();
+        document.getElementById('states-layer').innerHTML = statesText;
+        
+        // Load districts SVG
+        const districtsResponse = await fetch(`/static/ukraine_districts_detailed.svg?${CACHE_VERSION}`);
+        const districtsText = await districtsResponse.text();
+        document.getElementById('districts-layer').innerHTML = districtsText;
+        
+        // Load names SVG (with neptun.in.ua branding)
+        const namesResponse = await fetch(`/static/ukraine_names.svg?${CACHE_VERSION}`);
+        const namesText = await namesResponse.text();
+        document.getElementById('names-layer').innerHTML = namesText;
+        
+        // Hide all icons initially
+        document.querySelectorAll('#names-layer .reasonIcon').forEach(icon => {
+          icon.style.display = 'none';
+        });
+        
+        // Setup drag functionality
+        setupDrag();
+        
+        // Fetch alarms immediately
+        await fetchAlarms();
+        
+        // Fetch threat markers immediately
+        await fetchThreatMarkers();
+        
+        // Update alarms every 5 seconds
+        setInterval(fetchAlarms, ALARM_UPDATE_INTERVAL);
+        
+        // Update threat markers every 10 seconds
+        setInterval(fetchThreatMarkers, MARKERS_UPDATE_INTERVAL);
+        
+        console.log('Maps loaded successfully');
+      } catch (error) {
+        console.error('Error loading maps:', error);
+      }
+    }
+    
+    // Fetch alarms from ukrainealarm API via proxy with retry
+    async function fetchAlarms(retryCount = 0) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        
+        const response = await fetch('/api/alarms/all', {
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        
+        // Check if we got actual data
+        if (!Array.isArray(data)) {
+          throw new Error('Invalid data format');
+        }
+        
+        // Success - reset failures counter
+        consecutiveFailures = 0;
+        lastSuccessfulFetch = new Date();
+        
+        // Clear ALL existing alarms
+        document.querySelectorAll('.alarm').forEach(el => {
+          el.classList.remove('alarm');
+        });
+        
+        // Hide all icons
+        document.querySelectorAll('#names-layer .reasonIcon').forEach(icon => {
+          icon.style.display = 'none';
+        });
+        
+        // Track alarm counts
+        let districtAlarmCount = 0;
+        const statesWithAlarm = new Set(); // Track unique states with alarm
+        
+        // Track threat types per state
+        const stateThreatTypes = {};
+        
+        // Process each alert
+        data.forEach(region => {
+          if (region.activeAlerts && region.activeAlerts.length > 0) {
+            const regionId = region.regionId;
+            const regionType = region.regionType;
+            
+            // Determine threat type from alerts
+            region.activeAlerts.forEach(alert => {
+              const alertType = alert.type || 'UNKNOWN';
+              let stateId = regionId;
+              
+              // If it's a district, find parent state
+              if (regionType === 'District') {
+                stateId = DISTRICT_TO_STATE[regionId] || regionId;
+              }
+              
+              // Store threat type for this state
+              if (!stateThreatTypes[stateId]) {
+                stateThreatTypes[stateId] = new Set();
+              }
+              stateThreatTypes[stateId].add(alertType);
+            });
+            
+            if (regionType === 'State') {
+              // Color the oblast
+              const stateElements = document.querySelectorAll(`#states-layer [id="${regionId}"]`);
+              stateElements.forEach(el => {
+                el.classList.add('alarm');
+              });
+              statesWithAlarm.add(regionId);
+              
+              // Show drone icon for this state if applicable
+              showThreatIcons(regionId, region.activeAlerts);
+            } else if (regionType === 'District') {
+              // Color ONLY the specific district
+              const districtElements = document.querySelectorAll(`#districts-layer [id="${regionId}"]`);
+              districtElements.forEach(el => {
+                el.classList.add('alarm');
+              });
+              districtAlarmCount++;
+              
+              // Also mark the parent state as having alarm
+              const parentStateId = DISTRICT_TO_STATE[regionId];
+              if (parentStateId) {
+                statesWithAlarm.add(parentStateId);
+                // Color the parent state too
+                const stateElements = document.querySelectorAll(`#states-layer [id="${parentStateId}"]`);
+                stateElements.forEach(el => {
+                  el.classList.add('alarm');
+                });
+                // Show icons for parent state
+                showThreatIcons(parentStateId, region.activeAlerts);
+              }
+            }
+          }
+        });
+        
+        // Update status panel - show unique STATES count (oblasts with any alarm)
+        const stateAlarmCount = statesWithAlarm.size;
+        const countEl = document.getElementById('alarm-count');
+        countEl.textContent = stateAlarmCount;
+        countEl.className = stateAlarmCount > 0 ? 'alarm-count' : 'alarm-count safe';
+        
+        const now = new Date();
+        const updateEl = document.getElementById('last-update');
+        updateEl.textContent = `Оновлено: ${now.toLocaleTimeString('uk-UA')}`;
+        updateEl.className = 'last-update';
+        
+        document.getElementById('api-status').textContent = '';
+        
+        console.log(`Alarms: ${stateAlarmCount} oblasts (${Array.from(statesWithAlarm).join(',')}), ${districtAlarmCount} districts`);
+        
+      } catch (error) {
+        consecutiveFailures++;
+        console.error(`Error fetching alarms (attempt ${retryCount + 1}):`, error);
+        
+        // Retry up to MAX_RETRIES times
+        if (retryCount < MAX_RETRIES - 1) {
+          console.log(`Retrying in ${(retryCount + 1) * 500}ms...`);
+          setTimeout(() => fetchAlarms(retryCount + 1), (retryCount + 1) * 500);
+          return;
+        }
+        
+        // All retries failed - show warning
+        const updateEl = document.getElementById('last-update');
+        const statusEl = document.getElementById('api-status');
+        
+        if (lastSuccessfulFetch) {
+          const secondsAgo = Math.round((new Date() - lastSuccessfulFetch) / 1000);
+          updateEl.textContent = `Дані: ${secondsAgo}с тому`;
+          updateEl.className = 'last-update stale';
+        } else {
+          updateEl.textContent = 'Не вдалося завантажити';
+          updateEl.className = 'last-update error';
+          statusEl.textContent = '❌ API недоступний';
+        }
+      }
+    }
+    
+    // Show threat icons based on alert type
+    function showThreatIcons(stateId, alerts) {
+      alerts.forEach(alert => {
+        const alertType = alert.type || '';
+        
+        // Determine which icon to show
+        // AIR = general air alarm, DRONES = shaheds, ARTILLERY = shelling, etc.
+        if (alertType === 'DRONES' || alertType.includes('DRONE')) {
+          const droneIcon = document.getElementById(`droneIcon_${stateId}`);
+          if (droneIcon) {
+            droneIcon.style.display = 'block';
+          }
+        }
+        
+        // You can add more icon types here:
+        // if (alertType === 'BALLISTIC' || alertType === 'MISSILE') { ... }
+      });
+    }
+    
+    // Convert lat/lng to SVG percentage coordinates
+    function latLngToSvgPercent(lat, lng) {
+      // Ukraine bounds for SVG mapping
+      const x = ((lng - MAP_BOUNDS.minLng) / (MAP_BOUNDS.maxLng - MAP_BOUNDS.minLng)) * 100;
+      const y = ((MAP_BOUNDS.maxLat - lat) / (MAP_BOUNDS.maxLat - MAP_BOUNDS.minLat)) * 100;
+      return { x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) };
+    }
+    
+    // Fetch threat markers from /data endpoint
+    async function fetchThreatMarkers() {
+      try {
+        const response = await fetch(`/data?timeRange=${TIME_RANGE}`);
+        if (!response.ok) return;
+        
+        const data = await response.json();
+        const markersLayer = document.getElementById('markers-layer');
+        
+        // Clear existing markers
+        markersLayer.innerHTML = '';
+        
+        // Track marker counts by type
+        const markerCounts = {};
+        
+        // Process markers
+        const markers = data.tracks || data.items || data || [];
+        
+        if (!Array.isArray(markers)) {
+          console.log('No markers array found');
+          return;
+        }
+        
+        markers.forEach((marker, index) => {
+          const lat = parseFloat(marker.lat);
+          const lng = parseFloat(marker.lng);
+          
+          // Skip markers without valid coordinates
+          if (isNaN(lat) || isNaN(lng)) return;
+          
+          // Skip if outside Ukraine bounds
+          if (lat < MAP_BOUNDS.minLat || lat > MAP_BOUNDS.maxLat ||
+              lng < MAP_BOUNDS.minLng || lng > MAP_BOUNDS.maxLng) return;
+          
+          // Get threat type and icon
+          const threatType = marker.threat_type || 'default';
+          const iconFile = marker.marker_icon || THREAT_ICONS[threatType] || 'default.png';
+          
+          // Count markers by type
+          markerCounts[threatType] = (markerCounts[threatType] || 0) + 1;
+          
+          // Convert to SVG coordinates
+          const pos = latLngToSvgPercent(lat, lng);
+          
+          // Create marker element
+          const markerEl = document.createElement('div');
+          markerEl.className = 'threat-marker';
+          markerEl.style.left = `${pos.x}%`;
+          markerEl.style.top = `${pos.y}%`;
+          markerEl.dataset.type = threatType;
+          markerEl.dataset.place = marker.place || '';
+          markerEl.dataset.text = marker.text || '';
+          markerEl.dataset.date = marker.date || '';
+          
+          const img = document.createElement('img');
+          img.src = `/static/${iconFile}`;
+          img.alt = threatType;
+          img.onerror = function() {
+            this.src = '/static/default.png';
+          };
+          
+          markerEl.appendChild(img);
+          
+          // Add tooltip on hover
+          markerEl.addEventListener('mouseenter', (e) => showMarkerTooltip(e, marker, threatType));
+          markerEl.addEventListener('mouseleave', hideMarkerTooltip);
+          
+          markersLayer.appendChild(markerEl);
+        });
+        
+        // Update markers summary
+        updateMarkersSummary(markerCounts);
+        
+        console.log(`Loaded ${markers.length} threat markers`);
+        
+      } catch (error) {
+        console.error('Error fetching threat markers:', error);
+      }
+    }
+    
+    // Show tooltip for marker
+    function showMarkerTooltip(event, marker, threatType) {
+      hideMarkerTooltip();
+      
+      const tooltip = document.createElement('div');
+      tooltip.className = 'marker-tooltip';
+      tooltip.id = 'active-tooltip';
+      
+      const typeName = THREAT_NAMES[threatType] || threatType;
+      const place = marker.place || 'Невідомо';
+      const date = marker.date || '';
+      
+      tooltip.innerHTML = `
+        <div class="tooltip-type">${typeName}</div>
+        <div class="tooltip-place">${place}</div>
+        ${date ? `<div class="tooltip-time">${date}</div>` : ''}
+      `;
+      
+      document.body.appendChild(tooltip);
+      
+      // Position tooltip near cursor
+      const rect = tooltip.getBoundingClientRect();
+      let x = event.clientX + 15;
+      let y = event.clientY + 15;
+      
+      // Keep tooltip in viewport
+      if (x + rect.width > window.innerWidth) {
+        x = event.clientX - rect.width - 15;
+      }
+      if (y + rect.height > window.innerHeight) {
+        y = event.clientY - rect.height - 15;
+      }
+      
+      tooltip.style.left = `${x}px`;
+      tooltip.style.top = `${y}px`;
+    }
+    
+    // Hide tooltip
+    function hideMarkerTooltip() {
+      const tooltip = document.getElementById('active-tooltip');
+      if (tooltip) {
+        tooltip.remove();
+      }
+    }
+    
+    // Update markers summary in status panel
+    function updateMarkersSummary(counts) {
+      const container = document.getElementById('markers-info');
+      const summary = document.getElementById('markers-summary');
+      
+      const totalMarkers = Object.values(counts).reduce((a, b) => a + b, 0);
+      
+      if (totalMarkers === 0) {
+        container.style.display = 'none';
+        return;
+      }
+      
+      container.style.display = 'block';
+      
+      // Sort by count descending
+      const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+      
+      let html = '';
+      sorted.forEach(([type, count]) => {
+        const iconFile = THREAT_ICONS[type] || 'default.png';
+        const typeName = THREAT_NAMES[type] || type;
+        html += `
+          <div class="marker-type-count">
+            <img src="/static/${iconFile}" alt="${type}">
+            <span>${typeName}: ${count}</span>
+          </div>
+        `;
+      });
+      
+      summary.innerHTML = html;
+    }
+    
+    // Zoom functions
+    const BASE_WIDTH = window.innerWidth * 0.9;
+    const ASPECT_RATIO = 260 / 175;
+    let containerWidth = Math.min(BASE_WIDTH, 1400);
+    let containerHeight = containerWidth / ASPECT_RATIO;
+    let offsetX = 0;
+    let offsetY = 0;
+    
+    function zoomIn() {
+      currentScale = Math.min(currentScale * 1.3, 5);
+      updateZoom(true);
+    }
+    
+    function zoomOut() {
+      // Minimum scale 1.0 to prevent blurriness on small screens
+      currentScale = Math.max(currentScale / 1.3, 1.0);
+      updateZoom(true);
+    }
+    
+    function resetZoom() {
+      currentScale = 1;
+      currentX = 0;
+      currentY = 0;
+      offsetX = 0;
+      offsetY = 0;
+      updateZoom(true);
+    }
+    
+    // Use requestAnimationFrame for smooth updates
+    let zoomRAF = null;
+    
+    function updateZoom(animate = false) {
+      // Cancel pending frame to avoid multiple updates
+      if (zoomRAF) {
+        cancelAnimationFrame(zoomRAF);
+      }
+      
+      zoomRAF = requestAnimationFrame(() => {
+        const container = document.getElementById('svg-container');
+        const wrapper = document.getElementById('map-wrapper');
+        if (!container || !wrapper) return;
+        
+        if (animate && !isAndroid) {
+          container.classList.add('animating');
+          setTimeout(() => container.classList.remove('animating'), 200);
+        } else {
+          container.classList.remove('animating');
+        }
+        
+        // Size-based zoom for all devices (markers need correct % positioning)
+        const newWidth = containerWidth * currentScale;
+        const newHeight = containerHeight * currentScale;
+        const wrapperRect = wrapper.getBoundingClientRect();
+        const centerX = (wrapperRect.width - newWidth) / 2 + offsetX;
+        const centerY = (wrapperRect.height - newHeight) / 2 + offsetY;
+        
+        container.style.width = newWidth + 'px';
+        container.style.height = newHeight + 'px';
+        container.style.left = centerX + 'px';
+        container.style.top = centerY + 'px';
+        container.style.transform = '';
+        
+        zoomRAF = null;
+      });
+    }
+    
+    // Legacy transform function for compatibility
+    function updateTransform(animate = false) {
+      updateZoom(animate);
+    }
+    
+    // Drag functionality
+    let lastTouchDistance = 0;
+    let lastTouchCenter = { x: 0, y: 0 };
+    let isTouching = false;
+    
+    function getTouchDistance(touches) {
+      if (touches.length < 2) return 0;
+      const dx = touches[0].clientX - touches[1].clientX;
+      const dy = touches[0].clientY - touches[1].clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+    
+    function getTouchCenter(touches) {
+      if (touches.length < 2) {
+        return { x: touches[0].clientX, y: touches[0].clientY };
+      }
+      return {
+        x: (touches[0].clientX + touches[1].clientX) / 2,
+        y: (touches[0].clientY + touches[1].clientY) / 2
+      };
+    }
+    
+    function setupDrag() {
+      const wrapper = document.getElementById('map-wrapper');
+      let dragStartX, dragStartY, dragStartOffsetX, dragStartOffsetY;
+      
+      // Mouse events for desktop
+      wrapper.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        dragStartX = e.clientX;
+        dragStartY = e.clientY;
+        dragStartOffsetX = offsetX;
+        dragStartOffsetY = offsetY;
+        wrapper.style.cursor = 'grabbing';
+      });
+      
+      wrapper.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        offsetX = dragStartOffsetX + (e.clientX - dragStartX);
+        offsetY = dragStartOffsetY + (e.clientY - dragStartY);
+        updateZoom();
+      });
+      
+      wrapper.addEventListener('mouseup', () => {
+        isDragging = false;
+        wrapper.style.cursor = 'grab';
+      });
+      
+      wrapper.addEventListener('mouseleave', () => {
+        isDragging = false;
+        wrapper.style.cursor = 'grab';
+      });
+      
+      // Mouse wheel zoom
+      wrapper.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        if (e.deltaY < 0) {
+          zoomIn();
+        } else {
+          zoomOut();
+        }
+      }, { passive: false });
+      
+      // Touch events for mobile
+      wrapper.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 1) {
+          // Single touch - drag
+          isTouching = true;
+          isDragging = true;
+          dragStartX = e.touches[0].clientX;
+          dragStartY = e.touches[0].clientY;
+          dragStartOffsetX = offsetX;
+          dragStartOffsetY = offsetY;
+        } else if (e.touches.length === 2) {
+          // Two fingers - pinch zoom
+          e.preventDefault();
+          isDragging = false;
+          lastTouchDistance = getTouchDistance(e.touches);
+          lastTouchCenter = getTouchCenter(e.touches);
+        }
+      }, { passive: false });
+      
+      // No throttling - maximum smoothness on all devices
+      wrapper.addEventListener('touchmove', (e) => {
+        if (e.touches.length === 1 && isDragging) {
+          // Single touch drag
+          e.preventDefault();
+          offsetX = dragStartOffsetX + (e.touches[0].clientX - dragStartX);
+          offsetY = dragStartOffsetY + (e.touches[0].clientY - dragStartY);
+          updateZoom();
+        } else if (e.touches.length === 2) {
+          // Pinch to zoom
+          e.preventDefault();
+          const newDistance = getTouchDistance(e.touches);
+          
+          if (lastTouchDistance > 0) {
+            const scale = newDistance / lastTouchDistance;
+            // Min scale 1.0 to prevent blurriness on small Android screens
+            const newScale = Math.min(Math.max(currentScale * scale, 1.0), 5);
+            
+            // Only update if change is significant (reduces redraws)
+            if (Math.abs(newScale - currentScale) > 0.02) {
+              currentScale = newScale;
+              updateZoom();
+            }
+          }
+          
+          lastTouchDistance = newDistance;
+        }
+      }, { passive: false });
+      
+      wrapper.addEventListener('touchend', (e) => {
+        if (e.touches.length === 0) {
+          isDragging = false;
+          isTouching = false;
+          lastTouchDistance = 0;
+        } else if (e.touches.length === 1) {
+          // Went from 2 touches to 1 - restart drag
+          isDragging = true;
+          dragStartX = e.touches[0].clientX;
+          dragStartY = e.touches[0].clientY;
+          dragStartOffsetX = offsetX;
+          dragStartOffsetY = offsetY;
+          lastTouchDistance = 0;
+        }
+      });
+      
+      wrapper.addEventListener('touchcancel', () => {
+        isDragging = false;
+        isTouching = false;
+        lastTouchDistance = 0;
+      });
+      
+      // Double tap to reset zoom on mobile
+      let lastTap = 0;
+      wrapper.addEventListener('touchend', (e) => {
+        if (e.touches.length !== 0) return;
+        
+        const currentTime = new Date().getTime();
+        const tapLength = currentTime - lastTap;
+        
+        if (tapLength < 300 && tapLength > 0) {
+          // Double tap detected
+          e.preventDefault();
+          if (currentScale > 1.2) {
+            resetZoom();
+          } else {
+            currentScale = 2;
+            updateZoom(true);
+          }
+        }
+        lastTap = currentTime;
+      });
+      
+      wrapper.style.cursor = 'grab';
+      
+      // Initial positioning
+      updateZoom();
+    }
+    
+    // ========== PRESENCE TRACKING & LIVE USERS ==========
+    let presenceInterval;
+    let sessionId = localStorage.getItem('neptun_session') || crypto.randomUUID();
+    localStorage.setItem('neptun_session', sessionId);
+    
+    async function pingPresence() {
+      try {
+        const response = await fetch('/presence', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            session_id: sessionId,
+            platform: detectPlatform()
+          })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          updateLiveUsers(data);
+        }
+      } catch (e) {
+        console.log('Presence error:', e);
+      }
+    }
+    
+    function detectPlatform() {
+      const ua = navigator.userAgent.toLowerCase();
+      if (/android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(ua)) {
+        return 'app';
+      }
+      return 'web';
+    }
+    
+    function updateLiveUsers(data) {
+      const total = data.total || 0;
+      const web = data.web || 0;
+      const apps = data.apps || 0;
+      
+      const totalEl = document.querySelector('[data-role="live-total"]');
+      const webEl = document.querySelector('[data-role="live-web"]');
+      const appsEl = document.querySelector('[data-role="live-apps"]');
+      
+      if (totalEl) {
+        totalEl.textContent = total;
+        totalEl.classList.add('updating');
+        setTimeout(() => totalEl.classList.remove('updating'), 500);
+      }
+      if (webEl) webEl.textContent = web;
+      if (appsEl) appsEl.textContent = apps;
+    }
+    
+    // ========== DONATE FUNCTIONS ==========
+    function toggleDonate(show = null) {
+      const modal = document.getElementById('donateModal');
+      if (modal) {
+        if (show === false) {
+          modal.classList.remove('active');
+        } else if (show === true) {
+          modal.classList.add('active');
+        } else {
+          modal.classList.toggle('active');
+        }
+      }
+    }
+    
+    function copyDonate(text) {
+      navigator.clipboard.writeText(text).then(() => {
+        const toast = document.getElementById('copyToast');
+        if (toast) {
+          toast.classList.add('show');
+          setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+      });
+    }
+    
+    function openJar() {
+      window.open('https://send.monobank.ua/jar/6Vi9TVzJZQ', '_blank');
+    }
+    
+    // ========== DISCLAIMER & TELEGRAM BANNER ==========
+    function hideDisclaimer() {
+      const bar = document.getElementById('disclaimerBar');
+      if (bar) {
+        bar.classList.add('hidden');
+        localStorage.setItem('disclaimer_hidden', 'true');
+      }
+    }
+    
+    function closeTgBanner() {
+      const banner = document.getElementById('tgBanner');
+      if (banner) {
+        banner.classList.add('hidden');
+        localStorage.setItem('tg_banner_closed', 'true');
+      }
+    }
+    
+    function initBanners() {
+      // Show disclaimer if not hidden
+      if (!localStorage.getItem('disclaimer_hidden')) {
+        const bar = document.getElementById('disclaimerBar');
+        if (bar) bar.style.display = 'flex';
+      }
+      
+      // Hide TG banner if already closed
+      if (localStorage.getItem('tg_banner_closed')) {
+        const banner = document.getElementById('tgBanner');
+        if (banner) banner.classList.add('hidden');
+      }
+    }
+    
+    // ========== PLACE SEARCH ==========
+    let searchSuggestions = [];
+    let selectedSuggestion = -1;
+    
+    async function searchPlace(query) {
+      if (!query || query.length < 2) {
+        hideSuggestions();
+        return;
+      }
+      
+      try {
+        const response = await fetch(`/locate?q=${encodeURIComponent(query)}&limit=8`);
+        if (response.ok) {
+          const data = await response.json();
+          showSuggestions(data.results || []);
+        }
+      } catch (e) {
+        console.log('Search error:', e);
+      }
+    }
+    
+    function showSuggestions(results) {
+      const suggestEl = document.getElementById('psSuggest');
+      if (!suggestEl) return;
+      
+      searchSuggestions = results;
+      selectedSuggestion = -1;
+      
+      if (results.length === 0) {
+        suggestEl.innerHTML = '<div class="ps-empty">Нічого не знайдено</div>';
+        suggestEl.style.display = 'block';
+        return;
+      }
+      
+      suggestEl.innerHTML = results.map((r, i) => `
+        <div class="ps-item" data-idx="${i}">
+          <span>${r.name}</span>
+          <span style="color:#94a3b8;font-size:0.7rem;">${r.region || ''}</span>
+        </div>
+      `).join('');
+      
+      suggestEl.style.display = 'block';
+      
+      // Add click handlers
+      suggestEl.querySelectorAll('.ps-item').forEach(item => {
+        item.addEventListener('click', () => {
+          const idx = parseInt(item.dataset.idx);
+          selectPlace(searchSuggestions[idx]);
+        });
+      });
+    }
+    
+    function hideSuggestions() {
+      const suggestEl = document.getElementById('psSuggest');
+      if (suggestEl) suggestEl.style.display = 'none';
+      searchSuggestions = [];
+      selectedSuggestion = -1;
+    }
+    
+    function selectPlace(place) {
+      if (!place) return;
+      
+      hideSuggestions();
+      document.getElementById('psInput').value = place.name;
+      
+      // Navigate to location on SVG map
+      if (place.lat && place.lng) {
+        navigateToLocation(place.lat, place.lng);
+      }
+    }
+    
+    function navigateToLocation(lat, lng) {
+      // Convert lat/lng to SVG coordinates and zoom
+      const pos = latLngToSvgPercent(lat, lng);
+      
+      // Set zoom and center
+      currentScale = 2.5;
+      
+      const wrapper = document.querySelector('.map-wrapper');
+      if (!wrapper) return;
+      
+      const rect = wrapper.getBoundingClientRect();
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+      
+      // Calculate offset to center the point
+      offsetX = centerX - (pos.x / 100 * rect.width * currentScale);
+      offsetY = centerY - (pos.y / 100 * rect.height * currentScale);
+      
+      updateZoom(true);
+    }
+    
+    // Search input handlers
+    function initSearch() {
+      const input = document.getElementById('psInput');
+      const btn = document.getElementById('psBtn');
+      
+      if (!input || !btn) return;
+      
+      let debounceTimer;
+      
+      input.addEventListener('input', (e) => {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          searchPlace(e.target.value.trim());
+        }, 300);
+      });
+      
+      input.addEventListener('keydown', (e) => {
+        const suggestEl = document.getElementById('psSuggest');
+        
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          if (selectedSuggestion < searchSuggestions.length - 1) {
+            selectedSuggestion++;
+            updateSuggestionHighlight();
+          }
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          if (selectedSuggestion > 0) {
+            selectedSuggestion--;
+            updateSuggestionHighlight();
+          }
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          if (selectedSuggestion >= 0 && searchSuggestions[selectedSuggestion]) {
+            selectPlace(searchSuggestions[selectedSuggestion]);
+          } else if (input.value.trim()) {
+            searchPlace(input.value.trim());
+          }
+        } else if (e.key === 'Escape') {
+          hideSuggestions();
+        }
+      });
+      
+      btn.addEventListener('click', () => {
+        if (selectedSuggestion >= 0 && searchSuggestions[selectedSuggestion]) {
+          selectPlace(searchSuggestions[selectedSuggestion]);
+        }
+      });
+      
+      // Close suggestions when clicking outside
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('.place-search')) {
+          hideSuggestions();
+        }
+      });
+    }
+    
+    function updateSuggestionHighlight() {
+      const items = document.querySelectorAll('.ps-item');
+      items.forEach((item, i) => {
+        item.classList.toggle('active', i === selectedSuggestion);
+      });
+    }
+    
+    // Init
+    document.addEventListener('DOMContentLoaded', () => {
+      loadMaps();
+      initBanners();
+      initSearch();
+      
+      // Start presence tracking
+      pingPresence();
+      presenceInterval = setInterval(pingPresence, 30000);
+    });
+  </script>
+</body>
+</html>

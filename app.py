@@ -14957,6 +14957,14 @@ def map_embed():
     resp.headers['Access-Control-Allow-Origin'] = '*'  # Allow cross-origin requests
     return resp
 
+@app.route('/svg')
+def index_svg():
+    """SVG map with full functionality (navbar, search, donate, live users)"""
+    response = render_template('index_index.html')
+    resp = app.response_class(response)
+    resp.headers['Cache-Control'] = 'public, max-age=300'
+    return resp
+
 @app.route('/about')
 def about():
     """About NEPTUN project page"""
