@@ -631,9 +631,15 @@
         filter: none !important;
       }
       
-      /* Hide trajectory lines on mobile for performance */
-      #trajectories-layer {
-        display: none !important;
+      /* Simplified trajectory lines on mobile */
+      .trajectory-line line {
+        filter: none !important;
+        stroke-width: 1.5;
+      }
+      
+      .trajectory-arrow {
+        text-shadow: none !important;
+        font-size: 12px;
       }
       
       /* No hover effects on touch */
@@ -821,9 +827,8 @@
       filter: none !important;
     }
     
-    .android-device #trajectories-layer {
-      /* Hide trajectories on Android for performance */
-      display: none !important;
+    .android-device .trajectory-line line {
+      filter: none !important;
     }
     
     .android-device #map-container::before {
@@ -838,12 +843,9 @@
         filter: drop-shadow(0 0 3px rgba(255, 100, 100, 0.5)) !important;
       }
       
-      #trajectories-layer {
-        display: none !important;
-      }
-      
       .trajectory-line line {
         filter: none !important;
+        stroke-width: 1.5;
       }
       
       .trajectory-arrow {
