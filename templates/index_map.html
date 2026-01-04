@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>Карта тривог України | NEPTUN</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;600&display=swap" rel="stylesheet">
   
   <style>
     * {
@@ -16,7 +18,24 @@
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background: #1a1a2e;
+      background: linear-gradient(135deg, #0a0e17 0%, #0d1929 50%, #0a192f 100%);
+      font-family: 'Exo 2', -apple-system, sans-serif;
+    }
+    
+    /* Animated background grid */
+    #map-container::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-image: 
+        linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
+      background-size: 50px 50px;
+      pointer-events: none;
+      z-index: 0;
     }
     
     #map-container {
@@ -38,12 +57,13 @@
       justify-content: center;
     }
     
-    /* Container for both SVG layers */
+    /* Container for SVG layers */
     .svg-container {
       position: relative;
       width: 90vw;
       max-width: 1400px;
       aspect-ratio: 260 / 175;
+      filter: drop-shadow(0 0 40px rgba(0, 212, 255, 0.15));
     }
     
     .svg-container svg {
@@ -54,76 +74,134 @@
       height: 100%;
     }
     
-    /* States (oblasts) layer - bottom */
+    /* States (oblasts) layer */
     #states-layer {
       z-index: 1;
     }
     
-    /* Districts layer - middle */
+    /* Districts layer */
     #districts-layer {
       z-index: 2;
     }
     
-    /* Names layer - top */
+    /* Names layer */
     #names-layer {
       z-index: 3;
       pointer-events: none;
     }
     
     #names-layer text {
-      fill: white;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      font-weight: 500;
-      text-shadow: 1px 1px 2px rgba(0,0,0,0.8), -1px -1px 2px rgba(0,0,0,0.8);
+      fill: rgba(255, 255, 255, 0.9);
+      font-family: 'Exo 2', sans-serif;
+      font-weight: 400;
+      text-shadow: 
+        0 0 10px rgba(0, 212, 255, 0.5),
+        0 2px 4px rgba(0, 0, 0, 0.8);
     }
     
-    /* Threat icons */
-    .threat-icon {
-      display: none;
-      position: absolute;
-      width: 24px;
-      height: 24px;
-    }
-    
-    .threat-icon.active {
-      display: block;
-    }
-    
-    /* State (oblast) styling */
+    /* NEPTUN style - Oblast regions */
     #states-layer .stateObject {
-      fill: #2d3a4f;
-      stroke: #1a1a2e;
-      stroke-width: 0.3;
-      transition: fill 0.3s ease;
+      fill: linear-gradient(180deg, #1a2744 0%, #0f1a2e 100%);
+      fill: #162236;
+      stroke: #00d4ff;
+      stroke-width: 0.4;
+      stroke-opacity: 0.3;
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    #states-layer .stateObject:hover {
+      fill: #1e3050;
+      stroke-opacity: 0.6;
     }
     
     #states-layer .stateObject.alarm {
-      fill: #b91c1c;
+      fill: #7f1d1d;
+      stroke: #ff4444;
+      stroke-opacity: 0.8;
+      animation: alarmPulse 2s ease-in-out infinite;
     }
     
-    /* District styling */
+    /* NEPTUN style - District regions */
     #districts-layer .dist {
       fill: transparent;
-      stroke: #3d4a5c;
-      stroke-width: 0.15;
-      transition: fill 0.3s ease;
+      stroke: rgba(0, 212, 255, 0.15);
+      stroke-width: 0.1;
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
       pointer-events: all;
+    }
+    
+    #districts-layer .dist:hover {
+      fill: rgba(0, 212, 255, 0.1);
+      stroke: rgba(0, 212, 255, 0.4);
+      cursor: pointer;
     }
     
     #districts-layer .dist.alarm {
       fill: #dc2626;
+      stroke: #ff6b6b;
+      stroke-width: 0.2;
+      animation: districtAlarm 1.5s ease-in-out infinite;
     }
     
-    #districts-layer .dist:hover {
-      opacity: 0.85;
-      cursor: pointer;
+    @keyframes alarmPulse {
+      0%, 100% { 
+        fill: #7f1d1d;
+        filter: drop-shadow(0 0 8px rgba(255, 68, 68, 0.4));
+      }
+      50% { 
+        fill: #991b1b;
+        filter: drop-shadow(0 0 15px rgba(255, 68, 68, 0.7));
+      }
     }
     
-    /* Zoom controls */
-    .zoom-controls {
+    @keyframes districtAlarm {
+      0%, 100% { 
+        fill: #dc2626;
+        opacity: 0.9;
+      }
+      50% { 
+        fill: #ef4444;
+        opacity: 1;
+      }
+    }
+    
+    /* NEPTUN Logo & Branding */
+    .neptun-logo {
       position: fixed;
       top: 20px;
-      right: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1001;
+      text-align: center;
+    }
+    
+    .neptun-logo h1 {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 28px;
+      font-weight: 900;
+      background: linear-gradient(135deg, #00d4ff 0%, #0099cc 50%, #00d4ff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: 8px;
+      text-shadow: 0 0 30px rgba(0, 212, 255, 0.5);
+      margin: 0;
+    }
+    
+    .neptun-logo .subtitle {
+      font-family: 'Exo 2', sans-serif;
+      font-size: 10px;
+      color: rgba(0, 212, 255, 0.6);
+      letter-spacing: 4px;
+      margin-top: 4px;
+      text-transform: uppercase;
+    }
+    
+    /* Zoom controls - NEPTUN style */
+    .zoom-controls {
+      position: fixed;
+      bottom: 30px;
+      right: 30px;
       display: flex;
       flex-direction: column;
       gap: 8px;
@@ -131,75 +209,147 @@
     }
     
     .zoom-btn {
-      width: 40px;
-      height: 40px;
-      background: rgba(36, 43, 69, 0.95);
-      border: 1px solid rgba(74, 158, 255, 0.2);
+      width: 44px;
+      height: 44px;
+      background: rgba(10, 25, 47, 0.9);
+      border: 1px solid rgba(0, 212, 255, 0.3);
       border-radius: 8px;
-      color: white;
-      font-size: 24px;
+      color: #00d4ff;
+      font-size: 20px;
+      font-weight: bold;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
+      transition: all 0.3s ease;
+      backdrop-filter: blur(10px);
     }
     
     .zoom-btn:hover {
-      background: rgba(74, 158, 255, 0.3);
+      background: rgba(0, 212, 255, 0.15);
+      border-color: #00d4ff;
+      box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+      transform: scale(1.05);
     }
     
-    /* Status panel */
+    /* Status panel - NEPTUN style */
     .status-panel {
       position: fixed;
-      top: 20px;
+      top: 80px;
       left: 20px;
-      background: rgba(36, 43, 69, 0.95);
-      border: 1px solid rgba(74, 158, 255, 0.2);
+      background: rgba(10, 25, 47, 0.9);
+      border: 1px solid rgba(0, 212, 255, 0.2);
       border-radius: 12px;
-      padding: 15px 20px;
+      padding: 16px 20px;
       color: white;
       z-index: 1000;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      backdrop-filter: blur(10px);
+      min-width: 160px;
+    }
+    
+    .status-panel::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #00d4ff, transparent);
+      border-radius: 12px 12px 0 0;
     }
     
     .status-panel h3 {
-      font-size: 14px;
+      font-family: 'Exo 2', sans-serif;
+      font-size: 11px;
+      font-weight: 400;
       margin-bottom: 8px;
-      color: #94a3b8;
+      color: rgba(0, 212, 255, 0.8);
+      text-transform: uppercase;
+      letter-spacing: 2px;
     }
     
     .alarm-count {
-      font-size: 32px;
-      font-weight: bold;
-      color: #ef4444;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 36px;
+      font-weight: 700;
+      color: #ff4444;
+      text-shadow: 0 0 20px rgba(255, 68, 68, 0.5);
+      line-height: 1;
     }
     
     .alarm-count.safe {
-      color: #22c55e;
+      color: #00ff88;
+      text-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
     }
     
     .last-update {
-      font-size: 12px;
-      color: #64748b;
-      margin-top: 8px;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.5);
+      margin-top: 10px;
+      font-weight: 300;
     }
     
     .last-update.stale {
-      color: #f59e0b;
+      color: #ffaa00;
     }
     
     .last-update.error {
-      color: #ef4444;
+      color: #ff4444;
     }
     
     .api-status {
-      font-size: 10px;
-      color: #64748b;
+      font-size: 9px;
+      color: rgba(0, 212, 255, 0.5);
       margin-top: 4px;
+    }
+    
+    /* Legend panel */
+    .legend-panel {
+      position: fixed;
+      bottom: 30px;
+      left: 20px;
+      background: rgba(10, 25, 47, 0.9);
+      border: 1px solid rgba(0, 212, 255, 0.2);
+      border-radius: 10px;
+      padding: 12px 16px;
+      z-index: 1000;
+      backdrop-filter: blur(10px);
+    }
+    
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 6px 0;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.7);
+    }
+    
+    .legend-color {
+      width: 16px;
+      height: 16px;
+      border-radius: 4px;
+    }
+    
+    .legend-color.safe {
+      background: #162236;
+      border: 1px solid rgba(0, 212, 255, 0.3);
+    }
+    
+    .legend-color.alarm {
+      background: #dc2626;
+      border: 1px solid #ff6b6b;
+      animation: alarmPulse 2s ease-in-out infinite;
     }
   </style>
 </head>
 <body>
+  <!-- NEPTUN Logo -->
+  <div class="neptun-logo">
+    <h1>NEPTUN</h1>
+    <div class="subtitle">Моніторинг тривог України</div>
+  </div>
+  
   <div id="map-container">
     <div id="map-wrapper">
       <div class="svg-container" id="svg-container">
@@ -214,10 +364,22 @@
   </div>
   
   <div class="status-panel">
-    <h3>🚨 Райони з тривогою</h3>
+    <h3>Активні тривоги</h3>
     <div class="alarm-count" id="alarm-count">0</div>
     <div class="last-update" id="last-update">Завантаження...</div>
     <div class="api-status" id="api-status"></div>
+  </div>
+  
+  <!-- Legend -->
+  <div class="legend-panel">
+    <div class="legend-item">
+      <div class="legend-color safe"></div>
+      <span>Без тривоги</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-color alarm"></div>
+      <span>Повітряна тривога</span>
+    </div>
   </div>
   
   <div class="zoom-controls">
