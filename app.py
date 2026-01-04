@@ -14886,7 +14886,15 @@ def google_verification():
 
 @app.route('/new')
 def index_new():
-    """New UI - ukrainealarm style"""
+    """New UI - SVG map from ukrainealarm.com with districts"""
+    response = render_template('index_map.html')
+    resp = app.response_class(response)
+    resp.headers['Cache-Control'] = 'public, max-age=300'
+    return resp
+
+@app.route('/old')
+def index_old():
+    """Old TopoJSON map (has artifacts)"""
     response = render_template('index_new.html')
     resp = app.response_class(response)
     resp.headers['Cache-Control'] = 'public, max-age=300'
