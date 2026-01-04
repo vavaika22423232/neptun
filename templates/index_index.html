@@ -626,6 +626,14 @@
       .threat-marker {
         width: 24px;
         height: 24px;
+        /* Disable animations and filters for performance */
+        animation: none !important;
+        filter: none !important;
+      }
+      
+      /* Hide trajectory lines on mobile for performance */
+      #trajectories-layer {
+        display: none !important;
       }
       
       /* No hover effects on touch */
@@ -810,12 +818,37 @@
     .android-device .threat-marker {
       /* Disable marker pulse on Android */
       animation: none !important;
-      filter: drop-shadow(0 0 4px rgba(255, 100, 100, 0.6));
+      filter: none !important;
+    }
+    
+    .android-device #trajectories-layer {
+      /* Hide trajectories on Android for performance */
+      display: none !important;
     }
     
     .android-device #map-container::before {
       /* Disable background grid on Android */
       display: none;
+    }
+    
+    /* Touch device optimizations - disable heavy effects */
+    @media (hover: none) and (pointer: coarse) {
+      .threat-marker {
+        animation: none !important;
+        filter: drop-shadow(0 0 3px rgba(255, 100, 100, 0.5)) !important;
+      }
+      
+      #trajectories-layer {
+        display: none !important;
+      }
+      
+      .trajectory-line line {
+        filter: none !important;
+      }
+      
+      .trajectory-arrow {
+        text-shadow: none !important;
+      }
     }
     
     /* Safe area for notched phones */
@@ -829,7 +862,7 @@
       }
     }
     
-    /* ========== NAVBAR STYLES ========== */ */
+    /* ========== NAVBAR STYLES ========== */
     .navbar {
       width: 100%;
       background: linear-gradient(180deg, rgba(10, 14, 23, 0.98) 0%, rgba(10, 14, 23, 0.95) 100%);
@@ -1444,8 +1477,6 @@
     @media (max-width: 768px) {
       .navbar {
         padding: 0.5rem 0.8rem;
-        flex-wrap: wrap;
-        gap: 0.5rem;
       }
       
       .logo-text {
@@ -1454,19 +1485,7 @@
       }
       
       .nav-links {
-        order: 3;
-        width: 100%;
-        justify-content: center;
-        gap: 0.2rem;
-      }
-      
-      .nav-links a {
-        padding: 0.4rem 0.6rem;
-        font-size: 0.7rem;
-      }
-      
-      .nav-links a i {
-        font-size: 0.9rem;
+        display: none;
       }
       
       .live-users {
@@ -1488,16 +1507,18 @@
       }
       
       .tg-banner {
-        position: static;
-        margin: 55px 0 0 0;
+        position: fixed;
+        top: 50px;
+        bottom: auto;
         left: 0;
         right: 0;
         max-width: none;
-        padding: 0.6rem 0.8rem;
+        padding: 0.5rem 0.8rem;
         border-radius: 0;
         border-left: none;
         border-right: none;
         border-top: none;
+        margin: 0;
       }
       
       .tg-banner-icon {
@@ -1546,10 +1567,10 @@
       padding-top: 55px;
     }
     
-    /* On mobile, tg-banner is static so no extra padding needed */
+    /* On mobile, account for navbar + tg-banner */
     @media (max-width: 768px) {
       #map-container {
-        padding-top: 0;
+        padding-top: 95px;
       }
     }
     
