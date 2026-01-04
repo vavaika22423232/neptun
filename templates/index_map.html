@@ -17,6 +17,15 @@
       margin: 0;
       padding: 0;
       box-sizing: border-box;
+      /* Disable all selection and tap highlight */
+      -webkit-tap-highlight-color: transparent !important;
+      -webkit-touch-callout: none !important;
+      -webkit-user-select: none !important;
+      -moz-user-select: none !important;
+      -ms-user-select: none !important;
+      user-select: none !important;
+      -webkit-user-drag: none !important;
+      outline: none !important;
     }
     
     html, body {
@@ -25,6 +34,20 @@
       overflow: hidden;
       background: linear-gradient(135deg, #0a0e17 0%, #0d1929 50%, #0a192f 100%);
       font-family: 'Exo 2', -apple-system, sans-serif;
+      -webkit-tap-highlight-color: transparent !important;
+      -webkit-touch-callout: none !important;
+      -webkit-user-select: none !important;
+      user-select: none !important;
+    }
+    
+    /* SVG elements - disable highlight */
+    svg, svg *, img, div, path, g, text {
+      -webkit-tap-highlight-color: transparent !important;
+      -webkit-touch-callout: none !important;
+      -webkit-user-select: none !important;
+      user-select: none !important;
+      outline: none !important;
+      -webkit-user-drag: none !important;
     }
     
     /* Animated background grid */
@@ -949,11 +972,10 @@
           }
         });
         
-        // Update status panel
-        const totalAlarms = districtAlarmCount + stateAlarmCount;
+        // Update status panel - show only STATE alarms count (oblasts with alarm)
         const countEl = document.getElementById('alarm-count');
-        countEl.textContent = totalAlarms;
-        countEl.className = totalAlarms > 0 ? 'alarm-count' : 'alarm-count safe';
+        countEl.textContent = stateAlarmCount;
+        countEl.className = stateAlarmCount > 0 ? 'alarm-count' : 'alarm-count safe';
         
         const now = new Date();
         const updateEl = document.getElementById('last-update');
@@ -1189,7 +1211,8 @@
     }
     
     function zoomOut() {
-      currentScale = Math.max(currentScale / 1.3, 0.5);
+      // Minimum scale 1.0 to prevent blurriness on small screens
+      currentScale = Math.max(currentScale / 1.3, 1.0);
       updateZoom(true);
     }
     
@@ -1327,18 +1350,8 @@
         }
       }, { passive: false });
       
-      // Throttle for Android performance (size-based zoom is heavier)
-      let lastMoveTime = 0;
-      const THROTTLE_MS = isAndroid ? 50 : 16; // ~20fps on Android, 60fps elsewhere
-      
+      // No throttling - maximum smoothness on all devices
       wrapper.addEventListener('touchmove', (e) => {
-        const now = Date.now();
-        if (now - lastMoveTime < THROTTLE_MS) {
-          e.preventDefault();
-          return;
-        }
-        lastMoveTime = now;
-        
         if (e.touches.length === 1 && isDragging) {
           // Single touch drag
           e.preventDefault();
@@ -1352,7 +1365,8 @@
           
           if (lastTouchDistance > 0) {
             const scale = newDistance / lastTouchDistance;
-            const newScale = Math.min(Math.max(currentScale * scale, 0.5), 5);
+            // Min scale 1.0 to prevent blurriness on small Android screens
+            const newScale = Math.min(Math.max(currentScale * scale, 1.0), 5);
             
             // Only update if change is significant (reduces redraws)
             if (Math.abs(newScale - currentScale) > 0.02) {
