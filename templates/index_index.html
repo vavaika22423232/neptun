@@ -813,6 +813,33 @@
       display: none;
     }
     
+    /* Leaflet threat markers */
+    .leaflet-threat-marker {
+      background: transparent;
+      border: none;
+    }
+    
+    .leaflet-threat-marker img {
+      width: 32px;
+      height: 32px;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+      transition: transform 0.2s ease;
+    }
+    
+    .leaflet-threat-marker:hover img {
+      transform: scale(1.2);
+    }
+    
+    /* Custom popup styles */
+    .leaflet-popup-content-wrapper {
+      border-radius: 8px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    }
+    
+    .leaflet-popup-content {
+      margin: 10px 12px;
+    }
+
     @media (max-width: 768px) {
       .map-switcher {
         top: 60px;
@@ -1302,99 +1329,6 @@
       color: #fbbf24;
     }
     
-    /* Search box */
-    .place-search {
-      position: fixed;
-      top: 70px;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      gap: 0.5rem;
-      background: rgba(10, 14, 23, 0.95);
-      padding: 0.6rem 0.9rem;
-      border-radius: 14px;
-      border: 1px solid rgba(0, 212, 255, 0.2);
-      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
-      z-index: 950;
-      align-items: center;
-    }
-    
-    .place-search input {
-      background: rgba(0, 212, 255, 0.08);
-      border: 1px solid rgba(0, 212, 255, 0.2);
-      color: #e2e8f0;
-      padding: 0.5rem 0.75rem;
-      border-radius: 10px;
-      font-size: 0.85rem;
-      width: 280px;
-      outline: none;
-      font-weight: 500;
-    }
-    
-    .place-search input::placeholder {
-      color: rgba(148, 163, 184, 0.5);
-    }
-    
-    .place-search input:focus {
-      border-color: rgba(0, 212, 255, 0.5);
-      background: rgba(0, 212, 255, 0.12);
-    }
-    
-    .place-search button {
-      background: linear-gradient(135deg, #00d4ff, #0099cc);
-      border: none;
-      color: #0a0e17;
-      padding: 0.5rem 0.8rem;
-      border-radius: 10px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 0.3rem;
-      font-size: 0.8rem;
-      font-weight: 700;
-      transition: all 0.2s;
-    }
-    
-    .place-search button:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 4px 15px rgba(0, 212, 255, 0.4);
-    }
-    
-    .ps-suggest {
-      position: absolute;
-      top: 100%;
-      left: 0;
-      right: 0;
-      margin-top: 0.5rem;
-      background: rgba(10, 14, 23, 0.98);
-      border: 1px solid rgba(0, 212, 255, 0.2);
-      border-radius: 12px;
-      max-height: 300px;
-      overflow-y: auto;
-      display: none;
-    }
-    
-    .ps-item {
-      padding: 0.5rem 0.75rem;
-      font-size: 0.8rem;
-      cursor: pointer;
-      color: #e2e8f0;
-      display: flex;
-      justify-content: space-between;
-      transition: all 0.15s;
-    }
-    
-    .ps-item:hover, .ps-item.active {
-      background: rgba(0, 212, 255, 0.1);
-    }
-    
-    .ps-empty {
-      padding: 0.6rem;
-      font-size: 0.75rem;
-      color: rgba(148, 163, 184, 0.6);
-      text-align: center;
-    }
-    
     /* Telegram Banner - Premium Design */
     .tg-banner {
       display: flex;
@@ -1571,21 +1505,6 @@
         display: none;
       }
       
-      .place-search {
-        top: auto;
-        bottom: 120px;
-        left: 10px;
-        right: 10px;
-        transform: none;
-        max-width: none;
-      }
-      
-      .place-search input {
-        width: 150px;
-        flex: 1;
-        font-size: 0.8rem;
-      }
-      
       .tg-banner {
         bottom: auto;
         top: 60px;
@@ -1671,13 +1590,6 @@
       <i class="material-icons">favorite</i>
       <span>Підтримати</span>
     </button>
-  </div>
-  
-  <!-- Search Box -->
-  <div class="place-search" id="placeSearch">
-    <input type="text" id="psInput" placeholder="Пошук міста..." autocomplete="off">
-    <button id="psBtn"><i class="material-icons" style="font-size:18px;">search</i></button>
-    <div class="ps-suggest" id="psSuggest"></div>
   </div>
   
   <!-- Donate Modal -->
@@ -1778,7 +1690,6 @@
   
   <div class="status-panel">
     <h3>Активні тривоги</h3>
-    <div class="alarm-count" id="alarm-count">0</div>
     <div class="last-update" id="last-update">Завантаження...</div>
     <div class="api-status" id="api-status"></div>
     
@@ -2206,6 +2117,14 @@
         
         console.log(`Loaded ${markers.length} threat markers`);
         
+        // Store markers data for Leaflet
+        currentMarkersData = markers;
+        
+        // Update Leaflet markers if in Leaflet mode
+        if (currentMapMode === 'leaflet') {
+          updateLeafletMarkers();
+        }
+        
       } catch (error) {
         console.error('Error fetching threat markers:', error);
       }
@@ -2625,166 +2544,12 @@
       }
     }
     
-    // ========== PLACE SEARCH ==========
-    let searchSuggestions = [];
-    let selectedSuggestion = -1;
-    
-    async function searchPlace(query) {
-      if (!query || query.length < 2) {
-        hideSuggestions();
-        return;
-      }
-      
-      try {
-        const response = await fetch(`/locate?q=${encodeURIComponent(query)}&limit=8`);
-        if (response.ok) {
-          const data = await response.json();
-          showSuggestions(data.results || []);
-        }
-      } catch (e) {
-        console.log('Search error:', e);
-      }
-    }
-    
-    function showSuggestions(results) {
-      const suggestEl = document.getElementById('psSuggest');
-      if (!suggestEl) return;
-      
-      searchSuggestions = results;
-      selectedSuggestion = -1;
-      
-      if (results.length === 0) {
-        suggestEl.innerHTML = '<div class="ps-empty">Нічого не знайдено</div>';
-        suggestEl.style.display = 'block';
-        return;
-      }
-      
-      suggestEl.innerHTML = results.map((r, i) => `
-        <div class="ps-item" data-idx="${i}">
-          <span>${r.name}</span>
-          <span style="color:#94a3b8;font-size:0.7rem;">${r.region || ''}</span>
-        </div>
-      `).join('');
-      
-      suggestEl.style.display = 'block';
-      
-      // Add click handlers
-      suggestEl.querySelectorAll('.ps-item').forEach(item => {
-        item.addEventListener('click', () => {
-          const idx = parseInt(item.dataset.idx);
-          selectPlace(searchSuggestions[idx]);
-        });
-      });
-    }
-    
-    function hideSuggestions() {
-      const suggestEl = document.getElementById('psSuggest');
-      if (suggestEl) suggestEl.style.display = 'none';
-      searchSuggestions = [];
-      selectedSuggestion = -1;
-    }
-    
-    function selectPlace(place) {
-      if (!place) return;
-      
-      hideSuggestions();
-      document.getElementById('psInput').value = place.name;
-      
-      // Navigate to location on SVG map
-      if (place.lat && place.lng) {
-        navigateToLocation(place.lat, place.lng);
-      }
-    }
-    
-    function navigateToLocation(lat, lng) {
-      // Convert lat/lng to SVG coordinates and zoom
-      const pos = latLngToSvgPercent(lat, lng);
-      
-      // Set zoom and center
-      currentScale = 2.5;
-      
-      const wrapper = document.querySelector('.map-wrapper');
-      if (!wrapper) return;
-      
-      const rect = wrapper.getBoundingClientRect();
-      const centerX = rect.width / 2;
-      const centerY = rect.height / 2;
-      
-      // Calculate offset to center the point
-      offsetX = centerX - (pos.x / 100 * rect.width * currentScale);
-      offsetY = centerY - (pos.y / 100 * rect.height * currentScale);
-      
-      updateZoom(true);
-    }
-    
-    // Search input handlers
-    function initSearch() {
-      const input = document.getElementById('psInput');
-      const btn = document.getElementById('psBtn');
-      
-      if (!input || !btn) return;
-      
-      let debounceTimer;
-      
-      input.addEventListener('input', (e) => {
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => {
-          searchPlace(e.target.value.trim());
-        }, 300);
-      });
-      
-      input.addEventListener('keydown', (e) => {
-        const suggestEl = document.getElementById('psSuggest');
-        
-        if (e.key === 'ArrowDown') {
-          e.preventDefault();
-          if (selectedSuggestion < searchSuggestions.length - 1) {
-            selectedSuggestion++;
-            updateSuggestionHighlight();
-          }
-        } else if (e.key === 'ArrowUp') {
-          e.preventDefault();
-          if (selectedSuggestion > 0) {
-            selectedSuggestion--;
-            updateSuggestionHighlight();
-          }
-        } else if (e.key === 'Enter') {
-          e.preventDefault();
-          if (selectedSuggestion >= 0 && searchSuggestions[selectedSuggestion]) {
-            selectPlace(searchSuggestions[selectedSuggestion]);
-          } else if (input.value.trim()) {
-            searchPlace(input.value.trim());
-          }
-        } else if (e.key === 'Escape') {
-          hideSuggestions();
-        }
-      });
-      
-      btn.addEventListener('click', () => {
-        if (selectedSuggestion >= 0 && searchSuggestions[selectedSuggestion]) {
-          selectPlace(searchSuggestions[selectedSuggestion]);
-        }
-      });
-      
-      // Close suggestions when clicking outside
-      document.addEventListener('click', (e) => {
-        if (!e.target.closest('.place-search')) {
-          hideSuggestions();
-        }
-      });
-    }
-    
-    function updateSuggestionHighlight() {
-      const items = document.querySelectorAll('.ps-item');
-      items.forEach((item, i) => {
-        item.classList.toggle('active', i === selectedSuggestion);
-      });
-    }
-    
     // ========== LEAFLET MAP ==========
     let leafletMap = null;
     let leafletInitialized = false;
     let currentMapMode = 'svg'; // 'svg' or 'leaflet'
+    let leafletMarkers = []; // Store Leaflet markers for threats
+    let currentMarkersData = null; // Store current markers data for Leaflet
     
     function initLeafletMap() {
       if (leafletInitialized) return;
@@ -2805,6 +2570,58 @@
       
       leafletInitialized = true;
       console.log('Leaflet map initialized');
+    }
+    
+    // Update threat markers on Leaflet map
+    function updateLeafletMarkers() {
+      if (!leafletMap || !currentMarkersData) return;
+      
+      // Clear existing markers
+      leafletMarkers.forEach(marker => marker.remove());
+      leafletMarkers = [];
+      
+      currentMarkersData.forEach(marker => {
+        const lat = parseFloat(marker.lat);
+        const lng = parseFloat(marker.lng);
+        
+        // Skip markers without valid coordinates
+        if (isNaN(lat) || isNaN(lng)) return;
+        
+        // Skip if outside Ukraine bounds
+        if (lat < MAP_BOUNDS.minLat || lat > MAP_BOUNDS.maxLat ||
+            lng < MAP_BOUNDS.minLng || lng > MAP_BOUNDS.maxLng) return;
+        
+        // Get threat type and icon
+        const threatType = marker.threat_type || 'default';
+        const iconFile = marker.marker_icon || THREAT_ICONS[threatType] || 'default.png';
+        const typeName = THREAT_NAMES[threatType] || threatType;
+        
+        // Create custom icon
+        const customIcon = L.divIcon({
+          className: 'leaflet-threat-marker',
+          html: `<img src="/static/${iconFile}" alt="${threatType}" onerror="this.src='/static/default.png'">`,
+          iconSize: [32, 32],
+          iconAnchor: [16, 16]
+        });
+        
+        // Create marker
+        const leafletMarker = L.marker([lat, lng], { icon: customIcon }).addTo(leafletMap);
+        
+        // Add popup
+        const place = marker.place || 'Невідомо';
+        const date = marker.date || '';
+        leafletMarker.bindPopup(`
+          <div style="font-family: Inter, sans-serif; min-width: 150px;">
+            <div style="font-weight: 600; color: #1a1a2e; margin-bottom: 5px;">${typeName}</div>
+            <div style="color: #666; font-size: 12px;">${place}</div>
+            ${date ? `<div style="color: #888; font-size: 11px; margin-top: 3px;">${date}</div>` : ''}
+          </div>
+        `);
+        
+        leafletMarkers.push(leafletMarker);
+      });
+      
+      console.log(`Updated ${leafletMarkers.length} Leaflet markers`);
     }
     
     function switchToSvgMap() {
@@ -2842,9 +2659,12 @@
       document.querySelector('.status-panel').style.display = 'none';
       document.querySelector('.zoom-controls').style.display = 'none';
       
-      // Fix map size
+      // Fix map size and update markers
       setTimeout(() => {
-        if (leafletMap) leafletMap.invalidateSize();
+        if (leafletMap) {
+          leafletMap.invalidateSize();
+          updateLeafletMarkers();
+        }
       }, 100);
       
       console.log('Switched to Leaflet map');
@@ -2854,7 +2674,6 @@
     document.addEventListener('DOMContentLoaded', () => {
       loadMaps();
       initBanners();
-      initSearch();
       
       // Start presence tracking
       pingPresence();
