@@ -1850,17 +1850,10 @@
               });
               districtAlarmCount++;
               
-              // Also mark the parent state as having alarm
+              // Track the parent state (for counting) but do NOT color it
               const parentStateId = DISTRICT_TO_STATE[regionId];
               if (parentStateId) {
                 statesWithAlarm.add(parentStateId);
-                // Color the parent state too
-                const stateElements = document.querySelectorAll(`#states-layer [id="${parentStateId}"]`);
-                stateElements.forEach(el => {
-                  el.classList.add('alarm');
-                });
-                // Show icons for parent state
-                showThreatIcons(parentStateId, region.activeAlerts);
               }
             }
           }
