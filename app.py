@@ -14924,11 +14924,19 @@ def index_old():
     resp.headers['Cache-Control'] = 'public, max-age=300'
     return resp
 
+@app.route('/legacy')
+def index_legacy():
+    """Legacy main page - old index.html"""
+    response = render_template('index.html')
+    resp = app.response_class(response)
+    resp.headers['Cache-Control'] = 'public, max-age=300'
+    return resp
+
 @app.route('/')
 def index():
     """Main page - Карта тривог України онлайн"""
     # BANDWIDTH OPTIMIZATION: Add caching headers for main page
-    response = render_template('index.html')
+    response = render_template('index_index.html')
     resp = app.response_class(response)
     resp.headers['Cache-Control'] = 'public, max-age=300'  # 5 minutes cache
     resp.headers['ETag'] = f'index-{int(time.time() // 300)}'
@@ -14959,11 +14967,9 @@ def map_embed():
 
 @app.route('/svg')
 def index_svg():
-    """SVG map with full functionality (navbar, search, donate, live users)"""
-    response = render_template('index_index.html')
-    resp = app.response_class(response)
-    resp.headers['Cache-Control'] = 'public, max-age=300'
-    return resp
+    """SVG map - redirect to main page"""
+    from flask import redirect
+    return redirect('/', code=301)
 
 @app.route('/about')
 def about():
