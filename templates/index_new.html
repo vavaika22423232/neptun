@@ -1697,8 +1697,7 @@
         console.log('Alarmed oblasts:', Array.from(alarmedOblasts));
         
         // Debug: check Pokrovsk and Bakhmut specifically
-        console.log('Checking Покровський район:', DISTRICT_TO_OBLAST['Покровський район']);
-        console.log('Checking Бахмутський район:', DISTRICT_TO_OBLAST['Бахмутський район']);
+        console.log('alarmDistricts keys:', Object.keys(alarmDistricts));
         
         districtAlarmLayer.setStyle(function(feature) {
           const districtName = feature.properties.name;
@@ -1706,16 +1705,16 @@
           const districtOblast = DISTRICT_TO_OBLAST[districtName];
           const isAlarm = alarmDistricts[districtName] || (districtOblast && alarmedOblasts.has(districtOblast));
           
-          // Debug for Donetsk districts
-          if (districtName.includes('Покров') || districtName.includes('Бахмут')) {
-            console.log('DEBUG:', districtName, '| Oblast:', districtOblast, '| In alarmedOblasts:', districtOblast ? alarmedOblasts.has(districtOblast) : 'no oblast', '| isAlarm:', isAlarm);
+          // Debug for any district with alarm
+          if (isAlarm) {
+            console.log('ALARM:', districtName, '| inAlarmDistricts:', !!alarmDistricts[districtName], '| oblast:', districtOblast);
           }
           
           return {
             fillColor: isAlarm ? '#b91c1c' : 'transparent',
-            fillOpacity: isAlarm ? 1 : 0,
+            fillOpacity: isAlarm ? 0.7 : 0,
             color: isAlarm ? '#7f1d1d' : 'transparent',
-            weight: isAlarm ? 1 : 0
+            weight: isAlarm ? 2 : 0
           };
         });
       }
