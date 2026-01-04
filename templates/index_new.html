@@ -1410,6 +1410,32 @@
       districts.forEach(district => {
         if (district.regionName) {
           alarmDistricts[district.regionName] = true;
+          // Also add with "район" suffix if not present
+          if (!district.regionName.includes('район')) {
+            alarmDistricts[district.regionName + ' район'] = true;
+            alarmDistricts[district.regionName + 'ий район'] = true;
+            alarmDistricts[district.regionName + 'ький район'] = true;
+          }
+        }
+      });
+      
+      // Alternative district names mapping (API name -> GeoJSON name)
+      const DISTRICT_NAME_ALIASES = {
+        "Бахмутський": "Бахмутський район",
+        "Покровський": "Покровський район",
+        "Краматорський": "Краматорський район",
+        "Волноваський": "Волноваський район",
+        "Маріупольський": "Маріупольський район",
+        "Донецький": "Донецький район",
+        "Горлівський": "Горлівський район",
+        "Кальміуський": "Кальміуський район"
+      };
+      
+      // Apply aliases
+      Object.keys(alarmDistricts).forEach(name => {
+        const alias = DISTRICT_NAME_ALIASES[name];
+        if (alias) {
+          alarmDistricts[alias] = true;
         }
       });
       
