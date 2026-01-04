@@ -743,21 +743,24 @@
       'alarm_cancel': '✅ Відбій'
     };
     
+    // Cache buster version - change this to force reload SVG files
+    const CACHE_VERSION = 'v2';
+    
     // Load both SVG maps
     async function loadMaps() {
       try {
         // Load states (oblasts) SVG
-        const statesResponse = await fetch('/static/ukraine_states.svg');
+        const statesResponse = await fetch(`/static/ukraine_states.svg?${CACHE_VERSION}`);
         const statesText = await statesResponse.text();
         document.getElementById('states-layer').innerHTML = statesText;
         
         // Load districts SVG
-        const districtsResponse = await fetch('/static/ukraine_districts_detailed.svg');
+        const districtsResponse = await fetch(`/static/ukraine_districts_detailed.svg?${CACHE_VERSION}`);
         const districtsText = await districtsResponse.text();
         document.getElementById('districts-layer').innerHTML = districtsText;
         
-        // Load names SVG
-        const namesResponse = await fetch('/static/ukraine_names.svg');
+        // Load names SVG (with neptun.in.ua branding)
+        const namesResponse = await fetch(`/static/ukraine_names.svg?${CACHE_VERSION}`);
         const namesText = await namesResponse.text();
         document.getElementById('names-layer').innerHTML = namesText;
         
