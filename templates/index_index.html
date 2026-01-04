@@ -2131,14 +2131,21 @@
     // Render trajectory lines from markers with trajectory data
     function renderTrajectories(markers) {
       const trajLayer = document.getElementById('trajectories-layer');
-      if (!trajLayer) return;
+      if (!trajLayer) {
+        console.log('trajectories-layer not found');
+        return;
+      }
       
       // Clear existing trajectories
       trajLayer.innerHTML = '';
       
+      let trajCount = 0;
       markers.forEach(marker => {
         const traj = marker.trajectory;
         if (!traj || !traj.start || !traj.end) return;
+        
+        trajCount++;
+        console.log('Drawing trajectory:', traj);
         
         const startLat = parseFloat(traj.start[0]);
         const startLng = parseFloat(traj.start[1]);
@@ -2188,10 +2195,8 @@
         trajLayer.appendChild(arrow);
       });
       
-      const trajCount = trajLayer.querySelectorAll('.trajectory-svg').length;
-      if (trajCount > 0) {
-        console.log(`Rendered ${trajCount} trajectory lines`);
-      }
+      const trajRendered = trajLayer.querySelectorAll('.trajectory-svg').length;
+      console.log(`Trajectories: found ${trajCount} in data, rendered ${trajRendered} lines`);
     }
     
     // Show tooltip for marker
