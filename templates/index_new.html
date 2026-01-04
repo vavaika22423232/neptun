@@ -5,11 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Карта тривог України | NEPTUN</title>
   
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-  
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
@@ -22,300 +17,20 @@
     }
     
     :root {
-      /* ukrainealarm.com exact style */
       --main-bg: #1e2433;
-      --panel-bg: #2d3748;
-      --accent: #4299e1;
-      --accent2: #48bb78;
       --text: #ffffff;
-      --text2: #a0aec0;
       --text-muted: #718096;
-      --border: #4a5568;
-      --shadow: rgba(0, 0, 0, 0.5);
-      --card-bg: rgba(45, 55, 72, 0.95);
-      --danger: #c53030;
-      --warning: #dd6b20;
-      --success: #48bb78;
-      /* Legacy aliases */
-      --bg: #1e2433;
-      --bg-dark: #171c28;
-      --panel: #2d3748;
-      --red: #c53030;
-      --orange: #dd6b20;
-      --yellow: #d69e2e;
-      --green: #48bb78;
-      --blue: #4299e1;
-      --gray: #4a5568;
-      /* Map specific - ukrainealarm colors */
-      --map-bg: #1e2433;
-      --map-region: #3d4a5c;
-      --map-border: #4a5568;
-      --alarm-red: #9b2c2c;
-      --alarm-partial: #dd6b20;
+      --accent: #4299e1;
+    }
+    
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
     }
     
     body {
-      font-family: 'Inter', system-ui, -apple-system, sans-serif;
       background: var(--main-bg);
-      color: var(--text);
-      min-height: 100vh;
-      overflow: hidden;
-      line-height: 1.5;
-    }
-    
-    /* ===== NAVBAR - ukrainealarm.com style ===== */
-    .navbar {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 60px;
-      background: linear-gradient(180deg, rgba(36, 43, 69, 0.98) 0%, rgba(26, 31, 53, 0.98) 100%);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-bottom: 1px solid rgba(74, 158, 255, 0.2);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 24px;
-      z-index: 1000;
-      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.4), 0 1px 0 rgba(255, 255, 255, 0.03) inset;
-    }
-    
-    .navbar::before {
-      content: "";
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      height: 1px;
-      background: linear-gradient(90deg, transparent 0%, rgba(74, 158, 255, 0.5) 50%, transparent 100%);
-      opacity: 0.5;
-    }
-    
-    .nav-left {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    
-    .logo {
-      width: 40px;
-      height: 40px;
-      background: linear-gradient(135deg, #fbbf24, #f59e0b);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 20px;
-      box-shadow: 0 4px 12px rgba(251, 191, 36, 0.3);
-    }
-    
-    .logo-text {
-      font-size: 1.4rem;
-      font-weight: 900;
-      letter-spacing: 2px;
-      background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 30%, #8b5cf6 70%, #60a5fa 100%);
-      background-size: 200% 200%;
-      -webkit-background-clip: text;
-      background-clip: text;
-      color: transparent;
-      animation: logoShine 3s ease infinite;
-    }
-    
-    @keyframes logoShine {
-      0%, 100% { background-position: 0% 50%; }
-      50% { background-position: 100% 50%; }
-    }
-    
-    .site-title {
-      font-size: 16px;
-      font-weight: 600;
-      color: var(--text);
-    }
-    
-    .site-subtitle {
-      font-size: 12px;
-      color: var(--text-muted);
-    }
-    
-    .nav-links {
-      display: flex;
-      gap: 0.4rem;
-      font-size: 0.875rem;
-      align-items: center;
-    }
-    
-    .nav-links a {
-      color: rgba(148, 163, 184, 0.9);
-      text-decoration: none;
-      font-weight: 600;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      padding: 0.55rem 1rem;
-      border-radius: 12px;
-      line-height: 1;
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      position: relative;
-      overflow: hidden;
-      border: 1px solid transparent;
-    }
-    
-    .nav-links a::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(139, 92, 246, 0.1));
-      opacity: 0;
-      transition: opacity 0.3s ease;
-      border-radius: 12px;
-    }
-    
-    .nav-links a:hover {
-      color: #fff;
-      transform: translateY(-1px);
-      border-color: rgba(59, 130, 246, 0.2);
-    }
-    
-    .nav-links a:hover::before {
-      opacity: 1;
-    }
-    
-    .nav-right {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-    }
-    
-    /* Live users counter - Premium */
-    .live-users {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.5rem 0.9rem;
-      background: linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.9));
-      border: 1px solid rgba(59, 130, 246, 0.2);
-      border-radius: 14px;
-      font-size: 0.7rem;
-      font-weight: 600;
-      position: relative;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-      overflow: hidden;
-    }
-    
-    .live-users::before {
-      content: "";
-      position: absolute;
-      top: 0;
-      left: -100%;
-      width: 100%;
-      height: 100%;
-      background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.1), transparent);
-      animation: liveShimmer 3s ease infinite;
-    }
-    
-    @keyframes liveShimmer {
-      0% { left: -100%; }
-      100% { left: 100%; }
-    }
-    
-    .live-count {
-      color: #10b981;
-      font-weight: 800;
-      font-size: 0.85rem;
-    }
-    
-    .live-label {
-      color: #94a3b8;
-      font-weight: 500;
-      font-size: 0.65rem;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    
-    /* Threat counter - Premium */
-    .threat-counter {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      background: linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.9));
-      padding: 8px 16px;
-      border-radius: 14px;
-      border: 1px solid rgba(59, 130, 246, 0.2);
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-    }
-    
-    .threat-counter-label {
-      font-size: 13px;
-      color: var(--text-muted);
-    }
-    
-    .threat-counts {
-      display: flex;
-      gap: 16px;
-    }
-    
-    .threat-count {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    
-    .threat-icon {
-      width: 20px;
-      height: 20px;
-    }
-    
-    .threat-num {
-      font-size: 16px;
-      font-weight: 700;
-    }
-    
-    .threat-num.air { color: var(--danger); text-shadow: 0 0 10px rgba(239, 68, 68, 0.5); }
-    .threat-num.artillery { color: var(--warning); text-shadow: 0 0 10px rgba(245, 158, 11, 0.5); }
-    .threat-num.street { color: var(--success); text-shadow: 0 0 10px rgba(16, 185, 129, 0.5); }
-    
-    .sidebar-toggle-btn {
-      background: linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.9));
-      border: 1px solid rgba(59, 130, 246, 0.2);
-      color: var(--text);
-      width: 40px;
-      height: 40px;
-      border-radius: 12px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.3s ease;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-    }
-    
-    .sidebar-toggle-btn:hover {
-      background: linear-gradient(135deg, rgba(59, 130, 246, 0.25), rgba(6, 182, 212, 0.15));
-      border-color: rgba(59, 130, 246, 0.4);
-      transform: translateY(-1px);
-    }
-    
-    /* ===== MAIN LAYOUT ===== */
-    .main-container {
-      position: fixed;
-      top: 60px;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      display: block;
-    }
-    
-    /* ===== MAP CONTAINER - Leaflet ===== */
-    .map-container {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: var(--main-bg);
-      overflow: hidden;
     }
     
     #map {
@@ -325,13 +40,11 @@
       right: 0;
       bottom: 0;
       background: var(--main-bg);
-      z-index: 1;
     }
     
     /* Leaflet customization */
     .leaflet-container {
       background: var(--main-bg) !important;
-      font-family: 'Inter', system-ui, sans-serif;
     }
     
     .leaflet-control-zoom {
@@ -342,36 +55,17 @@
     }
     
     .leaflet-control-zoom a {
-      background: linear-gradient(135deg, rgba(36, 43, 69, 0.95), rgba(26, 31, 53, 0.95)) !important;
+      background: rgba(36, 43, 69, 0.95) !important;
       color: var(--text) !important;
       border: 1px solid rgba(74, 158, 255, 0.2) !important;
       width: 40px !important;
       height: 40px !important;
       line-height: 40px !important;
       font-size: 20px !important;
-      transition: all 0.2s ease !important;
     }
     
     .leaflet-control-zoom a:hover {
-      background: linear-gradient(135deg, rgba(74, 158, 255, 0.3), rgba(46, 213, 115, 0.2)) !important;
-      color: #fff !important;
-    }
-    
-    .leaflet-control-attribution {
-      background: rgba(26, 31, 53, 0.9) !important;
-      color: var(--text-muted) !important;
-      border-radius: 8px !important;
-      padding: 4px 8px !important;
-      font-size: 10px !important;
-    }
-    
-    .leaflet-control-attribution a {
-      color: var(--accent) !important;
-    }
-    
-    /* SVG overlay styling */
-    .leaflet-image-layer {
-      opacity: 1;
+      background: rgba(74, 158, 255, 0.3) !important;
     }
     
     /* Marker styles */
@@ -403,9 +97,9 @@
       50% { transform: scale(1.1); }
     }
     
-    /* Leaflet popup styling - ukrainealarm.com style */
+    /* Popup styling */
     .leaflet-popup-content-wrapper {
-      background: linear-gradient(145deg, rgba(36, 43, 69, 0.98), rgba(26, 31, 53, 0.98)) !important;
+      background: rgba(36, 43, 69, 0.98) !important;
       color: var(--text) !important;
       border: 1px solid rgba(74, 158, 255, 0.25) !important;
       border-radius: 12px !important;
@@ -414,7 +108,6 @@
     
     .leaflet-popup-tip {
       background: rgba(36, 43, 69, 0.98) !important;
-      border: 1px solid rgba(74, 158, 255, 0.25) !important;
     }
     
     .leaflet-popup-content {
@@ -422,7 +115,24 @@
       font-size: 13px;
     }
     
-    /* City labels - prevent offset issues on zoom */
+    .popup-title {
+      font-weight: 700;
+      font-size: 14px;
+      margin-bottom: 6px;
+    }
+    
+    .popup-text {
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+    
+    .popup-time {
+      color: var(--accent);
+      font-size: 11px;
+      margin-top: 6px;
+    }
+    
+    /* City labels */
     .city-label {
       background: transparent !important;
       border: none !important;
@@ -433,574 +143,26 @@
       background: transparent !important;
       border: none !important;
     }
-
-    .popup-title {
-      font-weight: 700;
-      font-size: 14px;
-      margin-bottom: 6px;
-      color: var(--text);
-    }
-    
-    .popup-text {
-      color: var(--text-muted);
-      font-size: 12px;
-      line-height: 1.4;
-    }
-    
-    .popup-time {
-      color: var(--accent);
-      font-size: 11px;
-      margin-top: 6px;
-    }
-    
-    /* ===== LEGEND - ukrainealarm.com style ===== */
-    .legend {
-      position: absolute;
-      bottom: 24px;
-      left: 24px;
-      background: linear-gradient(145deg, rgba(36, 43, 69, 0.95), rgba(26, 31, 53, 0.95));
-      border: 1px solid rgba(74, 158, 255, 0.2);
-      border-radius: 16px;
-      padding: 16px 20px;
-      backdrop-filter: blur(20px);
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.03);
-    }
-    
-    .legend-item {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 10px;
-      font-size: 13px;
-      color: var(--text2);
-      transition: color 0.2s;
-    }
-    
-    .legend-item:hover {
-      color: var(--text);
-    }
-    
-    .legend-item:last-child {
-      margin-bottom: 0;
-    }
-    
-    .legend-color {
-      width: 18px;
-      height: 18px;
-      border-radius: 6px;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    }
-    
-    .legend-color.air { background: linear-gradient(135deg, #ff4757, #c0392b); box-shadow: 0 2px 8px rgba(255, 71, 87, 0.5); }
-    .legend-color.artillery { background: linear-gradient(135deg, #ff7f50, #e67e22); box-shadow: 0 2px 8px rgba(255, 127, 80, 0.5); }
-    .legend-color.street { background: linear-gradient(135deg, #2ed573, #27ae60); box-shadow: 0 2px 8px rgba(46, 213, 115, 0.5); }
-    .legend-color.none { background: linear-gradient(135deg, #3d4663, #2a3352); }
-    .legend-color.partial { background: linear-gradient(135deg, #ffc107, #f39c12); box-shadow: 0 2px 8px rgba(255, 193, 7, 0.5); }
-    
-    /* ===== BOTTOM CONTROLS - ukrainealarm.com style ===== */
-    .bottom-controls {
-      position: absolute;
-      bottom: 24px;
-      right: 24px;
-      display: flex;
-      gap: 12px;
-    }
-    
-    .control-btn {
-      background: linear-gradient(135deg, rgba(36, 43, 69, 0.95), rgba(26, 31, 53, 0.95));
-      border: 1px solid rgba(74, 158, 255, 0.2);
-      color: var(--text);
-      padding: 10px 20px;
-      border-radius: 12px;
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      transition: all 0.3s ease;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-    }
-    
-    .control-btn:hover {
-      background: linear-gradient(135deg, rgba(59, 130, 246, 0.25), rgba(6, 182, 212, 0.15));
-      border-color: rgba(59, 130, 246, 0.4);
-      transform: translateY(-2px);
-      box-shadow: 0 8px 25px rgba(59, 130, 246, 0.2);
-    }
-    
-    .theme-toggle {
-      width: 48px;
-      height: 28px;
-      background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.95));
-      border: 1px solid rgba(59, 130, 246, 0.2);
-      border-radius: 14px;
-      position: relative;
-      cursor: pointer;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-    }
-    
-    .theme-toggle::after {
-      content: '';
-      position: absolute;
-      top: 3px;
-      left: 3px;
-      width: 20px;
-      height: 20px;
-      background: linear-gradient(135deg, #3b82f6, #06b6d4);
-      border-radius: 50%;
-      transition: transform 0.3s ease;
-      box-shadow: 0 2px 8px rgba(74, 158, 255, 0.4);
-    }
-    
-    .theme-toggle.light::after {
-      transform: translateX(20px);
-    }
-    
-    /* ===== SIDEBAR - ukrainealarm.com style ===== */
-    .sidebar {
-      position: absolute;
-      top: 0;
-      right: 0;
-      bottom: 0;
-      width: 380px;
-      background: linear-gradient(180deg, rgba(36, 43, 69, 0.98) 0%, rgba(26, 31, 53, 0.98) 100%);
-      backdrop-filter: blur(20px);
-      border-left: 1px solid rgba(74, 158, 255, 0.15);
-      display: flex;
-      flex-direction: column;
-      transform: translateX(0);
-      transition: transform 0.3s ease;
-      z-index: 100;
-      box-shadow: -8px 0 32px rgba(0, 0, 0, 0.4);
-    }
-    
-    .sidebar.collapsed {
-      transform: translateX(100%);
-    }
-    
-    .sidebar-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid rgba(74, 158, 255, 0.15);
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background: linear-gradient(180deg, rgba(42, 51, 82, 0.5) 0%, transparent 100%);
-    }
-    
-    .sidebar-title {
-      font-size: 14px;
-      font-weight: 600;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      color: var(--text);
-    }
-    
-    .pulse-dot {
-      width: 8px;
-      height: 8px;
-      background: var(--danger);
-      border-radius: 50%;
-      animation: pulse 2s infinite;
-      box-shadow: 0 0 10px rgba(255, 71, 87, 0.6);
-    }
-    
-    @keyframes pulse {
-      0%, 100% { opacity: 1; box-shadow: 0 0 10px rgba(255, 71, 87, 0.6); }
-      50% { opacity: 0.5; box-shadow: 0 0 20px rgba(255, 71, 87, 0.8); }
-    }
-    
-    .sidebar-counts {
-      display: flex;
-      gap: 16px;
-      margin-left: auto;
-    }
-    
-    .sidebar-count {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 14px;
-    }
-    
-    .sidebar-count-icon {
-      font-size: 16px;
-    }
-    
-    .sidebar-count-num {
-      font-weight: 700;
-      color: var(--text);
-    }
-    
-    /* Events list - Premium */
-    .events-list {
-      flex: 1;
-      overflow-y: auto;
-      padding: 8px;
-      scrollbar-width: thin;
-      scrollbar-color: rgba(59, 130, 246, 0.3) transparent;
-    }
-    
-    .events-list::-webkit-scrollbar {
-      width: 6px;
-    }
-    
-    .events-list::-webkit-scrollbar-track {
-      background: transparent;
-    }
-    
-    .events-list::-webkit-scrollbar-thumb {
-      background: rgba(59, 130, 246, 0.3);
-      border-radius: 3px;
-    }
-    
-    .event-item {
-      display: flex;
-      align-items: flex-start;
-      gap: 12px;
-      padding: 14px;
-      border-radius: 12px;
-      margin-bottom: 8px;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      background: rgba(30, 41, 59, 0.3);
-      border: 1px solid transparent;
-    }
-    
-    .event-item:hover {
-      background: rgba(59, 130, 246, 0.1);
-      border-color: rgba(59, 130, 246, 0.2);
-      transform: translateX(-4px);
-    }
-    
-    .event-icon {
-      width: 32px;
-      height: 32px;
-      flex-shrink: 0;
-      filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
-    }
-    
-    .event-content {
-      flex: 1;
-      min-width: 0;
-    }
-    
-    .event-place {
-      font-size: 14px;
-      font-weight: 600;
-      margin-bottom: 4px;
-      color: var(--text);
-    }
-    
-    .event-type {
-      font-size: 12px;
-      color: var(--text-muted);
-      margin-bottom: 6px;
-    }
-    
-    .event-time {
-      font-size: 11px;
-      color: var(--text-muted);
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    
-    .event-time::before {
-      content: '';
-      width: 6px;
-      height: 6px;
-      background: var(--accent);
-      border-radius: 50%;
-      opacity: 0.7;
-    }
-    
-    .event-duration {
-      font-size: 12px;
-      color: var(--text-muted);
-      text-align: right;
-      white-space: nowrap;
-    }
-    
-    /* TG Banner - Premium */
-    .tg-banner {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      padding: 16px;
-      background: linear-gradient(135deg, #0088cc 0%, #006bb3 100%);
-      color: white;
-      text-decoration: none;
-      font-size: 14px;
-      font-weight: 600;
-      transition: all 0.3s ease;
-      position: relative;
-      overflow: hidden;
-    }
-    
-    .tg-banner::before {
-      content: "";
-      position: absolute;
-      top: 0;
-      left: -100%;
-      width: 100%;
-      height: 100%;
-      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-      transition: left 0.5s;
-    }
-    
-    .tg-banner:hover::before {
-      left: 100%;
-    }
-    
-    .tg-banner:hover {
-      background: linear-gradient(135deg, #0099dd 0%, #0077cc 100%);
-    }
-    
-    /* Map info - Premium */
-    .map-info {
-      position: absolute;
-      bottom: 80px;
-      left: 50%;
-      transform: translateX(-50%);
-      font-size: 12px;
-      color: var(--text-muted);
-      text-align: center;
-      background: linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(30, 41, 59, 0.8));
-      padding: 8px 16px;
-      border-radius: 8px;
-      border: 1px solid rgba(59, 130, 246, 0.15);
-      backdrop-filter: blur(10px);
-    }
-    
-    .map-info a {
-      color: var(--accent);
-      text-decoration: none;
-      transition: color 0.2s;
-    }
-    
-    .map-info a:hover {
-      color: #60a5fa;
-    }
-    
-    /* Mobile */
-    @media (max-width: 900px) {
-      .nav-links {
-        display: none;
-      }
-      
-      .sidebar {
-        position: fixed;
-        top: 60px;
-        right: 0;
-        bottom: 0;
-        width: 100%;
-        max-width: 400px;
-        z-index: 100;
-      }
-      
-      .threat-counter {
-        display: none;
-      }
-    }
-    
-    @media (max-width: 600px) {
-      .navbar {
-        padding: 0 12px;
-      }
-      
-      .site-subtitle {
-        display: none;
-      }
-      
-      .legend {
-        left: 12px;
-        bottom: 12px;
-        padding: 12px;
-        font-size: 11px;
-      }
-      
-      .bottom-controls {
-        right: 12px;
-        bottom: 12px;
-      }
-    }
   </style>
 </head>
 <body>
-  <!-- Navbar - Premium Design -->
-  <nav class="navbar">
-    <div class="nav-left">
-      <div class="logo">🛡️</div>
-      <div>
-        <span class="logo-text">NEPTUN</span>
-        <div class="site-subtitle">Карта тривог України</div>
-      </div>
-    </div>
-    
-    <div class="nav-links">
-      <a href="#">Карта</a>
-      <a href="#">Статистика</a>
-      <a href="#">API</a>
-      <a href="#">Контакти</a>
-    </div>
-    
-    <div class="nav-right">
-      <!-- Live users counter -->
-      <div class="live-users">
-        <span class="live-label">Online</span>
-        <span class="live-count" id="liveCount">...</span>
-      </div>
-      
-      <div class="threat-counter">
-        <span class="threat-counter-label">Загрози:</span>
-        <div class="threat-counts">
-          <div class="threat-count">
-            <img src="/static/shahed.png" class="threat-icon" alt="Шахеди">
-            <span class="threat-num air" id="countAir">0</span>
-          </div>
-          <div class="threat-count">
-            <img src="/static/raketa.png" class="threat-icon" alt="Ракети">
-            <span class="threat-num artillery" id="countArtillery">0</span>
-          </div>
-        </div>
-      </div>
-      
-      <button class="sidebar-toggle-btn" onclick="toggleSidebar()" title="Показати/сховати події">
-        <i class="material-icons">chevron_left</i>
-      </button>
-    </div>
-  </nav>
-  
-  <!-- Main container -->
-  <div class="main-container">
-    <!-- Map container - Leaflet with SVG overlay -->
-    <div class="map-container">
-      <!-- Leaflet map div -->
-      <div id="map"></div>
-      
-      <!-- Legend -->
-      <div class="legend">
-        <div class="legend-item">
-          <div class="legend-color air"></div>
-          <span>Повітряна тривога</span>
-        </div>
-        <div class="legend-item">
-          <div class="legend-color artillery"></div>
-          <span>Загроза артобстрілу</span>
-        </div>
-        <div class="legend-item">
-          <div class="legend-color street"></div>
-          <span>Загроза вуличних боїв</span>
-        </div>
-        <div class="legend-item">
-          <div class="legend-color none"></div>
-          <span>Немає тривоги</span>
-        </div>
-      </div>
-      
-      <!-- Map info -->
-      <div class="map-info">
-        neptun.in.ua<br>
-        Станом на <span id="updateTime">--</span>
-      </div>
-      
-      <!-- Bottom controls -->
-      <div class="bottom-controls">
-        <button class="control-btn" onclick="toggleDemoMode()" id="demoBtn">
-          <span class="material-icons" style="font-size: 18px;">bug_report</span>
-          Демо
-        </button>
-        <button class="control-btn" onclick="showStats()">Статистика</button>
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <span style="font-size: 14px;">Тема</span>
-          <div class="theme-toggle" onclick="toggleTheme()"></div>
-        </div>
-      </div>
-    </div>
-    
-    <!-- Sidebar -->
-    <aside class="sidebar" id="sidebar">
-      <div class="sidebar-header">
-        <div class="sidebar-title">
-          <span class="pulse-dot"></span>
-          Загрози:
-        </div>
-        <div class="sidebar-counts">
-          <div class="sidebar-count">
-            <span class="sidebar-count-icon">✈️</span>
-            <span class="sidebar-count-num" id="sidebarAir">0</span>
-          </div>
-          <div class="sidebar-count">
-            <span class="sidebar-count-icon">💥</span>
-            <span class="sidebar-count-num" id="sidebarArtillery">0</span>
-          </div>
-          <div class="sidebar-count">
-            <span class="sidebar-count-icon">🛸</span>
-            <span class="sidebar-count-num" id="sidebarShahed">0</span>
-          </div>
-        </div>
-      </div>
-      
-      <!-- Air Raid Alerts Section -->
-      <div class="alarms-section" id="alarmsSection" style="display: none;">
-        <div class="alarms-header" style="padding: 12px 16px; background: rgba(155, 44, 44, 0.2); border-bottom: 1px solid rgba(197, 48, 48, 0.3);">
-          <span style="color: #f87171; font-weight: 600; font-size: 14px;">🚨 Повітряна тривога</span>
-          <span id="alarmCount" style="background: #dc2626; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; margin-left: 8px;">0</span>
-        </div>
-        <div class="alarms-list" id="alarmsList" style="max-height: 200px; overflow-y: auto; padding: 8px 0;">
-          <!-- Alarm regions will be listed here -->
-        </div>
-      </div>
-      
-      <div class="events-list" id="eventsList">
-        <!-- Events will be loaded here -->
-        <div style="padding: 20px; text-align: center; color: var(--text2);">
-          Завантаження подій...
-        </div>
-      </div>
-      
-      <a href="https://t.me/+aBR79kExNQM1ZjZi" target="_blank" class="tg-banner">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="white">
-          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .37z"/>
-        </svg>
-        Telegram канал
-      </a>
-    </aside>
-  </div>
+  <div id="map"></div>
 
   <script>
     // ===== CONFIG =====
     const API_URL = '/data';
     const UPDATE_INTERVAL = 10000;
     
-    // Ukraine bounds for Leaflet
-    // From SVG geoViewBox: "22.138577 52.380834 40.220623 44.387017"
-    // Format is: west north east south (minLng maxLat maxLng minLat)
     const UA_BOUNDS = {
-      south: 44.387017,   // minLat (4th value in geoViewBox)
-      north: 52.380834,   // maxLat (2nd value in geoViewBox)
-      west: 22.138577,    // minLng (1st value in geoViewBox)
-      east: 40.220623,    // maxLng (3rd value in geoViewBox)
+      south: 44.387017,
+      north: 52.380834,
+      west: 22.138577,
+      east: 40.220623,
       center: [48.5, 31.5]
     };
     
-    // SVG overlay bounds for Leaflet: [[south, west], [north, east]]
     const SVG_BOUNDS = [[UA_BOUNDS.south, UA_BOUNDS.west], [UA_BOUNDS.north, UA_BOUNDS.east]];
     
-    // Threat type icons (emoji for sidebar)
-    const ICONS = {
-      shahed: '🛸',
-      rocket: '🚀',
-      avia: '✈️',
-      artillery: '💥',
-      fpv: '🎯',
-      default: '⚠️'
-    };
-    
-    // PNG icons for map markers
     const PNG_ICONS = {
       shahed: '/static/shahed.png',
       rocket: '/static/raketa.png',
@@ -1014,12 +176,8 @@
     };
     
     // ===== ALARM API CONFIG =====
-    const ALARM_API_KEY = '57fe8a39:7698ad50f0f15d502b280a83019bab25';
-    const ALARM_API_URL = 'https://api.ukrainealarm.com/api/v3/alerts';
-    const ALARM_UPDATE_INTERVAL = 30000; // 30 seconds
+    const ALARM_UPDATE_INTERVAL = 30000;
     
-    // Mapping from API regionName to GeoJSON NL_NAME_1 (Ukrainian name)
-    // Note: GeoJSON has some names with accents (Дніпропетро́вська, Доне́цька)
     const REGION_MAPPING = {
       "Вінницька область": "Вінницька",
       "Волинська область": "Волинська",
@@ -1032,7 +190,7 @@
       "Київська область": "Київська",
       "Кіровоградська область": "Кіровоградська",
       "Луганська область": "Луганська",
-      "Львівська область": "Львівська",  // GeoJSON has NA for Lviv, use NAME_1
+      "Львівська область": "Львівська",
       "Миколаївська область": "Миколаївська",
       "Одеська область": "Одеська",
       "Полтавська область": "Полтавська",
@@ -1050,21 +208,190 @@
       "Севастополь": "Севастополь"
     };
 
+    const OBLAST_NORMALIZE = {
+      "Вінницька область": "Вінницька",
+      "Волинська область": "Волинська",
+      "Дніпропетровська область": "Дніпропетровська",
+      "Донецька область": "Донецька",
+      "Житомирська область": "Житомирська",
+      "Закарпатська область": "Закарпатська",
+      "Запорізька область": "Запорізька",
+      "Івано-Франківська область": "Івано-Франківська",
+      "Київська область": "Київська",
+      "Кіровоградська область": "Кіровоградська",
+      "Луганська область": "Луганська",
+      "Львівська область": "Львівська",
+      "Миколаївська область": "Миколаївська",
+      "Одеська область": "Одеська",
+      "Полтавська область": "Полтавська",
+      "Рівненська область": "Рівненська",
+      "Сумська область": "Сумська",
+      "Тернопільська область": "Тернопільська",
+      "Харківська область": "Харківська",
+      "Херсонська область": "Херсонська",
+      "Хмельницька область": "Хмельницька",
+      "Черкаська область": "Черкаська",
+      "Чернівецька область": "Чернівецька",
+      "Чернігівська область": "Чернігівська",
+      "м. Київ": "Київ"
+    };
+
+    const DISTRICT_TO_OBLAST = {
+      "Вінницький район": "Вінницька",
+      "Гайсинський район": "Вінницька",
+      "Жмеринський район": "Вінницька",
+      "Могилів-Подільський район": "Вінницька",
+      "Тульчинський район": "Вінницька",
+      "Хмільницький район": "Вінницька",
+      "Володимирський район": "Волинська",
+      "Камінь-Каширський район": "Волинська",
+      "Ковельський район": "Волинська",
+      "Луцький район": "Волинська",
+      "Дніпровський район": "Дніпропетровська",
+      "Кам'янський район": "Дніпропетровська",
+      "Криворізький район": "Дніпропетровська",
+      "Нікопольський район": "Дніпропетровська",
+      "Новомосковський район": "Дніпропетровська",
+      "Павлоградський район": "Дніпропетровська",
+      "Синельниківський район": "Дніпропетровська",
+      "Бахмутський район": "Донецька",
+      "Волноваський район": "Донецька",
+      "Горлівський район": "Донецька",
+      "Донецький район": "Донецька",
+      "Кальміуський район": "Донецька",
+      "Краматорський район": "Донецька",
+      "Маріупольський район": "Донецька",
+      "Покровський район": "Донецька",
+      "Бердичівський район": "Житомирська",
+      "Житомирський район": "Житомирська",
+      "Коростенський район": "Житомирська",
+      "Новоград-Волинський район": "Житомирська",
+      "Берегівський район": "Закарпатська",
+      "Мукачівський район": "Закарпатська",
+      "Рахівський район": "Закарпатська",
+      "Тячівський район": "Закарпатська",
+      "Ужгородський район": "Закарпатська",
+      "Хустський район": "Закарпатська",
+      "Бердянський район": "Запорізька",
+      "Василівський район": "Запорізька",
+      "Запорізький район": "Запорізька",
+      "Мелітопольський район": "Запорізька",
+      "Пологівський район": "Запорізька",
+      "Верховинський район": "Івано-Франківська",
+      "Івано-Франківський район": "Івано-Франківська",
+      "Калуський район": "Івано-Франківська",
+      "Коломийський район": "Івано-Франківська",
+      "Косівський район": "Івано-Франківська",
+      "Надвірнянський район": "Івано-Франківська",
+      "Білоцерківський район": "Київська",
+      "Бориспільський район": "Київська",
+      "Броварський район": "Київська",
+      "Бучанський район": "Київська",
+      "Вишгородський район": "Київська",
+      "Обухівський район": "Київська",
+      "Фастівський район": "Київська",
+      "Голованівський район": "Кіровоградська",
+      "Кропивницький район": "Кіровоградська",
+      "Новоукраїнський район": "Кіровоградська",
+      "Олександрійський район": "Кіровоградська",
+      "Алчевський район": "Луганська",
+      "Довжанський район": "Луганська",
+      "Луганський район": "Луганська",
+      "Ровеньківський район": "Луганська",
+      "Свердловський район": "Луганська",
+      "Сєвєродонецький район": "Луганська",
+      "Старобільський район": "Луганська",
+      "Щастинський район": "Луганська",
+      "Дрогобицький район": "Львівська",
+      "Золочівський район": "Львівська",
+      "Львівський район": "Львівська",
+      "Самбірський район": "Львівська",
+      "Стрийський район": "Львівська",
+      "Червоноградський район": "Львівська",
+      "Яворівський район": "Львівська",
+      "Баштанський район": "Миколаївська",
+      "Вознесенський район": "Миколаївська",
+      "Миколаївський район": "Миколаївська",
+      "Первомайський район": "Миколаївська",
+      "Білгород-Дністровський район": "Одеська",
+      "Березівський район": "Одеська",
+      "Болградський район": "Одеська",
+      "Ізмаїльський район": "Одеська",
+      "Одеський район": "Одеська",
+      "Подільський район": "Одеська",
+      "Роздільнянський район": "Одеська",
+      "Кременчуцький район": "Полтавська",
+      "Лубенський район": "Полтавська",
+      "Миргородський район": "Полтавська",
+      "Полтавський район": "Полтавська",
+      "Вараський район": "Рівненська",
+      "Дубенський район": "Рівненська",
+      "Рівненський район": "Рівненська",
+      "Сарненський район": "Рівненська",
+      "Конотопський район": "Сумська",
+      "Охтирський район": "Сумська",
+      "Роменський район": "Сумська",
+      "Сумський район": "Сумська",
+      "Шосткинський район": "Сумська",
+      "Кременецький район": "Тернопільська",
+      "Тернопільський район": "Тернопільська",
+      "Чортківський район": "Тернопільська",
+      "Богодухівський район": "Харківська",
+      "Ізюмський район": "Харківська",
+      "Красноградський район": "Харківська",
+      "Куп'янський район": "Харківська",
+      "Лозівський район": "Харківська",
+      "Харківський район": "Харківська",
+      "Чугуївський район": "Харківська",
+      "Бериславський район": "Херсонська",
+      "Генічеський район": "Херсонська",
+      "Каховський район": "Херсонська",
+      "Скадовський район": "Херсонська",
+      "Херсонський район": "Херсонська",
+      "Кам'янець-Подільський район": "Хмельницька",
+      "Хмельницький район": "Хмельницька",
+      "Шепетівський район": "Хмельницька",
+      "Звенигородський район": "Черкаська",
+      "Золотоніський район": "Черкаська",
+      "Уманський район": "Черкаська",
+      "Черкаський район": "Черкаська",
+      "Вижницький район": "Чернівецька",
+      "Дністровський район": "Чернівецька",
+      "Чернівецький район": "Чернівецька",
+      "Корюківський район": "Чернігівська",
+      "Ніжинський район": "Чернігівська",
+      "Новгород-Сіверський район": "Чернігівська",
+      "Прилуцький район": "Чернігівська",
+      "Чернігівський район": "Чернігівська",
+      "Бахчисарайський район": "Крим",
+      "Білогірський район": "Крим",
+      "Джанкойський район": "Крим",
+      "Кіровський район": "Крим",
+      "Красногвардійський район": "Крим",
+      "Красноперекопський район": "Крим",
+      "Ленінський район": "Крим",
+      "Нижньогірський район": "Крим",
+      "Первомайський район": "Крим",
+      "Роздольненський район": "Крим",
+      "Сакський район": "Крим",
+      "Сімферопольський район": "Крим",
+      "Совєтський район": "Крим",
+      "Чорноморський район": "Крим"
+    };
+
     // ===== STATE =====
-    let sidebarOpen = true;
     let currentData = [];
     let map = null;
     let markerLayer = null;
     let svgOverlay = null;
     let cityLabelsLayer = null;
     let alarmLayer = null;
-    let districtAlarmLayer = null; // New layer for districts
-    let alarmRegions = {}; // Store active alarm regions
-    let alarmDistricts = {}; // Store active alarm districts
-    let geojsonData = null; // Store GeoJSON data for oblasts
-    let districtsGeojsonData = null; // Store GeoJSON data for districts
+    let districtAlarmLayer = null;
+    let alarmRegions = {};
+    let alarmDistricts = {};
+    let geojsonData = null;
+    let districtsGeojsonData = null;
 
-    // City coordinates for labels
     const CITIES = [
       { name: "Київ", lat: 50.4501, lng: 30.5234, size: "capital" },
       { name: "Харків", lat: 49.9935, lng: 36.2304, size: "major" },
@@ -1090,7 +417,6 @@
       { name: "Кропивницький", lat: 48.5079, lng: 32.2623, size: "city" },
     ];
     
-    // Get PNG icon URL for threat type
     function getPngIcon(threatType) {
       const tt = (threatType || '').toLowerCase();
       
@@ -1114,73 +440,53 @@
       return { url: PNG_ICONS.default, type: 'default' };
     }
     
-    // Initialize Leaflet map with SVG overlay
     function initMap() {
-      // Create map without tile layer - we use SVG as background
       map = L.map('map', {
         center: UA_BOUNDS.center,
         zoom: 6,
         minZoom: 5,
         maxZoom: 10,
-        zoomControl: true,
+        zoomControl: false,
         attributionControl: false,
-        crs: L.CRS.EPSG3857 // Standard Web Mercator
+        crs: L.CRS.EPSG3857
       });
       
-      // Add SVG overlay as the base map (covers Ukraine bounds)
       svgOverlay = L.imageOverlay('/static/ukraine_mapsvg.svg', SVG_BOUNDS, {
         opacity: 1,
         interactive: false,
         className: 'svg-map-layer'
       }).addTo(map);
       
-      // Fit map to SVG bounds
       map.fitBounds(SVG_BOUNDS);
       
-      // Create marker layer
       markerLayer = L.layerGroup().addTo(map);
-      
-      // Create city labels layer
       cityLabelsLayer = L.layerGroup().addTo(map);
       
-      // Add city labels
       addCityLabels();
       
-      // Add zoom control with custom position
       L.control.zoom({
         position: 'topright',
         zoomInTitle: 'Збільшити',
         zoomOutTitle: 'Зменшити'
       }).addTo(map);
       
-      // Update city labels on zoom
       map.on('zoomend', function() {
         updateCityLabelsSize();
       });
       
-      console.log('Leaflet map initialized with SVG overlay');
-      console.log('Bounds:', SVG_BOUNDS);
-      
-      // Load GeoJSON and start alarm updates
       loadGeoJSONAndAlarms();
     }
     
-    // Load GeoJSON data and initialize alarm layer
     async function loadGeoJSONAndAlarms() {
       try {
-        // Load GeoJSON for Ukraine oblasts
         const oblastResponse = await fetch('/static/ukraine_oblasts.geojson');
         if (!oblastResponse.ok) throw new Error('Failed to load oblasts GeoJSON');
         geojsonData = await oblastResponse.json();
-        console.log('Oblasts GeoJSON loaded:', geojsonData.features?.length, 'features');
         
-        // Load GeoJSON for Ukraine districts (raions 2020)
         const districtResponse = await fetch('/static/ukraine_raions_2020.geojson?v=2');
         if (!districtResponse.ok) throw new Error('Failed to load districts GeoJSON');
         districtsGeojsonData = await districtResponse.json();
-        console.log('Districts GeoJSON loaded:', districtsGeojsonData.features?.length, 'features');
         
-        // Create oblast alarm layer (for State-level alarms)
         alarmLayer = L.geoJSON(geojsonData, {
           style: function(feature) {
             const regionName = feature.properties.NL_NAME_1 || feature.properties.NAME_1;
@@ -1198,10 +504,8 @@
           }
         }).addTo(map);
         
-        // Create SVG renderer for districts (Canvas may have fill issues)
         const svgRenderer = L.svg();
         
-        // Create district alarm layer (for District-level alarms)
         districtAlarmLayer = L.geoJSON(districtsGeojsonData, {
           renderer: svgRenderer,
           style: function(feature) {
@@ -1210,7 +514,6 @@
             return {
               fillColor: isAlarm ? '#b91c1c' : 'transparent',
               fillOpacity: isAlarm ? 1 : 0,
-              // Use same fill color for stroke to hide gaps
               color: isAlarm ? '#b91c1c' : 'transparent',
               weight: isAlarm ? 3 : 0,
               lineJoin: 'round',
@@ -1223,14 +526,10 @@
           }
         }).addTo(map);
         
-        // Move alarm layers to back (but above SVG)
         alarmLayer.bringToBack();
         districtAlarmLayer.bringToBack();
         
-        // Fetch initial alarms
         await fetchAlarms();
-        
-        // Start regular alarm updates
         setInterval(fetchAlarms, ALARM_UPDATE_INTERVAL);
         
       } catch (error) {
@@ -1238,219 +537,54 @@
       }
     }
     
-    // Cache for alarms data
     let lastAlarmsData = null;
-    let alarmsFailCount = 0;
-    const MAX_ALARM_FAILS = 3;
     
-    // Fetch alarms from ukrainealarm API with retry
     async function fetchAlarms() {
-      // Try multiple endpoints
-      const endpoints = ['/api/alarms/proxy', '/active_alarms'];
-      
-      for (const endpoint of endpoints) {
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 8000);
-          
-          const response = await fetch(endpoint, { signal: controller.signal });
-          clearTimeout(timeoutId);
-          
-          if (!response.ok) continue;
-          
-          const data = await response.json();
-          
-          // Normalize data format
-          let normalized;
-          if (data.states !== undefined) {
-            // Format from /api/alarms/proxy
-            normalized = data;
-          } else if (data.oblasts !== undefined) {
-            // Format from /active_alarms
-            normalized = {
-              states: Object.keys(data.oblasts || {}).map(name => ({ regionName: name })),
-              districts: Object.keys(data.raions || {}).map(name => ({ regionName: name })),
-              totalAlerts: Object.keys(data.oblasts || {}).length + Object.keys(data.raions || {}).length
-            };
-          } else {
-            continue;
-          }
-          
-          lastAlarmsData = normalized;
-          alarmsFailCount = 0;
-          updateAlarmLayer(normalized);
-          updateAlarmsList(normalized);
-          console.log('Alarms updated from', endpoint);
-          return;
-          
-        } catch (error) {
-          console.warn(`Alarm fetch from ${endpoint} failed:`, error.message);
-        }
-      }
-      
-      // All endpoints failed
-      alarmsFailCount++;
-      console.error(`All alarm endpoints failed (attempt ${alarmsFailCount})`);
-      
-      // Use cached data if available and not too many fails
-      if (lastAlarmsData && alarmsFailCount <= MAX_ALARM_FAILS) {
-        console.log('Using cached alarm data');
-        // Don't update - keep showing last known state
-      } else if (alarmsFailCount > MAX_ALARM_FAILS) {
-        // Too many fails - clear alarm display
-        updateAlarmLayer({ states: [], districts: [], totalAlerts: 0 });
-        updateAlarmsList({ states: [], districts: [], totalAlerts: 0 });
-      }
-    }
-    
-    // Update alarms list in sidebar
-    function updateAlarmsList(alertsData) {
-      const alarmsSection = document.getElementById('alarmsSection');
-      const alarmsList = document.getElementById('alarmsList');
-      const alarmCount = document.getElementById('alarmCount');
-      
-      if (!alertsData || (!alertsData.states?.length && !alertsData.districts?.length)) {
-        alarmsSection.style.display = 'none';
-        return;
-      }
-      
-      alarmsSection.style.display = 'block';
-      const totalAlerts = (alertsData.states?.length || 0) + (alertsData.districts?.length || 0);
-      alarmCount.textContent = totalAlerts;
-      
-      let html = '';
-      
-      // Show State (oblast) alerts first
-      if (alertsData.states?.length > 0) {
-        alertsData.states.forEach(state => {
-          html += `<div style="padding: 8px 16px; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; align-items: center; gap: 8px;">
-            <span style="color: #ef4444; font-size: 14px;">🔴</span>
-            <span style="color: #fca5a5; font-size: 13px; font-weight: 500;">${state.regionName}</span>
-            <span style="color: #6b7280; font-size: 11px; margin-left: auto;">вся область</span>
-          </div>`;
-        });
-      }
-      
-      // Group districts by oblast
-      if (alertsData.districts?.length > 0) {
-        const byOblast = {};
-        alertsData.districts.forEach(d => {
-          const oblast = d.oblast || 'Інше';
-          if (!byOblast[oblast]) byOblast[oblast] = [];
-          byOblast[oblast].push(d.regionName);
-        });
+      try {
+        const response = await fetch('/api/alarms/proxy');
+        if (!response.ok) throw new Error('Alarm API error');
+        const data = await response.json();
         
-        Object.entries(byOblast).forEach(([oblast, districts]) => {
-          html += `<div style="padding: 8px 16px; border-bottom: 1px solid rgba(255,255,255,0.05);">
-            <div style="color: #fbbf24; font-size: 12px; font-weight: 600; margin-bottom: 4px;">${oblast || 'Район'}</div>
-            <div style="color: #94a3b8; font-size: 12px; line-height: 1.4;">${districts.join(', ')}</div>
-          </div>`;
-        });
+        if (JSON.stringify(data) === JSON.stringify(lastAlarmsData)) {
+          return;
+        }
+        lastAlarmsData = data;
+        
+        alarmRegions = {};
+        alarmDistricts = {};
+        
+        if (data.states) {
+          data.states.forEach(s => {
+            if (s.regionName) {
+              const mappedName = REGION_MAPPING[s.regionName];
+              if (mappedName) {
+                alarmRegions[mappedName] = true;
+              }
+              alarmRegions[s.regionName] = true;
+            }
+          });
+        }
+        
+        if (data.districts) {
+          data.districts.forEach(d => {
+            if (d.regionName) {
+              alarmDistricts[d.regionName] = true;
+            }
+          });
+        }
+        
+        updateAlarmStyles();
+        
+      } catch (error) {
+        console.error('Error fetching alarms:', error);
       }
-      
-      alarmsList.innerHTML = html;
     }
     
-    // Update alarm layer based on API response
-    function updateAlarmLayer(alertsData) {
-      // Reset alarm regions and districts
-      alarmRegions = {};
-      alarmDistricts = {};
-      
-      // Only process State-level alerts for oblast map coloring
-      const states = alertsData?.states || [];
-      // Process District-level alerts for district map coloring
-      const districts = alertsData?.districts || [];
-      
-      // Fallback mapping for English names (NAME_1 in GeoJSON)
-      const ENGLISH_MAPPING = {
-        "Автономна Республіка Крим": "Crimea",
-        "Львівська область": "L'viv",
-        "Дніпропетровська область": "Dnipropetrovs'k",
-        "Донецька область": "Donets'k",
-        "Харківська область": "Kharkiv",
-        "Київська область": "Kiev",
-        "м. Київ": "KievCity",
-        "Одеська область": "Odessa",
-        "Запорізька область": "Zaporizhia",
-        "Луганська область": "Luhans'k",
-        "Миколаївська область": "Mykolayiv",
-        "Херсонська область": "Kherson",
-        "Полтавська область": "Poltava",
-        "Черкаська область": "Cherkasy",
-        "Чернігівська область": "Chernihiv",
-        "Сумська область": "Sumy",
-        "Житомирська область": "Zhytomyr",
-        "Вінницька область": "Vinnytsya",
-        "Хмельницька область": "Khmel'nyts'kyy",
-        "Рівненська область": "Rivne",
-        "Волинська область": "Volyn",
-        "Тернопільська область": "Ternopil'",
-        "Івано-Франківська область": "Ivano-Frankivs'k",
-        "Закарпатська область": "Zakarpattia",
-        "Чернівецька область": "Chernivtsi",
-        "Кіровоградська область": "Kirovohrad",
-        "Севастополь": "Sevastopol'"
-      };
-      
-      // Process State alerts for oblast map coloring
-      states.forEach(region => {
-        if (region.activeAlerts && region.activeAlerts.length > 0) {
-          const geoJsonNameUkr = REGION_MAPPING[region.regionName];
-          const geoJsonNameEng = ENGLISH_MAPPING[region.regionName];
-          
-          if (geoJsonNameUkr) {
-            alarmRegions[geoJsonNameUkr] = true;
-          }
-          if (geoJsonNameEng) {
-            alarmRegions[geoJsonNameEng] = true;
-          }
-        }
-      });
-      
-      // Process District alerts - only mark districts, NOT oblasts
-      districts.forEach(district => {
-        if (district.regionName) {
-          alarmDistricts[district.regionName] = true;
-          // Also add with "район" suffix if not present
-          if (!district.regionName.includes('район')) {
-            alarmDistricts[district.regionName + ' район'] = true;
-            alarmDistricts[district.regionName + 'ий район'] = true;
-            alarmDistricts[district.regionName + 'ький район'] = true;
-          }
-        }
-      });
-      
-      // Alternative district names mapping (API name -> GeoJSON name)
-      const DISTRICT_NAME_ALIASES = {
-        "Бахмутський": "Бахмутський район",
-        "Покровський": "Покровський район",
-        "Краматорський": "Краматорський район",
-        "Волноваський": "Волноваський район",
-        "Маріупольський": "Маріупольський район",
-        "Донецький": "Донецький район",
-        "Горлівський": "Горлівський район",
-        "Кальміуський": "Кальміуський район"
-      };
-      
-      // Apply aliases
-      Object.keys(alarmDistricts).forEach(name => {
-        const alias = DISTRICT_NAME_ALIASES[name];
-        if (alias) {
-          alarmDistricts[alias] = true;
-        }
-      });
-      
-      console.log('Active State alarms:', states.length, '| District alarms:', districts.length);
-      console.log('Alarm oblasts (from API):', states.map(s => s.regionName));
-      console.log('Alarm districts:', Object.keys(alarmDistricts));
-      
-      // Update oblast GeoJSON layer style
+    function updateAlarmStyles() {
       if (alarmLayer) {
         alarmLayer.setStyle(function(feature) {
-          const regionNameUkr = feature.properties.NL_NAME_1;
-          const regionNameEng = feature.properties.NAME_1;
-          const isAlarm = alarmRegions[regionNameUkr] || alarmRegions[regionNameEng];
+          const regionName = feature.properties.NL_NAME_1 || feature.properties.NAME_1;
+          const isAlarm = alarmRegions[regionName] || alarmRegions[regionName + ' область'];
           return {
             fillColor: isAlarm ? '#991b1b' : 'transparent',
             fillOpacity: isAlarm ? 1 : 0,
@@ -1460,262 +594,25 @@
         });
       }
       
-      // Update district GeoJSON layer style
       if (districtAlarmLayer) {
-        // Complete mapping of district names to oblasts (147 districts)
-        const DISTRICT_TO_OBLAST = {
-          "Євпаторійський район": "Автономна Республіка Крим",
-          "Івано-Франківський район": "Івано-Франківська область",
-          "Ізмаїльський район": "Одеська область",
-          "Ізюмський район": "Харківська область",
-          "Алчевський район": "Луганська область",
-          "Бахмутський район": "Донецька область",
-          "Бахчисарайський район": "Автономна Республіка Крим",
-          "Баштанський район": "Миколаївська область",
-          "Бердичівський район": "Житомирська область",
-          "Бердянський район": "Запорізька область",
-          "Берегівський район": "Закарпатська область",
-          "Березівський район": "Одеська область",
-          "Берестинський район": "Харківська область",
-          "Бериславський район": "Херсонська область",
-          "Богодухівський район": "Харківська область",
-          "Болградський район": "Одеська область",
-          "Бориспільський район": "Київська область",
-          "Броварський район": "Київська область",
-          "Бучанський район": "Київська область",
-          "Білгород-Дністровський район": "Одеська область",
-          "Білогірський район": "Автономна Республіка Крим",
-          "Білоцерківський район": "Київська область",
-          "Вараський район": "Рівненська область",
-          "Василівський район": "Запорізька область",
-          "Верховинський район": "Івано-Франківська область",
-          "Вижницький район": "Чернівецька область",
-          "Вишгородський район": "Київська область",
-          "Вознесенський район": "Миколаївська область",
-          "Волноваський район": "Донецька область",
-          "Володимирський район": "Волинська область",
-          "Вінницький район": "Вінницька область",
-          "Гайсинський район": "Вінницька область",
-          "Генічеський район": "Херсонська область",
-          "Голованівський район": "Кіровоградська область",
-          "Горлівський район": "Донецька область",
-          "Джанкойський район": "Автономна Республіка Крим",
-          "Дніпровський район": "Дніпропетровська область",
-          "Дністровський район": "Чернівецька область",
-          "Довжанський район": "Луганська область",
-          "Донецький район": "Донецька область",
-          "Дрогобицький район": "Львівська область",
-          "Дубенський район": "Рівненська область",
-          "Житомирський район": "Житомирська область",
-          "Жмеринський район": "Вінницька область",
-          "Запорізький район": "Запорізька область",
-          "Звенигородський район": "Черкаська область",
-          "Звягельський район": "Житомирська область",
-          "Золотоніський район": "Черкаська область",
-          "Золочівський район": "Львівська область",
-          "Калуський район": "Івано-Франківська область",
-          "Кальміуський район": "Донецька область",
-          "Кам'янський район": "Дніпропетровська область",
-          "Камінь-Каширський район": "Волинська область",
-          "Кам'янець-Подільський район": "Хмельницька область",
-          "Каховський район": "Херсонська область",
-          "Керченський район": "Автономна Республіка Крим",
-          "Ковельський район": "Волинська область",
-          "Коломийський район": "Івано-Франківська область",
-          "Конотопський район": "Сумська область",
-          "Коростенський район": "Житомирська область",
-          "Корюківський район": "Чернігівська область",
-          "Косівський район": "Івано-Франківська область",
-          "Краматорський район": "Донецька область",
-          "Красногвардійський район": "Автономна Республіка Крим",
-          "Кременецький район": "Тернопільська область",
-          "Кременчуцький район": "Полтавська область",
-          "Криворізький район": "Дніпропетровська область",
-          "Кропивницький район": "Кіровоградська область",
-          "Куп'янський район": "Харківська область",
-          "Курманський район": "Автономна Республіка Крим",
-          "Кіровський район": "Автономна Республіка Крим",
-          "Ленінський район": "Автономна Республіка Крим",
-          "Лозівський район": "Харківська область",
-          "Лубенський район": "Полтавська область",
-          "Луганський район": "Луганська область",
-          "Луцький район": "Волинська область",
-          "Львівський район": "Львівська область",
-          "Маріупольський район": "Донецька область",
-          "Мелітопольський район": "Запорізька область",
-          "Миколаївський район": "Миколаївська область",
-          "Миргородський район": "Полтавська область",
-          "Могилів-Подільський район": "Вінницька область",
-          "Мукачівський район": "Закарпатська область",
-          "Міський округ Євпаторія": "Автономна Республіка Крим",
-          "Міський округ Армянськ": "Автономна Республіка Крим",
-          "Міський округ Джанкой": "Автономна Республіка Крим",
-          "Міський округ Саки": "Автономна Республіка Крим",
-          "Міський округ Судак": "Автономна Республіка Крим",
-          "Міський округ Феодосія": "Автономна Республіка Крим",
-          "Міський округ Ялта": "Автономна Республіка Крим",
-          "Надвірнянський район": "Івано-Франківська область",
-          "Нижньогірський район": "Автономна Республіка Крим",
-          "Новгород-Сіверський район": "Чернігівська область",
-          "Новоукраїнський район": "Кіровоградська область",
-          "Ніжинський район": "Чернігівська область",
-          "Нікопольський район": "Дніпропетровська область",
-          "Обухівський район": "Київська область",
-          "Одеський район": "Одеська область",
-          "Олександрійський район": "Кіровоградська область",
-          "Охтирський район": "Сумська область",
-          "Павлоградський район": "Дніпропетровська область",
-          "Первомайський район": "Миколаївська область",
-          "Перекопський район": "Автономна Республіка Крим",
-          "Подільський район": "Одеська область",
-          "Покровський район": "Донецька область",
-          "Пологівський район": "Запорізька область",
-          "Полтавський район": "Полтавська область",
-          "Прилуцький район": "Чернігівська область",
-          "Рахівський район": "Закарпатська область",
-          "Ровеньківський район": "Луганська область",
-          "Роздольненський район": "Автономна Республіка Крим",
-          "Роздільнянський район": "Одеська область",
-          "Роменський район": "Сумська область",
-          "Рівненський район": "Рівненська область",
-          "Сакський район": "Автономна Республіка Крим",
-          "Самарівський район": "Дніпропетровська область",
-          "Самбірський район": "Львівська область",
-          "Сарненський район": "Рівненська область",
-          "Сватівський район": "Луганська область",
-          "Синельниківський район": "Дніпропетровська область",
-          "Скадовський район": "Херсонська область",
-          "Совєтський район": "Автономна Республіка Крим",
-          "Старобільський район": "Луганська область",
-          "Стрийський район": "Львівська область",
-          "Сумський район": "Сумська область",
-          "Сіверськодонецький район": "Луганська область",
-          "Сімферопольський район": "Автономна Республіка Крим",
-          "Тернопільський район": "Тернопільська область",
-          "Тульчинський район": "Вінницька область",
-          "Тячівський район": "Закарпатська область",
-          "Ужгородський район": "Закарпатська область",
-          "Уманський район": "Черкаська область",
-          "Фастівський район": "Київська область",
-          "Феодосійський район": "Автономна Республіка Крим",
-          "Харківський район": "Харківська область",
-          "Херсонський район": "Херсонська область",
-          "Хмельницький район": "Хмельницька область",
-          "Хмільницький район": "Вінницька область",
-          "Хустський район": "Закарпатська область",
-          "Червоноградський район": "Львівська область",
-          "Черкаський район": "Черкаська область",
-          "Чернівецький район": "Чернівецька область",
-          "Чернігівський район": "Чернігівська область",
-          "Чорноморський район": "Автономна Республіка Крим",
-          "Чортківський район": "Тернопільська область",
-          "Чугуївський район": "Харківська область",
-          "Шепетівський район": "Хмельницька область",
-          "Шептицький район": "Львівська область",
-          "Шосткинський район": "Сумська область",
-          "Щастинський район": "Луганська область",
-          "Яворівський район": "Львівська область",
-          "Ялтинський район": "Автономна Республіка Крим",
-          "Яни Капу": "Автономна Республіка Крим",
-          "міський округ Алушта": "Автономна Республіка Крим",
-          "міський округ Керч": "Автономна Республіка Крим",
-          "міський округ Сімферополь": "Автономна Республіка Крим"
-        };
-        
-        // Check which oblasts have full-oblast alarms (State level)
         const alarmedOblasts = new Set();
         
-        // Normalize oblast names from API to our format
-        const OBLAST_NORMALIZE = {
-          "Донецька область": "Донецька область",
-          "Донецька": "Донецька область",
-          "Donetsk Oblast": "Донецька область",
-          "Луганська область": "Луганська область",
-          "Луганська": "Луганська область",
-          "Luhansk Oblast": "Луганська область",
-          "Харківська область": "Харківська область",
-          "Харківська": "Харківська область",
-          "Kharkiv Oblast": "Харківська область",
-          "Запорізька область": "Запорізька область",
-          "Запорізька": "Запорізька область",
-          "Zaporizhzhia Oblast": "Запорізька область",
-          "Херсонська область": "Херсонська область",
-          "Херсонська": "Херсонська область",
-          "Kherson Oblast": "Херсонська область",
-          "Дніпропетровська область": "Дніпропетровська область",
-          "Дніпропетровська": "Дніпропетровська область",
-          "Dnipropetrovsk Oblast": "Дніпропетровська область",
-          "Миколаївська область": "Миколаївська область",
-          "Миколаївська": "Миколаївська область",
-          "Одеська область": "Одеська область",
-          "Одеська": "Одеська область",
-          "Сумська область": "Сумська область",
-          "Сумська": "Сумська область",
-          "Чернігівська область": "Чернігівська область",
-          "Чернігівська": "Чернігівська область",
-          "Полтавська область": "Полтавська область",
-          "Полтавська": "Полтавська область",
-          "Київська область": "Київська область",
-          "Київська": "Київська область",
-          "Черкаська область": "Черкаська область",
-          "Черкаська": "Черкаська область",
-          "Кіровоградська область": "Кіровоградська область",
-          "Кіровоградська": "Кіровоградська область",
-          "Вінницька область": "Вінницька область",
-          "Вінницька": "Вінницька область",
-          "Житомирська область": "Житомирська область",
-          "Житомирська": "Житомирська область",
-          "Хмельницька область": "Хмельницька область",
-          "Хмельницька": "Хмельницька область",
-          "Тернопільська область": "Тернопільська область",
-          "Тернопільська": "Тернопільська область",
-          "Рівненська область": "Рівненська область",
-          "Рівненська": "Рівненська область",
-          "Волинська область": "Волинська область",
-          "Волинська": "Волинська область",
-          "Львівська область": "Львівська область",
-          "Львівська": "Львівська область",
-          "Івано-Франківська область": "Івано-Франківська область",
-          "Івано-Франківська": "Івано-Франківська область",
-          "Закарпатська область": "Закарпатська область",
-          "Закарпатська": "Закарпатська область",
-          "Чернівецька область": "Чернівецька область",
-          "Чернівецька": "Чернівецька область",
-          "Автономна Республіка Крим": "Автономна Республіка Крим",
-          "Крим": "Автономна Республіка Крим",
-          "м. Київ": "м. Київ",
-          "Київ": "м. Київ"
-        };
-        
-        states.forEach(s => {
-          if (s.regionName) {
-            // Add both original and normalized names
-            alarmedOblasts.add(s.regionName);
-            const normalized = OBLAST_NORMALIZE[s.regionName];
+        Object.keys(alarmRegions).forEach(regionName => {
+          if (alarmRegions[regionName]) {
+            alarmedOblasts.add(regionName);
+            const normalized = OBLAST_NORMALIZE[regionName];
             if (normalized) alarmedOblasts.add(normalized);
           }
         });
         
-        console.log('Alarmed oblasts:', Array.from(alarmedOblasts));
-        
-        // Debug: check Pokrovsk and Bakhmut specifically
-        console.log('alarmDistricts keys:', Object.keys(alarmDistricts));
-        
         districtAlarmLayer.setStyle(function(feature) {
           const districtName = feature.properties.name;
-          // Check if this district has direct alarm OR its oblast has alarm
           const districtOblast = DISTRICT_TO_OBLAST[districtName];
           const isAlarm = alarmDistricts[districtName] || (districtOblast && alarmedOblasts.has(districtOblast));
-          
-          // Debug for any district with alarm
-          if (isAlarm) {
-            console.log('ALARM:', districtName, '| inAlarmDistricts:', !!alarmDistricts[districtName], '| oblast:', districtOblast);
-          }
           
           return {
             fillColor: isAlarm ? '#b91c1c' : 'transparent',
             fillOpacity: isAlarm ? 1 : 0,
-            // Use same fill color for stroke to hide gaps between polygons
             color: isAlarm ? '#b91c1c' : 'transparent',
             weight: isAlarm ? 3 : 0,
             lineJoin: 'round',
@@ -1725,269 +622,121 @@
       }
     }
     
-    // Add city labels to map
     function addCityLabels() {
       if (!cityLabelsLayer) return;
       
       const zoom = map.getZoom();
-      const scale = Math.pow(2, zoom - 6) * 0.8; // Base scale at zoom 6
       
       CITIES.forEach(city => {
-        let baseFontSize = 12, fontWeight = '500', color = '#a0aec0';
-        let baseDotSize = 5, dotColor = '#a0aec0';
+        const sizeConfig = {
+          capital: { fontSize: 16, fontWeight: 700, dotSize: 8 },
+          major: { fontSize: 14, fontWeight: 600, dotSize: 6 },
+          city: { fontSize: 12, fontWeight: 500, dotSize: 4 }
+        };
+        const config = sizeConfig[city.size] || sizeConfig.city;
         
-        if (city.size === 'capital') {
-          baseFontSize = 14; fontWeight = '600'; color = '#ffffff';
-          baseDotSize = 6; dotColor = '#ffffff';
-        } else if (city.size === 'major') {
-          baseFontSize = 13; fontWeight = '500'; color = '#ffffff';
-          baseDotSize = 5; dotColor = '#ffffff';
-        } else if (city.size === 'city') {
-          baseFontSize = 11; fontWeight = '400'; color = '#a0aec0';
-          baseDotSize = 4; dotColor = '#a0aec0';
-        }
+        if (city.size === 'city' && zoom < 6) return;
         
-        const fontSize = Math.max(10, Math.min(18, baseFontSize * scale));
-        const dotSize = Math.max(3, Math.min(10, baseDotSize * scale));
-        
-        // Add city dot marker
-        const dotIcon = L.divIcon({
-          className: 'city-dot',
-          html: '<div style="width:' + dotSize + 'px;height:' + dotSize + 'px;background:' + dotColor + ';border-radius:50%;"></div>',
-          iconSize: [dotSize, dotSize],
-          iconAnchor: [dotSize/2, dotSize/2]
-        });
-        
-        L.marker([city.lat, city.lng], { icon: dotIcon, interactive: false }).addTo(cityLabelsLayer);
-        
-        // Add city label (offset from dot) - fixed anchor for proper alignment
-        const labelOffset = dotSize + 4; // offset below dot
         const labelIcon = L.divIcon({
           className: 'city-label',
-          html: '<div style="font-size:' + fontSize + 'px;font-weight:' + fontWeight + ';color:' + color + ';text-shadow:2px 2px 4px rgba(0,0,0,0.9),-2px -2px 4px rgba(0,0,0,0.9);white-space:nowrap;text-align:center;">' + city.name + '</div>',
+          html: `<div style="
+            color: rgba(255,255,255,0.9);
+            font-size: ${config.fontSize}px;
+            font-weight: ${config.fontWeight};
+            text-shadow: 0 1px 3px rgba(0,0,0,0.8), 0 0 10px rgba(0,0,0,0.5);
+            white-space: nowrap;
+            pointer-events: none;
+          ">${city.name}</div>`,
           iconSize: [0, 0],
-          iconAnchor: [0, -labelOffset]
+          iconAnchor: [0, -10]
         });
         
-        L.marker([city.lat, city.lng], { icon: labelIcon, interactive: false }).addTo(cityLabelsLayer);
+        L.marker([city.lat, city.lng], { icon: labelIcon, interactive: false })
+          .addTo(cityLabelsLayer);
+        
+        const dotIcon = L.divIcon({
+          className: 'city-dot',
+          html: `<div style="
+            width: ${config.dotSize}px;
+            height: ${config.dotSize}px;
+            background: rgba(255,255,255,0.9);
+            border-radius: 50%;
+            box-shadow: 0 0 6px rgba(255,255,255,0.5);
+          "></div>`,
+          iconSize: [config.dotSize, config.dotSize],
+          iconAnchor: [config.dotSize/2, config.dotSize/2]
+        });
+        
+        L.marker([city.lat, city.lng], { icon: dotIcon, interactive: false })
+          .addTo(cityLabelsLayer);
       });
-      console.log('Added', CITIES.length, 'city labels with dots');
     }
     
     function updateCityLabelsSize() {
-      if (!cityLabelsLayer) return;
       cityLabelsLayer.clearLayers();
       addCityLabels();
     }
     
-    // Create Leaflet icon for marker
     function createLeafletIcon(iconUrl, iconType) {
-      const size = iconType === 'rocket' ? 42 : iconType === 'shahed' ? 40 : 36;
+      const sizeMap = {
+        shahed: [40, 40],
+        rocket: [42, 42],
+        default: [36, 36]
+      };
+      const size = sizeMap[iconType] || sizeMap.default;
+      
       return L.divIcon({
         className: `threat-marker-icon ${iconType}`,
-        html: `<img src="${iconUrl}" alt="threat" style="width:${size}px;height:${size}px;">`,
-        iconSize: [size, size],
-        iconAnchor: [size/2, size/2],
-        popupAnchor: [0, -size/2]
+        html: `<img src="${iconUrl}" style="width: ${size[0]}px; height: ${size[1]}px;">`,
+        iconSize: size,
+        iconAnchor: [size[0]/2, size[1]/2],
+        popupAnchor: [0, -size[1]/2]
       });
     }
     
-    // Update markers on Leaflet map
     function updateMarkers(points) {
-      if (!map || !markerLayer) return;
-      
-      // Clear existing markers
+      if (!markerLayer) return;
       markerLayer.clearLayers();
       
       points.forEach((point) => {
         if (!point.lat || !point.lng) return;
         
-        // Check bounds
         if (point.lat < UA_BOUNDS.south || point.lat > UA_BOUNDS.north ||
             point.lng < UA_BOUNDS.west || point.lng > UA_BOUNDS.east) {
           return;
         }
         
-        // Get icon
         const icon = getPngIcon(point.threat_type || point.type);
         const leafletIcon = createLeafletIcon(icon.url, icon.type);
         
-        // Create marker at exact lat/lng
         const marker = L.marker([point.lat, point.lng], { icon: leafletIcon });
         
-        // Add popup
         const popupContent = `
           <div class="popup-title">${point.place || 'Загроза'}</div>
           <div class="popup-text">${point.text || ''}</div>
           <div class="popup-time">${point.date || ''}</div>
         `;
         marker.bindPopup(popupContent);
-        
-        // Add to layer
         marker.addTo(markerLayer);
       });
-      
-      console.log('Updated', points.length, 'markers on Leaflet map');
     }
     
-    // Demo threats data
-    const DEMO_THREATS = [
-      { lat: 49.0164, lng: 36.3097, place: 'Лозова', text: 'Загроза застосування БПЛА', threat_type: 'shahed', oblast: 'Харківська' },
-      { lat: 48.5161, lng: 34.5333, place: 'Тернівка', text: 'Загроза застосування БПЛА', threat_type: 'shahed', oblast: 'Дніпропетровська' },
-      { lat: 48.4564, lng: 35.8478, place: 'Петропавлівка', text: 'Загроза застосування БПЛА', threat_type: 'shahed', oblast: 'Дніпропетровська' },
-      { lat: 50.0750, lng: 31.4667, place: 'Переяслав', text: 'Загроза застосування БПЛА', threat_type: 'shahed', oblast: 'Київська' },
-      { lat: 49.0378, lng: 36.9956, place: 'Барвінкове', text: '2х БПЛА - Загроза застосування', threat_type: 'shahed', oblast: 'Харківська' },
-      { lat: 47.0764, lng: 32.7978, place: 'Снігурівка', text: 'Загроза застосування БПЛА', threat_type: 'shahed', oblast: 'Миколаївська' },
-      { lat: 49.1981, lng: 37.2553, place: 'Ізюм', text: 'Загроза застосування БПЛА', threat_type: 'shahed', oblast: 'Харківська' },
-      { lat: 46.6, lng: 30.05, place: 'Доброслав', text: '2х БПЛА - Загроза застосування', threat_type: 'shahed', oblast: 'Одеська' },
-      { lat: 46.6354, lng: 32.6169, place: 'Херсон', text: 'Загроза обстрілу! Перейдіть в укриття!', threat_type: 'artillery', oblast: 'Херсонська' },
-      { lat: 46.4825, lng: 30.7233, place: 'Одеса', text: 'ЗМІ повідомляють про вибухи', threat_type: 'vibuh', oblast: 'Одеська' },
-    ];
-    
-    // Toggle demo mode
-    let demoMode = false;
-    
-    function toggleDemoMode() {
-      demoMode = !demoMode;
-      const btn = document.getElementById('demoBtn');
-      if (demoMode) {
-        updateMarkers(DEMO_THREATS);
-        updateEventsList(DEMO_THREATS);
-        if (btn) btn.style.background = 'var(--danger)';
-      } else {
-        if (markerLayer) markerLayer.clearLayers();
-        fetchData();
-        if (btn) btn.style.background = '';
-      }
-    }
-    
-    // ===== SIDEBAR FUNCTIONS =====
-    function toggleSidebar() {
-      sidebarOpen = !sidebarOpen;
-      const sidebar = document.getElementById('sidebar');
-      const btn = document.querySelector('.sidebar-toggle-btn i');
-      
-      if (sidebarOpen) {
-        sidebar.classList.remove('collapsed');
-        btn.textContent = 'chevron_left';
-      } else {
-        sidebar.classList.add('collapsed');
-        btn.textContent = 'chevron_right';
-      }
-    }
-    
-    function toggleTheme() {
-      document.querySelector('.theme-toggle').classList.toggle('light');
-    }
-    
-    function showStats() {
-      window.open('/analytics', '_blank');
-    }
-    
-    function updateTime() {
-      const now = new Date();
-      const options = { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' };
-      document.getElementById('updateTime').textContent = now.toLocaleDateString('uk-UA', options);
-    }
-    
-    // Update events list
-    function updateEventsList(points) {
-      const list = document.getElementById('eventsList');
-      if (!list) return;
-      
-      if (!points || !points.length) {
-        list.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text2);">Подій не знайдено</div>';
-        return;
-      }
-      
-      // Count threats
-      let airCount = 0, artilleryCount = 0, shahedCount = 0;
-      
-      points.forEach(p => {
-        const tt = (p.threat_type || '').toLowerCase();
-        if (tt.includes('shahed') || tt.includes('шахед')) shahedCount++;
-        else if (tt.includes('artillery') || tt.includes('арт')) artilleryCount++;
-        else if (tt.includes('avia') || tt.includes('авіа') || tt.includes('air')) airCount++;
-      });
-      
-      // Update counters
-      document.getElementById('countAir').textContent = airCount;
-      document.getElementById('countArtillery').textContent = artilleryCount;
-      document.getElementById('sidebarAir').textContent = airCount;
-      document.getElementById('sidebarArtillery').textContent = artilleryCount;
-      document.getElementById('sidebarShahed').textContent = shahedCount;
-      
-      // Generate events HTML
-      list.innerHTML = points.slice(0, 50).map(ev => {
-        const threatType = ev.threat_type || 'default';
-        const icon = ICONS[threatType] || ICONS.default;
-        const place = ev.place || 'Україна';
-        const text = ev.text || '';
-        const time = ev.date || '';
-        
-        // Type label
-        const typeLabels = {
-          'shahed': 'БПЛА Shahed',
-          'rocket': 'Балістична/крилата ракета',
-          'avia': 'Повітряна тривога',
-          'artillery': 'Загроза артобстрілу',
-          'fpv': 'FPV-дрон',
-          'default': 'Загроза'
-        };
-        const typeLabel = typeLabels[threatType] || typeLabels.default;
-        
-        return `
-          <div class="event-item">
-            <span class="event-icon">${icon}</span>
-            <div class="event-content">
-              <div class="event-place">${place}</div>
-              <div class="event-type">${typeLabel}</div>
-              <div class="event-time">${time}</div>
-            </div>
-          </div>
-        `;
-      }).join('');
-    }
-    
-    // Fetch data from API
     async function fetchData() {
       try {
         const response = await fetch(API_URL);
         if (!response.ok) throw new Error('API error');
         const data = await response.json();
-        // API returns { tracks: [...], events: [...] }
         currentData = data.tracks || data.points || data || [];
-        console.log('Fetched data:', currentData.length, 'tracks');
-        
         updateMarkers(currentData);
-        updateEventsList(currentData);
-        updateTime();
       } catch (error) {
         console.error('Error fetching data:', error);
       }
     }
     
-    // ===== INIT =====
     document.addEventListener('DOMContentLoaded', () => {
-      // Initialize Leaflet map
       initMap();
-      
-      updateTime();
-      
-      // Load demo data initially
-      if (demoMode) {
-        updateMarkers(DEMO_THREATS);
-        updateEventsList(DEMO_THREATS);
-      } else {
-        fetchData();
-      }
-      
-      // Regular data updates (only if not in demo mode)
-      setInterval(() => {
-        if (!demoMode) {
-          fetchData();
-        }
-      }, UPDATE_INTERVAL);
+      fetchData();
+      setInterval(fetchData, UPDATE_INTERVAL);
     });
   </script>
 </body>
