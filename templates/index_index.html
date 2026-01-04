@@ -1726,9 +1726,8 @@
     const MARKERS_UPDATE_INTERVAL = 10000; // 10 seconds for threat markers
     const MAX_RETRIES = 3;
     
-    // Get timeRange from URL or use default (same as index.html)
+    // timeRange is controlled by server (MONITOR_PERIOD_MINUTES in admin)
     const urlParams = new URLSearchParams(window.location.search);
-    const TIME_RANGE = parseInt(urlParams.get('timeRange')) || 40;
     
     // SVG map bounds (Ukraine approximate bounds)
     const MAP_BOUNDS = {
@@ -2054,7 +2053,8 @@
     // Fetch threat markers from /data endpoint
     async function fetchThreatMarkers() {
       try {
-        const response = await fetch(`/data?timeRange=${TIME_RANGE}`);
+        // Don't pass timeRange - server uses MONITOR_PERIOD_MINUTES from admin
+        const response = await fetch('/data');
         if (!response.ok) return;
         
         const data = await response.json();
