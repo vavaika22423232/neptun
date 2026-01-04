@@ -70,15 +70,22 @@
     /* Container for SVG layers */
     .svg-container {
       position: absolute;
-      /* Will be positioned via JS for pan/zoom */
-      filter: drop-shadow(0 0 40px rgba(0, 212, 255, 0.15));
-      /* High quality vector rendering */
+      /* GPU acceleration */
+      will-change: transform;
+      transform-origin: center center;
       -webkit-backface-visibility: hidden;
       backface-visibility: hidden;
     }
     
+    /* Only show shadow on desktop - too heavy for mobile */
+    @media (min-width: 769px) {
+      .svg-container {
+        filter: drop-shadow(0 0 40px rgba(0, 212, 255, 0.15));
+      }
+    }
+    
     .svg-container.animating {
-      transition: width 0.2s ease-out, height 0.2s ease-out, left 0.2s ease-out, top 0.2s ease-out;
+      transition: transform 0.2s ease-out;
     }
     
     .svg-container svg {
@@ -1161,7 +1168,7 @@
       summary.innerHTML = html;
     }
     
-    // Zoom functions - using size-based zoom for vector crispness
+    // Zoom functions
     const BASE_WIDTH = window.innerWidth * 0.9;
     const ASPECT_RATIO = 260 / 175;
     let containerWidth = Math.min(BASE_WIDTH, 1400);
@@ -1193,27 +1200,42 @@
       const wrapper = document.getElementById('map-wrapper');
       if (!container || !wrapper) return;
       
-      if (animate) {
+      if (animate && !isAndroid) {
         container.classList.add('animating');
         setTimeout(() => container.classList.remove('animating'), 200);
       } else {
         container.classList.remove('animating');
       }
       
-      // Calculate new dimensions
-      const newWidth = containerWidth * currentScale;
-      const newHeight = containerHeight * currentScale;
-      
-      // Center position with offset
-      const wrapperRect = wrapper.getBoundingClientRect();
-      const centerX = (wrapperRect.width - newWidth) / 2 + offsetX;
-      const centerY = (wrapperRect.height - newHeight) / 2 + offsetY;
-      
-      // Apply size (vector stays crisp!)
-      container.style.width = newWidth + 'px';
-      container.style.height = newHeight + 'px';
-      container.style.left = centerX + 'px';
-      container.style.top = centerY + 'px';
+      // Use CSS transform for Android (GPU accelerated, no reflow)
+      // Use size-based for desktop (crisper vectors)
+      if (isAndroid) {
+        // Set fixed size once, then use transform
+        if (!container.dataset.initialized) {
+          container.style.width = containerWidth + 'px';
+          container.style.height = containerHeight + 'px';
+          container.style.left = '50%';
+          container.style.top = '50%';
+          container.style.marginLeft = (-containerWidth / 2) + 'px';
+          container.style.marginTop = (-containerHeight / 2) + 'px';
+          container.dataset.initialized = 'true';
+        }
+        // GPU accelerated transform - no reflow!
+        container.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${currentScale})`;
+      } else {
+        // Desktop: size-based zoom for vector crispness
+        const newWidth = containerWidth * currentScale;
+        const newHeight = containerHeight * currentScale;
+        const wrapperRect = wrapper.getBoundingClientRect();
+        const centerX = (wrapperRect.width - newWidth) / 2 + offsetX;
+        const centerY = (wrapperRect.height - newHeight) / 2 + offsetY;
+        
+        container.style.width = newWidth + 'px';
+        container.style.height = newHeight + 'px';
+        container.style.left = centerX + 'px';
+        container.style.top = centerY + 'px';
+        container.style.transform = '';
+      }
     }
     
     // Legacy transform function for compatibility
