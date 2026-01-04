@@ -2,11 +2,12 @@
 <html lang="uk">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes, viewport-fit=cover, shrink-to-fit=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#0a0e17">
+  <meta name="format-detection" content="telephone=no">
   <title>Карта тривог України | NEPTUN</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;600&display=swap" rel="stylesheet">
@@ -74,6 +75,10 @@
       filter: drop-shadow(0 0 40px rgba(0, 212, 255, 0.15));
       will-change: transform;
       transform-origin: center center;
+      /* High quality rendering */
+      -webkit-backface-visibility: hidden;
+      backface-visibility: hidden;
+      -webkit-transform: translateZ(0);
     }
     
     .svg-container.animating {
@@ -86,6 +91,11 @@
       left: 0;
       width: 100%;
       height: 100%;
+      /* Crisp rendering for sharp edges on mobile */
+      shape-rendering: geometricPrecision;
+      text-rendering: geometricPrecision;
+      image-rendering: -webkit-optimize-contrast;
+      -webkit-font-smoothing: antialiased;
     }
     
     /* States (oblasts) layer */
@@ -608,16 +618,31 @@
         min-height: 44px;
       }
       
-      /* Disable hover effects */
+      /* Disable hover effects completely on touch */
       .zoom-btn:hover {
         transform: none;
         box-shadow: none;
       }
       
-      #states-layer .stateObject:hover,
+      /* Keep normal state colors on touch - don't change fill */
+      #states-layer .stateObject:hover {
+        fill: #162236;
+        stroke-opacity: 0.3;
+      }
+      
+      #states-layer .stateObject.alarm:hover {
+        fill: #7f1d1d;
+        stroke-opacity: 0.8;
+      }
+      
       #districts-layer .dist:hover {
-        fill: inherit;
-        stroke: inherit;
+        fill: transparent;
+        stroke: rgba(0, 212, 255, 0.15);
+      }
+      
+      #districts-layer .dist.alarm:hover {
+        fill: #dc2626;
+        stroke: #ff6b6b;
       }
       
       /* Prevent text selection on long press */
