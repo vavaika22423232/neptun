@@ -8,6 +8,8 @@
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <!-- TopoJSON client for shared boundaries -->
+  <script src="https://unpkg.com/topojson-client@3"></script>
   
   <style>
     * {
@@ -483,9 +485,13 @@
         if (!oblastResponse.ok) throw new Error('Failed to load oblasts GeoJSON');
         geojsonData = await oblastResponse.json();
         
-        const districtResponse = await fetch('/static/ukraine_raions_2020.geojson?v=2');
-        if (!districtResponse.ok) throw new Error('Failed to load districts GeoJSON');
-        districtsGeojsonData = await districtResponse.json();
+        // Load TopoJSON for districts (shared boundaries = no gaps)
+        const districtResponse = await fetch('/static/ukraine_raions_2020.topojson?v=3');
+        if (!districtResponse.ok) throw new Error('Failed to load districts TopoJSON');
+        const topoData = await districtResponse.json();
+        // Convert TopoJSON to GeoJSON
+        districtsGeojsonData = topojson.feature(topoData, topoData.objects.districts);
+        console.log('Districts loaded from TopoJSON:', districtsGeojsonData.features?.length);
         
         alarmLayer = L.geoJSON(geojsonData, {
           style: function(feature) {
@@ -514,10 +520,9 @@
             return {
               fillColor: isAlarm ? '#b91c1c' : 'transparent',
               fillOpacity: isAlarm ? 1 : 0,
-              color: isAlarm ? '#b91c1c' : 'transparent',
-              weight: isAlarm ? 3 : 0,
-              lineJoin: 'round',
-              lineCap: 'round'
+              // No stroke - TopoJSON handles shared boundaries
+              color: 'transparent',
+              weight: 0
             };
           },
           onEachFeature: function(feature, layer) {
@@ -613,10 +618,9 @@
           return {
             fillColor: isAlarm ? '#b91c1c' : 'transparent',
             fillOpacity: isAlarm ? 1 : 0,
-            color: isAlarm ? '#b91c1c' : 'transparent',
-            weight: isAlarm ? 3 : 0,
-            lineJoin: 'round',
-            lineCap: 'round'
+            // No stroke - TopoJSON shared boundaries prevent gaps
+            color: 'transparent',
+            weight: 0
           };
         });
       }
