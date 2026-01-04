@@ -14939,8 +14939,8 @@ def index():
 
 @app.route('/map-only')
 def map_only():
-    """Map-only view for embedding in mobile apps (iOS/Android WebView)"""
-    response = render_template('map_only.html')
+    """Map-only view - new SVG map for embedding in mobile apps (iOS/Android WebView)"""
+    response = render_template('index_map.html')
     resp = app.response_class(response)
     resp.headers['Cache-Control'] = 'public, max-age=300'  # 5 minutes cache
     resp.headers['X-Frame-Options'] = 'ALLOWALL'  # Allow embedding in iframes/WebView
