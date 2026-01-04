@@ -840,62 +840,6 @@
       'alarm_cancel': '✅ Відбій'
     };
     
-    // District ID to State ID mapping (for counting oblasts with alarms)
-    const DISTRICT_TO_STATE = {
-      // Чернігівська область (State ID: 25)
-      '140': '25', '141': '25', '142': '25', '143': '25', '144': '25',
-      // Донецька область (State ID: 8)
-      '49': '8', '50': '8', '51': '8', '52': '8', '53': '8', '54': '8', '55': '8', '56': '8',
-      // Запорізька область (State ID: 10)
-      '145': '10', '146': '10', '147': '10', '148': '10', '149': '10',
-      // Луганська область (State ID: 16)
-      '89': '16', '90': '16', '91': '16', '92': '16',
-      // Харківська область (State ID: 22)
-      '125': '22', '126': '22', '127': '22', '128': '22', '129': '22', '130': '22', '131': '22',
-      // Дніпропетровська область (State ID: 7)
-      '44': '7', '45': '7', '46': '7', '47': '7', '48': '7',
-      // Херсонська область (State ID: 23)
-      '132': '23', '133': '23', '134': '23', '135': '23', '136': '23',
-      // Миколаївська область (State ID: 17)
-      '93': '17', '94': '17', '95': '17', '96': '17',
-      // Одеська область (State ID: 18)
-      '97': '18', '98': '18', '99': '18', '100': '18', '101': '18', '102': '18', '103': '18',
-      // Сумська область (State ID: 21)
-      '118': '21', '119': '21', '120': '21', '121': '21', '122': '21', '123': '21',
-      // Київська область (State ID: 14)
-      '77': '14', '78': '14', '79': '14', '80': '14', '81': '14', '82': '14',
-      // Полтавська область (State ID: 19)
-      '104': '19', '105': '19', '106': '19', '107': '19',
-      // Вінницька область (State ID: 2)
-      '27': '2', '28': '2', '29': '2', '30': '2', '31': '2', '32': '2',
-      // Черкаська область (State ID: 24)
-      '137': '24', '138': '24', '139': '24',
-      // Кіровоградська область (State ID: 15)
-      '83': '15', '84': '15', '85': '15', '86': '15',
-      // Житомирська область (State ID: 9)
-      '57': '9', '58': '9', '59': '9', '60': '9',
-      // Хмельницька область (State ID: 4)
-      '33': '4', '34': '4', '35': '4', '36': '4',
-      // Рівненська область (State ID: 20)
-      '108': '20', '109': '20', '110': '20', '111': '20',
-      // Волинська область (State ID: 3)
-      '37': '3', '38': '3', '39': '3', '40': '3',
-      // Львівська область (State ID: 5)
-      '61': '5', '62': '5', '63': '5', '64': '5', '65': '5', '66': '5', '67': '5',
-      // Івано-Франківська область (State ID: 11)
-      '68': '11', '69': '11', '70': '11', '71': '11', '72': '11', '73': '11',
-      // Тернопільська область (State ID: 6)
-      '41': '6', '42': '6', '43': '6',
-      // Закарпатська область (State ID: 12)
-      '74': '12', '75': '12', '76': '12', '124': '12',
-      // Чернівецька область (State ID: 26)
-      '150': '26', '151': '26', '152': '26',
-      // м. Київ (State ID: 13)
-      '87': '13', '88': '13',
-      // Крим (State ID: 9999)
-      '112': '9999', '113': '9999', '114': '9999', '115': '9999', '116': '9999', '117': '9999'
-    };
-    
     // Cache buster version - change this to force reload SVG files
     const CACHE_VERSION = 'v4';
     
@@ -978,7 +922,7 @@
         
         // Track alarm counts
         let districtAlarmCount = 0;
-        const statesWithAlarm = new Set(); // Track unique states with alarm
+        let stateAlarmCount = 0;
         
         // Track threat types per state
         const stateThreatTypes = {};
@@ -992,11 +936,12 @@
             // Determine threat type from alerts
             region.activeAlerts.forEach(alert => {
               const alertType = alert.type || 'UNKNOWN';
+              // Map to state ID for icon display
               let stateId = regionId;
-              
-              // If it's a district, find parent state
               if (regionType === 'District') {
-                stateId = DISTRICT_TO_STATE[regionId] || regionId;
+                // Districts belong to states - get parent state
+                // For now, show icon if district has alarm
+                // The API should provide parentId, but we'll use state from regionId pattern
               }
               
               // Store threat type for this state
@@ -1012,7 +957,7 @@
               stateElements.forEach(el => {
                 el.classList.add('alarm');
               });
-              statesWithAlarm.add(regionId);
+              stateAlarmCount++;
               
               // Show drone icon for this state if applicable
               showThreatIcons(regionId, region.activeAlerts);
@@ -1023,25 +968,11 @@
                 el.classList.add('alarm');
               });
               districtAlarmCount++;
-              
-              // Also mark the parent state as having alarm
-              const parentStateId = DISTRICT_TO_STATE[regionId];
-              if (parentStateId) {
-                statesWithAlarm.add(parentStateId);
-                // Color the parent state too
-                const stateElements = document.querySelectorAll(`#states-layer [id="${parentStateId}"]`);
-                stateElements.forEach(el => {
-                  el.classList.add('alarm');
-                });
-                // Show icons for parent state
-                showThreatIcons(parentStateId, region.activeAlerts);
-              }
             }
           }
         });
         
-        // Update status panel - show unique STATES count (oblasts with any alarm)
-        const stateAlarmCount = statesWithAlarm.size;
+        // Update status panel - show only STATE alarms count (oblasts with alarm)
         const countEl = document.getElementById('alarm-count');
         countEl.textContent = stateAlarmCount;
         countEl.className = stateAlarmCount > 0 ? 'alarm-count' : 'alarm-count safe';
@@ -1053,7 +984,7 @@
         
         document.getElementById('api-status').textContent = '';
         
-        console.log(`Alarms: ${stateAlarmCount} oblasts (${Array.from(statesWithAlarm).join(',')}), ${districtAlarmCount} districts`);
+        console.log(`Alarms: ${stateAlarmCount} oblasts, ${districtAlarmCount} districts`);
         
       } catch (error) {
         consecutiveFailures++;
