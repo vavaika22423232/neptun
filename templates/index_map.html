@@ -648,6 +648,39 @@
       }
     }
     
+    /* Android-specific optimizations */
+    .android-device .svg-container {
+      /* Disable transitions completely on Android */
+      transition: none !important;
+    }
+    
+    .android-device .svg-container.animating {
+      transition: none !important;
+    }
+    
+    .android-device #states-layer .stateObject,
+    .android-device #districts-layer .dist {
+      /* Disable all transitions on Android */
+      transition: none !important;
+    }
+    
+    .android-device #states-layer .stateObject.alarm,
+    .android-device #districts-layer .dist.alarm {
+      /* Disable pulse animations on Android */
+      animation: none !important;
+    }
+    
+    .android-device .threat-marker {
+      /* Disable marker pulse on Android */
+      animation: none !important;
+      filter: drop-shadow(0 0 4px rgba(255, 100, 100, 0.6));
+    }
+    
+    .android-device #map-container::before {
+      /* Disable background grid on Android */
+      display: none;
+    }
+    
     /* Safe area for notched phones */
     @supports (padding: max(0px)) {
       .status-panel {
@@ -727,6 +760,13 @@
     let lastSuccessfulFetch = null;
     let consecutiveFailures = 0;
     let activeTooltip = null;
+    
+    // Android detection for performance optimizations
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    if (isAndroid) {
+      document.body.classList.add('android-device');
+      console.log('Android detected - applying performance optimizations');
+    }
     
     // Icon mapping for threat types
     const THREAT_ICONS = {
@@ -1263,7 +1303,18 @@
         }
       }, { passive: false });
       
+      // Throttle for Android performance
+      let lastMoveTime = 0;
+      const THROTTLE_MS = isAndroid ? 32 : 16; // ~30fps on Android, 60fps elsewhere
+      
       wrapper.addEventListener('touchmove', (e) => {
+        const now = Date.now();
+        if (now - lastMoveTime < THROTTLE_MS) {
+          e.preventDefault();
+          return;
+        }
+        lastMoveTime = now;
+        
         if (e.touches.length === 1 && isDragging) {
           // Single touch drag
           e.preventDefault();
@@ -1279,7 +1330,8 @@
             const scale = newDistance / lastTouchDistance;
             const newScale = Math.min(Math.max(currentScale * scale, 0.5), 5);
             
-            if (newScale !== currentScale) {
+            // Only update if change is significant (reduces redraws)
+            if (Math.abs(newScale - currentScale) > 0.02) {
               currentScale = newScale;
               updateZoom();
             }
