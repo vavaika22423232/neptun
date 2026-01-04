@@ -1175,7 +1175,7 @@
         console.log('Oblasts GeoJSON loaded:', geojsonData.features?.length, 'features');
         
         // Load GeoJSON for Ukraine districts (raions 2020)
-        const districtResponse = await fetch('/static/ukraine_raions_2020.geojson');
+        const districtResponse = await fetch('/static/ukraine_raions_2020.geojson?v=2');
         if (!districtResponse.ok) throw new Error('Failed to load districts GeoJSON');
         districtsGeojsonData = await districtResponse.json();
         console.log('Districts GeoJSON loaded:', districtsGeojsonData.features?.length, 'features');
