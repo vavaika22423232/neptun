@@ -362,6 +362,53 @@
       margin-top: 4px;
     }
 
+    /* Trajectory lines layer */
+    #trajectories-layer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 9;
+      pointer-events: none;
+      overflow: visible;
+    }
+    
+    .trajectory-line {
+      position: absolute;
+      pointer-events: none;
+      z-index: 9;
+    }
+    
+    .trajectory-line svg {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+    
+    .trajectory-line line {
+      stroke: #f97316;
+      stroke-width: 2;
+      stroke-dasharray: 6 3;
+      stroke-linecap: round;
+      opacity: 0.85;
+      filter: drop-shadow(0 0 4px rgba(249, 115, 22, 0.6));
+    }
+    
+    .trajectory-arrow {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      color: #f97316;
+      font-size: 14px;
+      font-weight: bold;
+      text-shadow: 0 0 6px rgba(249, 115, 22, 0.8);
+      pointer-events: none;
+      z-index: 10;
+    }
+    
     /* Threat markers layer */
     #markers-layer {
       position: absolute;
@@ -1397,6 +1444,8 @@
     @media (max-width: 768px) {
       .navbar {
         padding: 0.5rem 0.8rem;
+        flex-wrap: wrap;
+        gap: 0.5rem;
       }
       
       .logo-text {
@@ -1405,7 +1454,19 @@
       }
       
       .nav-links {
-        display: none;
+        order: 3;
+        width: 100%;
+        justify-content: center;
+        gap: 0.2rem;
+      }
+      
+      .nav-links a {
+        padding: 0.4rem 0.6rem;
+        font-size: 0.7rem;
+      }
+      
+      .nav-links a i {
+        font-size: 0.9rem;
       }
       
       .live-users {
@@ -1427,24 +1488,27 @@
       }
       
       .tg-banner {
-        bottom: auto;
-        top: 60px;
-        left: 10px;
-        right: 10px;
+        position: static;
+        margin: 55px 0 0 0;
+        left: 0;
+        right: 0;
         max-width: none;
-        padding: 0.7rem 0.9rem;
-        border-radius: 16px;
+        padding: 0.6rem 0.8rem;
+        border-radius: 0;
+        border-left: none;
+        border-right: none;
+        border-top: none;
       }
       
       .tg-banner-icon {
-        width: 38px;
-        height: 38px;
-        padding: 8px;
-        border-radius: 10px;
+        width: 32px;
+        height: 32px;
+        padding: 6px;
+        border-radius: 8px;
       }
       
       .tg-banner-title {
-        font-size: 0.85rem;
+        font-size: 0.75rem;
       }
       
       .tg-banner-desc {
@@ -1452,16 +1516,17 @@
       }
       
       .tg-banner-btn {
-        padding: 0.5rem 0.8rem;
-        font-size: 0.7rem;
-        border-radius: 10px;
+        padding: 0.4rem 0.6rem;
+        font-size: 0.65rem;
+        border-radius: 8px;
       }
       
       .tg-banner-close {
-        width: 24px;
-        height: 24px;
-        top: -8px;
-        right: -8px;
+        display: none !important;
+      }
+      
+      .tg-banner.hidden {
+        display: flex !important;
       }
       
       .disclaimer-bar {
@@ -1479,6 +1544,13 @@
     /* Adjust map container for navbar */
     #map-container {
       padding-top: 55px;
+    }
+    
+    /* On mobile, tg-banner is static so no extra padding needed */
+    @media (max-width: 768px) {
+      #map-container {
+        padding-top: 0;
+      }
     }
     
     /* Desktop status-panel position (below navbar) */
@@ -1592,6 +1664,8 @@
         <div id="districts-layer"></div>
         <!-- Names SVG will be loaded here -->
         <div id="names-layer"></div>
+        <!-- Trajectory lines layer -->
+        <div id="trajectories-layer"></div>
         <!-- Threat markers layer -->
         <div id="markers-layer"></div>
       </div>
@@ -2018,6 +2092,9 @@
           markersLayer.appendChild(markerEl);
         });
         
+        // Render trajectory lines
+        renderTrajectories(markers);
+        
         // Update markers summary
         updateMarkersSummary(markerCounts);
         
@@ -2025,6 +2102,72 @@
         
       } catch (error) {
         console.error('Error fetching threat markers:', error);
+      }
+    }
+    
+    // Render trajectory lines from markers with trajectory data
+    function renderTrajectories(markers) {
+      const trajLayer = document.getElementById('trajectories-layer');
+      if (!trajLayer) return;
+      
+      // Clear existing trajectories
+      trajLayer.innerHTML = '';
+      
+      markers.forEach(marker => {
+        const traj = marker.trajectory;
+        if (!traj || !traj.start || !traj.end) return;
+        
+        const startLat = parseFloat(traj.start[0]);
+        const startLng = parseFloat(traj.start[1]);
+        const endLat = parseFloat(traj.end[0]);
+        const endLng = parseFloat(traj.end[1]);
+        
+        if (isNaN(startLat) || isNaN(startLng) || isNaN(endLat) || isNaN(endLng)) return;
+        
+        // Convert to SVG percent coordinates
+        const startPos = latLngToSvgPercent(startLat, startLng);
+        const endPos = latLngToSvgPercent(endLat, endLng);
+        
+        // Create SVG line
+        const svgNS = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(svgNS, 'svg');
+        svg.setAttribute('class', 'trajectory-svg');
+        svg.style.position = 'absolute';
+        svg.style.top = '0';
+        svg.style.left = '0';
+        svg.style.width = '100%';
+        svg.style.height = '100%';
+        svg.style.overflow = 'visible';
+        svg.style.pointerEvents = 'none';
+        
+        const line = document.createElementNS(svgNS, 'line');
+        line.setAttribute('x1', `${startPos.x}%`);
+        line.setAttribute('y1', `${startPos.y}%`);
+        line.setAttribute('x2', `${endPos.x}%`);
+        line.setAttribute('y2', `${endPos.y}%`);
+        line.setAttribute('stroke', '#f97316');
+        line.setAttribute('stroke-width', '2');
+        line.setAttribute('stroke-dasharray', '6 3');
+        line.setAttribute('stroke-linecap', 'round');
+        line.style.filter = 'drop-shadow(0 0 4px rgba(249, 115, 22, 0.6))';
+        
+        svg.appendChild(line);
+        trajLayer.appendChild(svg);
+        
+        // Add arrow at end point
+        const angle = Math.atan2(endPos.y - startPos.y, endPos.x - startPos.x) * 180 / Math.PI;
+        const arrow = document.createElement('div');
+        arrow.className = 'trajectory-arrow';
+        arrow.style.left = `${endPos.x}%`;
+        arrow.style.top = `${endPos.y}%`;
+        arrow.style.transform = `translate(-50%, -50%) rotate(${angle + 90}deg)`;
+        arrow.innerHTML = '▲';
+        trajLayer.appendChild(arrow);
+      });
+      
+      const trajCount = trajLayer.querySelectorAll('.trajectory-svg').length;
+      if (trajCount > 0) {
+        console.log(`Rendered ${trajCount} trajectory lines`);
       }
     }
     
