@@ -703,7 +703,6 @@ def alarm_all():
     # No cache available - return empty with error flag
     print("Alarm API failed and no cache available")
     return jsonify([])
-        return jsonify({'error': str(e)}), 500
 
 # Custom route for serving pre-compressed static files
 @app.route('/static/<path:filename>')
