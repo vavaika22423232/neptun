@@ -739,6 +739,107 @@
       }
     }
     
+    /* ========== CITIES LAYER ========== */
+    #cities-layer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 15;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    
+    #cities-layer.visible {
+      opacity: 1;
+    }
+    
+    .city-marker {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      pointer-events: auto;
+      cursor: pointer;
+    }
+    
+    .city-dot {
+      width: 6px;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid rgba(0, 180, 220, 0.8);
+      border-radius: 50%;
+      box-shadow: 0 0 4px rgba(0, 212, 255, 0.5);
+    }
+    
+    .city-dot.capital {
+      width: 10px;
+      height: 10px;
+      background: #ffd700;
+      border: 2px solid #fff;
+      box-shadow: 0 0 8px rgba(255, 215, 0, 0.8);
+    }
+    
+    .city-dot.regional {
+      width: 8px;
+      height: 8px;
+      background: rgba(0, 212, 255, 0.9);
+      border: 1.5px solid #fff;
+    }
+    
+    .city-label {
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 9px;
+      font-weight: 600;
+      color: #fff;
+      text-shadow: 
+        -1px -1px 2px rgba(0,0,0,0.8),
+        1px -1px 2px rgba(0,0,0,0.8),
+        -1px 1px 2px rgba(0,0,0,0.8),
+        1px 1px 2px rgba(0,0,0,0.8);
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    
+    .city-label.capital {
+      font-size: 12px;
+      font-weight: 800;
+      color: #ffd700;
+    }
+    
+    .city-label.regional {
+      font-size: 10px;
+      font-weight: 700;
+      color: #00d4ff;
+    }
+    
+    @media (max-width: 768px) {
+      .city-label {
+        font-size: 7px;
+      }
+      .city-label.capital {
+        font-size: 10px;
+      }
+      .city-label.regional {
+        font-size: 8px;
+      }
+      .city-dot {
+        width: 4px;
+        height: 4px;
+      }
+      .city-dot.regional {
+        width: 6px;
+        height: 6px;
+      }
+      .city-dot.capital {
+        width: 8px;
+        height: 8px;
+      }
+    }
+    
     /* ========== NAVBAR STYLES ========== */
     .navbar {
       width: 100%;
@@ -1300,76 +1401,131 @@
       text-align: center;
     }
     
-    /* Telegram Banner */
+    /* Telegram Banner - Premium Design */
     .tg-banner {
       display: flex;
       position: fixed;
-      bottom: 60px;
+      bottom: 70px;
       left: 20px;
       right: 20px;
-      max-width: 500px;
-      background: linear-gradient(135deg, #0088cc 0%, #00aaff 100%);
-      border-radius: 14px;
-      padding: 0.8rem 1rem;
+      max-width: 420px;
+      background: linear-gradient(135deg, #1a1f2e 0%, #0d1117 100%);
+      border: 1px solid rgba(0, 136, 204, 0.3);
+      border-radius: 20px;
+      padding: 1rem 1.2rem;
       text-decoration: none;
       color: white;
       z-index: 1050;
-      box-shadow: 0 8px 30px rgba(0, 136, 204, 0.4);
+      box-shadow: 
+        0 10px 40px rgba(0, 0, 0, 0.4),
+        0 0 30px rgba(0, 136, 204, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
       align-items: center;
-      gap: 0.8rem;
-      transition: all 0.3s;
+      gap: 1rem;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      overflow: hidden;
+    }
+    
+    .tg-banner::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 200%;
+      height: 100%;
+      background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(0, 136, 204, 0.1),
+        transparent
+      );
+      animation: shimmer 3s infinite;
+    }
+    
+    @keyframes shimmer {
+      0% { transform: translateX(-50%); }
+      100% { transform: translateX(50%); }
     }
     
     .tg-banner:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 12px 40px rgba(0, 136, 204, 0.5);
+      transform: translateY(-4px) scale(1.02);
+      box-shadow: 
+        0 15px 50px rgba(0, 0, 0, 0.5),
+        0 0 50px rgba(0, 136, 204, 0.25);
+      border-color: rgba(0, 136, 204, 0.5);
     }
     
     .tg-banner.hidden { display: none !important; }
     
     .tg-banner-icon {
-      width: 36px;
-      height: 36px;
+      width: 44px;
+      height: 44px;
       flex-shrink: 0;
+      background: linear-gradient(135deg, #0088cc 0%, #00aaff 100%);
+      border-radius: 12px;
+      padding: 10px;
+      box-shadow: 0 4px 15px rgba(0, 136, 204, 0.4);
+    }
+    
+    .tg-banner-icon svg {
+      width: 100%;
+      height: 100%;
     }
     
     .tg-banner-text {
       flex: 1;
+      position: relative;
+      z-index: 1;
     }
     
     .tg-banner-title {
-      font-weight: 700;
-      font-size: 0.9rem;
+      font-weight: 800;
+      font-size: 0.95rem;
       display: block;
+      background: linear-gradient(90deg, #fff 0%, #00d4ff 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      margin-bottom: 4px;
     }
     
     .tg-banner-desc {
-      font-size: 0.7rem;
-      opacity: 0.9;
+      font-size: 0.72rem;
+      color: rgba(148, 163, 184, 0.9);
       display: block;
+      line-height: 1.4;
     }
     
     .tg-banner-btn {
-      background: rgba(255, 255, 255, 0.2);
-      padding: 0.5rem 1rem;
-      border-radius: 8px;
-      font-size: 0.8rem;
+      background: linear-gradient(135deg, #0088cc 0%, #00aaff 100%);
+      padding: 0.6rem 1.1rem;
+      border-radius: 12px;
+      font-size: 0.78rem;
       font-weight: 700;
       display: flex;
       align-items: center;
-      gap: 0.3rem;
+      gap: 0.4rem;
       flex-shrink: 0;
+      box-shadow: 0 4px 15px rgba(0, 136, 204, 0.3);
+      transition: all 0.2s;
+      position: relative;
+      z-index: 1;
+    }
+    
+    .tg-banner:hover .tg-banner-btn {
+      box-shadow: 0 6px 20px rgba(0, 136, 204, 0.5);
+      transform: scale(1.05);
     }
     
     .tg-banner-close {
       position: absolute;
-      top: -8px;
-      right: -8px;
-      width: 24px;
-      height: 24px;
-      background: #fff;
-      color: #0088cc;
-      border: none;
+      top: -10px;
+      right: -10px;
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
+      color: #9ca3af;
+      border: 2px solid rgba(0, 136, 204, 0.3);
       border-radius: 50%;
       font-size: 14px;
       font-weight: 700;
@@ -1377,6 +1533,15 @@
       display: flex;
       align-items: center;
       justify-content: center;
+      transition: all 0.2s;
+      z-index: 2;
+    }
+    
+    .tg-banner-close:hover {
+      background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+      color: white;
+      border-color: rgba(239, 68, 68, 0.5);
+      transform: scale(1.1);
     }
     
     /* Mobile adjustments */
@@ -1429,15 +1594,40 @@
       
       .tg-banner {
         bottom: auto;
-        top: 55px;
+        top: 60px;
         left: 10px;
         right: 10px;
         max-width: none;
-        padding: 0.6rem 0.8rem;
+        padding: 0.7rem 0.9rem;
+        border-radius: 16px;
+      }
+      
+      .tg-banner-icon {
+        width: 38px;
+        height: 38px;
+        padding: 8px;
+        border-radius: 10px;
+      }
+      
+      .tg-banner-title {
+        font-size: 0.85rem;
       }
       
       .tg-banner-desc {
         display: none;
+      }
+      
+      .tg-banner-btn {
+        padding: 0.5rem 0.8rem;
+        font-size: 0.7rem;
+        border-radius: 10px;
+      }
+      
+      .tg-banner-close {
+        width: 24px;
+        height: 24px;
+        top: -8px;
+        right: -8px;
       }
       
       .disclaimer-bar {
@@ -1538,8 +1728,8 @@
       <path d="M41.42 7.31L3.92 22.27c-2.56 1.03-2.55 2.46-.47 3.1l9.62 3 3.72 11.42c.45 1.25.23 1.75 1.52 1.75.99 0 1.43-.45 1.98-1l3.94-3.83 8.2 6.05c1.51.83 2.6.4 2.98-1.4l5.4-25.44c.55-2.2-.84-3.2-2.39-2.61z"/>
     </svg>
     <div class="tg-banner-text">
-      <span class="tg-banner-title">📢 Telegram канал NEPTUN</span>
-      <span class="tg-banner-desc">⚡ Більше інформації • 💬 Спілкування</span>
+      <span class="tg-banner-title">📢 Пряме інформування від хлопців в телеграм</span>
+      <span class="tg-banner-desc">⚡ Більше інформації • 💬 Пряме спілкування з адміном</span>
     </div>
     <div class="tg-banner-btn">
       <span>Підписатися</span>
@@ -1572,6 +1762,8 @@
         <div id="districts-layer"></div>
         <!-- Names SVG will be loaded here -->
         <div id="names-layer"></div>
+        <!-- Cities layer -->
+        <div id="cities-layer"></div>
         <!-- Threat markers layer -->
         <div id="markers-layer"></div>
       </div>
@@ -1722,6 +1914,140 @@
       '112': '9999', '113': '9999', '114': '9999', '115': '9999', '116': '9999', '117': '9999'
     };
     
+    // ========== CITIES DATA (100+ cities) ==========
+    const UKRAINE_CITIES = [
+      // Столиця
+      { name: 'Київ', lat: 50.4501, lng: 30.5234, type: 'capital' },
+      
+      // Обласні центри
+      { name: 'Харків', lat: 49.9935, lng: 36.2304, type: 'regional' },
+      { name: 'Одеса', lat: 46.4825, lng: 30.7233, type: 'regional' },
+      { name: 'Дніпро', lat: 48.4647, lng: 35.0462, type: 'regional' },
+      { name: 'Донецьк', lat: 48.0159, lng: 37.8028, type: 'regional' },
+      { name: 'Запоріжжя', lat: 47.8388, lng: 35.1396, type: 'regional' },
+      { name: 'Львів', lat: 49.8397, lng: 24.0297, type: 'regional' },
+      { name: 'Кривий Ріг', lat: 47.9105, lng: 33.3918, type: 'regional' },
+      { name: 'Миколаїв', lat: 46.9750, lng: 31.9946, type: 'regional' },
+      { name: 'Маріуполь', lat: 47.0951, lng: 37.5498, type: 'regional' },
+      { name: 'Луганськ', lat: 48.5740, lng: 39.3078, type: 'regional' },
+      { name: 'Вінниця', lat: 49.2331, lng: 28.4682, type: 'regional' },
+      { name: 'Херсон', lat: 46.6354, lng: 32.6169, type: 'regional' },
+      { name: 'Полтава', lat: 49.5883, lng: 34.5514, type: 'regional' },
+      { name: 'Чернігів', lat: 51.4982, lng: 31.2893, type: 'regional' },
+      { name: 'Черкаси', lat: 49.4444, lng: 32.0598, type: 'regional' },
+      { name: 'Суми', lat: 50.9077, lng: 34.7981, type: 'regional' },
+      { name: 'Житомир', lat: 50.2547, lng: 28.6587, type: 'regional' },
+      { name: 'Хмельницький', lat: 49.4229, lng: 26.9871, type: 'regional' },
+      { name: 'Рівне', lat: 50.6199, lng: 26.2516, type: 'regional' },
+      { name: 'Івано-Франківськ', lat: 48.9226, lng: 24.7111, type: 'regional' },
+      { name: 'Тернопіль', lat: 49.5535, lng: 25.5948, type: 'regional' },
+      { name: 'Луцьк', lat: 50.7472, lng: 25.3254, type: 'regional' },
+      { name: 'Ужгород', lat: 48.6208, lng: 22.2879, type: 'regional' },
+      { name: 'Чернівці', lat: 48.2920, lng: 25.9358, type: 'regional' },
+      { name: 'Кропивницький', lat: 48.5079, lng: 32.2623, type: 'regional' },
+      
+      // Великі міста (50k+)
+      { name: 'Біла Церква', lat: 49.7986, lng: 30.1156, type: 'city' },
+      { name: 'Кременчук', lat: 49.0659, lng: 33.4102, type: 'city' },
+      { name: 'Краматорськ', lat: 48.7236, lng: 37.5564, type: 'city' },
+      { name: 'Мелітополь', lat: 46.8489, lng: 35.3675, type: 'city' },
+      { name: 'Нікополь', lat: 47.5718, lng: 34.3957, type: 'city' },
+      { name: 'Бердянськ', lat: 46.7596, lng: 36.7840, type: 'city' },
+      { name: 'Павлоград', lat: 48.5333, lng: 35.8703, type: 'city' },
+      { name: 'Сєвєродонецьк', lat: 48.9484, lng: 38.4911, type: 'city' },
+      { name: 'Лисичанськ', lat: 48.9040, lng: 38.4281, type: 'city' },
+      { name: 'Кам\'янське', lat: 48.5186, lng: 34.6139, type: 'city' },
+      { name: 'Слов\'янськ', lat: 48.8506, lng: 37.6167, type: 'city' },
+      { name: 'Ужгород', lat: 48.6208, lng: 22.2879, type: 'city' },
+      { name: 'Мукачево', lat: 48.4414, lng: 22.7136, type: 'city' },
+      { name: 'Рубіжне', lat: 49.0139, lng: 38.3778, type: 'city' },
+      { name: 'Бровари', lat: 50.5111, lng: 30.7900, type: 'city' },
+      { name: 'Конотоп', lat: 51.2403, lng: 33.2028, type: 'city' },
+      { name: 'Шостка', lat: 51.8656, lng: 33.4764, type: 'city' },
+      { name: 'Ніжин', lat: 51.0461, lng: 31.8836, type: 'city' },
+      { name: 'Прилуки', lat: 50.5925, lng: 32.3864, type: 'city' },
+      { name: 'Умань', lat: 48.7494, lng: 30.2214, type: 'city' },
+      { name: 'Коростень', lat: 50.9519, lng: 28.6531, type: 'city' },
+      { name: 'Бердичів', lat: 49.8994, lng: 28.5839, type: 'city' },
+      { name: 'Новоград-Волинський', lat: 50.5900, lng: 27.6200, type: 'city' },
+      { name: 'Коломия', lat: 48.5306, lng: 25.0383, type: 'city' },
+      { name: 'Калуш', lat: 49.0131, lng: 24.3592, type: 'city' },
+      { name: 'Дрогобич', lat: 49.3492, lng: 23.5064, type: 'city' },
+      { name: 'Стрий', lat: 49.2617, lng: 23.8547, type: 'city' },
+      { name: 'Червоноград', lat: 50.3872, lng: 24.2317, type: 'city' },
+      { name: 'Самбір', lat: 49.5183, lng: 23.2042, type: 'city' },
+      { name: 'Нововолинськ', lat: 50.7283, lng: 24.1619, type: 'city' },
+      { name: 'Ковель', lat: 51.2153, lng: 24.7089, type: 'city' },
+      { name: 'Кузнецовськ', lat: 51.3456, lng: 25.8481, type: 'city' },
+      { name: 'Дубно', lat: 50.4153, lng: 25.7331, type: 'city' },
+      { name: 'Костопіль', lat: 50.8833, lng: 26.4500, type: 'city' },
+      { name: 'Шепетівка', lat: 50.1833, lng: 27.0667, type: 'city' },
+      { name: 'Нетішин', lat: 50.3361, lng: 26.6406, type: 'city' },
+      { name: 'Кам\'янець-Подільський', lat: 48.6844, lng: 26.5856, type: 'city' },
+      { name: 'Козятин', lat: 49.7181, lng: 28.8281, type: 'city' },
+      { name: 'Могилів-Подільський', lat: 48.4500, lng: 27.7833, type: 'city' },
+      { name: 'Жмеринка', lat: 49.0333, lng: 28.1167, type: 'city' },
+      { name: 'Олександрія', lat: 48.6697, lng: 33.1139, type: 'city' },
+      { name: 'Світловодськ', lat: 49.0500, lng: 33.2333, type: 'city' },
+      { name: 'Знам\'янка', lat: 48.7167, lng: 32.6667, type: 'city' },
+      { name: 'Новомосковськ', lat: 48.6333, lng: 35.2167, type: 'city' },
+      { name: 'Синельникове', lat: 48.3167, lng: 35.5167, type: 'city' },
+      { name: 'Жовті Води', lat: 48.3500, lng: 33.5000, type: 'city' },
+      { name: 'Марганець', lat: 47.6333, lng: 34.6167, type: 'city' },
+      { name: 'Покров', lat: 47.6500, lng: 34.0833, type: 'city' },
+      { name: 'Енергодар', lat: 47.4989, lng: 34.6575, type: 'city' },
+      { name: 'Токмак', lat: 47.2500, lng: 35.7000, type: 'city' },
+      { name: 'Пологи', lat: 47.4833, lng: 36.2500, type: 'city' },
+      { name: 'Гуляйполе', lat: 47.6500, lng: 36.2667, type: 'city' },
+      { name: 'Вознесенськ', lat: 47.5667, lng: 31.3333, type: 'city' },
+      { name: 'Первомайськ', lat: 48.0500, lng: 30.8500, type: 'city' },
+      { name: 'Южноукраїнськ', lat: 47.8167, lng: 31.1833, type: 'city' },
+      { name: 'Очаків', lat: 46.6167, lng: 31.5333, type: 'city' },
+      { name: 'Білгород-Дністровський', lat: 46.1939, lng: 30.3489, type: 'city' },
+      { name: 'Ізмаїл', lat: 45.3500, lng: 28.8333, type: 'city' },
+      { name: 'Рені', lat: 45.4500, lng: 28.2833, type: 'city' },
+      { name: 'Кілія', lat: 45.4500, lng: 29.2667, type: 'city' },
+      { name: 'Чорноморськ', lat: 46.3000, lng: 30.6500, type: 'city' },
+      { name: 'Нова Каховка', lat: 46.7564, lng: 33.3486, type: 'city' },
+      { name: 'Каховка', lat: 46.8167, lng: 33.4833, type: 'city' },
+      { name: 'Генічеськ', lat: 46.1667, lng: 34.8167, type: 'city' },
+      { name: 'Скадовськ', lat: 46.1167, lng: 32.9000, type: 'city' },
+      { name: 'Лозова', lat: 48.8833, lng: 36.3167, type: 'city' },
+      { name: 'Ізюм', lat: 49.2000, lng: 37.2833, type: 'city' },
+      { name: 'Куп\'янськ', lat: 49.7167, lng: 37.6167, type: 'city' },
+      { name: 'Чугуїв', lat: 49.8333, lng: 36.6833, type: 'city' },
+      { name: 'Балаклія', lat: 49.4667, lng: 36.8500, type: 'city' },
+      { name: 'Первомайський', lat: 49.4000, lng: 36.2333, type: 'city' },
+      { name: 'Лубни', lat: 50.0167, lng: 32.9833, type: 'city' },
+      { name: 'Миргород', lat: 49.9667, lng: 33.6000, type: 'city' },
+      { name: 'Гадяч', lat: 50.3667, lng: 34.0167, type: 'city' },
+      { name: 'Горішні Плавні', lat: 49.0000, lng: 33.6333, type: 'city' },
+      { name: 'Охтирка', lat: 50.3000, lng: 34.9000, type: 'city' },
+      { name: 'Ромни', lat: 50.7500, lng: 33.4833, type: 'city' },
+      { name: 'Глухів', lat: 51.6833, lng: 33.9167, type: 'city' },
+      { name: 'Смілa', lat: 49.2333, lng: 31.8667, type: 'city' },
+      { name: 'Золотоноша', lat: 49.6667, lng: 32.0333, type: 'city' },
+      { name: 'Канів', lat: 49.7500, lng: 31.4667, type: 'city' },
+      { name: 'Ватутіне', lat: 49.0167, lng: 32.0500, type: 'city' },
+      { name: 'Бахмут', lat: 48.5953, lng: 38.0008, type: 'city' },
+      { name: 'Костянтинівка', lat: 48.5333, lng: 37.7167, type: 'city' },
+      { name: 'Дружківка', lat: 48.6167, lng: 37.5333, type: 'city' },
+      { name: 'Покровськ', lat: 48.2833, lng: 37.1833, type: 'city' },
+      { name: 'Селидове', lat: 48.1500, lng: 37.3000, type: 'city' },
+      { name: 'Торецьк', lat: 48.4000, lng: 37.8500, type: 'city' },
+      { name: 'Волноваха', lat: 47.6000, lng: 37.4833, type: 'city' },
+      { name: 'Авдіївка', lat: 48.1333, lng: 37.7500, type: 'city' },
+      
+      // Крим
+      { name: 'Сімферополь', lat: 44.9521, lng: 34.1024, type: 'city' },
+      { name: 'Севастополь', lat: 44.6167, lng: 33.5254, type: 'city' },
+      { name: 'Керч', lat: 45.3531, lng: 36.4747, type: 'city' },
+      { name: 'Євпаторія', lat: 45.1908, lng: 33.3669, type: 'city' },
+      { name: 'Ялта', lat: 44.4952, lng: 34.1664, type: 'city' },
+      { name: 'Феодосія', lat: 45.0317, lng: 35.3825, type: 'city' },
+      { name: 'Джанкой', lat: 45.7083, lng: 34.3917, type: 'city' },
+    ];
+    
     // Cache buster version - change this to force reload SVG files
     const CACHE_VERSION = 'v4';
     
@@ -1750,6 +2076,10 @@
         
         // Setup drag functionality
         setupDrag();
+        
+        // Render cities on map
+        renderCities();
+        updateCitiesVisibility();
         
         // Fetch alarms immediately
         await fetchAlarms();
@@ -2113,6 +2443,66 @@
       updateZoom(true);
     }
     
+    // ========== CITIES RENDERING ==========
+    let citiesRendered = false;
+    
+    function renderCities() {
+      if (citiesRendered) return;
+      
+      const citiesLayer = document.getElementById('cities-layer');
+      if (!citiesLayer) return;
+      
+      citiesLayer.innerHTML = '';
+      
+      UKRAINE_CITIES.forEach(city => {
+        const pos = latLngToSvgPercent(city.lat, city.lng);
+        
+        const marker = document.createElement('div');
+        marker.className = 'city-marker';
+        marker.style.left = `${pos.x}%`;
+        marker.style.top = `${pos.y}%`;
+        marker.dataset.type = city.type;
+        
+        const dot = document.createElement('div');
+        dot.className = `city-dot ${city.type}`;
+        
+        const label = document.createElement('span');
+        label.className = `city-label ${city.type}`;
+        label.textContent = city.name;
+        
+        marker.appendChild(dot);
+        marker.appendChild(label);
+        citiesLayer.appendChild(marker);
+      });
+      
+      citiesRendered = true;
+      console.log(`Rendered ${UKRAINE_CITIES.length} cities`);
+    }
+    
+    function updateCitiesVisibility() {
+      const citiesLayer = document.getElementById('cities-layer');
+      if (!citiesLayer) return;
+      
+      // Show cities when zoomed in (scale >= 1.3)
+      // Show regional centers always at scale >= 1.0
+      if (currentScale >= 1.3) {
+        citiesLayer.classList.add('visible');
+        // Show all cities
+        citiesLayer.querySelectorAll('.city-marker').forEach(m => {
+          m.style.display = 'block';
+        });
+      } else if (currentScale >= 1.0) {
+        citiesLayer.classList.add('visible');
+        // Show only capital and regional centers
+        citiesLayer.querySelectorAll('.city-marker').forEach(m => {
+          const type = m.dataset.type;
+          m.style.display = (type === 'capital' || type === 'regional') ? 'block' : 'none';
+        });
+      } else {
+        citiesLayer.classList.remove('visible');
+      }
+    }
+    
     // Use requestAnimationFrame for smooth updates
     let zoomRAF = null;
     
@@ -2146,6 +2536,9 @@
         container.style.left = centerX + 'px';
         container.style.top = centerY + 'px';
         container.style.transform = '';
+        
+        // Update cities visibility based on zoom level
+        updateCitiesVisibility();
         
         zoomRAF = null;
       });
@@ -2318,8 +2711,11 @@
     
     // ========== PRESENCE TRACKING & LIVE USERS ==========
     let presenceInterval;
-    let sessionId = localStorage.getItem('neptun_session') || crypto.randomUUID();
-    localStorage.setItem('neptun_session', sessionId);
+    let uid = localStorage.getItem('neptun_uid');
+    if (!uid) {
+      uid = 'web_' + Math.random().toString(36).substring(2, 15);
+      localStorage.setItem('neptun_uid', uid);
+    }
     
     async function pingPresence() {
       try {
@@ -2327,8 +2723,8 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            session_id: sessionId,
-            platform: detectPlatform()
+            id: uid,
+            platform: 'web'
           })
         });
         
@@ -2341,18 +2737,11 @@
       }
     }
     
-    function detectPlatform() {
-      const ua = navigator.userAgent.toLowerCase();
-      if (/android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(ua)) {
-        return 'app';
-      }
-      return 'web';
-    }
-    
     function updateLiveUsers(data) {
-      const total = data.total || 0;
-      const web = data.web || 0;
-      const apps = data.apps || 0;
+      const total = data.visitors || data.total || 0;
+      const platforms = data.platforms || {};
+      const web = platforms.web || data.web || 0;
+      const apps = data.apps || (platforms.android || 0) + (platforms.ios || 0);
       
       const totalEl = document.querySelector('[data-role="live-total"]');
       const webEl = document.querySelector('[data-role="live-web"]');
