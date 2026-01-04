@@ -302,46 +302,7 @@
       color: rgba(0, 212, 255, 0.5);
       margin-top: 4px;
     }
-    
-    /* Legend panel */
-    .legend-panel {
-      position: fixed;
-      bottom: 30px;
-      left: 20px;
-      background: rgba(10, 25, 47, 0.9);
-      border: 1px solid rgba(0, 212, 255, 0.2);
-      border-radius: 10px;
-      padding: 12px 16px;
-      z-index: 1000;
-      backdrop-filter: blur(10px);
-    }
-    
-    .legend-item {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin: 6px 0;
-      font-size: 11px;
-      color: rgba(255, 255, 255, 0.7);
-    }
-    
-    .legend-color {
-      width: 16px;
-      height: 16px;
-      border-radius: 4px;
-    }
-    
-    .legend-color.safe {
-      background: #162236;
-      border: 1px solid rgba(0, 212, 255, 0.3);
-    }
-    
-    .legend-color.alarm {
-      background: #dc2626;
-      border: 1px solid #ff6b6b;
-      animation: alarmPulse 2s ease-in-out infinite;
-    }
-    
+
     /* Threat markers layer */
     #markers-layer {
       position: absolute;
@@ -487,18 +448,6 @@
     </div>
   </div>
   
-  <!-- Legend -->
-  <div class="legend-panel">
-    <div class="legend-item">
-      <div class="legend-color safe"></div>
-      <span>Без тривоги</span>
-    </div>
-    <div class="legend-item">
-      <div class="legend-color alarm"></div>
-      <span>Повітряна тривога</span>
-    </div>
-  </div>
-  
   <div class="zoom-controls">
     <button class="zoom-btn" onclick="zoomIn()">+</button>
     <button class="zoom-btn" onclick="zoomOut()">−</button>
@@ -510,6 +459,10 @@
     const ALARM_UPDATE_INTERVAL = 5000; // 5 seconds
     const MARKERS_UPDATE_INTERVAL = 10000; // 10 seconds for threat markers
     const MAX_RETRIES = 3;
+    
+    // Get timeRange from URL or use default (same as index.html)
+    const urlParams = new URLSearchParams(window.location.search);
+    const TIME_RANGE = parseInt(urlParams.get('timeRange')) || 40;
     
     // SVG map bounds (Ukraine approximate bounds)
     const MAP_BOUNDS = {
@@ -765,7 +718,7 @@
     // Fetch threat markers from /data endpoint
     async function fetchThreatMarkers() {
       try {
-        const response = await fetch('/data?timeRange=60');
+        const response = await fetch(`/data?timeRange=${TIME_RANGE}`);
         if (!response.ok) return;
         
         const data = await response.json();
