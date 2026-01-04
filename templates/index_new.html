@@ -519,7 +519,7 @@
             const isAlarm = alarmDistricts[districtName];
             return {
               fillColor: isAlarm ? '#b91c1c' : 'transparent',
-              fillOpacity: isAlarm ? 1 : 0,
+              fillOpacity: isAlarm ? 0.85 : 0,
               // No stroke - TopoJSON handles shared boundaries
               color: 'transparent',
               weight: 0
@@ -600,24 +600,14 @@
       }
       
       if (districtAlarmLayer) {
-        const alarmedOblasts = new Set();
-        
-        Object.keys(alarmRegions).forEach(regionName => {
-          if (alarmRegions[regionName]) {
-            alarmedOblasts.add(regionName);
-            const normalized = OBLAST_NORMALIZE[regionName];
-            if (normalized) alarmedOblasts.add(normalized);
-          }
-        });
-        
         districtAlarmLayer.setStyle(function(feature) {
           const districtName = feature.properties.name;
-          const districtOblast = DISTRICT_TO_OBLAST[districtName];
-          const isAlarm = alarmDistricts[districtName] || (districtOblast && alarmedOblasts.has(districtOblast));
+          // Only color districts with direct alarm, not entire oblast
+          const isAlarm = alarmDistricts[districtName];
           
           return {
             fillColor: isAlarm ? '#b91c1c' : 'transparent',
-            fillOpacity: isAlarm ? 1 : 0,
+            fillOpacity: isAlarm ? 0.85 : 0,
             // No stroke - TopoJSON shared boundaries prevent gaps
             color: 'transparent',
             weight: 0

@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Карта тривог України | NEPTUN</title>
+  
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #1a1a2e;
+    }
+    
+    #map-container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    #map-wrapper {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    /* Container for both SVG layers */
+    .svg-container {
+      position: relative;
+      width: 90vw;
+      max-width: 1400px;
+      aspect-ratio: 260 / 175;
+    }
+    
+    .svg-container svg {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+    
+    /* States (oblasts) layer - bottom */
+    #states-layer {
+      z-index: 1;
+    }
+    
+    /* Districts layer - top */
+    #districts-layer {
+      z-index: 2;
+    }
+    
+    /* State (oblast) styling */
+    #states-layer .stateObject {
+      fill: #2d3a4f;
+      stroke: #1a1a2e;
+      stroke-width: 0.3;
+      transition: fill 0.3s ease;
+    }
+    
+    #states-layer .stateObject.alarm {
+      fill: #b91c1c;
+    }
+    
+    /* District styling */
+    #districts-layer .dist {
+      fill: transparent;
+      stroke: #3d4a5c;
+      stroke-width: 0.15;
+      transition: fill 0.3s ease;
+      pointer-events: all;
+    }
+    
+    #districts-layer .dist.alarm {
+      fill: #dc2626;
+    }
+    
+    #districts-layer .dist:hover {
+      opacity: 0.85;
+      cursor: pointer;
+    }
+    
+    /* Zoom controls */
+    .zoom-controls {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 1000;
+    }
+    
+    .zoom-btn {
+      width: 40px;
+      height: 40px;
+      background: rgba(36, 43, 69, 0.95);
+      border: 1px solid rgba(74, 158, 255, 0.2);
+      border-radius: 8px;
+      color: white;
+      font-size: 24px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .zoom-btn:hover {
+      background: rgba(74, 158, 255, 0.3);
+    }
+    
+    /* Status panel */
+    .status-panel {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      background: rgba(36, 43, 69, 0.95);
+      border: 1px solid rgba(74, 158, 255, 0.2);
+      border-radius: 12px;
+      padding: 15px 20px;
+      color: white;
+      z-index: 1000;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    .status-panel h3 {
+      font-size: 14px;
+      margin-bottom: 8px;
+      color: #94a3b8;
+    }
+    
+    .alarm-count {
+      font-size: 32px;
+      font-weight: bold;
+      color: #ef4444;
+    }
+    
+    .alarm-count.safe {
+      color: #22c55e;
+    }
+    
+    .last-update {
+      font-size: 12px;
+      color: #64748b;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div id="map-container">
+    <div id="map-wrapper">
+      <div class="svg-container" id="svg-container">
+        <!-- States SVG will be loaded here -->
+        <div id="states-layer"></div>
+        <!-- Districts SVG will be loaded here -->
+        <div id="districts-layer"></div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="status-panel">
+    <h3>🚨 Райони з тривогою</h3>
+    <div class="alarm-count" id="alarm-count">0</div>
+    <div class="last-update" id="last-update">Завантаження...</div>
+  </div>
+  
+  <div class="zoom-controls">
+    <button class="zoom-btn" onclick="zoomIn()">+</button>
+    <button class="zoom-btn" onclick="zoomOut()">−</button>
+    <button class="zoom-btn" onclick="resetZoom()">⟲</button>
+  </div>
+
+  <script>
+    // ===== CONFIG =====
+    const ALARM_UPDATE_INTERVAL = 5000; // 5 seconds like ukrainealarm.com
+    
+    let currentScale = 1;
+    let currentX = 0;
+    let currentY = 0;
+    let isDragging = false;
+    let startX, startY;
+    
+    // Load both SVG maps
+    async function loadMaps() {
+      try {
+        // Load states (oblasts) SVG
+        const statesResponse = await fetch('/static/ukraine_states.svg');
+        const statesText = await statesResponse.text();
+        document.getElementById('states-layer').innerHTML = statesText;
+        
+        // Load districts SVG
+        const districtsResponse = await fetch('/static/ukraine_districts_detailed.svg');
+        const districtsText = await districtsResponse.text();
+        document.getElementById('districts-layer').innerHTML = districtsText;
+        
+        // Setup drag functionality
+        setupDrag();
+        
+        // Fetch alarms immediately
+        await fetchAlarms();
+        
+        // Update alarms every 5 seconds
+        setInterval(fetchAlarms, ALARM_UPDATE_INTERVAL);
+        
+        console.log('Maps loaded successfully');
+      } catch (error) {
+        console.error('Error loading maps:', error);
+      }
+    }
+    
+    // Fetch alarms from ukrainealarm API via proxy
+    async function fetchAlarms() {
+      try {
+        const response = await fetch('/api/alarms/all');
+        if (!response.ok) throw new Error('API error');
+        const data = await response.json();
+        
+        // Clear ALL existing alarms
+        document.querySelectorAll('.alarm').forEach(el => {
+          el.classList.remove('alarm');
+        });
+        
+        // Track alarm counts
+        let districtAlarmCount = 0;
+        let stateAlarmCount = 0;
+        
+        // Process each alert
+        if (Array.isArray(data)) {
+          data.forEach(region => {
+            if (region.activeAlerts && region.activeAlerts.length > 0) {
+              const regionId = region.regionId;
+              const regionType = region.regionType;
+              
+              if (regionType === 'State') {
+                // Color the oblast
+                const stateElements = document.querySelectorAll(`#states-layer [id="${regionId}"]`);
+                stateElements.forEach(el => {
+                  el.classList.add('alarm');
+                });
+                stateAlarmCount++;
+              } else if (regionType === 'District') {
+                // Color ONLY the specific district
+                const districtElements = document.querySelectorAll(`#districts-layer [id="${regionId}"]`);
+                districtElements.forEach(el => {
+                  el.classList.add('alarm');
+                });
+                districtAlarmCount++;
+              }
+            }
+          });
+        }
+        
+        // Update status panel
+        const totalAlarms = districtAlarmCount + stateAlarmCount;
+        const countEl = document.getElementById('alarm-count');
+        countEl.textContent = totalAlarms;
+        countEl.className = totalAlarms > 0 ? 'alarm-count' : 'alarm-count safe';
+        
+        const now = new Date();
+        document.getElementById('last-update').textContent = 
+          `Оновлено: ${now.toLocaleTimeString('uk-UA')}`;
+        
+        console.log(`Alarms: ${stateAlarmCount} oblasts, ${districtAlarmCount} districts`);
+        
+      } catch (error) {
+        console.error('Error fetching alarms:', error);
+        document.getElementById('last-update').textContent = 'Помилка оновлення';
+      }
+    }
+    
+    // Zoom functions
+    function zoomIn() {
+      currentScale = Math.min(currentScale * 1.3, 5);
+      updateTransform();
+    }
+    
+    function zoomOut() {
+      currentScale = Math.max(currentScale / 1.3, 0.5);
+      updateTransform();
+    }
+    
+    function resetZoom() {
+      currentScale = 1;
+      currentX = 0;
+      currentY = 0;
+      updateTransform();
+    }
+    
+    function updateTransform() {
+      const container = document.getElementById('svg-container');
+      if (container) {
+        container.style.transform = `scale(${currentScale}) translate(${currentX}px, ${currentY}px)`;
+      }
+    }
+    
+    // Drag functionality
+    function setupDrag() {
+      const wrapper = document.getElementById('map-wrapper');
+      
+      wrapper.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        startX = e.clientX - currentX * currentScale;
+        startY = e.clientY - currentY * currentScale;
+        wrapper.style.cursor = 'grabbing';
+      });
+      
+      wrapper.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        currentX = (e.clientX - startX) / currentScale;
+        currentY = (e.clientY - startY) / currentScale;
+        updateTransform();
+      });
+      
+      wrapper.addEventListener('mouseup', () => {
+        isDragging = false;
+        wrapper.style.cursor = 'grab';
+      });
+      
+      wrapper.addEventListener('mouseleave', () => {
+        isDragging = false;
+        wrapper.style.cursor = 'grab';
+      });
+      
+      // Mouse wheel zoom
+      wrapper.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        if (e.deltaY < 0) {
+          zoomIn();
+        } else {
+          zoomOut();
+        }
+      });
+      
+      wrapper.style.cursor = 'grab';
+    }
+    
+    // Init
+    document.addEventListener('DOMContentLoaded', loadMaps);
+  </script>
+</body>
+</html>

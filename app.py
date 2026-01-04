@@ -663,11 +663,12 @@ def alarm_all():
         )
         if response.ok:
             data = response.json()
-            # Return all active alerts
+            # Return all active alerts with regionId for SVG matching
             result = []
             for region in data:
                 if region.get('activeAlerts') and len(region['activeAlerts']) > 0:
                     result.append({
+                        'regionId': region.get('regionId'),
                         'regionName': region.get('regionName'),
                         'regionType': region.get('regionType'),
                         'activeAlerts': region.get('activeAlerts')
