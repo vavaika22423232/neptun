@@ -813,12 +813,6 @@
       display: none;
     }
     
-    /* Leaflet alarm overlay styles */
-    .leaflet-alarm-polygon {
-      fill-opacity: 0.4;
-      stroke-width: 2;
-    }
-    
     @media (max-width: 768px) {
       .map-switcher {
         top: 60px;
@@ -1997,14 +1991,6 @@
           throw new Error('Invalid data format');
         }
         
-        // Store data for Leaflet
-        currentAlarmData = data;
-        
-        // Update Leaflet if active
-        if (currentMapMode === 'leaflet') {
-          updateLeafletAlarms();
-        }
-        
         // Success - reset failures counter
         consecutiveFailures = 0;
         lastSuccessfulFetch = new Date();
@@ -2166,14 +2152,6 @@
         if (!Array.isArray(markers)) {
           console.log('No markers array found');
           return;
-        }
-        
-        // Store for Leaflet
-        currentMarkerData = markers;
-        
-        // Update Leaflet if active
-        if (currentMapMode === 'leaflet') {
-          updateLeafletMarkers();
         }
         
         markers.forEach((marker, index) => {
@@ -2807,54 +2785,6 @@
     let leafletMap = null;
     let leafletInitialized = false;
     let currentMapMode = 'svg'; // 'svg' or 'leaflet'
-    let alarmPolygons = [];
-    let threatMarkersLeaflet = [];
-    
-    // Ukraine oblasts GeoJSON (simplified boundaries)
-    const UKRAINE_OBLASTS_GEOJSON = {
-      "type": "FeatureCollection",
-      "features": [
-        {"type": "Feature", "properties": {"id": "31", "name": "Київ"}, "geometry": {"type": "Polygon", "coordinates": [[[30.35,50.35],[30.65,50.35],[30.65,50.55],[30.35,50.55],[30.35,50.35]]]}},
-        {"type": "Feature", "properties": {"id": "14", "name": "Київська"}, "geometry": {"type": "Polygon", "coordinates": [[[29.3,49.7],[31.8,49.7],[31.8,51.2],[29.3,51.2],[29.3,49.7]]]}},
-        {"type": "Feature", "properties": {"id": "22", "name": "Харківська"}, "geometry": {"type": "Polygon", "coordinates": [[[34.5,48.4],[38.3,48.4],[38.3,50.5],[34.5,50.5],[34.5,48.4]]]}},
-        {"type": "Feature", "properties": {"id": "18", "name": "Одеська"}, "geometry": {"type": "Polygon", "coordinates": [[[28.5,45.2],[31.5,45.2],[31.5,48.2],[28.5,48.2],[28.5,45.2]]]}},
-        {"type": "Feature", "properties": {"id": "9", "name": "Дніпропетровська"}, "geometry": {"type": "Polygon", "coordinates": [[[33.0,47.6],[36.2,47.6],[36.2,49.3],[33.0,49.3],[33.0,47.6]]]}},
-        {"type": "Feature", "properties": {"id": "12", "name": "Запорізька"}, "geometry": {"type": "Polygon", "coordinates": [[[34.3,46.4],[37.2,46.4],[37.2,48.0],[34.3,48.0],[34.3,46.4]]]}},
-        {"type": "Feature", "properties": {"id": "27", "name": "Львівська"}, "geometry": {"type": "Polygon", "coordinates": [[[22.8,49.0],[24.8,49.0],[24.8,50.5],[22.8,50.5],[22.8,49.0]]]}},
-        {"type": "Feature", "properties": {"id": "28", "name": "Донецька"}, "geometry": {"type": "Polygon", "coordinates": [[[36.5,47.0],[39.2,47.0],[39.2,49.3],[36.5,49.3],[36.5,47.0]]]}},
-        {"type": "Feature", "properties": {"id": "16", "name": "Луганська"}, "geometry": {"type": "Polygon", "coordinates": [[[37.8,48.0],[40.3,48.0],[40.3,50.1],[37.8,50.1],[37.8,48.0]]]}},
-        {"type": "Feature", "properties": {"id": "23", "name": "Херсонська"}, "geometry": {"type": "Polygon", "coordinates": [[[32.0,45.8],[35.5,45.8],[35.5,47.5],[32.0,47.5],[32.0,45.8]]]}},
-        {"type": "Feature", "properties": {"id": "17", "name": "Миколаївська"}, "geometry": {"type": "Polygon", "coordinates": [[[30.5,46.4],[33.0,46.4],[33.0,48.3],[30.5,48.3],[30.5,46.4]]]}},
-        {"type": "Feature", "properties": {"id": "4", "name": "Вінницька"}, "geometry": {"type": "Polygon", "coordinates": [[[27.5,48.2],[30.0,48.2],[30.0,49.9],[27.5,49.9],[27.5,48.2]]]}},
-        {"type": "Feature", "properties": {"id": "19", "name": "Полтавська"}, "geometry": {"type": "Polygon", "coordinates": [[[32.3,48.6],[35.5,48.6],[35.5,50.4],[32.3,50.4],[32.3,48.6]]]}},
-        {"type": "Feature", "properties": {"id": "25", "name": "Чернігівська"}, "geometry": {"type": "Polygon", "coordinates": [[[30.8,50.5],[33.5,50.5],[33.5,52.4],[30.8,52.4],[30.8,50.5]]]}},
-        {"type": "Feature", "properties": {"id": "24", "name": "Черкаська"}, "geometry": {"type": "Polygon", "coordinates": [[[30.5,48.6],[33.0,48.6],[33.0,50.0],[30.5,50.0],[30.5,48.6]]]}},
-        {"type": "Feature", "properties": {"id": "20", "name": "Сумська"}, "geometry": {"type": "Polygon", "coordinates": [[[32.5,50.2],[35.5,50.2],[35.5,52.4],[32.5,52.4],[32.5,50.2]]]}},
-        {"type": "Feature", "properties": {"id": "10", "name": "Житомирська"}, "geometry": {"type": "Polygon", "coordinates": [[[27.2,49.6],[30.0,49.6],[30.0,51.5],[27.2,51.5],[27.2,49.6]]]}},
-        {"type": "Feature", "properties": {"id": "3", "name": "Хмельницька"}, "geometry": {"type": "Polygon", "coordinates": [[[25.5,48.7],[28.0,48.7],[28.0,50.4],[25.5,50.4],[25.5,48.7]]]}},
-        {"type": "Feature", "properties": {"id": "5", "name": "Рівненська"}, "geometry": {"type": "Polygon", "coordinates": [[[25.1,50.2],[27.5,50.2],[27.5,51.7],[25.1,51.7],[25.1,50.2]]]}},
-        {"type": "Feature", "properties": {"id": "13", "name": "Івано-Франківська"}, "geometry": {"type": "Polygon", "coordinates": [[[23.5,48.1],[25.5,48.1],[25.5,49.3],[23.5,49.3],[23.5,48.1]]]}},
-        {"type": "Feature", "properties": {"id": "21", "name": "Тернопільська"}, "geometry": {"type": "Polygon", "coordinates": [[[24.7,48.8],[26.3,48.8],[26.3,50.1],[24.7,50.1],[24.7,48.8]]]}},
-        {"type": "Feature", "properties": {"id": "8", "name": "Волинська"}, "geometry": {"type": "Polygon", "coordinates": [[[23.5,50.5],[25.8,50.5],[25.8,52.0],[23.5,52.0],[23.5,50.5]]]}},
-        {"type": "Feature", "properties": {"id": "11", "name": "Закарпатська"}, "geometry": {"type": "Polygon", "coordinates": [[[22.1,47.9],[24.6,47.9],[24.6,49.1],[22.1,49.1],[22.1,47.9]]]}},
-        {"type": "Feature", "properties": {"id": "26", "name": "Чернівецька"}, "geometry": {"type": "Polygon", "coordinates": [[[24.8,47.7],[26.6,47.7],[26.6,48.6],[24.8,48.6],[24.8,47.7]]]}},
-        {"type": "Feature", "properties": {"id": "15", "name": "Кіровоградська"}, "geometry": {"type": "Polygon", "coordinates": [[[31.0,47.8],[33.5,47.8],[33.5,49.3],[31.0,49.3],[31.0,47.8]]]}},
-        {"type": "Feature", "properties": {"id": "9999", "name": "АР Крим"}, "geometry": {"type": "Polygon", "coordinates": [[[32.5,44.4],[36.6,44.4],[36.6,46.2],[32.5,46.2],[32.5,44.4]]]}}
-      ]
-    };
-    
-    // Region ID to name mapping for alarms
-    const REGION_ID_TO_NAME = {
-      '31': 'Київ', '14': 'Київська', '22': 'Харківська', '18': 'Одеська',
-      '9': 'Дніпропетровська', '12': 'Запорізька', '27': 'Львівська', 
-      '28': 'Донецька', '16': 'Луганська', '23': 'Херсонська',
-      '17': 'Миколаївська', '4': 'Вінницька', '19': 'Полтавська',
-      '25': 'Чернігівська', '24': 'Черкаська', '20': 'Сумська',
-      '10': 'Житомирська', '3': 'Хмельницька', '5': 'Рівненська',
-      '13': 'Івано-Франківська', '21': 'Тернопільська', '8': 'Волинська',
-      '11': 'Закарпатська', '26': 'Чернівецька', '15': 'Кіровоградська',
-      '9999': 'АР Крим'
-    };
     
     function initLeafletMap() {
       if (leafletInitialized) return;
@@ -2867,11 +2797,10 @@
         zoomControl: true
       });
       
-      // Dark style OpenStreetMap tiles
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-        subdomains: 'abcd',
-        maxZoom: 20
+      // Ukrainian language OpenStreetMap tiles (light theme)
+      L.tileLayer('https://tile.openstreetmap.de/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 19
       }).addTo(leafletMap);
       
       leafletInitialized = true;
@@ -2913,89 +2842,12 @@
       document.querySelector('.status-panel').style.display = 'none';
       document.querySelector('.zoom-controls').style.display = 'none';
       
-      // Update alarms on Leaflet map
-      updateLeafletAlarms();
-      updateLeafletMarkers();
-      
       // Fix map size
       setTimeout(() => {
         if (leafletMap) leafletMap.invalidateSize();
       }, 100);
       
       console.log('Switched to Leaflet map');
-    }
-    
-    // Store current alarm data for Leaflet
-    let currentAlarmData = [];
-    let currentMarkerData = [];
-    
-    function updateLeafletAlarms() {
-      if (!leafletMap || currentMapMode !== 'leaflet') return;
-      
-      // Clear existing polygons
-      alarmPolygons.forEach(p => leafletMap.removeLayer(p));
-      alarmPolygons = [];
-      
-      // Get active alarm region IDs
-      const activeRegions = new Set();
-      currentAlarmData.forEach(region => {
-        if (region.activeAlerts && region.activeAlerts.length > 0) {
-          activeRegions.add(String(region.regionId));
-        }
-      });
-      
-      // Add polygons for each oblast
-      UKRAINE_OBLASTS_GEOJSON.features.forEach(feature => {
-        const regionId = feature.properties.id;
-        const hasAlarm = activeRegions.has(regionId);
-        
-        const polygon = L.geoJSON(feature, {
-          style: {
-            fillColor: hasAlarm ? '#D45B50' : '#3b4351',
-            fillOpacity: hasAlarm ? 0.5 : 0.2,
-            color: hasAlarm ? '#ff6b6b' : '#00d4ff',
-            weight: hasAlarm ? 2 : 1,
-            opacity: 0.8
-          }
-        }).addTo(leafletMap);
-        
-        // Add popup
-        polygon.bindPopup(`<b>${feature.properties.name}</b><br>${hasAlarm ? '🔴 Тривога!' : '✅ Без тривоги'}`);
-        
-        alarmPolygons.push(polygon);
-      });
-    }
-    
-    function updateLeafletMarkers() {
-      if (!leafletMap || currentMapMode !== 'leaflet') return;
-      
-      // Clear existing markers
-      threatMarkersLeaflet.forEach(m => leafletMap.removeLayer(m));
-      threatMarkersLeaflet = [];
-      
-      // Add new markers
-      currentMarkerData.forEach(marker => {
-        const lat = parseFloat(marker.lat);
-        const lng = parseFloat(marker.lng);
-        if (isNaN(lat) || isNaN(lng)) return;
-        
-        const threatType = marker.threat_type || 'default';
-        const iconFile = marker.marker_icon || THREAT_ICONS[threatType] || 'default.png';
-        
-        const customIcon = L.icon({
-          iconUrl: `/static/${iconFile}`,
-          iconSize: [32, 32],
-          iconAnchor: [16, 16],
-          popupAnchor: [0, -16]
-        });
-        
-        const m = L.marker([lat, lng], { icon: customIcon }).addTo(leafletMap);
-        
-        const typeName = THREAT_NAMES[threatType] || threatType;
-        m.bindPopup(`<b>${typeName}</b><br>${marker.place || 'Невідомо'}<br>${marker.date || ''}`);
-        
-        threatMarkersLeaflet.push(m);
-      });
     }
 
     // Init
