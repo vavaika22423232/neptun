@@ -1208,11 +1208,13 @@
             const districtName = feature.properties.name;
             const isAlarm = alarmDistricts[districtName];
             return {
-              fillColor: isAlarm ? '#dc2626' : 'transparent',
-              fillOpacity: isAlarm ? 0.8 : 0,
-              color: isAlarm ? '#991b1b' : 'transparent',
-              weight: isAlarm ? 2 : 0,
-              opacity: 1
+              fillColor: isAlarm ? '#b91c1c' : 'transparent',
+              fillOpacity: isAlarm ? 1 : 0,
+              // Use same fill color for stroke to hide gaps
+              color: isAlarm ? '#b91c1c' : 'transparent',
+              weight: isAlarm ? 3 : 0,
+              lineJoin: 'round',
+              lineCap: 'round'
             };
           },
           onEachFeature: function(feature, layer) {
@@ -1712,9 +1714,12 @@
           
           return {
             fillColor: isAlarm ? '#b91c1c' : 'transparent',
-            fillOpacity: isAlarm ? 0.7 : 0,
-            color: isAlarm ? '#7f1d1d' : 'transparent',
-            weight: isAlarm ? 2 : 0
+            fillOpacity: isAlarm ? 1 : 0,
+            // Use same fill color for stroke to hide gaps between polygons
+            color: isAlarm ? '#b91c1c' : 'transparent',
+            weight: isAlarm ? 3 : 0,
+            lineJoin: 'round',
+            lineCap: 'round'
           };
         });
       }
