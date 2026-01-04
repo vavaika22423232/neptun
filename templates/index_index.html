@@ -1799,10 +1799,15 @@
     const urlParams = new URLSearchParams(window.location.search);
     const TIME_RANGE = parseInt(urlParams.get('timeRange')) || 40;
     
-    // SVG map bounds - calibrated to match ukraine_states.svg viewBox 0 0 260 175
+    // SVG map bounds - precisely calibrated for ukraine_states.svg viewBox 0 0 260 175
+    // Calibrated using SVG text positions:
+    // - Закарпатська x=7 (lng≈22.3) → minLng≈21.8
+    // - Луганська x=231 (lng≈39.3) → maxLng≈41.5  
+    // - Чернігівська y=25.5 (lat≈51.5) → maxLat≈52.8
+    // - Крим y=152.7 (lat≈45.0) → minLat≈43.8
     const MAP_BOUNDS = {
-      minLat: 43.4,
-      maxLat: 52.9,
+      minLat: 43.8,
+      maxLat: 52.8,
       minLng: 21.8,
       maxLng: 41.5
     };
