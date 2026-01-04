@@ -614,6 +614,13 @@
     
     /* Touch device optimizations */
     @media (hover: none) and (pointer: coarse) {
+      /* Disable tap highlight on Android/mobile */
+      * {
+        -webkit-tap-highlight-color: transparent;
+        -webkit-touch-callout: none;
+        tap-highlight-color: transparent;
+      }
+      
       /* Larger touch targets */
       .zoom-btn {
         min-width: 44px;
@@ -1195,35 +1202,28 @@
       updateZoom(true);
     }
     
+    // Use requestAnimationFrame for smooth updates
+    let zoomRAF = null;
+    
     function updateZoom(animate = false) {
-      const container = document.getElementById('svg-container');
-      const wrapper = document.getElementById('map-wrapper');
-      if (!container || !wrapper) return;
-      
-      if (animate && !isAndroid) {
-        container.classList.add('animating');
-        setTimeout(() => container.classList.remove('animating'), 200);
-      } else {
-        container.classList.remove('animating');
+      // Cancel pending frame to avoid multiple updates
+      if (zoomRAF) {
+        cancelAnimationFrame(zoomRAF);
       }
       
-      // Use CSS transform for Android (GPU accelerated, no reflow)
-      // Use size-based for desktop (crisper vectors)
-      if (isAndroid) {
-        // Set fixed size once, then use transform
-        if (!container.dataset.initialized) {
-          container.style.width = containerWidth + 'px';
-          container.style.height = containerHeight + 'px';
-          container.style.left = '50%';
-          container.style.top = '50%';
-          container.style.marginLeft = (-containerWidth / 2) + 'px';
-          container.style.marginTop = (-containerHeight / 2) + 'px';
-          container.dataset.initialized = 'true';
+      zoomRAF = requestAnimationFrame(() => {
+        const container = document.getElementById('svg-container');
+        const wrapper = document.getElementById('map-wrapper');
+        if (!container || !wrapper) return;
+        
+        if (animate && !isAndroid) {
+          container.classList.add('animating');
+          setTimeout(() => container.classList.remove('animating'), 200);
+        } else {
+          container.classList.remove('animating');
         }
-        // GPU accelerated transform - no reflow!
-        container.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${currentScale})`;
-      } else {
-        // Desktop: size-based zoom for vector crispness
+        
+        // Size-based zoom for all devices (markers need correct % positioning)
         const newWidth = containerWidth * currentScale;
         const newHeight = containerHeight * currentScale;
         const wrapperRect = wrapper.getBoundingClientRect();
@@ -1235,7 +1235,9 @@
         container.style.left = centerX + 'px';
         container.style.top = centerY + 'px';
         container.style.transform = '';
-      }
+        
+        zoomRAF = null;
+      });
     }
     
     // Legacy transform function for compatibility
@@ -1325,9 +1327,9 @@
         }
       }, { passive: false });
       
-      // Throttle for Android performance
+      // Throttle for Android performance (size-based zoom is heavier)
       let lastMoveTime = 0;
-      const THROTTLE_MS = isAndroid ? 32 : 16; // ~30fps on Android, 60fps elsewhere
+      const THROTTLE_MS = isAndroid ? 50 : 16; // ~20fps on Android, 60fps elsewhere
       
       wrapper.addEventListener('touchmove', (e) => {
         const now = Date.now();
