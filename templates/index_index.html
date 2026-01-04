@@ -1799,12 +1799,12 @@
     const urlParams = new URLSearchParams(window.location.search);
     const TIME_RANGE = parseInt(urlParams.get('timeRange')) || 40;
     
-    // SVG map bounds (Ukraine approximate bounds)
+    // SVG map bounds - calibrated to match ukraine_states.svg viewBox 0 0 260 175
     const MAP_BOUNDS = {
-      minLat: 44.2,
-      maxLat: 52.4,
-      minLng: 22.0,
-      maxLng: 40.2
+      minLat: 43.4,
+      maxLat: 52.9,
+      minLng: 21.8,
+      maxLng: 41.5
     };
     
     let currentScale = 1;
