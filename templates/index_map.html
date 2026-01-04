@@ -59,9 +59,34 @@
       z-index: 1;
     }
     
-    /* Districts layer - top */
+    /* Districts layer - middle */
     #districts-layer {
       z-index: 2;
+    }
+    
+    /* Names layer - top */
+    #names-layer {
+      z-index: 3;
+      pointer-events: none;
+    }
+    
+    #names-layer text {
+      fill: white;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-weight: 500;
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.8), -1px -1px 2px rgba(0,0,0,0.8);
+    }
+    
+    /* Threat icons */
+    .threat-icon {
+      display: none;
+      position: absolute;
+      width: 24px;
+      height: 24px;
+    }
+    
+    .threat-icon.active {
+      display: block;
     }
     
     /* State (oblast) styling */
@@ -158,6 +183,20 @@
       color: #64748b;
       margin-top: 8px;
     }
+    
+    .last-update.stale {
+      color: #f59e0b;
+    }
+    
+    .last-update.error {
+      color: #ef4444;
+    }
+    
+    .api-status {
+      font-size: 10px;
+      color: #64748b;
+      margin-top: 4px;
+    }
   </style>
 </head>
 <body>
@@ -168,6 +207,8 @@
         <div id="states-layer"></div>
         <!-- Districts SVG will be loaded here -->
         <div id="districts-layer"></div>
+        <!-- Names SVG will be loaded here -->
+        <div id="names-layer"></div>
       </div>
     </div>
   </div>
@@ -176,6 +217,7 @@
     <h3>🚨 Райони з тривогою</h3>
     <div class="alarm-count" id="alarm-count">0</div>
     <div class="last-update" id="last-update">Завантаження...</div>
+    <div class="api-status" id="api-status"></div>
   </div>
   
   <div class="zoom-controls">
@@ -187,12 +229,15 @@
   <script>
     // ===== CONFIG =====
     const ALARM_UPDATE_INTERVAL = 5000; // 5 seconds like ukrainealarm.com
+    const MAX_RETRIES = 3;
     
     let currentScale = 1;
     let currentX = 0;
     let currentY = 0;
     let isDragging = false;
     let startX, startY;
+    let lastSuccessfulFetch = null;
+    let consecutiveFailures = 0;
     
     // Load both SVG maps
     async function loadMaps() {
@@ -206,6 +251,16 @@
         const districtsResponse = await fetch('/static/ukraine_districts_detailed.svg');
         const districtsText = await districtsResponse.text();
         document.getElementById('districts-layer').innerHTML = districtsText;
+        
+        // Load names SVG
+        const namesResponse = await fetch('/static/ukraine_names.svg');
+        const namesText = await namesResponse.text();
+        document.getElementById('names-layer').innerHTML = namesText;
+        
+        // Hide all icons initially
+        document.querySelectorAll('#names-layer .reasonIcon').forEach(icon => {
+          icon.style.display = 'none';
+        });
         
         // Setup drag functionality
         setupDrag();
@@ -222,47 +277,90 @@
       }
     }
     
-    // Fetch alarms from ukrainealarm API via proxy
-    async function fetchAlarms() {
+    // Fetch alarms from ukrainealarm API via proxy with retry
+    async function fetchAlarms(retryCount = 0) {
       try {
-        const response = await fetch('/api/alarms/all');
-        if (!response.ok) throw new Error('API error');
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        
+        const response = await fetch('/api/alarms/all', {
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
+        
+        // Check if we got actual data
+        if (!Array.isArray(data)) {
+          throw new Error('Invalid data format');
+        }
+        
+        // Success - reset failures counter
+        consecutiveFailures = 0;
+        lastSuccessfulFetch = new Date();
         
         // Clear ALL existing alarms
         document.querySelectorAll('.alarm').forEach(el => {
           el.classList.remove('alarm');
         });
         
+        // Hide all icons
+        document.querySelectorAll('#names-layer .reasonIcon').forEach(icon => {
+          icon.style.display = 'none';
+        });
+        
         // Track alarm counts
         let districtAlarmCount = 0;
         let stateAlarmCount = 0;
         
+        // Track threat types per state
+        const stateThreatTypes = {};
+        
         // Process each alert
-        if (Array.isArray(data)) {
-          data.forEach(region => {
-            if (region.activeAlerts && region.activeAlerts.length > 0) {
-              const regionId = region.regionId;
-              const regionType = region.regionType;
-              
-              if (regionType === 'State') {
-                // Color the oblast
-                const stateElements = document.querySelectorAll(`#states-layer [id="${regionId}"]`);
-                stateElements.forEach(el => {
-                  el.classList.add('alarm');
-                });
-                stateAlarmCount++;
-              } else if (regionType === 'District') {
-                // Color ONLY the specific district
-                const districtElements = document.querySelectorAll(`#districts-layer [id="${regionId}"]`);
-                districtElements.forEach(el => {
-                  el.classList.add('alarm');
-                });
-                districtAlarmCount++;
+        data.forEach(region => {
+          if (region.activeAlerts && region.activeAlerts.length > 0) {
+            const regionId = region.regionId;
+            const regionType = region.regionType;
+            
+            // Determine threat type from alerts
+            region.activeAlerts.forEach(alert => {
+              const alertType = alert.type || 'UNKNOWN';
+              // Map to state ID for icon display
+              let stateId = regionId;
+              if (regionType === 'District') {
+                // Districts belong to states - get parent state
+                // For now, show icon if district has alarm
+                // The API should provide parentId, but we'll use state from regionId pattern
               }
+              
+              // Store threat type for this state
+              if (!stateThreatTypes[stateId]) {
+                stateThreatTypes[stateId] = new Set();
+              }
+              stateThreatTypes[stateId].add(alertType);
+            });
+            
+            if (regionType === 'State') {
+              // Color the oblast
+              const stateElements = document.querySelectorAll(`#states-layer [id="${regionId}"]`);
+              stateElements.forEach(el => {
+                el.classList.add('alarm');
+              });
+              stateAlarmCount++;
+              
+              // Show drone icon for this state if applicable
+              showThreatIcons(regionId, region.activeAlerts);
+            } else if (regionType === 'District') {
+              // Color ONLY the specific district
+              const districtElements = document.querySelectorAll(`#districts-layer [id="${regionId}"]`);
+              districtElements.forEach(el => {
+                el.classList.add('alarm');
+              });
+              districtAlarmCount++;
             }
-          });
-        }
+          }
+        });
         
         // Update status panel
         const totalAlarms = districtAlarmCount + stateAlarmCount;
@@ -271,15 +369,59 @@
         countEl.className = totalAlarms > 0 ? 'alarm-count' : 'alarm-count safe';
         
         const now = new Date();
-        document.getElementById('last-update').textContent = 
-          `Оновлено: ${now.toLocaleTimeString('uk-UA')}`;
+        const updateEl = document.getElementById('last-update');
+        updateEl.textContent = `Оновлено: ${now.toLocaleTimeString('uk-UA')}`;
+        updateEl.className = 'last-update';
+        
+        document.getElementById('api-status').textContent = '';
         
         console.log(`Alarms: ${stateAlarmCount} oblasts, ${districtAlarmCount} districts`);
         
       } catch (error) {
-        console.error('Error fetching alarms:', error);
-        document.getElementById('last-update').textContent = 'Помилка оновлення';
+        consecutiveFailures++;
+        console.error(`Error fetching alarms (attempt ${retryCount + 1}):`, error);
+        
+        // Retry up to MAX_RETRIES times
+        if (retryCount < MAX_RETRIES - 1) {
+          console.log(`Retrying in ${(retryCount + 1) * 500}ms...`);
+          setTimeout(() => fetchAlarms(retryCount + 1), (retryCount + 1) * 500);
+          return;
+        }
+        
+        // All retries failed - show warning
+        const updateEl = document.getElementById('last-update');
+        const statusEl = document.getElementById('api-status');
+        
+        if (lastSuccessfulFetch) {
+          const secondsAgo = Math.round((new Date() - lastSuccessfulFetch) / 1000);
+          updateEl.textContent = `Дані: ${secondsAgo}с тому`;
+          updateEl.className = 'last-update stale';
+          statusEl.textContent = `⚠️ API тимчасово недоступний (${consecutiveFailures} спроб)`;
+        } else {
+          updateEl.textContent = 'Не вдалося завантажити';
+          updateEl.className = 'last-update error';
+          statusEl.textContent = '❌ API недоступний';
+        }
       }
+    }
+    
+    // Show threat icons based on alert type
+    function showThreatIcons(stateId, alerts) {
+      alerts.forEach(alert => {
+        const alertType = alert.type || '';
+        
+        // Determine which icon to show
+        // AIR = general air alarm, DRONES = shaheds, ARTILLERY = shelling, etc.
+        if (alertType === 'DRONES' || alertType.includes('DRONE')) {
+          const droneIcon = document.getElementById(`droneIcon_${stateId}`);
+          if (droneIcon) {
+            droneIcon.style.display = 'block';
+          }
+        }
+        
+        // You can add more icon types here:
+        // if (alertType === 'BALLISTIC' || alertType === 'MISSILE') { ... }
+      });
     }
     
     // Zoom functions

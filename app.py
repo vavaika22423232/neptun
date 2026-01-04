@@ -584,7 +584,9 @@ DISTRICT_TO_OBLAST = {
 
 # Cache for alarm API responses
 _alarm_cache = {'data': None, 'time': 0}
+_alarm_all_cache = {'data': None, 'time': 0}  # Separate cache for /all endpoint
 ALARM_CACHE_TTL = 30  # seconds
+ALARM_CACHE_STALE_TTL = 300  # 5 minutes - serve stale data if API fails
 
 @app.route('/api/alarms/proxy')
 def alarm_proxy():
@@ -654,30 +656,53 @@ def alarm_proxy():
 
 @app.route('/api/alarms/all')
 def alarm_all():
-    """Returns ALL alerts (State, District, Community) for detailed view"""
-    try:
-        response = http_requests.get(
-            f'{ALARM_API_BASE}/alerts',
-            headers={'Authorization': ALARM_API_KEY},
-            timeout=10
-        )
-        if response.ok:
-            data = response.json()
-            # Return all active alerts with regionId for SVG matching
-            result = []
-            for region in data:
-                if region.get('activeAlerts') and len(region['activeAlerts']) > 0:
-                    result.append({
-                        'regionId': region.get('regionId'),
-                        'regionName': region.get('regionName'),
-                        'regionType': region.get('regionType'),
-                        'activeAlerts': region.get('activeAlerts')
-                    })
-            return jsonify(result)
-        else:
-            return jsonify({'error': 'API error', 'status': response.status_code}), 502
-    except Exception as e:
-        print(f"Alarm all error: {e}")
+    """Returns ALL alerts (State, District, Community) for detailed view with caching"""
+    import time as _time
+    now = _time.time()
+    
+    # Return fresh cached data if available
+    if _alarm_all_cache['data'] and (now - _alarm_all_cache['time']) < ALARM_CACHE_TTL:
+        return jsonify(_alarm_all_cache['data'])
+    
+    # Try to fetch with retries
+    for attempt in range(3):
+        try:
+            response = http_requests.get(
+                f'{ALARM_API_BASE}/alerts',
+                headers={'Authorization': ALARM_API_KEY},
+                timeout=8
+            )
+            if response.ok:
+                data = response.json()
+                # Return all active alerts with regionId for SVG matching
+                result = []
+                for region in data:
+                    if region.get('activeAlerts') and len(region['activeAlerts']) > 0:
+                        result.append({
+                            'regionId': region.get('regionId'),
+                            'regionName': region.get('regionName'),
+                            'regionType': region.get('regionType'),
+                            'activeAlerts': region.get('activeAlerts')
+                        })
+                
+                # Update cache
+                _alarm_all_cache['data'] = result
+                _alarm_all_cache['time'] = now
+                
+                return jsonify(result)
+        except Exception as e:
+            print(f"Alarm all attempt {attempt+1} failed: {e}")
+            if attempt < 2:
+                _time.sleep(0.5)  # Wait before retry
+    
+    # All retries failed - return stale cached data if available (within 5 min)
+    if _alarm_all_cache['data'] and (now - _alarm_all_cache['time']) < ALARM_CACHE_STALE_TTL:
+        print(f"Returning stale alarm data ({int(now - _alarm_all_cache['time'])}s old) after API failures")
+        return jsonify(_alarm_all_cache['data'])
+    
+    # No cache available - return empty with error flag
+    print("Alarm API failed and no cache available")
+    return jsonify([])
         return jsonify({'error': str(e)}), 500
 
 # Custom route for serving pre-compressed static files
