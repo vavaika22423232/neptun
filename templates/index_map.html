@@ -341,6 +341,115 @@
       border: 1px solid #ff6b6b;
       animation: alarmPulse 2s ease-in-out infinite;
     }
+    
+    /* Threat markers layer */
+    #markers-layer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 10;
+      pointer-events: none;
+    }
+    
+    .threat-marker {
+      position: absolute;
+      width: 32px;
+      height: 32px;
+      transform: translate(-50%, -50%);
+      pointer-events: auto;
+      cursor: pointer;
+      filter: drop-shadow(0 0 8px rgba(255, 100, 100, 0.8));
+      animation: markerPulse 2s ease-in-out infinite;
+      transition: transform 0.2s ease;
+    }
+    
+    .threat-marker:hover {
+      transform: translate(-50%, -50%) scale(1.3);
+      z-index: 100;
+    }
+    
+    .threat-marker img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    
+    @keyframes markerPulse {
+      0%, 100% { 
+        opacity: 1;
+        filter: drop-shadow(0 0 8px rgba(255, 100, 100, 0.8));
+      }
+      50% { 
+        opacity: 0.85;
+        filter: drop-shadow(0 0 15px rgba(255, 100, 100, 1));
+      }
+    }
+    
+    /* Marker tooltip */
+    .marker-tooltip {
+      position: fixed;
+      background: rgba(10, 25, 47, 0.95);
+      border: 1px solid rgba(0, 212, 255, 0.4);
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: white;
+      font-size: 12px;
+      max-width: 280px;
+      z-index: 2000;
+      pointer-events: none;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    }
+    
+    .marker-tooltip .tooltip-type {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 11px;
+      color: #00d4ff;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 6px;
+    }
+    
+    .marker-tooltip .tooltip-place {
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    
+    .marker-tooltip .tooltip-time {
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.5);
+    }
+    
+    /* Markers counter in status panel */
+    .markers-info {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(0, 212, 255, 0.2);
+    }
+    
+    .markers-info h4 {
+      font-size: 10px;
+      color: rgba(0, 212, 255, 0.7);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 6px;
+    }
+    
+    .marker-type-count {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.8);
+      margin: 4px 0;
+    }
+    
+    .marker-type-count img {
+      width: 18px;
+      height: 18px;
+    }
   </style>
 </head>
 <body>
@@ -359,6 +468,8 @@
         <div id="districts-layer"></div>
         <!-- Names SVG will be loaded here -->
         <div id="names-layer"></div>
+        <!-- Threat markers layer -->
+        <div id="markers-layer"></div>
       </div>
     </div>
   </div>
@@ -368,6 +479,12 @@
     <div class="alarm-count" id="alarm-count">0</div>
     <div class="last-update" id="last-update">Завантаження...</div>
     <div class="api-status" id="api-status"></div>
+    
+    <!-- Threat markers info -->
+    <div class="markers-info" id="markers-info" style="display: none;">
+      <h4>Загрози на карті</h4>
+      <div id="markers-summary"></div>
+    </div>
   </div>
   
   <!-- Legend -->
@@ -390,8 +507,17 @@
 
   <script>
     // ===== CONFIG =====
-    const ALARM_UPDATE_INTERVAL = 5000; // 5 seconds like ukrainealarm.com
+    const ALARM_UPDATE_INTERVAL = 5000; // 5 seconds
+    const MARKERS_UPDATE_INTERVAL = 10000; // 10 seconds for threat markers
     const MAX_RETRIES = 3;
+    
+    // SVG map bounds (Ukraine approximate bounds)
+    const MAP_BOUNDS = {
+      minLat: 44.2,
+      maxLat: 52.4,
+      minLng: 22.0,
+      maxLng: 40.2
+    };
     
     let currentScale = 1;
     let currentX = 0;
@@ -400,6 +526,42 @@
     let startX, startY;
     let lastSuccessfulFetch = null;
     let consecutiveFailures = 0;
+    let activeTooltip = null;
+    
+    // Icon mapping for threat types
+    const THREAT_ICONS = {
+      'shahed': 'shahed.png',
+      'raketa': 'raketa.png',
+      'avia': 'avia.png',
+      'artillery': 'artillery.png',
+      'obstril': 'obstril.png',
+      'fpv': 'fpv.png',
+      'pusk': 'pusk.png',
+      'kab': 'rszv.png',
+      'rszv': 'rszv.png',
+      'rozved': 'rozved.png',
+      'vibuh': 'vibuh.png',
+      'alarm': 'trivoga.png',
+      'alarm_cancel': 'vidboi.png',
+      'default': 'default.png'
+    };
+    
+    // Threat type names for display
+    const THREAT_NAMES = {
+      'shahed': '🛩️ Шахеди/БПЛА',
+      'raketa': '🚀 Ракети',
+      'avia': '✈️ Авіація',
+      'artillery': '💥 Артилерія',
+      'obstril': '💥 Обстріл',
+      'fpv': '🎯 FPV дрони',
+      'pusk': '🚀 Пуски',
+      'kab': '💣 КАБи',
+      'rszv': '💣 РСЗВ',
+      'rozved': '🔍 Розвідники',
+      'vibuh': '💥 Вибухи',
+      'alarm': '🚨 Тривога',
+      'alarm_cancel': '✅ Відбій'
+    };
     
     // Load both SVG maps
     async function loadMaps() {
@@ -430,8 +592,14 @@
         // Fetch alarms immediately
         await fetchAlarms();
         
+        // Fetch threat markers immediately
+        await fetchThreatMarkers();
+        
         // Update alarms every 5 seconds
         setInterval(fetchAlarms, ALARM_UPDATE_INTERVAL);
+        
+        // Update threat markers every 10 seconds
+        setInterval(fetchThreatMarkers, MARKERS_UPDATE_INTERVAL);
         
         console.log('Maps loaded successfully');
       } catch (error) {
@@ -584,6 +752,171 @@
         // You can add more icon types here:
         // if (alertType === 'BALLISTIC' || alertType === 'MISSILE') { ... }
       });
+    }
+    
+    // Convert lat/lng to SVG percentage coordinates
+    function latLngToSvgPercent(lat, lng) {
+      // Ukraine bounds for SVG mapping
+      const x = ((lng - MAP_BOUNDS.minLng) / (MAP_BOUNDS.maxLng - MAP_BOUNDS.minLng)) * 100;
+      const y = ((MAP_BOUNDS.maxLat - lat) / (MAP_BOUNDS.maxLat - MAP_BOUNDS.minLat)) * 100;
+      return { x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) };
+    }
+    
+    // Fetch threat markers from /data endpoint
+    async function fetchThreatMarkers() {
+      try {
+        const response = await fetch('/data?timeRange=60');
+        if (!response.ok) return;
+        
+        const data = await response.json();
+        const markersLayer = document.getElementById('markers-layer');
+        
+        // Clear existing markers
+        markersLayer.innerHTML = '';
+        
+        // Track marker counts by type
+        const markerCounts = {};
+        
+        // Process markers
+        const markers = data.tracks || data.items || data || [];
+        
+        if (!Array.isArray(markers)) {
+          console.log('No markers array found');
+          return;
+        }
+        
+        markers.forEach((marker, index) => {
+          const lat = parseFloat(marker.lat);
+          const lng = parseFloat(marker.lng);
+          
+          // Skip markers without valid coordinates
+          if (isNaN(lat) || isNaN(lng)) return;
+          
+          // Skip if outside Ukraine bounds
+          if (lat < MAP_BOUNDS.minLat || lat > MAP_BOUNDS.maxLat ||
+              lng < MAP_BOUNDS.minLng || lng > MAP_BOUNDS.maxLng) return;
+          
+          // Get threat type and icon
+          const threatType = marker.threat_type || 'default';
+          const iconFile = marker.marker_icon || THREAT_ICONS[threatType] || 'default.png';
+          
+          // Count markers by type
+          markerCounts[threatType] = (markerCounts[threatType] || 0) + 1;
+          
+          // Convert to SVG coordinates
+          const pos = latLngToSvgPercent(lat, lng);
+          
+          // Create marker element
+          const markerEl = document.createElement('div');
+          markerEl.className = 'threat-marker';
+          markerEl.style.left = `${pos.x}%`;
+          markerEl.style.top = `${pos.y}%`;
+          markerEl.dataset.type = threatType;
+          markerEl.dataset.place = marker.place || '';
+          markerEl.dataset.text = marker.text || '';
+          markerEl.dataset.date = marker.date || '';
+          
+          const img = document.createElement('img');
+          img.src = `/static/${iconFile}`;
+          img.alt = threatType;
+          img.onerror = function() {
+            this.src = '/static/default.png';
+          };
+          
+          markerEl.appendChild(img);
+          
+          // Add tooltip on hover
+          markerEl.addEventListener('mouseenter', (e) => showMarkerTooltip(e, marker, threatType));
+          markerEl.addEventListener('mouseleave', hideMarkerTooltip);
+          
+          markersLayer.appendChild(markerEl);
+        });
+        
+        // Update markers summary
+        updateMarkersSummary(markerCounts);
+        
+        console.log(`Loaded ${markers.length} threat markers`);
+        
+      } catch (error) {
+        console.error('Error fetching threat markers:', error);
+      }
+    }
+    
+    // Show tooltip for marker
+    function showMarkerTooltip(event, marker, threatType) {
+      hideMarkerTooltip();
+      
+      const tooltip = document.createElement('div');
+      tooltip.className = 'marker-tooltip';
+      tooltip.id = 'active-tooltip';
+      
+      const typeName = THREAT_NAMES[threatType] || threatType;
+      const place = marker.place || 'Невідомо';
+      const date = marker.date || '';
+      
+      tooltip.innerHTML = `
+        <div class="tooltip-type">${typeName}</div>
+        <div class="tooltip-place">${place}</div>
+        ${date ? `<div class="tooltip-time">${date}</div>` : ''}
+      `;
+      
+      document.body.appendChild(tooltip);
+      
+      // Position tooltip near cursor
+      const rect = tooltip.getBoundingClientRect();
+      let x = event.clientX + 15;
+      let y = event.clientY + 15;
+      
+      // Keep tooltip in viewport
+      if (x + rect.width > window.innerWidth) {
+        x = event.clientX - rect.width - 15;
+      }
+      if (y + rect.height > window.innerHeight) {
+        y = event.clientY - rect.height - 15;
+      }
+      
+      tooltip.style.left = `${x}px`;
+      tooltip.style.top = `${y}px`;
+    }
+    
+    // Hide tooltip
+    function hideMarkerTooltip() {
+      const tooltip = document.getElementById('active-tooltip');
+      if (tooltip) {
+        tooltip.remove();
+      }
+    }
+    
+    // Update markers summary in status panel
+    function updateMarkersSummary(counts) {
+      const container = document.getElementById('markers-info');
+      const summary = document.getElementById('markers-summary');
+      
+      const totalMarkers = Object.values(counts).reduce((a, b) => a + b, 0);
+      
+      if (totalMarkers === 0) {
+        container.style.display = 'none';
+        return;
+      }
+      
+      container.style.display = 'block';
+      
+      // Sort by count descending
+      const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+      
+      let html = '';
+      sorted.forEach(([type, count]) => {
+        const iconFile = THREAT_ICONS[type] || 'default.png';
+        const typeName = THREAT_NAMES[type] || type;
+        html += `
+          <div class="marker-type-count">
+            <img src="/static/${iconFile}" alt="${type}">
+            <span>${typeName}: ${count}</span>
+          </div>
+        `;
+      });
+      
+      summary.innerHTML = html;
     }
     
     // Zoom functions
