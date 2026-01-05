@@ -689,7 +689,9 @@ def alarm_all():
                 _alarm_all_cache['data'] = result
                 _alarm_all_cache['time'] = now
                 
-                return jsonify(result)
+                resp = jsonify(result)
+                resp.headers['Cache-Control'] = 'public, max-age=30'  # 30s client cache
+                return resp
         except Exception as e:
             print(f"Alarm all attempt {attempt+1} failed: {e}")
             if attempt < 2:
@@ -698,11 +700,15 @@ def alarm_all():
     # All retries failed - return stale cached data if available (within 5 min)
     if _alarm_all_cache['data'] and (now - _alarm_all_cache['time']) < ALARM_CACHE_STALE_TTL:
         print(f"Returning stale alarm data ({int(now - _alarm_all_cache['time'])}s old) after API failures")
-        return jsonify(_alarm_all_cache['data'])
+        resp = jsonify(_alarm_all_cache['data'])
+        resp.headers['Cache-Control'] = 'public, max-age=30'
+        return resp
     
     # No cache available - return empty with error flag
     print("Alarm API failed and no cache available")
-    return jsonify([])
+    resp = jsonify([])
+    resp.headers['Cache-Control'] = 'public, max-age=10'
+    return resp
 
 # Custom route for serving pre-compressed static files
 @app.route('/static/<path:filename>')
@@ -14920,14 +14926,6 @@ def index_new():
 def index_old():
     """Old TopoJSON map (has artifacts)"""
     response = render_template('index_new.html')
-    resp = app.response_class(response)
-    resp.headers['Cache-Control'] = 'public, max-age=300'
-    return resp
-
-@app.route('/legacy')
-def index_legacy():
-    """Legacy main page - old index.html"""
-    response = render_template('index.html')
     resp = app.response_class(response)
     resp.headers['Cache-Control'] = 'public, max-age=300'
     return resp
