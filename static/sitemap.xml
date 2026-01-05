@@ -6,20 +6,19 @@
         xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9
         http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
   
-  <!-- Головна сторінка - карта тривог України -->
+  <!-- Головна сторінка - карта шахедів та тривог України -->
   <url>
     <loc>https://neptun.in.ua/</loc>
-    <lastmod>2026-01-02</lastmod>
+    <lastmod>2026-01-05</lastmod>
     <changefreq>always</changefreq>
     <priority>1.0</priority>
     <image:image>
-      <image:loc>https://neptun.in.ua/static/default.png</image:loc>
-      <image:title>Карта тривог України онлайн - NEPTUN</image:title>
-      <image:caption>Карта тривог, шахедів, ракет України в реальному часі. Найточніша карта тревог України 24/7</image:caption>
+      <image:loc>https://neptun.in.ua/static/og-image.png</image:loc>
+      <image:title>Карта шахедів онлайн - NEPTUN | Радар тривог України</image:title>
+      <image:caption>Карта шахедів, дронів та ракет України в реальному часі. Радар шахедів, карта повітряних тривог, відстеження загроз онлайн 24/7</image:caption>
     </image:image>
     <xhtml:link rel="alternate" hreflang="uk" href="https://neptun.in.ua/"/>
-    <xhtml:link rel="alternate" hreflang="ru" href="https://neptun.in.ua/"/>
-    <xhtml:link rel="alternate" hreflang="en" href="https://neptun.in.ua/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://neptun.in.ua/"/>
   </url>
   
   <!-- Карта тривог - основна сторінка з хешем -->
