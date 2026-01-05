@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5">
+  <meta name="theme-color" content="#0a0e17">
+  <title>NEPTUN - Зачекайте...</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #0a0e17 0%, #1a1a2e 50%, #16213e 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      overflow: hidden;
+    }
+    
+    .container {
+      text-align: center;
+      padding: 40px;
+      max-width: 500px;
+    }
+    
+    .logo {
+      font-size: 48px;
+      font-weight: 800;
+      margin-bottom: 10px;
+      background: linear-gradient(135deg, #00d4ff, #7c3aed);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: 4px;
+    }
+    
+    .subtitle {
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 14px;
+      margin-bottom: 40px;
+      letter-spacing: 2px;
+    }
+    
+    .message {
+      font-size: 24px;
+      margin-bottom: 20px;
+      line-height: 1.4;
+    }
+    
+    .description {
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 16px;
+      margin-bottom: 30px;
+      line-height: 1.6;
+    }
+    
+    .loader {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 30px;
+    }
+    
+    .loader span {
+      width: 12px;
+      height: 12px;
+      background: #00d4ff;
+      border-radius: 50%;
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+    
+    .loader span:nth-child(1) { animation-delay: 0s; }
+    .loader span:nth-child(2) { animation-delay: 0.2s; }
+    .loader span:nth-child(3) { animation-delay: 0.4s; }
+    
+    @keyframes pulse {
+      0%, 100% { transform: scale(0.8); opacity: 0.5; }
+      50% { transform: scale(1.2); opacity: 1; }
+    }
+    
+    .countdown {
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.5);
+      margin-bottom: 20px;
+    }
+    
+    .countdown span {
+      color: #00d4ff;
+      font-weight: bold;
+    }
+    
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 20px;
+      font-size: 14px;
+    }
+    
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      background: #ffc107;
+      border-radius: 50%;
+      animation: blink 1s infinite;
+    }
+    
+    .status.online .status-dot {
+      background: #4caf50;
+      animation: none;
+    }
+    
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+    
+    .ukraine-map {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      opacity: 0.03;
+      background-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60"><path fill="%23fff" d="M20 10 L80 10 L90 25 L85 45 L60 55 L30 50 L15 35 L10 20 Z"/></svg>');
+      background-size: 60%;
+      background-position: center;
+      background-repeat: no-repeat;
+      z-index: -1;
+    }
+    
+    .retry-btn {
+      display: inline-block;
+      margin-top: 20px;
+      padding: 12px 30px;
+      background: linear-gradient(135deg, #00d4ff, #7c3aed);
+      color: #fff;
+      text-decoration: none;
+      border-radius: 25px;
+      font-weight: 600;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    
+    .retry-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 30px rgba(0, 212, 255, 0.3);
+    }
+  </style>
+</head>
+<body>
+  <div class="ukraine-map"></div>
+  
+  <div class="container">
+    <div class="logo">NEPTUN</div>
+    <div class="subtitle">КАРТА ТРИВОГ УКРАЇНИ</div>
+    
+    <div class="message">🔄 Зачекайте, вносимо зміни</div>
+    
+    <div class="description">
+      Сервер оновлюється. Сторінка автоматично перезавантажиться через кілька секунд.
+    </div>
+    
+    <div class="loader">
+      <span></span>
+      <span></span>
+      <span></span>
+    </div>
+    
+    <div class="countdown">
+      Автоматичне оновлення через <span id="timer">10</span> сек.
+    </div>
+    
+    <div class="status" id="status">
+      <span class="status-dot"></span>
+      <span id="status-text">Перевірка з'єднання...</span>
+    </div>
+    
+    <a href="/" class="retry-btn" id="retry-btn" style="display: none;">
+      🔄 Спробувати зараз
+    </a>
+  </div>
+
+  <script>
+    let countdown = 10;
+    let checkInterval;
+    
+    // Update countdown timer
+    const timerEl = document.getElementById('timer');
+    const statusEl = document.getElementById('status');
+    const statusTextEl = document.getElementById('status-text');
+    const retryBtn = document.getElementById('retry-btn');
+    
+    // Check if server is available
+    async function checkServer() {
+      try {
+        const response = await fetch('/api/alarms', { 
+          method: 'GET',
+          cache: 'no-cache',
+          timeout: 5000
+        });
+        
+        if (response.ok) {
+          statusEl.classList.add('online');
+          statusTextEl.textContent = 'Сервер доступний!';
+          
+          // Redirect to main page
+          setTimeout(() => {
+            window.location.href = '/';
+          }, 1000);
+          
+          return true;
+        }
+      } catch (e) {
+        console.log('Server not ready yet...');
+      }
+      return false;
+    }
+    
+    // Countdown and auto-refresh
+    setInterval(async () => {
+      countdown--;
+      timerEl.textContent = countdown;
+      
+      if (countdown <= 0) {
+        // Try to reload
+        const isOnline = await checkServer();
+        if (!isOnline) {
+          countdown = 10; // Reset countdown
+          window.location.reload();
+        }
+      }
+      
+      // Check server every 3 seconds
+      if (countdown % 3 === 0) {
+        checkServer();
+      }
+    }, 1000);
+    
+    // Initial check
+    checkServer();
+    
+    // Show retry button after a few seconds
+    setTimeout(() => {
+      retryBtn.style.display = 'inline-block';
+    }, 5000);
+  </script>
+</body>
+</html>

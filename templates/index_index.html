@@ -1709,9 +1709,116 @@
         top: 70px;
       }
     }
+    
+    /* Maintenance/502 overlay */
+    #maintenance-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, rgba(10, 14, 23, 0.98) 0%, rgba(26, 26, 46, 0.98) 50%, rgba(22, 33, 62, 0.98) 100%);
+      z-index: 99999;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    #maintenance-overlay.show {
+      display: flex;
+    }
+    
+    .maintenance-content {
+      max-width: 450px;
+      padding: 30px;
+    }
+    
+    .maintenance-logo {
+      font-size: 42px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, #00d4ff, #7c3aed);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: 3px;
+    }
+    
+    .maintenance-subtitle {
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 12px;
+      margin-bottom: 30px;
+      letter-spacing: 2px;
+    }
+    
+    .maintenance-message {
+      font-size: 20px;
+      margin-bottom: 15px;
+      line-height: 1.4;
+    }
+    
+    .maintenance-desc {
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 14px;
+      margin-bottom: 25px;
+      line-height: 1.5;
+    }
+    
+    .maintenance-loader {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 25px;
+    }
+    
+    .maintenance-loader span {
+      width: 10px;
+      height: 10px;
+      background: #00d4ff;
+      border-radius: 50%;
+      animation: maintenance-pulse 1.4s ease-in-out infinite;
+    }
+    
+    .maintenance-loader span:nth-child(1) { animation-delay: 0s; }
+    .maintenance-loader span:nth-child(2) { animation-delay: 0.2s; }
+    .maintenance-loader span:nth-child(3) { animation-delay: 0.4s; }
+    
+    @keyframes maintenance-pulse {
+      0%, 100% { transform: scale(0.8); opacity: 0.5; }
+      50% { transform: scale(1.2); opacity: 1; }
+    }
+    
+    .maintenance-timer {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.4);
+    }
+    
+    .maintenance-timer span {
+      color: #00d4ff;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
+  <!-- MAINTENANCE OVERLAY for 502 errors -->
+  <div id="maintenance-overlay">
+    <div class="maintenance-content">
+      <div class="maintenance-logo">NEPTUN</div>
+      <div class="maintenance-subtitle">КАРТА ТРИВОГ УКРАЇНИ</div>
+      <div class="maintenance-message">🔄 Зачекайте, вносимо зміни</div>
+      <div class="maintenance-desc">Сервер оновлюється. Сторінка автоматично перезавантажиться через кілька секунд.</div>
+      <div class="maintenance-loader">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+      <div class="maintenance-timer">Автоматичне оновлення через <span id="maintenance-timer">10</span> сек.</div>
+    </div>
+  </div>
+  
   <!-- SEO CONTENT - Hidden but indexed by search engines -->
   <article id="seo-content" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;" aria-hidden="true">
     <h1>Карта шахедів онлайн - Радар тривог України в реальному часі | NEPTUN</h1>
@@ -1897,6 +2004,54 @@
     let lastSuccessfulFetch = null;
     let consecutiveFailures = 0;
     let activeTooltip = null;
+    let maintenanceCountdown = 10;
+    let maintenanceShowing = false;
+    
+    // Show maintenance overlay for 502/503 errors
+    function showMaintenanceOverlay() {
+      if (maintenanceShowing) return;
+      maintenanceShowing = true;
+      
+      const overlay = document.getElementById('maintenance-overlay');
+      const timerEl = document.getElementById('maintenance-timer');
+      overlay.classList.add('show');
+      
+      maintenanceCountdown = 10;
+      timerEl.textContent = maintenanceCountdown;
+      
+      const interval = setInterval(() => {
+        maintenanceCountdown--;
+        timerEl.textContent = maintenanceCountdown;
+        
+        if (maintenanceCountdown <= 0) {
+          clearInterval(interval);
+          window.location.reload();
+        }
+      }, 1000);
+      
+      // Also try to check if server is back every 3 seconds
+      const checkInterval = setInterval(async () => {
+        try {
+          const response = await fetch('/api/alarms', { cache: 'no-cache' });
+          if (response.ok) {
+            clearInterval(checkInterval);
+            clearInterval(interval);
+            overlay.classList.remove('show');
+            maintenanceShowing = false;
+            fetchAlarms(); // Reload data
+          }
+        } catch (e) {
+          // Still down, keep waiting
+        }
+      }, 3000);
+    }
+    
+    // Hide maintenance overlay
+    function hideMaintenanceOverlay() {
+      const overlay = document.getElementById('maintenance-overlay');
+      overlay.classList.remove('show');
+      maintenanceShowing = false;
+    }
     
     // Android detection for performance optimizations
     const isAndroid = /Android/i.test(navigator.userAgent);
@@ -2062,9 +2217,10 @@
           throw new Error('Invalid data format');
         }
         
-        // Success - reset failures counter
+        // Success - reset failures counter and hide maintenance overlay
         consecutiveFailures = 0;
         lastSuccessfulFetch = new Date();
+        hideMaintenanceOverlay();
         
         // Clear ALL existing alarms
         document.querySelectorAll('.alarm').forEach(el => {
@@ -2152,6 +2308,13 @@
         consecutiveFailures++;
         console.error(`Error fetching alarms (attempt ${retryCount + 1}):`, error);
         
+        // Check for 502/503 errors - show maintenance overlay
+        const errorMsg = error.message || '';
+        if (errorMsg.includes('502') || errorMsg.includes('503') || errorMsg.includes('504') || consecutiveFailures >= 5) {
+          showMaintenanceOverlay();
+          return;
+        }
+        
         // Retry up to MAX_RETRIES times
         if (retryCount < MAX_RETRIES - 1) {
           console.log(`Retrying in ${(retryCount + 1) * 500}ms...`);
@@ -2171,6 +2334,9 @@
           updateEl.textContent = 'Не вдалося завантажити';
           updateEl.className = 'last-update error';
           statusEl.textContent = '❌ API недоступний';
+          
+          // Show maintenance overlay if no data at all
+          showMaintenanceOverlay();
         }
       }
     }
