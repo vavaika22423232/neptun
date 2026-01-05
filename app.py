@@ -18405,6 +18405,7 @@ def send_chat_message():
         
         user_id = data.get('userId', '')
         message = data.get('message', '').strip()
+        reply_to = data.get('replyTo')  # Optional reply to message id
         
         if not user_id or not message:
             return jsonify({'error': 'Missing userId or message'}), 400
@@ -18425,6 +18426,18 @@ def send_chat_message():
             'time': now.strftime('%H:%M'),
             'date': now.strftime('%d.%m.%Y')
         }
+        
+        # Add reply reference if provided
+        if reply_to:
+            messages = load_chat_messages()
+            # Find the original message being replied to
+            original_msg = next((m for m in messages if m.get('id') == reply_to), None)
+            if original_msg:
+                new_message['replyTo'] = {
+                    'id': original_msg.get('id'),
+                    'userId': original_msg.get('userId'),
+                    'message': original_msg.get('message', '')[:100]  # Truncate preview
+                }
         
         # Load, append, save
         messages = load_chat_messages()
