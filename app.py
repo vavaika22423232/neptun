@@ -16135,13 +16135,11 @@ def data():
     if client_etag == response_headers['ETag']:
         return Response(status=304, headers=response_headers)
     
-    # Use user-provided timeRange or fall back to global configured MONITOR_PERIOD_MINUTES
-    try:
-        time_range = int(request.args.get('timeRange', MONITOR_PERIOD_MINUTES))
-        # Limit to reasonable values to prevent abuse and reduce bandwidth
-        time_range = max(10, min(time_range, 100))  # Reduced from 200 to 100
-    except (ValueError, TypeError):
-        time_range = MONITOR_PERIOD_MINUTES
+    # Use global configured MONITOR_PERIOD_MINUTES from admin panel
+    # URL parameter timeRange is ignored - only admin can control this
+    time_range = MONITOR_PERIOD_MINUTES
+    # Validate range (should be 1-360 as set by admin, but apply safety limits)
+    time_range = max(1, min(time_range, 360))
     
     print(f"[DEBUG] /data endpoint called with timeRange={request.args.get('timeRange')}, MONITOR_PERIOD_MINUTES={MONITOR_PERIOD_MINUTES}, using time_range={time_range}")
     messages = load_messages()
