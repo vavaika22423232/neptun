@@ -2122,7 +2122,7 @@
       const timerEl = document.getElementById('maintenance-timer');
       overlay.classList.add('show');
       
-      maintenanceCountdown = 40;
+      maintenanceCountdown = 60;
       timerEl.textContent = maintenanceCountdown;
       
       const interval = setInterval(() => {
@@ -2961,8 +2961,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             id: uid,
-            platform: 'web',
-            nickname: window.neptunNickname || null
+            platform: 'web'
           })
         });
         
@@ -3074,128 +3073,13 @@
     document.addEventListener('DOMContentLoaded', () => {
       loadMaps();
       initBanners();
-      initNickname();
       
       // Start presence tracking
       pingPresence();
       presenceInterval = setInterval(pingPresence, 30000);
     });
-    
-    // ========== NICKNAME SYSTEM ==========
-    function initNickname() {
-      const savedNickname = localStorage.getItem('neptun_nickname');
-      if (savedNickname) {
-        window.neptunNickname = savedNickname;
-        updateNicknameDisplay(savedNickname);
-      } else {
-        // Show modal after short delay
-        setTimeout(() => {
-          document.getElementById('nicknameModal').style.display = 'flex';
-        }, 1500);
-      }
-    }
-    
-    function saveNickname() {
-      const input = document.getElementById('nicknameInput');
-      const nickname = input.value.trim();
-      
-      if (!nickname || nickname.length < 2) {
-        input.style.borderColor = '#ef4444';
-        input.placeholder = 'Мінімум 2 символи!';
-        setTimeout(() => {
-          input.style.borderColor = 'rgba(59, 130, 246, 0.3)';
-          input.placeholder = 'Введіть свій нікнейм...';
-        }, 2000);
-        return;
-      }
-      
-      // Save to localStorage
-      localStorage.setItem('neptun_nickname', nickname);
-      window.neptunNickname = nickname;
-      
-      // Hide modal
-      document.getElementById('nicknameModal').style.display = 'none';
-      
-      // Update UI
-      updateNicknameDisplay(nickname);
-      
-      // Send to server immediately
-      pingPresence();
-    }
-    
-    function updateNicknameDisplay(nickname) {
-      // Add nickname badge to navbar
-      const navbar = document.querySelector('.navbar');
-      if (navbar) {
-        let badge = document.getElementById('nicknameBadge');
-        if (!badge) {
-          badge = document.createElement('div');
-          badge.id = 'nicknameBadge';
-          badge.style.cssText = `
-            background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(139, 92, 246, 0.15));
-            color: #60a5fa;
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 600;
-            border: 1px solid rgba(59, 130, 246, 0.3);
-            display: flex;
-            align-items: center;
-            gap: 5px;
-            cursor: pointer;
-          `;
-          badge.onclick = () => {
-            if (confirm('Змінити нікнейм?')) {
-              localStorage.removeItem('neptun_nickname');
-              window.neptunNickname = null;
-              badge.remove();
-              document.getElementById('nicknameModal').style.display = 'flex';
-            }
-          };
-          // Insert before support button
-          const supportBtn = navbar.querySelector('.support-btn');
-          if (supportBtn) {
-            navbar.insertBefore(badge, supportBtn);
-          } else {
-            navbar.appendChild(badge);
-          }
-        }
-        badge.innerHTML = `<i class="material-icons" style="font-size:14px;">person</i> ${nickname}`;
-      }
-    }
+
   </script>
-  
-  <!-- Nickname Modal -->
-  <div id="nicknameModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 99999; justify-content: center; align-items: center; backdrop-filter: blur(5px);">
-    <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); padding: 2.5rem; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); max-width: 450px; width: 90%; border: 2px solid rgba(59, 130, 246, 0.3);">
-      <h2 style="margin: 0 0 0.8rem 0; color: #60a5fa; font-size: 1.8rem; text-align: center; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
-        <i class="material-icons" style="font-size: 2rem;">person_add</i>
-        Вітаємо на NEPTUN!
-      </h2>
-      <p style="color: #cbd5e1; margin-bottom: 1.5rem; text-align: center; line-height: 1.6;">
-        Придумайте собі нікнейм, який буде відображатися в статистиці онлайн відвідувачів
-      </p>
-      <div style="margin-bottom: 1.5rem;">
-        <input 
-          type="text" 
-          id="nicknameInput" 
-          placeholder="Введіть свій нікнейм..." 
-          maxlength="20"
-          style="width: 100%; padding: 0.9rem 1.2rem; font-size: 1rem; border: 2px solid rgba(59, 130, 246, 0.3); border-radius: 10px; background: rgba(15, 23, 42, 0.5); color: #e2e8f0; box-sizing: border-box; transition: all 0.3s;"
-          onkeypress="if(event.key === 'Enter') saveNickname()"
-        >
-        <small style="color: #94a3b8; display: block; margin-top: 0.5rem; text-align: center;">Максимум 20 символів</small>
-      </div>
-      <button 
-        onclick="saveNickname()" 
-        style="width: 100%; padding: 0.9rem; font-size: 1.1rem; font-weight: 600; background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; border: none; border-radius: 10px; cursor: pointer; transition: all 0.3s; box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);"
-        onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(59, 130, 246, 0.6)'"
-        onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(59, 130, 246, 0.4)'"
-      >
-        Продовжити
-      </button>
-    </div>
-  </div>
   
   <!-- SEO FOOTER - Important for search rankings -->
   <footer id="seo-footer" style="position:fixed;bottom:0;left:0;right:0;background:linear-gradient(180deg, transparent 0%, rgba(10,14,23,0.95) 50%);padding:8px 16px;z-index:100;pointer-events:none;">

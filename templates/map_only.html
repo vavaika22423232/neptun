@@ -17,6 +17,10 @@
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js" crossorigin=""></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" crossorigin=""></script>
   
+  <!-- Material Icons -->
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+  
   <style>
     * {
       margin: 0;
@@ -402,9 +406,700 @@
         font-size: 22px;
       }
     }
+    
+    /* ========== NAVBAR STYLES ========== */
+    .navbar {
+      width: 100%;
+      background: linear-gradient(180deg, rgba(10, 14, 23, 0.98) 0%, rgba(10, 14, 23, 0.95) 100%);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      color: #e2e8f0;
+      font-weight: 600;
+      font-size: 1rem;
+      padding: 0.6rem 1.2rem;
+      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(0, 212, 255, 0.15);
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 1000;
+    }
+    
+    .navbar::after {
+      content: "";
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.5), transparent);
+    }
+    
+    .navbar .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    
+    .logo-text {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 1.3rem;
+      font-weight: 900;
+      background: linear-gradient(135deg, #00d4ff 0%, #0099cc 50%, #00d4ff 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      letter-spacing: 4px;
+    }
+    
+    .nav-links {
+      display: flex;
+      gap: 0.3rem;
+      align-items: center;
+    }
+    
+    .nav-links a {
+      color: rgba(148, 163, 184, 0.9);
+      text-decoration: none;
+      font-weight: 600;
+      padding: 0.5rem 0.9rem;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: all 0.2s ease;
+      border: 1px solid transparent;
+    }
+    
+    .nav-links a:hover {
+      color: #fff;
+      background: rgba(0, 212, 255, 0.1);
+      border-color: rgba(0, 212, 255, 0.2);
+    }
+    
+    .nav-links a.active {
+      color: #00d4ff;
+      background: rgba(0, 212, 255, 0.15);
+      border-color: rgba(0, 212, 255, 0.3);
+    }
+    
+    .nav-links a i {
+      font-size: 1.1rem;
+    }
+    
+    /* Support button */
+    .support-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+      color: white;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 10px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 2px 10px rgba(255, 107, 107, 0.3);
+    }
+    
+    .support-btn i {
+      font-size: 16px;
+      animation: heartPulse 1.5s ease infinite;
+    }
+    
+    @keyframes heartPulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.15); }
+    }
+    
+    .support-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+    }
+    
+    /* Donate Modal */
+    .donate-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.85);
+      backdrop-filter: blur(8px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+    }
+    
+    .donate-modal-overlay.active {
+      display: flex;
+      animation: fadeIn 0.3s ease;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    
+    .donate-modal {
+      width: min(500px, 92vw);
+      background: linear-gradient(160deg, #0a0e17 0%, #0d1929 50%, #0a192f 100%);
+      border: 1px solid rgba(0, 212, 255, 0.25);
+      border-radius: 20px;
+      padding: 2rem;
+      position: relative;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6), 0 0 80px rgba(0, 212, 255, 0.1);
+      animation: modalSlideUp 0.3s ease;
+    }
+    
+    @keyframes modalSlideUp {
+      from { transform: translateY(30px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    
+    .donate-close {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      background: rgba(255, 255, 255, 0.1);
+      border: none;
+      color: #94a3b8;
+      font-size: 1.5rem;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .donate-close:hover {
+      background: rgba(255, 255, 255, 0.2);
+      color: #fff;
+    }
+    
+    .donate-title {
+      color: #f1f5f9;
+      font-size: 1.5rem;
+      margin: 0 0 0.5rem 0;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .donate-sub {
+      color: #94a3b8;
+      margin-bottom: 1.5rem;
+      line-height: 1.5;
+    }
+    
+    .donate-grid {
+      display: grid;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    
+    .donate-card {
+      background: rgba(0, 212, 255, 0.05);
+      border: 1px solid rgba(0, 212, 255, 0.15);
+      border-radius: 12px;
+      padding: 1rem;
+    }
+    
+    .donate-label {
+      color: #00d4ff;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      margin-bottom: 0.5rem;
+      letter-spacing: 0.5px;
+    }
+    
+    .donate-value {
+      color: #f1f5f9;
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      font-family: 'Courier New', monospace;
+    }
+    
+    .donate-actions {
+      display: flex;
+      gap: 0.5rem;
+    }
+    
+    .btn-mini {
+      background: rgba(59, 130, 246, 0.2);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      color: #60a5fa;
+      padding: 0.4rem 0.8rem;
+      border-radius: 8px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+    
+    .btn-mini:hover {
+      background: rgba(59, 130, 246, 0.3);
+      border-color: rgba(59, 130, 246, 0.5);
+    }
+    
+    .btn-mini.alt {
+      background: rgba(148, 163, 184, 0.1);
+      border-color: rgba(148, 163, 184, 0.2);
+      color: #94a3b8;
+    }
+    
+    .jar-link-button {
+      width: 100%;
+      background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+      color: white;
+      border: none;
+      padding: 0.9rem;
+      border-radius: 12px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    
+    .jar-link-button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(59, 130, 246, 0.4);
+    }
+    
+    .donate-footer {
+      text-align: center;
+      color: #64748b;
+      font-size: 0.85rem;
+    }
+    
+    .copy-toast {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      color: white;
+      padding: 0.8rem 1.5rem;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(16, 185, 129, 0.4);
+      font-weight: 600;
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.3s ease;
+      z-index: 3000;
+    }
+    
+    .copy-toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    
+    /* Telegram Banner - Premium Design */
+    .tg-banner {
+      display: flex;
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      right: 20px;
+      max-width: 420px;
+      background: linear-gradient(135deg, #1a1f2e 0%, #0d1117 100%);
+      border: 1px solid rgba(0, 136, 204, 0.3);
+      border-radius: 20px;
+      padding: 1rem 1.2rem;
+      text-decoration: none;
+      color: white;
+      z-index: 1050;
+      box-shadow: 
+        0 10px 40px rgba(0, 0, 0, 0.4),
+        0 0 30px rgba(0, 136, 204, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      align-items: center;
+      gap: 1rem;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      overflow: hidden;
+    }
+    
+    .tg-banner::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 200%;
+      height: 100%;
+      background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(0, 136, 204, 0.1),
+        transparent
+      );
+      animation: shimmer 3s infinite;
+    }
+    
+    @keyframes shimmer {
+      0% { transform: translateX(-50%); }
+      100% { transform: translateX(50%); }
+    }
+    
+    .tg-banner:hover {
+      transform: translateY(-4px) scale(1.02);
+      box-shadow: 
+        0 15px 50px rgba(0, 0, 0, 0.5),
+        0 0 50px rgba(0, 136, 204, 0.25);
+      border-color: rgba(0, 136, 204, 0.5);
+    }
+    
+    .tg-banner.hidden { display: none !important; }
+    
+    .tg-banner-icon {
+      width: 44px;
+      height: 44px;
+      flex-shrink: 0;
+      background: linear-gradient(135deg, #0088cc 0%, #00aaff 100%);
+      border-radius: 12px;
+      padding: 10px;
+      box-shadow: 0 4px 15px rgba(0, 136, 204, 0.4);
+    }
+    
+    .tg-banner-icon svg {
+      width: 100%;
+      height: 100%;
+    }
+    
+    .tg-banner-text {
+      flex: 1;
+      position: relative;
+      z-index: 1;
+    }
+    
+    .tg-banner-title {
+      font-weight: 800;
+      font-size: 0.95rem;
+      display: block;
+      background: linear-gradient(90deg, #fff 0%, #00d4ff 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      margin-bottom: 4px;
+    }
+    
+    .tg-banner-desc {
+      font-size: 0.72rem;
+      color: rgba(148, 163, 184, 0.9);
+      display: block;
+      line-height: 1.4;
+    }
+    
+    .tg-banner-btn {
+      background: linear-gradient(135deg, #0088cc 0%, #00aaff 100%);
+      padding: 0.6rem 1.1rem;
+      border-radius: 12px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      flex-shrink: 0;
+      box-shadow: 0 4px 15px rgba(0, 136, 204, 0.3);
+      transition: all 0.2s;
+      position: relative;
+      z-index: 1;
+    }
+    
+    .tg-banner:hover .tg-banner-btn {
+      box-shadow: 0 6px 20px rgba(0, 136, 204, 0.5);
+      transform: scale(1.05);
+    }
+    
+    .tg-banner-close {
+      position: absolute;
+      top: -10px;
+      right: -10px;
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
+      color: #9ca3af;
+      border: 2px solid rgba(0, 136, 204, 0.3);
+      border-radius: 50%;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      z-index: 2;
+    }
+    
+    .tg-banner-close:hover {
+      background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+      color: white;
+      border-color: rgba(239, 68, 68, 0.5);
+      transform: scale(1.1);
+    }
+    
+    /* Mobile adjustments */
+    @media (max-width: 768px) {
+      .navbar {
+        padding: 0.5rem 0.8rem;
+      }
+      
+      .logo-text {
+        font-size: 1rem;
+        letter-spacing: 2px;
+      }
+      
+      .nav-links {
+        display: none;
+      }
+      
+      .support-btn {
+        padding: 6px 10px;
+        font-size: 0.75rem;
+      }
+      
+      .support-btn span {
+        display: none;
+      }
+      
+      .tg-banner {
+        bottom: auto;
+        top: 50px;
+        left: 0;
+        right: 0;
+        max-width: none;
+        padding: 0.5rem 0.8rem;
+        border-radius: 0;
+        border-left: none;
+        border-right: none;
+        border-top: none;
+        margin: 0;
+      }
+      
+      .tg-banner-icon {
+        width: 32px;
+        height: 32px;
+        padding: 6px;
+        border-radius: 8px;
+      }
+      
+      .tg-banner-title {
+        font-size: 0.75rem;
+      }
+      
+      .tg-banner-desc {
+        display: none;
+      }
+      
+      .tg-banner-btn {
+        padding: 0.4rem 0.6rem;
+        font-size: 0.65rem;
+        border-radius: 8px;
+      }
+      
+      .tg-banner-close {
+        display: none !important;
+      }
+      
+      .tg-banner.hidden {
+        display: flex !important;
+      }
+    }
+    
+    /* Maintenance/502 overlay */
+    #maintenance-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, rgba(10, 14, 23, 0.98) 0%, rgba(26, 26, 46, 0.98) 50%, rgba(22, 33, 62, 0.98) 100%);
+      z-index: 99999;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    #maintenance-overlay.show {
+      display: flex;
+    }
+    
+    .maintenance-content {
+      max-width: 450px;
+      padding: 30px;
+    }
+    
+    .maintenance-logo {
+      font-size: 42px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, #00d4ff, #7c3aed);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: 3px;
+    }
+    
+    .maintenance-subtitle {
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 12px;
+      margin-bottom: 30px;
+      letter-spacing: 2px;
+    }
+    
+    .maintenance-message {
+      font-size: 20px;
+      margin-bottom: 15px;
+      line-height: 1.4;
+    }
+    
+    .maintenance-desc {
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 14px;
+      margin-bottom: 25px;
+      line-height: 1.5;
+    }
+    
+    .maintenance-loader {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 25px;
+    }
+    
+    .maintenance-loader span {
+      width: 10px;
+      height: 10px;
+      background: #00d4ff;
+      border-radius: 50%;
+      animation: maintenance-pulse 1.4s ease-in-out infinite;
+    }
+    
+    .maintenance-loader span:nth-child(1) { animation-delay: 0s; }
+    .maintenance-loader span:nth-child(2) { animation-delay: 0.2s; }
+    .maintenance-loader span:nth-child(3) { animation-delay: 0.4s; }
+    
+    @keyframes maintenance-pulse {
+      0%, 100% { transform: scale(0.8); opacity: 0.5; }
+      50% { transform: scale(1.2); opacity: 1; }
+    }
+    
+    .maintenance-timer {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.4);
+    }
+    
+    .maintenance-timer span {
+      color: #00d4ff;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
+  <!-- MAINTENANCE OVERLAY for 502 errors -->
+  <div id="maintenance-overlay">
+    <div class="maintenance-content">
+      <div class="maintenance-logo">NEPTUN</div>
+      <div class="maintenance-subtitle">КАРТА ТРИВОГ УКРАЇНИ</div>
+      <div class="maintenance-message">🔄 Зачекайте, вносимо зміни</div>
+      <div class="maintenance-desc">Сервер оновлюється. Сторінка автоматично перезавантажиться через кілька секунд.</div>
+      <div class="maintenance-loader">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+      <div class="maintenance-timer">Автоматичне оновлення через <span id="maintenance-timer">60</span> сек.</div>
+    </div>
+  </div>
+  
+  <!-- Navbar -->
+  <div class="navbar">
+    <div class="logo">
+      <span class="logo-text">NEPTUN</span>
+    </div>
+    <div class="nav-links">
+      <a href="/" target="_blank"><i class="material-icons">map</i> Карта</a>
+      <a href="/analytics" target="_blank"><i class="material-icons">analytics</i> Аналітика</a>
+      <a href="/#about"><i class="material-icons">info</i> Інфо</a>
+    </div>
+    <button class="support-btn" onclick="toggleDonate()" title="Підтримати проєкт">
+      <i class="material-icons">favorite</i>
+      <span>Підтримати</span>
+    </button>
+  </div>
+  
+  <!-- Donate Modal -->
+  <div class="donate-modal-overlay" id="donateModal">
+    <div class="donate-modal">
+      <button class="donate-close" onclick="toggleDonate(false)">×</button>
+      <h3 class="donate-title"><i class="material-icons" style="font-size:24px;">favorite</i> Підтримати NEPTUN</h3>
+      <p class="donate-sub">Ваша допомога дозволяє нам розвивати карту та робити її ще кращою для всіх українців.</p>
+      <div class="donate-grid">
+        <div class="donate-card">
+          <div class="donate-label">Моно (UAH)</div>
+          <div class="donate-value">4441 1111 2110 7290</div>
+          <div class="donate-actions">
+            <button class="btn-mini" onclick="copyDonate('4441111121107290')"><i class="material-icons" style="font-size:14px;">content_copy</i> Копіювати</button>
+          </div>
+        </div>
+        <div class="donate-card">
+          <div class="donate-label">Приват (UAH)</div>
+          <div class="donate-value">5168 7451 5313 3886</div>
+          <div class="donate-actions">
+            <button class="btn-mini" onclick="copyDonate('5168745153133886')"><i class="material-icons" style="font-size:14px;">content_copy</i> Копіювати</button>
+          </div>
+        </div>
+        <div class="donate-card">
+          <div class="donate-label">Monobank Банка</div>
+          <div class="donate-value" style="font-size:0.8rem;">send.monobank.ua/jar/6Vi9TVzJZQ</div>
+          <div class="donate-actions">
+            <button class="btn-mini" onclick="openJar()"><i class="material-icons" style="font-size:14px;">open_in_new</i> Відкрити</button>
+            <button class="btn-mini alt" onclick="copyDonate('https://send.monobank.ua/jar/6Vi9TVzJZQ')"><i class="material-icons" style="font-size:14px;">content_copy</i></button>
+          </div>
+        </div>
+      </div>
+      <button class="jar-link-button" onclick="openJar()"><i class="material-icons">rocket_launch</i> Задонатити зараз</button>
+      <div class="donate-footer">Дякуємо за підтримку! 💙💛</div>
+    </div>
+  </div>
+  <div class="copy-toast" id="copyToast">✓ Скопійовано</div>
+  
+  <!-- Telegram Banner -->
+  <a href="https://t.me/+aBR79kExNQM1ZjZi" target="_blank" class="tg-banner" id="tgBanner">
+    <svg class="tg-banner-icon" viewBox="0 0 48 48" fill="white">
+      <path d="M41.42 7.31L3.92 22.27c-2.56 1.03-2.55 2.46-.47 3.1l9.62 3 3.72 11.42c.45 1.25.23 1.75 1.52 1.75.99 0 1.43-.45 1.98-1l3.94-3.83 8.2 6.05c1.51.83 2.6.4 2.98-1.4l5.4-25.44c.55-2.2-.84-3.2-2.39-2.61z"/>
+    </svg>
+    <div class="tg-banner-text">
+      <span class="tg-banner-title">📢 Пряме інформування від хлопців в телеграм</span>
+      <span class="tg-banner-desc">⚡ Більше інформації • 💬 Пряме спілкування з адміном</span>
+    </div>
+    <div class="tg-banner-btn">
+      <span>Підписатися</span>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/>
+      </svg>
+    </div>
+    <button class="tg-banner-close" onclick="event.preventDefault(); event.stopPropagation(); closeTgBanner();">×</button>
+  </a>
+  
   <div id="map"></div>
   <div class="loading hidden" id="markerLoadingOverlay">Завантаження даних</div>
   
@@ -427,8 +1122,55 @@
     }
   }
   
+  // ========== DONATE FUNCTIONS ==========
+  function toggleDonate(show = null) {
+    const modal = document.getElementById('donateModal');
+    if (modal) {
+      if (show === false) {
+        modal.classList.remove('active');
+      } else if (show === true) {
+        modal.classList.add('active');
+      } else {
+        modal.classList.toggle('active');
+      }
+    }
+  }
+  
+  function copyDonate(text) {
+    navigator.clipboard.writeText(text).then(() => {
+      const toast = document.getElementById('copyToast');
+      if (toast) {
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 3000);
+      }
+    });
+  }
+  
+  function openJar() {
+    window.open('https://send.monobank.ua/jar/6Vi9TVzJZQ', '_blank');
+  }
+  
+  // ========== TELEGRAM BANNER ==========
+  function closeTgBanner() {
+    const banner = document.getElementById('tgBanner');
+    if (banner) {
+      banner.classList.add('hidden');
+      localStorage.setItem('tg_banner_closed', 'true');
+    }
+  }
+  
+  function initBanners() {
+    // Hide TG banner if already closed
+    if (localStorage.getItem('tg_banner_closed')) {
+      const banner = document.getElementById('tgBanner');
+      if (banner) banner.classList.add('hidden');
+    }
+  }
+  
   // Чекаємо завантаження DOM
   document.addEventListener('DOMContentLoaded', function() {
+    initBanners(); // Initialize banners
+    
     if (typeof L === 'undefined') {
       alert('Leaflet не завантажився!');
       return;
@@ -478,6 +1220,54 @@
     
     let map, markers = [], markerLayer = null, worldMaskLayer = null;
     let isInitialLoad = true, dataCache = null, cacheTimestamp = 0;
+    let maintenanceCountdown = 60;
+    let maintenanceShowing = false;
+    
+    // Show maintenance overlay for 502/503 errors
+    function showMaintenanceOverlay() {
+      if (maintenanceShowing) return;
+      maintenanceShowing = true;
+      
+      const overlay = document.getElementById('maintenance-overlay');
+      const timerEl = document.getElementById('maintenance-timer');
+      overlay.classList.add('show');
+      
+      maintenanceCountdown = 60;
+      timerEl.textContent = maintenanceCountdown;
+      
+      const interval = setInterval(() => {
+        maintenanceCountdown--;
+        timerEl.textContent = maintenanceCountdown;
+        
+        if (maintenanceCountdown <= 0) {
+          clearInterval(interval);
+          window.location.reload();
+        }
+      }, 1000);
+      
+      // Also try to check if server is back every 3 seconds
+      const checkInterval = setInterval(async () => {
+        try {
+          const response = await fetch('/api/alarms', { cache: 'no-cache' });
+          if (response.ok) {
+            clearInterval(checkInterval);
+            clearInterval(interval);
+            overlay.classList.remove('show');
+            maintenanceShowing = false;
+            loadMarkers(); // Reload data
+          }
+        } catch (e) {
+          // Still down, keep waiting
+        }
+      }, 3000);
+    }
+    
+    // Hide maintenance overlay
+    function hideMaintenanceOverlay() {
+      const overlay = document.getElementById('maintenance-overlay');
+      overlay.classList.remove('show');
+      maintenanceShowing = false;
+    }
     
     function getMapStyle(isDark) {
       const style = isDark ? 'streets-v2-dark' : 'streets-v2';
@@ -706,6 +1496,14 @@
           data = dataCache;
         } else {
           const res = await fetch('/data?' + params.toString());
+          if (!res.ok) {
+            // Check for 502/503 errors
+            if (res.status === 502 || res.status === 503 || res.status === 504) {
+              showMaintenanceOverlay();
+              return;
+            }
+            throw new Error(`HTTP ${res.status}`);
+          }
           data = await res.json();
           dataCache = data;
           cacheTimestamp = now;
@@ -1013,10 +1811,17 @@
         }
         
       } catch (error) {
+        console.error('Error updating markers:', error);
         const overlay = document.getElementById('markerLoadingOverlay');
         if (overlay) {
           overlay.classList.add('hidden');
           if (isInitialLoad) isInitialLoad = false;
+        }
+        
+        // Check for critical errors and show maintenance overlay
+        const errorMsg = error.message || '';
+        if (errorMsg.includes('502') || errorMsg.includes('503') || errorMsg.includes('504')) {
+          showMaintenanceOverlay();
         }
       }
     }
