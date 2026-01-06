@@ -16272,6 +16272,11 @@ def data():
     
     print(f"[DEBUG] Returning {len(out)} tracks and {len(events)} events")
     
+    # Replace old shahed.png with new icon_drone.svg for backward compatibility
+    for track in out:
+        if track.get('marker_icon') == 'shahed.png':
+            track['marker_icon'] = 'icon_drone.svg'
+    
     # Return all data without limits
     response_data = {
         'tracks': out,  # All tracks without limit
