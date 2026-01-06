@@ -281,6 +281,72 @@
       transform: scale(1.05);
     }
     
+    /* Map style switcher */
+    .map-switcher {
+      position: fixed;
+      bottom: 180px;
+      right: 30px;
+      z-index: 1000;
+    }
+    
+    .map-switcher-btn {
+      width: 44px;
+      height: 44px;
+      background: rgba(10, 25, 47, 0.9);
+      border: 1px solid rgba(0, 212, 255, 0.3);
+      border-radius: 8px;
+      color: #00d4ff;
+      font-size: 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+    }
+    
+    .map-switcher-btn:hover {
+      background: rgba(0, 212, 255, 0.15);
+      border-color: #00d4ff;
+      box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+      transform: scale(1.05);
+    }
+    
+    .map-switcher-tooltip {
+      position: absolute;
+      right: 54px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: rgba(10, 25, 47, 0.95);
+      border: 1px solid rgba(0, 212, 255, 0.3);
+      border-radius: 8px;
+      padding: 8px 12px;
+      color: #e2e8f0;
+      font-size: 12px;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+    
+    .map-switcher:hover .map-switcher-tooltip {
+      opacity: 1;
+    }
+    
+    @media (max-width: 768px) {
+      .map-switcher {
+        bottom: 160px;
+        right: 15px;
+      }
+      .map-switcher-btn {
+        width: 40px;
+        height: 40px;
+        font-size: 16px;
+      }
+      .map-switcher-tooltip {
+        display: none;
+      }
+    }
+    
     /* Status panel - NEPTUN style */
     .status-panel {
       position: fixed;
@@ -763,6 +829,14 @@
       <h4>Загрози на карті</h4>
       <div id="markers-summary"></div>
     </div>
+  </div>
+  
+  <!-- Map Style Switcher -->
+  <div class="map-switcher">
+    <button class="map-switcher-btn" onclick="window.location.href='/map-old'" title="Перемкнути на стару карту">
+      🗺️
+    </button>
+    <span class="map-switcher-tooltip">Leaflet карта (стара версія)</span>
   </div>
   
   <div class="zoom-controls">
