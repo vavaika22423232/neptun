@@ -14953,6 +14953,16 @@ def map_only():
     resp.headers['Access-Control-Allow-Origin'] = '*'  # Allow cross-origin requests
     return resp
 
+@app.route('/map-old')
+def map_old():
+    """Old Leaflet map view (map_only.html)"""
+    response = render_template('map_only.html')
+    resp = app.response_class(response)
+    resp.headers['Cache-Control'] = 'public, max-age=300'  # 5 minutes cache
+    resp.headers['X-Frame-Options'] = 'ALLOWALL'  # Allow embedding in iframes/WebView
+    resp.headers['Access-Control-Allow-Origin'] = '*'  # Allow cross-origin requests
+    return resp
+
 @app.route('/map-embed')
 def map_embed():
     """Map with world mask (dimming) for mobile apps embedding"""

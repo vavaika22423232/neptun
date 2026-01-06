@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Neptun Alarm Map</title>
+  
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+  
+  <!-- Leaflet MarkerCluster CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" crossorigin=""/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" crossorigin=""/>
+  
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js" crossorigin=""></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" crossorigin=""></script>
+  
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      background: #E0E5EC;
+    }
+    
+    #map {
+      width: 100%;
+      height: 100%;
+      position: fixed;
+      top: 0;
+      left: 0;
+      border-radius: 0;
+      /* Робимо карту менш білою через фільтр */
+      filter: brightness(0.9) contrast(1.05) saturate(1.1);
+    }
+    
+    /* Neumorphism для контролів карти */
+    .leaflet-control-zoom,
+    .leaflet-bar {
+      border: none !important;
+      box-shadow: 
+        8px 8px 15px #A3B1C6,
+        -8px -8px 15px #FFFFFF !important;
+      border-radius: 15px !important;
+      background: #E0E5EC !important;
+      overflow: hidden;
+    }
+    
+    .leaflet-control-zoom a,
+    .leaflet-bar a {
+      background: #E0E5EC !important;
+      border: none !important;
+      color: #4A90E2 !important;
+      font-size: 20px !important;
+      font-weight: 600 !important;
+      width: 40px !important;
+      height: 40px !important;
+      line-height: 40px !important;
+      transition: all 0.2s ease;
+    }
+    
+    .leaflet-control-zoom a:hover,
+    .leaflet-bar a:hover {
+      background: #E0E5EC !important;
+      box-shadow: 
+        inset 4px 4px 8px #A3B1C6,
+        inset -4px -4px 8px #FFFFFF !important;
+      color: #2E5C8A !important;
+    }
+    
+    .leaflet-control-zoom a:active,
+    .leaflet-bar a:active {
+      box-shadow: 
+        inset 6px 6px 10px #A3B1C6,
+        inset -6px -6px 10px #FFFFFF !important;
+    }
+    
+    .leaflet-control-zoom a.leaflet-disabled,
+    .leaflet-bar a.leaflet-disabled {
+      opacity: 0.4 !important;
+      cursor: not-allowed !important;
+    }
+    
+    .leaflet-control-attribution {
+      background: #E0E5EC !important;
+      box-shadow: 
+        4px 4px 8px #A3B1C6,
+        -4px -4px 8px #FFFFFF !important;
+      border-radius: 8px !important;
+      padding: 4px 8px !important;
+      border: none !important;
+      color: #718096 !important;
+      font-size: 11px !important;
+    }
+    
+    .leaflet-control-attribution a {
+      color: #4A90E2 !important;
+    }
+    
+    .custom-div-icon {
+      background: transparent;
+      border: none;
+    }
+    
+    .leaflet-popup-content-wrapper,
+    .leaflet-popup-content {
+      background: transparent !important;
+      padding: 0 !important;
+      box-shadow: none !important;
+      border: none !important;
+      border-radius: 0 !important;
+      max-width: 380px !important;
+    }
+    
+    .leaflet-popup-tip {
+      display: none !important;
+    }
+    
+    .leaflet-popup-close-button {
+      display: none !important;
+    }
+    
+    .leaflet-popup {
+      animation: popupFadeIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    
+    /* Темна тема для тайлів */
+    .dark-tiles {
+      filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
+    }
+    
+    @keyframes popupFadeIn {
+      from { opacity: 0; transform: translateY(-10px) scale(0.95); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    
+    .tm-wrap {
+      position: relative;
+      display: inline-block;
+    }
+    
+    .plain-marker-img {
+      width: 34px;
+      height: 34px;
+      object-fit: contain;
+      image-rendering: auto;
+      filter: drop-shadow(0 1px 2px rgba(0,0,0,.45));
+    }
+    
+    /* White outline for Shahed markers specifically */
+    .shahed-marker-active .plain-marker-img,
+    .shahed-flying .plain-marker-img {
+      filter: 
+        drop-shadow(0 0 3px rgba(255,255,255,0.9))
+        drop-shadow(0 0 6px rgba(255,255,255,0.6))
+        drop-shadow(0 1px 2px rgba(0,0,0,.45));
+    }
+    
+    /* White outline for Shahed SVG markers */
+    .shahed-marker-active svg,
+    .shahed-flying svg {
+      filter: 
+        drop-shadow(0 0 3px rgba(255,255,255,0.9))
+        drop-shadow(0 0 6px rgba(255,255,255,0.6))
+        drop-shadow(0 1px 2px rgba(0,0,0,.45));
+    }
+    
+    .tm-badge {
+      position: absolute;
+      top: -8px;
+      right: -8px;
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+      color: white;
+      border-radius: 50%;
+      min-width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      box-shadow: 0 2px 6px rgba(239, 68, 68, 0.4), 0 0 0 2px white;
+      z-index: 10;
+      pointer-events: none;
+      animation: pulse 2s ease-in-out infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.1); opacity: 0.9; }
+    }
+    
+    .shahed-flying {
+      animation: shahedFlight var(--flight-duration, 60s) linear infinite;
+    }
+    
+    @keyframes shahedFlight {
+      0% { transform: translate(var(--flight-dx, 0), var(--flight-dy, 0)); }
+      100% { transform: translate(0, 0); }
+    }
+    
+    .cluster {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(145deg, #1e293b, #0f172a);
+      border: 2px solid #334155;
+      border-radius: 18px;
+      padding: 4px 6px 6px;
+      box-shadow: 0 4px 12px -3px rgba(0,0,0,.4);
+    }
+    
+    .cluster svg, .cluster img {
+      width: 26px;
+      height: 26px;
+      object-fit: contain;
+      filter: drop-shadow(0 0 4px rgba(0,0,0,.5));
+      margin-right: 2px;
+    }
+    
+    .cluster b {
+      font-size: .8rem;
+      font-family: Inter, system-ui, sans-serif;
+      color: #fff;
+      text-shadow: 0 1px 2px #000;
+    }
+    
+    .cluster-fresh {
+      background: linear-gradient(160deg, #164e63, #0f2d40);
+      border-color: #155e75;
+    }
+    
+    .cluster-stale {
+      background: linear-gradient(160deg, #3f3f46, #27272a);
+      border-color: #52525b;
+    }
+    
+    .cluster-old {
+      background: linear-gradient(160deg, #1e1b4b, #0f172a);
+      border-color: #312e81;
+      opacity: .72;
+    }
+    
+    .trajectory-line {
+      animation: trajectoryPulse 2s ease-in-out infinite;
+    }
+    
+    @keyframes trajectoryPulse {
+      0%, 100% { opacity: 0.7; }
+      50% { opacity: 0.4; }
+    }
+    
+    .direction-arrow {
+      pointer-events: none;
+    }
+    
+    .loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(255,255,255,0.95);
+      padding: 20px 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      font-size: 14px;
+      color: #374151;
+      z-index: 9999;
+    }
+    
+    .loading::after {
+      content: '...';
+      animation: dots 1.5s steps(4, end) infinite;
+    }
+    
+    @keyframes dots {
+      0%, 20% { content: '.'; }
+      40% { content: '..'; }
+      60%, 100% { content: '...'; }
+    }
+    
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div class="loading hidden" id="markerLoadingOverlay">Завантаження даних</div>
+  
+  <script>
+  // Чекаємо завантаження DOM
+  document.addEventListener('DOMContentLoaded', function() {
+    if (typeof L === 'undefined') {
+      alert('Leaflet не завантажився!');
+      return;
+    }
+    console.log('Leaflet loaded:', L.version);
+    const mapTilerApiKey = 'm8zW2kq1Ta7cw9nODPXo';
+    const API_BASE = window.location.origin;
+    const UPDATE_INTERVAL = 30000;
+    const MAX_TRACKS = 500;
+    const CACHE_DURATION = 60000;
+    
+    // Leaflet вже завантажено, не потрібен адаптер
+    
+    const ICONS = {
+      shahed: '/static/shahed.png',
+      rocket: '/static/rocket.png',
+      raketa: '/static/rocket.png',
+      missile: '/static/rocket.png',
+      missile_s300: '/static/missile_s300.png',
+      avia: '/static/avia.png',
+      artillery: '/static/artillery.png',
+      fpv: '/static/fpv.png',
+      alarm_cancel: '/static/alarm_cancel.png',
+      default: '/static/default.png'
+    };
+    
+    const PLACEHOLDER_ICON = '/static/placeholders/placeholder.png';
+    const FALLBACK_ICON = '/static/default.png';
+    
+    const SVGMarkers = {
+      createSVG(type, size = 32) {
+        const icons = {
+          shahed: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#ef4444" stroke="#fff" stroke-width="2"/><path d="M16 10 L12 16 L16 22 L20 16 Z" fill="#fff"/></svg>`,
+          rocket: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#f59e0b" stroke="#fff" stroke-width="2"/><path d="M16 8 L18 16 L16 24 L14 16 Z" fill="#fff"/></svg>`,
+          raketa: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#f59e0b" stroke="#fff" stroke-width="2"/><path d="M16 8 L18 16 L16 24 L14 16 Z" fill="#fff"/></svg>`,
+          missile: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#f59e0b" stroke="#fff" stroke-width="2"/><path d="M16 8 L18 16 L16 24 L14 16 Z" fill="#fff"/></svg>`,
+          missile_s300: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#8b5cf6" stroke="#fff" stroke-width="2"/><path d="M16 8 L18 16 L16 24 L14 16 Z" fill="#fff"/></svg>`,
+          avia: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#06b6d4" stroke="#fff" stroke-width="2"/><path d="M16 12 L8 16 L16 20 L24 16 Z" fill="#fff"/></svg>`,
+          artillery: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#84cc16" stroke="#fff" stroke-width="2"/><circle cx="16" cy="16" r="4" fill="#fff"/></svg>`,
+          fpv: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#a855f7" stroke="#fff" stroke-width="2"/><rect x="10" y="10" width="12" height="12" fill="#fff" rx="2"/></svg>`,
+          alarm_cancel: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#10b981" stroke="#fff" stroke-width="2"/><path d="M10 16 L14 20 L22 12" stroke="#fff" stroke-width="3" fill="none"/></svg>`,
+          default: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#3b82f6" stroke="#fff" stroke-width="2"/><circle cx="16" cy="16" r="6" fill="#fff"/></svg>`
+        };
+        return icons[type] || icons.default;
+      }
+    };
+    
+    let map, markers = [], markerLayer = null, worldMaskLayer = null;
+    let isInitialLoad = true, dataCache = null, cacheTimestamp = 0;
+    
+    function getMapStyle(isDark) {
+      const style = isDark ? 'streets-v2-dark' : 'streets-v2';
+      return `https://api.maptiler.com/maps/${style}/style.json?key=${mapTilerApiKey}`;
+    }
+    
+    // OpenStreetMap не потребує форсування українських підписів
+    const forceUkrainianLabels = () => {};
+    
+    async function initWorldMask() {
+      console.log('initWorldMask called, map exists:', !!map);
+      const worldRing = [[85, -180], [85, 180], [-85, 180], [-85, -180]];
+      const fallbackRing = [
+        [52.37, 23.60], [51.90, 23.60], [51.90, 24.00], [51.50, 24.50], [51.90, 25.30],
+        [51.90, 26.00], [51.60, 26.60], [51.50, 27.50], [51.60, 28.20], [51.30, 29.20],
+        [51.60, 30.60], [52.30, 31.80], [52.10, 32.70], [52.40, 34.40], [52.30, 35.90],
+        [52.00, 37.40], [51.20, 38.20], [50.30, 39.70], [49.10, 40.10], [48.30, 39.70],
+        [47.10, 38.50], [46.00, 38.20], [45.35, 37.40], [45.40, 36.60], [45.20, 34.90],
+        [45.35, 33.30], [46.07, 30.95], [46.58, 30.06], [47.80, 29.48], [48.37, 28.05],
+        [48.47, 27.53], [48.27, 26.86], [47.74, 26.63], [47.85, 24.96], [48.15, 23.53],
+        [48.62, 22.57], [49.90, 22.09], [51.94, 22.93], [52.37, 23.60]
+      ];
+      
+      function drawMask(rings) {
+        console.log('drawMask called with', rings.length, 'rings');
+        if (worldMaskLayer) {
+          map.removeLayer(worldMaskLayer);
+          worldMaskLayer = null;
+        }
+        
+        // Створюємо polygon з дірками (world - ukraine = mask)
+        worldMaskLayer = L.polygon([worldRing, ...rings], {
+          stroke: false,
+          fill: true,
+          fillColor: '#1a2332',
+          fillOpacity: 1.0,
+          interactive: false,
+          pane: 'overlayPane'
+        }).addTo(map);
+        
+        console.log('World mask layer added:', !!worldMaskLayer);
+        
+        // Переміщуємо на задній план
+        if (worldMaskLayer._path) {
+          worldMaskLayer._path.style.pointerEvents = 'none';
+        }
+      }
+      
+      try {
+        const resp = await fetch('/static/geoBoundaries-UKR-ADM0_simplified.geojson');
+        if (resp.ok) {
+          const gj = await resp.json();
+          const feats = (gj.features || []);
+          if (feats.length) {
+            const geom = feats[0].geometry;
+            let rings = [];
+            if (geom.type === 'Polygon') {
+              rings = geom.coordinates.map(r => r.map(([lng, lat]) => [lat, lng]));
+            } else if (geom.type === 'MultiPolygon') {
+              rings = geom.coordinates.map(poly => poly[0].map(([lng, lat]) => [lat, lng]));
+            }
+            if (rings.length) {
+              drawMask(rings);
+              return;
+            }
+          }
+        }
+        drawMask([fallbackRing]);
+      } catch(e) {
+        drawMask([fallbackRing]);
+      }
+    }
+    
+    async function getIconUrl(type) {
+      return new Promise((resolve) => {
+        const url = ICONS[type] || ICONS.default;
+        const img = new Image();
+        img.onload = () => resolve(url);
+        img.onerror = () => resolve(FALLBACK_ICON);
+        img.src = url;
+      });
+    }
+    
+    function cleanMessage(text) {
+      return (text || '').replace(/<[^>]*>/g, '').trim();
+    }
+    
+    function translatePlace(place) {
+      return (place || '').trim();
+    }
+    
+    function isFPVThreat(place, text, type) {
+      const fpvKeywords = ['fpv', 'фпв', 'дрон', 'бпла'];
+      const combined = ((place || '') + ' ' + (text || '') + ' ' + (type || '')).toLowerCase();
+      return fpvKeywords.some(kw => combined.includes(kw));
+    }
+    
+    function initMap() {
+      console.log('Initializing Leaflet with OpenStreetMap');
+      
+      try {
+        console.log('Creating L.map...');
+        map = L.map('map', {
+          center: [48.3794, 31.1656],
+          zoom: 5.5,
+          minZoom: 5.5,
+          maxZoom: 18,
+          maxBounds: [
+            [43.0, 20.0],  // Southwest coordinates (bottom-left corner)
+            [53.0, 42.0]   // Northeast coordinates (top-right corner)
+          ],
+          maxBoundsViscosity: 1.0,
+          zoomControl: false,
+          attributionControl: true
+        });
+        console.log('Map created:', !!map);
+        
+        // Додаємо tile layer
+        console.log('Adding tile layer...');
+        
+        const baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap contributors',
+          maxZoom: 19
+        }).addTo(map);
+        
+        console.log('Tile layer added');
+        
+        // Додаємо zoom control
+        L.control.zoom({
+          position: 'topright',
+          zoomInTitle: 'Збільшити',
+          zoomOutTitle: 'Зменшити'
+        }).addTo(map);
+        console.log('Zoom control added');
+        
+        map.whenReady(() => {
+          console.log('Map is ready!');
+          document.getElementById('markerLoadingOverlay').classList.add('hidden');
+          console.log('About to call initWorldMask');
+          setTimeout(() => {
+            console.log('Timeout fired, calling initWorldMask');
+            initWorldMask();
+          }, 100);
+          updateMarkers();
+          setInterval(updateMarkers, UPDATE_INTERVAL);
+          
+          // Блокуємо вихід за межі України під час pinch zoom
+          const ukraineBounds = L.latLngBounds(
+            [43.0, 20.0],  // Southwest
+            [53.0, 42.0]   // Northeast
+          );
+          
+          // Жорстко обмежуємо zoom під час touchmove (pinch)
+          let lastValidZoom = map.getZoom();
+          let lastValidCenter = map.getCenter();
+          
+          map.on('zoomstart', function() {
+            lastValidZoom = map.getZoom();
+            lastValidCenter = map.getCenter();
+          });
+          
+          // Перехоплюємо zoom щоб заблокувати зменшення нижче minZoom
+          map.on('zoom', function() {
+            const zoom = map.getZoom();
+            const currentBounds = map.getBounds();
+            
+            // Якщо zoom менший за мінімальний - повертаємо
+            if (zoom < 5.5) {
+              map.setZoom(5.5, { animate: false });
+              return;
+            }
+            
+            // Якщо виходимо за межі - повертаємо в межі
+            if (!ukraineBounds.contains(currentBounds)) {
+              map.panInsideBounds(ukraineBounds, { animate: false });
+            }
+          });
+          
+          // Перехоплюємо move щоб миттєво повертати в межі
+          map.on('move', function() {
+            const center = map.getCenter();
+            const clampedLat = Math.max(43.5, Math.min(52.5, center.lat));
+            const clampedLng = Math.max(21.0, Math.min(41.0, center.lng));
+            if (center.lat !== clampedLat || center.lng !== clampedLng) {
+              map.setView([clampedLat, clampedLng], map.getZoom(), { animate: false });
+            }
+          });
+          
+          // Додатковий захист - перехоплюємо touchend для фінальної корекції
+          map.getContainer().addEventListener('touchend', function() {
+            setTimeout(function() {
+              const zoom = map.getZoom();
+              if (zoom < 5.5) {
+                map.setZoom(5.5, { animate: true });
+              }
+              const currentBounds = map.getBounds();
+              if (!ukraineBounds.contains(currentBounds)) {
+                map.panInsideBounds(ukraineBounds, { animate: true });
+              }
+            }, 50);
+          }, { passive: true });
+        });
+        
+      } catch (error) {
+        console.error('ERROR in initMap:', error);
+        const mapContainer = document.getElementById('map');
+        if (mapContainer) {
+          mapContainer.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; background: #0f172a; color: #e2e8f0;"><div style="text-align: center; padding: 2rem;"><h2 style="color: #ef4444;">❌ Помилка завантаження карти</h2><p>Не вдалося ініціалізувати карту</p><p style="color: #94a3b8; font-size: 0.875rem; margin-top: 0.5rem;">' + error.message + '</p><button onclick="location.reload()" style="background: #3b82f6; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 0.5rem; cursor: pointer; margin-top: 1rem;">🔄 Перезавантажити</button></div></div>';
+        }
+      }
+    }
+    
+    async function updateMarkers() {
+      const params = new URLSearchParams({ confRange: 0, maxTracks: MAX_TRACKS });
+      const overlay = document.getElementById('markerLoadingOverlay');
+      
+      if (overlay && isInitialLoad) overlay.classList.remove('hidden');
+      
+      let points = [];
+      
+      try {
+        let data;
+        const now = Date.now();
+        
+        if (dataCache && (now - cacheTimestamp) < CACHE_DURATION) {
+          data = dataCache;
+        } else {
+          const res = await fetch('/data?' + params.toString());
+          data = await res.json();
+          dataCache = data;
+          cacheTimestamp = now;
+        }
+        
+        points = (data.tracks || []).filter(p => {
+          if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return false;
+          if (isNaN(p.lat) || isNaN(p.lng)) return false;
+          if (Math.abs(p.lat) < 1 && Math.abs(p.lng) < 1) return false;
+          if (p.lat < 43 || p.lat > 53.5 || p.lng < 21 || p.lng > 41) return false;
+          const vague = ['схід','захід','північ','південь','восток','запад','север','юг'];
+          if (p.place && vague.includes((p.place||'').toLowerCase())) return false;
+          return true;
+        });
+        
+        window.__lastPoints = points;
+        
+        if (overlay) {
+          overlay.classList.add('hidden');
+          if (isInitialLoad) isInitialLoad = false;
+        }
+        
+        if (!window.shahedLayer) {
+          window.shahedLayer = L.layerGroup().addTo(map);
+        } else {
+          window.shahedLayer.clearLayers();
+        }
+        
+        if (markerLayer) {
+          markerLayer.clearLayers();
+        } else {
+          markerLayer = L.layerGroup().addTo(map);
+        }
+        
+        markers = [];
+        
+        const MAX_DIRECT_MARKERS = 650;
+        
+        const shahedPoints = points.filter(p => {
+          const tt = (p.threat_type || '').toLowerCase();
+          return tt === 'shahed' || /шахед/i.test(p.threat_type || '');
+        });
+        
+        const otherPoints = points.filter(p => {
+          const tt = (p.threat_type || '').toLowerCase();
+          return tt !== 'shahed' && !/шахед/i.test(p.threat_type || '');
+        });
+        
+        const useFastMode = otherPoints.length > MAX_DIRECT_MARKERS;
+        
+        if (useFastMode) {
+          const z = map.getZoom();
+          let cell = 0.55;
+          if (z >= 7) cell = 0.32;
+          if (z >= 8) cell = 0.18;
+          if (z >= 9) cell = 0.11;
+          if (z >= 10) cell = 0.06;
+          
+          const keyFn = p => Math.floor(p.lat / cell) + '_' + Math.floor(p.lng / cell);
+          const buckets = new Map();
+          
+          for (const p of otherPoints) {
+            const k = keyFn(p);
+            let b = buckets.get(k);
+            if (!b) {
+              b = { items: [], latSum: 0, lngSum: 0, types: new Map(), latest: 0 };
+              buckets.set(k, b);
+            }
+            b.items.push(p);
+            b.latSum += p.lat;
+            b.lngSum += p.lng;
+            const tt = (p.threat_type || '').toLowerCase();
+            b.types.set(tt, (b.types.get(tt) || 0) + 1);
+            const ts = Date.parse((p.date || '').replace(/-/g, '/')) || 0;
+            if (ts > b.latest) b.latest = ts;
+          }
+          
+          buckets.forEach(b => {
+            const lat = b.latSum / b.items.length;
+            const lng = b.lngSum / b.items.length;
+            let dominant = 'default';
+            let maxc = 0;
+            b.types.forEach((c, t) => {
+              if (c > maxc) {
+                maxc = c;
+                dominant = t;
+              }
+            });
+            
+            const count = b.items.length;
+            const ageMin = (Date.now() - b.latest) / 60000;
+            const freshness = ageMin < 8 ? 'fresh' : ageMin < 20 ? 'stale' : 'old';
+            
+            let clusterOpacity = 1.0;
+            if (ageMin <= 30) {
+              clusterOpacity = 1.0;
+            } else if (ageMin <= 120) {
+              clusterOpacity = 1.0 - ((ageMin - 30) / 90) * 0.4;
+            } else {
+              const extraMinutes = Math.min(ageMin - 120, 120);
+              clusterOpacity = 0.6 - (extraMinutes / 120) * 0.3;
+            }
+            clusterOpacity = Math.max(0.3, Math.min(1.0, clusterOpacity));
+            
+            const mostCommonType = [...b.types.entries()].sort((a, b) => b[1] - a[1])[0][0] || 'default';
+            const clusterSvg = SVGMarkers.createSVG(mostCommonType, 32);
+            const html = '<div class="cluster cluster-' + freshness + '" style="opacity:' + clusterOpacity + ';">' + clusterSvg + '<b>' + count + '</b></div>';
+            const icon = L.divIcon({ html, className: '', iconSize: [44, 52], iconAnchor: [22, 48] });
+            const m = L.marker([lat, lng], { icon });
+            
+            const typeLines = [...b.types.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([t, c]) => '<div style="font-size:1rem;">' + (t || '—') + ': ' + c + '</div>').join('');
+            m.bindPopup('<div style="font-size:1rem;line-height:1.4;padding:8px;"><b style="font-size:1.2rem;">' + count + '</b> <span style="font-size:1rem;">подій</span><br>' + typeLines + '<div style="margin-top:6px;opacity:.6;font-size:.85rem;">кластер</div></div>');
+            m.addTo(markerLayer);
+            markers.push(m);
+          });
+        }
+        
+        const pointsToRender = useFastMode ? shahedPoints : points;
+        
+        for (const p of pointsToRender) {
+          let iconUrl = ICONS[p.threat_type] || ICONS.default;
+          let useCustomIcon = false;
+          
+          if (p.marker_icon) {
+            iconUrl = (p.marker_icon.startsWith('http') || p.marker_icon.startsWith('/')) ? p.marker_icon : '/static/' + p.marker_icon;
+            useCustomIcon = true;
+          }
+          
+          if (!useCustomIcon && isFPVThreat(p.place, p.text, p.threat_type)) {
+            iconUrl = ICONS.fpv || iconUrl;
+          }
+          
+          if (!useCustomIcon) {
+            try {
+              iconUrl = await getIconUrl(p.threat_type || 'default');
+            } catch (error) {
+              iconUrl = FALLBACK_ICON;
+            }
+          }
+          
+          if (!p.count && p.place) {
+            const m = p.place.match(/\((\d{1,3})\)/);
+            if (m) p.count = parseInt(m[1]);
+          }
+          
+          let arrowDir = null;
+          if (p.place && p.place.includes('←')) {
+            arrowDir = p.place.split('←').pop().trim();
+          }
+          
+          const countBadge = (p.threat_type === 'shahed' || /shahed|шахед|бпла/i.test(p.threat_type || '')) && p.count && p.count > 1 ? '<div class="tm-badge">' + p.count + '×</div>' : '';
+          
+          let z = map.getZoom ? map.getZoom() : 6;
+          let base = 34;
+          let factor = z >= 9 ? 1.25 : z >= 7 ? 1.0 : z >= 6 ? 0.85 : z >= 5 ? 0.7 : 0.55;
+          const w = Math.round(base * factor);
+          const h = Math.round(w * 1.15);
+          
+          let opacity = 1.0;
+          if (p.date) {
+            try {
+              const markerDate = new Date(p.date);
+              const now = new Date();
+              const ageInMinutes = (now - markerDate) / (1000 * 60);
+              
+              if (ageInMinutes <= 30) {
+                opacity = 1.0;
+              } else if (ageInMinutes <= 120) {
+                opacity = 1.0 - ((ageInMinutes - 30) / 90) * 0.4;
+              } else {
+                const extraMinutes = Math.min(ageInMinutes - 120, 120);
+                opacity = 0.6 - (extraMinutes / 120) * 0.3;
+              }
+              
+              opacity = Math.max(0.3, Math.min(1.0, opacity));
+            } catch (e) {
+              opacity = 1.0;
+            }
+          }
+        
+        // For mobile apps, always use PNG icons for better compatibility
+        const markerContent = '<img class="plain-marker-img" style="width:' + w + 'px;height:' + h + 'px;" src="' + iconUrl + '" alt="">';
+        
+        let flightAnimation = '';
+        if (arrowDir && (p.threat_type === 'shahed' || /shahed|шахед|бпла/i.test(p.threat_type || ''))) {
+          const dir = arrowDir.toLowerCase();
+          let dx = 0, dy = 0;
+          if (dir.includes('півд')) dy = -0.35;
+          if (dir.includes('північ')) dy = 0.35;
+          if (dir.includes('сход')) dx = -0.35;
+          if (dir.includes('зах')) dx = 0.35;
+          
+          if (dx !== 0 || dy !== 0) {
+            const map_zoom = map.getZoom ? map.getZoom() : 6;
+            const pixels_per_degree = 256 * Math.pow(2, map_zoom) / 360;
+            const flight_dx_px = dx * pixels_per_degree;
+            const flight_dy_px = -dy * pixels_per_degree;
+            
+            const distance_km = Math.sqrt(dx * dx + dy * dy) * 111;
+            const flight_time_sec = (distance_km / 0.061);
+            const animation_duration = Math.max(30, Math.min(flight_time_sec, 120));
+            
+            flightAnimation = ` style="--flight-dx: ${-flight_dx_px}px; --flight-dy: ${-flight_dy_px}px; --flight-duration: ${animation_duration}s;"`;
+          }
+        }
+          
+        const html = '<div class="tm-wrap shahed-marker-active shahed-flying marker-new"' + flightAnimation + ' style="opacity:' + opacity + ';">' + markerContent + countBadge + '</div>';
+          const icon = L.divIcon({ html, className: '', iconSize: [w, h], iconAnchor: [w / 2, h / 2], popupAnchor: [0, -h / 2] });
+          const m = L.marker([p.lat, p.lng], { icon });
+          
+          if (arrowDir) {
+            const dir = arrowDir.toLowerCase();
+            let dx = 0, dy = 0;
+            if (dir.includes('півд')) dy = -0.35;
+            if (dir.includes('північ')) dy = 0.35;
+            if (dir.includes('сход')) dx = -0.35;
+            if (dir.includes('зах')) dx = 0.35;
+            
+            if (dx !== 0 || dy !== 0) {
+              const tailStart = [p.lat + dy, p.lng + dx];
+              const polylineOpacity = opacity * 0.7;
+              const trajectory = L.polyline([tailStart, [p.lat, p.lng]], {
+                color: '#ef4444',
+                weight: 3,
+                opacity: polylineOpacity,
+                dashArray: '8 4',
+                className: 'trajectory-line'
+              }).addTo(markerLayer);
+              
+              const angle = Math.atan2(p.lat - tailStart[0], p.lng - tailStart[1]) * 180 / Math.PI + 90;
+              const arrowIcon = L.divIcon({
+                html: `<div class="direction-arrow" style="transform: rotate(${angle}deg);"><svg width="40" height="40" viewBox="0 0 40 40"><path d="M 20 5 L 30 20 L 20 17 L 10 20 Z" fill="#ef4444" stroke="#ffffff" stroke-width="1.5" opacity="${polylineOpacity}"/></svg></div>`,
+                className: '',
+                iconSize: [40, 40],
+                iconAnchor: [20, 20]
+              });
+              L.marker([p.lat, p.lng], { icon: arrowIcon }).addTo(markerLayer);
+            }
+          }
+          
+          const placeUA = translatePlace(p.place);
+          
+          const threatColors = {
+            shahed: { bg: '#fee2e2', accent: '#dc2626' },
+            rocket: { bg: '#fed7aa', accent: '#ea580c' },
+            avia: { bg: '#fef3c7', accent: '#d97706' },
+            artillery: { bg: '#fef9c3', accent: '#ca8a04' },
+            fpv: { bg: '#e9d5ff', accent: '#9333ea' },
+            alarm_cancel: { bg: '#d1fae5', accent: '#10b981' },
+            default: { bg: '#dbeafe', accent: '#3b82f6' }
+          };
+          
+          const threatType = (p.threat_type || 'default').toLowerCase();
+          const colors = threatColors[threatType] || threatColors.default;
+          
+          // Calculate marker age
+          let ageText = '';
+          if (p.date) {
+            try {
+              const markerDate = new Date(p.date);
+              const now = new Date();
+              const ageMinutes = Math.floor((now - markerDate) / (1000 * 60));
+              
+              if (ageMinutes < 1) {
+                ageText = 'щойно';
+              } else if (ageMinutes < 60) {
+                ageText = `${ageMinutes} хв тому`;
+              } else {
+                const hours = Math.floor(ageMinutes / 60);
+                const mins = ageMinutes % 60;
+                if (mins > 0) {
+                  ageText = `${hours} год ${mins} хв тому`;
+                } else {
+                  ageText = `${hours} год тому`;
+                }
+              }
+            } catch (e) {}
+          }
+          
+          const popupHtml = `
+            <div style="background: white; border-left: 3px solid ${colors.accent}; border-radius: 6px; padding: 8px 10px; min-width: 160px; max-width: 240px; font-family: -apple-system, sans-serif; box-shadow: 0 2px 8px rgba(0,0,0,0.12);">
+              ${placeUA ? `<div style="font-size: 0.9rem; font-weight: 600; color: #1e293b; margin-bottom: 4px;">${placeUA}</div>` : ''}
+              <div style="font-size: 0.8rem; color: #64748b; line-height: 1.4; margin-bottom: 4px;">${cleanMessage(p.text || '')}</div>
+              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                ${p.count ? `<span style="display: inline-block; background: ${colors.bg}; color: ${colors.accent}; font-weight: 600; font-size: 0.7rem; padding: 2px 5px; border-radius: 3px;">×${p.count}</span>` : ''}
+                ${ageText ? `<span style="font-size: 0.7rem; color: #94a3b8;">🕐 ${ageText}</span>` : ''}
+              </div>
+            </div>
+          `;
+          
+          m.bindPopup(popupHtml, { closeButton: false, autoPan: true });
+          
+          const isShahed = (p.threat_type || '').toLowerCase() === 'shahed' || /шахед/i.test(p.threat_type || '');
+          if (isShahed) {
+            window.shahedLayer.addLayer(m);
+          } else {
+            markerLayer.addLayer(m);
+          }
+          markers.push(m);
+        }
+        
+        if (overlay) {
+          overlay.classList.add('hidden');
+          if (isInitialLoad) isInitialLoad = false;
+        }
+        
+      } catch (error) {
+        const overlay = document.getElementById('markerLoadingOverlay');
+        if (overlay) {
+          overlay.classList.add('hidden');
+          if (isInitialLoad) isInitialLoad = false;
+        }
+      }
+    }
+    
+    // Запускаємо ініціалізацію карти
+    initMap();
+    
+    let zoomRedrawTimer = null;
+    let lastZoom = 5.5;
+    
+    setTimeout(() => {
+      if (map) {
+        map.on('zoomend', () => {
+          const z = map.getZoom();
+          if (z === lastZoom) return;
+          lastZoom = z;
+          if (zoomRedrawTimer) clearTimeout(zoomRedrawTimer);
+          zoomRedrawTimer = setTimeout(() => {
+            try {
+              if (markerLayer && markerLayer.refreshClusters) markerLayer.refreshClusters();
+            } catch(e) {}
+          }, 150);
+        });
+      }
+    }, 1000);
+  }); // end DOMContentLoaded
+  </script>
+</body>
+</html>
