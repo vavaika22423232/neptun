@@ -295,73 +295,111 @@
       display: none !important;
     }
     
-    /* Map style switcher */
+    /* Map style switcher - Beautiful pill design with Neumorphism */
     .map-switcher {
       position: fixed;
-      bottom: 100px;
+      bottom: 110px;
       right: 20px;
       z-index: 1000;
     }
     
     .map-switcher-btn {
-      width: 44px;
-      height: 44px;
-      background: #E0E5EC;
-      border: none;
-      border-radius: 12px;
-      box-shadow: 
-        6px 6px 12px #A3B1C6,
-        -6px -6px 12px #FFFFFF;
-      color: #4A90E2;
-      font-size: 18px;
-      cursor: pointer;
       display: flex;
       align-items: center;
-      justify-content: center;
-      transition: all 0.2s ease;
+      gap: 10px;
+      padding: 12px 20px;
+      background: linear-gradient(145deg, #E8EDF2, #D8DDE5);
+      border: none;
+      border-radius: 50px;
+      box-shadow: 
+        8px 8px 16px #A3B1C6,
+        -8px -8px 16px #FFFFFF;
+      color: #4A90E2;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .map-switcher-btn::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 0;
+      height: 0;
+      border-radius: 50%;
+      background: rgba(74, 144, 226, 0.1);
+      transform: translate(-50%, -50%);
+      transition: width 0.6s ease, height 0.6s ease;
+    }
+    
+    .map-switcher-btn:hover::before {
+      width: 300px;
+      height: 300px;
     }
     
     .map-switcher-btn:hover {
       box-shadow: 
         inset 4px 4px 8px #A3B1C6,
         inset -4px -4px 8px #FFFFFF;
+      transform: translateY(-2px);
     }
     
-    .map-switcher-tooltip {
-      position: absolute;
-      right: 54px;
-      top: 50%;
-      transform: translateY(-50%);
-      background: #E0E5EC;
+    .map-switcher-btn:active {
+      transform: translateY(0);
       box-shadow: 
-        4px 4px 8px #A3B1C6,
-        -4px -4px 8px #FFFFFF;
-      border-radius: 8px;
-      padding: 8px 12px;
-      color: #4A5568;
-      font-size: 12px;
-      white-space: nowrap;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.2s ease;
+        inset 6px 6px 12px #A3B1C6,
+        inset -6px -6px 12px #FFFFFF;
     }
     
-    .map-switcher:hover .map-switcher-tooltip {
-      opacity: 1;
+    .map-switcher-icon {
+      font-size: 20px;
+      filter: drop-shadow(0 2px 4px rgba(74, 144, 226, 0.3));
+      animation: iconFloat 3s ease-in-out infinite;
+      position: relative;
+      z-index: 1;
+    }
+    
+    @keyframes iconFloat {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-3px); }
+    }
+    
+    .map-switcher-text {
+      letter-spacing: 0.5px;
+      position: relative;
+      z-index: 1;
     }
     
     @media (max-width: 768px) {
       .map-switcher {
-        bottom: 80px;
+        bottom: 90px;
         right: 15px;
       }
       .map-switcher-btn {
-        width: 40px;
-        height: 40px;
-        font-size: 16px;
+        padding: 10px 16px;
+        font-size: 13px;
+        gap: 8px;
       }
-      .map-switcher-tooltip {
+      .map-switcher-icon {
+        font-size: 18px;
+      }
+    }
+    
+    @media (max-width: 480px) {
+      .map-switcher-btn {
+        padding: 8px 14px;
+        font-size: 12px;
+      }
+      .map-switcher-text {
         display: none;
+      }
+      .map-switcher-icon {
+        font-size: 22px;
       }
     }
   </style>
@@ -373,9 +411,9 @@
   <!-- Map Style Switcher -->
   <div class="map-switcher">
     <button class="map-switcher-btn" onclick="window.location.href='/'" title="Перемкнути на нову карту">
-      ✨
+      <span class="map-switcher-icon">✨</span>
+      <span class="map-switcher-text">New SVG Map</span>
     </button>
-    <span class="map-switcher-tooltip">Нова SVG карта</span>
   </div>
   
   <script>
