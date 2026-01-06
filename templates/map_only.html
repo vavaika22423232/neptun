@@ -410,13 +410,23 @@
   
   <!-- Map Style Switcher -->
   <div class="map-switcher">
-    <button class="map-switcher-btn" onclick="window.location.href='/'" title="Перемкнути на нову карту">
+    <button class="map-switcher-btn" onclick="goBackToNewMap()" title="Перемкнути на нову карту">
       <span class="map-switcher-icon">✨</span>
       <span class="map-switcher-text">New SVG Map</span>
     </button>
   </div>
   
   <script>
+  function goBackToNewMap() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const from = urlParams.get('from');
+    if (from === 'map') {
+      window.location.href = '/map-only';
+    } else {
+      window.location.href = '/';
+    }
+  }
+  </script>
   // Чекаємо завантаження DOM
   document.addEventListener('DOMContentLoaded', function() {
     if (typeof L === 'undefined') {
