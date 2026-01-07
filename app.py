@@ -710,6 +710,257 @@ def alarm_all():
     resp.headers['Cache-Control'] = 'public, max-age=10'
     return resp
 
+
+# ===== UKRAINEALARM API MONITORING FOR PUSH NOTIFICATIONS =====
+# This system monitors alarm state changes and triggers push notifications
+
+# Store previous alarm states to detect changes
+_alarm_states = {}  # {region_id: {'active': bool, 'types': [str], 'last_changed': timestamp}}
+_monitoring_active = False
+
+def get_region_display_name(region_data):
+    """Get display name for region from API data."""
+    region_name = region_data.get('regionName', '')
+    region_type = region_data.get('regionType', '')
+    
+    # For State regions, return the oblast name
+    if region_type == 'State':
+        return region_name
+    
+    # For districts, try to get parent oblast from mapping
+    if region_type == 'District':
+        oblast = DISTRICT_TO_OBLAST.get(region_name, '')
+        if oblast:
+            return oblast
+        # If no mapping, return district name
+        return region_name
+    
+    return region_name
+
+def send_alarm_notification(region_data, alarm_started: bool):
+    """Send FCM notification for alarm state change."""
+    if not firebase_initialized:
+        log.warning("Firebase not initialized, skipping alarm notifications")
+        return
+
+    try:
+        from firebase_admin import messaging
+        
+        region_name = get_region_display_name(region_data)
+        region_id = region_data.get('regionId', '')
+        alert_types = region_data.get('activeAlerts', [])
+        
+        # Determine notification details based on state
+        if alarm_started:
+            # Alarm started
+            threat_types = []
+            for alert in alert_types:
+                alert_type = alert.get('type', '')
+                if alert_type == 'AIR':
+                    threat_types.append('Повітряна тривога')
+                elif alert_type == 'ARTILLERY':
+                    threat_types.append('Артилерійська загроза')
+                elif alert_type == 'URBAN_FIGHTS':
+                    threat_types.append('Вуличні бої')
+                elif alert_type == 'CHEMICAL':
+                    threat_types.append('Хімічна загроза')
+                elif alert_type == 'NUCLEAR':
+                    threat_types.append('Ядерна загроза')
+            
+            if not threat_types:
+                threat_types = ['Повітряна тривога']
+            
+            title = f"🚨 Тривога: {region_name}"
+            body = ", ".join(threat_types)
+            is_critical = True
+        else:
+            # Alarm ended
+            title = f"✅ Відбій: {region_name}"
+            body = "Загрозу знято"
+            is_critical = False
+        
+        log.info(f"=== ALARM FCM NOTIFICATION ===")
+        log.info(f"Region: {region_name} ({region_id})")
+        log.info(f"State: {'STARTED' if alarm_started else 'ENDED'}")
+        log.info(f"Message: {title} - {body}")
+        
+        # Get devices subscribed to this region
+        devices = device_store.get_devices_for_region(region_name)
+        log.info(f"Devices subscribed to {region_name}: {len(devices)}")
+        
+        if not devices:
+            log.info(f"No devices subscribed to region: {region_name}")
+            return
+
+        # Send to each device
+        success_count = 0
+        for device in devices:
+            try:
+                message = messaging.Message(
+                    notification=messaging.Notification(
+                        title=title,
+                        body=body,
+                    ),
+                    data={
+                        'type': 'alarm',
+                        'region': region_name,
+                        'region_id': region_id,
+                        'alarm_state': 'active' if alarm_started else 'ended',
+                        'timestamp': datetime.now(pytz.timezone('Europe/Kiev')).isoformat(),
+                        'click_action': 'FLUTTER_NOTIFICATION_CLICK',
+                    },
+                    android=messaging.AndroidConfig(
+                        priority='high',
+                        ttl=timedelta(seconds=300),
+                        notification=messaging.AndroidNotification(
+                            channel_id='critical_alerts' if is_critical else 'normal_alerts',
+                            priority='max' if is_critical else 'high',
+                            sound='default' if is_critical else None,
+                        ),
+                    ),
+                    apns=messaging.APNSConfig(
+                        headers={
+                            'apns-priority': '10',
+                            'apns-push-type': 'alert',
+                        },
+                        payload=messaging.APNSPayload(
+                            aps=messaging.Aps(
+                                alert=messaging.ApsAlert(title=title, body=body),
+                                sound='default' if is_critical else None,
+                                content_available=True,
+                            ),
+                        ),
+                    ),
+                    token=device['token'],
+                )
+                
+                response = messaging.send(message)
+                success_count += 1
+                log.info(f"Alarm notification sent to device {device['device_id'][:20]}...: {response}")
+            except messaging.UnregisteredError:
+                log.warning(f"Device {device['device_id'][:20]}... has invalid token, removing...")
+                device_store.remove_device(device['device_id'])
+            except Exception as e:
+                error_msg = str(e)
+                if 'NotRegistered' in error_msg or 'not registered' in error_msg.lower():
+                    log.warning(f"Device {device['device_id'][:20]}... not registered, removing...")
+                    device_store.remove_device(device['device_id'])
+                else:
+                    log.error(f"Failed to send alarm to device {device['device_id'][:20]}...: {e}")
+        
+        log.info(f"Sent {success_count}/{len(devices)} alarm notifications for region: {region_name}")
+    except Exception as e:
+        log.error(f"Error in send_alarm_notification: {e}")
+
+def monitor_alarms():
+    """Background task to monitor ukrainealarm API and send notifications on state changes."""
+    global _alarm_states
+    
+    log.info("=== ALARM MONITORING STARTED ===")
+    
+    while _monitoring_active:
+        try:
+            # Fetch current alarm states
+            response = http_requests.get(
+                f'{ALARM_API_BASE}/alerts',
+                headers={'Authorization': ALARM_API_KEY},
+                timeout=10
+            )
+            
+            if response.ok:
+                data = response.json()
+                current_time = time.time()
+                
+                # Track which regions currently have alarms
+                current_active_regions = set()
+                
+                # Process each region
+                for region in data:
+                    region_id = region.get('regionId', '')
+                    active_alerts = region.get('activeAlerts', [])
+                    has_alarm = len(active_alerts) > 0
+                    
+                    if has_alarm:
+                        current_active_regions.add(region_id)
+                    
+                    # Check if this is a state change
+                    previous_state = _alarm_states.get(region_id, {})
+                    was_active = previous_state.get('active', False)
+                    
+                    if has_alarm and not was_active:
+                        # Alarm started
+                        log.info(f"🚨 ALARM STARTED: {region.get('regionName')} (ID: {region_id})")
+                        send_alarm_notification(region, alarm_started=True)
+                        _alarm_states[region_id] = {
+                            'active': True,
+                            'types': [alert.get('type') for alert in active_alerts],
+                            'last_changed': current_time
+                        }
+                    elif not has_alarm and was_active:
+                        # Alarm ended
+                        log.info(f"✅ ALARM ENDED: {region.get('regionName')} (ID: {region_id})")
+                        send_alarm_notification(region, alarm_started=False)
+                        _alarm_states[region_id] = {
+                            'active': False,
+                            'types': [],
+                            'last_changed': current_time
+                        }
+                    elif has_alarm:
+                        # Alarm still active - update types if changed
+                        current_types = [alert.get('type') for alert in active_alerts]
+                        previous_types = previous_state.get('types', [])
+                        if set(current_types) != set(previous_types):
+                            log.info(f"⚠️ ALARM TYPES CHANGED: {region.get('regionName')} - {current_types}")
+                            _alarm_states[region_id]['types'] = current_types
+                
+                # Check for regions that went from active to inactive (ended alarms)
+                for region_id, state in list(_alarm_states.items()):
+                    if state.get('active') and region_id not in current_active_regions:
+                        # Find region data
+                        region_data = next((r for r in data if r.get('regionId') == region_id), None)
+                        if region_data:
+                            log.info(f"✅ ALARM ENDED (from tracking): {region_data.get('regionName')} (ID: {region_id})")
+                            send_alarm_notification(region_data, alarm_started=False)
+                            _alarm_states[region_id] = {
+                                'active': False,
+                                'types': [],
+                                'last_changed': current_time
+                            }
+                
+                log.info(f"Alarm monitoring cycle complete - {len(current_active_regions)} active alarms")
+            else:
+                log.warning(f"Failed to fetch alarms: HTTP {response.status_code}")
+        
+        except Exception as e:
+            log.error(f"Error in alarm monitoring: {e}")
+        
+        # Wait before next check (30 seconds)
+        time.sleep(30)
+    
+    log.info("=== ALARM MONITORING STOPPED ===")
+
+def start_alarm_monitoring():
+    """Start the alarm monitoring background thread."""
+    global _monitoring_active
+    
+    if _monitoring_active:
+        log.info("Alarm monitoring already active")
+        return
+    
+    _monitoring_active = True
+    monitor_thread = threading.Thread(target=monitor_alarms, daemon=True)
+    monitor_thread.start()
+    log.info("Alarm monitoring thread started")
+
+# Start monitoring when app initializes
+if firebase_initialized:
+    start_alarm_monitoring()
+else:
+    log.warning("Firebase not initialized - alarm monitoring disabled")
+
+# ===== END UKRAINEALARM MONITORING =====
+
+
 # Custom route for serving pre-compressed static files
 @app.route('/static/<path:filename>')
 def static_with_gzip(filename):
