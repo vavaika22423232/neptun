@@ -18473,6 +18473,193 @@ def send_chat_message():
         log.error(f"Error sending chat message: {e}")
         return jsonify({'error': str(e)}), 500
 
+# ============= PUSH NOTIFICATIONS FOR ALARMS =============
+
+# Store previous alarm state to detect changes
+_previous_alarms = {}
+
+@app.route('/api/register-device', methods=['POST'])
+def register_device():
+    """Register device for push notifications."""
+    try:
+        data = request.get_json()
+        token = data.get('token', '')
+        device_id = data.get('device_id', '')
+        regions = data.get('regions', [])
+        enabled = data.get('enabled', True)
+        
+        if not device_id:
+            return jsonify({'error': 'Missing device_id'}), 400
+        
+        # Save device info
+        device_store.save_device(device_id, token, regions, enabled)
+        
+        log.info(f"Device registered: {device_id[:10]}... with {len(regions)} regions")
+        return jsonify({'success': True, 'device_id': device_id})
+    except Exception as e:
+        log.error(f"Error registering device: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/test-notification', methods=['POST'])
+def test_notification():
+    """Send test notification to device."""
+    try:
+        data = request.get_json()
+        token = data.get('token', '')
+        
+        if not token or not firebase_initialized:
+            return jsonify({'error': 'No token or Firebase not initialized'}), 400
+        
+        from firebase_admin import messaging
+        
+        message = messaging.Message(
+            notification=messaging.Notification(
+                title='🧪 Тестове сповіщення',
+                body='Dron Alerts працює! Ви отримуватимете сповіщення про загрози.'
+            ),
+            token=token,
+        )
+        
+        response = messaging.send(message)
+        log.info(f"Test notification sent: {response}")
+        return jsonify({'success': True, 'message_id': response})
+    except Exception as e:
+        log.error(f"Error sending test notification: {e}")
+        return jsonify({'error': str(e)}), 500
+
+def check_alarm_changes():
+    """Background task to check for alarm changes and send notifications."""
+    global _previous_alarms
+    
+    if not firebase_initialized:
+        return
+    
+    try:
+        from firebase_admin import messaging
+        
+        # Fetch current alarms
+        response = http_requests.get(
+            f'{ALARM_API_BASE}/alerts',
+            headers={'Authorization': ALARM_API_KEY},
+            timeout=8
+        )
+        
+        if not response.ok:
+            return
+        
+        data = response.json()
+        current_alarms = {}
+        
+        # Build current alarm state by region name
+        for region in data:
+            region_name = region.get('regionName', '')
+            active_alerts = region.get('activeAlerts', [])
+            if active_alerts:
+                current_alarms[region_name] = active_alerts
+        
+        # Compare with previous state
+        if _previous_alarms:
+            # Check for new alarms (started)
+            for region, alerts in current_alarms.items():
+                if region not in _previous_alarms:
+                    # New alarm started
+                    _send_alarm_notification(region, alerts, 'started')
+            
+            # Check for ended alarms
+            for region, alerts in _previous_alarms.items():
+                if region not in current_alarms:
+                    # Alarm ended
+                    _send_alarm_notification(region, alerts, 'ended')
+        
+        # Update previous state
+        _previous_alarms = current_alarms
+        
+    except Exception as e:
+        log.error(f"Error checking alarm changes: {e}")
+
+def _send_alarm_notification(region, alerts, status):
+    """Send push notification for alarm change."""
+    try:
+        from firebase_admin import messaging
+        
+        # Get alert types
+        alert_types = [alert.get('type', '') for alert in alerts]
+        
+        # Determine criticality
+        critical_types = ['Повітряна тривога', 'Ракетна небезпека', 'Хімічна загроза']
+        is_critical = any(t in critical_types for t in alert_types)
+        
+        # Build notification message
+        if status == 'started':
+            emoji = '🚨' if is_critical else '⚠️'
+            title = f'{emoji} Повітряна тривога!'
+            body = f'{region}: {", ".join(alert_types)}'
+        else:
+            emoji = '✅'
+            title = f'{emoji} Відбій тривоги'
+            body = f'{region}: тривога закінчена'
+        
+        # Get devices subscribed to this region
+        devices = device_store.get_devices_for_region(region)
+        
+        if not devices:
+            return
+        
+        # Send to all subscribed devices
+        messages = []
+        for device in devices:
+            if device.get('token'):
+                messages.append(messaging.Message(
+                    notification=messaging.Notification(
+                        title=title,
+                        body=body,
+                    ),
+                    data={
+                        'type': 'rocket' if is_critical else 'drone',
+                        'region': region,
+                        'status': status,
+                    },
+                    token=device['token'],
+                    android=messaging.AndroidConfig(
+                        priority='high' if is_critical else 'normal',
+                        notification=messaging.AndroidNotification(
+                            channel_id='critical_alerts' if is_critical else 'normal_alerts',
+                            sound='default',
+                        ),
+                    ),
+                    apns=messaging.APNSConfig(
+                        payload=messaging.APNSPayload(
+                            aps=messaging.Aps(
+                                sound='default',
+                                badge=1,
+                            ),
+                        ),
+                    ),
+                ))
+        
+        if messages:
+            # Send batch
+            response = messaging.send_all(messages)
+            log.info(f"Sent {response.success_count} notifications for {region} ({status})")
+            
+    except Exception as e:
+        log.error(f"Error sending alarm notification: {e}")
+
+# Background thread for monitoring alarms
+def _alarm_monitor_thread():
+    """Background thread that checks for alarm changes every 30 seconds."""
+    while True:
+        try:
+            check_alarm_changes()
+        except Exception as e:
+            log.error(f"Alarm monitor thread error: {e}")
+        time.sleep(30)  # Check every 30 seconds
+
+# Start alarm monitoring thread
+_alarm_monitor = threading.Thread(target=_alarm_monitor_thread, daemon=True)
+_alarm_monitor.start()
+log.info("Alarm monitoring thread started")
+
 
 if __name__ == '__main__':
     # Local / container direct run (not needed if a WSGI server like gunicorn is used)

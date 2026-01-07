@@ -176,6 +176,20 @@ class DeviceStore:
             self._save(devices)
             log.info(f"Registered device {device_id[:20]}... with {len(regions)} regions")
 
+    def save_device(self, device_id: str, token: str, regions: List[str], enabled: bool = True) -> None:
+        """Save or update device information."""
+        with self._lock:
+            devices = self._load()
+            from datetime import datetime
+            devices[device_id] = {
+                "token": token,
+                "regions": regions,
+                "enabled": enabled,
+                "last_active": datetime.utcnow().isoformat(),
+            }
+            self._save(devices)
+            log.info(f"Saved device {device_id[:20]}... with {len(regions)} regions (enabled={enabled})")
+
     def update_regions(self, device_id: str, regions: List[str]) -> None:
         """Update regions for an existing device."""
         with self._lock:
