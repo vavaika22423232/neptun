@@ -98,6 +98,16 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 ::-webkit-scrollbar-track{background:var(--bg)}
 ::-webkit-scrollbar-thumb{background:var(--card);border-radius:5px}
 ::-webkit-scrollbar-thumb:hover{background:var(--border)}
+.menu-section{background:linear-gradient(135deg,rgba(20,27,45,0.9),rgba(30,41,66,0.7));border:1px solid var(--border);border-radius:1rem;padding:2rem;cursor:pointer;transition:all 0.3s;text-align:center;position:relative;overflow:hidden}
+.menu-section::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,var(--blue),var(--purple));opacity:0;transition:opacity 0.3s}
+.menu-section:hover{transform:translateY(-8px);border-color:var(--blue);box-shadow:0 12px 40px rgba(59,130,246,0.4)}
+.menu-section:hover::before{opacity:1}
+.menu-icon{font-size:3.5rem;margin-bottom:1rem;filter:grayscale(0.3);transition:all 0.3s}
+.menu-section:hover .menu-icon{filter:grayscale(0);transform:scale(1.1)}
+.menu-title{font-size:1.25rem;font-weight:700;color:var(--text);margin-bottom:0.5rem}
+.menu-desc{font-size:0.875rem;color:var(--muted);line-height:1.5}
+.admin-section{animation:fadeIn 0.3s}
+@keyframes fadeIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
 </style>
 </head>
 <body>
@@ -120,6 +130,53 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 </form>
 </div>
 </header>
+
+<!-- Main Menu -->
+<div id="mainMenu" style="display:block">
+<div class="card">
+<div class="card-header">
+<h2 class="card-title">📂 Select Section</h2>
+</div>
+<div class="card-body">
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.5rem">
+<div class="menu-section" onclick="showSection('overview')">
+<div class="menu-icon">📊</div>
+<div class="menu-title">Overview & Stats</div>
+<div class="menu-desc">System statistics, active users, daily metrics</div>
+</div>
+<div class="menu-section" onclick="showSection('map')">
+<div class="menu-icon">🗺️</div>
+<div class="menu-title">Live Map & Markers</div>
+<div class="menu-desc">Interactive map, add/edit markers, trajectories</div>
+</div>
+<div class="menu-section" onclick="showSection('subscriptions')">
+<div class="menu-icon">💳</div>
+<div class="menu-title">Commercial Subscriptions</div>
+<div class="menu-desc">Payment management, approvals, revenue stats</div>
+</div>
+<div class="menu-section" onclick="showSection('users')">
+<div class="menu-icon">👥</div>
+<div class="menu-title">Users & Blocking</div>
+<div class="menu-desc">Active visitors, blocked users, sessions</div>
+</div>
+<div class="menu-section" onclick="showSection('messages')">
+<div class="menu-icon">📨</div>
+<div class="menu-title">Raw Messages</div>
+<div class="menu-desc">Pending geocoding, message processing</div>
+</div>
+<div class="menu-section" onclick="showSection('debug')">
+<div class="menu-icon">🐛</div>
+<div class="menu-title">Debug & Logs</div>
+<div class="menu-desc">System logs, cache management, diagnostics</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- Section: Overview -->
+<div id="section-overview" class="admin-section" style="display:none">
+<button class="btn btn-secondary" onclick="showMainMenu()" style="margin-bottom:1rem">← Back to Menu</button>
 
 <div class="stats-grid">
 <div class="stat-card">
@@ -161,6 +218,11 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 </div>
 </div>
 </div>
+</div>
+
+<!-- Section: Map -->
+<div id="section-map" class="admin-section" style="display:none">
+<button class="btn btn-secondary" onclick="showMainMenu()" style="margin-bottom:1rem">← Back to Menu</button>
 
 <div class="card">
 <div class="card-header">
@@ -267,6 +329,88 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 </div>
 </div>
 </div>
+</div>
+</div>
+
+<!-- Section: Subscriptions -->
+<div id="section-subscriptions" class="admin-section" style="display:none">
+<button class="btn btn-secondary" onclick="showMainMenu()" style="margin-bottom:1rem">← Back to Menu</button>
+
+<div class="card">
+<div class="card-header">
+<h2 class="card-title">💳 Commercial Subscriptions <span class="badge success">{{ subscriptions|length if subscriptions else 0 }}</span></h2>
+</div>
+<div class="card-body">
+{% if subscriptions %}
+<div class="stats-grid" style="margin-bottom:1.5rem">
+<div class="stat-card">
+<div class="stat-value">{{ subscriptions|length }}</div>
+<div class="stat-label">Total</div>
+</div>
+<div class="stat-card">
+<div class="stat-value">{{ subscriptions|selectattr('status', 'equalto', 'paid')|list|length }}</div>
+<div class="stat-label">✅ Paid</div>
+</div>
+<div class="stat-card">
+<div class="stat-value">{{ subscriptions|selectattr('status', 'equalto', 'pending')|list|length }}</div>
+<div class="stat-label">⏳ Pending</div>
+</div>
+<div class="stat-card">
+<div class="stat-value">{{ (subscriptions|selectattr('status', 'equalto', 'paid')|map(attribute='amount')|sum)|int }} UAH</div>
+<div class="stat-label">💰 Revenue</div>
+</div>
+</div>
+<div class="table-container">
+<table class="table">
+<thead>
+<tr>
+<th>Nickname</th>
+<th>Email</th>
+<th>Amount</th>
+<th>Status</th>
+<th>Date</th>
+<th>Actions</th>
+</tr>
+</thead>
+<tbody>
+{% for sub in subscriptions %}
+<tr>
+<td><strong>{{ sub.nickname }}</strong></td>
+<td class="truncate" style="max-width:200px">{{ sub.email }}</td>
+<td><strong>{{ sub.amount }} {{ sub.currency }}</strong></td>
+<td>
+{% if sub.status == 'paid' %}
+<span class="badge success">✅ Paid</span>
+{% else %}
+<span class="badge warning">⏳ Pending</span>
+{% endif %}
+</td>
+<td style="font-size:0.75rem;color:var(--muted)">{{ sub.timestamp[:16].replace('T', ' ') }}</td>
+<td>
+{% if sub.status == 'pending' %}
+<button class="btn btn-success btn-sm" onclick="approveSubscription('{{ sub.id }}')">✓ Approve</button>
+{% else %}
+<span style="color:var(--muted);font-size:0.75rem">Approved</span>
+{% endif %}
+</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% else %}
+<div class="empty-state">
+<div class="empty-state-icon">💳</div>
+<p>No subscriptions yet</p>
+</div>
+{% endif %}
+</div>
+</div>
+</div>
+
+<!-- Section: Users -->
+<div id="section-users" class="admin-section" style="display:none">
+<button class="btn btn-secondary" onclick="showMainMenu()" style="margin-bottom:1rem">← Back to Menu</button>
 
 <div class="card">
 <div class="card-header">
@@ -398,6 +542,12 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 {% endif %}
 </div>
 </div>
+</div>
+</div>
+
+<!-- Section: Messages -->
+<div id="section-messages" class="admin-section" style="display:none">
+<button class="btn btn-secondary" onclick="showMainMenu()" style="margin-bottom:1rem">← Back to Menu</button>
 
 <div class="card">
 <div class="card-header">
@@ -523,83 +673,13 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 {% endif %}
 </div>
 </div>
+</div>
+</div>
+</div>
 
-<div class="card">
-<div class="card-header">
-<h2 class="card-title">💳 Commercial Subscriptions <span class="badge success">{{ subscriptions|length if subscriptions else 0 }}</span></h2>
-<a href="/admin/subscriptions" class="btn btn-primary btn-sm">📊 Full Dashboard</a>
-</div>
-<div class="card-body">
-{% if subscriptions %}
-<div class="stats-grid" style="margin-bottom:1.5rem">
-<div class="stat-card">
-<div class="stat-value">{{ subscriptions|length }}</div>
-<div class="stat-label">Total</div>
-</div>
-<div class="stat-card">
-<div class="stat-value">{{ subscriptions|selectattr('status', 'equalto', 'paid')|list|length }}</div>
-<div class="stat-label">✅ Paid</div>
-</div>
-<div class="stat-card">
-<div class="stat-value">{{ subscriptions|selectattr('status', 'equalto', 'pending')|list|length }}</div>
-<div class="stat-label">⏳ Pending</div>
-</div>
-<div class="stat-card">
-<div class="stat-value">{{ (subscriptions|selectattr('status', 'equalto', 'paid')|map(attribute='amount')|sum)|int }} UAH</div>
-<div class="stat-label">💰 Revenue</div>
-</div>
-</div>
-<div class="table-container">
-<table class="table">
-<thead>
-<tr>
-<th>Nickname</th>
-<th>Email</th>
-<th>Amount</th>
-<th>Status</th>
-<th>Date</th>
-<th>Actions</th>
-</tr>
-</thead>
-<tbody>
-{% for sub in subscriptions[:10] %}
-<tr>
-<td><strong>{{ sub.nickname }}</strong></td>
-<td class="truncate" style="max-width:200px">{{ sub.email }}</td>
-<td><strong>{{ sub.amount }} {{ sub.currency }}</strong></td>
-<td>
-{% if sub.status == 'paid' %}
-<span class="badge success">✅ Paid</span>
-{% else %}
-<span class="badge warning">⏳ Pending</span>
-{% endif %}
-</td>
-<td style="font-size:0.75rem;color:var(--muted)">{{ sub.timestamp[:16].replace('T', ' ') }}</td>
-<td>
-{% if sub.status == 'pending' %}
-<button class="btn btn-success btn-sm" onclick="approveSubscription('{{ sub.id }}')">✓ Approve</button>
-{% else %}
-<span style="color:var(--muted);font-size:0.75rem">Approved</span>
-{% endif %}
-</td>
-</tr>
-{% endfor %}
-</tbody>
-</table>
-</div>
-{% if subscriptions|length > 10 %}
-<div style="text-align:center;margin-top:1rem">
-<a href="/admin/subscriptions" class="btn btn-secondary">View All {{ subscriptions|length }} Subscriptions →</a>
-</div>
-{% endif %}
-{% else %}
-<div class="empty-state">
-<div class="empty-state-icon">💳</div>
-<p>No subscriptions yet</p>
-</div>
-{% endif %}
-</div>
-</div>
+<!-- Section: Debug -->
+<div id="section-debug" class="admin-section" style="display:none">
+<button class="btn btn-secondary" onclick="showMainMenu()" style="margin-bottom:1rem">← Back to Menu</button>
 
 <div class="card">
 <div class="card-header">
@@ -846,7 +926,11 @@ async function updateStats(){try{const d=await api('/admin/stats');const s=d.sta
 setInterval(()=>{if(auto&&map)reloadMarkers()},30000);
 setInterval(updateRaw,15000);
 setInterval(updateStats,20000);
-document.addEventListener('DOMContentLoaded',()=>{console.log('🌊 Neptun Admin Dashboard initialized');if(typeof L==='undefined'){notif('Leaflet library failed to load','error');return}initMap();updateStats();updateRaw();loadHiddenMarkers();const typeSelect=document.getElementById('editType');if(typeSelect){updateMarkerIcon(typeSelect.value||'shahed');}});
+
+function showMainMenu(){document.querySelectorAll('.admin-section').forEach(s=>s.style.display='none');document.getElementById('mainMenu').style.display='block'}
+function showSection(name){document.querySelectorAll('.admin-section').forEach(s=>s.style.display='none');document.getElementById('mainMenu').style.display='none';const section=document.getElementById('section-'+name);if(section){section.style.display='block';if(name==='map'&&!map){setTimeout(()=>initMap(),100)}}else{notif('Section not found: '+name,'error')}}
+
+document.addEventListener('DOMContentLoaded',()=>{console.log('🌊 Neptun Admin Dashboard initialized');if(typeof L==='undefined'){notif('Leaflet library failed to load','error');return}const hash=window.location.hash.substring(1);if(hash&&document.getElementById('section-'+hash)){showSection(hash)}updateStats();updateRaw();loadHiddenMarkers();const typeSelect=document.getElementById('editType');if(typeSelect){updateMarkerIcon(typeSelect.value||'shahed');}});
 </script>
 </body>
 </html>
