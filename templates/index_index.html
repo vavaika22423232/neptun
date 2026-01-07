@@ -3457,6 +3457,12 @@
       };
       
       try {
+        // Show loading state
+        const submitBtn = document.querySelector('#commercialForm button[type="submit"]');
+        const originalText = submitBtn.innerHTML;
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '⏳ Підготовка оплати...';
+        
         // Send data to server
         const response = await fetch('/api/commercial_subscription', {
           method: 'POST',
@@ -3477,12 +3483,39 @@
             });
           }
           
-          // Redirect to payment (you'll need to implement this endpoint)
-          if (data.payment_url) {
-            window.location.href = data.payment_url;
+          // If LiqPay is configured, submit payment form automatically
+          if (data.payment_url && data.payment_data && data.payment_signature) {
+            // Create and submit LiqPay form
+            const liqpayForm = document.createElement('form');
+            liqpayForm.method = 'POST';
+            liqpayForm.action = data.payment_url;
+            liqpayForm.acceptCharset = 'utf-8';
+            
+            const dataInput = document.createElement('input');
+            dataInput.type = 'hidden';
+            dataInput.name = 'data';
+            dataInput.value = data.payment_data;
+            
+            const signatureInput = document.createElement('input');
+            signatureInput.type = 'hidden';
+            signatureInput.name = 'signature';
+            signatureInput.value = data.payment_signature;
+            
+            liqpayForm.appendChild(dataInput);
+            liqpayForm.appendChild(signatureInput);
+            document.body.appendChild(liqpayForm);
+            
+            // Show redirect message
+            submitBtn.innerHTML = '🔄 Перехід до оплати...';
+            
+            // Submit to LiqPay
+            setTimeout(() => liqpayForm.submit(), 500);
           } else {
+            // Fallback if payment not configured
             alert('✅ Дякуємо! Ми зв\'яжемося з вами найближчим часом для оформлення оплати.');
             closeCommercialForm();
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalText;
           }
         } else {
           throw new Error('Server error');
@@ -3490,6 +3523,11 @@
       } catch (error) {
         console.error('Subscription error:', error);
         alert('❌ Помилка відправки форми. Будь ласка, напишіть нам в Telegram або на email.');
+        const submitBtn = document.querySelector('#commercialForm button[type="submit"]');
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '💳 Оплатити 1500 грн/міс';
+        }
       }
     }
 

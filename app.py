@@ -341,6 +341,63 @@ log = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# ============= PAYMENT & EMAIL CONFIGURATION =============
+
+# LiqPay configuration
+LIQPAY_PUBLIC_KEY = os.getenv('LIQPAY_PUBLIC_KEY', '')
+LIQPAY_PRIVATE_KEY = os.getenv('LIQPAY_PRIVATE_KEY', '')
+LIQPAY_ENABLED = bool(LIQPAY_PUBLIC_KEY and LIQPAY_PRIVATE_KEY)
+
+if LIQPAY_ENABLED:
+    try:
+        from liqpay import LiqPay
+        liqpay = LiqPay(LIQPAY_PUBLIC_KEY, LIQPAY_PRIVATE_KEY)
+        print("INFO: LiqPay payment gateway initialized")
+    except ImportError:
+        LIQPAY_ENABLED = False
+        liqpay = None
+        print("WARNING: LiqPay library not installed. Run: pip install liqpay")
+    except Exception as e:
+        LIQPAY_ENABLED = False
+        liqpay = None
+        print(f"WARNING: LiqPay initialization failed: {e}")
+else:
+    liqpay = None
+    print("WARNING: LiqPay disabled (missing API keys)")
+
+# Flask-Mail configuration
+app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
+app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT', 587))
+app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS', 'True') == 'True'
+app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME', '')
+app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD', '')
+app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER', 'noreply@neptun.in.ua')
+
+MAIL_ENABLED = bool(app.config['MAIL_USERNAME'] and app.config['MAIL_PASSWORD'])
+
+if MAIL_ENABLED:
+    try:
+        from flask_mail import Mail, Message
+        mail = Mail(app)
+        print("INFO: Flask-Mail initialized")
+    except ImportError:
+        MAIL_ENABLED = False
+        mail = None
+        print("WARNING: Flask-Mail not installed. Run: pip install flask-mail")
+    except Exception as e:
+        MAIL_ENABLED = False
+        mail = None
+        print(f"WARNING: Flask-Mail initialization failed: {e}")
+else:
+    mail = None
+    print("WARNING: Email disabled (missing SMTP credentials)")
+
+# Admin credentials
+ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'admin')
+ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'change_me_in_production')
+
+# =========================================================
+
 # Firebase Admin initialization
 device_store = DeviceStore()
 firebase_initialized = False
@@ -713,7 +770,7 @@ def alarm_all():
 # ==================== COMMERCIAL SUBSCRIPTION ENDPOINT ====================
 @app.route('/api/commercial_subscription', methods=['POST'])
 def commercial_subscription():
-    """Handle commercial subscription requests"""
+    """Handle commercial subscription requests with LiqPay payment"""
     try:
         data = request.get_json()
         
@@ -736,7 +793,7 @@ def commercial_subscription():
             'user_agent': request.headers.get('User-Agent', '')
         }
         
-        # Save to file (you can also use database)
+        # Save to file
         subscriptions_file = 'commercial_subscriptions.json'
         subscriptions = []
         
@@ -752,26 +809,223 @@ def commercial_subscription():
         with open(subscriptions_file, 'w', encoding='utf-8') as f:
             json.dump(subscriptions, f, ensure_ascii=False, indent=2)
         
-        # Log to console
         print(f"🔔 NEW COMMERCIAL SUBSCRIPTION:")
+        print(f"   ID: {subscription['id']}")
         print(f"   Nickname: {subscription['nickname']}")
         print(f"   Email: {subscription['email']}")
         print(f"   Amount: {subscription['amount']} UAH")
         
-        # TODO: Integrate with payment gateway (LiqPay, Fondy, etc.)
-        # For now, return success and manual payment instructions
+        # Generate LiqPay payment if enabled
+        payment_url = None
+        payment_data = None
+        payment_signature = None
+        
+        if LIQPAY_ENABLED:
+            try:
+                # Generate LiqPay payment
+                payment_params = {
+                    'action': 'pay',
+                    'amount': subscription['amount'],
+                    'currency': subscription['currency'],
+                    'description': f"NEPTUN Commercial Subscription - {subscription['nickname']}",
+                    'order_id': subscription['id'],
+                    'version': '3',
+                    'result_url': 'https://neptun.in.ua?payment=success',
+                    'server_url': 'https://neptun.in.ua/api/liqpay_callback'
+                }
+                
+                # Get payment form data
+                payment_data = liqpay.cnb_data(payment_params)
+                payment_signature = liqpay.cnb_signature(payment_params)
+                payment_url = 'https://www.liqpay.ua/api/3/checkout'
+                
+                print(f"✅ LiqPay payment generated for subscription {subscription['id']}")
+            except Exception as e:
+                print(f"❌ LiqPay payment generation failed: {e}")
+                traceback.print_exc()
         
         return jsonify({
             'success': True,
             'subscription_id': subscription['id'],
-            'message': 'Дякуємо! Ми зв\'яжемося з вами найближчим часом.',
-            # 'payment_url': 'https://payment-gateway.com/...'  # Add when integrated
+            'message': 'Дякуємо! Зараз ви будете перенаправлені на сторінку оплати.',
+            'payment_url': payment_url,
+            'payment_data': payment_data,
+            'payment_signature': payment_signature
         }), 200
         
     except Exception as e:
         print(f"❌ Commercial subscription error: {e}")
         traceback.print_exc()
         return jsonify({'error': 'Internal server error'}), 500
+
+# ==================== LIQPAY CALLBACK ENDPOINT ====================
+@app.route('/api/liqpay_callback', methods=['POST'])
+def liqpay_callback():
+    """Handle LiqPay payment callback"""
+    try:
+        if not LIQPAY_ENABLED:
+            return jsonify({'error': 'LiqPay not configured'}), 503
+        
+        # Get callback data
+        callback_data = request.form.get('data')
+        callback_signature = request.form.get('signature')
+        
+        if not callback_data or not callback_signature:
+            print("❌ LiqPay callback: missing data or signature")
+            return jsonify({'error': 'Invalid callback'}), 400
+        
+        # Verify signature
+        import base64
+        decoded_data = json.loads(base64.b64decode(callback_data).decode('utf-8'))
+        
+        # Verify payment signature
+        sign_string = LIQPAY_PRIVATE_KEY + callback_data + LIQPAY_PRIVATE_KEY
+        import hashlib
+        expected_signature = base64.b64encode(hashlib.sha1(sign_string.encode('utf-8')).digest()).decode('utf-8')
+        
+        if callback_signature != expected_signature:
+            print("❌ LiqPay callback: signature verification failed")
+            return jsonify({'error': 'Invalid signature'}), 403
+        
+        # Extract payment info
+        order_id = decoded_data.get('order_id')
+        status = decoded_data.get('status')
+        amount = decoded_data.get('amount')
+        
+        print(f"💳 LiqPay callback received:")
+        print(f"   Order ID: {order_id}")
+        print(f"   Status: {status}")
+        print(f"   Amount: {amount}")
+        
+        # Update subscription status
+        subscriptions_file = 'commercial_subscriptions.json'
+        
+        if os.path.exists(subscriptions_file):
+            try:
+                with open(subscriptions_file, 'r', encoding='utf-8') as f:
+                    subscriptions = json.load(f)
+                
+                # Find and update subscription
+                for sub in subscriptions:
+                    if sub['id'] == order_id:
+                        sub['payment_status'] = status
+                        sub['payment_amount'] = amount
+                        sub['payment_time'] = datetime.now(pytz.timezone('Europe/Kiev')).isoformat()
+                        
+                        if status == 'success':
+                            sub['status'] = 'paid'
+                            print(f"✅ Subscription {order_id} marked as PAID")
+                            
+                            # Send confirmation email
+                            if MAIL_ENABLED:
+                                try:
+                                    send_subscription_email(sub)
+                                except Exception as e:
+                                    print(f"❌ Email sending failed: {e}")
+                        
+                        break
+                
+                # Save updated subscriptions
+                with open(subscriptions_file, 'w', encoding='utf-8') as f:
+                    json.dump(subscriptions, f, ensure_ascii=False, indent=2)
+                    
+            except Exception as e:
+                print(f"❌ Failed to update subscription: {e}")
+                traceback.print_exc()
+        
+        return jsonify({'status': 'ok'}), 200
+        
+    except Exception as e:
+        print(f"❌ LiqPay callback error: {e}")
+        traceback.print_exc()
+        return jsonify({'error': 'Internal server error'}), 500
+
+# ==================== EMAIL NOTIFICATION FUNCTION ====================
+def send_subscription_email(subscription):
+    """Send confirmation email for subscription"""
+    if not MAIL_ENABLED:
+        print("⚠️ Email disabled - skipping notification")
+        return
+    
+    try:
+        from flask_mail import Message
+        
+        subject = "✅ Підписка NEPTUN активована!"
+        recipient = subscription['email']
+        
+        # HTML email body
+        body_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
+                .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
+                .info-block {{ background: white; padding: 20px; margin: 20px 0; border-radius: 8px; border-left: 4px solid #667eea; }}
+                .footer {{ text-align: center; margin-top: 30px; color: #666; font-size: 12px; }}
+                .btn {{ display: inline-block; padding: 12px 30px; background: #667eea; color: white; text-decoration: none; border-radius: 5px; margin-top: 20px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>🎉 Вітаємо!</h1>
+                    <p>Ваша комерційна підписка активована</p>
+                </div>
+                <div class="content">
+                    <p>Привіт, <strong>{subscription['nickname']}</strong>!</p>
+                    
+                    <p>Дякуємо за оплату! Ваша місячна комерційна підписка на <strong>NEPTUN</strong> успішно активована.</p>
+                    
+                    <div class="info-block">
+                        <h3>📋 Деталі підписки:</h3>
+                        <p><strong>ID:</strong> {subscription['id']}</p>
+                        <p><strong>Нікнейм:</strong> {subscription['nickname']}</p>
+                        <p><strong>Сума:</strong> {subscription['amount']} {subscription['currency']}</p>
+                        <p><strong>Статус:</strong> ✅ Оплачено</p>
+                        <p><strong>Дата активації:</strong> {subscription.get('payment_time', subscription['timestamp'])}</p>
+                    </div>
+                    
+                    <p><strong>Тепер ви можете використовувати карту NEPTUN у комерційних цілях!</strong></p>
+                    
+                    <ul>
+                        <li>✅ Використання в стрімах (TikTok, YouTube, Twitch)</li>
+                        <li>✅ Вбудовування на сторонні сайти</li>
+                        <li>✅ Монетизація контенту з картою</li>
+                        <li>✅ Пріоритетна підтримка</li>
+                    </ul>
+                    
+                    <p>Підписка діє <strong>1 місяць</strong> з моменту оплати.</p>
+                    
+                    <a href="https://neptun.in.ua" class="btn">Відкрити NEPTUN карту</a>
+                    
+                    <p style="margin-top: 30px;">Якщо у вас виникнуть питання, відповідайте на цей email або пишіть нам у Telegram: {subscription.get('telegram', 'не вказано')}</p>
+                </div>
+                <div class="footer">
+                    <p>NEPTUN - Карта тривог України 🇺🇦</p>
+                    <p><a href="https://neptun.in.ua">neptun.in.ua</a></p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        msg = Message(
+            subject=subject,
+            recipients=[recipient],
+            html=body_html
+        )
+        
+        mail.send(msg)
+        print(f"📧 Confirmation email sent to {recipient}")
+        
+    except Exception as e:
+        print(f"❌ Failed to send email: {e}")
+        traceback.print_exc()
+        raise
 
 # ==================== END COMMERCIAL SUBSCRIPTION ====================
 
@@ -15284,6 +15538,93 @@ def index():
     resp.headers['X-Robots-Tag'] = 'index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1'
     resp.headers['Link'] = '<https://neptun.in.ua/>; rel="canonical"'
     return resp
+
+# ==================== ADMIN PANEL ====================
+@app.route('/admin')
+def admin_panel():
+    """Admin panel for managing commercial subscriptions"""
+    # Check basic auth
+    auth = request.authorization
+    
+    if not auth or auth.username != ADMIN_USERNAME or auth.password != ADMIN_PASSWORD:
+        return Response(
+            'Необхідна авторизація',
+            401,
+            {'WWW-Authenticate': 'Basic realm="Admin Panel"'}
+        )
+    
+    # Load subscriptions
+    subscriptions_file = 'commercial_subscriptions.json'
+    subscriptions = []
+    
+    if os.path.exists(subscriptions_file):
+        try:
+            with open(subscriptions_file, 'r', encoding='utf-8') as f:
+                subscriptions = json.load(f)
+        except Exception as e:
+            print(f"❌ Failed to load subscriptions: {e}")
+    
+    # Sort by timestamp (newest first)
+    subscriptions.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+    
+    # Statistics
+    total_count = len(subscriptions)
+    paid_count = sum(1 for s in subscriptions if s.get('status') == 'paid')
+    pending_count = sum(1 for s in subscriptions if s.get('status') == 'pending')
+    total_revenue = sum(s.get('amount', 0) for s in subscriptions if s.get('status') == 'paid')
+    
+    return render_template('admin.html',
+                         subscriptions=subscriptions,
+                         total_count=total_count,
+                         paid_count=paid_count,
+                         pending_count=pending_count,
+                         total_revenue=total_revenue)
+
+@app.route('/admin/subscription/<subscription_id>/approve', methods=['POST'])
+def admin_approve_subscription(subscription_id):
+    """Manually approve a subscription (for bank transfer payments)"""
+    auth = request.authorization
+    
+    if not auth or auth.username != ADMIN_USERNAME or auth.password != ADMIN_PASSWORD:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    subscriptions_file = 'commercial_subscriptions.json'
+    
+    if os.path.exists(subscriptions_file):
+        try:
+            with open(subscriptions_file, 'r', encoding='utf-8') as f:
+                subscriptions = json.load(f)
+            
+            # Find and approve subscription
+            for sub in subscriptions:
+                if sub['id'] == subscription_id:
+                    sub['status'] = 'paid'
+                    sub['manual_approval'] = True
+                    sub['approved_by'] = auth.username
+                    sub['approved_at'] = datetime.now(pytz.timezone('Europe/Kiev')).isoformat()
+                    
+                    # Send confirmation email
+                    if MAIL_ENABLED:
+                        try:
+                            send_subscription_email(sub)
+                        except Exception as e:
+                            print(f"❌ Email sending failed: {e}")
+                    
+                    break
+            
+            # Save updated subscriptions
+            with open(subscriptions_file, 'w', encoding='utf-8') as f:
+                json.dump(subscriptions, f, ensure_ascii=False, indent=2)
+            
+            return jsonify({'success': True, 'message': 'Subscription approved'})
+            
+        except Exception as e:
+            print(f"❌ Failed to approve subscription: {e}")
+            return jsonify({'error': str(e)}), 500
+    
+    return jsonify({'error': 'Subscription not found'}), 404
+
+# ==================== END ADMIN PANEL ====================
 
 @app.route('/map-only')
 def map_only():
