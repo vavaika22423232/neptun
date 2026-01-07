@@ -715,8 +715,9 @@ def alarm_all():
 # This system monitors alarm state changes and triggers push notifications
 
 # Store previous alarm states to detect changes
-_alarm_states = {}  # {region_id: {'active': bool, 'types': [str], 'last_changed': timestamp}}
+_alarm_states = {}  # {region_id: {'active': bool, 'types': [str], 'last_changed': timestamp, 'notified': bool}}
 _monitoring_active = False
+_first_run = True  # Don't send notifications on first run (existing alarms)
 
 def get_region_display_name(region_data):
     """Get display name for region from API data."""
@@ -854,7 +855,7 @@ def send_alarm_notification(region_data, alarm_started: bool):
 
 def monitor_alarms():
     """Background task to monitor ukrainealarm API and send notifications on state changes."""
-    global _alarm_states
+    global _alarm_states, _first_run
     
     log.info("=== ALARM MONITORING STARTED ===")
     
@@ -874,60 +875,86 @@ def monitor_alarms():
                 # Track which regions currently have alarms
                 current_active_regions = set()
                 
-                # Process each region
-                for region in data:
-                    region_id = region.get('regionId', '')
-                    active_alerts = region.get('activeAlerts', [])
-                    has_alarm = len(active_alerts) > 0
+                # On first run, just store current states without sending notifications
+                if _first_run:
+                    log.info("First run - storing initial alarm states without notifications")
+                    for region in data:
+                        region_id = region.get('regionId', '')
+                        active_alerts = region.get('activeAlerts', [])
+                        has_alarm = len(active_alerts) > 0
+                        
+                        if has_alarm:
+                            current_active_regions.add(region_id)
+                            _alarm_states[region_id] = {
+                                'active': True,
+                                'types': [alert.get('type') for alert in active_alerts],
+                                'last_changed': current_time,
+                                'notified': True  # Mark as already notified to prevent spam
+                            }
                     
-                    if has_alarm:
-                        current_active_regions.add(region_id)
-                    
-                    # Check if this is a state change
-                    previous_state = _alarm_states.get(region_id, {})
-                    was_active = previous_state.get('active', False)
-                    
-                    if has_alarm and not was_active:
-                        # Alarm started
-                        log.info(f"🚨 ALARM STARTED: {region.get('regionName')} (ID: {region_id})")
-                        send_alarm_notification(region, alarm_started=True)
-                        _alarm_states[region_id] = {
-                            'active': True,
-                            'types': [alert.get('type') for alert in active_alerts],
-                            'last_changed': current_time
-                        }
-                    elif not has_alarm and was_active:
-                        # Alarm ended
-                        log.info(f"✅ ALARM ENDED: {region.get('regionName')} (ID: {region_id})")
-                        send_alarm_notification(region, alarm_started=False)
-                        _alarm_states[region_id] = {
-                            'active': False,
-                            'types': [],
-                            'last_changed': current_time
-                        }
-                    elif has_alarm:
-                        # Alarm still active - update types if changed
-                        current_types = [alert.get('type') for alert in active_alerts]
-                        previous_types = previous_state.get('types', [])
-                        if set(current_types) != set(previous_types):
-                            log.info(f"⚠️ ALARM TYPES CHANGED: {region.get('regionName')} - {current_types}")
-                            _alarm_states[region_id]['types'] = current_types
-                
-                # Check for regions that went from active to inactive (ended alarms)
-                for region_id, state in list(_alarm_states.items()):
-                    if state.get('active') and region_id not in current_active_regions:
-                        # Find region data
-                        region_data = next((r for r in data if r.get('regionId') == region_id), None)
-                        if region_data:
-                            log.info(f"✅ ALARM ENDED (from tracking): {region_data.get('regionName')} (ID: {region_id})")
-                            send_alarm_notification(region_data, alarm_started=False)
+                    _first_run = False
+                    log.info(f"Initial state stored - {len(current_active_regions)} active alarms")
+                else:
+                    # Normal monitoring - check for changes
+                    for region in data:
+                        region_id = region.get('regionId', '')
+                        active_alerts = region.get('activeAlerts', [])
+                        has_alarm = len(active_alerts) > 0
+                        
+                        if has_alarm:
+                            current_active_regions.add(region_id)
+                        
+                        # Check if this is a state change
+                        previous_state = _alarm_states.get(region_id, {})
+                        was_active = previous_state.get('active', False)
+                        was_notified = previous_state.get('notified', False)
+                        
+                        if has_alarm and not was_active:
+                            # Alarm started - send notification only if not already notified
+                            if not was_notified:
+                                log.info(f"🚨 ALARM STARTED: {region.get('regionName')} (ID: {region_id})")
+                                send_alarm_notification(region, alarm_started=True)
+                            _alarm_states[region_id] = {
+                                'active': True,
+                                'types': [alert.get('type') for alert in active_alerts],
+                                'last_changed': current_time,
+                                'notified': True
+                            }
+                        elif not has_alarm and was_active:
+                            # Alarm ended - always send відбій notification
+                            log.info(f"✅ ALARM ENDED: {region.get('regionName')} (ID: {region_id})")
+                            send_alarm_notification(region, alarm_started=False)
                             _alarm_states[region_id] = {
                                 'active': False,
                                 'types': [],
-                                'last_changed': current_time
+                                'last_changed': current_time,
+                                'notified': False  # Reset for next alarm
                             }
-                
-                log.info(f"Alarm monitoring cycle complete - {len(current_active_regions)} active alarms")
+                        elif has_alarm and was_active:
+                            # Alarm still active - only log, don't resend notification
+                            current_types = [alert.get('type') for alert in active_alerts]
+                            previous_types = previous_state.get('types', [])
+                            if set(current_types) != set(previous_types):
+                                log.info(f"⚠️ ALARM TYPES CHANGED: {region.get('regionName')} - {current_types}")
+                                _alarm_states[region_id]['types'] = current_types
+                                # Keep notified=True to prevent resending
+                    
+                    # Check for regions that went from active to inactive (ended alarms)
+                    for region_id, state in list(_alarm_states.items()):
+                        if state.get('active') and region_id not in current_active_regions:
+                            # Find region data to send відбій notification
+                            region_data = next((r for r in data if r.get('regionId') == region_id), None)
+                            if region_data:
+                                log.info(f"✅ ALARM ENDED (from tracking): {region_data.get('regionName')} (ID: {region_id})")
+                                send_alarm_notification(region_data, alarm_started=False)
+                            _alarm_states[region_id] = {
+                                'active': False,
+                                'types': [],
+                                'last_changed': current_time,
+                                'notified': False
+                            }
+                    
+                    log.info(f"Alarm monitoring cycle complete - {len(current_active_regions)} active alarms")
             else:
                 log.warning(f"Failed to fetch alarms: HTTP {response.status_code}")
         
