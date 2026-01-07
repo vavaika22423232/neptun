@@ -1989,6 +1989,11 @@
       }
     }
     
+    /* Smooth scroll behavior */
+    html {
+      scroll-behavior: smooth;
+    }
+    
     #nicknameInput:focus {
       border-color: rgba(0,212,255,0.6) !important;
       box-shadow: 0 0 0 3px rgba(0,212,255,0.1) !important;
@@ -3260,32 +3265,61 @@
     <p>NEPTUN не розголошує геолокацію військових об'єктів. Карта шахедів показує лише публічну інформацію про повітряні тривоги та загальні напрямки руху загроз без деталізації критичної інфраструктури.</p>
   </article>
 
-  <!-- COMMERCIAL SUBSCRIPTION BLOCK -->
-  <div id="commercialBlock" style="position:fixed;bottom:60px;right:20px;max-width:380px;background:linear-gradient(135deg, #0a0e17 0%, #0d1929 100%);border:2px solid rgba(0,212,255,0.3);border-radius:16px;padding:20px;box-shadow:0 10px 40px rgba(0,212,255,0.2);z-index:99;display:none;animation:slideInRight 0.4s ease;">
-    <button onclick="document.getElementById('commercialBlock').style.display='none'" style="position:absolute;top:10px;right:10px;background:none;border:none;color:#64748b;font-size:20px;cursor:pointer;width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:50%;transition:all 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.1)'; this.style.color='#ef4444'" onmouseout="this.style.background='none'; this.style.color='#64748b'">×</button>
-    
-    <div style="text-align:center;margin-bottom:15px;">
-      <div style="color:#00d4ff;font-size:24px;font-weight:800;">💼 Комерційне використання</div>
+  <!-- COMMERCIAL SUBSCRIPTION SECTION (EMBEDDED) -->
+  <section id="commercialSection" style="max-width:1200px;margin:60px auto;padding:40px 20px;">
+    <div style="background:linear-gradient(135deg, #0a0e17 0%, #0d1929 100%);border:2px solid rgba(0,212,255,0.3);border-radius:24px;padding:50px;box-shadow:0 20px 60px rgba(0,212,255,0.15);">
+      
+      <!-- Header -->
+      <div style="text-align:center;margin-bottom:40px;">
+        <div style="color:#00d4ff;font-size:42px;font-weight:900;margin-bottom:15px;">💼 Комерційне використання</div>
+        <p style="color:#94a3b8;font-size:18px;line-height:1.7;max-width:700px;margin:0 auto;">
+          Використовуйте карту NEPTUN для своїх <strong style="color:#e2e8f0;">TikTok ефірів</strong>, <strong style="color:#e2e8f0;">YouTube стрімів</strong> та <strong style="color:#e2e8f0;">Telegram каналів</strong> з нашою місячною підпискою
+        </p>
+      </div>
+
+      <!-- Features Grid -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:25px;margin-bottom:40px;">
+        <div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.2);border-radius:16px;padding:25px;text-align:center;">
+          <div style="font-size:40px;margin-bottom:10px;">📺</div>
+          <div style="color:#e2e8f0;font-size:16px;font-weight:700;margin-bottom:8px;">TikTok & YouTube</div>
+          <div style="color:#64748b;font-size:13px;line-height:1.5;">Безлімітне використання у всіх ваших стрімах та відео</div>
+        </div>
+        
+        <div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.2);border-radius:16px;padding:25px;text-align:center;">
+          <div style="font-size:40px;margin-bottom:10px;">💬</div>
+          <div style="color:#e2e8f0;font-size:16px;font-weight:700;margin-bottom:8px;">Telegram канали</div>
+          <div style="color:#64748b;font-size:13px;line-height:1.5;">Вбудовуйте карту в свої пости та сторіс</div>
+        </div>
+        
+        <div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.2);border-radius:16px;padding:25px;text-align:center;">
+          <div style="font-size:40px;margin-bottom:10px;">⚡</div>
+          <div style="color:#e2e8f0;font-size:16px;font-weight:700;margin-bottom:8px;">Реальний час</div>
+          <div style="color:#64748b;font-size:13px;line-height:1.5;">Актуальні дані про повітряні тривоги 24/7</div>
+        </div>
+      </div>
+
+      <!-- Pricing Box -->
+      <div style="background:rgba(0,212,255,0.08);border:2px solid rgba(0,212,255,0.3);border-radius:20px;padding:40px;margin-bottom:35px;text-align:center;">
+        <div style="color:#64748b;font-size:13px;text-transform:uppercase;letter-spacing:2px;margin-bottom:12px;font-weight:600;">Місячна підписка</div>
+        <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:15px;">
+          <div style="color:#00d4ff;font-size:64px;font-weight:900;line-height:1;">1500₴</div>
+          <div style="color:#64748b;font-size:18px;">/місяць</div>
+        </div>
+        <div style="color:#94a3b8;font-size:14px;margin-bottom:25px;">✨ Безлімітне використання • 🔄 Щомісячне продовження • ⚡ Миттєва активація</div>
+        
+        <button onclick="scrollToCommercialForm()" style="padding:18px 50px;background:linear-gradient(135deg, #00d4ff 0%, #0891b2 100%);border:none;border-radius:14px;color:#0a0e17;font-size:18px;font-weight:800;cursor:pointer;transition:all 0.3s;box-shadow:0 8px 20px rgba(0,212,255,0.4);text-transform:uppercase;letter-spacing:1px;" onmouseover="this.style.transform='translateY(-3px) scale(1.05)'; this.style.boxShadow='0 12px 30px rgba(0,212,255,0.6)'" onmouseout="this.style.transform='translateY(0) scale(1)'; this.style.boxShadow='0 8px 20px rgba(0,212,255,0.4)'">
+          🚀 Оформити зараз
+        </button>
+      </div>
+
+      <!-- Info Footer -->
+      <div style="text-align:center;color:#64748b;font-size:13px;line-height:1.7;">
+        <p style="margin:0;">📧 Після оплати ви отримаєте підтвердження на email</p>
+        <p style="margin:5px 0 0 0;">💳 Безпечна оплата через Monobank Acquiring (комісія 1.4%)</p>
+      </div>
+
     </div>
-    
-    <p style="color:#94a3b8;font-size:13px;line-height:1.6;margin-bottom:15px;">
-      Якщо ви бажаєте використовувати цю мапу в <strong style="color:#e2e8f0;">комерційних цілях</strong>, для ведення <strong style="color:#e2e8f0;">TikTok ефірів</strong>, YouTube стрімів, Telegram каналів тощо - ви можете придбати <strong style="color:#00d4ff;">місячну підписку</strong>.
-    </p>
-    
-    <div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.2);border-radius:12px;padding:15px;margin-bottom:15px;text-align:center;">
-      <div style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">Вартість</div>
-      <div style="color:#00d4ff;font-size:32px;font-weight:900;">1500₴</div>
-      <div style="color:#64748b;font-size:12px;margin-top:3px;">на місяць</div>
-    </div>
-    
-    <button onclick="openCommercialForm()" style="width:100%;padding:14px;background:linear-gradient(135deg, #00d4ff 0%, #0891b2 100%);border:none;border-radius:10px;color:#0a0e17;font-size:15px;font-weight:700;cursor:pointer;transition:all 0.3s;box-shadow:0 4px 12px rgba(0,212,255,0.4);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 16px rgba(0,212,255,0.6)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(0,212,255,0.4)'">
-      🚀 Оформити підписку
-    </button>
-    
-    <div style="text-align:center;margin-top:12px;color:#64748b;font-size:11px;">
-      ✨ Безлімітне використання на всіх платформах
-    </div>
-  </div>
+  </section>
 
   <!-- COMMERCIAL SUBSCRIPTION FORM MODAL -->
   <div id="commercialFormModal" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.95);z-index:999998;display:none;align-items:center;justify-content:center;backdrop-filter:blur(10px);padding:20px;overflow-y:auto;">
@@ -3419,17 +3453,9 @@
   </style>
 
   <script>
-    // Show commercial block after 30 seconds
-    setTimeout(() => {
-      const block = document.getElementById('commercialBlock');
-      if (block && !localStorage.getItem('commercial_dismissed')) {
-        block.style.display = 'block';
-      }
-    }, 30000);
-
-    function openCommercialForm() {
+    // Scroll to commercial form smoothly
+    function scrollToCommercialForm() {
       document.getElementById('commercialFormModal').style.display = 'flex';
-      document.getElementById('commercialBlock').style.display = 'none';
       
       // Track analytics
       if (window.gtag) {
