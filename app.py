@@ -18478,55 +18478,6 @@ def send_chat_message():
 # Store previous alarm state to detect changes
 _previous_alarms = {}
 
-@app.route('/api/register-device', methods=['POST'])
-def register_device():
-    """Register device for push notifications."""
-    try:
-        data = request.get_json()
-        token = data.get('token', '')
-        device_id = data.get('device_id', '')
-        regions = data.get('regions', [])
-        enabled = data.get('enabled', True)
-        
-        if not device_id:
-            return jsonify({'error': 'Missing device_id'}), 400
-        
-        # Save device info
-        device_store.save_device(device_id, token, regions, enabled)
-        
-        log.info(f"Device registered: {device_id[:10]}... with {len(regions)} regions")
-        return jsonify({'success': True, 'device_id': device_id})
-    except Exception as e:
-        log.error(f"Error registering device: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/test-notification', methods=['POST'])
-def test_notification():
-    """Send test notification to device."""
-    try:
-        data = request.get_json()
-        token = data.get('token', '')
-        
-        if not token or not firebase_initialized:
-            return jsonify({'error': 'No token or Firebase not initialized'}), 400
-        
-        from firebase_admin import messaging
-        
-        message = messaging.Message(
-            notification=messaging.Notification(
-                title='🧪 Тестове сповіщення',
-                body='Dron Alerts працює! Ви отримуватимете сповіщення про загрози.'
-            ),
-            token=token,
-        )
-        
-        response = messaging.send(message)
-        log.info(f"Test notification sent: {response}")
-        return jsonify({'success': True, 'message_id': response})
-    except Exception as e:
-        log.error(f"Error sending test notification: {e}")
-        return jsonify({'error': str(e)}), 500
-
 def check_alarm_changes():
     """Background task to check for alarm changes and send notifications."""
     global _previous_alarms
