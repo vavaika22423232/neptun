@@ -3483,33 +3483,15 @@
             });
           }
           
-          // If LiqPay is configured, submit payment form automatically
-          if (data.payment_url && data.payment_data && data.payment_signature) {
-            // Create and submit LiqPay form
-            const liqpayForm = document.createElement('form');
-            liqpayForm.method = 'POST';
-            liqpayForm.action = data.payment_url;
-            liqpayForm.acceptCharset = 'utf-8';
-            
-            const dataInput = document.createElement('input');
-            dataInput.type = 'hidden';
-            dataInput.name = 'data';
-            dataInput.value = data.payment_data;
-            
-            const signatureInput = document.createElement('input');
-            signatureInput.type = 'hidden';
-            signatureInput.name = 'signature';
-            signatureInput.value = data.payment_signature;
-            
-            liqpayForm.appendChild(dataInput);
-            liqpayForm.appendChild(signatureInput);
-            document.body.appendChild(liqpayForm);
-            
+          // If Monobank invoice created, redirect to payment page
+          if (data.payment_data && data.payment_data.pageUrl) {
             // Show redirect message
-            submitBtn.innerHTML = '🔄 Перехід до оплати...';
+            submitBtn.innerHTML = '🔄 Перехід до Monobank...';
             
-            // Submit to LiqPay
-            setTimeout(() => liqpayForm.submit(), 500);
+            // Redirect to Monobank invoice page
+            setTimeout(() => {
+              window.location.href = data.payment_data.pageUrl;
+            }, 500);
           } else {
             // Fallback if payment not configured
             alert('✅ Дякуємо! Ми зв\'яжемося з вами найближчим часом для оформлення оплати.');

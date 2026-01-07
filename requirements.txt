@@ -7,7 +7,6 @@ beautifulsoup4==4.12.3
 apscheduler==3.10.4
 google-generativeai==0.8.3
 firebase-admin>=6.5.0
-liqpay==1.0.0
 flask-mail==0.9.1
 
 # Optional heavy dependencies - comment out to speed up deployment

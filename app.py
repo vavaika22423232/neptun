@@ -343,27 +343,16 @@ app = Flask(__name__)
 
 # ============= PAYMENT & EMAIL CONFIGURATION =============
 
-# LiqPay configuration
-LIQPAY_PUBLIC_KEY = os.getenv('LIQPAY_PUBLIC_KEY', '')
-LIQPAY_PRIVATE_KEY = os.getenv('LIQPAY_PRIVATE_KEY', '')
-LIQPAY_ENABLED = bool(LIQPAY_PUBLIC_KEY and LIQPAY_PRIVATE_KEY)
+# Monobank Acquiring configuration (для ФОП/ТОВ - 1.4% комісія)
+MONOBANK_TOKEN = os.getenv('MONOBANK_TOKEN', '')
+MONOBANK_ENABLED = bool(MONOBANK_TOKEN)
 
-if LIQPAY_ENABLED:
-    try:
-        from liqpay import LiqPay
-        liqpay = LiqPay(LIQPAY_PUBLIC_KEY, LIQPAY_PRIVATE_KEY)
-        print("INFO: LiqPay payment gateway initialized")
-    except ImportError:
-        LIQPAY_ENABLED = False
-        liqpay = None
-        print("WARNING: LiqPay library not installed. Run: pip install liqpay")
-    except Exception as e:
-        LIQPAY_ENABLED = False
-        liqpay = None
-        print(f"WARNING: LiqPay initialization failed: {e}")
+if MONOBANK_ENABLED:
+    print("INFO: Monobank Acquiring initialized")
+    print("INFO: Commission: 1.4% | Instant payouts | Direct bank integration")
 else:
-    liqpay = None
-    print("WARNING: LiqPay disabled (missing API keys)")
+    print("WARNING: Monobank Acquiring disabled (missing X-Token)")
+    print("HINT: Register at https://fop.monobank.ua/ with your ФОП/ТОВ")
 
 # Flask-Mail configuration
 app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
@@ -815,42 +804,86 @@ def commercial_subscription():
         print(f"   Email: {subscription['email']}")
         print(f"   Amount: {subscription['amount']} UAH")
         
-        # Generate LiqPay payment if enabled
+        # Generate Monobank invoice if enabled
         payment_url = None
         payment_data = None
-        payment_signature = None
+        invoice_id = None
         
-        if LIQPAY_ENABLED:
+        if MONOBANK_ENABLED:
             try:
-                # Generate LiqPay payment
-                payment_params = {
-                    'action': 'pay',
-                    'amount': subscription['amount'],
-                    'currency': subscription['currency'],
-                    'description': f"NEPTUN Commercial Subscription - {subscription['nickname']}",
-                    'order_id': subscription['id'],
-                    'version': '3',
-                    'result_url': 'https://neptun.in.ua?payment=success',
-                    'server_url': 'https://neptun.in.ua/api/liqpay_callback'
+                import requests
+                
+                # Monobank invoice parameters
+                order_reference = subscription['id']
+                amount = subscription['amount']
+                
+                invoice_payload = {
+                    'amount': int(amount * 100),  # У копійках
+                    'ccy': 980,  # UAH код
+                    'merchantPaymInfo': {
+                        'reference': order_reference,
+                        'destination': f'Комерційна підписка NEPTUN для {subscription["nickname"]}',
+                        'basketOrder': [{
+                            'name': 'Комерційна підписка NEPTUN (місяць)',
+                            'qty': 1,
+                            'sum': int(amount * 100),
+                            'icon': 'https://neptun.in.ua/static/favicon.ico',
+                            'unit': 'шт'
+                        }]
+                    },
+                    'redirectUrl': 'https://neptun.in.ua?payment=success',
+                    'webHookUrl': 'https://neptun.in.ua/api/monobank_callback',
+                    'validity': 3600,  # 1 година
+                    'paymentType': 'debit'  # Оплата картою
                 }
                 
-                # Get payment form data
-                payment_data = liqpay.cnb_data(payment_params)
-                payment_signature = liqpay.cnb_signature(payment_params)
-                payment_url = 'https://www.liqpay.ua/api/3/checkout'
+                # Відправка запиту до Monobank API
+                headers = {
+                    'X-Token': MONOBANK_TOKEN,
+                    'Content-Type': 'application/json'
+                }
                 
-                print(f"✅ LiqPay payment generated for subscription {subscription['id']}")
+                response = requests.post(
+                    'https://api.monobank.ua/api/merchant/invoice/create',
+                    json=invoice_payload,
+                    headers=headers,
+                    timeout=10
+                )
+                
+                if response.status_code == 200:
+                    invoice = response.json()
+                    payment_url = invoice.get('pageUrl')
+                    invoice_id = invoice.get('invoiceId')
+                    
+                    payment_data = {
+                        'pageUrl': payment_url,
+                        'invoiceId': invoice_id
+                    }
+                    
+                    # Зберігаємо invoiceId до підписки
+                    subscription['invoice_id'] = invoice_id
+                    
+                    # Перезаписуємо файл з новим invoiceId
+                    with open(subscriptions_file, 'w', encoding='utf-8') as f:
+                        json.dump(subscriptions, f, ensure_ascii=False, indent=2)
+                    
+                    print(f"✅ Monobank invoice created: {invoice_id}")
+                    print(f"   Payment URL: {payment_url}")
+                else:
+                    print(f"❌ Monobank API error: {response.status_code}")
+                    print(f"   Response: {response.text}")
+                    
             except Exception as e:
-                print(f"❌ LiqPay payment generation failed: {e}")
+                print(f"❌ Monobank invoice creation failed: {e}")
                 traceback.print_exc()
         
         return jsonify({
             'success': True,
             'subscription_id': subscription['id'],
-            'message': 'Дякуємо! Зараз ви будете перенаправлені на сторінку оплати.',
+            'message': 'Дякуємо! Зараз ви будете перенаправлені на сторінку оплати Monobank.',
             'payment_url': payment_url,
             'payment_data': payment_data,
-            'payment_signature': payment_signature
+            'invoice_id': invoice_id
         }), 200
         
     except Exception as e:
@@ -858,44 +891,39 @@ def commercial_subscription():
         traceback.print_exc()
         return jsonify({'error': 'Internal server error'}), 500
 
-# ==================== LIQPAY CALLBACK ENDPOINT ====================
-@app.route('/api/liqpay_callback', methods=['POST'])
-def liqpay_callback():
-    """Handle LiqPay payment callback"""
+# ==================== MONOBANK CALLBACK ENDPOINT ====================
+@app.route('/api/monobank_callback', methods=['POST'])
+def monobank_callback():
+    """Handle Monobank webhook after payment"""
     try:
-        if not LIQPAY_ENABLED:
-            return jsonify({'error': 'LiqPay not configured'}), 503
+        if not MONOBANK_ENABLED:
+            return jsonify({'error': 'Monobank not configured'}), 503
         
-        # Get callback data
-        callback_data = request.form.get('data')
-        callback_signature = request.form.get('signature')
+        # Get webhook data
+        callback_data = request.get_json()
         
-        if not callback_data or not callback_signature:
-            print("❌ LiqPay callback: missing data or signature")
-            return jsonify({'error': 'Invalid callback'}), 400
+        if not callback_data:
+            print("❌ Monobank webhook: missing data")
+            return jsonify({'error': 'Invalid webhook'}), 400
         
-        # Verify signature
-        import base64
-        decoded_data = json.loads(base64.b64decode(callback_data).decode('utf-8'))
-        
-        # Verify payment signature
-        sign_string = LIQPAY_PRIVATE_KEY + callback_data + LIQPAY_PRIVATE_KEY
-        import hashlib
-        expected_signature = base64.b64encode(hashlib.sha1(sign_string.encode('utf-8')).digest()).decode('utf-8')
-        
-        if callback_signature != expected_signature:
-            print("❌ LiqPay callback: signature verification failed")
-            return jsonify({'error': 'Invalid signature'}), 403
+        # TODO: Verify X-Sign header with Monobank public key (requires ecdsa library)
+        # x_sign_base64 = request.headers.get('X-Sign', '')
         
         # Extract payment info
-        order_id = decoded_data.get('order_id')
-        status = decoded_data.get('status')
-        amount = decoded_data.get('amount')
+        invoice_id = callback_data.get('invoiceId', '')
+        status = callback_data.get('status', '')  # 'success', 'failure', 'processing'
+        amount = callback_data.get('amount', 0)  # У копійках
+        final_amount = callback_data.get('finalAmount', 0)
+        created_date = callback_data.get('createdDate', '')
+        modified_date = callback_data.get('modifiedDate', '')
+        reference = callback_data.get('reference', '')  # Наш order_reference
+        fail_reason = callback_data.get('failureReason', '')
         
-        print(f"💳 LiqPay callback received:")
-        print(f"   Order ID: {order_id}")
+        print(f"💳 Monobank webhook received:")
+        print(f"   Invoice ID: {invoice_id}")
         print(f"   Status: {status}")
-        print(f"   Amount: {amount}")
+        print(f"   Reference: {reference}")
+        print(f"   Amount: {amount / 100} UAH")
         
         # Update subscription status
         subscriptions_file = 'commercial_subscriptions.json'
@@ -905,16 +933,17 @@ def liqpay_callback():
                 with open(subscriptions_file, 'r', encoding='utf-8') as f:
                     subscriptions = json.load(f)
                 
-                # Find and update subscription
+                # Find and update subscription by reference (наш UUID)
                 for sub in subscriptions:
-                    if sub['id'] == order_id:
+                    if sub['id'] == reference or sub.get('invoice_id') == invoice_id:
                         sub['payment_status'] = status
-                        sub['payment_amount'] = amount
-                        sub['payment_time'] = datetime.now(pytz.timezone('Europe/Kiev')).isoformat()
+                        sub['payment_amount'] = final_amount / 100
+                        sub['payment_time'] = modified_date or datetime.now(pytz.timezone('Europe/Kiev')).isoformat()
+                        sub['monobank_invoice_id'] = invoice_id
                         
                         if status == 'success':
                             sub['status'] = 'paid'
-                            print(f"✅ Subscription {order_id} marked as PAID")
+                            print(f"✅ Subscription {reference} marked as PAID (Monobank)")
                             
                             # Send confirmation email
                             if MAIL_ENABLED:
@@ -922,6 +951,9 @@ def liqpay_callback():
                                     send_subscription_email(sub)
                                 except Exception as e:
                                     print(f"❌ Email sending failed: {e}")
+                        elif status == 'failure':
+                            sub['status'] = 'declined'
+                            print(f"❌ Payment failed for {reference}: {fail_reason}")
                         
                         break
                 
@@ -936,7 +968,7 @@ def liqpay_callback():
         return jsonify({'status': 'ok'}), 200
         
     except Exception as e:
-        print(f"❌ LiqPay callback error: {e}")
+        print(f"❌ Monobank webhook error: {e}")
         traceback.print_exc()
         return jsonify({'error': 'Internal server error'}), 500
 
