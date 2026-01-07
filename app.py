@@ -15539,54 +15539,11 @@ def index():
     resp.headers['Link'] = '<https://neptun.in.ua/>; rel="canonical"'
     return resp
 
-# ==================== ADMIN PANEL ====================
-@app.route('/admin')
-def admin_panel():
-    """Admin panel for managing commercial subscriptions"""
-    # Check basic auth
-    auth = request.authorization
-    
-    if not auth or auth.username != ADMIN_USERNAME or auth.password != ADMIN_PASSWORD:
-        return Response(
-            'Необхідна авторизація',
-            401,
-            {'WWW-Authenticate': 'Basic realm="Admin Panel"'}
-        )
-    
-    # Load subscriptions
-    subscriptions_file = 'commercial_subscriptions.json'
-    subscriptions = []
-    
-    if os.path.exists(subscriptions_file):
-        try:
-            with open(subscriptions_file, 'r', encoding='utf-8') as f:
-                subscriptions = json.load(f)
-        except Exception as e:
-            print(f"❌ Failed to load subscriptions: {e}")
-    
-    # Sort by timestamp (newest first)
-    subscriptions.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
-    
-    # Statistics
-    total_count = len(subscriptions)
-    paid_count = sum(1 for s in subscriptions if s.get('status') == 'paid')
-    pending_count = sum(1 for s in subscriptions if s.get('status') == 'pending')
-    total_revenue = sum(s.get('amount', 0) for s in subscriptions if s.get('status') == 'paid')
-    
-    return render_template('admin.html',
-                         subscriptions=subscriptions,
-                         total_count=total_count,
-                         paid_count=paid_count,
-                         pending_count=pending_count,
-                         total_revenue=total_revenue)
-
 @app.route('/admin/subscription/<subscription_id>/approve', methods=['POST'])
 def admin_approve_subscription(subscription_id):
     """Manually approve a subscription (for bank transfer payments)"""
-    auth = request.authorization
-    
-    if not auth or auth.username != ADMIN_USERNAME or auth.password != ADMIN_PASSWORD:
-        return jsonify({'error': 'Unauthorized'}), 401
+    if not _require_secret(request):
+        return jsonify({'error': 'Forbidden'}), 403
     
     subscriptions_file = 'commercial_subscriptions.json'
     
@@ -15600,7 +15557,6 @@ def admin_approve_subscription(subscription_id):
                 if sub['id'] == subscription_id:
                     sub['status'] = 'paid'
                     sub['manual_approval'] = True
-                    sub['approved_by'] = auth.username
                     sub['approved_at'] = datetime.now(pytz.timezone('Europe/Kiev')).isoformat()
                     
                     # Send confirmation email
@@ -15623,8 +15579,6 @@ def admin_approve_subscription(subscription_id):
             return jsonify({'error': str(e)}), 500
     
     return jsonify({'error': 'Subscription not found'}), 404
-
-# ==================== END ADMIN PANEL ====================
 
 @app.route('/map-only')
 def map_only():
@@ -18148,6 +18102,19 @@ def admin_panel():
             parsed_hidden.append({'lat':lat_str,'lng':lng_str,'text':text_part,'source':source_part,'key':hk})
         except Exception:
             continue
+    
+    # Load commercial subscriptions
+    subscriptions = []
+    subscriptions_file = 'commercial_subscriptions.json'
+    if os.path.exists(subscriptions_file):
+        try:
+            with open(subscriptions_file, 'r', encoding='utf-8') as f:
+                subscriptions = json.load(f)
+            # Sort by timestamp (newest first)
+            subscriptions.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+        except Exception as e:
+            print(f"❌ Failed to load subscriptions: {e}")
+    
     return render_template(
         'admin.html',
         visitors=visitors,
@@ -18162,7 +18129,8 @@ def admin_panel():
         hidden_markers=parsed_hidden,
         neg_geocode=list(_load_neg_geocode_cache().items())[:150],
         debug_logs=DEBUG_LOGS,
-        redirect_stats=get_redirect_stats()
+        redirect_stats=get_redirect_stats(),
+        subscriptions=subscriptions
     )
 
 @app.route('/admin/clear_debug_logs', methods=['POST'])

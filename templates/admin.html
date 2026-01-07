@@ -526,6 +526,83 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 
 <div class="card">
 <div class="card-header">
+<h2 class="card-title">💳 Commercial Subscriptions <span class="badge success">{{ subscriptions|length if subscriptions else 0 }}</span></h2>
+<a href="/admin/subscriptions" class="btn btn-primary btn-sm">📊 Full Dashboard</a>
+</div>
+<div class="card-body">
+{% if subscriptions %}
+<div class="stats-grid" style="margin-bottom:1.5rem">
+<div class="stat-card">
+<div class="stat-value">{{ subscriptions|length }}</div>
+<div class="stat-label">Total</div>
+</div>
+<div class="stat-card">
+<div class="stat-value">{{ subscriptions|selectattr('status', 'equalto', 'paid')|list|length }}</div>
+<div class="stat-label">✅ Paid</div>
+</div>
+<div class="stat-card">
+<div class="stat-value">{{ subscriptions|selectattr('status', 'equalto', 'pending')|list|length }}</div>
+<div class="stat-label">⏳ Pending</div>
+</div>
+<div class="stat-card">
+<div class="stat-value">{{ (subscriptions|selectattr('status', 'equalto', 'paid')|map(attribute='amount')|sum)|int }} UAH</div>
+<div class="stat-label">💰 Revenue</div>
+</div>
+</div>
+<div class="table-container">
+<table class="table">
+<thead>
+<tr>
+<th>Nickname</th>
+<th>Email</th>
+<th>Amount</th>
+<th>Status</th>
+<th>Date</th>
+<th>Actions</th>
+</tr>
+</thead>
+<tbody>
+{% for sub in subscriptions[:10] %}
+<tr>
+<td><strong>{{ sub.nickname }}</strong></td>
+<td class="truncate" style="max-width:200px">{{ sub.email }}</td>
+<td><strong>{{ sub.amount }} {{ sub.currency }}</strong></td>
+<td>
+{% if sub.status == 'paid' %}
+<span class="badge success">✅ Paid</span>
+{% else %}
+<span class="badge warning">⏳ Pending</span>
+{% endif %}
+</td>
+<td style="font-size:0.75rem;color:var(--muted)">{{ sub.timestamp[:16].replace('T', ' ') }}</td>
+<td>
+{% if sub.status == 'pending' %}
+<button class="btn btn-success btn-sm" onclick="approveSubscription('{{ sub.id }}')">✓ Approve</button>
+{% else %}
+<span style="color:var(--muted);font-size:0.75rem">Approved</span>
+{% endif %}
+</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% if subscriptions|length > 10 %}
+<div style="text-align:center;margin-top:1rem">
+<a href="/admin/subscriptions" class="btn btn-secondary">View All {{ subscriptions|length }} Subscriptions →</a>
+</div>
+{% endif %}
+{% else %}
+<div class="empty-state">
+<div class="empty-state-icon">💳</div>
+<p>No subscriptions yet</p>
+</div>
+{% endif %}
+</div>
+</div>
+
+<div class="card">
+<div class="card-header">
 <h2 class="card-title">🐛 Debug Console <span class="badge info">{{ debug_logs|length }}</span></h2>
 <button class="btn btn-danger btn-sm" onclick="clearLogs()">🗑️ Clear Logs</button>
 </div>
@@ -694,6 +771,8 @@ async function pasteMarker(){if(!clipboard){notif('Clipboard is empty. Copy a ma
 document.addEventListener('keydown',function(e){const active=document.activeElement;const tag=(active&&active.tagName)?active.tagName.toLowerCase():'';const editable=active&&(active.isContentEditable||tag==='input'||tag==='textarea'||tag==='select');const selection=window.getSelection();if(editable||(selection&&selection.toString().length>0))return;const key=e.key?.toLowerCase();if((e.ctrlKey||e.metaKey)&&key==='c'){e.preventDefault();copySelectedMarker();return}if((e.ctrlKey||e.metaKey)&&key==='v'){e.preventDefault();pasteMarker();}});
 
 async function deleteSelected(){if(!selectedMarker){notif('Select a marker first','warning');return}if(selectedMarker._isNew){closeMarkerEditor();notif('Новая метка отменена','info');return}if(!confirm('Delete this marker?'))return;const data=selectedMarker._markerData||{};try{await fetch('/hide_marker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat:data.lat,lng:data.lng,text:data.text,source:data.channel||'admin'})});notif('Marker deleted','success');closeMarkerEditor();reloadMarkers()}catch(e){notif('Failed to delete marker','error')}}
+
+async function approveSubscription(subscriptionId){if(!confirm('Approve this subscription payment?'))return;try{const response=await fetch(`/admin/subscription/${subscriptionId}/approve`,{method:'POST'});if(!response.ok)throw new Error('Server error');notif('✅ Subscription approved! Email sent.','success');setTimeout(()=>location.reload(),1500)}catch(e){console.error('Approve error:',e);notif('❌ Failed to approve subscription','error')}}
 
 async function saveMarkerEdit(){
 	if(!selectedMarker){notif('No marker selected','warning');return}
