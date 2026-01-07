@@ -257,11 +257,13 @@
     /* States (oblasts) layer */
     #states-layer {
       z-index: 1;
+      opacity: 0.5;
     }
     
     /* Districts layer */
     #districts-layer {
       z-index: 2;
+      opacity: 0.5;
     }
     
     /* Names layer */
@@ -1174,6 +1176,27 @@
       font-size: 1.1rem;
     }
     
+    /* App download link - special styling */
+    .nav-links a.app-link {
+      background: linear-gradient(135deg, #3ddc84 0%, #2db869 100%);
+      color: white;
+      border: 1px solid rgba(61, 220, 132, 0.3);
+      box-shadow: 0 2px 8px rgba(61, 220, 132, 0.2);
+      animation: appButtonPulse 2s ease-in-out infinite;
+    }
+    
+    .nav-links a.app-link:hover {
+      background: linear-gradient(135deg, #45e591 0%, #32c274 100%);
+      border-color: rgba(61, 220, 132, 0.5);
+      box-shadow: 0 4px 12px rgba(61, 220, 132, 0.4);
+      transform: translateY(-1px);
+    }
+    
+    @keyframes appButtonPulse {
+      0%, 100% { box-shadow: 0 2px 8px rgba(61, 220, 132, 0.2); }
+      50% { box-shadow: 0 2px 12px rgba(61, 220, 132, 0.4); }
+    }
+    
     /* Live users counter */
     .live-users {
       display: inline-flex;
@@ -1712,7 +1735,22 @@
       }
       
       .nav-links {
+        gap: 0.2rem;
+      }
+      
+      .nav-links a:not(.app-link) {
         display: none;
+      }
+      
+      .nav-links a.app-link {
+        display: flex;
+        padding: 6px 10px;
+        font-size: 0.75rem;
+        gap: 0.3rem;
+      }
+      
+      .nav-links a.app-link i {
+        font-size: 18px;
       }
       
       .live-users {
@@ -1966,7 +2004,7 @@
     <div class="nav-links">
       <a href="#" class="active"><i class="material-icons">map</i> Карта</a>
       <a href="/analytics" target="_blank"><i class="material-icons">analytics</i> Аналітика</a>
-      <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" target="_blank"><i class="material-icons">android</i> Додаток</a>
+      <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" target="_blank" class="app-link"><i class="material-icons">android</i> Додаток</a>
       <a href="#about"><i class="material-icons">info</i> Інфо</a>
     </div>
     <button class="support-btn" onclick="toggleDonate()" title="Підтримати проєкт">
@@ -3083,14 +3121,19 @@
   </script>
   
   <!-- SEO FOOTER - Important for search rankings -->
-  <footer id="seo-footer" style="position:fixed;bottom:0;left:0;right:0;background:linear-gradient(180deg, transparent 0%, rgba(10,14,23,0.95) 50%);padding:8px 16px;z-index:100;pointer-events:none;">
-    <nav style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px;font-size:10px;opacity:0.4;pointer-events:auto;">
-      <span style="color:#64748b;">© 2024 NEPTUN</span>
-      <a href="/" style="color:#64748b;text-decoration:none;" title="Карта шахедів онлайн">Карта шахедів</a>
-      <a href="/" style="color:#64748b;text-decoration:none;" title="Карта тривог України">Карта тривог</a>
-      <a href="/" style="color:#64748b;text-decoration:none;" title="Радар шахедів">Радар шахедів</a>
-      <a href="/" style="color:#64748b;text-decoration:none;" title="Мапа тривог">Мапа тривог</a>
-      <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" target="_blank" rel="noopener" style="color:#64748b;text-decoration:none;" title="Завантажити додаток">Android</a>
+  <footer id="seo-footer" style="position:fixed;bottom:0;left:0;right:0;background:linear-gradient(180deg, transparent 0%, rgba(10,14,23,0.98) 50%, rgba(10,14,23,1) 100%);padding:12px 20px;z-index:100;pointer-events:none;border-top:1px solid rgba(0,212,255,0.08);">
+    <nav style="display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:12px;font-size:11px;opacity:0.5;pointer-events:auto;font-weight:500;">
+      <span style="color:#00d4ff;font-weight:700;letter-spacing:1px;">© 2026 NEPTUN</span>
+      <span style="color:#334155;">•</span>
+      <a href="/" style="color:#64748b;text-decoration:none;transition:color 0.2s;" onmouseover="this.style.color='#00d4ff'" onmouseout="this.style.color='#64748b'" title="Карта шахедів онлайн">Карта шахедів</a>
+      <span style="color:#334155;">•</span>
+      <a href="/" style="color:#64748b;text-decoration:none;transition:color 0.2s;" onmouseover="this.style.color='#00d4ff'" onmouseout="this.style.color='#64748b'" title="Карта тривог України">Карта тривог</a>
+      <span style="color:#334155;">•</span>
+      <a href="/" style="color:#64748b;text-decoration:none;transition:color 0.2s;" onmouseover="this.style.color='#00d4ff'" onmouseout="this.style.color='#64748b'" title="Радар шахедів">Радар шахедів</a>
+      <span style="color:#334155;">•</span>
+      <a href="/" style="color:#64748b;text-decoration:none;transition:color 0.2s;" onmouseover="this.style.color='#00d4ff'" onmouseout="this.style.color='#64748b'" title="Мапа тривог">Мапа тривог</a>
+      <span style="color:#334155;">•</span>
+      <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" target="_blank" rel="noopener" style="color:#3ddc84;text-decoration:none;transition:color 0.2s;font-weight:600;" onmouseover="this.style.color='#45e591'" onmouseout="this.style.color='#3ddc84'" title="Завантажити додаток">📱 Android</a>
     </nav>
   </footer>
 </body>
