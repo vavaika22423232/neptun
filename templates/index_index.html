@@ -3260,6 +3260,252 @@
     <p>NEPTUN не розголошує геолокацію військових об'єктів. Карта шахедів показує лише публічну інформацію про повітряні тривоги та загальні напрямки руху загроз без деталізації критичної інфраструктури.</p>
   </article>
 
+  <!-- COMMERCIAL SUBSCRIPTION BLOCK -->
+  <div id="commercialBlock" style="position:fixed;bottom:60px;right:20px;max-width:380px;background:linear-gradient(135deg, #0a0e17 0%, #0d1929 100%);border:2px solid rgba(0,212,255,0.3);border-radius:16px;padding:20px;box-shadow:0 10px 40px rgba(0,212,255,0.2);z-index:99;display:none;animation:slideInRight 0.4s ease;">
+    <button onclick="document.getElementById('commercialBlock').style.display='none'" style="position:absolute;top:10px;right:10px;background:none;border:none;color:#64748b;font-size:20px;cursor:pointer;width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:50%;transition:all 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.1)'; this.style.color='#ef4444'" onmouseout="this.style.background='none'; this.style.color='#64748b'">×</button>
+    
+    <div style="text-align:center;margin-bottom:15px;">
+      <div style="color:#00d4ff;font-size:24px;font-weight:800;">💼 Комерційне використання</div>
+    </div>
+    
+    <p style="color:#94a3b8;font-size:13px;line-height:1.6;margin-bottom:15px;">
+      Якщо ви бажаєте використовувати цю мапу в <strong style="color:#e2e8f0;">комерційних цілях</strong>, для ведення <strong style="color:#e2e8f0;">TikTok ефірів</strong>, YouTube стрімів, Telegram каналів тощо - ви можете придбати <strong style="color:#00d4ff;">місячну підписку</strong>.
+    </p>
+    
+    <div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.2);border-radius:12px;padding:15px;margin-bottom:15px;text-align:center;">
+      <div style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">Вартість</div>
+      <div style="color:#00d4ff;font-size:32px;font-weight:900;">1500₴</div>
+      <div style="color:#64748b;font-size:12px;margin-top:3px;">на місяць</div>
+    </div>
+    
+    <button onclick="openCommercialForm()" style="width:100%;padding:14px;background:linear-gradient(135deg, #00d4ff 0%, #0891b2 100%);border:none;border-radius:10px;color:#0a0e17;font-size:15px;font-weight:700;cursor:pointer;transition:all 0.3s;box-shadow:0 4px 12px rgba(0,212,255,0.4);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 16px rgba(0,212,255,0.6)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(0,212,255,0.4)'">
+      🚀 Оформити підписку
+    </button>
+    
+    <div style="text-align:center;margin-top:12px;color:#64748b;font-size:11px;">
+      ✨ Безлімітне використання на всіх платформах
+    </div>
+  </div>
+
+  <!-- COMMERCIAL SUBSCRIPTION FORM MODAL -->
+  <div id="commercialFormModal" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.95);z-index:999998;display:none;align-items:center;justify-content:center;backdrop-filter:blur(10px);padding:20px;overflow-y:auto;">
+    <div style="background:linear-gradient(135deg, #0a0e17 0%, #0d1929 100%);padding:35px;border-radius:20px;border:2px solid rgba(0,212,255,0.3);box-shadow:0 20px 60px rgba(0,212,255,0.2);max-width:500px;width:100%;max-height:90vh;overflow-y:auto;animation:slideIn 0.3s ease;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:25px;">
+        <div style="color:#00d4ff;font-size:24px;font-weight:800;">💼 Комерційна підписка</div>
+        <button onclick="closeCommercialForm()" style="background:none;border:none;color:#64748b;font-size:28px;cursor:pointer;width:35px;height:35px;display:flex;align-items:center;justify-content:center;border-radius:50%;transition:all 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.1)'; this.style.color='#ef4444'" onmouseout="this.style.background='none'; this.style.color='#64748b'">×</button>
+      </div>
+      
+      <form id="commercialForm" onsubmit="submitCommercialForm(event)" style="display:flex;flex-direction:column;gap:18px;">
+        <div>
+          <label style="display:block;color:#94a3b8;font-size:13px;margin-bottom:8px;font-weight:600;">📱 Ваш нік в TikTok/YouTube/Telegram:</label>
+          <input 
+            type="text" 
+            id="commercialNickname" 
+            placeholder="@your_channel" 
+            required 
+            maxlength="50"
+            style="width:100%;padding:12px 16px;background:rgba(15,23,42,0.8);border:2px solid rgba(0,212,255,0.2);border-radius:10px;color:#e2e8f0;font-size:15px;outline:none;transition:all 0.3s;box-sizing:border-box;"
+            onfocus="this.style.borderColor='rgba(0,212,255,0.6)'"
+            onblur="this.style.borderColor='rgba(0,212,255,0.2)'"
+          >
+        </div>
+        
+        <div>
+          <label style="display:block;color:#94a3b8;font-size:13px;margin-bottom:8px;font-weight:600;">📧 Email для зв'язку:</label>
+          <input 
+            type="email" 
+            id="commercialEmail" 
+            placeholder="your@email.com" 
+            required
+            style="width:100%;padding:12px 16px;background:rgba(15,23,42,0.8);border:2px solid rgba(0,212,255,0.2);border-radius:10px;color:#e2e8f0;font-size:15px;outline:none;transition:all 0.3s;box-sizing:border-box;"
+            onfocus="this.style.borderColor='rgba(0,212,255,0.6)'"
+            onblur="this.style.borderColor='rgba(0,212,255,0.2)'"
+          >
+        </div>
+        
+        <div>
+          <label style="display:block;color:#94a3b8;font-size:13px;margin-bottom:8px;font-weight:600;">📞 Telegram для зв'язку (необов'язково):</label>
+          <input 
+            type="text" 
+            id="commercialTelegram" 
+            placeholder="@your_telegram" 
+            maxlength="50"
+            style="width:100%;padding:12px 16px;background:rgba(15,23,42,0.8);border:2px solid rgba(0,212,255,0.2);border-radius:10px;color:#e2e8f0;font-size:15px;outline:none;transition:all 0.3s;box-sizing:border-box;"
+            onfocus="this.style.borderColor='rgba(0,212,255,0.6)'"
+            onblur="this.style.borderColor='rgba(0,212,255,0.2)'"
+          >
+        </div>
+        
+        <div>
+          <label style="display:block;color:#94a3b8;font-size:13px;margin-bottom:8px;font-weight:600;">💬 Коментар (необов'язково):</label>
+          <textarea 
+            id="commercialComment" 
+            placeholder="Розкажіть про ваш канал, аудиторію, плани використання карти..."
+            rows="4"
+            maxlength="500"
+            style="width:100%;padding:12px 16px;background:rgba(15,23,42,0.8);border:2px solid rgba(0,212,255,0.2);border-radius:10px;color:#e2e8f0;font-size:14px;outline:none;transition:all 0.3s;box-sizing:border-box;resize:vertical;font-family:inherit;"
+            onfocus="this.style.borderColor='rgba(0,212,255,0.6)'"
+            onblur="this.style.borderColor='rgba(0,212,255,0.2)'"
+          ></textarea>
+        </div>
+        
+        <div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.2);border-radius:12px;padding:15px;margin-top:5px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <span style="color:#94a3b8;font-size:14px;">До сплати:</span>
+            <span style="color:#00d4ff;font-size:28px;font-weight:900;">1500₴</span>
+          </div>
+          <div style="color:#64748b;font-size:11px;text-align:center;">Підписка діє 30 днів з моменту оплати</div>
+        </div>
+        
+        <button 
+          type="submit" 
+          style="width:100%;padding:16px;background:linear-gradient(135deg, #00d4ff 0%, #0891b2 100%);border:none;border-radius:12px;color:#0a0e17;font-size:16px;font-weight:700;cursor:pointer;transition:all 0.3s;text-transform:uppercase;letter-spacing:1px;box-shadow:0 4px 15px rgba(0,212,255,0.4);"
+          onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(0,212,255,0.6)'"
+          onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(0,212,255,0.4)'"
+        >
+          💳 Перейти до оплати
+        </button>
+      </form>
+      
+      <div style="text-align:center;margin-top:20px;color:#64748b;font-size:12px;line-height:1.6;">
+        🔒 Після натискання ви будете перенаправлені на безпечну сторінку оплати.<br>
+        📧 Деталі підписки надійдуть на вказану email адресу.
+      </div>
+    </div>
+  </div>
+
+  <style>
+    @keyframes slideInRight {
+      from {
+        opacity: 0;
+        transform: translateX(100px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+    
+    #commercialBlock::-webkit-scrollbar,
+    #commercialFormModal > div::-webkit-scrollbar {
+      width: 8px;
+    }
+    
+    #commercialBlock::-webkit-scrollbar-track,
+    #commercialFormModal > div::-webkit-scrollbar-track {
+      background: rgba(15,23,42,0.3);
+      border-radius: 4px;
+    }
+    
+    #commercialBlock::-webkit-scrollbar-thumb,
+    #commercialFormModal > div::-webkit-scrollbar-thumb {
+      background: rgba(0,212,255,0.3);
+      border-radius: 4px;
+    }
+    
+    #commercialBlock::-webkit-scrollbar-thumb:hover,
+    #commercialFormModal > div::-webkit-scrollbar-thumb:hover {
+      background: rgba(0,212,255,0.5);
+    }
+    
+    @media (max-width: 768px) {
+      #commercialBlock {
+        bottom: 70px;
+        right: 10px;
+        left: 10px;
+        max-width: none;
+      }
+    }
+  </style>
+
+  <script>
+    // Show commercial block after 30 seconds
+    setTimeout(() => {
+      const block = document.getElementById('commercialBlock');
+      if (block && !localStorage.getItem('commercial_dismissed')) {
+        block.style.display = 'block';
+      }
+    }, 30000);
+
+    function openCommercialForm() {
+      document.getElementById('commercialFormModal').style.display = 'flex';
+      document.getElementById('commercialBlock').style.display = 'none';
+      
+      // Track analytics
+      if (window.gtag) {
+        gtag('event', 'commercial_form_opened', {
+          'event_category': 'commercial',
+          'event_label': 'subscription_interest'
+        });
+      }
+    }
+
+    function closeCommercialForm() {
+      document.getElementById('commercialFormModal').style.display = 'none';
+    }
+
+    async function submitCommercialForm(event) {
+      event.preventDefault();
+      
+      const formData = {
+        nickname: document.getElementById('commercialNickname').value,
+        email: document.getElementById('commercialEmail').value,
+        telegram: document.getElementById('commercialTelegram').value,
+        comment: document.getElementById('commercialComment').value,
+        amount: 1500,
+        timestamp: new Date().toISOString()
+      };
+      
+      try {
+        // Send data to server
+        const response = await fetch('/api/commercial_subscription', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData)
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          
+          // Track conversion
+          if (window.gtag) {
+            gtag('event', 'begin_checkout', {
+              'event_category': 'ecommerce',
+              'event_label': 'commercial_subscription',
+              'value': 1500,
+              'currency': 'UAH'
+            });
+          }
+          
+          // Redirect to payment (you'll need to implement this endpoint)
+          if (data.payment_url) {
+            window.location.href = data.payment_url;
+          } else {
+            alert('✅ Дякуємо! Ми зв\'яжемося з вами найближчим часом для оформлення оплати.');
+            closeCommercialForm();
+          }
+        } else {
+          throw new Error('Server error');
+        }
+      } catch (error) {
+        console.error('Subscription error:', error);
+        alert('❌ Помилка відправки форми. Будь ласка, напишіть нам в Telegram або на email.');
+      }
+    }
+
+    // Close modal on ESC
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeCommercialForm();
+      }
+    });
+    
+    // Dismiss commercial block permanently
+    document.getElementById('commercialBlock')?.querySelector('button').addEventListener('click', () => {
+      localStorage.setItem('commercial_dismissed', 'true');
+    });
+  </script>
+
   <!-- SEO FOOTER - Important for search rankings -->
   <footer id="seo-footer" style="position:fixed;bottom:0;left:0;right:0;background:linear-gradient(180deg, transparent 0%, rgba(10,14,23,0.98) 50%, rgba(10,14,23,1) 100%);padding:12px 20px;z-index:100;pointer-events:none;border-top:1px solid rgba(0,212,255,0.08);">
     <nav style="display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:12px;font-size:11px;opacity:0.5;pointer-events:auto;font-weight:500;">

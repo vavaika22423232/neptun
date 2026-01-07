@@ -710,6 +710,70 @@ def alarm_all():
     resp.headers['Cache-Control'] = 'public, max-age=10'
     return resp
 
+# ==================== COMMERCIAL SUBSCRIPTION ENDPOINT ====================
+@app.route('/api/commercial_subscription', methods=['POST'])
+def commercial_subscription():
+    """Handle commercial subscription requests"""
+    try:
+        data = request.get_json()
+        
+        # Validate required fields
+        if not data.get('nickname') or not data.get('email'):
+            return jsonify({'error': 'Missing required fields'}), 400
+        
+        # Prepare subscription data
+        subscription = {
+            'id': str(uuid.uuid4()),
+            'nickname': data.get('nickname'),
+            'email': data.get('email'),
+            'telegram': data.get('telegram', ''),
+            'comment': data.get('comment', ''),
+            'amount': 1500,
+            'currency': 'UAH',
+            'status': 'pending',
+            'timestamp': datetime.now(pytz.timezone('Europe/Kiev')).isoformat(),
+            'ip': request.remote_addr,
+            'user_agent': request.headers.get('User-Agent', '')
+        }
+        
+        # Save to file (you can also use database)
+        subscriptions_file = 'commercial_subscriptions.json'
+        subscriptions = []
+        
+        if os.path.exists(subscriptions_file):
+            try:
+                with open(subscriptions_file, 'r', encoding='utf-8') as f:
+                    subscriptions = json.load(f)
+            except:
+                pass
+        
+        subscriptions.append(subscription)
+        
+        with open(subscriptions_file, 'w', encoding='utf-8') as f:
+            json.dump(subscriptions, f, ensure_ascii=False, indent=2)
+        
+        # Log to console
+        print(f"🔔 NEW COMMERCIAL SUBSCRIPTION:")
+        print(f"   Nickname: {subscription['nickname']}")
+        print(f"   Email: {subscription['email']}")
+        print(f"   Amount: {subscription['amount']} UAH")
+        
+        # TODO: Integrate with payment gateway (LiqPay, Fondy, etc.)
+        # For now, return success and manual payment instructions
+        
+        return jsonify({
+            'success': True,
+            'subscription_id': subscription['id'],
+            'message': 'Дякуємо! Ми зв\'яжемося з вами найближчим часом.',
+            # 'payment_url': 'https://payment-gateway.com/...'  # Add when integrated
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Commercial subscription error: {e}")
+        traceback.print_exc()
+        return jsonify({'error': 'Internal server error'}), 500
+
+# ==================== END COMMERCIAL SUBSCRIPTION ====================
 
 # ===== UKRAINEALARM API MONITORING FOR PUSH NOTIFICATIONS =====
 # This system monitors alarm state changes and triggers push notifications
