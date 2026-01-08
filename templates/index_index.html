@@ -3315,8 +3315,8 @@
         const result = await response.json();
         
         if (response.ok) {
-          // Check if payment URL exists
-          const paymentUrl = result.pageUrl || result.payment_url;
+          // Check if payment URL exists (can be in result directly or in payment_data)
+          const paymentUrl = result.payment_url || (result.payment_data && result.payment_data.pageUrl);
           
           if (paymentUrl) {
             // Redirect to Monobank payment
