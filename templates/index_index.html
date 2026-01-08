@@ -3272,17 +3272,45 @@
     async function handleCommercialSubscription(event) {
       event.preventDefault();
       
-      const formData = {
-        name: document.getElementById('commercialName').value,
-        email: document.getElementById('commercialEmail').value,
-        phone: document.getElementById('commercialPhone').value,
-        type: document.getElementById('commercialType').value,
-        comment: document.getElementById('commercialComment').value,
-        amount: 1500
-      };
-      
       const messageDiv = document.getElementById('commercialFormMessage');
       const submitBtn = event.target.querySelector('button[type="submit"]');
+      
+      // Get form values
+      const name = document.getElementById('commercialName').value.trim();
+      const email = document.getElementById('commercialEmail').value.trim();
+      const phone = document.getElementById('commercialPhone').value.trim();
+      const type = document.getElementById('commercialType').value;
+      const comment = document.getElementById('commercialComment').value.trim();
+      
+      // Validate required fields
+      if (!name || !email || !phone || !type) {
+        messageDiv.style.background = 'rgba(239,68,68,0.2)';
+        messageDiv.style.color = '#fca5a5';
+        messageDiv.style.border = '1px solid rgba(239,68,68,0.5)';
+        messageDiv.innerHTML = '❌ Будь ласка, заповніть всі обов\'язкові поля';
+        messageDiv.style.display = 'block';
+        return;
+      }
+      
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        messageDiv.style.background = 'rgba(239,68,68,0.2)';
+        messageDiv.style.color = '#fca5a5';
+        messageDiv.style.border = '1px solid rgba(239,68,68,0.5)';
+        messageDiv.innerHTML = '❌ Введіть коректний email';
+        messageDiv.style.display = 'block';
+        return;
+      }
+      
+      const formData = {
+        name: name,
+        email: email,
+        phone: phone,
+        type: type,
+        comment: comment,
+        amount: 1500
+      };
       
       try {
         // Show loading
