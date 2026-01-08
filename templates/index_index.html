@@ -3275,24 +3275,12 @@
       const messageDiv = document.getElementById('commercialFormMessage');
       const submitBtn = event.target.querySelector('button[type="submit"]');
       
-      // Get form values with null checks
-      const nameEl = document.getElementById('commercialName');
-      const emailEl = document.getElementById('commercialEmail');
-      const phoneEl = document.getElementById('commercialPhone');
-      const typeEl = document.getElementById('commercialType');
-      const commentEl = document.getElementById('commercialComment');
-      
-      if (!nameEl || !emailEl || !phoneEl || !typeEl || !commentEl) {
-        console.error('Form elements not found!', {nameEl, emailEl, phoneEl, typeEl, commentEl});
-        alert('Помилка: форма не завантажилась. Спробуйте оновити сторінку.');
-        return;
-      }
-      
-      const name = nameEl.value.trim();
-      const email = emailEl.value.trim();
-      const phone = phoneEl.value.trim();
-      const type = typeEl.value;
-      const comment = commentEl.value.trim();
+      // Get form values
+      const name = document.getElementById('commercialName').value.trim();
+      const email = document.getElementById('commercialEmail').value.trim();
+      const phone = document.getElementById('commercialPhone').value.trim();
+      const type = document.getElementById('commercialType').value;
+      const comment = document.getElementById('commercialComment').value.trim();
       
       // Validate required fields
       if (!name || !email || !type) {
@@ -3439,6 +3427,11 @@
         <div style="margin-bottom:20px;">
           <label style="display:block;color:#94a3b8;font-size:14px;font-weight:600;margin-bottom:8px;">Email *</label>
           <input type="email" id="commercialEmail" required style="width:100%;padding:14px;background:rgba(10,14,23,0.8);border:1px solid rgba(0,212,255,0.3);border-radius:10px;color:#fff;font-size:15px;outline:none;">
+        </div>
+
+        <div style="margin-bottom:20px;">
+          <label style="display:block;color:#94a3b8;font-size:14px;font-weight:600;margin-bottom:8px;">Телефон (опціонально)</label>
+          <input type="tel" id="commercialPhone" style="width:100%;padding:14px;background:rgba(10,14,23,0.8);border:1px solid rgba(0,212,255,0.3);border-radius:10px;color:#fff;font-size:15px;outline:none;" placeholder="+380XXXXXXXXX">
         </div>
 
         <div style="margin-bottom:20px;">
