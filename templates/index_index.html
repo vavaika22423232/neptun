@@ -1283,6 +1283,21 @@
       font-weight: 500;
     }
     
+    /* User nickname on the right side (near FAQ) */
+    .user-nickname-right {
+      display: none;
+      align-items: center;
+      gap: 4px;
+      padding: 0.4rem 0.8rem;
+      background: rgba(103, 232, 249, 0.08);
+      border: 1px solid rgba(103, 232, 249, 0.15);
+      border-radius: 50px;
+      color: #67e8f9;
+      font-size: 0.7rem;
+      font-weight: 500;
+      margin-right: 0.25rem;
+    }
+    
     .nickname-icon {
       font-size: 0.65rem;
     }
@@ -2199,16 +2214,26 @@
       displayNicknameInNavbar();
     }
 
-    // Display nickname in navbar
+    // Display nickname in navbar (both left and right)
     function displayNicknameInNavbar() {
       const nickname = localStorage.getItem('user_nickname');
       if (nickname) {
+        // Left side (in stats block)
         const displayElement = document.getElementById('userNicknameDisplay');
         const nicknameText = document.getElementById('navbarNickname');
         if (displayElement && nicknameText) {
           nicknameText.textContent = nickname;
           displayElement.style.display = 'flex';
           displayElement.style.alignItems = 'center';
+        }
+        
+        // Right side (near FAQ button)
+        const displayElementRight = document.getElementById('userNicknameDisplayRight');
+        const nicknameTextRight = document.getElementById('navbarNicknameRight');
+        if (displayElementRight && nicknameTextRight) {
+          nicknameTextRight.textContent = nickname;
+          displayElementRight.style.display = 'flex';
+          displayElementRight.style.alignItems = 'center';
         }
       }
     }
@@ -2297,6 +2322,10 @@
       </div>
     </div>
     <div class="nav-actions">
+      <div id="userNicknameDisplayRight" class="user-nickname-right">
+        <span class="nickname-icon">👤</span>
+        <span id="navbarNicknameRight"></span>
+      </div>
       <button class="nav-btn faq-btn" onclick="toggleFAQ()" title="FAQ та правила">
         <i class="material-icons">help_outline</i>
         <span>FAQ</span>
