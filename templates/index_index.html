@@ -3268,103 +3268,63 @@
   </script>
 
   <script>
-    // Scroll to commercial form smoothly
-    function scrollToCommercialForm() {
-      document.getElementById('commercialFormModal').style.display = 'flex';
-      
-      // Track analytics
-      if (window.gtag) {
-        gtag('event', 'commercial_form_opened', {
-          'event_category': 'commercial',
-          'event_label': 'subscription_interest'
-        });
-      }
-    }
-
-    function closeCommercialForm() {
-      document.getElementById('commercialFormModal').style.display = 'none';
-    }
-
-    async function submitCommercialForm(event) {
+    // Handle commercial subscription form submission
+    async function handleCommercialSubscription(event) {
       event.preventDefault();
       
       const formData = {
-        nickname: document.getElementById('commercialNickname').value,
+        name: document.getElementById('commercialName').value,
         email: document.getElementById('commercialEmail').value,
-        telegram: document.getElementById('commercialTelegram').value,
+        phone: document.getElementById('commercialPhone').value,
+        type: document.getElementById('commercialType').value,
         comment: document.getElementById('commercialComment').value,
-        amount: 1500,
-        timestamp: new Date().toISOString()
+        amount: 1500
       };
       
+      const messageDiv = document.getElementById('commercialFormMessage');
+      const submitBtn = event.target.querySelector('button[type="submit"]');
+      
       try {
-        // Show loading state
-        const submitBtn = document.querySelector('#commercialForm button[type="submit"]');
-        const originalText = submitBtn.innerHTML;
+        // Show loading
         submitBtn.disabled = true;
         submitBtn.innerHTML = '⏳ Підготовка оплати...';
+        messageDiv.style.display = 'none';
         
-        // Send data to server
+        // Send to backend
         const response = await fetch('/api/commercial_subscription', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(formData)
         });
         
-        if (response.ok) {
-          const data = await response.json();
+        const result = await response.json();
+        
+        if (response.ok && result.pageUrl) {
+          // Redirect to Monobank payment
+          messageDiv.style.background = 'rgba(34,197,94,0.2)';
+          messageDiv.style.color = '#86efac';
+          messageDiv.style.border = '1px solid rgba(34,197,94,0.5)';
+          messageDiv.innerHTML = '✅ Перенаправлення на сторінку оплати...';
+          messageDiv.style.display = 'block';
           
-          // Track conversion
-          if (window.gtag) {
-            gtag('event', 'begin_checkout', {
-              'event_category': 'ecommerce',
-              'event_label': 'commercial_subscription',
-              'value': 1500,
-              'currency': 'UAH'
-            });
-          }
-          
-          // If Monobank invoice created, redirect to payment page
-          if (data.payment_data && data.payment_data.pageUrl) {
-            // Show redirect message
-            submitBtn.innerHTML = '🔄 Перехід до Monobank...';
-            
-            // Redirect to Monobank invoice page
-            setTimeout(() => {
-              window.location.href = data.payment_data.pageUrl;
-            }, 500);
-          } else {
-            // Fallback if payment not configured
-            alert('✅ Дякуємо! Ми зв\'яжемося з вами найближчим часом для оформлення оплати.');
-            closeCommercialForm();
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = originalText;
-          }
+          setTimeout(() => {
+            window.location.href = result.pageUrl;
+          }, 1000);
         } else {
-          throw new Error('Server error');
+          throw new Error(result.error || 'Помилка створення інвойсу');
         }
       } catch (error) {
         console.error('Subscription error:', error);
-        alert('❌ Помилка відправки форми. Будь ласка, напишіть нам в Telegram або на email.');
-        const submitBtn = document.querySelector('#commercialForm button[type="submit"]');
-        if (submitBtn) {
-          submitBtn.disabled = false;
-          submitBtn.innerHTML = '💳 Оплатити 1500 грн/міс';
-        }
+        messageDiv.style.background = 'rgba(239,68,68,0.2)';
+        messageDiv.style.color = '#fca5a5';
+        messageDiv.style.border = '1px solid rgba(239,68,68,0.5)';
+        messageDiv.innerHTML = `❌ ${error.message}`;
+        messageDiv.style.display = 'block';
+        
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '💳 Перейти до оплати';
       }
     }
-
-    // Close modal on ESC
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        closeCommercialForm();
-      }
-    });
-    
-    // Dismiss commercial block permanently
-    document.getElementById('commercialBlock')?.querySelector('button').addEventListener('click', () => {
-      localStorage.setItem('commercial_dismissed', 'true');
-    });
   </script>
 
   <!-- COMMERCIAL SUBSCRIPTION SECTION -->
@@ -3390,10 +3350,52 @@
           <div style="color:#e2e8f0;font-size:16px;font-weight:700;">Реальний час</div>
         </div>
       </div>
-      <div style="background:rgba(0,212,255,0.08);border:2px solid rgba(0,212,255,0.3);border-radius:20px;padding:40px;text-align:center;">
+      <div style="background:rgba(0,212,255,0.08);border:2px solid rgba(0,212,255,0.3);border-radius:20px;padding:40px;text-align:center;margin-bottom:40px;">
         <div style="color:#00d4ff;font-size:64px;font-weight:900;margin-bottom:15px;">1500₴<span style="font-size:18px;color:#64748b;">/місяць</span></div>
-        <button onclick="scrollToCommercialForm()" style="padding:18px 50px;background:linear-gradient(135deg, #00d4ff 0%, #0891b2 100%);border:none;border-radius:14px;color:#0a0e17;font-size:18px;font-weight:800;cursor:pointer;box-shadow:0 8px 20px rgba(0,212,255,0.4);">🚀 Оформити зараз</button>
+        <p style="color:#94a3b8;font-size:14px;margin-bottom:25px;">Безпечна оплата через Monobank Acquiring • Комісія 1.4%</p>
       </div>
+
+      <!-- SUBSCRIPTION FORM -->
+      <form id="commercialSubscriptionForm" onsubmit="handleCommercialSubscription(event)" style="background:rgba(15,23,42,0.5);border:1px solid rgba(0,212,255,0.2);border-radius:20px;padding:40px;">
+        <div style="color:#e2e8f0;font-size:24px;font-weight:800;margin-bottom:30px;text-align:center;">📝 Оформлення підписки</div>
+        
+        <div style="margin-bottom:20px;">
+          <label style="display:block;color:#94a3b8;font-size:14px;font-weight:600;margin-bottom:8px;">Ім'я / Назва організації *</label>
+          <input type="text" id="commercialName" required style="width:100%;padding:14px;background:rgba(10,14,23,0.8);border:1px solid rgba(0,212,255,0.3);border-radius:10px;color:#fff;font-size:15px;outline:none;">
+        </div>
+
+        <div style="margin-bottom:20px;">
+          <label style="display:block;color:#94a3b8;font-size:14px;font-weight:600;margin-bottom:8px;">Email *</label>
+          <input type="email" id="commercialEmail" required style="width:100%;padding:14px;background:rgba(10,14,23,0.8);border:1px solid rgba(0,212,255,0.3);border-radius:10px;color:#fff;font-size:15px;outline:none;">
+        </div>
+
+        <div style="margin-bottom:20px;">
+          <label style="display:block;color:#94a3b8;font-size:14px;font-weight:600;margin-bottom:8px;">Телефон *</label>
+          <input type="tel" id="commercialPhone" required style="width:100%;padding:14px;background:rgba(10,14,23,0.8);border:1px solid rgba(0,212,255,0.3);border-radius:10px;color:#fff;font-size:15px;outline:none;" placeholder="+380XXXXXXXXX">
+        </div>
+
+        <div style="margin-bottom:20px;">
+          <label style="display:block;color:#94a3b8;font-size:14px;font-weight:600;margin-bottom:8px;">Тип використання *</label>
+          <select id="commercialType" required style="width:100%;padding:14px;background:rgba(10,14,23,0.8);border:1px solid rgba(0,212,255,0.3);border-radius:10px;color:#fff;font-size:15px;outline:none;">
+            <option value="">Оберіть тип</option>
+            <option value="streaming">📺 Стрімінг (TikTok/YouTube/Twitch)</option>
+            <option value="media">📰 ЗМІ / Новинний портал</option>
+            <option value="business">🏢 Корпоративне використання</option>
+            <option value="other">📌 Інше</option>
+          </select>
+        </div>
+
+        <div style="margin-bottom:25px;">
+          <label style="display:block;color:#94a3b8;font-size:14px;font-weight:600;margin-bottom:8px;">Коментар (опціонально)</label>
+          <textarea id="commercialComment" rows="3" style="width:100%;padding:14px;background:rgba(10,14,23,0.8);border:1px solid rgba(0,212,255,0.3);border-radius:10px;color:#fff;font-size:15px;outline:none;resize:vertical;" placeholder="Додаткова інформація..."></textarea>
+        </div>
+
+        <button type="submit" style="width:100%;padding:18px;background:linear-gradient(135deg, #00d4ff 0%, #0891b2 100%);border:none;border-radius:12px;color:#0a0e17;font-size:18px;font-weight:800;cursor:pointer;box-shadow:0 8px 20px rgba(0,212,255,0.4);transition:all 0.3s;">
+          💳 Перейти до оплати
+        </button>
+
+        <div id="commercialFormMessage" style="margin-top:20px;padding:15px;border-radius:10px;display:none;text-align:center;font-size:14px;"></div>
+      </form>
     </div>
   </section>
 
