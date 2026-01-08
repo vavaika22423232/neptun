@@ -82,11 +82,6 @@ else:
     groq_client = None
     print("INFO: Groq AI disabled (no API key)")
 
-# Use persistent disk on Render for data that should survive deploys
-# Define this early so it's available for all file operations
-PERSISTENT_DATA_DIR = os.getenv('PERSISTENT_DATA_DIR', '/data')
-print(f"INFO: PERSISTENT_DATA_DIR = {PERSISTENT_DATA_DIR} (exists: {os.path.isdir(PERSISTENT_DATA_DIR)})")
-
 # Context-aware geocoding integration
 try:
     from context_aware_geocoder import get_context_aware_geocoding
@@ -792,8 +787,8 @@ def commercial_subscription():
             'user_agent': request.headers.get('User-Agent', '')
         }
         
-        # Save to file (use persistent disk on Render)
-        subscriptions_file = os.path.join(PERSISTENT_DATA_DIR, 'commercial_subscriptions.json') if os.path.isdir(PERSISTENT_DATA_DIR) else 'commercial_subscriptions.json'
+        # Save to file
+        subscriptions_file = 'commercial_subscriptions.json'
         subscriptions = []
         
         if os.path.exists(subscriptions_file):
@@ -936,8 +931,8 @@ def monobank_callback():
         print(f"   Reference: {reference}")
         print(f"   Amount: {amount / 100} UAH")
         
-        # Update subscription status (use persistent disk on Render)
-        subscriptions_file = os.path.join(PERSISTENT_DATA_DIR, 'commercial_subscriptions.json') if os.path.isdir(PERSISTENT_DATA_DIR) else 'commercial_subscriptions.json'
+        # Update subscription status
+        subscriptions_file = 'commercial_subscriptions.json'
         
         if os.path.exists(subscriptions_file):
             try:
@@ -1464,15 +1459,8 @@ ACTIVE_VISITORS = {}
 ACTIVE_LOCK = threading.Lock()
 ACTIVE_TTL = 70  # seconds of inactivity before a visitor is dropped
 BLOCKED_FILE = 'blocked_ids.json'
-
-# Use persistent disk on Render for visit statistics
-if os.path.isdir(PERSISTENT_DATA_DIR):
-    STATS_FILE = os.path.join(PERSISTENT_DATA_DIR, 'visits_stats.json')
-    RECENT_VISITS_FILE = os.path.join(PERSISTENT_DATA_DIR, 'visits_recent.json')
-else:
-    STATS_FILE = 'visits_stats.json'
-    RECENT_VISITS_FILE = 'visits_recent.json'
-
+STATS_FILE = 'visits_stats.json'  # persistent first-seen timestamps per visitor id
+RECENT_VISITS_FILE = 'visits_recent.json'  # stores rolling today/week visitor id sets for fast counts
 VISIT_STATS = None  # lazy-loaded dict: {id: first_seen_epoch}
 FORCE_RELOAD_TIMESTAMP = 0  # Timestamp when force reload was triggered
 FORCE_RELOAD_DURATION = 120  # Duration in seconds to keep force reload active (2 minutes)
@@ -15595,8 +15583,7 @@ def admin_approve_subscription(subscription_id):
     if not _require_secret(request):
         return jsonify({'error': 'Forbidden'}), 403
     
-    # Use persistent disk on Render
-    subscriptions_file = os.path.join(PERSISTENT_DATA_DIR, 'commercial_subscriptions.json') if os.path.isdir(PERSISTENT_DATA_DIR) else 'commercial_subscriptions.json'
+    subscriptions_file = 'commercial_subscriptions.json'
     
     if os.path.exists(subscriptions_file):
         try:
@@ -18154,9 +18141,9 @@ def admin_panel():
         except Exception:
             continue
     
-    # Load commercial subscriptions (use persistent disk on Render)
+    # Load commercial subscriptions
     subscriptions = []
-    subscriptions_file = os.path.join(PERSISTENT_DATA_DIR, 'commercial_subscriptions.json') if os.path.isdir(PERSISTENT_DATA_DIR) else 'commercial_subscriptions.json'
+    subscriptions_file = 'commercial_subscriptions.json'
     if os.path.exists(subscriptions_file):
         try:
             with open(subscriptions_file, 'r', encoding='utf-8') as f:

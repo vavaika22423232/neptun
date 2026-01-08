@@ -6,11 +6,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="theme-color" content="#121212">
+  <meta name="theme-color" content="#0a0e17">
   <meta name="format-detection" content="telephone=no">
   
   <!-- PRIMARY SEO - OPTIMIZED FOR #1 RANKING -->
-  <title>Карта тривог та шахедів України</title>
+  <title>🚨 Карта тривог України ЗАРАЗ | Офіційна карта шахедів онлайн 24/7 | NEPTUN</title>
   <meta name="description" content="⚡ Офіційна карта повітряних тривог України в реальному часі. Відстежуйте рух шахедів, дронів та ракет ЗАРАЗ онлайн на мапі загроз. Радар шахедів 24/7 + БЕЗКОШТОВНИЙ додаток з миттєвими сповіщеннями про тривогу в вашому регіоні. Найточніша карта тривог 2026!">
   <meta name="keywords" content="карта тривог україни, карта повітряних тривог, офіційна карта тривог, карта шахедів онлайн, карта шахедів зараз, мапа тривог, мапа шахедів, радар шахедів україна, карта польоту шахедів в реальному часі, рух шахедів онлайн, карта дронів україни, відстеження дронів, повітряна тривога зараз, тривога україна онлайн, карта загроз україни, радар ракет, бпла україна, карта відключень світла, neptun карта, нептун карта тривог, air raid alert ukraine, shahed tracker online, ukraine alert map, drone map ukraine real time, повітряна небезпека україна, карта тривог київ, карта тривог харків, карта тривог одеса, карта тривог львів">
   <meta name="author" content="NEPTUN">
@@ -26,7 +26,7 @@
   <meta property="og:image" content="https://neptun.in.ua/static/og-image.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:site_name" content="Карта тривог та шахедів">
+  <meta property="og:site_name" content="NEPTUN - Карта тривог України">
   <meta property="og:locale" content="uk_UA">
   
   <!-- TWITTER -->
@@ -49,8 +49,8 @@
   {
     "@context": "https://schema.org",
     "@type": "WebApplication",
-    "name": "Карта тривог та шахедів",
-    "alternateName": ["Карта шахедів", "Радар шахедів", "Мапа тривог", "NEPTUN"],
+    "name": "NEPTUN - Карта тривог України",
+    "alternateName": ["Карта шахедів", "Радар шахедів", "Мапа тривог"],
     "description": "Карта шахедів та повітряних тривог України в реальному часі. Відстежуйте рух дронів, ракет та БпЛА онлайн.",
     "url": "https://neptun.in.ua",
     "applicationCategory": "UtilitiesApplication",
@@ -131,8 +131,7 @@
   </script>
   
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;600&family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
   
   <!-- Google Analytics -->
@@ -164,30 +163,12 @@
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background: #121212;
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: linear-gradient(135deg, #0a0e17 0%, #0d1929 50%, #0a192f 100%);
+      font-family: 'Inter', 'Exo 2', -apple-system, sans-serif;
       -webkit-tap-highlight-color: transparent !important;
       -webkit-touch-callout: none !important;
       -webkit-user-select: none !important;
       user-select: none !important;
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
-    }
-    
-    /* DeepState style CSS variables */
-    :root {
-      --ds-bg: #121212;
-      --ds-bg-elevated: #1e1e1e;
-      --ds-bg-card: #252525;
-      --ds-border: #333333;
-      --ds-border-light: #404040;
-      --ds-accent: #4caf50;
-      --ds-accent-hover: #66bb6a;
-      --ds-warning: #ff9800;
-      --ds-danger: #f44336;
-      --ds-text: #ffffff;
-      --ds-text-secondary: #b3b3b3;
-      --ds-text-muted: #808080;
     }
     
     /* SVG elements - disable highlight */
@@ -200,9 +181,20 @@
       -webkit-user-drag: none !important;
     }
     
-    /* Background grid - subtle */
+    /* Animated background grid */
     #map-container::before {
-      display: none;
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-image: 
+        linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
+      background-size: 50px 50px;
+      pointer-events: none;
+      z-index: 0;
     }
     
     #map-container {
@@ -213,10 +205,9 @@
       justify-content: center;
       position: relative;
       overflow: hidden;
-      touch-action: none;
+      touch-action: none; /* Prevent default touch behaviors */
       -webkit-user-select: none;
       user-select: none;
-      background: var(--ds-bg);
     }
     
     #map-wrapper {
@@ -282,50 +273,56 @@
     }
     
     #names-layer text {
-      fill: rgba(255, 255, 255, 0.8);
-      font-family: 'Inter', sans-serif;
-      font-weight: 500;
-      font-size: 11px;
-      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+      fill: rgba(255, 255, 255, 0.9);
+      font-family: 'Exo 2', sans-serif;
+      font-weight: 400;
+      text-shadow: 
+        0 0 10px rgba(0, 212, 255, 0.5),
+        0 2px 4px rgba(0, 0, 0, 0.8);
     }
     
-    /* DeepState style - Oblast regions */
+    /* NEPTUN style - Oblast regions */
     #states-layer .stateObject {
-      fill: #1a1a1a;
-      stroke: var(--ds-border);
-      stroke-width: 0.5;
-      transition: fill 0.2s ease;
+      fill: linear-gradient(180deg, #1a2744 0%, #0f1a2e 100%);
+      fill: #162236;
+      stroke: #00d4ff;
+      stroke-width: 0.4;
+      stroke-opacity: 0.3;
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     }
     
     #states-layer .stateObject:hover {
-      fill: #252525;
+      fill: #1e3050;
+      stroke-opacity: 0.6;
     }
     
     #states-layer .stateObject.alarm {
-      fill: #3d1a1a;
-      stroke: var(--ds-danger);
-      stroke-width: 0.6;
+      fill: #7f1d1d;
+      stroke: #ff4444;
+      stroke-opacity: 0.8;
+      /* animation: alarmPulse 2s ease-in-out infinite; - disabled for performance */
     }
     
-    /* DeepState style - District regions */
+    /* NEPTUN style - District regions */
     #districts-layer .dist {
       fill: transparent;
-      stroke: rgba(255, 255, 255, 0.08);
-      stroke-width: 0.15;
-      transition: fill 0.2s ease;
+      stroke: rgba(0, 212, 255, 0.15);
+      stroke-width: 0.1;
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
       pointer-events: all;
     }
     
     #districts-layer .dist:hover {
-      fill: rgba(255, 255, 255, 0.05);
-      stroke: rgba(255, 255, 255, 0.15);
+      fill: rgba(0, 212, 255, 0.1);
+      stroke: rgba(0, 212, 255, 0.4);
       cursor: pointer;
     }
     
     #districts-layer .dist.alarm {
-      fill: #c62828;
-      stroke: var(--ds-danger);
-      stroke-width: 0.25;
+      fill: #dc2626;
+      stroke: #ff6b6b;
+      stroke-width: 0.2;
+      /* animation: districtAlarm 1.5s ease-in-out infinite; - disabled for performance */
     }
     
     @keyframes alarmPulse {
@@ -342,164 +339,243 @@
       }
     }
     
-    /* NEPTUN Logo & Branding - DeepState style */
+    /* NEPTUN Logo & Branding */
     .neptun-logo {
       position: fixed;
-      top: 18px;
+      top: 20px;
       left: 50%;
       transform: translateX(-50%);
       z-index: 1001;
       text-align: center;
-      display: none; /* Hidden - using navbar logo instead */
     }
     
     .neptun-logo h1 {
-      font-family: 'Inter', sans-serif;
-      font-size: 22px;
-      font-weight: 600;
-      color: var(--ds-text);
-      letter-spacing: 2px;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 28px;
+      font-weight: 900;
+      background: linear-gradient(135deg, #00d4ff 0%, #0099cc 50%, #00d4ff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: 8px;
+      text-shadow: 0 0 30px rgba(0, 212, 255, 0.5);
       margin: 0;
     }
     
     .neptun-logo .subtitle {
-      font-family: 'Inter', sans-serif;
-      font-size: 9px;
-      color: var(--ds-text-muted);
-      letter-spacing: 1px;
-      margin-top: 2px;
+      font-family: 'Exo 2', sans-serif;
+      font-size: 10px;
+      color: rgba(0, 212, 255, 0.6);
+      letter-spacing: 4px;
+      margin-top: 4px;
       text-transform: uppercase;
     }
     
-    /* Zoom controls - DeepState flat style */
+    /* Zoom controls - NEPTUN style */
     .zoom-controls {
       position: fixed;
-      bottom: 20px;
-      right: 15px;
+      bottom: 30px;
+      right: 30px;
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 8px;
       z-index: 1000;
     }
     
     .zoom-btn {
-      width: 40px;
-      height: 40px;
-      background: var(--ds-bg-elevated);
-      border: 1px solid var(--ds-border);
+      width: 44px;
+      height: 44px;
+      background: rgba(10, 25, 47, 0.9);
+      border: 1px solid rgba(0, 212, 255, 0.3);
       border-radius: 8px;
-      color: var(--ds-text-secondary);
+      color: #00d4ff;
       font-size: 20px;
-      font-weight: 500;
+      font-weight: bold;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: all 0.15s ease;
+      transition: all 0.2s ease;
+      /* backdrop-filter: blur(10px); - disabled for performance */
     }
     
     .zoom-btn:hover {
-      background: var(--ds-bg-card);
-      color: var(--ds-text);
-      border-color: var(--ds-border-light);
+      background: rgba(0, 212, 255, 0.15);
+      border-color: #00d4ff;
+      box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+      transform: scale(1.05);
     }
     
-    .zoom-btn:active {
-      background: var(--ds-border);
-    }
-    
-    /* Map style switcher - DeepState flat style */
+    /* Map style switcher - Beautiful pill design */
     .map-switcher {
       position: fixed;
-      bottom: 120px;
-      right: 15px;
+      bottom: 190px;
+      right: 30px;
       z-index: 1000;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
     }
     
     .map-switcher-btn {
       display: flex;
       align-items: center;
-      justify-content: center;
-      gap: 8px;
-      padding: 10px 14px;
-      background: var(--ds-bg-elevated);
-      border: 1px solid var(--ds-border);
-      border-radius: 10px;
-      color: var(--ds-text-secondary);
-      font-size: 13px;
-      font-weight: 500;
+      gap: 10px;
+      padding: 12px 20px;
+      background: linear-gradient(135deg, rgba(10, 25, 47, 0.95) 0%, rgba(15, 35, 60, 0.95) 100%);
+      border: 1px solid rgba(0, 212, 255, 0.4);
+      border-radius: 50px;
+      color: #00d4ff;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: 'Exo 2', sans-serif;
       cursor: pointer;
-      transition: all 0.15s ease;
-      white-space: nowrap;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3), 0 0 30px rgba(0, 212, 255, 0.1);
+      position: relative;
+      overflow: hidden;
     }
     
     .map-switcher-btn::before {
-      display: none;
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.2), transparent);
+      transition: left 0.5s ease;
+    }
+    
+    .map-switcher-btn:hover::before {
+      left: 100%;
     }
     
     .map-switcher-btn:hover {
-      background: var(--ds-bg-card);
-      color: var(--ds-text);
-      border-color: var(--ds-border-light);
+      background: linear-gradient(135deg, rgba(0, 212, 255, 0.2) 0%, rgba(0, 170, 255, 0.25) 100%);
+      border-color: #00d4ff;
+      box-shadow: 0 6px 25px rgba(0, 0, 0, 0.4), 0 0 40px rgba(0, 212, 255, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      transform: translateY(-2px);
     }
     
     .map-switcher-btn:active {
-      background: var(--ds-border);
+      transform: translateY(0);
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3), 0 0 20px rgba(0, 212, 255, 0.3);
     }
     
     .map-switcher-icon {
-      font-size: 16px;
+      font-size: 20px;
+      filter: drop-shadow(0 0 8px rgba(0, 212, 255, 0.6));
+      animation: iconPulse 3s ease-in-out infinite;
     }
     
     @keyframes iconPulse {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.05); }
+      0%, 100% { transform: scale(1); filter: drop-shadow(0 0 8px rgba(0, 212, 255, 0.6)); }
+      50% { transform: scale(1.1); filter: drop-shadow(0 0 12px rgba(0, 212, 255, 0.8)); }
     }
     
     .map-switcher-text {
-      display: inline;
-      font-size: 12px;
+      letter-spacing: 0.5px;
+      text-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
     }
     
     @media (max-width: 768px) {
       .map-switcher {
-        bottom: 120px;
-        right: 10px;
+        bottom: 170px;
+        right: 15px;
       }
       .map-switcher-btn {
-        padding: 8px 12px;
-        font-size: 11px;
-        gap: 6px;
+        padding: 10px 16px;
+        font-size: 13px;
+        gap: 8px;
       }
       .map-switcher-icon {
-        font-size: 14px;
-      }
-      .map-switcher-text {
-        display: inline;
-        font-size: 10px;
+        font-size: 18px;
       }
     }
     
     @media (max-width: 480px) {
-      .map-switcher {
-        bottom: 120px;
-      }
       .map-switcher-btn {
-        padding: 7px 10px;
-      }
-      .map-switcher-text {
-        display: inline;
-        font-size: 9px;
-      }
-      .map-switcher-icon {
+        padding: 8px 14px;
         font-size: 12px;
       }
+      .map-switcher-text {
+        display: none;
+      }
+      .map-switcher-icon {
+        font-size: 22px;
+      }
+    }
+    
+    /* Status panel - NEPTUN style */
+    .status-panel {
+      position: fixed;
+      top: 80px;
+      left: 20px;
+      background: rgba(10, 25, 47, 0.95);
+      border: 1px solid rgba(0, 212, 255, 0.2);
+      border-radius: 12px;
+      padding: 16px 20px;
+      color: white;
+      z-index: 1000;
+      /* backdrop-filter removed for performance */
+      min-width: 160px;
+    }
+    
+    .status-panel::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #00d4ff, transparent);
+      border-radius: 12px 12px 0 0;
+    }
+    
+    .status-panel h3 {
+      font-family: 'Exo 2', sans-serif;
+      font-size: 11px;
+      font-weight: 400;
+      margin-bottom: 8px;
+      color: rgba(0, 212, 255, 0.8);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+    
+    .alarm-count {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 36px;
+      font-weight: 700;
+      color: #ff4444;
+      text-shadow: 0 0 20px rgba(255, 68, 68, 0.5);
+      line-height: 1;
+    }
+    
+    .alarm-count.safe {
+      color: #00ff88;
+      text-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
+    }
+    
+    .last-update {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.5);
+      margin-top: 10px;
+      font-weight: 300;
+    }
+    
+    .last-update.stale {
+      color: #ffaa00;
+    }
+    
+    .last-update.error {
+      color: #ff4444;
+    }
+    
+    .api-status {
+      font-size: 9px;
+      color: rgba(0, 212, 255, 0.5);
+      margin-top: 4px;
     }
 
-    /* Trajectory lines layer - DeepState */
+    /* Trajectory lines layer */
     #trajectories-layer {
       position: absolute;
       top: 0;
@@ -527,19 +603,21 @@
     }
     
     .trajectory-line line {
-      stroke: var(--ds-warning);
-      stroke-width: 1.5;
-      stroke-dasharray: 5 3;
+      stroke: #f97316;
+      stroke-width: 2;
+      stroke-dasharray: 6 3;
       stroke-linecap: round;
-      opacity: 0.8;
+      opacity: 0.85;
+      filter: drop-shadow(0 0 4px rgba(249, 115, 22, 0.6));
     }
     
     .trajectory-arrow {
       position: absolute;
       transform: translate(-50%, -50%);
-      color: var(--ds-warning);
-      font-size: 12px;
-      font-weight: 600;
+      color: #f97316;
+      font-size: 14px;
+      font-weight: bold;
+      text-shadow: 0 0 6px rgba(249, 115, 22, 0.8);
       pointer-events: none;
       z-index: 10;
     }
@@ -557,17 +635,18 @@
     
     .threat-marker {
       position: absolute;
-      width: 28px;
-      height: 28px;
+      width: 32px;
+      height: 32px;
       transform: translate(-50%, -50%);
       pointer-events: auto;
       cursor: pointer;
-      filter: drop-shadow(0 0 3px rgba(244, 67, 54, 0.5));
+      filter: drop-shadow(0 0 4px rgba(255, 100, 100, 0.6));
+      /* animation disabled for performance */
       transition: transform 0.15s ease;
     }
     
     .threat-marker:hover {
-      transform: translate(-50%, -50%) scale(1.2);
+      transform: translate(-50%, -50%) scale(1.3);
       z-index: 100;
     }
     
@@ -580,19 +659,20 @@
     /* Count badge for multiple threats at same location */
     .marker-count-badge {
       position: absolute;
-      top: -5px;
-      right: -5px;
-      background: var(--ds-danger);
+      top: -6px;
+      right: -6px;
+      background: linear-gradient(135deg, #dc2626, #b91c1c);
       color: #fff;
-      font-size: 9px;
-      font-weight: 600;
+      font-size: 10px;
+      font-weight: 700;
       padding: 2px 5px;
-      border-radius: 8px;
+      border-radius: 10px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.5);
       font-family: 'Inter', system-ui, sans-serif;
       line-height: 1;
       z-index: 10;
       pointer-events: none;
-      min-width: 14px;
+      min-width: 16px;
       text-align: center;
     }
     
@@ -601,55 +681,54 @@
       50% { opacity: 0.8; }
     }
     
-    /* Marker tooltip - DeepState */
+    /* Marker tooltip */
     .marker-tooltip {
       position: fixed;
-      background: var(--ds-bg-elevated);
-      border: 1px solid var(--ds-border);
-      border-radius: 10px;
+      background: rgba(10, 25, 47, 0.95);
+      border: 1px solid rgba(0, 212, 255, 0.4);
+      border-radius: 8px;
       padding: 10px 14px;
       color: white;
       font-size: 12px;
-      max-width: 260px;
+      max-width: 280px;
       z-index: 2000;
       pointer-events: none;
+      /* backdrop-filter removed for performance */
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
     }
     
     .marker-tooltip .tooltip-type {
-      font-family: 'Inter', sans-serif;
-      font-size: 10px;
-      color: var(--ds-danger);
+      font-family: 'Orbitron', sans-serif;
+      font-size: 11px;
+      color: #00d4ff;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 5px;
-      font-weight: 600;
+      letter-spacing: 1px;
+      margin-bottom: 6px;
     }
     
     .marker-tooltip .tooltip-place {
-      font-weight: 500;
+      font-weight: 600;
       margin-bottom: 4px;
-      color: var(--ds-text);
     }
     
     .marker-tooltip .tooltip-time {
       font-size: 10px;
-      color: var(--ds-text-muted);
+      color: rgba(255, 255, 255, 0.5);
     }
     
     /* Markers counter in status panel */
     .markers-info {
-      margin-top: 10px;
-      padding-top: 10px;
-      border-top: 1px solid var(--ds-border);
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(0, 212, 255, 0.2);
     }
     
     .markers-info h4 {
       font-size: 10px;
-      color: var(--ds-text-muted);
+      color: rgba(0, 212, 255, 0.7);
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 1px;
       margin-bottom: 6px;
-      font-weight: 500;
     }
     
     .marker-type-count {
@@ -657,19 +736,33 @@
       align-items: center;
       gap: 8px;
       font-size: 11px;
-      color: var(--ds-text-secondary);
+      color: rgba(255, 255, 255, 0.8);
       margin: 4px 0;
     }
     
     .marker-type-count img {
-      width: 16px;
-      height: 16px;
+      width: 18px;
+      height: 18px;
     }
     
     /* ========== MOBILE OPTIMIZATION ========== */
     
     /* Very small phones (320px) */
     @media screen and (max-width: 360px) {
+      .status-panel {
+        bottom: 65px;
+        right: 8px;
+        padding: 6px 10px;
+      }
+      .status-panel h3 {
+        font-size: 7px;
+      }
+      .alarm-count {
+        font-size: 20px;
+      }
+      .last-update {
+        font-size: 7px;
+      }
       .zoom-controls {
         bottom: 65px;
         left: 8px;
@@ -689,10 +782,50 @@
       }
       .neptun-logo .subtitle {
         font-size: 8px;
-        letter-spacing: 1px;
+        letter-spacing: 2px;
       }
       .neptun-logo {
         top: 10px;
+      }
+      
+      /* Status panel compact - mobile optimized */
+      .status-panel {
+        top: auto;
+        bottom: 70px;
+        left: auto;
+        right: 10px;
+        padding: 8px 12px;
+        min-width: auto;
+        border-radius: 12px;
+        background: rgba(10, 25, 47, 0.95);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+      }
+      .status-panel::before {
+        display: none;
+      }
+      .status-panel h3 {
+        font-size: 8px;
+        letter-spacing: 1px;
+        margin-bottom: 2px;
+        text-align: center;
+      }
+      .alarm-count {
+        font-size: 24px;
+        line-height: 1;
+      }
+      .last-update {
+        font-size: 8px;
+        margin-top: 4px;
+        text-align: center;
+      }
+      .api-status {
+        display: none;
+      }
+      .markers-info {
+        display: none !important;
       }
       
       /* Zoom controls smaller - left bottom */
@@ -700,13 +833,13 @@
         bottom: 70px;
         left: 10px;
         right: auto;
-        gap: 4px;
+        gap: 6px;
       }
       .zoom-btn {
-        width: 36px;
-        height: 36px;
+        width: 38px;
+        height: 38px;
         font-size: 18px;
-        border-radius: 6px;
+        border-radius: 8px;
       }
       
       /* Map fills screen */
@@ -718,8 +851,9 @@
       
       /* Smaller markers */
       .threat-marker {
-        width: 22px;
-        height: 22px;
+        width: 24px;
+        height: 24px;
+        /* Disable animations and filters for performance */
         animation: none !important;
         filter: none !important;
       }
@@ -727,18 +861,18 @@
       /* Simplified trajectory lines on mobile */
       .trajectory-line line {
         filter: none !important;
-        stroke-width: 1;
+        stroke-width: 1.5;
       }
       
       .trajectory-arrow {
         text-shadow: none !important;
-        font-size: 10px;
+        font-size: 12px;
       }
       
       /* No hover effects on touch */
       #districts-layer .dist:hover {
         fill: transparent;
-        stroke: rgba(255, 255, 255, 0.1);
+        stroke: rgba(0, 212, 255, 0.15);
       }
       
       /* Disable background grid for performance */
@@ -757,11 +891,20 @@
     /* Tablets */
     @media screen and (max-width: 768px) and (min-width: 481px) {
       .neptun-logo h1 {
-        font-size: 20px;
-        letter-spacing: 2px;
+        font-size: 22px;
+        letter-spacing: 5px;
       }
       .neptun-logo .subtitle {
         font-size: 9px;
+      }
+      
+      .status-panel {
+        top: 70px;
+        left: 15px;
+        padding: 12px 16px;
+      }
+      .alarm-count {
+        font-size: 32px;
       }
       
       .zoom-controls {
@@ -769,8 +912,8 @@
         right: 15px;
       }
       .zoom-btn {
-        width: 38px;
-        height: 38px;
+        width: 40px;
+        height: 40px;
       }
       
       .svg-container {
@@ -778,8 +921,8 @@
       }
       
       .threat-marker {
-        width: 26px;
-        height: 26px;
+        width: 28px;
+        height: 28px;
       }
     }
     
@@ -793,6 +936,26 @@
       }
       .neptun-logo .subtitle {
         display: none;
+      }
+      
+      .status-panel {
+        top: auto;
+        bottom: 5px;
+        left: auto;
+        right: 50px;
+        padding: 6px 10px;
+        flex-direction: row;
+        gap: 8px;
+        align-items: center;
+      }
+      .status-panel h3 {
+        display: none;
+      }
+      .alarm-count {
+        font-size: 20px;
+      }
+      .last-update, .api-status, .markers-info {
+        display: none !important;
       }
       
       .zoom-controls {
@@ -919,418 +1082,130 @@
     
     /* Safe area for notched phones */
     @supports (padding: max(0px)) {
+      .status-panel {
+        left: max(10px, env(safe-area-inset-left));
+      }
       .zoom-controls {
         right: max(10px, env(safe-area-inset-right));
         bottom: max(10px, env(safe-area-inset-bottom));
       }
     }
     
-    /* ========== BURGER MENU & SIDE DRAWER - DEEPSTATE ========== */
-    .menu-burger {
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      width: 36px;
-      height: 36px;
-      background: transparent;
-      border: none;
-      cursor: pointer;
-      padding: 6px;
-      margin-right: 8px;
-      border-radius: 6px;
-      transition: background 0.15s;
-    }
-    
-    .menu-burger:hover {
-      background: var(--ds-bg-elevated);
-    }
-    
-    .menu-burger span {
-      display: block;
-      width: 18px;
-      height: 2px;
-      background: var(--ds-text-secondary);
-      margin: 2px 0;
-      border-radius: 1px;
-      transition: all 0.2s;
-    }
-    
-    .menu-burger:hover span {
-      background: var(--ds-text);
-    }
-    
-    /* Drawer overlay */
-    .drawer-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0, 0, 0, 0.6);
-      z-index: 1999;
-      opacity: 0;
-      visibility: hidden;
-      transition: opacity 0.25s, visibility 0.25s;
-    }
-    
-    .drawer-overlay.active {
-      opacity: 1;
-      visibility: visible;
-    }
-    
-    /* Side drawer */
-    .side-drawer {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 280px;
-      height: 100%;
-      background: var(--ds-bg);
-      border-right: 1px solid var(--ds-border);
-      z-index: 2000;
-      transform: translateX(-100%);
-      transition: transform 0.25s ease;
-      display: flex;
-      flex-direction: column;
-      overflow-y: auto;
-    }
-    
-    .side-drawer.active {
-      transform: translateX(0);
-    }
-    
-    .drawer-header {
-      padding: 20px 16px;
-      border-bottom: 1px solid var(--ds-border);
-      position: relative;
-    }
-    
-    .drawer-logo {
-      font-family: 'Inter', sans-serif;
-      font-size: 20px;
-      font-weight: 600;
-      color: var(--ds-text);
-      letter-spacing: 1px;
-    }
-    
-    .drawer-subtitle {
-      font-size: 11px;
-      color: var(--ds-text-muted);
-      margin-top: 2px;
-    }
-    
-    .drawer-close {
-      position: absolute;
-      top: 16px;
-      right: 12px;
-      width: 32px;
-      height: 32px;
-      background: var(--ds-bg-elevated);
-      border: 1px solid var(--ds-border);
-      border-radius: 6px;
-      color: var(--ds-text-muted);
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.15s;
-    }
-    
-    .drawer-close:hover {
-      background: var(--ds-bg-card);
-      color: var(--ds-text);
-    }
-    
-    .drawer-close i {
-      font-size: 18px;
-    }
-    
-    /* Drawer navigation */
-    .drawer-nav {
-      padding: 12px 0;
-      border-bottom: 1px solid var(--ds-border);
-    }
-    
-    .drawer-link {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 12px 16px;
-      color: var(--ds-text-secondary);
-      text-decoration: none;
-      font-size: 14px;
-      font-weight: 500;
-      transition: all 0.15s;
-    }
-    
-    .drawer-link:hover {
-      background: var(--ds-bg-elevated);
-      color: var(--ds-text);
-    }
-    
-    .drawer-link.active {
-      color: var(--ds-accent);
-      background: rgba(76, 175, 80, 0.1);
-    }
-    
-    .drawer-link.highlight {
-      color: var(--ds-accent);
-    }
-    
-    .drawer-link i, .drawer-link svg {
-      font-size: 20px;
-      width: 20px;
-      height: 20px;
-      flex-shrink: 0;
-    }
-    
-    /* Drawer sections */
-    .drawer-section {
-      padding: 12px 0;
-      border-bottom: 1px solid var(--ds-border);
-    }
-    
-    .drawer-section-title {
-      padding: 8px 16px;
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--ds-text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    
-    /* Drawer footer */
-    .drawer-footer {
-      margin-top: auto;
-      padding: 16px;
-      border-top: 1px solid var(--ds-border);
-      text-align: center;
-    }
-    
-    .drawer-version {
-      font-size: 12px;
-      color: var(--ds-text-muted);
-      margin-bottom: 4px;
-    }
-    
-    .drawer-copyright {
-      font-size: 11px;
-      color: var(--ds-text-muted);
-      opacity: 0.7;
-    }
-    
-    .drawer-disclaimer {
-      font-size: 10px;
-      color: var(--ds-warning);
-      margin-top: 8px;
-      padding: 6px 10px;
-      background: rgba(255, 152, 0, 0.1);
-      border-radius: 4px;
-    }
-    
-    /* ========== NAVBAR STYLES - DEEPSTATE ========== */
+    /* ========== NAVBAR STYLES ========== */
     .navbar {
       width: 100%;
-      height: 48px;
-      background: var(--ds-bg);
-      color: var(--ds-text);
-      padding: 0 12px;
+      background: linear-gradient(180deg, rgba(10, 14, 23, 0.98) 0%, rgba(10, 14, 23, 0.95) 100%);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      color: #e2e8f0;
+      font-weight: 600;
+      font-size: 1rem;
+      padding: 0.6rem 1.2rem;
+      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
       display: flex;
       align-items: center;
       justify-content: space-between;
+      border-bottom: 1px solid rgba(0, 212, 255, 0.15);
       position: fixed;
       top: 0;
       left: 0;
       right: 0;
       z-index: 1000;
-      border-bottom: 1px solid var(--ds-border);
     }
     
     .navbar::after {
-      display: none;
+      content: "";
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.5), transparent);
     }
     
-    /* Left section */
-    .navbar-left {
+    .navbar .logo {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 0.75rem;
     }
     
     .logo-text {
-      font-family: 'Inter', sans-serif;
-      font-size: 16px;
-      font-weight: 600;
-      color: var(--ds-text);
-      letter-spacing: 0.5px;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 1.3rem;
+      font-weight: 900;
+      background: linear-gradient(135deg, #00d4ff 0%, #0099cc 50%, #00d4ff 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      letter-spacing: 4px;
     }
     
-    /* User nickname display */
-    .user-nickname {
-      display: none;
-      align-items: center;
-      gap: 4px;
-      padding: 4px 10px;
-      background: var(--ds-bg-card);
-      border: 1px solid var(--ds-border);
-      border-radius: 6px;
-      font-size: 12px;
-      color: var(--ds-accent);
-      font-weight: 500;
-      margin-left: 8px;
-    }
-    
-    .user-nickname .nickname-icon {
-      font-size: 11px;
-    }
-    
-    /* Center section - online counter */
-    .navbar-center {
-      position: absolute;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      align-items: center;
-    }
-    
-    .online-badge {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 6px 12px;
-      background: var(--ds-bg-elevated);
-      border: 1px solid var(--ds-border);
-      border-radius: 20px;
-      font-size: 12px;
-    }
-    
-    .online-dot {
-      width: 6px;
-      height: 6px;
-      background: var(--ds-accent);
-      border-radius: 50%;
-      animation: pulse 2s infinite;
-    }
-    
-    @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.7; transform: scale(1.1); }
-    }
-    
-    .online-count {
-      color: var(--ds-accent);
-      font-weight: 600;
-    }
-    
-    .online-label {
-      color: var(--ds-text-muted);
-      font-size: 11px;
-    }
-    
-    /* Right section */
-    .navbar-right {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    
-    .nav-btn {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      height: 34px;
-      padding: 0 12px;
-      background: transparent;
-      border: none;
-      border-radius: 6px;
-      color: var(--ds-text-secondary);
-      font-size: 13px;
-      font-weight: 500;
-      cursor: pointer;
-      text-decoration: none;
-      transition: all 0.15s;
-    }
-    
-    .nav-btn:hover {
-      background: var(--ds-bg-elevated);
-      color: var(--ds-text);
-    }
-    
-    .nav-btn i {
-      font-size: 18px;
-    }
-    
-    .nav-btn.primary {
-      background: var(--ds-accent);
-      color: white;
-    }
-    
-    .nav-btn.primary:hover {
-      background: var(--ds-accent-hover);
-    }
-    
-    .nav-btn.donate {
-      color: var(--ds-danger);
-      border: 1px solid var(--ds-danger);
-    }
-    
-    .nav-btn.donate:hover {
-      background: var(--ds-danger);
-      color: white;
-    }
-    
-    .nav-btn .btn-text {
-      display: inline;
-    }
-    
-    /* Hide nav links on mobile */
-    @media (max-width: 768px) {
-      .navbar-center {
-        display: none;
-      }
-      .nav-btn .btn-text {
-        display: none;
-      }
-      .nav-btn {
-        padding: 0 8px;
-        height: 32px;
-      }
-      .nav-btn i {
-        font-size: 20px;
-      }
-    }
-    
-    @media (max-width: 480px) {
-      .logo-text {
-        font-size: 14px;
-      }
-    }
-    
-    /* Legacy support - hide old elements */
-    .navbar .logo {
-      display: none;
-    }
     .nav-links {
-      display: none;
+      display: flex;
+      gap: 0.3rem;
+      align-items: center;
     }
-    .support-btn {
-      display: none;
+    
+    .nav-links a {
+      color: rgba(148, 163, 184, 0.9);
+      text-decoration: none;
+      font-weight: 600;
+      padding: 0.5rem 0.9rem;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: all 0.2s ease;
+      border: 1px solid transparent;
     }
-    .live-users {
-      display: none;
+    
+    .nav-links a:hover {
+      color: #fff;
+      background: rgba(0, 212, 255, 0.1);
+      border-color: rgba(0, 212, 255, 0.2);
     }
-
-    /* Live users counter - DeepState */
+    
+    .nav-links a.active {
+      color: #00d4ff;
+      background: rgba(0, 212, 255, 0.15);
+      border-color: rgba(0, 212, 255, 0.3);
+    }
+    
+    .nav-links a i {
+      font-size: 1.1rem;
+    }
+    
+    /* App download link - special styling */
+    .nav-links a.app-link {
+      background: linear-gradient(135deg, #3ddc84 0%, #2db869 100%);
+      color: white;
+      border: 1px solid rgba(61, 220, 132, 0.3);
+      box-shadow: 0 2px 8px rgba(61, 220, 132, 0.2);
+      animation: appButtonPulse 2s ease-in-out infinite;
+    }
+    
+    .nav-links a.app-link:hover {
+      background: linear-gradient(135deg, #45e591 0%, #32c274 100%);
+      border-color: rgba(61, 220, 132, 0.5);
+      box-shadow: 0 4px 12px rgba(61, 220, 132, 0.4);
+      transform: translateY(-1px);
+    }
+    
+    @keyframes appButtonPulse {
+      0%, 100% { box-shadow: 0 2px 8px rgba(61, 220, 132, 0.2); }
+      50% { box-shadow: 0 2px 12px rgba(61, 220, 132, 0.4); }
+    }
+    
+    /* Live users counter */
     .live-users {
       display: inline-flex;
       align-items: center;
-      gap: 0.4rem;
-      padding: 0.4rem 0.75rem;
-      background: var(--ds-bg-elevated);
-      border: 1px solid var(--ds-border);
-      border-radius: 8px;
+      gap: 0.5rem;
+      padding: 0.45rem 0.85rem;
+      background: rgba(0, 212, 255, 0.08);
+      border: 1px solid rgba(0, 212, 255, 0.2);
+      border-radius: 12px;
       font-size: 0.7rem;
     }
     
@@ -1341,7 +1216,7 @@
     }
     
     .live-label {
-      color: var(--ds-text-muted);
+      color: rgba(0, 212, 255, 0.8);
       font-weight: 500;
       font-size: 0.65rem;
       text-transform: uppercase;
@@ -1349,18 +1224,18 @@
     }
     
     .live-count {
-      color: var(--ds-accent);
-      font-weight: 600;
+      color: #00ff88;
+      font-weight: 800;
       font-size: 0.85rem;
-      font-family: 'Inter', sans-serif;
+      font-family: 'Orbitron', sans-serif;
     }
     
     .live-count.updating {
-      animation: countUpdate 0.3s ease;
+      animation: countUpdate 0.5s ease;
     }
     
     @keyframes countUpdate {
-      50% { transform: scale(1.05); }
+      50% { transform: scale(1.2); color: #00ffaa; }
     }
     
     .live-breakdown {
@@ -1372,60 +1247,56 @@
       display: flex;
       align-items: center;
       gap: 0.15rem;
-      padding: 0.15rem 0.35rem;
-      border-radius: 4px;
-      font-size: 0.55rem;
-      background: var(--ds-bg-card);
+      padding: 0.1rem 0.35rem;
+      border-radius: 6px;
+      font-size: 0.6rem;
+      background: rgba(0, 212, 255, 0.05);
+      border: 1px solid rgba(0, 212, 255, 0.1);
     }
     
     .live-chip strong {
-      color: var(--ds-text);
-      font-weight: 600;
+      color: #e2e8f0;
+      font-weight: 700;
     }
     
-    /* Support button - DeepState */
+    /* Support button */
     .support-btn {
       display: flex;
       align-items: center;
       gap: 6px;
-      background: transparent;
-      color: var(--ds-danger);
-      border: 1px solid var(--ds-danger);
-      padding: 0.45rem 0.75rem;
-      border-radius: 8px;
+      background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+      color: white;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 10px;
       font-size: 0.8rem;
-      font-weight: 500;
+      font-weight: 600;
       cursor: pointer;
-      transition: all 0.15s ease;
-    }
-    
-    .support-btn::before {
-      display: none;
+      transition: all 0.2s ease;
+      box-shadow: 0 2px 10px rgba(255, 107, 107, 0.3);
     }
     
     .support-btn i {
-      font-size: 14px;
+      font-size: 16px;
+      animation: heartPulse 1.5s ease infinite;
     }
     
     @keyframes heartPulse {
       0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.1); }
+      50% { transform: scale(1.15); }
     }
     
     .support-btn:hover {
-      background: var(--ds-danger);
-      color: white;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
     }
     
-    .support-btn:active {
-      background: #d32f2f;
-    }
-    
-    /* Donate Modal - DeepState */
+    /* Donate Modal */
     .donate-modal-overlay {
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.8);
+      background: rgba(0, 0, 0, 0.85);
+      backdrop-filter: blur(8px);
       display: none;
       align-items: center;
       justify-content: center;
@@ -1434,7 +1305,7 @@
     
     .donate-modal-overlay.active {
       display: flex;
-      animation: fadeIn 0.2s ease;
+      animation: fadeIn 0.3s ease;
     }
     
     @keyframes fadeIn {
@@ -1443,76 +1314,71 @@
     }
     
     .donate-modal {
-      width: min(420px, 90vw);
-      background: var(--ds-bg-elevated);
-      border: 1px solid var(--ds-border);
-      border-radius: 16px;
-      padding: 1.5rem;
+      width: min(500px, 92vw);
+      background: linear-gradient(160deg, #0a0e17 0%, #0d1929 50%, #0a192f 100%);
+      border: 1px solid rgba(0, 212, 255, 0.25);
+      border-radius: 20px;
+      padding: 2rem;
       position: relative;
-      animation: modalSlide 0.25s ease;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6), 0 0 80px rgba(0, 212, 255, 0.1);
+      animation: modalSlide 0.4s ease;
     }
     
     @keyframes modalSlide {
-      from { transform: translateY(20px); opacity: 0; }
+      from { transform: translateY(30px); opacity: 0; }
       to { transform: translateY(0); opacity: 1; }
     }
     
     .donate-title {
-      margin: 0 0 0.75rem;
-      font-size: 1.2rem;
-      font-weight: 600;
-      color: var(--ds-text);
+      margin: 0 0 1rem;
+      font-size: 1.4rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #00d4ff, #00ff88);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
       display: flex;
       align-items: center;
       gap: 0.5rem;
     }
     
-    @keyframes gradientFlow {
-      to { background-position: 200% center; }
-    }
-    
     .donate-sub {
-      color: var(--ds-text-secondary);
-      font-size: 0.85rem;
+      color: rgba(148, 163, 184, 0.9);
+      font-size: 0.9rem;
       line-height: 1.5;
-      margin-bottom: 1.25rem;
+      margin-bottom: 1.5rem;
     }
     
     .donate-grid {
       display: grid;
-      gap: 0.75rem;
-      grid-template-columns: 1fr;
-      margin-bottom: 1.25rem;
+      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      margin-bottom: 1.5rem;
     }
     
     .donate-card {
-      background: var(--ds-bg-card);
-      border: 1px solid var(--ds-border);
-      border-radius: 10px;
+      background: rgba(0, 212, 255, 0.05);
+      border: 1px solid rgba(0, 212, 255, 0.15);
+      border-radius: 14px;
       padding: 1rem;
       display: flex;
       flex-direction: column;
-      gap: 0.4rem;
-      transition: all 0.15s ease;
-    }
-    
-    .donate-card:hover {
-      border-color: var(--ds-border-light);
+      gap: 0.5rem;
     }
     
     .donate-label {
-      font-size: 0.65rem;
+      font-size: 0.7rem;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
-      font-weight: 500;
-      color: var(--ds-text-muted);
+      letter-spacing: 1.5px;
+      font-weight: 700;
+      color: #00d4ff;
     }
     
     .donate-value {
-      font-family: 'Inter', monospace;
-      font-weight: 500;
-      font-size: 0.9rem;
-      color: var(--ds-text);
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: #e2e8f0;
       word-break: break-all;
     }
     
@@ -1523,122 +1389,110 @@
     }
     
     .btn-mini {
-      background: var(--ds-bg-elevated);
-      color: var(--ds-accent);
-      border: 1px solid var(--ds-border);
-      border-radius: 6px;
+      background: linear-gradient(135deg, #00d4ff, #0099cc);
+      color: #0a0e17;
+      border: none;
+      border-radius: 8px;
       padding: 0.45rem 0.75rem;
-      font-size: 0.72rem;
-      font-weight: 500;
+      font-size: 0.7rem;
+      font-weight: 700;
       cursor: pointer;
       display: flex;
       align-items: center;
-      gap: 0.35rem;
-      transition: all 0.15s ease;
+      gap: 0.3rem;
+      transition: all 0.2s;
     }
     
     .btn-mini:hover {
-      background: var(--ds-bg-card);
-      border-color: var(--ds-border-light);
-    }
-    
-    .btn-mini:active {
-      background: var(--ds-border);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 15px rgba(0, 212, 255, 0.3);
     }
     
     .btn-mini.alt {
-      color: var(--ds-text-muted);
+      background: rgba(148, 163, 184, 0.2);
+      color: #e2e8f0;
     }
     
     .donate-close {
       position: absolute;
       top: 1rem;
       right: 1rem;
-      width: 32px;
-      height: 32px;
-      background: var(--ds-bg-elevated);
-      border: 1px solid var(--ds-border);
-      border-radius: 8px;
+      width: 36px;
+      height: 36px;
+      background: rgba(0, 212, 255, 0.1);
+      border: 1px solid rgba(0, 212, 255, 0.2);
+      border-radius: 10px;
       display: flex;
       align-items: center;
       justify-content: center;
-      color: var(--ds-text-muted);
+      color: #94a3b8;
       cursor: pointer;
-      font-size: 16px;
-      transition: all 0.15s ease;
+      font-size: 18px;
+      transition: all 0.2s;
     }
     
     .donate-close:hover {
-      color: var(--ds-danger);
-      border-color: var(--ds-danger);
-    }
-    
-    .donate-close:active {
-      background: var(--ds-bg-card);
+      background: rgba(255, 107, 107, 0.2);
+      border-color: rgba(255, 107, 107, 0.3);
+      color: #ff6b6b;
     }
     
     .jar-link-button {
       width: 100%;
-      background: var(--ds-accent);
-      color: white;
+      background: linear-gradient(135deg, #00d4ff, #00ff88);
+      color: #0a0e17;
       border: none;
-      border-radius: 10px;
+      border-radius: 14px;
       padding: 1rem;
       font-size: 0.95rem;
-      font-weight: 500;
+      font-weight: 700;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 0.5rem;
       cursor: pointer;
-      transition: all 0.15s ease;
-    }
-    
-    @keyframes buttonGlow {
-      to { background-position: 200% center; }
+      transition: all 0.3s;
     }
     
     .jar-link-button:hover {
-      background: var(--ds-accent-hover);
-    }
-    
-    .jar-link-button:active {
-      background: #388e3c;
+      transform: translateY(-3px);
+      box-shadow: 0 10px 30px rgba(0, 212, 255, 0.3);
     }
     
     .donate-footer {
       font-size: 0.65rem;
-      color: var(--ds-text-muted);
+      color: rgba(100, 116, 139, 0.7);
       margin-top: 1rem;
       text-align: center;
     }
     
-    /* Copy toast - DeepState */
+    /* Copy toast */
     .copy-toast {
       position: fixed;
       bottom: 80px;
       right: 20px;
-      background: var(--ds-bg-elevated);
-      color: var(--ds-accent);
-      padding: 0.65rem 1rem;
-      border: 1px solid var(--ds-border);
-      border-radius: 8px;
+      background: rgba(0, 212, 255, 0.15);
+      border: 1px solid rgba(0, 212, 255, 0.3);
+      color: #00d4ff;
+      padding: 0.7rem 1rem;
+      border-radius: 10px;
       font-size: 0.8rem;
-      font-weight: 500;
+      font-weight: 600;
       display: none;
       z-index: 2100;
+      backdrop-filter: blur(10px);
     }
     
     .copy-toast.show {
       display: block;
-      animation: fadeIn 0.2s ease, fadeOut 0.3s linear 2s forwards;
+      animation: fadeIn 0.25s ease, fadeOut 0.4s linear 2.4s forwards;
     }
     
     @keyframes fadeOut {
       to { opacity: 0; }
     }
     
-    /* Disclaimer bar - DeepState */
+    /* Disclaimer bar */
     .disclaimer-bar {
       position: fixed;
       bottom: 0;
@@ -1647,136 +1501,149 @@
       z-index: 1100;
       display: flex;
       align-items: center;
-      gap: 0.75rem;
-      padding: 0.65rem 1rem;
-      background: var(--ds-bg-elevated);
-      border-top: 1px solid var(--ds-border);
-      font-size: 0.7rem;
-      color: var(--ds-text);
-      line-height: 1.4;
+      gap: 1rem;
+      padding: 0.85rem 1.2rem;
+      background: rgba(10, 14, 23, 0.98);
+      border-top: 1px solid rgba(251, 191, 36, 0.3);
+      backdrop-filter: blur(20px);
+      font-size: 0.75rem;
+      color: #e2e8f0;
+      line-height: 1.5;
     }
     
     .disclaimer-bar.hidden { display: none !important; }
     
-    .disclaimer-bar b { color: var(--ds-warning); font-weight: 600; }
+    .disclaimer-bar b { color: #fbbf24; font-weight: 700; }
     
     .disclaimer-icon {
       flex: 0 0 auto;
-      width: 28px;
-      height: 28px;
-      border-radius: 6px;
-      background: var(--ds-bg-card);
+      width: 32px;
+      height: 32px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #f59e0b, #d97706);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 14px;
-      color: var(--ds-warning);
+      font-size: 16px;
+      color: #fff;
     }
     
     .disclaimer-text { flex: 1; }
     
     .disclaimer-close {
-      background: transparent;
-      border: 1px solid var(--ds-border);
-      color: var(--ds-text-muted);
-      width: 26px;
-      height: 26px;
-      border-radius: 6px;
+      background: rgba(148, 163, 184, 0.15);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      color: #94a3b8;
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      font-size: 12px;
-      transition: all 0.15s;
+      font-size: 14px;
+      transition: all 0.2s;
     }
     
     .disclaimer-close:hover {
-      color: var(--ds-text);
-      border-color: var(--ds-border-light);
-    }
-    
-    .disclaimer-close:active {
-      background: var(--ds-bg-card);
+      background: rgba(251, 191, 36, 0.2);
+      border-color: rgba(251, 191, 36, 0.3);
+      color: #fbbf24;
     }
     
     .disclaimer-actions {
-      margin-top: 0.3rem;
+      margin-top: 0.4rem;
       display: flex;
-      gap: 0.4rem;
+      gap: 0.5rem;
     }
     
     .disclaimer-actions a {
       text-decoration: none;
-      background: var(--ds-bg-card);
-      color: var(--ds-text-muted);
-      font-size: 0.6rem;
-      padding: 0.25rem 0.5rem;
-      border-radius: 4px;
+      background: rgba(148, 163, 184, 0.1);
+      color: #e2e8f0;
+      font-size: 0.65rem;
+      padding: 0.35rem 0.6rem;
+      border-radius: 6px;
       text-transform: uppercase;
-      letter-spacing: 0.3px;
-      font-weight: 500;
+      letter-spacing: 0.5px;
+      font-weight: 600;
       display: flex;
       align-items: center;
-      gap: 0.2rem;
-      transition: all 0.15s;
+      gap: 0.25rem;
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      transition: all 0.2s;
     }
     
     .disclaimer-actions a:hover {
-      color: var(--ds-warning);
-      background: var(--ds-border);
+      background: rgba(251, 191, 36, 0.15);
+      border-color: rgba(251, 191, 36, 0.25);
+      color: #fbbf24;
     }
     
-    /* Telegram Banner - DeepState Motivating */
+    /* Telegram Banner - Premium Design */
     .tg-banner {
       display: flex;
       position: fixed;
-      bottom: 80px;
-      left: 15px;
-      right: auto;
-      max-width: 480px;
-      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-      border: 1px solid #0088cc;
-      border-radius: 14px;
-      padding: 0.8rem 1rem;
+      bottom: 70px;
+      left: 20px;
+      right: 20px;
+      max-width: 420px;
+      background: linear-gradient(135deg, #1a1f2e 0%, #0d1117 100%);
+      border: 1px solid rgba(0, 136, 204, 0.3);
+      border-radius: 20px;
+      padding: 1rem 1.2rem;
       text-decoration: none;
       color: white;
       z-index: 1050;
+      box-shadow: 
+        0 10px 40px rgba(0, 0, 0, 0.4),
+        0 0 30px rgba(0, 136, 204, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
       align-items: center;
-      gap: 0.8rem;
-      transition: all 0.2s ease;
-      box-shadow: 0 4px 20px rgba(0, 136, 204, 0.15);
+      gap: 1rem;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      overflow: hidden;
     }
     
     .tg-banner::before {
       content: '';
       position: absolute;
       top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      border-radius: 14px;
-      background: linear-gradient(135deg, rgba(0, 136, 204, 0.1) 0%, transparent 50%);
-      pointer-events: none;
+      left: -100%;
+      width: 200%;
+      height: 100%;
+      background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(0, 136, 204, 0.1),
+        transparent
+      );
+      animation: shimmer 3s infinite;
+    }
+    
+    @keyframes shimmer {
+      0% { transform: translateX(-50%); }
+      100% { transform: translateX(50%); }
     }
     
     .tg-banner:hover {
-      border-color: #00aaff;
-      transform: translateY(-2px);
-      box-shadow: 0 6px 25px rgba(0, 136, 204, 0.25);
+      transform: translateY(-4px) scale(1.02);
+      box-shadow: 
+        0 15px 50px rgba(0, 0, 0, 0.5),
+        0 0 50px rgba(0, 136, 204, 0.25);
+      border-color: rgba(0, 136, 204, 0.5);
     }
     
     .tg-banner.hidden { display: none !important; }
     
     .tg-banner-icon {
-      width: 36px;
-      height: 36px;
-      background: linear-gradient(135deg, #0088cc 0%, #0066aa 100%);
-      border-radius: 10px;
-      padding: 8px;
+      width: 44px;
+      height: 44px;
       flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      background: linear-gradient(135deg, #0088cc 0%, #00aaff 100%);
+      border-radius: 12px;
+      padding: 10px;
+      box-shadow: 0 4px 15px rgba(0, 136, 204, 0.4);
     }
     
     .tg-banner-icon svg {
@@ -1786,60 +1653,74 @@
     
     .tg-banner-text {
       flex: 1;
-      min-width: 0;
+      position: relative;
+      z-index: 1;
     }
     
     .tg-banner-title {
-      font-weight: 600;
-      font-size: 0.85rem;
-      display: inline;
-      color: #ffffff;
-      line-height: 1.4;
+      font-weight: 800;
+      font-size: 0.95rem;
+      display: block;
+      background: linear-gradient(90deg, #fff 0%, #00d4ff 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      margin-bottom: 4px;
     }
     
     .tg-banner-desc {
-      font-size: 0.8rem;
-      color: #9ca3af;
-      display: inline;
-      margin-left: 6px;
+      font-size: 0.72rem;
+      color: rgba(148, 163, 184, 0.9);
+      display: block;
+      line-height: 1.4;
     }
     
     .tg-banner-btn {
-      background: linear-gradient(135deg, #0088cc 0%, #0077b5 100%);
-      color: white;
-      padding: 0.5rem 0.9rem;
-      border-radius: 8px;
-      font-size: 0.75rem;
-      font-weight: 600;
+      background: linear-gradient(135deg, #0088cc 0%, #00aaff 100%);
+      padding: 0.6rem 1.1rem;
+      border-radius: 12px;
+      font-size: 0.78rem;
+      font-weight: 700;
       display: flex;
       align-items: center;
-      gap: 0.3rem;
+      gap: 0.4rem;
       flex-shrink: 0;
+      box-shadow: 0 4px 15px rgba(0, 136, 204, 0.3);
       transition: all 0.2s;
-      white-space: nowrap;
+      position: relative;
+      z-index: 1;
     }
     
     .tg-banner:hover .tg-banner-btn {
-      background: linear-gradient(135deg, #00aaff 0%, #0088cc 100%);
-      transform: scale(1.02);
+      box-shadow: 0 6px 20px rgba(0, 136, 204, 0.5);
+      transform: scale(1.05);
     }
     
     .tg-banner-close {
-      display: none;
+      position: absolute;
+      top: -10px;
+      right: -10px;
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
+      color: #9ca3af;
+      border: 2px solid rgba(0, 136, 204, 0.3);
+      border-radius: 50%;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      z-index: 2;
     }
     
-    /* Pulse animation for attention */
-    @keyframes tgPulse {
-      0%, 100% { box-shadow: 0 4px 20px rgba(0, 136, 204, 0.15); }
-      50% { box-shadow: 0 4px 25px rgba(0, 136, 204, 0.3); }
-    }
-    
-    .tg-banner {
-      animation: tgPulse 3s ease-in-out infinite;
-    }
-    
-    .tg-banner:hover {
-      animation: none;
+    .tg-banner-close:hover {
+      background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+      color: white;
+      border-color: rgba(239, 68, 68, 0.5);
+      transform: scale(1.1);
     }
     
     /* Mobile adjustments */
@@ -1892,24 +1773,17 @@
       
       .tg-banner {
         position: fixed;
-        top: 46px;
+        top: 50px;
         bottom: auto;
         left: 0;
         right: 0;
         max-width: none;
         padding: 0.5rem 0.8rem;
         border-radius: 0;
-        border: none;
-        border-bottom: 1px solid #0088cc;
+        border-left: none;
+        border-right: none;
+        border-top: none;
         margin: 0;
-        gap: 0.7rem;
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-        animation: none;
-        box-shadow: none;
-      }
-      
-      .tg-banner::before {
-        display: none;
       }
       
       .tg-banner-icon {
@@ -1921,7 +1795,6 @@
       
       .tg-banner-title {
         font-size: 0.75rem;
-        margin-bottom: 2px;
       }
       
       .tg-banner-desc {
@@ -1929,9 +1802,9 @@
       }
       
       .tg-banner-btn {
-        padding: 0.4rem 0.7rem;
+        padding: 0.4rem 0.6rem;
         font-size: 0.65rem;
-        border-radius: 6px;
+        border-radius: 8px;
       }
       
       .tg-banner-close {
@@ -1943,32 +1816,37 @@
       }
       
       .disclaimer-bar {
-        font-size: 0.65rem;
-        padding: 0.5rem 0.7rem;
-        gap: 0.5rem;
+        font-size: 0.7rem;
+        padding: 0.6rem 0.8rem;
       }
       
       .disclaimer-icon {
-        width: 22px;
-        height: 22px;
-        font-size: 11px;
-        border-radius: 4px;
+        width: 28px;
+        height: 28px;
+        font-size: 14px;
       }
     }
     
     /* Adjust map container for navbar */
     #map-container {
-      padding-top: 48px;
+      padding-top: 55px;
     }
     
     /* On mobile, account for navbar + tg-banner */
     @media (max-width: 768px) {
       #map-container {
-        padding-top: 80px;
+        padding-top: 95px;
       }
     }
     
-    /* Maintenance/502 overlay - DeepState */
+    /* Desktop status-panel position (below navbar) */
+    @media screen and (min-width: 769px) {
+      .status-panel {
+        top: 70px;
+      }
+    }
+    
+    /* Maintenance/502 overlay */
     #maintenance-overlay {
       display: none;
       position: fixed;
@@ -1976,13 +1854,13 @@
       left: 0;
       width: 100%;
       height: 100%;
-      background: var(--ds-bg);
+      background: linear-gradient(135deg, rgba(10, 14, 23, 0.98) 0%, rgba(26, 26, 46, 0.98) 50%, rgba(22, 33, 62, 0.98) 100%);
       z-index: 99999;
       align-items: center;
       justify-content: center;
       text-align: center;
-      color: var(--ds-text);
-      font-family: 'Inter', -apple-system, sans-serif;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     }
     
     #maintenance-overlay.show {
@@ -1990,50 +1868,52 @@
     }
     
     .maintenance-content {
-      max-width: 400px;
-      padding: 24px;
+      max-width: 450px;
+      padding: 30px;
     }
     
     .maintenance-logo {
-      font-size: 32px;
-      font-weight: 700;
-      margin-bottom: 6px;
-      color: #f1f5f9;
-      letter-spacing: 2px;
+      font-size: 42px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, #00d4ff, #7c3aed);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: 3px;
     }
     
     .maintenance-subtitle {
-      color: #64748b;
-      font-size: 11px;
-      margin-bottom: 24px;
-      letter-spacing: 1px;
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 12px;
+      margin-bottom: 30px;
+      letter-spacing: 2px;
     }
     
     .maintenance-message {
-      font-size: 18px;
-      margin-bottom: 12px;
+      font-size: 20px;
+      margin-bottom: 15px;
       line-height: 1.4;
-      color: #f1f5f9;
     }
     
     .maintenance-desc {
-      color: #94a3b8;
-      font-size: 13px;
-      margin-bottom: 20px;
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 14px;
+      margin-bottom: 25px;
       line-height: 1.5;
     }
     
     .maintenance-loader {
       display: flex;
       justify-content: center;
-      gap: 6px;
-      margin-bottom: 20px;
+      gap: 8px;
+      margin-bottom: 25px;
     }
     
     .maintenance-loader span {
-      width: 8px;
-      height: 8px;
-      background: #3b82f6;
+      width: 10px;
+      height: 10px;
+      background: #00d4ff;
       border-radius: 50%;
       animation: maintenance-pulse 1.4s ease-in-out infinite;
     }
@@ -2048,50 +1928,50 @@
     }
     
     .maintenance-timer {
-      font-size: 11px;
-      color: #64748b;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.4);
     }
     
     .maintenance-timer span {
-      color: #3b82f6;
-      font-weight: 600;
+      color: #00d4ff;
+      font-weight: bold;
     }
   </style>
 </head>
 <body>
-  <!-- NICKNAME MODAL - DeepState style -->
-  <div id="nicknameModal" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:999999;display:flex;align-items:center;justify-content:center;">
-    <div style="background:#1e1e1e;padding:28px;border-radius:16px;max-width:360px;width:90%;border:1px solid #333;">
-      <div style="text-align:center;margin-bottom:24px;">
-        <div style="color:#fff;font-size:24px;font-weight:600;letter-spacing:1px;">NEPTUN</div>
-        <div style="color:#808080;font-size:11px;margin-top:4px;">КАРТА ТРИВОГ УКРАЇНИ</div>
+  <!-- NICKNAME MODAL - Required on first visit -->
+  <div id="nicknameModal" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.95);z-index:999999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(10px);">
+    <div style="background:linear-gradient(135deg, #0a0e17 0%, #0d1929 100%);padding:40px;border-radius:20px;border:2px solid rgba(0,212,255,0.3);box-shadow:0 20px 60px rgba(0,212,255,0.2);max-width:450px;width:90%;animation:slideIn 0.3s ease;">
+      <div style="text-align:center;margin-bottom:30px;">
+        <div style="color:#00d4ff;font-size:48px;font-weight:900;letter-spacing:2px;text-shadow:0 0 20px rgba(0,212,255,0.5);">NEPTUN</div>
+        <div style="color:#64748b;font-size:14px;margin-top:8px;">КАРТА ТРИВОГ УКРАЇНИ</div>
       </div>
       
-      <div style="margin-bottom:20px;">
-        <label style="display:block;color:#b3b3b3;font-size:12px;margin-bottom:8px;font-weight:500;">👤 Введіть ваш нік:</label>
+      <div style="margin-bottom:25px;">
+        <label style="display:block;color:#94a3b8;font-size:14px;margin-bottom:10px;font-weight:600;">👤 Введіть ваш нік:</label>
         <input 
           id="nicknameInput" 
           type="text" 
           placeholder="Наприклад: Захисник_UA" 
           maxlength="20"
-          style="width:100%;padding:12px 14px;background:#252525;border:1px solid #333;border-radius:8px;color:#fff;font-size:14px;outline:none;transition:border-color 0.15s;box-sizing:border-box;"
+          style="width:100%;padding:15px 20px;background:rgba(15,23,42,0.8);border:2px solid rgba(0,212,255,0.2);border-radius:12px;color:#e2e8f0;font-size:16px;font-weight:500;outline:none;transition:all 0.3s;box-sizing:border-box;"
           onkeypress="if(event.key==='Enter') saveNickname()"
-          onfocus="this.style.borderColor='#4caf50'"
-          onblur="this.style.borderColor='#333'"
+          onfocus="this.style.borderColor='rgba(0,212,255,0.6)'; this.style.boxShadow='0 0 0 3px rgba(0,212,255,0.1)'"
+          onblur="this.style.borderColor='rgba(0,212,255,0.2)'; this.style.boxShadow='none'"
         >
-        <div id="nicknameError" style="color:#f44336;font-size:11px;margin-top:6px;display:none;">⚠️ Нік повинен містити 3-20 символів</div>
+        <div id="nicknameError" style="color:#ef4444;font-size:12px;margin-top:8px;display:none;font-weight:500;">⚠️ Нік повинен містити 3-20 символів</div>
       </div>
       
       <button 
         onclick="saveNickname()" 
-        style="width:100%;padding:12px;background:#4caf50;border:none;border-radius:8px;color:#fff;font-size:14px;font-weight:500;cursor:pointer;transition:background 0.15s;"
-        onmouseover="this.style.background='#66bb6a'"
-        onmouseout="this.style.background='#4caf50'"
+        style="width:100%;padding:16px;background:linear-gradient(135deg, #00d4ff 0%, #0891b2 100%);border:none;border-radius:12px;color:#0a0e17;font-size:16px;font-weight:700;cursor:pointer;transition:all 0.3s;text-transform:uppercase;letter-spacing:1px;box-shadow:0 4px 15px rgba(0,212,255,0.4);"
+        onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(0,212,255,0.6)'"
+        onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(0,212,255,0.4)'"
       >
-        🚀 Почати
+        🚀 Почати користуватися
       </button>
       
-      <div style="text-align:center;margin-top:16px;color:#666;font-size:11px;">
+      <div style="text-align:center;margin-top:20px;color:#64748b;font-size:12px;">
         🛡️ Ваш нік буде відображатися в списку активних користувачів
       </div>
     </div>
@@ -2248,107 +2128,37 @@
     <p>Карта шахедів NEPTUN - ваш надійний помічник для безпеки в умовах війни. Слідкуйте за ситуацією в повітряному просторі України онлайн 24/7.</p>
   </article>
   
-  <!-- NAVBAR - DeepState Style -->
-  <nav class="navbar">
-    <!-- Left: Burger + Logo + Nickname -->
-    <div class="navbar-left">
-      <button class="menu-burger" onclick="toggleDrawer()" aria-label="Меню">
-        <span></span>
-        <span></span>
-        <span></span>
-      </button>
+  <!-- NAVBAR -->
+  <div class="navbar">
+    <div class="logo">
       <span class="logo-text">NEPTUN</span>
+      <div class="live-users" id="liveUsers" title="Активні користувачі онлайн">
+        <div class="live-header">
+          <span class="live-label">онлайн</span>
+          <span class="live-count" data-role="live-total">0</span>
+        </div>
+        <div class="live-breakdown">
+          <span class="live-chip">🌐 <strong data-role="live-web">0</strong></span>
+          <span class="live-chip">📱 <strong data-role="live-apps">0</strong></span>
+        </div>
+      </div>
       <!-- User Nickname Display -->
-      <div id="userNicknameDisplay" class="user-nickname">
-        <span class="nickname-icon">👤</span>
+      <div id="userNicknameDisplay" style="display:none;margin-left:15px;padding:6px 14px;background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.3);border-radius:10px;color:#00d4ff;font-size:13px;font-weight:600;">
+        <i class="material-icons" style="font-size:14px;vertical-align:middle;margin-right:4px;">👤</i>
         <span id="navbarNickname"></span>
       </div>
     </div>
-    
-    <!-- Center: Online counter -->
-    <div class="navbar-center">
-      <div class="online-badge">
-        <span class="online-dot"></span>
-        <span class="online-count" data-role="live-total">0</span>
-        <span class="online-label">онлайн</span>
-      </div>
+    <div class="nav-links">
+      <a href="#" class="active"><i class="material-icons">map</i> Карта</a>
+      <a href="/analytics" target="_blank"><i class="material-icons">analytics</i> Аналітика</a>
+      <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" target="_blank" class="app-link"><i class="material-icons">android</i> Додаток</a>
+      <a href="#about"><i class="material-icons">info</i> Інфо</a>
     </div>
-    
-    <!-- Right: Action buttons -->
-    <div class="navbar-right">
-      <a href="/analytics" target="_blank" class="nav-btn" title="Аналітика">
-        <i class="material-icons">analytics</i>
-        <span class="btn-text">Аналітика</span>
-      </a>
-      <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" target="_blank" class="nav-btn primary" title="Завантажити додаток">
-        <i class="material-icons">download</i>
-        <span class="btn-text">Додаток</span>
-      </a>
-      <button class="nav-btn donate" onclick="toggleDonate()" title="Підтримати розробку">
-        <i class="material-icons">favorite</i>
-        <span class="btn-text">Підтримати</span>
-      </button>
-    </div>
-  </nav>
-
-  <!-- SIDE DRAWER - DeepState style -->
-  <div class="drawer-overlay" id="drawerOverlay" onclick="toggleDrawer(false)"></div>
-  <aside class="side-drawer" id="sideDrawer">
-    <div class="drawer-header">
-      <div class="drawer-logo">NEPTUN</div>
-      <div class="drawer-subtitle">Карта тривог України</div>
-      <button class="drawer-close" onclick="toggleDrawer(false)">
-        <i class="material-icons">close</i>
-      </button>
-    </div>
-    
-    <nav class="drawer-nav">
-      <a href="#" class="drawer-link active" onclick="toggleDrawer(false)">
-        <i class="material-icons">map</i>
-        <span>Карта тривог</span>
-      </a>
-      <a href="/analytics" target="_blank" class="drawer-link">
-        <i class="material-icons">analytics</i>
-        <span>Аналітика</span>
-      </a>
-      <a href="#about" class="drawer-link" onclick="toggleDrawer(false)">
-        <i class="material-icons">info</i>
-        <span>Про проєкт</span>
-      </a>
-      <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" target="_blank" class="drawer-link highlight">
-        <i class="material-icons">android</i>
-        <span>Завантажити додаток</span>
-      </a>
-    </nav>
-    
-    <div class="drawer-section">
-      <div class="drawer-section-title">Соціальні мережі</div>
-      <a href="https://t.me/+aBR79kExNQM1ZjZi" target="_blank" class="drawer-link">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .37z"/>
-        </svg>
-        <span>Telegram канал</span>
-      </a>
-    </div>
-    
-    <div class="drawer-section">
-      <div class="drawer-section-title">Підтримка</div>
-      <a href="#" onclick="toggleDrawer(false);toggleDonate()" class="drawer-link">
-        <i class="material-icons">favorite</i>
-        <span>Підтримати проєкт</span>
-      </a>
-      <a href="#" onclick="toggleDrawer(false);document.getElementById('commercialModal').style.display='flex'" class="drawer-link">
-        <i class="material-icons">business</i>
-        <span>Комерційне використання</span>
-      </a>
-    </div>
-    
-    <div class="drawer-footer">
-      <div class="drawer-version">NEPTUN v2.0</div>
-      <div class="drawer-copyright">© 2024-2026 NEPTUN</div>
-      <div class="drawer-disclaimer">Неофіційне джерело</div>
-    </div>
-  </aside>
+    <button class="support-btn" onclick="toggleDonate()" title="Підтримати проєкт">
+      <i class="material-icons">favorite</i>
+      <span>Підтримати</span>
+    </button>
+  </div>
   
   <!-- Donate Modal -->
   <div class="donate-modal-overlay" id="donateModal">
@@ -2388,17 +2198,18 @@
   
   <!-- Telegram Banner -->
   <a href="https://t.me/+aBR79kExNQM1ZjZi" target="_blank" class="tg-banner" id="tgBanner">
-    <div class="tg-banner-icon">
-      <svg viewBox="0 0 48 48" fill="white">
-        <path d="M41.42 7.31L3.92 22.27c-2.56 1.03-2.55 2.46-.47 3.1l9.62 3 3.72 11.42c.45 1.25.23 1.75 1.52 1.75.99 0 1.43-.45 1.98-1l3.94-3.83 8.2 6.05c1.51.83 2.6.4 2.98-1.4l5.4-25.44c.55-2.2-.84-3.2-2.39-2.61z"/>
-      </svg>
-    </div>
+    <svg class="tg-banner-icon" viewBox="0 0 48 48" fill="white">
+      <path d="M41.42 7.31L3.92 22.27c-2.56 1.03-2.55 2.46-.47 3.1l9.62 3 3.72 11.42c.45 1.25.23 1.75 1.52 1.75.99 0 1.43-.45 1.98-1l3.94-3.83 8.2 6.05c1.51.83 2.6.4 2.98-1.4l5.4-25.44c.55-2.2-.84-3.2-2.39-2.61z"/>
+    </svg>
     <div class="tg-banner-text">
       <span class="tg-banner-title">📢 Пряме інформування від хлопців в телеграм</span>
-      <span class="tg-banner-desc">• ⚡ Більше інформації • 💬 Пряме спілкування</span>
+      <span class="tg-banner-desc">⚡ Більше інформації • 💬 Пряме спілкування з адміном</span>
     </div>
     <div class="tg-banner-btn">
       <span>Підписатися</span>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/>
+      </svg>
     </div>
   </a>
   
@@ -2432,19 +2243,32 @@
     </div>
   </div>
   
-  <!-- Right side floating buttons -->
+  <div class="status-panel">
+    <h3>Активні тривоги</h3>
+    <div class="alarm-count" id="alarm-count">0</div>
+    <div class="last-update" id="last-update">Завантаження...</div>
+    <div class="api-status" id="api-status"></div>
+    
+    <!-- Threat markers info -->
+    <div class="markers-info" id="markers-info" style="display: none;">
+      <h4>Загрози на карті</h4>
+      <div id="markers-summary"></div>
+    </div>
+  </div>
+  
+  <!-- Map Style Switcher -->
   <div class="map-switcher">
-    <button class="map-switcher-btn" onclick="document.getElementById('commercialModal').style.display='flex'" title="Для стрімерів">
-      <span class="map-switcher-icon">📺</span>
-      <span class="map-switcher-text">Для стрімерів</span>
-    </button>
     <button class="map-switcher-btn" onclick="window.location.href='/map-old?from=index'" title="Перемкнути на стару карту">
       <span class="map-switcher-icon">🗺️</span>
-      <span class="map-switcher-text">Стара карта</span>
+      <span class="map-switcher-text">Старий вид карти</span>
     </button>
   </div>
   
-
+  <div class="zoom-controls">
+    <button class="zoom-btn" onclick="zoomIn()">+</button>
+    <button class="zoom-btn" onclick="zoomOut()">−</button>
+    <button class="zoom-btn" onclick="resetZoom()">⟲</button>
+  </div>
 
   <script>
     // ===== CONFIG =====
@@ -2759,20 +2583,15 @@
         // Update status panel - show unique STATES count (oblasts with any alarm)
         const stateAlarmCount = statesWithAlarm.size;
         const countEl = document.getElementById('alarm-count');
-        if (countEl) {
-          countEl.textContent = stateAlarmCount;
-          countEl.className = stateAlarmCount > 0 ? 'alarm-count' : 'alarm-count safe';
-        }
+        countEl.textContent = stateAlarmCount;
+        countEl.className = stateAlarmCount > 0 ? 'alarm-count' : 'alarm-count safe';
         
         const now = new Date();
         const updateEl = document.getElementById('last-update');
-        if (updateEl) {
-          updateEl.textContent = `Оновлено: ${now.toLocaleTimeString('uk-UA')}`;
-          updateEl.className = 'last-update';
-        }
+        updateEl.textContent = `Оновлено: ${now.toLocaleTimeString('uk-UA')}`;
+        updateEl.className = 'last-update';
         
-        const apiStatusEl = document.getElementById('api-status');
-        if (apiStatusEl) apiStatusEl.textContent = '';
+        document.getElementById('api-status').textContent = '';
         
         console.log(`Alarms: ${stateAlarmCount} oblasts (${Array.from(statesWithAlarm).join(',')}), ${districtAlarmCount} districts`);
         
@@ -2800,16 +2619,12 @@
         
         if (lastSuccessfulFetch) {
           const secondsAgo = Math.round((new Date() - lastSuccessfulFetch) / 1000);
-          if (updateEl) {
-            updateEl.textContent = `Дані: ${secondsAgo}с тому`;
-            updateEl.className = 'last-update stale';
-          }
+          updateEl.textContent = `Дані: ${secondsAgo}с тому`;
+          updateEl.className = 'last-update stale';
         } else {
-          if (updateEl) {
-            updateEl.textContent = 'Не вдалося завантажити';
-            updateEl.className = 'last-update error';
-          }
-          if (statusEl) statusEl.textContent = '❌ API недоступний';
+          updateEl.textContent = 'Не вдалося завантажити';
+          updateEl.className = 'last-update error';
+          statusEl.textContent = '❌ API недоступний';
           
           // Show maintenance overlay if no data at all
           showMaintenanceOverlay();
@@ -3382,35 +3197,6 @@
       if (appsEl) appsEl.textContent = apps;
     }
     
-    // ========== DRAWER FUNCTIONS ==========
-    function toggleDrawer(show = null) {
-      const drawer = document.getElementById('sideDrawer');
-      const overlay = document.getElementById('drawerOverlay');
-      
-      if (!drawer || !overlay) return;
-      
-      if (show === false) {
-        drawer.classList.remove('active');
-        overlay.classList.remove('active');
-        document.body.style.overflow = '';
-      } else if (show === true) {
-        drawer.classList.add('active');
-        overlay.classList.add('active');
-        document.body.style.overflow = 'hidden';
-      } else {
-        drawer.classList.toggle('active');
-        overlay.classList.toggle('active');
-        document.body.style.overflow = drawer.classList.contains('active') ? 'hidden' : '';
-      }
-    }
-    
-    // Close drawer on escape key
-    document.addEventListener('keydown', function(e) {
-      if (e.key === 'Escape') {
-        toggleDrawer(false);
-      }
-    });
-    
     // ========== DONATE FUNCTIONS ==========
     function toggleDonate(show = null) {
       const modal = document.getElementById('donateModal');
@@ -3562,63 +3348,127 @@
   </script>
   </section>
 
-  <!-- COMMERCIAL MODAL - DeepState style -->
-  <div id="commercialModal" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px;overflow-y:auto;">
-    <div style="background:#1e1e1e;border:1px solid #333;border-radius:16px;padding:28px;max-width:420px;width:100%;max-height:90vh;overflow-y:auto;position:relative;">
+  <!-- FLOATING COMMERCIAL BUTTON -->
+  <div id="commercialFloatingBtn">
+    <button onclick="document.getElementById('commercialModal').style.display='flex'" class="commercial-btn">
+      <span class="commercial-btn-icon">📺</span>
+      <span class="commercial-btn-text">Для стрімерів</span>
+    </button>
+  </div>
+
+  <!-- COMMERCIAL MODAL -->
+  <div id="commercialModal" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.95);z-index:9999;display:none;align-items:center;justify-content:center;backdrop-filter:blur(10px);padding:20px;overflow-y:auto;">
+    <div style="background:linear-gradient(135deg, #0a0e17 0%, #0d1929 100%);border:2px solid rgba(0,212,255,0.3);border-radius:24px;padding:50px;max-width:900px;width:100%;max-height:90vh;overflow-y:auto;position:relative;box-shadow:0 20px 60px rgba(0,212,255,0.3);">
       
       <!-- Close button -->
-      <button onclick="document.getElementById('commercialModal').style.display='none'" style="position:absolute;top:14px;right:14px;width:32px;height:32px;background:#252525;border:1px solid #333;border-radius:8px;color:#808080;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.15s;" onmouseover="this.style.color='#f44336';this.style.borderColor='#f44336'" onmouseout="this.style.color='#808080';this.style.borderColor='#333'">×</button>
+      <button onclick="document.getElementById('commercialModal').style.display='none'" style="position:absolute;top:20px;right:20px;background:none;border:none;color:#9ca3af;font-size:32px;cursor:pointer;line-height:1;padding:0;transition:color 0.3s;" onmouseover="this.style.color='#00d4ff'" onmouseout="this.style.color='#9ca3af'">×</button>
 
-      <div style="text-align:center;margin-bottom:20px;">
-        <div style="color:#fff;font-size:20px;font-weight:600;margin-bottom:6px;">💼 Комерційне використання</div>
-        <p style="color:#808080;font-size:12px;line-height:1.4;margin:0;">
-          Для TikTok ефірів, YouTube стрімів та Telegram каналів
+      <div style="text-align:center;margin-bottom:40px;">
+        <div style="color:#00d4ff;font-size:42px;font-weight:900;margin-bottom:15px;">💼 Комерційне використання</div>
+        <p style="color:#94a3b8;font-size:18px;line-height:1.7;">
+          Використовуйте карту NEPTUN для своїх <strong style="color:#e2e8f0;">TikTok ефірів</strong>, <strong style="color:#e2e8f0;">YouTube стрімів</strong> та <strong style="color:#e2e8f0;">Telegram каналів</strong>
         </p>
       </div>
 
-      <div style="background:#252525;border:1px solid #333;border-radius:10px;padding:16px;text-align:center;margin-bottom:20px;">
-        <div style="color:#4caf50;font-size:28px;font-weight:600;margin-bottom:4px;">1500₴<span style="font-size:12px;color:#808080;">/місяць</span></div>
-        <p style="color:#666;font-size:11px;margin:0;">Monobank Acquiring • Комісія 1.4%</p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:25px;margin-bottom:40px;">
+        <div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.2);border-radius:16px;padding:25px;text-align:center;">
+          <div style="font-size:40px;margin-bottom:10px;">📺</div>
+          <div style="color:#e2e8f0;font-size:16px;font-weight:700;">TikTok & YouTube</div>
+        </div>
+        <div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.2);border-radius:16px;padding:25px;text-align:center;">
+          <div style="font-size:40px;margin-bottom:10px;">💬</div>
+          <div style="color:#e2e8f0;font-size:16px;font-weight:700;">Telegram канали</div>
+        </div>
+        <div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.2);border-radius:16px;padding:25px;text-align:center;">
+          <div style="font-size:40px;margin-bottom:10px;">⚡</div>
+          <div style="color:#e2e8f0;font-size:16px;font-weight:700;">Реальний час</div>
+        </div>
       </div>
 
-      <form id="commercialSubscriptionForm" onsubmit="handleCommercialSubscription(event)">
+      <div style="background:rgba(0,212,255,0.08);border:2px solid rgba(0,212,255,0.3);border-radius:20px;padding:40px;text-align:center;margin-bottom:40px;">
+        <div style="color:#00d4ff;font-size:64px;font-weight:900;margin-bottom:15px;">1500₴<span style="font-size:18px;color:#64748b;">/місяць</span></div>
+        <p style="color:#94a3b8;font-size:14px;margin-bottom:0;">Безпечна оплата через Monobank Acquiring • Комісія 1.4%</p>
+      </div>
+
+      <form id="commercialSubscriptionForm" onsubmit="handleCommercialSubscription(event)" style="background:rgba(15,23,42,0.5);border:1px solid rgba(0,212,255,0.2);border-radius:20px;padding:40px;">
+        <div style="color:#e2e8f0;font-size:24px;font-weight:800;margin-bottom:30px;text-align:center;">📝 Оформлення підписки</div>
         
-        <div style="margin-bottom:14px;">
-          <label style="display:block;color:#b3b3b3;font-size:12px;font-weight:500;margin-bottom:6px;">Ваш нік *</label>
-          <input type="text" id="commercialName" required style="width:100%;padding:12px;background:#252525;border:1px solid #333;border-radius:8px;color:#fff;font-size:14px;outline:none;box-sizing:border-box;transition:border-color 0.15s;" onfocus="this.style.borderColor='#4caf50'" onblur="this.style.borderColor='#333'">
+        <div style="margin-bottom:20px;">
+          <label style="display:block;color:#94a3b8;font-size:14px;font-weight:600;margin-bottom:8px;">Ваш нік в тік тоці або іншій платформі *</label>
+          <input type="text" id="commercialName" required style="width:100%;padding:14px;background:rgba(10,14,23,0.8);border:1px solid rgba(0,212,255,0.3);border-radius:10px;color:#fff;font-size:15px;outline:none;">
         </div>
 
-        <div style="margin-bottom:14px;">
-          <label style="display:block;color:#b3b3b3;font-size:12px;font-weight:500;margin-bottom:6px;">Telegram *</label>
-          <input type="text" id="commercialTelegram" required style="width:100%;padding:12px;background:#252525;border:1px solid #333;border-radius:8px;color:#fff;font-size:14px;outline:none;box-sizing:border-box;transition:border-color 0.15s;" placeholder="@username" onfocus="this.style.borderColor='#4caf50'" onblur="this.style.borderColor='#333'">
+        <div style="margin-bottom:20px;">
+          <label style="display:block;color:#94a3b8;font-size:14px;font-weight:600;margin-bottom:8px;">Telegram для зв'язку *</label>
+          <input type="text" id="commercialTelegram" required style="width:100%;padding:14px;background:rgba(10,14,23,0.8);border:1px solid rgba(0,212,255,0.3);border-radius:10px;color:#fff;font-size:15px;outline:none;" placeholder="@username або https://t.me/username">
         </div>
 
-        <div style="margin-bottom:14px;">
-          <label style="display:block;color:#b3b3b3;font-size:12px;font-weight:500;margin-bottom:6px;">Тип використання *</label>
-          <select id="commercialType" required style="width:100%;padding:12px;background:#252525;border:1px solid #333;border-radius:8px;color:#fff;font-size:14px;outline:none;box-sizing:border-box;">
+        <div style="margin-bottom:20px;">
+          <label style="display:block;color:#94a3b8;font-size:14px;font-weight:600;margin-bottom:8px;">Тип використання *</label>
+          <select id="commercialType" required style="width:100%;padding:14px;background:rgba(10,14,23,0.8);border:1px solid rgba(0,212,255,0.3);border-radius:10px;color:#fff;font-size:15px;outline:none;">
             <option value="">Оберіть тип</option>
-            <option value="streaming">📺 Стрімінг</option>
-            <option value="media">📰 ЗМІ</option>
-            <option value="business">🏢 Бізнес</option>
+            <option value="streaming">📺 Стрімінг (TikTok/YouTube/Twitch)</option>
+            <option value="media">📰 ЗМІ / Новинний портал</option>
+            <option value="business">🏢 Корпоративне використання</option>
             <option value="other">📌 Інше</option>
           </select>
         </div>
 
-        <div style="margin-bottom:18px;">
-          <label style="display:block;color:#b3b3b3;font-size:12px;font-weight:500;margin-bottom:6px;">Коментар</label>
-          <textarea id="commercialComment" rows="2" style="width:100%;padding:12px;background:#252525;border:1px solid #333;border-radius:8px;color:#fff;font-size:14px;outline:none;resize:vertical;box-sizing:border-box;"></textarea>
+        <div style="margin-bottom:25px;">
+          <label style="display:block;color:#94a3b8;font-size:14px;font-weight:600;margin-bottom:8px;">Коментар (опціонально)</label>
+          <textarea id="commercialComment" rows="3" style="width:100%;padding:14px;background:rgba(10,14,23,0.8);border:1px solid rgba(0,212,255,0.3);border-radius:10px;color:#fff;font-size:15px;outline:none;resize:vertical;" placeholder="Додаткова інформація..."></textarea>
         </div>
 
-        <button type="submit" style="width:100%;padding:12px;background:#4caf50;border:none;border-radius:8px;color:#fff;font-size:14px;font-weight:500;cursor:pointer;transition:background 0.15s;" onmouseover="this.style.background='#66bb6a'" onmouseout="this.style.background='#4caf50'">
+        <button type="submit" style="width:100%;padding:18px;background:linear-gradient(135deg, #00d4ff 0%, #0891b2 100%);border:none;border-radius:12px;color:#0a0e17;font-size:18px;font-weight:800;cursor:pointer;box-shadow:0 8px 20px rgba(0,212,255,0.4);transition:all 0.3s;">
           💳 Перейти до оплати
         </button>
 
-        <div id="commercialFormMessage" style="margin-top:14px;padding:10px;border-radius:8px;display:none;text-align:center;font-size:12px;"></div>
+        <div id="commercialFormMessage" style="margin-top:20px;padding:15px;border-radius:10px;display:none;text-align:center;font-size:14px;"></div>
       </form>
     </div>
   </div>
 
   <style>
+    /* Commercial floating button */
+    #commercialFloatingBtn {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 1100;
+    }
+    
+    .commercial-btn {
+      background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+      color: white;
+      padding: 12px 20px;
+      border: none;
+      border-radius: 16px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 4px 20px rgba(139, 92, 246, 0.4);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .commercial-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(139, 92, 246, 0.6);
+    }
+    
+    .commercial-btn-icon {
+      font-size: 18px;
+      animation: tvPulse 2s ease-in-out infinite;
+    }
+    
+    @keyframes tvPulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+    }
+    
     /* Mobile navbar optimizations */
     @media (max-width: 768px) {
       .navbar {
@@ -3687,11 +3537,29 @@
       
       /* Commercial button mobile */
       #commercialFloatingBtn {
-        width: 40px;
-        height: 40px;
-        font-size: 16px;
-        bottom: 120px;
-        right: 10px;
+        bottom: 15px;
+        right: 12px;
+        left: auto;
+      }
+      
+      .commercial-btn {
+        padding: 10px 14px;
+        font-size: 12px;
+        border-radius: 12px;
+        gap: 6px;
+      }
+      
+      .commercial-btn-icon {
+        font-size: 14px;
+      }
+      
+      .commercial-btn-text {
+        font-size: 11px;
+      }
+      
+      #commercialModal > div {
+        padding: 25px 20px;
+        border-radius: 16px;
       }
     }
     
@@ -3708,88 +3576,33 @@
       .nav-links a.app-link span {
         display: none;
       }
+      
+      .commercial-btn-text {
+        display: none;
+      }
+      
+      .commercial-btn {
+        padding: 10px 12px;
+        border-radius: 50%;
+      }
     }
   </style>
 
-  <!-- SEO FOOTER - DeepState Style -->
-  <footer id="seo-footer">
-    <nav class="seo-footer-nav">
-      <span class="seo-footer-copy">© 2026 NEPTUN</span>
-      <span class="seo-footer-dot">•</span>
-      <a href="/" class="seo-footer-link" title="Карта шахедів онлайн">Карта шахедів</a>
-      <span class="seo-footer-dot">•</span>
-      <a href="/" class="seo-footer-link" title="Карта тривог України">Карта тривог</a>
-      <span class="seo-footer-dot mobile-hidden">•</span>
-      <a href="/" class="seo-footer-link mobile-hidden" title="Радар шахедів">Радар шахедів</a>
-      <span class="seo-footer-dot mobile-hidden">•</span>
-      <a href="/" class="seo-footer-link mobile-hidden" title="Мапа тривог">Мапа тривог</a>
-      <span class="seo-footer-dot">•</span>
-      <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" target="_blank" rel="noopener" class="seo-footer-app" title="Завантажити додаток">📱 Android</a>
+  <!-- SEO FOOTER - Important for search rankings -->
+  <footer id="seo-footer" style="position:fixed;bottom:0;left:0;right:0;background:linear-gradient(180deg, transparent 0%, rgba(10,14,23,0.98) 50%, rgba(10,14,23,1) 100%);padding:12px 20px;z-index:100;pointer-events:none;border-top:1px solid rgba(0,212,255,0.08);">
+    <nav style="display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:12px;font-size:11px;opacity:0.5;pointer-events:auto;font-weight:500;">
+      <span style="color:#00d4ff;font-weight:700;letter-spacing:1px;">© 2026 NEPTUN</span>
+      <span style="color:#334155;">•</span>
+      <a href="/" style="color:#64748b;text-decoration:none;transition:color 0.2s;" onmouseover="this.style.color='#00d4ff'" onmouseout="this.style.color='#64748b'" title="Карта шахедів онлайн">Карта шахедів</a>
+      <span style="color:#334155;">•</span>
+      <a href="/" style="color:#64748b;text-decoration:none;transition:color 0.2s;" onmouseover="this.style.color='#00d4ff'" onmouseout="this.style.color='#64748b'" title="Карта тривог України">Карта тривог</a>
+      <span style="color:#334155;">•</span>
+      <a href="/" style="color:#64748b;text-decoration:none;transition:color 0.2s;" onmouseover="this.style.color='#00d4ff'" onmouseout="this.style.color='#64748b'" title="Радар шахедів">Радар шахедів</a>
+      <span style="color:#334155;">•</span>
+      <a href="/" style="color:#64748b;text-decoration:none;transition:color 0.2s;" onmouseover="this.style.color='#00d4ff'" onmouseout="this.style.color='#64748b'" title="Мапа тривог">Мапа тривог</a>
+      <span style="color:#334155;">•</span>
+      <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" target="_blank" rel="noopener" style="color:#3ddc84;text-decoration:none;transition:color 0.2s;font-weight:600;" onmouseover="this.style.color='#45e591'" onmouseout="this.style.color='#3ddc84'" title="Завантажити додаток">📱 Android</a>
     </nav>
   </footer>
-  
-  <style>
-    #seo-footer {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      background: linear-gradient(180deg, transparent 0%, rgba(18,18,18,0.95) 40%, rgba(18,18,18,0.98) 100%);
-      padding: 12px 20px;
-      z-index: 100;
-      pointer-events: none;
-    }
-    .seo-footer-nav {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      align-items: center;
-      gap: 12px;
-      font-size: 11px;
-      opacity: 0.7;
-      pointer-events: auto;
-      font-weight: 500;
-    }
-    .seo-footer-copy {
-      color: #4caf50;
-      font-weight: 600;
-      letter-spacing: 1px;
-    }
-    .seo-footer-dot {
-      color: #333;
-    }
-    .seo-footer-link {
-      color: #808080;
-      text-decoration: none;
-      transition: color 0.15s;
-    }
-    .seo-footer-link:hover {
-      color: #fff;
-    }
-    .seo-footer-app {
-      color: #4caf50;
-      text-decoration: none;
-      transition: color 0.15s;
-      font-weight: 600;
-    }
-    .seo-footer-app:hover {
-      color: #66bb6a;
-    }
-    @media (max-width: 768px) {
-      #seo-footer {
-        padding: 8px 12px;
-      }
-      .seo-footer-nav {
-        font-size: 9px;
-        gap: 8px;
-      }
-      .seo-footer-copy {
-        letter-spacing: 0.5px;
-      }
-      .mobile-hidden {
-        display: none;
-      }
-    }
-  </style>
 </body>
 </html>
