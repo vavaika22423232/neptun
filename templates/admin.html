@@ -369,8 +369,10 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 <table class="table">
 <thead>
 <tr>
-<th>Nickname</th>
-<th>Email</th>
+<th>Name</th>
+<th>Telegram</th>
+<th>Type</th>
+<th>Comment</th>
 <th>Amount</th>
 <th>Status</th>
 <th>Date</th>
@@ -380,8 +382,16 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 <tbody>
 {% for sub in subscriptions %}
 <tr>
-<td><strong>{{ sub.nickname }}</strong></td>
-<td class="truncate" style="max-width:200px">{{ sub.email }}</td>
+<td><strong>{{ sub.name }}</strong></td>
+<td>
+{% if sub.telegram %}
+<a href="https://t.me/{{ sub.telegram|replace('@', '')|replace('https://t.me/', '') }}" target="_blank" style="color:#00d4ff">{{ sub.telegram }}</a>
+{% else %}
+<span style="color:var(--muted)">-</span>
+{% endif %}
+</td>
+<td style="font-size:0.8rem">{{ sub.type }}</td>
+<td class="truncate" style="max-width:200px;font-size:0.8rem;color:var(--muted)">{{ sub.comment or '-' }}</td>
 <td><strong>{{ sub.amount }} {{ sub.currency }}</strong></td>
 <td>
 {% if sub.status == 'paid' %}

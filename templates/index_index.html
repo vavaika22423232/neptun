@@ -3142,12 +3142,14 @@
     
     async function pingPresence() {
       try {
+        const nickname = localStorage.getItem('user_nickname') || '';
         const response = await fetch('/presence', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             id: uid,
-            platform: 'web'
+            platform: 'web',
+            nickname: nickname
           })
         });
         
@@ -3362,10 +3364,10 @@
   </section>
 
   <!-- FLOATING COMMERCIAL BUTTON -->
-  <div id="commercialFloatingBtn" style="position:fixed;bottom:80px;right:20px;z-index:200;animation:pulse 2s infinite;">
-    <button onclick="document.getElementById('commercialModal').style.display='flex'" style="background:linear-gradient(135deg, #00d4ff 0%, #0891b2 100%);color:#0a0e17;padding:16px 24px;border:none;border-radius:50px;font-size:16px;font-weight:800;cursor:pointer;box-shadow:0 8px 30px rgba(0,212,255,0.5);display:flex;align-items:center;gap:10px;transition:all 0.3s;" onmouseover="this.style.transform='translateY(-3px) scale(1.05)';this.style.boxShadow='0 12px 40px rgba(0,212,255,0.7)'" onmouseout="this.style.transform='translateY(0) scale(1)';this.style.boxShadow='0 8px 30px rgba(0,212,255,0.5)'">
-      <span style="font-size:20px;">💼</span>
-      <span>Дозвіл на стрімінг карти</span>
+  <div id="commercialFloatingBtn">
+    <button onclick="document.getElementById('commercialModal').style.display='flex'" class="commercial-btn">
+      <span class="commercial-btn-icon">📺</span>
+      <span class="commercial-btn-text">Для стрімерів</span>
     </button>
   </div>
 
@@ -3442,14 +3444,161 @@
   </div>
 
   <style>
-    @keyframes pulse {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.05); }
+    /* Commercial floating button */
+    #commercialFloatingBtn {
+      position: fixed;
+      bottom: 90px;
+      left: 20px;
+      z-index: 200;
     }
+    
+    .commercial-btn {
+      background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+      color: white;
+      padding: 12px 20px;
+      border: none;
+      border-radius: 16px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 4px 20px rgba(139, 92, 246, 0.4);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .commercial-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(139, 92, 246, 0.6);
+    }
+    
+    .commercial-btn-icon {
+      font-size: 18px;
+      animation: tvPulse 2s ease-in-out infinite;
+    }
+    
+    @keyframes tvPulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+    }
+    
+    /* Mobile navbar optimizations */
     @media (max-width: 768px) {
-      #commercialFloatingBtn { bottom: 70px; right: 15px; }
-      #commercialFloatingBtn button { padding: 12px 20px; font-size: 14px; }
-      #commercialModal > div { padding: 30px; }
+      .navbar {
+        padding: 8px 12px !important;
+        gap: 8px;
+      }
+      
+      .logo {
+        flex-shrink: 0;
+      }
+      
+      .logo-text {
+        font-size: 0.95rem !important;
+        letter-spacing: 1px !important;
+      }
+      
+      .live-users {
+        padding: 4px 8px !important;
+        font-size: 0.55rem !important;
+        gap: 2px !important;
+        border-radius: 8px !important;
+      }
+      
+      .live-count {
+        font-size: 0.75rem !important;
+      }
+      
+      #userNicknameDisplay {
+        display: none !important;
+      }
+      
+      .nav-links {
+        gap: 4px !important;
+      }
+      
+      .nav-links a:not(.app-link) {
+        display: none !important;
+      }
+      
+      .nav-links a.app-link {
+        padding: 5px 10px !important;
+        font-size: 0.7rem !important;
+        border-radius: 8px !important;
+        gap: 4px !important;
+      }
+      
+      .nav-links a.app-link i {
+        font-size: 16px !important;
+      }
+      
+      .support-btn {
+        padding: 5px 10px !important;
+        font-size: 0.7rem !important;
+        border-radius: 8px !important;
+        gap: 4px !important;
+      }
+      
+      .support-btn span {
+        display: none !important;
+      }
+      
+      .support-btn i {
+        font-size: 16px !important;
+        margin: 0 !important;
+      }
+      
+      /* Commercial button mobile */
+      #commercialFloatingBtn {
+        bottom: 75px;
+        left: 12px;
+      }
+      
+      .commercial-btn {
+        padding: 10px 14px;
+        font-size: 12px;
+        border-radius: 12px;
+        gap: 6px;
+      }
+      
+      .commercial-btn-icon {
+        font-size: 14px;
+      }
+      
+      .commercial-btn-text {
+        font-size: 11px;
+      }
+      
+      #commercialModal > div {
+        padding: 25px 20px;
+        border-radius: 16px;
+      }
+    }
+    
+    /* Extra small screens */
+    @media (max-width: 380px) {
+      .logo-text {
+        font-size: 0.85rem !important;
+      }
+      
+      .live-users {
+        padding: 3px 6px !important;
+      }
+      
+      .nav-links a.app-link span {
+        display: none;
+      }
+      
+      .commercial-btn-text {
+        display: none;
+      }
+      
+      .commercial-btn {
+        padding: 10px 12px;
+        border-radius: 50%;
+      }
     }
   </style>
 
