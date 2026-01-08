@@ -406,101 +406,85 @@
       transform: scale(1.05);
     }
     
-    /* Map style switcher - Beautiful pill design */
-    .map-switcher {
+    /* Floating Buttons Container - Minimal Style */
+    .floating-buttons {
       position: fixed;
-      bottom: 190px;
-      right: 30px;
-      z-index: 1000;
+      bottom: 24px;
+      right: 24px;
+      z-index: 1100;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
     }
     
-    .map-switcher-btn {
+    .floating-btn {
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 12px 20px;
-      background: linear-gradient(135deg, rgba(10, 25, 47, 0.95) 0%, rgba(15, 35, 60, 0.95) 100%);
-      border: 1px solid rgba(0, 212, 255, 0.4);
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 18px;
+      border: none;
       border-radius: 50px;
-      color: #00d4ff;
-      font-size: 14px;
-      font-weight: 600;
-      font-family: 'Exo 2', sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 0.3px;
       cursor: pointer;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3), 0 0 30px rgba(0, 212, 255, 0.1);
-      position: relative;
-      overflow: hidden;
+      transition: all 0.25s ease;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
     }
     
-    .map-switcher-btn::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: -100%;
-      width: 100%;
-      height: 100%;
-      background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.2), transparent);
-      transition: left 0.5s ease;
-    }
-    
-    .map-switcher-btn:hover::before {
-      left: 100%;
-    }
-    
-    .map-switcher-btn:hover {
-      background: linear-gradient(135deg, rgba(0, 212, 255, 0.2) 0%, rgba(0, 170, 255, 0.25) 100%);
-      border-color: #00d4ff;
-      box-shadow: 0 6px 25px rgba(0, 0, 0, 0.4), 0 0 40px rgba(0, 212, 255, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-      transform: translateY(-2px);
-    }
-    
-    .map-switcher-btn:active {
-      transform: translateY(0);
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3), 0 0 20px rgba(0, 212, 255, 0.3);
-    }
-    
-    .map-switcher-icon {
+    .floating-btn i.material-icons {
       font-size: 20px;
-      filter: drop-shadow(0 0 8px rgba(0, 212, 255, 0.6));
-      animation: iconPulse 3s ease-in-out infinite;
     }
     
-    @keyframes iconPulse {
-      0%, 100% { transform: scale(1); filter: drop-shadow(0 0 8px rgba(0, 212, 255, 0.6)); }
-      50% { transform: scale(1.1); filter: drop-shadow(0 0 12px rgba(0, 212, 255, 0.8)); }
+    .floating-btn.commercial-btn {
+      background: rgba(139, 92, 246, 0.15);
+      color: #a78bfa;
+      border: 1px solid rgba(139, 92, 246, 0.25);
     }
     
-    .map-switcher-text {
-      letter-spacing: 0.5px;
-      text-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+    .floating-btn.commercial-btn:hover {
+      background: rgba(139, 92, 246, 0.25);
+      color: #c4b5fd;
+      transform: translateX(-4px);
+      box-shadow: 0 4px 20px rgba(139, 92, 246, 0.2);
+    }
+    
+    .floating-btn.map-btn {
+      background: rgba(0, 212, 255, 0.1);
+      color: #67e8f9;
+      border: 1px solid rgba(0, 212, 255, 0.2);
+    }
+    
+    .floating-btn.map-btn:hover {
+      background: rgba(0, 212, 255, 0.2);
+      color: #a5f3fc;
+      transform: translateX(-4px);
+      box-shadow: 0 4px 20px rgba(0, 212, 255, 0.15);
     }
     
     @media (max-width: 768px) {
-      .map-switcher {
-        bottom: 170px;
-        right: 15px;
-      }
-      .map-switcher-btn {
-        padding: 10px 16px;
-        font-size: 13px;
+      .floating-buttons {
+        bottom: 80px;
+        right: 12px;
         gap: 8px;
       }
-      .map-switcher-icon {
+      
+      .floating-btn {
+        padding: 10px 14px;
+        border-radius: 50px;
+        width: auto;
+        height: auto;
+        font-size: 11px;
+      }
+      
+      .floating-btn .btn-text {
+        display: inline;
+      }
+      
+      .floating-btn i.material-icons {
         font-size: 18px;
-      }
-    }
-    
-    @media (max-width: 480px) {
-      .map-switcher-btn {
-        padding: 8px 14px;
-        font-size: 12px;
-      }
-      .map-switcher-text {
-        display: none;
-      }
-      .map-switcher-icon {
-        font-size: 22px;
       }
     }
     
@@ -1091,21 +1075,20 @@
       }
     }
     
-    /* ========== NAVBAR STYLES ========== */
+    /* ========== NAVBAR STYLES - Minimal Glass ========== */
     .navbar {
       width: 100%;
-      background: linear-gradient(180deg, rgba(10, 14, 23, 0.98) 0%, rgba(10, 14, 23, 0.95) 100%);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
       color: #e2e8f0;
-      font-weight: 600;
+      font-weight: 500;
       font-size: 1rem;
-      padding: 0.6rem 1.2rem;
-      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+      padding: 0.5rem 1rem;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      border-bottom: 1px solid rgba(0, 212, 255, 0.15);
+      border-bottom: 1px solid rgba(103, 232, 249, 0.1);
       position: fixed;
       top: 0;
       left: 0;
@@ -1114,13 +1097,7 @@
     }
     
     .navbar::after {
-      content: "";
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      height: 1px;
-      background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.5), transparent);
+      display: none;
     }
     
     .navbar .logo {
@@ -1131,172 +1108,180 @@
     
     .logo-text {
       font-family: 'Orbitron', sans-serif;
-      font-size: 1.3rem;
-      font-weight: 900;
-      background: linear-gradient(135deg, #00d4ff 0%, #0099cc 50%, #00d4ff 100%);
-      -webkit-background-clip: text;
-      background-clip: text;
-      color: transparent;
-      letter-spacing: 4px;
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #67e8f9;
+      letter-spacing: 3px;
+    }
+    
+    .nav-actions {
+      display: flex;
+      gap: 0.4rem;
+      align-items: center;
     }
     
     .nav-links {
       display: flex;
-      gap: 0.3rem;
+      gap: 0.25rem;
       align-items: center;
     }
     
-    .nav-links a {
-      color: rgba(148, 163, 184, 0.9);
+    .nav-links a, .nav-actions .nav-btn {
+      color: #94a3b8;
       text-decoration: none;
-      font-weight: 600;
-      padding: 0.5rem 0.9rem;
-      border-radius: 10px;
-      font-size: 0.85rem;
+      font-weight: 500;
+      padding: 0.4rem 0.8rem;
+      border-radius: 50px;
+      font-size: 0.75rem;
       display: flex;
       align-items: center;
-      gap: 0.4rem;
-      transition: all 0.2s ease;
+      gap: 0.35rem;
+      transition: all 0.25s ease;
       border: 1px solid transparent;
+      background: rgba(103, 232, 249, 0.06);
+      cursor: pointer;
     }
     
-    .nav-links a:hover {
-      color: #fff;
-      background: rgba(0, 212, 255, 0.1);
-      border-color: rgba(0, 212, 255, 0.2);
+    .nav-links a:hover, .nav-actions .nav-btn:hover {
+      color: #a5f3fc;
+      background: rgba(103, 232, 249, 0.12);
+      border-color: rgba(103, 232, 249, 0.2);
     }
     
     .nav-links a.active {
-      color: #00d4ff;
-      background: rgba(0, 212, 255, 0.15);
-      border-color: rgba(0, 212, 255, 0.3);
+      color: #67e8f9;
+      background: rgba(103, 232, 249, 0.15);
+      border-color: rgba(103, 232, 249, 0.25);
     }
     
-    .nav-links a i {
-      font-size: 1.1rem;
+    .nav-links a i, .nav-actions .nav-btn i {
+      font-size: 1rem;
     }
     
-    /* App download link - special styling */
-    .nav-links a.app-link {
-      background: linear-gradient(135deg, #3ddc84 0%, #2db869 100%);
-      color: white;
-      border: 1px solid rgba(61, 220, 132, 0.3);
-      box-shadow: 0 2px 8px rgba(61, 220, 132, 0.2);
-      animation: appButtonPulse 2s ease-in-out infinite;
+    /* App download button - minimal glass style */
+    .nav-actions .app-link {
+      background: rgba(61, 220, 132, 0.1);
+      color: #4ade80 !important;
+      border: 1px solid rgba(61, 220, 132, 0.2);
+      text-decoration: none;
     }
     
-    .nav-links a.app-link:hover {
-      background: linear-gradient(135deg, #45e591 0%, #32c274 100%);
-      border-color: rgba(61, 220, 132, 0.5);
-      box-shadow: 0 4px 12px rgba(61, 220, 132, 0.4);
+    .nav-actions .app-link:hover {
+      background: rgba(61, 220, 132, 0.18);
+      border-color: rgba(61, 220, 132, 0.35);
+      transform: translateY(-1px);
+    }
+    
+    /* Support button - minimal glass style */
+    .nav-actions .support-btn {
+      background: rgba(251, 113, 133, 0.1);
+      color: #fb7185 !important;
+      border: 1px solid rgba(251, 113, 133, 0.2);
+    }
+    
+    .nav-actions .support-btn:hover {
+      background: rgba(251, 113, 133, 0.18);
+      border-color: rgba(251, 113, 133, 0.35);
       transform: translateY(-1px);
     }
     
     @keyframes appButtonPulse {
-      0%, 100% { box-shadow: 0 2px 8px rgba(61, 220, 132, 0.2); }
-      50% { box-shadow: 0 2px 12px rgba(61, 220, 132, 0.4); }
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.85; }
+    }
+    
+    /* Navbar stats container - minimal glass */
+    .navbar-stats {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 10px;
+      background: rgba(103, 232, 249, 0.06);
+      border: 1px solid rgba(103, 232, 249, 0.12);
+      border-radius: 50px;
     }
     
     /* Live users counter */
     .live-users {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.45rem 0.85rem;
-      background: rgba(0, 212, 255, 0.08);
-      border: 1px solid rgba(0, 212, 255, 0.2);
-      border-radius: 12px;
-      font-size: 0.7rem;
-    }
-    
-    .live-header {
       display: flex;
       align-items: center;
-      gap: 0.3rem;
+      gap: 5px;
+      font-size: 0.65rem;
     }
     
     .live-label {
-      color: rgba(0, 212, 255, 0.8);
+      color: #64748b;
       font-weight: 500;
-      font-size: 0.65rem;
+      font-size: 0.55rem;
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
     
     .live-count {
-      color: #00ff88;
-      font-weight: 800;
-      font-size: 0.85rem;
+      color: #4ade80;
+      font-weight: 700;
+      font-size: 0.8rem;
       font-family: 'Orbitron', sans-serif;
     }
     
     .live-count.updating {
-      animation: countUpdate 0.5s ease;
+      animation: countUpdate 0.4s ease;
     }
     
     @keyframes countUpdate {
-      50% { transform: scale(1.2); color: #00ffaa; }
+      50% { transform: scale(1.15); }
     }
     
     .live-breakdown {
       display: flex;
-      gap: 0.25rem;
+      gap: 4px;
     }
     
     .live-chip {
       display: flex;
       align-items: center;
-      gap: 0.15rem;
-      padding: 0.1rem 0.35rem;
-      border-radius: 6px;
-      font-size: 0.6rem;
-      background: rgba(0, 212, 255, 0.05);
-      border: 1px solid rgba(0, 212, 255, 0.1);
+      gap: 2px;
+      font-size: 0.55rem;
+      color: #64748b;
     }
     
     .live-chip strong {
-      color: #e2e8f0;
-      font-weight: 700;
-    }
-    
-    /* Support button */
-    .support-btn {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
-      color: white;
-      border: none;
-      padding: 8px 14px;
-      border-radius: 10px;
-      font-size: 0.8rem;
+      color: #94a3b8;
       font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      box-shadow: 0 2px 10px rgba(255, 107, 107, 0.3);
     }
     
-    .support-btn i {
-      font-size: 16px;
-      animation: heartPulse 1.5s ease infinite;
+    /* User nickname in navbar */
+    .user-nickname {
+      display: none;
+      align-items: center;
+      gap: 4px;
+      padding-left: 8px;
+      border-left: 1px solid rgba(103, 232, 249, 0.15);
+      color: #67e8f9;
+      font-size: 0.7rem;
+      font-weight: 500;
+    }
+    
+    .nickname-icon {
+      font-size: 0.65rem;
     }
     
     @keyframes heartPulse {
       0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.15); }
+      50% { transform: scale(1.1); }
     }
     
-    .support-btn:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+    .nav-actions .support-btn i {
+      animation: heartPulse 2s ease infinite;
     }
     
-    /* Donate Modal */
+    /* Donate Modal - Minimal Glass Style */
     .donate-modal-overlay {
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.85);
-      backdrop-filter: blur(8px);
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
       display: none;
       align-items: center;
       justify-content: center;
@@ -1314,185 +1299,190 @@
     }
     
     .donate-modal {
-      width: min(500px, 92vw);
-      background: linear-gradient(160deg, #0a0e17 0%, #0d1929 50%, #0a192f 100%);
-      border: 1px solid rgba(0, 212, 255, 0.25);
+      width: min(420px, 92vw);
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(103, 232, 249, 0.15);
       border-radius: 20px;
-      padding: 2rem;
+      padding: 1.75rem;
       position: relative;
-      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6), 0 0 80px rgba(0, 212, 255, 0.1);
-      animation: modalSlide 0.4s ease;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+      animation: modalSlide 0.3s ease;
     }
     
     @keyframes modalSlide {
-      from { transform: translateY(30px); opacity: 0; }
+      from { transform: translateY(20px); opacity: 0; }
       to { transform: translateY(0); opacity: 1; }
     }
     
     .donate-title {
-      margin: 0 0 1rem;
-      font-size: 1.4rem;
-      font-weight: 800;
-      background: linear-gradient(135deg, #00d4ff, #00ff88);
-      -webkit-background-clip: text;
-      background-clip: text;
-      color: transparent;
+      margin: 0 0 0.75rem;
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: #a5f3fc;
       display: flex;
       align-items: center;
       gap: 0.5rem;
     }
     
+    .donate-title i {
+      color: #fb7185;
+    }
+    
     .donate-sub {
-      color: rgba(148, 163, 184, 0.9);
-      font-size: 0.9rem;
+      color: #64748b;
+      font-size: 0.8rem;
       line-height: 1.5;
-      margin-bottom: 1.5rem;
+      margin-bottom: 1.25rem;
     }
     
     .donate-grid {
-      display: grid;
-      gap: 1rem;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      margin-bottom: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
     }
     
     .donate-card {
-      background: rgba(0, 212, 255, 0.05);
-      border: 1px solid rgba(0, 212, 255, 0.15);
-      border-radius: 14px;
-      padding: 1rem;
+      background: rgba(103, 232, 249, 0.05);
+      border: 1px solid rgba(103, 232, 249, 0.12);
+      border-radius: 12px;
+      padding: 0.85rem;
       display: flex;
       flex-direction: column;
-      gap: 0.5rem;
+      gap: 0.4rem;
     }
     
     .donate-label {
-      font-size: 0.7rem;
+      font-size: 0.6rem;
       text-transform: uppercase;
-      letter-spacing: 1.5px;
-      font-weight: 700;
-      color: #00d4ff;
+      letter-spacing: 1px;
+      font-weight: 600;
+      color: #67e8f9;
     }
     
     .donate-value {
       font-family: 'JetBrains Mono', monospace;
-      font-weight: 600;
-      font-size: 0.95rem;
+      font-weight: 500;
+      font-size: 0.85rem;
       color: #e2e8f0;
       word-break: break-all;
     }
     
     .donate-actions {
       display: flex;
-      gap: 0.5rem;
-      margin-top: auto;
+      gap: 0.4rem;
+      margin-top: 0.4rem;
     }
     
     .btn-mini {
-      background: linear-gradient(135deg, #00d4ff, #0099cc);
-      color: #0a0e17;
-      border: none;
-      border-radius: 8px;
-      padding: 0.45rem 0.75rem;
-      font-size: 0.7rem;
-      font-weight: 700;
+      background: rgba(103, 232, 249, 0.12);
+      color: #67e8f9;
+      border: 1px solid rgba(103, 232, 249, 0.2);
+      border-radius: 50px;
+      padding: 0.4rem 0.7rem;
+      font-size: 0.65rem;
+      font-weight: 600;
       cursor: pointer;
       display: flex;
       align-items: center;
-      gap: 0.3rem;
-      transition: all 0.2s;
+      gap: 0.25rem;
+      transition: all 0.25s ease;
     }
     
     .btn-mini:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 4px 15px rgba(0, 212, 255, 0.3);
+      background: rgba(103, 232, 249, 0.2);
+      border-color: rgba(103, 232, 249, 0.35);
     }
     
     .btn-mini.alt {
-      background: rgba(148, 163, 184, 0.2);
-      color: #e2e8f0;
+      background: rgba(148, 163, 184, 0.1);
+      border-color: rgba(148, 163, 184, 0.15);
+      color: #94a3b8;
     }
     
     .donate-close {
       position: absolute;
-      top: 1rem;
-      right: 1rem;
-      width: 36px;
-      height: 36px;
-      background: rgba(0, 212, 255, 0.1);
-      border: 1px solid rgba(0, 212, 255, 0.2);
-      border-radius: 10px;
+      top: 0.85rem;
+      right: 0.85rem;
+      width: 32px;
+      height: 32px;
+      background: rgba(103, 232, 249, 0.08);
+      border: 1px solid rgba(103, 232, 249, 0.15);
+      border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
       color: #94a3b8;
       cursor: pointer;
       font-size: 18px;
-      transition: all 0.2s;
+      transition: all 0.25s ease;
     }
     
     .donate-close:hover {
-      background: rgba(255, 107, 107, 0.2);
-      border-color: rgba(255, 107, 107, 0.3);
-      color: #ff6b6b;
+      background: rgba(251, 113, 133, 0.15);
+      border-color: rgba(251, 113, 133, 0.25);
+      color: #fb7185;
+      transform: rotate(90deg);
     }
     
     .jar-link-button {
       width: 100%;
-      background: linear-gradient(135deg, #00d4ff, #00ff88);
-      color: #0a0e17;
-      border: none;
-      border-radius: 14px;
-      padding: 1rem;
-      font-size: 0.95rem;
-      font-weight: 700;
+      background: rgba(103, 232, 249, 0.15);
+      color: #67e8f9;
+      border: 1px solid rgba(103, 232, 249, 0.3);
+      border-radius: 50px;
+      padding: 0.85rem;
+      font-size: 0.85rem;
+      font-weight: 600;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 0.5rem;
       cursor: pointer;
-      transition: all 0.3s;
+      transition: all 0.25s ease;
     }
     
     .jar-link-button:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 10px 30px rgba(0, 212, 255, 0.3);
+      background: rgba(103, 232, 249, 0.25);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 16px rgba(103, 232, 249, 0.2);
     }
     
     .donate-footer {
-      font-size: 0.65rem;
-      color: rgba(100, 116, 139, 0.7);
-      margin-top: 1rem;
+      font-size: 0.6rem;
+      color: #475569;
+      margin-top: 0.85rem;
       text-align: center;
     }
     
-    /* Copy toast */
+    /* Copy toast - minimal glass */
     .copy-toast {
       position: fixed;
       bottom: 80px;
       right: 20px;
-      background: rgba(0, 212, 255, 0.15);
-      border: 1px solid rgba(0, 212, 255, 0.3);
-      color: #00d4ff;
-      padding: 0.7rem 1rem;
-      border-radius: 10px;
-      font-size: 0.8rem;
-      font-weight: 600;
+      background: rgba(103, 232, 249, 0.12);
+      border: 1px solid rgba(103, 232, 249, 0.25);
+      color: #67e8f9;
+      padding: 0.6rem 0.9rem;
+      border-radius: 50px;
+      font-size: 0.75rem;
+      font-weight: 500;
       display: none;
       z-index: 2100;
-      backdrop-filter: blur(10px);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
     }
     
     .copy-toast.show {
       display: block;
-      animation: fadeIn 0.25s ease, fadeOut 0.4s linear 2.4s forwards;
+      animation: fadeIn 0.2s ease, fadeOut 0.3s linear 2.4s forwards;
     }
     
     @keyframes fadeOut {
       to { opacity: 0; }
     }
     
-    /* Disclaimer bar */
+    /* Disclaimer bar - minimal glass */
     .disclaimer-bar {
       position: fixed;
       bottom: 0;
@@ -1501,19 +1491,20 @@
       z-index: 1100;
       display: flex;
       align-items: center;
-      gap: 1rem;
-      padding: 0.85rem 1.2rem;
-      background: rgba(10, 14, 23, 0.98);
-      border-top: 1px solid rgba(251, 191, 36, 0.3);
-      backdrop-filter: blur(20px);
-      font-size: 0.75rem;
-      color: #e2e8f0;
+      gap: 0.85rem;
+      padding: 0.75rem 1rem;
+      background: rgba(15, 23, 42, 0.85);
+      border-top: 1px solid rgba(251, 191, 36, 0.2);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      font-size: 0.7rem;
+      color: #94a3b8;
       line-height: 1.5;
     }
     
     .disclaimer-bar.hidden { display: none !important; }
     
-    .disclaimer-bar b { color: #fbbf24; font-weight: 700; }
+    .disclaimer-bar b { color: #fbbf24; font-weight: 600; }
     
     .disclaimer-icon {
       flex: 0 0 auto;
@@ -1580,147 +1571,120 @@
       color: #fbbf24;
     }
     
-    /* Telegram Banner - Premium Design */
+    /* Telegram Banner - Minimal Glass Style */
     .tg-banner {
       display: flex;
       position: fixed;
-      bottom: 70px;
-      left: 20px;
-      right: 20px;
+      bottom: 80px;
+      left: 24px;
+      right: auto;
       max-width: 420px;
-      background: linear-gradient(135deg, #1a1f2e 0%, #0d1117 100%);
-      border: 1px solid rgba(0, 136, 204, 0.3);
-      border-radius: 20px;
-      padding: 1rem 1.2rem;
+      background: rgba(0, 136, 204, 0.08);
+      border: 1px solid rgba(0, 136, 204, 0.15);
+      border-radius: 50px;
+      padding: 10px 16px 10px 12px;
       text-decoration: none;
       color: white;
       z-index: 1050;
-      box-shadow: 
-        0 10px 40px rgba(0, 0, 0, 0.4),
-        0 0 30px rgba(0, 136, 204, 0.15),
-        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
       align-items: center;
-      gap: 1rem;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      overflow: hidden;
-    }
-    
-    .tg-banner::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: -100%;
-      width: 200%;
-      height: 100%;
-      background: linear-gradient(
-        90deg,
-        transparent,
-        rgba(0, 136, 204, 0.1),
-        transparent
-      );
-      animation: shimmer 3s infinite;
-    }
-    
-    @keyframes shimmer {
-      0% { transform: translateX(-50%); }
-      100% { transform: translateX(50%); }
+      gap: 12px;
+      transition: all 0.25s ease;
     }
     
     .tg-banner:hover {
-      transform: translateY(-4px) scale(1.02);
-      box-shadow: 
-        0 15px 50px rgba(0, 0, 0, 0.5),
-        0 0 50px rgba(0, 136, 204, 0.25);
-      border-color: rgba(0, 136, 204, 0.5);
+      background: rgba(0, 136, 204, 0.15);
+      transform: translateX(4px);
+      box-shadow: 0 4px 20px rgba(0, 136, 204, 0.15);
     }
     
     .tg-banner.hidden { display: none !important; }
     
     .tg-banner-icon {
-      width: 44px;
-      height: 44px;
+      width: 36px;
+      height: 36px;
       flex-shrink: 0;
-      background: linear-gradient(135deg, #0088cc 0%, #00aaff 100%);
-      border-radius: 12px;
-      padding: 10px;
-      box-shadow: 0 4px 15px rgba(0, 136, 204, 0.4);
+      background: rgba(0, 136, 204, 0.15);
+      border: 1px solid rgba(0, 136, 204, 0.25);
+      border-radius: 50%;
+      padding: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     
     .tg-banner-icon svg {
-      width: 100%;
-      height: 100%;
+      width: 18px;
+      height: 18px;
+      fill: #67e8f9;
     }
     
     .tg-banner-text {
       flex: 1;
-      position: relative;
-      z-index: 1;
+      min-width: 0;
     }
     
     .tg-banner-title {
-      font-weight: 800;
-      font-size: 0.95rem;
+      font-weight: 500;
+      font-size: 0.75rem;
       display: block;
-      background: linear-gradient(90deg, #fff 0%, #00d4ff 100%);
-      -webkit-background-clip: text;
-      background-clip: text;
-      color: transparent;
-      margin-bottom: 4px;
+      color: #a5f3fc;
     }
     
     .tg-banner-desc {
-      font-size: 0.72rem;
-      color: rgba(148, 163, 184, 0.9);
+      font-size: 0.65rem;
+      color: rgba(148, 163, 184, 0.7);
       display: block;
-      line-height: 1.4;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     
     .tg-banner-btn {
-      background: linear-gradient(135deg, #0088cc 0%, #00aaff 100%);
-      padding: 0.6rem 1.1rem;
-      border-radius: 12px;
-      font-size: 0.78rem;
-      font-weight: 700;
+      background: rgba(0, 136, 204, 0.2);
+      border: 1px solid rgba(0, 136, 204, 0.3);
+      padding: 6px 14px;
+      border-radius: 50px;
+      font-size: 0.7rem;
+      font-weight: 500;
+      color: #67e8f9;
       display: flex;
       align-items: center;
-      gap: 0.4rem;
+      gap: 4px;
       flex-shrink: 0;
-      box-shadow: 0 4px 15px rgba(0, 136, 204, 0.3);
-      transition: all 0.2s;
-      position: relative;
-      z-index: 1;
+      transition: all 0.2s ease;
     }
     
     .tg-banner:hover .tg-banner-btn {
-      box-shadow: 0 6px 20px rgba(0, 136, 204, 0.5);
-      transform: scale(1.05);
+      background: rgba(0, 136, 204, 0.3);
+      color: #a5f3fc;
     }
     
     .tg-banner-close {
       position: absolute;
-      top: -10px;
-      right: -10px;
-      width: 28px;
-      height: 28px;
-      background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
-      color: #9ca3af;
-      border: 2px solid rgba(0, 136, 204, 0.3);
+      top: -6px;
+      right: -6px;
+      width: 22px;
+      height: 22px;
+      background: rgba(100, 116, 139, 0.3);
+      color: #94a3b8;
+      border: 1px solid rgba(100, 116, 139, 0.3);
       border-radius: 50%;
-      font-size: 14px;
-      font-weight: 700;
+      font-size: 12px;
+      font-weight: 500;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: all 0.2s;
-      z-index: 2;
+      transition: all 0.2s ease;
+      backdrop-filter: blur(8px);
     }
     
     .tg-banner-close:hover {
-      background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-      color: white;
-      border-color: rgba(239, 68, 68, 0.5);
-      transform: scale(1.1);
+      background: rgba(239, 68, 68, 0.2);
+      color: #fca5a5;
+      border-color: rgba(239, 68, 68, 0.3);
     }
     
     /* Mobile adjustments */
@@ -1734,41 +1698,43 @@
         letter-spacing: 2px;
       }
       
-      .nav-links {
-        gap: 0.2rem;
+      .nav-actions {
+        gap: 0.3rem;
       }
       
-      .nav-links a:not(.app-link) {
+      .nav-links {
         display: none;
       }
       
-      .nav-links a.app-link {
-        display: flex;
+      .nav-actions .nav-btn {
         padding: 6px 10px;
         font-size: 0.75rem;
         gap: 0.3rem;
       }
       
-      .nav-links a.app-link i {
-        font-size: 18px;
+      .nav-actions .nav-btn i {
+        font-size: 16px;
+      }
+      
+      .nav-actions .nav-btn span {
+        display: none;
+      }
+      
+      .navbar-stats {
+        padding: 4px 8px;
+        gap: 6px;
       }
       
       .live-users {
-        padding: 0.35rem 0.6rem;
-        font-size: 0.6rem;
+        gap: 4px;
       }
       
       .live-breakdown {
         display: none;
       }
       
-      .support-btn {
-        padding: 6px 10px;
-        font-size: 0.75rem;
-      }
-      
-      .support-btn span {
-        display: none;
+      .user-nickname {
+        display: none !important;
       }
       
       .tg-banner {
@@ -1848,7 +1814,7 @@
     
     /* Maintenance/502 overlay */
     #maintenance-overlay {
-      display: none;
+      display: none !important;
       position: fixed;
       top: 0;
       left: 0;
@@ -1864,7 +1830,7 @@
     }
     
     #maintenance-overlay.show {
-      display: flex;
+      display: flex !important;
     }
     
     .maintenance-content {
@@ -2132,32 +2098,29 @@
   <div class="navbar">
     <div class="logo">
       <span class="logo-text">NEPTUN</span>
-      <div class="live-users" id="liveUsers" title="Активні користувачі онлайн">
-        <div class="live-header">
+      <!-- Combined stats block -->
+      <div class="navbar-stats">
+        <div class="live-users" id="liveUsers" title="Активні користувачі онлайн">
           <span class="live-label">онлайн</span>
           <span class="live-count" data-role="live-total">0</span>
+          <span class="live-breakdown">
+            <span class="live-chip">🌐<strong data-role="live-web">0</strong></span>
+            <span class="live-chip">📱<strong data-role="live-apps">0</strong></span>
+          </span>
         </div>
-        <div class="live-breakdown">
-          <span class="live-chip">🌐 <strong data-role="live-web">0</strong></span>
-          <span class="live-chip">📱 <strong data-role="live-apps">0</strong></span>
+        <div id="userNicknameDisplay" class="user-nickname">
+          <span class="nickname-icon">👤</span>
+          <span id="navbarNickname"></span>
         </div>
       </div>
-      <!-- User Nickname Display -->
-      <div id="userNicknameDisplay" style="display:none;margin-left:15px;padding:6px 14px;background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.3);border-radius:10px;color:#00d4ff;font-size:13px;font-weight:600;">
-        <i class="material-icons" style="font-size:14px;vertical-align:middle;margin-right:4px;">👤</i>
-        <span id="navbarNickname"></span>
-      </div>
     </div>
-    <div class="nav-links">
-      <a href="#" class="active"><i class="material-icons">map</i> Карта</a>
-      <a href="/analytics" target="_blank"><i class="material-icons">analytics</i> Аналітика</a>
-      <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" target="_blank" class="app-link"><i class="material-icons">android</i> Додаток</a>
-      <a href="#about"><i class="material-icons">info</i> Інфо</a>
+    <div class="nav-actions">
+      <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" target="_blank" class="nav-btn app-link"><i class="material-icons">android</i> Додаток</a>
+      <button class="nav-btn support-btn" onclick="toggleDonate()" title="Підтримати проєкт">
+        <i class="material-icons">favorite</i>
+        <span>Підтримати</span>
+      </button>
     </div>
-    <button class="support-btn" onclick="toggleDonate()" title="Підтримати проєкт">
-      <i class="material-icons">favorite</i>
-      <span>Підтримати</span>
-    </button>
   </div>
   
   <!-- Donate Modal -->
@@ -2243,32 +2206,18 @@
     </div>
   </div>
   
-  <div class="status-panel">
-    <h3>Активні тривоги</h3>
-    <div class="alarm-count" id="alarm-count">0</div>
-    <div class="last-update" id="last-update">Завантаження...</div>
-    <div class="api-status" id="api-status"></div>
-    
-    <!-- Threat markers info -->
-    <div class="markers-info" id="markers-info" style="display: none;">
-      <h4>Загрози на карті</h4>
-      <div id="markers-summary"></div>
-    </div>
-  </div>
-  
-  <!-- Map Style Switcher -->
-  <div class="map-switcher">
-    <button class="map-switcher-btn" onclick="window.location.href='/map-old?from=index'" title="Перемкнути на стару карту">
-      <span class="map-switcher-icon">🗺️</span>
-      <span class="map-switcher-text">Старий вид карти</span>
+  <!-- Floating Buttons Container -->
+  <div class="floating-buttons">
+    <button onclick="document.getElementById('commercialModal').style.display='flex'" class="floating-btn commercial-btn" title="Комерційне використання">
+      <i class="material-icons">live_tv</i>
+      <span class="btn-text">Для стрімерів</span>
+    </button>
+    <button class="floating-btn map-btn" onclick="window.location.href='/map-old?from=index'" title="Перемкнути на стару карту">
+      <i class="material-icons">map</i>
+      <span class="btn-text">Стара карта</span>
     </button>
   </div>
-  
-  <div class="zoom-controls">
-    <button class="zoom-btn" onclick="zoomIn()">+</button>
-    <button class="zoom-btn" onclick="zoomOut()">−</button>
-    <button class="zoom-btn" onclick="resetZoom()">⟲</button>
-  </div>
+
 
   <script>
     // ===== CONFIG =====
@@ -3348,127 +3297,364 @@
   </script>
   </section>
 
-  <!-- FLOATING COMMERCIAL BUTTON -->
-  <div id="commercialFloatingBtn">
-    <button onclick="document.getElementById('commercialModal').style.display='flex'" class="commercial-btn">
-      <span class="commercial-btn-icon">📺</span>
-      <span class="commercial-btn-text">Для стрімерів</span>
-    </button>
-  </div>
-
-  <!-- COMMERCIAL MODAL -->
-  <div id="commercialModal" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.95);z-index:9999;display:none;align-items:center;justify-content:center;backdrop-filter:blur(10px);padding:20px;overflow-y:auto;">
-    <div style="background:linear-gradient(135deg, #0a0e17 0%, #0d1929 100%);border:2px solid rgba(0,212,255,0.3);border-radius:24px;padding:50px;max-width:900px;width:100%;max-height:90vh;overflow-y:auto;position:relative;box-shadow:0 20px 60px rgba(0,212,255,0.3);">
+  <!-- COMMERCIAL MODAL - Minimal Glass Style -->
+  <div id="commercialModal" class="commercial-modal-overlay">
+    <div class="commercial-modal-content">
       
       <!-- Close button -->
-      <button onclick="document.getElementById('commercialModal').style.display='none'" style="position:absolute;top:20px;right:20px;background:none;border:none;color:#9ca3af;font-size:32px;cursor:pointer;line-height:1;padding:0;transition:color 0.3s;" onmouseover="this.style.color='#00d4ff'" onmouseout="this.style.color='#9ca3af'">×</button>
+      <button onclick="document.getElementById('commercialModal').style.display='none'" class="commercial-modal-close">
+        <span class="material-icons">close</span>
+      </button>
 
-      <div style="text-align:center;margin-bottom:40px;">
-        <div style="color:#00d4ff;font-size:42px;font-weight:900;margin-bottom:15px;">💼 Комерційне використання</div>
-        <p style="color:#94a3b8;font-size:18px;line-height:1.7;">
-          Використовуйте карту NEPTUN для своїх <strong style="color:#e2e8f0;">TikTok ефірів</strong>, <strong style="color:#e2e8f0;">YouTube стрімів</strong> та <strong style="color:#e2e8f0;">Telegram каналів</strong>
+      <div class="commercial-modal-header">
+        <span class="material-icons" style="font-size:32px;color:#67e8f9;">storefront</span>
+        <div class="commercial-modal-title">Комерційне використання</div>
+        <p class="commercial-modal-subtitle">
+          Для TikTok ефірів, YouTube стрімів та Telegram каналів
         </p>
       </div>
 
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:25px;margin-bottom:40px;">
-        <div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.2);border-radius:16px;padding:25px;text-align:center;">
-          <div style="font-size:40px;margin-bottom:10px;">📺</div>
-          <div style="color:#e2e8f0;font-size:16px;font-weight:700;">TikTok & YouTube</div>
+      <div class="commercial-features">
+        <div class="commercial-feature-card">
+          <span class="material-icons">live_tv</span>
+          <span>TikTok & YouTube</span>
         </div>
-        <div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.2);border-radius:16px;padding:25px;text-align:center;">
-          <div style="font-size:40px;margin-bottom:10px;">💬</div>
-          <div style="color:#e2e8f0;font-size:16px;font-weight:700;">Telegram канали</div>
+        <div class="commercial-feature-card">
+          <span class="material-icons">telegram</span>
+          <span>Telegram канали</span>
         </div>
-        <div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.2);border-radius:16px;padding:25px;text-align:center;">
-          <div style="font-size:40px;margin-bottom:10px;">⚡</div>
-          <div style="color:#e2e8f0;font-size:16px;font-weight:700;">Реальний час</div>
+        <div class="commercial-feature-card">
+          <span class="material-icons">bolt</span>
+          <span>Реальний час</span>
         </div>
       </div>
 
-      <div style="background:rgba(0,212,255,0.08);border:2px solid rgba(0,212,255,0.3);border-radius:20px;padding:40px;text-align:center;margin-bottom:40px;">
-        <div style="color:#00d4ff;font-size:64px;font-weight:900;margin-bottom:15px;">1500₴<span style="font-size:18px;color:#64748b;">/місяць</span></div>
-        <p style="color:#94a3b8;font-size:14px;margin-bottom:0;">Безпечна оплата через Monobank Acquiring • Комісія 1.4%</p>
+      <div class="commercial-price-card">
+        <div class="commercial-price">1500₴<span>/місяць</span></div>
+        <p class="commercial-price-note">Monobank Acquiring • 1.4% комісія</p>
       </div>
 
-      <form id="commercialSubscriptionForm" onsubmit="handleCommercialSubscription(event)" style="background:rgba(15,23,42,0.5);border:1px solid rgba(0,212,255,0.2);border-radius:20px;padding:40px;">
-        <div style="color:#e2e8f0;font-size:24px;font-weight:800;margin-bottom:30px;text-align:center;">📝 Оформлення підписки</div>
+      <form id="commercialSubscriptionForm" onsubmit="handleCommercialSubscription(event)" class="commercial-form">
+        <div class="commercial-form-title">
+          <span class="material-icons">edit_note</span>
+          Оформлення підписки
+        </div>
         
-        <div style="margin-bottom:20px;">
-          <label style="display:block;color:#94a3b8;font-size:14px;font-weight:600;margin-bottom:8px;">Ваш нік в тік тоці або іншій платформі *</label>
-          <input type="text" id="commercialName" required style="width:100%;padding:14px;background:rgba(10,14,23,0.8);border:1px solid rgba(0,212,255,0.3);border-radius:10px;color:#fff;font-size:15px;outline:none;">
+        <div class="commercial-form-group">
+          <label>Ваш нік на платформі *</label>
+          <input type="text" id="commercialName" required placeholder="@username">
         </div>
 
-        <div style="margin-bottom:20px;">
-          <label style="display:block;color:#94a3b8;font-size:14px;font-weight:600;margin-bottom:8px;">Telegram для зв'язку *</label>
-          <input type="text" id="commercialTelegram" required style="width:100%;padding:14px;background:rgba(10,14,23,0.8);border:1px solid rgba(0,212,255,0.3);border-radius:10px;color:#fff;font-size:15px;outline:none;" placeholder="@username або https://t.me/username">
+        <div class="commercial-form-group">
+          <label>Telegram для зв'язку *</label>
+          <input type="text" id="commercialTelegram" required placeholder="@username або t.me/username">
         </div>
 
-        <div style="margin-bottom:20px;">
-          <label style="display:block;color:#94a3b8;font-size:14px;font-weight:600;margin-bottom:8px;">Тип використання *</label>
-          <select id="commercialType" required style="width:100%;padding:14px;background:rgba(10,14,23,0.8);border:1px solid rgba(0,212,255,0.3);border-radius:10px;color:#fff;font-size:15px;outline:none;">
+        <div class="commercial-form-group">
+          <label>Тип використання *</label>
+          <select id="commercialType" required>
             <option value="">Оберіть тип</option>
-            <option value="streaming">📺 Стрімінг (TikTok/YouTube/Twitch)</option>
-            <option value="media">📰 ЗМІ / Новинний портал</option>
-            <option value="business">🏢 Корпоративне використання</option>
+            <option value="streaming">📺 Стрімінг</option>
+            <option value="media">📰 ЗМІ / Новини</option>
+            <option value="business">🏢 Корпоративне</option>
             <option value="other">📌 Інше</option>
           </select>
         </div>
 
-        <div style="margin-bottom:25px;">
-          <label style="display:block;color:#94a3b8;font-size:14px;font-weight:600;margin-bottom:8px;">Коментар (опціонально)</label>
-          <textarea id="commercialComment" rows="3" style="width:100%;padding:14px;background:rgba(10,14,23,0.8);border:1px solid rgba(0,212,255,0.3);border-radius:10px;color:#fff;font-size:15px;outline:none;resize:vertical;" placeholder="Додаткова інформація..."></textarea>
+        <div class="commercial-form-group">
+          <label>Коментар (опціонально)</label>
+          <textarea id="commercialComment" rows="2" placeholder="Додаткова інформація..."></textarea>
         </div>
 
-        <button type="submit" style="width:100%;padding:18px;background:linear-gradient(135deg, #00d4ff 0%, #0891b2 100%);border:none;border-radius:12px;color:#0a0e17;font-size:18px;font-weight:800;cursor:pointer;box-shadow:0 8px 20px rgba(0,212,255,0.4);transition:all 0.3s;">
-          💳 Перейти до оплати
+        <button type="submit" class="commercial-submit-btn">
+          <span class="material-icons">credit_card</span>
+          Перейти до оплати
         </button>
 
-        <div id="commercialFormMessage" style="margin-top:20px;padding:15px;border-radius:10px;display:none;text-align:center;font-size:14px;"></div>
+        <div id="commercialFormMessage" class="commercial-form-message"></div>
       </form>
     </div>
   </div>
-
+  
   <style>
-    /* Commercial floating button */
-    #commercialFloatingBtn {
+    /* Commercial Modal - Minimal Glass Style */
+    .commercial-modal-overlay {
       position: fixed;
-      bottom: 20px;
-      right: 20px;
-      z-index: 1100;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      z-index: 9999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      overflow-y: auto;
     }
     
-    .commercial-btn {
-      background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
-      color: white;
-      padding: 12px 20px;
-      border: none;
-      border-radius: 16px;
-      font-size: 14px;
-      font-weight: 700;
-      cursor: pointer;
-      box-shadow: 0 4px 20px rgba(139, 92, 246, 0.4);
+    .commercial-modal-content {
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(103, 232, 249, 0.15);
+      border-radius: 24px;
+      padding: 40px;
+      max-width: 500px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      position: relative;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    }
+    
+    .commercial-modal-close {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      background: rgba(103, 232, 249, 0.08);
+      border: 1px solid rgba(103, 232, 249, 0.15);
+      border-radius: 50%;
+      width: 36px;
+      height: 36px;
       display: flex;
       align-items: center;
+      justify-content: center;
+      color: #94a3b8;
+      cursor: pointer;
+      transition: all 0.25s ease;
+    }
+    
+    .commercial-modal-close:hover {
+      background: rgba(103, 232, 249, 0.15);
+      color: #67e8f9;
+      transform: rotate(90deg);
+    }
+    
+    .commercial-modal-close .material-icons {
+      font-size: 20px;
+    }
+    
+    .commercial-modal-header {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+    
+    .commercial-modal-title {
+      color: #a5f3fc;
+      font-size: 22px;
+      font-weight: 600;
+      margin: 12px 0 8px;
+      letter-spacing: 0.5px;
+    }
+    
+    .commercial-modal-subtitle {
+      color: #64748b;
+      font-size: 13px;
+      margin: 0;
+    }
+    
+    .commercial-features {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    
+    .commercial-feature-card {
+      background: rgba(103, 232, 249, 0.06);
+      border: 1px solid rgba(103, 232, 249, 0.12);
+      border-radius: 50px;
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #94a3b8;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    
+    .commercial-feature-card .material-icons {
+      font-size: 16px;
+      color: #67e8f9;
+    }
+    
+    .commercial-price-card {
+      background: rgba(103, 232, 249, 0.08);
+      border: 1px solid rgba(103, 232, 249, 0.2);
+      border-radius: 16px;
+      padding: 20px;
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    
+    .commercial-price {
+      color: #67e8f9;
+      font-size: 36px;
+      font-weight: 700;
+    }
+    
+    .commercial-price span {
+      font-size: 14px;
+      color: #64748b;
+      font-weight: 400;
+    }
+    
+    .commercial-price-note {
+      color: #64748b;
+      font-size: 11px;
+      margin: 8px 0 0;
+    }
+    
+    .commercial-form {
+      background: rgba(103, 232, 249, 0.04);
+      border: 1px solid rgba(103, 232, 249, 0.1);
+      border-radius: 16px;
+      padding: 24px;
+    }
+    
+    .commercial-form-title {
+      color: #a5f3fc;
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       gap: 8px;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      border: 1px solid rgba(255,255,255,0.1);
     }
     
-    .commercial-btn:hover {
+    .commercial-form-title .material-icons {
+      font-size: 20px;
+      color: #67e8f9;
+    }
+    
+    .commercial-form-group {
+      margin-bottom: 16px;
+    }
+    
+    .commercial-form-group label {
+      display: block;
+      color: #64748b;
+      font-size: 12px;
+      font-weight: 500;
+      margin-bottom: 6px;
+    }
+    
+    .commercial-form-group input,
+    .commercial-form-group select,
+    .commercial-form-group textarea {
+      width: 100%;
+      padding: 12px 14px;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(103, 232, 249, 0.15);
+      border-radius: 10px;
+      color: #e2e8f0;
+      font-size: 14px;
+      outline: none;
+      transition: all 0.25s ease;
+      box-sizing: border-box;
+    }
+    
+    .commercial-form-group input:focus,
+    .commercial-form-group select:focus,
+    .commercial-form-group textarea:focus {
+      border-color: rgba(103, 232, 249, 0.4);
+      background: rgba(15, 23, 42, 0.8);
+    }
+    
+    .commercial-form-group input::placeholder,
+    .commercial-form-group textarea::placeholder {
+      color: #475569;
+    }
+    
+    .commercial-form-group select option {
+      background: #0f172a;
+      color: #e2e8f0;
+    }
+    
+    .commercial-form-group textarea {
+      resize: vertical;
+      min-height: 60px;
+    }
+    
+    .commercial-submit-btn {
+      width: 100%;
+      padding: 14px;
+      background: rgba(103, 232, 249, 0.15);
+      border: 1px solid rgba(103, 232, 249, 0.3);
+      border-radius: 50px;
+      color: #67e8f9;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.25s ease;
+      margin-top: 20px;
+    }
+    
+    .commercial-submit-btn:hover {
+      background: rgba(103, 232, 249, 0.25);
       transform: translateY(-2px);
-      box-shadow: 0 8px 30px rgba(139, 92, 246, 0.6);
+      box-shadow: 0 4px 16px rgba(103, 232, 249, 0.2);
     }
     
-    .commercial-btn-icon {
+    .commercial-submit-btn .material-icons {
       font-size: 18px;
-      animation: tvPulse 2s ease-in-out infinite;
     }
     
-    @keyframes tvPulse {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.1); }
+    .commercial-form-message {
+      margin-top: 16px;
+      padding: 12px;
+      border-radius: 10px;
+      display: none;
+      text-align: center;
+      font-size: 13px;
     }
     
+    /* Mobile responsive */
+    @media (max-width: 768px) {
+      .commercial-modal-content {
+        padding: 28px 20px;
+        border-radius: 20px;
+        max-width: 100%;
+      }
+      
+      .commercial-modal-title {
+        font-size: 18px;
+      }
+      
+      .commercial-features {
+        gap: 8px;
+      }
+      
+      .commercial-feature-card {
+        padding: 6px 12px;
+        font-size: 11px;
+      }
+      
+      .commercial-price {
+        font-size: 28px;
+      }
+      
+      .commercial-form {
+        padding: 18px;
+      }
+      
+      .commercial-form-group input,
+      .commercial-form-group select,
+      .commercial-form-group textarea {
+        padding: 10px 12px;
+        font-size: 13px;
+      }
+    }
+  </style>
+
+  <style>
     /* Mobile navbar optimizations */
     @media (max-width: 768px) {
       .navbar {
@@ -3501,62 +3687,28 @@
       }
       
       .nav-links {
-        gap: 4px !important;
-      }
-      
-      .nav-links a:not(.app-link) {
         display: none !important;
       }
       
-      .nav-links a.app-link {
+      .nav-actions {
+        gap: 4px !important;
+      }
+      
+      .nav-actions .nav-btn {
         padding: 5px 10px !important;
         font-size: 0.7rem !important;
         border-radius: 8px !important;
         gap: 4px !important;
       }
       
-      .nav-links a.app-link i {
+      .nav-actions .nav-btn i {
         font-size: 16px !important;
       }
       
-      .support-btn {
-        padding: 5px 10px !important;
-        font-size: 0.7rem !important;
-        border-radius: 8px !important;
-        gap: 4px !important;
-      }
-      
-      .support-btn span {
+      .nav-actions .nav-btn span {
         display: none !important;
       }
-      
-      .support-btn i {
-        font-size: 16px !important;
-        margin: 0 !important;
-      }
-      
-      /* Commercial button mobile */
-      #commercialFloatingBtn {
-        bottom: 15px;
-        right: 12px;
-        left: auto;
-      }
-      
-      .commercial-btn {
-        padding: 10px 14px;
-        font-size: 12px;
-        border-radius: 12px;
-        gap: 6px;
-      }
-      
-      .commercial-btn-icon {
-        font-size: 14px;
-      }
-      
-      .commercial-btn-text {
-        font-size: 11px;
-      }
-      
+
       #commercialModal > div {
         padding: 25px 20px;
         border-radius: 16px;
@@ -3572,18 +3724,21 @@
       .live-users {
         padding: 3px 6px !important;
       }
-      
-      .nav-links a.app-link span {
-        display: none;
+    }
+    
+    /* SEO Footer mobile */
+    @media (max-width: 768px) {
+      #seo-footer {
+        padding: 6px 10px !important;
       }
       
-      .commercial-btn-text {
-        display: none;
+      #seo-footer nav {
+        gap: 6px !important;
+        font-size: 9px !important;
       }
       
-      .commercial-btn {
-        padding: 10px 12px;
-        border-radius: 50%;
+      #seo-footer .mobile-hidden {
+        display: none !important;
       }
     }
   </style>
@@ -3592,16 +3747,12 @@
   <footer id="seo-footer" style="position:fixed;bottom:0;left:0;right:0;background:linear-gradient(180deg, transparent 0%, rgba(10,14,23,0.98) 50%, rgba(10,14,23,1) 100%);padding:12px 20px;z-index:100;pointer-events:none;border-top:1px solid rgba(0,212,255,0.08);">
     <nav style="display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:12px;font-size:11px;opacity:0.5;pointer-events:auto;font-weight:500;">
       <span style="color:#00d4ff;font-weight:700;letter-spacing:1px;">© 2026 NEPTUN</span>
+      <span style="color:#334155;" class="mobile-hidden">•</span>
+      <a href="/" style="color:#64748b;text-decoration:none;transition:color 0.2s;" class="mobile-hidden" title="Карта шахедів онлайн">Карта шахедів</a>
+      <span style="color:#334155;" class="mobile-hidden">•</span>
+      <a href="/" style="color:#64748b;text-decoration:none;transition:color 0.2s;" class="mobile-hidden" title="Карта тривог України">Карта тривог</a>
       <span style="color:#334155;">•</span>
-      <a href="/" style="color:#64748b;text-decoration:none;transition:color 0.2s;" onmouseover="this.style.color='#00d4ff'" onmouseout="this.style.color='#64748b'" title="Карта шахедів онлайн">Карта шахедів</a>
-      <span style="color:#334155;">•</span>
-      <a href="/" style="color:#64748b;text-decoration:none;transition:color 0.2s;" onmouseover="this.style.color='#00d4ff'" onmouseout="this.style.color='#64748b'" title="Карта тривог України">Карта тривог</a>
-      <span style="color:#334155;">•</span>
-      <a href="/" style="color:#64748b;text-decoration:none;transition:color 0.2s;" onmouseover="this.style.color='#00d4ff'" onmouseout="this.style.color='#64748b'" title="Радар шахедів">Радар шахедів</a>
-      <span style="color:#334155;">•</span>
-      <a href="/" style="color:#64748b;text-decoration:none;transition:color 0.2s;" onmouseover="this.style.color='#00d4ff'" onmouseout="this.style.color='#64748b'" title="Мапа тривог">Мапа тривог</a>
-      <span style="color:#334155;">•</span>
-      <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" target="_blank" rel="noopener" style="color:#3ddc84;text-decoration:none;transition:color 0.2s;font-weight:600;" onmouseover="this.style.color='#45e591'" onmouseout="this.style.color='#3ddc84'" title="Завантажити додаток">📱 Android</a>
+      <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" target="_blank" rel="noopener" style="color:#3ddc84;text-decoration:none;transition:color 0.2s;font-weight:600;" title="Завантажити додаток">📱 Android</a>
     </nav>
   </footer>
 </body>
