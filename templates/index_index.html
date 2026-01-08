@@ -3326,16 +3326,30 @@
       }
     }
   </script>
+  </section>
 
-  <!-- COMMERCIAL SUBSCRIPTION SECTION -->
-  <section id="commercialSection" style="position:relative;z-index:150;max-width:1200px;margin:60px auto 120px auto;padding:40px 20px;">
-    <div style="background:linear-gradient(135deg, #0a0e17 0%, #0d1929 100%);border:2px solid rgba(0,212,255,0.3);border-radius:24px;padding:50px;box-shadow:0 20px 60px rgba(0,212,255,0.15);">
+  <!-- FLOATING COMMERCIAL BUTTON -->
+  <div id="commercialFloatingBtn" style="position:fixed;bottom:80px;right:20px;z-index:200;animation:pulse 2s infinite;">
+    <button onclick="document.getElementById('commercialModal').style.display='flex'" style="background:linear-gradient(135deg, #00d4ff 0%, #0891b2 100%);color:#0a0e17;padding:16px 24px;border:none;border-radius:50px;font-size:16px;font-weight:800;cursor:pointer;box-shadow:0 8px 30px rgba(0,212,255,0.5);display:flex;align-items:center;gap:10px;transition:all 0.3s;" onmouseover="this.style.transform='translateY(-3px) scale(1.05)';this.style.boxShadow='0 12px 40px rgba(0,212,255,0.7)'" onmouseout="this.style.transform='translateY(0) scale(1)';this.style.boxShadow='0 8px 30px rgba(0,212,255,0.5)'">
+      <span style="font-size:20px;">💼</span>
+      <span>Комерційна підписка</span>
+    </button>
+  </div>
+
+  <!-- COMMERCIAL MODAL -->
+  <div id="commercialModal" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.95);z-index:9999;display:none;align-items:center;justify-content:center;backdrop-filter:blur(10px);padding:20px;overflow-y:auto;">
+    <div style="background:linear-gradient(135deg, #0a0e17 0%, #0d1929 100%);border:2px solid rgba(0,212,255,0.3);border-radius:24px;padding:50px;max-width:900px;width:100%;max-height:90vh;overflow-y:auto;position:relative;box-shadow:0 20px 60px rgba(0,212,255,0.3);">
+      
+      <!-- Close button -->
+      <button onclick="document.getElementById('commercialModal').style.display='none'" style="position:absolute;top:20px;right:20px;background:none;border:none;color:#9ca3af;font-size:32px;cursor:pointer;line-height:1;padding:0;transition:color 0.3s;" onmouseover="this.style.color='#00d4ff'" onmouseout="this.style.color='#9ca3af'">×</button>
+
       <div style="text-align:center;margin-bottom:40px;">
         <div style="color:#00d4ff;font-size:42px;font-weight:900;margin-bottom:15px;">💼 Комерційне використання</div>
-        <p style="color:#94a3b8;font-size:18px;line-height:1.7;max-width:700px;margin:0 auto;">
+        <p style="color:#94a3b8;font-size:18px;line-height:1.7;">
           Використовуйте карту NEPTUN для своїх <strong style="color:#e2e8f0;">TikTok ефірів</strong>, <strong style="color:#e2e8f0;">YouTube стрімів</strong> та <strong style="color:#e2e8f0;">Telegram каналів</strong>
         </p>
       </div>
+
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:25px;margin-bottom:40px;">
         <div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.2);border-radius:16px;padding:25px;text-align:center;">
           <div style="font-size:40px;margin-bottom:10px;">📺</div>
@@ -3350,12 +3364,12 @@
           <div style="color:#e2e8f0;font-size:16px;font-weight:700;">Реальний час</div>
         </div>
       </div>
+
       <div style="background:rgba(0,212,255,0.08);border:2px solid rgba(0,212,255,0.3);border-radius:20px;padding:40px;text-align:center;margin-bottom:40px;">
         <div style="color:#00d4ff;font-size:64px;font-weight:900;margin-bottom:15px;">1500₴<span style="font-size:18px;color:#64748b;">/місяць</span></div>
-        <p style="color:#94a3b8;font-size:14px;margin-bottom:25px;">Безпечна оплата через Monobank Acquiring • Комісія 1.4%</p>
+        <p style="color:#94a3b8;font-size:14px;margin-bottom:0;">Безпечна оплата через Monobank Acquiring • Комісія 1.4%</p>
       </div>
 
-      <!-- SUBSCRIPTION FORM -->
       <form id="commercialSubscriptionForm" onsubmit="handleCommercialSubscription(event)" style="background:rgba(15,23,42,0.5);border:1px solid rgba(0,212,255,0.2);border-radius:20px;padding:40px;">
         <div style="color:#e2e8f0;font-size:24px;font-weight:800;margin-bottom:30px;text-align:center;">📝 Оформлення підписки</div>
         
@@ -3397,7 +3411,19 @@
         <div id="commercialFormMessage" style="margin-top:20px;padding:15px;border-radius:10px;display:none;text-align:center;font-size:14px;"></div>
       </form>
     </div>
-  </section>
+  </div>
+
+  <style>
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+    @media (max-width: 768px) {
+      #commercialFloatingBtn { bottom: 70px; right: 15px; }
+      #commercialFloatingBtn button { padding: 12px 20px; font-size: 14px; }
+      #commercialModal > div { padding: 30px; }
+    }
+  </style>
 
   <!-- SEO FOOTER - Important for search rankings -->
   <footer id="seo-footer" style="position:fixed;bottom:0;left:0;right:0;background:linear-gradient(180deg, transparent 0%, rgba(10,14,23,0.98) 50%, rgba(10,14,23,1) 100%);padding:12px 20px;z-index:100;pointer-events:none;border-top:1px solid rgba(0,212,255,0.08);">
