@@ -759,22 +759,28 @@ def alarm_all():
 # ==================== COMMERCIAL SUBSCRIPTION ENDPOINT ====================
 @app.route('/api/commercial_subscription', methods=['POST'])
 def commercial_subscription():
-    """Handle commercial subscription requests with LiqPay payment"""
+    """Handle commercial subscription requests with Monobank payment"""
     try:
         data = request.get_json()
         
         # Validate required fields
-        if not data.get('nickname') or not data.get('email'):
-            return jsonify({'error': 'Missing required fields'}), 400
+        required_fields = ['name', 'email', 'type']
+        missing_fields = [field for field in required_fields if not data.get(field)]
+        
+        if missing_fields:
+            return jsonify({
+                'error': f'Missing required fields: {", ".join(missing_fields)}'
+            }), 400
         
         # Prepare subscription data
         subscription = {
             'id': str(uuid.uuid4()),
-            'nickname': data.get('nickname'),
+            'name': data.get('name'),
             'email': data.get('email'),
-            'telegram': data.get('telegram', ''),
+            'phone': data.get('phone'),
+            'type': data.get('type'),
             'comment': data.get('comment', ''),
-            'amount': 1500,
+            'amount': data.get('amount', 1500),
             'currency': 'UAH',
             'status': 'pending',
             'timestamp': datetime.now(pytz.timezone('Europe/Kiev')).isoformat(),
@@ -800,8 +806,10 @@ def commercial_subscription():
         
         print(f"🔔 NEW COMMERCIAL SUBSCRIPTION:")
         print(f"   ID: {subscription['id']}")
-        print(f"   Nickname: {subscription['nickname']}")
+        print(f"   Name: {subscription['name']}")
         print(f"   Email: {subscription['email']}")
+        print(f"   Phone: {subscription['phone']}")
+        print(f"   Type: {subscription['type']}")
         print(f"   Amount: {subscription['amount']} UAH")
         
         # Generate Monobank invoice if enabled
@@ -822,7 +830,7 @@ def commercial_subscription():
                     'ccy': 980,  # UAH код
                     'merchantPaymInfo': {
                         'reference': order_reference,
-                        'destination': f'Комерційна підписка NEPTUN для {subscription["nickname"]}',
+                        'destination': f'Комерційна підписка NEPTUN для {subscription["name"]}',
                         'basketOrder': [{
                             'name': 'Комерційна підписка NEPTUN (місяць)',
                             'qty': 1,

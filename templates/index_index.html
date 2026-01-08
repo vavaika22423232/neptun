@@ -3283,7 +3283,7 @@
       const comment = document.getElementById('commercialComment').value.trim();
       
       // Validate required fields
-      if (!name || !email || !phone || !type) {
+      if (!name || !email || !type) {
         messageDiv.style.background = 'rgba(239,68,68,0.2)';
         messageDiv.style.color = '#fca5a5';
         messageDiv.style.border = '1px solid rgba(239,68,68,0.5)';
@@ -3360,7 +3360,7 @@
   <div id="commercialFloatingBtn" style="position:fixed;bottom:80px;right:20px;z-index:200;animation:pulse 2s infinite;">
     <button onclick="document.getElementById('commercialModal').style.display='flex'" style="background:linear-gradient(135deg, #00d4ff 0%, #0891b2 100%);color:#0a0e17;padding:16px 24px;border:none;border-radius:50px;font-size:16px;font-weight:800;cursor:pointer;box-shadow:0 8px 30px rgba(0,212,255,0.5);display:flex;align-items:center;gap:10px;transition:all 0.3s;" onmouseover="this.style.transform='translateY(-3px) scale(1.05)';this.style.boxShadow='0 12px 40px rgba(0,212,255,0.7)'" onmouseout="this.style.transform='translateY(0) scale(1)';this.style.boxShadow='0 8px 30px rgba(0,212,255,0.5)'">
       <span style="font-size:20px;">💼</span>
-      <span>Комерційна підписка</span>
+      <span>Дозвіл на стрімінг карти</span>
     </button>
   </div>
 
@@ -3409,11 +3409,6 @@
         <div style="margin-bottom:20px;">
           <label style="display:block;color:#94a3b8;font-size:14px;font-weight:600;margin-bottom:8px;">Email *</label>
           <input type="email" id="commercialEmail" required style="width:100%;padding:14px;background:rgba(10,14,23,0.8);border:1px solid rgba(0,212,255,0.3);border-radius:10px;color:#fff;font-size:15px;outline:none;">
-        </div>
-
-        <div style="margin-bottom:20px;">
-          <label style="display:block;color:#94a3b8;font-size:14px;font-weight:600;margin-bottom:8px;">Телефон *</label>
-          <input type="tel" id="commercialPhone" required style="width:100%;padding:14px;background:rgba(10,14,23,0.8);border:1px solid rgba(0,212,255,0.3);border-radius:10px;color:#fff;font-size:15px;outline:none;" placeholder="+380XXXXXXXXX">
         </div>
 
         <div style="margin-bottom:20px;">
