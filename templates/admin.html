@@ -154,6 +154,11 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 <div class="menu-title">Commercial Subscriptions</div>
 <div class="menu-desc">Payment management, approvals, revenue stats</div>
 </div>
+<div class="menu-section" onclick="showSection('nicknames')">
+<div class="menu-icon">👤</div>
+<div class="menu-title">User Nicknames</div>
+<div class="menu-desc">All registered user nicknames from localStorage</div>
+</div>
 <div class="menu-section" onclick="showSection('users')">
 <div class="menu-icon">👥</div>
 <div class="menu-title">Users & Blocking</div>
@@ -404,6 +409,51 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 <p>No subscriptions yet</p>
 </div>
 {% endif %}
+</div>
+</div>
+</div>
+
+<!-- Section: User Nicknames -->
+<div id="section-nicknames" class="admin-section" style="display:none">
+<button class="btn btn-secondary" onclick="showMainMenu()" style="margin-bottom:1rem">← Back to Menu</button>
+
+<div class="card">
+<div class="card-header">
+<h2 class="card-title">👤 User Nicknames</h2>
+<span class="badge info" id="nicknamesCount">0 nicknames</span>
+</div>
+<div class="card-body">
+<div style="margin-bottom:1.5rem">
+<p style="color:var(--muted);font-size:0.875rem">
+ℹ️ This section displays all user nicknames stored in localStorage. Since localStorage is client-side, 
+this data is collected from active sessions via JavaScript. Refresh the page to see real-time updates.
+</p>
+</div>
+
+<div style="margin-bottom:1rem;display:flex;gap:1rem;align-items:center">
+<input type="text" id="nicknameSearch" placeholder="🔍 Search nicknames..." class="input" style="max-width:300px" oninput="filterNicknames()">
+<button class="btn btn-primary btn-sm" onclick="loadNicknamesFromSessions()">🔄 Refresh List</button>
+</div>
+
+<div id="nicknamesTable" style="overflow-x:auto">
+<table style="width:100%;border-collapse:collapse;background:var(--card);border-radius:0.5rem;overflow:hidden">
+<thead style="background:rgba(59,130,246,0.1)">
+<tr>
+<th style="padding:1rem;text-align:left;font-weight:600;color:var(--text)">#</th>
+<th style="padding:1rem;text-align:left;font-weight:600;color:var(--text)">👤 Nickname</th>
+<th style="padding:1rem;text-align:left;font-weight:600;color:var(--text)">📅 First Seen</th>
+<th style="padding:1rem;text-align:left;font-weight:600;color:var(--text)">🔗 Source</th>
+</tr>
+</thead>
+<tbody id="nicknamesBody">
+<tr>
+<td colspan="4" style="padding:2rem;text-align:center;color:var(--muted)">
+Loading nicknames... Please wait.
+</td>
+</tr>
+</tbody>
+</table>
+</div>
 </div>
 </div>
 </div>
@@ -928,7 +978,77 @@ setInterval(updateRaw,15000);
 setInterval(updateStats,20000);
 
 function showMainMenu(){document.querySelectorAll('.admin-section').forEach(s=>s.style.display='none');document.getElementById('mainMenu').style.display='block'}
-function showSection(name){document.querySelectorAll('.admin-section').forEach(s=>s.style.display='none');document.getElementById('mainMenu').style.display='none';const section=document.getElementById('section-'+name);if(section){section.style.display='block';if(name==='map'&&!map){setTimeout(()=>initMap(),100)}}else{notif('Section not found: '+name,'error')}}
+function showSection(name){document.querySelectorAll('.admin-section').forEach(s=>s.style.display='none');document.getElementById('mainMenu').style.display='none';const section=document.getElementById('section-'+name);if(section){section.style.display='block';if(name==='map'&&!map){setTimeout(()=>initMap(),100)}else if(name==='nicknames'){loadNicknamesFromSessions()}}else{notif('Section not found: '+name,'error')}}
+
+// Nicknames management
+let allNicknames = [];
+async function loadNicknamesFromSessions() {
+  try {
+    // In real scenario, you'd fetch from backend API that collects nicknames from active sessions
+    // For now, we'll show a placeholder since localStorage is client-side only
+    const tbody = document.getElementById('nicknamesBody');
+    const countBadge = document.getElementById('nicknamesCount');
+    
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="4" style="padding:2rem;text-align:center;color:var(--muted)">
+          <div style="margin-bottom:1rem;font-size:1.5rem">⚠️</div>
+          <div style="font-size:1rem;font-weight:600;margin-bottom:0.5rem">Client-Side Data Only</div>
+          <div style="font-size:0.875rem">
+            User nicknames are stored in each user's browser localStorage.<br>
+            To collect them, you need to implement a backend endpoint that:<br>
+            1. Collects nicknames from active visitor sessions<br>
+            2. Stores them in a database (e.g., visitor_nicknames table)<br>
+            3. Returns the list via API endpoint: /admin/nicknames<br><br>
+            For now, check your own localStorage: <strong>${localStorage.getItem('user_nickname') || 'Not set'}</strong>
+          </div>
+        </td>
+      </tr>
+    `;
+    
+    countBadge.textContent = '0 nicknames (client-side only)';
+    
+    // Example implementation if you had an API:
+    /*
+    const response = await api('/admin/nicknames');
+    allNicknames = response.nicknames || [];
+    
+    tbody.innerHTML = allNicknames.length === 0 
+      ? `<tr><td colspan="4" style="padding:2rem;text-align:center;color:var(--muted)">No nicknames found</td></tr>`
+      : allNicknames.map((n, i) => `
+          <tr style="border-top:1px solid var(--border)">
+            <td style="padding:1rem">${i + 1}</td>
+            <td style="padding:1rem;font-weight:600;color:var(--blue)">${n.nickname}</td>
+            <td style="padding:1rem;color:var(--muted);font-size:0.875rem">${n.timestamp}</td>
+            <td style="padding:1rem"><span class="badge info">${n.source}</span></td>
+          </tr>
+        `).join('');
+    
+    countBadge.textContent = `${allNicknames.length} nicknames`;
+    */
+  } catch (e) {
+    document.getElementById('nicknamesBody').innerHTML = `
+      <tr><td colspan="4" style="padding:2rem;text-align:center;color:var(--red)">Error: ${e.message}</td></tr>
+    `;
+  }
+}
+
+function filterNicknames() {
+  const search = document.getElementById('nicknameSearch').value.toLowerCase();
+  const filtered = allNicknames.filter(n => n.nickname.toLowerCase().includes(search));
+  const tbody = document.getElementById('nicknamesBody');
+  
+  tbody.innerHTML = filtered.length === 0
+    ? `<tr><td colspan="4" style="padding:2rem;text-align:center;color:var(--muted)">No matching nicknames</td></tr>`
+    : filtered.map((n, i) => `
+        <tr style="border-top:1px solid var(--border)">
+          <td style="padding:1rem">${i + 1}</td>
+          <td style="padding:1rem;font-weight:600;color:var(--blue)">${n.nickname}</td>
+          <td style="padding:1rem;color:var(--muted);font-size:0.875rem">${n.timestamp}</td>
+          <td style="padding:1rem"><span class="badge info">${n.source}</span></td>
+        </tr>
+      `).join('');
+}
 
 document.addEventListener('DOMContentLoaded',()=>{console.log('🌊 Neptun Admin Dashboard initialized');if(typeof L==='undefined'){notif('Leaflet library failed to load','error');return}const hash=window.location.hash.substring(1);if(hash&&document.getElementById('section-'+hash)){showSection(hash)}updateStats();updateRaw();loadHiddenMarkers();const typeSelect=document.getElementById('editType');if(typeSelect){updateMarkerIcon(typeSelect.value||'shahed');}});
 </script>

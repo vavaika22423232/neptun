@@ -2046,7 +2046,29 @@
       }
       
       console.log('👤 Нік збережено:', nickname);
+      
+      // Update navbar display
+      displayNicknameInNavbar();
     }
+
+    // Display nickname in navbar
+    function displayNicknameInNavbar() {
+      const nickname = localStorage.getItem('user_nickname');
+      if (nickname) {
+        const displayElement = document.getElementById('userNicknameDisplay');
+        const nicknameText = document.getElementById('navbarNickname');
+        if (displayElement && nicknameText) {
+          nicknameText.textContent = nickname;
+          displayElement.style.display = 'flex';
+          displayElement.style.alignItems = 'center';
+        }
+      }
+    }
+
+    // Call on page load
+    document.addEventListener('DOMContentLoaded', displayNicknameInNavbar);
+    // Also call after saving nickname
+    window.addEventListener('storage', displayNicknameInNavbar);
 
     // Add fadeOut animation
     const style = document.createElement('style');
@@ -2119,6 +2141,11 @@
           <span class="live-chip">🌐 <strong data-role="live-web">0</strong></span>
           <span class="live-chip">📱 <strong data-role="live-apps">0</strong></span>
         </div>
+      </div>
+      <!-- User Nickname Display -->
+      <div id="userNicknameDisplay" style="display:none;margin-left:15px;padding:6px 14px;background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.3);border-radius:10px;color:#00d4ff;font-size:13px;font-weight:600;">
+        <i class="material-icons" style="font-size:14px;vertical-align:middle;margin-right:4px;">👤</i>
+        <span id="navbarNickname"></span>
       </div>
     </div>
     <div class="nav-links">
