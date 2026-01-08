@@ -787,20 +787,19 @@ def commercial_subscription():
             'user_agent': request.headers.get('User-Agent', '')
         }
         
-        # Save to file
-        subscriptions_file = 'commercial_subscriptions.json'
+        # Save to file (using persistent storage)
         subscriptions = []
         
-        if os.path.exists(subscriptions_file):
+        if os.path.exists(COMMERCIAL_SUBSCRIPTIONS_FILE):
             try:
-                with open(subscriptions_file, 'r', encoding='utf-8') as f:
+                with open(COMMERCIAL_SUBSCRIPTIONS_FILE, 'r', encoding='utf-8') as f:
                     subscriptions = json.load(f)
             except:
                 pass
         
         subscriptions.append(subscription)
         
-        with open(subscriptions_file, 'w', encoding='utf-8') as f:
+        with open(COMMERCIAL_SUBSCRIPTIONS_FILE, 'w', encoding='utf-8') as f:
             json.dump(subscriptions, f, ensure_ascii=False, indent=2)
         
         print(f"🔔 NEW COMMERCIAL SUBSCRIPTION:")
@@ -870,7 +869,7 @@ def commercial_subscription():
                     subscription['invoice_id'] = invoice_id
                     
                     # Перезаписуємо файл з новим invoiceId
-                    with open(subscriptions_file, 'w', encoding='utf-8') as f:
+                    with open(COMMERCIAL_SUBSCRIPTIONS_FILE, 'w', encoding='utf-8') as f:
                         json.dump(subscriptions, f, ensure_ascii=False, indent=2)
                     
                     print(f"✅ Monobank invoice created: {invoice_id}")
@@ -931,12 +930,11 @@ def monobank_callback():
         print(f"   Reference: {reference}")
         print(f"   Amount: {amount / 100} UAH")
         
-        # Update subscription status
-        subscriptions_file = 'commercial_subscriptions.json'
+        # Update subscription status (using persistent storage)
         
-        if os.path.exists(subscriptions_file):
+        if os.path.exists(COMMERCIAL_SUBSCRIPTIONS_FILE):
             try:
-                with open(subscriptions_file, 'r', encoding='utf-8') as f:
+                with open(COMMERCIAL_SUBSCRIPTIONS_FILE, 'r', encoding='utf-8') as f:
                     subscriptions = json.load(f)
                 
                 # Find and update subscription by reference (наш UUID)
@@ -964,7 +962,7 @@ def monobank_callback():
                         break
                 
                 # Save updated subscriptions
-                with open(subscriptions_file, 'w', encoding='utf-8') as f:
+                with open(COMMERCIAL_SUBSCRIPTIONS_FILE, 'w', encoding='utf-8') as f:
                     json.dump(subscriptions, f, ensure_ascii=False, indent=2)
                     
             except Exception as e:
@@ -1459,8 +1457,7 @@ ACTIVE_VISITORS = {}
 ACTIVE_LOCK = threading.Lock()
 ACTIVE_TTL = 70  # seconds of inactivity before a visitor is dropped
 BLOCKED_FILE = 'blocked_ids.json'
-STATS_FILE = 'visits_stats.json'  # persistent first-seen timestamps per visitor id
-RECENT_VISITS_FILE = 'visits_recent.json'  # stores rolling today/week visitor id sets for fast counts
+# STATS_FILE and RECENT_VISITS_FILE are defined below in persistent storage section
 VISIT_STATS = None  # lazy-loaded dict: {id: first_seen_epoch}
 FORCE_RELOAD_TIMESTAMP = 0  # Timestamp when force reload was triggered
 FORCE_RELOAD_DURATION = 120  # Duration in seconds to keep force reload active (2 minutes)
@@ -1706,12 +1703,18 @@ if PERSISTENT_DATA_DIR and os.path.isdir(PERSISTENT_DATA_DIR):
     MESSAGES_FILE = os.path.join(PERSISTENT_DATA_DIR, 'messages.json')
     CHAT_MESSAGES_FILE = os.path.join(PERSISTENT_DATA_DIR, 'chat_messages.json')
     HIDDEN_FILE = os.path.join(PERSISTENT_DATA_DIR, 'hidden_markers.json')
+    COMMERCIAL_SUBSCRIPTIONS_FILE = os.path.join(PERSISTENT_DATA_DIR, 'commercial_subscriptions.json')
+    STATS_FILE = os.path.join(PERSISTENT_DATA_DIR, 'visits_stats.json')
+    RECENT_VISITS_FILE = os.path.join(PERSISTENT_DATA_DIR, 'visits_recent.json')
     log.info(f'Using PERSISTENT storage: {CHAT_MESSAGES_FILE}')
 else:
     # Fallback to local files (for development)
     MESSAGES_FILE = 'messages.json'
     CHAT_MESSAGES_FILE = 'chat_messages.json'  # Anonymous chat messages
     HIDDEN_FILE = 'hidden_markers.json'
+    COMMERCIAL_SUBSCRIPTIONS_FILE = 'commercial_subscriptions.json'
+    STATS_FILE = 'visits_stats.json'
+    RECENT_VISITS_FILE = 'visits_recent.json'
     log.warning(f'Using LOCAL storage (will be lost on redeploy): {CHAT_MESSAGES_FILE}')
 OPENCAGE_CACHE_FILE = 'opencage_cache.json'
 OPENCAGE_TTL = 60 * 60 * 24 * 30  # 30 days
@@ -15583,11 +15586,9 @@ def admin_approve_subscription(subscription_id):
     if not _require_secret(request):
         return jsonify({'error': 'Forbidden'}), 403
     
-    subscriptions_file = 'commercial_subscriptions.json'
-    
-    if os.path.exists(subscriptions_file):
+    if os.path.exists(COMMERCIAL_SUBSCRIPTIONS_FILE):
         try:
-            with open(subscriptions_file, 'r', encoding='utf-8') as f:
+            with open(COMMERCIAL_SUBSCRIPTIONS_FILE, 'r', encoding='utf-8') as f:
                 subscriptions = json.load(f)
             
             # Find and approve subscription
@@ -15607,7 +15608,7 @@ def admin_approve_subscription(subscription_id):
                     break
             
             # Save updated subscriptions
-            with open(subscriptions_file, 'w', encoding='utf-8') as f:
+            with open(COMMERCIAL_SUBSCRIPTIONS_FILE, 'w', encoding='utf-8') as f:
                 json.dump(subscriptions, f, ensure_ascii=False, indent=2)
             
             return jsonify({'success': True, 'message': 'Subscription approved'})
@@ -18141,12 +18142,11 @@ def admin_panel():
         except Exception:
             continue
     
-    # Load commercial subscriptions
+    # Load commercial subscriptions (from persistent storage)
     subscriptions = []
-    subscriptions_file = 'commercial_subscriptions.json'
-    if os.path.exists(subscriptions_file):
+    if os.path.exists(COMMERCIAL_SUBSCRIPTIONS_FILE):
         try:
-            with open(subscriptions_file, 'r', encoding='utf-8') as f:
+            with open(COMMERCIAL_SUBSCRIPTIONS_FILE, 'r', encoding='utf-8') as f:
                 subscriptions = json.load(f)
             # Sort by timestamp (newest first)
             subscriptions.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
