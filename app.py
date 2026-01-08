@@ -764,7 +764,7 @@ def commercial_subscription():
         data = request.get_json()
         
         # Validate required fields
-        required_fields = ['name', 'email', 'type']
+        required_fields = ['name', 'telegram', 'type']
         missing_fields = [field for field in required_fields if not data.get(field)]
         
         if missing_fields:
@@ -776,8 +776,7 @@ def commercial_subscription():
         subscription = {
             'id': str(uuid.uuid4()),
             'name': data.get('name'),
-            'email': data.get('email'),
-            'phone': data.get('phone'),
+            'telegram': data.get('telegram'),
             'type': data.get('type'),
             'comment': data.get('comment', ''),
             'amount': data.get('amount', 1500),
@@ -807,8 +806,7 @@ def commercial_subscription():
         print(f"🔔 NEW COMMERCIAL SUBSCRIPTION:")
         print(f"   ID: {subscription['id']}")
         print(f"   Name: {subscription['name']}")
-        print(f"   Email: {subscription['email']}")
-        print(f"   Phone: {subscription['phone']}")
+        print(f"   Telegram: {subscription['telegram']}")
         print(f"   Type: {subscription['type']}")
         print(f"   Amount: {subscription['amount']} UAH")
         

@@ -3277,13 +3277,12 @@
       
       // Get form values
       const name = document.getElementById('commercialName').value.trim();
-      const email = document.getElementById('commercialEmail').value.trim();
-      const phone = document.getElementById('commercialPhone').value.trim();
+      const telegram = document.getElementById('commercialTelegram').value.trim();
       const type = document.getElementById('commercialType').value;
       const comment = document.getElementById('commercialComment').value.trim();
       
       // Validate required fields
-      if (!name || !email || !type) {
+      if (!name || !telegram || !type) {
         messageDiv.style.background = 'rgba(239,68,68,0.2)';
         messageDiv.style.color = '#fca5a5';
         messageDiv.style.border = '1px solid rgba(239,68,68,0.5)';
@@ -3292,21 +3291,9 @@
         return;
       }
       
-      // Validate email format
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
-        messageDiv.style.background = 'rgba(239,68,68,0.2)';
-        messageDiv.style.color = '#fca5a5';
-        messageDiv.style.border = '1px solid rgba(239,68,68,0.5)';
-        messageDiv.innerHTML = '❌ Введіть коректний email';
-        messageDiv.style.display = 'block';
-        return;
-      }
-      
       const formData = {
         name: name,
-        email: email,
-        phone: phone,
+        telegram: telegram,
         type: type,
         comment: comment,
         amount: 1500
@@ -3420,18 +3407,13 @@
         <div style="color:#e2e8f0;font-size:24px;font-weight:800;margin-bottom:30px;text-align:center;">📝 Оформлення підписки</div>
         
         <div style="margin-bottom:20px;">
-          <label style="display:block;color:#94a3b8;font-size:14px;font-weight:600;margin-bottom:8px;">Ім'я / Назва організації *</label>
+          <label style="display:block;color:#94a3b8;font-size:14px;font-weight:600;margin-bottom:8px;">Ваш нік в тік тоці або іншій платформі *</label>
           <input type="text" id="commercialName" required style="width:100%;padding:14px;background:rgba(10,14,23,0.8);border:1px solid rgba(0,212,255,0.3);border-radius:10px;color:#fff;font-size:15px;outline:none;">
         </div>
 
         <div style="margin-bottom:20px;">
-          <label style="display:block;color:#94a3b8;font-size:14px;font-weight:600;margin-bottom:8px;">Email *</label>
-          <input type="email" id="commercialEmail" required style="width:100%;padding:14px;background:rgba(10,14,23,0.8);border:1px solid rgba(0,212,255,0.3);border-radius:10px;color:#fff;font-size:15px;outline:none;">
-        </div>
-
-        <div style="margin-bottom:20px;">
-          <label style="display:block;color:#94a3b8;font-size:14px;font-weight:600;margin-bottom:8px;">Телефон (опціонально)</label>
-          <input type="tel" id="commercialPhone" style="width:100%;padding:14px;background:rgba(10,14,23,0.8);border:1px solid rgba(0,212,255,0.3);border-radius:10px;color:#fff;font-size:15px;outline:none;" placeholder="+380XXXXXXXXX">
+          <label style="display:block;color:#94a3b8;font-size:14px;font-weight:600;margin-bottom:8px;">Telegram для зв'язку *</label>
+          <input type="text" id="commercialTelegram" required style="width:100%;padding:14px;background:rgba(10,14,23,0.8);border:1px solid rgba(0,212,255,0.3);border-radius:10px;color:#fff;font-size:15px;outline:none;" placeholder="@username або https://t.me/username">
         </div>
 
         <div style="margin-bottom:20px;">
