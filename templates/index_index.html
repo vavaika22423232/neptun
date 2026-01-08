@@ -1180,6 +1180,19 @@
       transform: translateY(-1px);
     }
     
+    /* FAQ button - minimal glass style */
+    .nav-actions .faq-btn {
+      background: rgba(147, 51, 234, 0.1);
+      color: #a78bfa !important;
+      border: 1px solid rgba(147, 51, 234, 0.2);
+    }
+    
+    .nav-actions .faq-btn:hover {
+      background: rgba(147, 51, 234, 0.18);
+      border-color: rgba(147, 51, 234, 0.35);
+      transform: translateY(-1px);
+    }
+    
     /* Support button - minimal glass style */
     .nav-actions .support-btn {
       background: rgba(251, 113, 133, 0.1);
@@ -1461,6 +1474,167 @@
       color: #475569;
       margin-top: 0.85rem;
       text-align: center;
+    }
+    
+    /* FAQ Modal - Minimal Glass Style */
+    .faq-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+      padding: 20px;
+    }
+    
+    .faq-modal-overlay.active {
+      display: flex;
+    }
+    
+    .faq-modal {
+      background: rgba(15, 23, 42, 0.92);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(103, 232, 249, 0.15);
+      border-radius: 24px;
+      padding: 1.75rem;
+      max-width: 520px;
+      width: 100%;
+      max-height: 85vh;
+      overflow-y: auto;
+      position: relative;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+    }
+    
+    .faq-modal::-webkit-scrollbar {
+      width: 6px;
+    }
+    
+    .faq-modal::-webkit-scrollbar-track {
+      background: rgba(103, 232, 249, 0.05);
+      border-radius: 3px;
+    }
+    
+    .faq-modal::-webkit-scrollbar-thumb {
+      background: rgba(103, 232, 249, 0.2);
+      border-radius: 3px;
+    }
+    
+    .faq-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid rgba(103, 232, 249, 0.1);
+    }
+    
+    .faq-header i {
+      font-size: 1.5rem;
+      color: #67e8f9;
+    }
+    
+    .faq-header h3 {
+      color: #e2e8f0;
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin: 0;
+    }
+    
+    .faq-close {
+      position: absolute;
+      top: 0.85rem;
+      right: 0.85rem;
+      width: 32px;
+      height: 32px;
+      background: rgba(103, 232, 249, 0.08);
+      border: 1px solid rgba(103, 232, 249, 0.15);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #94a3b8;
+      cursor: pointer;
+      font-size: 18px;
+      transition: all 0.25s ease;
+    }
+    
+    .faq-close:hover {
+      background: rgba(251, 113, 133, 0.15);
+      border-color: rgba(251, 113, 133, 0.25);
+      color: #fb7185;
+      transform: rotate(90deg);
+    }
+    
+    .faq-item {
+      background: rgba(103, 232, 249, 0.04);
+      border: 1px solid rgba(103, 232, 249, 0.08);
+      border-radius: 16px;
+      padding: 1rem;
+      margin-bottom: 0.75rem;
+    }
+    
+    .faq-item:last-child {
+      margin-bottom: 0;
+    }
+    
+    .faq-question {
+      color: #67e8f9;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+    }
+    
+    .faq-question i {
+      font-size: 1rem;
+      margin-top: 2px;
+    }
+    
+    .faq-answer {
+      color: #94a3b8;
+      font-size: 0.78rem;
+      line-height: 1.6;
+      padding-left: 1.5rem;
+    }
+    
+    .faq-warning {
+      background: rgba(251, 113, 133, 0.08);
+      border: 1px solid rgba(251, 113, 133, 0.2);
+    }
+    
+    .faq-warning .faq-question {
+      color: #fb7185;
+    }
+    
+    .faq-warning .faq-question i {
+      color: #fb7185;
+    }
+    
+    .faq-footer {
+      margin-top: 1.25rem;
+      padding-top: 1rem;
+      border-top: 1px solid rgba(103, 232, 249, 0.1);
+      text-align: center;
+    }
+    
+    .faq-footer a {
+      color: #67e8f9;
+      text-decoration: none;
+      font-size: 0.75rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      transition: color 0.2s ease;
+    }
+    
+    .faq-footer a:hover {
+      color: #a5f3fc;
     }
     
     /* Copy toast - minimal glass */
@@ -2123,6 +2297,10 @@
       </div>
     </div>
     <div class="nav-actions">
+      <button class="nav-btn faq-btn" onclick="toggleFAQ()" title="FAQ та правила">
+        <i class="material-icons">help_outline</i>
+        <span>FAQ</span>
+      </button>
       <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" target="_blank" class="nav-btn app-link"><i class="material-icons">android</i> Додаток</a>
       <button class="nav-btn support-btn" onclick="toggleDonate()" title="Підтримати проєкт">
         <i class="material-icons">favorite</i>
@@ -2166,6 +2344,95 @@
     </div>
   </div>
   <div class="copy-toast" id="copyToast">✓ Скопійовано</div>
+  
+  <!-- FAQ Modal -->
+  <div class="faq-modal-overlay" id="faqModal">
+    <div class="faq-modal">
+      <button class="faq-close" onclick="toggleFAQ(false)">×</button>
+      <div class="faq-header">
+        <i class="material-icons">help_outline</i>
+        <h3>FAQ та правила використання</h3>
+      </div>
+      
+      <div class="faq-item">
+        <div class="faq-question">
+          <i class="material-icons">map</i>
+          Що таке NEPTUN?
+        </div>
+        <div class="faq-answer">
+          NEPTUN — це інтерактивна карта тривог України, яка автоматично збирає дані з відкритих джерел (офіційні телеграм-канали ОВА та інші) та візуалізує їх у реальному часі.
+        </div>
+      </div>
+      
+      <div class="faq-item">
+        <div class="faq-question">
+          <i class="material-icons">verified</i>
+          Чи є карта офіційною?
+        </div>
+        <div class="faq-answer">
+          Ні, NEPTUN не є офіційною системою оповіщення. Ми агрегуємо дані з публічних джерел для зручного відображення. Для офіційної інформації використовуйте державні ресурси та додаток "Повітряна тривога".
+        </div>
+      </div>
+      
+      <div class="faq-item">
+        <div class="faq-question">
+          <i class="material-icons">schedule</i>
+          Як швидко оновлюються дані?
+        </div>
+        <div class="faq-answer">
+          Дані оновлюються автоматично кожні кілька секунд. Затримка залежить від швидкості публікації інформації в джерелах, які ми моніторимо.
+        </div>
+      </div>
+      
+      <div class="faq-item">
+        <div class="faq-question">
+          <i class="material-icons">smartphone</i>
+          Чи є мобільний додаток?
+        </div>
+        <div class="faq-answer">
+          Так! Ви можете завантажити офіційний Android-додаток NEPTUN з Google Play. Додаток для iOS наразі в розробці.
+        </div>
+      </div>
+      
+      <div class="faq-item faq-warning">
+        <div class="faq-question">
+          <i class="material-icons">block</i>
+          Що заборонено?
+        </div>
+        <div class="faq-answer">
+          <strong>⛔ Категорично заборонено використовувати карту для переливання аудиторії на власні телеграм-канали чи інші ресурси.</strong><br><br>
+          Порушники будуть заблоковані без попередження. Комерційне використання потребує окремої домовленості — зверніться до нас через кнопку "Комерційне використання".
+        </div>
+      </div>
+      
+      <div class="faq-item">
+        <div class="faq-question">
+          <i class="material-icons">business</i>
+          Як використовувати карту для бізнесу?
+        </div>
+        <div class="faq-answer">
+          Для комерційного використання (вбудовування на сайт, інтеграція в додатки, використання API) натисніть кнопку "Комерційне використання" в нижньому меню та заповніть заявку.
+        </div>
+      </div>
+      
+      <div class="faq-item">
+        <div class="faq-question">
+          <i class="material-icons">favorite</i>
+          Як підтримати проєкт?
+        </div>
+        <div class="faq-answer">
+          Ви можете підтримати нас фінансово через кнопку "Підтримати" у верхньому меню. Також допомагає поширення карти серед знайомих та позитивні відгуки в Google Play.
+        </div>
+      </div>
+      
+      <div class="faq-footer">
+        <a href="https://t.me/+aBR79kExNQM1ZjZi" target="_blank">
+          <i class="material-icons" style="font-size: 16px;">telegram</i>
+          Зв'язатися з нами в Telegram
+        </a>
+      </div>
+    </div>
+  </div>
   
   <!-- Telegram Banner -->
   <a href="https://t.me/+aBR79kExNQM1ZjZi" target="_blank" class="tg-banner" id="tgBanner">
@@ -3167,6 +3434,28 @@
         }
       }
     }
+    
+    // ========== FAQ FUNCTIONS ==========
+    function toggleFAQ(show = null) {
+      const modal = document.getElementById('faqModal');
+      if (modal) {
+        if (show === false) {
+          modal.classList.remove('active');
+        } else if (show === true) {
+          modal.classList.add('active');
+        } else {
+          modal.classList.toggle('active');
+        }
+      }
+    }
+    
+    // Close FAQ modal on outside click
+    document.addEventListener('click', function(e) {
+      const faqModal = document.getElementById('faqModal');
+      if (e.target === faqModal) {
+        toggleFAQ(false);
+      }
+    });
     
     function copyDonate(text) {
       navigator.clipboard.writeText(text).then(() => {
