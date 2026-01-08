@@ -3275,12 +3275,24 @@
       const messageDiv = document.getElementById('commercialFormMessage');
       const submitBtn = event.target.querySelector('button[type="submit"]');
       
-      // Get form values
-      const name = document.getElementById('commercialName').value.trim();
-      const email = document.getElementById('commercialEmail').value.trim();
-      const phone = document.getElementById('commercialPhone').value.trim();
-      const type = document.getElementById('commercialType').value;
-      const comment = document.getElementById('commercialComment').value.trim();
+      // Get form values with null checks
+      const nameEl = document.getElementById('commercialName');
+      const emailEl = document.getElementById('commercialEmail');
+      const phoneEl = document.getElementById('commercialPhone');
+      const typeEl = document.getElementById('commercialType');
+      const commentEl = document.getElementById('commercialComment');
+      
+      if (!nameEl || !emailEl || !phoneEl || !typeEl || !commentEl) {
+        console.error('Form elements not found!', {nameEl, emailEl, phoneEl, typeEl, commentEl});
+        alert('Помилка: форма не завантажилась. Спробуйте оновити сторінку.');
+        return;
+      }
+      
+      const name = nameEl.value.trim();
+      const email = emailEl.value.trim();
+      const phone = phoneEl.value.trim();
+      const type = typeEl.value;
+      const comment = commentEl.value.trim();
       
       // Validate required fields
       if (!name || !email || !type) {
