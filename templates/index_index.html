@@ -2211,7 +2211,6 @@
         <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/>
       </svg>
     </div>
-    <button class="tg-banner-close" onclick="event.preventDefault(); event.stopPropagation(); closeTgBanner();">×</button>
   </a>
   
   <!-- Disclaimer Bar -->
@@ -3235,25 +3234,11 @@
       }
     }
     
-    function closeTgBanner() {
-      const banner = document.getElementById('tgBanner');
-      if (banner) {
-        banner.classList.add('hidden');
-        localStorage.setItem('tg_banner_closed', 'true');
-      }
-    }
-    
     function initBanners() {
       // Show disclaimer if not hidden
       if (!localStorage.getItem('disclaimer_hidden')) {
         const bar = document.getElementById('disclaimerBar');
         if (bar) bar.style.display = 'flex';
-      }
-      
-      // Hide TG banner if already closed
-      if (localStorage.getItem('tg_banner_closed')) {
-        const banner = document.getElementById('tgBanner');
-        if (banner) banner.classList.add('hidden');
       }
     }
     
@@ -3447,9 +3432,9 @@
     /* Commercial floating button */
     #commercialFloatingBtn {
       position: fixed;
-      bottom: 90px;
-      left: 20px;
-      z-index: 200;
+      bottom: 20px;
+      right: 20px;
+      z-index: 1100;
     }
     
     .commercial-btn {
@@ -3552,8 +3537,9 @@
       
       /* Commercial button mobile */
       #commercialFloatingBtn {
-        bottom: 75px;
-        left: 12px;
+        bottom: 15px;
+        right: 12px;
+        left: auto;
       }
       
       .commercial-btn {
