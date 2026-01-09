@@ -3558,16 +3558,19 @@
         telegram: telegram,
         type: type,
         comment: comment,
-        amount: 1500
+        amount: 1000
       };
+      
+      // WayForPay payment URL
+      const WAYFORPAY_URL = 'https://secure.wayforpay.com/invoice/i8609a370790c';
       
       try {
         // Show loading
         submitBtn.disabled = true;
-        submitBtn.innerHTML = '⏳ Підготовка оплати...';
+        submitBtn.innerHTML = '⏳ Збереження заявки...';
         messageDiv.style.display = 'none';
         
-        // Send to backend
+        // Send to backend to save subscription data
         const response = await fetch('/api/commercial_subscription', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -3577,36 +3580,23 @@
         const result = await response.json();
         
         if (response.ok) {
-          // Check if payment URL exists (can be in result directly or in payment_data)
-          const paymentUrl = result.payment_url || (result.payment_data && result.payment_data.pageUrl);
+          // Show success and redirect to WayForPay
+          messageDiv.style.background = 'rgba(34,197,94,0.2)';
+          messageDiv.style.color = '#86efac';
+          messageDiv.style.border = '1px solid rgba(34,197,94,0.5)';
+          messageDiv.innerHTML = '✅ Заявку збережено! Перенаправлення на WayForPay...';
+          messageDiv.style.display = 'block';
           
-          if (paymentUrl) {
-            // Redirect to Monobank payment
-            messageDiv.style.background = 'rgba(34,197,94,0.2)';
-            messageDiv.style.color = '#86efac';
-            messageDiv.style.border = '1px solid rgba(34,197,94,0.5)';
-            messageDiv.innerHTML = '✅ Перенаправлення на сторінку оплати...';
-            messageDiv.style.display = 'block';
-            
-            setTimeout(() => {
-              window.location.href = paymentUrl;
-            }, 1000);
-          } else {
-            // Payment system not configured - show success message
-            messageDiv.style.background = 'rgba(34,197,94,0.2)';
-            messageDiv.style.color = '#86efac';
-            messageDiv.style.border = '1px solid rgba(34,197,94,0.5)';
-            messageDiv.innerHTML = '✅ ' + (result.message || 'Дякуємо! Ми зв\'яжемося з вами найближчим часом.');
-            messageDiv.style.display = 'block';
-            
-            // Close modal after 3 seconds
-            setTimeout(() => {
-              document.getElementById('commercialModal').style.display = 'none';
-              event.target.reset();
-            }, 3000);
-          }
+          // Redirect to WayForPay after 1.5 seconds
+          setTimeout(() => {
+            window.open(WAYFORPAY_URL, '_blank');
+            document.getElementById('commercialModal').style.display = 'none';
+            event.target.reset();
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '💳 Перейти до оплати';
+          }, 1500);
         } else {
-          throw new Error(result.error || 'Помилка створення інвойсу');
+          throw new Error(result.error || 'Помилка збереження заявки');
         }
       } catch (error) {
         console.error('Subscription error:', error);
@@ -3656,8 +3646,8 @@
       </div>
 
       <div class="commercial-price-card">
-        <div class="commercial-price">1500₴<span>/місяць</span></div>
-        <p class="commercial-price-note">Monobank Acquiring • 1.4% комісія</p>
+        <div class="commercial-price">1000₴<span>/місяць</span></div>
+        <p class="commercial-price-note">WayForPay • Безпечна оплата</p>
       </div>
 
       <form id="commercialSubscriptionForm" onsubmit="handleCommercialSubscription(event)" class="commercial-form">
