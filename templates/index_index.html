@@ -3701,17 +3701,14 @@
         amount: 1000
       };
       
-      // WayForPay payment URL
-      const WAYFORPAY_URL = 'https://secure.wayforpay.com/invoice/i8609a370790c';
-      
       try {
         // Show loading
         submitBtn.disabled = true;
-        submitBtn.innerHTML = '⏳ Збереження заявки...';
+        submitBtn.innerHTML = '⏳ Створення рахунку...';
         messageDiv.style.display = 'none';
         
-        // Send to backend to save subscription data
-        const response = await fetch('/api/commercial_subscription', {
+        // Create WayForPay invoice via API
+        const response = await fetch('/api/wayforpay/create-invoice', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(formData)
@@ -3719,23 +3716,23 @@
         
         const result = await response.json();
         
-        if (response.ok) {
+        if (response.ok && result.success) {
           // Show success and redirect to WayForPay
           messageDiv.style.background = 'rgba(34,197,94,0.2)';
           messageDiv.style.color = '#86efac';
           messageDiv.style.border = '1px solid rgba(34,197,94,0.5)';
-          messageDiv.innerHTML = '✅ Заявку збережено! Перенаправлення на WayForPay...';
+          messageDiv.innerHTML = `✅ Рахунок #${result.order_id} створено! Перенаправлення на WayForPay...`;
           messageDiv.style.display = 'block';
           
-          // Redirect to WayForPay after 1 second
+          // Redirect to WayForPay payment page
           setTimeout(() => {
-            window.location.href = WAYFORPAY_URL;
+            window.location.href = result.payment_url;
           }, 1000);
         } else {
-          throw new Error(result.error || 'Помилка збереження заявки');
+          throw new Error(result.error || 'Помилка створення рахунку');
         }
       } catch (error) {
-        console.error('Subscription error:', error);
+        console.error('Payment error:', error);
         messageDiv.style.background = 'rgba(239,68,68,0.2)';
         messageDiv.style.color = '#fca5a5';
         messageDiv.style.border = '1px solid rgba(239,68,68,0.5)';

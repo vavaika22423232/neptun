@@ -341,6 +341,17 @@ app = Flask(__name__)
 
 # ============= PAYMENT & EMAIL CONFIGURATION =============
 
+# WayForPay configuration
+WAYFORPAY_MERCHANT_ACCOUNT = os.getenv('WAYFORPAY_MERCHANT_ACCOUNT', 'neptun_in_ua')
+WAYFORPAY_MERCHANT_SECRET = os.getenv('WAYFORPAY_MERCHANT_SECRET', '')
+WAYFORPAY_DOMAIN = 'neptun.in.ua'
+WAYFORPAY_ENABLED = bool(WAYFORPAY_MERCHANT_SECRET)
+
+if WAYFORPAY_ENABLED:
+    print("INFO: WayForPay payment initialized")
+else:
+    print("WARNING: WayForPay disabled (missing WAYFORPAY_MERCHANT_SECRET)")
+
 # Monobank Acquiring configuration (для ФОП/ТОВ - 1.4% комісія)
 MONOBANK_TOKEN = os.getenv('MONOBANK_TOKEN', '')
 MONOBANK_ENABLED = bool(MONOBANK_TOKEN)
@@ -753,6 +764,203 @@ def alarm_all():
     resp = jsonify([])
     resp.headers['Cache-Control'] = 'public, max-age=10'
     return resp
+
+# ==================== WAYFORPAY PAYMENT ====================
+def generate_wayforpay_signature(params, secret_key):
+    """Generate HMAC_MD5 signature for WayForPay"""
+    import hmac
+    import hashlib
+    sign_string = ';'.join(str(p) for p in params)
+    return hmac.new(
+        secret_key.encode('utf-8'),
+        sign_string.encode('utf-8'),
+        hashlib.md5
+    ).hexdigest()
+
+@app.route('/api/wayforpay/create-invoice', methods=['POST'])
+def wayforpay_create_invoice():
+    """Create WayForPay invoice with unique order ID"""
+    try:
+        data = request.get_json() or {}
+        
+        # Generate unique order ID
+        import time
+        order_id = f"NEPTUN_{int(time.time())}_{uuid.uuid4().hex[:8]}"
+        
+        # Get client info
+        client_name = data.get('name', 'Клієнт NEPTUN')
+        client_telegram = data.get('telegram', '')
+        client_type = data.get('type', 'Комерційна підписка')
+        amount = int(data.get('amount', 1000))
+        
+        # Save subscription request
+        subscription = {
+            'id': order_id,
+            'name': client_name,
+            'telegram': client_telegram,
+            'type': client_type,
+            'amount': amount,
+            'currency': 'UAH',
+            'status': 'pending',
+            'timestamp': datetime.now(pytz.timezone('Europe/Kiev')).isoformat(),
+            'ip': request.remote_addr
+        }
+        
+        # Save to file
+        subscriptions = []
+        if os.path.exists(COMMERCIAL_SUBSCRIPTIONS_FILE):
+            try:
+                with open(COMMERCIAL_SUBSCRIPTIONS_FILE, 'r', encoding='utf-8') as f:
+                    subscriptions = json.load(f)
+            except:
+                pass
+        subscriptions.append(subscription)
+        with open(COMMERCIAL_SUBSCRIPTIONS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(subscriptions, f, ensure_ascii=False, indent=2)
+        
+        print(f"🔔 NEW WAYFORPAY ORDER: {order_id}")
+        print(f"   Name: {client_name}, Telegram: {client_telegram}")
+        print(f"   Amount: {amount} UAH")
+        
+        # If WayForPay secret is configured, create proper invoice
+        if WAYFORPAY_ENABLED:
+            import time as _time
+            order_date = int(_time.time())
+            
+            # WayForPay API parameters
+            product_name = 'Комерційна підписка NEPTUN (місяць)'
+            product_count = 1
+            product_price = amount
+            
+            # Signature params in specific order
+            sign_params = [
+                WAYFORPAY_MERCHANT_ACCOUNT,
+                WAYFORPAY_DOMAIN,
+                order_id,
+                order_date,
+                amount,
+                'UAH',
+                product_name,
+                product_count,
+                product_price
+            ]
+            
+            signature = generate_wayforpay_signature(sign_params, WAYFORPAY_MERCHANT_SECRET)
+            
+            # Create invoice via WayForPay API
+            invoice_data = {
+                'transactionType': 'CREATE_INVOICE',
+                'merchantAccount': WAYFORPAY_MERCHANT_ACCOUNT,
+                'merchantDomainName': WAYFORPAY_DOMAIN,
+                'merchantSignature': signature,
+                'orderReference': order_id,
+                'orderDate': order_date,
+                'amount': amount,
+                'currency': 'UAH',
+                'productName': [product_name],
+                'productCount': [product_count],
+                'productPrice': [product_price],
+                'returnUrl': 'https://neptun.in.ua/?payment=success',
+                'serviceUrl': 'https://neptun.in.ua/api/wayforpay/callback',
+                'language': 'UA'
+            }
+            
+            try:
+                import requests
+                response = requests.post(
+                    'https://api.wayforpay.com/api',
+                    json=invoice_data,
+                    timeout=10
+                )
+                
+                result = response.json()
+                
+                if result.get('reasonCode') == 1100:
+                    invoice_url = result.get('invoiceUrl')
+                    print(f"✅ WayForPay invoice created: {invoice_url}")
+                    
+                    return jsonify({
+                        'success': True,
+                        'order_id': order_id,
+                        'payment_url': invoice_url,
+                        'message': 'Рахунок створено'
+                    })
+                else:
+                    print(f"❌ WayForPay error: {result}")
+                    # Fallback to simple redirect
+                    return jsonify({
+                        'success': True,
+                        'order_id': order_id,
+                        'payment_url': f'https://secure.wayforpay.com/pay?merchantAccount={WAYFORPAY_MERCHANT_ACCOUNT}&orderReference={order_id}&amount={amount}&currency=UAH',
+                        'message': 'Рахунок створено (fallback)'
+                    })
+                    
+            except Exception as e:
+                print(f"❌ WayForPay API error: {e}")
+        
+        # Fallback - return static invoice URL
+        return jsonify({
+            'success': True,
+            'order_id': order_id,
+            'payment_url': 'https://secure.wayforpay.com/invoice/i8609a370790c',
+            'message': 'Заявку збережено'
+        })
+        
+    except Exception as e:
+        print(f"❌ WayForPay create invoice error: {e}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/wayforpay/callback', methods=['POST'])
+def wayforpay_callback():
+    """Handle WayForPay webhook after payment"""
+    try:
+        data = request.get_json() or {}
+        
+        order_id = data.get('orderReference', '')
+        status = data.get('transactionStatus', '')
+        
+        print(f"💳 WayForPay callback: {order_id} - {status}")
+        
+        # Update subscription status
+        if os.path.exists(COMMERCIAL_SUBSCRIPTIONS_FILE):
+            try:
+                with open(COMMERCIAL_SUBSCRIPTIONS_FILE, 'r', encoding='utf-8') as f:
+                    subscriptions = json.load(f)
+                
+                for sub in subscriptions:
+                    if sub.get('id') == order_id:
+                        sub['status'] = 'paid' if status == 'Approved' else status
+                        sub['payment_date'] = datetime.now(pytz.timezone('Europe/Kiev')).isoformat()
+                        break
+                
+                with open(COMMERCIAL_SUBSCRIPTIONS_FILE, 'w', encoding='utf-8') as f:
+                    json.dump(subscriptions, f, ensure_ascii=False, indent=2)
+                    
+                print(f"✅ Subscription {order_id} updated to: {status}")
+                
+            except Exception as e:
+                print(f"❌ Error updating subscription: {e}")
+        
+        # Return response signature
+        response_time = int(datetime.now().timestamp())
+        sign_params = [order_id, status, response_time]
+        
+        if WAYFORPAY_ENABLED:
+            signature = generate_wayforpay_signature(sign_params, WAYFORPAY_MERCHANT_SECRET)
+        else:
+            signature = ''
+        
+        return jsonify({
+            'orderReference': order_id,
+            'status': 'accept',
+            'time': response_time,
+            'signature': signature
+        })
+        
+    except Exception as e:
+        print(f"❌ WayForPay callback error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 # ==================== COMMERCIAL SUBSCRIPTION ENDPOINT ====================
 @app.route('/api/commercial_subscription', methods=['POST'])
