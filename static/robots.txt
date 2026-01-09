@@ -1,20 +1,47 @@
-# robots.txt для NEPTUN - Карта шахедів та тривог України онлайн
-# Карта шахедів, радар шахедів, карта польоту шахедів в реальному часі
-# Карта тривог України, мапа тривог, повітряна тривога онлайн
-# Відстеження дронів, ракет, БпЛА над Україною 24/7
+# robots.txt для NEPTUN - Карта тривог України онлайн
+# Карта тривог, карта повітряних тривог, тривога зараз
+# Карта шахедів, радар шахедів, відстеження дронів
+# Повітряна тривога онлайн 24/7
 
 User-agent: *
 Allow: /
+Allow: /map
 Allow: /static/
 Allow: /blackouts
-Allow: /analytics
 Allow: /about
 Allow: /faq
 Allow: /privacy
 Allow: /terms
-Allow: /safety
 
-# Закриваємо від індексації адмін панель
+# Регіональні сторінки - пріоритет для SEO
+Allow: /region/
+Allow: /region/kyiv
+Allow: /region/kyivska
+Allow: /region/kharkivska
+Allow: /region/odeska
+Allow: /region/dnipropetrovska
+Allow: /region/lvivska
+Allow: /region/zaporizka
+Allow: /region/mykolaivska
+Allow: /region/poltavska
+Allow: /region/vinnytska
+Allow: /region/zhytomyrska
+Allow: /region/cherkaska
+Allow: /region/sumska
+Allow: /region/chernihivska
+Allow: /region/khmelnytska
+Allow: /region/volynska
+Allow: /region/rivnenska
+Allow: /region/ternopilska
+Allow: /region/ivano-frankivska
+Allow: /region/zakarpatska
+Allow: /region/chernivetska
+Allow: /region/kirovohradska
+Allow: /region/khersonska
+Allow: /region/donetska
+Allow: /region/luhanska
+
+# Закриваємо від індексації
 Disallow: /admin
 Disallow: /auth/
 

@@ -15578,6 +15578,47 @@ def index():
     resp.headers['Link'] = '<https://neptun.in.ua/>; rel="canonical"'
     return resp
 
+# SEO: Regional pages for each oblast
+REGIONS_SEO = {
+    'kyiv': {'name': 'Київська область', 'name_gen': 'Київської області', 'city': 'Київ'},
+    'kharkiv': {'name': 'Харківська область', 'name_gen': 'Харківської області', 'city': 'Харків'},
+    'odesa': {'name': 'Одеська область', 'name_gen': 'Одеської області', 'city': 'Одеса'},
+    'dnipro': {'name': 'Дніпропетровська область', 'name_gen': 'Дніпропетровської області', 'city': 'Дніпро'},
+    'lviv': {'name': 'Львівська область', 'name_gen': 'Львівської області', 'city': 'Львів'},
+    'zaporizhzhia': {'name': 'Запорізька область', 'name_gen': 'Запорізької області', 'city': 'Запоріжжя'},
+    'vinnytsia': {'name': 'Вінницька область', 'name_gen': 'Вінницької області', 'city': 'Вінниця'},
+    'poltava': {'name': 'Полтавська область', 'name_gen': 'Полтавської області', 'city': 'Полтава'},
+    'chernihiv': {'name': 'Чернігівська область', 'name_gen': 'Чернігівської області', 'city': 'Чернігів'},
+    'sumy': {'name': 'Сумська область', 'name_gen': 'Сумської області', 'city': 'Суми'},
+    'mykolaiv': {'name': 'Миколаївська область', 'name_gen': 'Миколаївської області', 'city': 'Миколаїв'},
+    'kherson': {'name': 'Херсонська область', 'name_gen': 'Херсонської області', 'city': 'Херсон'},
+    'zhytomyr': {'name': 'Житомирська область', 'name_gen': 'Житомирської області', 'city': 'Житомир'},
+    'cherkasy': {'name': 'Черкаська область', 'name_gen': 'Черкаської області', 'city': 'Черкаси'},
+    'rivne': {'name': 'Рівненська область', 'name_gen': 'Рівненської області', 'city': 'Рівне'},
+    'khmelnytskyi': {'name': 'Хмельницька область', 'name_gen': 'Хмельницької області', 'city': 'Хмельницький'},
+    'volyn': {'name': 'Волинська область', 'name_gen': 'Волинської області', 'city': 'Луцьк'},
+    'ternopil': {'name': 'Тернопільська область', 'name_gen': 'Тернопільської області', 'city': 'Тернопіль'},
+    'ivano-frankivsk': {'name': 'Івано-Франківська область', 'name_gen': 'Івано-Франківської області', 'city': 'Івано-Франківськ'},
+    'chernivtsi': {'name': 'Чернівецька область', 'name_gen': 'Чернівецької області', 'city': 'Чернівці'},
+    'zakarpattia': {'name': 'Закарпатська область', 'name_gen': 'Закарпатської області', 'city': 'Ужгород'},
+    'kirovohrad': {'name': 'Кіровоградська область', 'name_gen': 'Кіровоградської області', 'city': 'Кропивницький'},
+    'donetsk': {'name': 'Донецька область', 'name_gen': 'Донецької області', 'city': 'Донецьк'},
+    'luhansk': {'name': 'Луганська область', 'name_gen': 'Луганської області', 'city': 'Луганськ'},
+}
+
+@app.route('/region/<region_slug>')
+def region_page(region_slug):
+    """SEO page for each region - helps with regional search queries"""
+    region = REGIONS_SEO.get(region_slug)
+    if not region:
+        return render_template('index_index.html'), 404
+    
+    return render_template('region.html', 
+                          region_slug=region_slug,
+                          region_name=region['name'],
+                          region_name_gen=region['name_gen'],
+                          region_city=region['city'])
+
 @app.route('/admin/subscription/<subscription_id>/approve', methods=['POST'])
 def admin_approve_subscription(subscription_id):
     """Manually approve a subscription (for bank transfer payments)"""

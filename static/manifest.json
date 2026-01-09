@@ -1,0 +1,88 @@
+{
+  "name": "Карта тривог та шахедів України - NEPTUN",
+  "short_name": "Карта тривог",
+  "description": "Карта тривог України в реальному часі. Відстеження повітряних тривог, шахедів, ракет та дронів онлайн 24/7. Push-сповіщення про тривоги.",
+  "lang": "uk",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "browser"],
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#67e8f9",
+  "categories": ["news", "utilities", "weather"],
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "/static/icons/favicon-16x16.png",
+      "sizes": "16x16",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/icons/favicon-32x32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/icons/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/static/screenshots/desktop.png",
+      "sizes": "1920x1080",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Карта тривог на десктопі"
+    },
+    {
+      "src": "/static/screenshots/mobile.png",
+      "sizes": "750x1334",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Карта тривог на мобільному"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Карта тривог",
+      "short_name": "Карта",
+      "description": "Відкрити карту тривог України",
+      "url": "/?shortcut=map",
+      "icons": [{ "src": "/static/icons/icon-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Київ",
+      "short_name": "Київ",
+      "description": "Тривоги в Київській області",
+      "url": "/region/kyiv?shortcut=region",
+      "icons": [{ "src": "/static/icons/icon-192x192.png", "sizes": "192x192" }]
+    }
+  ],
+  "related_applications": [
+    {
+      "platform": "play",
+      "url": "https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app",
+      "id": "com.neptunalarm.neptun_alarm_app"
+    }
+  ],
+  "prefer_related_applications": false,
+  "launch_handler": {
+    "client_mode": "navigate-existing"
+  }
+}

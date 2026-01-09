@@ -1,95 +1,307 @@
+
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
         xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"
-        xmlns:xhtml="http://www.w3.org/1999/xhtml"
-        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-        xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9
-        http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
+        xmlns:xhtml="http://www.w3.org/1999/xhtml">
   
-  <!-- Головна сторінка - карта шахедів та тривог України -->
+  <!-- ======================================== -->
+  <!-- ГОЛОВНА СТОРІНКА - МАКСИМАЛЬНИЙ ПРІОРИТЕТ -->
+  <!-- ======================================== -->
   <url>
     <loc>https://neptun.in.ua/</loc>
-    <lastmod>2026-01-07</lastmod>
+    <lastmod>2026-01-09</lastmod>
     <changefreq>always</changefreq>
     <priority>1.0</priority>
     <image:image>
       <image:loc>https://neptun.in.ua/static/og-image.png</image:loc>
-      <image:title>Карта шахедів онлайн - NEPTUN | Радар тривог України</image:title>
-      <image:caption>Карта шахедів, дронів та ракет України в реальному часі. Радар шахедів, карта повітряних тривог, відстеження загроз онлайн 24/7</image:caption>
+      <image:title>Карта тривог України онлайн - NEPTUN</image:title>
+      <image:caption>Карта повітряних тривог України в реальному часі. Відстеження шахедів, дронів, ракет. Оновлення кожні 5 секунд.</image:caption>
     </image:image>
     <xhtml:link rel="alternate" hreflang="uk" href="https://neptun.in.ua/"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="https://neptun.in.ua/"/>
   </url>
   
-  <!-- Карта тривог - основна сторінка з хешем -->
+  <!-- ======================================== -->
+  <!-- ОСНОВНІ ФУНКЦІОНАЛЬНІ СТОРІНКИ -->
+  <!-- ======================================== -->
+  
+  <!-- Карта відключень світла ДТЕК -->
   <url>
-    <loc>https://neptun.in.ua/#map</loc>
-    <lastmod>2026-01-02</lastmod>
+    <loc>https://neptun.in.ua/blackouts</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>hourly</changefreq>
+    <priority>0.9</priority>
+    <image:image>
+      <image:loc>https://neptun.in.ua/static/og-image.png</image:loc>
+      <image:title>Графік відключень світла - ДТЕК онлайн</image:title>
+    </image:image>
+  </url>
+  
+  <!-- Тільки карта (мобільна версія) -->
+  <url>
+    <loc>https://neptun.in.ua/map</loc>
+    <lastmod>2026-01-09</lastmod>
     <changefreq>always</changefreq>
     <priority>0.95</priority>
   </url>
   
-  <!-- Карта відключень світла -->
+  <!-- ======================================== -->
+  <!-- РЕГІОНАЛЬНІ СТОРІНКИ - SEO GOLD -->
+  <!-- ======================================== -->
+  
+  <!-- Київ -->
   <url>
-    <loc>https://neptun.in.ua/blackouts</loc>
-    <lastmod>2026-01-02</lastmod>
-    <changefreq>hourly</changefreq>
+    <loc>https://neptun.in.ua/region/kyiv</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
     <priority>0.9</priority>
+    <image:image>
+      <image:loc>https://neptun.in.ua/static/og-image.png</image:loc>
+      <image:title>Тривога в Києві зараз - карта онлайн</image:title>
+    </image:image>
   </url>
   
-  <!-- Аналітика тривог -->
+  <!-- Київська область -->
   <url>
-    <loc>https://neptun.in.ua/analytics</loc>
-    <lastmod>2026-01-02</lastmod>
-    <changefreq>daily</changefreq>
+    <loc>https://neptun.in.ua/region/kyivska</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.88</priority>
+  </url>
+  
+  <!-- Харківська область -->
+  <url>
+    <loc>https://neptun.in.ua/region/kharkivska</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.88</priority>
+    <image:image>
+      <image:loc>https://neptun.in.ua/static/og-image.png</image:loc>
+      <image:title>Тривога в Харкові зараз - карта онлайн</image:title>
+    </image:image>
+  </url>
+  
+  <!-- Одеська область -->
+  <url>
+    <loc>https://neptun.in.ua/region/odeska</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.88</priority>
+    <image:image>
+      <image:loc>https://neptun.in.ua/static/og-image.png</image:loc>
+      <image:title>Тривога в Одесі зараз - карта онлайн</image:title>
+    </image:image>
+  </url>
+  
+  <!-- Дніпропетровська область -->
+  <url>
+    <loc>https://neptun.in.ua/region/dnipropetrovska</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.88</priority>
+    <image:image>
+      <image:loc>https://neptun.in.ua/static/og-image.png</image:loc>
+      <image:title>Тривога в Дніпрі зараз - карта онлайн</image:title>
+    </image:image>
+  </url>
+  
+  <!-- Львівська область -->
+  <url>
+    <loc>https://neptun.in.ua/region/lvivska</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.87</priority>
+    <image:image>
+      <image:loc>https://neptun.in.ua/static/og-image.png</image:loc>
+      <image:title>Тривога у Львові зараз - карта онлайн</image:title>
+    </image:image>
+  </url>
+  
+  <!-- Запорізька область -->
+  <url>
+    <loc>https://neptun.in.ua/region/zaporizka</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.87</priority>
+  </url>
+  
+  <!-- Миколаївська область -->
+  <url>
+    <loc>https://neptun.in.ua/region/mykolaivska</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.86</priority>
+  </url>
+  
+  <!-- Полтавська область -->
+  <url>
+    <loc>https://neptun.in.ua/region/poltavska</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
     <priority>0.85</priority>
   </url>
+  
+  <!-- Вінницька область -->
+  <url>
+    <loc>https://neptun.in.ua/region/vinnytska</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.85</priority>
+  </url>
+  
+  <!-- Житомирська область -->
+  <url>
+    <loc>https://neptun.in.ua/region/zhytomyrska</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.84</priority>
+  </url>
+  
+  <!-- Черкаська область -->
+  <url>
+    <loc>https://neptun.in.ua/region/cherkaska</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.84</priority>
+  </url>
+  
+  <!-- Сумська область -->
+  <url>
+    <loc>https://neptun.in.ua/region/sumska</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.84</priority>
+  </url>
+  
+  <!-- Чернігівська область -->
+  <url>
+    <loc>https://neptun.in.ua/region/chernihivska</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.84</priority>
+  </url>
+  
+  <!-- Хмельницька область -->
+  <url>
+    <loc>https://neptun.in.ua/region/khmelnytska</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.83</priority>
+  </url>
+  
+  <!-- Волинська область -->
+  <url>
+    <loc>https://neptun.in.ua/region/volynska</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.83</priority>
+  </url>
+  
+  <!-- Рівненська область -->
+  <url>
+    <loc>https://neptun.in.ua/region/rivnenska</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.83</priority>
+  </url>
+  
+  <!-- Тернопільська область -->
+  <url>
+    <loc>https://neptun.in.ua/region/ternopilska</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.82</priority>
+  </url>
+  
+  <!-- Івано-Франківська область -->
+  <url>
+    <loc>https://neptun.in.ua/region/ivano-frankivska</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.82</priority>
+  </url>
+  
+  <!-- Закарпатська область -->
+  <url>
+    <loc>https://neptun.in.ua/region/zakarpatska</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.82</priority>
+  </url>
+  
+  <!-- Чернівецька область -->
+  <url>
+    <loc>https://neptun.in.ua/region/chernivetska</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.81</priority>
+  </url>
+  
+  <!-- Кіровоградська область -->
+  <url>
+    <loc>https://neptun.in.ua/region/kirovohradska</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.81</priority>
+  </url>
+  
+  <!-- Херсонська область -->
+  <url>
+    <loc>https://neptun.in.ua/region/khersonska</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.85</priority>
+  </url>
+  
+  <!-- Донецька область -->
+  <url>
+    <loc>https://neptun.in.ua/region/donetska</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.86</priority>
+  </url>
+  
+  <!-- Луганська область -->
+  <url>
+    <loc>https://neptun.in.ua/region/luhanska</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.85</priority>
+  </url>
+  
+  <!-- ======================================== -->
+  <!-- ІНФОРМАЦІЙНІ СТОРІНКИ -->
+  <!-- ======================================== -->
   
   <!-- Про проект -->
   <url>
     <loc>https://neptun.in.ua/about</loc>
-    <lastmod>2026-01-02</lastmod>
+    <lastmod>2026-01-09</lastmod>
     <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
+    <priority>0.6</priority>
   </url>
   
-  <!-- Про систему NEPTUN (хеш) -->
-  <url>
-    <loc>https://neptun.in.ua/#about</loc>
-    <lastmod>2026-01-02</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
-  </url>
-  
-  <!-- Часто задавані питання -->
+  <!-- FAQ - Часті питання -->
   <url>
     <loc>https://neptun.in.ua/faq</loc>
-    <lastmod>2026-01-02</lastmod>
+    <lastmod>2026-01-09</lastmod>
     <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
+    <priority>0.7</priority>
   </url>
   
   <!-- Політика конфіденційності -->
   <url>
     <loc>https://neptun.in.ua/privacy</loc>
-    <lastmod>2026-01-02</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.4</priority>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
   </url>
   
   <!-- Умови використання -->
   <url>
     <loc>https://neptun.in.ua/terms</loc>
-    <lastmod>2026-01-02</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.4</priority>
-  </url>
-  
-  <!-- Правила безпеки -->
-  <url>
-    <loc>https://neptun.in.ua/safety</loc>
-    <lastmod>2026-01-02</lastmod>
-    <changefreq>weekly</changefreq>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>yearly</changefreq>
     <priority>0.3</priority>
   </url>
 

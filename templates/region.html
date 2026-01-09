@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0e17">
+  
+  <!-- SEO для регіону -->
+  <title>Тривога {{ region_name }} зараз — карта тривог {{ region_name_gen }} онлайн | NEPTUN</title>
+  <meta name="description" content="Карта тривог {{ region_name_gen }} в реальному часі. Повітряна тривога {{ region_city }} онлайн, відстеження шахедів та ракет. Актуальна інформація про тривоги в {{ region_name_gen }} 24/7.">
+  <meta name="keywords" content="тривога {{ region_city }}, карта тривог {{ region_name_gen }}, повітряна тривога {{ region_city }}, {{ region_name }} тривога зараз, шахеди {{ region_city }}, ракети {{ region_name }}">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://neptun.in.ua/region/{{ region_slug }}">
+  
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://neptun.in.ua/region/{{ region_slug }}">
+  <meta property="og:title" content="Тривога {{ region_name }} зараз — карта тривог онлайн">
+  <meta property="og:description" content="Карта тривог {{ region_name_gen }} в реальному часі. Повітряна тривога {{ region_city }} онлайн 24/7.">
+  <meta property="og:image" content="https://neptun.in.ua/static/og-image.png">
+  <meta property="og:site_name" content="Карта тривог та шахедів України">
+  <meta property="og:locale" content="uk_UA">
+  
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Тривога {{ region_name }} — NEPTUN">
+  <meta name="twitter:description" content="Карта тривог {{ region_name_gen }} в реальному часі.">
+  <meta name="twitter:image" content="https://neptun.in.ua/static/og-image.png">
+  
+  <!-- Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    "name": "Тривога {{ region_name }} зараз — карта тривог онлайн",
+    "description": "Карта тривог {{ region_name_gen }} в реальному часі. Повітряна тривога та відстеження загроз онлайн 24/7.",
+    "url": "https://neptun.in.ua/region/{{ region_slug }}",
+    "inLanguage": "uk",
+    "isPartOf": {
+      "@type": "WebSite",
+      "name": "NEPTUN - Карта тривог України",
+      "url": "https://neptun.in.ua"
+    },
+    "about": {
+      "@type": "Place",
+      "name": "{{ region_name }}",
+      "address": {
+        "@type": "PostalAddress",
+        "addressRegion": "{{ region_name }}",
+        "addressCountry": "UA"
+      }
+    },
+    "breadcrumb": {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Головна",
+          "item": "https://neptun.in.ua/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "{{ region_name }}",
+          "item": "https://neptun.in.ua/region/{{ region_slug }}"
+        }
+      ]
+    }
+  }
+  </script>
+  
+  <!-- PWA -->
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32x32.png">
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      font-family: 'Inter', sans-serif;
+      background: linear-gradient(135deg, #0a0e17 0%, #111827 50%, #0f172a 100%);
+      color: #e2e8f0;
+      min-height: 100vh;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    
+    /* Header */
+    .header {
+      text-align: center;
+      padding: 60px 20px 40px;
+    }
+    
+    .logo {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 2.5rem;
+      color: #67e8f9;
+      letter-spacing: 4px;
+      margin-bottom: 10px;
+    }
+    
+    .region-title {
+      font-size: 1.8rem;
+      font-weight: 700;
+      margin-bottom: 15px;
+    }
+    
+    .region-subtitle {
+      color: #94a3b8;
+      font-size: 1.1rem;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    
+    /* Live Status */
+    .live-status {
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(103, 232, 249, 0.2);
+      border-radius: 16px;
+      padding: 30px;
+      margin: 30px auto;
+      max-width: 600px;
+      text-align: center;
+    }
+    
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-radius: 50px;
+      font-weight: 600;
+      font-size: 1.1rem;
+      margin-bottom: 15px;
+    }
+    
+    .status-badge.safe {
+      background: rgba(34, 197, 94, 0.2);
+      color: #4ade80;
+      border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+    
+    .status-badge.alert {
+      background: rgba(239, 68, 68, 0.2);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+    
+    .status-badge .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    
+    .status-time {
+      color: #64748b;
+      font-size: 0.85rem;
+    }
+    
+    /* CTA Button */
+    .cta-section {
+      text-align: center;
+      margin: 40px 0;
+    }
+    
+    .cta-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: linear-gradient(135deg, #67e8f9, #06b6d4);
+      color: #0f172a;
+      text-decoration: none;
+      padding: 16px 32px;
+      border-radius: 50px;
+      font-weight: 700;
+      font-size: 1.1rem;
+      transition: all 0.3s ease;
+    }
+    
+    .cta-btn:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 10px 30px rgba(103, 232, 249, 0.3);
+    }
+    
+    /* Info Cards */
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+      margin: 40px 0;
+    }
+    
+    .info-card {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(103, 232, 249, 0.1);
+      border-radius: 16px;
+      padding: 25px;
+    }
+    
+    .info-card h3 {
+      color: #67e8f9;
+      font-size: 1rem;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .info-card p {
+      color: #94a3b8;
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+    
+    /* SEO Content */
+    .seo-content {
+      background: rgba(15, 23, 42, 0.4);
+      border-radius: 16px;
+      padding: 30px;
+      margin: 40px 0;
+    }
+    
+    .seo-content h2 {
+      color: #e2e8f0;
+      font-size: 1.3rem;
+      margin-bottom: 15px;
+    }
+    
+    .seo-content p {
+      color: #94a3b8;
+      line-height: 1.8;
+      margin-bottom: 15px;
+    }
+    
+    /* Other Regions */
+    .regions-list {
+      margin: 40px 0;
+    }
+    
+    .regions-list h3 {
+      color: #e2e8f0;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+    
+    .regions-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+    }
+    
+    .region-link {
+      background: rgba(103, 232, 249, 0.08);
+      border: 1px solid rgba(103, 232, 249, 0.15);
+      border-radius: 50px;
+      padding: 8px 16px;
+      color: #94a3b8;
+      text-decoration: none;
+      font-size: 0.85rem;
+      transition: all 0.2s ease;
+    }
+    
+    .region-link:hover {
+      background: rgba(103, 232, 249, 0.15);
+      color: #67e8f9;
+    }
+    
+    /* Footer */
+    .footer {
+      text-align: center;
+      padding: 40px 20px;
+      border-top: 1px solid rgba(103, 232, 249, 0.1);
+      margin-top: 40px;
+    }
+    
+    .footer a {
+      color: #64748b;
+      text-decoration: none;
+      margin: 0 10px;
+    }
+    
+    .footer a:hover {
+      color: #67e8f9;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <a href="/" style="text-decoration: none;">
+        <div class="logo">NEPTUN</div>
+      </a>
+      <h1 class="region-title">Карта тривог {{ region_name_gen }}</h1>
+      <p class="region-subtitle">Відстежуйте повітряні тривоги в {{ region_name_gen }} в реальному часі. Актуальна інформація про загрози 24/7.</p>
+    </header>
+    
+    <div class="live-status" id="liveStatus">
+      <div class="status-badge safe" id="statusBadge">
+        <span class="dot"></span>
+        <span id="statusText">Завантаження...</span>
+      </div>
+      <div class="status-time" id="statusTime">Оновлюється автоматично</div>
+    </div>
+    
+    <div class="cta-section">
+      <a href="/?region={{ region_slug }}" class="cta-btn">
+        <span class="material-icons">map</span>
+        Відкрити карту тривог
+      </a>
+    </div>
+    
+    <div class="info-grid">
+      <div class="info-card">
+        <h3><span class="material-icons">notifications_active</span> Миттєві сповіщення</h3>
+        <p>Отримуйте push-сповіщення про тривоги в {{ region_name_gen }} через наш Android-додаток.</p>
+      </div>
+      <div class="info-card">
+        <h3><span class="material-icons">radar</span> Відстеження загроз</h3>
+        <p>Бачте напрямок руху шахедів та ракет на інтерактивній карті в режимі реального часу.</p>
+      </div>
+      <div class="info-card">
+        <h3><span class="material-icons">verified</span> Офіційні джерела</h3>
+        <p>Дані збираються з офіційних каналів ОВА {{ region_name_gen }} та інших перевірених джерел.</p>
+      </div>
+    </div>
+    
+    <article class="seo-content">
+      <h2>Повітряна тривога {{ region_city }} та {{ region_name }}</h2>
+      <p>
+        NEPTUN — це сервіс для відстеження повітряних тривог в {{ region_name_gen }} та по всій Україні. 
+        Наша карта тривог показує актуальний статус в {{ region_city }} та інших містах області в реальному часі.
+      </p>
+      <p>
+        Коли оголошується повітряна тривога в {{ region_name_gen }}, ви одразу бачите це на карті. 
+        Ми також відстежуємо рух шахедів, ракет та інших загроз, щоб ви могли завчасно вжити заходів безпеки.
+      </p>
+      <p>
+        Для миттєвих сповіщень про тривоги в {{ region_city }} рекомендуємо встановити наш 
+        <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" style="color:#67e8f9;">Android-додаток NEPTUN</a>.
+      </p>
+    </article>
+    
+    <div class="regions-list">
+      <h3>Інші регіони</h3>
+      <div class="regions-grid">
+        <a href="/region/kyiv" class="region-link">Київська</a>
+        <a href="/region/kharkiv" class="region-link">Харківська</a>
+        <a href="/region/odesa" class="region-link">Одеська</a>
+        <a href="/region/dnipro" class="region-link">Дніпропетровська</a>
+        <a href="/region/lviv" class="region-link">Львівська</a>
+        <a href="/region/zaporizhzhia" class="region-link">Запорізька</a>
+        <a href="/region/vinnytsia" class="region-link">Вінницька</a>
+        <a href="/region/poltava" class="region-link">Полтавська</a>
+        <a href="/region/chernihiv" class="region-link">Чернігівська</a>
+        <a href="/region/sumy" class="region-link">Сумська</a>
+        <a href="/region/mykolaiv" class="region-link">Миколаївська</a>
+        <a href="/region/kherson" class="region-link">Херсонська</a>
+        <a href="/region/zhytomyr" class="region-link">Житомирська</a>
+        <a href="/region/cherkasy" class="region-link">Черкаська</a>
+        <a href="/region/rivne" class="region-link">Рівненська</a>
+        <a href="/region/khmelnytskyi" class="region-link">Хмельницька</a>
+        <a href="/region/volyn" class="region-link">Волинська</a>
+        <a href="/region/ternopil" class="region-link">Тернопільська</a>
+        <a href="/region/ivano-frankivsk" class="region-link">Івано-Франківська</a>
+        <a href="/region/chernivtsi" class="region-link">Чернівецька</a>
+        <a href="/region/zakarpattia" class="region-link">Закарпатська</a>
+        <a href="/region/kirovohrad" class="region-link">Кіровоградська</a>
+        <a href="/region/donetsk" class="region-link">Донецька</a>
+        <a href="/region/luhansk" class="region-link">Луганська</a>
+      </div>
+    </div>
+    
+    <footer class="footer">
+      <a href="/">Головна</a>
+      <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app">Android додаток</a>
+      <a href="https://t.me/+aBR79kExNQM1ZjZi">Telegram</a>
+      <p style="margin-top: 20px; color: #475569; font-size: 0.8rem;">© 2026 NEPTUN. Карта тривог України.</p>
+    </footer>
+  </div>
+  
+  <script>
+    // Fetch current alarm status for region
+    async function updateStatus() {
+      try {
+        const response = await fetch('/api/states');
+        const data = await response.json();
+        
+        // Find this region in the data
+        const regionName = '{{ region_name }}';
+        const isAlert = data.states && data.states.some(s => 
+          s.name && s.name.includes(regionName.split(' ')[0]) && s.alert
+        );
+        
+        const badge = document.getElementById('statusBadge');
+        const text = document.getElementById('statusText');
+        const time = document.getElementById('statusTime');
+        
+        if (isAlert) {
+          badge.className = 'status-badge alert';
+          text.textContent = '🚨 ТРИВОГА';
+        } else {
+          badge.className = 'status-badge safe';
+          text.textContent = '✅ Відбій тривоги';
+        }
+        
+        time.textContent = 'Оновлено: ' + new Date().toLocaleTimeString('uk-UA');
+      } catch (e) {
+        console.error('Status update error:', e);
+      }
+    }
+    
+    // Update on load and every 30 seconds
+    updateStatus();
+    setInterval(updateStatus, 30000);
+  </script>
+</body>
+</html>
