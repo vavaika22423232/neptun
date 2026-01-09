@@ -7,12 +7,15 @@
 
 # ...existing code...
 
-import os, re, json, asyncio, threading, logging, pytz, time, subprocess, queue, sys, platform, traceback, uuid
+import os, re, json, asyncio, threading, logging, pytz, time, subprocess, queue, sys, platform, traceback, uuid, gc
 from collections import defaultdict
 from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify, request, Response, send_from_directory
 from telethon import TelegramClient
 from core.message_store import MessageStore, DeviceStore
+
+# MEMORY OPTIMIZATION: Force garbage collection on startup
+gc.collect()
 
 # Import expanded Ukraine addresses database
 try:
@@ -24,33 +27,28 @@ except Exception as e:
     print(f"WARNING: Ukraine addresses database not available: {e}")
 
 # Import comprehensive Ukrainian settlements database (26000+ entries)
-try:
-    from ukraine_all_settlements import UKRAINE_ALL_SETTLEMENTS, UKRAINE_SETTLEMENTS_BY_OBLAST
-    print(f"INFO: Ukraine ALL settlements loaded: {len(UKRAINE_ALL_SETTLEMENTS)} simple + {len(UKRAINE_SETTLEMENTS_BY_OBLAST)} oblast-aware entries")
-except Exception as e:
+# MEMORY OPTIMIZATION: Load only if enough memory, otherwise use empty dict
+MEMORY_OPTIMIZED = os.environ.get('MEMORY_OPTIMIZED', 'true').lower() == 'true'
+
+if MEMORY_OPTIMIZED:
+    # Don't load the huge settlements database - saves ~100MB RAM
     UKRAINE_ALL_SETTLEMENTS = {}
     UKRAINE_SETTLEMENTS_BY_OBLAST = {}
-    print(f"WARNING: Ukraine ALL settlements not available: {e}")
+    print("INFO: MEMORY_OPTIMIZED=true - Large settlements database skipped to save RAM")
+else:
+    try:
+        from ukraine_all_settlements import UKRAINE_ALL_SETTLEMENTS, UKRAINE_SETTLEMENTS_BY_OBLAST
+        print(f"INFO: Ukraine ALL settlements loaded: {len(UKRAINE_ALL_SETTLEMENTS)} simple + {len(UKRAINE_SETTLEMENTS_BY_OBLAST)} oblast-aware entries")
+    except Exception as e:
+        UKRAINE_ALL_SETTLEMENTS = {}
+        UKRAINE_SETTLEMENTS_BY_OBLAST = {}
+        print(f"WARNING: Ukraine ALL settlements not available: {e}")
 
-# SpaCy integration for enhanced Ukrainian NLP
-try:
-    import spacy
-    nlp = spacy.load('uk_core_news_sm')
-    SPACY_AVAILABLE = True
-    print("INFO: SpaCy Ukrainian model uk_core_news_sm loaded successfully")
-except ImportError:
-    SPACY_AVAILABLE = False
-    nlp = None
-    print("WARNING: SpaCy library not available - NLP analysis disabled")
-except OSError:
-    SPACY_AVAILABLE = False
-    nlp = None
-    print("WARNING: SpaCy Ukrainian model uk_core_news_sm not found - NLP analysis disabled")
-    print("HINT: Install with: python -m spacy download uk_core_news_sm")
-except Exception as e:
-    SPACY_AVAILABLE = False
-    nlp = None
-    print(f"ERROR: SpaCy initialization failed: {e}")
+# SpaCy integration DISABLED to save memory (~150MB)
+# Enable only if server has >1GB RAM
+SPACY_AVAILABLE = False
+nlp = None
+print("INFO: SpaCy DISABLED to save memory")
 
 # Nominatim geocoding integration
 try:
@@ -1475,11 +1473,11 @@ CHANNELS_FILE = 'channels_dynamic.json'
 
 # Global debug storage for admin panel
 DEBUG_LOGS = []
-MAX_DEBUG_LOGS = 50  # Reduced from 100 to save memory
+MAX_DEBUG_LOGS = 20  # Reduced to save memory
 
 # Cache for fallback reparse to avoid duplicate processing
 FALLBACK_REPARSE_CACHE = set()  # message IDs that have been reparsed
-MAX_REPARSE_CACHE_SIZE = 500  # Reduced from 1000 to save memory
+MAX_REPARSE_CACHE_SIZE = 200  # Reduced to save memory
 
 
 def _normalize_platform(platform_hint: str, ua: str) -> str:
@@ -19288,9 +19286,17 @@ def _send_alarm_notification(region, alerts, status):
 # Background thread for monitoring alarms
 def _alarm_monitor_thread():
     """Background thread that checks for alarm changes every 30 seconds."""
+    gc_counter = 0
     while True:
         try:
             check_alarm_changes()
+            
+            # MEMORY OPTIMIZATION: Force garbage collection every 5 minutes
+            gc_counter += 1
+            if gc_counter >= 10:  # 10 * 30 sec = 5 minutes
+                gc.collect()
+                gc_counter = 0
+                
         except Exception as e:
             log.error(f"Alarm monitor thread error: {e}")
         time.sleep(30)  # Check every 30 seconds

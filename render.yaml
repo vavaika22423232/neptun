@@ -24,3 +24,9 @@ services:
         value: production
       - key: MAX_CONTENT_LENGTH
         value: "1048576"
+      - key: MEMORY_OPTIMIZED
+        value: "true"
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: PYTHONDONTWRITEBYTECODE
+        value: "1"
