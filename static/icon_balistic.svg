@@ -1,0 +1,14 @@
+<svg width="38" height="38" viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="19" cy="19" r="19" fill="#FF4444"/>
+    <g clip-path="url(#clip0_balistic)">
+        <path d="M19 8L12 28H26L19 8Z" fill="#141921"/>
+        <path d="M19 8L19 22" stroke="#141921" stroke-width="2"/>
+        <circle cx="19" cy="25" r="2" fill="#141921"/>
+        <path d="M15 28L13 31H25L23 28" fill="#141921"/>
+    </g>
+    <defs>
+        <clipPath id="clip0_balistic">
+            <rect width="24" height="24" fill="white" transform="translate(7 7)"/>
+        </clipPath>
+    </defs>
+</svg>

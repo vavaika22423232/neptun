@@ -710,6 +710,7 @@ def alarm_proxy():
     return jsonify({'states': [], 'districts': [], 'totalAlerts': 0, 'error': 'API unavailable'})
 
 @app.route('/api/alarms/all')
+@app.route('/api/alarms')  # Alias for compatibility
 def alarm_all():
     """Returns ALL alerts (State, District, Community) for detailed view with caching"""
     import time as _time
@@ -890,26 +891,28 @@ def wayforpay_create_invoice():
                 else:
                     error_msg = result.get('reason', 'Unknown error')
                     print(f"❌ WayForPay error: {error_msg}")
-                    # Return error with static fallback
+                    # Return error - no fallback to old invoice
                     return jsonify({
-                        'success': True,
+                        'success': False,
                         'order_id': order_id,
-                        'payment_url': 'https://secure.wayforpay.com/invoice/i8609a370790c',
-                        'message': f'Помилка API: {error_msg}, використовуємо резервний рахунок',
+                        'error': f'WayForPay помилка: {error_msg}',
                         'error_detail': result
-                    })
+                    }), 400
                     
             except Exception as e:
                 print(f"❌ WayForPay API error: {e}")
                 traceback.print_exc()
+                return jsonify({
+                    'success': False,
+                    'order_id': order_id,
+                    'error': f'WayForPay API помилка: {str(e)}'
+                }), 500
         
-        # Fallback - return static invoice URL
+        # WayForPay not configured - return error
         return jsonify({
-            'success': True,
-            'order_id': order_id,
-            'payment_url': 'https://secure.wayforpay.com/invoice/i8609a370790c',
-            'message': 'Заявку збережено (fallback)'
-        })
+            'success': False,
+            'error': 'WayForPay не налаштований на сервері'
+        }), 500
         
     except Exception as e:
         print(f"❌ WayForPay create invoice error: {e}")
@@ -15784,6 +15787,23 @@ def index_old():
 def shahed_map():
     """Shahed map landing page"""
     return render_template('shahed_map.html')
+
+# Redirects for icons requested without /static/ prefix
+@app.route('/icon_missile.svg')
+def icon_missile_redirect():
+    return redirect('/static/icon_missile.svg', code=301)
+
+@app.route('/icon_balistic.svg')
+def icon_balistic_redirect():
+    return redirect('/static/icon_balistic.svg', code=301)
+
+@app.route('/icon_drone.svg')
+def icon_drone_redirect():
+    return redirect('/static/icon_drone.svg', code=301)
+
+@app.route('/favicon.ico')
+def favicon():
+    return redirect('/static/icons/favicon-32x32.png', code=301)
 
 @app.route('/')
 def index():
