@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0a0e17">
+  
+  <title>Карта шахедів онлайн — відстеження дронів в реальному часі</title>
+  <meta name="description" content="Карта шахедів України в реальному часі. Відстежуйте траєкторію польоту дронів, шахедів та БпЛА онлайн 24/7. Миттєві сповіщення.">
+  <meta name="keywords" content="карта шахедів, радар шахедів, відстеження дронів, шахеди онлайн, траєкторія шахедів">
+  <meta name="robots" content="index, follow">
+  
+  <meta property="og:title" content="Карта шахедів — радар дронів онлайн">
+  <meta property="og:description" content="Відстежуйте шахеди та дрони в реальному часі на інтерактивній карті">
+  <meta property="og:type" content="website">
+  
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #0a0e17 0%, #1a1a2e 50%, #0f0f23 100%);
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 20px;
+    }
+    
+    .container {
+      max-width: 500px;
+    }
+    
+    .icon {
+      font-size: 80px;
+      margin-bottom: 20px;
+      animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.1); opacity: 0.8; }
+    }
+    
+    h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 15px;
+      background: linear-gradient(135deg, #f87171, #fbbf24);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
+    .subtitle {
+      color: #94a3b8;
+      font-size: 1.1rem;
+      margin-bottom: 30px;
+      line-height: 1.6;
+    }
+    
+    .features {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+      margin-bottom: 30px;
+    }
+    
+    .feature {
+      background: rgba(248, 113, 113, 0.1);
+      border: 1px solid rgba(248, 113, 113, 0.2);
+      border-radius: 20px;
+      padding: 8px 16px;
+      font-size: 0.85rem;
+      color: #fca5a5;
+    }
+    
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: linear-gradient(135deg, #ef4444, #f97316);
+      color: white;
+      text-decoration: none;
+      padding: 18px 40px;
+      border-radius: 50px;
+      font-weight: 700;
+      font-size: 1.2rem;
+      transition: all 0.3s ease;
+      box-shadow: 0 10px 40px rgba(239, 68, 68, 0.3);
+    }
+    
+    .btn:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 15px 50px rgba(239, 68, 68, 0.4);
+    }
+    
+    .loader {
+      margin-top: 30px;
+      color: #64748b;
+      font-size: 0.9rem;
+    }
+    
+    .loader span {
+      display: inline-block;
+      animation: blink 1.4s infinite;
+    }
+    
+    .loader span:nth-child(2) { animation-delay: 0.2s; }
+    .loader span:nth-child(3) { animation-delay: 0.4s; }
+    
+    @keyframes blink {
+      0%, 100% { opacity: 0.3; }
+      50% { opacity: 1; }
+    }
+    
+    .stats {
+      margin-top: 40px;
+      display: flex;
+      gap: 30px;
+      justify-content: center;
+    }
+    
+    .stat {
+      text-align: center;
+    }
+    
+    .stat-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #f87171;
+    }
+    
+    .stat-label {
+      font-size: 0.75rem;
+      color: #64748b;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">🛩️</div>
+    
+    <h1>Карта шахедів онлайн</h1>
+    
+    <p class="subtitle">
+      Відстежуйте траєкторію польоту шахедів, дронів та ракет в реальному часі. 
+      Миттєві сповіщення про загрози у вашому регіоні.
+    </p>
+    
+    <div class="features">
+      <span class="feature">🎯 Траєкторія польоту</span>
+      <span class="feature">⚡ Оновлення 5 сек</span>
+      <span class="feature">🔔 Push-сповіщення</span>
+      <span class="feature">📍 Всі області</span>
+    </div>
+    
+    <a href="https://t.me/+nwvntK75xyI5NTdi" class="btn" id="openBtn">
+      🗺️ Відкрити карту
+    </a>
+    
+    <div class="loader">
+      Завантаження даних<span>.</span><span>.</span><span>.</span>
+    </div>
+    
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-value">24/7</div>
+        <div class="stat-label">Моніторинг</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value">5 сек</div>
+        <div class="stat-label">Оновлення</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value">25</div>
+        <div class="stat-label">Областей</div>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    // Auto-redirect after 3 seconds
+    setTimeout(() => {
+      window.location.href = 'https://t.me/+nwvntK75xyI5NTdi';
+    }, 3000);
+  </script>
+</body>
+</html>

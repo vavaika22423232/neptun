@@ -832,20 +832,20 @@ def wayforpay_create_invoice():
             product_count = 1
             product_price = amount
             
-            # Signature params in specific order
-            sign_params = [
-                WAYFORPAY_MERCHANT_ACCOUNT,
-                WAYFORPAY_DOMAIN,
-                order_id,
-                order_date,
-                amount,
-                'UAH',
-                product_name,
-                product_count,
-                product_price
-            ]
+            # Signature for CREATE_INVOICE (specific order!)
+            # merchantAccount;merchantDomainName;orderReference;orderDate;amount;currency;productName;productCount;productPrice
+            sign_string = f"{WAYFORPAY_MERCHANT_ACCOUNT};{WAYFORPAY_DOMAIN};{order_id};{order_date};{amount};UAH;{product_name};{product_count};{product_price}"
             
-            signature = generate_wayforpay_signature(sign_params, WAYFORPAY_MERCHANT_SECRET)
+            import hmac
+            import hashlib
+            signature = hmac.new(
+                WAYFORPAY_MERCHANT_SECRET.encode('utf-8'),
+                sign_string.encode('utf-8'),
+                hashlib.md5
+            ).hexdigest()
+            
+            print(f"   Sign string: {sign_string}")
+            print(f"   Signature: {signature}")
             
             # Create invoice via WayForPay API
             invoice_data = {
@@ -867,6 +867,7 @@ def wayforpay_create_invoice():
             
             try:
                 import requests
+                print(f"   Sending to WayForPay API...")
                 response = requests.post(
                     'https://api.wayforpay.com/api',
                     json=invoice_data,
@@ -874,6 +875,7 @@ def wayforpay_create_invoice():
                 )
                 
                 result = response.json()
+                print(f"   WayForPay response: {result}")
                 
                 if result.get('reasonCode') == 1100:
                     invoice_url = result.get('invoiceUrl')
@@ -886,24 +888,27 @@ def wayforpay_create_invoice():
                         'message': 'Рахунок створено'
                     })
                 else:
-                    print(f"❌ WayForPay error: {result}")
-                    # Fallback to simple redirect
+                    error_msg = result.get('reason', 'Unknown error')
+                    print(f"❌ WayForPay error: {error_msg}")
+                    # Return error with static fallback
                     return jsonify({
                         'success': True,
                         'order_id': order_id,
-                        'payment_url': f'https://secure.wayforpay.com/pay?merchantAccount={WAYFORPAY_MERCHANT_ACCOUNT}&orderReference={order_id}&amount={amount}&currency=UAH',
-                        'message': 'Рахунок створено (fallback)'
+                        'payment_url': 'https://secure.wayforpay.com/invoice/i8609a370790c',
+                        'message': f'Помилка API: {error_msg}, використовуємо резервний рахунок',
+                        'error_detail': result
                     })
                     
             except Exception as e:
                 print(f"❌ WayForPay API error: {e}")
+                traceback.print_exc()
         
         # Fallback - return static invoice URL
         return jsonify({
             'success': True,
             'order_id': order_id,
             'payment_url': 'https://secure.wayforpay.com/invoice/i8609a370790c',
-            'message': 'Заявку збережено'
+            'message': 'Заявку збережено (fallback)'
         })
         
     except Exception as e:
@@ -15772,6 +15777,13 @@ def index_old():
     resp = app.response_class(response)
     resp.headers['Cache-Control'] = 'public, max-age=300'
     return resp
+
+@app.route('/shahed-map')
+@app.route('/shahed')
+@app.route('/drones')
+def shahed_map():
+    """Shahed map landing page"""
+    return render_template('shahed_map.html')
 
 @app.route('/')
 def index():
