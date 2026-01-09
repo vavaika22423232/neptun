@@ -854,6 +854,7 @@ def wayforpay_create_invoice():
                 'merchantAccount': WAYFORPAY_MERCHANT_ACCOUNT,
                 'merchantDomainName': WAYFORPAY_DOMAIN,
                 'merchantSignature': signature,
+                'apiVersion': 1,
                 'orderReference': order_id,
                 'orderDate': order_date,
                 'amount': amount,
