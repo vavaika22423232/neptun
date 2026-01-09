@@ -361,30 +361,31 @@
     <div class="regions-list">
       <h3>Інші регіони</h3>
       <div class="regions-grid">
-        <a href="/region/kyiv" class="region-link">Київська</a>
-        <a href="/region/kharkiv" class="region-link">Харківська</a>
-        <a href="/region/odesa" class="region-link">Одеська</a>
-        <a href="/region/dnipro" class="region-link">Дніпропетровська</a>
-        <a href="/region/lviv" class="region-link">Львівська</a>
-        <a href="/region/zaporizhzhia" class="region-link">Запорізька</a>
-        <a href="/region/vinnytsia" class="region-link">Вінницька</a>
-        <a href="/region/poltava" class="region-link">Полтавська</a>
-        <a href="/region/chernihiv" class="region-link">Чернігівська</a>
-        <a href="/region/sumy" class="region-link">Сумська</a>
-        <a href="/region/mykolaiv" class="region-link">Миколаївська</a>
-        <a href="/region/kherson" class="region-link">Херсонська</a>
-        <a href="/region/zhytomyr" class="region-link">Житомирська</a>
-        <a href="/region/cherkasy" class="region-link">Черкаська</a>
-        <a href="/region/rivne" class="region-link">Рівненська</a>
-        <a href="/region/khmelnytskyi" class="region-link">Хмельницька</a>
-        <a href="/region/volyn" class="region-link">Волинська</a>
-        <a href="/region/ternopil" class="region-link">Тернопільська</a>
-        <a href="/region/ivano-frankivsk" class="region-link">Івано-Франківська</a>
-        <a href="/region/chernivtsi" class="region-link">Чернівецька</a>
-        <a href="/region/zakarpattia" class="region-link">Закарпатська</a>
-        <a href="/region/kirovohrad" class="region-link">Кіровоградська</a>
-        <a href="/region/donetsk" class="region-link">Донецька</a>
-        <a href="/region/luhansk" class="region-link">Луганська</a>
+        <a href="/region/kyiv" class="region-link">Київ</a>
+        <a href="/region/kyivska" class="region-link">Київська</a>
+        <a href="/region/kharkivska" class="region-link">Харківська</a>
+        <a href="/region/odeska" class="region-link">Одеська</a>
+        <a href="/region/dnipropetrovska" class="region-link">Дніпропетровська</a>
+        <a href="/region/lvivska" class="region-link">Львівська</a>
+        <a href="/region/zaporizka" class="region-link">Запорізька</a>
+        <a href="/region/vinnytska" class="region-link">Вінницька</a>
+        <a href="/region/poltavska" class="region-link">Полтавська</a>
+        <a href="/region/chernihivska" class="region-link">Чернігівська</a>
+        <a href="/region/sumska" class="region-link">Сумська</a>
+        <a href="/region/mykolaivska" class="region-link">Миколаївська</a>
+        <a href="/region/khersonska" class="region-link">Херсонська</a>
+        <a href="/region/zhytomyrska" class="region-link">Житомирська</a>
+        <a href="/region/cherkaska" class="region-link">Черкаська</a>
+        <a href="/region/rivnenska" class="region-link">Рівненська</a>
+        <a href="/region/khmelnytska" class="region-link">Хмельницька</a>
+        <a href="/region/volynska" class="region-link">Волинська</a>
+        <a href="/region/ternopilska" class="region-link">Тернопільська</a>
+        <a href="/region/ivano-frankivska" class="region-link">Івано-Франківська</a>
+        <a href="/region/chernivetska" class="region-link">Чернівецька</a>
+        <a href="/region/zakarpatska" class="region-link">Закарпатська</a>
+        <a href="/region/kirovohradska" class="region-link">Кіровоградська</a>
+        <a href="/region/donetska" class="region-link">Донецька</a>
+        <a href="/region/luhanska" class="region-link">Луганська</a>
       </div>
     </div>
     
@@ -400,14 +401,24 @@
     // Fetch current alarm status for region
     async function updateStatus() {
       try {
-        const response = await fetch('/api/states');
+        const response = await fetch('/api/alarms/all');
         const data = await response.json();
         
         // Find this region in the data
         const regionName = '{{ region_name }}';
-        const isAlert = data.states && data.states.some(s => 
-          s.name && s.name.includes(regionName.split(' ')[0]) && s.alert
-        );
+        const regionSlug = '{{ region_slug }}';
+        
+        // Check if any active alerts for this region (state level)
+        const isAlert = data && data.some(item => {
+          const name = item.regionName || '';
+          // Match by regionType=State and name contains region
+          if (item.regionType === 'State') {
+            // Check various name formats
+            return name.toLowerCase().includes(regionName.toLowerCase().split(' ')[0]) ||
+                   name.toLowerCase().includes(regionSlug.replace(/-/g, ''));
+          }
+          return false;
+        });
         
         const badge = document.getElementById('statusBadge');
         const text = document.getElementById('statusText');
@@ -424,6 +435,7 @@
         time.textContent = 'Оновлено: ' + new Date().toLocaleTimeString('uk-UA');
       } catch (e) {
         console.error('Status update error:', e);
+        document.getElementById('statusText').textContent = '⚠️ Помилка завантаження';
       }
     }
     
