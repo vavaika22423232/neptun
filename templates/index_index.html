@@ -3564,8 +3564,13 @@
     function showBlockedOverlay() {
       const overlay = document.createElement('div');
       overlay.style.cssText = 'position:fixed;inset:0;background:#0a0f1f;display:flex;align-items:center;justify-content:center;z-index:99999;font-family:Inter,sans-serif;color:#fff;padding:2rem;text-align:center;';
-      overlay.innerHTML = '<div style="max-width:480px;"><h2 style="color:#ef4444;margin-bottom:1rem;">⛔ Доступ обмежено</h2><p style="color:#94a3b8;margin-bottom:1.5rem;">Ваш доступ до NEPTUN тимчасово обмежено адміністратором.</p><p style="color:#64748b;font-size:0.9rem;margin-bottom:1.5rem;">Якщо ви стрімер і хочете вести трансляції з картою NEPTUN — придбайте підписку для стрімерів.</p><button onclick="openCommercialModal()" style="background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;padding:12px 24px;border-radius:12px;font-size:1rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;"><span class="material-icons" style="font-size:20px;">live_tv</span> Для стрімерів</button></div>';
+      overlay.innerHTML = '<div style="max-width:480px;"><h2 style="color:#ef4444;margin-bottom:1rem;">⛔ Доступ обмежено</h2><p style="color:#94a3b8;margin-bottom:1.5rem;">Ваш доступ до NEPTUN тимчасово обмежено адміністратором. Використання мапи в комерційних цілях</p><p style="color:#64748b;font-size:0.9rem;margin-bottom:1.5rem;">Якщо ви стрімер і хочете вести трансляції з картою NEPTUN — придбайте підписку для стрімерів.</p><button id="blockedStreamerBtn" style="background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;padding:12px 24px;border-radius:12px;font-size:1rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;"><span class="material-icons" style="font-size:20px;">live_tv</span> Для стрімерів</button></div>';
       document.body.appendChild(overlay);
+      
+      // Add click handler after element is in DOM
+      document.getElementById('blockedStreamerBtn').addEventListener('click', function() {
+        document.getElementById('commercialModal').style.display = 'flex';
+      });
       
       // Stop all intervals
       if (presenceInterval) clearInterval(presenceInterval);
