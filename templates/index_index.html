@@ -3587,14 +3587,10 @@
           messageDiv.innerHTML = '✅ Заявку збережено! Перенаправлення на WayForPay...';
           messageDiv.style.display = 'block';
           
-          // Redirect to WayForPay after 1.5 seconds
+          // Redirect to WayForPay after 1 second
           setTimeout(() => {
-            window.open(WAYFORPAY_URL, '_blank');
-            document.getElementById('commercialModal').style.display = 'none';
-            event.target.reset();
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = '💳 Перейти до оплати';
-          }, 1500);
+            window.location.href = WAYFORPAY_URL;
+          }, 1000);
         } else {
           throw new Error(result.error || 'Помилка збереження заявки');
         }
@@ -3657,7 +3653,7 @@
         </div>
         
         <div class="commercial-form-group">
-          <label>Ваш нік на платформі *</label>
+          <label>Ваш нік в тіктоці або іншій платформі *</label>
           <input type="text" id="commercialName" required placeholder="@username">
         </div>
 
