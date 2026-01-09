@@ -17811,24 +17811,24 @@ def sitemap_xml():
         xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"
         xmlns:xhtml="http://www.w3.org/1999/xhtml">
   
-  <!-- Головна сторінка - карта тривог України -->
+  <!-- ГОЛОВНА СТОРІНКА -->
   <url>
     <loc>https://neptun.in.ua/</loc>
     <lastmod>{today}</lastmod>
     <changefreq>always</changefreq>
     <priority>1.0</priority>
     <image:image>
-      <image:loc>https://neptun.in.ua/static/default.png</image:loc>
-      <image:title>Карта тривог України онлайн - NEPTUN</image:title>
-      <image:caption>Карта тривог, шахедів, ракет України в реальному часі 24/7</image:caption>
+      <image:loc>https://neptun.in.ua/static/og-image.png</image:loc>
+      <image:title>Карта тривог та шахедів України онлайн - NEPTUN</image:title>
+      <image:caption>Карта повітряних тривог України в реальному часі. Відстеження шахедів, дронів, ракет 24/7</image:caption>
     </image:image>
     <xhtml:link rel="alternate" hreflang="uk" href="https://neptun.in.ua/"/>
-    <xhtml:link rel="alternate" hreflang="ru" href="https://neptun.in.ua/"/>
-    <xhtml:link rel="alternate" hreflang="en" href="https://neptun.in.ua/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://neptun.in.ua/"/>
   </url>
   
+  <!-- ФУНКЦІОНАЛЬНІ СТОРІНКИ -->
   <url>
-    <loc>https://neptun.in.ua/#map</loc>
+    <loc>https://neptun.in.ua/map</loc>
     <lastmod>{today}</lastmod>
     <changefreq>always</changefreq>
     <priority>0.95</priority>
@@ -17841,46 +17841,182 @@ def sitemap_xml():
     <priority>0.9</priority>
   </url>
   
+  <!-- РЕГІОНАЛЬНІ СТОРІНКИ -->
   <url>
-    <loc>https://neptun.in.ua/analytics</loc>
+    <loc>https://neptun.in.ua/region/kyiv</loc>
     <lastmod>{today}</lastmod>
-    <changefreq>daily</changefreq>
+    <changefreq>always</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://neptun.in.ua/region/kyivska</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.88</priority>
+  </url>
+  <url>
+    <loc>https://neptun.in.ua/region/kharkivska</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.88</priority>
+  </url>
+  <url>
+    <loc>https://neptun.in.ua/region/odeska</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.88</priority>
+  </url>
+  <url>
+    <loc>https://neptun.in.ua/region/dnipropetrovska</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.88</priority>
+  </url>
+  <url>
+    <loc>https://neptun.in.ua/region/lvivska</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.87</priority>
+  </url>
+  <url>
+    <loc>https://neptun.in.ua/region/zaporizka</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.87</priority>
+  </url>
+  <url>
+    <loc>https://neptun.in.ua/region/mykolaivska</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.86</priority>
+  </url>
+  <url>
+    <loc>https://neptun.in.ua/region/poltavska</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://neptun.in.ua/region/vinnytska</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://neptun.in.ua/region/zhytomyrska</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.84</priority>
+  </url>
+  <url>
+    <loc>https://neptun.in.ua/region/cherkaska</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.84</priority>
+  </url>
+  <url>
+    <loc>https://neptun.in.ua/region/sumska</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.84</priority>
+  </url>
+  <url>
+    <loc>https://neptun.in.ua/region/chernihivska</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.84</priority>
+  </url>
+  <url>
+    <loc>https://neptun.in.ua/region/khmelnytska</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.83</priority>
+  </url>
+  <url>
+    <loc>https://neptun.in.ua/region/volynska</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.83</priority>
+  </url>
+  <url>
+    <loc>https://neptun.in.ua/region/rivnenska</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.83</priority>
+  </url>
+  <url>
+    <loc>https://neptun.in.ua/region/ternopilska</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.82</priority>
+  </url>
+  <url>
+    <loc>https://neptun.in.ua/region/ivano-frankivska</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.82</priority>
+  </url>
+  <url>
+    <loc>https://neptun.in.ua/region/zakarpatska</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.82</priority>
+  </url>
+  <url>
+    <loc>https://neptun.in.ua/region/chernivetska</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.81</priority>
+  </url>
+  <url>
+    <loc>https://neptun.in.ua/region/kirovohradska</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.81</priority>
+  </url>
+  <url>
+    <loc>https://neptun.in.ua/region/khersonska</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://neptun.in.ua/region/donetska</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.86</priority>
+  </url>
+  <url>
+    <loc>https://neptun.in.ua/region/luhanska</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>always</changefreq>
     <priority>0.85</priority>
   </url>
   
+  <!-- ІНФОРМАЦІЙНІ СТОРІНКИ -->
   <url>
     <loc>https://neptun.in.ua/about</loc>
     <lastmod>{today}</lastmod>
     <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
+    <priority>0.6</priority>
   </url>
-  
-  <url>
-    <loc>https://neptun.in.ua/#about</loc>
-    <lastmod>{today}</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
-  </url>
-  
   <url>
     <loc>https://neptun.in.ua/faq</loc>
     <lastmod>{today}</lastmod>
     <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
+    <priority>0.7</priority>
   </url>
-  
   <url>
     <loc>https://neptun.in.ua/privacy</loc>
     <lastmod>{today}</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.4</priority>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
   </url>
-  
   <url>
     <loc>https://neptun.in.ua/terms</loc>
     <lastmod>{today}</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.4</priority>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
   </url>
 
 </urlset>'''
