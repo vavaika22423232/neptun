@@ -3134,7 +3134,83 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
     # Normalize name for lookup
     name_lower = name.strip().lower()
     
-    # PRIORITY 0: Check UKRAINE_ALL_SETTLEMENTS first (26000+ entries, BEST coverage)
+    # PRIORITY 0: If message contains explicit oblast, try Nominatim API FIRST
+    # This prevents returning wrong coordinates from local dictionaries for cities
+    # with duplicate names in different oblasts (e.g., Радушне in Миколаївська vs Дніпропетровська)
+    if message_text:
+        message_lower = message_text.lower()
+        
+        # Direct oblast name patterns - maps text patterns to nominatim region names
+        direct_oblast_patterns = {
+            'київська область': 'Київська',
+            'київська обл': 'Київська',
+            'харківська область': 'Харківська',
+            'харківська обл': 'Харківська',
+            'чернігівська область': 'Чернігівська',
+            'чернігівська обл': 'Чернігівська',
+            'сумська область': 'Сумська',
+            'сумська обл': 'Сумська',
+            'полтавська область': 'Полтавська',
+            'полтавська обл': 'Полтавська',
+            'дніпропетровська область': 'Дніпропетровська',
+            'дніпропетровська обл': 'Дніпропетровська',
+            'миколаївська область': 'Миколаївська',
+            'миколаївська обл': 'Миколаївська',
+            'одеська область': 'Одеська',
+            'одеська обл': 'Одеська',
+            'херсонська область': 'Херсонська',
+            'херсонська обл': 'Херсонська',
+            'запорізька область': 'Запорізька',
+            'запорізька обл': 'Запорізька',
+            'черкаська область': 'Черкаська',
+            'черкаська обл': 'Черкаська',
+            'житомирська область': 'Житомирська',
+            'житомирська обл': 'Житомирська',
+            'вінницька область': 'Вінницька',
+            'вінницька обл': 'Вінницька',
+            'донецька область': 'Донецька',
+            'донецька обл': 'Донецька',
+            'луганська область': 'Луганська',
+            'луганська обл': 'Луганська',
+            'кіровоградська область': 'Кіровоградська',
+            'кіровоградська обл': 'Кіровоградська',
+            'рівненська область': 'Рівненська',
+            'рівненська обл': 'Рівненська',
+            'волинська область': 'Волинська',
+            'волинська обл': 'Волинська',
+            'львівська область': 'Львівська',
+            'львівська обл': 'Львівська',
+            'тернопільська область': 'Тернопільська',
+            'тернопільська обл': 'Тернопільська',
+            'хмельницька область': 'Хмельницька',
+            'хмельницька обл': 'Хмельницька',
+            'івано-франківська область': 'Івано-Франківська',
+            'івано-франківська обл': 'Івано-Франківська',
+            'закарпатська область': 'Закарпатська',
+            'закарпатська обл': 'Закарпатська',
+            'чернівецька область': 'Чернівецька',
+            'чернівецька обл': 'Чернівецька',
+        }
+        
+        explicit_oblast = None
+        for pattern, oblast_key in direct_oblast_patterns.items():
+            if pattern in message_lower:
+                explicit_oblast = oblast_key
+                print(f"DEBUG GEOLOOKUP: Found explicit oblast '{pattern}' -> '{oblast_key}' for city '{name}'")
+                break
+        
+        if explicit_oblast and NOMINATIM_AVAILABLE:
+            # Try Nominatim API with explicit oblast filtering FIRST
+            print(f"DEBUG GEOLOOKUP: Trying Nominatim for '{name}' in {explicit_oblast} oblast")
+            coords = get_coordinates_nominatim(name_lower, explicit_oblast)
+            if coords:
+                print(f"DEBUG GEOLOOKUP: Nominatim found '{name}' in {explicit_oblast} -> {coords}")
+                return (coords[0], coords[1], False)
+            else:
+                print(f"DEBUG GEOLOOKUP: Nominatim could not find '{name}' in {explicit_oblast}")
+    
+    # PRIORITY 1: Check UKRAINE_ALL_SETTLEMENTS (26000+ entries, BEST coverage)
+    # Only if no explicit oblast in message or API failed
     if name_lower in UKRAINE_ALL_SETTLEMENTS:
         coords = UKRAINE_ALL_SETTLEMENTS[name_lower]
         return (coords[0], coords[1], False)
@@ -3145,13 +3221,14 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
         if len(coords) >= 2:
             return (coords[0], coords[1], False)
     
-    # CRITICAL: If message_text contains explicit oblast name, use it directly
+    # PRIORITY 2: If message_text contains explicit oblast name, try Photon API
     # This handles cases like "Київська область: БпЛА курсом на Димер"
     if message_text:
+        # Re-use message_lower from above
         message_lower = message_text.lower()
         
-        # Direct oblast name patterns
-        direct_oblast_patterns = {
+        # Direct oblast name patterns for Photon
+        direct_oblast_patterns_photon = {
             'київська область': 'київська обл.',
             'київська обл': 'київська обл.',
             'харківська область': 'харківська обл.',
@@ -3184,14 +3261,13 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
             'луганська обл': 'луганська область',
         }
         
-        explicit_oblast = None
-        for pattern, oblast_key in direct_oblast_patterns.items():
+        explicit_oblast_photon = None
+        for pattern, oblast_key in direct_oblast_patterns_photon.items():
             if pattern in message_lower:
-                explicit_oblast = oblast_key
-                print(f"DEBUG: Found explicit oblast '{pattern}' -> '{oblast_key}' for city '{name}'")
+                explicit_oblast_photon = oblast_key
                 break
         
-        if explicit_oblast:
+        if explicit_oblast_photon:
             # Try Photon API with explicit oblast filtering
             try:
                 import requests
