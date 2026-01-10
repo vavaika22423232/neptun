@@ -1515,11 +1515,7 @@ def send_alarm_notification(region_data, alarm_started: bool):
                 # For Android: DATA-ONLY message so background handler can process TTS
                 # For iOS: Include notification so system shows alert (TTS won't work in background on iOS)
                 message = messaging.Message(
-                    # Include notification for iOS (will be ignored by Android background handler anyway)
-                    notification=messaging.Notification(
-                        title=title,
-                        body=body,
-                    ),
+                    # NO notification block - Android needs data-only for background handler + TTS
                     data={
                         'type': 'alarm',
                         'title': title,
@@ -1535,7 +1531,6 @@ def send_alarm_notification(region_data, alarm_started: bool):
                     android=messaging.AndroidConfig(
                         priority='high',
                         ttl=timedelta(seconds=300),
-                        # NO notification here - let background handler create local notification + TTS
                     ),
                     apns=messaging.APNSConfig(
                         headers={
@@ -19877,11 +19872,9 @@ def test_notification():
         if not token:
             return jsonify({'error': 'Missing token or device_id'}), 400
 
+        # For Android: DATA-ONLY message (no notification) so background handler processes TTS
         message = messaging.Message(
-            notification=messaging.Notification(
-                title=title,
-                body=body,
-            ),
+            # NO notification block for Android - only data!
             data={
                 'type': 'alarm',
                 'title': title,
