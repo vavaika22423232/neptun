@@ -201,20 +201,68 @@ class DeviceStore:
                 self._save(devices)
                 log.info(f"Updated regions for device {device_id[:20]}...")
 
+    def _normalize_region(self, region: str) -> str:
+        """Normalize region name for matching."""
+        # Remove common prefixes and suffixes
+        normalized = region.lower().strip()
+        # Remove oblast suffixes
+        for suffix in [' область', ' обл.', ' обл', ' область.']:
+            normalized = normalized.replace(suffix, '')
+        # Remove district markers
+        for suffix in [' район', ' р-н']:
+            if suffix in normalized:
+                # Extract oblast from "(Xобл.)" if present
+                import re
+                oblast_match = re.search(r'\(([^)]+обл[^)]*)\)', normalized)
+                if oblast_match:
+                    normalized = oblast_match.group(1).replace(' обл.', '').replace(' обл', '').strip()
+                else:
+                    normalized = normalized.split(suffix)[0].strip()
+        # Remove city/town info, keep oblast
+        import re
+        oblast_match = re.search(r'\(([^)]+обл[^)]*)\)', normalized)
+        if oblast_match:
+            normalized = oblast_match.group(1).replace(' обл.', '').replace(' обл', '').strip()
+        return normalized.strip()
+
+    def _regions_match(self, region1: str, region2: str) -> bool:
+        """Check if two regions match (fuzzy matching)."""
+        n1 = self._normalize_region(region1)
+        n2 = self._normalize_region(region2)
+        # Direct match
+        if n1 == n2:
+            return True
+        # One contains the other
+        if n1 in n2 or n2 in n1:
+            return True
+        # Check if any word matches (for cases like "Київ" vs "Київська")
+        words1 = set(n1.split())
+        words2 = set(n2.split())
+        # Check root matches (e.g., "київ" matches "київськ")
+        for w1 in words1:
+            for w2 in words2:
+                if len(w1) > 3 and len(w2) > 3:
+                    if w1[:4] == w2[:4]:  # First 4 chars match
+                        return True
+        return False
+
     def get_devices_for_region(self, region: str) -> List[Dict[str, Any]]:
-        """Get all devices subscribed to a specific region."""
+        """Get all devices subscribed to a specific region (with fuzzy matching)."""
         with self._lock:
             devices = self._load()
             result = []
             for device_id, data in devices.items():
                 if not data.get("enabled", True):
                     continue
-                if region in data.get("regions", []):
-                    result.append({
-                        "device_id": device_id,
-                        "token": data["token"],
-                        "regions": data["regions"],
-                    })
+                # Check if any subscribed region matches the alert region
+                for subscribed_region in data.get("regions", []):
+                    if self._regions_match(region, subscribed_region):
+                        result.append({
+                            "device_id": device_id,
+                            "token": data["token"],
+                            "regions": data["regions"],
+                        })
+                        break  # Don't add same device twice
             return result
 
     def remove_device(self, device_id: str) -> None:

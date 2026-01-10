@@ -17682,6 +17682,261 @@ def get_messages():
         traceback.print_exc()
         return jsonify({'messages': [], 'count': 0, 'error': str(e)}), 500
 
+# ==================== ALARM STATUS API (для AlarmTimerWidget) ====================
+_active_alarms_cache = {}  # region -> {active: bool, start_time: str, type: str}
+
+@app.route('/api/alarm-status')
+def get_alarm_status():
+    """Get current alarm status for regions - used by AlarmTimerWidget."""
+    try:
+        messages = load_messages()
+        alerts = {}
+        
+        # Process last 100 messages to find active alarms
+        for msg in messages[-100:]:
+            if not isinstance(msg, dict):
+                continue
+            
+            text = msg.get('text', '').lower()
+            location = ''
+            
+            # Extract region from location field or text
+            if '**' in msg.get('text', ''):
+                parts = msg.get('text', '').split('**')
+                for part in parts:
+                    part = part.strip()
+                    if 'область' in part.lower() or 'обл' in part.lower():
+                        location = part.replace('🚨', '').replace('🟢', '').strip()
+                        break
+            
+            if not location:
+                location = msg.get('location', msg.get('text', '')[:50])
+            
+            # Get timestamp
+            timestamp = msg.get('time', '') or msg.get('timestamp', '') or datetime.now().isoformat()
+            
+            # Determine if this is alarm start or end
+            is_all_clear = 'відбій' in text
+            is_alarm = 'тривога' in text or 'бпла' in text or 'дрон' in text or 'ракет' in text
+            
+            # Determine alarm type
+            alarm_type = 'Повітряна тривога'
+            if 'бпла' in text or 'дрон' in text:
+                alarm_type = 'БпЛА/Дрони'
+            elif 'ракет' in text or 'балістичн' in text:
+                alarm_type = 'Ракетна загроза'
+            
+            if location:
+                # Clean up location name
+                region_key = location.replace('🚨', '').replace('🟢', '').strip()[:50]
+                
+                if is_all_clear:
+                    alerts[region_key] = {
+                        'active': False,
+                        'start_time': None,
+                        'type': None,
+                        'end_time': timestamp
+                    }
+                elif is_alarm:
+                    # Only set if not already active or if this is newer
+                    if region_key not in alerts or not alerts[region_key].get('active'):
+                        alerts[region_key] = {
+                            'active': True,
+                            'start_time': timestamp,
+                            'type': alarm_type,
+                            'end_time': None
+                        }
+        
+        response = jsonify({
+            'alerts': alerts,
+            'timestamp': datetime.now().isoformat(),
+            'count': sum(1 for a in alerts.values() if a.get('active'))
+        })
+        response.headers['Cache-Control'] = 'public, max-age=15'
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        return response
+        
+    except Exception as e:
+        print(f"[ERROR] /api/alarm-status failed: {e}")
+        return jsonify({'alerts': {}, 'error': str(e)}), 500
+
+# ==================== ALARM HISTORY API (для AlarmHistoryPage) ====================
+@app.route('/api/alarm-history')
+def get_alarm_history():
+    """Get alarm history for statistics - used by AlarmHistoryPage."""
+    try:
+        region = request.args.get('region', '')
+        days = int(request.args.get('days', 30))
+        
+        messages = load_messages()
+        history = []
+        
+        # Calculate date cutoff
+        cutoff_date = datetime.now() - timedelta(days=days)
+        
+        for msg in messages:
+            if not isinstance(msg, dict):
+                continue
+            
+            text = msg.get('text', '').lower()
+            
+            # Skip if not alarm-related
+            if not any(kw in text for kw in ['тривога', 'відбій', 'бпла', 'дрон', 'ракет']):
+                continue
+            
+            # Get timestamp
+            timestamp_str = msg.get('time', '') or msg.get('timestamp', '')
+            try:
+                # Try to parse timestamp
+                if timestamp_str:
+                    # Handle various formats
+                    for fmt in ['%Y-%m-%d %H:%M:%S', '%d.%m.%Y %H:%M', '%Y-%m-%dT%H:%M:%S']:
+                        try:
+                            timestamp = datetime.strptime(timestamp_str[:19], fmt)
+                            break
+                        except:
+                            continue
+                    else:
+                        timestamp = datetime.now()
+                else:
+                    timestamp = datetime.now()
+                
+                # Skip if too old
+                if timestamp < cutoff_date:
+                    continue
+                    
+            except:
+                continue
+            
+            # Extract location
+            location = msg.get('location', '')
+            if not location and '**' in msg.get('text', ''):
+                parts = msg.get('text', '').split('**')
+                for part in parts:
+                    if 'область' in part.lower():
+                        location = part.strip()
+                        break
+            
+            # Filter by region if specified
+            if region and region.lower() not in location.lower():
+                continue
+            
+            # Determine alarm type
+            is_start = 'тривога' in text and 'відбій' not in text
+            alarm_type = 'air_raid'
+            if 'бпла' in text or 'дрон' in text:
+                alarm_type = 'drone'
+            elif 'ракет' in text:
+                alarm_type = 'missile'
+            
+            history.append({
+                'start_time': timestamp.isoformat(),
+                'end_time': None,  # Would need to match with відбій
+                'type': alarm_type,
+                'region': location[:50],
+                'is_start': is_start,
+                'duration_minutes': 30  # Estimate
+            })
+        
+        # Sort by time
+        history.sort(key=lambda x: x['start_time'], reverse=True)
+        
+        response = jsonify({
+            'history': history[:500],  # Last 500 entries
+            'count': len(history),
+            'region': region,
+            'days': days,
+            'timestamp': datetime.now().isoformat()
+        })
+        response.headers['Cache-Control'] = 'public, max-age=60'
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        return response
+        
+    except Exception as e:
+        print(f"[ERROR] /api/alarm-history failed: {e}")
+        return jsonify({'history': [], 'error': str(e)}), 500
+
+# ==================== FAMILY SAFETY API (для FamilySafetyTab) ====================
+_family_status_store = {}  # code -> {is_safe: bool, last_update: str, name: str}
+
+@app.route('/api/family/status', methods=['POST'])
+def get_family_status():
+    """Get safety status for family members by their codes."""
+    try:
+        data = request.get_json() or {}
+        codes = data.get('codes', [])
+        
+        statuses = {}
+        for code in codes:
+            code = code.upper()
+            if code in _family_status_store:
+                statuses[code] = _family_status_store[code]
+            else:
+                statuses[code] = {'is_safe': False, 'last_update': None}
+        
+        response = jsonify({'statuses': statuses, 'timestamp': datetime.now().isoformat()})
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        return response
+        
+    except Exception as e:
+        print(f"[ERROR] /api/family/status failed: {e}")
+        return jsonify({'statuses': {}, 'error': str(e)}), 500
+
+@app.route('/api/family/update', methods=['POST'])
+def update_family_status():
+    """Update safety status for a family member."""
+    try:
+        data = request.get_json() or {}
+        code = (data.get('code', '') or '').upper()
+        is_safe = data.get('is_safe', False)
+        
+        if not code or len(code) < 4:
+            return jsonify({'success': False, 'error': 'Invalid code'}), 400
+        
+        _family_status_store[code] = {
+            'is_safe': is_safe,
+            'last_update': datetime.now().isoformat(),
+            'name': data.get('name', '')
+        }
+        
+        response = jsonify({'success': True, 'code': code, 'is_safe': is_safe})
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        return response
+        
+    except Exception as e:
+        print(f"[ERROR] /api/family/update failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/family/sos', methods=['POST'])
+def send_family_sos():
+    """Send SOS signal to family members (placeholder - would need push notifications)."""
+    try:
+        data = request.get_json() or {}
+        code = (data.get('code', '') or '').upper()
+        family_codes = data.get('family_codes', [])
+        
+        if not code:
+            return jsonify({'success': False, 'error': 'Invalid code'}), 400
+        
+        # Mark sender as needing help
+        _family_status_store[code] = {
+            'is_safe': False,
+            'last_update': datetime.now().isoformat(),
+            'sos': True,
+            'sos_time': datetime.now().isoformat()
+        }
+        
+        # In production, this would send push notifications to family_codes
+        print(f"[SOS] Code {code} sent SOS to {len(family_codes)} family members")
+        
+        response = jsonify({'success': True, 'code': code, 'notified': len(family_codes)})
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        return response
+        
+    except Exception as e:
+        print(f"[ERROR] /api/family/sos failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/test_parse')
 def test_parse():
     """Test endpoint to manually test message parsing without auth."""
