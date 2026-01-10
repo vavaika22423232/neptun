@@ -1377,27 +1377,29 @@ def send_alarm_notification(region_data, alarm_started: bool):
         success_count = 0
         for device in devices:
             try:
+                # For Android: DATA-ONLY message so background handler can process TTS
+                # For iOS: Include notification so system shows alert (TTS won't work in background on iOS)
                 message = messaging.Message(
+                    # Include notification for iOS (will be ignored by Android background handler anyway)
                     notification=messaging.Notification(
                         title=title,
                         body=body,
                     ),
                     data={
                         'type': 'alarm',
+                        'title': title,
+                        'body': body,
                         'region': region_name,
                         'region_id': region_id,
                         'alarm_state': 'active' if alarm_started else 'ended',
+                        'is_critical': 'true' if is_critical else 'false',
                         'timestamp': datetime.now(pytz.timezone('Europe/Kiev')).isoformat(),
                         'click_action': 'FLUTTER_NOTIFICATION_CLICK',
                     },
                     android=messaging.AndroidConfig(
                         priority='high',
                         ttl=timedelta(seconds=300),
-                        notification=messaging.AndroidNotification(
-                            channel_id='critical_alerts' if is_critical else 'normal_alerts',
-                            priority='max' if is_critical else 'high',
-                            sound='default' if is_critical else None,
-                        ),
+                        # NO notification here - let background handler create local notification + TTS
                     ),
                     apns=messaging.APNSConfig(
                         headers={
@@ -1407,7 +1409,8 @@ def send_alarm_notification(region_data, alarm_started: bool):
                         payload=messaging.APNSPayload(
                             aps=messaging.Aps(
                                 alert=messaging.ApsAlert(title=title, body=body),
-                                sound='default' if is_critical else None,
+                                sound='default',
+                                badge=1,
                                 content_available=True,
                             ),
                         ),
