@@ -1297,12 +1297,9 @@ def get_region_display_name(region_data):
     if region_type == 'State':
         return region_name
     
-    # For districts, try to get parent oblast from mapping
+    # For districts, return the DISTRICT name (not oblast!)
+    # This is important for notification matching - users subscribe to districts
     if region_type == 'District':
-        oblast = DISTRICT_TO_OBLAST.get(region_name, '')
-        if oblast:
-            return oblast
-        # If no mapping, return district name
         return region_name
     
     return region_name
@@ -1354,8 +1351,22 @@ def send_alarm_notification(region_data, alarm_started: bool):
         log.info(f"State: {'STARTED' if alarm_started else 'ENDED'}")
         log.info(f"Message: {title} - {body}")
         
-        # Get devices subscribed to this region
+        # Get devices subscribed to this region (district) OR its oblast
         devices = device_store.get_devices_for_region(region_name)
+        
+        # Also check for oblast subscription (user might be subscribed to entire oblast)
+        region_type = region_data.get('regionType', '')
+        if region_type == 'District':
+            oblast = DISTRICT_TO_OBLAST.get(region_name, '')
+            if oblast:
+                oblast_devices = device_store.get_devices_for_region(oblast)
+                # Merge devices, avoiding duplicates
+                existing_device_ids = {d['device_id'] for d in devices}
+                for dev in oblast_devices:
+                    if dev['device_id'] not in existing_device_ids:
+                        devices.append(dev)
+                log.info(f"Also checked oblast '{oblast}', total devices now: {len(devices)}")
+        
         log.info(f"Devices subscribed to {region_name}: {len(devices)}")
         
         if not devices:
@@ -1444,21 +1455,26 @@ def monitor_alarms():
                 # Track which regions currently have alarms
                 current_active_regions = set()
                 
-                # On first run, just store current states without sending notifications
+                # On first run, store current states AND send notifications for active alarms
                 if _first_run:
-                    log.info("First run - storing initial alarm states without notifications")
+                    log.info("First run - storing initial alarm states and sending notifications for active alarms")
                     for region in data:
                         region_id = region.get('regionId', '')
+                        region_type = region.get('regionType', '')
                         active_alerts = region.get('activeAlerts', [])
                         has_alarm = len(active_alerts) > 0
                         
                         if has_alarm:
                             current_active_regions.add(region_id)
+                            # Send notification ONLY for Districts (not States/oblasts)
+                            if region_type == 'District':
+                                log.info(f"🚨 FIRST RUN - DISTRICT ALARM: {region.get('regionName')} (ID: {region_id})")
+                                send_alarm_notification(region, alarm_started=True)
                             _alarm_states[region_id] = {
                                 'active': True,
                                 'types': [alert.get('type') for alert in active_alerts],
                                 'last_changed': current_time,
-                                'notified': True  # Mark as already notified to prevent spam
+                                'notified': True
                             }
                     
                     _first_run = False
@@ -1467,6 +1483,7 @@ def monitor_alarms():
                     # Normal monitoring - check for changes
                     for region in data:
                         region_id = region.get('regionId', '')
+                        region_type = region.get('regionType', '')
                         active_alerts = region.get('activeAlerts', [])
                         has_alarm = len(active_alerts) > 0
                         
@@ -1479,10 +1496,12 @@ def monitor_alarms():
                         was_notified = previous_state.get('notified', False)
                         
                         if has_alarm and not was_active:
-                            # Alarm started - send notification only if not already notified
-                            if not was_notified:
-                                log.info(f"🚨 ALARM STARTED: {region.get('regionName')} (ID: {region_id})")
+                            # Alarm started - send notification ONLY for Districts
+                            if not was_notified and region_type == 'District':
+                                log.info(f"🚨 DISTRICT ALARM STARTED: {region.get('regionName')} (ID: {region_id})")
                                 send_alarm_notification(region, alarm_started=True)
+                            elif region_type == 'State':
+                                log.info(f"ℹ️ Oblast alarm started (no push): {region.get('regionName')}")
                             _alarm_states[region_id] = {
                                 'active': True,
                                 'types': [alert.get('type') for alert in active_alerts],
@@ -1490,9 +1509,12 @@ def monitor_alarms():
                                 'notified': True
                             }
                         elif not has_alarm and was_active:
-                            # Alarm ended - always send відбій notification
-                            log.info(f"✅ ALARM ENDED: {region.get('regionName')} (ID: {region_id})")
-                            send_alarm_notification(region, alarm_started=False)
+                            # Alarm ended - send відбій ONLY for Districts
+                            if region_type == 'District':
+                                log.info(f"✅ DISTRICT ALARM ENDED: {region.get('regionName')} (ID: {region_id})")
+                                send_alarm_notification(region, alarm_started=False)
+                            elif region_type == 'State':
+                                log.info(f"ℹ️ Oblast alarm ended (no push): {region.get('regionName')}")
                             _alarm_states[region_id] = {
                                 'active': False,
                                 'types': [],
@@ -1514,8 +1536,13 @@ def monitor_alarms():
                             # Find region data to send відбій notification
                             region_data = next((r for r in data if r.get('regionId') == region_id), None)
                             if region_data:
-                                log.info(f"✅ ALARM ENDED (from tracking): {region_data.get('regionName')} (ID: {region_id})")
-                                send_alarm_notification(region_data, alarm_started=False)
+                                region_type = region_data.get('regionType', '')
+                                # Send відбій ONLY for Districts
+                                if region_type == 'District':
+                                    log.info(f"✅ DISTRICT ALARM ENDED (from tracking): {region_data.get('regionName')} (ID: {region_id})")
+                                    send_alarm_notification(region_data, alarm_started=False)
+                                else:
+                                    log.info(f"ℹ️ Oblast alarm ended (from tracking, no push): {region_data.get('regionName')}")
                             _alarm_states[region_id] = {
                                 'active': False,
                                 'types': [],
@@ -13810,10 +13837,53 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 t = 'нова ' + t[5:]
             t = t.replace('водолагу','водолога')
             return t
+        
+        # Pattern to extract oblast from parentheses like "(Полтавська обл.)" or "(Харківська область)"
+        pat_oblast_in_parens = re.compile(r'\(([А-Яа-яЇїІіЄєҐґ\-]+)\s*обл\.?\)?', re.IGNORECASE)
+        
         for ln, region_hdr in lines_with_region:
             ln_low = ln.lower()
             if 'бпла' not in ln_low:
                 continue
+            
+            # PRIORITY: Extract oblast from parentheses in the line itself (e.g., "Семенівку (Полтавська обл.)")
+            # This overrides the region header from channel
+            line_oblast_match = pat_oblast_in_parens.search(ln)
+            if line_oblast_match:
+                oblast_name = line_oblast_match.group(1).lower()
+                # Map to standard oblast name
+                oblast_map = {
+                    'полтавськ': 'полтавщина', 'полтавська': 'полтавщина',
+                    'харківськ': 'харківщина', 'харківська': 'харківщина',
+                    'чернігівськ': 'чернігівщина', 'чернігівська': 'чернігівщина',
+                    'сумськ': 'сумщина', 'сумська': 'сумщина',
+                    'київськ': 'київщина', 'київська': 'київщина',
+                    'одеськ': 'одещина', 'одеська': 'одещина',
+                    'миколаївськ': 'миколаївщина', 'миколаївська': 'миколаївщина',
+                    'херсонськ': 'херсонщина', 'херсонська': 'херсонщина',
+                    'запорізьк': 'запорізька', 'запорізька': 'запорізька',
+                    'дніпропетровськ': 'дніпропетровщина', 'дніпропетровська': 'дніпропетровщина',
+                    'донецьк': 'донецька', 'донецька': 'донецька',
+                    'луганськ': 'луганська', 'луганська': 'луганська',
+                    'черкаськ': 'черкащина', 'черкаська': 'черкащина',
+                    'житомирськ': 'житомирщина', 'житомирська': 'житомирщина',
+                    'вінницьк': 'вінниччина', 'вінницька': 'вінниччина',
+                    'рівненськ': 'рівненщина', 'рівненська': 'рівненщина',
+                    'волинськ': 'волинь', 'волинська': 'волинь',
+                    'львівськ': 'львівщина', 'львівська': 'львівщина',
+                    'тернопільськ': 'тернопільщина', 'тернопільська': 'тернопільщина',
+                    'хмельницьк': 'хмельниччина', 'хмельницька': 'хмельниччина',
+                    'івано-франківськ': 'івано-франківщина', 'івано-франківська': 'івано-франківщина',
+                    'закарпатськ': 'закарпаття', 'закарпатська': 'закарпаття',
+                    'чернівецьк': 'чернівецька', 'чернівецька': 'чернівецька',
+                    'кіровоградськ': 'кіровоградщина', 'кіровоградська': 'кіровоградщина',
+                }
+                for key, val in oblast_map.items():
+                    if oblast_name.startswith(key):
+                        region_hdr = val
+                        log.info(f"mid={mid} OVERRIDE region_hdr from line: '{oblast_name}' -> '{region_hdr}'")
+                        break
+            
             add_debug_log(f"Processing UAV line: '{ln[:100]}...' (region: {region_hdr})", "uav_course")
             
             # Check for complex pattern "на/через X в напрямку Y" first
