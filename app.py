@@ -1317,8 +1317,9 @@ def send_alarm_notification(region_data, alarm_started: bool):
         region_id = region_data.get('regionId', '')
         alert_types = region_data.get('activeAlerts', [])
         
-        # Check recent Telegram messages for threat details (drones, rockets)
+        # Check recent Telegram messages for threat details (drones, rockets, KABs, etc.)
         threat_detail = None
+        threat_text = None  # The actual text from Telegram message
         try:
             recent_messages = message_store.get_recent_messages(minutes=10)
             region_lower = region_name.lower()
@@ -1331,9 +1332,10 @@ def send_alarm_notification(region_data, alarm_started: bool):
             district_root = region_lower.replace(' район', '').replace('ький', '').replace('ська', '').replace('ська', '')[:5]
             
             for msg in recent_messages:
-                msg_text = (msg.get('text', '') or '').lower()
+                msg_text = (msg.get('text', '') or '')
+                msg_text_lower = msg_text.lower()
                 msg_location = (msg.get('location', '') or '').lower()
-                combined = msg_text + ' ' + msg_location
+                combined = msg_text_lower + ' ' + msg_location
                 
                 # Check if message relates to this region (fuzzy match)
                 region_match = (
@@ -1343,26 +1345,57 @@ def send_alarm_notification(region_data, alarm_started: bool):
                 )
                 
                 if region_match:
-                    if 'ракет' in msg_text or 'балістичн' in msg_text or 'крилат' in msg_text:
+                    # Extract the threat description from message
+                    # Look for patterns like "Загроза застосування БПЛА", "Загроза застосування КАБів"
+                    import re
+                    threat_match = re.search(r'(Загроза [^.]+|Ракетна [^.]+|вибух[^.]*)', msg_text, re.IGNORECASE)
+                    if threat_match:
+                        threat_text = threat_match.group(1).strip()
+                        if threat_text.endswith('.'):
+                            threat_text = threat_text[:-1]
+                    
+                    if 'ракет' in msg_text_lower or 'балістичн' in msg_text_lower or 'крилат' in msg_text_lower:
                         threat_detail = 'ракети'
-                        log.info(f"Found rocket threat in message for {region_name}")
+                        log.info(f"Found rocket threat in message for {region_name}: {threat_text}")
                         break
-                    elif 'бпла' in msg_text or 'дрон' in msg_text or 'шахед' in msg_text:
+                    elif 'бпла' in msg_text_lower or 'дрон' in msg_text_lower or 'шахед' in msg_text_lower:
                         threat_detail = 'дрони'
-                        log.info(f"Found drone threat in message for {region_name}")
+                        log.info(f"Found drone threat in message for {region_name}: {threat_text}")
+                        break
+                    elif 'каб' in msg_text_lower:
+                        threat_detail = 'каби'
+                        log.info(f"Found KAB threat in message for {region_name}: {threat_text}")
+                        break
+                    elif 'вибух' in msg_text_lower:
+                        threat_detail = 'вибухи'
+                        log.info(f"Found explosion report for {region_name}: {threat_text}")
                         break
             
             # If no specific match found, check if there's ANY recent drone/rocket message
             if not threat_detail:
                 for msg in recent_messages:
-                    msg_text = (msg.get('text', '') or '').lower()
-                    if 'ракет' in msg_text or 'балістичн' in msg_text or 'крилат' in msg_text:
+                    msg_text = (msg.get('text', '') or '')
+                    msg_text_lower = msg_text.lower()
+                    
+                    # Extract threat text
+                    import re
+                    threat_match = re.search(r'(Загроза [^.]+|Ракетна [^.]+)', msg_text, re.IGNORECASE)
+                    if threat_match:
+                        threat_text = threat_match.group(1).strip()
+                        if threat_text.endswith('.'):
+                            threat_text = threat_text[:-1]
+                    
+                    if 'ракет' in msg_text_lower or 'балістичн' in msg_text_lower or 'крилат' in msg_text_lower:
                         threat_detail = 'ракети'
-                        log.info(f"Using global rocket threat for {region_name}")
+                        log.info(f"Using global rocket threat for {region_name}: {threat_text}")
                         break
-                    elif 'бпла' in msg_text or 'дрон' in msg_text or 'шахед' in msg_text:
+                    elif 'бпла' in msg_text_lower or 'дрон' in msg_text_lower or 'шахед' in msg_text_lower:
                         threat_detail = 'дрони'
-                        log.info(f"Using global drone threat for {region_name}")
+                        log.info(f"Using global drone threat for {region_name}: {threat_text}")
+                        break
+                    elif 'каб' in msg_text_lower:
+                        threat_detail = 'каби'
+                        log.info(f"Using global KAB threat for {region_name}: {threat_text}")
                         break
                         
         except Exception as e:
@@ -1390,12 +1423,21 @@ def send_alarm_notification(region_data, alarm_started: bool):
             
             title = f"🚨 Тривога: {region_name}"
             
-            # Add threat detail to body if available
-            if threat_detail == 'ракети':
+            # Use threat_text from Telegram if available, otherwise use generic descriptions
+            if threat_text:
+                body = threat_text  # e.g., "Загроза застосування БПЛА", "Загроза застосування КАБів"
+                is_critical = True
+            elif threat_detail == 'ракети':
                 body = "Ракетна небезпека!"
                 is_critical = True
             elif threat_detail == 'дрони':
-                body = "Загроза БПЛА (дронів)"
+                body = "Загроза застосування БПЛА"
+                is_critical = True
+            elif threat_detail == 'каби':
+                body = "Загроза застосування КАБів"
+                is_critical = True
+            elif threat_detail == 'вибухи':
+                body = "Повідомляють про вибухи"
                 is_critical = True
             else:
                 body = ", ".join(threat_types)
