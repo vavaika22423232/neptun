@@ -1330,10 +1330,18 @@ def send_alarm_notification(region_data, alarm_started: bool):
                 
                 # Check if this region was recently notified
                 region_lower = region_name.lower()
+                # Extract root for matching (e.g., "херсонський район" -> "херсон")
+                region_root = region_lower.replace('ський район', '').replace('ська область', '').replace('ський', '').replace('ська', '').replace(' район', '').replace(' область', '').strip()[:6]
+                
                 for notified_region, timestamp in _telegram_region_notified.items():
-                    if notified_region in region_lower or region_lower in notified_region:
+                    notified_root = notified_region.replace('ський район', '').replace('ська область', '').replace('ський', '').replace('ська', '').replace(' район', '').replace(' область', '').strip()[:6]
+                    
+                    # Match by root or full name
+                    if (notified_region in region_lower or 
+                        region_lower in notified_region or
+                        (region_root and notified_root and region_root == notified_root)):
                         elapsed = now - timestamp
-                        log.info(f"⏭️ Skipping alarm notification for {region_name} - already notified via Telegram {int(elapsed)}s ago")
+                        log.info(f"⏭️ Skipping alarm notification for {region_name} - already notified via Telegram {int(elapsed)}s ago (matched: {notified_region})")
                         return
         
         # Check recent Telegram messages for threat details (drones, rockets, KABs, etc.)
@@ -20599,9 +20607,10 @@ def _alarm_monitor_thread():
         time.sleep(30)  # Check every 30 seconds
 
 # Start alarm monitoring thread
-_alarm_monitor = threading.Thread(target=_alarm_monitor_thread, daemon=True)
-_alarm_monitor.start()
-log.info("Alarm monitoring thread started")
+# DISABLED: Using monitor_alarms() instead which has better deduplication logic
+# _alarm_monitor = threading.Thread(target=_alarm_monitor_thread, daemon=True)
+# _alarm_monitor.start()
+log.info("Old alarm monitoring thread DISABLED - using monitor_alarms() instead")
 
 
 @app.route('/api/stats')
