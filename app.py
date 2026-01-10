@@ -1547,6 +1547,148 @@ def send_alarm_notification(region_data, alarm_started: bool):
     except Exception as e:
         log.error(f"Error in send_alarm_notification: {e}")
 
+
+# Track recently sent telegram alerts to avoid duplicates (message_id -> timestamp)
+_telegram_alert_sent = {}
+_telegram_alert_lock = threading.Lock()
+
+def send_telegram_threat_notification(message_text: str, location: str, message_id: str):
+    """Send FCM notification for threat messages from Telegram (КАБи, ракети, БПЛА etc.)."""
+    if not firebase_initialized:
+        return
+    
+    # Deduplicate - don't send same message within 5 minutes
+    with _telegram_alert_lock:
+        now = time.time()
+        # Clean old entries
+        _telegram_alert_sent.clear() if len(_telegram_alert_sent) > 1000 else None
+        for mid in list(_telegram_alert_sent.keys()):
+            if now - _telegram_alert_sent[mid] > 300:
+                del _telegram_alert_sent[mid]
+        
+        if message_id in _telegram_alert_sent:
+            return
+        _telegram_alert_sent[message_id] = now
+    
+    try:
+        from firebase_admin import messaging
+        
+        msg_lower = message_text.lower()
+        
+        # Determine threat type and notification content
+        if 'каб' in msg_lower:
+            threat_type = 'каби'
+            body = message_text
+            emoji = '💣'
+            is_critical = True
+        elif 'ракет' in msg_lower or 'балістичн' in msg_lower:
+            threat_type = 'ракети'
+            body = message_text
+            emoji = '🚀'
+            is_critical = True
+        elif 'бпла' in msg_lower or 'дрон' in msg_lower or 'шахед' in msg_lower:
+            threat_type = 'дрони'
+            body = message_text
+            emoji = '🛩️'
+            is_critical = True
+        elif 'вибух' in msg_lower:
+            threat_type = 'вибухи'
+            body = message_text
+            emoji = '💥'
+            is_critical = True
+        else:
+            # Not a threat message, skip
+            return
+        
+        # Extract region from location (e.g., "Харків (Харківська обл.)" -> "Харківська область")
+        region_name = location
+        if '(' in location and 'обл' in location:
+            # Extract oblast from parentheses
+            import re
+            oblast_match = re.search(r'\(([^)]*обл[^)]*)\)', location)
+            if oblast_match:
+                region_name = oblast_match.group(1).replace('обл.', 'область').strip()
+        
+        title = f"{emoji} {region_name}"
+        
+        # Remove location prefix from body if present (we already have it in title)
+        if ')' in body:
+            parts = body.split(')', 1)
+            if len(parts) > 1 and parts[1].strip():
+                body = parts[1].strip()
+        
+        log.info(f"=== TELEGRAM THREAT NOTIFICATION ===")
+        log.info(f"Location: {location} -> {region_name}")
+        log.info(f"Threat: {threat_type}")
+        log.info(f"Message: {title} - {body}")
+        
+        # Get devices subscribed to this region
+        devices = device_store.get_devices_for_region(region_name)
+        
+        # Also try matching by city/location name
+        if '(' in location:
+            city = location.split('(')[0].strip()
+            city_devices = device_store.get_devices_for_region(city)
+            existing_ids = {d['device_id'] for d in devices}
+            for dev in city_devices:
+                if dev['device_id'] not in existing_ids:
+                    devices.append(dev)
+        
+        log.info(f"Devices subscribed: {len(devices)}")
+        
+        if not devices:
+            return
+        
+        # Send to each device
+        success_count = 0
+        for device in devices:
+            try:
+                message = messaging.Message(
+                    data={
+                        'type': 'telegram_threat',
+                        'title': title,
+                        'body': body,
+                        'region': region_name,
+                        'alarm_state': 'active',
+                        'is_critical': 'true' if is_critical else 'false',
+                        'threat_type': threat_type,
+                        'timestamp': datetime.now(pytz.timezone('Europe/Kiev')).isoformat(),
+                        'click_action': 'FLUTTER_NOTIFICATION_CLICK',
+                    },
+                    android=messaging.AndroidConfig(
+                        priority='high',
+                        ttl=timedelta(seconds=300),
+                    ),
+                    apns=messaging.APNSConfig(
+                        headers={
+                            'apns-priority': '10',
+                            'apns-push-type': 'alert',
+                        },
+                        payload=messaging.APNSPayload(
+                            aps=messaging.Aps(
+                                alert=messaging.ApsAlert(title=title, body=body),
+                                sound='default',
+                                badge=1,
+                                content_available=True,
+                            ),
+                        ),
+                    ),
+                    token=device['token'],
+                )
+                
+                response = messaging.send(message)
+                success_count += 1
+            except messaging.UnregisteredError:
+                device_store.remove_device(device['device_id'])
+            except Exception as e:
+                error_msg = str(e)
+                if 'NotRegistered' in error_msg or 'not registered' in error_msg.lower():
+                    device_store.remove_device(device['device_id'])
+        
+        log.info(f"Sent {success_count}/{len(devices)} telegram threat notifications")
+    except Exception as e:
+        log.error(f"Error in send_telegram_threat_notification: {e}")
+
 def monitor_alarms():
     """Background task to monitor ukrainealarm API and send notifications on state changes."""
     global _alarm_states, _first_run
@@ -15929,6 +16071,28 @@ async def fetch_loop():
                         continue
                     msgs_recent_window += 1
                     tracks = process_message(msg.text, msg.id, dt.strftime('%Y-%m-%d %H:%M:%S'), ch)
+                    
+                    # Send push notification for threat messages (КАБи, ракети, БПЛА)
+                    msg_lower = msg.text.lower()
+                    if any(kw in msg_lower for kw in ['каб', 'ракет', 'балістичн', 'бпла', 'дрон', 'шахед', 'вибух']):
+                        # Extract location from message (usually first part before threat description)
+                        location = ''
+                        if '(' in msg.text and ')' in msg.text:
+                            # Format: "Харків (Харківська обл.) Загроза..."
+                            location = msg.text.split(')')[0] + ')'
+                        elif tracks and tracks[0].get('place'):
+                            location = tracks[0]['place']
+                        
+                        # Extract just the threat part for body
+                        threat_text = msg.text
+                        if ')' in threat_text:
+                            parts = threat_text.split(')', 1)
+                            if len(parts) > 1 and parts[1].strip():
+                                threat_text = parts[1].strip()
+                        
+                        if location:
+                            send_telegram_threat_notification(threat_text, location, str(msg.id))
+                    
                     if tracks:
                         merged_any = False
                         appended = []
