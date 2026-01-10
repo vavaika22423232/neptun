@@ -25,37 +25,45 @@
   <!-- Canonical URL -->
   <link rel="canonical" href="https://neptun.in.ua/map-old">
   
-  <!-- Leaflet CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+  <!-- Preload критичних ресурсів -->
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
+  
+  <!-- Leaflet CSS - jsDelivr швидший за unpkg -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css" crossorigin=""/>
   
   <!-- Leaflet MarkerCluster CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" crossorigin=""/>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" crossorigin=""/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" crossorigin=""/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" crossorigin=""/>
   
-  <!-- Leaflet JS -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js" crossorigin=""></script>
-  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" crossorigin=""></script>
+  <!-- Leaflet JS - jsDelivr -->
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js" crossorigin=""></script>
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js" crossorigin=""></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.min.js" crossorigin=""></script>
   
-  <!-- Material Icons -->
-  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+  <!-- Material Icons - lazy load -->
+  <link rel="preload" href="https://fonts.googleapis.com/icon?family=Material+Icons" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet"></noscript>
   
   <style>
     * {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent !important;
+      -webkit-touch-callout: none !important;
+      -webkit-user-select: none !important;
+      user-select: none !important;
     }
     
     html, body {
       width: 100%;
       height: 100%;
       overflow: hidden;
-      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      font-family: 'Exo 2', -apple-system, BlinkMacSystemFont, sans-serif;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
-      background: #E0E5EC;
+      background: linear-gradient(135deg, #0a0e17 0%, #0d1929 50%, #0a192f 100%);
     }
     
     #map {
@@ -65,71 +73,61 @@
       top: 0;
       left: 0;
       border-radius: 0;
-      /* Робимо карту менш білою через фільтр */
-      filter: brightness(0.9) contrast(1.05) saturate(1.1);
     }
     
-    /* Neumorphism для контролів карти */
+    /* NEPTUN Dark Style для контролів карти */
     .leaflet-control-zoom,
     .leaflet-bar {
       border: none !important;
-      box-shadow: 
-        8px 8px 15px #A3B1C6,
-        -8px -8px 15px #FFFFFF !important;
-      border-radius: 15px !important;
-      background: #E0E5EC !important;
+      background: rgba(10, 25, 47, 0.95) !important;
+      border: 1px solid rgba(0, 212, 255, 0.3) !important;
+      border-radius: 8px !important;
       overflow: hidden;
     }
     
     .leaflet-control-zoom a,
     .leaflet-bar a {
-      background: #E0E5EC !important;
+      background: rgba(10, 25, 47, 0.95) !important;
       border: none !important;
-      color: #4A90E2 !important;
+      border-bottom: 1px solid rgba(0, 212, 255, 0.2) !important;
+      color: #00d4ff !important;
       font-size: 20px !important;
       font-weight: 600 !important;
       width: 40px !important;
       height: 40px !important;
       line-height: 40px !important;
-      transition: all 0.2s ease;
+      transition: background 0.2s ease;
+    }
+    
+    .leaflet-control-zoom a:last-child,
+    .leaflet-bar a:last-child {
+      border-bottom: none !important;
     }
     
     .leaflet-control-zoom a:hover,
     .leaflet-bar a:hover {
-      background: #E0E5EC !important;
-      box-shadow: 
-        inset 4px 4px 8px #A3B1C6,
-        inset -4px -4px 8px #FFFFFF !important;
-      color: #2E5C8A !important;
-    }
-    
-    .leaflet-control-zoom a:active,
-    .leaflet-bar a:active {
-      box-shadow: 
-        inset 6px 6px 10px #A3B1C6,
-        inset -6px -6px 10px #FFFFFF !important;
+      background: rgba(0, 212, 255, 0.2) !important;
+      color: #00d4ff !important;
     }
     
     .leaflet-control-zoom a.leaflet-disabled,
     .leaflet-bar a.leaflet-disabled {
       opacity: 0.4 !important;
       cursor: not-allowed !important;
+      color: #4a5568 !important;
     }
     
     .leaflet-control-attribution {
-      background: #E0E5EC !important;
-      box-shadow: 
-        4px 4px 8px #A3B1C6,
-        -4px -4px 8px #FFFFFF !important;
+      background: rgba(10, 25, 47, 0.9) !important;
+      border: 1px solid rgba(0, 212, 255, 0.2) !important;
       border-radius: 8px !important;
       padding: 4px 8px !important;
-      border: none !important;
-      color: #718096 !important;
-      font-size: 11px !important;
+      color: rgba(0, 212, 255, 0.6) !important;
+      font-size: 10px !important;
     }
     
     .leaflet-control-attribution a {
-      color: #4A90E2 !important;
+      color: #00d4ff !important;
     }
     
     .custom-div-icon {
@@ -295,12 +293,12 @@
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      background: rgba(255,255,255,0.95);
+      background: rgba(10, 25, 47, 0.95);
+      border: 1px solid rgba(0, 212, 255, 0.3);
       padding: 20px 30px;
       border-radius: 12px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
       font-size: 14px;
-      color: #374151;
+      color: #00d4ff;
       z-index: 9999;
     }
     
@@ -319,7 +317,7 @@
       display: none !important;
     }
     
-    /* Map style switcher - Minimal Glass Style */
+    /* Map style switcher - NEPTUN Dark Style */
     .map-switcher {
       position: fixed;
       bottom: 110px;
@@ -332,23 +330,20 @@
       align-items: center;
       gap: 8px;
       padding: 12px 18px;
-      background: rgba(0, 212, 255, 0.1);
-      border: 1px solid rgba(0, 212, 255, 0.2);
+      background: rgba(10, 25, 47, 0.95);
+      border: 1px solid rgba(0, 212, 255, 0.3);
       border-radius: 50px;
-      color: #67e8f9;
+      color: #00d4ff;
       font-size: 13px;
       font-weight: 500;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family: 'Exo 2', sans-serif;
       cursor: pointer;
-      transition: all 0.25s ease;
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
+      transition: background 0.2s ease;
     }
     
     .map-switcher-btn:hover {
       background: rgba(0, 212, 255, 0.2);
-      transform: translateX(-4px);
-      box-shadow: 0 4px 20px rgba(0, 212, 255, 0.15);
+      border-color: #00d4ff;
     }
     
     .map-switcher-icon {
@@ -383,12 +378,10 @@
       }
     }
     
-    /* ========== NAVBAR STYLES - Minimal Glass ========== */
+    /* ========== NAVBAR STYLES - NEPTUN Dark ========== */
     .navbar {
       width: 100%;
-      background: rgba(15, 23, 42, 0.75);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
+      background: rgba(10, 25, 47, 0.95);
       color: #e2e8f0;
       font-weight: 500;
       font-size: 1rem;
@@ -396,7 +389,7 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      border-bottom: 1px solid rgba(103, 232, 249, 0.1);
+      border-bottom: 1px solid rgba(0, 212, 255, 0.2);
       position: fixed;
       top: 0;
       left: 0;
@@ -414,7 +407,7 @@
       font-family: 'Orbitron', sans-serif;
       font-size: 1.1rem;
       font-weight: 700;
-      color: #67e8f9;
+      color: #00d4ff;
       letter-spacing: 3px;
     }
     

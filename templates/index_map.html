@@ -9,8 +9,13 @@
   <meta name="theme-color" content="#0a0e17">
   <meta name="format-detection" content="telephone=no">
   <title>Карта тривог України | NEPTUN</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;600&display=swap" rel="stylesheet">
+  <!-- Preload fonts asynchronously to not block render -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;600&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;600&display=swap" rel="stylesheet"></noscript>
+  <link rel="preload" href="https://fonts.googleapis.com/icon?family=Material+Icons" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet"></noscript>
   
   <style>
     * {
@@ -50,20 +55,9 @@
       -webkit-user-drag: none !important;
     }
     
-    /* Animated background grid */
+    /* Background grid - DISABLED for performance */
     #map-container::before {
-      content: '';
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background-image: 
-        linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
-      background-size: 50px 50px;
-      pointer-events: none;
-      z-index: 0;
+      display: none;
     }
     
     #map-container {
@@ -169,7 +163,7 @@
       fill: #7f1d1d;
       stroke: #ff4444;
       stroke-opacity: 0.8;
-      animation: alarmPulse 2s ease-in-out infinite;
+      /* animation disabled for performance */
     }
     
     /* NEPTUN style - District regions */
@@ -191,17 +185,17 @@
       fill: #dc2626;
       stroke: #ff6b6b;
       stroke-width: 0.2;
-      animation: districtAlarm 1.5s ease-in-out infinite;
+      /* animation disabled for performance */
     }
     
     @keyframes alarmPulse {
       0%, 100% { 
         fill: #7f1d1d;
-        filter: drop-shadow(0 0 8px rgba(255, 68, 68, 0.4));
+        opacity: 0.9;
       }
       50% { 
         fill: #991b1b;
-        filter: drop-shadow(0 0 15px rgba(255, 68, 68, 0.7));
+        opacity: 1;
       }
     }
     
@@ -248,22 +242,39 @@
       text-transform: uppercase;
     }
     
-    /* Zoom controls - NEPTUN style */
-    .zoom-controls {
+    /* Controls Panel - unified block */
+    .controls-panel {
       position: fixed;
-      bottom: 30px;
-      right: 30px;
+      bottom: 24px;
+      right: 24px;
       display: flex;
       flex-direction: column;
-      gap: 8px;
-      z-index: 1000;
+      gap: 0;
+      z-index: 1100;
+      background: rgba(10, 25, 47, 0.95);
+      border: 1px solid rgba(0, 212, 255, 0.3);
+      border-radius: 16px;
+      padding: 8px;
+      overflow: hidden;
+    }
+    
+    .controls-section {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    
+    .controls-divider {
+      height: 1px;
+      background: rgba(0, 212, 255, 0.2);
+      margin: 8px 0;
     }
     
     .zoom-btn {
       width: 44px;
       height: 44px;
-      background: rgba(10, 25, 47, 0.9);
-      border: 1px solid rgba(0, 212, 255, 0.3);
+      background: transparent;
+      border: none;
       border-radius: 8px;
       color: #00d4ff;
       font-size: 20px;
@@ -272,112 +283,67 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: all 0.3s ease;
-      backdrop-filter: blur(10px);
+      transition: background 0.2s ease;
     }
     
     .zoom-btn:hover {
-      background: rgba(0, 212, 255, 0.15);
+      background: rgba(0, 212, 255, 0.2);
       border-color: #00d4ff;
-      box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
-      transform: scale(1.05);
     }
     
-    /* Map style switcher - Beautiful pill design */
-    .map-switcher {
-      position: fixed;
-      bottom: 190px;
-      right: 30px;
-      z-index: 1000;
-    }
-    
-    .map-switcher-btn {
+    /* Nav buttons in controls panel */
+    .nav-btn {
+      width: 44px;
+      height: 44px;
+      background: transparent;
+      border: none;
+      border-radius: 8px;
+      color: #00d4ff;
+      cursor: pointer;
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 12px 20px;
-      background: linear-gradient(135deg, rgba(10, 25, 47, 0.95) 0%, rgba(15, 35, 60, 0.95) 100%);
-      border: 1px solid rgba(0, 212, 255, 0.4);
-      border-radius: 50px;
-      color: #00d4ff;
-      font-size: 14px;
-      font-weight: 600;
-      font-family: 'Exo 2', sans-serif;
-      cursor: pointer;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3), 0 0 30px rgba(0, 212, 255, 0.1);
-      position: relative;
-      overflow: hidden;
+      justify-content: center;
+      transition: background 0.2s ease;
     }
     
-    .map-switcher-btn::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: -100%;
-      width: 100%;
-      height: 100%;
-      background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.2), transparent);
-      transition: left 0.5s ease;
+    .nav-btn i.material-icons {
+      font-size: 22px;
     }
     
-    .map-switcher-btn:hover::before {
-      left: 100%;
+    .nav-btn:hover {
+      background: rgba(0, 212, 255, 0.2);
     }
     
-    .map-switcher-btn:hover {
-      background: linear-gradient(135deg, rgba(0, 212, 255, 0.2) 0%, rgba(0, 170, 255, 0.25) 100%);
-      border-color: #00d4ff;
-      box-shadow: 0 6px 25px rgba(0, 0, 0, 0.4), 0 0 40px rgba(0, 212, 255, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-      transform: translateY(-2px);
+    .nav-btn.home-btn {
+      color: #4ade80;
     }
     
-    .map-switcher-btn:active {
-      transform: translateY(0);
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3), 0 0 20px rgba(0, 212, 255, 0.3);
-    }
-    
-    .map-switcher-icon {
-      font-size: 20px;
-      filter: drop-shadow(0 0 8px rgba(0, 212, 255, 0.6));
-      animation: iconPulse 3s ease-in-out infinite;
-    }
-    
-    @keyframes iconPulse {
-      0%, 100% { transform: scale(1); filter: drop-shadow(0 0 8px rgba(0, 212, 255, 0.6)); }
-      50% { transform: scale(1.1); filter: drop-shadow(0 0 12px rgba(0, 212, 255, 0.8)); }
-    }
-    
-    .map-switcher-text {
-      letter-spacing: 0.5px;
-      text-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+    .nav-btn.home-btn:hover {
+      background: rgba(34, 197, 94, 0.2);
     }
     
     @media (max-width: 768px) {
-      .map-switcher {
-        bottom: 170px;
-        right: 15px;
+      .controls-panel {
+        bottom: 16px;
+        right: 12px;
+        padding: 6px;
       }
-      .map-switcher-btn {
-        padding: 10px 16px;
-        font-size: 13px;
-        gap: 8px;
-      }
-      .map-switcher-icon {
-        font-size: 18px;
+      
+      .zoom-btn, .nav-btn {
+        width: 40px;
+        height: 40px;
       }
     }
     
     @media (max-width: 480px) {
-      .map-switcher-btn {
-        padding: 8px 14px;
-        font-size: 12px;
+      .controls-panel {
+        bottom: 12px;
+        right: 10px;
       }
-      .map-switcher-text {
-        display: none;
-      }
-      .map-switcher-icon {
-        font-size: 22px;
+      
+      .zoom-btn, .nav-btn {
+        width: 38px;
+        height: 38px;
       }
     }
     
@@ -386,13 +352,13 @@
       position: fixed;
       top: 80px;
       left: 20px;
-      background: rgba(10, 25, 47, 0.9);
+      background: rgba(10, 25, 47, 0.97);
       border: 1px solid rgba(0, 212, 255, 0.2);
       border-radius: 12px;
       padding: 16px 20px;
       color: white;
       z-index: 1000;
-      backdrop-filter: blur(10px);
+      /* backdrop-filter disabled for performance */
       min-width: 160px;
     }
     
@@ -470,9 +436,7 @@
       transform: translate(-50%, -50%);
       pointer-events: auto;
       cursor: pointer;
-      filter: drop-shadow(0 0 8px rgba(255, 100, 100, 0.8));
-      animation: markerPulse 2s ease-in-out infinite;
-      transition: transform 0.2s ease;
+      /* drop-shadow and animation disabled for performance */
     }
     
     .threat-marker:hover {
@@ -500,7 +464,7 @@
     /* Marker tooltip */
     .marker-tooltip {
       position: fixed;
-      background: rgba(10, 25, 47, 0.95);
+      background: rgba(10, 25, 47, 0.98);
       border: 1px solid rgba(0, 212, 255, 0.4);
       border-radius: 8px;
       padding: 10px 14px;
@@ -509,8 +473,7 @@
       max-width: 280px;
       z-index: 2000;
       pointer-events: none;
-      backdrop-filter: blur(10px);
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+      /* backdrop-filter and box-shadow disabled for performance */
     }
     
     .marker-tooltip .tooltip-type {
@@ -960,8 +923,6 @@
   </div>
   
   <div class="status-panel">
-    <h3>Активні тривоги</h3>
-    <div class="alarm-count" id="alarm-count">0</div>
     <div class="last-update" id="last-update">Завантаження...</div>
     <div class="api-status" id="api-status"></div>
     
@@ -972,24 +933,29 @@
     </div>
   </div>
   
-  <!-- Map Style Switcher -->
-  <div class="map-switcher">
-    <button class="map-switcher-btn" onclick="window.location.href='/map-old?from=map'" title="Перемкнути на стару карту">
-      <span class="map-switcher-icon">🗺️</span>
-      <span class="map-switcher-text">Старий вид карти</span>
-    </button>
-  </div>
-  
-  <div class="zoom-controls">
-    <button class="zoom-btn" onclick="zoomIn()">+</button>
-    <button class="zoom-btn" onclick="zoomOut()">−</button>
-    <button class="zoom-btn" onclick="resetZoom()">⟲</button>
+  <!-- Unified Controls Panel -->
+  <div class="controls-panel">
+    <div class="controls-section">
+      <button class="nav-btn home-btn" onclick="window.location.href='/'" title="На головну">
+        <i class="material-icons">home</i>
+      </button>
+      <button class="nav-btn map-btn" onclick="window.location.href='/map-old?from=map'" title="Стара карта">
+        <i class="material-icons">map</i>
+      </button>
+    </div>
+    <div class="controls-divider"></div>
+    <div class="controls-section">
+      <button class="zoom-btn" onclick="zoomIn()" title="Збільшити">+</button>
+      <button class="zoom-btn" onclick="zoomOut()" title="Зменшити">−</button>
+      <button class="zoom-btn" onclick="resetZoom()" title="Скинути">⟲</button>
+    </div>
   </div>
 
   <script>
     // ===== CONFIG =====
-    const ALARM_UPDATE_INTERVAL = 5000; // 5 seconds
-    const MARKERS_UPDATE_INTERVAL = 10000; // 10 seconds for threat markers
+    // Reduced update frequency for better performance on mobile
+    const ALARM_UPDATE_INTERVAL = 15000; // 15 seconds (was 5s)
+    const MARKERS_UPDATE_INTERVAL = 30000; // 30 seconds (was 10s)
     const MAX_RETRIES = 3;
     
     // Get timeRange from URL or use default (same as index.html)
