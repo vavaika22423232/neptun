@@ -1611,9 +1611,10 @@ def monitor_alarms():
             # Track which regions currently have alarms
             current_active_regions = set()
             
-            # On first run, store current states AND send notifications for active alarms
+            # On first run, just store current states WITHOUT sending notifications
+            # This prevents spam after server redeploy
             if _first_run:
-                log.info("First run - storing initial alarm states and sending notifications for active alarms")
+                log.info("First run after deploy - storing initial alarm states WITHOUT notifications")
                 for region in data:
                     region_id = region.get('regionId', '')
                     region_type = region.get('regionType', '')
@@ -1622,19 +1623,17 @@ def monitor_alarms():
                     
                     if has_alarm:
                         current_active_regions.add(region_id)
-                        # Send notification ONLY for Districts (not States/oblasts)
-                        if region_type == 'District':
-                            log.info(f"🚨 FIRST RUN - DISTRICT ALARM: {region.get('regionName')} (ID: {region_id})")
-                            send_alarm_notification(region, alarm_started=True)
+                        # Just store the state - NO notification on first run
+                        log.info(f"📝 Stored existing alarm: {region.get('regionName')} (type: {region_type})")
                         _alarm_states[region_id] = {
                             'active': True,
                             'types': [alert.get('type') for alert in active_alerts],
                             'last_changed': current_time,
-                            'notified': True
+                            'notified': True  # Mark as notified to prevent duplicate on next change
                         }
                 
                 _first_run = False
-                log.info(f"Initial state stored - {len(current_active_regions)} active alarms")
+                log.info(f"Initial state stored - {len(current_active_regions)} active alarms (no push sent)")
             else:
                 # Normal monitoring - check for changes
                 for region in data:
