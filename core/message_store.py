@@ -322,3 +322,149 @@ class DeviceStore:
         except Exception as exc:
             log.error(f"Failed to save devices: {exc}")
 
+
+class FamilyStore:
+    """Storage for family safety data with FCM tokens for SOS notifications."""
+
+    def __init__(self, path: str = None):
+        self.path = path if path else _get_persistent_path("family_status.json")
+        self._lock = threading.RLock()
+
+    def _load(self) -> Dict[str, Any]:
+        """Load family data from disk."""
+        if not os.path.exists(self.path):
+            return {"statuses": {}, "members": {}}
+        try:
+            with open(self.path, encoding="utf-8") as fp:
+                data = json.load(fp)
+                # Ensure structure
+                if "statuses" not in data:
+                    data["statuses"] = {}
+                if "members" not in data:
+                    data["members"] = {}
+                return data
+        except Exception as exc:
+            log.error(f"Failed to load family data: {exc}")
+            return {"statuses": {}, "members": {}}
+
+    def _save(self, data: Dict[str, Any]) -> None:
+        """Save family data to disk."""
+        try:
+            with open(self.path, "w", encoding="utf-8") as fp:
+                json.dump(data, fp, ensure_ascii=False, indent=2)
+        except Exception as exc:
+            log.error(f"Failed to save family data: {exc}")
+
+    def get_status(self, code: str) -> Optional[Dict[str, Any]]:
+        """Get status for a single family code."""
+        with self._lock:
+            data = self._load()
+            return data["statuses"].get(code.upper())
+
+    def get_statuses(self, codes: List[str]) -> Dict[str, Dict[str, Any]]:
+        """Get statuses for multiple family codes."""
+        with self._lock:
+            data = self._load()
+            result = {}
+            for code in codes:
+                code_upper = code.upper()
+                if code_upper in data["statuses"]:
+                    result[code_upper] = data["statuses"][code_upper]
+                else:
+                    result[code_upper] = {"is_safe": False, "last_update": None}
+            return result
+
+    def update_status(self, code: str, is_safe: bool, name: str = "", fcm_token: str = None, device_id: str = None) -> None:
+        """Update status for a family member."""
+        from datetime import datetime
+        with self._lock:
+            data = self._load()
+            code_upper = code.upper()
+            
+            # Update status
+            data["statuses"][code_upper] = {
+                "is_safe": is_safe,
+                "last_update": datetime.utcnow().isoformat(),
+                "name": name,
+            }
+            
+            # Store FCM token if provided (for SOS notifications)
+            if fcm_token or device_id:
+                if code_upper not in data["members"]:
+                    data["members"][code_upper] = {}
+                if fcm_token:
+                    data["members"][code_upper]["fcm_token"] = fcm_token
+                if device_id:
+                    data["members"][code_upper]["device_id"] = device_id
+                data["members"][code_upper]["last_active"] = datetime.utcnow().isoformat()
+            
+            self._save(data)
+            log.info(f"Updated family status: {code_upper} -> is_safe={is_safe}")
+
+    def send_sos(self, sender_code: str, family_codes: List[str]) -> Dict[str, Any]:
+        """Mark sender as needing help and return FCM tokens of family members."""
+        from datetime import datetime
+        with self._lock:
+            data = self._load()
+            sender_upper = sender_code.upper()
+            
+            # Mark sender as NOT safe with SOS flag
+            data["statuses"][sender_upper] = {
+                "is_safe": False,
+                "last_update": datetime.utcnow().isoformat(),
+                "sos": True,
+                "sos_time": datetime.utcnow().isoformat(),
+            }
+            
+            # Get FCM tokens for family members
+            tokens_to_notify = []
+            for code in family_codes:
+                code_upper = code.upper()
+                if code_upper in data["members"]:
+                    member = data["members"][code_upper]
+                    if member.get("fcm_token"):
+                        tokens_to_notify.append({
+                            "code": code_upper,
+                            "fcm_token": member["fcm_token"],
+                            "device_id": member.get("device_id"),
+                        })
+            
+            self._save(data)
+            log.warning(f"🆘 SOS from {sender_upper} to {len(family_codes)} family members, {len(tokens_to_notify)} have FCM tokens")
+            
+            return {
+                "sender_code": sender_upper,
+                "family_codes": family_codes,
+                "tokens_to_notify": tokens_to_notify,
+            }
+
+    def clear_sos(self, code: str) -> None:
+        """Clear SOS status for a family member."""
+        with self._lock:
+            data = self._load()
+            code_upper = code.upper()
+            if code_upper in data["statuses"] and data["statuses"][code_upper].get("sos"):
+                del data["statuses"][code_upper]["sos"]
+                del data["statuses"][code_upper]["sos_time"]
+                self._save(data)
+                log.info(f"Cleared SOS for {code_upper}")
+
+    def register_fcm_token(self, code: str, fcm_token: str, device_id: str = None) -> None:
+        """Register FCM token for a family member (for receiving SOS notifications)."""
+        from datetime import datetime
+        with self._lock:
+            data = self._load()
+            code_upper = code.upper()
+            
+            if code_upper not in data["members"]:
+                data["members"][code_upper] = {}
+            
+            data["members"][code_upper]["fcm_token"] = fcm_token
+            if device_id:
+                data["members"][code_upper]["device_id"] = device_id
+            data["members"][code_upper]["last_active"] = datetime.utcnow().isoformat()
+            
+            self._save(data)
+            log.info(f"Registered FCM token for family code {code_upper}")
+
+

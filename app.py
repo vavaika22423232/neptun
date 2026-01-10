@@ -12,7 +12,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify, request, Response, send_from_directory
 from telethon import TelegramClient
-from core.message_store import MessageStore, DeviceStore
+from core.message_store import MessageStore, DeviceStore, FamilyStore
 
 # MEMORY OPTIMIZATION: Force garbage collection on startup
 gc.collect()
@@ -398,6 +398,7 @@ ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'change_me_in_production')
 
 # Firebase Admin initialization
 device_store = DeviceStore()
+family_store = FamilyStore()
 firebase_initialized = False
 
 def init_firebase():
@@ -18078,7 +18079,7 @@ def get_alarm_history():
         return jsonify({'history': [], 'error': str(e)}), 500
 
 # ==================== FAMILY SAFETY API (для FamilySafetyTab) ====================
-_family_status_store = {}  # code -> {is_safe: bool, last_update: str, name: str}
+# Using family_store (FamilyStore class) for persistent storage
 
 @app.route('/api/family/status', methods=['POST'])
 def get_family_status():
@@ -18087,13 +18088,7 @@ def get_family_status():
         data = request.get_json() or {}
         codes = data.get('codes', [])
         
-        statuses = {}
-        for code in codes:
-            code = code.upper()
-            if code in _family_status_store:
-                statuses[code] = _family_status_store[code]
-            else:
-                statuses[code] = {'is_safe': False, 'last_update': None}
+        statuses = family_store.get_statuses(codes)
         
         response = jsonify({'statuses': statuses, 'timestamp': datetime.now().isoformat()})
         response.headers['Access-Control-Allow-Origin'] = '*'
@@ -18110,15 +18105,14 @@ def update_family_status():
         data = request.get_json() or {}
         code = (data.get('code', '') or '').upper()
         is_safe = data.get('is_safe', False)
+        name = data.get('name', '')
+        fcm_token = data.get('fcm_token')
+        device_id = data.get('device_id')
         
         if not code or len(code) < 4:
             return jsonify({'success': False, 'error': 'Invalid code'}), 400
         
-        _family_status_store[code] = {
-            'is_safe': is_safe,
-            'last_update': datetime.now().isoformat(),
-            'name': data.get('name', '')
-        }
+        family_store.update_status(code, is_safe, name, fcm_token, device_id)
         
         response = jsonify({'success': True, 'code': code, 'is_safe': is_safe})
         response.headers['Access-Control-Allow-Origin'] = '*'
@@ -18128,34 +18122,131 @@ def update_family_status():
         print(f"[ERROR] /api/family/update failed: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/family/register-token', methods=['POST'])
+def register_family_fcm_token():
+    """Register FCM token for family member to receive SOS notifications."""
+    try:
+        data = request.get_json() or {}
+        code = (data.get('code', '') or '').upper()
+        fcm_token = data.get('fcm_token')
+        device_id = data.get('device_id')
+        
+        if not code or len(code) < 4:
+            return jsonify({'success': False, 'error': 'Invalid code'}), 400
+        if not fcm_token:
+            return jsonify({'success': False, 'error': 'Missing FCM token'}), 400
+        
+        family_store.register_fcm_token(code, fcm_token, device_id)
+        
+        response = jsonify({'success': True, 'code': code})
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        return response
+        
+    except Exception as e:
+        print(f"[ERROR] /api/family/register-token failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/family/sos', methods=['POST'])
 def send_family_sos():
-    """Send SOS signal to family members (placeholder - would need push notifications)."""
+    """Send SOS signal to family members via push notification."""
     try:
         data = request.get_json() or {}
         code = (data.get('code', '') or '').upper()
         family_codes = data.get('family_codes', [])
+        sender_name = data.get('name', '')
+        location = data.get('location')  # Optional: {lat, lng, address}
         
         if not code:
             return jsonify({'success': False, 'error': 'Invalid code'}), 400
         
-        # Mark sender as needing help
-        _family_status_store[code] = {
-            'is_safe': False,
-            'last_update': datetime.now().isoformat(),
-            'sos': True,
-            'sos_time': datetime.now().isoformat()
-        }
+        # Get tokens to notify and mark sender as needing help
+        sos_data = family_store.send_sos(code, family_codes)
+        tokens_to_notify = sos_data.get('tokens_to_notify', [])
         
-        # In production, this would send push notifications to family_codes
-        print(f"[SOS] Code {code} sent SOS to {len(family_codes)} family members")
+        # Send FCM push notifications to family members
+        notified_count = 0
+        if tokens_to_notify and init_firebase():
+            from firebase_admin import messaging
+            
+            for member in tokens_to_notify:
+                try:
+                    # Prepare SOS notification
+                    sos_message = f"🆘 {sender_name or code} потребує допомоги!"
+                    if location and location.get('address'):
+                        sos_message += f"\n📍 {location['address']}"
+                    
+                    # Send FCM notification
+                    message = messaging.Message(
+                        token=member['fcm_token'],
+                        data={
+                            'type': 'sos',
+                            'sender_code': code,
+                            'sender_name': sender_name,
+                            'title': '🆘 SOS Сигнал!',
+                            'body': sos_message,
+                            'location_lat': str(location.get('lat', '')) if location else '',
+                            'location_lng': str(location.get('lng', '')) if location else '',
+                            'location_address': location.get('address', '') if location else '',
+                        },
+                        android=messaging.AndroidConfig(
+                            priority='high',
+                            ttl=3600,
+                        ),
+                        apns=messaging.APNSConfig(
+                            headers={'apns-priority': '10'},
+                            payload=messaging.APNSPayload(
+                                aps=messaging.Aps(
+                                    alert=messaging.ApsAlert(
+                                        title='🆘 SOS Сигнал!',
+                                        body=sos_message,
+                                    ),
+                                    sound='default',
+                                    badge=1,
+                                ),
+                            ),
+                        ),
+                    )
+                    
+                    messaging.send(message)
+                    notified_count += 1
+                    print(f"[SOS] Notified {member['code']} via FCM")
+                    
+                except Exception as fcm_error:
+                    print(f"[SOS] Failed to notify {member['code']}: {fcm_error}")
         
-        response = jsonify({'success': True, 'code': code, 'notified': len(family_codes)})
+        print(f"[SOS] Code {code} sent SOS to {len(family_codes)} family members, {notified_count} notified via FCM")
+        
+        response = jsonify({
+            'success': True, 
+            'code': code, 
+            'notified': notified_count,
+            'total_family': len(family_codes)
+        })
         response.headers['Access-Control-Allow-Origin'] = '*'
         return response
         
     except Exception as e:
         print(f"[ERROR] /api/family/sos failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/family/clear-sos', methods=['POST'])
+def clear_family_sos():
+    """Clear SOS status for a family member (they are OK now)."""
+    try:
+        data = request.get_json() or {}
+        code = (data.get('code', '') or '').upper()
+        
+        if not code:
+            return jsonify({'success': False, 'error': 'Invalid code'}), 400
+        
+        family_store.clear_sos(code)
+        
+        response = jsonify({'success': True, 'code': code})
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        return response
+        
+    except Exception as e:
+        print(f"[ERROR] /api/family/clear-sos failed: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/test_parse')
@@ -20312,85 +20403,6 @@ def _alarm_monitor_thread():
 _alarm_monitor = threading.Thread(target=_alarm_monitor_thread, daemon=True)
 _alarm_monitor.start()
 log.info("Alarm monitoring thread started")
-
-
-# ==================== FAMILY SAFETY SYSTEM ====================
-# In-memory storage for family safety statuses (can be moved to Redis/DB for persistence)
-_family_statuses = {}
-
-@app.route('/api/family/update', methods=['POST'])
-def family_update_status():
-    """Update family member's safety status."""
-    try:
-        data = request.get_json()
-        code = data.get('code', '').upper()
-        is_safe = data.get('is_safe', False)
-        
-        if not code or len(code) != 6:
-            return jsonify({'error': 'Invalid code'}), 400
-        
-        _family_statuses[code] = {
-            'is_safe': is_safe,
-            'last_update': datetime.now(pytz.timezone('Europe/Kyiv')).isoformat(),
-        }
-        
-        log.info(f"Family status updated: {code} -> is_safe={is_safe}")
-        return jsonify({'success': True})
-    except Exception as e:
-        log.error(f"Error updating family status: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/family/status', methods=['POST'])
-def family_get_statuses():
-    """Get safety statuses for multiple family members."""
-    try:
-        data = request.get_json()
-        codes = data.get('codes', [])
-        
-        if not codes:
-            return jsonify({'error': 'No codes provided'}), 400
-        
-        statuses = {}
-        for code in codes:
-            code_upper = code.upper()
-            if code_upper in _family_statuses:
-                statuses[code_upper] = _family_statuses[code_upper]
-            else:
-                statuses[code_upper] = {'is_safe': False, 'last_update': None}
-        
-        return jsonify({'statuses': statuses})
-    except Exception as e:
-        log.error(f"Error getting family statuses: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/family/sos', methods=['POST'])
-def family_send_sos():
-    """Send SOS signal to family members via FCM."""
-    try:
-        data = request.get_json()
-        sender_code = data.get('code', '').upper()
-        family_codes = data.get('family_codes', [])
-        
-        if not sender_code:
-            return jsonify({'error': 'Missing sender code'}), 400
-        
-        # TODO: Look up FCM tokens for family members and send push notifications
-        # For now, just log the SOS
-        log.warning(f"🆘 SOS from {sender_code} to family: {family_codes}")
-        
-        # Mark sender as NOT safe (they need help)
-        _family_statuses[sender_code] = {
-            'is_safe': False,
-            'last_update': datetime.now(pytz.timezone('Europe/Kyiv')).isoformat(),
-            'sos': True,
-        }
-        
-        return jsonify({'success': True, 'sent_to': len(family_codes)})
-    except Exception as e:
-        log.error(f"Error sending SOS: {e}")
-        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/stats')
