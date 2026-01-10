@@ -1578,22 +1578,18 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
         # Determine threat type and notification content
         if 'каб' in msg_lower:
             threat_type = 'каби'
-            body = message_text
             emoji = '💣'
             is_critical = True
         elif 'ракет' in msg_lower or 'балістичн' in msg_lower:
             threat_type = 'ракети'
-            body = message_text
             emoji = '🚀'
             is_critical = True
         elif 'бпла' in msg_lower or 'дрон' in msg_lower or 'шахед' in msg_lower:
             threat_type = 'дрони'
-            body = message_text
             emoji = '🛩️'
             is_critical = True
         elif 'вибух' in msg_lower:
             threat_type = 'вибухи'
-            body = message_text
             emoji = '💥'
             is_critical = True
         else:
@@ -1611,11 +1607,16 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
         
         title = f"{emoji} {region_name}"
         
-        # Remove location prefix from body if present (we already have it in title)
+        # Extract threat description from message (remove location prefix)
+        body = message_text
         if ')' in body:
             parts = body.split(')', 1)
             if len(parts) > 1 and parts[1].strip():
                 body = parts[1].strip()
+        
+        # Remove emoji from start if present
+        if body and body[0] in '💣🚀🛩️💥🚨⚠️':
+            body = body[1:].strip()
         
         log.info(f"=== TELEGRAM THREAT NOTIFICATION ===")
         log.info(f"Location: {location} -> {region_name}")
@@ -16083,15 +16084,9 @@ async def fetch_loop():
                         elif tracks and tracks[0].get('place'):
                             location = tracks[0]['place']
                         
-                        # Extract just the threat part for body
-                        threat_text = msg.text
-                        if ')' in threat_text:
-                            parts = threat_text.split(')', 1)
-                            if len(parts) > 1 and parts[1].strip():
-                                threat_text = parts[1].strip()
-                        
                         if location:
-                            send_telegram_threat_notification(threat_text, location, str(msg.id))
+                            # Pass FULL message text - function will extract threat part
+                            send_telegram_threat_notification(msg.text, location, str(msg.id))
                     
                     if tracks:
                         merged_any = False
