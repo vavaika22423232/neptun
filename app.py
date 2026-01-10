@@ -1368,14 +1368,16 @@ def send_alarm_notification(region_data, alarm_started: bool):
                 )
                 
                 if region_match:
-                    # Extract the threat description from message
-                    # Look for patterns like "Загроза застосування БПЛА", "Загроза застосування КАБів"
-                    import re
-                    threat_match = re.search(r'(Загроза [^.]+|Ракетна [^.]+|вибух[^.]*)', msg_text, re.IGNORECASE)
-                    if threat_match:
-                        threat_text = threat_match.group(1).strip()
-                        if threat_text.endswith('.'):
-                            threat_text = threat_text[:-1]
+                    # Use the FULL message text as threat_text for TTS
+                    # This ensures "ЗМІ повідомляють про вибухи" is spoken as-is
+                    threat_text = msg_text.strip()
+                    # Remove location prefix if present (e.g., "Херсон (Херсонська обл.)")
+                    # as we already announce the region separately
+                    if '(' in threat_text and ')' in threat_text:
+                        # Extract just the message part after the location
+                        parts = threat_text.split(')', 1)
+                        if len(parts) > 1 and parts[1].strip():
+                            threat_text = parts[1].strip()
                     
                     if 'ракет' in msg_text_lower or 'балістичн' in msg_text_lower or 'крилат' in msg_text_lower:
                         threat_detail = 'ракети'
@@ -1400,25 +1402,33 @@ def send_alarm_notification(region_data, alarm_started: bool):
                     msg_text = (msg.get('text', '') or '')
                     msg_text_lower = msg_text.lower()
                     
-                    # Extract threat text
-                    import re
-                    threat_match = re.search(r'(Загроза [^.]+|Ракетна [^.]+)', msg_text, re.IGNORECASE)
-                    if threat_match:
-                        threat_text = threat_match.group(1).strip()
-                        if threat_text.endswith('.'):
-                            threat_text = threat_text[:-1]
+                    # Use full message text for TTS
+                    full_threat_text = msg_text.strip()
+                    # Remove location prefix if present
+                    if '(' in full_threat_text and ')' in full_threat_text:
+                        parts = full_threat_text.split(')', 1)
+                        if len(parts) > 1 and parts[1].strip():
+                            full_threat_text = parts[1].strip()
                     
                     if 'ракет' in msg_text_lower or 'балістичн' in msg_text_lower or 'крилат' in msg_text_lower:
                         threat_detail = 'ракети'
+                        threat_text = full_threat_text
                         log.info(f"Using global rocket threat for {region_name}: {threat_text}")
                         break
                     elif 'бпла' in msg_text_lower or 'дрон' in msg_text_lower or 'шахед' in msg_text_lower:
                         threat_detail = 'дрони'
+                        threat_text = full_threat_text
                         log.info(f"Using global drone threat for {region_name}: {threat_text}")
                         break
                     elif 'каб' in msg_text_lower:
                         threat_detail = 'каби'
+                        threat_text = full_threat_text
                         log.info(f"Using global KAB threat for {region_name}: {threat_text}")
+                        break
+                    elif 'вибух' in msg_text_lower:
+                        threat_detail = 'вибухи'
+                        threat_text = full_threat_text
+                        log.info(f"Using global explosion report for {region_name}: {threat_text}")
                         break
                         
         except Exception as e:
@@ -19852,24 +19862,44 @@ def test_notification():
         
         data = request.get_json()
         token = data.get('token')
+        device_id = data.get('device_id')
+        title = data.get('title', '🧪 Тестове сповіщення')
+        body = data.get('body', 'NEPTUN працює коректно!')
+        region = data.get('region', 'Тест')
+
+        # If device_id provided, look up the token
+        if not token and device_id:
+            devices = device_store._load()
+            device_data = devices.get(device_id)
+            if device_data:
+                token = device_data.get('token')
 
         if not token:
-            return jsonify({'error': 'Missing token'}), 400
+            return jsonify({'error': 'Missing token or device_id'}), 400
 
         message = messaging.Message(
             notification=messaging.Notification(
-                title='🧪 Тестове сповіщення',
-                body='Dron Alerts працює коректно! Ви отримуватимете сповіщення про загрози.',
+                title=title,
+                body=body,
             ),
             data={
-                'type': 'test',
+                'type': 'alarm',
+                'title': title,
+                'body': body,
+                'region': region,
+                'alarm_state': 'active',
+                'is_critical': 'true',
                 'timestamp': datetime.now(pytz.UTC).isoformat(),
             },
+            android=messaging.AndroidConfig(
+                priority='high',
+            ),
             token=token,
         )
 
         response = messaging.send(message)
         log.info(f"Test notification sent successfully: {response}")
+        return jsonify({'success': True, 'message_id': response})
         return jsonify({'success': True, 'message_id': response})
     except messaging.UnregisteredError:
         # Token is invalid - remove device from store
