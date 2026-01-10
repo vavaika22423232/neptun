@@ -1317,6 +1317,26 @@ def send_alarm_notification(region_data, alarm_started: bool):
         region_id = region_data.get('regionId', '')
         alert_types = region_data.get('activeAlerts', [])
         
+        # Check recent Telegram messages for threat details (drones, rockets)
+        threat_detail = None
+        try:
+            recent_messages = message_store.get_recent_messages(minutes=10)
+            region_lower = region_name.lower()
+            for msg in recent_messages:
+                msg_text = (msg.get('text', '') or '').lower()
+                msg_location = (msg.get('location', '') or '').lower()
+                
+                # Check if message relates to this region
+                if region_lower in msg_text or region_lower in msg_location:
+                    if 'ракет' in msg_text or 'балістичн' in msg_text:
+                        threat_detail = 'ракети'
+                        break
+                    elif 'бпла' in msg_text or 'дрон' in msg_text or 'шахед' in msg_text:
+                        threat_detail = 'дрони'
+                        break
+        except Exception as e:
+            log.warning(f"Error checking threat details: {e}")
+        
         # Determine notification details based on state
         if alarm_started:
             # Alarm started
@@ -1338,8 +1358,17 @@ def send_alarm_notification(region_data, alarm_started: bool):
                 threat_types = ['Повітряна тривога']
             
             title = f"🚨 Тривога: {region_name}"
-            body = ", ".join(threat_types)
-            is_critical = True
+            
+            # Add threat detail to body if available
+            if threat_detail == 'ракети':
+                body = "Ракетна небезпека!"
+                is_critical = True
+            elif threat_detail == 'дрони':
+                body = "Загроза БПЛА (дронів)"
+                is_critical = True
+            else:
+                body = ", ".join(threat_types)
+                is_critical = True
         else:
             # Alarm ended
             title = f"✅ Відбій: {region_name}"
@@ -1393,6 +1422,7 @@ def send_alarm_notification(region_data, alarm_started: bool):
                         'region_id': region_id,
                         'alarm_state': 'active' if alarm_started else 'ended',
                         'is_critical': 'true' if is_critical else 'false',
+                        'threat_type': threat_detail or 'air',  # 'ракети', 'дрони', or 'air'
                         'timestamp': datetime.now(pytz.timezone('Europe/Kiev')).isoformat(),
                         'click_action': 'FLUTTER_NOTIFICATION_CLICK',
                     },
