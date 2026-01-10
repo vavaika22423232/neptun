@@ -2145,6 +2145,8 @@ def save_messages(data, send_notifications=True):
 # Two messages that refer to the same object coming almost back-to-back should not
 # produce two separate points: instead we update the earlier one (increment count, merge text).
 # Heuristics: same threat_type, within DEDUP_DIST_KM km, within DEDUP_TIME_MIN minutes.
+# DISABLED: Now showing all messages as separate points with small offset
+DEDUP_ENABLED = False  # Set to True to enable merging
 DEDUP_TIME_MIN = int(os.getenv('DEDUP_TIME_MIN', '5'))
 DEDUP_DIST_KM = float(os.getenv('DEDUP_DIST_KM', '7'))
 DEDUP_SCAN_BACK = int(os.getenv('DEDUP_SCAN_BACK', '400'))  # how many recent messages to scan
@@ -2170,7 +2172,23 @@ def _haversine_km(lat1, lon1, lat2, lon2):
 def maybe_merge_track(all_data:list, new_track:dict):
     """Try to merge new_track into an existing recent track.
     Returns tuple (merged: bool, track_ref: dict).
+    
+    If DEDUP_ENABLED is False, adds small random offset to prevent overlapping.
     """
+    import random
+    
+    # If dedup disabled, add small offset and return as new track
+    if not DEDUP_ENABLED:
+        lat = new_track.get('lat')
+        lng = new_track.get('lng')
+        if isinstance(lat, (int, float)) and isinstance(lng, (int, float)):
+            # Add small random offset (about 500m-1.5km)
+            offset_lat = random.uniform(-0.012, 0.012)
+            offset_lng = random.uniform(-0.015, 0.015)
+            new_track['lat'] = lat + offset_lat
+            new_track['lng'] = lng + offset_lng
+        return False, new_track
+    
     try:
         if not all_data:
             return False, new_track
