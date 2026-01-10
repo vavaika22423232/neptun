@@ -1400,40 +1400,10 @@ def send_alarm_notification(region_data, alarm_started: bool):
                         log.info(f"Found explosion report for {region_name}: {threat_text}")
                         break
             
-            # If no specific match found, check if there's ANY recent drone/rocket message
+            # If no specific match found, just use generic alert type
+            # DON'T use global messages - they may be for different regions
             if not threat_detail:
-                for msg in recent_messages:
-                    msg_text = (msg.get('text', '') or '')
-                    msg_text_lower = msg_text.lower()
-                    
-                    # Use full message text for TTS
-                    full_threat_text = msg_text.strip()
-                    # Remove location prefix if present
-                    if '(' in full_threat_text and ')' in full_threat_text:
-                        parts = full_threat_text.split(')', 1)
-                        if len(parts) > 1 and parts[1].strip():
-                            full_threat_text = parts[1].strip()
-                    
-                    if 'ракет' in msg_text_lower or 'балістичн' in msg_text_lower or 'крилат' in msg_text_lower:
-                        threat_detail = 'ракети'
-                        threat_text = full_threat_text
-                        log.info(f"Using global rocket threat for {region_name}: {threat_text}")
-                        break
-                    elif 'бпла' in msg_text_lower or 'дрон' in msg_text_lower or 'шахед' in msg_text_lower:
-                        threat_detail = 'дрони'
-                        threat_text = full_threat_text
-                        log.info(f"Using global drone threat for {region_name}: {threat_text}")
-                        break
-                    elif 'каб' in msg_text_lower:
-                        threat_detail = 'каби'
-                        threat_text = full_threat_text
-                        log.info(f"Using global KAB threat for {region_name}: {threat_text}")
-                        break
-                    elif 'вибух' in msg_text_lower:
-                        threat_detail = 'вибухи'
-                        threat_text = full_threat_text
-                        log.info(f"Using global explosion report for {region_name}: {threat_text}")
-                        break
+                log.info(f"No specific threat details found for {region_name}, using generic alert")
                         
         except Exception as e:
             log.warning(f"Error checking threat details: {e}")
