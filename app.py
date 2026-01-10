@@ -1322,18 +1322,49 @@ def send_alarm_notification(region_data, alarm_started: bool):
         try:
             recent_messages = message_store.get_recent_messages(minutes=10)
             region_lower = region_name.lower()
+            
+            # Also get oblast for matching
+            oblast = DISTRICT_TO_OBLAST.get(region_name, region_name)
+            oblast_lower = oblast.lower().replace(' область', '').replace('ська', 'ськ')
+            
+            # Extract district name root for fuzzy matching (e.g., "Одеський" -> "одес")
+            district_root = region_lower.replace(' район', '').replace('ький', '').replace('ська', '').replace('ська', '')[:5]
+            
             for msg in recent_messages:
                 msg_text = (msg.get('text', '') or '').lower()
                 msg_location = (msg.get('location', '') or '').lower()
+                combined = msg_text + ' ' + msg_location
                 
-                # Check if message relates to this region
-                if region_lower in msg_text or region_lower in msg_location:
-                    if 'ракет' in msg_text or 'балістичн' in msg_text:
+                # Check if message relates to this region (fuzzy match)
+                region_match = (
+                    region_lower in combined or 
+                    oblast_lower in combined or
+                    district_root in combined
+                )
+                
+                if region_match:
+                    if 'ракет' in msg_text or 'балістичн' in msg_text or 'крилат' in msg_text:
                         threat_detail = 'ракети'
+                        log.info(f"Found rocket threat in message for {region_name}")
                         break
                     elif 'бпла' in msg_text or 'дрон' in msg_text or 'шахед' in msg_text:
                         threat_detail = 'дрони'
+                        log.info(f"Found drone threat in message for {region_name}")
                         break
+            
+            # If no specific match found, check if there's ANY recent drone/rocket message
+            if not threat_detail:
+                for msg in recent_messages:
+                    msg_text = (msg.get('text', '') or '').lower()
+                    if 'ракет' in msg_text or 'балістичн' in msg_text or 'крилат' in msg_text:
+                        threat_detail = 'ракети'
+                        log.info(f"Using global rocket threat for {region_name}")
+                        break
+                    elif 'бпла' in msg_text or 'дрон' in msg_text or 'шахед' in msg_text:
+                        threat_detail = 'дрони'
+                        log.info(f"Using global drone threat for {region_name}")
+                        break
+                        
         except Exception as e:
             log.warning(f"Error checking threat details: {e}")
         
