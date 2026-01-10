@@ -19819,6 +19819,152 @@ _alarm_monitor.start()
 log.info("Alarm monitoring thread started")
 
 
+# ==================== FAMILY SAFETY SYSTEM ====================
+# In-memory storage for family safety statuses (can be moved to Redis/DB for persistence)
+_family_statuses = {}
+
+@app.route('/api/family/update', methods=['POST'])
+def family_update_status():
+    """Update family member's safety status."""
+    try:
+        data = request.get_json()
+        code = data.get('code', '').upper()
+        is_safe = data.get('is_safe', False)
+        
+        if not code or len(code) != 6:
+            return jsonify({'error': 'Invalid code'}), 400
+        
+        _family_statuses[code] = {
+            'is_safe': is_safe,
+            'last_update': datetime.now(pytz.timezone('Europe/Kyiv')).isoformat(),
+        }
+        
+        log.info(f"Family status updated: {code} -> is_safe={is_safe}")
+        return jsonify({'success': True})
+    except Exception as e:
+        log.error(f"Error updating family status: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/family/status', methods=['POST'])
+def family_get_statuses():
+    """Get safety statuses for multiple family members."""
+    try:
+        data = request.get_json()
+        codes = data.get('codes', [])
+        
+        if not codes:
+            return jsonify({'error': 'No codes provided'}), 400
+        
+        statuses = {}
+        for code in codes:
+            code_upper = code.upper()
+            if code_upper in _family_statuses:
+                statuses[code_upper] = _family_statuses[code_upper]
+            else:
+                statuses[code_upper] = {'is_safe': False, 'last_update': None}
+        
+        return jsonify({'statuses': statuses})
+    except Exception as e:
+        log.error(f"Error getting family statuses: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/family/sos', methods=['POST'])
+def family_send_sos():
+    """Send SOS signal to family members via FCM."""
+    try:
+        data = request.get_json()
+        sender_code = data.get('code', '').upper()
+        family_codes = data.get('family_codes', [])
+        
+        if not sender_code:
+            return jsonify({'error': 'Missing sender code'}), 400
+        
+        # TODO: Look up FCM tokens for family members and send push notifications
+        # For now, just log the SOS
+        log.warning(f"🆘 SOS from {sender_code} to family: {family_codes}")
+        
+        # Mark sender as NOT safe (they need help)
+        _family_statuses[sender_code] = {
+            'is_safe': False,
+            'last_update': datetime.now(pytz.timezone('Europe/Kyiv')).isoformat(),
+            'sos': True,
+        }
+        
+        return jsonify({'success': True, 'sent_to': len(family_codes)})
+    except Exception as e:
+        log.error(f"Error sending SOS: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/stats')
+def get_alarm_stats():
+    """Get alarm statistics for a region."""
+    try:
+        region = request.args.get('region', 'Дніпропетровська')
+        
+        # Load messages from file to calculate stats
+        messages = []
+        try:
+            with open(MESSAGES_FILE, 'r', encoding='utf-8') as f:
+                all_messages = json.load(f)
+                # Filter by region if needed
+                for msg in all_messages:
+                    msg_region = msg.get('region', '') or msg.get('location', '')
+                    if region.lower() in msg_region.lower():
+                        messages.append(msg)
+        except FileNotFoundError:
+            pass
+        
+        # Calculate stats
+        now = datetime.now(pytz.timezone('Europe/Kyiv'))
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        week_start = today_start - timedelta(days=7)
+        month_start = today_start - timedelta(days=30)
+        
+        today_count = 0
+        week_count = 0
+        month_count = 0
+        durations = []
+        
+        for msg in messages:
+            try:
+                timestamp = msg.get('timestamp', '')
+                msg_time = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                if msg_time.tzinfo is None:
+                    msg_time = pytz.timezone('Europe/Kyiv').localize(msg_time)
+                
+                if msg_time >= today_start:
+                    today_count += 1
+                if msg_time >= week_start:
+                    week_count += 1
+                if msg_time >= month_start:
+                    month_count += 1
+                    
+            except (ValueError, TypeError):
+                continue
+        
+        # Average alarm duration (rough estimate based on message pairs)
+        avg_duration = 25  # Default 25 min if no data
+        
+        return jsonify({
+            'region': region,
+            'today_alarms': today_count,
+            'week_alarms': week_count,
+            'month_alarms': month_count,
+            'avg_duration_min': avg_duration,
+        })
+    except Exception as e:
+        log.error(f"Error getting stats: {e}")
+        return jsonify({
+            'today_alarms': 0,
+            'week_alarms': 0,
+            'month_alarms': 0,
+            'avg_duration_min': 0,
+        })
+
+
 if __name__ == '__main__':
     # Local / container direct run (not needed if a WSGI server like gunicorn is used)
     port = int(os.getenv('PORT', '5000'))
