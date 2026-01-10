@@ -1664,6 +1664,12 @@
       updateZoom();
     }
     
+    // Global refresh function for WebView/Flutter to call
+    window.refreshMap = async function() {
+      console.log('refreshMap called from WebView');
+      await loadMaps();
+    };
+    
     // Init
     document.addEventListener('DOMContentLoaded', loadMaps);
   </script>
