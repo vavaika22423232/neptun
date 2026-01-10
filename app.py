@@ -19836,10 +19836,11 @@ def get_registered_devices():
     """Get all registered devices (for debugging)."""
     try:
         devices = device_store._load()
-        # Mask tokens for security (show only last 10 chars)
+        # Mask tokens for security (show only last 10 chars) but show length
         for device_id, data in devices.items():
             if 'token' in data:
                 token = data['token']
+                data['token_length'] = len(token)
                 data['token'] = '...' + token[-10:] if len(token) > 10 else token
         return jsonify({
             'count': len(devices),
