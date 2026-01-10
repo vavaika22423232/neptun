@@ -1358,6 +1358,9 @@ def send_alarm_notification(region_data, alarm_started: bool):
             # Also extract city name (e.g., "Краматорський" -> "краматорськ")
             city_name = region_lower.replace(' район', '').replace('ький', 'ськ').replace('ий', '')
             
+            # Extract oblast root for matching (e.g., "Харківська область" -> "харків")
+            oblast_root = oblast_lower.replace('ська', '').replace('ський', '')[:6]
+            
             for msg in recent_messages:
                 msg_text = (msg.get('text', '') or '')
                 msg_text_lower = msg_text.lower()
@@ -1365,11 +1368,13 @@ def send_alarm_notification(region_data, alarm_started: bool):
                 combined = msg_text_lower + ' ' + msg_location
                 
                 # Check if message relates to this region (fuzzy match)
+                # Note: Telegram messages use "Харків (Харківська обл.)" format
                 region_match = (
                     region_lower in combined or 
                     oblast_lower in combined or
                     district_root in combined or
-                    city_name in combined
+                    city_name in combined or
+                    oblast_root in combined  # "харків" in "харків (харківська обл.)"
                 )
                 
                 if region_match:
