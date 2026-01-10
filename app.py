@@ -1321,7 +1321,30 @@ def send_alarm_notification(region_data, alarm_started: bool):
         threat_detail = None
         threat_text = None  # The actual text from Telegram message
         try:
-            recent_messages = message_store.get_recent_messages(minutes=10)
+            # Load all messages and filter recent ones (last 10 minutes)
+            all_messages = MESSAGE_STORE.load()
+            now = datetime.now(pytz.timezone('Europe/Kiev'))
+            cutoff = now - timedelta(minutes=10)
+            recent_messages = []
+            for msg in all_messages:
+                msg_time_str = msg.get('timestamp') or msg.get('time') or ''
+                if msg_time_str:
+                    try:
+                        # Parse timestamp
+                        if 'T' in msg_time_str:
+                            msg_time = datetime.fromisoformat(msg_time_str.replace('Z', '+00:00'))
+                        else:
+                            msg_time = datetime.strptime(msg_time_str, '%Y-%m-%d %H:%M:%S')
+                            msg_time = pytz.timezone('Europe/Kiev').localize(msg_time)
+                        if msg_time > cutoff:
+                            recent_messages.append(msg)
+                    except:
+                        # Include message if we can't parse time
+                        recent_messages.append(msg)
+                else:
+                    recent_messages.append(msg)
+            
+            log.info(f"Checking {len(recent_messages)} recent messages for threat details for {region_name}")
             region_lower = region_name.lower()
             
             # Also get oblast for matching
