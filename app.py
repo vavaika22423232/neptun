@@ -1351,8 +1351,11 @@ def send_alarm_notification(region_data, alarm_started: bool):
             oblast = DISTRICT_TO_OBLAST.get(region_name, region_name)
             oblast_lower = oblast.lower().replace(' область', '').replace('ська', 'ськ')
             
-            # Extract district name root for fuzzy matching (e.g., "Одеський" -> "одес")
-            district_root = region_lower.replace(' район', '').replace('ький', '').replace('ська', '').replace('ська', '')[:5]
+            # Extract district name root for fuzzy matching (e.g., "Краматорський район" -> "краматор")
+            district_root = region_lower.replace(' район', '').replace('ький', '').replace('ська', '').replace('ий', '')[:7]
+            
+            # Also extract city name (e.g., "Краматорський" -> "краматорськ")
+            city_name = region_lower.replace(' район', '').replace('ький', 'ськ').replace('ий', '')
             
             for msg in recent_messages:
                 msg_text = (msg.get('text', '') or '')
@@ -1364,7 +1367,8 @@ def send_alarm_notification(region_data, alarm_started: bool):
                 region_match = (
                     region_lower in combined or 
                     oblast_lower in combined or
-                    district_root in combined
+                    district_root in combined or
+                    city_name in combined
                 )
                 
                 if region_match:
