@@ -1439,123 +1439,149 @@ def monitor_alarms():
     
     log.info("=== ALARM MONITORING STARTED ===")
     
+    consecutive_failures = 0
+    MAX_FAILURES_BEFORE_WARN = 5
+    last_successful_fetch = 0
+    
     while _monitoring_active:
         try:
-            # Fetch current alarm states
-            response = http_requests.get(
-                f'{ALARM_API_BASE}/alerts',
-                headers={'Authorization': ALARM_API_KEY},
-                timeout=10
-            )
+            # Try multiple times before giving up this cycle
+            data = None
+            for attempt in range(3):
+                try:
+                    response = http_requests.get(
+                        f'{ALARM_API_BASE}/alerts',
+                        headers={'Authorization': ALARM_API_KEY},
+                        timeout=15
+                    )
+                    if response.ok:
+                        data = response.json()
+                        consecutive_failures = 0
+                        last_successful_fetch = time.time()
+                        break
+                    else:
+                        log.warning(f"API attempt {attempt+1}/3 failed: HTTP {response.status_code}")
+                except Exception as e:
+                    log.warning(f"API attempt {attempt+1}/3 error: {e}")
+                
+                if attempt < 2:
+                    time.sleep(2)  # Wait 2 sec between retries
             
-            if response.ok:
-                data = response.json()
-                current_time = time.time()
-                
-                # Track which regions currently have alarms
-                current_active_regions = set()
-                
-                # On first run, store current states AND send notifications for active alarms
-                if _first_run:
-                    log.info("First run - storing initial alarm states and sending notifications for active alarms")
-                    for region in data:
-                        region_id = region.get('regionId', '')
-                        region_type = region.get('regionType', '')
-                        active_alerts = region.get('activeAlerts', [])
-                        has_alarm = len(active_alerts) > 0
-                        
-                        if has_alarm:
-                            current_active_regions.add(region_id)
-                            # Send notification ONLY for Districts (not States/oblasts)
-                            if region_type == 'District':
-                                log.info(f"🚨 FIRST RUN - DISTRICT ALARM: {region.get('regionName')} (ID: {region_id})")
-                                send_alarm_notification(region, alarm_started=True)
-                            _alarm_states[region_id] = {
-                                'active': True,
-                                'types': [alert.get('type') for alert in active_alerts],
-                                'last_changed': current_time,
-                                'notified': True
-                            }
-                    
-                    _first_run = False
-                    log.info(f"Initial state stored - {len(current_active_regions)} active alarms")
+            if data is None:
+                consecutive_failures += 1
+                if consecutive_failures >= MAX_FAILURES_BEFORE_WARN:
+                    log.error(f"API unavailable for {consecutive_failures} consecutive cycles! Last success: {int(time.time() - last_successful_fetch)}s ago")
                 else:
-                    # Normal monitoring - check for changes
-                    for region in data:
-                        region_id = region.get('regionId', '')
-                        region_type = region.get('regionType', '')
-                        active_alerts = region.get('activeAlerts', [])
-                        has_alarm = len(active_alerts) > 0
-                        
-                        if has_alarm:
-                            current_active_regions.add(region_id)
-                        
-                        # Check if this is a state change
-                        previous_state = _alarm_states.get(region_id, {})
-                        was_active = previous_state.get('active', False)
-                        was_notified = previous_state.get('notified', False)
-                        
-                        if has_alarm and not was_active:
-                            # Alarm started - send notification ONLY for Districts
-                            if not was_notified and region_type == 'District':
-                                log.info(f"🚨 DISTRICT ALARM STARTED: {region.get('regionName')} (ID: {region_id})")
-                                send_alarm_notification(region, alarm_started=True)
-                            elif region_type == 'State':
-                                log.info(f"ℹ️ Oblast alarm started (no push): {region.get('regionName')}")
-                            _alarm_states[region_id] = {
-                                'active': True,
-                                'types': [alert.get('type') for alert in active_alerts],
-                                'last_changed': current_time,
-                                'notified': True
-                            }
-                        elif not has_alarm and was_active:
-                            # Alarm ended - send відбій ONLY for Districts
-                            if region_type == 'District':
-                                log.info(f"✅ DISTRICT ALARM ENDED: {region.get('regionName')} (ID: {region_id})")
-                                send_alarm_notification(region, alarm_started=False)
-                            elif region_type == 'State':
-                                log.info(f"ℹ️ Oblast alarm ended (no push): {region.get('regionName')}")
-                            _alarm_states[region_id] = {
-                                'active': False,
-                                'types': [],
-                                'last_changed': current_time,
-                                'notified': False  # Reset for next alarm
-                            }
-                        elif has_alarm and was_active:
-                            # Alarm still active - only log, don't resend notification
-                            current_types = [alert.get('type') for alert in active_alerts]
-                            previous_types = previous_state.get('types', [])
-                            if set(current_types) != set(previous_types):
-                                log.info(f"⚠️ ALARM TYPES CHANGED: {region.get('regionName')} - {current_types}")
-                                _alarm_states[region_id]['types'] = current_types
-                                # Keep notified=True to prevent resending
+                    log.warning(f"API fetch failed (attempt {consecutive_failures}), keeping previous state")
+                # DON'T clear _alarm_states - keep previous state!
+                time.sleep(30)
+                continue
+            
+            current_time = time.time()
+            
+            # Track which regions currently have alarms
+            current_active_regions = set()
+            
+            # On first run, store current states AND send notifications for active alarms
+            if _first_run:
+                log.info("First run - storing initial alarm states and sending notifications for active alarms")
+                for region in data:
+                    region_id = region.get('regionId', '')
+                    region_type = region.get('regionType', '')
+                    active_alerts = region.get('activeAlerts', [])
+                    has_alarm = len(active_alerts) > 0
                     
-                    # Check for regions that went from active to inactive (ended alarms)
-                    for region_id, state in list(_alarm_states.items()):
-                        if state.get('active') and region_id not in current_active_regions:
-                            # Find region data to send відбій notification
-                            region_data = next((r for r in data if r.get('regionId') == region_id), None)
-                            if region_data:
-                                region_type = region_data.get('regionType', '')
-                                # Send відбій ONLY for Districts
-                                if region_type == 'District':
-                                    log.info(f"✅ DISTRICT ALARM ENDED (from tracking): {region_data.get('regionName')} (ID: {region_id})")
-                                    send_alarm_notification(region_data, alarm_started=False)
-                                else:
-                                    log.info(f"ℹ️ Oblast alarm ended (from tracking, no push): {region_data.get('regionName')}")
-                            _alarm_states[region_id] = {
-                                'active': False,
-                                'types': [],
-                                'last_changed': current_time,
-                                'notified': False
-                            }
-                    
-                    log.info(f"Alarm monitoring cycle complete - {len(current_active_regions)} active alarms")
+                    if has_alarm:
+                        current_active_regions.add(region_id)
+                        # Send notification ONLY for Districts (not States/oblasts)
+                        if region_type == 'District':
+                            log.info(f"🚨 FIRST RUN - DISTRICT ALARM: {region.get('regionName')} (ID: {region_id})")
+                            send_alarm_notification(region, alarm_started=True)
+                        _alarm_states[region_id] = {
+                            'active': True,
+                            'types': [alert.get('type') for alert in active_alerts],
+                            'last_changed': current_time,
+                            'notified': True
+                        }
+                
+                _first_run = False
+                log.info(f"Initial state stored - {len(current_active_regions)} active alarms")
             else:
-                log.warning(f"Failed to fetch alarms: HTTP {response.status_code}")
+                # Normal monitoring - check for changes
+                for region in data:
+                    region_id = region.get('regionId', '')
+                    region_type = region.get('regionType', '')
+                    active_alerts = region.get('activeAlerts', [])
+                    has_alarm = len(active_alerts) > 0
+                    
+                    if has_alarm:
+                        current_active_regions.add(region_id)
+                    
+                    # Check if this is a state change
+                    previous_state = _alarm_states.get(region_id, {})
+                    was_active = previous_state.get('active', False)
+                    was_notified = previous_state.get('notified', False)
+                    
+                    if has_alarm and not was_active:
+                        # Alarm started - send notification ONLY for Districts
+                        if not was_notified and region_type == 'District':
+                            log.info(f"🚨 DISTRICT ALARM STARTED: {region.get('regionName')} (ID: {region_id})")
+                            send_alarm_notification(region, alarm_started=True)
+                        elif region_type == 'State':
+                            log.info(f"ℹ️ Oblast alarm started (no push): {region.get('regionName')}")
+                        _alarm_states[region_id] = {
+                            'active': True,
+                            'types': [alert.get('type') for alert in active_alerts],
+                            'last_changed': current_time,
+                            'notified': True
+                        }
+                    elif not has_alarm and was_active:
+                        # Alarm ended - send відбій ONLY for Districts
+                        if region_type == 'District':
+                            log.info(f"✅ DISTRICT ALARM ENDED: {region.get('regionName')} (ID: {region_id})")
+                            send_alarm_notification(region, alarm_started=False)
+                        elif region_type == 'State':
+                            log.info(f"ℹ️ Oblast alarm ended (no push): {region.get('regionName')}")
+                        _alarm_states[region_id] = {
+                            'active': False,
+                            'types': [],
+                            'last_changed': current_time,
+                            'notified': False  # Reset for next alarm
+                        }
+                    elif has_alarm and was_active:
+                        # Alarm still active - only log, don't resend notification
+                        current_types = [alert.get('type') for alert in active_alerts]
+                        previous_types = previous_state.get('types', [])
+                        if set(current_types) != set(previous_types):
+                            log.info(f"⚠️ ALARM TYPES CHANGED: {region.get('regionName')} - {current_types}")
+                            _alarm_states[region_id]['types'] = current_types
+                            # Keep notified=True to prevent resending
+                
+                # Check for regions that went from active to inactive (ended alarms)
+                for region_id, state in list(_alarm_states.items()):
+                    if state.get('active') and region_id not in current_active_regions:
+                        # Find region data to send відбій notification
+                        region_data = next((r for r in data if r.get('regionId') == region_id), None)
+                        if region_data:
+                            region_type = region_data.get('regionType', '')
+                            # Send відбій ONLY for Districts
+                            if region_type == 'District':
+                                log.info(f"✅ DISTRICT ALARM ENDED (from tracking): {region_data.get('regionName')} (ID: {region_id})")
+                                send_alarm_notification(region_data, alarm_started=False)
+                            else:
+                                log.info(f"ℹ️ Oblast alarm ended (from tracking, no push): {region_data.get('regionName')}")
+                        _alarm_states[region_id] = {
+                            'active': False,
+                            'types': [],
+                            'last_changed': current_time,
+                            'notified': False
+                        }
+                
+                log.info(f"Alarm monitoring cycle complete - {len(current_active_regions)} active alarms")
         
         except Exception as e:
             log.error(f"Error in alarm monitoring: {e}")
+            consecutive_failures += 1
         
         # Wait before next check (30 seconds)
         time.sleep(30)
@@ -1580,6 +1606,24 @@ if firebase_initialized:
     start_alarm_monitoring()
 else:
     log.warning("Firebase not initialized - alarm monitoring disabled")
+
+@app.route('/api/monitoring-status')
+def monitoring_status():
+    """Check alarm monitoring status (for debugging)."""
+    active_districts = []
+    for region_id, state in _alarm_states.items():
+        if state.get('active'):
+            active_districts.append(region_id)
+    
+    return jsonify({
+        'monitoring_active': _monitoring_active,
+        'first_run': _first_run,
+        'firebase_initialized': firebase_initialized,
+        'alarm_states_count': len(_alarm_states),
+        'active_alarms': len(active_districts),
+        'active_region_ids': active_districts[:20],  # First 20 for debug
+        'server_time': datetime.now(pytz.timezone('Europe/Kiev')).isoformat(),
+    })
 
 # ===== END UKRAINEALARM MONITORING =====
 
