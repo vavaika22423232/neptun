@@ -1318,6 +1318,24 @@ def send_alarm_notification(region_data, alarm_started: bool):
         region_id = region_data.get('regionId', '')
         alert_types = region_data.get('activeAlerts', [])
         
+        # Check if this region was recently notified via Telegram (suppress duplicate)
+        # Only suppress if alarm is STARTING (not ending - відбій)
+        if alarm_started:
+            with _telegram_alert_lock:
+                now = time.time()
+                # Clean old entries (older than 5 minutes)
+                for key in list(_telegram_region_notified.keys()):
+                    if now - _telegram_region_notified[key] > 300:
+                        del _telegram_region_notified[key]
+                
+                # Check if this region was recently notified
+                region_lower = region_name.lower()
+                for notified_region, timestamp in _telegram_region_notified.items():
+                    if notified_region in region_lower or region_lower in notified_region:
+                        elapsed = now - timestamp
+                        log.info(f"⏭️ Skipping alarm notification for {region_name} - already notified via Telegram {int(elapsed)}s ago")
+                        return
+        
         # Check recent Telegram messages for threat details (drones, rockets, KABs, etc.)
         threat_detail = None
         threat_text = None  # The actual text from Telegram message
@@ -1552,6 +1570,10 @@ def send_alarm_notification(region_data, alarm_started: bool):
 _telegram_alert_sent = {}
 _telegram_alert_lock = threading.Lock()
 
+# Track regions that received Telegram notifications recently to suppress duplicate alarm notifications
+# region_name (normalized) -> timestamp
+_telegram_region_notified = {}
+
 def send_telegram_threat_notification(message_text: str, location: str, message_id: str):
     """Send FCM notification for threat messages from Telegram (КАБи, ракети, БПЛА etc.)."""
     if not firebase_initialized:
@@ -1687,6 +1709,19 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
                     device_store.remove_device(device['device_id'])
         
         log.info(f"Sent {success_count}/{len(devices)} telegram threat notifications")
+        
+        # Mark this region as notified to suppress duplicate alarm notifications
+        if success_count > 0:
+            with _telegram_alert_lock:
+                # Normalize region name for matching
+                region_key = region_name.lower()
+                _telegram_region_notified[region_key] = time.time()
+                # Also mark the city if different
+                if '(' in location:
+                    city = location.split('(')[0].strip().lower()
+                    _telegram_region_notified[city] = time.time()
+                log.info(f"Marked region '{region_key}' as telegram-notified (will suppress alarm notifications for 5 min)")
+                
     except Exception as e:
         log.error(f"Error in send_telegram_threat_notification: {e}")
 
