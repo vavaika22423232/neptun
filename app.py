@@ -20194,17 +20194,19 @@ def send_fcm_notification(message_data: dict):
         # Check if this is a real threat (not just informational message)
         threat_type = message_data.get('threat_type', '') or message_data.get('type', '') or ''
         text = message_data.get('text', '') or ''
-        
-        # Skip informational messages (no real threat)
-        skip_keywords = ['відбій', 'скасовано', 'завершено', 'немає загрози', 'безпечно', 
-                         'інформація', 'увага!', 'попередження']
         text_lower = text.lower()
+        
+        # Check if this is an "all clear" message (відбій)
+        is_all_clear = any(kw in text_lower for kw in ['відбій', 'скасовано', 'завершено'])
+        
+        # Skip only truly informational messages (not відбій - we want to notify about all clear too)
+        skip_keywords = ['немає загрози', 'безпечно', 'інформація', 'увага!', 'попередження']
         if any(kw in text_lower for kw in skip_keywords):
             log.info(f"Skipping FCM for informational message: {text[:50]}...")
             return
             
-        # Skip if no threat type detected
-        if not threat_type:
+        # Skip if no threat type detected AND not an all clear message
+        if not threat_type and not is_all_clear:
             log.info(f"Skipping FCM for message without threat type")
             return
         
@@ -20277,9 +20279,15 @@ def send_fcm_notification(message_data: dict):
         threat_lower = threat_type.lower()
         is_critical = any(kw in threat_lower for kw in ['ракет', 'балістич', 'кабах', 'кап', 'cruise', 'ballistic'])
         
-        # Create notification
-        title = f"{'🚨' if is_critical else '⚠️'} {threat_type}"
-        body = f"{location}"
+        # Create notification - different format for all clear vs threat
+        if is_all_clear:
+            title = f"🟢 Відбій тривоги"
+            body = f"{location}"
+            alarm_state = 'ended'
+        else:
+            title = f"{'🚨' if is_critical else '⚠️'} {threat_type}"
+            body = f"{location}"
+            alarm_state = 'active'
 
         # Send to each device
         success_count = 0
@@ -20291,19 +20299,20 @@ def send_fcm_notification(message_data: dict):
                         body=body,
                     ),
                     data={
-                        'type': 'rocket' if is_critical else 'drone',
+                        'type': 'all_clear' if is_all_clear else ('rocket' if is_critical else 'drone'),
                         'location': location,
-                        'threat_type': threat_type,
+                        'threat_type': threat_type if threat_type else 'Відбій тривоги',
                         'region': region,
+                        'alarm_state': alarm_state,
                         'timestamp': message_data.get('date', ''),
                         'click_action': 'FLUTTER_NOTIFICATION_CLICK',
                     },
                     android=messaging.AndroidConfig(
-                        priority='high',  # Always high priority for immediate delivery
+                        priority='high' if not is_all_clear else 'normal',  # Lower priority for all clear
                         ttl=timedelta(seconds=300),  # 5 min TTL - old alerts not useful
                         notification=messaging.AndroidNotification(
-                            channel_id='critical_alerts' if is_critical else 'normal_alerts',
-                            priority='max' if is_critical else 'high',
+                            channel_id='critical_alerts' if is_critical else ('normal_alerts' if not is_all_clear else 'all_clear_alerts'),
+                            priority='max' if is_critical else ('high' if not is_all_clear else 'default'),
                         ),
                     ),
                     apns=messaging.APNSConfig(
