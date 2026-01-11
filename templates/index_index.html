@@ -536,6 +536,20 @@
       box-shadow: 0 4px 20px rgba(0, 212, 255, 0.15);
     }
     
+    .floating-btn.app-btn {
+      background: rgba(52, 211, 153, 0.15);
+      color: #6ee7b7;
+      border: 1px solid rgba(52, 211, 153, 0.25);
+      text-decoration: none;
+    }
+    
+    .floating-btn.app-btn:hover {
+      background: rgba(52, 211, 153, 0.25);
+      color: #a7f3d0;
+      transform: translateX(-4px);
+      box-shadow: 0 4px 20px rgba(52, 211, 153, 0.2);
+    }
+    
     @media (max-width: 768px) {
       .floating-buttons {
         bottom: 80px;
@@ -1832,7 +1846,7 @@
       color: #fbbf24;
     }
     
-    /* Telegram Banner - Minimal Glass Style */
+    /* Telegram Banner - Eye-catching Animated Style */
     .tg-banner {
       display: flex;
       position: fixed;
@@ -1840,45 +1854,70 @@
       left: 24px;
       right: auto;
       max-width: 420px;
-      background: rgba(0, 136, 204, 0.08);
-      border: 1px solid rgba(0, 136, 204, 0.15);
-      border-radius: 50px;
-      padding: 10px 16px 10px 12px;
+      background: linear-gradient(135deg, rgba(0, 136, 204, 0.15) 0%, rgba(59, 130, 246, 0.12) 50%, rgba(139, 92, 246, 0.1) 100%);
+      border: 1px solid rgba(0, 136, 204, 0.25);
+      border-radius: 20px;
+      padding: 14px 18px 14px 14px;
       text-decoration: none;
       color: white;
       z-index: 1050;
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
       align-items: center;
-      gap: 12px;
-      transition: all 0.25s ease;
+      gap: 14px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 4px 24px rgba(0, 136, 204, 0.15), 0 0 0 1px rgba(255,255,255,0.05) inset;
+      animation: tgBannerPulse 3s ease-in-out infinite;
+    }
+    
+    @keyframes tgBannerPulse {
+      0%, 100% { 
+        box-shadow: 0 4px 24px rgba(0, 136, 204, 0.15), 0 0 0 1px rgba(255,255,255,0.05) inset;
+      }
+      50% { 
+        box-shadow: 0 8px 32px rgba(0, 136, 204, 0.25), 0 0 0 1px rgba(255,255,255,0.1) inset;
+      }
     }
     
     .tg-banner:hover {
-      background: rgba(0, 136, 204, 0.15);
-      transform: translateX(4px);
-      box-shadow: 0 4px 20px rgba(0, 136, 204, 0.15);
+      background: linear-gradient(135deg, rgba(0, 136, 204, 0.25) 0%, rgba(59, 130, 246, 0.2) 50%, rgba(139, 92, 246, 0.15) 100%);
+      transform: translateY(-4px) scale(1.02);
+      box-shadow: 0 12px 40px rgba(0, 136, 204, 0.3), 0 0 0 1px rgba(255,255,255,0.1) inset;
+      animation: none;
     }
     
     .tg-banner.hidden { display: none !important; }
     
     .tg-banner-icon {
-      width: 36px;
-      height: 36px;
+      width: 48px;
+      height: 48px;
       flex-shrink: 0;
-      background: rgba(0, 136, 204, 0.15);
-      border: 1px solid rgba(0, 136, 204, 0.25);
-      border-radius: 50%;
-      padding: 8px;
+      background: linear-gradient(135deg, #0088cc 0%, #00aaff 100%);
+      border: none;
+      border-radius: 14px;
+      padding: 10px;
       display: flex;
       align-items: center;
       justify-content: center;
+      box-shadow: 0 4px 12px rgba(0, 136, 204, 0.4);
+      animation: tgIconFloat 2s ease-in-out infinite;
+    }
+    
+    @keyframes tgIconFloat {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-3px); }
+    }
+    
+    .tg-banner:hover .tg-banner-icon {
+      animation: none;
+      transform: scale(1.1);
     }
     
     .tg-banner-icon svg {
-      width: 18px;
-      height: 18px;
-      fill: #67e8f9;
+      width: 24px;
+      height: 24px;
+      fill: white;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
     }
     
     .tg-banner-text {
@@ -1887,15 +1926,17 @@
     }
     
     .tg-banner-title {
-      font-weight: 500;
-      font-size: 0.75rem;
+      font-weight: 600;
+      font-size: 0.9rem;
       display: block;
-      color: #a5f3fc;
+      color: #ffffff;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+      margin-bottom: 2px;
     }
     
     .tg-banner-desc {
-      font-size: 0.65rem;
-      color: rgba(148, 163, 184, 0.7);
+      font-size: 0.75rem;
+      color: rgba(167, 243, 252, 0.9);
       display: block;
       white-space: nowrap;
       overflow: hidden;
@@ -1903,37 +1944,41 @@
     }
     
     .tg-banner-btn {
-      background: rgba(0, 136, 204, 0.2);
-      border: 1px solid rgba(0, 136, 204, 0.3);
-      padding: 6px 14px;
-      border-radius: 50px;
-      font-size: 0.7rem;
-      font-weight: 500;
-      color: #67e8f9;
+      background: linear-gradient(135deg, #0088cc 0%, #00aaff 100%);
+      border: none;
+      padding: 10px 18px;
+      border-radius: 12px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: white;
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: 6px;
       flex-shrink: 0;
-      transition: all 0.2s ease;
+      transition: all 0.25s ease;
+      box-shadow: 0 4px 12px rgba(0, 136, 204, 0.35);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
     
     .tg-banner:hover .tg-banner-btn {
-      background: rgba(0, 136, 204, 0.3);
-      color: #a5f3fc;
+      background: linear-gradient(135deg, #00aaff 0%, #00ccff 100%);
+      transform: scale(1.05);
+      box-shadow: 0 6px 20px rgba(0, 170, 255, 0.5);
     }
     
     .tg-banner-close {
       position: absolute;
-      top: -6px;
-      right: -6px;
-      width: 22px;
-      height: 22px;
-      background: rgba(100, 116, 139, 0.3);
+      top: -8px;
+      right: -8px;
+      width: 26px;
+      height: 26px;
+      background: rgba(30, 41, 59, 0.9);
       color: #94a3b8;
-      border: 1px solid rgba(100, 116, 139, 0.3);
+      border: 2px solid rgba(100, 116, 139, 0.4);
       border-radius: 50%;
-      font-size: 12px;
-      font-weight: 500;
+      font-size: 14px;
+      font-weight: 600;
       cursor: pointer;
       display: flex;
       align-items: center;
@@ -1943,9 +1988,10 @@
     }
     
     .tg-banner-close:hover {
-      background: rgba(239, 68, 68, 0.2);
-      color: #fca5a5;
-      border-color: rgba(239, 68, 68, 0.3);
+      background: rgba(239, 68, 68, 0.9);
+      color: white;
+      border-color: rgba(239, 68, 68, 0.8);
+      transform: scale(1.1);
     }
     
     /* Mobile adjustments */
@@ -2005,33 +2051,46 @@
         left: 0;
         right: 0;
         max-width: none;
-        padding: 0.5rem 0.8rem;
+        padding: 12px 16px;
         border-radius: 0;
         border-left: none;
         border-right: none;
         border-top: none;
         margin: 0;
+        animation: none;
+        background: linear-gradient(135deg, rgba(0, 136, 204, 0.2) 0%, rgba(59, 130, 246, 0.15) 100%);
+      }
+      
+      .tg-banner:hover {
+        transform: none;
       }
       
       .tg-banner-icon {
-        width: 32px;
-        height: 32px;
-        padding: 6px;
-        border-radius: 8px;
+        width: 40px;
+        height: 40px;
+        padding: 8px;
+        border-radius: 10px;
+        animation: none;
+      }
+      
+      .tg-banner-icon svg {
+        width: 20px;
+        height: 20px;
       }
       
       .tg-banner-title {
-        font-size: 0.75rem;
+        font-size: 0.85rem;
       }
       
       .tg-banner-desc {
-        display: none;
+        display: block;
+        font-size: 0.7rem;
       }
       
       .tg-banner-btn {
-        padding: 0.4rem 0.6rem;
-        font-size: 0.65rem;
-        border-radius: 8px;
+        padding: 8px 14px;
+        font-size: 0.75rem;
+        border-radius: 10px;
       }
       
       .tg-banner-close {
@@ -2420,7 +2479,6 @@
         <i class="material-icons">help_outline</i>
         <span>FAQ</span>
       </button>
-      <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" target="_blank" class="nav-btn app-link"><i class="material-icons">android</i> Додаток</a>
       <button class="nav-btn support-btn" onclick="toggleDonate()" title="Підтримати проєкт">
         <i class="material-icons">favorite</i>
         <span>Підтримати</span>
@@ -2652,6 +2710,10 @@
   
   <!-- Floating Buttons Container -->
   <div class="floating-buttons">
+    <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" target="_blank" class="floating-btn app-btn" title="Завантажити додаток">
+      <i class="material-icons">android</i>
+      <span class="btn-text">Додаток</span>
+    </a>
     <button onclick="document.getElementById('commercialModal').style.display='flex'" class="floating-btn commercial-btn" title="Комерційне використання">
       <i class="material-icons">live_tv</i>
       <span class="btn-text">Для стрімерів</span>
