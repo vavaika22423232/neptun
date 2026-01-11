@@ -20277,15 +20277,36 @@ def send_fcm_notification(message_data: dict):
 
         # Determine if critical
         threat_lower = threat_type.lower()
-        is_critical = any(kw in threat_lower for kw in ['ракет', 'балістич', 'кабах', 'кап', 'cruise', 'ballistic'])
+        is_critical = any(kw in threat_lower for kw in ['ракет', 'балістич', 'kab', 'cruise', 'ballistic'])
+        
+        # Map internal threat codes to human-readable Ukrainian text for TTS
+        threat_type_map = {
+            'alarm': 'Повітряна тривога',
+            'alarm_cancel': 'Відбій тривоги',
+            'shahed': 'Загроза БПЛА',
+            'raketa': 'Загроза ракетної атаки',
+            'kab': 'Загроза КАБ',
+            'fpv': 'Загроза FPV-дронів',
+            'avia': 'Загроза авіаційної атаки',
+            'vibuh': 'Вибухи',
+            'artillery': 'Загроза обстрілу',
+            'rozved': 'Розвідувальні дрони',
+            'pusk': 'Пуски дронів',
+            'vidboi': 'Відбій',
+            'rszv': 'Загроза РСЗВ',
+        }
+        
+        # Get human-readable threat type for notifications
+        readable_threat_type = threat_type_map.get(threat_type, threat_type) if threat_type else ''
         
         # Create notification - different format for all clear vs threat
         if is_all_clear:
             title = f"🟢 Відбій тривоги"
             body = f"{location}"
             alarm_state = 'ended'
+            readable_threat_type = 'Відбій тривоги'
         else:
-            title = f"{'🚨' if is_critical else '⚠️'} {threat_type}"
+            title = f"{'🚨' if is_critical else '⚠️'} {readable_threat_type}"
             body = f"{location}"
             alarm_state = 'active'
 
@@ -20301,7 +20322,7 @@ def send_fcm_notification(message_data: dict):
                     data={
                         'type': 'all_clear' if is_all_clear else ('rocket' if is_critical else 'drone'),
                         'location': location,
-                        'threat_type': threat_type if threat_type else 'Відбій тривоги',
+                        'threat_type': readable_threat_type if readable_threat_type else 'Повітряна тривога',
                         'region': region,
                         'alarm_state': alarm_state,
                         'timestamp': message_data.get('date', ''),
