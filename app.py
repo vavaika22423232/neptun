@@ -20331,7 +20331,8 @@ def send_fcm_notification(message_data: dict):
             'Вінницька область': ['вінницька', 'вінниц', 'жмеринка', 'козятин', 'хмільник'],
             'Житомирська область': ['житомирська', 'житомир', 'бердичів', 'коростень', 'новоград', 'овруч'],
             'Черкаська область': ['черкаська', 'черкас', 'умань', 'сміла', 'золотоноша'],
-            'Чернігівська область': ['чернігівська', 'чернігів', 'ніжин', 'прилуки', 'корюків'],
+            'Чернігівська область': ['чернігівська', 'чернігів', 'чернігов', 'ніжин', 'прилуки', 'корюків'],
+            'Чернівецька область': ['чернівецька', 'чернівці', 'чернівц', 'чернівеч', 'буковина', 'новодністровськ', 'вижниця', 'сторожинець'],
             'Полтавська область': ['полтавська', 'полтав', 'кременчук', 'миргород', 'лубни'],
             'Сумська область': ['сумська', 'сум', 'конотоп', 'шостка', 'ромни', 'охтирка'],
             'Миколаївська область': ['миколаївська', 'миколаїв', 'миколаєв', 'первомайськ', 'вознесенськ'],
@@ -20343,30 +20344,42 @@ def send_fcm_notification(message_data: dict):
             'Тернопільська область': ['тернопільська', 'тернопіль', 'чортків', 'кременець'],
             'Івано-Франківська область': ['івано-франківська', 'івано-франків', 'калуш', 'коломия', 'надвірна'],
             'Закарпатська область': ['закарпатська', 'закарпат', 'ужгород', 'мукачево', 'хуст', 'берегово'],
-            'Чернівецька область': ['чернівецька', 'чернівц', 'кам\'янка', 'новодністровськ'],
             'Луганська область': ['луганська', 'луганськ', 'луганщин', 'сєвєродонецьк', 'лисичанськ'],
         }
         
         # First search in text for oblast pattern (most reliable for "City (Oblast обл.)" format)
+        # IMPORTANT: Search for LONGEST matching keyword first to avoid confusion
+        # between similar names like "Чернівці" vs "Чернігів"
+        best_match = None
+        best_keyword_len = 0
+        
         for region_name, keywords in regions_map.items():
             for keyword in keywords:
                 if keyword in text_for_region:
-                    region = region_name
-                    log.info(f"Matched region from text: {region} (keyword: {keyword})")
-                    break
-            if region:
-                break
+                    # Prefer longer (more specific) matches
+                    if len(keyword) > best_keyword_len:
+                        best_match = region_name
+                        best_keyword_len = len(keyword)
+                        log.info(f"Found potential match: {region_name} (keyword: '{keyword}', len={len(keyword)})")
+        
+        if best_match:
+            region = best_match
+            log.info(f"Best match from text: {region} (keyword length: {best_keyword_len})")
         
         # Fallback: search in place field
         if not region:
+            best_match = None
+            best_keyword_len = 0
             for region_name, keywords in regions_map.items():
                 for keyword in keywords:
                     if keyword in place_lower:
-                        region = region_name
-                        log.info(f"Matched region from place: {region} (keyword: {keyword} in place: {location})")
-                        break
-                if region:
-                    break
+                        if len(keyword) > best_keyword_len:
+                            best_match = region_name
+                            best_keyword_len = len(keyword)
+                            log.info(f"Found potential match from place: {region_name} (keyword: '{keyword}')")
+            if best_match:
+                region = best_match
+                log.info(f"Best match from place: {region}")
         
         if not region:
             log.info(f"Could not determine region for place: {location}")
