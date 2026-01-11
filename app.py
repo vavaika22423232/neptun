@@ -2444,18 +2444,45 @@ MESSAGE_STORE = MessageStore(
 # Cache for sent FCM notifications to prevent duplicates
 # Format: {notification_hash: timestamp}
 SENT_NOTIFICATIONS_CACHE = {}
-NOTIFICATION_CACHE_TTL = 7200  # 2 hours - don't send same notification within this time
+NOTIFICATION_CACHE_TTL = 300  # 5 minutes - don't repeat same location+threat within this time
+
+def _normalize_location_name(name: str) -> str:
+    """Normalize location name for deduplication - remove common suffixes/prefixes."""
+    if not name:
+        return ''
+    name = name.lower().strip()
+    # Remove common suffixes
+    suffixes = [' район', ' область', ' громада', ' міська', ' селищна', ' сільська', 
+                ' (міська)', ' (районна)', ' (обласна)', 'ська', 'ський']
+    for suffix in suffixes:
+        if name.endswith(suffix):
+            name = name[:-len(suffix)]
+    return name.strip()
 
 def _get_notification_hash(msg: dict) -> str:
-    """Generate a unique hash for a notification based on content."""
+    """Generate a unique hash for a notification based on content.
+    Uses location name + threat type only (ignores coordinates) for better deduplication.
+    """
     import hashlib
-    # Use place + coordinates + threat_type as unique key
+    # Use place + threat_type as unique key (ignore coordinates for better dedup)
     place = (msg.get('place', '') or msg.get('location', '') or '')[:100]
-    msg_type = (msg.get('threat_type', '') or msg.get('type', '') or '')[:50]
-    # Round coordinates to reduce duplicates for nearby locations
-    lat = round(msg.get('lat', 0) or 0, 2)
-    lng = round(msg.get('lng', 0) or 0, 2)
-    content = f"{place}|{msg_type}|{lat}|{lng}".lower()
+    place = _normalize_location_name(place)
+    
+    msg_type = (msg.get('threat_type', '') or msg.get('type', '') or '')[:50].lower()
+    
+    # Normalize threat type to category
+    if 'бпла' in msg_type or 'дрон' in msg_type or 'шахед' in msg_type:
+        msg_type = 'drone'
+    elif 'ракет' in msg_type or 'балістичн' in msg_type or 'крилат' in msg_type:
+        msg_type = 'rocket'
+    elif 'каб' in msg_type or 'бомб' in msg_type:
+        msg_type = 'kab'
+    elif 'відбій' in msg_type or 'знято' in msg_type:
+        msg_type = 'clear'
+    else:
+        msg_type = 'alert'
+    
+    content = f"{place}|{msg_type}"
     return hashlib.md5(content.encode()).hexdigest()
 
 def _should_send_notification(msg: dict) -> bool:
