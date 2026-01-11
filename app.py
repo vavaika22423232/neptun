@@ -18430,12 +18430,21 @@ def send_family_sos():
         sender_name = data.get('name', '')
         location = data.get('location')  # Optional: {lat, lng, address}
         
+        print(f"[SOS] === SOS REQUEST RECEIVED ===")
+        print(f"[SOS] Sender code: {code}")
+        print(f"[SOS] Sender name: {sender_name}")
+        print(f"[SOS] Family codes to notify: {family_codes}")
+        
         if not code:
             return jsonify({'success': False, 'error': 'Invalid code'}), 400
         
         # Get tokens to notify and mark sender as needing help
         sos_data = family_store.send_sos(code, family_codes)
         tokens_to_notify = sos_data.get('tokens_to_notify', [])
+        
+        print(f"[SOS] Found {len(tokens_to_notify)} family members with FCM tokens")
+        for t in tokens_to_notify:
+            print(f"[SOS]   - {t['code']}: token={t['fcm_token'][:30]}...")
         
         # Send FCM push notifications to family members
         notified_count = 0
@@ -18521,6 +18530,39 @@ def clear_family_sos():
         
     except Exception as e:
         print(f"[ERROR] /api/family/clear-sos failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/family/check-tokens', methods=['POST'])
+def check_family_tokens():
+    """Debug endpoint to check which family codes have FCM tokens registered."""
+    try:
+        data = request.get_json() or {}
+        codes = data.get('codes', [])
+        
+        if not codes:
+            return jsonify({'success': False, 'error': 'No codes provided'}), 400
+        
+        result = {}
+        for code in codes:
+            code_upper = code.upper()
+            status = family_store.get_status(code_upper)
+            # Check if member has FCM token
+            family_data = family_store._load()
+            member_data = family_data.get('members', {}).get(code_upper, {})
+            has_token = bool(member_data.get('fcm_token'))
+            
+            result[code_upper] = {
+                'has_token': has_token,
+                'last_active': member_data.get('last_active'),
+                'status': status,
+            }
+        
+        response = jsonify({'success': True, 'codes': result})
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        return response
+        
+    except Exception as e:
+        print(f"[ERROR] /api/family/check-tokens failed: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/test_parse')
