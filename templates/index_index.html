@@ -18,10 +18,19 @@
   <meta name="googlebot" content="index, follow">
   <link rel="canonical" href="https://neptun.in.ua/">
   
-  <!-- PRELOAD CRITICAL RESOURCES -->
-  <link rel="preload" href="/static/og-image.png" as="image">
-  <link rel="dns-prefetch" href="//api.alerts.in.ua">
+  <!-- PRELOAD CRITICAL RESOURCES - CORE WEB VITALS OPTIMIZATION -->
+  <!-- Preload fonts for better LCP -->
+  <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" as="style">
+  <link rel="preload" href="https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZ9hiJ-Ek-_EeA.woff2" as="font" type="font/woff2" crossorigin>
+  
+  <!-- DNS Prefetch for external resources -->
+  <link rel="dns-prefetch" href="//fonts.googleapis.com">
   <link rel="dns-prefetch" href="//fonts.gstatic.com">
+  <link rel="dns-prefetch" href="//www.googletagmanager.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  
+  <!-- Preload critical images (LCP element) -->
+  <link rel="preload" href="/static/og-image.png" as="image">
   
   <!-- OPEN GRAPH / FACEBOOK -->
   <meta property="og:type" content="website">
@@ -46,7 +55,10 @@
   <meta name="geo.placename" content="Ukraine">
   <meta name="language" content="Ukrainian">
   <meta http-equiv="content-language" content="uk">
+  
+  <!-- HREFLANG - Для міжнародного SEO -->
   <link rel="alternate" hreflang="uk" href="https://neptun.in.ua/">
+  <link rel="alternate" hreflang="en" href="https://neptun.in.ua/?lang=en">
   <link rel="alternate" hreflang="x-default" href="https://neptun.in.ua/">
   
   <!-- STRUCTURED DATA - JSON-LD -->
@@ -280,6 +292,34 @@
       touch-action: none; /* Prevent default touch behaviors */
       -webkit-user-select: none;
       user-select: none;
+    }
+    
+    /* SEO H1 - видимий для Google, компактний для користувачів */
+    .seo-h1 {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 5;
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 12px;
+      font-weight: 400;
+      font-family: 'Inter', sans-serif;
+      text-align: center;
+      white-space: nowrap;
+      pointer-events: none;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+      letter-spacing: 0.3px;
+    }
+    
+    @media (max-width: 768px) {
+      .seo-h1 {
+        font-size: 10px;
+        top: 8px;
+        max-width: 90%;
+        white-space: normal;
+        line-height: 1.3;
+      }
     }
     
     #map-wrapper {
@@ -2692,6 +2732,9 @@
   </div>
   
   <div id="map-container">
+    <!-- SEO H1 - Візуально прихований але видимий для Google -->
+    <h1 class="seo-h1">Карта тривог України онлайн — повітряна тривога, шахеди та дрони в реальному часі</h1>
+    
     <div id="map-wrapper">
       <div class="svg-container" id="svg-container">
         <!-- States SVG will be loaded here -->
@@ -2707,6 +2750,326 @@
       </div>
     </div>
   </div>
+  
+  <!-- NOSCRIPT FALLBACK FOR GOOGLEBOT - КРИТИЧНО ДЛЯ SEO -->
+  <noscript>
+    <div class="noscript-seo-content">
+      <h1>Карта тривог України онлайн — NEPTUN</h1>
+      <h2>Повітряна тривога в реальному часі</h2>
+      <p>NEPTUN — найточніша <strong>карта тривог України</strong> в реальному часі. Відстежуйте <strong>повітряні тривоги</strong>, <strong>шахеди</strong>, дрони та ракети онлайн 24/7.</p>
+      
+      <h2>Що показує карта тривог NEPTUN?</h2>
+      <ul>
+        <li><strong>Повітряна тривога</strong> — активні тривоги по всіх областях України</li>
+        <li><strong>Шахеди онлайн</strong> — відстеження дронів-камікадзе Shahed в реальному часі</li>
+        <li><strong>Ракетна загроза</strong> — крилаті та балістичні ракети</li>
+        <li><strong>БпЛА</strong> — розвідувальні дрони та БПЛА</li>
+      </ul>
+      
+      <h2>Переваги карти тривог NEPTUN</h2>
+      <ul>
+        <li>Оновлення кожні 5 секунд</li>
+        <li>Дані з офіційних джерел (Telegram канали ОВА)</li>
+        <li>Безкоштовний Android додаток з push-сповіщеннями</li>
+        <li>Траєкторія польоту шахедів та ракет</li>
+      </ul>
+      
+      <h2>Регіони України</h2>
+      <p>Карта тривог охоплює всі області: Київська, Харківська, Одеська, Дніпропетровська, Львівська, Запорізька, Миколаївська, Полтавська, Вінницька, Житомирська, Черкаська, Сумська, Чернігівська, Хмельницька, Волинська, Рівненська, Тернопільська, Івано-Франківська, Закарпатська, Чернівецька, Кіровоградська, Херсонська область та місто Київ.</p>
+      
+      <h2>Завантажити додаток</h2>
+      <p>Скачайте безкоштовний додаток <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app">NEPTUN з Google Play</a> та отримуйте миттєві сповіщення про тривоги у вашому регіоні.</p>
+      
+      <p><em>Для перегляду інтерактивної карти тривог увімкніть JavaScript у вашому браузері.</em></p>
+    </div>
+    <style>
+      .noscript-seo-content {
+        max-width: 800px;
+        margin: 40px auto;
+        padding: 20px;
+        background: #0a0e17;
+        color: #e2e8f0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        line-height: 1.7;
+      }
+      .noscript-seo-content h1 { color: #00d4ff; font-size: 28px; margin-bottom: 16px; }
+      .noscript-seo-content h2 { color: #00d4ff; font-size: 20px; margin: 24px 0 12px; }
+      .noscript-seo-content p { margin: 12px 0; }
+      .noscript-seo-content ul { margin: 12px 0; padding-left: 24px; }
+      .noscript-seo-content li { margin: 8px 0; }
+      .noscript-seo-content a { color: #00d4ff; }
+      .noscript-seo-content strong { color: #fff; }
+    </style>
+  </noscript>
+  
+  <!-- SEO EXPANDABLE CONTENT BLOCK - ВИДИМИЙ ДЛЯ GOOGLE -->
+  <div class="seo-content-block" id="seoContentBlock">
+    <button class="seo-toggle" onclick="toggleSeoContent()" aria-expanded="false" aria-controls="seoContentInner">
+      <span class="seo-toggle-text">Про карту тривог України</span>
+      <i class="material-icons seo-toggle-icon">expand_more</i>
+    </button>
+    <div class="seo-content-inner" id="seoContentInner" aria-hidden="true">
+      <article class="seo-article" itemscope itemtype="https://schema.org/Article">
+        <meta itemprop="headline" content="Карта тривог України онлайн — повітряна тривога в реальному часі">
+        <meta itemprop="author" content="NEPTUN">
+        <meta itemprop="datePublished" content="2024-01-01">
+        <meta itemprop="dateModified" content="2025-01-12">
+        
+        <h2>Карта тривог України — найточніший моніторинг загроз в реальному часі</h2>
+        
+        <p><strong>NEPTUN</strong> — це сучасна інтерактивна <strong>карта тривог України</strong>, яка відображає актуальну інформацію про <strong>повітряні тривоги</strong>, <strong>шахеди</strong>, ракети та інші загрози в режимі реального часу. Наш сервіс допомагає мільйонам українців слідкувати за небезпекою та вчасно реагувати на загрози.</p>
+        
+        <h3>Що показує карта повітряних тривог?</h3>
+        
+        <p>Карта тривог NEPTUN надає комплексну інформацію про всі типи загроз:</p>
+        
+        <ul>
+          <li><strong>Повітряна тривога</strong> — активні сирени по всіх 25 областях України з точним часом оголошення та відбою</li>
+          <li><strong>Шахеди онлайн</strong> — відстеження дронів-камікадзе Shahed-136/131 з траєкторією польоту, напрямком руху та швидкістю</li>
+          <li><strong>Крилаті ракети</strong> — моніторинг Х-101, Х-555, Калібр з прогнозом траєкторії</li>
+          <li><strong>Балістичні ракети</strong> — Іскандер, Кинжал та інші балістичні загрози</li>
+          <li><strong>БпЛА розвідники</strong> — розвідувальні дрони типу Орлан, Supercam тощо</li>
+        </ul>
+        
+        <h3>Чому NEPTUN — найкраща карта тривог?</h3>
+        
+        <p>Наша <strong>карта повітряних тривог</strong> має низку переваг перед конкурентами:</p>
+        
+        <ul>
+          <li><strong>Швидкість оновлення</strong> — дані оновлюються кожні 5-10 секунд, що робить нас одними з найшвидших</li>
+          <li><strong>Офіційні джерела</strong> — інформація надходить з офіційних Telegram-каналів ОВА (Обласних Військових Адміністрацій)</li>
+          <li><strong>Траєкторії шахедів</strong> — унікальна функція відображення напрямку польоту дронів з прогнозом цілі</li>
+          <li><strong>Мобільний додаток</strong> — безкоштовний Android-додаток з миттєвими push-сповіщеннями</li>
+          <li><strong>Працює 24/7</strong> — цілодобовий моніторинг без перерв</li>
+        </ul>
+        
+        <h3>Карта шахедів та дронів онлайн</h3>
+        
+        <p>Окрема увага в NEPTUN приділяється <strong>відстеженню шахедів</strong>. Ми показуємо:</p>
+        
+        <ul>
+          <li>Поточне місцезнаходження <strong>дронів Shahed</strong> на карті України</li>
+          <li>Напрямок польоту та ймовірну ціль</li>
+          <li>Кількість дронів у групі</li>
+          <li>Область перебування та час входу</li>
+        </ul>
+        
+        <p>Функція <strong>"шахеди онлайн"</strong> дозволяє в реальному часі бачити, де саме зараз знаходяться ударні безпілотники та куди вони прямують.</p>
+        
+        <h3>Регіони України на карті тривог</h3>
+        
+        <p>Карта охоплює всі адміністративні одиниці України:</p>
+        
+        <p><strong>Північ:</strong> Київська область, Чернігівська область, Сумська область, Житомирська область</p>
+        <p><strong>Схід:</strong> Харківська область, Донецька область, Луганська область, Запорізька область</p>
+        <p><strong>Південь:</strong> Одеська область, Миколаївська область, Херсонська область</p>
+        <p><strong>Центр:</strong> Дніпропетровська область, Полтавська область, Черкаська область, Кіровоградська область, Вінницька область</p>
+        <p><strong>Захід:</strong> Львівська область, Волинська область, Рівненська область, Тернопільська область, Хмельницька область, Івано-Франківська область, Закарпатська область, Чернівецька область</p>
+        <p><strong>Столиця:</strong> місто Київ</p>
+        
+        <h3>Як користуватися картою тривог?</h3>
+        
+        <ol>
+          <li>Відкрийте <a href="https://neptun.in.ua">neptun.in.ua</a> у браузері</li>
+          <li>Карта автоматично завантажиться з актуальними даними</li>
+          <li>Червоні області — активна <strong>повітряна тривога</strong></li>
+          <li>Іконки на карті — <strong>шахеди</strong>, ракети та інші загрози</li>
+          <li>Натисніть на іконку для детальної інформації</li>
+        </ol>
+        
+        <h3>Мобільний додаток карти тривог</h3>
+        
+        <p>Завантажте безкоштовний <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" rel="noopener">додаток NEPTUN з Google Play</a> та отримуйте:</p>
+        
+        <ul>
+          <li>Push-сповіщення про тривоги у вашому регіоні</li>
+          <li>Голосове оповіщення про загрози</li>
+          <li>Віджет на робочий стіл</li>
+          <li>Оповіщення для рідних (SOS функція)</li>
+        </ul>
+        
+        <h3>Часті питання про карту тривог</h3>
+        
+        <h4>Чи є карта тривог офіційною?</h4>
+        <p>NEPTUN агрегує дані з офіційних джерел (Telegram ОВА), але не є державною системою оповіщення. Для офіційної інформації використовуйте додаток "Повітряна тривога" від МЦУ.</p>
+        
+        <h4>Яка затримка даних?</h4>
+        <p>Дані оновлюються кожні 5-10 секунд. Затримка залежить від швидкості публікації в джерелах.</p>
+        
+        <h4>Чи працює карта без інтернету?</h4>
+        <p>Для роботи карти потрібне підключення до інтернету. Мобільний додаток надсилає push-сповіщення навіть при слабкому зв'язку.</p>
+        
+        <p class="seo-updated">Останнє оновлення: <time datetime="2025-01-12">12 січня 2025</time></p>
+      </article>
+    </div>
+  </div>
+  
+  <style>
+    /* SEO Content Block Styles */
+    .seo-content-block {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      background: linear-gradient(to top, rgba(10, 14, 23, 0.98), rgba(10, 14, 23, 0.95));
+      border-top: 1px solid rgba(0, 212, 255, 0.2);
+      max-height: 50vh;
+      overflow: hidden;
+      transition: max-height 0.4s ease;
+    }
+    
+    .seo-content-block.collapsed {
+      max-height: 44px;
+    }
+    
+    .seo-toggle {
+      width: 100%;
+      padding: 12px 20px;
+      background: transparent;
+      border: none;
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.3s;
+    }
+    
+    .seo-toggle:hover {
+      color: #00d4ff;
+    }
+    
+    .seo-toggle-icon {
+      font-size: 20px;
+      transition: transform 0.3s;
+    }
+    
+    .seo-content-block.collapsed .seo-toggle-icon {
+      transform: rotate(180deg);
+    }
+    
+    .seo-content-inner {
+      padding: 0 20px 20px;
+      max-height: calc(50vh - 44px);
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(0, 212, 255, 0.3) transparent;
+    }
+    
+    .seo-article {
+      max-width: 900px;
+      margin: 0 auto;
+      color: #94a3b8;
+      font-size: 14px;
+      line-height: 1.7;
+    }
+    
+    .seo-article h2 {
+      color: #00d4ff;
+      font-size: 18px;
+      margin: 20px 0 12px;
+      font-weight: 600;
+    }
+    
+    .seo-article h3 {
+      color: #e2e8f0;
+      font-size: 16px;
+      margin: 18px 0 10px;
+      font-weight: 600;
+    }
+    
+    .seo-article h4 {
+      color: #cbd5e1;
+      font-size: 14px;
+      margin: 14px 0 8px;
+      font-weight: 600;
+    }
+    
+    .seo-article p {
+      margin: 10px 0;
+    }
+    
+    .seo-article ul, .seo-article ol {
+      margin: 10px 0;
+      padding-left: 24px;
+    }
+    
+    .seo-article li {
+      margin: 6px 0;
+    }
+    
+    .seo-article strong {
+      color: #e2e8f0;
+    }
+    
+    .seo-article a {
+      color: #00d4ff;
+      text-decoration: none;
+    }
+    
+    .seo-article a:hover {
+      text-decoration: underline;
+    }
+    
+    .seo-updated {
+      margin-top: 20px;
+      font-size: 12px;
+      color: #64748b;
+      font-style: italic;
+    }
+    
+    @media (max-width: 768px) {
+      .seo-content-block {
+        max-height: 40vh;
+      }
+      .seo-content-block.collapsed {
+        max-height: 40px;
+      }
+      .seo-toggle {
+        padding: 10px 16px;
+        font-size: 12px;
+      }
+      .seo-content-inner {
+        padding: 0 16px 16px;
+      }
+      .seo-article {
+        font-size: 13px;
+      }
+      .seo-article h2 {
+        font-size: 16px;
+      }
+      .seo-article h3 {
+        font-size: 14px;
+      }
+    }
+  </style>
+  
+  <script>
+    // SEO Content Toggle
+    function toggleSeoContent() {
+      const block = document.getElementById('seoContentBlock');
+      const inner = document.getElementById('seoContentInner');
+      const toggle = block.querySelector('.seo-toggle');
+      
+      block.classList.toggle('collapsed');
+      const isCollapsed = block.classList.contains('collapsed');
+      
+      toggle.setAttribute('aria-expanded', !isCollapsed);
+      inner.setAttribute('aria-hidden', isCollapsed);
+    }
+    
+    // Start collapsed by default
+    document.addEventListener('DOMContentLoaded', function() {
+      const block = document.getElementById('seoContentBlock');
+      if (block) {
+        block.classList.add('collapsed');
+      }
+    });
+  </script>
   
   <!-- Floating Buttons Container -->
   <div class="floating-buttons">

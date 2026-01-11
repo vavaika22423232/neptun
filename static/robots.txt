@@ -45,40 +45,83 @@ Allow: /region/luhanska
 Disallow: /admin
 Disallow: /auth/
 
-# Технічні файли
+# Технічні файли - закриваємо від індексації
 Disallow: /api/
 Disallow: /*.json$
 Disallow: /data
+Disallow: /ws
+Disallow: /socket
+Disallow: /health
+Disallow: /metrics
 
 # Sitemap для Google та інших пошукових систем
 Sitemap: https://neptun.in.ua/sitemap.xml
 
-# Спеціальні правила для основних ботів
+# ===========================================
+# GOOGLEBOT - МАКСИМАЛЬНИЙ ПРІОРИТЕТ
+# ===========================================
 User-agent: Googlebot
 Allow: /
-Crawl-delay: 0
 Allow: /static/
+Allow: /region/
+Allow: /map
+Allow: /blackouts
+Crawl-delay: 0
 
 User-agent: Googlebot-Image
 Allow: /static/
+Allow: /*.png$
+Allow: /*.jpg$
+Allow: /*.svg$
 
-User-agent: Bingbot
+User-agent: Googlebot-Video
+Disallow: /
+
+User-agent: Googlebot-News
 Allow: /
-Crawl-delay: 0
 
-User-agent: Yandex
+# ===========================================
+# ІНШІ БОТИ
+# ===========================================
+User-agent: Bingbot
 Allow: /
 Crawl-delay: 1
 
-User-agent: Slurp
+User-agent: Yandex
 Allow: /
+Crawl-delay: 2
 
 User-agent: DuckDuckBot
 Allow: /
 
-User-agent: Baiduspider
+User-agent: Slurp
 Allow: /
 
-# Оптимізація для пошукових систем
-# neptun.in.ua - карта тривог україни, карта шахедів, повітряні тривоги
+User-agent: Baiduspider
+Allow: /
+Crawl-delay: 3
+
+User-agent: facebookexternalhit
+Allow: /
+
+User-agent: Twitterbot
+Allow: /
+
+User-agent: LinkedInBot
+Allow: /
+
+User-agent: TelegramBot
+Allow: /
+
+# Default для всіх інших
+User-agent: *
+Allow: /
 Crawl-delay: 1
+
+# ===========================================
+# SEO KEYWORDS (для пошукових систем)
+# neptun.in.ua - карта тривог україни
+# карта повітряних тривог, мапа тривог
+# шахеди онлайн, карта шахедів
+# дрони україна карта, air raid map ukraine
+# ==========================================
