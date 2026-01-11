@@ -16423,9 +16423,38 @@ def icon_drone_redirect():
 def favicon():
     return redirect('/static/icons/favicon-32x32.png', code=301)
 
+# SEO: Bot detection patterns for prerender
+SEO_BOT_PATTERNS = [
+    'googlebot', 'bingbot', 'yandex', 'baiduspider', 'facebookexternalhit',
+    'twitterbot', 'rogerbot', 'linkedinbot', 'embedly', 'quora link preview',
+    'showyoubot', 'outbrain', 'pinterest', 'slackbot', 'vkshare', 'w3c_validator',
+    'whatsapp', 'telegram', 'applebot', 'duckduckbot'
+]
+
+def is_seo_bot(user_agent):
+    """Check if request is from SEO bot/crawler"""
+    if not user_agent:
+        return False
+    ua_lower = user_agent.lower()
+    return any(bot in ua_lower for bot in SEO_BOT_PATTERNS)
+
 @app.route('/')
 def index():
     """Main page - Карта тривог України онлайн"""
+    user_agent = request.headers.get('User-Agent', '')
+    
+    # SEO: Detect crawlers and serve optimized response
+    if is_seo_bot(user_agent):
+        # For bots: add extra SEO headers and potentially serve prerendered content
+        response = render_template('index_index.html')
+        resp = app.response_class(response)
+        resp.headers['Cache-Control'] = 'public, max-age=3600'  # 1 hour for bots
+        resp.headers['X-Robots-Tag'] = 'index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1'
+        resp.headers['Link'] = '<https://neptun.in.ua/>; rel="canonical"'
+        # Mark as bot request for debugging
+        resp.headers['X-Bot-Detected'] = 'true'
+        return resp
+    
     # BANDWIDTH OPTIMIZATION: Add caching headers for main page
     response = render_template('index_index.html')
     resp = app.response_class(response)
