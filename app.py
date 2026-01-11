@@ -1492,31 +1492,62 @@ def send_alarm_notification(region_data, alarm_started: bool):
         log.info(f"State: {'STARTED' if alarm_started else 'ENDED'}")
         log.info(f"Message: {title} - {body}")
         
-        # Get devices subscribed to this region (district) OR its oblast
-        devices = device_store.get_devices_for_region(region_name)
+        # Map region name to Firebase topic
+        region_topic_map = {
+            'Київ': 'region_kyiv_city',
+            'Київська область': 'region_kyivska',
+            'Дніпропетровська область': 'region_dnipropetrovska',
+            'Харківська область': 'region_kharkivska',
+            'Одеська область': 'region_odeska',
+            'Львівська область': 'region_lvivska',
+            'Донецька область': 'region_donetska',
+            'Запорізька область': 'region_zaporizka',
+            'Вінницька область': 'region_vinnytska',
+            'Житомирська область': 'region_zhytomyrska',
+            'Черкаська область': 'region_cherkaska',
+            'Чернігівська область': 'region_chernihivska',
+            'Полтавська область': 'region_poltavska',
+            'Сумська область': 'region_sumska',
+            'Миколаївська область': 'region_mykolaivska',
+            'Херсонська область': 'region_khersonska',
+            'Кіровоградська область': 'region_kirovohradska',
+            'Хмельницька область': 'region_khmelnytska',
+            'Рівненська область': 'region_rivnenska',
+            'Волинська область': 'region_volynska',
+            'Тернопільська область': 'region_ternopilska',
+            'Івано-Франківська область': 'region_ivano_frankivska',
+            'Закарпатська область': 'region_zakarpatska',
+            'Чернівецька область': 'region_chernivetska',
+            'Луганська область': 'region_luhanska',
+        }
         
-        # Also check for oblast subscription (user might be subscribed to entire oblast)
+        # Get topic for this region
+        topic = region_topic_map.get(region_name)
+        
+        # If district, also get oblast topic
         region_type = region_data.get('regionType', '')
+        oblast_topic = None
         if region_type == 'District':
             oblast = DISTRICT_TO_OBLAST.get(region_name, '')
             if oblast:
-                oblast_devices = device_store.get_devices_for_region(oblast)
-                # Merge devices, avoiding duplicates
-                existing_device_ids = {d['device_id'] for d in devices}
-                for dev in oblast_devices:
-                    if dev['device_id'] not in existing_device_ids:
-                        devices.append(dev)
-                log.info(f"Also checked oblast '{oblast}', total devices now: {len(devices)}")
+                oblast_topic = region_topic_map.get(oblast)
+                log.info(f"District {region_name} maps to oblast {oblast} (topic: {oblast_topic})")
         
-        log.info(f"Devices subscribed to {region_name}: {len(devices)}")
-        
-        if not devices:
-            log.info(f"No devices subscribed to region: {region_name}")
+        if not topic and not oblast_topic:
+            log.info(f"No topic mapping for region: {region_name}")
             return
 
-        # Send to each device
+        # Send to topic (much more efficient than individual devices)
         success_count = 0
-        for device in devices:
+        
+        # Send to region topic if available
+        topics_to_send = []
+        if topic:
+            topics_to_send.append(topic)
+        if oblast_topic and oblast_topic != topic:
+            topics_to_send.append(oblast_topic)
+        
+        for target_topic in topics_to_send:
             try:
                 # For Android: DATA-ONLY message so background handler can process TTS
                 # For iOS: Include notification so system shows alert (TTS won't work in background on iOS)
@@ -1526,11 +1557,12 @@ def send_alarm_notification(region_data, alarm_started: bool):
                         'type': 'alarm',
                         'title': title,
                         'body': body,
+                        'location': region_name,  # For TTS - the region/city name
                         'region': region_name,
                         'region_id': region_id,
                         'alarm_state': 'active' if alarm_started else 'ended',
                         'is_critical': 'true' if is_critical else 'false',
-                        'threat_type': threat_detail or 'air',  # 'ракети', 'дрони', or 'air'
+                        'threat_type': body if alarm_started else 'Відбій тривоги',  # Threat description for TTS
                         'timestamp': datetime.now(pytz.timezone('Europe/Kiev')).isoformat(),
                         'click_action': 'FLUTTER_NOTIFICATION_CLICK',
                     },
@@ -1552,24 +1584,16 @@ def send_alarm_notification(region_data, alarm_started: bool):
                             ),
                         ),
                     ),
-                    token=device['token'],
+                    topic=target_topic,  # Send to topic instead of individual token
                 )
                 
                 response = messaging.send(message)
                 success_count += 1
-                log.info(f"Alarm notification sent to device {device['device_id'][:20]}...: {response}")
-            except messaging.UnregisteredError:
-                log.warning(f"Device {device['device_id'][:20]}... has invalid token, removing...")
-                device_store.remove_device(device['device_id'])
+                log.info(f"✅ Alarm notification sent to topic {target_topic}: {response}")
             except Exception as e:
-                error_msg = str(e)
-                if 'NotRegistered' in error_msg or 'not registered' in error_msg.lower():
-                    log.warning(f"Device {device['device_id'][:20]}... not registered, removing...")
-                    device_store.remove_device(device['device_id'])
-                else:
-                    log.error(f"Failed to send alarm to device {device['device_id'][:20]}...: {e}")
+                log.error(f"Failed to send alarm to topic {target_topic}: {e}")
         
-        log.info(f"Sent {success_count}/{len(devices)} alarm notifications for region: {region_name}")
+        log.info(f"Sent alarm notifications to {success_count} topics for region: {region_name}")
     except Exception as e:
         log.error(f"Error in send_alarm_notification: {e}")
 
@@ -1628,14 +1652,21 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
         
         # Extract region from location (e.g., "Харків (Харківська обл.)" -> "Харківська область")
         region_name = location
+        city_name = ''  # Specific city for TTS
         if '(' in location and 'обл' in location:
-            # Extract oblast from parentheses
+            # Extract city (before parentheses) and oblast (in parentheses)
             import re
+            city_match = re.match(r'^([^(]+)\s*\(', location)
+            if city_match:
+                city_name = city_match.group(1).strip()
             oblast_match = re.search(r'\(([^)]*обл[^)]*)\)', location)
             if oblast_match:
                 region_name = oblast_match.group(1).replace('обл.', 'область').strip()
         
         title = f"{emoji} {region_name}"
+        
+        # For TTS: use city if available, otherwise region
+        tts_location = city_name if city_name else region_name
         
         # Extract threat description from message (remove location prefix)
         body = message_text
@@ -1653,70 +1684,106 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
         log.info(f"Threat: {threat_type}")
         log.info(f"Message: {title} - {body}")
         
-        # Get devices subscribed to this region
-        devices = device_store.get_devices_for_region(region_name)
+        # Map region name to Firebase topic
+        region_topic_map = {
+            'Київ': 'region_kyiv_city',
+            'Київська область': 'region_kyivska',
+            'Дніпропетровська область': 'region_dnipropetrovska',
+            'Харківська область': 'region_kharkivska',
+            'Одеська область': 'region_odeska',
+            'Львівська область': 'region_lvivska',
+            'Донецька область': 'region_donetska',
+            'Запорізька область': 'region_zaporizka',
+            'Вінницька область': 'region_vinnytska',
+            'Житомирська область': 'region_zhytomyrska',
+            'Черкаська область': 'region_cherkaska',
+            'Чернігівська область': 'region_chernihivska',
+            'Полтавська область': 'region_poltavska',
+            'Сумська область': 'region_sumska',
+            'Миколаївська область': 'region_mykolaivska',
+            'Херсонська область': 'region_khersonska',
+            'Кіровоградська область': 'region_kirovohradska',
+            'Хмельницька область': 'region_khmelnytska',
+            'Рівненська область': 'region_rivnenska',
+            'Волинська область': 'region_volynska',
+            'Тернопільська область': 'region_ternopilska',
+            'Івано-Франківська область': 'region_ivano_frankivska',
+            'Закарпатська область': 'region_zakarpatska',
+            'Чернівецька область': 'region_chernivetska',
+            'Луганська область': 'region_luhanska',
+        }
         
-        # Also try matching by city/location name
-        if '(' in location:
+        # Get topic for this region
+        topic = region_topic_map.get(region_name)
+        
+        # Also try matching by city in parentheses -> extract oblast
+        if not topic and '(' in location:
             city = location.split('(')[0].strip()
-            city_devices = device_store.get_devices_for_region(city)
-            existing_ids = {d['device_id'] for d in devices}
-            for dev in city_devices:
-                if dev['device_id'] not in existing_ids:
-                    devices.append(dev)
+            # Try to find oblast from city
+            for oblast_name in region_topic_map.keys():
+                if oblast_name.replace(' область', '').lower() in location.lower():
+                    topic = region_topic_map.get(oblast_name)
+                    log.info(f"Matched city {city} to oblast {oblast_name}")
+                    break
         
-        log.info(f"Devices subscribed: {len(devices)}")
-        
-        if not devices:
+        if not topic:
+            log.info(f"No topic mapping for region: {region_name}")
             return
+
+        log.info(f"Sending telegram threat to topic: {topic}")
         
-        # Send to each device
+        # Map internal threat codes to human-readable Ukrainian for TTS
+        threat_type_readable = {
+            'каби': 'Загроза КАБ',
+            'ракети': 'Загроза ракетної атаки',
+            'дрони': 'Загроза БПЛА',
+            'вибухи': 'Вибухи',
+        }.get(threat_type, body)  # Fallback to body if not mapped
+        
+        # Send to topic
         success_count = 0
-        for device in devices:
-            try:
-                message = messaging.Message(
-                    data={
-                        'type': 'telegram_threat',
-                        'title': title,
-                        'body': body,
-                        'region': region_name,
-                        'alarm_state': 'active',
-                        'is_critical': 'true' if is_critical else 'false',
-                        'threat_type': threat_type,
-                        'timestamp': datetime.now(pytz.timezone('Europe/Kiev')).isoformat(),
-                        'click_action': 'FLUTTER_NOTIFICATION_CLICK',
+        try:
+            message = messaging.Message(
+                data={
+                    'type': 'telegram_threat',
+                    'title': title,
+                    'body': body,
+                    'location': tts_location,  # City or region for TTS
+                    'region': region_name,
+                    'alarm_state': 'active',
+                    'is_critical': 'true' if is_critical else 'false',
+                    'threat_type': threat_type_readable,  # Human-readable threat for TTS
+                    'timestamp': datetime.now(pytz.timezone('Europe/Kiev')).isoformat(),
+                    'click_action': 'FLUTTER_NOTIFICATION_CLICK',
+                },
+                android=messaging.AndroidConfig(
+                    priority='high',
+                    ttl=timedelta(seconds=300),
+                ),
+                apns=messaging.APNSConfig(
+                    headers={
+                        'apns-priority': '10',
+                        'apns-push-type': 'alert',
                     },
-                    android=messaging.AndroidConfig(
-                        priority='high',
-                        ttl=timedelta(seconds=300),
-                    ),
-                    apns=messaging.APNSConfig(
-                        headers={
-                            'apns-priority': '10',
-                            'apns-push-type': 'alert',
-                        },
-                        payload=messaging.APNSPayload(
-                            aps=messaging.Aps(
-                                alert=messaging.ApsAlert(title=title, body=body),
-                                sound='default',
-                                badge=1,
-                                content_available=True,
-                            ),
+                    payload=messaging.APNSPayload(
+                        aps=messaging.Aps(
+                            alert=messaging.ApsAlert(title=title, body=body),
+                            sound='default',
+                            badge=1,
+                            content_available=True,
                         ),
                     ),
-                    token=device['token'],
-                )
-                
-                response = messaging.send(message)
-                success_count += 1
-            except messaging.UnregisteredError:
-                device_store.remove_device(device['device_id'])
-            except Exception as e:
-                error_msg = str(e)
-                if 'NotRegistered' in error_msg or 'not registered' in error_msg.lower():
-                    device_store.remove_device(device['device_id'])
+                ),
+                topic=topic,  # Send to topic instead of individual token
+            )
+            
+            response = messaging.send(message)
+            success_count = 1
+            log.info(f"✅ Telegram threat notification sent to topic {topic}: {response}")
+        except Exception as e:
+            log.error(f"Failed to send telegram threat to topic {topic}: {e}")
         
-        log.info(f"Sent {success_count}/{len(devices)} telegram threat notifications")
+        log.info(f"Sent telegram threat notification to topic: {topic}")
         
         # Mark this region as notified to suppress duplicate alarm notifications
         if success_count > 0:
@@ -20297,20 +20364,12 @@ def send_fcm_notification(message_data: dict):
                     if keyword in place_lower:
                         region = region_name
                         log.info(f"Matched region from place: {region} (keyword: {keyword} in place: {location})")
+                        break
+                if region:
                     break
-            if region:
-                break
         
         if not region:
             log.info(f"Could not determine region for place: {location}")
-            return
-
-        # Get devices subscribed to this region
-        devices = device_store.get_devices_for_region(region)
-        log.info(f"Region: {region}, Devices found: {len(devices)}")
-        
-        if not devices:
-            log.info(f"No devices subscribed to region: {region}")
             return
 
         # Determine if critical
@@ -20348,63 +20407,123 @@ def send_fcm_notification(message_data: dict):
             body = f"{specific_location}"
             alarm_state = 'active'
 
-        # Send to each device
-        success_count = 0
-        for device in devices:
-            try:
-                message = messaging.Message(
-                    notification=messaging.Notification(
-                        title=title,
-                        body=body,
-                    ),
-                    data={
-                        'type': 'all_clear' if is_all_clear else ('rocket' if is_critical else 'drone'),
-                        'location': specific_location,  # Specific city for TTS
-                        'threat_type': readable_threat_type if readable_threat_type else 'Повітряна тривога',
-                        'region': region,
-                        'alarm_state': alarm_state,
-                        'timestamp': message_data.get('date', ''),
-                        'click_action': 'FLUTTER_NOTIFICATION_CLICK',
-                    },
-                    android=messaging.AndroidConfig(
-                        priority='high' if not is_all_clear else 'normal',  # Lower priority for all clear
-                        ttl=timedelta(seconds=300),  # 5 min TTL - old alerts not useful
-                        notification=messaging.AndroidNotification(
-                            channel_id='critical_alerts' if is_critical else ('normal_alerts' if not is_all_clear else 'all_clear_alerts'),
-                            priority='max' if is_critical else ('high' if not is_all_clear else 'default'),
-                        ),
-                    ),
-                    apns=messaging.APNSConfig(
-                        headers={
-                            'apns-priority': '10',  # Immediate delivery on iOS
-                            'apns-push-type': 'alert',
-                        },
-                        payload=messaging.APNSPayload(
-                            aps=messaging.Aps(
-                                alert=messaging.ApsAlert(title=title, body=body),
-                                sound='default',
-                                content_available=True,
-                            ),
-                        ),
-                    ),
-                    token=device['token'],
-                )
-                
-                response = messaging.send(message)
-                success_count += 1
-                log.info(f"Notification sent to device {device['device_id'][:20]}...: {response}")
-            except messaging.UnregisteredError:
-                log.warning(f"Device {device['device_id'][:20]}... has invalid token, removing...")
-                device_store.remove_device(device['device_id'])
-            except Exception as e:
-                error_msg = str(e)
-                if 'NotRegistered' in error_msg or 'not registered' in error_msg.lower():
-                    log.warning(f"Device {device['device_id'][:20]}... not registered, removing...")
-                    device_store.remove_device(device['device_id'])
-                else:
-                    log.error(f"Failed to send to device {device['device_id'][:20]}...: {e}")
+        # Send to Firebase topic for this region (more efficient than individual tokens)
+        # Topic name format: region_kyivska, region_kharkivska, etc.
+        region_topic_map = {
+            'Київ': 'region_kyiv_city',
+            'Київська область': 'region_kyivska',
+            'Дніпропетровська область': 'region_dnipropetrovska',
+            'Харківська область': 'region_kharkivska',
+            'Одеська область': 'region_odeska',
+            'Львівська область': 'region_lvivska',
+            'Донецька область': 'region_donetska',
+            'Запорізька область': 'region_zaporizka',
+            'Вінницька область': 'region_vinnytska',
+            'Житомирська область': 'region_zhytomyrska',
+            'Черкаська область': 'region_cherkaska',
+            'Чернігівська область': 'region_chernihivska',
+            'Полтавська область': 'region_poltavska',
+            'Сумська область': 'region_sumska',
+            'Миколаївська область': 'region_mykolaivska',
+            'Херсонська область': 'region_khersonska',
+            'Кіровоградська область': 'region_kirovohradska',
+            'Хмельницька область': 'region_khmelnytska',
+            'Рівненська область': 'region_rivnenska',
+            'Волинська область': 'region_volynska',
+            'Тернопільська область': 'region_ternopilska',
+            'Івано-Франківська область': 'region_ivano_frankivska',
+            'Закарпатська область': 'region_zakarpatska',
+            'Чернівецька область': 'region_chernivetska',
+            'Луганська область': 'region_luhanska',
+        }
         
-        log.info(f"Sent {success_count}/{len(devices)} notifications for region: {region}")
+        topic = region_topic_map.get(region)
+        if not topic:
+            log.warning(f"No topic mapping for region: {region}")
+            return
+        
+        log.info(f"Sending FCM to topic: {topic}")
+
+        # Send via topic (reaches all subscribed devices at once)
+        success_count = 0
+        try:
+            message = messaging.Message(
+                notification=messaging.Notification(
+                    title=title,
+                    body=body,
+                ),
+                data={
+                    'type': 'all_clear' if is_all_clear else ('rocket' if is_critical else 'drone'),
+                    'location': specific_location,  # Specific city for TTS
+                    'body': specific_location,  # Also in body for foreground handler
+                    'threat_type': readable_threat_type if readable_threat_type else 'Повітряна тривога',
+                    'region': region,
+                    'alarm_state': alarm_state,
+                    'is_critical': 'true' if is_critical else 'false',
+                    'timestamp': message_data.get('date', ''),
+                    'click_action': 'FLUTTER_NOTIFICATION_CLICK',
+                },
+                android=messaging.AndroidConfig(
+                    priority='high' if not is_all_clear else 'normal',
+                    ttl=timedelta(seconds=300),
+                    notification=messaging.AndroidNotification(
+                        channel_id='critical_alerts' if is_critical else ('normal_alerts' if not is_all_clear else 'all_clear_alerts'),
+                        priority='max' if is_critical else ('high' if not is_all_clear else 'default'),
+                    ),
+                ),
+                apns=messaging.APNSConfig(
+                    headers={
+                        'apns-priority': '10',
+                        'apns-push-type': 'alert',
+                    },
+                    payload=messaging.APNSPayload(
+                        aps=messaging.Aps(
+                            alert=messaging.ApsAlert(title=title, body=body),
+                            sound='default',
+                            content_available=True,
+                        ),
+                    ),
+                ),
+                topic=topic,  # Send to topic instead of individual token
+            )
+            
+            response = messaging.send(message)
+            success_count = 1
+            log.info(f"✅ Topic notification sent to {topic}: {response}")
+        except Exception as e:
+            log.error(f"Failed to send topic notification to {topic}: {e}")
+        
+        # Also send to 'all_regions' topic for users who want all alerts
+        try:
+            message_all = messaging.Message(
+                notification=messaging.Notification(
+                    title=title,
+                    body=body,
+                ),
+                data={
+                    'type': 'all_clear' if is_all_clear else ('rocket' if is_critical else 'drone'),
+                    'location': specific_location,
+                    'body': specific_location,
+                    'threat_type': readable_threat_type if readable_threat_type else 'Повітряна тривога',
+                    'region': region,
+                    'alarm_state': alarm_state,
+                    'is_critical': 'true' if is_critical else 'false',
+                    'timestamp': message_data.get('date', ''),
+                    'click_action': 'FLUTTER_NOTIFICATION_CLICK',
+                },
+                android=messaging.AndroidConfig(
+                    priority='high' if not is_all_clear else 'normal',
+                    ttl=timedelta(seconds=300),
+                ),
+                topic='all_regions',
+            )
+            
+            response_all = messaging.send(message_all)
+            log.info(f"✅ All-regions notification sent: {response_all}")
+        except Exception as e:
+            log.error(f"Failed to send all_regions notification: {e}")
+        
+        log.info(f"Sent notifications for region: {region} (topic: {topic})")
     except Exception as e:
         log.error(f"Error in send_fcm_notification: {e}")
 
