@@ -2227,19 +2227,20 @@
       
       .tg-banner {
         position: fixed;
-        top: 50px;
+        top: 52px;
         bottom: auto;
-        left: 0;
-        right: 0;
+        left: 8px;
+        right: 8px;
         max-width: none;
-        padding: 12px 16px;
-        border-radius: 0;
-        border-left: none;
-        border-right: none;
-        border-top: none;
+        padding: 10px 12px;
+        border-radius: 12px;
+        border: 1px solid rgba(59, 130, 246, 0.25);
+        border-left: 3px solid #3b82f6;
         margin: 0;
         animation: none;
-        background: linear-gradient(135deg, rgba(0, 136, 204, 0.2) 0%, rgba(59, 130, 246, 0.15) 100%);
+        background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.9) 100%);
+        gap: 10px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
       }
       
       .tg-banner:hover {
@@ -2247,39 +2248,52 @@
       }
       
       .tg-banner-icon {
-        width: 40px;
-        height: 40px;
-        padding: 8px;
-        border-radius: 10px;
-        animation: none;
+        width: 36px;
+        height: 36px;
+        min-width: 36px;
+        padding: 7px;
+        border-radius: 8px;
       }
       
       .tg-banner-icon svg {
-        width: 20px;
-        height: 20px;
+        width: 18px;
+        height: 18px;
+      }
+      
+      .tg-banner-text {
+        flex: 1;
+        min-width: 0;
       }
       
       .tg-banner-title {
-        font-size: 0.85rem;
+        font-size: 0.8rem;
+        margin-bottom: 2px;
+        letter-spacing: 0;
       }
       
       .tg-banner-desc {
-        display: block;
-        font-size: 0.7rem;
+        font-size: 0.68rem;
+        opacity: 0.9;
       }
       
       .tg-banner-btn {
-        padding: 8px 14px;
-        font-size: 0.75rem;
-        border-radius: 10px;
+        padding: 7px 12px;
+        font-size: 0.72rem;
+        border-radius: 8px;
+        gap: 4px;
+      }
+      
+      .tg-banner-btn .material-icons {
+        font-size: 14px;
       }
       
       .tg-banner-close {
-        display: none !important;
-      }
-      
-      .tg-banner.hidden {
         display: flex !important;
+        top: -6px;
+        right: -6px;
+        width: 22px;
+        height: 22px;
+        font-size: 12px;
       }
       
       .disclaimer-bar {
@@ -3069,7 +3083,7 @@
       padding: 12px 20px;
       background: transparent;
       border: none;
-      color: rgba(255, 255, 255, 0.7);
+      color: rgba(255, 255, 255, 0.75);
       font-size: 13px;
       font-weight: 500;
       cursor: pointer;
@@ -3077,11 +3091,23 @@
       align-items: center;
       justify-content: center;
       gap: 8px;
-      transition: all 0.3s;
+      transition: all 0.2s ease;
+      user-select: none;
+      -webkit-user-select: none;
     }
     
     .seo-toggle:hover {
       color: #00d4ff;
+      background: rgba(0, 212, 255, 0.05);
+    }
+    
+    .seo-toggle:focus {
+      outline: none;
+    }
+    
+    .seo-toggle:focus-visible {
+      outline: 2px solid rgba(0, 212, 255, 0.5);
+      outline-offset: -2px;
     }
     
     .seo-toggle-icon {
@@ -3165,26 +3191,68 @@
     
     @media (max-width: 768px) {
       .seo-content-block {
-        max-height: 40vh;
+        max-height: 45vh;
       }
       .seo-content-block.collapsed {
-        max-height: 40px;
+        max-height: 52px;
       }
       .seo-toggle {
-        padding: 10px 16px;
-        font-size: 12px;
+        padding: 14px 16px;
+        font-size: 13px;
+        min-height: 52px;
+        -webkit-tap-highlight-color: rgba(0, 212, 255, 0.15);
+        touch-action: manipulation;
+      }
+      .seo-toggle:active {
+        background: rgba(0, 212, 255, 0.08);
+      }
+      .seo-toggle-icon {
+        font-size: 24px;
+      }
+      .seo-toggle-text {
+        flex: 1;
+        text-align: left;
       }
       .seo-content-inner {
         padding: 0 16px 16px;
+        -webkit-overflow-scrolling: touch;
+      }
+      .seo-article {
+        font-size: 14px;
+        line-height: 1.8;
+      }
+      .seo-article h2 {
+        font-size: 17px;
+        margin: 24px 0 14px;
+      }
+      .seo-article h3 {
+        font-size: 15px;
+      }
+      .seo-article p {
+        margin: 12px 0;
+      }
+      .seo-article li {
+        margin: 8px 0;
+      }
+    }
+    
+    @media (max-width: 480px) {
+      .seo-content-block.collapsed {
+        max-height: 48px;
+      }
+      .seo-toggle {
+        padding: 12px 14px;
+        min-height: 48px;
+        gap: 6px;
+      }
+      .seo-toggle-icon {
+        font-size: 22px;
+      }
+      .seo-content-inner {
+        padding: 0 14px 14px;
       }
       .seo-article {
         font-size: 13px;
-      }
-      .seo-article h2 {
-        font-size: 16px;
-      }
-      .seo-article h3 {
-        font-size: 14px;
       }
     }
   </style>
@@ -4799,28 +4867,39 @@
     /* Mobile navbar optimizations */
     @media (max-width: 768px) {
       .navbar {
-        padding: 8px 12px !important;
-        gap: 8px;
+        padding: 6px 10px !important;
+        gap: 6px;
       }
       
       .logo {
-        flex-shrink: 0;
+        flex-shrink: 1;
+        min-width: 0;
+        gap: 6px !important;
       }
       
       .logo-text {
-        font-size: 0.95rem !important;
+        font-size: 0.9rem !important;
         letter-spacing: 1px !important;
       }
       
+      .navbar-stats {
+        flex-shrink: 1;
+        min-width: 0;
+      }
+      
       .live-users {
-        padding: 4px 8px !important;
-        font-size: 0.55rem !important;
-        gap: 2px !important;
-        border-radius: 8px !important;
+        padding: 3px 6px !important;
+        font-size: 0.5rem !important;
+        gap: 3px !important;
+        border-radius: 6px !important;
+      }
+      
+      .live-label {
+        display: none !important;
       }
       
       .live-count {
-        font-size: 0.75rem !important;
+        font-size: 0.7rem !important;
       }
       
       #userNicknameDisplay {
@@ -4833,17 +4912,18 @@
       
       .nav-actions {
         gap: 4px !important;
+        flex-shrink: 0;
       }
       
       .nav-actions .nav-btn {
-        padding: 5px 10px !important;
-        font-size: 0.7rem !important;
+        padding: 6px 8px !important;
+        font-size: 0.65rem !important;
         border-radius: 8px !important;
-        gap: 4px !important;
+        gap: 0 !important;
       }
       
       .nav-actions .nav-btn i {
-        font-size: 16px !important;
+        font-size: 18px !important;
       }
       
       .nav-actions .nav-btn span {
@@ -4858,46 +4938,148 @@
     
     /* Extra small screens */
     @media (max-width: 380px) {
+      .navbar {
+        padding: 5px 8px !important;
+      }
+      
       .logo-text {
-        font-size: 0.85rem !important;
+        font-size: 0.8rem !important;
+        letter-spacing: 0.5px !important;
       }
       
       .live-users {
-        padding: 3px 6px !important;
-      }
-    }
-    
-    /* SEO Footer mobile */
-    @media (max-width: 768px) {
-      #seo-footer {
-        padding: 6px 10px !important;
+        padding: 2px 5px !important;
       }
       
-      #seo-footer nav {
-        gap: 6px !important;
-        font-size: 9px !important;
+      .live-count {
+        font-size: 0.65rem !important;
       }
       
-      #seo-footer .mobile-hidden {
-        display: none !important;
+      .nav-actions .nav-btn {
+        padding: 5px 6px !important;
+      }
+      
+      .nav-actions .nav-btn i {
+        font-size: 16px !important;
+      }
+      
+      .tg-banner {
+        left: 6px;
+        right: 6px;
+        padding: 8px 10px;
+        gap: 8px;
+      }
+      
+      .tg-banner-icon {
+        width: 32px;
+        height: 32px;
+        min-width: 32px;
+        padding: 6px;
+      }
+      
+      .tg-banner-icon svg {
+        width: 16px;
+        height: 16px;
+      }
+      
+      .tg-banner-title {
+        font-size: 0.75rem;
+      }
+      
+      .tg-banner-desc {
+        font-size: 0.62rem;
+      }
+      
+      .tg-banner-btn {
+        padding: 6px 10px;
+        font-size: 0.68rem;
       }
     }
   </style>
 
   <!-- SEO FOOTER - Important for search rankings -->
-  <footer id="seo-footer" style="position:fixed;bottom:0;left:0;right:0;background:linear-gradient(180deg, transparent 0%, rgba(10,14,23,0.98) 50%, rgba(10,14,23,1) 100%);padding:12px 20px;z-index:100;pointer-events:none;border-top:1px solid rgba(0,212,255,0.08);">
-    <nav style="display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:12px;font-size:11px;opacity:0.5;pointer-events:auto;font-weight:500;">
-      <span style="color:#00d4ff;font-weight:700;letter-spacing:1px;">© 2026 NEPTUN</span>
-      <span style="color:#334155;" class="mobile-hidden">•</span>
-      <a href="/" style="color:#64748b;text-decoration:none;transition:color 0.2s;" class="mobile-hidden" title="Карта тривог України в реальному часі">Карта тривог</a>
-      <span style="color:#334155;" class="mobile-hidden">•</span>
-      <a href="/map-old" style="color:#64748b;text-decoration:none;transition:color 0.2s;" class="mobile-hidden" title="Радар шахедів онлайн">Радар шахедів</a>
-      <span style="color:#334155;" class="mobile-hidden">•</span>
-      <a href="https://t.me/+aBR79kExNQM1ZjZi" target="_blank" rel="noopener" style="color:#64748b;text-decoration:none;transition:color 0.2s;" class="mobile-hidden" title="Telegram канал NEPTUN">Telegram</a>
-      <span style="color:#334155;">•</span>
-      <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" target="_blank" rel="noopener" style="color:#3ddc84;text-decoration:none;transition:color 0.2s;font-weight:600;" title="Додаток карти тривог NEPTUN">📱 Додаток</a>
+  <footer id="seo-footer">
+    <nav class="seo-footer-nav">
+      <span class="seo-footer-brand">© 2026 NEPTUN</span>
+      <span class="seo-footer-sep desktop-only">•</span>
+      <a href="/" class="seo-footer-link desktop-only" title="Карта тривог України в реальному часі">Карта тривог</a>
+      <span class="seo-footer-sep desktop-only">•</span>
+      <a href="/map-old" class="seo-footer-link desktop-only" title="Радар шахедів онлайн">Радар шахедів</a>
+      <span class="seo-footer-sep desktop-only">•</span>
+      <a href="https://t.me/+aBR79kExNQM1ZjZi" target="_blank" rel="noopener" class="seo-footer-link desktop-only" title="Telegram канал NEPTUN">Telegram</a>
+      <span class="seo-footer-sep">•</span>
+      <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" target="_blank" rel="noopener" class="seo-footer-app" title="Додаток карти тривог NEPTUN">📱 Додаток</a>
     </nav>
   </footer>
+  
+  <style>
+    #seo-footer {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: linear-gradient(180deg, transparent 0%, rgba(10,14,23,0.95) 40%, rgba(10,14,23,1) 100%);
+      padding: 10px 16px;
+      z-index: 100;
+      pointer-events: none;
+    }
+    .seo-footer-nav {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      font-size: 11px;
+      opacity: 0.6;
+      pointer-events: auto;
+      font-weight: 500;
+    }
+    .seo-footer-brand {
+      color: #00d4ff;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    .seo-footer-sep {
+      color: #334155;
+      font-size: 8px;
+    }
+    .seo-footer-link {
+      color: #64748b;
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    .seo-footer-link:hover {
+      color: #94a3b8;
+    }
+    .seo-footer-app {
+      color: #3ddc84;
+      text-decoration: none;
+      font-weight: 600;
+      transition: color 0.2s;
+    }
+    .seo-footer-app:hover {
+      color: #4ade80;
+    }
+    
+    /* Mobile optimization */
+    @media (max-width: 640px) {
+      #seo-footer {
+        padding: 8px 12px;
+        background: linear-gradient(180deg, transparent 0%, rgba(10,14,23,0.98) 30%, rgba(10,14,23,1) 100%);
+      }
+      .seo-footer-nav {
+        gap: 8px;
+        font-size: 10px;
+        opacity: 0.5;
+      }
+      .desktop-only {
+        display: none !important;
+      }
+      .seo-footer-brand {
+        letter-spacing: 0.3px;
+      }
+    }
+  </style>
   
   <!-- Service Worker Registration -->
   <script>
