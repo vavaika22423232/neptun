@@ -20701,8 +20701,8 @@ def get_chat_messages():
         return jsonify({'error': str(e)}), 500
 
 # File to store registered nicknames with device IDs
-CHAT_NICKNAMES_FILE = os.path.join(DATA_DIR, 'chat_nicknames.json') if PERSISTENT_STORAGE else 'chat_nicknames.json'
-CHAT_BANNED_USERS_FILE = os.path.join(DATA_DIR, 'chat_banned_users.json') if PERSISTENT_STORAGE else 'chat_banned_users.json'
+CHAT_NICKNAMES_FILE = os.path.join(PERSISTENT_DATA_DIR, 'chat_nicknames.json') if PERSISTENT_DATA_DIR and os.path.isdir(PERSISTENT_DATA_DIR) else 'chat_nicknames.json'
+CHAT_BANNED_USERS_FILE = os.path.join(PERSISTENT_DATA_DIR, 'chat_banned_users.json') if PERSISTENT_DATA_DIR and os.path.isdir(PERSISTENT_DATA_DIR) else 'chat_banned_users.json'
 
 def load_chat_nicknames():
     """Load registered chat nicknames."""
