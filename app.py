@@ -20876,6 +20876,7 @@ def send_chat_message():
         new_message = {
             'id': str(uuid.uuid4()),
             'userId': user_id,
+            'deviceId': device_id,  # Store deviceId for isMe detection after nickname change
             'message': message,
             'timestamp': now.timestamp(),
             'time': now.strftime('%H:%M'),
