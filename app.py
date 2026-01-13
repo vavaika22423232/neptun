@@ -20873,6 +20873,9 @@ def send_chat_message():
         kyiv_tz = pytz.timezone('Europe/Kiev')
         now = datetime.now(kyiv_tz)
         
+        # Check if sender is a moderator
+        sender_is_moderator = is_chat_moderator(device_id)
+        
         new_message = {
             'id': str(uuid.uuid4()),
             'userId': user_id,
@@ -20880,7 +20883,8 @@ def send_chat_message():
             'message': message,
             'timestamp': now.timestamp(),
             'time': now.strftime('%H:%M'),
-            'date': now.strftime('%d.%m.%Y')
+            'date': now.strftime('%d.%m.%Y'),
+            'isModerator': sender_is_moderator  # Show moderator badge to other users
         }
         
         # Add reply reference if provided
@@ -20918,6 +20922,34 @@ def send_chat_message():
 
 # Moderator secret for message deletion
 MODERATOR_SECRET = '99446626'
+
+# List of moderator device IDs
+CHAT_MODERATORS_FILE = os.path.join(PERSISTENT_DATA_DIR, 'chat_moderators.json') if PERSISTENT_DATA_DIR and os.path.isdir(PERSISTENT_DATA_DIR) else 'chat_moderators.json'
+
+def load_chat_moderators():
+    """Load list of moderator device IDs."""
+    try:
+        if os.path.exists(CHAT_MODERATORS_FILE):
+            with open(CHAT_MODERATORS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        log.error(f"Error loading chat moderators: {e}")
+    return []
+
+def save_chat_moderators(moderators):
+    """Save list of moderator device IDs."""
+    try:
+        with open(CHAT_MODERATORS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(moderators, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log.error(f"Error saving chat moderators: {e}")
+
+def is_chat_moderator(device_id):
+    """Check if device is a chat moderator."""
+    if not device_id:
+        return False
+    moderators = load_chat_moderators()
+    return device_id in moderators
 
 @app.route('/api/chat/message/<message_id>', methods=['DELETE'])
 def delete_chat_message(message_id):
@@ -21101,6 +21133,56 @@ def get_banned_users():
         return jsonify({'users': users, 'count': len(users)})
     except Exception as e:
         log.error(f"Error getting banned users: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/chat/add-moderator', methods=['POST'])
+def add_chat_moderator():
+    """Add a device as chat moderator (requires admin secret)."""
+    try:
+        data = request.get_json() or {}
+        secret = data.get('secret', '')
+        device_id = data.get('deviceId', '')
+        
+        if secret != MODERATOR_SECRET:
+            return jsonify({'error': 'Невірний секрет'}), 403
+        
+        if not device_id:
+            return jsonify({'error': 'deviceId обовʼязковий'}), 400
+        
+        moderators = load_chat_moderators()
+        if device_id not in moderators:
+            moderators.append(device_id)
+            save_chat_moderators(moderators)
+            log.info(f"Added chat moderator: {device_id[:20]}...")
+        
+        return jsonify({'success': True, 'message': 'Модератора додано'})
+    except Exception as e:
+        log.error(f"Error adding moderator: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/chat/remove-moderator', methods=['POST'])
+def remove_chat_moderator():
+    """Remove a device from chat moderators (requires admin secret)."""
+    try:
+        data = request.get_json() or {}
+        secret = data.get('secret', '')
+        device_id = data.get('deviceId', '')
+        
+        if secret != MODERATOR_SECRET:
+            return jsonify({'error': 'Невірний секрет'}), 403
+        
+        if not device_id:
+            return jsonify({'error': 'deviceId обовʼязковий'}), 400
+        
+        moderators = load_chat_moderators()
+        if device_id in moderators:
+            moderators.remove(device_id)
+            save_chat_moderators(moderators)
+            log.info(f"Removed chat moderator: {device_id[:20]}...")
+        
+        return jsonify({'success': True, 'message': 'Модератора видалено'})
+    except Exception as e:
+        log.error(f"Error removing moderator: {e}")
         return jsonify({'error': str(e)}), 500
 
 # ============= PUSH NOTIFICATIONS FOR ALARMS =============
