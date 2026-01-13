@@ -339,6 +339,36 @@ log = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# ============= PERFORMANCE OPTIMIZATION =============
+# Enable gzip compression for faster response times
+from flask_compress import Compress
+compress = Compress()
+compress.init_app(app)
+
+# Cache control headers for static assets
+@app.after_request
+def add_cache_headers(response):
+    # Cache static assets for 7 days
+    if request.path.startswith('/static/'):
+        if any(request.path.endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.woff', '.woff2', '.ttf']):
+            response.cache_control.max_age = 604800  # 7 days
+            response.cache_control.public = True
+        elif any(request.path.endswith(ext) for ext in ['.js', '.css']):
+            response.cache_control.max_age = 86400  # 1 day
+            response.cache_control.public = True
+    # No cache for API endpoints
+    elif request.path.startswith('/api/'):
+        response.cache_control.no_cache = True
+        response.cache_control.no_store = True
+        response.cache_control.must_revalidate = True
+    # Cache HTML for 5 minutes
+    elif request.path == '/' or request.path == '/index.html':
+        response.cache_control.max_age = 300
+        response.cache_control.public = True
+    return response
+
+# ====================================================
+
 # ============= PAYMENT & EMAIL CONFIGURATION =============
 
 # WayForPay configuration

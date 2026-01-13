@@ -30,14 +30,20 @@
   <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" as="style">
   <link rel="preload" href="https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZ9hiJ-Ek-_EeA.woff2" as="font" type="font/woff2" crossorigin>
   
+  <!-- Preload Material Icons font -->
+  <link rel="preload" href="https://fonts.gstatic.com/s/materialicons/v140/flUhRq6tzZclQEJ-Vdg-IuiaDsNc.woff2" as="font" type="font/woff2" crossorigin>
+  
   <!-- DNS Prefetch for external resources -->
   <link rel="dns-prefetch" href="//fonts.googleapis.com">
   <link rel="dns-prefetch" href="//fonts.gstatic.com">
   <link rel="dns-prefetch" href="//www.googletagmanager.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   
-  <!-- Preload critical images (LCP element) -->
-  <link rel="preload" href="/static/og-image.png" as="image">
+  <!-- Preload critical SVG maps -->
+  <link rel="preload" href="/static/ukraine_states.svg" as="image">
+  
+  <!-- Prefetch API endpoint for faster data loading -->
+  <link rel="prefetch" href="/api/alarms">
   
   <!-- OPEN GRAPH / FACEBOOK - Агресивний CTR -->
   <meta property="og:type" content="website">
@@ -317,25 +323,36 @@
     .seo-content-block.collapsed { max-height: 44px; }
     /* Prevent layout shift from fonts */
     .material-icons { font-family: 'Material Icons'; font-size: 24px; width: 24px; height: 24px; display: inline-block; }
+    /* Prevent FOUC */
+    .navbar, .donate-modal, .faq-modal { opacity: 0; animation: fadeIn 0.3s ease-in-out forwards; animation-delay: 0.1s; }
+    @keyframes fadeIn { to { opacity: 1; } }
   </style>
   
   <!-- FONTS - Optimized loading with font-display: swap -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
-  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" media="print" onload="this.media='all'">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all';this.onload=null;">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons&display=block" rel="stylesheet" media="print" onload="this.media='all';this.onload=null;">
   <noscript>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
   </noscript>
   
   <!-- Google Analytics - Deferred for performance -->
-  <script async src="https://www.googletagmanager.com/gtag/js?id=G-MW867VP8WK"></script>
   <script>
+    // Defer GA loading until page interactive
     window.dataLayer = window.dataLayer || [];
     function gtag(){dataLayer.push(arguments);}
     gtag('js', new Date());
     gtag('config', 'G-MW867VP8WK');
+    
+    // Load GA script after page load
+    window.addEventListener('load', function() {
+      setTimeout(function() {
+        var script = document.createElement('script');
+        script.async = true;
+        script.src = 'https://www.googletagmanager.com/gtag/js?id=G-MW867VP8WK';
+        document.head.appendChild(script);
+      }, 2000);
+    });
     
     // Core Web Vitals tracking for SEO monitoring
     function sendToAnalytics(metric) {
@@ -4017,7 +4034,7 @@
         const typeName = THREAT_NAMES[type] || type;
         html += `
           <div class="marker-type-count">
-            <img src="/static/${iconFile}" alt="${type}">
+            <img src="/static/${iconFile}" alt="${type}" loading="lazy" decoding="async">
             <span>${typeName}: ${count}</span>
           </div>
         `;

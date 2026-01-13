@@ -1,11 +1,19 @@
-// NEPTUN Service Worker for PWA
-const CACHE_NAME = 'neptun-v1';
+// NEPTUN Service Worker for PWA - Optimized for speed
+const CACHE_NAME = 'neptun-v2-speed';
 const STATIC_ASSETS = [
   '/',
   '/static/manifest.json',
-  '/static/style.css',
-  '/static/og-image.png'
+  '/static/og-image.png',
+  '/static/icons/icon-192.png',
+  '/static/icons/icon-512.png'
 ];
+
+// Cache duration for different resource types
+const CACHE_DURATION = {
+  images: 7 * 24 * 60 * 60 * 1000, // 7 days
+  static: 24 * 60 * 60 * 1000, // 1 day
+  api: 5 * 60 * 1000 // 5 minutes
+};
 
 // Install - cache static assets
 self.addEventListener('install', (event) => {
@@ -31,39 +39,58 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch - network first, then cache
+// Fetch - cache first for static, network first for dynamic
 self.addEventListener('fetch', (event) => {
   // Skip non-GET requests
   if (event.request.method !== 'GET') return;
   
-  // Skip API requests - always fetch from network
-  if (event.request.url.includes('/api/')) return;
+  const url = new URL(event.request.url);
   
+  // Cache-first strategy for static assets (images, fonts, icons)
+  if (url.pathname.match(/\.(png|jpg|jpeg|gif|svg|woff2|woff|ttf)$/)) {
+    event.respondWith(
+      caches.match(event.request).then((cachedResponse) => {
+        if (cachedResponse) return cachedResponse;
+        
+        return fetch(event.request).then((response) => {
+          if (response.status === 200) {
+            const responseClone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, responseClone);
+            });
+          }
+          return response;
+        });
+      })
+    );
+    return;
+  }
+  
+  // Network-first for API and dynamic content
+  if (url.pathname.includes('/api/')) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => response)
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+  
+  // Stale-while-revalidate for HTML
   event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        // Clone and cache successful responses
-        if (response.status === 200) {
-          const responseClone = response.clone();
+    caches.match(event.request).then((cachedResponse) => {
+      const fetchPromise = fetch(event.request).then((networkResponse) => {
+        if (networkResponse.status === 200) {
+          const responseClone = networkResponse.clone();
           caches.open(CACHE_NAME).then((cache) => {
             cache.put(event.request, responseClone);
           });
         }
-        return response;
-      })
-      .catch(() => {
-        // Network failed - try cache
-        return caches.match(event.request).then((cachedResponse) => {
-          if (cachedResponse) {
-            return cachedResponse;
-          }
-          // Return offline page for navigation requests
-          if (event.request.mode === 'navigate') {
-            return caches.match('/');
-          }
-          return new Response('Offline', { status: 503 });
-        });
-      })
+        return networkResponse;
+      }).catch(() => cachedResponse);
+      
+      return cachedResponse || fetchPromise;
+    })
   );
 });
 
