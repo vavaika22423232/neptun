@@ -1,0 +1,28 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "neptun_alarm_app",
+            "cwd": "neptun_alarm_app",
+            "request": "launch",
+            "type": "dart"
+        },
+        {
+            "name": "neptun_alarm_app (profile mode)",
+            "cwd": "neptun_alarm_app",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "profile"
+        },
+        {
+            "name": "neptun_alarm_app (release mode)",
+            "cwd": "neptun_alarm_app",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "release"
+        }
+    ]
+}

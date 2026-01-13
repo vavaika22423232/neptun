@@ -20700,6 +20700,142 @@ def get_chat_messages():
         log.error(f"Error getting chat messages: {e}")
         return jsonify({'error': str(e)}), 500
 
+# File to store registered nicknames with device IDs
+CHAT_NICKNAMES_FILE = os.path.join(DATA_DIR, 'chat_nicknames.json') if PERSISTENT_STORAGE else 'chat_nicknames.json'
+CHAT_BANNED_USERS_FILE = os.path.join(DATA_DIR, 'chat_banned_users.json') if PERSISTENT_STORAGE else 'chat_banned_users.json'
+
+def load_chat_nicknames():
+    """Load registered chat nicknames."""
+    try:
+        if os.path.exists(CHAT_NICKNAMES_FILE):
+            with open(CHAT_NICKNAMES_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        log.error(f"Error loading chat nicknames: {e}")
+    return {}
+
+def save_chat_nicknames(nicknames):
+    """Save registered chat nicknames."""
+    try:
+        with open(CHAT_NICKNAMES_FILE, 'w', encoding='utf-8') as f:
+            json.dump(nicknames, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log.error(f"Error saving chat nicknames: {e}")
+
+def load_banned_users():
+    """Load banned users list."""
+    try:
+        if os.path.exists(CHAT_BANNED_USERS_FILE):
+            with open(CHAT_BANNED_USERS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        log.error(f"Error loading banned users: {e}")
+    return {}
+
+def save_banned_users(banned):
+    """Save banned users list."""
+    try:
+        with open(CHAT_BANNED_USERS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(banned, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log.error(f"Error saving banned users: {e}")
+
+def is_user_banned(device_id):
+    """Check if device is banned."""
+    if not device_id:
+        return False
+    banned = load_banned_users()
+    return device_id in banned
+
+def is_nickname_forbidden(nickname):
+    """Check if nickname contains forbidden words."""
+    forbidden = ['neptun', 'нептун', 'neptune', 'admin', 'адмін', 'moderator', 'модератор', 'support', 'підтримка']
+    nickname_lower = nickname.lower()
+    for word in forbidden:
+        if word in nickname_lower:
+            return True
+    return False
+
+@app.route('/api/chat/check-nickname', methods=['POST'])
+def check_chat_nickname():
+    """Check if nickname is available and valid."""
+    try:
+        data = request.get_json()
+        nickname = data.get('nickname', '').strip()
+        device_id = data.get('deviceId', '')
+        
+        if not nickname:
+            return jsonify({'available': False, 'error': 'Нікнейм не може бути порожнім'}), 400
+        
+        if len(nickname) < 3:
+            return jsonify({'available': False, 'error': 'Нікнейм має бути мінімум 3 символи'}), 400
+            
+        if len(nickname) > 20:
+            return jsonify({'available': False, 'error': 'Нікнейм не може бути довше 20 символів'}), 400
+        
+        # Check forbidden words
+        if is_nickname_forbidden(nickname):
+            return jsonify({'available': False, 'error': 'Цей нікнейм заборонено'}), 400
+        
+        # Load existing nicknames
+        nicknames = load_chat_nicknames()
+        nickname_lower = nickname.lower()
+        
+        # Check if nickname is taken by someone else
+        for existing_nickname, owner_device_id in nicknames.items():
+            if existing_nickname.lower() == nickname_lower:
+                # Allow if same device
+                if owner_device_id == device_id:
+                    return jsonify({'available': True, 'message': 'Це ваш поточний нік'})
+                else:
+                    return jsonify({'available': False, 'error': 'Цей нікнейм вже зайнятий'}), 400
+        
+        return jsonify({'available': True})
+    except Exception as e:
+        log.error(f"Error checking nickname: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/chat/register-nickname', methods=['POST'])
+def register_chat_nickname():
+    """Register a nickname for a device."""
+    try:
+        data = request.get_json()
+        nickname = data.get('nickname', '').strip()
+        device_id = data.get('deviceId', '')
+        
+        if not nickname or not device_id:
+            return jsonify({'success': False, 'error': 'Missing nickname or deviceId'}), 400
+        
+        if len(nickname) < 3 or len(nickname) > 20:
+            return jsonify({'success': False, 'error': 'Нікнейм має бути 3-20 символів'}), 400
+        
+        # Check forbidden words
+        if is_nickname_forbidden(nickname):
+            return jsonify({'success': False, 'error': 'Цей нікнейм заборонено'}), 400
+        
+        # Load existing nicknames
+        nicknames = load_chat_nicknames()
+        nickname_lower = nickname.lower()
+        
+        # Check if nickname is taken by someone else
+        for existing_nickname, owner_device_id in nicknames.items():
+            if existing_nickname.lower() == nickname_lower and owner_device_id != device_id:
+                return jsonify({'success': False, 'error': 'Цей нікнейм вже зайнятий'}), 400
+        
+        # Remove any previous nickname for this device
+        nicknames = {k: v for k, v in nicknames.items() if v != device_id}
+        
+        # Register new nickname
+        nicknames[nickname] = device_id
+        save_chat_nicknames(nicknames)
+        
+        log.info(f"Registered chat nickname: {nickname} for device {device_id[:20]}...")
+        
+        return jsonify({'success': True, 'nickname': nickname})
+    except Exception as e:
+        log.error(f"Error registering nickname: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/chat/send', methods=['POST'])
 def send_chat_message():
     """Send a new chat message."""
@@ -20707,11 +20843,27 @@ def send_chat_message():
         data = request.get_json()
         
         user_id = data.get('userId', '')
+        device_id = data.get('deviceId', '')
         message = data.get('message', '').strip()
         reply_to = data.get('replyTo')  # Optional reply to message id
         
         if not user_id or not message:
             return jsonify({'error': 'Missing userId or message'}), 400
+        
+        # Check if user is banned
+        if is_user_banned(device_id):
+            return jsonify({'error': 'Ви заблоковані в чаті', 'banned': True}), 403
+        
+        # Validate nickname ownership if device_id provided
+        if device_id:
+            nicknames = load_chat_nicknames()
+            registered_device = nicknames.get(user_id)
+            if registered_device and registered_device != device_id:
+                return jsonify({'error': 'Цей нікнейм належить іншому користувачу'}), 403
+        
+        # Check forbidden nickname
+        if is_nickname_forbidden(user_id):
+            return jsonify({'error': 'Заборонений нікнейм'}), 400
         
         # Sanitize message (basic)
         if len(message) > 1000:
@@ -20761,6 +20913,193 @@ def send_chat_message():
         })
     except Exception as e:
         log.error(f"Error sending chat message: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# Moderator secret for message deletion
+MODERATOR_SECRET = '99446626'
+
+@app.route('/api/chat/message/<message_id>', methods=['DELETE'])
+def delete_chat_message(message_id):
+    """Delete a chat message (moderator only)."""
+    try:
+        data = request.get_json() or {}
+        device_id = data.get('deviceId', '')
+        is_moderator = data.get('isModerator', False)
+        
+        messages = load_chat_messages()
+        
+        # Find the message
+        message_to_delete = next((m for m in messages if m.get('id') == message_id), None)
+        
+        if not message_to_delete:
+            return jsonify({'error': 'Повідомлення не знайдено'}), 404
+        
+        # Check permissions - either moderator or message owner
+        if is_moderator:
+            # Moderators can delete any message
+            pass
+        elif device_id:
+            # Regular users can only delete their own messages
+            nicknames = load_chat_nicknames()
+            message_user = message_to_delete.get('userId')
+            user_device = nicknames.get(message_user)
+            if user_device != device_id:
+                return jsonify({'error': 'Немає прав для видалення'}), 403
+        else:
+            return jsonify({'error': 'Немає прав для видалення'}), 403
+        
+        # Remove the message
+        messages = [m for m in messages if m.get('id') != message_id]
+        save_chat_messages(messages)
+        
+        log.info(f"Chat message {message_id} deleted by {'moderator' if is_moderator else device_id[:20]}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Повідомлення видалено'
+        })
+    except Exception as e:
+        log.error(f"Error deleting chat message: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/chat/ban-user', methods=['POST'])
+def ban_chat_user():
+    """Ban a user from chat (moderator only)."""
+    try:
+        data = request.get_json() or {}
+        target_nickname = data.get('nickname', '')
+        is_moderator = data.get('isModerator', False)
+        reason = data.get('reason', 'Порушення правил чату')
+        
+        if not is_moderator:
+            return jsonify({'error': 'Тільки модератори можуть блокувати'}), 403
+        
+        if not target_nickname:
+            return jsonify({'error': 'Вкажіть нікнейм'}), 400
+        
+        # Find device ID for this nickname
+        nicknames = load_chat_nicknames()
+        target_device_id = nicknames.get(target_nickname)
+        
+        if not target_device_id:
+            return jsonify({'error': 'Користувача не знайдено'}), 404
+        
+        # Add to banned list
+        banned = load_banned_users()
+        kyiv_tz = pytz.timezone('Europe/Kiev')
+        now = datetime.now(kyiv_tz)
+        
+        banned[target_device_id] = {
+            'nickname': target_nickname,
+            'reason': reason,
+            'bannedAt': now.isoformat(),
+            'bannedAtTimestamp': now.timestamp()
+        }
+        save_banned_users(banned)
+        
+        log.info(f"User banned: {target_nickname} (device: {target_device_id[:20]}...) - Reason: {reason}")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Користувач {target_nickname} заблокований'
+        })
+    except Exception as e:
+        log.error(f"Error banning user: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/chat/unban-user', methods=['POST'])
+def unban_chat_user():
+    """Unban a user from chat (moderator only)."""
+    try:
+        data = request.get_json() or {}
+        target_nickname = data.get('nickname', '')
+        is_moderator = data.get('isModerator', False)
+        
+        if not is_moderator:
+            return jsonify({'error': 'Тільки модератори можуть розблоковувати'}), 403
+        
+        if not target_nickname:
+            return jsonify({'error': 'Вкажіть нікнейм'}), 400
+        
+        # Find device ID for this nickname
+        nicknames = load_chat_nicknames()
+        target_device_id = nicknames.get(target_nickname)
+        
+        # Remove from banned list (check both by device and nickname)
+        banned = load_banned_users()
+        removed = False
+        
+        if target_device_id and target_device_id in banned:
+            del banned[target_device_id]
+            removed = True
+        
+        # Also check by nickname in case device ID changed
+        for device_id, info in list(banned.items()):
+            if info.get('nickname') == target_nickname:
+                del banned[device_id]
+                removed = True
+        
+        if not removed:
+            return jsonify({'error': 'Користувач не заблокований'}), 404
+        
+        save_banned_users(banned)
+        log.info(f"User unbanned: {target_nickname}")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Користувач {target_nickname} розблокований'
+        })
+    except Exception as e:
+        log.error(f"Error unbanning user: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/chat/check-ban', methods=['POST'])
+def check_user_ban():
+    """Check if current user is banned."""
+    try:
+        data = request.get_json() or {}
+        device_id = data.get('deviceId', '')
+        
+        if not device_id:
+            return jsonify({'banned': False})
+        
+        banned = load_banned_users()
+        ban_info = banned.get(device_id)
+        
+        if ban_info:
+            return jsonify({
+                'banned': True,
+                'reason': ban_info.get('reason', 'Порушення правил'),
+                'bannedAt': ban_info.get('bannedAt', '')
+            })
+        
+        return jsonify({'banned': False})
+    except Exception as e:
+        log.error(f"Error checking ban: {e}")
+        return jsonify({'banned': False})
+
+@app.route('/api/chat/banned-users', methods=['GET'])
+def get_banned_users():
+    """Get list of banned users (moderator only)."""
+    try:
+        # Check moderator via query param (simple check)
+        is_mod = request.args.get('isModerator', 'false').lower() == 'true'
+        if not is_mod:
+            return jsonify({'error': 'Доступ заборонено'}), 403
+        
+        banned = load_banned_users()
+        users = []
+        for device_id, info in banned.items():
+            users.append({
+                'deviceId': device_id[:20] + '...',
+                'nickname': info.get('nickname', 'Unknown'),
+                'reason': info.get('reason', ''),
+                'bannedAt': info.get('bannedAt', '')
+            })
+        
+        return jsonify({'users': users, 'count': len(users)})
+    except Exception as e:
+        log.error(f"Error getting banned users: {e}")
         return jsonify({'error': str(e)}), 500
 
 # ============= PUSH NOTIFICATIONS FOR ALARMS =============

@@ -1,14 +1,24 @@
 <svg width="38" height="38" viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">
     <circle cx="19" cy="19" r="19" fill="#FF4444"/>
-    <g clip-path="url(#clip0_balistic)">
-        <path d="M19 8L12 28H26L19 8Z" fill="#141921"/>
-        <path d="M19 8L19 22" stroke="#141921" stroke-width="2"/>
-        <circle cx="19" cy="25" r="2" fill="#141921"/>
-        <path d="M15 28L13 31H25L23 28" fill="#141921"/>
+    <g transform="rotate(-90, 19, 19)">
+        <!-- Корпус ракеты -->
+        <ellipse cx="19" cy="18" rx="4" ry="12" fill="#1a1a1a"/>
+        <!-- Носовой конус -->
+        <path d="M15 8 Q19 4 23 8 L23 10 Q19 8 15 10 Z" fill="#0d0d0d"/>
+        <!-- Тень на корпусе -->
+        <ellipse cx="20.5" cy="18" rx="2" ry="10" fill="#2a2a2a"/>
+        <!-- Стабилизаторы -->
+        <path d="M15 26 L12 32 L15 30 Z" fill="#0a0a0a"/>
+        <path d="M23 26 L26 32 L23 30 Z" fill="#0a0a0a"/>
+        <path d="M19 26 L19 33 L17 30 L21 30 Z" fill="#111111"/>
+        <!-- Окошко/отсек -->
+        <ellipse cx="19" cy="14" rx="2" ry="3" fill="#333333"/>
+        <!-- Полоса -->
+        <rect x="15" y="20" width="8" height="2" fill="#444444"/>
+        <!-- Сопло -->
+        <ellipse cx="19" cy="29" rx="3" ry="1.5" fill="#1a1a1a"/>
+        <!-- Огонь из сопла -->
+        <path d="M17 30 Q19 35 21 30 Q19 33 17 30" fill="#FF6600"/>
+        <path d="M18 30 Q19 33 20 30 Q19 32 18 30" fill="#FFCC00"/>
     </g>
-    <defs>
-        <clipPath id="clip0_balistic">
-            <rect width="24" height="24" fill="white" transform="translate(7 7)"/>
-        </clipPath>
-    </defs>
 </svg>
