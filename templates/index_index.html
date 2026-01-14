@@ -1717,7 +1717,7 @@
       font-weight: 600;
     }
     
-    /* User nickname in navbar */
+    /* User ID in navbar */
     .user-nickname {
       display: none;
       align-items: center;
@@ -1729,7 +1729,7 @@
       font-weight: 500;
     }
     
-    /* User nickname on the right side (near FAQ) */
+    /* User ID on the right side (near FAQ) */
     .user-nickname-right {
       display: none;
       align-items: center;
@@ -2552,146 +2552,62 @@
   </style>
 </head>
 <body>
-  <!-- NICKNAME MODAL - Required on first visit -->
-  <div id="nicknameModal" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.95);z-index:999999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(10px);">
-    <div style="background:linear-gradient(135deg, #0a0e17 0%, #0d1929 100%);padding:40px;border-radius:20px;border:2px solid rgba(0,212,255,0.3);box-shadow:0 20px 60px rgba(0,212,255,0.2);max-width:450px;width:90%;animation:slideIn 0.3s ease;">
-      <div style="text-align:center;margin-bottom:30px;">
-        <div style="color:#00d4ff;font-size:48px;font-weight:900;letter-spacing:2px;text-shadow:0 0 20px rgba(0,212,255,0.5);">NEPTUN</div>
-        <div style="color:#64748b;font-size:14px;margin-top:8px;">КАРТА ТРИВОГ УКРАЇНИ</div>
-      </div>
-      
-      <div style="margin-bottom:25px;">
-        <label style="display:block;color:#94a3b8;font-size:14px;margin-bottom:10px;font-weight:600;">👤 Введіть ваш нік:</label>
-        <input 
-          id="nicknameInput" 
-          type="text" 
-          placeholder="Наприклад: Захисник_UA" 
-          maxlength="20"
-          style="width:100%;padding:15px 20px;background:rgba(15,23,42,0.8);border:2px solid rgba(0,212,255,0.2);border-radius:12px;color:#e2e8f0;font-size:16px;font-weight:500;outline:none;transition:all 0.3s;box-sizing:border-box;"
-          onkeypress="if(event.key==='Enter') saveNickname()"
-          onfocus="this.style.borderColor='rgba(0,212,255,0.6)'; this.style.boxShadow='0 0 0 3px rgba(0,212,255,0.1)'"
-          onblur="this.style.borderColor='rgba(0,212,255,0.2)'; this.style.boxShadow='none'"
-        >
-        <div id="nicknameError" style="color:#ef4444;font-size:12px;margin-top:8px;display:none;font-weight:500;">⚠️ Нік повинен містити 3-20 символів</div>
-      </div>
-      
-      <button 
-        onclick="saveNickname()" 
-        style="width:100%;padding:16px;background:linear-gradient(135deg, #00d4ff 0%, #0891b2 100%);border:none;border-radius:12px;color:#0a0e17;font-size:16px;font-weight:700;cursor:pointer;transition:all 0.3s;text-transform:uppercase;letter-spacing:1px;box-shadow:0 4px 15px rgba(0,212,255,0.4);"
-        onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(0,212,255,0.6)'"
-        onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(0,212,255,0.4)'"
-      >
-        🚀 Почати користуватися
-      </button>
-      
-      <div style="text-align:center;margin-top:20px;color:#64748b;font-size:12px;">
-        🛡️ Ваш нік буде відображатися в списку активних користувачів
-      </div>
-    </div>
-  </div>
-
   <style>
-    @keyframes slideIn {
-      from {
-        opacity: 0;
-        transform: translateY(-30px) scale(0.95);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-      }
-    }
-    
     /* Smooth scroll behavior */
     html {
       scroll-behavior: smooth;
     }
-    
-    #nicknameInput:focus {
-      border-color: rgba(0,212,255,0.6) !important;
-      box-shadow: 0 0 0 3px rgba(0,212,255,0.1) !important;
-    }
   </style>
 
   <script>
-    // Check if nickname exists on page load
-    window.addEventListener('DOMContentLoaded', function() {
-      const savedNickname = localStorage.getItem('user_nickname');
-      if (savedNickname) {
-        document.getElementById('nicknameModal').style.display = 'none';
-      } else {
-        // Focus input after animation
-        setTimeout(() => {
-          document.getElementById('nicknameInput').focus();
-        }, 300);
+    // Generate unique user ID on first visit
+    function generateUserId() {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+      let result = 'U';
+      for (let i = 0; i < 7; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
       }
-    });
-
-    function saveNickname() {
-      const input = document.getElementById('nicknameInput');
-      const error = document.getElementById('nicknameError');
-      const nickname = input.value.trim();
-      
-      if (nickname.length < 3 || nickname.length > 20) {
-        error.style.display = 'block';
-        input.style.borderColor = '#ef4444';
-        input.focus();
-        return;
-      }
-      
-      // Save nickname
-      localStorage.setItem('user_nickname', nickname);
-      localStorage.setItem('nickname_timestamp', Date.now());
-      
-      // Animate out
-      const modal = document.getElementById('nicknameModal');
-      modal.style.animation = 'fadeOut 0.3s ease';
-      setTimeout(() => {
-        modal.style.display = 'none';
-      }, 300);
-      
-      // Send analytics
-      if (window.gtag) {
-        gtag('event', 'nickname_set', {
-          'event_category': 'user_engagement',
-          'event_label': 'nickname_length_' + nickname.length
-        });
-      }
-      
-      console.log('👤 Нік збережено:', nickname);
-      
-      // Update navbar display
-      displayNicknameInNavbar();
+      return result;
     }
 
-    // Display nickname in navbar (both left and right)
-    function displayNicknameInNavbar() {
-      const nickname = localStorage.getItem('user_nickname');
-      if (nickname) {
+    // Initialize user ID on page load
+    window.addEventListener('DOMContentLoaded', function() {
+      let userId = localStorage.getItem('user_id');
+      if (!userId) {
+        userId = generateUserId();
+        localStorage.setItem('user_id', userId);
+        localStorage.setItem('user_id_timestamp', Date.now());
+        console.log('🆔 ID користувача створено:', userId);
+      }
+      displayUserIdInNavbar();
+    });
+
+    // Display user ID in navbar (both left and right)
+    function displayUserIdInNavbar() {
+      const userId = localStorage.getItem('user_id');
+      if (userId) {
         // Left side (in stats block)
         const displayElement = document.getElementById('userNicknameDisplay');
-        const nicknameText = document.getElementById('navbarNickname');
-        if (displayElement && nicknameText) {
-          nicknameText.textContent = nickname;
+        const idText = document.getElementById('navbarNickname');
+        if (displayElement && idText) {
+          idText.textContent = userId;
           displayElement.style.display = 'flex';
           displayElement.style.alignItems = 'center';
         }
         
         // Right side (near FAQ button)
         const displayElementRight = document.getElementById('userNicknameDisplayRight');
-        const nicknameTextRight = document.getElementById('navbarNicknameRight');
-        if (displayElementRight && nicknameTextRight) {
-          nicknameTextRight.textContent = nickname;
+        const idTextRight = document.getElementById('navbarNicknameRight');
+        if (displayElementRight && idTextRight) {
+          idTextRight.textContent = userId;
           displayElementRight.style.display = 'flex';
           displayElementRight.style.alignItems = 'center';
         }
       }
     }
 
-    // Call on page load
-    document.addEventListener('DOMContentLoaded', displayNicknameInNavbar);
-    // Also call after saving nickname
-    window.addEventListener('storage', displayNicknameInNavbar);
+    // Also call after storage changes
+    window.addEventListener('storage', displayUserIdInNavbar);
 
     // Add fadeOut animation
     const style = document.createElement('style');
@@ -2848,14 +2764,14 @@
           </span>
         </div>
         <div id="userNicknameDisplay" class="user-nickname">
-          <span class="nickname-icon">👤</span>
+          <span class="nickname-icon">🆔</span>
           <span id="navbarNickname"></span>
         </div>
       </div>
     </div>
     <div class="nav-actions">
       <div id="userNicknameDisplayRight" class="user-nickname-right">
-        <span class="nickname-icon">👤</span>
+        <span class="nickname-icon">🆔</span>
         <span id="navbarNicknameRight"></span>
       </div>
       <button class="nav-btn faq-btn" onclick="toggleFAQ()" title="FAQ та правила">
@@ -4522,14 +4438,14 @@
     
     async function pingPresence() {
       try {
-        const nickname = localStorage.getItem('user_nickname') || '';
+        const userId = localStorage.getItem('user_id') || '';
         const response = await fetch('/presence', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             id: uid,
             platform: 'web',
-            nickname: nickname
+            nickname: userId
           })
         });
         

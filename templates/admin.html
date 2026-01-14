@@ -155,9 +155,9 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 <div class="menu-desc">Payment management, approvals, revenue stats</div>
 </div>
 <div class="menu-section" onclick="showSection('nicknames')">
-<div class="menu-icon">👤</div>
-<div class="menu-title">User Nicknames</div>
-<div class="menu-desc">All registered user nicknames from localStorage</div>
+<div class="menu-icon">🆔</div>
+<div class="menu-title">User IDs</div>
+<div class="menu-desc">All registered user IDs from localStorage</div>
 </div>
 <div class="menu-section" onclick="showSection('users')">
 <div class="menu-icon">👥</div>
@@ -429,19 +429,19 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 
 <div class="card">
 <div class="card-header">
-<h2 class="card-title">👤 User Nicknames</h2>
-<span class="badge info" id="nicknamesCount">0 nicknames</span>
+<h2 class="card-title">🆔 User IDs</h2>
+<span class="badge info" id="nicknamesCount">0 IDs</span>
 </div>
 <div class="card-body">
 <div style="margin-bottom:1.5rem">
 <p style="color:var(--muted);font-size:0.875rem">
-ℹ️ This section displays all user nicknames stored in localStorage. Since localStorage is client-side, 
+ℹ️ This section displays all user IDs stored in localStorage. Since localStorage is client-side, 
 this data is collected from active sessions via JavaScript. Refresh the page to see real-time updates.
 </p>
 </div>
 
 <div style="margin-bottom:1rem;display:flex;gap:1rem;align-items:center">
-<input type="text" id="nicknameSearch" placeholder="🔍 Search nicknames..." class="input" style="max-width:300px" oninput="filterNicknames()">
+<input type="text" id="nicknameSearch" placeholder="🔍 Search IDs..." class="input" style="max-width:300px" oninput="filterNicknames()">
 <button class="btn btn-primary btn-sm" onclick="loadNicknamesFromSessions()">🔄 Refresh List</button>
 </div>
 
@@ -450,7 +450,7 @@ this data is collected from active sessions via JavaScript. Refresh the page to 
 <thead style="background:rgba(59,130,246,0.1)">
 <tr>
 <th style="padding:1rem;text-align:left;font-weight:600;color:var(--text)">#</th>
-<th style="padding:1rem;text-align:left;font-weight:600;color:var(--text)">👤 Nickname</th>
+<th style="padding:1rem;text-align:left;font-weight:600;color:var(--text)">🆔 User ID</th>
 <th style="padding:1rem;text-align:left;font-weight:600;color:var(--text)">📅 First Seen</th>
 <th style="padding:1rem;text-align:left;font-weight:600;color:var(--text)">🔗 Source</th>
 </tr>
@@ -458,7 +458,7 @@ this data is collected from active sessions via JavaScript. Refresh the page to 
 <tbody id="nicknamesBody">
 <tr>
 <td colspan="4" style="padding:2rem;text-align:center;color:var(--muted)">
-Loading nicknames... Please wait.
+Loading user IDs... Please wait.
 </td>
 </tr>
 </tbody>
@@ -532,7 +532,7 @@ Loading nicknames... Please wait.
 <thead>
 <tr>
 <th>Session ID</th>
-<th>Nickname</th>
+<th>User ID</th>
 <th>IP Address</th>
 <th>Device</th>
 <th>Duration</th>
@@ -546,7 +546,7 @@ Loading nicknames... Please wait.
 <td class="truncate" style="max-width:150px" title="{{ v.id }}">{{ v.id[:16] }}...</td>
 <td>
   {% if v.nickname %}
-  <span class="badge success" title="User nickname">👤 {{ v.nickname }}</span>
+  <span class="badge success" title="User ID">🆔 {{ v.nickname }}</span>
   {% else %}
   <span style="color:#888">—</span>
   {% endif %}

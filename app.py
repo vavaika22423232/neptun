@@ -1452,6 +1452,7 @@ def send_alarm_notification(region_data, alarm_started: bool):
         # Check recent Telegram messages for threat details (drones, rockets, KABs, etc.)
         threat_detail = None
         threat_text = None  # The actual text from Telegram message
+        tts_location = None  # Specific city/location for TTS
         try:
             # Load all messages and filter recent ones (last 10 minutes)
             all_messages = MESSAGE_STORE.load()
@@ -1509,6 +1510,15 @@ def send_alarm_notification(region_data, alarm_started: bool):
                 )
                 
                 if region_match:
+                    # Витягуємо конкретну локацію (місто) з повідомлення
+                    # Формат: "Харків (Харківська обл.)" або просто текст
+                    msg_location_raw = msg.get('location', '') or ''
+                    if msg_location_raw and '(' in msg_location_raw:
+                        # Витягуємо місто до дужок
+                        tts_location = msg_location_raw.split('(')[0].strip()
+                    elif msg_location_raw:
+                        tts_location = msg_location_raw.strip()
+                    
                     # Use the FULL message text as threat_text for TTS
                     # This ensures "ЗМІ повідомляють про вибухи" is spoken as-is
                     threat_text = msg_text.strip()
@@ -1522,19 +1532,19 @@ def send_alarm_notification(region_data, alarm_started: bool):
                     
                     if 'ракет' in msg_text_lower or 'балістичн' in msg_text_lower or 'крилат' in msg_text_lower:
                         threat_detail = 'ракети'
-                        log.info(f"Found rocket threat in message for {region_name}: {threat_text}")
+                        log.info(f"Found rocket threat for {region_name} at {tts_location}: {threat_text}")
                         break
                     elif 'бпла' in msg_text_lower or 'дрон' in msg_text_lower or 'шахед' in msg_text_lower:
                         threat_detail = 'дрони'
-                        log.info(f"Found drone threat in message for {region_name}: {threat_text}")
+                        log.info(f"Found drone threat for {region_name} at {tts_location}: {threat_text}")
                         break
                     elif 'каб' in msg_text_lower:
                         threat_detail = 'каби'
-                        log.info(f"Found KAB threat in message for {region_name}: {threat_text}")
+                        log.info(f"Found KAB threat for {region_name} at {tts_location}: {threat_text}")
                         break
                     elif 'вибух' in msg_text_lower:
                         threat_detail = 'вибухи'
-                        log.info(f"Found explosion report for {region_name}: {threat_text}")
+                        log.info(f"Found explosion report for {region_name} at {tts_location}: {threat_text}")
                         break
             
             # If no specific match found, just use generic alert type
@@ -1654,6 +1664,24 @@ def send_alarm_notification(region_data, alarm_started: bool):
         
         for target_topic in topics_to_send:
             try:
+                # Визначаємо чіткий тип загрози для TTS
+                if alarm_started:
+                    if threat_detail == 'ракети':
+                        tts_threat = 'Ракетна небезпека'
+                    elif threat_detail == 'каби':
+                        tts_threat = 'Загроза КАБів'
+                    elif threat_detail == 'дрони':
+                        tts_threat = 'Загроза БПЛА'
+                    elif threat_detail == 'вибухи':
+                        tts_threat = 'Повідомляють про вибухи'
+                    else:
+                        tts_threat = 'Повітряна тривога'
+                else:
+                    tts_threat = 'Відбій тривоги'
+                
+                # Визначаємо локацію для TTS: конкретне місто або область
+                fcm_location = tts_location if tts_location else region_name
+                
                 # For Android: DATA-ONLY message so background handler can process TTS
                 # For iOS: Include notification so system shows alert (TTS won't work in background on iOS)
                 message = messaging.Message(
@@ -1662,12 +1690,12 @@ def send_alarm_notification(region_data, alarm_started: bool):
                         'type': 'alarm',
                         'title': title,
                         'body': body,
-                        'location': region_name,  # For TTS - the region/city name
-                        'region': region_name,
+                        'location': fcm_location,  # Конкретне місто або область для TTS
+                        'region': region_name,  # Область (для фільтрації)
                         'region_id': region_id,
                         'alarm_state': 'active' if alarm_started else 'ended',
                         'is_critical': 'true' if is_critical else 'false',
-                        'threat_type': body if alarm_started else 'Відбій тривоги',  # Threat description for TTS
+                        'threat_type': tts_threat,  # Чіткий тип загрози для TTS
                         'timestamp': datetime.now(pytz.timezone('Europe/Kiev')).isoformat(),
                         'click_action': 'FLUTTER_NOTIFICATION_CLICK',
                     },
@@ -1839,11 +1867,11 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
         
         # Map internal threat codes to human-readable Ukrainian for TTS
         threat_type_readable = {
-            'каби': 'Загроза КАБ',
-            'ракети': 'Загроза ракетної атаки',
+            'каби': 'Загроза КАБів',
+            'ракети': 'Ракетна небезпека',
             'дрони': 'Загроза БПЛА',
-            'вибухи': 'Вибухи',
-        }.get(threat_type, body)  # Fallback to body if not mapped
+            'вибухи': 'Повідомляють про вибухи',
+        }.get(threat_type, 'Повітряна тривога')  # Default to general alert
         
         # Send to topic
         success_count = 0
@@ -3356,6 +3384,37 @@ def extract_location_with_groq_ai(message_text: str):
         print(f"WARNING: Groq AI extraction failed: {e}")
         return None
 
+def safe_float(value, default=None):
+    """Safely convert value to float, returning default on failure."""
+    if value is None:
+        return default
+    try:
+        result = float(value)
+        # Check for NaN and Inf
+        if result != result or result == float('inf') or result == float('-inf'):
+            return default
+        return result
+    except (ValueError, TypeError):
+        return default
+
+def validate_ukraine_coords(lat, lng):
+    """Validate that coordinates are within Ukraine bounds.
+    Returns True if valid, False otherwise."""
+    if lat is None or lng is None:
+        return False
+    try:
+        lat_f = float(lat)
+        lng_f = float(lng)
+        # Ukraine bounding box (approximate)
+        # Lat: 44.0 - 52.5, Lng: 22.0 - 40.5
+        if not (44.0 <= lat_f <= 52.5):
+            return False
+        if not (22.0 <= lng_f <= 40.5):
+            return False
+        return True
+    except (ValueError, TypeError):
+        return False
+
 def geocode_with_context(city: str, oblast_key: str, district: str = None):
     """Geocode city using Photon API with oblast and optional district context.
     Returns (lat, lng, is_approx) or None."""
@@ -3410,7 +3469,13 @@ def geocode_with_context(city: str, oblast_key: str, district: str = None):
                     if region_name in state:
                         coords_arr = feature.get('geometry', {}).get('coordinates', [])
                         if coords_arr and len(coords_arr) >= 2:
-                            lat, lng = coords_arr[1], coords_arr[0]
+                            lng_val = safe_float(coords_arr[0])
+                            lat_val = safe_float(coords_arr[1])
+                            if lat_val is None or lng_val is None:
+                                continue
+                            if not validate_ukraine_coords(lat_val, lng_val):
+                                continue
+                            lat, lng = lat_val, lng_val
                             
                             # If district provided, prefer district match
                             if district:
@@ -3639,16 +3704,20 @@ def ensure_city_coords(name: str, region_hint: str = None):
                         if region_hint in state.lower() or state.lower() in region_hint:
                             coords_arr = feature.get('geometry', {}).get('coordinates', [])
                             if coords_arr and len(coords_arr) >= 2:
-                                lng, lat = coords_arr[0], coords_arr[1]
-                                print(f"DEBUG Photon: Found '{n}' in {state} -> ({lat}, {lng})")
-                                return (lat, lng, False)
+                                lng_val = safe_float(coords_arr[0])
+                                lat_val = safe_float(coords_arr[1])
+                                if lat_val is not None and lng_val is not None and validate_ukraine_coords(lat_val, lng_val):
+                                    print(f"DEBUG Photon: Found '{n}' in {state} -> ({lat_val}, {lng_val})")
+                                    return (lat_val, lng_val, False)
                     else:
                         # No region hint, use first Ukraine result
                         coords_arr = feature.get('geometry', {}).get('coordinates', [])
                         if coords_arr and len(coords_arr) >= 2:
-                            lng, lat = coords_arr[0], coords_arr[1]
-                            print(f"DEBUG Photon: Found '{n}' in {state} -> ({lat}, {lng})")
-                            return (lat, lng, False)
+                            lng_val = safe_float(coords_arr[0])
+                            lat_val = safe_float(coords_arr[1])
+                            if lat_val is not None and lng_val is not None and validate_ukraine_coords(lat_val, lng_val):
+                                print(f"DEBUG Photon: Found '{n}' in {state} -> ({lat_val}, {lng_val})")
+                                return (lat_val, lng_val, False)
         
         # Fallback to Nominatim with transliteration
         def transliterate_ua_to_latin(text):
@@ -3672,25 +3741,28 @@ def ensure_city_coords(name: str, region_hint: str = None):
         response = requests.get(nominatim_url, params=params, headers=headers, timeout=4)
         if response.ok:
             results = response.json()
-            for result in results:
-                if region_hint:
-                    address = result.get('address', {})
-                    result_state = address.get('state', '')
-                    if region_hint in result_state.lower() or result_state.lower() in region_hint:
-                        lat = float(result['lat'])
-                        lng = float(result['lon'])
-                        print(f"DEBUG Nominatim: Found '{n}' -> '{name_latin}' in {result_state} -> ({lat}, {lng})")
-                        return (lat, lng, False)
-                elif results:
-                    # No region hint, use first result
-                    first = results[0]
-                    lat = float(first['lat'])
-                    lng = float(first['lon'])
-                    print(f"DEBUG Nominatim: Found '{n}' -> '{name_latin}' -> ({lat}, {lng})")
-                    return (lat, lng, False)
-                    
-    except Exception as e:
-        print(f"DEBUG API geocoding error in ensure_city_coords: {e}")
+                    if not isinstance(results, list):
+                        results = []
+                    for result in results:
+                        if not isinstance(result, dict):
+                            continue
+                        if region_hint:
+                            address = result.get('address', {})
+                            result_state = address.get('state', '')
+                            if region_hint in result_state.lower() or result_state.lower() in region_hint:
+                                lat_val = safe_float(result.get('lat'))
+                                lng_val = safe_float(result.get('lon'))
+                                if lat_val is not None and lng_val is not None and validate_ukraine_coords(lat_val, lng_val):
+                                    print(f"DEBUG Nominatim: Found '{n}' -> '{name_latin}' in {result_state} -> ({lat_val}, {lng_val})")
+                                    return (lat_val, lng_val, False)
+                        elif results:
+                            # No region hint, use first result
+                            first = results[0] if isinstance(results[0], dict) else {}
+                            lat_val = safe_float(first.get('lat'))
+                            lng_val = safe_float(first.get('lon'))
+                            if lat_val is not None and lng_val is not None and validate_ukraine_coords(lat_val, lng_val):
+                                print(f"DEBUG Nominatim: Found '{n}' -> '{name_latin}' -> ({lat_val}, {lng_val})")
+                                return (lat_val, lng_val, False)
     # Approximate fallback: oblast center (if region hint matches an oblast name substring)
     if region_hint:
         reg_low = region_hint.lower()
@@ -3896,9 +3968,11 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                             if (country == 'Україна' or country == 'Ukraine') and region_name in state:
                                 coords_arr = feature.get('geometry', {}).get('coordinates', [])
                                 if coords_arr and len(coords_arr) >= 2:
-                                    lat, lng = coords_arr[1], coords_arr[0]
-                                    print(f"DEBUG: Photon EXPLICIT OBLAST: '{name}' in {state} -> ({lat}, {lng})")
-                                    return (lat, lng, False)
+                                    lng_val = safe_float(coords_arr[0])
+                                    lat_val = safe_float(coords_arr[1])
+                                    if lat_val is not None and lng_val is not None and validate_ukraine_coords(lat_val, lng_val):
+                                        print(f"DEBUG: Photon EXPLICIT OBLAST: '{name}' in {state} -> ({lat_val}, {lng_val})")
+                                        return (lat_val, lng_val, False)
             except Exception as e:
                 print(f"DEBUG: Explicit oblast geocoding error: {e}")
     
@@ -4220,7 +4294,13 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                         if region_name and region_name in state:
                             coords_arr = feature.get('geometry', {}).get('coordinates', [])
                             if coords_arr and len(coords_arr) >= 2:
-                                lat, lng = coords_arr[1], coords_arr[0]
+                                lng_val = safe_float(coords_arr[0])
+                                lat_val = safe_float(coords_arr[1])
+                                if lat_val is None or lng_val is None:
+                                    continue
+                                if not validate_ukraine_coords(lat_val, lng_val):
+                                    continue
+                                lat, lng = lat_val, lng_val
                                 
                                 # PRIORITY: If district hint exists, check if it matches
                                 if district_hint:
@@ -4283,17 +4363,25 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                 response = requests.get(nominatim_url, params=params, headers=headers, timeout=4)
                 if response.ok:
                     results = response.json()
+                    if not isinstance(results, list):
+                        results = []
                     for result in results:
+                        if not isinstance(result, dict):
+                            continue
                         # Verify it's in the correct oblast
                         address = result.get('address', {})
                         result_state = address.get('state', '')
                         
                         if region_name in result_state or result_state in region_name:
-                            lat = float(result['lat'])
-                            lng = float(result['lon'])
+                            lat_val = safe_float(result.get('lat'))
+                            lng_val = safe_float(result.get('lon'))
+                            if lat_val is None or lng_val is None:
+                                continue
+                            if not validate_ukraine_coords(lat_val, lng_val):
+                                continue
                             display_name = result.get('display_name', '')
-                            print(f"DEBUG: Nominatim API found '{name}' -> '{name_latin}' in {result_state} -> ({lat}, {lng})")
-                            return (lat, lng, False)
+                            print(f"DEBUG: Nominatim API found '{name}' -> '{name_latin}' in {result_state} -> ({lat_val}, {lng_val})")
+                            return (lat_val, lng_val, False)
         except Exception as e:
             print(f"DEBUG: Multi-regional API lookup error: {e}")
     
@@ -4342,14 +4430,19 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                     
                     coords_arr = feature.get('geometry', {}).get('coordinates', [])
                     if coords_arr and len(coords_arr) >= 2:
-                        lng, lat = coords_arr[0], coords_arr[1]
+                        lng_val = safe_float(coords_arr[0])
+                        lat_val = safe_float(coords_arr[1])
+                        if lat_val is None or lng_val is None:
+                            continue
+                        if not validate_ukraine_coords(lat_val, lng_val):
+                            continue
                         
                         # Check if this is a frontline oblast
                         is_frontline = any(oblast in state.lower() for oblast in frontline_oblasts)
                         
                         ukraine_results.append({
-                            'lat': lat,
-                            'lng': lng,
+                            'lat': lat_val,
+                            'lng': lng_val,
                             'state': state,
                             'is_frontline': is_frontline
                         })
@@ -4830,16 +4923,20 @@ def _find_coordinates_multiple_formats(city_name: str, detected_regions: list, e
                     if region_context and region_context in state:
                         coords_arr = feature.get('geometry', {}).get('coordinates', [])
                         if coords_arr and len(coords_arr) >= 2:
-                            lng, lat = coords_arr[0], coords_arr[1]
-                            print(f"DEBUG SpaCy Photon: Found '{city_name}' in {state} -> ({lat}, {lng})")
-                            return (lat, lng)
+                            lng_val = safe_float(coords_arr[0])
+                            lat_val = safe_float(coords_arr[1])
+                            if lat_val is not None and lng_val is not None and validate_ukraine_coords(lat_val, lng_val):
+                                print(f"DEBUG SpaCy Photon: Found '{city_name}' in {state} -> ({lat_val}, {lng_val})")
+                                return (lat_val, lng_val)
                     elif not region_context:
                         # No region filter, use first Ukraine result
                         coords_arr = feature.get('geometry', {}).get('coordinates', [])
                         if coords_arr and len(coords_arr) >= 2:
-                            lng, lat = coords_arr[0], coords_arr[1]
-                            print(f"DEBUG SpaCy Photon: Found '{city_name}' in {state} -> ({lat}, {lng})")
-                            return (lat, lng)
+                            lng_val = safe_float(coords_arr[0])
+                            lat_val = safe_float(coords_arr[1])
+                            if lat_val is not None and lng_val is not None and validate_ukraine_coords(lat_val, lng_val):
+                                print(f"DEBUG SpaCy Photon: Found '{city_name}' in {state} -> ({lat_val}, {lng_val})")
+                                return (lat_val, lng_val)
     
     except Exception as e:
         print(f"DEBUG SpaCy API lookup error: {e}")
@@ -5419,6 +5516,8 @@ KHARKIV_CITY_COORDS = {
     'золочів(харківщина)': (50.2744, 36.3592),
     'золочів': (50.2744, 36.3592),  # may conflict with Львівська обл.; disambiguation via region context
     'великий бурлук': (50.0514, 37.3903),
+    'бурлук': (50.0514, 37.3903),  # скорочена форма від "Великий Бурлук"
+    'приколотне': (49.8936, 37.2033),  # село в Харківській області
     # 'південне': Removed from Kharkiv section - this is Odesa region (46.6226, 31.1013)
     'покотилівка': (49.9345, 36.0603),
     'манченки': (49.9840, 35.9680),
@@ -9993,12 +10092,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                 if not oblast_match:
                                     continue
                                 
-                                lat = float(item.get('lat', 0))
-                                lon = float(item.get('lon', 0))
+                                lat_val = safe_float(item.get('lat'))
+                                lon_val = safe_float(item.get('lon'))
                                 
-                                if lat and lon:
-                                    coords = (lat, lon)
-                                    add_debug_log(f"Nominatim FOUND: '{search_q}' -> '{display_name[:60]}' ({lat}, {lon})", "mapstransler")
+                                if lat_val and lon_val and validate_ukraine_coords(lat_val, lon_val):
+                                    coords = (lat_val, lon_val)
+                                    add_debug_log(f"Nominatim FOUND: '{search_q}' -> '{display_name[:60]}' ({lat_val}, {lon_val})", "mapstransler")
                                     break
                             
                             if coords:
@@ -10040,10 +10139,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                 if (country == 'Україна' or country == 'Ukraine') and target_state in state:
                                     coords_arr = feature.get('geometry', {}).get('coordinates', [])
                                     if coords_arr and len(coords_arr) >= 2:
-                                        lat, lng = coords_arr[1], coords_arr[0]
-                                        coords = (lat, lng)
-                                        add_debug_log(f"Photon FOUND: '{search_name}' -> '{name_found}' ({lat}, {lng})", "mapstransler")
-                                        break
+                                        lng_val = safe_float(coords_arr[0])
+                                        lat_val = safe_float(coords_arr[1])
+                                        if lat_val and lng_val and validate_ukraine_coords(lat_val, lng_val):
+                                            coords = (lat_val, lng_val)
+                                            add_debug_log(f"Photon FOUND: '{search_name}' -> '{name_found}' ({lat_val}, {lng_val})", "mapstransler")
+                                            break
                             
                             if coords:
                                 break
@@ -10082,13 +10183,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                 if oblast_name not in admin_name and target_state.lower() not in admin_name:
                                     continue
                                 
-                                lat = float(place.get('lat', 0))
-                                lng = float(place.get('lng', 0))
+                                lat_val = safe_float(place.get('lat'))
+                                lng_val = safe_float(place.get('lng'))
                                 place_name = place.get('name', '')
                                 
-                                if lat and lng:
-                                    coords = (lat, lng)
-                                    add_debug_log(f"GeoNames FOUND: '{search_name}' -> '{place_name}' in {admin_name} ({lat}, {lng})", "mapstransler")
+                                if lat_val and lng_val and validate_ukraine_coords(lat_val, lng_val):
+                                    coords = (lat_val, lng_val)
+                                    add_debug_log(f"GeoNames FOUND: '{search_name}' -> '{place_name}' in {admin_name} ({lat_val}, {lng_val})", "mapstransler")
                                     break
                             
                             if coords:
@@ -10132,12 +10233,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             if oblast_name and oblast_name not in display_name:
                                 continue
                             
-                            lat = float(item.get('lat', 0))
-                            lon = float(item.get('lon', 0))
+                            lat_val = safe_float(item.get('lat'))
+                            lon_val = safe_float(item.get('lon'))
                             
-                            if lat and lon:
-                                coords = (lat, lon)
-                                add_debug_log(f"Nominatim LOOSE: '{city_norm_title}' -> '{display_name[:50]}' ({lat}, {lon})", "mapstransler")
+                            if lat_val and lon_val and validate_ukraine_coords(lat_val, lon_val):
+                                coords = (lat_val, lon_val)
+                                add_debug_log(f"Nominatim LOOSE: '{city_norm_title}' -> '{display_name[:50]}' ({lat_val}, {lon_val})", "mapstransler")
                                 break
                                 
                 except Exception as e:
@@ -10166,13 +10267,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         oblast_name = target_state.replace('область', '').strip().lower() if target_state else ''
                         
                         for element in data.get('elements', []):
-                            lat = element.get('lat')
-                            lon = element.get('lon')
+                            lat_val = safe_float(element.get('lat'))
+                            lon_val = safe_float(element.get('lon'))
                             tags = element.get('tags', {})
                             name = tags.get('name', '')
                             
-                            if lat and lon:
-                                coords = (lat, lon)
+                            if lat_val and lon_val and validate_ukraine_coords(lat_val, lon_val):
+                                coords = (lat_val, lon_val)
                                 add_debug_log(f"Overpass FOUND: '{city_norm_title}' -> '{name}' ({lat}, {lon})", "mapstransler")
                                 break
                                 
@@ -13562,13 +13663,15 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         }]
     m = re.search(r'(\d{1,2}\.\d+),(\d{1,3}\.\d+)', text)
     if m:
-        lat = float(m.group(1)); lng = float(m.group(2))
-        threat_type, icon = classify(text)
-        return [{
-            'id': str(mid), 'place': 'Unknown', 'lat': lat, 'lng': lng,
-            'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
-            'marker_icon': icon
-        }]
+        lat_val = safe_float(m.group(1))
+        lng_val = safe_float(m.group(2))
+        if lat_val is not None and lng_val is not None and validate_ukraine_coords(lat_val, lng_val):
+            threat_type, icon = classify(text)
+            return [{
+                'id': str(mid), 'place': 'Unknown', 'lat': lat_val, 'lng': lng_val,
+                'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
+                'marker_icon': icon
+            }]
     # Alarm cancellation always list-only
     if re.search(r'відбій\s+тривог|отбой\s+тревог', original_text.lower()):
         return [{
@@ -17492,14 +17595,18 @@ def locate_place():
         response = requests.get(nominatim_url, params=params, headers=headers, timeout=3)
         if response.ok:
             results = response.json()
-            if results and len(results) > 0:
+            if isinstance(results, list) and len(results) > 0:
                 result = results[0]
-                api_results.append({
-                    'name': result.get('display_name', query).split(',')[0],
-                    'lat': float(result['lat']),
-                    'lng': float(result['lon']),
-                    'source': 'nominatim'
-                })
+                if isinstance(result, dict):
+                    lat_val = safe_float(result.get('lat'))
+                    lng_val = safe_float(result.get('lon'))
+                    if lat_val is not None and lng_val is not None and validate_ukraine_coords(lat_val, lng_val):
+                        api_results.append({
+                            'name': result.get('display_name', query).split(',')[0],
+                            'lat': lat_val,
+                            'lng': lng_val,
+                            'source': 'nominatim'
+                        })
     except Exception as e:
         log.warning(f'Nominatim exact match error: {e}')
     
@@ -17515,17 +17622,20 @@ def locate_place():
         if response.ok:
             data = response.json()
             features = data.get('features', [])
-            if features:
+            if features and len(features) > 0:
                 feature = features[0]
-                props = feature.get('properties', {})
-                coords = feature.get('geometry', {}).get('coordinates', [])
+                props = feature.get('properties', {}) if isinstance(feature, dict) else {}
+                coords = feature.get('geometry', {}).get('coordinates', []) if isinstance(feature, dict) else []
                 if coords and len(coords) >= 2 and (props.get('country') == 'Україна' or props.get('country') == 'Ukraine'):
-                    api_results.append({
-                        'name': props.get('name', query),
-                        'lat': coords[1],
-                        'lng': coords[0],
-                        'source': 'photon'
-                    })
+                    lng_val = safe_float(coords[0])
+                    lat_val = safe_float(coords[1])
+                    if lat_val is not None and lng_val is not None and validate_ukraine_coords(lat_val, lng_val):
+                        api_results.append({
+                            'name': props.get('name', query),
+                            'lat': lat_val,
+                            'lng': lng_val,
+                            'source': 'photon'
+                        })
     except Exception as e:
         log.warning(f'Photon exact match error: {e}')
     
@@ -18971,8 +19081,10 @@ def admin_add_manual_marker():
         return jsonify({'status':'forbidden'}), 403
     payload = request.get_json(silent=True) or {}
     try:
-        lat = float(payload.get('lat'))
-        lng = float(payload.get('lng'))
+        lat = safe_float(payload.get('lat'))
+        lng = safe_float(payload.get('lng'))
+        if lat is None or lng is None:
+            raise ValueError('invalid_coordinates')
         if not (43 <= lat <= 53.8 and 21 <= lng <= 41.5):
             raise ValueError('out_of_bounds')
         text = (payload.get('text') or '').strip()
@@ -19042,8 +19154,10 @@ def admin_update_manual_marker():
         return jsonify({'status': 'error', 'error': 'missing_id'}), 400
 
     try:
-        lat = float(payload.get('lat'))
-        lng = float(payload.get('lng'))
+        lat = safe_float(payload.get('lat'))
+        lng = safe_float(payload.get('lng'))
+        if lat is None or lng is None:
+            raise ValueError('invalid_coordinates')
         if not (43 <= lat <= 53.8 and 21 <= lng <= 41.5):
             raise ValueError('out_of_bounds')
         place = (payload.get('place') or '').strip()
@@ -19056,7 +19170,7 @@ def admin_update_manual_marker():
             threat_type = 'manual'
         rotation = payload.get('rotation', 0)
         try:
-            rotation = float(rotation)
+            rotation = safe_float(rotation) or 0
         except Exception:
             rotation = 0
 
