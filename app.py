@@ -745,11 +745,22 @@ def alarm_proxy():
 def alarm_all():
     """Returns ALL alerts (State, District, Community) for detailed view with caching"""
     import time as _time
+    import hashlib
     now = _time.time()
     
     # Return fresh cached data if available
     if _alarm_all_cache['data'] and (now - _alarm_all_cache['time']) < ALARM_CACHE_TTL:
-        return jsonify(_alarm_all_cache['data'])
+        # BANDWIDTH OPTIMIZATION: Support ETag for 304 responses
+        cache_etag = _alarm_all_cache.get('etag')
+        client_etag = request.headers.get('If-None-Match')
+        if cache_etag and client_etag == cache_etag:
+            return Response(status=304, headers={'ETag': cache_etag})
+        
+        resp = jsonify(_alarm_all_cache['data'])
+        resp.headers['Cache-Control'] = 'public, max-age=30'
+        if cache_etag:
+            resp.headers['ETag'] = cache_etag
+        return resp
     
     # Try to fetch with retries
     for attempt in range(3):
@@ -772,12 +783,23 @@ def alarm_all():
                             'activeAlerts': region.get('activeAlerts')
                         })
                 
-                # Update cache
+                # Generate ETag from content hash
+                content_hash = hashlib.md5(json.dumps(result, sort_keys=True).encode()).hexdigest()[:16]
+                etag = f'"{content_hash}"'
+                
+                # Update cache with ETag
                 _alarm_all_cache['data'] = result
                 _alarm_all_cache['time'] = now
+                _alarm_all_cache['etag'] = etag
+                
+                # Check if client has same version
+                client_etag = request.headers.get('If-None-Match')
+                if client_etag == etag:
+                    return Response(status=304, headers={'ETag': etag})
                 
                 resp = jsonify(result)
-                resp.headers['Cache-Control'] = 'public, max-age=30'  # 30s client cache
+                resp.headers['Cache-Control'] = 'public, max-age=30'
+                resp.headers['ETag'] = etag
                 return resp
         except Exception as e:
             print(f"Alarm all attempt {attempt+1} failed: {e}")
