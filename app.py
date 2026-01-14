@@ -2050,26 +2050,29 @@ def monitoring_status():
 @app.route('/static/<path:filename>')
 def static_with_gzip(filename):
     """Serve static files with gzip compression support."""
-    # Rate limiting removed
-    # ...existing code...
-    """Serve static files with gzip compression support."""
     
-    # CRITICAL BANDWIDTH PROTECTION: Rate limit static files
+    # SMART BANDWIDTH PROTECTION: Only rate limit large files, not icons
     client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
-    static_requests = request_counts.get(f"{client_ip}_static", [])
-    now_time = time.time()
     
-    # Clean old requests (last 60 seconds)
-    static_requests = [req_time for req_time in static_requests if now_time - req_time < 60]
+    # Skip rate limiting for small assets (icons, SVG, small images)
+    is_small_asset = filename.endswith(('.svg', '.ico', '.woff', '.woff2')) or \
+                     filename.startswith('icon_') or \
+                     filename in ('manifest.json', 'sitemap.xml')
     
-    # Allow only 5 static file requests per minute per IP
-    if len(static_requests) >= 5:
-        print(f"[CRITICAL BANDWIDTH] Blocking static file {filename} from {client_ip} - too many requests")
-        return jsonify({'error': 'Static files rate limited - wait 1 minute'}), 429
-    
-    static_requests.append(now_time)
-    request_counts[f"{client_ip}_static"] = static_requests
-        # Rate limiting removed
+    if not is_small_asset:
+        static_requests = request_counts.get(f"{client_ip}_static", [])
+        now_time = time.time()
+        
+        # Clean old requests (last 60 seconds)
+        static_requests = [req_time for req_time in static_requests if now_time - req_time < 60]
+        
+        # Allow 30 static file requests per minute per IP (increased from 5)
+        if len(static_requests) >= 30:
+            print(f"[BANDWIDTH] Rate limiting static file {filename} from {client_ip}")
+            return jsonify({'error': 'Static files rate limited - wait 1 minute'}), 429
+        
+        static_requests.append(now_time)
+        request_counts[f"{client_ip}_static"] = static_requests
     
     # SMART BANDWIDTH PROTECTION: Block only genuinely large files (>1MB)
     try:

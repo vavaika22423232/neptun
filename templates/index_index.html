@@ -33,6 +33,9 @@
   <!-- Preload Material Icons font -->
   <link rel="preload" href="https://fonts.gstatic.com/s/materialicons/v140/flUhRq6tzZclQEJ-Vdg-IuiaDsNc.woff2" as="font" type="font/woff2" crossorigin>
   
+  <!-- Preload Orbitron font for splashscreen -->
+  <link rel="preload" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&display=swap" as="style">
+  
   <!-- DNS Prefetch for external resources -->
   <link rel="dns-prefetch" href="//fonts.googleapis.com">
   <link rel="dns-prefetch" href="//fonts.gstatic.com">
@@ -326,13 +329,153 @@
     /* Prevent FOUC */
     .navbar, .donate-modal, .faq-modal { opacity: 0; animation: fadeIn 0.3s ease-in-out forwards; animation-delay: 0.1s; }
     @keyframes fadeIn { to { opacity: 1; } }
+    
+    /* === SPLASHSCREEN === */
+    #splashscreen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #0a0e17 0%, #0d1929 50%, #0a192f 100%);
+      z-index: 99999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.6s ease, visibility 0.6s ease;
+    }
+    #splashscreen.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+    .splash-logo {
+      font-family: 'Orbitron', -apple-system, sans-serif;
+      font-size: clamp(36px, 10vw, 72px);
+      font-weight: 900;
+      background: linear-gradient(135deg, #00d4ff 0%, #0099cc 50%, #00d4ff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: 8px;
+      animation: logoGlow 2s ease-in-out infinite;
+      text-shadow: 0 0 60px rgba(0, 212, 255, 0.5);
+    }
+    @keyframes logoGlow {
+      0%, 100% { filter: drop-shadow(0 0 20px rgba(0, 212, 255, 0.6)); }
+      50% { filter: drop-shadow(0 0 40px rgba(0, 212, 255, 0.9)); }
+    }
+    .splash-subtitle {
+      font-family: 'Exo 2', 'Inter', sans-serif;
+      font-size: clamp(10px, 2.5vw, 14px);
+      color: rgba(0, 212, 255, 0.7);
+      letter-spacing: 6px;
+      margin-top: 12px;
+      text-transform: uppercase;
+    }
+    /* Radar animation */
+    .splash-radar {
+      position: relative;
+      width: clamp(120px, 30vw, 200px);
+      height: clamp(120px, 30vw, 200px);
+      margin-bottom: 30px;
+    }
+    .radar-circle {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      border: 2px solid rgba(0, 212, 255, 0.3);
+      border-radius: 50%;
+      animation: radarPulse 2s ease-out infinite;
+    }
+    .radar-circle:nth-child(1) { width: 100%; height: 100%; animation-delay: 0s; }
+    .radar-circle:nth-child(2) { width: 70%; height: 70%; animation-delay: 0.4s; }
+    .radar-circle:nth-child(3) { width: 40%; height: 40%; animation-delay: 0.8s; }
+    @keyframes radarPulse {
+      0% { transform: translate(-50%, -50%) scale(0.8); opacity: 1; border-color: rgba(0, 212, 255, 0.6); }
+      100% { transform: translate(-50%, -50%) scale(1.3); opacity: 0; border-color: rgba(0, 212, 255, 0); }
+    }
+    .radar-sweep {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 50%;
+      height: 2px;
+      background: linear-gradient(90deg, rgba(0, 212, 255, 0.8), transparent);
+      transform-origin: left center;
+      animation: radarSweep 2s linear infinite;
+    }
+    @keyframes radarSweep {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .radar-center {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 12px;
+      height: 12px;
+      background: #00d4ff;
+      border-radius: 50%;
+      box-shadow: 0 0 20px rgba(0, 212, 255, 0.8);
+    }
+    /* Loading progress */
+    .splash-progress {
+      width: clamp(150px, 40vw, 250px);
+      height: 3px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 3px;
+      margin-top: 30px;
+      overflow: hidden;
+    }
+    .splash-progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, #00d4ff, #0099cc, #00d4ff);
+      background-size: 200% 100%;
+      animation: progressMove 1.5s ease-in-out infinite, progressGrow 2s ease-out forwards;
+      width: 0%;
+    }
+    @keyframes progressMove {
+      0% { background-position: 100% 0; }
+      100% { background-position: -100% 0; }
+    }
+    @keyframes progressGrow {
+      0% { width: 0%; }
+      50% { width: 70%; }
+      100% { width: 100%; }
+    }
+    .splash-status {
+      font-family: 'Inter', sans-serif;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.5);
+      margin-top: 15px;
+      letter-spacing: 1px;
+    }
+    /* Grid background for splash */
+    .splash-grid {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-image: 
+        linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
+      background-size: 50px 50px;
+      pointer-events: none;
+    }
   </style>
   
   <!-- FONTS - Optimized loading with font-display: swap -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all';this.onload=null;">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons&display=block" rel="stylesheet" media="print" onload="this.media='all';this.onload=null;">
   <noscript>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
   </noscript>
   
@@ -1640,12 +1783,12 @@
     
     .donate-modal {
       width: min(420px, 92vw);
-      background: rgba(15, 23, 42, 0.85);
-      border: 1px solid rgba(103, 232, 249, 0.15);
+      background: #0f172a;
+      border: 1px solid rgba(103, 232, 249, 0.25);
       border-radius: 20px;
       padding: 1.75rem;
       position: relative;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
       animation: modalSlide 0.3s ease;
     }
     
@@ -1983,95 +2126,6 @@
       to { opacity: 0; }
     }
     
-    /* Disclaimer bar - minimal glass */
-    .disclaimer-bar {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      z-index: 1100;
-      display: flex;
-      align-items: center;
-      gap: 0.85rem;
-      padding: 0.75rem 1rem;
-      background: rgba(15, 23, 42, 0.85);
-      border-top: 1px solid rgba(251, 191, 36, 0.2);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      font-size: 0.7rem;
-      color: #94a3b8;
-      line-height: 1.5;
-    }
-    
-    .disclaimer-bar.hidden { display: none !important; }
-    
-    .disclaimer-bar b { color: #fbbf24; font-weight: 600; }
-    
-    .disclaimer-icon {
-      flex: 0 0 auto;
-      width: 32px;
-      height: 32px;
-      border-radius: 10px;
-      background: linear-gradient(135deg, #f59e0b, #d97706);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 16px;
-      color: #fff;
-    }
-    
-    .disclaimer-text { flex: 1; }
-    
-    .disclaimer-close {
-      background: rgba(148, 163, 184, 0.15);
-      border: 1px solid rgba(148, 163, 184, 0.2);
-      color: #94a3b8;
-      width: 30px;
-      height: 30px;
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      font-size: 14px;
-      transition: all 0.2s;
-    }
-    
-    .disclaimer-close:hover {
-      background: rgba(251, 191, 36, 0.2);
-      border-color: rgba(251, 191, 36, 0.3);
-      color: #fbbf24;
-    }
-    
-    .disclaimer-actions {
-      margin-top: 0.4rem;
-      display: flex;
-      gap: 0.5rem;
-    }
-    
-    .disclaimer-actions a {
-      text-decoration: none;
-      background: rgba(148, 163, 184, 0.1);
-      color: #e2e8f0;
-      font-size: 0.65rem;
-      padding: 0.35rem 0.6rem;
-      border-radius: 6px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      font-weight: 600;
-      display: flex;
-      align-items: center;
-      gap: 0.25rem;
-      border: 1px solid rgba(148, 163, 184, 0.15);
-      transition: all 0.2s;
-    }
-    
-    .disclaimer-actions a:hover {
-      background: rgba(251, 191, 36, 0.15);
-      border-color: rgba(251, 191, 36, 0.25);
-      color: #fbbf24;
-    }
-    
     /* Telegram Banner - HIGH CONVERSION WARNING STYLE */
     @keyframes tg-urgent-pulse {
       0%, 100% { box-shadow: 0 0 0 0 rgba(251, 146, 60, 0.5), 0 4px 20px rgba(0, 0, 0, 0.3); }
@@ -2384,17 +2438,6 @@
         height: 18px;
         font-size: 11px;
       }
-      
-      .disclaimer-bar {
-        font-size: 0.7rem;
-        padding: 0.6rem 0.8rem;
-      }
-      
-      .disclaimer-icon {
-        width: 28px;
-        height: 28px;
-        font-size: 14px;
-      }
     }
     
     /* Adjust map container for navbar */
@@ -2659,6 +2702,62 @@
       }
     `;
     document.head.appendChild(style);
+  </script>
+
+  <!-- SPLASHSCREEN -->
+  <div id="splashscreen">
+    <div class="splash-grid"></div>
+    <div class="splash-radar">
+      <div class="radar-circle"></div>
+      <div class="radar-circle"></div>
+      <div class="radar-circle"></div>
+      <div class="radar-sweep"></div>
+      <div class="radar-center"></div>
+    </div>
+    <div class="splash-logo">NEPTUN</div>
+    <div class="splash-subtitle">Карта тривог України</div>
+    <div class="splash-progress">
+      <div class="splash-progress-bar"></div>
+    </div>
+    <div class="splash-status">Завантаження даних...</div>
+  </div>
+  
+  <script>
+    // Hide splashscreen when page is fully loaded
+    (function() {
+      function hideSplash() {
+        const splash = document.getElementById('splashscreen');
+        if (splash) {
+          // Minimum display time of 1.5 seconds for branding
+          const minDisplayTime = 1500;
+          const startTime = window.splashStartTime || Date.now();
+          const elapsed = Date.now() - startTime;
+          const remaining = Math.max(0, minDisplayTime - elapsed);
+          
+          setTimeout(function() {
+            splash.classList.add('hidden');
+            // Remove from DOM after animation
+            setTimeout(function() {
+              if (splash.parentNode) {
+                splash.parentNode.removeChild(splash);
+              }
+            }, 600);
+          }, remaining);
+        }
+      }
+      
+      window.splashStartTime = Date.now();
+      
+      // Hide on window load
+      if (document.readyState === 'complete') {
+        hideSplash();
+      } else {
+        window.addEventListener('load', hideSplash);
+      }
+      
+      // Fallback: hide after 4 seconds max
+      setTimeout(hideSplash, 4000);
+    })();
   </script>
 
   <!-- MAINTENANCE OVERLAY for 502 errors -->
@@ -2967,19 +3066,6 @@
       </svg>
     </div>
   </a>
-  
-  <!-- Disclaimer Bar -->
-  <div id="disclaimerBar" class="disclaimer-bar" style="display:none;">
-    <div class="disclaimer-icon">!</div>
-    <div class="disclaimer-text">
-      <div><b>УВАГА:</b> Дані формуються автоматично з відкритих джерел (Telegram тощо) та можуть містити похибки. Сервіс <b>не є</b> офіційною системою оповіщення.</div>
-      <div class="disclaimer-actions">
-        <a href="#about"><span class="material-icons" style="font-size:13px;">info</span> Докладніше</a>
-        <a href="https://t.me/+zFxu_4W_ishiNjli" target="_blank"><span class="material-icons" style="font-size:13px;">group</span> Спільнота</a>
-      </div>
-    </div>
-    <button class="disclaimer-close" onclick="hideDisclaimer()">×</button>
-  </div>
   
   <div id="map-container">
     <!-- SEO H1 - Візуально прихований але видимий для Google -->
@@ -4498,6 +4584,8 @@
     }
     
     // ========== DONATE FUNCTIONS ==========
+    let donateJustOpened = false;
+    
     function toggleDonate(show = null) {
       const modal = document.getElementById('donateModal');
       if (modal) {
@@ -4505,8 +4593,17 @@
           modal.classList.remove('active');
         } else if (show === true) {
           modal.classList.add('active');
+          donateJustOpened = true;
+          setTimeout(() => { donateJustOpened = false; }, 100);
         } else {
-          modal.classList.toggle('active');
+          // Toggle
+          if (modal.classList.contains('active')) {
+            modal.classList.remove('active');
+          } else {
+            modal.classList.add('active');
+            donateJustOpened = true;
+            setTimeout(() => { donateJustOpened = false; }, 100);
+          }
         }
       }
     }
@@ -4547,21 +4644,9 @@
       window.open('https://send.monobank.ua/jar/6Vi9TVzJZQ', '_blank');
     }
     
-    // ========== DISCLAIMER & TELEGRAM BANNER ==========
-    function hideDisclaimer() {
-      const bar = document.getElementById('disclaimerBar');
-      if (bar) {
-        bar.classList.add('hidden');
-        localStorage.setItem('disclaimer_hidden', 'true');
-      }
-    }
-    
+    // ========== TELEGRAM BANNER ==========
     function initBanners() {
-      // Show disclaimer if not hidden
-      if (!localStorage.getItem('disclaimer_hidden')) {
-        const bar = document.getElementById('disclaimerBar');
-        if (bar) bar.style.display = 'flex';
-      }
+      // Initialize banners
     }
     
     // Init
