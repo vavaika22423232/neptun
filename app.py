@@ -3741,28 +3741,30 @@ def ensure_city_coords(name: str, region_hint: str = None):
         response = requests.get(nominatim_url, params=params, headers=headers, timeout=4)
         if response.ok:
             results = response.json()
-                    if not isinstance(results, list):
-                        results = []
-                    for result in results:
-                        if not isinstance(result, dict):
-                            continue
-                        if region_hint:
-                            address = result.get('address', {})
-                            result_state = address.get('state', '')
-                            if region_hint in result_state.lower() or result_state.lower() in region_hint:
-                                lat_val = safe_float(result.get('lat'))
-                                lng_val = safe_float(result.get('lon'))
-                                if lat_val is not None and lng_val is not None and validate_ukraine_coords(lat_val, lng_val):
-                                    print(f"DEBUG Nominatim: Found '{n}' -> '{name_latin}' in {result_state} -> ({lat_val}, {lng_val})")
-                                    return (lat_val, lng_val, False)
-                        elif results:
-                            # No region hint, use first result
-                            first = results[0] if isinstance(results[0], dict) else {}
-                            lat_val = safe_float(first.get('lat'))
-                            lng_val = safe_float(first.get('lon'))
-                            if lat_val is not None and lng_val is not None and validate_ukraine_coords(lat_val, lng_val):
-                                print(f"DEBUG Nominatim: Found '{n}' -> '{name_latin}' -> ({lat_val}, {lng_val})")
-                                return (lat_val, lng_val, False)
+            if not isinstance(results, list):
+                results = []
+            for result in results:
+                if not isinstance(result, dict):
+                    continue
+                if region_hint:
+                    address = result.get('address', {})
+                    result_state = address.get('state', '')
+                    if region_hint in result_state.lower() or result_state.lower() in region_hint:
+                        lat_val = safe_float(result.get('lat'))
+                        lng_val = safe_float(result.get('lon'))
+                        if lat_val is not None and lng_val is not None and validate_ukraine_coords(lat_val, lng_val):
+                            print(f"DEBUG Nominatim: Found '{n}' -> '{name_latin}' in {result_state} -> ({lat_val}, {lng_val})")
+                            return (lat_val, lng_val, False)
+                else:
+                    # No region hint, use first valid result
+                    lat_val = safe_float(result.get('lat'))
+                    lng_val = safe_float(result.get('lon'))
+                    if lat_val is not None and lng_val is not None and validate_ukraine_coords(lat_val, lng_val):
+                        print(f"DEBUG Nominatim: Found '{n}' -> '{name_latin}' -> ({lat_val}, {lng_val})")
+                        return (lat_val, lng_val, False)
+    except Exception as e:
+        print(f"DEBUG: Geocoding error for '{name}': {e}")
+    
     # Approximate fallback: oblast center (if region hint matches an oblast name substring)
     if region_hint:
         reg_low = region_hint.lower()
