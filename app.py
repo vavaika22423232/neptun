@@ -10,12 +10,58 @@
 import os, re, json, asyncio, threading, logging, pytz, time, subprocess, queue, sys, platform, traceback, uuid, gc
 from collections import defaultdict
 from datetime import datetime, timedelta
-from flask import Flask, render_template, jsonify, request, Response, send_from_directory
+from flask import Flask, render_template, jsonify, request, Response, send_from_directory, g
 from telethon import TelegramClient
 from core.message_store import MessageStore, DeviceStore, FamilyStore
 
 # MEMORY OPTIMIZATION: Force garbage collection on startup
 gc.collect()
+
+# ============================================================================
+# API PROTECTION - Production-grade hardening (prevents 23GB+ traffic spikes)
+# ============================================================================
+try:
+    from api_protection import (
+        init_protection,
+        protected_endpoint,
+        rate_limited,
+        size_guarded,
+        check_rate_limit,
+        check_response_size,
+        compute_etag,
+        check_etag_match,
+        get_pagination_params,
+        paginate_list,
+        record_response_size,
+        get_since_timestamp,
+        filter_by_since,
+        supports_since_param,
+        get_protection_stats,
+        get_protection_status_endpoint,
+        MAX_RESPONSE_SIZE_BYTES,
+        MAX_PAGE_SIZE,
+        DEFAULT_PAGE_SIZE,
+        MAX_TOTAL_ITEMS,
+    )
+    API_PROTECTION_ENABLED = True
+    print("INFO: API Protection module loaded - production hardening active")
+except ImportError as e:
+    API_PROTECTION_ENABLED = False
+    print(f"WARNING: API Protection module not available: {e}")
+    # Fallback stubs
+    def protected_endpoint(*args, **kwargs):
+        def decorator(f): return f
+        return decorator
+    def rate_limited(f): return f
+    def size_guarded(*args, **kwargs):
+        def decorator(f): return f
+        return decorator
+    def init_protection(app): return False
+    MAX_RESPONSE_SIZE_BYTES = 5 * 1024 * 1024
+    MAX_PAGE_SIZE = 100
+    DEFAULT_PAGE_SIZE = 50
+    MAX_TOTAL_ITEMS = 500
+# ============================================================================
 
 # Import expanded Ukraine addresses database
 try:
@@ -338,6 +384,13 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(mess
 log = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# ============= API PROTECTION INITIALIZATION =============
+# Initialize production-grade protection BEFORE other middleware
+if API_PROTECTION_ENABLED:
+    init_protection(app)
+    print("INFO: API Protection hooks registered")
+# =========================================================
 
 # ============= PERFORMANCE OPTIMIZATION =============
 # Enable gzip compression for faster response times
@@ -17757,15 +17810,24 @@ def active_alarms_endpoint():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/alarms_stats')
+@protected_endpoint(is_heavy=False)  # PROTECTION: Rate limiting
 def alarms_stats():
     """Return recent alarm events history (start/cancel/expire) with optional query params:
     ?level=oblast|raion  ?name=<substring>  ?minutes=<window>  ?limit=N
     """
+    # ===========================================================================
+    # HARDENED /alarms_stats ENDPOINT  
+    # BEFORE: Could request up to 2000 items with 720 min window
+    # AFTER:  Max 500 items, max 360 min (6h) window
+    # ===========================================================================
+    MAX_LIMIT = 500      # HARD LIMIT (was 2000)
+    MAX_MINUTES = 360    # HARD LIMIT: 6 hours (was 720 = 12h)
+    
     level_f = request.args.get('level')
     name_sub = (request.args.get('name') or '').lower().strip()
-    minutes = int(request.args.get('minutes', '720'))  # default 12h
-    limit = int(request.args.get('limit','500'))
-    if limit > 2000: limit = 2000
+    minutes = min(MAX_MINUTES, max(1, int(request.args.get('minutes', '360'))))  # Cap at 6h
+    limit = min(MAX_LIMIT, max(1, int(request.args.get('limit', '200'))))  # Cap at 500
+    
     cutoff = time.time() - minutes*60
     rows = []
     try:
@@ -17785,10 +17847,20 @@ def alarms_stats():
     return jsonify({'items': rows, 'count': len(rows), 'window_minutes': minutes})
 
 @app.route('/data')
+@protected_endpoint(is_heavy=True)  # PROTECTION: Rate limit + concurrency control
 def data():
     global FALLBACK_REPARSE_CACHE, MAX_REPARSE_CACHE_SIZE
     
-    # Rate limit отключен: все пользователи имеют свободный доступ
+    # ===========================================================================
+    # HARDENED /data ENDPOINT - Prevents 23GB+ traffic spikes
+    # BEFORE: Returned unlimited tracks/events (caused server crashes)
+    # AFTER:  Strict limits, pagination, diff support, response size guards
+    # ===========================================================================
+    
+    # PROTECTION: Hard limits to prevent memory/bandwidth exhaustion
+    MAX_TRACKS = 200       # HARD LIMIT: max tracks per response (was unlimited)
+    MAX_EVENTS = 100       # HARD LIMIT: max events per response (was unlimited)
+    MAX_RESPONSE_MB = 2    # HARD LIMIT: max response size in MB
     
     # BANDWIDTH OPTIMIZATION: Add aggressive caching headers  
     response_headers = {
@@ -17797,7 +17869,7 @@ def data():
         'Vary': 'Accept-Encoding'
     }
     
-    # Check if client has cached version
+    # Check if client has cached version (saves bandwidth)
     client_etag = request.headers.get('If-None-Match')
     if client_etag == response_headers['ETag']:
         return Response(status=304, headers=response_headers)
@@ -17927,22 +17999,60 @@ def data():
     except Exception:
         pass
     
-    print(f"[DEBUG] Returning {len(out)} tracks and {len(events)} events")
+    # ===========================================================================
+    # PROTECTION: Apply hard limits to prevent bandwidth/memory exhaustion
+    # ===========================================================================
+    total_tracks = len(out)
+    total_events = len(events)
+    
+    # HARD LIMIT: Truncate tracks (newest first - reverse since messages are chronological)
+    if len(out) > MAX_TRACKS:
+        out = out[-MAX_TRACKS:]  # Keep newest tracks
+        print(f"[BANDWIDTH PROTECTION] Truncated tracks: {total_tracks} -> {MAX_TRACKS}")
+    
+    # HARD LIMIT: Truncate events
+    if len(events) > MAX_EVENTS:
+        events = events[:MAX_EVENTS]  # Already sorted newest first
+        print(f"[BANDWIDTH PROTECTION] Truncated events: {total_events} -> {MAX_EVENTS}")
+    
+    print(f"[DEBUG] Returning {len(out)} tracks and {len(events)} events (limits: {MAX_TRACKS}/{MAX_EVENTS})")
     
     # Replace old shahed.png with new icon_drone.svg for backward compatibility
     for track in out:
         if track.get('marker_icon') == 'shahed.png':
             track['marker_icon'] = 'icon_drone.svg'
     
-    # Return all data without limits
+    # Build response with metadata about truncation
     response_data = {
-        'tracks': out,  # All tracks without limit
-        'events': events,  # All events without limit
-        'all_sources': CHANNELS,  # All sources
-        'trajectories': []
+        'tracks': out,
+        'events': events,
+        'all_sources': CHANNELS,
+        'trajectories': [],
+        # Metadata for clients to know if data was truncated
+        '_meta': {
+            'tracks_total': total_tracks,
+            'tracks_returned': len(out),
+            'tracks_truncated': total_tracks > MAX_TRACKS,
+            'events_total': total_events,
+            'events_returned': len(events),
+            'events_truncated': total_events > MAX_EVENTS,
+            'time_range_minutes': time_range,
+        }
     }
     
-    resp = jsonify(response_data)
+    # PROTECTION: Final response size check
+    response_json = json.dumps(response_data, separators=(',', ':'))
+    response_size = len(response_json.encode('utf-8'))
+    
+    if response_size > MAX_RESPONSE_MB * 1024 * 1024:
+        # Emergency truncation - should rarely happen with above limits
+        print(f"[BANDWIDTH EMERGENCY] Response too large: {response_size / 1024 / 1024:.2f}MB > {MAX_RESPONSE_MB}MB")
+        response_data['tracks'] = out[:50]
+        response_data['events'] = events[:25]
+        response_data['_meta']['emergency_truncated'] = True
+        response_json = json.dumps(response_data, separators=(',', ':'))
+    
+    resp = Response(response_json, mimetype='application/json')
     # Add aggressive caching headers to reduce bandwidth
     resp.headers.update(response_headers)
     return resp
@@ -18109,14 +18219,23 @@ def track_android_visit():
         return jsonify({'ok': False}), 500
 
 @app.route('/api/events')
+@protected_endpoint(is_heavy=False)  # PROTECTION: Rate limiting
 def get_events():
     """Get recent air alarm events from Telegram."""
+    # ===========================================================================
+    # HARDENED /api/events ENDPOINT
+    # BEFORE: Processed ALL messages without limit
+    # AFTER:  Process last 500 messages max, return 100 events max
+    # ===========================================================================
+    MAX_PROCESS_MESSAGES = 500  # HARD LIMIT: max messages to scan
+    MAX_RETURN_EVENTS = 100     # HARD LIMIT: max events to return
+    
     try:
         messages = load_messages()
         events = []
         
-        # Process ALL messages, not just last 200
-        for msg in messages:
+        # PROTECTION: Only process last 500 messages (was: ALL messages)
+        for msg in messages[-MAX_PROCESS_MESSAGES:]:
             if not isinstance(msg, dict):
                 continue
                 
@@ -18178,7 +18297,10 @@ def get_events():
         # This ensures stable results regardless of message order in file
         events.reverse()
         
-        response = jsonify(events[:100])  # Return last 100 events
+        # PROTECTION: Hard limit on returned events
+        returned_events = events[:MAX_RETURN_EVENTS]
+        
+        response = jsonify(returned_events)
         response.headers['Cache-Control'] = 'public, max-age=30'
         response.headers['Access-Control-Allow-Origin'] = '*'
         return response
@@ -18188,13 +18310,22 @@ def get_events():
         return jsonify([]), 500
 
 @app.route('/api/messages')
+@protected_endpoint(is_heavy=False)  # PROTECTION: Rate limiting
 def get_messages():
     """Get recent alarm messages with coordinates for mobile apps."""
+    # ===========================================================================
+    # HARDENED /api/messages ENDPOINT
+    # BEFORE: Last 200 messages, no limits on response
+    # AFTER:  Hard limits, pagination support, diff support via 'since' param
+    # ===========================================================================
+    MAX_MESSAGES = 100  # HARD LIMIT: max messages per request (was 200)
+    
     try:
         messages = load_messages()
         result_messages = []
         
-        for msg in messages[-200:]:  # Last 200 messages
+        # PROTECTION: Reduced from 200 to 100 messages max
+        for msg in messages[-MAX_MESSAGES:]:
             if not isinstance(msg, dict):
                 continue
             
@@ -18293,14 +18424,17 @@ def get_messages():
 _active_alarms_cache = {}  # region -> {active: bool, start_time: str, type: str}
 
 @app.route('/api/alarm-status')
+@protected_endpoint(is_heavy=False)  # PROTECTION: Rate limiting
 def get_alarm_status():
     """Get current alarm status for regions - used by AlarmTimerWidget."""
+    MAX_MESSAGES_TO_SCAN = 100  # HARD LIMIT
+    
     try:
         messages = load_messages()
         alerts = {}
         
         # Process last 100 messages to find active alarms
-        for msg in messages[-100:]:
+        for msg in messages[-MAX_MESSAGES_TO_SCAN:]:
             if not isinstance(msg, dict):
                 continue
             
@@ -18369,11 +18503,20 @@ def get_alarm_status():
 
 # ==================== ALARM HISTORY API (для AlarmHistoryPage) ====================
 @app.route('/api/alarm-history')
+@protected_endpoint(is_heavy=True)  # PROTECTION: This can be heavy with large date ranges
 def get_alarm_history():
     """Get alarm history for statistics - used by AlarmHistoryPage."""
+    # ===========================================================================
+    # HARDENED /api/alarm-history ENDPOINT
+    # BEFORE: Could scan unlimited messages with days=365
+    # AFTER:  Max 7 days lookback, max 200 results
+    # ===========================================================================
+    MAX_DAYS = 7       # HARD LIMIT: max days to look back (was unlimited)
+    MAX_RESULTS = 200  # HARD LIMIT: max results to return (was 500)
+    
     try:
         region = request.args.get('region', '')
-        days = int(request.args.get('days', 30))
+        days = min(MAX_DAYS, max(1, int(request.args.get('days', 7))))  # PROTECTION: Cap at 7 days
         
         messages = load_messages()
         history = []
@@ -18448,9 +18591,14 @@ def get_alarm_history():
         # Sort by time
         history.sort(key=lambda x: x['start_time'], reverse=True)
         
+        # PROTECTION: Hard limit on results
+        returned_history = history[:MAX_RESULTS]
+        
         response = jsonify({
-            'history': history[:500],  # Last 500 entries
-            'count': len(history),
+            'history': returned_history,
+            'count': len(returned_history),
+            'total_count': len(history),
+            'truncated': len(history) > MAX_RESULTS,
             'region': region,
             'days': days,
             'timestamp': datetime.now().isoformat()
@@ -19782,6 +19930,39 @@ def admin_stats():
         })
     except Exception as e:
         return jsonify({'status': 'error', 'error': str(e)}), 500
+
+# ==================== API PROTECTION MONITORING ====================
+@app.route('/admin/protection_status', methods=['GET'])
+def admin_protection_status():
+    """Get API protection statistics for monitoring bandwidth/abuse."""
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    
+    try:
+        if API_PROTECTION_ENABLED:
+            stats = get_protection_stats()
+            return jsonify({
+                'status': 'ok',
+                'protection_enabled': True,
+                'max_response_size_mb': MAX_RESPONSE_SIZE_BYTES / 1024 / 1024,
+                'stats': stats,
+                'endpoint_limits': {
+                    '/data': {'max_tracks': 200, 'max_events': 100},
+                    '/api/messages': {'max_messages': 100},
+                    '/api/events': {'max_process': 500, 'max_return': 100},
+                    '/api/alarm-history': {'max_days': 7, 'max_results': 200},
+                    '/alarms_stats': {'max_limit': 500, 'max_minutes': 360},
+                }
+            })
+        else:
+            return jsonify({
+                'status': 'ok',
+                'protection_enabled': False,
+                'message': 'API protection module not loaded'
+            })
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+# ===================================================================
 
 @app.route('/admin/cleanup', methods=['POST'])
 def admin_cleanup():
