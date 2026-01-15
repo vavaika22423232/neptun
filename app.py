@@ -17286,72 +17286,52 @@ def get_all_cities_with_queues():
 
 @app.route('/api/get_schedule')
 def get_schedule():
-    """Get blackout schedule for a specific address using real geocoding and live DTEK updates"""
+    """Get blackout schedule for a specific address using YASNO API with fallback"""
     city = request.args.get('city', '').strip()
     street = request.args.get('street', '').strip()
     building = request.args.get('building', '').strip()
+    group = request.args.get('group', '').strip()
     
     if not city:
         return jsonify({'error': 'Місто обов\'язкове для заповнення'}), 400
     
-    # Try to use live schedule updater first
-    if SCHEDULE_UPDATER_AVAILABLE:
-        try:
-            # Ensure cache is fresh
-            if not schedule_updater.is_cache_valid(max_age_hours=1):
-                schedule_updater.update_all_schedules()
+    # Try YASNO API first (for Kyiv and Dnipro)
+    try:
+        from yasno_api import get_yasno_schedule, yasno_api
+        
+        region = yasno_api.city_to_region(city)
+        if region:
+            # YASNO supports this city
+            result = get_yasno_schedule(city, group if group else None)
             
-            # Get schedule from live updater
-            result = schedule_updater.get_schedule_for_address(city, street, building)
-            
-            if result and result.get('schedule'):
+            if result.get('found'):
                 return jsonify({
                     'found': True,
-                    'address': f"{city}, {street} {building}".strip(),
+                    'address': f"{city}, {street} {building}".strip() if street else city,
                     'city': city,
-                    'group': result.get('queue'),
-                    'provider': result.get('provider'),
-                    'schedule': result.get('schedule'),
+                    'region': result.get('region'),
+                    'group': group or result.get('available_groups', ['1.1'])[0],
+                    'provider': 'YASNO (DTEK)',
+                    'source': 'yasno_api',
+                    'is_blackout': result.get('is_blackout', False),
+                    'status': result.get('status', 'unknown'),
+                    'status_type': result.get('status_type', 'UNKNOWN'),
+                    'schedule': result.get('schedule', []),
+                    'raw_schedule': result.get('raw_schedule', []),
+                    'next_blackout_hour': result.get('next_blackout_hour'),
+                    'next_power_on_hour': result.get('next_power_on_hour'),
+                    'available_groups': result.get('available_groups', yasno_api.AVAILABLE_GROUPS),
                     'last_update': result.get('last_update'),
-                    'source': 'live_dtek'
                 })
-        except Exception as e:
-            log.warning(f"Live schedule failed, falling back: {e}")
-    
-    # Fallback to API client
-    if not BLACKOUT_API_AVAILABLE:
-        return get_schedule_fallback(city, street, building)
-    
-    try:
-        # Use real API client to get schedule
-        result = blackout_client.get_schedule_for_address(city, street, building)
-        
-        if not result['found']:
-            return jsonify({
-                'error': f'Адресу "{city}" не знайдено. Перевірте правильність написання міста.'
-            }), 404
-        
-        # Add oblast info if available
-        if 'київ' in city.lower():
-            result['oblast'] = 'Київська'
-        elif 'одес' in city.lower():
-            result['oblast'] = 'Одеська'
-        elif 'харків' in city.lower():
-            result['oblast'] = 'Харківська'
-        elif 'дніпр' in city.lower():
-            result['oblast'] = 'Дніпропетровська'
-        elif 'львів' in city.lower():
-            result['oblast'] = 'Львівська'
-        else:
-            result['oblast'] = 'Україна'
-        
-        return jsonify(result)
-        
+            else:
+                log.warning(f"YASNO API returned no data for {city}")
+    except ImportError:
+        log.warning("YASNO API module not available")
     except Exception as e:
-        logging.error(f"Error in get_schedule: {e}")
-        return jsonify({
-            'error': 'Помилка при отриманні графіку. Спробуйте ще раз.'
-        }), 500
+        log.error(f"YASNO API error: {e}")
+    
+    # Fallback to static data for other cities
+    return get_schedule_fallback(city, street, building)
 
 
 def get_schedule_fallback(city, street, building):
@@ -17409,35 +17389,14 @@ def get_schedule_fallback(city, street, building):
 
 @app.route('/api/live_schedules')
 def get_live_schedules():
-    """Get live schedules from DTEK and Ukrenergo with automatic hourly updates"""
+    """Get schedules - returns static data"""
     try:
-        if not SCHEDULE_UPDATER_AVAILABLE:
-            return jsonify({
-                'error': 'Автооновлення графіків недоступне',
-                'fallback': True
-            }), 503
-        
-        # Check if cache is still valid
-        if not schedule_updater.is_cache_valid(max_age_hours=1):
-            log.info("Cache expired, triggering update...")
-            schedule_updater.update_all_schedules()
-        
-        # Get cached schedules
-        schedules = schedule_updater.get_cached_schedules()
-        
-        if not schedules:
-            return jsonify({
-                'error': 'Графіки тимчасово недоступні',
-                'retry_after': 60
-            }), 503
-        
         return jsonify({
             'success': True,
-            'schedules': schedules,
-            'last_update': schedules.get('last_update'),
-            'next_update': 'через годину'
+            'schedules': BLACKOUT_SCHEDULES,
+            'last_update': None,
+            'source': 'static'
         })
-        
     except Exception as e:
         log.error(f"Error in get_live_schedules: {e}")
         return jsonify({
@@ -17447,26 +17406,15 @@ def get_live_schedules():
 
 @app.route('/api/schedule_status')
 def get_schedule_status():
-    """Get status of automatic schedule updates"""
+    """Get status of schedule data"""
     try:
-        if not SCHEDULE_UPDATER_AVAILABLE:
-            return jsonify({
-                'available': False,
-                'message': 'Автооновлення недоступне'
-            })
-        
-        last_update = schedule_updater.last_update
-        cache_valid = schedule_updater.is_cache_valid()
-        
         return jsonify({
             'available': True,
-            'last_update': last_update.isoformat() if last_update else None,
-            'cache_valid': cache_valid,
-            'next_update': 'через годину' if cache_valid else 'зараз',
-            'scheduler_running': scheduler.running if scheduler_initialized else False,
-            'scheduler_initialized': scheduler_initialized
+            'last_update': None,
+            'cache_valid': True,
+            'source': 'static',
+            'message': 'Використовуються статичні дані'
         })
-        
     except Exception as e:
         log.error(f"Error in get_schedule_status: {e}")
         return jsonify({'error': str(e)}), 500
@@ -17474,30 +17422,11 @@ def get_schedule_status():
 
 @app.route('/api/force_update', methods=['POST'])
 def force_schedule_update():
-    """Force immediate schedule update (admin only)"""
-    try:
-        if not SCHEDULE_UPDATER_AVAILABLE:
-            return jsonify({
-                'success': False,
-                'error': 'Schedule updater not available'
-            }), 503
-        
-        log.info("🔄 Manual schedule update triggered")
-        result = schedule_updater.update_all_schedules()
-        
-        return jsonify({
-            'success': True,
-            'message': 'Графіки успішно оновлено',
-            'last_update': schedule_updater.last_update.isoformat() if schedule_updater.last_update else None,
-            'data': result is not None
-        })
-        
-    except Exception as e:
-        log.error(f"Error in force_schedule_update: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+    """Force update - not available with static data"""
+    return jsonify({
+        'success': False,
+        'message': 'Автооновлення недоступне, використовуються статичні дані'
+    }), 503
 
 
 @app.route('/locate')
