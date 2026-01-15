@@ -984,6 +984,69 @@
       text-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
     }
     
+    /* Ballistic threat banner - minimalist style */
+    .ballistic-banner {
+      position: fixed;
+      top: 90px;
+      right: 20px;
+      background: rgba(220, 38, 38, 0.95);
+      border-radius: 8px;
+      padding: 10px 16px;
+      color: white;
+      z-index: 9999;
+      display: none;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+    }
+    
+    .ballistic-banner.visible {
+      display: flex;
+    }
+    
+    .ballistic-banner .icon {
+      font-size: 18px;
+    }
+    
+    .ballistic-banner .content {
+      line-height: 1.3;
+    }
+    
+    .ballistic-banner .content strong {
+      display: block;
+      font-weight: 600;
+    }
+    
+    .ballistic-banner .content span {
+      opacity: 0.8;
+      font-size: 11px;
+    }
+    
+    .ballistic-banner .close-btn {
+      background: none;
+      border: none;
+      color: white;
+      font-size: 18px;
+      cursor: pointer;
+      opacity: 0.6;
+      padding: 0;
+      margin-left: 8px;
+    }
+    
+    .ballistic-banner .close-btn:hover {
+      opacity: 1;
+    }
+    
+    @media (max-width: 768px) {
+      .ballistic-banner {
+        top: 70px;
+        right: 10px;
+        left: 10px;
+        justify-content: center;
+      }
+    }
+    
     .last-update {
       font-size: 11px;
       color: rgba(255, 255, 255, 0.5);
@@ -3862,6 +3925,9 @@
         const apiStatusEl = document.getElementById('api-status');
         if (apiStatusEl) apiStatusEl.textContent = '';
         
+        // === BALLISTIC THREAT DETECTION ===
+        checkBallisticThreats(data);
+        
         // SEO: Update dynamic meta tags with current alarm state
         updateDynamicMeta(stateAlarmCount, Array.from(statesWithAlarm));
         
@@ -3925,6 +3991,66 @@
         // You can add more icon types here:
         // if (alertType === 'BALLISTIC' || alertType === 'MISSILE') { ... }
       });
+    }
+    
+    // === BALLISTIC THREAT DETECTION ===
+    let lastBallisticCheck = new Set();
+    let ballisticBannerTimeout = null;
+    
+    function checkBallisticThreats(data) {
+      const currentBallisticRegions = new Set();
+      
+      // Check all regions for BALLISTIC threats
+      data.forEach(region => {
+        if (region.activeAlerts && region.activeAlerts.length > 0) {
+          region.activeAlerts.forEach(alert => {
+            const alertType = alert.type || '';
+            if (alertType === 'BALLISTIC' || alertType === 'MISSILE' || alertType.includes('BALLISTIC')) {
+              const regionName = region.regionName || region.regionId;
+              currentBallisticRegions.add(regionName);
+              console.log('🚀 BALLISTIC DETECTED:', regionName, alertType);
+            }
+          });
+        }
+      });
+      
+      // Check for NEW ballistic threats
+      const newThreats = [...currentBallisticRegions].filter(r => !lastBallisticCheck.has(r));
+      
+      if (newThreats.length > 0) {
+        showBallisticBanner();
+      } else if (currentBallisticRegions.size === 0 && lastBallisticCheck.size > 0) {
+        // All threats cleared
+        hideBallisticBanner();
+      }
+      
+      lastBallisticCheck = currentBallisticRegions;
+    }
+    
+    function showBallisticBanner() {
+      const banner = document.getElementById('ballistic-banner');
+      if (banner) {
+        banner.classList.add('visible');
+        console.log('🚀 Showing ballistic banner');
+        
+        // Auto-hide after 10 seconds (protection from too fast dismissal)
+        if (ballisticBannerTimeout) clearTimeout(ballisticBannerTimeout);
+        ballisticBannerTimeout = setTimeout(() => {
+          hideBallisticBanner();
+        }, 10000);
+      }
+    }
+    
+    function hideBallisticBanner() {
+      const banner = document.getElementById('ballistic-banner');
+      if (banner) {
+        banner.classList.remove('visible');
+        console.log('✅ Hiding ballistic banner');
+      }
+      if (ballisticBannerTimeout) {
+        clearTimeout(ballisticBannerTimeout);
+        ballisticBannerTimeout = null;
+      }
     }
     
     // Convert lat/lng to SVG percentage coordinates
@@ -5261,5 +5387,15 @@
       });
     }
   </script>
+  
+  <!-- Ballistic Threat Banner -->
+  <div class="ballistic-banner" id="ballistic-banner">
+    <span class="icon">🚀</span>
+    <div class="content">
+      <strong>Загроза балістики</strong>
+      <span>де зараз повітряна тривога</span>
+    </div>
+    <button class="close-btn" onclick="hideBallisticBanner()">&times;</button>
+  </div>
 </body>
 </html>
