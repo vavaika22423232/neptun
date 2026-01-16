@@ -17317,11 +17317,23 @@ def get_schedule():
                     'status': result.get('status', 'unknown'),
                     'status_type': result.get('status_type', 'UNKNOWN'),
                     'schedule': result.get('schedule', []),
+                    'schedule_tomorrow': result.get('schedule_tomorrow', []),
                     'raw_schedule': result.get('raw_schedule', []),
+                    'raw_schedule_tomorrow': result.get('raw_schedule_tomorrow', []),
                     'next_blackout_hour': result.get('next_blackout_hour'),
                     'next_power_on_hour': result.get('next_power_on_hour'),
                     'available_groups': result.get('available_groups', yasno_api.AVAILABLE_GROUPS),
                     'last_update': result.get('last_update'),
+                    # Emergency/schedule status
+                    'emergency_mode': result.get('emergency_mode', False),
+                    'schedules_active': result.get('schedules_active', True),
+                    'emergency_message': result.get('emergency_message', ''),
+                    'has_definite_outages': result.get('has_definite_outages', False),
+                    'has_possible_outages': result.get('has_possible_outages', False),
+                    # For notifications
+                    'status_changed': result.get('status_changed', False),
+                    'power_turned_on': result.get('power_turned_on', False),
+                    'power_turned_off': result.get('power_turned_off', False),
                 })
             else:
                 log.warning(f"YASNO API returned no data for {city}")
