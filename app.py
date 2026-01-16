@@ -2442,6 +2442,42 @@ BALLISTIC_THREAT_ACTIVE = False
 BALLISTIC_THREAT_REGION = None
 BALLISTIC_THREAT_TIMESTAMP = None
 
+def add_system_chat_message(message_type, text, region=None, threat_type='ballistic'):
+    """Add system message to chat about threats/alerts.
+    
+    message_type: 'threat_start' or 'threat_end'
+    text: The alert message text
+    region: Optional region name
+    threat_type: 'ballistic', 'air', 'artillery', etc.
+    """
+    try:
+        kyiv_tz = pytz.timezone('Europe/Kiev')
+        now = datetime.now(kyiv_tz)
+        
+        # Create system message
+        system_message = {
+            'id': f'system_{uuid.uuid4()}',
+            'userId': '⚠️ Система сповіщень',
+            'deviceId': 'system',
+            'message': text,
+            'timestamp': now.timestamp(),
+            'time': now.strftime('%H:%M'),
+            'date': now.strftime('%d.%m.%Y'),
+            'isSystem': True,  # Mark as system message
+            'systemType': message_type,  # 'threat_start' or 'threat_end'
+            'threatType': threat_type,
+            'region': region
+        }
+        
+        # Load, append, save
+        messages = load_chat_messages()
+        messages.append(system_message)
+        save_chat_messages(messages)
+        
+        log.info(f'📢 Added system chat message: {message_type} - {text[:50]}...')
+    except Exception as e:
+        log.error(f'Error adding system chat message: {e}')
+
 def update_ballistic_state(text):
     """Update ballistic threat state based on Telegram message text."""
     global BALLISTIC_THREAT_ACTIVE, BALLISTIC_THREAT_REGION, BALLISTIC_THREAT_TIMESTAMP
@@ -2451,6 +2487,7 @@ def update_ballistic_state(text):
     
     # Detect ballistic threat activation
     if 'загроза балістики' in text_lower and 'відбій' not in text_lower:
+        was_active = BALLISTIC_THREAT_ACTIVE
         BALLISTIC_THREAT_ACTIVE = True
         BALLISTIC_THREAT_TIMESTAMP = datetime.now().isoformat()
         # Try to extract region
@@ -2461,15 +2498,35 @@ def update_ballistic_state(text):
         else:
             BALLISTIC_THREAT_REGION = None
         log.info(f'🚀 BALLISTIC THREAT ACTIVATED: region={BALLISTIC_THREAT_REGION}')
+        
+        # Add system message to chat if this is a new threat
+        if not was_active:
+            region_text = f' ({BALLISTIC_THREAT_REGION})' if BALLISTIC_THREAT_REGION else ''
+            add_system_chat_message(
+                'threat_start',
+                f'🚀 ЗАГРОЗА БАЛІСТИКИ{region_text}! Негайно в укриття!',
+                BALLISTIC_THREAT_REGION,
+                'ballistic'
+            )
         return
     
     # Detect ballistic threat deactivation
     if 'відбій' in text_lower and ('балістик' in text_lower or 'загроз' in text_lower):
+        was_active = BALLISTIC_THREAT_ACTIVE
         if BALLISTIC_THREAT_ACTIVE:
             log.info(f'✅ BALLISTIC THREAT DEACTIVATED')
         BALLISTIC_THREAT_ACTIVE = False
         BALLISTIC_THREAT_REGION = None
         BALLISTIC_THREAT_TIMESTAMP = None
+        
+        # Add system message to chat if threat was active
+        if was_active:
+            add_system_chat_message(
+                'threat_end',
+                '✅ Відбій загрози балістики. Залишайтесь пильними.',
+                None,
+                'ballistic'
+            )
         return
 
 def load_config():
