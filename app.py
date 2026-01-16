@@ -17488,18 +17488,29 @@ def get_schedule():
     street = request.args.get('street', '').strip()
     building = request.args.get('building', '').strip()
     group = request.args.get('group', '').strip()
+    refresh = request.args.get('refresh', '').lower() in ('true', '1', 'yes')
     
     if not city:
         return jsonify({'error': 'Місто обов\'язкове для заповнення'}), 400
     
     # Try YASNO API first (for Kyiv and Dnipro)
     try:
-        from yasno_api import get_yasno_schedule, yasno_api
+        from yasno_api import yasno_api
         
         region = yasno_api.city_to_region(city)
         if region:
-            # YASNO supports this city
-            result = get_yasno_schedule(city, group if group else None)
+            # Clear cache if refresh requested
+            if refresh:
+                yasno_api._cache = None
+                yasno_api._cache_time = None
+                log.info(f"Forced refresh for {city}")
+            
+            # YASNO supports this city - get schedule with force refresh if needed
+            data = yasno_api._get_data(force_refresh=refresh)
+            if not data:
+                log.warning(f"YASNO API returned no data for {city}")
+            
+            result = yasno_api.get_schedule_for_address(city, group if group else None)
             
             if result.get('found'):
                 return jsonify({

@@ -237,7 +237,7 @@ class YasnoAPI:
         
         return hourly
     
-    def get_current_status(self, region: str, group: str) -> Dict:
+    def get_current_status(self, region: str, group: str, force_refresh: bool = False) -> Dict:
         """
         Get current electricity status for region/group
         
@@ -247,8 +247,8 @@ class YasnoAPI:
         now = datetime.now()
         current_hour = now.hour + now.minute / 60  # Include fractional hour
         
-        # Get API data
-        data = self._get_data()
+        # Get API data (force refresh if requested)
+        data = self._get_data(force_refresh=force_refresh)
         
         # Check emergency mode
         emergency_status = self.is_emergency_mode(data)
