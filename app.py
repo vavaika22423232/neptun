@@ -22116,13 +22116,17 @@ def get_chat_user_profile():
         target_device_id = data.get('targetDeviceId', '')
         target_user_id = data.get('targetUserId', '')
         
+        log.info(f"Profile request: requester={requester_device_id[:20] if requester_device_id else 'none'}..., target_user={target_user_id}")
+        
         # Check if requester is moderator
         is_requester_mod = is_chat_moderator(requester_device_id)
+        log.info(f"Requester is moderator: {is_requester_mod}")
         
         # Find device_id from userId if not provided
         if not target_device_id and target_user_id:
             nicknames = load_chat_nicknames()
             target_device_id = nicknames.get(target_user_id, '')
+            log.info(f"Lookup nickname '{target_user_id}' -> device: {target_device_id[:20] if target_device_id else 'NOT_FOUND'}...")
         
         # Check if target is moderator
         is_target_mod = is_chat_moderator(target_device_id) if target_device_id else False
@@ -22145,6 +22149,7 @@ def get_chat_user_profile():
             
             # Get regions from device data
             regions = device_data.get('regions', [])
+            log.info(f"Found regions for device: {regions}")
             
             response_data['deviceId'] = target_device_id[:20] + '...' if len(target_device_id) > 20 else target_device_id
             response_data['regions'] = regions
