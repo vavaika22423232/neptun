@@ -10,12 +10,85 @@
 import os, re, json, asyncio, threading, logging, pytz, time, subprocess, queue, sys, platform, traceback, uuid, gc
 from collections import defaultdict
 from datetime import datetime, timedelta
-from flask import Flask, render_template, jsonify, request, Response, send_from_directory, g
+from flask import Flask, render_template, jsonify, request, Response, send_from_directory, g, redirect
 from telethon import TelegramClient
 from core.message_store import MessageStore, DeviceStore, FamilyStore
+from functools import lru_cache
+import hashlib
 
 # MEMORY OPTIMIZATION: Force garbage collection on startup
 gc.collect()
+
+# ============================================================================
+# HIGH-LOAD OPTIMIZATION: Response caching for API endpoints
+# ============================================================================
+class ResponseCache:
+    """Thread-safe in-memory cache for API responses with TTL."""
+    def __init__(self, default_ttl: int = 30):
+        self._cache: dict = {}
+        self._lock = threading.RLock()
+        self.default_ttl = default_ttl
+        self.hits = 0
+        self.misses = 0
+    
+    def get(self, key: str):
+        with self._lock:
+            if key in self._cache:
+                data, expires_at = self._cache[key]
+                if time.time() < expires_at:
+                    self.hits += 1
+                    return data
+                # Expired
+                del self._cache[key]
+            self.misses += 1
+            return None
+    
+    def set(self, key: str, data, ttl: int = None):
+        with self._lock:
+            expires_at = time.time() + (ttl or self.default_ttl)
+            self._cache[key] = (data, expires_at)
+    
+    def clear_expired(self):
+        """Remove expired entries (call periodically)."""
+        with self._lock:
+            now = time.time()
+            expired_keys = [k for k, (_, exp) in self._cache.items() if now >= exp]
+            for k in expired_keys:
+                del self._cache[k]
+            return len(expired_keys)
+    
+    def stats(self) -> dict:
+        with self._lock:
+            total = self.hits + self.misses
+            return {
+                'hits': self.hits,
+                'misses': self.misses,
+                'hit_rate': f"{(self.hits / total * 100):.1f}%" if total > 0 else "0%",
+                'cached_items': len(self._cache)
+            }
+
+# Global response cache
+RESPONSE_CACHE = ResponseCache(default_ttl=30)
+
+# Cached messages - avoid repeated file reads
+_MESSAGES_CACHE = {'data': None, 'expires': 0}
+_MESSAGES_CACHE_TTL = 5  # 5 second cache for messages
+
+def load_messages_cached():
+    """Load messages with caching to reduce disk I/O."""
+    global _MESSAGES_CACHE
+    now = time.time()
+    if _MESSAGES_CACHE['data'] is not None and now < _MESSAGES_CACHE['expires']:
+        return _MESSAGES_CACHE['data']
+    # Load fresh
+    data = MESSAGE_STORE.load()
+    _MESSAGES_CACHE = {'data': data, 'expires': now + _MESSAGES_CACHE_TTL}
+    return data
+
+def invalidate_messages_cache():
+    """Call this after saving new messages."""
+    global _MESSAGES_CACHE
+    _MESSAGES_CACHE = {'data': None, 'expires': 0}
 
 # ============================================================================
 # API PROTECTION - Production-grade hardening (prevents 23GB+ traffic spikes)
@@ -2082,8 +2155,8 @@ def monitor_alarms():
             log.error(f"Error in alarm monitoring: {e}")
             consecutive_failures += 1
         
-        # Wait before next check (30 seconds)
-        time.sleep(30)
+        # Wait before next check (45 seconds to reduce CPU load)
+        time.sleep(45)
     
     log.info("=== ALARM MONITORING STOPPED ===")
 
@@ -2834,11 +2907,15 @@ def _should_send_notification(msg: dict) -> bool:
     return True
 
 def load_messages():
-    return MESSAGE_STORE.load()
+    # HIGH-LOAD: Use cached version to reduce disk I/O
+    return load_messages_cached()
 
 
 def save_messages(data, send_notifications=True):
     try:
+        # Invalidate cache on save
+        invalidate_messages_cache()
+        
         # Check for new messages to send notifications
         existing = MESSAGE_STORE.load()
         existing_ids = {msg.get('id') for msg in existing}
@@ -16702,7 +16779,7 @@ async def fetch_loop():
         else:
             # If only merges happened (no brand-new tracks), still persist periodically
             save_messages(all_data)
-        await asyncio.sleep(30)  # Check every 30 seconds for faster notifications
+        await asyncio.sleep(45)  # Check every 45 seconds (CPU optimized)
 
 def start_fetch_thread():
     global FETCH_THREAD_STARTED
@@ -16756,7 +16833,7 @@ def replace_client(new_session: str):
 
 # ----------------- Session watcher (auto reload new_session.txt) -----------------
 SESSION_WATCH_FILE = os.getenv('SESSION_WATCH_FILE', 'new_session.txt')
-SESSION_WATCH_INTERVAL = int(os.getenv('SESSION_WATCH_INTERVAL', '20'))
+SESSION_WATCH_INTERVAL = int(os.getenv('SESSION_WATCH_INTERVAL', '60'))  # CPU optimized: 60s instead of 20s
 _watch_thread_started = False
 _last_session_file_mtime = 0
 
@@ -18114,9 +18191,24 @@ def data():
     
     # ===========================================================================
     # HARDENED /data ENDPOINT - Prevents 23GB+ traffic spikes
-    # BEFORE: Returned unlimited tracks/events (caused server crashes)
-    # AFTER:  Strict limits, pagination, diff support, response size guards
+    # HIGH-LOAD OPTIMIZED: Added in-memory caching
     # ===========================================================================
+    
+    # HIGH-LOAD: Check memory cache first (5 second TTL)
+    cache_key = f'data_{MONITOR_PERIOD_MINUTES}'
+    cached = RESPONSE_CACHE.get(cache_key)
+    if cached:
+        # Still check ETag for 304
+        client_etag = request.headers.get('If-None-Match')
+        if client_etag and cached.get('etag') == client_etag:
+            return Response(status=304, headers={'Cache-Control': 'public, max-age=5'})
+        
+        response = jsonify(cached['data'])
+        response.headers['Cache-Control'] = 'public, max-age=5'
+        response.headers['X-Cache'] = 'HIT'
+        if cached.get('etag'):
+            response.headers['ETag'] = cached['etag']
+        return response
     
     # PROTECTION: Hard limits to prevent memory/bandwidth exhaustion
     MAX_TRACKS = 200       # HARD LIMIT: max tracks per response (was unlimited)
@@ -18125,8 +18217,8 @@ def data():
     
     # BANDWIDTH OPTIMIZATION: Add aggressive caching headers  
     response_headers = {
-        'Cache-Control': 'public, max-age=60, s-maxage=60',  # Increased cache to 60 seconds
-        'ETag': f'data-{int(time.time() // 60)}',  # Cache for 60 seconds
+        'Cache-Control': 'public, max-age=5',  # Reduced to match memory cache
+        'ETag': f'data-{int(time.time() // 5)}',  # Cache for 5 seconds
         'Vary': 'Accept-Encoding'
     }
     
@@ -18319,9 +18411,16 @@ def data():
         response_data['_meta']['emergency_truncated'] = True
         response_json = json.dumps(response_data, separators=(',', ':'))
     
+    # HIGH-LOAD: Cache the response for 5 seconds
+    RESPONSE_CACHE.set(cache_key, {
+        'data': response_data,
+        'etag': response_headers.get('ETag')
+    }, ttl=5)
+    
     resp = Response(response_json, mimetype='application/json')
     # Add aggressive caching headers to reduce bandwidth
     resp.headers.update(response_headers)
+    resp.headers['X-Cache'] = 'MISS'
     return resp
 
 @app.route('/channels')
@@ -18581,10 +18680,19 @@ def get_events():
 def get_messages():
     """Get recent alarm messages with coordinates for mobile apps."""
     # ===========================================================================
-    # HARDENED /api/messages ENDPOINT
-    # BEFORE: Last 200 messages, no limits on response
-    # AFTER:  Hard limits, pagination support, diff support via 'since' param
+    # HARDENED /api/messages ENDPOINT - HIGH LOAD OPTIMIZED
+    # Uses response cache to avoid reprocessing on every request
     # ===========================================================================
+    
+    # Check cache first (30 second TTL)
+    cache_key = 'api_messages'
+    cached = RESPONSE_CACHE.get(cache_key)
+    if cached:
+        response = jsonify(cached)
+        response.headers['Cache-Control'] = 'public, max-age=30'
+        response.headers['X-Cache'] = 'HIT'
+        return response
+    
     MAX_MESSAGES = 100  # HARD LIMIT: max messages per request (was 200)
     
     try:
@@ -18672,13 +18780,18 @@ def get_messages():
         # Sort by timestamp (newest first)
         result_messages.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
         
-        response = jsonify({
+        # Cache the result
+        result_data = {
             'messages': result_messages,
             'count': len(result_messages),
             'timestamp': datetime.now().isoformat()
-        })
+        }
+        RESPONSE_CACHE.set(cache_key, result_data, ttl=30)
+        
+        response = jsonify(result_data)
         response.headers['Cache-Control'] = 'public, max-age=30'
         response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['X-Cache'] = 'MISS'
         return response
         
     except Exception as e:
@@ -18694,6 +18807,16 @@ _active_alarms_cache = {}  # region -> {active: bool, start_time: str, type: str
 @protected_endpoint(is_heavy=False)  # PROTECTION: Rate limiting
 def get_alarm_status():
     """Get current alarm status for regions - used by AlarmTimerWidget."""
+    
+    # HIGH-LOAD: Check cache first (15 second TTL)
+    cache_key = 'api_alarm_status'
+    cached = RESPONSE_CACHE.get(cache_key)
+    if cached:
+        response = jsonify(cached)
+        response.headers['Cache-Control'] = 'public, max-age=15'
+        response.headers['X-Cache'] = 'HIT'
+        return response
+    
     MAX_MESSAGES_TO_SCAN = 100  # HARD LIMIT
     
     try:
@@ -18755,13 +18878,17 @@ def get_alarm_status():
                             'end_time': None
                         }
         
-        response = jsonify({
+        result_data = {
             'alerts': alerts,
             'timestamp': datetime.now().isoformat(),
             'count': sum(1 for a in alerts.values() if a.get('active'))
-        })
+        }
+        RESPONSE_CACHE.set(cache_key, result_data, ttl=15)
+        
+        response = jsonify(result_data)
         response.headers['Cache-Control'] = 'public, max-age=15'
         response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['X-Cache'] = 'MISS'
         return response
         
     except Exception as e:
@@ -20603,11 +20730,14 @@ def _copy_persistent_files_to_git_repo():
 """(Removed duplicate legacy process_message; canonical version defined earlier.)"""
 
 # ----------------------- Deferred initialization hooks -----------------------
-@app.before_request
+# CPU OPTIMIZATION: Use before_first_request pattern manually
+_INIT_BACKGROUND_DONE = False
+
 def _init_background():
-    global INIT_ONCE
-    if INIT_ONCE:
+    global _INIT_BACKGROUND_DONE, INIT_ONCE
+    if _INIT_BACKGROUND_DONE:
         return
+    _INIT_BACKGROUND_DONE = True
     INIT_ONCE = True
     _startup_diagnostics()
     # Start background workers
@@ -20619,6 +20749,13 @@ def _init_background():
         start_session_watcher()
     except Exception as e:
         log.error(f'Failed to start session watcher: {e}\n{traceback.format_exc()}')
+
+@app.before_request
+def _maybe_init_background():
+    # CPU OPTIMIZATION: Skip quickly if already initialized
+    if _INIT_BACKGROUND_DONE:
+        return
+    _init_background()
 
 @app.route('/startup_diag')
 def startup_diag():
@@ -20636,11 +20773,21 @@ def startup_diag():
             'session_present': bool(session_str),
             'retention_minutes': MESSAGES_RETENTION_MINUTES,
             'retention_max_count': MESSAGES_MAX_COUNT,
-            'subscribers': len(SUBSCRIBERS)
+            'subscribers': len(SUBSCRIBERS),
+            'cache_stats': RESPONSE_CACHE.stats(),  # HIGH-LOAD: Cache statistics
         }
         return jsonify(info)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/cache-stats')
+def cache_stats():
+    """Get response cache statistics for monitoring."""
+    stats = RESPONSE_CACHE.stats()
+    # Also clean expired entries
+    cleaned = RESPONSE_CACHE.clear_expired()
+    stats['expired_cleaned'] = cleaned
+    return jsonify(stats)
 
 
 @app.route('/healthz')
@@ -21597,10 +21744,21 @@ def save_chat_messages(messages):
 def get_chat_messages():
     """Get chat messages, optionally after a specific timestamp."""
     try:
+        # HIGH-LOAD OPTIMIZATION: Cache chat messages for 3 seconds
+        after = request.args.get('after', '')
+        limit = min(int(request.args.get('limit', 100)), 500)
+        cache_key = f'chat_messages_{after}_{limit}'
+        
+        cached = RESPONSE_CACHE.get(cache_key)
+        if cached:
+            response = jsonify(cached)
+            response.headers['Cache-Control'] = 'public, max-age=3'
+            response.headers['X-Cache'] = 'HIT'
+            return response
+        
         messages = load_chat_messages()
         
         # Optional: get only messages after timestamp
-        after = request.args.get('after')
         if after:
             try:
                 after_ts = float(after)
@@ -21608,15 +21766,22 @@ def get_chat_messages():
             except:
                 pass
         
-        # Return last 100 messages by default
-        limit = min(int(request.args.get('limit', 100)), 500)
+        # Return last N messages by default
         messages = messages[-limit:]
         
-        return jsonify({
+        result = {
             'success': True,
             'messages': messages,
             'count': len(messages)
-        })
+        }
+        
+        # Cache for 3 seconds
+        RESPONSE_CACHE.set(cache_key, result, ttl=3)
+        
+        response = jsonify(result)
+        response.headers['Cache-Control'] = 'public, max-age=3'
+        response.headers['X-Cache'] = 'MISS'
+        return response
     except Exception as e:
         log.error(f"Error getting chat messages: {e}")
         return jsonify({'error': str(e)}), 500

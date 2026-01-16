@@ -8,6 +8,8 @@ apscheduler==3.10.4
 google-generativeai==0.8.3
 firebase-admin>=6.5.0
 flask-mail==0.9.1
+gunicorn==22.0.0
+gevent>=24.0.0
 
 # Optional heavy dependencies - comment out to speed up deployment
 # groq==0.11.0
