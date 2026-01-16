@@ -21075,7 +21075,7 @@ def get_feedback():
                 <div class="stat-label">Всього повідомлень</div>
             </div>
             <div class="stat-card">
-                <div class="stat-number">''' + str(len([f for f in feedback_list if f.get('timestamp', '')[:10] == datetime.now().strftime('%Y-%m-%d')])) + '''</div>
+                <div class="stat-number">''' + str(len([f for f in feedback_list if str(f.get('timestamp', ''))[:10] == datetime.now().strftime('%Y-%m-%d')])) + '''</div>
                 <div class="stat-label">Сьогодні</div>
             </div>
         </div>
@@ -21103,10 +21103,17 @@ def get_feedback():
                 # Format timestamp
                 ts = fb.get('timestamp', '')
                 try:
-                    dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
-                    formatted_time = dt.strftime('%d.%m.%Y %H:%M')
+                    if isinstance(ts, (int, float)):
+                        # Unix timestamp
+                        dt = datetime.fromtimestamp(ts)
+                        formatted_time = dt.strftime('%d.%m.%Y %H:%M')
+                    elif isinstance(ts, str) and ts:
+                        dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                        formatted_time = dt.strftime('%d.%m.%Y %H:%M')
+                    else:
+                        formatted_time = 'Невідомо'
                 except:
-                    formatted_time = ts[:16] if ts else 'Невідомо'
+                    formatted_time = str(ts)[:16] if ts else 'Невідомо'
                 
                 # Escape HTML in text
                 text = fb.get('text', '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
