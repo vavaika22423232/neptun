@@ -2534,6 +2534,100 @@ def update_ballistic_state(text, is_realtime=False):
             )
         return
 
+def add_telegram_message_to_chat(text, is_realtime=False):
+    """Add important Telegram messages to chat as system notifications.
+    
+    Args:
+        text: The message text from Telegram
+        is_realtime: If True, add to chat. If False, skip (backfill)
+    """
+    if not text or not is_realtime:
+        return
+    
+    text_lower = text.lower()
+    
+    # Skip if it's a ballistic message (handled separately by update_ballistic_state)
+    if 'балістик' in text_lower:
+        return
+    
+    # Detect threat type and format message
+    message_type = None
+    threat_type = None
+    emoji = '⚠️'
+    formatted_text = None
+    region = None
+    
+    # Extract region from text
+    import re
+    region_match = re.search(r'([\w\-]+(?:ська|ький|ка)\s*(?:область|район))', text, re.IGNORECASE)
+    if region_match:
+        region = region_match.group(1)
+    
+    # КАБи (Керовані авіабомби)
+    if 'каб' in text_lower and 'відбій' not in text_lower:
+        message_type = 'threat_start'
+        threat_type = 'kab'
+        emoji = '💣'
+        # Extract short version
+        if len(text) > 100:
+            formatted_text = f'{emoji} КАБи: {text[:100]}...'
+        else:
+            formatted_text = f'{emoji} {text}'
+    
+    # Ракети / крилаті ракети
+    elif ('ракет' in text_lower or 'крилат' in text_lower) and 'відбій' not in text_lower:
+        message_type = 'threat_start'
+        threat_type = 'rocket'
+        emoji = '🚀'
+        if len(text) > 100:
+            formatted_text = f'{emoji} Ракети: {text[:100]}...'
+        else:
+            formatted_text = f'{emoji} {text}'
+    
+    # БПЛА / Дрони / Шахеди
+    elif any(kw in text_lower for kw in ['бпла', 'дрон', 'шахед', 'безпілотн']) and 'відбій' not in text_lower:
+        message_type = 'threat_start'
+        threat_type = 'drone'
+        emoji = '🛩️'
+        if len(text) > 100:
+            formatted_text = f'{emoji} БПЛА: {text[:100]}...'
+        else:
+            formatted_text = f'{emoji} {text}'
+    
+    # Вибухи
+    elif 'вибух' in text_lower:
+        message_type = 'threat_start'
+        threat_type = 'explosion'
+        emoji = '💥'
+        if len(text) > 100:
+            formatted_text = f'{emoji} Вибухи: {text[:100]}...'
+        else:
+            formatted_text = f'{emoji} {text}'
+    
+    # Відбій тривоги (загальний)
+    elif 'відбій' in text_lower and ('тривог' in text_lower or 'загроз' in text_lower):
+        message_type = 'threat_end'
+        threat_type = 'all_clear'
+        emoji = '✅'
+        formatted_text = f'{emoji} Відбій: {text[:80]}' if len(text) > 80 else f'{emoji} {text}'
+    
+    # Тривога (загальна повітряна)
+    elif 'тривог' in text_lower and 'повітрян' in text_lower and 'відбій' not in text_lower:
+        message_type = 'threat_start'
+        threat_type = 'air_alarm'
+        emoji = '🚨'
+        formatted_text = f'{emoji} {text[:100]}' if len(text) > 100 else f'{emoji} {text}'
+    
+    # If we detected something, add to chat
+    if message_type and formatted_text:
+        add_system_chat_message(
+            message_type,
+            formatted_text,
+            region,
+            threat_type
+        )
+        log.info(f'📢 Added Telegram message to chat: {threat_type} - {formatted_text[:50]}...')
+
 def load_config():
     """Load persisted configuration (currently only monitor period)."""
     global MONITOR_PERIOD_MINUTES
@@ -16522,6 +16616,8 @@ async def fetch_loop():
                     msgs_recent_window += 1
                     # Check for ballistic threat messages (realtime - add to chat)
                     update_ballistic_state(msg.text, is_realtime=True)
+                    # Add other important messages to chat
+                    add_telegram_message_to_chat(msg.text, is_realtime=True)
                     tracks = process_message(msg.text, msg.id, dt.strftime('%Y-%m-%d %H:%M:%S'), ch)
                     
                     # Send push notification for threat messages (КАБи, ракети, БПЛА)
