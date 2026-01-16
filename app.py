@@ -20780,6 +20780,95 @@ def get_registered_devices():
         return jsonify({'error': str(e)}), 500
 
 
+# ============ FEEDBACK / BUG REPORTS ============
+FEEDBACK_FILE = os.path.join(PERSISTENT_DATA_DIR, 'feedback.json') if PERSISTENT_DATA_DIR and os.path.isdir(PERSISTENT_DATA_DIR) else 'feedback.json'
+
+def load_feedback():
+    """Load feedback messages."""
+    try:
+        if os.path.exists(FEEDBACK_FILE):
+            with open(FEEDBACK_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        log.error(f"Error loading feedback: {e}")
+    return []
+
+def save_feedback(feedback_list):
+    """Save feedback messages."""
+    try:
+        with open(FEEDBACK_FILE, 'w', encoding='utf-8') as f:
+            json.dump(feedback_list, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log.error(f"Error saving feedback: {e}")
+
+@app.route('/api/feedback', methods=['POST'])
+def submit_feedback():
+    """Submit user feedback or bug report."""
+    try:
+        data = request.get_json()
+        message = data.get('message', '').strip()
+        feedback_type = data.get('type', 'bug')  # 'bug', 'suggestion', 'other'
+        device_id = data.get('device_id', '')
+        app_version = data.get('app_version', '')
+        
+        if not message:
+            return jsonify({'error': 'Message is required'}), 400
+        
+        if len(message) > 5000:
+            message = message[:5000]
+        
+        # Create feedback entry
+        kyiv_tz = pytz.timezone('Europe/Kiev')
+        now = datetime.now(kyiv_tz)
+        
+        feedback_entry = {
+            'id': str(uuid.uuid4()),
+            'type': feedback_type,
+            'message': message,
+            'device_id': device_id[:50] if device_id else '',
+            'app_version': app_version,
+            'timestamp': now.timestamp(),
+            'date': now.strftime('%Y-%m-%d %H:%M:%S'),
+            'status': 'new'
+        }
+        
+        # Load, append, save
+        feedback_list = load_feedback()
+        feedback_list.append(feedback_entry)
+        # Keep only last 500 entries
+        if len(feedback_list) > 500:
+            feedback_list = feedback_list[-500:]
+        save_feedback(feedback_list)
+        
+        log.info(f"📩 New feedback received: {feedback_type} - {message[:50]}...")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Дякуємо за ваш відгук!'
+        })
+    except Exception as e:
+        log.error(f"Error submitting feedback: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/feedback', methods=['GET'])
+def get_feedback():
+    """Get all feedback (for admin)."""
+    try:
+        # Simple auth check (you can add proper auth later)
+        auth_key = request.args.get('key', '')
+        if auth_key != os.getenv('ADMIN_KEY', 'neptun_admin_2024'):
+            return jsonify({'error': 'Unauthorized'}), 401
+        
+        feedback_list = load_feedback()
+        return jsonify({
+            'success': True,
+            'feedback': feedback_list,
+            'count': len(feedback_list)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/test-notification', methods=['POST'])
 def test_notification():
     """Send a test notification to a device."""
