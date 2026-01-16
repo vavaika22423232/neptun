@@ -2437,6 +2437,41 @@ CONFIG_FILE = 'config.json'
 MONITOR_PERIOD_MINUTES = 30  # default; editable only via admin panel
 MANUAL_MARKER_WINDOW_MINUTES = int(os.getenv('MANUAL_MARKER_WINDOW_MINUTES', '720'))  # manual markers stay visible at least 12h
 
+# ---------------- Ballistic threat state ----------------
+BALLISTIC_THREAT_ACTIVE = False
+BALLISTIC_THREAT_REGION = None
+BALLISTIC_THREAT_TIMESTAMP = None
+
+def update_ballistic_state(text):
+    """Update ballistic threat state based on Telegram message text."""
+    global BALLISTIC_THREAT_ACTIVE, BALLISTIC_THREAT_REGION, BALLISTIC_THREAT_TIMESTAMP
+    if not text:
+        return
+    text_lower = text.lower()
+    
+    # Detect ballistic threat activation
+    if 'загроза балістики' in text_lower and 'відбій' not in text_lower:
+        BALLISTIC_THREAT_ACTIVE = True
+        BALLISTIC_THREAT_TIMESTAMP = datetime.now().isoformat()
+        # Try to extract region
+        import re
+        region_match = re.search(r'([\w\-]+(?:ська|ький|ка)\s*область)', text, re.IGNORECASE)
+        if region_match:
+            BALLISTIC_THREAT_REGION = region_match.group(1)
+        else:
+            BALLISTIC_THREAT_REGION = None
+        log.info(f'🚀 BALLISTIC THREAT ACTIVATED: region={BALLISTIC_THREAT_REGION}')
+        return
+    
+    # Detect ballistic threat deactivation
+    if 'відбій' in text_lower and ('балістик' in text_lower or 'загроз' in text_lower):
+        if BALLISTIC_THREAT_ACTIVE:
+            log.info(f'✅ BALLISTIC THREAT DEACTIVATED')
+        BALLISTIC_THREAT_ACTIVE = False
+        BALLISTIC_THREAT_REGION = None
+        BALLISTIC_THREAT_TIMESTAMP = None
+        return
+
 def load_config():
     """Load persisted configuration (currently only monitor period)."""
     global MONITOR_PERIOD_MINUTES
@@ -16344,6 +16379,8 @@ async def fetch_loop():
                         break  # older than needed
                     if msg.id in processed:
                         continue
+                    # Check for ballistic threat messages
+                    update_ballistic_state(msg.text)
                     tracks = process_message(msg.text, msg.id, dt.strftime('%Y-%m-%d %H:%M:%S'), ch_strip)
                     if tracks:
                         print(f"DEBUG: Message {msg.id} generated {len(tracks)} tracks")
@@ -16421,6 +16458,8 @@ async def fetch_loop():
                         # Older than live window
                         continue
                     msgs_recent_window += 1
+                    # Check for ballistic threat messages
+                    update_ballistic_state(msg.text)
                     tracks = process_message(msg.text, msg.id, dt.strftime('%Y-%m-%d %H:%M:%S'), ch)
                     
                     # Send push notification for threat messages (КАБи, ракети, БПЛА)
@@ -18081,6 +18120,12 @@ def data():
         'events': events,
         'all_sources': CHANNELS,
         'trajectories': [],
+        # Ballistic threat state from Telegram
+        'ballistic_threat': {
+            'active': BALLISTIC_THREAT_ACTIVE,
+            'region': BALLISTIC_THREAT_REGION,
+            'timestamp': BALLISTIC_THREAT_TIMESTAMP,
+        },
         # Metadata for clients to know if data was truncated
         '_meta': {
             'tracks_total': total_tracks,

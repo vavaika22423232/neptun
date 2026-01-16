@@ -3925,9 +3925,6 @@
         const apiStatusEl = document.getElementById('api-status');
         if (apiStatusEl) apiStatusEl.textContent = '';
         
-        // === BALLISTIC THREAT DETECTION ===
-        checkBallisticThreats(data);
-        
         // SEO: Update dynamic meta tags with current alarm state
         updateDynamicMeta(stateAlarmCount, Array.from(statesWithAlarm));
         
@@ -3994,50 +3991,40 @@
     }
     
     // === BALLISTIC THREAT DETECTION ===
-    let lastBallisticCheck = new Set();
     let ballisticBannerTimeout = null;
+    let lastBallisticState = false;
     
-    function checkBallisticThreats(data) {
-      const currentBallisticRegions = new Set();
+    function checkBallisticThreats(ballisticThreat) {
+      // Check ballistic threat state from /data API (sourced from Telegram)
+      const isActive = ballisticThreat && ballisticThreat.active === true;
+      const region = ballisticThreat ? ballisticThreat.region : null;
       
-      // Check all regions for BALLISTIC threats
-      data.forEach(region => {
-        if (region.activeAlerts && region.activeAlerts.length > 0) {
-          region.activeAlerts.forEach(alert => {
-            const alertType = alert.type || '';
-            if (alertType === 'BALLISTIC' || alertType === 'MISSILE' || alertType.includes('BALLISTIC')) {
-              const regionName = region.regionName || region.regionId;
-              currentBallisticRegions.add(regionName);
-              console.log('🚀 BALLISTIC DETECTED:', regionName, alertType);
-            }
-          });
-        }
-      });
+      console.log('🚀 Ballistic check:', { isActive, region, lastState: lastBallisticState });
       
-      // Check for NEW ballistic threats
-      const newThreats = [...currentBallisticRegions].filter(r => !lastBallisticCheck.has(r));
-      
-      if (newThreats.length > 0) {
-        showBallisticBanner();
-      } else if (currentBallisticRegions.size === 0 && lastBallisticCheck.size > 0) {
-        // All threats cleared
+      if (isActive && !lastBallisticState) {
+        // NEW ballistic threat - show banner
+        showBallisticBanner(region);
+      } else if (!isActive && lastBallisticState) {
+        // Threat cleared - hide banner
         hideBallisticBanner();
       }
       
-      lastBallisticCheck = currentBallisticRegions;
+      lastBallisticState = isActive;
     }
     
-    function showBallisticBanner() {
+    function showBallisticBanner(region) {
       const banner = document.getElementById('ballistic-banner');
       if (banner) {
         banner.classList.add('visible');
-        console.log('🚀 Showing ballistic banner');
+        console.log('🚀 Showing ballistic banner for region:', region);
         
-        // Auto-hide after 10 seconds (protection from too fast dismissal)
-        if (ballisticBannerTimeout) clearTimeout(ballisticBannerTimeout);
-        ballisticBannerTimeout = setTimeout(() => {
-          hideBallisticBanner();
-        }, 10000);
+        // Update region text if present
+        const regionSpan = banner.querySelector('.ballistic-region');
+        if (regionSpan && region) {
+          regionSpan.textContent = region;
+        }
+        
+        // NO auto-hide - only hide when "Відбій" message comes
       }
     }
     
@@ -4045,7 +4032,7 @@
       const banner = document.getElementById('ballistic-banner');
       if (banner) {
         banner.classList.remove('visible');
-        console.log('✅ Hiding ballistic banner');
+        console.log('✅ Hiding ballistic banner (відбій received)');
       }
       if (ballisticBannerTimeout) {
         clearTimeout(ballisticBannerTimeout);
@@ -4164,6 +4151,11 @@
         
         // Update markers summary
         updateMarkersSummary(markerCounts);
+        
+        // Check for ballistic threat from Telegram
+        if (data.ballistic_threat) {
+          checkBallisticThreats(data.ballistic_threat);
+        }
         
         console.log(`Loaded ${markers.length} threat markers`);
         
@@ -5392,8 +5384,8 @@
   <div class="ballistic-banner" id="ballistic-banner">
     <span class="icon">🚀</span>
     <div class="content">
-      <strong>Загроза балістики</strong>
-      <span>де зараз повітряна тривога</span>
+      <strong>Загроза балістики!</strong>
+      <span class="ballistic-region"></span>
     </div>
     <button class="close-btn" onclick="hideBallisticBanner()">&times;</button>
   </div>
