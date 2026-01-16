@@ -458,6 +458,37 @@ log = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# ============= CLOUDFLARE CDN SUPPORT =============
+# Cloudflare passes real client IP in CF-Connecting-IP header
+def get_real_ip():
+    """Get real client IP, supporting Cloudflare proxy."""
+    # Cloudflare specific headers (most reliable)
+    cf_ip = request.headers.get('CF-Connecting-IP')
+    if cf_ip:
+        return cf_ip
+    # Standard proxy headers
+    x_forwarded = request.headers.get('X-Forwarded-For')
+    if x_forwarded:
+        return x_forwarded.split(',')[0].strip()
+    x_real_ip = request.headers.get('X-Real-IP')
+    if x_real_ip:
+        return x_real_ip
+    return request.remote_addr or 'unknown'
+
+# Cloudflare cache status header
+@app.after_request
+def add_cloudflare_headers(response):
+    # Add headers for Cloudflare caching
+    if 'Cache-Control' not in response.headers:
+        # Default: no cache for dynamic content
+        response.headers['Cache-Control'] = 'no-store'
+    
+    # Add Vary header for proper caching
+    if 'Vary' not in response.headers:
+        response.headers['Vary'] = 'Accept-Encoding'
+    
+    return response
+
 # ============= API PROTECTION INITIALIZATION =============
 # Initialize production-grade protection BEFORE other middleware
 if API_PROTECTION_ENABLED:
