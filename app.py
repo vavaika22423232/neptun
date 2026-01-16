@@ -22095,6 +22095,58 @@ def remove_chat_moderator():
         log.error(f"Error removing moderator: {e}")
         return jsonify({'error': str(e)}), 500
 
+
+@app.route('/api/chat/user-profile', methods=['POST'])
+def get_chat_user_profile():
+    """Get user profile info (regions) - moderator only."""
+    try:
+        data = request.get_json() or {}
+        requester_device_id = data.get('requesterDeviceId', '')
+        target_device_id = data.get('targetDeviceId', '')
+        target_user_id = data.get('targetUserId', '')
+        
+        # Check if requester is moderator
+        if not is_chat_moderator(requester_device_id):
+            return jsonify({'error': 'Тільки для модераторів'}), 403
+        
+        # Find device_id from userId if not provided
+        if not target_device_id and target_user_id:
+            nicknames = load_chat_nicknames()
+            target_device_id = nicknames.get(target_user_id, '')
+        
+        if not target_device_id:
+            return jsonify({
+                'userId': target_user_id,
+                'regions': [],
+                'message': 'Користувач не знайдений або анонімний'
+            })
+        
+        # Load device data from device_store
+        devices = device_store._load()
+        device_data = devices.get(target_device_id, {})
+        
+        # Get regions from device data
+        regions = device_data.get('regions', [])
+        
+        # Check if user is moderator
+        is_mod = is_chat_moderator(target_device_id)
+        
+        # Check if user is banned
+        is_banned = is_user_banned(target_device_id)
+        
+        return jsonify({
+            'userId': target_user_id,
+            'deviceId': target_device_id[:20] + '...' if len(target_device_id) > 20 else target_device_id,
+            'regions': regions,
+            'isModerator': is_mod,
+            'isBanned': is_banned,
+            'lastSeen': device_data.get('last_seen', ''),
+        })
+    except Exception as e:
+        log.error(f"Error getting user profile: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 # ============= PUSH NOTIFICATIONS FOR ALARMS =============
 
 # Store previous alarm state to detect changes
