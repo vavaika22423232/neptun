@@ -20823,7 +20823,9 @@ def submit_feedback():
         message = data.get('message', '').strip()
         feedback_type = data.get('type', 'bug')  # 'bug', 'suggestion', 'other'
         device_id = data.get('device_id', '')
+        device = data.get('device', '')  # iOS, Android, etc
         app_version = data.get('app_version', '')
+        regions = data.get('regions', [])  # User's selected regions
         
         if not message:
             return jsonify({'error': 'Message is required'}), 400
@@ -20839,8 +20841,10 @@ def submit_feedback():
             'id': str(uuid.uuid4()),
             'type': feedback_type,
             'message': message,
+            'device': device,
             'device_id': device_id[:50] if device_id else '',
             'app_version': app_version,
+            'regions': regions[:10] if isinstance(regions, list) else [],  # Max 10 regions
             'timestamp': now.timestamp(),
             'date': now.strftime('%Y-%m-%d %H:%M:%S'),
             'status': 'new'
