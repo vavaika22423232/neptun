@@ -20852,19 +20852,308 @@ def submit_feedback():
 
 @app.route('/api/feedback', methods=['GET'])
 def get_feedback():
-    """Get all feedback (for admin)."""
+    """Get all feedback (for admin) with nice HTML interface."""
     try:
-        # Simple auth check (you can add proper auth later)
+        # Simple auth check
         auth_key = request.args.get('key', '')
         if auth_key != os.getenv('ADMIN_KEY', 'neptun_admin_2024'):
             return jsonify({'error': 'Unauthorized'}), 401
         
         feedback_list = load_feedback()
-        return jsonify({
-            'success': True,
-            'feedback': feedback_list,
-            'count': len(feedback_list)
-        })
+        
+        # Check if JSON format requested
+        if request.args.get('format') == 'json':
+            return jsonify({
+                'success': True,
+                'feedback': feedback_list,
+                'count': len(feedback_list)
+            })
+        
+        # Sort by date (newest first)
+        feedback_list.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+        
+        # Generate HTML
+        html = '''<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEPTUN - Зворотній зв'язок</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: #e0e0e0;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        
+        header {
+            text-align: center;
+            padding: 30px 0;
+            margin-bottom: 30px;
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(90deg, #00d4ff, #7b2ff7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+        }
+        
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 20px 40px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .stat-number {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #00d4ff;
+        }
+        
+        .stat-label {
+            font-size: 0.9rem;
+            color: #888;
+            margin-top: 5px;
+        }
+        
+        .feedback-list {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .feedback-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .feedback-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 40px rgba(0, 212, 255, 0.1);
+            border-color: rgba(0, 212, 255, 0.3);
+        }
+        
+        .feedback-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 15px;
+        }
+        
+        .feedback-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .feedback-device {
+            font-size: 0.85rem;
+            color: #888;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .feedback-device .icon {
+            font-size: 1.1rem;
+        }
+        
+        .feedback-time {
+            font-size: 0.8rem;
+            color: #666;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 5px 12px;
+            border-radius: 20px;
+        }
+        
+        .feedback-text {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            padding: 20px;
+            font-size: 1rem;
+            line-height: 1.6;
+            color: #f0f0f0;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        
+        .feedback-regions {
+            margin-top: 15px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        
+        .region-tag {
+            background: linear-gradient(135deg, #7b2ff7 0%, #f107a3 100%);
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+        
+        .empty-state .icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+        }
+        
+        .refresh-btn {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background: linear-gradient(135deg, #00d4ff 0%, #7b2ff7 100%);
+            color: white;
+            border: none;
+            padding: 15px 25px;
+            border-radius: 30px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            box-shadow: 0 4px 20px rgba(0, 212, 255, 0.3);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .refresh-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 30px rgba(0, 212, 255, 0.4);
+        }
+        
+        @media (max-width: 600px) {
+            h1 { font-size: 1.8rem; }
+            .stats { flex-direction: column; gap: 15px; }
+            .stat-card { padding: 15px 30px; }
+            .feedback-header { flex-direction: column; gap: 10px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🌊 NEPTUN Feedback</h1>
+            <p style="color: #888;">Адмін-панель зворотнього зв'язку</p>
+        </header>
+        
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-number">''' + str(len(feedback_list)) + '''</div>
+                <div class="stat-label">Всього повідомлень</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">''' + str(len([f for f in feedback_list if f.get('timestamp', '')[:10] == datetime.now().strftime('%Y-%m-%d')])) + '''</div>
+                <div class="stat-label">Сьогодні</div>
+            </div>
+        </div>
+        
+        <div class="feedback-list">'''
+        
+        if not feedback_list:
+            html += '''
+            <div class="empty-state">
+                <div class="icon">📭</div>
+                <h3>Поки немає повідомлень</h3>
+                <p>Користувачі ще не надіслали зворотній зв'язок</p>
+            </div>'''
+        else:
+            for fb in feedback_list:
+                # Determine device icon
+                device = fb.get('device', 'Unknown')
+                if 'iphone' in device.lower() or 'ios' in device.lower():
+                    device_icon = '📱'
+                elif 'android' in device.lower():
+                    device_icon = '🤖'
+                else:
+                    device_icon = '💻'
+                
+                # Format timestamp
+                ts = fb.get('timestamp', '')
+                try:
+                    dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                    formatted_time = dt.strftime('%d.%m.%Y %H:%M')
+                except:
+                    formatted_time = ts[:16] if ts else 'Невідомо'
+                
+                # Escape HTML in text
+                text = fb.get('text', '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                device_escaped = device.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                
+                # Get regions
+                regions = fb.get('regions', [])
+                
+                html += f'''
+            <div class="feedback-card">
+                <div class="feedback-header">
+                    <div class="feedback-meta">
+                        <div class="feedback-device">
+                            <span class="icon">{device_icon}</span>
+                            <span>{device_escaped}</span>
+                        </div>
+                    </div>
+                    <div class="feedback-time">🕐 {formatted_time}</div>
+                </div>
+                <div class="feedback-text">{text}</div>'''
+                
+                if regions:
+                    html += '''
+                <div class="feedback-regions">'''
+                    for region in regions[:5]:  # Show max 5 regions
+                        region_escaped = region.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                        html += f'''
+                    <span class="region-tag">📍 {region_escaped}</span>'''
+                    if len(regions) > 5:
+                        html += f'''
+                    <span class="region-tag">+{len(regions) - 5} ще</span>'''
+                    html += '''
+                </div>'''
+                
+                html += '''
+            </div>'''
+        
+        html += '''
+        </div>
+    </div>
+    
+    <button class="refresh-btn" onclick="location.reload()">🔄 Оновити</button>
+</body>
+</html>'''
+        
+        return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
+        
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
