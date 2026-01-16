@@ -2478,8 +2478,13 @@ def add_system_chat_message(message_type, text, region=None, threat_type='ballis
     except Exception as e:
         log.error(f'Error adding system chat message: {e}')
 
-def update_ballistic_state(text):
-    """Update ballistic threat state based on Telegram message text."""
+def update_ballistic_state(text, is_realtime=False):
+    """Update ballistic threat state based on Telegram message text.
+    
+    Args:
+        text: The message text to analyze
+        is_realtime: If True, this is a live message (add to chat). If False, it's from backfill (don't add to chat)
+    """
     global BALLISTIC_THREAT_ACTIVE, BALLISTIC_THREAT_REGION, BALLISTIC_THREAT_TIMESTAMP
     if not text:
         return
@@ -2497,10 +2502,10 @@ def update_ballistic_state(text):
             BALLISTIC_THREAT_REGION = region_match.group(1)
         else:
             BALLISTIC_THREAT_REGION = None
-        log.info(f'🚀 BALLISTIC THREAT ACTIVATED: region={BALLISTIC_THREAT_REGION}')
+        log.info(f'🚀 BALLISTIC THREAT ACTIVATED: region={BALLISTIC_THREAT_REGION}, realtime={is_realtime}')
         
-        # Add system message to chat if this is a new threat
-        if not was_active:
+        # Add system message to chat ONLY for realtime (live) messages, not backfill
+        if not was_active and is_realtime:
             region_text = f' ({BALLISTIC_THREAT_REGION})' if BALLISTIC_THREAT_REGION else ''
             add_system_chat_message(
                 'threat_start',
@@ -2514,13 +2519,13 @@ def update_ballistic_state(text):
     if 'відбій' in text_lower and ('балістик' in text_lower or 'загроз' in text_lower):
         was_active = BALLISTIC_THREAT_ACTIVE
         if BALLISTIC_THREAT_ACTIVE:
-            log.info(f'✅ BALLISTIC THREAT DEACTIVATED')
+            log.info(f'✅ BALLISTIC THREAT DEACTIVATED, realtime={is_realtime}')
         BALLISTIC_THREAT_ACTIVE = False
         BALLISTIC_THREAT_REGION = None
         BALLISTIC_THREAT_TIMESTAMP = None
         
-        # Add system message to chat if threat was active
-        if was_active:
+        # Add system message to chat ONLY for realtime (live) messages
+        if was_active and is_realtime:
             add_system_chat_message(
                 'threat_end',
                 '✅ Відбій загрози балістики. Залишайтесь пильними.',
@@ -16436,8 +16441,8 @@ async def fetch_loop():
                         break  # older than needed
                     if msg.id in processed:
                         continue
-                    # Check for ballistic threat messages
-                    update_ballistic_state(msg.text)
+                    # Check for ballistic threat messages (backfill - don't add to chat)
+                    update_ballistic_state(msg.text, is_realtime=False)
                     tracks = process_message(msg.text, msg.id, dt.strftime('%Y-%m-%d %H:%M:%S'), ch_strip)
                     if tracks:
                         print(f"DEBUG: Message {msg.id} generated {len(tracks)} tracks")
@@ -16515,8 +16520,8 @@ async def fetch_loop():
                         # Older than live window
                         continue
                     msgs_recent_window += 1
-                    # Check for ballistic threat messages
-                    update_ballistic_state(msg.text)
+                    # Check for ballistic threat messages (realtime - add to chat)
+                    update_ballistic_state(msg.text, is_realtime=True)
                     tracks = process_message(msg.text, msg.id, dt.strftime('%Y-%m-%d %H:%M:%S'), ch)
                     
                     # Send push notification for threat messages (КАБи, ракети, БПЛА)
