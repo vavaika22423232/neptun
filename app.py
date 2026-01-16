@@ -22109,7 +22109,7 @@ def remove_chat_moderator():
 
 @app.route('/api/chat/user-profile', methods=['POST'])
 def get_chat_user_profile():
-    """Get user profile info (regions) - moderator only."""
+    """Get user profile info - basic info for all, detailed for moderators."""
     try:
         data = request.get_json() or {}
         requester_device_id = data.get('requesterDeviceId', '')
@@ -22117,42 +22117,44 @@ def get_chat_user_profile():
         target_user_id = data.get('targetUserId', '')
         
         # Check if requester is moderator
-        if not is_chat_moderator(requester_device_id):
-            return jsonify({'error': 'Тільки для модераторів'}), 403
+        is_requester_mod = is_chat_moderator(requester_device_id)
         
         # Find device_id from userId if not provided
         if not target_device_id and target_user_id:
             nicknames = load_chat_nicknames()
             target_device_id = nicknames.get(target_user_id, '')
         
-        if not target_device_id:
-            return jsonify({
-                'userId': target_user_id,
-                'regions': [],
-                'message': 'Користувач не знайдений або анонімний'
-            })
+        # Check if target is moderator
+        is_target_mod = is_chat_moderator(target_device_id) if target_device_id else False
         
-        # Load device data from device_store
-        devices = device_store._load()
-        device_data = devices.get(target_device_id, {})
+        # Check if target is banned
+        is_banned = is_user_banned(target_device_id) if target_device_id else False
         
-        # Get regions from device data
-        regions = device_data.get('regions', [])
-        
-        # Check if user is moderator
-        is_mod = is_chat_moderator(target_device_id)
-        
-        # Check if user is banned
-        is_banned = is_user_banned(target_device_id)
-        
-        return jsonify({
+        # Basic response for all users
+        response_data = {
             'userId': target_user_id,
-            'deviceId': target_device_id[:20] + '...' if len(target_device_id) > 20 else target_device_id,
-            'regions': regions,
-            'isModerator': is_mod,
+            'isModerator': is_target_mod,
             'isBanned': is_banned,
-            'lastSeen': device_data.get('last_seen', ''),
-        })
+        }
+        
+        # If requester is moderator - show more details
+        if is_requester_mod and target_device_id:
+            # Load device data from device_store
+            devices = device_store._load()
+            device_data = devices.get(target_device_id, {})
+            
+            # Get regions from device data
+            regions = device_data.get('regions', [])
+            
+            response_data['deviceId'] = target_device_id[:20] + '...' if len(target_device_id) > 20 else target_device_id
+            response_data['regions'] = regions
+            response_data['lastSeen'] = device_data.get('last_seen', '')
+        else:
+            # For regular users - only basic info
+            response_data['regions'] = []
+            response_data['message'] = 'Детальна інформація доступна тільки модераторам'
+        
+        return jsonify(response_data)
     except Exception as e:
         log.error(f"Error getting user profile: {e}")
         return jsonify({'error': str(e)}), 500
