@@ -20781,14 +20781,22 @@ def get_registered_devices():
 
 
 # ============ FEEDBACK / BUG REPORTS ============
-FEEDBACK_FILE = os.path.join(PERSISTENT_DATA_DIR, 'feedback.json') if PERSISTENT_DATA_DIR and os.path.isdir(PERSISTENT_DATA_DIR) else 'feedback.json'
+# Ensure we use persistent storage for feedback
+if PERSISTENT_DATA_DIR and os.path.isdir(PERSISTENT_DATA_DIR):
+    FEEDBACK_FILE = os.path.join(PERSISTENT_DATA_DIR, 'feedback.json')
+    log.info(f'Feedback will be saved to persistent storage: {FEEDBACK_FILE}')
+else:
+    FEEDBACK_FILE = 'feedback.json'
+    log.warning(f'Feedback will be saved locally (not persistent): {FEEDBACK_FILE}')
 
 def load_feedback():
     """Load feedback messages."""
     try:
         if os.path.exists(FEEDBACK_FILE):
             with open(FEEDBACK_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                data = json.load(f)
+                log.info(f"Loaded {len(data)} feedback items from {FEEDBACK_FILE}")
+                return data
     except Exception as e:
         log.error(f"Error loading feedback: {e}")
     return []
@@ -20796,8 +20804,14 @@ def load_feedback():
 def save_feedback(feedback_list):
     """Save feedback messages."""
     try:
+        # Ensure directory exists
+        feedback_dir = os.path.dirname(FEEDBACK_FILE)
+        if feedback_dir and not os.path.exists(feedback_dir):
+            os.makedirs(feedback_dir, exist_ok=True)
+        
         with open(FEEDBACK_FILE, 'w', encoding='utf-8') as f:
             json.dump(feedback_list, f, ensure_ascii=False, indent=2)
+        log.info(f"Saved {len(feedback_list)} feedback items to {FEEDBACK_FILE}")
     except Exception as e:
         log.error(f"Error saving feedback: {e}")
 
@@ -21067,6 +21081,7 @@ def get_feedback():
         <header>
             <h1>🌊 NEPTUN Feedback</h1>
             <p style="color: #888;">Адмін-панель зворотнього зв'язку</p>
+            <p style="color: #555; font-size: 0.8rem; margin-top: 5px;">💾 ''' + ('Persistent: ' + FEEDBACK_FILE if '/data' in FEEDBACK_FILE else '⚠️ Local: ' + FEEDBACK_FILE) + '''</p>
         </header>
         
         <div class="stats">
