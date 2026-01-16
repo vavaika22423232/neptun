@@ -21106,14 +21106,21 @@ def get_feedback():
             </div>'''
         else:
             for fb in feedback_list:
+                # Get device info
+                device = fb.get('device', '') or fb.get('device_id', '') or 'Невідомий пристрій'
+                app_version = fb.get('app_version', '')
+                feedback_type = fb.get('type', 'bug')
+                
                 # Determine device icon
-                device = fb.get('device', 'Unknown')
                 if 'iphone' in device.lower() or 'ios' in device.lower():
                     device_icon = '📱'
                 elif 'android' in device.lower():
                     device_icon = '🤖'
                 else:
                     device_icon = '💻'
+                
+                # Type badge
+                type_badge = {'bug': '🐛 Баг', 'suggestion': '💡 Ідея', 'other': '📝 Інше'}.get(feedback_type, '📝')
                 
                 # Format timestamp
                 ts = fb.get('timestamp', '')
@@ -21126,13 +21133,15 @@ def get_feedback():
                         dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
                         formatted_time = dt.strftime('%d.%m.%Y %H:%M')
                     else:
-                        formatted_time = 'Невідомо'
+                        formatted_time = fb.get('date', 'Невідомо')
                 except:
-                    formatted_time = str(ts)[:16] if ts else 'Невідомо'
+                    formatted_time = fb.get('date', str(ts)[:16] if ts else 'Невідомо')
                 
-                # Escape HTML in text
-                text = fb.get('text', '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-                device_escaped = device.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                # Escape HTML in text - use 'message' field!
+                text = fb.get('message', '') or fb.get('text', '')
+                text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                device_display = f"{device}" + (f" (v{app_version})" if app_version else "")
+                device_escaped = device_display.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
                 
                 # Get regions
                 regions = fb.get('regions', [])
@@ -21144,11 +21153,12 @@ def get_feedback():
                         <div class="feedback-device">
                             <span class="icon">{device_icon}</span>
                             <span>{device_escaped}</span>
+                            <span style="margin-left: 10px; background: rgba(255,255,255,0.1); padding: 3px 8px; border-radius: 10px; font-size: 0.75rem;">{type_badge}</span>
                         </div>
                     </div>
                     <div class="feedback-time">🕐 {formatted_time}</div>
                 </div>
-                <div class="feedback-text">{text}</div>'''
+                <div class="feedback-text">{text if text else "<i style='color:#666'>Порожнє повідомлення</i>"}</div>'''
                 
                 if regions:
                     html += '''
