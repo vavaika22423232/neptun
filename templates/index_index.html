@@ -33,9 +33,6 @@
   <!-- Preload Material Icons font -->
   <link rel="preload" href="https://fonts.gstatic.com/s/materialicons/v140/flUhRq6tzZclQEJ-Vdg-IuiaDsNc.woff2" as="font" type="font/woff2" crossorigin>
   
-  <!-- Preload Orbitron font for splashscreen -->
-  <link rel="preload" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&display=swap" as="style">
-  
   <!-- DNS Prefetch for external resources -->
   <link rel="dns-prefetch" href="//fonts.googleapis.com">
   <link rel="dns-prefetch" href="//fonts.gstatic.com">
@@ -329,144 +326,6 @@
     /* Prevent FOUC */
     .navbar, .donate-modal, .faq-modal { opacity: 0; animation: fadeIn 0.3s ease-in-out forwards; animation-delay: 0.1s; }
     @keyframes fadeIn { to { opacity: 1; } }
-    
-    /* === SPLASHSCREEN === */
-    #splashscreen {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: linear-gradient(135deg, #0a0e17 0%, #0d1929 50%, #0a192f 100%);
-      z-index: 99999;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      transition: opacity 0.6s ease, visibility 0.6s ease;
-    }
-    #splashscreen.hidden {
-      opacity: 0;
-      visibility: hidden;
-      pointer-events: none;
-    }
-    .splash-logo {
-      font-family: 'Orbitron', -apple-system, sans-serif;
-      font-size: clamp(36px, 10vw, 72px);
-      font-weight: 900;
-      background: linear-gradient(135deg, #00d4ff 0%, #0099cc 50%, #00d4ff 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      letter-spacing: 8px;
-      animation: logoGlow 2s ease-in-out infinite;
-      text-shadow: 0 0 60px rgba(0, 212, 255, 0.5);
-    }
-    @keyframes logoGlow {
-      0%, 100% { filter: drop-shadow(0 0 20px rgba(0, 212, 255, 0.6)); }
-      50% { filter: drop-shadow(0 0 40px rgba(0, 212, 255, 0.9)); }
-    }
-    .splash-subtitle {
-      font-family: 'Exo 2', 'Inter', sans-serif;
-      font-size: clamp(10px, 2.5vw, 14px);
-      color: rgba(0, 212, 255, 0.7);
-      letter-spacing: 6px;
-      margin-top: 12px;
-      text-transform: uppercase;
-    }
-    /* Radar animation */
-    .splash-radar {
-      position: relative;
-      width: clamp(120px, 30vw, 200px);
-      height: clamp(120px, 30vw, 200px);
-      margin-bottom: 30px;
-    }
-    .radar-circle {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      border: 2px solid rgba(0, 212, 255, 0.3);
-      border-radius: 50%;
-      animation: radarPulse 2s ease-out infinite;
-    }
-    .radar-circle:nth-child(1) { width: 100%; height: 100%; animation-delay: 0s; }
-    .radar-circle:nth-child(2) { width: 70%; height: 70%; animation-delay: 0.4s; }
-    .radar-circle:nth-child(3) { width: 40%; height: 40%; animation-delay: 0.8s; }
-    @keyframes radarPulse {
-      0% { transform: translate(-50%, -50%) scale(0.8); opacity: 1; border-color: rgba(0, 212, 255, 0.6); }
-      100% { transform: translate(-50%, -50%) scale(1.3); opacity: 0; border-color: rgba(0, 212, 255, 0); }
-    }
-    .radar-sweep {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 50%;
-      height: 2px;
-      background: linear-gradient(90deg, rgba(0, 212, 255, 0.8), transparent);
-      transform-origin: left center;
-      animation: radarSweep 2s linear infinite;
-    }
-    @keyframes radarSweep {
-      from { transform: rotate(0deg); }
-      to { transform: rotate(360deg); }
-    }
-    .radar-center {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 12px;
-      height: 12px;
-      background: #00d4ff;
-      border-radius: 50%;
-      box-shadow: 0 0 20px rgba(0, 212, 255, 0.8);
-    }
-    /* Loading progress */
-    .splash-progress {
-      width: clamp(150px, 40vw, 250px);
-      height: 3px;
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 3px;
-      margin-top: 30px;
-      overflow: hidden;
-    }
-    .splash-progress-bar {
-      height: 100%;
-      background: linear-gradient(90deg, #00d4ff, #0099cc, #00d4ff);
-      background-size: 200% 100%;
-      animation: progressMove 1.5s ease-in-out infinite, progressGrow 2s ease-out forwards;
-      width: 0%;
-    }
-    @keyframes progressMove {
-      0% { background-position: 100% 0; }
-      100% { background-position: -100% 0; }
-    }
-    @keyframes progressGrow {
-      0% { width: 0%; }
-      50% { width: 70%; }
-      100% { width: 100%; }
-    }
-    .splash-status {
-      font-family: 'Inter', sans-serif;
-      font-size: 12px;
-      color: rgba(255, 255, 255, 0.5);
-      margin-top: 15px;
-      letter-spacing: 1px;
-    }
-    /* Grid background for splash */
-    .splash-grid {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background-image: 
-        linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
-      background-size: 50px 50px;
-      pointer-events: none;
-    }
   </style>
   
   <!-- FONTS - Optimized loading with font-display: swap -->
@@ -2521,97 +2380,6 @@
         top: 70px;
       }
     }
-    
-    /* Maintenance/502 overlay */
-    #maintenance-overlay {
-      display: none !important;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: linear-gradient(135deg, rgba(10, 14, 23, 0.98) 0%, rgba(26, 26, 46, 0.98) 50%, rgba(22, 33, 62, 0.98) 100%);
-      z-index: 99999;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      color: #fff;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    }
-    
-    #maintenance-overlay.show {
-      display: flex !important;
-    }
-    
-    .maintenance-content {
-      max-width: 450px;
-      padding: 30px;
-    }
-    
-    .maintenance-logo {
-      font-size: 42px;
-      font-weight: 800;
-      margin-bottom: 8px;
-      background: linear-gradient(135deg, #00d4ff, #7c3aed);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      letter-spacing: 3px;
-    }
-    
-    .maintenance-subtitle {
-      color: rgba(255, 255, 255, 0.5);
-      font-size: 12px;
-      margin-bottom: 30px;
-      letter-spacing: 2px;
-    }
-    
-    .maintenance-message {
-      font-size: 20px;
-      margin-bottom: 15px;
-      line-height: 1.4;
-    }
-    
-    .maintenance-desc {
-      color: rgba(255, 255, 255, 0.7);
-      font-size: 14px;
-      margin-bottom: 25px;
-      line-height: 1.5;
-    }
-    
-    .maintenance-loader {
-      display: flex;
-      justify-content: center;
-      gap: 8px;
-      margin-bottom: 25px;
-    }
-    
-    .maintenance-loader span {
-      width: 10px;
-      height: 10px;
-      background: #00d4ff;
-      border-radius: 50%;
-      animation: maintenance-pulse 1.4s ease-in-out infinite;
-    }
-    
-    .maintenance-loader span:nth-child(1) { animation-delay: 0s; }
-    .maintenance-loader span:nth-child(2) { animation-delay: 0.2s; }
-    .maintenance-loader span:nth-child(3) { animation-delay: 0.4s; }
-    
-    @keyframes maintenance-pulse {
-      0%, 100% { transform: scale(0.8); opacity: 0.5; }
-      50% { transform: scale(1.2); opacity: 1; }
-    }
-    
-    .maintenance-timer {
-      font-size: 12px;
-      color: rgba(255, 255, 255, 0.4);
-    }
-    
-    .maintenance-timer span {
-      color: #00d4ff;
-      font-weight: bold;
-    }
   </style>
 </head>
 <body>
@@ -2645,28 +2413,9 @@
       displayUserIdInNavbar();
     });
 
-    // Display user ID in navbar (both left and right)
+    // User ID display disabled
     function displayUserIdInNavbar() {
-      const userId = localStorage.getItem('user_id');
-      if (userId) {
-        // Left side (in stats block)
-        const displayElement = document.getElementById('userNicknameDisplay');
-        const idText = document.getElementById('navbarNickname');
-        if (displayElement && idText) {
-          idText.textContent = userId;
-          displayElement.style.display = 'flex';
-          displayElement.style.alignItems = 'center';
-        }
-        
-        // Right side (near FAQ button)
-        const displayElementRight = document.getElementById('userNicknameDisplayRight');
-        const idTextRight = document.getElementById('navbarNicknameRight');
-        if (displayElementRight && idTextRight) {
-          idTextRight.textContent = userId;
-          displayElementRight.style.display = 'flex';
-          displayElementRight.style.alignItems = 'center';
-        }
-      }
+      // Disabled - user ID no longer shown in navbar
     }
 
     // Also call after storage changes
@@ -2683,78 +2432,6 @@
     document.head.appendChild(style);
   </script>
 
-  <!-- SPLASHSCREEN -->
-  <div id="splashscreen">
-    <div class="splash-grid"></div>
-    <div class="splash-radar">
-      <div class="radar-circle"></div>
-      <div class="radar-circle"></div>
-      <div class="radar-circle"></div>
-      <div class="radar-sweep"></div>
-      <div class="radar-center"></div>
-    </div>
-    <div class="splash-logo">NEPTUN</div>
-    <div class="splash-subtitle">Карта тривог України</div>
-    <div class="splash-progress">
-      <div class="splash-progress-bar"></div>
-    </div>
-    <div class="splash-status">Завантаження даних...</div>
-  </div>
-  
-  <script>
-    // Hide splashscreen when page is fully loaded
-    (function() {
-      function hideSplash() {
-        const splash = document.getElementById('splashscreen');
-        if (splash) {
-          // Minimum display time of 1.5 seconds for branding
-          const minDisplayTime = 1500;
-          const startTime = window.splashStartTime || Date.now();
-          const elapsed = Date.now() - startTime;
-          const remaining = Math.max(0, minDisplayTime - elapsed);
-          
-          setTimeout(function() {
-            splash.classList.add('hidden');
-            // Remove from DOM after animation
-            setTimeout(function() {
-              if (splash.parentNode) {
-                splash.parentNode.removeChild(splash);
-              }
-            }, 600);
-          }, remaining);
-        }
-      }
-      
-      window.splashStartTime = Date.now();
-      
-      // Hide on window load
-      if (document.readyState === 'complete') {
-        hideSplash();
-      } else {
-        window.addEventListener('load', hideSplash);
-      }
-      
-      // Fallback: hide after 4 seconds max
-      setTimeout(hideSplash, 4000);
-    })();
-  </script>
-
-  <!-- MAINTENANCE OVERLAY for 502 errors -->
-  <div id="maintenance-overlay">
-    <div class="maintenance-content">
-      <div class="maintenance-logo">NEPTUN</div>
-      <div class="maintenance-subtitle">КАРТА ТРИВОГ УКРАЇНИ</div>
-      <div class="maintenance-message">🔄 Зачекайте, вносимо зміни</div>
-      <div class="maintenance-desc">Сервер оновлюється. Сторінка автоматично перезавантажиться через кілька секунд.</div>
-      <div class="maintenance-loader">
-        <span></span>
-        <span></span>
-        <span></span>
-      </div>
-      <div class="maintenance-timer">Автоматичне оновлення через <span id="maintenance-timer">10</span> сек.</div>
-    </div>
-  </div>
-  
   <!-- SEO CONTENT - Visible to search engines -->
   <article id="seo-content" style="position:absolute;left:0;top:60px;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;">
     <h2>Карта тривог та шахедів України онлайн — повітряна тривога в реальному часі</h2>
@@ -2826,17 +2503,9 @@
             <span class="live-chip">📱<strong data-role="live-apps">0</strong></span>
           </span>
         </div>
-        <div id="userNicknameDisplay" class="user-nickname">
-          <span class="nickname-icon">🆔</span>
-          <span id="navbarNickname"></span>
-        </div>
       </div>
     </div>
     <div class="nav-actions">
-      <div id="userNicknameDisplayRight" class="user-nickname-right">
-        <span class="nickname-icon">🆔</span>
-        <span id="navbarNicknameRight"></span>
-      </div>
       <button class="nav-btn faq-btn" onclick="toggleFAQ()" title="FAQ та правила">
         <i class="material-icons">help_outline</i>
         <span>FAQ</span>
@@ -3443,22 +3112,6 @@
       }
     });
   </script>
-  
-  <!-- Floating Buttons Container -->
-  <div class="floating-buttons">
-    <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" target="_blank" class="floating-btn app-btn" title="Завантажити додаток">
-      <i class="material-icons">android</i>
-      <span class="btn-text">Додаток</span>
-    </a>
-    <button onclick="document.getElementById('commercialModal').style.display='flex'" class="floating-btn commercial-btn" title="Комерційне використання">
-      <i class="material-icons">live_tv</i>
-      <span class="btn-text">Для стрімерів</span>
-    </button>
-    <button class="floating-btn map-btn" onclick="window.location.href='/map-old?from=index'" title="Перемкнути на стару карту">
-      <i class="material-icons">map</i>
-      <span class="btn-text">Стара карта</span>
-    </button>
-  </div>
 
 
   <script>
@@ -3583,14 +3236,14 @@
     // Icon mapping for threat types
     const THREAT_ICONS = {
       'shahed': 'icon_drone.svg',
-      'raketa': 'icon_missile.svg',
+      'raketa': 'icon_balistic.svg',
       'avia': 'avia.png',
       'artillery': 'artillery.png',
       'obstril': 'icon_obstril.svg',
       'fpv': 'fpv.png',
       'pusk': 'pusk.png',
-      'kab': 'rszv.png',
-      'rszv': 'rszv.png',
+      'kab': 'icon_missile.svg',
+      'rszv': 'icon_missile.svg',
       'rozved': 'icon_rozved.svg',
       'vibuh': 'icon_vibuh.svg',
       'alarm': 'trivoga.png',
@@ -5285,86 +4938,99 @@
     }
   </style>
 
-  <!-- SEO FOOTER - Important for search rankings -->
-  <footer id="seo-footer">
-    <nav class="seo-footer-nav">
-      <span class="seo-footer-brand">© 2026 NEPTUN</span>
-      <span class="seo-footer-sep desktop-only">•</span>
-      <a href="/" class="seo-footer-link desktop-only" title="Карта тривог України в реальному часі">Карта тривог</a>
-      <span class="seo-footer-sep desktop-only">•</span>
-      <a href="/map-old" class="seo-footer-link desktop-only" title="Радар шахедів онлайн">Радар шахедів</a>
-      <span class="seo-footer-sep desktop-only">•</span>
-      <a href="https://t.me/+aBR79kExNQM1ZjZi" target="_blank" rel="noopener" class="seo-footer-link desktop-only" title="Telegram канал NEPTUN">Telegram</a>
-      <span class="seo-footer-sep">•</span>
-      <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" target="_blank" rel="noopener" class="seo-footer-app" title="Додаток карти тривог NEPTUN">📱 Додаток</a>
-    </nav>
+  <!-- BOTTOM BAR - Combined footer and actions -->
+  <footer id="bottom-bar">
+    <div class="bottom-bar-content">
+      <span class="bottom-brand">© 2026 NEPTUN</span>
+      <div class="bottom-links">
+        <a href="/map-old" class="bottom-link" title="Радар шахедів">
+          <i class="material-icons">radar</i>
+          <span>Радар</span>
+        </a>
+        <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" target="_blank" rel="noopener" class="bottom-link app" title="Додаток">
+          <i class="material-icons">android</i>
+          <span>Додаток</span>
+        </a>
+      </div>
+    </div>
   </footer>
   
   <style>
-    #seo-footer {
+    #bottom-bar {
       position: fixed;
       bottom: 0;
       left: 0;
       right: 0;
-      background: linear-gradient(180deg, transparent 0%, rgba(10,14,23,0.95) 40%, rgba(10,14,23,1) 100%);
-      padding: 10px 16px;
-      z-index: 100;
-      pointer-events: none;
+      background: rgba(15, 23, 42, 0.95);
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 8px 16px;
+      z-index: 1000;
     }
-    .seo-footer-nav {
+    .bottom-bar-content {
       display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
+      justify-content: space-between;
       align-items: center;
-      gap: 10px;
+      max-width: 100%;
+    }
+    .bottom-brand {
+      color: #64748b;
       font-size: 11px;
-      opacity: 0.6;
-      pointer-events: auto;
       font-weight: 500;
     }
-    .seo-footer-brand {
-      color: #00d4ff;
-      font-weight: 700;
-      letter-spacing: 0.5px;
+    .bottom-links {
+      display: flex;
+      gap: 4px;
     }
-    .seo-footer-sep {
-      color: #334155;
-      font-size: 8px;
-    }
-    .seo-footer-link {
-      color: #64748b;
-      text-decoration: none;
-      transition: color 0.2s;
-    }
-    .seo-footer-link:hover {
+    .bottom-link {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 6px 12px;
+      border-radius: 6px;
       color: #94a3b8;
-    }
-    .seo-footer-app {
-      color: #3ddc84;
       text-decoration: none;
-      font-weight: 600;
-      transition: color 0.2s;
+      font-size: 12px;
+      font-weight: 500;
+      transition: all 0.2s;
+      background: rgba(255, 255, 255, 0.05);
     }
-    .seo-footer-app:hover {
-      color: #4ade80;
+    .bottom-link:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #e2e8f0;
+    }
+    .bottom-link i {
+      font-size: 16px;
+    }
+    .bottom-link.app {
+      background: rgba(52, 211, 153, 0.15);
+      color: #6ee7b7;
+    }
+    .bottom-link.app:hover {
+      background: rgba(52, 211, 153, 0.25);
     }
     
-    /* Mobile optimization */
     @media (max-width: 640px) {
-      #seo-footer {
-        padding: 8px 12px;
-        background: linear-gradient(180deg, transparent 0%, rgba(10,14,23,0.98) 30%, rgba(10,14,23,1) 100%);
+      #bottom-bar {
+        padding: 6px 10px;
       }
-      .seo-footer-nav {
+      .bottom-brand {
+        display: none;
+      }
+      .bottom-links {
+        width: 100%;
+        justify-content: center;
         gap: 8px;
-        font-size: 10px;
-        opacity: 0.5;
       }
-      .desktop-only {
-        display: none !important;
+      .bottom-link {
+        padding: 8px 14px;
+        flex: 1;
+        justify-content: center;
       }
-      .seo-footer-brand {
-        letter-spacing: 0.3px;
+      .bottom-link span {
+        display: none;
+      }
+      .bottom-link i {
+        font-size: 20px;
       }
     }
   </style>

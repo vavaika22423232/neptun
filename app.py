@@ -9458,10 +9458,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         # Recon / розвід дрони -> use pvo icon (rozved.png) per user request - PRIORITY: check BEFORE general БПЛА
         if 'розвід' in l or 'розвідуваль' in l or 'развед' in l:
             return 'rozved', 'rozved.png'
-        # PRIORITY: КАБы (управляемые авиационные бомбы) -> rszv.png - check BEFORE пуски to avoid misclassification
+        # PRIORITY: КАБы (управляемые авиационные бомбы) -> icon_missile.svg - check BEFORE пуски to avoid misclassification
         if any(k in l for k in ['каб','kab','умпк','umpk','модуль','fab','умпб','фаб','кабу']) or \
            ('авіаційн' in l and 'бомб' in l) or ('керован' in l and 'бомб' in l):
-            return 'kab', 'rszv.png'
+            return 'kab', 'icon_missile.svg'
         # Launch site detections for Shahed / UAV launches ("пуски" + origin phrases). User wants pusk.png marker.
         # Exclude КАБ launches - they should be classified as КАБ, not пуски
         if ('пуск' in l or 'пуски' in l) and (any(k in l for k in ['shahed','шахед','шахеді','шахедів','бпла','uav','дрон']) or ('аеродром' in l) or ('аэродром' in l)) and not any(k in l for k in ['каб','kab','умпк','fab','фаб']):
@@ -9484,11 +9484,11 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             print(f"[CLASSIFY DEBUG] Classified as alarm_cancel")
             return 'alarm_cancel', 'vidboi.png'
         
-        # PRIORITY: High-speed targets / missile threats with rocket emoji (🚀) -> raketa.png
+        # PRIORITY: High-speed targets / missile threats with rocket emoji (🚀) -> icon_balistic.svg
         # This should have priority over drones to handle missile-like threats with rocket emoji
         if '🚀' in th or any(k in l for k in ['ціль','цілей','цілі','високошвидкісн','high-speed']):
             print(f"[CLASSIFY DEBUG] Classified as raketa (high-speed targets/rocket emoji)")
-            return 'raketa', 'raketa.png'
+            return 'raketa', 'icon_balistic.svg'
             
         # PRIORITY: drones (частая путаница). Если присутствуют слова шахед/бпла/дрон -> это shahed
         if any(k in l for k in ['shahed','шахед','шахеді','шахедів','geran','герань','дрон','дрони','бпла','uav']):
@@ -9498,24 +9498,24 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         if any(k in l for k in ['літак','самол','avia','tactical','тактичн','fighter','истребит','jets']) or \
            ('авіаційн' in l and ('засоб' in l or 'ураж' in l)):
             return 'avia', 'avia.png'
-        # Rocket / missile attacks (ракета, ракети) -> raketa.png
+        # Rocket / missile attacks (ракета, ракети) -> icon_balistic.svg
         if any(k in l for k in ['ракет','rocket','міжконтинент','межконтинент','балістичн','крилат','cruise']):
-            return 'raketa', 'raketa.png'
-        # РСЗВ (MLRS, град, ураган, смерч) -> rszv.png
+            return 'raketa', 'icon_balistic.svg'
+        # РСЗВ (MLRS, град, ураган, смерч) -> icon_missile.svg
         if any(k in l for k in ['рсзв','mlrs','град','ураган','смерч','рсув','tор','tорнадо','торнадо']):
-            return 'rszv', 'rszv.png'
-        # Korabel (naval/ship-related threats) -> use raketa.png as fallback
+            return 'rszv', 'icon_missile.svg'
+        # Korabel (naval/ship-related threats) -> use icon_balistic.svg as fallback
         if any(k in l for k in ['корабел','флот','корабл','ship','fleet','морськ','naval']):
-            return 'raketa', 'raketa.png'
+            return 'raketa', 'icon_balistic.svg'
         # Artillery
         if any(k in l for k in ['арт','artillery','гармат','гаубиц','минометн','howitzer']):
             return 'artillery', 'artillery.png'
         # PVO (air defense activity) -> use vidboi.png as fallback
         if any(k in l for k in ['ппо','pvo','defense','оборон','зенітн','с-','patriot']):
             return 'vidboi', 'vidboi.png'
-        # Naval mines -> use raketa.png as fallback
+        # Naval mines -> use icon_balistic.svg as fallback
         if any(k in l for k in ['міна','мін ','mine','neptun','нептун','противокорабел']):
-            return 'raketa', 'raketa.png'
+            return 'raketa', 'icon_balistic.svg'
         # FPV drones -> fpv.png
         if any(k in l for k in ['fpv','фпв','камікадз','kamikaze']):
             print(f"[CLASSIFY DEBUG] Classified as fpv")
@@ -12465,7 +12465,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 multi_city_tracks.append({
                     'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
                     'threat_type': 'rszv', 'text': clean_text(ln)[:500], 'date': date_str, 'channel': channel,
-                    'marker_icon': 'rszv.png', 'source_match': 'multiline_oblast_city_rocket', 'count': rocket_count
+                    'marker_icon': 'icon_missile.svg', 'source_match': 'multiline_oblast_city_rocket', 'count': rocket_count
                 })
                 continue  # переходим к следующей строке (не пытаемся распознать как БпЛА)
         # --- NEW: группы крылатых ракет ("Група/Групи КР курсом на <город>") ---
@@ -12508,7 +12508,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 multi_city_tracks.append({
                     'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
                     'threat_type': 'raketa', 'text': ln[:500], 'date': date_str, 'channel': channel,
-                    'marker_icon': 'raketa.png', 'source_match': 'multiline_oblast_city_kr_group', 'count': kr_count
+                    'marker_icon': 'icon_balistic.svg', 'source_match': 'multiline_oblast_city_kr_group', 'count': kr_count
                 })
                 continue
         # Universal KR fallback (handles degraded OCR lines like '3х рупи  курсом на рилуки')
@@ -12558,7 +12558,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         multi_city_tracks.append({
                             'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
                             'threat_type': 'raketa', 'text': ln[:500], 'date': date_str, 'channel': channel,
-                            'marker_icon': 'raketa.png', 'source_match': 'multiline_oblast_city_kr_group_fallback2', 'count': count_guess
+                            'marker_icon': 'icon_balistic.svg', 'source_match': 'multiline_oblast_city_kr_group_fallback2', 'count': count_guess
                         })
                         continue
         # Generic course fallback (any remaining 'курс' + ' на ' line not yet matched)
@@ -12613,7 +12613,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         multi_city_tracks.append({
                             'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
                             'threat_type': 'raketa', 'text': ln[:500], 'date': date_str, 'channel': channel,
-                            'marker_icon': 'raketa.png', 'source_match': 'multiline_oblast_city_course_generic', 'count': 1
+                            'marker_icon': 'icon_balistic.svg', 'source_match': 'multiline_oblast_city_course_generic', 'count': 1
                         })
                         continue
         # Fallback KR pattern if above failed but line mentions 'КР' and 'курс'
@@ -12647,7 +12647,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     multi_city_tracks.append({
                         'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
                         'threat_type': 'raketa', 'text': ln[:500], 'date': date_str, 'channel': channel,
-                        'marker_icon': 'raketa.png', 'source_match': 'multiline_oblast_city_kr_group_fallback', 'count': 1
+                        'marker_icon': 'icon_balistic.svg', 'source_match': 'multiline_oblast_city_kr_group_fallback', 'count': 1
                     })
                     continue
         # Разрешаем многословные названия (до 3 слов) до конца строки / знака препинания
@@ -13717,7 +13717,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             return [{
                 'id': f"{mid}_kab_regional", 'place': region_key.title(), 'lat': lat, 'lng': lng,
                 'threat_type': 'raketa', 'text': original_text[:500], 'date': date_str, 'channel': channel,
-                'marker_icon': 'raketa.png', 'source_match': 'kab_regional_threat'
+                'marker_icon': 'icon_balistic.svg', 'source_match': 'kab_regional_threat'
             }]
     
     # SPECIAL: Handle multi-regional UAV messages (like the user's example)
