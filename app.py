@@ -19496,6 +19496,11 @@ def data():
         if track.get('marker_icon') == 'shahed.png':
             track['marker_icon'] = 'icon_drone.svg'
     
+    # DEBUG: Count tracks with trajectories
+    traj_count = sum(1 for t in out if t.get('trajectory'))
+    if traj_count > 0:
+        print(f"[DEBUG] /data response has {traj_count} tracks with trajectories")
+    
     # Build response with metadata about truncation
     response_data = {
         'tracks': out,
