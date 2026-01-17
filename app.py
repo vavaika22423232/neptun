@@ -6155,6 +6155,8 @@ CITY_COORDS = {
     # Newly added Kyiv & Odesa region settlements / raion centers for alerts
     'гостомель': (50.5853, 30.2617), 'боярка': (50.3301, 30.5201), 'макарів': (50.4645, 29.8114),
     'бородянка': (50.6447, 29.9202), 'кілія': (45.4553, 29.2640),
+    # Odesa region settlements for trajectory tracking
+    'старі трояни': (45.3833, 28.8000), 'стара трояни': (45.3833, 28.8000),
     # Cherkasy region settlement (directional course report: "БпЛА курсом на Цибулів")
     'цибулів': (49.0733, 29.8472),
     # Raion centers (approx: use main settlement or administrative center)
@@ -8851,6 +8853,55 @@ def parse_trajectory_from_message(text):
             }
     
     # =========================================================================
+    # Pattern 2a: "БпЛА з [регіон] курсом на [регіон], напрямок [місто/міста]"
+    # Example: "БпЛА з Київщини курсом на Житомирщину, напрямок Коростень/Овруч"
+    # =========================================================================
+    p2a = re.search(r'(?:група\s+)?(?:бпла|шахед|дрон)\s+з\s+([а-яіїєґ]+(щин|ччин)[иіау])\s+курсом\s+на\s+([а-яіїєґ]+(щин|ччин)[у|ю])[,\s]+(?:напрямок|напрям)\s+(?:м\.?|н\.?п\.?)?\s*([а-яіїєґ\'\-/]+)', text_lower)
+    if p2a:
+        source_region = p2a.group(1)
+        target_region = p2a.group(3)
+        target_cities = p2a.group(5)  # May contain multiple cities like "Коростень/Овруч"
+        
+        source_coords = _get_region_center(source_region)
+        # Try to get coords for the first city mentioned
+        first_city = target_cities.split('/')[0].split(',')[0].strip()
+        target_coords = _get_city_coords(first_city)
+        
+        # Fallback to region center if city not found
+        if not target_coords:
+            target_coords = _get_region_center(target_region)
+        
+        if source_coords and target_coords:
+            return {
+                'start': [source_coords[0], source_coords[1]],
+                'end': [target_coords[0], target_coords[1]],
+                'source_name': source_region.title(),
+                'target_name': target_cities.title(),
+                'kind': 'region_course_to_city'
+            }
+    
+    # =========================================================================
+    # Pattern 2b: "БпЛА з [регіон] курсом на [регіон]" (без напрямку)
+    # Example: "БпЛА з Київщини курсом на Житомирщину"
+    # =========================================================================
+    p2b = re.search(r'(?:група\s+)?(?:бпла|шахед|дрон)\s+з\s+([а-яіїєґ]+(щин|ччин)[иіау])\s+курсом\s+на\s+([а-яіїєґ]+(щин|ччин)[уюі])', text_lower)
+    if p2b:
+        source_region = p2b.group(1)
+        target_region = p2b.group(3)
+        
+        source_coords = _get_region_center(source_region)
+        target_coords = _get_region_center(target_region)
+        
+        if source_coords and target_coords:
+            return {
+                'start': [source_coords[0], source_coords[1]],
+                'end': [target_coords[0], target_coords[1]],
+                'source_name': source_region.title(),
+                'target_name': target_region.title(),
+                'kind': 'region_course_to_region'
+            }
+    
+    # =========================================================================
     # Pattern 3: "БпЛА на [напрямок] [регіон] курсом на [регіон]"
     # Example: "Група БпЛА на сході Миколаївщини курсом на Кіровоградщину"
     # =========================================================================
@@ -8950,13 +9001,14 @@ def parse_trajectory_from_message(text):
                 }
     
     # =========================================================================
-    # Pattern 7: "БпЛА на [регіон], напрямок [місто]"
+    # Pattern 7: "БпЛА на [регіон], напрямок/курс на [місто]"
     # Example: "БпЛА на Дніпропетровщині, напрямок Синельникове"
+    # Example: "Група БпЛА на Одещині, курс на н.п. Кілія"
     # =========================================================================
-    p7 = re.search(r'(?:група\s+)?(?:бпла|шахед|дрон)\s+на\s+([а-яіїєґ]+(щин|ччин)[іиї])[,\s]+(?:напрямок|напрям|у напрямку|в напрямку)\s+(?:м\.?|н\.?п\.?)?\s*([а-яіїєґ\'\-]+)', text_lower)
+    p7 = re.search(r'(?:група\s+)?(?:бпла|шахед|дрон)\s+на\s+([а-яіїєґ]+(щин|ччин)[іиї])[,.\s]+(?:напрямок|напрям|у напрямку|в напрямку|курс на|курс)\s+(?:м\.?|н\.?п\.?)?\s*([а-яіїєґ\'\-\s]+?)(?:\.|$)', text_lower)
     if p7:
         source_region = p7.group(1)
-        target_city = p7.group(3)
+        target_city = p7.group(3).strip()
         
         source_coords = _get_region_center(source_region)
         target_coords = _get_city_coords(target_city)
@@ -8968,6 +9020,38 @@ def parse_trajectory_from_message(text):
                 'source_name': source_region.title(),
                 'target_name': target_city.title(),
                 'kind': 'region_to_city'
+            }
+    
+    # =========================================================================
+    # Pattern 7a: "БпЛА з акваторії [море] на [регіон], курс на [місто]"
+    # Example: "Група БпЛА з акваторії Чорного моря на Одещині. курс на Старі Трояни."
+    # =========================================================================
+    p7a = re.search(r'(?:група\s+)?(?:бпла|шахед|дрон)\s+з\s+акваторії\s+([а-яіїєґ\'\-\s]+моря)\s+на\s+([а-яіїєґ]+(щин|ччин)[іиї])[,.\s]+курс\s+(?:на\s+)?(?:м\.?|н\.?п\.?)?\s*([а-яіїєґ\'\-\s]+?)(?:\.|$)', text_lower)
+    if p7a:
+        sea_name = p7a.group(1)
+        region = p7a.group(2)
+        target_city = p7a.group(4).strip()
+        
+        # Coordinates for seas (approximate entry points to Ukraine)
+        sea_coords = {
+            'чорного моря': (45.5, 31.5),  # Black Sea south of Odesa
+            'азовського моря': (46.5, 36.5),  # Azov Sea
+        }
+        
+        source_coords = sea_coords.get(sea_name, (45.5, 31.5))  # Default to Black Sea
+        target_coords = _get_city_coords(target_city)
+        
+        # Fallback to region center if city not found
+        if not target_coords:
+            target_coords = _get_region_center(region)
+        
+        if target_coords:
+            return {
+                'start': [source_coords[0], source_coords[1]],
+                'end': [target_coords[0], target_coords[1]],
+                'source_name': sea_name.title(),
+                'target_name': target_city.title(),
+                'kind': 'sea_to_city'
             }
     
     # =========================================================================
