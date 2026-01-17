@@ -4215,23 +4215,69 @@ def geocode_with_context(city: str, oblast_key: str, district: str = None):
     try:
         import requests
         
-        # Map oblast key to full region name for Photon
-        oblast_to_region_map = {
-            'дніпропетровська область': 'Дніпропетровська область',
-            'харківська обл.': 'Харківська область',
-            'полтавська область': 'Полтавська область',
-            'сумська область': 'Сумська область',
-            'чернігівська обл.': 'Чернігівська область',
-            'миколаївська обл.': 'Миколаївська область',
-            'одеська обл.': 'Одеська область',
-            'запорізька область': 'Запорізька область',
-            'херсонська обл.': 'Херсонська область',
-            'київська обл.': 'Київська область',
-            'донецька область': 'Донецька область',
-            'луганська область': 'Луганська область',
+        # Normalize oblast key to standard form for matching
+        oblast_lower = oblast_key.lower().strip() if oblast_key else ''
+        
+        # Map various oblast formats to standardized name for API matching
+        oblast_normalize = {
+            # Full forms
+            'дніпропетровська область': 'Дніпропетровська',
+            'харківська область': 'Харківська',
+            'полтавська область': 'Полтавська',
+            'сумська область': 'Сумська',
+            'чернігівська область': 'Чернігівська',
+            'миколаївська область': 'Миколаївська',
+            'одеська область': 'Одеська',
+            'запорізька область': 'Запорізька',
+            'херсонська область': 'Херсонська',
+            'київська область': 'Київська',
+            'донецька область': 'Донецька',
+            'луганська область': 'Луганська',
+            'вінницька область': 'Вінницька',
+            'волинська область': 'Волинська',
+            'житомирська область': 'Житомирська',
+            'закарпатська область': 'Закарпатська',
+            'івано-франківська область': 'Івано-Франківська',
+            'кіровоградська область': 'Кіровоградська',
+            'львівська область': 'Львівська',
+            'рівненська область': 'Рівненська',
+            'тернопільська область': 'Тернопільська',
+            'хмельницька область': 'Хмельницька',
+            'черкаська область': 'Черкаська',
+            'чернівецька область': 'Чернів��цька',
+            # Short forms with обл.
+            'харківська обл.': 'Харківська',
+            'чернігівська обл.': 'Чернігівська',
+            'миколаївська обл.': 'Миколаївська',
+            'одеська обл.': 'Одеська',
+            'херсонська обл.': 'Херсонська',
+            'київська обл.': 'Київська',
+            # Colloquial forms
+            'харківщина': 'Харківська',
+            'полтавщина': 'Полтавська',
+            'сумщина': 'Сумська',
+            'дніпропетровщина': 'Дніпропетровська',
+            'миколаївщина': 'Миколаївська',
+            'херсонщина': 'Херсонська',
+            'одещина': 'Одеська',
+            'чернігівщина': 'Чернігівська',
+            'київщина': 'Київська',
+            'кіровоградщина': 'Кіровоградська',
+            'вінниччина': 'Вінницька',
+            'запоріжжя': 'Запорізька',
         }
         
-        region_name = oblast_to_region_map.get(oblast_key.lower(), oblast_key)
+        region_name = oblast_normalize.get(oblast_lower)
+        if not region_name:
+            # Try partial match
+            for key, val in oblast_normalize.items():
+                if key in oblast_lower or oblast_lower in key:
+                    region_name = val
+                    break
+        if not region_name:
+            region_name = oblast_key  # Use as-is
+        
+        print(f"DEBUG geocode_with_context: city='{city}', oblast='{oblast_key}' -> region='{region_name}'")
         
         photon_url = 'https://photon.komoot.io/api/'
         params = {'q': city, 'limit': 15}
@@ -4257,7 +4303,8 @@ def geocode_with_context(city: str, oblast_key: str, district: str = None):
                 
                 # Filter by Ukraine and oblast
                 if (country == 'Україна' or country == 'Ukraine'):
-                    if region_name in state:
+                    # Check if state matches region_name
+                    if region_name.lower() in state.lower() or state.lower() in region_name.lower():
                         coords_arr = feature.get('geometry', {}).get('coordinates', [])
                         if coords_arr and len(coords_arr) >= 2:
                             lng_val = safe_float(coords_arr[0])
@@ -4783,36 +4830,15 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                     target_city = ai_city.lower()
                     print(f"DEBUG Groq: Using AI-extracted city '{target_city}' (confidence: {ai_result['confidence']})")
                     
-                    # Build context for geocoding
-                    oblast_key = None
+                    # Try geocoding with AI-provided context (oblast as-is, geocode_with_context normalizes it)
                     if ai_oblast:
-                        # Normalize oblast name
-                        oblast_normalizations = {
-                            'дніпропетровська область': 'дніпропетровська область',
-                            'харківська область': 'харківська обл.',
-                            'полтавська область': 'полтавська область',
-                            'сумська область': 'сумська область',
-                            'чернігівська область': 'чернігівська обл.',
-                            'миколаївська область': 'миколаївська обл.',
-                            'одеська область': 'одеська обл.',
-                            'запорізька область': 'запорізька область',
-                            'херсонська область': 'херсонська обл.',
-                            'київська область': 'київська обл.',
-                            'донецька область': 'донецька область',
-                            'луганська область': 'луганська область',
-                        }
-                        ai_oblast_lower = ai_oblast.lower()
-                        oblast_key = oblast_normalizations.get(ai_oblast_lower, ai_oblast_lower)
-                    
-                    # Try geocoding with AI-provided context
-                    if oblast_key:
-                        # Use Photon API with oblast + optional district filtering
-                        coords = geocode_with_context(target_city, oblast_key, ai_district)
+                        coords = geocode_with_context(target_city, ai_oblast, ai_district)
                         if coords:
                             return coords
                     
-                    # Fallback to basic geocoding with AI city name
-                    coords = ensure_city_coords(target_city, oblast_key.lower() if isinstance(oblast_key, str) else None)
+                    # Fallback to basic geocoding with AI city name and oblast hint
+                    oblast_hint = ai_oblast.lower() if ai_oblast else None
+                    coords = ensure_city_coords(target_city, oblast_hint)
                     if coords:
                         return coords
                         
@@ -6319,6 +6345,7 @@ KHARKIV_CITY_COORDS = {
     'козача лопань': (49.8872, 36.4167),  # СМТ в Дергачівському районі
     'чкаловське': (49.7155296, 36.9322501),  # Правильне Чкаловське в Харківській області
     'першотравневий': (49.3914, 36.2147),  # с. Першотравневе, Харківська область (same as Первомайський)
+    'вільшани': (50.0513573, 35.8839188),  # селище міського типу в Харківському районі
     'створ населеного пункту балки?': (49.4627, 36.8586),  # placeholder example – remove/replace if noise
 }
 
