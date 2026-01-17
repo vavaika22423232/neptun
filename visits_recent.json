@@ -1,6 +1,12 @@
 {
-  "day": "2026-01-17",
-  "today_ids": [],
-  "week_ids": [],
-  "week_start": "2026-01-10"
+  "day": "2025-10-17",
+  "today_ids": [
+    "f96ab906-84b4-4487-88e9-6de8a2b38cb4",
+    "2007b8aa-0c3c-4c3f-8170-de04eb2c6bf2"
+  ],
+  "week_ids": [
+    "f96ab906-84b4-4487-88e9-6de8a2b38cb4",
+    "2007b8aa-0c3c-4c3f-8170-de04eb2c6bf2"
+  ],
+  "week_start": "2025-10-17"
 }
