@@ -1866,26 +1866,54 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
         
         msg_lower = message_text.lower()
         
-        # Determine threat type and notification content
-        if 'каб' in msg_lower:
-            threat_type = 'каби'
-            emoji = '💣'
-            is_critical = True
-        elif 'ракет' in msg_lower or 'балістичн' in msg_lower:
-            threat_type = 'ракети'
-            emoji = '🚀'
-            is_critical = True
-        elif 'бпла' in msg_lower or 'дрон' in msg_lower or 'шахед' in msg_lower:
-            threat_type = 'дрони'
-            emoji = '🛩️'
-            is_critical = True
-        elif 'вибух' in msg_lower:
-            threat_type = 'вибухи'
-            emoji = '💥'
-            is_critical = True
+        # Try AI classification first for more accurate results
+        ai_result = classify_threat_with_ai(message_text)
+        
+        if ai_result and ai_result.get('threat_type') not in ['unknown', None]:
+            # Use AI classification
+            threat_map = {
+                'shahed': ('шахеди', '🛵'),
+                'ballistic': ('балістика', '🚀'),
+                'cruise': ('крилаті ракети', '🎯'),
+                'kab': ('КАБи', '💣'),
+                'drone': ('дрони', '🔭'),
+                'explosion': ('вибухи', '💥'),
+                'artillery': ('артилерія', '💨'),
+            }
+            threat_type, emoji = threat_map.get(ai_result['threat_type'], ('загроза', '⚠️'))
+            if ai_result.get('emoji'):
+                emoji = ai_result['emoji']
+            is_critical = ai_result.get('priority', 3) >= 3
+            
+            # Use AI short description if available
+            if ai_result.get('description_short'):
+                ai_description = ai_result['description_short']
+            else:
+                ai_description = None
+                
+            print(f"AI threat classification: {threat_type} {emoji} (priority {ai_result.get('priority')})")
         else:
-            # Not a threat message, skip
-            return
+            # Fallback to regex-based classification
+            ai_description = None
+            if 'каб' in msg_lower:
+                threat_type = 'каби'
+                emoji = '💣'
+                is_critical = True
+            elif 'ракет' in msg_lower or 'балістичн' in msg_lower:
+                threat_type = 'ракети'
+                emoji = '🚀'
+                is_critical = True
+            elif 'бпла' in msg_lower or 'дрон' in msg_lower or 'шахед' in msg_lower:
+                threat_type = 'дрони'
+                emoji = '🛩️'
+                is_critical = True
+            elif 'вибух' in msg_lower:
+                threat_type = 'вибухи'
+                emoji = '💥'
+                is_critical = True
+            else:
+                # Not a threat message, skip
+                return
         
         # Extract region from location (e.g., "Харків (Харківська обл.)" -> "Харківська область")
         region_name = location
@@ -3682,6 +3710,470 @@ def extract_location_with_groq_ai(message_text: str):
     except Exception as e:
         print(f"WARNING: Groq AI extraction failed: {e}")
         return None
+
+# AI-powered trajectory parsing cache to avoid repeated API calls
+_trajectory_ai_cache = {}
+_TRAJECTORY_AI_CACHE_TTL = 300  # 5 minutes
+
+def extract_trajectory_with_ai(message_text: str):
+    """Use Groq AI to intelligently extract trajectory/course information from Ukrainian military messages.
+    
+    This is smarter than regex - it understands context and can handle various message formats.
+    
+    Returns dict with:
+    - source_type: 'city' | 'region' | 'direction' | None
+    - source_name: name of source location/direction
+    - target_type: 'city' | 'region' | 'direction' | None  
+    - target_name: name of target location/direction
+    - confidence: AI confidence 0-1
+    
+    Examples:
+    - "БпЛА з півночі на Суми" -> source_type='direction', source_name='північ', target_type='city', target_name='Суми'
+    - "БпЛА з Херсонщини на Миколаївщину" -> source_type='region', source_name='Херсонщина', target_type='region', target_name='Миколаївщина'
+    """
+    if not GROQ_ENABLED or not message_text:
+        return None
+    
+    # Check cache first
+    cache_key = hash(message_text[:200])
+    if cache_key in _trajectory_ai_cache:
+        cached = _trajectory_ai_cache[cache_key]
+        if time.time() - cached['ts'] < _TRAJECTORY_AI_CACHE_TTL:
+            return cached['data']
+    
+    try:
+        prompt = f"""Ти експерт з аналізу повідомлень про рух дронів/БпЛА в Україні.
+
+Витягни з повідомлення інформацію про ТРАЄКТОРІЮ руху:
+1. ЗВІДКИ рухається (source) - місто, область, або напрямок (північ, південь, схід, захід, північно-східний і т.д.)
+2. КУДИ рухається (target) - місто, область, або напрямок
+
+ПРАВИЛА:
+- "з півночі" = напрямок "північ" (source)
+- "на Суми" = місто "Суми" (target)  
+- "з Херсонщини" = область "Херсонщина" (source)
+- "на Миколаївщину" = область "Миколаївщина" (target)
+- "курсом на Дніпро" = місто "Дніпро" (target)
+- "курс південний" = напрямок "південь" (target)
+- "на сході Сумщини" = source область "Сумщина" + позиція "схід"
+- Нормалізуй: Миколаївщину → Миколаївщина, Сум → Суми
+
+Типи source/target:
+- "city" = конкретне місто (Суми, Харків, Миколаїв)
+- "region" = область (Херсонщина, Миколаївщина, Сумщина)  
+- "direction" = напрямок (північ, південь, схід, захід, північно-східний і т.д.)
+
+Повідомлення:
+{message_text}
+
+Відповідь ТІЛЬКИ JSON:
+{{"source_type": "city|region|direction|null", "source_name": "назва або null", "target_type": "city|region|direction|null", "target_name": "назва або null", "source_position": "північ|південь|схід|захід|null", "confidence": 0.9}}"""
+
+        response = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "Ти аналізуєш траєкторії дронів. Відповідай ТІЛЬКИ валідним JSON без пояснень."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.1,
+            max_tokens=200,
+            top_p=0.9
+        )
+        
+        result_text = response.choices[0].message.content.strip()
+        
+        # Remove markdown code blocks if present
+        if result_text.startswith('```'):
+            result_text = re.sub(r'^```(?:json)?\s*', '', result_text)
+            result_text = re.sub(r'\s*```$', '', result_text)
+        
+        result = json.loads(result_text)
+        
+        # Validate result
+        if not isinstance(result, dict):
+            return None
+        
+        # Convert null strings to None
+        for key in ['source_type', 'source_name', 'target_type', 'target_name', 'source_position']:
+            if result.get(key) in ['null', 'None', '']:
+                result[key] = None
+        
+        # Skip if no trajectory info
+        if not result.get('target_name') and not result.get('target_type'):
+            return None
+        
+        print(f"DEBUG Groq AI Trajectory: {result}")
+        
+        # Cache result
+        _trajectory_ai_cache[cache_key] = {'ts': time.time(), 'data': result}
+        
+        return result
+        
+    except json.JSONDecodeError as e:
+        print(f"WARNING: Groq AI trajectory returned invalid JSON: {e}")
+        return None
+    except Exception as e:
+        print(f"WARNING: Groq AI trajectory extraction failed: {e}")
+        return None
+
+
+# ==================== AI THREAT CLASSIFICATION ====================
+_threat_ai_cache = {}
+_THREAT_AI_CACHE_TTL = 600  # 10 minutes
+
+def classify_threat_with_ai(message_text: str):
+    """Use Groq AI to intelligently classify threat type from Ukrainian military message.
+    
+    Returns dict with:
+    - threat_type: 'shahed' | 'ballistic' | 'cruise' | 'kab' | 'drone' | 'explosion' | 'artillery' | 'unknown'
+    - emoji: appropriate emoji for the threat
+    - priority: 1-5 (5 = most critical)
+    - quantity: number of objects if mentioned (None if not)
+    - description_short: short summary in Ukrainian (max 50 chars)
+    - regions_at_risk: list of regions that might be affected
+    """
+    if not GROQ_ENABLED or not message_text:
+        return None
+    
+    # Check cache
+    cache_key = hashlib.md5(message_text.encode()).hexdigest()
+    cached = _threat_ai_cache.get(cache_key)
+    if cached and time.time() - cached['ts'] < _THREAT_AI_CACHE_TTL:
+        return cached['data']
+    
+    try:
+        prompt = f"""Ти експерт з аналізу військових повідомлень про повітряні тривоги в Україні.
+
+Проаналізуй повідомлення та визнач:
+1. Тип загрози (threat_type):
+   - "shahed" - Шахеди, ударні БПЛА, дрони-камікадзе
+   - "ballistic" - Балістичні ракети (Іскандер, КН-23)
+   - "cruise" - Крилаті ракети (Калібр, Х-101, Х-555)
+   - "kab" - Керовані авіабомби (КАБ)
+   - "drone" - Розвідувальні БПЛА (Орлан, Supercam)
+   - "explosion" - Вибухи без уточнення типу
+   - "artillery" - Артилерія, РСЗВ, С-300 по землі
+   - "unknown" - Невизначено
+
+2. Емодзі (emoji) для типу загрози:
+   - 🛵 для Шахедів/БПЛА
+   - 🚀 для балістики
+   - 🎯 для крилатих ракет
+   - 💣 для КАБів
+   - 🔭 для розвідувальних дронів
+   - 💥 для вибухів
+   - 💨 для артилерії
+
+3. Пріоритет (priority) від 1 до 5:
+   - 5: Балістика, масований обстріл
+   - 4: КАБи, крилаті ракети
+   - 3: Шахеди, ударні БПЛА
+   - 2: Розвідувальні дрони
+   - 1: Невизначена загроза
+
+4. Кількість (quantity): число об'єктів якщо вказано, інакше null
+
+5. Короткий опис (description_short): до 50 символів українською
+
+6. Регіони під загрозою (regions_at_risk): список областей куди може рухатися загроза
+
+Повідомлення:
+{message_text}
+
+Відповідь ТІЛЬКИ у форматі JSON:
+{{"threat_type": "shahed", "emoji": "🛵", "priority": 3, "quantity": 5, "description_short": "5 Шахедів на Київ", "regions_at_risk": ["Київська", "Черкаська"]}}"""
+
+        response = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "Ти військовий аналітик. Відповідай ТІЛЬКИ валідним JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.1,
+            max_tokens=400,
+            top_p=0.9
+        )
+        
+        result_text = response.choices[0].message.content.strip()
+        
+        # Remove markdown code blocks if present
+        if result_text.startswith('```'):
+            result_text = re.sub(r'^```(?:json)?\s*', '', result_text)
+            result_text = re.sub(r'\s*```$', '', result_text)
+        
+        result = json.loads(result_text)
+        
+        if not isinstance(result, dict):
+            return None
+        
+        # Normalize fields
+        if result.get('quantity') in ['null', 'None', '', 0]:
+            result['quantity'] = None
+        if result.get('regions_at_risk') in ['null', 'None', '']:
+            result['regions_at_risk'] = []
+        
+        print(f"DEBUG AI Threat Classification: {result.get('threat_type')} p{result.get('priority')} - {result.get('description_short')}")
+        
+        # Cache result
+        _threat_ai_cache[cache_key] = {'ts': time.time(), 'data': result}
+        
+        return result
+        
+    except Exception as e:
+        print(f"WARNING: AI threat classification failed: {e}")
+        return None
+
+
+# ==================== AI MESSAGE SUMMARIZATION ====================
+_summary_ai_cache = {}
+_SUMMARY_AI_CACHE_TTL = 1800  # 30 minutes
+
+def summarize_message_with_ai(message_text: str, max_length: int = 100):
+    """Use Groq AI to create a concise summary of a military message.
+    
+    Returns dict with:
+    - summary: short summary in Ukrainian (max max_length chars)
+    - key_info: list of key facts extracted
+    - urgency: 'critical' | 'high' | 'medium' | 'low'
+    """
+    if not GROQ_ENABLED or not message_text or len(message_text) < 50:
+        return None
+    
+    # Check cache
+    cache_key = hashlib.md5(f"{message_text}_{max_length}".encode()).hexdigest()
+    cached = _summary_ai_cache.get(cache_key)
+    if cached and time.time() - cached['ts'] < _SUMMARY_AI_CACHE_TTL:
+        return cached['data']
+    
+    try:
+        prompt = f"""Ти експерт з аналізу військових повідомлень.
+
+Створи КОРОТКИЙ підсумок повідомлення (до {max_length} символів) українською мовою.
+Виділи ключові факти та визнач терміновість.
+
+Повідомлення:
+{message_text}
+
+Відповідь у форматі JSON:
+{{"summary": "короткий опис до {max_length} символів", "key_info": ["факт 1", "факт 2"], "urgency": "high"}}"""
+
+        response = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "Створюй короткі інформативні підсумки. Відповідай JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2,
+            max_tokens=300,
+            top_p=0.9
+        )
+        
+        result_text = response.choices[0].message.content.strip()
+        if result_text.startswith('```'):
+            result_text = re.sub(r'^```(?:json)?\s*', '', result_text)
+            result_text = re.sub(r'\s*```$', '', result_text)
+        
+        result = json.loads(result_text)
+        
+        # Truncate summary if too long
+        if result.get('summary') and len(result['summary']) > max_length:
+            result['summary'] = result['summary'][:max_length-3] + '...'
+        
+        _summary_ai_cache[cache_key] = {'ts': time.time(), 'data': result}
+        return result
+        
+    except Exception as e:
+        print(f"WARNING: AI summarization failed: {e}")
+        return None
+
+
+# ==================== AI CHAT MODERATION ====================
+_moderation_ai_cache = {}
+_MODERATION_AI_CACHE_TTL = 3600  # 1 hour
+
+def moderate_chat_message_with_ai(message_text: str, nickname: str = None):
+    """Use Groq AI to moderate chat messages - detect spam, profanity, threats.
+    
+    Returns dict with:
+    - is_safe: True if message is OK to post
+    - reason: reason if blocked (None if safe)
+    - category: 'spam' | 'profanity' | 'threat' | 'flood' | 'advertising' | None
+    - severity: 1-5 (5 = most severe)
+    - suggestion: suggested edit if minor issue (None otherwise)
+    """
+    if not GROQ_ENABLED or not message_text:
+        return {'is_safe': True, 'reason': None, 'category': None, 'severity': 0}
+    
+    # Skip very short messages - probably safe
+    if len(message_text.strip()) < 3:
+        return {'is_safe': True, 'reason': None, 'category': None, 'severity': 0}
+    
+    # Check cache
+    cache_key = hashlib.md5(message_text.encode()).hexdigest()
+    cached = _moderation_ai_cache.get(cache_key)
+    if cached and time.time() - cached['ts'] < _MODERATION_AI_CACHE_TTL:
+        return cached['data']
+    
+    try:
+        prompt = f"""Ти модератор українського чату про повітряні тривоги.
+
+Перевір повідомлення на порушення:
+1. Нецензурна лексика (мат, образи) - category: "profanity"
+2. Спам (реклама, посилання) - category: "spam"  
+3. Погрози насильства - category: "threat"
+4. Фейки/дезінформація - category: "fake"
+
+Нікнейм: "{nickname or 'Анонім'}"
+Повідомлення: "{message_text}"
+
+ВАЖЛИВО: Відповідай ТІЛЬКИ валідним JSON об'єктом!
+Якщо повідомлення НОРМАЛЬНЕ (без порушень):
+{{"is_safe": true, "reason": null, "category": null, "severity": 0}}
+
+Якщо є ПОРУШЕННЯ:
+{{"is_safe": false, "reason": "опис порушення", "category": "profanity", "severity": 3}}
+
+Відповідь:"""
+
+        response = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "Ти модератор чату. Відповідай ВИКЛЮЧНО валідним JSON. Блокуй тільки явні порушення - мат, спам, погрози. Звичайні питання та побажання - is_safe: true."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.1,
+            max_tokens=150,
+            top_p=0.9
+        )
+        
+        result_text = response.choices[0].message.content.strip()
+        
+        # Remove markdown code blocks if present
+        if result_text.startswith('```'):
+            result_text = re.sub(r'^```(?:json)?\s*', '', result_text)
+            result_text = re.sub(r'\s*```$', '', result_text)
+        
+        # Try to extract JSON from response
+        json_match = re.search(r'\{[^{}]*\}', result_text)
+        if json_match:
+            result_text = json_match.group()
+        
+        result = json.loads(result_text)
+        
+        # Ensure required fields
+        result.setdefault('is_safe', True)
+        result.setdefault('reason', None)
+        result.setdefault('category', None)
+        result.setdefault('severity', 0)
+        
+        if not result['is_safe']:
+            print(f"AI MODERATION: Blocked message - {result.get('reason')} [{result.get('category')}]")
+        
+        _moderation_ai_cache[cache_key] = {'ts': time.time(), 'data': result}
+        return result
+        
+    except Exception as e:
+        print(f"WARNING: AI moderation failed: {e}")
+        return {'is_safe': True, 'reason': None, 'category': None, 'severity': 0}
+
+
+# ==================== AI COMPREHENSIVE ANALYSIS ====================
+def analyze_message_comprehensive_ai(message_text: str):
+    """Single AI call to extract ALL information from a military message.
+    
+    Combines: location extraction, trajectory parsing, threat classification, summarization.
+    More efficient than multiple separate AI calls.
+    
+    Returns dict with all extracted data or None on failure.
+    """
+    if not GROQ_ENABLED or not message_text:
+        return None
+    
+    # Check combined cache
+    cache_key = hashlib.md5(f"comprehensive_{message_text}".encode()).hexdigest()
+    cached = _threat_ai_cache.get(cache_key)
+    if cached and time.time() - cached['ts'] < _THREAT_AI_CACHE_TTL:
+        return cached['data']
+    
+    try:
+        prompt = f"""Ти експерт з аналізу військових повідомлень про повітряні тривоги в Україні.
+
+Проаналізуй повідомлення та витягни ВСЮ інформацію одним запитом:
+
+1. ЛОКАЦІЯ:
+   - city: назва міста/села в називному відмінку
+   - district: район (якщо вказано)
+   - oblast: область
+
+2. ТРАЄКТОРІЯ (якщо є курс/напрямок):
+   - source_type: 'city'|'region'|'direction'|null
+   - source_name: звідки
+   - target_type: 'city'|'region'|'direction'|null  
+   - target_name: куди
+
+3. ЗАГРОЗА:
+   - threat_type: 'shahed'|'ballistic'|'cruise'|'kab'|'drone'|'explosion'|'artillery'|'unknown'
+   - emoji: 🛵|🚀|🎯|💣|🔭|💥|💨
+   - priority: 1-5 (5 найвища)
+   - quantity: кількість або null
+
+4. ПІДСУМОК:
+   - summary: короткий опис до 80 символів
+   - urgency: 'critical'|'high'|'medium'|'low'
+
+Повідомлення:
+{message_text}
+
+Відповідь ТІЛЬКИ валідний JSON:
+{{
+  "location": {{"city": null, "district": null, "oblast": null}},
+  "trajectory": {{"source_type": null, "source_name": null, "target_type": null, "target_name": null}},
+  "threat": {{"threat_type": "unknown", "emoji": "⚠️", "priority": 1, "quantity": null}},
+  "summary": {{"text": "опис", "urgency": "medium"}}
+}}"""
+
+        response = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "Ти військовий аналітик. Відповідай ТІЛЬКИ валідним JSON без markdown."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.1,
+            max_tokens=600,
+            top_p=0.9
+        )
+        
+        result_text = response.choices[0].message.content.strip()
+        if result_text.startswith('```'):
+            result_text = re.sub(r'^```(?:json)?\s*', '', result_text)
+            result_text = re.sub(r'\s*```$', '', result_text)
+        
+        result = json.loads(result_text)
+        
+        if not isinstance(result, dict):
+            return None
+        
+        # Normalize null values
+        def normalize_nulls(obj):
+            if isinstance(obj, dict):
+                return {k: normalize_nulls(v) for k, v in obj.items()}
+            if obj in ['null', 'None', '']:
+                return None
+            return obj
+        
+        result = normalize_nulls(result)
+        
+        print(f"DEBUG AI Comprehensive: threat={result.get('threat',{}).get('threat_type')}, "
+              f"city={result.get('location',{}).get('city')}, "
+              f"target={result.get('trajectory',{}).get('target_name')}")
+        
+        _threat_ai_cache[cache_key] = {'ts': time.time(), 'data': result}
+        return result
+        
+    except Exception as e:
+        print(f"WARNING: AI comprehensive analysis failed: {e}")
+        return None
+
 
 def safe_float(value, default=None):
     """Safely convert value to float, returning default on failure."""
@@ -8075,6 +8567,552 @@ def _estimate_source_coordinates(target_lat, target_lng, direction):
     
     return source_lat, source_lng
 
+# =============================================================================
+# TRAJECTORY PARSER - Parse various Ukrainian message formats for drone courses
+# =============================================================================
+# Supports formats like:
+# - "БпЛА з півночі на Суми" (direction + target city)
+# - "Група БпЛА на сході Миколаївщини курсом на Кіровоградщину" (region + direction + target)
+# - "БпЛА з Херсонщини на Миколаївщину" (source region → target region)
+# - "БпЛА курсом на м.Запоріжжя з північно-східного напрямку" (city target + direction)
+# - "Харків: БпЛА на місто з північно-східного напрямку" (city prefix + direction)
+# - "БпЛА на Дніпропетровщині, напрямок Синельникове" (region + target city)
+# =============================================================================
+
+# Direction mappings (Ukrainian → offset vector)
+DIRECTION_VECTORS = {
+    # Cardinal directions - all forms
+    'північ': (-0.5, 0), 'півночі': (-0.5, 0), 'північн': (-0.5, 0), 'північний': (-0.5, 0),
+    'південь': (0.5, 0), 'півдня': (0.5, 0), 'півд': (0.5, 0), 'південн': (0.5, 0), 'півдні': (0.5, 0), 'південний': (0.5, 0),
+    'схід': (0, 0.5), 'сходу': (0, 0.5), 'східн': (0, 0.5), 'сході': (0, 0.5), 'східний': (0, 0.5),
+    'захід': (0, -0.5), 'заходу': (0, -0.5), 'західн': (0, -0.5), 'заході': (0, -0.5), 'західний': (0, -0.5),
+    # Intercardinal directions - all forms
+    'північно-східн': (-0.35, 0.35), 'північний схід': (-0.35, 0.35), 'північного сходу': (-0.35, 0.35),
+    'північно-східний': (-0.35, 0.35), 'північно-схід': (-0.35, 0.35),
+    'північно-західн': (-0.35, -0.35), 'північний захід': (-0.35, -0.35), 'північного заходу': (-0.35, -0.35),
+    'північно-західний': (-0.35, -0.35), 'північно-захід': (-0.35, -0.35),
+    'південно-східн': (0.35, 0.35), 'південний схід': (0.35, 0.35), 'південного сходу': (0.35, 0.35),
+    'південно-східний': (0.35, 0.35), 'південно-схід': (0.35, 0.35),
+    'південно-західн': (0.35, -0.35), 'південний захід': (0.35, -0.35), 'південного заходу': (0.35, -0.35),
+    'південно-західний': (0.35, -0.35), 'південно-захід': (0.35, -0.35),
+}
+
+# Direction keywords in messages (source direction - "з" pattern)
+DIRECTION_FROM_KEYWORDS = [
+    'з північно-східного напрямку', 'з північно-західного напрямку',
+    'з південно-східного напрямку', 'з південно-західного напрямку',
+    'з північного напрямку', 'з південного напрямку', 
+    'з східного напрямку', 'з західного напрямку',
+    'з півночі', 'з півдня', 'з сходу', 'з заходу',
+    'з північного сходу', 'з північного заходу',
+    'з південного сходу', 'з південного заходу',
+]
+
+# Course keywords in messages (target direction - "курс" pattern)
+DIRECTION_COURSE_KEYWORDS = [
+    'курс північно-східний', 'курс північно-західний',
+    'курс південно-східний', 'курс південно-західний',
+    'курс північний', 'курс південний', 'курс східний', 'курс західний',
+    'курсом на північ', 'курсом на південь', 'курсом на схід', 'курсом на захід',
+]
+
+def _get_direction_vector(direction_text):
+    """Get lat/lng offset vector for a direction text"""
+    direction_lower = direction_text.lower().strip()
+    for key, vector in DIRECTION_VECTORS.items():
+        if key in direction_lower:
+            return vector
+    return None
+
+def _get_region_center(region_name):
+    """Get center coordinates for a region (oblast)"""
+    region_lower = region_name.lower().strip()
+    # Check in OBLAST_CENTERS directly
+    if region_lower in OBLAST_CENTERS:
+        return OBLAST_CENTERS[region_lower]
+    
+    # Try removing common endings and searching again
+    # Ukrainian oblast name endings: -щина/-щини/-щині/-щину, -ччина/-ччини/-ччині
+    base_region = region_lower
+    for ending in ['щині', 'щину', 'щини', 'щина', 'ччині', 'ччину', 'ччини', 'ччина']:
+        if region_lower.endswith(ending):
+            base_region = region_lower[:-len(ending)]
+            break
+    
+    # Try to find with base + common endings
+    for ending in ['щина', 'щини', 'ччина', 'ччини']:
+        test_key = base_region + ending
+        if test_key in OBLAST_CENTERS:
+            return OBLAST_CENTERS[test_key]
+    
+    # Try partial match
+    for key, coords in OBLAST_CENTERS.items():
+        if base_region in key or key.startswith(base_region):
+            return coords
+    
+    return None
+
+def _get_city_coords(city_name):
+    """Get coordinates for a city"""
+    city_lower = city_name.lower().strip()
+    # Remove prefixes like "м.", "н.п.", "с."
+    city_lower = re.sub(r'^(м\.|м\s|н\.п\.|н\.п\s|с\.|с\s|сел\.|смт\.?|смт\s)', '', city_lower).strip()
+    
+    # Check in CITY_COORDS
+    if city_lower in CITY_COORDS:
+        return CITY_COORDS[city_lower]
+    
+    # Try variations without endings
+    endings = ['а', 'у', 'ом', 'і', 'ів', 'ами', 'е', 'ої', 'ою']
+    for ending in endings:
+        if city_lower.endswith(ending) and len(city_lower) > len(ending) + 2:
+            base = city_lower[:-len(ending)]
+            if base in CITY_COORDS:
+                return CITY_COORDS[base]
+    
+    return None
+
+def _offset_coords(lat, lng, direction_vector):
+    """Apply direction offset to coordinates"""
+    lat_offset, lng_offset = direction_vector
+    return (lat + lat_offset, lng + lng_offset)
+
+def _ai_trajectory_to_coords(ai_result):
+    """Convert AI trajectory result to coordinates.
+    
+    Takes AI result with source_type, source_name, target_type, target_name
+    and returns trajectory dict with start/end coordinates.
+    """
+    if not ai_result:
+        return None
+    
+    source_type = ai_result.get('source_type')
+    source_name = ai_result.get('source_name')
+    target_type = ai_result.get('target_type')
+    target_name = ai_result.get('target_name')
+    source_position = ai_result.get('source_position')  # e.g. "схід" for "на сході Сумщини"
+    
+    # Get target coordinates
+    end_coords = None
+    if target_type == 'city' and target_name:
+        end_coords = _get_city_coords(target_name)
+    elif target_type == 'region' and target_name:
+        end_coords = _get_region_center(target_name)
+    elif target_type == 'direction' and target_name:
+        # Direction only - need source to calculate end
+        pass
+    
+    # Get source coordinates
+    start_coords = None
+    if source_type == 'city' and source_name:
+        start_coords = _get_city_coords(source_name)
+    elif source_type == 'region' and source_name:
+        start_coords = _get_region_center(source_name)
+        # Apply position offset if specified (e.g. "на сході Сумщини")
+        if start_coords and source_position:
+            pos_vec = _get_direction_vector(source_position)
+            if pos_vec:
+                start_coords = (start_coords[0] + pos_vec[0] * 0.3, start_coords[1] + pos_vec[1] * 0.3)
+    elif source_type == 'direction' and source_name:
+        # Direction source - calculate from target
+        if end_coords:
+            dir_vec = _get_direction_vector(source_name)
+            if dir_vec:
+                # Invert direction to get source position
+                start_coords = (end_coords[0] - dir_vec[0], end_coords[1] - dir_vec[1])
+    
+    # Handle target direction (when target is a direction like "курс південний")
+    if target_type == 'direction' and target_name and start_coords and not end_coords:
+        dir_vec = _get_direction_vector(target_name)
+        if dir_vec:
+            end_coords = (start_coords[0] + dir_vec[0] * 0.5, start_coords[1] + dir_vec[1] * 0.5)
+    
+    # Need both start and end to create trajectory
+    if not start_coords or not end_coords:
+        return None
+    
+    return {
+        'start': [start_coords[0], start_coords[1]],
+        'end': [end_coords[0], end_coords[1]],
+        'source_name': source_name or 'unknown',
+        'target_name': target_name or 'unknown',
+        'kind': f'ai_{source_type}_to_{target_type}'
+    }
+
+def parse_trajectory_from_message(text):
+    """
+    Parse trajectory info from Ukrainian drone movement messages.
+    
+    Uses AI (Groq) when available for intelligent parsing, with regex fallback.
+    
+    Returns dict with:
+        - start: [lat, lng] - source coordinates
+        - end: [lat, lng] - target coordinates  
+        - source_name: str - source location name
+        - target_name: str - target location name
+        - kind: str - type of trajectory match
+    Or None if no trajectory pattern found.
+    """
+    import re
+    if not text:
+        return None
+    
+    # ==========================================================================
+    # TRY AI FIRST (if enabled) - much smarter than regex
+    # ==========================================================================
+    if GROQ_ENABLED:
+        try:
+            ai_result = extract_trajectory_with_ai(text)
+            if ai_result and ai_result.get('confidence', 0) >= 0.7:
+                trajectory = _ai_trajectory_to_coords(ai_result)
+                if trajectory:
+                    print(f"DEBUG: AI trajectory parsed successfully: {trajectory.get('kind')}")
+                    return trajectory
+        except Exception as e:
+            print(f"DEBUG: AI trajectory failed, falling back to regex: {e}")
+    
+    # ==========================================================================
+    # FALLBACK TO REGEX PATTERNS
+    # ==========================================================================
+    text_lower = text.lower()
+    # Remove emoji prefixes for pattern matching
+    text_clean = re.sub(r'^[^\w\s]*\s*', '', text_lower)
+    
+    # =========================================================================
+    # Pattern 1: "БпЛА з [напрямок] на [місто]"
+    # Example: "БпЛА з півночі на Суми"
+    # =========================================================================
+    p1 = re.search(r'(?:група\s+)?(?:бпла|шахед|дрон)\s+з\s+(півноч[іи]|півдн[яю]|сход[уі]|заход[уі]|північн\w*[\s-]*схо\w*|північн\w*[\s-]*захо\w*|південн\w*[\s-]*схо\w*|південн\w*[\s-]*захо\w*)\s+на\s+([а-яіїєґ\'\-]+)', text_lower)
+    if p1:
+        direction_text = p1.group(1)
+        target_city = p1.group(2)
+        
+        target_coords = _get_city_coords(target_city)
+        if target_coords:
+            direction_vec = _get_direction_vector(direction_text)
+            if direction_vec:
+                # Invert direction to get source (from direction -> opposite)
+                start_lat = target_coords[0] - direction_vec[0]
+                start_lng = target_coords[1] - direction_vec[1]
+                return {
+                    'start': [start_lat, start_lng],
+                    'end': [target_coords[0], target_coords[1]],
+                    'source_name': f'з {direction_text}',
+                    'target_name': target_city.title(),
+                    'kind': 'direction_to_city'
+                }
+    
+    # =========================================================================
+    # Pattern 2: "БпЛА з [регіон] на [регіон]"
+    # Example: "БпЛА з Херсонщини на Миколаївщину"
+    # =========================================================================
+    p2 = re.search(r'(?:група\s+)?(?:бпла|шахед|дрон)\s+з\s+([а-яіїєґ]+(щин|ччин)[ауиіи])\s+на\s+([а-яіїєґ]+(щин|ччин)[ауиію])', text_lower)
+    if p2:
+        source_region = p2.group(1)
+        target_region = p2.group(3)
+        
+        source_coords = _get_region_center(source_region)
+        target_coords = _get_region_center(target_region)
+        
+        if source_coords and target_coords:
+            return {
+                'start': [source_coords[0], source_coords[1]],
+                'end': [target_coords[0], target_coords[1]],
+                'source_name': source_region.title(),
+                'target_name': target_region.title(),
+                'kind': 'region_to_region'
+            }
+    
+    # =========================================================================
+    # Pattern 3: "БпЛА на [напрямок] [регіон] курсом на [регіон]"
+    # Example: "Група БпЛА на сході Миколаївщини курсом на Кіровоградщину"
+    # =========================================================================
+    p3 = re.search(r'(?:група\s+)?(?:бпла|шахед|дрон)\s+на\s+(півноч[іи]|півдн[іи]|сход[іиі]|заход[іиі]|північн\w*[\s-]*схо\w*|північн\w*[\s-]*захо\w*|південн\w*[\s-]*схо\w*|південн\w*[\s-]*захо\w*)\s+([а-яіїєґ]+(щин|ччин)[иі])\s+курсом\s+на\s+([а-яіїєґ]+(щин|ччин)[ауиію])', text_lower)
+    if p3:
+        direction_in_region = p3.group(1)
+        source_region = p3.group(2)
+        target_region = p3.group(4)
+        
+        source_coords = _get_region_center(source_region)
+        target_coords = _get_region_center(target_region)
+        
+        if source_coords and target_coords:
+            # Offset source by direction within the region
+            direction_vec = _get_direction_vector(direction_in_region)
+            if direction_vec:
+                start_lat = source_coords[0] + direction_vec[0] * 0.3
+                start_lng = source_coords[1] + direction_vec[1] * 0.3
+            else:
+                start_lat, start_lng = source_coords
+            
+            return {
+                'start': [start_lat, start_lng],
+                'end': [target_coords[0], target_coords[1]],
+                'source_name': f'{direction_in_region} {source_region}'.title(),
+                'target_name': target_region.title(),
+                'kind': 'region_direction_to_region'
+            }
+    
+    # =========================================================================
+    # Pattern 4: "БпЛА курсом на м.[місто] з [напрямок] напрямку"
+    # Example: "БпЛА курсом на м.Запоріжжя з північно-східного напрямку"
+    # =========================================================================
+    p4 = re.search(r'(?:група\s+)?(?:бпла|шахед|дрон)\s+курсом\s+на\s+(?:м\.?|місто\s+)?([а-яіїєґ\'\-]+)\s+з\s+(північн\w*[\s-]*схід\w*|північн\w*[\s-]*захід\w*|південн\w*[\s-]*схід\w*|південн\w*[\s-]*захід\w*|північн\w*|південн\w*|східн\w*|західн\w*)\s*напрямку', text_lower)
+    if p4:
+        target_city = p4.group(1)
+        direction_text = p4.group(2)
+        
+        target_coords = _get_city_coords(target_city)
+        if target_coords:
+            direction_vec = _get_direction_vector(direction_text)
+            if direction_vec:
+                start_lat = target_coords[0] - direction_vec[0]
+                start_lng = target_coords[1] - direction_vec[1]
+                return {
+                    'start': [start_lat, start_lng],
+                    'end': [target_coords[0], target_coords[1]],
+                    'source_name': f'з {direction_text} напрямку',
+                    'target_name': target_city.title(),
+                    'kind': 'city_from_direction'
+                }
+    
+    # =========================================================================
+    # Pattern 5: "[Місто]: БпЛА на місто з [напрямок] напрямку"
+    # Example: "🛵 Харків: БпЛА на місто з північно-східного напрямку"
+    # =========================================================================
+    p5 = re.search(r'([а-яіїєґ\'\-]+)\s*:\s*(?:група\s+)?(?:бпла|шахед|дрон)\s+на\s+місто\s+з\s+(північн\w*[\s-]*схід\w*|північн\w*[\s-]*захід\w*|південн\w*[\s-]*схід\w*|південн\w*[\s-]*захід\w*|північн\w*|південн\w*|східн\w*|західн\w*)\s*напрямку', text_clean)
+    if p5:
+        target_city = p5.group(1)
+        direction_text = p5.group(2)
+        
+        target_coords = _get_city_coords(target_city)
+        if target_coords:
+            direction_vec = _get_direction_vector(direction_text)
+            if direction_vec:
+                start_lat = target_coords[0] - direction_vec[0]
+                start_lng = target_coords[1] - direction_vec[1]
+                return {
+                    'start': [start_lat, start_lng],
+                    'end': [target_coords[0], target_coords[1]],
+                    'source_name': f'з {direction_text}',
+                    'target_name': target_city.title(),
+                    'kind': 'city_prefix_direction'
+                }
+    
+    # =========================================================================
+    # Pattern 6: "[Місто]: БпЛА з [напрямок]"
+    # Example: "🛵 Харків: БпЛА з півночі"
+    # =========================================================================
+    p6 = re.search(r'([а-яіїєґ\'\-]+)\s*:\s*(?:група\s+)?(?:бпла|шахед|дрон)\s+з\s+(півноч[іи]|півдн[яю]|сход[уі]|заход[уі]|північн\w*[\s-]*схо\w*|північн\w*[\s-]*захо\w*|південн\w*[\s-]*схо\w*|південн\w*[\s-]*захо\w*)', text_clean)
+    if p6:
+        target_city = p6.group(1)
+        direction_text = p6.group(2)
+        
+        target_coords = _get_city_coords(target_city)
+        if target_coords:
+            direction_vec = _get_direction_vector(direction_text)
+            if direction_vec:
+                start_lat = target_coords[0] - direction_vec[0]
+                start_lng = target_coords[1] - direction_vec[1]
+                return {
+                    'start': [start_lat, start_lng],
+                    'end': [target_coords[0], target_coords[1]],
+                    'source_name': f'з {direction_text}',
+                    'target_name': target_city.title(),
+                    'kind': 'city_prefix_from'
+                }
+    
+    # =========================================================================
+    # Pattern 7: "БпЛА на [регіон], напрямок [місто]"
+    # Example: "БпЛА на Дніпропетровщині, напрямок Синельникове"
+    # =========================================================================
+    p7 = re.search(r'(?:група\s+)?(?:бпла|шахед|дрон)\s+на\s+([а-яіїєґ]+(щин|ччин)[іиї])[,\s]+(?:напрямок|напрям|у напрямку|в напрямку)\s+(?:м\.?|н\.?п\.?)?\s*([а-яіїєґ\'\-]+)', text_lower)
+    if p7:
+        source_region = p7.group(1)
+        target_city = p7.group(3)
+        
+        source_coords = _get_region_center(source_region)
+        target_coords = _get_city_coords(target_city)
+        
+        if source_coords and target_coords:
+            return {
+                'start': [source_coords[0], source_coords[1]],
+                'end': [target_coords[0], target_coords[1]],
+                'source_name': source_region.title(),
+                'target_name': target_city.title(),
+                'kind': 'region_to_city'
+            }
+    
+    # =========================================================================
+    # Pattern 8: "БпЛА на [напрямок] [регіон]" (position only, no course)
+    # Example: "БпЛА на півдні Миколаївщини"
+    # Note: This is just a position, not a full trajectory
+    # =========================================================================
+    p8 = re.search(r'(?:група\s+)?(?:бпла|шахед|дрон)\s+на\s+(півноч[іи]|півдн[іи]|сход[іи]|заход[іи]|північн\w*[\s-]*схо\w*|північн\w*[\s-]*захо\w*|південн\w*[\s-]*схо\w*|південн\w*[\s-]*захо\w*)\s+([а-яіїєґ]+(щин|ччин)[иі])', text_lower)
+    if p8:
+        direction_in_region = p8.group(1)
+        region = p8.group(2)
+        
+        # Check if there's a course direction mentioned later in the text
+        # Put compound directions FIRST to match them before simple ones
+        course_match = re.search(r'курс\s+(північн\w*-?схід\w*|північн\w*-?захід\w*|південн\w*-?схід\w*|південн\w*-?захід\w*|північн\w*|південн\w*|східн\w*|західн\w*)', text_lower)
+        
+        source_coords = _get_region_center(region)
+        if source_coords:
+            direction_vec = _get_direction_vector(direction_in_region)
+            if direction_vec:
+                start_lat = source_coords[0] + direction_vec[0] * 0.3
+                start_lng = source_coords[1] + direction_vec[1] * 0.3
+                
+                if course_match:
+                    course_direction = course_match.group(1)
+                    course_vec = _get_direction_vector(course_direction)
+                    if course_vec:
+                        end_lat = start_lat + course_vec[0] * 0.5
+                        end_lng = start_lng + course_vec[1] * 0.5
+                        return {
+                            'start': [start_lat, start_lng],
+                            'end': [end_lat, end_lng],
+                            'source_name': f'{direction_in_region} {region}'.title(),
+                            'target_name': f'курс {course_direction}',
+                            'kind': 'region_position_with_course'
+                        }
+    
+    # =========================================================================
+    # Pattern 9: "БпЛА на [регіон], повз м.[місто] курсом на [регіон]"
+    # Example: "БпЛА на Миколаївщині, повз М.Миколаїв курсом на Одещину"
+    # =========================================================================
+    p9 = re.search(r'(?:група\s+)?(?:бпла|шахед|дрон)\s+на\s+([а-яіїєґ]+(щин|ччин)[іиї])[,\s]+повз\s+(?:м\.?|місто\s+)?([а-яіїєґ\'\-]+)\s+курсом\s+на\s+([а-яіїєґ]+(щин|ччин)[ауиію])', text_lower)
+    if p9:
+        source_region = p9.group(1)
+        via_city = p9.group(3)
+        target_region = p9.group(4)
+        
+        via_coords = _get_city_coords(via_city)
+        target_coords = _get_region_center(target_region)
+        
+        if via_coords and target_coords:
+            return {
+                'start': [via_coords[0], via_coords[1]],
+                'end': [target_coords[0], target_coords[1]],
+                'source_name': f'{via_city} ({source_region})'.title(),
+                'target_name': target_region.title(),
+                'kind': 'via_city_to_region'
+            }
+    
+    # =========================================================================
+    # Pattern 10: "БпЛА з [регіон] на [регіон], напрямок м.[місто]"  
+    # Example: "БпЛА з Херсонщини на Миколаївщину, напрямок м.Миколаїв"
+    # =========================================================================
+    p10 = re.search(r'(?:група\s+)?(?:бпла|шахед|дрон)\s+з\s+([а-яіїєґ]+(щин|ччин)[иі])\s+на\s+([а-яіїєґ]+(щин|ччин)[ауиію])[,\s]+(?:напрямок|напрям)\s+(?:м\.?|н\.?п\.?)?\s*([а-яіїєґ\'\-]+)', text_lower)
+    if p10:
+        source_region = p10.group(1)
+        mid_region = p10.group(3)
+        target_city = p10.group(5)
+        
+        source_coords = _get_region_center(source_region)
+        target_coords = _get_city_coords(target_city)
+        
+        if source_coords and target_coords:
+            return {
+                'start': [source_coords[0], source_coords[1]],
+                'end': [target_coords[0], target_coords[1]],
+                'source_name': source_region.title(),
+                'target_name': f'{target_city} ({mid_region})'.title(),
+                'kind': 'region_via_region_to_city'
+            }
+    
+    # =========================================================================
+    # Pattern 11: "БпЛА на [напрямок] [регіон], напрямок н.п.[місто]"
+    # Example: "БпЛА на сході Сумщини, напрямок н.п.Лебедин"
+    # =========================================================================
+    p11 = re.search(r'(?:група\s+)?(?:бпла|шахед|дрон)\s+на\s+(півноч[іи]|півдн[іи]|сход[іи]|заход[іи]|північн\w*[\s-]*схо\w*|північн\w*[\s-]*захо\w*|південн\w*[\s-]*схо\w*|південн\w*[\s-]*захо\w*)\s+([а-яіїєґ]+(щин|ччин)[иі])[,\s]+(?:напрямок|напрям)\s+(?:м\.?|н\.?п\.?)?\s*([а-яіїєґ\'\-]+)', text_lower)
+    if p11:
+        direction_in_region = p11.group(1)
+        source_region = p11.group(2)
+        target_city = p11.group(4)
+        
+        source_coords = _get_region_center(source_region)
+        target_coords = _get_city_coords(target_city)
+        
+        if source_coords and target_coords:
+            direction_vec = _get_direction_vector(direction_in_region)
+            if direction_vec:
+                start_lat = source_coords[0] + direction_vec[0] * 0.3
+                start_lng = source_coords[1] + direction_vec[1] * 0.3
+            else:
+                start_lat, start_lng = source_coords
+            
+            return {
+                'start': [start_lat, start_lng],
+                'end': [target_coords[0], target_coords[1]],
+                'source_name': f'{direction_in_region} {source_region}'.title(),
+                'target_name': target_city.title(),
+                'kind': 'region_position_to_city'
+            }
+    
+    # =========================================================================
+    # Pattern 12: "БпЛА на межі [регіон1] та [регіон2] областей, курс [напрямок]"
+    # Example: "БпЛА на межі Сумської та Чернігівської областей,курс південний"
+    # =========================================================================
+    p12 = re.search(r'(?:група\s+)?(?:бпла|шахед|дрон)\s+на\s+меж[іи]\s+([а-яіїєґ]+)\w*\s+(?:та|і|й)\s+([а-яіїєґ]+)\w*\s+(?:областей|обл)[,\s]*курс\s+(північн\w*|південн\w*|східн\w*|західн\w*|північн\w*[\s-]*схід\w*|північн\w*[\s-]*захід\w*|південн\w*[\s-]*схід\w*|південн\w*[\s-]*захід\w*)', text_lower)
+    if p12:
+        region1_base = p12.group(1)
+        region2_base = p12.group(2)
+        course_direction = p12.group(3)
+        
+        # Try to find both regions
+        region1_coords = None
+        region2_coords = None
+        
+        for key, coords in OBLAST_CENTERS.items():
+            if region1_base in key:
+                region1_coords = coords
+            if region2_base in key:
+                region2_coords = coords
+        
+        if region1_coords and region2_coords:
+            # Start at midpoint between regions
+            start_lat = (region1_coords[0] + region2_coords[0]) / 2
+            start_lng = (region1_coords[1] + region2_coords[1]) / 2
+            
+            course_vec = _get_direction_vector(course_direction)
+            if course_vec:
+                end_lat = start_lat + course_vec[0] * 0.5
+                end_lng = start_lng + course_vec[1] * 0.5
+                return {
+                    'start': [start_lat, start_lng],
+                    'end': [end_lat, end_lng],
+                    'source_name': f'межа {region1_base}/{region2_base}',
+                    'target_name': f'курс {course_direction}',
+                    'kind': 'border_with_course'
+                }
+    
+    # =========================================================================
+    # Pattern 13: "БпЛА в напрямку м.[місто]"
+    # Example: "БпЛА на Дніпропетровщині в напрямку м.Павлоград"
+    # =========================================================================
+    p13 = re.search(r'(?:бпла|шахед|дрон|група\s+бпла)\s+(?:на\s+)?([а-яіїєґ]+(щин|ччин)[іи])?\s*(?:в|у)\s+напрямку\s+(?:м\.?|н\.?п\.?)?\s*([а-яіїєґ\'\-]+)', text_lower)
+    if p13:
+        source_region = p13.group(1) if p13.group(1) else None
+        target_city = p13.group(3)
+        
+        target_coords = _get_city_coords(target_city)
+        
+        if target_coords:
+            if source_region:
+                source_coords = _get_region_center(source_region)
+                if source_coords:
+                    return {
+                        'start': [source_coords[0], source_coords[1]],
+                        'end': [target_coords[0], target_coords[1]],
+                        'source_name': source_region.title(),
+                        'target_name': target_city.title(),
+                        'kind': 'region_towards_city'
+                    }
+    
+    return None
+
 def process_message(text, mid, date_str, channel, _disable_multiline=False):  # type: ignore
     import re
     
@@ -8129,18 +9167,43 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             cleaned.append(ln2)
         return '\n'.join(cleaned)
     
-    # PRIORITY: Check for trajectory patterns FIRST (before any processing)
-    # Pattern: "з [source_region] на [target_region(s)]" - trajectory, not multi-target
-    trajectory_pattern = r'(\d+(?:-\d+)?)?\s*шахед[іївыиє]*\s+з\s+([а-яіїєґ]+(щин|ччин)[ауиі])\s+на\s+([а-яіїєґ/]+(щин|ччин)[ауиіу])'
-    trajectory_match = re.search(trajectory_pattern, text.lower(), re.IGNORECASE)
-    
-    if trajectory_match:
-        count_str = trajectory_match.group(1)
-        source_region = trajectory_match.group(2)
-        target_regions = trajectory_match.group(4)
+    # PRIORITY: Check for trajectory patterns FIRST using the comprehensive parser
+    trajectory_data = parse_trajectory_from_message(text)
+    if trajectory_data:
+        print(f"DEBUG: Trajectory parsed - kind={trajectory_data.get('kind')}, source={trajectory_data.get('source_name')}, target={trajectory_data.get('target_name')}")
         
-        print(f"DEBUG: Trajectory detected - {count_str or ''}шахедів з {source_region} на {target_regions}")
-        return []
+        # Create marker at target location with trajectory data
+        target_coords = trajectory_data['end']
+        source_coords = trajectory_data['start']
+        
+        # Classify threat type based on message text
+        text_lower = text.lower()
+        if 'шахед' in text_lower or 'shahed' in text_lower:
+            threat_type, icon = 'shahed', 'icon_drone.svg'
+        elif 'бпла' in text_lower or 'дрон' in text_lower:
+            threat_type, icon = 'shahed', 'icon_drone.svg'
+        elif 'ракет' in text_lower:
+            threat_type, icon = 'raketa', 'icon_balistic.svg'
+        else:
+            threat_type, icon = 'shahed', 'icon_drone.svg'
+        
+        place_name = f"{trajectory_data.get('target_name', 'Ціль')} ← {trajectory_data.get('source_name', 'Джерело')}"
+        
+        trajectory_marker = {
+            'id': str(mid),
+            'place': place_name,
+            'lat': target_coords[0],
+            'lng': target_coords[1],
+            'threat_type': threat_type,
+            'text': text[:500],
+            'date': date_str,
+            'channel': channel,
+            'marker_icon': icon,
+            'source_match': f'trajectory_{trajectory_data.get("kind", "unknown")}',
+            'trajectory': trajectory_data
+        }
+        
+        return [trajectory_marker]
     
     # EARLY FILTERS: Check for messages that should be completely filtered out
     def _is_russian_strategic_aviation(t: str) -> bool:
@@ -21985,6 +23048,16 @@ def send_chat_message():
         # Sanitize message (basic)
         if len(message) > 1000:
             message = message[:1000]
+        
+        # AI Moderation - check message for spam, profanity, etc.
+        moderation = moderate_chat_message_with_ai(message, user_id)
+        if moderation and not moderation.get('is_safe', True):
+            log.warning(f"AI moderation blocked message from {user_id}: {moderation.get('reason')}")
+            return jsonify({
+                'error': moderation.get('reason', 'Повідомлення заблоковано модерацією'),
+                'category': moderation.get('category'),
+                'suggestion': moderation.get('suggestion')
+            }), 403
         
         # Create message object
         kyiv_tz = pytz.timezone('Europe/Kiev')

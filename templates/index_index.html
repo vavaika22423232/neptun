@@ -927,7 +927,7 @@
       margin-top: 4px;
     }
 
-    /* Trajectory lines layer */
+    /* Trajectory lines layer - alerts.in.ua style */
     #trajectories-layer {
       position: absolute;
       top: 0;
@@ -939,13 +939,16 @@
       overflow: visible;
     }
     
-    .trajectory-line {
+    .trajectory-group {
       position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
       pointer-events: none;
-      z-index: 9;
     }
     
-    .trajectory-line svg {
+    .trajectory-group svg {
       position: absolute;
       top: 0;
       left: 0;
@@ -954,26 +957,65 @@
       overflow: visible;
     }
     
-    .trajectory-line line {
-      stroke: #f97316;
+    /* White dashed line */
+    .trajectory-group line.traj-line {
+      stroke: #ffffff;
       stroke-width: 2;
-      stroke-dasharray: 6 3;
+      stroke-dasharray: 8 6;
       stroke-linecap: round;
-      opacity: 0.85;
-      filter: drop-shadow(0 0 4px rgba(249, 115, 22, 0.6));
+      opacity: 0.9;
     }
     
-    .trajectory-arrow {
+    /* Big direction arrow (triangle) in the middle */
+    .trajectory-direction-arrow {
       position: absolute;
-      transform: translate(-50%, -50%);
-      color: #f97316;
-      font-size: 14px;
-      font-weight: bold;
-      text-shadow: 0 0 6px rgba(249, 115, 22, 0.8);
+      width: 0;
+      height: 0;
+      border-left: 12px solid transparent;
+      border-right: 12px solid transparent;
+      border-top: 20px solid rgba(255, 255, 255, 0.95);
+      filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
       pointer-events: none;
-      z-index: 10;
+      z-index: 11;
     }
     
+    /* V-shaped arrow at target */
+    .trajectory-target-arrow {
+      position: absolute;
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 24px;
+      font-weight: 300;
+      pointer-events: none;
+      z-index: 11;
+      transform: translate(-50%, -50%);
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    }
+    
+    /* Source icon (drone) at start */
+    .trajectory-source-icon {
+      position: absolute;
+      width: 28px;
+      height: 28px;
+      background: #1e293b;
+      border: 2px solid rgba(255, 255, 255, 0.6);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: 12;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    }
+    
+    .trajectory-source-icon::after {
+      content: '';
+      width: 10px;
+      height: 10px;
+      background: rgba(255, 255, 255, 0.8);
+      border-radius: 50%;
+    }
+
     /* Threat markers layer */
     #markers-layer {
       position: absolute;
@@ -1211,14 +1253,26 @@
       }
       
       /* Simplified trajectory lines on mobile */
-      .trajectory-line line {
-        filter: none !important;
+      .trajectory-group line.traj-line {
         stroke-width: 1.5;
       }
       
-      .trajectory-arrow {
+      .trajectory-direction-arrow {
+        border-left-width: 8px;
+        border-right-width: 8px;
+        border-top-width: 14px;
+        filter: none !important;
+      }
+      
+      .trajectory-target-arrow {
+        font-size: 18px;
         text-shadow: none !important;
-        font-size: 12px;
+      }
+      
+      .trajectory-source-icon {
+        width: 22px;
+        height: 22px;
+        box-shadow: none !important;
       }
       
       /* No hover effects on touch */
@@ -1406,8 +1460,14 @@
       filter: none !important;
     }
     
-    .android-device .trajectory-line line {
+    .android-device .trajectory-group line.traj-line {
       filter: none !important;
+    }
+    
+    .android-device .trajectory-direction-arrow,
+    .android-device .trajectory-source-icon {
+      filter: none !important;
+      box-shadow: none !important;
     }
     
     .android-device #map-container::before {
@@ -1422,12 +1482,15 @@
         filter: drop-shadow(0 0 3px rgba(255, 100, 100, 0.5)) !important;
       }
       
-      .trajectory-line line {
-        filter: none !important;
+      .trajectory-group line.traj-line {
         stroke-width: 1.5;
       }
       
-      .trajectory-arrow {
+      .trajectory-direction-arrow {
+        filter: none !important;
+      }
+      
+      .trajectory-target-arrow {
         text-shadow: none !important;
       }
     }
@@ -3783,7 +3846,7 @@
       }
     }
     
-    // Render trajectory lines from markers with trajectory data
+    // Render trajectory lines from markers with trajectory data (alerts.in.ua style)
     function renderTrajectories(markers) {
       const trajLayer = document.getElementById('trajectories-layer');
       if (!trajLayer) {
@@ -3813,10 +3876,20 @@
         const startPos = latLngToSvgPercent(startLat, startLng);
         const endPos = latLngToSvgPercent(endLat, endLng);
         
-        // Create SVG line
+        // Calculate middle point for direction arrow
+        const midX = (startPos.x + endPos.x) / 2;
+        const midY = (startPos.y + endPos.y) / 2;
+        
+        // Calculate angle for arrows
+        const angle = Math.atan2(endPos.y - startPos.y, endPos.x - startPos.x) * 180 / Math.PI;
+        
+        // Create trajectory group
+        const group = document.createElement('div');
+        group.className = 'trajectory-group';
+        
+        // Create SVG for the line
         const svgNS = 'http://www.w3.org/2000/svg';
         const svg = document.createElementNS(svgNS, 'svg');
-        svg.setAttribute('class', 'trajectory-svg');
         svg.style.position = 'absolute';
         svg.style.top = '0';
         svg.style.left = '0';
@@ -3825,32 +3898,46 @@
         svg.style.overflow = 'visible';
         svg.style.pointerEvents = 'none';
         
+        // Create dashed line
         const line = document.createElementNS(svgNS, 'line');
+        line.setAttribute('class', 'traj-line');
         line.setAttribute('x1', `${startPos.x}%`);
         line.setAttribute('y1', `${startPos.y}%`);
         line.setAttribute('x2', `${endPos.x}%`);
         line.setAttribute('y2', `${endPos.y}%`);
-        line.setAttribute('stroke', '#f97316');
-        line.setAttribute('stroke-width', '2');
-        line.setAttribute('stroke-dasharray', '6 3');
-        line.setAttribute('stroke-linecap', 'round');
-        line.style.filter = 'drop-shadow(0 0 4px rgba(249, 115, 22, 0.6))';
         
         svg.appendChild(line);
-        trajLayer.appendChild(svg);
+        group.appendChild(svg);
         
-        // Add arrow at end point
-        const angle = Math.atan2(endPos.y - startPos.y, endPos.x - startPos.x) * 180 / Math.PI;
-        const arrow = document.createElement('div');
-        arrow.className = 'trajectory-arrow';
-        arrow.style.left = `${endPos.x}%`;
-        arrow.style.top = `${endPos.y}%`;
-        arrow.style.transform = `translate(-50%, -50%) rotate(${angle + 90}deg)`;
-        arrow.innerHTML = '▲';
-        trajLayer.appendChild(arrow);
+        // Add source icon (circle with dot) at start
+        const sourceIcon = document.createElement('div');
+        sourceIcon.className = 'trajectory-source-icon';
+        sourceIcon.style.left = `${startPos.x}%`;
+        sourceIcon.style.top = `${startPos.y}%`;
+        group.appendChild(sourceIcon);
+        
+        // Add big direction arrow (triangle) in the middle
+        const dirArrow = document.createElement('div');
+        dirArrow.className = 'trajectory-direction-arrow';
+        dirArrow.style.left = `${midX}%`;
+        dirArrow.style.top = `${midY}%`;
+        dirArrow.style.transform = `translate(-50%, -50%) rotate(${angle + 90}deg)`;
+        group.appendChild(dirArrow);
+        
+        // Add V-shaped arrow at target
+        const targetArrow = document.createElement('div');
+        targetArrow.className = 'trajectory-target-arrow';
+        targetArrow.style.left = `${endPos.x}%`;
+        targetArrow.style.top = `${endPos.y}%`;
+        // Use CSS rotation to point the V in the right direction
+        targetArrow.style.transform = `translate(-50%, -50%) rotate(${angle + 90}deg)`;
+        targetArrow.innerHTML = '∨';
+        group.appendChild(targetArrow);
+        
+        trajLayer.appendChild(group);
       });
       
-      const trajRendered = trajLayer.querySelectorAll('.trajectory-svg').length;
+      const trajRendered = trajLayer.querySelectorAll('.trajectory-group').length;
       console.log(`Trajectories: found ${trajCount} in data, rendered ${trajRendered} lines`);
     }
     
