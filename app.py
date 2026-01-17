@@ -20863,7 +20863,9 @@ if 'health' not in app.view_functions:
             'auth': AUTH_STATUS, 
             'visitors': visitors,
             'firebase_initialized': firebase_initialized,
-            'devices_count': len(device_store._load()) if device_store else 0
+            'devices_count': len(device_store._load()) if device_store else 0,
+            'groq_enabled': GROQ_ENABLED,
+            'groq_model': GROQ_MODEL if GROQ_ENABLED else None
         })
 
 @app.route('/ads.txt')

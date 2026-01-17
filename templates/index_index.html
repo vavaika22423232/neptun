@@ -4996,9 +4996,9 @@
     <div class="bottom-bar-content">
       <span class="bottom-brand">© 2026 NEPTUN</span>
       <div class="bottom-links">
-        <a href="/map-old" class="bottom-link" title="Радар шахедів">
-          <i class="material-icons">radar</i>
-          <span>Радар</span>
+        <a href="/map-old" class="bottom-link" title="Стара карта">
+          <i class="material-icons">map</i>
+          <span>Стара карта</span>
         </a>
         <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" target="_blank" rel="noopener" class="bottom-link app" title="Додаток">
           <i class="material-icons">android</i>
@@ -5078,9 +5078,12 @@
         padding: 8px 14px;
         flex: 1;
         justify-content: center;
+        flex-direction: column;
+        gap: 2px;
       }
       .bottom-link span {
-        display: none;
+        display: block;
+        font-size: 10px;
       }
       .bottom-link i {
         font-size: 20px;
