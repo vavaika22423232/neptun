@@ -3182,48 +3182,14 @@
     
     // Show maintenance overlay for 502/503 errors
     function showMaintenanceOverlay() {
-      if (maintenanceShowing) return;
-      maintenanceShowing = true;
-      
-      const overlay = document.getElementById('maintenance-overlay');
-      const timerEl = document.getElementById('maintenance-timer');
-      overlay.classList.add('show');
-      
-      maintenanceCountdown = 60;
-      timerEl.textContent = maintenanceCountdown;
-      
-      const interval = setInterval(() => {
-        maintenanceCountdown--;
-        timerEl.textContent = maintenanceCountdown;
-        
-        if (maintenanceCountdown <= 0) {
-          clearInterval(interval);
-          window.location.reload();
-        }
-      }, 1000);
-      
-      // Also try to check if server is back every 3 seconds
-      const checkInterval = setInterval(async () => {
-        try {
-          const response = await fetch('/api/alarms', { cache: 'no-cache' });
-          if (response.ok) {
-            clearInterval(checkInterval);
-            clearInterval(interval);
-            overlay.classList.remove('show');
-            maintenanceShowing = false;
-            fetchAlarms(); // Reload data
-          }
-        } catch (e) {
-          // Still down, keep waiting
-        }
-      }, 3000);
+      // Maintenance overlay removed - function kept for compatibility
+      return;
     }
     
     // Hide maintenance overlay
     function hideMaintenanceOverlay() {
-      const overlay = document.getElementById('maintenance-overlay');
-      overlay.classList.remove('show');
-      maintenanceShowing = false;
+      // Maintenance overlay removed - function kept for compatibility
+      return;
     }
     
     // Android detection for performance optimizations
