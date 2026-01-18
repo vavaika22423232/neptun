@@ -183,6 +183,27 @@ GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')
 GROQ_MODEL = 'llama-3.3-70b-versatile'
 GROQ_ENABLED = bool(GROQ_API_KEY)
 
+# AI request caching and rate limiting
+_groq_cache = {}  # Simple in-memory cache {hash: (result, timestamp)}
+_groq_cache_ttl = 300  # Cache TTL in seconds (5 min)
+_groq_last_request = 0  # Timestamp of last request
+_groq_min_interval = 0.5  # Minimum interval between requests (seconds)
+
+def _get_groq_cache_key(text):
+    """Generate cache key for AI request"""
+    import hashlib
+    return hashlib.md5(text.encode()).hexdigest()[:16]
+
+def _groq_rate_limit():
+    """Simple rate limiter for Groq API"""
+    global _groq_last_request
+    import time as time_module
+    now = time_module.time()
+    elapsed = now - _groq_last_request
+    if elapsed < _groq_min_interval:
+        time_module.sleep(_groq_min_interval - elapsed)
+    _groq_last_request = time_module.time()
+
 if GROQ_ENABLED:
     try:
         from groq import Groq
@@ -3632,6 +3653,16 @@ def extract_location_with_groq_ai(message_text: str):
     if not GROQ_ENABLED or not message_text:
         return None
     
+    # Check cache first
+    cache_key = _get_groq_cache_key('loc_' + message_text[:200])
+    if cache_key in _groq_cache:
+        cached = _groq_cache[cache_key]
+        if time.time() - cached[1] < _groq_cache_ttl:
+            return cached[0]
+    
+    # Apply rate limiting
+    _groq_rate_limit()
+    
     try:
         prompt = f"""Ти експерт з аналізу повідомлень про повітряні тривоги в Україні.
 
@@ -3697,12 +3728,17 @@ def extract_location_with_groq_ai(message_text: str):
         
         print(f"DEBUG Groq AI: city='{city}', district='{district}', oblast='{oblast}', confidence={confidence}")
         
-        return {
+        result = {
             'city': city.strip() if city else None,
             'district': district.strip() if district else None,
             'oblast': oblast.strip() if oblast else None,
             'confidence': float(confidence)
         }
+        
+        # Cache result
+        _groq_cache[cache_key] = (result, time.time())
+        
+        return result
         
     except json.JSONDecodeError as e:
         print(f"WARNING: Groq AI returned invalid JSON: {e}")
@@ -3736,11 +3772,14 @@ def extract_trajectory_with_ai(message_text: str):
         return None
     
     # Check cache first
-    cache_key = hash(message_text[:200])
+    cache_key = _get_groq_cache_key(message_text[:200])
     if cache_key in _trajectory_ai_cache:
         cached = _trajectory_ai_cache[cache_key]
         if time.time() - cached['ts'] < _TRAJECTORY_AI_CACHE_TTL:
             return cached['data']
+    
+    # Apply rate limiting
+    _groq_rate_limit()
     
     try:
         prompt = f"""Ти експерт з аналізу повідомлень про рух дронів/БпЛА в Україні.
