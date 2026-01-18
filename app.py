@@ -3068,6 +3068,15 @@ def save_messages(data, send_notifications=True):
         
         if new_messages:
             log.info(f"Found {len(new_messages)} new messages to process for notifications")
+            
+            # === THREAT TRACKER: Process new messages ===
+            for msg in new_messages:
+                try:
+                    result = process_message_for_threats(msg)
+                    if result:
+                        log.debug(f"Threat tracker: {result['action']} threat {result['threat_id']}")
+                except Exception as e:
+                    log.debug(f"Threat tracker error: {e}")
         
         saved = MESSAGE_STORE.save(data)
         
@@ -5787,6 +5796,971 @@ def get_regional_threat_assessment(region: str, active_threats: list = None) -> 
         'min_eta_minutes': None,
         'recommendation': 'Слідкуйте за оновленнями' if base_risk > 0.4 else 'Нормальний стан'
     }
+
+
+# ==================== AI SMART TTL SYSTEM ====================
+# Intelligent marker lifetime calculation based on threat type, context, and status
+
+# Base TTL in minutes - MINIMUM time, adjusted UP based on distance/ETA
+THREAT_BASE_TTL = {
+    'shahed': 15,       # Base 15 min, increases with distance
+    'drone': 15,        # Other drones
+    'cruise': 12,       # Cruise missiles
+    'ballistic': 5,     # Ballistic - very fast
+    'kab': 8,           # Guided bombs - fast
+    'rocket': 8,        # Rockets
+    'kinzhal': 3,       # Hypersonic - extremely fast
+    'iskander': 5,      # Ballistic
+    'kalibr': 15,       # Cruise missile
+    'x101': 20,         # Long-range cruise
+    'unknown': 20,      # Default
+    'explosion': 10,    # Already happened
+    'artillery': 8,     # Artillery
+    'air': 15,          # Air alert general
+}
+
+# Maximum TTL by threat type (even with long distance)
+THREAT_MAX_TTL = {
+    'shahed': 180,      # 3 hours max for shaheds
+    'drone': 120,       # 2 hours
+    'cruise': 45,       # 45 min
+    'ballistic': 15,    # 15 min max
+    'kab': 20,          # 20 min
+    'rocket': 15,       # 15 min
+    'kinzhal': 8,       # 8 min
+    'iskander': 12,     # 12 min
+    'kalibr': 50,       # 50 min
+    'x101': 60,         # 1 hour
+    'unknown': 45,      # 45 min default
+    'explosion': 15,    # 15 min
+    'artillery': 12,    # 12 min
+    'air': 30,          # 30 min
+}
+
+# Keywords indicating DISTANT threat (need more TTL)
+DISTANT_KEYWORDS = [
+    'чорне море', 'каспій', 'азовськ', 'білорусь', 'росія',
+    'запуск', 'старт', 'пуск', 'зліт', 'виявлен', 'увійшл',
+    'перетнув кордон', 'з території', 'від кордону',
+]
+
+# Keywords indicating CLOSE/ARRIVED threat (need less TTL)
+CLOSE_KEYWORDS = [
+    'над ', 'в районі', 'у районі', 'біля', 'поблизу',
+    'наближається до', 'на підльоті', 'входить у',
+    'вже в', 'досяг', 'прибув', 'летить над',
+]
+
+# Keywords that indicate threat is over/destroyed
+THREAT_ENDED_KEYWORDS = [
+    'збит', 'знищен', 'уражен', 'ліквідован', 'нейтралізован',
+    'перехоплен', 'відбит', 'відведен', 'не загроз', 'пішов', 
+    'покинув', 'вийшов', 'залишив', 'минув', 'пролетів',
+    'завершен', 'закінч', 'скасуван', 'все чист', 'відбій',
+    'влучан', 'вибух', 'впав', 'упав', 'приземлив',
+]
+
+# Keywords that indicate ongoing/active threat
+THREAT_ACTIVE_KEYWORDS = [
+    'курс', 'напрям', 'рухається', 'летить', 'прямує',
+    'наближається', 'атак', 'загроз', 'небезпек', 'увага',
+    'пуск', 'старт', 'виявлен', 'зафіксован', 'в повітр',
+]
+
+def calculate_ai_marker_ttl(message_text: str, threat_type: str = None, 
+                            distance_km: float = None, eta_minutes: float = None,
+                            source_region: str = None, target_region: str = None,
+                            marker_data: dict = None) -> dict:
+    """
+    Calculate intelligent TTL (time-to-live) for a marker based on AI analysis.
+    
+    Instead of fixed 30-minute display time, calculates optimal TTL based on:
+    1. Threat type (ballistic=fast, shahed=slow)
+    2. Distance to target (further = longer TTL)
+    3. ETA (adjust based on when it should arrive)
+    4. Message context (destroyed? changed course? ongoing?)
+    5. Historical patterns
+    
+    Returns:
+    {
+        'ttl_minutes': int,  # Recommended TTL
+        'ttl_seconds': int,  # Same in seconds
+        'expires_at': datetime,  # When marker should disappear
+        'confidence': float,  # Confidence in TTL estimate
+        'reason': str,  # Why this TTL was chosen
+        'status': 'active' | 'ended' | 'uncertain'
+    }
+    """
+    msg_lower = (message_text or '').lower()
+    
+    # Detect if threat is already over
+    ended_count = sum(1 for kw in THREAT_ENDED_KEYWORDS if kw in msg_lower)
+    active_count = sum(1 for kw in THREAT_ACTIVE_KEYWORDS if kw in msg_lower)
+    
+    # If threat is clearly ended
+    if ended_count >= 2 or (ended_count > 0 and active_count == 0):
+        return {
+            'ttl_minutes': 5,
+            'ttl_seconds': 300,
+            'expires_at': datetime.now() + timedelta(minutes=5),
+            'confidence': 0.9,
+            'reason': 'Загроза знищена/завершена',
+            'status': 'ended'
+        }
+    
+    # Get base TTL from threat type
+    if threat_type:
+        tt_lower = threat_type.lower()
+        # Handle variants
+        if 'шахед' in tt_lower or 'герань' in tt_lower:
+            threat_type = 'shahed'
+        elif 'балістик' in tt_lower or 'іскандер' in tt_lower:
+            threat_type = 'ballistic'
+        elif 'крилат' in tt_lower or 'калібр' in tt_lower or 'х-' in tt_lower:
+            threat_type = 'cruise'
+        elif 'каб' in tt_lower or 'бомб' in tt_lower:
+            threat_type = 'kab'
+        elif 'кінжал' in tt_lower:
+            threat_type = 'kinzhal'
+    else:
+        # Try to detect threat type from message
+        if any(w in msg_lower for w in ['шахед', 'герань', 'бпла', 'дрон']):
+            threat_type = 'shahed'
+        elif any(w in msg_lower for w in ['балістик', 'іскандер', 'кн-23']):
+            threat_type = 'ballistic'
+        elif any(w in msg_lower for w in ['крилат', 'калібр', 'х-101', 'х-55', 'х-22']):
+            threat_type = 'cruise'
+        elif any(w in msg_lower for w in ['каб', 'керована бомба', 'авіабомб']):
+            threat_type = 'kab'
+        elif any(w in msg_lower for w in ['кінжал', 'гіперзвук']):
+            threat_type = 'kinzhal'
+        elif 'вибух' in msg_lower:
+            threat_type = 'explosion'
+        elif 'артилер' in msg_lower or 'обстріл' in msg_lower:
+            threat_type = 'artillery'
+        else:
+            threat_type = 'unknown'
+    
+    base_ttl = THREAT_BASE_TTL.get(threat_type, 20)
+    max_ttl = THREAT_MAX_TTL.get(threat_type, 45)
+    reason = f"Базовий TTL для {threat_type}"
+    confidence = 0.7
+    
+    # === ANALYZE DISTANCE FROM MESSAGE CONTEXT ===
+    # Check if threat is distant (just launched, from far away)
+    distant_count = sum(1 for kw in DISTANT_KEYWORDS if kw in msg_lower)
+    # Check if threat is close (already over target area)
+    close_count = sum(1 for kw in CLOSE_KEYWORDS if kw in msg_lower)
+    
+    distance_factor = 1.0
+    if distant_count > close_count:
+        # Distant threat - increase TTL significantly
+        distance_factor = 2.5 if threat_type in ['shahed', 'drone'] else 1.8
+        reason += " + далеко"
+        confidence = 0.75
+    elif close_count > distant_count:
+        # Close threat - keep base TTL or reduce
+        distance_factor = 0.8
+        reason += " + близько"
+        confidence = 0.8
+    
+    base_ttl = base_ttl * distance_factor
+    
+    # === ADJUST BY ETA IF KNOWN ===
+    if eta_minutes is not None and eta_minutes > 0:
+        # TTL should be at least ETA + buffer
+        eta_buffer = eta_minutes * 1.3 + 5  # 1.3x ETA + 5 min buffer
+        if eta_buffer > base_ttl:
+            base_ttl = eta_buffer
+            reason = f"ETA: {eta_minutes:.0f} хв"
+            confidence = 0.85
+    
+    # === ADJUST BY DISTANCE IF KNOWN ===
+    if distance_km is not None and distance_km > 0:
+        # Estimate time based on threat speed
+        speeds = THREAT_SPEEDS.get(threat_type, THREAT_SPEEDS['unknown'])
+        avg_time = (distance_km / speeds['avg']) * 60  # in minutes
+        
+        # TTL should accommodate travel time + buffer
+        travel_ttl = avg_time * 1.2 + 5  # 1.2x travel + 5 min buffer
+        if travel_ttl > base_ttl:
+            base_ttl = travel_ttl
+            reason = f"Відстань: {distance_km:.0f} км"
+            confidence = 0.8
+    
+    # === ADJUST FOR SOURCE REGION ===
+    if source_region:
+        src_lower = source_region.lower()
+        if 'чорне море' in src_lower or 'каспій' in src_lower:
+            if threat_type == 'shahed':
+                base_ttl = max(base_ttl, 90)  # Shaheds from sea - at least 1.5 hours
+            else:
+                base_ttl = max(base_ttl, 40)
+            reason += " (з моря)"
+        elif 'білорусь' in src_lower:
+            base_ttl = max(base_ttl, 30)
+            reason += " (з Білорусі)"
+    
+    # === COURSE CHANGES ===
+    if any(w in msg_lower for w in ['змінив курс', 'змінює напрям', 'маневрує', 'повернув']):
+        base_ttl *= 1.2  # Add 20% for unpredictable path
+        reason += " + маневри"
+        confidence *= 0.9
+    
+    # === MULTIPLE THREATS ===
+    quantity = 1
+    qty_match = re.search(r'(\d+)\s*(?:бпла|шахед|дрон|ракет)', msg_lower)
+    if qty_match:
+        quantity = int(qty_match.group(1))
+        if quantity > 5:
+            base_ttl *= 1.15  # Large groups take slightly longer
+            reason += f" ({quantity} шт)"
+    
+    # === APPLY MAX TTL LIMIT ===
+    base_ttl = min(base_ttl, max_ttl)
+    
+    # Round to reasonable value
+    base_ttl = int(round(base_ttl / 5) * 5)  # Round to nearest 5 minutes
+    base_ttl = max(5, base_ttl)  # Minimum 5 minutes
+    
+    return {
+        'ttl_minutes': base_ttl,
+        'ttl_seconds': base_ttl * 60,
+        'expires_at': datetime.now() + timedelta(minutes=base_ttl),
+        'confidence': round(confidence, 2),
+        'reason': reason,
+        'status': 'active',
+        'threat_type_detected': threat_type
+    }
+
+def get_marker_ttl_from_message(message: dict) -> dict:
+    """
+    Convenience function to get TTL for a marker from its message data.
+    """
+    text = message.get('text', '')
+    threat_type = message.get('threat_type')
+    
+    # Extract coordinates for distance calculation
+    lat = message.get('lat')
+    lng = message.get('lng')
+    distance_km = None
+    eta_minutes = None
+    
+    # Get trajectory data if available
+    trajectory = message.get('trajectory') or message.get('enhanced_trajectory')
+    if trajectory:
+        distance_km = trajectory.get('distance_km')
+        eta = trajectory.get('eta', {})
+        if isinstance(eta, dict):
+            eta_minutes = eta.get('avg_minutes')
+    
+    # Get source region
+    source_region = message.get('source') or message.get('course_source')
+    
+    return calculate_ai_marker_ttl(
+        message_text=text,
+        threat_type=threat_type,
+        distance_km=distance_km,
+        eta_minutes=eta_minutes,
+        source_region=source_region,
+        marker_data=message
+    )
+
+def should_marker_be_visible(message: dict, current_time: datetime = None) -> dict:
+    """
+    Determine if a marker should still be visible based on AI TTL.
+    
+    Returns:
+    {
+        'visible': bool,
+        'reason': str,
+        'remaining_minutes': int,  # If visible, minutes remaining
+        'ttl_info': dict  # Full TTL calculation
+    }
+    """
+    if current_time is None:
+        current_time = datetime.now()
+    
+    # Get message timestamp
+    try:
+        msg_time = datetime.strptime(message.get('date', ''), '%Y-%m-%d %H:%M:%S')
+    except:
+        # Can't parse time, show by default
+        return {
+            'visible': True,
+            'reason': 'Не вдалося визначити час',
+            'remaining_minutes': 30,
+            'ttl_info': None
+        }
+    
+    # Calculate AI TTL
+    ttl_info = get_marker_ttl_from_message(message)
+    ttl_minutes = ttl_info['ttl_minutes']
+    
+    # Calculate age
+    age_minutes = (current_time - msg_time).total_seconds() / 60
+    
+    if age_minutes > ttl_minutes:
+        return {
+            'visible': False,
+            'reason': ttl_info['reason'],
+            'remaining_minutes': 0,
+            'age_minutes': int(age_minutes),
+            'ttl_info': ttl_info
+        }
+    
+    return {
+        'visible': True,
+        'reason': 'Активна загроза',
+        'remaining_minutes': int(ttl_minutes - age_minutes),
+        'age_minutes': int(age_minutes),
+        'ttl_info': ttl_info
+    }
+
+# Global flag to enable/disable AI TTL
+AI_TTL_ENABLED = True
+
+def set_ai_ttl_enabled(enabled: bool):
+    """Enable or disable AI TTL system"""
+    global AI_TTL_ENABLED
+    AI_TTL_ENABLED = enabled
+    print(f"INFO: AI TTL system {'enabled' if enabled else 'disabled'}")
+
+# ==================== END AI SMART TTL SYSTEM ====================
+
+
+# ==================== SMART THREAT TRACKING SYSTEM ====================
+# Інтелектуальна система відстеження загроз:
+# 1. Синхронізація з API тривог - коли тривога в регіоні закінчується, маркери зникають
+# 2. Відстеження груп (шахедів) - лічильник збитих/активних
+# 3. Оновлення позиції маркерів при нових повідомленнях
+# 4. Автоматична зміна статусу (активний → збитий → пролетів)
+
+import threading
+import time as time_module
+
+# Threat tracking storage
+# threat_id -> { info about tracked threat }
+ACTIVE_THREATS = {}
+ACTIVE_THREATS_LOCK = threading.Lock()
+
+# Mapping: region -> list of threat_ids in that region
+REGION_THREATS = {}
+
+# Cache for alarm states (to detect changes)
+_LAST_ALARM_STATES = {}
+
+class ThreatTracker:
+    """
+    Система відстеження загроз в реальному часі.
+    
+    Можливості:
+    - Створення нових загроз з повідомлень
+    - Оновлення позиції при нових даних
+    - Відстеження груп (кількість в групі, кількість збитих)
+    - Автоматичне видалення при зняття тривоги в регіоні
+    - Зміна статусу (активний → збитий → минув)
+    """
+    
+    def __init__(self):
+        self.threats = {}  # threat_id -> ThreatInfo
+        self.lock = threading.Lock()
+        self.region_to_threats = {}  # region_name -> set of threat_ids
+        self.message_to_threat = {}  # message_id -> threat_id (for linking)
+        
+    def generate_threat_id(self, msg_text: str, threat_type: str, region: str) -> str:
+        """Generate unique ID for a threat based on key characteristics"""
+        import hashlib
+        # Create hash from characteristics that should be same for updates to same threat
+        key = f"{threat_type}:{region}:{datetime.now().strftime('%Y%m%d%H')}"
+        return hashlib.md5(key.encode()).hexdigest()[:12]
+    
+    def parse_threat_from_message(self, message: dict) -> dict:
+        """
+        Розбір повідомлення для витягування інформації про загрозу.
+        
+        Повертає:
+        - threat_type: тип загрози
+        - quantity: кількість в групі
+        - regions: список регіонів де виявлено
+        - status: активний/збитий/пролетів
+        - direction: напрямок руху
+        - coordinates: координати якщо є
+        """
+        text = message.get('text', '')
+        msg_lower = text.lower()
+        
+        result = {
+            'threat_type': None,
+            'quantity': 1,
+            'quantity_destroyed': 0,
+            'regions': [],
+            'status': 'active',
+            'direction': None,
+            'target': None,
+            'coordinates': None,
+            'original_message': message
+        }
+        
+        # === DETERMINE THREAT TYPE ===
+        if any(w in msg_lower for w in ['шахед', 'герань', 'shahed', 'geran']):
+            result['threat_type'] = 'shahed'
+        elif any(w in msg_lower for w in ['бпла', 'дрон', 'uav', 'безпілот']):
+            result['threat_type'] = 'drone'
+        elif any(w in msg_lower for w in ['балістик', 'іскандер', 'кн-23', 'ballistic']):
+            result['threat_type'] = 'ballistic'
+        elif any(w in msg_lower for w in ['крилат', 'калібр', 'х-101', 'х-55', 'cruise']):
+            result['threat_type'] = 'cruise'
+        elif any(w in msg_lower for w in ['каб', 'керована бомба', 'авіабомб', 'kab']):
+            result['threat_type'] = 'kab'
+        elif any(w in msg_lower for w in ['кінжал', 'kinzhal', 'гіперзвук']):
+            result['threat_type'] = 'kinzhal'
+        else:
+            result['threat_type'] = 'unknown'
+        
+        # === EXTRACT QUANTITY ===
+        # Patterns: "5 шахедів", "група з 10 БПЛА", "до 15 дронів"
+        qty_patterns = [
+            r'(\d+)\s*(?:шахед|shahed|герань|бпла|дрон|ракет)',
+            r'група\s*(?:з\s*)?(\d+)',
+            r'до\s*(\d+)\s*(?:шахед|бпла|дрон|ракет)',
+            r'близько\s*(\d+)',
+        ]
+        for pattern in qty_patterns:
+            match = re.search(pattern, msg_lower)
+            if match:
+                result['quantity'] = int(match.group(1))
+                break
+        
+        # === EXTRACT DESTROYED COUNT ===
+        # "збито 3 з 10", "знищено 5 шахедів"
+        destroyed_patterns = [
+            r'збит[оі]\s*(\d+)',
+            r'знищен[оі]\s*(\d+)',
+            r'уражен[оі]\s*(\d+)',
+            r'(\d+)\s*збит',
+            r'(\d+)\s*знищен',
+        ]
+        for pattern in destroyed_patterns:
+            match = re.search(pattern, msg_lower)
+            if match:
+                result['quantity_destroyed'] = int(match.group(1))
+                break
+        
+        # === DETERMINE STATUS ===
+        if result['quantity_destroyed'] > 0:
+            if result['quantity_destroyed'] >= result['quantity']:
+                result['status'] = 'destroyed'
+            else:
+                result['status'] = 'partially_destroyed'
+        
+        # Check for "passed through" status
+        passed_keywords = ['пролетів', 'минув', 'пройшов', 'покинув', 'вийшов', 'залишив']
+        if any(kw in msg_lower for kw in passed_keywords):
+            result['status'] = 'passed'
+        
+        # === EXTRACT REGIONS ===
+        # List of Ukrainian regions
+        ua_regions = [
+            'київ', 'київська', 'харків', 'харківська', 'одес', 'одеська',
+            'дніпро', 'дніпропетров', 'запоріж', 'львів', 'львівська',
+            'полтав', 'вінниц', 'черкас', 'чернігів', 'суми', 'сумська',
+            'миколаїв', 'херсон', 'донецьк', 'луганськ', 'житомир',
+            'хмельниц', 'рівн', 'волин', 'тернопіл', 'івано-франків',
+            'закарпат', 'чернівц', 'кіровоград', 'кропивниц'
+        ]
+        
+        for region in ua_regions:
+            if region in msg_lower:
+                # Normalize region name
+                region_normalized = region.title() + 'ська область'
+                if region_normalized not in result['regions']:
+                    result['regions'].append(region_normalized)
+        
+        # === EXTRACT DIRECTION/TARGET ===
+        direction_patterns = [
+            r'курс(?:ом)?\s*(?:на)?\s*([А-ЯІЇЄа-яіїє\-]+)',
+            r'напрям(?:ок|ку)?\s*(?:на)?\s*([А-ЯІЇЄа-яіїє\-]+)',
+            r'рухається\s*(?:до|на)\s*([А-ЯІЇЄа-яіїє\-]+)',
+            r'летить\s*(?:до|на)\s*([А-ЯІЇЄа-яіїє\-]+)',
+        ]
+        for pattern in direction_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                result['direction'] = match.group(1).strip()
+                result['target'] = result['direction']
+                break
+        
+        # === GET COORDINATES ===
+        if message.get('lat') and message.get('lng'):
+            result['coordinates'] = {
+                'lat': message['lat'],
+                'lng': message['lng']
+            }
+        
+        return result
+    
+    def find_existing_threat(self, parsed: dict) -> str:
+        """
+        Шукає існуючу загрозу яка може бути тією ж самою.
+        
+        Критерії співпадіння:
+        - Той самий тип загрози
+        - Той самий регіон або напрямок
+        - Створено недавно (в межах 2 годин для шахедів, 30 хв для балістики)
+        """
+        threat_type = parsed.get('threat_type')
+        regions = parsed.get('regions', [])
+        direction = parsed.get('direction')
+        
+        # Time window for matching
+        max_age_minutes = 120 if threat_type == 'shahed' else 30
+        now = datetime.now()
+        
+        with self.lock:
+            for threat_id, threat in self.threats.items():
+                # Skip if different type
+                if threat['threat_type'] != threat_type:
+                    continue
+                
+                # Skip if too old
+                age = (now - threat['created_at']).total_seconds() / 60
+                if age > max_age_minutes:
+                    continue
+                
+                # Check region match
+                if regions and threat.get('regions'):
+                    if any(r in threat['regions'] for r in regions):
+                        return threat_id
+                
+                # Check direction match
+                if direction and threat.get('direction'):
+                    if direction.lower() in threat['direction'].lower() or threat['direction'].lower() in direction.lower():
+                        return threat_id
+        
+        return None
+    
+    def create_or_update_threat(self, message: dict) -> dict:
+        """
+        Створює нову загрозу або оновлює існуючу.
+        
+        Повертає інформацію про загрозу та дію (created/updated).
+        """
+        parsed = self.parse_threat_from_message(message)
+        
+        # Try to find existing threat
+        existing_id = self.find_existing_threat(parsed)
+        
+        if existing_id:
+            # UPDATE existing threat
+            return self._update_threat(existing_id, parsed, message)
+        else:
+            # CREATE new threat
+            return self._create_threat(parsed, message)
+    
+    def _create_threat(self, parsed: dict, message: dict) -> dict:
+        """Створює нову загрозу"""
+        threat_id = self.generate_threat_id(
+            message.get('text', ''),
+            parsed['threat_type'],
+            parsed['regions'][0] if parsed['regions'] else 'unknown'
+        )
+        
+        threat = {
+            'id': threat_id,
+            'threat_type': parsed['threat_type'],
+            'quantity': parsed['quantity'],
+            'quantity_destroyed': parsed['quantity_destroyed'],
+            'quantity_remaining': parsed['quantity'] - parsed['quantity_destroyed'],
+            'regions': parsed['regions'],
+            'current_region': parsed['regions'][0] if parsed['regions'] else None,
+            'direction': parsed['direction'],
+            'target': parsed['target'],
+            'status': parsed['status'],
+            'coordinates': parsed['coordinates'],
+            'created_at': datetime.now(),
+            'updated_at': datetime.now(),
+            'message_ids': [message.get('id')],
+            'history': [{
+                'time': datetime.now().isoformat(),
+                'event': 'created',
+                'message_id': message.get('id'),
+                'status': parsed['status'],
+                'coordinates': parsed['coordinates']
+            }]
+        }
+        
+        with self.lock:
+            self.threats[threat_id] = threat
+            
+            # Update region mapping
+            for region in parsed['regions']:
+                if region not in self.region_to_threats:
+                    self.region_to_threats[region] = set()
+                self.region_to_threats[region].add(threat_id)
+            
+            # Link message to threat
+            self.message_to_threat[message.get('id')] = threat_id
+        
+        print(f"[THREAT TRACKER] Created threat {threat_id}: {parsed['threat_type']} x{parsed['quantity']} -> {parsed['direction']}")
+        
+        return {
+            'action': 'created',
+            'threat_id': threat_id,
+            'threat': threat
+        }
+    
+    def _update_threat(self, threat_id: str, parsed: dict, message: dict) -> dict:
+        """Оновлює існуючу загрозу"""
+        with self.lock:
+            if threat_id not in self.threats:
+                return self._create_threat(parsed, message)
+            
+            threat = self.threats[threat_id]
+            changes = []
+            
+            # Update quantity if increased
+            if parsed['quantity'] > threat['quantity']:
+                changes.append(f"quantity: {threat['quantity']} -> {parsed['quantity']}")
+                threat['quantity'] = parsed['quantity']
+            
+            # Update destroyed count
+            if parsed['quantity_destroyed'] > threat['quantity_destroyed']:
+                changes.append(f"destroyed: {threat['quantity_destroyed']} -> {parsed['quantity_destroyed']}")
+                threat['quantity_destroyed'] = parsed['quantity_destroyed']
+                threat['quantity_remaining'] = threat['quantity'] - threat['quantity_destroyed']
+            
+            # Update coordinates if provided (move marker)
+            if parsed['coordinates']:
+                old_coords = threat['coordinates']
+                threat['coordinates'] = parsed['coordinates']
+                if old_coords != parsed['coordinates']:
+                    changes.append(f"moved to {parsed['coordinates']}")
+            
+            # Update regions (add new ones)
+            for region in parsed['regions']:
+                if region not in threat['regions']:
+                    threat['regions'].append(region)
+                    changes.append(f"entered {region}")
+                    
+                    # Update region mapping
+                    if region not in self.region_to_threats:
+                        self.region_to_threats[region] = set()
+                    self.region_to_threats[region].add(threat_id)
+            
+            # Update current region
+            if parsed['regions']:
+                threat['current_region'] = parsed['regions'][-1]  # Latest region
+            
+            # Update direction
+            if parsed['direction'] and parsed['direction'] != threat['direction']:
+                changes.append(f"direction: {threat['direction']} -> {parsed['direction']}")
+                threat['direction'] = parsed['direction']
+                threat['target'] = parsed['target']
+            
+            # Update status
+            if parsed['status'] != threat['status']:
+                changes.append(f"status: {threat['status']} -> {parsed['status']}")
+                threat['status'] = parsed['status']
+            
+            # Update timestamp
+            threat['updated_at'] = datetime.now()
+            
+            # Link message
+            if message.get('id') not in threat['message_ids']:
+                threat['message_ids'].append(message.get('id'))
+            self.message_to_threat[message.get('id')] = threat_id
+            
+            # Add to history
+            threat['history'].append({
+                'time': datetime.now().isoformat(),
+                'event': 'updated',
+                'message_id': message.get('id'),
+                'changes': changes,
+                'status': parsed['status'],
+                'coordinates': parsed['coordinates']
+            })
+            
+            if changes:
+                print(f"[THREAT TRACKER] Updated threat {threat_id}: {', '.join(changes)}")
+        
+        return {
+            'action': 'updated',
+            'threat_id': threat_id,
+            'threat': threat,
+            'changes': changes
+        }
+    
+    def update_from_alarms(self, active_alarms: dict) -> list:
+        """
+        Оновлює стан загроз на основі API тривог.
+        
+        Коли тривога в регіоні закінчується - всі загрози в цьому регіоні 
+        переходять в статус 'passed' або 'cleared'.
+        
+        Повертає список threat_id які були змінені.
+        """
+        changed_threats = []
+        
+        # Get list of regions with active alarms
+        active_regions = set()
+        
+        # Parse states
+        for state in active_alarms.get('states', []):
+            region_name = state.get('regionName', '')
+            active_regions.add(region_name.lower())
+        
+        # Parse districts
+        for district in active_alarms.get('districts', []):
+            region_name = district.get('regionName', '')
+            oblast = district.get('oblast', '')
+            active_regions.add(region_name.lower())
+            if oblast:
+                active_regions.add(oblast.lower())
+        
+        with self.lock:
+            # Check each region with threats
+            for region, threat_ids in list(self.region_to_threats.items()):
+                region_lower = region.lower()
+                
+                # Check if alarm is still active in this region
+                alarm_active = any(
+                    region_lower in ar or ar in region_lower 
+                    for ar in active_regions
+                )
+                
+                if not alarm_active:
+                    # Alarm ended in this region - mark all threats as passed/cleared
+                    for threat_id in list(threat_ids):
+                        if threat_id in self.threats:
+                            threat = self.threats[threat_id]
+                            
+                            # Only update if threat is still active
+                            if threat['status'] in ['active', 'partially_destroyed']:
+                                old_status = threat['status']
+                                
+                                # Determine new status
+                                if threat['current_region'] == region:
+                                    # This was the current region - threat passed through or was cleared
+                                    if threat['quantity_destroyed'] >= threat['quantity']:
+                                        threat['status'] = 'destroyed'
+                                    else:
+                                        threat['status'] = 'cleared_by_alarm'
+                                    
+                                    threat['history'].append({
+                                        'time': datetime.now().isoformat(),
+                                        'event': 'alarm_ended',
+                                        'region': region,
+                                        'old_status': old_status,
+                                        'new_status': threat['status']
+                                    })
+                                    
+                                    changed_threats.append(threat_id)
+                                    print(f"[THREAT TRACKER] Alarm ended in {region}, threat {threat_id} status: {old_status} -> {threat['status']}")
+        
+        return changed_threats
+    
+    def get_threat_for_message(self, message_id: str) -> dict:
+        """Отримує загрозу пов'язану з повідомленням"""
+        with self.lock:
+            threat_id = self.message_to_threat.get(message_id)
+            if threat_id and threat_id in self.threats:
+                return self.threats[threat_id].copy()
+        return None
+    
+    def get_all_active_threats(self) -> list:
+        """Отримує всі активні загрози"""
+        with self.lock:
+            return [
+                t.copy() for t in self.threats.values()
+                if t['status'] in ['active', 'partially_destroyed']
+            ]
+    
+    def get_threats_in_region(self, region: str) -> list:
+        """Отримує всі загрози в регіоні"""
+        region_lower = region.lower()
+        with self.lock:
+            result = []
+            for threat_id, threat in self.threats.items():
+                if any(region_lower in r.lower() for r in threat.get('regions', [])):
+                    result.append(threat.copy())
+            return result
+    
+    def cleanup_old_threats(self, max_age_hours: int = 6):
+        """Видаляє старі неактивні загрози"""
+        now = datetime.now()
+        removed = 0
+        
+        with self.lock:
+            for threat_id in list(self.threats.keys()):
+                threat = self.threats[threat_id]
+                age_hours = (now - threat['created_at']).total_seconds() / 3600
+                
+                # Remove if too old or completed
+                should_remove = False
+                if age_hours > max_age_hours:
+                    should_remove = True
+                elif threat['status'] in ['destroyed', 'cleared_by_alarm', 'passed']:
+                    # Keep completed threats for 30 minutes
+                    if age_hours > 0.5:
+                        should_remove = True
+                
+                if should_remove:
+                    del self.threats[threat_id]
+                    removed += 1
+                    
+                    # Clean up region mapping
+                    for region, ids in self.region_to_threats.items():
+                        ids.discard(threat_id)
+        
+        if removed > 0:
+            print(f"[THREAT TRACKER] Cleaned up {removed} old threats")
+        
+        return removed
+    
+    def get_marker_for_threat(self, threat_id: str) -> dict:
+        """
+        Генерує дані маркера для відображення на карті.
+        
+        Включає:
+        - Координати (останні відомі)
+        - Іконку на основі типу та статусу
+        - Підпис з кількістю та статусом
+        - Колір на основі статусу
+        """
+        with self.lock:
+            if threat_id not in self.threats:
+                return None
+            
+            threat = self.threats[threat_id]
+        
+        # Generate marker data
+        marker = {
+            'threat_id': threat_id,
+            'lat': threat['coordinates']['lat'] if threat['coordinates'] else None,
+            'lng': threat['coordinates']['lng'] if threat['coordinates'] else None,
+            'threat_type': threat['threat_type'],
+            'status': threat['status'],
+            'quantity': threat['quantity'],
+            'quantity_destroyed': threat['quantity_destroyed'],
+            'quantity_remaining': threat['quantity_remaining'],
+            'direction': threat['direction'],
+            'target': threat['target'],
+            'current_region': threat['current_region'],
+            'created_at': threat['created_at'].isoformat(),
+            'updated_at': threat['updated_at'].isoformat(),
+        }
+        
+        # Generate label
+        if threat['quantity'] > 1:
+            if threat['quantity_destroyed'] > 0:
+                label = f"{threat['threat_type'].upper()} x{threat['quantity_remaining']}/{threat['quantity']} (збито: {threat['quantity_destroyed']})"
+            else:
+                label = f"{threat['threat_type'].upper()} x{threat['quantity']}"
+        else:
+            label = threat['threat_type'].upper()
+        
+        if threat['direction']:
+            label += f" → {threat['direction']}"
+        
+        marker['label'] = label
+        
+        # Determine icon and color based on status
+        status_icons = {
+            'active': {'icon': 'icon_drone.svg', 'color': '#ff4444'},
+            'partially_destroyed': {'icon': 'icon_drone.svg', 'color': '#ff8800'},
+            'destroyed': {'icon': 'icon_explosion.svg', 'color': '#00ff00'},
+            'passed': {'icon': 'icon_check.svg', 'color': '#888888'},
+            'cleared_by_alarm': {'icon': 'icon_check.svg', 'color': '#44ff44'},
+        }
+        
+        status_info = status_icons.get(threat['status'], status_icons['active'])
+        marker['marker_icon'] = status_info['icon']
+        marker['marker_color'] = status_info['color']
+        
+        return marker
+
+
+# Global threat tracker instance
+THREAT_TRACKER = ThreatTracker()
+
+def check_alarms_and_update_threats():
+    """
+    Перевіряє стан тривог і оновлює загрози.
+    Викликається періодично (кожні 30 сек).
+    """
+    try:
+        # Get current alarms from cache
+        if _alarm_all_cache.get('data'):
+            changed = THREAT_TRACKER.update_from_alarms(_alarm_all_cache['data'])
+            if changed:
+                print(f"[THREAT TRACKER] Updated {len(changed)} threats based on alarm changes")
+    except Exception as e:
+        print(f"[THREAT TRACKER] Error checking alarms: {e}")
+
+def process_message_for_threats(message: dict) -> dict:
+    """
+    Обробляє повідомлення для системи відстеження загроз.
+    
+    Повертає інформацію про створену/оновлену загрозу.
+    """
+    # Only process messages with threat indicators
+    text = (message.get('text') or '').lower()
+    
+    threat_keywords = ['шахед', 'бпла', 'дрон', 'ракет', 'балістик', 'каб', 'крилат', 'кінжал']
+    if not any(kw in text for kw in threat_keywords):
+        return None
+    
+    try:
+        result = THREAT_TRACKER.create_or_update_threat(message)
+        return result
+    except Exception as e:
+        print(f"[THREAT TRACKER] Error processing message: {e}")
+        return None
+
+def get_smart_marker_visibility(message: dict, active_alarms: dict = None) -> dict:
+    """
+    Визначає чи повинен маркер бути видимим.
+    
+    Враховує:
+    1. AI TTL для типу загрози
+    2. Стан тривоги в регіоні
+    3. Статус загрози (якщо відстежується)
+    
+    Повертає:
+    {
+        'visible': bool,
+        'reason': str,
+        'remaining_minutes': int,
+        'threat_info': dict (якщо є)
+    }
+    """
+    # First, check if there's a tracked threat
+    msg_id = message.get('id')
+    threat = THREAT_TRACKER.get_threat_for_message(msg_id) if msg_id else None
+    
+    if threat:
+        # Use threat tracking info
+        if threat['status'] in ['destroyed', 'cleared_by_alarm', 'passed']:
+            # Threat is over - short visibility
+            return {
+                'visible': True,
+                'reason': f"Загроза завершена: {threat['status']}",
+                'remaining_minutes': 5,
+                'auto_hide_at': (datetime.now() + timedelta(minutes=5)).isoformat(),
+                'threat_info': threat
+            }
+        else:
+            # Active threat - check TTL
+            ttl_info = should_marker_be_visible(message)
+            ttl_info['threat_info'] = threat
+            return ttl_info
+    
+    # No tracked threat - use standard AI TTL
+    return should_marker_be_visible(message)
+
+# ==================== END SMART THREAT TRACKING SYSTEM ====================
+
 
 def analyze_threat_context(message_text: str, threat_type: str) -> dict:
     """
@@ -11496,8 +12470,8 @@ def _create_directional_trajectory_markers(text, mid, date_str, channel):
                 'opacity': 0.7
             })
         
-        # Add ETA circles around target
-        eta_circles = create_eta_circles(target_lat, target_lng, projected_path['estimated_arrival_minutes'])
+        # Add ETA circles around target - DISABLED
+        # eta_circles = create_eta_circles(target_lat, target_lng, projected_path['estimated_arrival_minutes'])
         
         # Create main target marker with trajectory info
         markers.append({
@@ -11506,15 +12480,14 @@ def _create_directional_trajectory_markers(text, mid, date_str, channel):
             'lat': target_lat,
             'lng': target_lng,
             'threat_type': 'trajectory_target',
-            'text': f"Ціль: {target_city.title()} (ETA: {int(projected_path['estimated_arrival_minutes'])}хв)",
+            'text': f"Ціль: {target_city.title()}",  # ETA removed
             'date': date_str,
             'channel': channel,
             'marker_icon': 'target.png',
             'source_match': 'trajectory_target',
-            'eta_minutes': projected_path['estimated_arrival_minutes'],
             'distance_km': projected_path['total_distance_km'],
             'marker_type': 'trajectory_target',
-            'eta_circles': eta_circles,
+            # 'eta_circles': eta_circles,  # DISABLED
             'projected_path': projected_path['path_points']
         })
         
@@ -12379,10 +13352,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         
         place_name = f"{trajectory_data.get('target_name', 'Ціль')} ← {trajectory_data.get('source_name', 'Джерело')}"
         
-        # Add ETA to place name if available
-        eta_info = trajectory_data.get('eta', {})
-        if eta_info.get('formatted'):
-            place_name += f" (ETA: {eta_info['formatted']})"
+        # ETA in place name - DISABLED
+        # eta_info = trajectory_data.get('eta', {})
+        # if eta_info.get('formatted'):
+        #     place_name += f" (ETA: {eta_info['formatted']})"
         
         trajectory_marker = {
             'id': str(mid),
@@ -23138,114 +24111,193 @@ def data():
     print(f"[DEBUG] Loaded {len(messages)} total messages")
     tz = pytz.timezone('Europe/Kyiv')
     now = datetime.now(tz).replace(tzinfo=None)
+    
+    # For AI TTL, we need to check each message individually
+    # But first do a pre-filter to avoid checking very old messages
+    max_possible_ttl = 240  # 4 hours - max possible TTL for any threat type
+    min_time_prefilter = now - timedelta(minutes=max_possible_ttl)
+    
+    # Fallback to fixed time if AI TTL is disabled
     min_time = now - timedelta(minutes=time_range)
     manual_cutoff = now - timedelta(minutes=max(time_range, MANUAL_MARKER_WINDOW_MINUTES))
-    print(f"[DEBUG] Filtering messages since {min_time} (last {time_range} minutes)")
+    
+    print(f"[DEBUG] Filtering messages since {min_time} (last {time_range} minutes), AI_TTL_ENABLED={AI_TTL_ENABLED}")
     hidden = set(load_hidden())
     out = []  # geo tracks
     events = []  # list-only (alarms, cancellations, other non-geo informational)
+    ai_ttl_stats = {'shown': 0, 'hidden': 0, 'reasons': {}}
+    
     for m in messages:
         try:
             dt = datetime.strptime(m.get('date',''), '%Y-%m-%d %H:%M:%S')
         except Exception:
             continue
+        
         manual_marker = bool(m.get('manual'))
-        if dt >= min_time or (manual_marker and dt >= manual_cutoff):
-            # Fallback reparse: if message lacks geo but contains course pattern, try to derive markers now
-            txt_low = (m.get('text') or '').lower()
-            msg_id = m.get('id')
-            
-            # Skip multi-regional UAV messages - they're already handled by immediate processing
-            text_full = m.get('text') or ''
-            text_lines = text_full.split('\n')
-            region_count = sum(1 for line in text_lines if any(region in line.lower() for region in ['щина:', 'щина]', 'область:', 'край:']) or (
-                'щина' in line.lower() and line.lower().strip().endswith(':')
-            ))
-            uav_count = sum(1 for line in text_lines if 'бпла' in line.lower() and ('курс' in line.lower() or 'на ' in line.lower()))
-            
-            # Process ALL messages without coordinates through process_message()
-            if (not m.get('lat')) and (not m.get('lng')):
-                # Skip if this is a multi-regional UAV message (already processed immediately)
-                if region_count >= 2 and uav_count >= 3:
-                    add_debug_log(f"Skipping fallback reparse for multi-regional UAV message ID {msg_id}", "reparse")
-                    continue
-                    
-                # Check if we've already reparsed this message to avoid duplicate processing
-                if msg_id in FALLBACK_REPARSE_CACHE:
-                    add_debug_log(f"Skipping fallback reparse for message ID {msg_id} - already processed", "reparse")
-                    continue
-                
-                try:
-                    # Add to cache to prevent future reprocessing
-                    FALLBACK_REPARSE_CACHE.add(msg_id)
-                    # Limit cache size to prevent memory growth
-                    if len(FALLBACK_REPARSE_CACHE) > MAX_REPARSE_CACHE_SIZE:
-                        # Remove oldest half of the cache (approximate LRU)
-                        cache_list = list(FALLBACK_REPARSE_CACHE)
-                        FALLBACK_REPARSE_CACHE = set(cache_list[len(cache_list)//2:])
-                    
-                    add_debug_log(f"Fallback reparse for message ID {msg_id} - first time processing", "reparse")
-                    reparsed = process_message(m.get('text') or '', m.get('id'), m.get('date'), m.get('channel') or m.get('source') or '')
-                    if isinstance(reparsed, list) and reparsed:
-                        for t in reparsed:
-                            try:
-                                lat_r = round(float(t.get('lat')), 3)
-                                lng_r = round(float(t.get('lng')), 3)
-                            except Exception:
-                                continue
-                            text_r = (t.get('text') or '')
-                            source_r = t.get('channel') or t.get('source') or ''
-                            marker_key_r = f"{lat_r},{lng_r}|{text_r}|{source_r}"
-                            if marker_key_r in hidden:
-                                continue
-                            out.append(t)
-                        # Skip adding original as event if we produced tracks
-                        if reparsed:
-                            continue
-                except Exception:
-                    pass
-            # list-only (no coordinates) -> push into events list if not suppressed
-            if m.get('list_only'):
-                if not m.get('suppress'):
-                    events.append(m)
-                continue  # skip trying to interpret as marker
-            # build marker key similar to frontend hide logic (rounded lat/lng + text + source/channel)
-            try:
-                lat = round(float(m.get('lat')), 3)
-                lng = round(float(m.get('lng')), 3)
-            except Exception:
-                continue  # not a proper geo marker
-            text = (m.get('text') or '')
-            source = m.get('source') or m.get('channel') or ''
-            marker_key = f"{lat},{lng}|{text}|{source}"
-            if marker_key in hidden:
+        
+        # === AI TTL LOGIC ===
+        # Check if message should be visible using AI-calculated TTL
+        if AI_TTL_ENABLED and not manual_marker:
+            # Pre-filter: skip messages older than max possible TTL
+            if dt < min_time_prefilter:
                 continue
-            # Backward compatibility: allow prefix match (text truncated when stored) for same lat,lng,source
-            base_prefix = f"{lat},{lng}|"
-            if not any(h.startswith(base_prefix) for h in hidden if '|' in h):
-                pass
-            else:
-                # iterate candidates with same coords and source, compare text prefix
-                skip = False
-                for h in hidden:
-                    if not h.startswith(base_prefix):
-                        continue
-                    try:
-                        _, htext, hsource = h.split('|',2)
-                    except ValueError:
-                        continue
-                    if hsource == source and text.startswith(htext):
-                        skip = True
-                        break
-                if skip:
-                    continue
-            # Фильтр: удаляем региональные метки без явных слов угроз (могли сохраниться старыми версиями логики)
-            low_txt = text.lower()
-            if m.get('source_match','').startswith('region') and not any(k in low_txt for k in ['бпла','дрон','шахед','shahed','geran','ракета','ракети','missile','iskander','s-300','s300','каб','артил','града','смерч','ураган','mlrs','avia','авіа','авиа','бомба']):
+            
+            # Calculate individual marker TTL
+            visibility = should_marker_be_visible(m, now)
+            
+            if not visibility['visible']:
+                ai_ttl_stats['hidden'] += 1
+                reason = visibility.get('ttl_info', {}).get('reason', 'unknown')
+                ai_ttl_stats['reasons'][reason] = ai_ttl_stats['reasons'].get(reason, 0) + 1
                 continue
-            out.append(m)
+            
+            # Add TTL info to marker for frontend display
+            if visibility.get('ttl_info'):
+                m['ai_ttl'] = {
+                    'remaining_minutes': visibility.get('remaining_minutes', 0),
+                    'reason': visibility['ttl_info'].get('reason', ''),
+                    'status': visibility['ttl_info'].get('status', 'active'),
+                    'threat_type_detected': visibility['ttl_info'].get('threat_type_detected', '')
+                }
+            ai_ttl_stats['shown'] += 1
+            # Continue to marker processing below
+        
+        # === FALLBACK LOGIC ===
+        # If AI TTL is disabled, use fixed time
+        elif not AI_TTL_ENABLED:
+            if not (dt >= min_time or (manual_marker and dt >= manual_cutoff)):
+                continue
         else:
+            # AI TTL was enabled but marker was already processed above, continue
             continue
+        
+        # === MARKER PROCESSING (shared for both AI TTL and fallback) ===
+        # Fallback reparse: if message lacks geo but contains course pattern, try to derive markers now
+        txt_low = (m.get('text') or '').lower()
+        msg_id = m.get('id')
+            
+        # Skip multi-regional UAV messages - they're already handled by immediate processing
+        text_full = m.get('text') or ''
+        text_lines = text_full.split('\n')
+        region_count = sum(1 for line in text_lines if any(region in line.lower() for region in ['щина:', 'щина]', 'область:', 'край:']) or (
+            'щина' in line.lower() and line.lower().strip().endswith(':')
+        ))
+        uav_count = sum(1 for line in text_lines if 'бпла' in line.lower() and ('курс' in line.lower() or 'на ' in line.lower()))
+        
+        # Process ALL messages without coordinates through process_message()
+        if (not m.get('lat')) and (not m.get('lng')):
+            # Skip if this is a multi-regional UAV message (already processed immediately)
+            if region_count >= 2 and uav_count >= 3:
+                add_debug_log(f"Skipping fallback reparse for multi-regional UAV message ID {msg_id}", "reparse")
+                continue
+                
+            # Check if we've already reparsed this message to avoid duplicate processing
+            if msg_id in FALLBACK_REPARSE_CACHE:
+                add_debug_log(f"Skipping fallback reparse for message ID {msg_id} - already processed", "reparse")
+                continue
+            
+            try:
+                # Add to cache to prevent future reprocessing
+                FALLBACK_REPARSE_CACHE.add(msg_id)
+                # Limit cache size to prevent memory growth
+                if len(FALLBACK_REPARSE_CACHE) > MAX_REPARSE_CACHE_SIZE:
+                    # Remove oldest half of the cache (approximate LRU)
+                    cache_list = list(FALLBACK_REPARSE_CACHE)
+                    FALLBACK_REPARSE_CACHE = set(cache_list[len(cache_list)//2:])
+                
+                add_debug_log(f"Fallback reparse for message ID {msg_id} - first time processing", "reparse")
+                reparsed = process_message(m.get('text') or '', m.get('id'), m.get('date'), m.get('channel') or m.get('source') or '')
+                if isinstance(reparsed, list) and reparsed:
+                    for t in reparsed:
+                        try:
+                            lat_r = round(float(t.get('lat')), 3)
+                            lng_r = round(float(t.get('lng')), 3)
+                        except Exception:
+                            continue
+                        text_r = (t.get('text') or '')
+                        source_r = t.get('channel') or t.get('source') or ''
+                        marker_key_r = f"{lat_r},{lng_r}|{text_r}|{source_r}"
+                        if marker_key_r in hidden:
+                            continue
+                        out.append(t)
+                    # Skip adding original as event if we produced tracks
+                    if reparsed:
+                        continue
+            except Exception:
+                pass
+        # list-only (no coordinates) -> push into events list if not suppressed
+        if m.get('list_only'):
+            if not m.get('suppress'):
+                events.append(m)
+            continue  # skip trying to interpret as marker
+        # build marker key similar to frontend hide logic (rounded lat/lng + text + source/channel)
+        try:
+            lat = round(float(m.get('lat')), 3)
+            lng = round(float(m.get('lng')), 3)
+        except Exception:
+            continue  # not a proper geo marker
+        text = (m.get('text') or '')
+        source = m.get('source') or m.get('channel') or ''
+        marker_key = f"{lat},{lng}|{text}|{source}"
+        if marker_key in hidden:
+            continue
+        # Backward compatibility: allow prefix match (text truncated when stored) for same lat,lng,source
+        base_prefix = f"{lat},{lng}|"
+        if not any(h.startswith(base_prefix) for h in hidden if '|' in h):
+            pass
+        else:
+            # iterate candidates with same coords and source, compare text prefix
+            skip = False
+            for h in hidden:
+                if not h.startswith(base_prefix):
+                    continue
+                try:
+                    _, htext, hsource = h.split('|',2)
+                except ValueError:
+                    continue
+                if hsource == source and text.startswith(htext):
+                    skip = True
+                    break
+            if skip:
+                continue
+        # Фильтр: удаляем региональные метки без явных слов угроз (могли сохраниться старыми версиями логики)
+        low_txt = text.lower()
+        if m.get('source_match','').startswith('region') and not any(k in low_txt for k in ['бпла','дрон','шахед','shahed','geran','ракета','ракети','missile','iskander','s-300','s300','каб','артил','града','смерч','ураган','mlrs','avia','авіа','авиа','бомба']):
+            continue
+        out.append(m)
+    
+    # Log AI TTL statistics
+    if AI_TTL_ENABLED and (ai_ttl_stats['shown'] > 0 or ai_ttl_stats['hidden'] > 0):
+        print(f"[AI TTL] Shown: {ai_ttl_stats['shown']}, Hidden by TTL: {ai_ttl_stats['hidden']}")
+        if ai_ttl_stats['reasons']:
+            for reason, count in list(ai_ttl_stats['reasons'].items())[:3]:
+                print(f"[AI TTL]   - {reason}: {count}")
+    
+    # === THREAT TRACKER: Update from alarms and get active threats ===
+    try:
+        # Check alarm state and update threats
+        if _alarm_all_cache.get('data'):
+            check_alarms_and_update_threats()
+        
+        # Cleanup old threats
+        THREAT_TRACKER.cleanup_old_threats(max_age_hours=4)
+        
+        # Get active tracked threats
+        active_threats = THREAT_TRACKER.get_all_active_threats()
+        threat_info = {
+            'count': len(active_threats),
+            'by_type': {},
+            'by_region': {}
+        }
+        for t in active_threats:
+            tt = t.get('threat_type', 'unknown')
+            threat_info['by_type'][tt] = threat_info['by_type'].get(tt, 0) + t.get('quantity_remaining', 1)
+            for r in t.get('regions', []):
+                threat_info['by_region'][r] = threat_info['by_region'].get(r, 0) + 1
+    except Exception as e:
+        print(f"[THREAT TRACKER] Error in /data: {e}")
+        threat_info = None
+    
     # Sort events by time desc (latest first) like markers implicitly (messages stored chronological)
     try:
         events.sort(key=lambda x: x.get('date',''), reverse=True)
@@ -23291,6 +24343,13 @@ def data():
             'active': BALLISTIC_THREAT_ACTIVE,
             'region': BALLISTIC_THREAT_REGION,
             'timestamp': BALLISTIC_THREAT_TIMESTAMP,
+        },
+        # Smart threat tracking info
+        'threat_tracking': threat_info,
+        # AI TTL stats
+        'ai_ttl': {
+            'enabled': AI_TTL_ENABLED,
+            'stats': ai_ttl_stats if AI_TTL_ENABLED else None
         },
         # Metadata for clients to know if data was truncated
         '_meta': {
@@ -25162,6 +26221,118 @@ def set_monitor_period():
         return jsonify({'status':'ok','monitor_period':MONITOR_PERIOD_MINUTES})
     except Exception as e:
         return jsonify({'status':'error','error':str(e)}), 400
+
+@app.route('/admin/set_ai_ttl', methods=['POST'])
+def set_ai_ttl():
+    """Enable or disable AI-based marker TTL system"""
+    if not _require_secret(request):
+        return jsonify({'status': 'forbidden'}), 403
+    global AI_TTL_ENABLED
+    payload = request.get_json(silent=True) or request.form
+    try:
+        enabled = payload.get('enabled')
+        if isinstance(enabled, str):
+            enabled = enabled.lower() in ('true', '1', 'yes', 'on')
+        AI_TTL_ENABLED = bool(enabled)
+        print(f"[DEBUG] AI_TTL_ENABLED updated to {AI_TTL_ENABLED}")
+        return jsonify({
+            'status': 'ok',
+            'ai_ttl_enabled': AI_TTL_ENABLED,
+            'description': 'AI визначає час життя міток на основі типу загрози та контексту' if AI_TTL_ENABLED else 'Фіксований час життя міток з адмін панелі'
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 400
+
+@app.route('/admin/ai_ttl_status', methods=['GET'])
+def get_ai_ttl_status():
+    """Get current AI TTL status and configuration"""
+    return jsonify({
+        'ai_ttl_enabled': AI_TTL_ENABLED,
+        'fallback_minutes': MONITOR_PERIOD_MINUTES,
+        'threat_base_ttl': THREAT_BASE_TTL,
+        'description': 'AI визначає час життя міток на основі типу загрози та контексту' if AI_TTL_ENABLED else 'Фіксований час життя міток з адмін панелі'
+    })
+
+@app.route('/admin/test_ai_ttl', methods=['POST'])
+def test_ai_ttl():
+    """Test AI TTL calculation for a message"""
+    if not _require_secret(request):
+        return jsonify({'status': 'forbidden'}), 403
+    payload = request.get_json(silent=True) or {}
+    text = payload.get('text', '')
+    threat_type = payload.get('threat_type')
+    distance_km = payload.get('distance_km')
+    eta_minutes = payload.get('eta_minutes')
+    
+    result = calculate_ai_marker_ttl(
+        message_text=text,
+        threat_type=threat_type,
+        distance_km=distance_km,
+        eta_minutes=eta_minutes
+    )
+    
+    # Convert datetime to string for JSON
+    if 'expires_at' in result:
+        result['expires_at'] = result['expires_at'].strftime('%Y-%m-%d %H:%M:%S')
+    
+    return jsonify(result)
+
+@app.route('/admin/threat_tracker', methods=['GET'])
+def admin_threat_tracker():
+    """Get current threat tracking status"""
+    active_threats = THREAT_TRACKER.get_all_active_threats()
+    
+    # Serialize threats for JSON
+    threats_json = []
+    for t in active_threats:
+        threat_copy = {}
+        for k, v in t.items():
+            if isinstance(v, datetime):
+                threat_copy[k] = v.isoformat()
+            elif k == 'history':
+                # Skip history for summary
+                threat_copy[k] = len(v)
+            else:
+                threat_copy[k] = v
+        threats_json.append(threat_copy)
+    
+    # Summary by type
+    by_type = {}
+    for t in active_threats:
+        tt = t.get('threat_type', 'unknown')
+        if tt not in by_type:
+            by_type[tt] = {'count': 0, 'total_quantity': 0, 'destroyed': 0}
+        by_type[tt]['count'] += 1
+        by_type[tt]['total_quantity'] += t.get('quantity', 1)
+        by_type[tt]['destroyed'] += t.get('quantity_destroyed', 0)
+    
+    return jsonify({
+        'active_threats': threats_json,
+        'by_type': by_type,
+        'total_active': len(active_threats),
+        'total_tracked': len(THREAT_TRACKER.threats),
+        'regions_with_threats': list(THREAT_TRACKER.region_to_threats.keys())
+    })
+
+@app.route('/api/threats', methods=['GET'])
+def api_threats():
+    """Public API for active threats - used by frontend"""
+    active_threats = THREAT_TRACKER.get_all_active_threats()
+    
+    # Generate markers for each threat
+    markers = []
+    for t in active_threats:
+        marker = THREAT_TRACKER.get_marker_for_threat(t['id'])
+        if marker and marker.get('lat') and marker.get('lng'):
+            markers.append(marker)
+    
+    return jsonify({
+        'threats': markers,
+        'summary': {
+            'total': len(markers),
+            'by_type': {}
+        }
+    })
 
 @app.route('/admin/neg_geocode_clear', methods=['POST'])
 def admin_neg_geocode_clear():

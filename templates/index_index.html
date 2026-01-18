@@ -972,13 +972,14 @@
       stroke-width: 2;
       stroke-dasharray: 4 8;
       opacity: 0.7;
-      animation: predictedPulse 2s ease-in-out infinite;
+      /* animation: predictedPulse 2s ease-in-out infinite; - disabled */
     }
     
+    /* @keyframes predictedPulse - disabled
     @keyframes predictedPulse {
       0%, 100% { opacity: 0.5; }
       50% { opacity: 0.9; }
-    }
+    } */
     
     .trajectory-group.predicted .trajectory-direction-arrow {
       border-top-color: rgba(251, 191, 36, 0.9);
@@ -1094,7 +1095,7 @@
       50% { filter: drop-shadow(0 0 10px rgba(255, 100, 100, 0.9)); }
     }
     
-    /* AI Prediction pulse ring around marker */
+    /* AI Prediction pulse ring around marker - DISABLED
     .threat-marker.has-prediction::before {
       content: '';
       position: absolute;
@@ -1127,21 +1128,26 @@
       0% { width: 32px; height: 32px; opacity: 1; border-width: 3px; }
       100% { width: 64px; height: 64px; opacity: 0; border-width: 1px; }
     }
+    */
     
-    /* Critical threat (rockets, ballistic) - red pulse */
+    /* Critical threat (rockets, ballistic) - red pulse - DISABLED
     .threat-marker.critical::before {
       border-color: rgba(239, 68, 68, 0.8);
     }
     .threat-marker.critical::after {
       border-color: rgba(239, 68, 68, 0.5);
     }
+    */
     .threat-marker.critical {
-      animation: markerAppear 0.4s ease-out, criticalGlow 1s ease-in-out infinite;
+      /* animation: markerAppear 0.4s ease-out, criticalGlow 1s ease-in-out infinite; - disabled */
+      filter: drop-shadow(0 0 8px rgba(239, 68, 68, 0.8));
     }
+    /* @keyframes criticalGlow - disabled
     @keyframes criticalGlow {
       0%, 100% { filter: drop-shadow(0 0 8px rgba(239, 68, 68, 0.8)); }
       50% { filter: drop-shadow(0 0 16px rgba(239, 68, 68, 1)); }
     }
+    */
     
     /* Count badge for multiple threats at same location */
     .marker-count-badge {
@@ -1215,7 +1221,7 @@
     .marker-tooltip .tooltip-eta.eta-critical {
       background: rgba(239, 68, 68, 0.3);
       color: #fca5a5;
-      animation: etaPulse 1s ease-in-out infinite;
+      /* animation: etaPulse 1s ease-in-out infinite; - disabled */
     }
     
     .marker-tooltip .tooltip-eta.eta-warning {
@@ -4340,36 +4346,37 @@
       const place = marker.place || 'Невідомо';
       const date = marker.date || '';
       
-      // Enhanced AI prediction info
-      const eta = marker.eta;
-      const confidence = marker.prediction_confidence;
-      const confidenceLevel = marker.confidence_level;
+      // Enhanced AI prediction info - DISABLED: ETA and targets removed
+      // const eta = marker.eta;
+      // const confidence = marker.prediction_confidence;
+      // const confidenceLevel = marker.confidence_level;
       const distance = marker.distance_km;
       const speed = marker.speed_kmh;
-      const altTargets = marker.alternative_targets;
+      // const altTargets = marker.alternative_targets;
       
+      // ETA display - DISABLED
       let etaHtml = '';
+      /* ETA disabled
       if (eta && eta.formatted) {
         const etaClass = eta.avg_minutes < 10 ? 'eta-critical' : eta.avg_minutes < 30 ? 'eta-warning' : 'eta-normal';
         etaHtml = `<div class="tooltip-eta ${etaClass}">⏱ ETA: <strong>${eta.formatted}</strong></div>`;
       }
+      */
       
       let aiInfoHtml = '';
-      if (distance || speed || confidenceLevel) {
+      if (distance || speed) {
         const distanceStr = distance ? `${Math.round(distance)} км` : '';
         const speedStr = speed ? `~${speed} км/год` : '';
-        const confIcon = confidenceLevel === 'high' ? '🟢' : confidenceLevel === 'medium' ? '🟡' : '🔴';
-        const confText = confidenceLevel === 'high' ? 'Висока' : confidenceLevel === 'medium' ? 'Середня' : 'Низька';
         
         aiInfoHtml = `<div class="tooltip-ai-info">`;
         if (distanceStr) aiInfoHtml += `<span>📏 ${distanceStr}</span>`;
         if (speedStr) aiInfoHtml += `<span>💨 ${speedStr}</span>`;
-        if (confidenceLevel) aiInfoHtml += `<span>${confIcon} ${confText}</span>`;
         aiInfoHtml += `</div>`;
       }
       
-      // Alternative targets
+      // Alternative targets - DISABLED
       let altTargetsHtml = '';
+      /* Alternative targets disabled
       if (altTargets && altTargets.length > 1) {
         altTargetsHtml = `<div class="tooltip-alt-targets">
           <div class="alt-targets-title">🎯 Можливі цілі:</div>`;
@@ -4385,14 +4392,12 @@
         });
         altTargetsHtml += `</div>`;
       }
+      */
       
       tooltip.innerHTML = `
         <div class="tooltip-type">${typeName}</div>
         <div class="tooltip-place">${place}</div>
         ${date ? `<div class="tooltip-time">${date}</div>` : ''}
-        ${etaHtml}
-        ${aiInfoHtml}
-        ${altTargetsHtml}
       `;
       
       document.body.appendChild(tooltip);
