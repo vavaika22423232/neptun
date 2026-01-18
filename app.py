@@ -185,24 +185,71 @@ GROQ_ENABLED = bool(GROQ_API_KEY)
 
 # AI request caching and rate limiting
 _groq_cache = {}  # Simple in-memory cache {hash: (result, timestamp)}
-_groq_cache_ttl = 300  # Cache TTL in seconds (5 min)
+_groq_cache_ttl = 1800  # Cache TTL: 30 min (was 5 min) - reduce API calls
 _groq_last_request = 0  # Timestamp of last request
-_groq_min_interval = 0.5  # Minimum interval between requests (seconds)
+_groq_min_interval = 2.0  # Minimum 2 seconds between requests (was 0.5)
+_groq_daily_cooldown_until = 0  # If set, skip ALL AI until this timestamp
+_groq_429_backoff = 0  # Exponential backoff counter
 
 def _get_groq_cache_key(text):
     """Generate cache key for AI request"""
     import hashlib
     return hashlib.md5(text.encode()).hexdigest()[:16]
 
-def _groq_rate_limit():
-    """Simple rate limiter for Groq API"""
-    global _groq_last_request
+def _groq_is_available():
+    """Check if Groq AI is currently available (not in cooldown)"""
+    global _groq_daily_cooldown_until
+    if not GROQ_ENABLED:
+        return False
+    if _groq_daily_cooldown_until > 0:
+        import time as time_module
+        if time_module.time() < _groq_daily_cooldown_until:
+            return False
+        else:
+            # Cooldown expired, reset
+            _groq_daily_cooldown_until = 0
+            print("INFO: Groq AI cooldown expired, resuming")
+    return True
+
+def _groq_handle_429(error_message: str):
+    """Handle 429 rate limit error - set global cooldown"""
+    global _groq_daily_cooldown_until, _groq_429_backoff
     import time as time_module
+    import re
+    
+    # Parse wait time from error message
+    # Example: "Please try again in 4m56.352s"
+    wait_match = re.search(r'try again in (\d+)m([\d.]+)s', error_message)
+    if wait_match:
+        minutes = int(wait_match.group(1))
+        seconds = float(wait_match.group(2))
+        wait_seconds = minutes * 60 + seconds + 60  # Add 1 min buffer
+    else:
+        # Default: 10 minutes cooldown with exponential backoff
+        _groq_429_backoff = min(_groq_429_backoff + 1, 6)  # Max 6 = 640 seconds
+        wait_seconds = 60 * (2 ** _groq_429_backoff)  # 2, 4, 8, 16, 32, 64 minutes
+    
+    _groq_daily_cooldown_until = time_module.time() + wait_seconds
+    print(f"WARNING: Groq rate limit hit! Pausing ALL AI requests for {wait_seconds/60:.1f} minutes")
+
+def _groq_rate_limit():
+    """Smart rate limiter for Groq API"""
+    global _groq_last_request, _groq_429_backoff
+    import time as time_module
+    
+    # Check if in cooldown
+    if not _groq_is_available():
+        raise Exception("Groq AI in cooldown mode")
+    
     now = time_module.time()
     elapsed = now - _groq_last_request
     if elapsed < _groq_min_interval:
         time_module.sleep(_groq_min_interval - elapsed)
     _groq_last_request = time_module.time()
+    
+    # Reset backoff on successful rate limit pass
+    if _groq_429_backoff > 0:
+        _groq_429_backoff = max(0, _groq_429_backoff - 1)
 
 if GROQ_ENABLED:
     try:
@@ -3745,12 +3792,17 @@ def extract_location_with_groq_ai(message_text: str):
         print(f"Response: {result_text[:200]}")
         return None
     except Exception as e:
-        print(f"WARNING: Groq AI extraction failed: {e}")
+        error_str = str(e)
+        # Handle 429 rate limit - activate global cooldown
+        if '429' in error_str or 'rate_limit' in error_str.lower():
+            _groq_handle_429(error_str)
+        else:
+            print(f"WARNING: Groq AI extraction failed: {e}")
         return None
 
 # AI-powered trajectory parsing cache to avoid repeated API calls
 _trajectory_ai_cache = {}
-_TRAJECTORY_AI_CACHE_TTL = 300  # 5 minutes
+_TRAJECTORY_AI_CACHE_TTL = 1800  # 30 minutes (was 5 min) - reduce API calls
 
 def extract_trajectory_with_ai(message_text: str):
     """Use Groq AI to intelligently extract trajectory/course information from Ukrainian military messages.
@@ -3853,7 +3905,12 @@ def extract_trajectory_with_ai(message_text: str):
         print(f"WARNING: Groq AI trajectory returned invalid JSON: {e}")
         return None
     except Exception as e:
-        print(f"WARNING: Groq AI trajectory extraction failed: {e}")
+        error_str = str(e)
+        # Handle 429 rate limit - activate global cooldown
+        if '429' in error_str or 'rate_limit' in error_str.lower():
+            _groq_handle_429(error_str)
+        else:
+            print(f"WARNING: Groq AI trajectory extraction failed: {e}")
         return None
 
 
@@ -4031,7 +4088,11 @@ def predict_route_with_ai(source_region: str, current_position: tuple = None, me
         return result
         
     except Exception as e:
-        print(f"WARNING: AI route prediction failed: {e}")
+        error_str = str(e)
+        if '429' in error_str or 'rate_limit' in error_str.lower():
+            _groq_handle_429(error_str)
+        else:
+            print(f"WARNING: AI route prediction failed: {e}")
         return _predict_route_from_patterns(source_region)
 
 def _find_matching_pattern(source_region: str, patterns: dict):
@@ -4156,7 +4217,11 @@ def _ai_analyze_patterns_for_update(patterns: dict):
         print(f"DEBUG AI Pattern Analysis: {suggestions.get('observations', 'No observations')}")
         
     except Exception as e:
-        print(f"WARNING: AI pattern analysis failed: {e}")
+        error_str = str(e)
+        if '429' in error_str or 'rate_limit' in error_str.lower():
+            _groq_handle_429(error_str)
+        else:
+            print(f"WARNING: AI pattern analysis failed: {e}")
 
 def ai_correct_route(route_id: str, correction_data: dict):
     """
@@ -4189,7 +4254,7 @@ def ai_correct_route(route_id: str, correction_data: dict):
 
 # ==================== AI THREAT CLASSIFICATION ====================
 _threat_ai_cache = {}
-_THREAT_AI_CACHE_TTL = 600  # 10 minutes
+_THREAT_AI_CACHE_TTL = 1800  # 30 minutes (was 10 min) - reduce API calls
 
 def classify_threat_with_ai(message_text: str):
     """Use Groq AI to intelligently classify threat type from Ukrainian military message.
@@ -4290,7 +4355,11 @@ def classify_threat_with_ai(message_text: str):
         return result
         
     except Exception as e:
-        print(f"WARNING: AI threat classification failed: {e}")
+        error_str = str(e)
+        if '429' in error_str or 'rate_limit' in error_str.lower():
+            _groq_handle_429(error_str)
+        else:
+            print(f"WARNING: AI threat classification failed: {e}")
         return None
 
 
@@ -4353,7 +4422,11 @@ def summarize_message_with_ai(message_text: str, max_length: int = 100):
         return result
         
     except Exception as e:
-        print(f"WARNING: AI summarization failed: {e}")
+        error_str = str(e)
+        if '429' in error_str or 'rate_limit' in error_str.lower():
+            _groq_handle_429(error_str)
+        else:
+            print(f"WARNING: AI summarization failed: {e}")
         return None
 
 
@@ -4443,7 +4516,11 @@ def moderate_chat_message_with_ai(message_text: str, nickname: str = None):
         return result
         
     except Exception as e:
-        print(f"WARNING: AI moderation failed: {e}")
+        error_str = str(e)
+        if '429' in error_str or 'rate_limit' in error_str.lower():
+            _groq_handle_429(error_str)
+        else:
+            print(f"WARNING: AI moderation failed: {e}")
         return {'is_safe': True, 'reason': None, 'category': None, 'severity': 0}
 
 
@@ -4541,7 +4618,11 @@ def analyze_message_comprehensive_ai(message_text: str):
         return result
         
     except Exception as e:
-        print(f"WARNING: AI comprehensive analysis failed: {e}")
+        error_str = str(e)
+        if '429' in error_str or 'rate_limit' in error_str.lower():
+            _groq_handle_429(error_str)
+        else:
+            print(f"WARNING: AI comprehensive analysis failed: {e}")
         return None
 
 
@@ -21458,6 +21539,14 @@ if 'health' not in app.view_functions:
                 if now - ts > ACTIVE_TTL:
                     del ACTIVE_VISITORS[vid]
             visitors = len(ACTIVE_VISITORS)
+        
+        # Calculate Groq cooldown status
+        groq_cooldown_remaining = 0
+        groq_available = _groq_is_available() if GROQ_ENABLED else False
+        if GROQ_ENABLED and _groq_daily_cooldown_until > 0:
+            import time as time_module
+            groq_cooldown_remaining = max(0, int(_groq_daily_cooldown_until - time_module.time()))
+        
         return jsonify({
             'status':'ok',
             'messages':len(load_messages()), 
@@ -21466,7 +21555,9 @@ if 'health' not in app.view_functions:
             'firebase_initialized': firebase_initialized,
             'devices_count': len(device_store._load()) if device_store else 0,
             'groq_enabled': GROQ_ENABLED,
-            'groq_model': GROQ_MODEL if GROQ_ENABLED else None
+            'groq_model': GROQ_MODEL if GROQ_ENABLED else None,
+            'groq_available': groq_available,
+            'groq_cooldown_seconds': groq_cooldown_remaining
         })
 
 @app.route('/ads.txt')
