@@ -1056,28 +1056,91 @@
       transform: translate(-50%, -50%);
       pointer-events: auto;
       cursor: pointer;
-      filter: drop-shadow(0 0 4px rgba(255, 100, 100, 0.6));
-      /* animation disabled for performance */
-      transition: transform 0.15s ease;
+      filter: drop-shadow(0 0 6px rgba(255, 100, 100, 0.7));
+      animation: markerAppear 0.4s ease-out, markerGlow 2s ease-in-out infinite;
+      transition: transform 0.3s ease, filter 0.3s ease;
     }
     
     .threat-marker:hover {
       transform: translate(-50%, -50%) scale(1.3);
       z-index: 100;
+      filter: drop-shadow(0 0 12px rgba(255, 100, 100, 0.9));
     }
     
     .threat-marker img {
       width: 100%;
       height: 100%;
       object-fit: contain;
-      /* Rotation based on trajectory direction */
+      /* Rotation based on trajectory direction - icon points EAST (right) */
       transform: rotate(var(--direction-angle, 0deg));
-      transition: transform 0.2s ease;
+      transition: transform 0.5s ease;
     }
     
     .threat-marker:hover img {
       /* Keep rotation on hover */
       transform: rotate(var(--direction-angle, 0deg));
+    }
+    
+    /* Marker appearance animation */
+    @keyframes markerAppear {
+      0% { opacity: 0; transform: translate(-50%, -50%) scale(0.3); }
+      50% { transform: translate(-50%, -50%) scale(1.1); }
+      100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    }
+    
+    /* Subtle glow pulse */
+    @keyframes markerGlow {
+      0%, 100% { filter: drop-shadow(0 0 6px rgba(255, 100, 100, 0.7)); }
+      50% { filter: drop-shadow(0 0 10px rgba(255, 100, 100, 0.9)); }
+    }
+    
+    /* AI Prediction pulse ring around marker */
+    .threat-marker.has-prediction::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 48px;
+      height: 48px;
+      border: 2px solid rgba(251, 191, 36, 0.6);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      animation: predictionPulse 2s ease-out infinite;
+      pointer-events: none;
+    }
+    
+    .threat-marker.has-prediction::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 48px;
+      height: 48px;
+      border: 2px solid rgba(251, 191, 36, 0.4);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      animation: predictionPulse 2s ease-out infinite 0.5s;
+      pointer-events: none;
+    }
+    
+    @keyframes predictionPulse {
+      0% { width: 32px; height: 32px; opacity: 1; border-width: 3px; }
+      100% { width: 64px; height: 64px; opacity: 0; border-width: 1px; }
+    }
+    
+    /* Critical threat (rockets, ballistic) - red pulse */
+    .threat-marker.critical::before {
+      border-color: rgba(239, 68, 68, 0.8);
+    }
+    .threat-marker.critical::after {
+      border-color: rgba(239, 68, 68, 0.5);
+    }
+    .threat-marker.critical {
+      animation: markerAppear 0.4s ease-out, criticalGlow 1s ease-in-out infinite;
+    }
+    @keyframes criticalGlow {
+      0%, 100% { filter: drop-shadow(0 0 8px rgba(239, 68, 68, 0.8)); }
+      50% { filter: drop-shadow(0 0 16px rgba(239, 68, 68, 1)); }
     }
     
     /* Count badge for multiple threats at same location */
@@ -1140,6 +1203,104 @@
       color: rgba(255, 255, 255, 0.5);
     }
     
+    /* Enhanced AI prediction tooltip styles */
+    .marker-tooltip .tooltip-eta {
+      margin-top: 8px;
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 13px;
+      background: rgba(0, 0, 0, 0.3);
+    }
+    
+    .marker-tooltip .tooltip-eta.eta-critical {
+      background: rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+      animation: etaPulse 1s ease-in-out infinite;
+    }
+    
+    .marker-tooltip .tooltip-eta.eta-warning {
+      background: rgba(251, 191, 36, 0.3);
+      color: #fde68a;
+    }
+    
+    .marker-tooltip .tooltip-eta.eta-normal {
+      background: rgba(34, 197, 94, 0.2);
+      color: #86efac;
+    }
+    
+    @keyframes etaPulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+    
+    .marker-tooltip .tooltip-ai-info {
+      margin-top: 6px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.7);
+    }
+    
+    .marker-tooltip .tooltip-ai-info span {
+      background: rgba(0, 212, 255, 0.1);
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+    
+    .marker-tooltip .tooltip-alt-targets {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(0, 212, 255, 0.2);
+    }
+    
+    .marker-tooltip .alt-targets-title {
+      font-size: 10px;
+      color: #00d4ff;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .marker-tooltip .alt-target-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      padding: 3px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    
+    .marker-tooltip .alt-target-item:last-child {
+      border-bottom: none;
+    }
+    
+    .marker-tooltip .alt-rank {
+      color: rgba(255, 255, 255, 0.4);
+      font-size: 10px;
+      width: 14px;
+    }
+    
+    .marker-tooltip .alt-name {
+      flex: 1;
+      color: #fff;
+      font-weight: 500;
+    }
+    
+    .marker-tooltip .alt-prob {
+      background: linear-gradient(135deg, rgba(251, 191, 36, 0.3), rgba(251, 191, 36, 0.1));
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-weight: 600;
+      color: #fbbf24;
+      font-size: 10px;
+    }
+    
+    .marker-tooltip .alt-eta {
+      font-size: 9px;
+      color: rgba(255, 255, 255, 0.5);
+    }
+
     /* Markers counter in status panel */
     .markers-info {
       margin-top: 12px;
@@ -3967,6 +4128,8 @@
           
           // Calculate rotation angle from trajectory (if available)
           const traj = marker.trajectory;
+          let hasPrediction = false;
+          
           if (traj && traj.start && traj.end) {
             const startLat = parseFloat(traj.start[0]);
             const startLng = parseFloat(traj.start[1]);
@@ -3977,32 +4140,56 @@
               // Calculate bearing angle (direction of movement)
               const dLng = endLng - startLng;
               const dLat = endLat - startLat;
-              // atan2 gives angle from positive X axis, we need angle from North (top)
-              // Default icon points West (-90°), so we adjust
-              let angle = Math.atan2(dLng, dLat) * (180 / Math.PI);
-              // Icon default orientation is pointing left (West), rotate to match direction
-              // Angle 0 = North, 90 = East, 180 = South, -90 = West
-              // Icon needs +90 offset since it points West by default
-              angle = angle + 90;
-              img.style.setProperty('--direction-angle', `${angle}deg`);
+              
+              // Check if trajectory is valid (start != end)
+              if (Math.abs(dLat) > 0.001 || Math.abs(dLng) > 0.001) {
+                hasPrediction = true;
+                
+                // atan2(dLng, dLat) gives bearing from North (0°=N, 90°=E, 180°=S, -90°=W)
+                let bearingAngle = Math.atan2(dLng, dLat) * (180 / Math.PI);
+                
+                // Icon points EAST (right) by default, which is 90° from North
+                // To rotate icon to match bearing, subtract 90°
+                // North (0°): icon needs -90° rotation to point up
+                // East (90°): icon needs 0° rotation (already points right)
+                // South (180°): icon needs 90° rotation to point down
+                // West (-90°): icon needs -180° rotation to point left
+                let iconAngle = bearingAngle - 90;
+                
+                img.style.setProperty('--direction-angle', `${iconAngle}deg`);
+              }
             }
           } else if (marker.course_direction || marker.arrow_direction) {
             // Fallback: use course_direction text to estimate angle
             const dir = (marker.course_direction || marker.arrow_direction || '').toLowerCase();
-            let angle = 0;
-            if (dir.includes('північ') || dir.includes('north')) angle = 0;
-            else if (dir.includes('північно-схід') || dir.includes('northeast')) angle = 45;
-            else if (dir.includes('схід') || dir.includes('east')) angle = 90;
-            else if (dir.includes('південно-схід') || dir.includes('southeast')) angle = 135;
-            else if (dir.includes('південь') || dir.includes('south')) angle = 180;
-            else if (dir.includes('південно-захід') || dir.includes('southwest')) angle = 225;
-            else if (dir.includes('захід') || dir.includes('west')) angle = 270;
-            else if (dir.includes('північно-захід') || dir.includes('northwest')) angle = 315;
+            let bearingAngle = null; // bearing from North
             
-            if (angle !== 0 || dir) {
-              // Icon default is West, so North needs +90 rotation
-              img.style.setProperty('--direction-angle', `${angle + 90}deg`);
+            if (dir.includes('північ') && dir.includes('схід')) bearingAngle = 45; // NE
+            else if (dir.includes('північ') && dir.includes('захід')) bearingAngle = -45; // NW
+            else if (dir.includes('південь') && dir.includes('схід')) bearingAngle = 135; // SE
+            else if (dir.includes('південь') && dir.includes('захід')) bearingAngle = -135; // SW
+            else if (dir.includes('північ') || dir.includes('north')) bearingAngle = 0;
+            else if (dir.includes('схід') || dir.includes('east')) bearingAngle = 90;
+            else if (dir.includes('південь') || dir.includes('south')) bearingAngle = 180;
+            else if (dir.includes('захід') || dir.includes('west')) bearingAngle = -90;
+            
+            if (bearingAngle !== null) {
+              hasPrediction = true;
+              // Icon points EAST, subtract 90° from bearing
+              let iconAngle = bearingAngle - 90;
+              img.style.setProperty('--direction-angle', `${iconAngle}deg`);
             }
+          }
+          
+          // Add prediction class for AI pulse animation
+          if (hasPrediction || (traj && traj.predicted)) {
+            markerEl.classList.add('has-prediction');
+          }
+          
+          // Add critical class for rockets/ballistic
+          const isCritical = /ракет|ballist|калібр|іскандер|кинжал/i.test(threatType);
+          if (isCritical) {
+            markerEl.classList.add('critical');
           }
           
           markerEl.appendChild(img);
@@ -4153,10 +4340,59 @@
       const place = marker.place || 'Невідомо';
       const date = marker.date || '';
       
+      // Enhanced AI prediction info
+      const eta = marker.eta;
+      const confidence = marker.prediction_confidence;
+      const confidenceLevel = marker.confidence_level;
+      const distance = marker.distance_km;
+      const speed = marker.speed_kmh;
+      const altTargets = marker.alternative_targets;
+      
+      let etaHtml = '';
+      if (eta && eta.formatted) {
+        const etaClass = eta.avg_minutes < 10 ? 'eta-critical' : eta.avg_minutes < 30 ? 'eta-warning' : 'eta-normal';
+        etaHtml = `<div class="tooltip-eta ${etaClass}">⏱ ETA: <strong>${eta.formatted}</strong></div>`;
+      }
+      
+      let aiInfoHtml = '';
+      if (distance || speed || confidenceLevel) {
+        const distanceStr = distance ? `${Math.round(distance)} км` : '';
+        const speedStr = speed ? `~${speed} км/год` : '';
+        const confIcon = confidenceLevel === 'high' ? '🟢' : confidenceLevel === 'medium' ? '🟡' : '🔴';
+        const confText = confidenceLevel === 'high' ? 'Висока' : confidenceLevel === 'medium' ? 'Середня' : 'Низька';
+        
+        aiInfoHtml = `<div class="tooltip-ai-info">`;
+        if (distanceStr) aiInfoHtml += `<span>📏 ${distanceStr}</span>`;
+        if (speedStr) aiInfoHtml += `<span>💨 ${speedStr}</span>`;
+        if (confidenceLevel) aiInfoHtml += `<span>${confIcon} ${confText}</span>`;
+        aiInfoHtml += `</div>`;
+      }
+      
+      // Alternative targets
+      let altTargetsHtml = '';
+      if (altTargets && altTargets.length > 1) {
+        altTargetsHtml = `<div class="tooltip-alt-targets">
+          <div class="alt-targets-title">🎯 Можливі цілі:</div>`;
+        altTargets.slice(0, 3).forEach((t, i) => {
+          const prob = Math.round(t.probability * 100);
+          const etaStr = t.eta && t.eta.formatted ? t.eta.formatted : '';
+          altTargetsHtml += `<div class="alt-target-item">
+            <span class="alt-rank">${i + 1}.</span>
+            <span class="alt-name">${t.name}</span>
+            <span class="alt-prob">${prob}%</span>
+            ${etaStr ? `<span class="alt-eta">${etaStr}</span>` : ''}
+          </div>`;
+        });
+        altTargetsHtml += `</div>`;
+      }
+      
       tooltip.innerHTML = `
         <div class="tooltip-type">${typeName}</div>
         <div class="tooltip-place">${place}</div>
         ${date ? `<div class="tooltip-time">${date}</div>` : ''}
+        ${etaHtml}
+        ${aiInfoHtml}
+        ${altTargetsHtml}
       `;
       
       document.body.appendChild(tooltip);

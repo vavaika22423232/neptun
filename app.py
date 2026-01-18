@@ -3699,7 +3699,531 @@ PROBLEMATIC_ENTRIES = [
 for entry in PROBLEMATIC_ENTRIES:
     NAME_REGION_MAP.pop(entry, None)
 
-def extract_location_with_groq_ai(message_text: str):
+
+# ==================== ENHANCED AI GEOCODING SYSTEM ====================
+# Advanced intelligent geocoding with multi-strategy fallback, disambiguation, 
+# context-aware resolution, and machine learning from corrections
+# Version 2.0 - Maximum optimization
+
+# Extended city aliases with common misspellings and transliterations
+CITY_ALIASES = {
+    # Major cities with common variants
+    'київ': ['киев', 'kyiv', 'kiev', 'кіїв', 'кийів'],
+    'харків': ['харьков', 'kharkiv', 'kharkov', 'харкiв'],
+    'одеса': ['одесса', 'odessa', 'odesa', 'одэса'],
+    'дніпро': ['днепр', 'dnipro', 'dnepr', 'днiпро', 'днiпропетровськ'],
+    'львів': ['львов', 'lviv', 'lvov', 'львiв'],
+    'запоріжжя': ['запорожье', 'zaporizhzhia', 'zaporozhye', 'запорiжжя'],
+    'миколаїв': ['николаев', 'mykolaiv', 'nikolaev', 'миколаiв'],
+    'херсон': ['kherson', 'herson', 'херсонь'],
+    'полтава': ['poltava', 'полтаві'],
+    'чернігів': ['чернигов', 'chernihiv', 'chernigov', 'чернiгiв'],
+    'суми': ['сумы', 'sumy', 'сумi'],
+    'кропивницький': ['кировоград', 'кропивницкий', 'kropyvnytskyi', 'кiровоград'],
+    'вінниця': ['винница', 'vinnytsia', 'vinnitsa', 'вiнниця'],
+    'житомир': ['zhytomyr', 'житомір'],
+    'рівне': ['ровно', 'rivne', 'rovno', 'рiвне'],
+    'луцьк': ['луцк', 'lutsk', 'луцьк'],
+    'тернопіль': ['тернополь', 'ternopil', 'тернопiль'],
+    'хмельницький': ['хмельницкий', 'khmelnytskyi', 'хмельницкій'],
+    'чернівці': ['черновцы', 'chernivtsi', 'черновці', 'чернiвцi'],
+    'івано-франківськ': ['ивано-франковск', 'ivano-frankivsk', 'франківськ', 'франковск'],
+    'ужгород': ['uzhhorod', 'ужгороді'],
+    'кривий ріг': ['кривой рог', 'kryvyi rih', 'кривий рiг'],
+    'маріуполь': ['мариуполь', 'mariupol', 'марiуполь'],
+    "слов'янськ": ['славянск', 'sloviansk', 'словянськ'],
+    'краматорськ': ['краматорск', 'kramatorsk'],
+    'бахмут': ['артемовск', 'bakhmut', 'артемівськ'],
+    'мелітополь': ['мелитополь', 'melitopol'],
+    'бердянськ': ['бердянск', 'berdiansk'],
+    'нікополь': ['никополь', 'nikopol', 'нiкополь'],
+    'павлоград': ['pavlohrad', 'павлоградь'],
+    'кам\'янське': ['каменское', 'дніпродзержинськ', 'kamianske'],
+}
+
+# Reverse alias lookup
+_ALIAS_TO_CANONICAL = {}
+for canonical, aliases in CITY_ALIASES.items():
+    for alias in aliases:
+        _ALIAS_TO_CANONICAL[alias.lower()] = canonical
+
+# Common OCR/typo corrections
+TYPO_CORRECTIONS = {
+    'кiiв': 'київ',
+    'киiв': 'київ',
+    'xapкiв': 'харків',
+    'xapків': 'харків',
+    'oдеса': 'одеса',  # Latin 'o'
+    'oдесса': 'одеса',
+    'днiпро': 'дніпро',
+    'запорiжжя': 'запоріжжя',
+    'миколаiв': 'миколаїв',
+    'полтаві': 'полтава',
+    'сумі': 'суми',
+    'львiв': 'львів',
+    'рiвне': 'рівне',
+    'вiнниця': 'вінниця',
+    'тернопiль': 'тернопіль',
+    'чернiгiв': 'чернігів',
+    'хмельницкий': 'хмельницький',
+    'кіровоградщіні': 'кіровоградщина',
+    'херсощіні': 'херсонщина',
+}
+
+# Disambiguation map for cities that exist in multiple oblasts
+AMBIGUOUS_CITIES = {
+    'михайлівка': ['запорізька', 'донецька', 'одеська', 'миколаївська'],
+    'новоселівка': ['харківська', 'донецька', 'запорізька', 'дніпропетровська'],
+    'петрівка': ['кіровоградська', 'донецька', 'харківська', 'одеська'],
+    'олександрівка': ['донецька', 'кіровоградська', 'миколаївська', 'одеська'],
+    'василівка': ['запорізька', 'дніпропетровська', 'київська'],
+    'новогригорівка': ['дніпропетровська', 'херсонська', 'одеська'],
+    'зеленівка': ['херсонська', 'одеська', 'миколаївська'],
+    'кам\'янка': ['черкаська', 'дніпропетровська', 'запорізька'],
+    'покровське': ['донецька', 'дніпропетровська', 'харківська'],
+    'мар\'їнка': ['донецька', 'київська'],
+    'юр\'ївка': ['дніпропетровська', 'донецька', 'кіровоградська'],
+    'юріївка': ['дніпропетровська', 'донецька', 'кіровоградська'],
+    'андріївка': ['харківська', 'донецька', 'запорізька', 'київська'],
+    'семенівка': ['чернігівська', 'полтавська', 'сумська'],
+    'білозерка': ['херсонська', 'запорізька'],
+    'широке': ['дніпропетровська', 'запорізька', 'донецька'],
+    'тернівка': ['дніпропетровська', 'донецька', 'кіровоградська'],
+    'степове': ['дніпропетровська', 'запорізька', 'миколаївська'],
+    'новопавлівка': ['донецька', 'запорізька', 'харківська'],
+    'воскресенка': ['миколаївська', 'запорізька'],
+    'першотравневе': ['донецька', 'харківська', 'дніпропетровська'],
+    'веселе': ['запорізька', 'харківська', 'донецька'],
+    'українка': ['київська', 'донецька', 'дніпропетровська'],
+    'калинівка': ['вінницька', 'київська', 'чернігівська'],
+    'красногорівка': ['донецька', 'дніпропетровська'],
+    'лисичанськ': ['луганська'],
+    'сєвєродонецьк': ['луганська'],
+}
+
+# Source region to oblast mapping for trajectory context
+SOURCE_REGION_HINTS = {
+    'чорне море': ['одеська', 'миколаївська', 'херсонська'],
+    'азовське море': ['запорізька', 'донецька', 'херсонська'],
+    'білорусь': ['чернігівська', 'київська', 'житомирська', 'волинська'],
+    'крим': ['херсонська', 'запорізька', 'миколаївська', 'одеська'],
+    'рф': ['харківська', 'сумська', 'чернігівська', 'луганська', 'донецька'],
+    'росія': ['харківська', 'сумська', 'чернігівська', 'луганська', 'донецька'],
+    'бєлгород': ['харківська', 'сумська'],
+    'курськ': ['сумська', 'чернігівська'],
+    'брянськ': ['чернігівська', 'сумська'],
+}
+
+# Geocoding learning storage
+_GEOCODE_LEARNING_FILE = 'geocode_learning.json'
+_geocode_learning_cache = None
+
+def _load_geocode_learning():
+    """Load learned geocoding corrections"""
+    global _geocode_learning_cache
+    if _geocode_learning_cache is not None:
+        return _geocode_learning_cache
+    
+    try:
+        if os.path.exists(_GEOCODE_LEARNING_FILE):
+            with open(_GEOCODE_LEARNING_FILE, 'r', encoding='utf-8') as f:
+                _geocode_learning_cache = json.load(f)
+        else:
+            _geocode_learning_cache = {
+                'corrections': {},  # {normalized_query: {lat, lng, source}}
+                'disambiguation': {},  # {city: preferred_oblast}
+                'failed_queries': [],  # queries that consistently fail
+                'stats': {'total_queries': 0, 'cache_hits': 0, 'api_calls': 0}
+            }
+    except Exception as e:
+        print(f"WARNING: Failed to load geocode learning: {e}")
+        _geocode_learning_cache = {'corrections': {}, 'disambiguation': {}, 'failed_queries': [], 'stats': {}}
+    
+    return _geocode_learning_cache
+
+def _save_geocode_learning():
+    """Save learned geocoding corrections"""
+    global _geocode_learning_cache
+    if _geocode_learning_cache is None:
+        return
+    
+    try:
+        with open(_GEOCODE_LEARNING_FILE, 'w', encoding='utf-8') as f:
+            json.dump(_geocode_learning_cache, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"WARNING: Failed to save geocode learning: {e}")
+
+def normalize_city_name(city: str) -> str:
+    """
+    Normalize city name using multiple strategies:
+    1. Lowercase and strip
+    2. Fix common typos/OCR errors
+    3. Resolve aliases to canonical name
+    4. Apply UA_CITY_NORMALIZE for case forms
+    """
+    if not city:
+        return ''
+    
+    city = city.lower().strip()
+    
+    # Fix typos first
+    if city in TYPO_CORRECTIONS:
+        city = TYPO_CORRECTIONS[city]
+    
+    # Check aliases
+    if city in _ALIAS_TO_CANONICAL:
+        city = _ALIAS_TO_CANONICAL[city]
+    
+    # Apply accusative/genitive normalization
+    if city in UA_CITY_NORMALIZE:
+        city = UA_CITY_NORMALIZE[city]
+    
+    return city
+
+def disambiguate_city(city: str, context_region: str = None, source_region: str = None, 
+                      message_text: str = None) -> str:
+    """
+    Disambiguate city that exists in multiple oblasts.
+    
+    Uses multiple signals:
+    1. Explicit region context from message
+    2. Source region (trajectory source helps determine likely oblast)
+    3. Learned preferences
+    4. Statistical frequency
+    """
+    city_lower = normalize_city_name(city)
+    
+    if city_lower not in AMBIGUOUS_CITIES:
+        return context_region  # Not ambiguous
+    
+    possible_oblasts = AMBIGUOUS_CITIES[city_lower]
+    
+    # Strategy 1: Explicit region context
+    if context_region:
+        context_lower = context_region.lower()
+        for oblast in possible_oblasts:
+            if oblast in context_lower or context_lower in oblast:
+                return oblast + ' область'
+    
+    # Strategy 2: Source region hints
+    if source_region and message_text:
+        msg_lower = message_text.lower()
+        for source, likely_oblasts in SOURCE_REGION_HINTS.items():
+            if source in msg_lower or source in source_region.lower():
+                # Find intersection with possible oblasts
+                for oblast in likely_oblasts:
+                    if oblast in possible_oblasts:
+                        return oblast + ' область'
+    
+    # Strategy 3: Learned preferences
+    learning = _load_geocode_learning()
+    if city_lower in learning.get('disambiguation', {}):
+        return learning['disambiguation'][city_lower]
+    
+    # Strategy 4: Return first (most common) option
+    return possible_oblasts[0] + ' область' if possible_oblasts else context_region
+
+def ai_geocode_with_context(city: str, message_text: str = None, 
+                            source_region: str = None, target_hint: str = None) -> dict:
+    """
+    AI-powered geocoding with full context understanding.
+    
+    Uses Groq AI to:
+    1. Parse complex location descriptions
+    2. Resolve ambiguous names using context
+    3. Extract oblast from surrounding text
+    4. Handle compound location names
+    
+    Returns:
+    {
+        'city': normalized city name,
+        'oblast': resolved oblast,
+        'coords': (lat, lng) or None,
+        'confidence': 0-1,
+        'method': 'ai' | 'cache' | 'fallback'
+    }
+    """
+    if not city:
+        return None
+    
+    # Check learning cache first
+    learning = _load_geocode_learning()
+    cache_key = f"{normalize_city_name(city)}_{source_region or ''}"
+    
+    if cache_key in learning.get('corrections', {}):
+        cached = learning['corrections'][cache_key]
+        learning['stats']['cache_hits'] = learning['stats'].get('cache_hits', 0) + 1
+        return {
+            'city': city,
+            'oblast': cached.get('oblast'),
+            'coords': (cached['lat'], cached['lng']),
+            'confidence': 0.95,
+            'method': 'cache'
+        }
+    
+    # Try AI if enabled
+    if GROQ_ENABLED and message_text:
+        try:
+            ai_result = _ai_resolve_location(city, message_text, source_region, target_hint)
+            if ai_result and ai_result.get('confidence', 0) >= 0.7:
+                learning['stats']['api_calls'] = learning['stats'].get('api_calls', 0) + 1
+                return ai_result
+        except Exception as e:
+            print(f"DEBUG: AI geocoding failed: {e}")
+    
+    # Fallback to disambiguation + standard geocoding
+    resolved_oblast = disambiguate_city(city, None, source_region, message_text)
+    
+    return {
+        'city': normalize_city_name(city),
+        'oblast': resolved_oblast,
+        'coords': None,  # Will be resolved by caller
+        'confidence': 0.5,
+        'method': 'fallback'
+    }
+
+def _ai_resolve_location(city: str, message_text: str, source_region: str = None, 
+                         target_hint: str = None) -> dict:
+    """
+    Use Groq AI to resolve location with full context.
+    """
+    if not GROQ_ENABLED:
+        return None
+    
+    # Rate limiting
+    _groq_rate_limit()
+    
+    try:
+        context_parts = []
+        if source_region:
+            context_parts.append(f"Джерело загрози: {source_region}")
+        if target_hint:
+            context_parts.append(f"Можливий напрямок: {target_hint}")
+        
+        context_str = "\n".join(context_parts) if context_parts else "Контекст відсутній"
+        
+        prompt = f"""Ти експерт з географії України. Визнач точне місцезнаходження населеного пункту.
+
+ЗАВДАННЯ: Визначити область для міста/села "{city}"
+
+КОНТЕКСТ:
+{context_str}
+
+ПОВІДОМЛЕННЯ:
+{message_text}
+
+ВАЖЛИВО:
+1. Якщо в повідомленні згадується область явно - використай її
+2. Якщо місто існує в кількох областях - визнач найбільш ймовірну за контекстом
+3. Якщо джерело "Чорне море" або "Крим" - це південні області (Одеська, Миколаївська, Херсонська)
+4. Якщо джерело "Білорусь" - це північні області (Київська, Чернігівська, Житомирська)
+5. Якщо джерело "Росія"/"Бєлгород" - це східні області (Харківська, Сумська)
+
+ВІДОМІ ОМОНІМИ:
+- Михайлівка: є в Запорізькій, Донецькій, Одеській
+- Петрівка: є в Кіровоградській, Донецькій, Харківській
+- Олександрівка: є в багатьох областях
+- Семенівка: є в Чернігівській, Полтавській, Сумській
+- Юріївка: є в Дніпропетровській, Донецькій
+
+Відповідь JSON:
+{{"city": "назва в називному відмінку", "oblast": "повна назва області", "confidence": 0.95, "reasoning": "коротке пояснення"}}"""
+
+        response = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "Ти географ-експерт. Відповідай ТІЛЬКИ валідним JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.1,
+            max_tokens=200
+        )
+        
+        result_text = response.choices[0].message.content.strip()
+        
+        # Clean JSON
+        if result_text.startswith('```'):
+            result_text = re.sub(r'^```(?:json)?\s*', '', result_text)
+            result_text = re.sub(r'\s*```$', '', result_text)
+        
+        result = json.loads(result_text)
+        
+        print(f"DEBUG AI Geocode: {city} -> {result.get('oblast')} (conf={result.get('confidence')})")
+        
+        return {
+            'city': result.get('city', city),
+            'oblast': result.get('oblast'),
+            'coords': None,  # Will be resolved separately
+            'confidence': float(result.get('confidence', 0.5)),
+            'method': 'ai',
+            'reasoning': result.get('reasoning')
+        }
+        
+    except json.JSONDecodeError as e:
+        print(f"WARNING: AI geocode returned invalid JSON: {e}")
+        return None
+    except Exception as e:
+        error_str = str(e)
+        if '429' in error_str or 'rate_limit' in error_str.lower():
+            _groq_handle_429(error_str)
+        return None
+
+def learn_geocode_correction(query: str, correct_coords: tuple, oblast: str = None, source: str = 'manual'):
+    """
+    Learn from a geocoding correction to improve future results.
+    
+    Args:
+        query: Original query string
+        correct_coords: (lat, lng) of correct location
+        oblast: Oblast name if known
+        source: 'manual' | 'user' | 'verified'
+    """
+    learning = _load_geocode_learning()
+    
+    normalized = normalize_city_name(query)
+    
+    learning['corrections'][normalized] = {
+        'lat': correct_coords[0],
+        'lng': correct_coords[1],
+        'oblast': oblast,
+        'source': source,
+        'timestamp': datetime.now().isoformat()
+    }
+    
+    # Update disambiguation if we learned oblast
+    if oblast and normalized in AMBIGUOUS_CITIES:
+        oblast_short = oblast.lower().replace(' область', '').replace('ська', 'ська')
+        learning['disambiguation'][normalized] = oblast
+    
+    _geocode_learning_cache = learning
+    _save_geocode_learning()
+    
+    print(f"INFO: Learned geocode correction: {query} -> {correct_coords}")
+
+def get_geocode_stats() -> dict:
+    """Get geocoding statistics"""
+    learning = _load_geocode_learning()
+    return {
+        'total_corrections': len(learning.get('corrections', {})),
+        'disambiguation_rules': len(learning.get('disambiguation', {})),
+        'failed_queries': len(learning.get('failed_queries', [])),
+        'stats': learning.get('stats', {})
+    }
+
+def smart_geocode(city: str, region: str = None, message_text: str = None,
+                  source_region: str = None, use_ai: bool = True) -> tuple:
+    """
+    Smart geocoding with multi-strategy fallback.
+    
+    Strategies (in order):
+    1. Learning cache (from corrections)
+    2. Local CITY_COORDS database
+    3. AI-powered resolution (if enabled)
+    4. Nominatim API
+    5. Disambiguation + region-based lookup
+    
+    Returns:
+        (lat, lng) or None
+    """
+    if not city:
+        return None
+    
+    normalized = normalize_city_name(city)
+    
+    # Strategy 1: Learning cache
+    learning = _load_geocode_learning()
+    learning['stats']['total_queries'] = learning['stats'].get('total_queries', 0) + 1
+    
+    cache_key = f"{normalized}_{region or ''}"
+    if cache_key in learning.get('corrections', {}):
+        cached = learning['corrections'][cache_key]
+        learning['stats']['cache_hits'] = learning['stats'].get('cache_hits', 0) + 1
+        return (cached['lat'], cached['lng'])
+    
+    # Also check without region
+    if normalized in learning.get('corrections', {}):
+        cached = learning['corrections'][normalized]
+        return (cached['lat'], cached['lng'])
+    
+    # Strategy 2: Local CITY_COORDS
+    if normalized in CITY_COORDS:
+        return tuple(CITY_COORDS[normalized])
+    
+    # Strategy 3: AI resolution
+    if use_ai and GROQ_ENABLED and message_text:
+        try:
+            ai_result = ai_geocode_with_context(city, message_text, source_region)
+            if ai_result and ai_result.get('oblast'):
+                # Try to find coords with resolved oblast
+                resolved_region = ai_result['oblast']
+                coords = geocode_with_context(normalized, resolved_region)
+                if coords:
+                    return coords
+        except Exception as e:
+            print(f"DEBUG: Smart geocode AI strategy failed: {e}")
+    
+    # Strategy 4: Nominatim
+    if NOMINATIM_AVAILABLE:
+        resolved_region = region
+        if not resolved_region and normalized in AMBIGUOUS_CITIES:
+            resolved_region = disambiguate_city(normalized, None, source_region, message_text)
+        
+        coords = get_coordinates_nominatim(normalized, resolved_region)
+        if coords:
+            return coords
+    
+    # Strategy 5: Standard geocode_with_context
+    if region:
+        coords = geocode_with_context(normalized, region)
+        if coords:
+            return coords
+    
+    # Strategy 6: Try without region
+    coords = geocode_with_context(normalized, None)
+    if coords:
+        return coords
+    
+    # Mark as failed for future optimization
+    if normalized not in learning.get('failed_queries', []):
+        learning['failed_queries'] = learning.get('failed_queries', [])
+        learning['failed_queries'].append(normalized)
+        if len(learning['failed_queries']) > 500:
+            learning['failed_queries'] = learning['failed_queries'][-500:]
+        _save_geocode_learning()
+    
+    return None
+
+def batch_geocode(locations: list, message_text: str = None, source_region: str = None) -> list:
+    """
+    Batch geocoding for multiple locations with optimization.
+    
+    Args:
+        locations: List of dicts with 'city' and optional 'region' keys
+        message_text: Context message for AI
+        source_region: Source region for trajectory context
+    
+    Returns:
+        List of dicts with added 'coords' key
+    """
+    results = []
+    
+    for loc in locations:
+        city = loc.get('city', '')
+        region = loc.get('region')
+        
+        coords = smart_geocode(city, region, message_text, source_region)
+        
+        results.append({
+            **loc,
+            'coords': coords,
+            'resolved': coords is not None
+        })
+    
+    return results
+
+# ==================== END ENHANCED AI GEOCODING SYSTEM ====================
+
+
     """Use Groq AI (Llama 3.1 70B) to intelligently extract location from Ukrainian military message.
     
     Returns dict with:
@@ -4239,6 +4763,1953 @@ def _ai_analyze_patterns_for_update(patterns: dict):
             _groq_handle_429(error_str)
         else:
             print(f"WARNING: AI pattern analysis failed: {e}")
+
+
+# ==================== ENHANCED AI PREDICTION SYSTEM ====================
+# Advanced trajectory prediction with ETA, multi-target probability, speed estimation
+# Version 2.0 - Maximum optimization with Bayesian updates, ensemble prediction
+
+import math
+from datetime import timedelta
+
+# Speed constants (km/h) based on threat type - REFINED
+THREAT_SPEEDS = {
+    'shahed': {'min': 120, 'avg': 150, 'max': 185, 'typical_altitude': 500},
+    'drone': {'min': 80, 'avg': 130, 'max': 170, 'typical_altitude': 300},
+    'cruise': {'min': 680, 'avg': 850, 'max': 1000, 'typical_altitude': 50},  # Low-flying
+    'ballistic': {'min': 2000, 'avg': 4000, 'max': 7000, 'typical_altitude': 100000},
+    'kab': {'min': 200, 'avg': 350, 'max': 550, 'typical_altitude': 5000},
+    'rocket': {'min': 650, 'avg': 850, 'max': 1000, 'typical_altitude': 100},
+    'x101': {'min': 700, 'avg': 850, 'max': 950, 'typical_altitude': 50},
+    'kalibr': {'min': 700, 'avg': 880, 'max': 1000, 'typical_altitude': 20},
+    'kinzhal': {'min': 3000, 'avg': 4500, 'max': 6000, 'typical_altitude': 20000},
+    'iskander': {'min': 2100, 'avg': 3000, 'max': 4000, 'typical_altitude': 50000},
+    'unknown': {'min': 150, 'avg': 300, 'max': 500, 'typical_altitude': 500}
+}
+
+# Seasonal attack patterns (month -> target type preferences)
+SEASONAL_PATTERNS = {
+    # Winter (heating season) - energy infrastructure
+    1: {'industrial': 1.4, 'port': 0.9, 'capital': 1.2},
+    2: {'industrial': 1.4, 'port': 0.9, 'capital': 1.2},
+    12: {'industrial': 1.5, 'port': 0.8, 'capital': 1.3},
+    # Spring - mixed
+    3: {'industrial': 1.2, 'port': 1.0, 'capital': 1.1},
+    4: {'industrial': 1.1, 'port': 1.1, 'capital': 1.0},
+    5: {'industrial': 1.0, 'port': 1.2, 'capital': 1.0},
+    # Summer - ports/grain
+    6: {'industrial': 0.9, 'port': 1.4, 'capital': 0.95},
+    7: {'industrial': 0.9, 'port': 1.5, 'capital': 0.9},
+    8: {'industrial': 0.9, 'port': 1.4, 'capital': 0.95},
+    # Fall - energy prep
+    9: {'industrial': 1.1, 'port': 1.2, 'capital': 1.0},
+    10: {'industrial': 1.3, 'port': 1.0, 'capital': 1.1},
+    11: {'industrial': 1.4, 'port': 0.9, 'capital': 1.2},
+}
+
+# Special dates with increased attack probability
+SPECIAL_DATES = {
+    (1, 1): {'name': 'Новий рік', 'capital_boost': 1.5, 'overall_boost': 1.3},
+    (1, 7): {'name': 'Різдво', 'capital_boost': 1.3, 'overall_boost': 1.2},
+    (2, 24): {'name': 'Річниця вторгнення', 'capital_boost': 1.6, 'overall_boost': 1.4},
+    (3, 8): {'name': '8 березня', 'capital_boost': 1.2, 'overall_boost': 1.1},
+    (5, 9): {'name': 'День перемоги РФ', 'capital_boost': 1.4, 'overall_boost': 1.3},
+    (6, 28): {'name': 'День Конституції', 'capital_boost': 1.3, 'overall_boost': 1.2},
+    (8, 24): {'name': 'День Незалежності', 'capital_boost': 1.7, 'overall_boost': 1.5},
+    (10, 14): {'name': 'День захисників', 'capital_boost': 1.3, 'overall_boost': 1.2},
+    (12, 25): {'name': 'Католицьке Різдво', 'capital_boost': 1.2, 'overall_boost': 1.1},
+    (12, 31): {'name': 'Переддень НР', 'capital_boost': 1.4, 'overall_boost': 1.3},
+}
+
+# Day of week patterns (0=Monday)
+WEEKDAY_PATTERNS = {
+    0: {'capital': 1.0, 'overall': 1.0},  # Monday - average
+    1: {'capital': 1.0, 'overall': 1.0},  # Tuesday
+    2: {'capital': 1.05, 'overall': 1.0}, # Wednesday
+    3: {'capital': 1.05, 'overall': 1.0}, # Thursday
+    4: {'capital': 1.1, 'overall': 1.05}, # Friday - slight increase
+    5: {'capital': 1.2, 'overall': 1.15}, # Saturday - higher
+    6: {'capital': 1.25, 'overall': 1.2}, # Sunday - highest
+}
+
+# Hour patterns for different threat types
+HOURLY_PATTERNS = {
+    'shahed': {
+        # Night/early morning - peak shahed time
+        0: 1.4, 1: 1.5, 2: 1.6, 3: 1.7, 4: 1.8, 5: 1.6,
+        6: 1.2, 7: 0.8, 8: 0.6, 9: 0.5, 10: 0.4, 11: 0.4,
+        12: 0.4, 13: 0.4, 14: 0.4, 15: 0.5, 16: 0.6, 17: 0.7,
+        18: 0.8, 19: 0.9, 20: 1.0, 21: 1.1, 22: 1.2, 23: 1.3
+    },
+    'cruise': {
+        # More evenly distributed, slight morning preference
+        0: 0.9, 1: 0.9, 2: 0.9, 3: 1.0, 4: 1.1, 5: 1.2,
+        6: 1.3, 7: 1.2, 8: 1.1, 9: 1.0, 10: 1.0, 11: 1.0,
+        12: 1.0, 13: 1.0, 14: 1.0, 15: 1.0, 16: 1.0, 17: 1.0,
+        18: 1.0, 19: 1.0, 20: 1.0, 21: 0.95, 22: 0.9, 23: 0.9
+    },
+    'ballistic': {
+        # Unpredictable, slightly more daytime for KAB
+        h: 1.0 for h in range(24)
+    },
+    'kab': {
+        # Daytime operations (need visual)
+        0: 0.3, 1: 0.2, 2: 0.2, 3: 0.2, 4: 0.3, 5: 0.5,
+        6: 0.8, 7: 1.0, 8: 1.2, 9: 1.3, 10: 1.4, 11: 1.4,
+        12: 1.4, 13: 1.4, 14: 1.3, 15: 1.2, 16: 1.1, 17: 1.0,
+        18: 0.8, 19: 0.6, 20: 0.4, 21: 0.3, 22: 0.3, 23: 0.3
+    }
+}
+
+# Flight corridors with waypoints
+FLIGHT_CORRIDORS = {
+    'south_to_kyiv': {
+        'start_regions': ['одеська', 'миколаївська', 'херсонська'],
+        'waypoints': [
+            {'name': 'Вінниця', 'coords': [49.2331, 28.4682], 'probability': 0.3},
+            {'name': 'Умань', 'coords': [48.7500, 30.2200], 'probability': 0.5},
+            {'name': 'Черкаси', 'coords': [49.4444, 32.0598], 'probability': 0.4},
+        ],
+        'end_targets': ['київ', 'біла церква', 'васильків'],
+        'typical_duration_hours': 4.5,
+    },
+    'east_to_kharkiv': {
+        'start_regions': ['бєлгородська', 'курська'],
+        'waypoints': [],
+        'end_targets': ['харків', 'суми', 'полтава'],
+        'typical_duration_hours': 0.5,
+    },
+    'crimea_to_odesa': {
+        'start_regions': ['крим', 'чорне море'],
+        'waypoints': [
+            {'name': 'Херсон', 'coords': [46.6354, 32.6169], 'probability': 0.4},
+        ],
+        'end_targets': ['одеса', 'миколаїв', 'південний'],
+        'typical_duration_hours': 1.5,
+    },
+    'belarus_to_kyiv': {
+        'start_regions': ['білорусь', 'гомельська', 'мозирська'],
+        'waypoints': [
+            {'name': 'Чернігів', 'coords': [51.4982, 31.2893], 'probability': 0.3},
+            {'name': 'Ніжин', 'coords': [51.0500, 31.8833], 'probability': 0.2},
+        ],
+        'end_targets': ['київ', 'бровари', 'бориспіль'],
+        'typical_duration_hours': 3.0,
+    },
+    'caspian_to_west': {
+        'start_regions': ['каспійське море', 'астрахань'],
+        'waypoints': [
+            {'name': 'Дніпро', 'coords': [48.4647, 35.0462], 'probability': 0.3},
+            {'name': 'Київ', 'coords': [50.4501, 30.5234], 'probability': 0.5},
+        ],
+        'end_targets': ['київ', 'львів', 'хмельницький'],
+        'typical_duration_hours': 2.0,  # Cruise missiles are fast
+    },
+}
+
+# Important target cities with strategic value weights - EXPANDED
+STRATEGIC_TARGETS = {
+    # Capital - highest priority
+    'київ': {'weight': 1.0, 'coords': [50.4501, 30.5234], 'type': 'capital', 'population': 2800000, 'air_defense': 'heavy'},
+    
+    # Major cities
+    'харків': {'weight': 0.92, 'coords': [49.9935, 36.2304], 'type': 'city', 'population': 1400000, 'air_defense': 'medium'},
+    'одеса': {'weight': 0.88, 'coords': [46.4825, 30.7233], 'type': 'port', 'population': 1000000, 'air_defense': 'medium'},
+    'дніпро': {'weight': 0.85, 'coords': [48.4647, 35.0462], 'type': 'industrial', 'population': 980000, 'air_defense': 'medium'},
+    'запоріжжя': {'weight': 0.82, 'coords': [47.8388, 35.1396], 'type': 'industrial', 'population': 750000, 'air_defense': 'light'},
+    'львів': {'weight': 0.78, 'coords': [49.8397, 24.0297], 'type': 'city', 'population': 720000, 'air_defense': 'medium'},
+    
+    # Industrial/Energy hubs
+    'кременчук': {'weight': 0.72, 'coords': [49.0689, 33.4202], 'type': 'industrial', 'population': 220000, 'air_defense': 'light'},
+    'кривий ріг': {'weight': 0.70, 'coords': [47.9105, 33.3918], 'type': 'industrial', 'population': 620000, 'air_defense': 'light'},
+    'маріуполь': {'weight': 0.65, 'coords': [47.0951, 37.5497], 'type': 'industrial', 'population': 430000, 'air_defense': 'none'},
+    'павлоград': {'weight': 0.55, 'coords': [48.5333, 35.8708], 'type': 'industrial', 'population': 110000, 'air_defense': 'light'},
+    'енергодар': {'weight': 0.60, 'coords': [47.4989, 34.6561], 'type': 'nuclear', 'population': 50000, 'air_defense': 'none'},
+    'южноукраїнськ': {'weight': 0.55, 'coords': [47.8167, 31.2167], 'type': 'nuclear', 'population': 40000, 'air_defense': 'light'},
+    
+    # Ports
+    'миколаїв': {'weight': 0.72, 'coords': [46.9750, 31.9946], 'type': 'port', 'population': 480000, 'air_defense': 'light'},
+    'ізмаїл': {'weight': 0.58, 'coords': [45.3500, 28.8333], 'type': 'port', 'population': 70000, 'air_defense': 'light'},
+    'рені': {'weight': 0.50, 'coords': [45.4500, 28.2833], 'type': 'port', 'population': 18000, 'air_defense': 'none'},
+    'южний': {'weight': 0.55, 'coords': [46.6167, 31.1000], 'type': 'port', 'population': 32000, 'air_defense': 'light'},
+    'чорноморськ': {'weight': 0.52, 'coords': [46.3000, 30.6500], 'type': 'port', 'population': 60000, 'air_defense': 'light'},
+    
+    # Regional centers
+    'вінниця': {'weight': 0.68, 'coords': [49.2331, 28.4682], 'type': 'city', 'population': 370000, 'air_defense': 'light'},
+    'полтава': {'weight': 0.62, 'coords': [49.5883, 34.5514], 'type': 'city', 'population': 290000, 'air_defense': 'light'},
+    'черкаси': {'weight': 0.58, 'coords': [49.4444, 32.0598], 'type': 'city', 'population': 280000, 'air_defense': 'light'},
+    'житомир': {'weight': 0.55, 'coords': [50.2547, 28.6587], 'type': 'city', 'population': 260000, 'air_defense': 'light'},
+    'хмельницький': {'weight': 0.60, 'coords': [49.4230, 26.9871], 'type': 'military', 'population': 275000, 'air_defense': 'light'},
+    'кропивницький': {'weight': 0.52, 'coords': [48.5079, 32.2623], 'type': 'city', 'population': 230000, 'air_defense': 'light'},
+    'рівне': {'weight': 0.55, 'coords': [50.6199, 26.2516], 'type': 'city', 'population': 245000, 'air_defense': 'light'},
+    'луцьк': {'weight': 0.52, 'coords': [50.7593, 25.3424], 'type': 'city', 'population': 215000, 'air_defense': 'light'},
+    'тернопіль': {'weight': 0.50, 'coords': [49.5535, 25.5948], 'type': 'city', 'population': 225000, 'air_defense': 'light'},
+    'івано-франківськ': {'weight': 0.52, 'coords': [48.9226, 24.7111], 'type': 'city', 'population': 235000, 'air_defense': 'light'},
+    'ужгород': {'weight': 0.45, 'coords': [48.6208, 22.2879], 'type': 'city', 'population': 115000, 'air_defense': 'light'},
+    'чернівці': {'weight': 0.48, 'coords': [48.2921, 25.9358], 'type': 'city', 'population': 265000, 'air_defense': 'light'},
+    
+    # Border cities (frequent targets)
+    'суми': {'weight': 0.65, 'coords': [50.9077, 34.7981], 'type': 'border', 'population': 265000, 'air_defense': 'light'},
+    'чернігів': {'weight': 0.62, 'coords': [51.4982, 31.2893], 'type': 'border', 'population': 285000, 'air_defense': 'light'},
+    'херсон': {'weight': 0.60, 'coords': [46.6354, 32.6169], 'type': 'border', 'population': 280000, 'air_defense': 'light'},
+    
+    # Kyiv region targets
+    'біла церква': {'weight': 0.50, 'coords': [49.8000, 30.1200], 'type': 'city', 'population': 210000, 'air_defense': 'light'},
+    'бровари': {'weight': 0.48, 'coords': [50.5111, 30.7906], 'type': 'city', 'population': 110000, 'air_defense': 'medium'},
+    'бориспіль': {'weight': 0.52, 'coords': [50.3500, 30.9500], 'type': 'airport', 'population': 60000, 'air_defense': 'medium'},
+    'васильків': {'weight': 0.55, 'coords': [50.1833, 30.3167], 'type': 'military', 'population': 35000, 'air_defense': 'medium'},
+    'гостомель': {'weight': 0.50, 'coords': [50.5667, 30.2167], 'type': 'airport', 'population': 15000, 'air_defense': 'medium'},
+    
+    # Strategic cities on common routes
+    'умань': {'weight': 0.48, 'coords': [48.7500, 30.2200], 'type': 'city', 'population': 82000, 'air_defense': 'none'},
+    'шепетівка': {'weight': 0.52, 'coords': [50.1833, 27.0667], 'type': 'military', 'population': 40000, 'air_defense': 'light'},
+    'коростень': {'weight': 0.42, 'coords': [50.9500, 28.6333], 'type': 'city', 'population': 62000, 'air_defense': 'none'},
+    'ніжин': {'weight': 0.42, 'coords': [51.0500, 31.8833], 'type': 'city', 'population': 70000, 'air_defense': 'none'},
+    'конотоп': {'weight': 0.45, 'coords': [51.2333, 33.2000], 'type': 'city', 'population': 85000, 'air_defense': 'none'},
+    'прилуки': {'weight': 0.42, 'coords': [50.5833, 32.3833], 'type': 'city', 'population': 56000, 'air_defense': 'none'},
+    
+    # Military/Strategic
+    'старокостянтинів': {'weight': 0.60, 'coords': [49.7500, 27.2167], 'type': 'military', 'population': 35000, 'air_defense': 'medium'},
+    'мелітополь': {'weight': 0.50, 'coords': [46.8500, 35.3667], 'type': 'city', 'population': 150000, 'air_defense': 'none'},
+    'бердянськ': {'weight': 0.48, 'coords': [46.7500, 36.8000], 'type': 'port', 'population': 110000, 'air_defense': 'none'},
+    'миргород': {'weight': 0.45, 'coords': [49.9667, 33.6000], 'type': 'military', 'population': 40000, 'air_defense': 'light'},
+    'озерне': {'weight': 0.48, 'coords': [50.1500, 27.4667], 'type': 'military', 'population': 5000, 'air_defense': 'light'},
+}
+
+# Source regions with typical launch patterns - EXPANDED
+SOURCE_REGIONS_INFO = {
+    'чорне море': {
+        'typical_targets': ['одеса', 'миколаїв', 'київ', 'вінниця'],
+        'threat_types': ['cruise', 'shahed'],
+        'launch_platforms': ['submarine', 'ship'],
+        'typical_group_size': {'cruise': 8, 'shahed': 20}
+    },
+    'азовське море': {
+        'typical_targets': ['запоріжжя', 'дніпро', 'харків', 'маріуполь'],
+        'threat_types': ['cruise'],
+        'launch_platforms': ['ship'],
+        'typical_group_size': {'cruise': 4}
+    },
+    'білорусь': {
+        'typical_targets': ['київ', 'чернігів', 'житомир', 'рівне'],
+        'threat_types': ['shahed', 'drone'],
+        'launch_platforms': ['ground'],
+        'typical_group_size': {'shahed': 15, 'drone': 5}
+    },
+    'курська область': {
+        'typical_targets': ['суми', 'харків', 'полтава', 'конотоп'],
+        'threat_types': ['shahed', 'kab', 'drone'],
+        'launch_platforms': ['aircraft', 'ground'],
+        'typical_group_size': {'shahed': 10, 'kab': 5}
+    },
+    'бєлгородська область': {
+        'typical_targets': ['харків'],
+        'threat_types': ['kab', 'ballistic', 'drone'],
+        'launch_platforms': ['aircraft', 'ground'],
+        'typical_group_size': {'kab': 8, 'ballistic': 2}
+    },
+    'крим': {
+        'typical_targets': ['одеса', 'миколаїв', 'херсон', 'київ', 'запоріжжя'],
+        'threat_types': ['cruise', 'shahed', 'ballistic'],
+        'launch_platforms': ['ground', 'aircraft'],
+        'typical_group_size': {'cruise': 6, 'shahed': 25, 'ballistic': 3}
+    },
+    'каспійське море': {
+        'typical_targets': ['київ', 'львів', 'харків', 'дніпро'],
+        'threat_types': ['cruise'],
+        'launch_platforms': ['ship', 'submarine'],
+        'typical_group_size': {'cruise': 10}
+    },
+    'брянська область': {
+        'typical_targets': ['чернігів', 'київ', 'суми', 'ніжин'],
+        'threat_types': ['shahed', 'drone'],
+        'launch_platforms': ['ground'],
+        'typical_group_size': {'shahed': 12}
+    },
+    'ростовська область': {
+        'typical_targets': ['харків', 'дніпро', 'запоріжжя'],
+        'threat_types': ['cruise', 'ballistic'],
+        'launch_platforms': ['aircraft', 'ground'],
+        'typical_group_size': {'cruise': 6, 'ballistic': 2}
+    },
+    'воронезька область': {
+        'typical_targets': ['харків', 'полтава', 'суми'],
+        'threat_types': ['shahed', 'cruise'],
+        'launch_platforms': ['ground', 'aircraft'],
+        'typical_group_size': {'shahed': 8, 'cruise': 4}
+    },
+}
+
+# Bayesian prior probabilities based on historical attacks (normalized)
+PRIOR_TARGET_PROBABILITIES = {
+    'київ': 0.25,
+    'харків': 0.18,
+    'одеса': 0.12,
+    'дніпро': 0.10,
+    'запоріжжя': 0.06,
+    'миколаїв': 0.05,
+    'львів': 0.04,
+    'вінниця': 0.03,
+    'полтава': 0.02,
+    'суми': 0.02,
+    'чернігів': 0.02,
+    'херсон': 0.02,
+    'кременчук': 0.02,
+    'other': 0.07
+}
+
+def calculate_distance_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Calculate distance between two points in kilometers using Haversine formula"""
+    R = 6371  # Earth's radius in km
+    
+    lat1_r, lat2_r = math.radians(lat1), math.radians(lat2)
+    lng1_r, lng2_r = math.radians(lng1), math.radians(lng2)
+    
+    dlat = lat2_r - lat1_r
+    dlng = lng2_r - lng1_r
+    
+    a = math.sin(dlat/2)**2 + math.cos(lat1_r) * math.cos(lat2_r) * math.sin(dlng/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    
+    return R * c
+
+def calculate_bearing(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Calculate bearing from point 1 to point 2 in degrees (0-360)"""
+    lat1_r, lat2_r = math.radians(lat1), math.radians(lat2)
+    lng1_r, lng2_r = math.radians(lng1), math.radians(lng2)
+    dLng = lng2_r - lng1_r
+    
+    x = math.sin(dLng) * math.cos(lat2_r)
+    y = math.cos(lat1_r) * math.sin(lat2_r) - math.sin(lat1_r) * math.cos(lat2_r) * math.cos(dLng)
+    
+    bearing = math.degrees(math.atan2(x, y))
+    return (bearing + 360) % 360
+
+def get_temporal_factors() -> dict:
+    """Get all temporal factors for current time"""
+    now = datetime.now()
+    hour = now.hour
+    weekday = now.weekday()
+    month = now.month
+    day = now.day
+    
+    factors = {
+        'hour': hour,
+        'weekday': weekday,
+        'month': month,
+        'is_night': 0 <= hour < 6,
+        'is_weekend': weekday >= 5,
+        'weekday_pattern': WEEKDAY_PATTERNS.get(weekday, {'capital': 1.0, 'overall': 1.0}),
+        'seasonal_pattern': SEASONAL_PATTERNS.get(month, {}),
+    }
+    
+    # Check special dates
+    special = SPECIAL_DATES.get((month, day))
+    if special:
+        factors['special_date'] = special
+        factors['capital_boost'] = special.get('capital_boost', 1.0)
+        factors['overall_boost'] = special.get('overall_boost', 1.0)
+    else:
+        factors['capital_boost'] = 1.0
+        factors['overall_boost'] = 1.0
+    
+    return factors
+
+def softmax_normalize(probabilities: list) -> list:
+    """Apply softmax normalization for better probability distribution"""
+    if not probabilities:
+        return []
+    
+    # Temperature parameter (lower = more confident, higher = more uniform)
+    temperature = 0.5
+    
+    max_p = max(probabilities)
+    exp_probs = [math.exp((p - max_p) / temperature) for p in probabilities]
+    sum_exp = sum(exp_probs)
+    
+    if sum_exp == 0:
+        return [1.0 / len(probabilities)] * len(probabilities)
+    
+    return [p / sum_exp for p in exp_probs]
+
+def bayesian_update(prior: float, likelihood: float, evidence: float = 1.0) -> float:
+    """Apply Bayesian update to probability"""
+    if evidence == 0:
+        return prior
+    posterior = (likelihood * prior) / evidence
+    return min(1.0, max(0.0, posterior))
+
+def analyze_attack_pattern(active_threats: list, patterns: dict = None) -> dict:
+    """
+    Analyze current attack pattern to detect coordinated strikes.
+    
+    Returns:
+    - attack_type: 'single' | 'wave' | 'diversionary' | 'saturation' | 'pinpoint'
+    - coordination_score: 0-1 how coordinated the attack is
+    - predicted_next_wave: estimated time until next wave
+    - decoy_probability: chance some targets are decoys
+    - primary_objective_guess: most likely strategic goal
+    """
+    if not active_threats:
+        return {
+            'attack_type': 'none',
+            'coordination_score': 0,
+            'predicted_next_wave': None,
+            'decoy_probability': 0,
+            'primary_objective_guess': None
+        }
+    
+    num_threats = len(active_threats)
+    threat_types = [t.get('type', 'unknown') for t in active_threats]
+    unique_types = set(threat_types)
+    
+    # Analyze timing spread
+    timestamps = []
+    for t in active_threats:
+        ts = t.get('first_seen') or t.get('timestamp')
+        if ts:
+            try:
+                if isinstance(ts, str):
+                    dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                else:
+                    dt = ts
+                timestamps.append(dt)
+            except:
+                pass
+    
+    time_spread_minutes = 0
+    if len(timestamps) >= 2:
+        timestamps.sort()
+        time_spread_minutes = (timestamps[-1] - timestamps[0]).total_seconds() / 60
+    
+    # Determine attack type
+    attack_type = 'single'
+    coordination_score = 0.3
+    decoy_probability = 0
+    
+    if num_threats == 1:
+        attack_type = 'single'
+        coordination_score = 0.5
+    elif num_threats <= 3:
+        attack_type = 'small_group'
+        coordination_score = 0.6
+    elif num_threats <= 8:
+        if len(unique_types) > 2:
+            attack_type = 'combined'  # Multiple threat types
+            coordination_score = 0.8
+            decoy_probability = 0.3
+        elif time_spread_minutes < 10:
+            attack_type = 'wave'
+            coordination_score = 0.75
+        else:
+            attack_type = 'dispersed'
+            coordination_score = 0.5
+    else:  # Large attack
+        if 'ballistic' in unique_types or 'cruise' in unique_types:
+            if 'shahed' in unique_types:
+                attack_type = 'saturation'  # Mix to overwhelm air defense
+                coordination_score = 0.9
+                decoy_probability = 0.5  # Shaheds may be decoys
+            else:
+                attack_type = 'mass_strike'
+                coordination_score = 0.85
+        else:
+            attack_type = 'drone_swarm'
+            coordination_score = 0.7
+    
+    # Predict next wave based on historical patterns
+    predicted_next_wave = None
+    if patterns and 'attack_intervals' in patterns:
+        intervals = patterns['attack_intervals']
+        if intervals:
+            avg_interval = sum(intervals) / len(intervals)
+            predicted_next_wave = avg_interval
+    
+    # Guess primary objective
+    targets = [t.get('target', t.get('heading', '')) for t in active_threats if t.get('target') or t.get('heading')]
+    target_counts = {}
+    for tgt in targets:
+        tgt_lower = str(tgt).lower()
+        target_counts[tgt_lower] = target_counts.get(tgt_lower, 0) + 1
+    
+    primary_objective = None
+    if target_counts:
+        primary_objective = max(target_counts, key=target_counts.get).title()
+    
+    return {
+        'attack_type': attack_type,
+        'coordination_score': round(coordination_score, 2),
+        'predicted_next_wave': predicted_next_wave,
+        'decoy_probability': round(decoy_probability, 2),
+        'primary_objective_guess': primary_objective,
+        'threat_diversity': len(unique_types),
+        'total_threats': num_threats,
+        'time_spread_minutes': round(time_spread_minutes, 1)
+    }
+
+def calculate_intercept_probability(threat_type: str, region: str, air_defense: str = 'unknown') -> float:
+    """
+    Estimate probability of interception based on threat and air defense.
+    
+    Args:
+        threat_type: Type of threat (shahed, cruise, ballistic, etc.)
+        region: Target region
+        air_defense: 'heavy' | 'medium' | 'light' | 'unknown'
+    
+    Returns probability 0-1
+    """
+    # Base intercept rates by threat type (rough estimates)
+    base_rates = {
+        'shahed': 0.75,      # High intercept rate for slow drones
+        'drone': 0.80,       # Other drones
+        'cruise': 0.60,      # Cruise missiles harder to intercept
+        'ballistic': 0.45,   # Ballistic very difficult
+        'kab': 0.25,         # KABs almost impossible to intercept
+        'rocket': 0.35,      # S-300 used as ground attack
+        'unknown': 0.50
+    }
+    
+    base_rate = base_rates.get(threat_type, 0.5)
+    
+    # Modify by air defense level
+    defense_multipliers = {
+        'heavy': 1.3,    # Kyiv, major cities
+        'medium': 1.0,   # Regional centers
+        'light': 0.7,    # Rural areas
+        'unknown': 0.9
+    }
+    
+    multiplier = defense_multipliers.get(air_defense, 0.9)
+    
+    # Cap at realistic levels
+    return min(0.95, max(0.1, base_rate * multiplier))
+
+def estimate_threat_altitude(threat_type: str, phase: str = 'cruise') -> dict:
+    """
+    Estimate threat altitude based on type and flight phase.
+    
+    Args:
+        threat_type: Type of threat
+        phase: 'launch' | 'cruise' | 'terminal' | 'unknown'
+    
+    Returns altitude info in meters
+    """
+    altitudes = THREAT_SPEEDS.get(threat_type, THREAT_SPEEDS['unknown'])
+    typical_alt = altitudes.get('altitude', 1000)
+    
+    # Adjust by phase
+    if phase == 'launch':
+        alt_range = (typical_alt * 0.8, typical_alt * 1.5)
+    elif phase == 'cruise':
+        alt_range = (typical_alt * 0.7, typical_alt * 1.2)
+    elif phase == 'terminal':
+        alt_range = (50, typical_alt * 0.5)  # Diving to target
+    else:
+        alt_range = (typical_alt * 0.5, typical_alt * 1.5)
+    
+    return {
+        'min_m': int(alt_range[0]),
+        'max_m': int(alt_range[1]),
+        'typical_m': typical_alt,
+        'phase': phase
+    }
+
+def estimate_eta_minutes(distance_km: float, threat_type: str) -> dict:
+    """
+    Estimate time of arrival based on distance and threat type.
+    
+    Returns dict with:
+    - min_minutes: fastest possible ETA
+    - avg_minutes: expected ETA  
+    - max_minutes: slowest ETA
+    - formatted: human-readable string
+    """
+    speeds = THREAT_SPEEDS.get(threat_type, THREAT_SPEEDS['unknown'])
+    
+    # Convert to minutes (distance / speed * 60)
+    min_eta = (distance_km / speeds['max']) * 60 if speeds['max'] > 0 else 999
+    avg_eta = (distance_km / speeds['avg']) * 60 if speeds['avg'] > 0 else 999
+    max_eta = (distance_km / speeds['min']) * 60 if speeds['min'] > 0 else 999
+    
+    # Format human-readable
+    def format_time(minutes):
+        if minutes < 1:
+            return "< 1 хв"
+        elif minutes < 60:
+            return f"{int(minutes)} хв"
+        else:
+            hours = int(minutes // 60)
+            mins = int(minutes % 60)
+            if mins == 0:
+                return f"{hours} год"
+            return f"{hours} год {mins} хв"
+    
+    if min_eta == avg_eta == max_eta:
+        formatted = format_time(avg_eta)
+    elif max_eta - min_eta < 5:
+        formatted = f"~{format_time(avg_eta)}"
+    else:
+        formatted = f"{format_time(min_eta)} - {format_time(max_eta)}"
+    
+    return {
+        'min_minutes': round(min_eta, 1),
+        'avg_minutes': round(avg_eta, 1),
+        'max_minutes': round(max_eta, 1),
+        'formatted': formatted
+    }
+
+def extract_attack_scale(message_text: str) -> dict:
+    """
+    Extract attack scale information from message text.
+    
+    Returns:
+    - count: estimated number of threats
+    - scale: 'single' | 'small_group' | 'large_group' | 'mass'
+    - confidence: how confident we are in the count
+    """
+    if not message_text:
+        return {'count': 1, 'scale': 'single', 'confidence': 0.3}
+    
+    msg_lower = message_text.lower()
+    count = 1
+    confidence = 0.5
+    
+    # Direct number extraction
+    number_patterns = [
+        (r'(\d+)\s*(?:бпла|шахед|дрон|ракет)', 1.0),
+        (r'близько\s*(\d+)', 0.8),
+        (r'до\s*(\d+)', 0.7),
+        (r'понад\s*(\d+)', 0.8),
+        (r'більше\s*(\d+)', 0.7),
+        (r'(\d+)\s*одиниц', 1.0),
+        (r'група\s*(?:з\s*)?(\d+)', 0.9),
+    ]
+    
+    for pattern, conf in number_patterns:
+        match = re.search(pattern, msg_lower)
+        if match:
+            try:
+                count = int(match.group(1))
+                confidence = conf
+                break
+            except:
+                pass
+    
+    # Word-based count estimation
+    if count == 1:
+        word_counts = {
+            'кілька': (3, 0.6),
+            'декілька': (4, 0.6),
+            'група': (5, 0.5),
+            'групи': (8, 0.5),
+            'багато': (10, 0.4),
+            'масов': (15, 0.4),
+            'велика група': (10, 0.5),
+            'невелика група': (3, 0.6),
+        }
+        for word, (est_count, conf) in word_counts.items():
+            if word in msg_lower:
+                count = est_count
+                confidence = conf
+                break
+    
+    # Determine scale
+    if count == 1:
+        scale = 'single'
+    elif count <= 3:
+        scale = 'small_group'
+    elif count <= 10:
+        scale = 'large_group'
+    else:
+        scale = 'mass'
+    
+    return {
+        'count': count,
+        'scale': scale,
+        'confidence': confidence
+    }
+
+def learn_from_attack_outcome(attack_id: str, actual_targets: list, predicted_targets: list, 
+                               threat_type: str, source_region: str, timestamp: str = None):
+    """
+    Learn from actual attack outcomes to improve future predictions.
+    Updates historical patterns and adjusts weights.
+    
+    Args:
+        attack_id: Unique identifier for this attack
+        actual_targets: List of targets that were actually hit/targeted
+        predicted_targets: List of targets we predicted
+        threat_type: Type of threat
+        source_region: Where attack originated
+        timestamp: When attack occurred
+    """
+    patterns = _load_route_patterns()
+    
+    if 'learning_history' not in patterns:
+        patterns['learning_history'] = []
+    
+    # Calculate accuracy
+    correct_predictions = 0
+    for pred in predicted_targets:
+        pred_name = pred if isinstance(pred, str) else pred.get('name', '').lower()
+        for actual in actual_targets:
+            actual_name = actual if isinstance(actual, str) else actual.get('name', '').lower()
+            if pred_name.lower() == actual_name.lower():
+                correct_predictions += 1
+                break
+    
+    accuracy = correct_predictions / len(predicted_targets) if predicted_targets else 0
+    
+    # Store learning record
+    record = {
+        'attack_id': attack_id,
+        'timestamp': timestamp or datetime.now().isoformat(),
+        'threat_type': threat_type,
+        'source_region': source_region,
+        'predicted': [p if isinstance(p, str) else p.get('name') for p in predicted_targets[:5]],
+        'actual': [a if isinstance(a, str) else a.get('name') for a in actual_targets],
+        'accuracy': round(accuracy, 2)
+    }
+    patterns['learning_history'].append(record)
+    
+    # Keep last 500 records
+    if len(patterns['learning_history']) > 500:
+        patterns['learning_history'] = patterns['learning_history'][-500:]
+    
+    # Update source-target correlations
+    if 'source_target_correlations' not in patterns:
+        patterns['source_target_correlations'] = {}
+    
+    src_key = source_region.lower() if source_region else 'unknown'
+    if src_key not in patterns['source_target_correlations']:
+        patterns['source_target_correlations'][src_key] = {}
+    
+    for actual in actual_targets:
+        actual_name = (actual if isinstance(actual, str) else actual.get('name', '')).lower()
+        if actual_name:
+            current = patterns['source_target_correlations'][src_key].get(actual_name, 0)
+            patterns['source_target_correlations'][src_key][actual_name] = current + 1
+    
+    # Update temporal patterns
+    if timestamp:
+        try:
+            dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            hour = dt.hour
+            weekday = dt.weekday()
+            month = dt.month
+            
+            if 'temporal_attack_history' not in patterns:
+                patterns['temporal_attack_history'] = {
+                    'hourly': {str(h): 0 for h in range(24)},
+                    'daily': {str(d): 0 for d in range(7)},
+                    'monthly': {str(m): 0 for m in range(1, 13)}
+                }
+            
+            patterns['temporal_attack_history']['hourly'][str(hour)] = \
+                patterns['temporal_attack_history']['hourly'].get(str(hour), 0) + 1
+            patterns['temporal_attack_history']['daily'][str(weekday)] = \
+                patterns['temporal_attack_history']['daily'].get(str(weekday), 0) + 1
+            patterns['temporal_attack_history']['monthly'][str(month)] = \
+                patterns['temporal_attack_history']['monthly'].get(str(month), 0) + 1
+        except:
+            pass
+    
+    global _route_patterns_modified
+    _route_patterns_modified = True
+    _save_route_patterns()
+    
+    print(f"INFO: Learned from attack {attack_id}, accuracy={accuracy:.0%}")
+    return {'status': 'ok', 'accuracy': accuracy}
+
+def get_prediction_accuracy_stats() -> dict:
+    """
+    Get statistics on prediction accuracy over time.
+    
+    Returns accuracy metrics for evaluation.
+    """
+    patterns = _load_route_patterns()
+    history = patterns.get('learning_history', [])
+    
+    if not history:
+        return {
+            'total_predictions': 0,
+            'avg_accuracy': 0,
+            'accuracy_trend': 'unknown',
+            'best_threat_type': None,
+            'worst_threat_type': None
+        }
+    
+    # Overall accuracy
+    accuracies = [h['accuracy'] for h in history if 'accuracy' in h]
+    avg_accuracy = sum(accuracies) / len(accuracies) if accuracies else 0
+    
+    # Accuracy by threat type
+    by_threat = {}
+    for h in history:
+        tt = h.get('threat_type', 'unknown')
+        if tt not in by_threat:
+            by_threat[tt] = []
+        if 'accuracy' in h:
+            by_threat[tt].append(h['accuracy'])
+    
+    threat_accuracies = {tt: sum(accs)/len(accs) for tt, accs in by_threat.items() if accs}
+    
+    best_threat = max(threat_accuracies, key=threat_accuracies.get) if threat_accuracies else None
+    worst_threat = min(threat_accuracies, key=threat_accuracies.get) if threat_accuracies else None
+    
+    # Accuracy trend (last 50 vs previous 50)
+    trend = 'stable'
+    if len(accuracies) >= 100:
+        recent = accuracies[-50:]
+        older = accuracies[-100:-50]
+        recent_avg = sum(recent) / len(recent)
+        older_avg = sum(older) / len(older)
+        if recent_avg > older_avg + 0.05:
+            trend = 'improving'
+        elif recent_avg < older_avg - 0.05:
+            trend = 'declining'
+    
+    return {
+        'total_predictions': len(history),
+        'avg_accuracy': round(avg_accuracy, 3),
+        'accuracy_trend': trend,
+        'accuracy_by_threat': threat_accuracies,
+        'best_threat_type': best_threat,
+        'worst_threat_type': worst_threat
+    }
+
+def calculate_confidence_interval(probability: float, sample_size: int = 10) -> dict:
+    """
+    Calculate confidence interval for a probability estimate.
+    
+    Uses Wilson score interval for better accuracy with small samples.
+    """
+    import math
+    
+    z = 1.96  # 95% confidence
+    n = max(1, sample_size)
+    p = min(1.0, max(0.0, probability))
+    
+    # Wilson score interval
+    denominator = 1 + z*z/n
+    center = (p + z*z/(2*n)) / denominator
+    spread = z * math.sqrt((p*(1-p) + z*z/(4*n)) / n) / denominator
+    
+    return {
+        'lower': round(max(0, center - spread), 3),
+        'upper': round(min(1, center + spread), 3),
+        'center': round(center, 3),
+        'width': round(spread * 2, 3)
+    }
+
+def detect_decoy_threats(threats: list) -> list:
+    """
+    Analyze a group of threats to identify potential decoys.
+    
+    In saturation attacks, slower drones (Shahed) may be decoys while
+    faster missiles (cruise/ballistic) are the real targets.
+    
+    Returns threats with decoy_probability added.
+    """
+    if not threats or len(threats) < 2:
+        return threats
+    
+    threat_types = {}
+    for t in threats:
+        tt = t.get('type', t.get('threat_type', 'unknown'))
+        if tt not in threat_types:
+            threat_types[tt] = []
+        threat_types[tt].append(t)
+    
+    # Check for mixed attack pattern
+    has_drones = 'shahed' in threat_types or 'drone' in threat_types
+    has_missiles = 'cruise' in threat_types or 'ballistic' in threat_types
+    
+    for t in threats:
+        tt = t.get('type', t.get('threat_type', 'unknown'))
+        decoy_prob = 0
+        
+        if has_drones and has_missiles:
+            # Mixed attack - drones more likely to be decoys
+            if tt in ['shahed', 'drone']:
+                # More drones = higher chance they're decoys
+                drone_count = len(threat_types.get('shahed', [])) + len(threat_types.get('drone', []))
+                missile_count = len(threat_types.get('cruise', [])) + len(threat_types.get('ballistic', []))
+                
+                if drone_count > missile_count * 2:
+                    decoy_prob = 0.4  # Many drones vs few missiles
+                elif drone_count > missile_count:
+                    decoy_prob = 0.3
+                else:
+                    decoy_prob = 0.2
+        
+        # Shaheds from south heading north when missiles from east = probable decoy
+        source = t.get('source_region', '').lower()
+        heading = t.get('heading', t.get('target', '')).lower()
+        
+        if tt == 'shahed' and has_missiles:
+            if 'одеськ' in source or 'миколаїв' in source:
+                if 'київ' in heading:
+                    decoy_prob = max(decoy_prob, 0.35)
+        
+        t['decoy_probability'] = round(decoy_prob, 2)
+    
+    return threats
+
+def prioritize_threats(threats: list) -> list:
+    """
+    Prioritize threats based on multiple factors.
+    
+    Priority factors:
+    1. Threat type (ballistic > cruise > KAB > shahed)
+    2. Speed/ETA (faster = higher priority)
+    3. Target value (capital > industrial > other)
+    4. Not a likely decoy
+    
+    Returns threats sorted by priority score.
+    """
+    if not threats:
+        return threats
+    
+    # Priority base scores by type
+    type_priority = {
+        'ballistic': 100,
+        'cruise': 85,
+        'kab': 80,
+        'shahed': 60,
+        'drone': 50,
+        'rocket': 70,
+        'unknown': 40
+    }
+    
+    # Target priority modifiers
+    target_priority = {
+        'capital': 30,
+        'industrial': 20,
+        'port': 15,
+        'military': 25,
+        'civilian': 10
+    }
+    
+    for t in threats:
+        score = 0
+        
+        # Base type score
+        tt = t.get('type', t.get('threat_type', 'unknown'))
+        score += type_priority.get(tt, 40)
+        
+        # ETA factor - shorter ETA = higher priority
+        eta = t.get('eta', {})
+        if isinstance(eta, dict):
+            eta_min = eta.get('min_minutes', 60)
+        else:
+            eta_min = 60
+        
+        if eta_min < 5:
+            score += 50  # Very urgent
+        elif eta_min < 15:
+            score += 30
+        elif eta_min < 30:
+            score += 15
+        
+        # Target value
+        target_type = t.get('target_type', 'civilian')
+        score += target_priority.get(target_type, 10)
+        
+        # Reduce score if likely decoy
+        decoy_prob = t.get('decoy_probability', 0)
+        score *= (1 - decoy_prob * 0.5)
+        
+        # Boost if high confidence
+        confidence = t.get('confidence', t.get('probability', 0.5))
+        score *= (0.8 + confidence * 0.4)
+        
+        t['priority_score'] = round(score, 1)
+    
+    # Sort by priority (descending)
+    threats.sort(key=lambda x: x.get('priority_score', 0), reverse=True)
+    
+    return threats
+
+def get_regional_threat_assessment(region: str, active_threats: list = None) -> dict:
+    """
+    Get threat assessment for a specific region.
+    
+    Returns risk level and recommendations.
+    """
+    region_lower = region.lower()
+    
+    # Base risk by region position
+    frontline_regions = ['харківська', 'запорізька', 'херсонська', 'донецька', 'луганська', 'сумська']
+    high_value_regions = ['київ', 'київська', 'одеська', 'дніпропетровська']
+    
+    base_risk = 0.3
+    if any(r in region_lower for r in frontline_regions):
+        base_risk = 0.7
+    elif any(r in region_lower for r in high_value_regions):
+        base_risk = 0.5
+    
+    # Temporal risk adjustment
+    temporal = get_temporal_factors()
+    hour_pattern = HOURLY_PATTERNS.get('shahed', {}).get(temporal['hour'], 1.0)
+    base_risk *= hour_pattern
+    
+    # Active threat adjustment
+    threats_heading_to_region = []
+    if active_threats:
+        for t in active_threats:
+            target = str(t.get('target', t.get('heading', ''))).lower()
+            if region_lower in target or target in region_lower:
+                threats_heading_to_region.append(t)
+    
+    if threats_heading_to_region:
+        # Calculate ETA to region
+        min_eta = min(
+            t.get('eta', {}).get('min_minutes', 999) if isinstance(t.get('eta'), dict) else 999
+            for t in threats_heading_to_region
+        )
+        threat_count = len(threats_heading_to_region)
+        
+        return {
+            'region': region,
+            'risk_level': 'critical' if base_risk > 0.7 else 'high' if base_risk > 0.5 else 'elevated',
+            'risk_score': round(min(1.0, base_risk + 0.3), 2),
+            'active_threats': threat_count,
+            'min_eta_minutes': min_eta,
+            'recommendation': 'Негайно в укриття!' if min_eta < 10 else 'Підготуватися до тривоги'
+        }
+    
+    return {
+        'region': region,
+        'risk_level': 'elevated' if base_risk > 0.4 else 'low',
+        'risk_score': round(base_risk, 2),
+        'active_threats': 0,
+        'min_eta_minutes': None,
+        'recommendation': 'Слідкуйте за оновленнями' if base_risk > 0.4 else 'Нормальний стан'
+    }
+
+def analyze_threat_context(message_text: str, threat_type: str) -> dict:
+    """
+    Analyze message context to improve prediction accuracy.
+    
+    Returns context clues for prediction adjustment.
+    """
+    if not message_text:
+        return {}
+    
+    msg_lower = message_text.lower()
+    context = {}
+    
+    # Attack scale
+    context['scale'] = extract_attack_scale(message_text)
+    
+    # Target infrastructure hints
+    if any(w in msg_lower for w in ['енерг', 'електр', 'тец', 'гес', 'підстанц', 'інфраструктур']):
+        context['likely_target_type'] = 'energy_infrastructure'
+    elif any(w in msg_lower for w in ['порт', 'морськ', 'судно', 'зерно', 'термінал']):
+        context['likely_target_type'] = 'port'
+    elif any(w in msg_lower for w in ['військов', 'аеродром', 'склад', 'база']):
+        context['likely_target_type'] = 'military'
+    elif any(w in msg_lower for w in ['житлов', 'цивільн', 'центр міста']):
+        context['likely_target_type'] = 'civilian'
+    
+    # Urgency indicators
+    urgent_words = ['терміново', 'увага', 'небезпека', 'загроза', 'швидко', 'негайно']
+    context['urgency'] = any(w in msg_lower for w in urgent_words)
+    
+    # Direction certainty
+    direction_certain = ['курсом на', 'напрямок на', 'рухається до', 'тримає курс']
+    direction_uncertain = ['ймовірно', 'можливо', 'орієнтовно', 'приблизно']
+    
+    if any(d in msg_lower for d in direction_certain):
+        context['direction_certainty'] = 'high'
+    elif any(d in msg_lower for d in direction_uncertain):
+        context['direction_certainty'] = 'low'
+    else:
+        context['direction_certainty'] = 'medium'
+    
+    # Speed/altitude indicators
+    if any(w in msg_lower for w in ['малій висоті', 'низько', 'низьколетяч']):
+        context['altitude'] = 'low'
+    elif any(w in msg_lower for w in ['великій висоті', 'високо']):
+        context['altitude'] = 'high'
+    
+    # Maneuvers
+    if any(w in msg_lower for w in ['маневрує', 'змінює курс', 'змінив напрямок']):
+        context['maneuvering'] = True
+    
+    return context
+
+def predict_waypoints(source_coords: tuple, target_coords: tuple, threat_type: str, message_text: str = None) -> list:
+    """
+    Predict intermediate waypoints along the trajectory.
+    
+    Returns list of waypoints with:
+    - name: waypoint name
+    - coords: [lat, lng]
+    - eta_minutes: estimated time to reach this point
+    - probability: probability of passing through
+    """
+    if not source_coords or not target_coords:
+        return []
+    
+    waypoints = []
+    
+    # Check known flight corridors
+    msg_lower = (message_text or '').lower()
+    
+    for corridor_id, corridor in FLIGHT_CORRIDORS.items():
+        # Check if source matches corridor
+        source_match = any(region in msg_lower for region in corridor['start_regions'])
+        
+        if not source_match:
+            continue
+        
+        # Check if any end target matches
+        target_match = False
+        for end_target in corridor['end_targets']:
+            target_data = STRATEGIC_TARGETS.get(end_target)
+            if target_data:
+                target_dist = calculate_distance_km(
+                    target_coords[0], target_coords[1],
+                    target_data['coords'][0], target_data['coords'][1]
+                )
+                if target_dist < 50:  # Within 50km of a corridor end target
+                    target_match = True
+                    break
+        
+        if not target_match:
+            continue
+        
+        # Found matching corridor - add waypoints
+        total_distance = calculate_distance_km(
+            source_coords[0], source_coords[1],
+            target_coords[0], target_coords[1]
+        )
+        
+        speeds = THREAT_SPEEDS.get(threat_type, THREAT_SPEEDS['unknown'])
+        
+        for wp in corridor['waypoints']:
+            # Calculate distance to waypoint
+            wp_distance = calculate_distance_km(
+                source_coords[0], source_coords[1],
+                wp['coords'][0], wp['coords'][1]
+            )
+            
+            # Only include if waypoint is between source and target
+            target_distance = calculate_distance_km(
+                wp['coords'][0], wp['coords'][1],
+                target_coords[0], target_coords[1]
+            )
+            
+            if wp_distance < total_distance and target_distance < total_distance:
+                eta_minutes = (wp_distance / speeds['avg']) * 60
+                
+                waypoints.append({
+                    'name': wp['name'],
+                    'coords': wp['coords'],
+                    'eta_minutes': round(eta_minutes, 1),
+                    'probability': wp['probability'],
+                    'corridor': corridor_id
+                })
+        
+        break  # Use first matching corridor
+    
+    # Sort by ETA
+    waypoints.sort(key=lambda x: x['eta_minutes'])
+    
+    return waypoints
+
+def ensemble_predict(source_coords: tuple, target_name: str, target_coords: tuple, 
+                    threat_type: str, message_text: str = None, patterns: dict = None) -> dict:
+    """
+    Ensemble prediction combining multiple models:
+    1. Statistical model (distance, strategic value)
+    2. Temporal model (time of day, day of week, season)
+    3. Historical model (past attack patterns)
+    4. Bayesian model (prior probabilities)
+    5. Corridor model (known flight paths)
+    
+    Returns combined probability with confidence intervals.
+    """
+    if not source_coords or not target_coords:
+        return {'probability': 0.0, 'confidence': 0.0}
+    
+    temporal = get_temporal_factors()
+    target_lower = target_name.lower()
+    strategic = STRATEGIC_TARGETS.get(target_lower, {})
+    target_type = strategic.get('type', 'city')
+    
+    # Model 1: Statistical (distance + strategic value)
+    distance = calculate_distance_km(
+        source_coords[0], source_coords[1],
+        target_coords[0], target_coords[1]
+    )
+    
+    max_range = {'shahed': 400, 'drone': 300, 'cruise': 1500, 'ballistic': 500, 'kab': 100}.get(threat_type, 400)
+    stat_prob = max(0.05, 1.0 - (distance / max_range) ** 0.7) if distance <= max_range else 0.05
+    stat_prob *= strategic.get('weight', 0.5)
+    
+    # Model 2: Temporal
+    temporal_prob = 1.0
+    
+    # Hour pattern
+    hour_patterns = HOURLY_PATTERNS.get(threat_type, HOURLY_PATTERNS.get('shahed', {}))
+    hour_mult = hour_patterns.get(temporal['hour'], 1.0)
+    temporal_prob *= hour_mult
+    
+    # Weekend/weekday
+    temporal_prob *= temporal['weekday_pattern'].get('overall', 1.0)
+    if target_lower == 'київ':
+        temporal_prob *= temporal['weekday_pattern'].get('capital', 1.0)
+    
+    # Seasonal
+    seasonal = temporal['seasonal_pattern'].get(target_type, 1.0)
+    temporal_prob *= seasonal
+    
+    # Special date
+    if target_lower == 'київ':
+        temporal_prob *= temporal.get('capital_boost', 1.0)
+    temporal_prob *= temporal.get('overall_boost', 1.0)
+    
+    # Model 3: Historical
+    historical_prob = 1.0
+    if patterns and patterns.get('historical_routes'):
+        recent = patterns['historical_routes'][-50:]
+        target_hits = sum(1 for r in recent if r.get('target', '').lower() == target_lower)
+        if target_hits > 0:
+            historical_prob = 1.0 + min(target_hits * 0.1, 0.5)
+    
+    # Model 4: Bayesian prior
+    prior = PRIOR_TARGET_PROBABILITIES.get(target_lower, PRIOR_TARGET_PROBABILITIES.get('other', 0.05))
+    
+    # Model 5: Corridor
+    corridor_prob = 1.0
+    msg_lower = (message_text or '').lower()
+    
+    for corridor_id, corridor in FLIGHT_CORRIDORS.items():
+        source_match = any(region in msg_lower for region in corridor['start_regions'])
+        target_match = target_lower in corridor['end_targets']
+        
+        if source_match and target_match:
+            corridor_prob = 1.5  # Strong boost for corridor match
+            break
+        elif source_match:
+            # Partial match - check if target is a waypoint
+            for wp in corridor.get('waypoints', []):
+                if wp['name'].lower() == target_lower:
+                    corridor_prob = 1.2 + wp['probability'] * 0.3
+                    break
+    
+    # Combine models with weights
+    weights = {
+        'statistical': 0.25,
+        'temporal': 0.20,
+        'historical': 0.15,
+        'bayesian': 0.20,
+        'corridor': 0.20
+    }
+    
+    # Normalize each model to 0-1 range
+    models = {
+        'statistical': min(1.0, stat_prob),
+        'temporal': min(1.0, temporal_prob / 2.0),  # Divide by 2 since it can be > 1
+        'historical': min(1.0, historical_prob / 1.5),
+        'bayesian': prior,
+        'corridor': min(1.0, corridor_prob / 1.5)
+    }
+    
+    # Weighted average
+    combined = sum(models[m] * weights[m] for m in models)
+    
+    # Calculate confidence based on model agreement
+    model_values = list(models.values())
+    variance = sum((v - combined) ** 2 for v in model_values) / len(model_values)
+    confidence = max(0.3, 1.0 - math.sqrt(variance) * 2)
+    
+    return {
+        'probability': round(combined, 4),
+        'confidence': round(confidence, 3),
+        'models': models,
+        'weights': weights
+    }
+
+def calculate_target_probability(
+    source_coords: tuple,
+    target_name: str,
+    target_coords: tuple,
+    threat_type: str,
+    message_text: str = None,
+    patterns: dict = None
+) -> float:
+    """
+    Calculate probability that trajectory ends at specific target.
+    
+    Factors:
+    1. Distance (closer = higher probability)
+    2. Strategic value (important cities get bonus)
+    3. Direction alignment (if heading stated)
+    4. Historical patterns (learned routes)
+    5. Time of day (night attacks often target Kyiv)
+    6. Attack scale (group attacks → Kyiv)
+    7. Source region attack patterns
+    8. Day of week patterns
+    9. Recent attack correlation
+    10. Geographic corridor analysis
+    11. Seasonal patterns (NEW)
+    12. Special dates (NEW)
+    13. Air defense density (NEW)
+    14. Population factor (NEW)
+    15. Bayesian prior (NEW)
+    """
+    if not source_coords or not target_coords:
+        return 0.0
+    
+    # Get ensemble prediction as base
+    ensemble = ensemble_predict(
+        source_coords, target_name, target_coords,
+        threat_type, message_text, patterns
+    )
+    base_prob = ensemble['probability']
+    
+    # Additional refinements
+    target_lower = target_name.lower()
+    strategic = STRATEGIC_TARGETS.get(target_lower, {})
+    temporal = get_temporal_factors()
+    
+    # Factor 1: Distance (max useful distance ~400km for drones)
+    distance = calculate_distance_km(
+        source_coords[0], source_coords[1],
+        target_coords[0], target_coords[1]
+    )
+    
+    # Distance penalty - further = less likely
+    if threat_type in ['shahed', 'drone']:
+        max_range = 400  # Shahed range ~400km
+        if distance > max_range:
+            distance_factor = 0.1
+        else:
+            # Non-linear: closer targets get exponentially higher probability
+            distance_factor = (1.0 - (distance / max_range)) ** 0.7
+    elif threat_type in ['ballistic']:
+        max_range = 500  # Iskander ~500km
+        distance_factor = 1.0 - (distance / max_range) * 0.3
+    else:
+        max_range = 1500  # Cruise missiles
+        distance_factor = 1.0 - (distance / max_range) * 0.4
+    
+    base_prob *= max(0.1, distance_factor)
+    
+    # Factor 2: Strategic value
+    target_lower = target_name.lower()
+    strategic = STRATEGIC_TARGETS.get(target_lower)
+    if strategic:
+        base_prob *= (0.7 + strategic['weight'] * 0.5)  # 0.7-1.2 multiplier
+    
+    # Factor 3: Direction alignment (if message mentions direction)
+    if message_text:
+        msg_lower = message_text.lower()
+        
+        # Calculate actual direction from source to target
+        lat_diff = target_coords[0] - source_coords[0]
+        lng_diff = target_coords[1] - source_coords[1]
+        
+        # Check if message direction matches actual direction
+        direction_match = False
+        if 'північ' in msg_lower and lat_diff > 0:
+            direction_match = True
+            base_prob *= 1.3
+        elif 'південь' in msg_lower and lat_diff < 0:
+            direction_match = True
+            base_prob *= 1.3
+        elif 'схід' in msg_lower and lng_diff > 0:
+            direction_match = True
+            base_prob *= 1.3
+        elif 'захід' in msg_lower and lng_diff < 0:
+            direction_match = True
+            base_prob *= 1.3
+        
+        # Compound directions (північно-західний, etc.)
+        if 'північно-західн' in msg_lower and lat_diff > 0 and lng_diff < 0:
+            base_prob *= 1.4
+        elif 'північно-східн' in msg_lower and lat_diff > 0 and lng_diff > 0:
+            base_prob *= 1.4
+        elif 'південно-західн' in msg_lower and lat_diff < 0 and lng_diff < 0:
+            base_prob *= 1.4
+        elif 'південно-східн' in msg_lower and lat_diff < 0 and lng_diff > 0:
+            base_prob *= 1.4
+        
+        # Explicit target mentions - STRONG signal
+        if target_lower in msg_lower:
+            base_prob *= 2.0
+        
+        # Explicit course mentions "курсом на Київ"
+        if f'курс' in msg_lower and target_lower in msg_lower:
+            base_prob *= 2.5
+    
+    # Factor 4: Historical patterns - weighted by recency
+    if patterns and patterns.get('historical_routes'):
+        recent_routes = patterns['historical_routes'][-100:]
+        similar_routes = []
+        for i, r in enumerate(recent_routes):
+            if r.get('target', '').lower() == target_lower:
+                # More recent routes have higher weight
+                recency_weight = 1.0 + (i / len(recent_routes)) * 0.5
+                similar_routes.append(recency_weight)
+        
+        if similar_routes:
+            history_factor = 1.0 + min(sum(similar_routes) * 0.08, 0.6)
+            base_prob *= history_factor
+    
+    # Factor 5: Time of day patterns
+    try:
+        current_hour = datetime.now().hour
+        current_weekday = datetime.now().weekday()
+        
+        # Night attacks (00:00-06:00) - strategic targets
+        if 0 <= current_hour < 6:
+            if target_lower == 'київ':
+                base_prob *= 1.5  # Night attacks strongly favor capital
+            elif strategic and strategic['type'] in ['capital', 'industrial']:
+                base_prob *= 1.2
+        
+        # Early morning (04:00-07:00) - common shahed arrival time
+        if 4 <= current_hour < 7:
+            if threat_type in ['shahed', 'drone']:
+                if target_lower == 'київ':
+                    base_prob *= 1.4  # Peak shahed arrival window
+        
+        # Weekend patterns (more mass attacks)
+        if current_weekday >= 5:  # Saturday, Sunday
+            if target_lower == 'київ':
+                base_prob *= 1.15
+                
+    except:
+        pass
+    
+    # Factor 6: Attack scale analysis (from message)
+    if message_text:
+        msg_lower = message_text.lower()
+        
+        # Group attacks → likely Kyiv
+        group_indicators = ['група', 'групи', 'кілька', 'декілька', 'багато', 'масов']
+        is_group_attack = any(ind in msg_lower for ind in group_indicators)
+        
+        # Count mentioned drones
+        drone_count = 0
+        count_patterns = [r'(\d+)\s*(?:бпла|шахед|дрон)', r'близько\s*(\d+)', r'до\s*(\d+)']
+        for pattern in count_patterns:
+            match = re.search(pattern, msg_lower)
+            if match:
+                try:
+                    drone_count = max(drone_count, int(match.group(1)))
+                except:
+                    pass
+        
+        if is_group_attack or drone_count >= 3:
+            if target_lower == 'київ':
+                base_prob *= 1.4  # Group attacks usually target capital
+            elif target_lower in ['харків', 'одеса', 'дніпро']:
+                base_prob *= 1.2  # Or major cities
+    
+    # Factor 7: Source region → Target corridor patterns
+    source_name_lower = (source_coords[2] if len(source_coords) > 2 else '').lower() if isinstance(source_coords, (list, tuple)) and len(source_coords) > 2 else ''
+    
+    # Known attack corridors
+    ATTACK_CORRIDORS = {
+        # South → Kyiv corridor
+        ('одеська', 'миколаївська', 'херсонська'): {'київ': 1.5, 'вінниця': 1.3, 'черкаси': 1.2},
+        # East → Kharkiv/Poltava
+        ('харківська', 'сумська', 'луганська'): {'харків': 1.6, 'полтава': 1.3, 'суми': 1.4},
+        # Crimea → South/Central
+        ('крим', 'севастополь', 'чорне море'): {'одеса': 1.4, 'миколаїв': 1.5, 'херсон': 1.3, 'запоріжжя': 1.3},
+        # Belarus → Kyiv/Chernihiv
+        ('білорусь', 'гомель', 'мозир'): {'київ': 1.6, 'чернігів': 1.5, 'житомир': 1.3},
+    }
+    
+    if message_text:
+        msg_lower = message_text.lower()
+        for sources, targets in ATTACK_CORRIDORS.items():
+            if any(src in msg_lower for src in sources):
+                if target_lower in targets:
+                    base_prob *= targets[target_lower]
+                    break
+    
+    # Factor 8: Geographic corridor (direct line of flight)
+    # Bonus if target is roughly in line with source direction
+    if message_text and source_coords and target_coords:
+        # Calculate bearing from message-mentioned direction
+        msg_lower = message_text.lower()
+        expected_bearing = None
+        
+        if 'північ' in msg_lower and 'схід' not in msg_lower and 'захід' not in msg_lower:
+            expected_bearing = 0
+        elif 'північ' in msg_lower and 'схід' in msg_lower:
+            expected_bearing = 45
+        elif 'схід' in msg_lower and 'північ' not in msg_lower and 'південь' not in msg_lower:
+            expected_bearing = 90
+        elif 'південь' in msg_lower and 'схід' in msg_lower:
+            expected_bearing = 135
+        elif 'південь' in msg_lower and 'схід' not in msg_lower and 'захід' not in msg_lower:
+            expected_bearing = 180
+        elif 'південь' in msg_lower and 'захід' in msg_lower:
+            expected_bearing = 225
+        elif 'захід' in msg_lower and 'північ' not in msg_lower and 'південь' not in msg_lower:
+            expected_bearing = 270
+        elif 'північ' in msg_lower and 'захід' in msg_lower:
+            expected_bearing = 315
+        
+        if expected_bearing is not None:
+            # Calculate actual bearing to target
+            import math
+            lat1, lng1 = math.radians(source_coords[0]), math.radians(source_coords[1])
+            lat2, lng2 = math.radians(target_coords[0]), math.radians(target_coords[1])
+            dLng = lng2 - lng1
+            x = math.sin(dLng) * math.cos(lat2)
+            y = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dLng)
+            actual_bearing = (math.degrees(math.atan2(x, y)) + 360) % 360
+            
+            # Calculate bearing difference (0-180)
+            bearing_diff = abs(actual_bearing - expected_bearing)
+            if bearing_diff > 180:
+                bearing_diff = 360 - bearing_diff
+            
+            # Bonus for targets in the expected direction corridor (within 45°)
+            if bearing_diff <= 30:
+                base_prob *= 1.4  # Strong corridor match
+            elif bearing_diff <= 60:
+                base_prob *= 1.2  # Moderate match
+            elif bearing_diff > 120:
+                base_prob *= 0.6  # Wrong direction - penalty
+    
+    # Factor 9: Recent attack correlation (last 3 hours)
+    # If same region was attacked recently, less likely to be hit again soon
+    if patterns and patterns.get('historical_routes'):
+        try:
+            recent_3h = []
+            cutoff_time = datetime.now() - timedelta(hours=3)
+            for r in patterns['historical_routes'][-20:]:
+                try:
+                    ts = datetime.fromisoformat(r.get('timestamp', ''))
+                    if ts > cutoff_time and r.get('target', '').lower() == target_lower:
+                        recent_3h.append(r)
+                except:
+                    pass
+            
+            # If already hit in last 3 hours, slightly reduce probability
+            # (attackers often switch targets)
+            if recent_3h:
+                base_prob *= max(0.7, 1.0 - len(recent_3h) * 0.1)
+        except:
+            pass
+    
+    # Factor 10: Infrastructure type matching
+    if message_text and strategic:
+        msg_lower = message_text.lower()
+        target_type = strategic.get('type', '')
+        
+        # Energy infrastructure attacks
+        if any(w in msg_lower for w in ['енерг', 'електр', 'тец', 'гес', 'підстанц']):
+            if target_type == 'industrial':
+                base_prob *= 1.3
+            if target_lower in ['київ', 'харків', 'дніпро', 'запоріжжя']:
+                base_prob *= 1.2
+        
+        # Port/shipping attacks
+        if any(w in msg_lower for w in ['порт', 'морськ', 'судно', 'зерно']):
+            if target_type == 'port':
+                base_prob *= 1.5
+    
+    # Factor 11: Seasonal patterns (winter=energy, summer=ports)
+    try:
+        current_month = datetime.now().month
+        seasonal = SEASONAL_PATTERNS.get(current_month, {})
+        target_type_key = strategic.get('type', 'city')
+        seasonal_mult = seasonal.get(target_type_key, 1.0)
+        base_prob *= seasonal_mult
+    except:
+        pass
+    
+    # Factor 12: Special dates (holidays, anniversaries)
+    try:
+        current_month = datetime.now().month
+        current_day = datetime.now().day
+        special = SPECIAL_DATES.get((current_month, current_day))
+        if special:
+            if target_lower == 'київ':
+                base_prob *= special.get('capital_boost', 1.0)
+            else:
+                base_prob *= special.get('overall_boost', 1.0)
+    except:
+        pass
+    
+    # Factor 13: Air defense density (harder to hit well-defended cities)
+    air_defense = strategic.get('air_defense', 'none')
+    if threat_type in ['shahed', 'drone', 'cruise']:
+        # Drones/cruise more likely to target less defended areas
+        defense_mult = {
+            'heavy': 0.85,  # Heavy defense = attackers still try but less success
+            'medium': 0.95,
+            'light': 1.05,
+            'none': 1.1
+        }
+        base_prob *= defense_mult.get(air_defense, 1.0)
+    elif threat_type in ['ballistic', 'kinzhal']:
+        # Ballistic missiles less affected by air defense
+        pass
+    
+    # Factor 14: Population factor (bigger cities = more valuable targets)
+    population = strategic.get('population', 100000)
+    if population > 1000000:
+        base_prob *= 1.15
+    elif population > 500000:
+        base_prob *= 1.08
+    elif population < 50000:
+        base_prob *= 0.9
+    
+    # Factor 15: Bayesian prior from historical data
+    prior = PRIOR_TARGET_PROBABILITIES.get(target_lower, PRIOR_TARGET_PROBABILITIES.get('other', 0.05))
+    # Blend with prior using 20% weight
+    base_prob = base_prob * 0.8 + prior * 0.2
+    
+    # Clamp to 0-1 range
+    return min(1.0, max(0.0, base_prob))
+
+def predict_multiple_targets_with_ai(
+    source_region: str,
+    source_coords: tuple,
+    threat_type: str,
+    message_text: str = None,
+    top_n: int = 3
+) -> dict:
+    """
+    Advanced AI prediction returning multiple possible targets with probabilities.
+    
+    Returns:
+    {
+        'targets': [
+            {'name': 'Київ', 'probability': 0.75, 'distance_km': 250, 'eta': {...}},
+            {'name': 'Вінниця', 'probability': 0.15, 'distance_km': 150, 'eta': {...}},
+            {'name': 'Черкаси', 'probability': 0.10, 'distance_km': 100, 'eta': {...}}
+        ],
+        'primary_target': 'Київ',
+        'confidence': 0.75,
+        'reasoning': 'AI explanation...',
+        'speed_estimate_kmh': 150
+    }
+    """
+    if not source_coords:
+        return {'targets': [], 'primary_target': None, 'confidence': 0.0}
+    
+    patterns = _load_route_patterns()
+    
+    # Calculate probabilities for all strategic targets
+    candidates = []
+    for target_name, target_data in STRATEGIC_TARGETS.items():
+        target_coords = target_data['coords']
+        
+        probability = calculate_target_probability(
+            source_coords=source_coords,
+            target_name=target_name,
+            target_coords=target_coords,
+            threat_type=threat_type,
+            message_text=message_text,
+            patterns=patterns
+        )
+        
+        if probability > 0.05:  # Only include if >5% probability
+            distance = calculate_distance_km(
+                source_coords[0], source_coords[1],
+                target_coords[0], target_coords[1]
+            )
+            eta = estimate_eta_minutes(distance, threat_type)
+            
+            # Get ensemble prediction for this target
+            ensemble = ensemble_predict(
+                source_coords, target_name, target_coords,
+                threat_type, message_text, patterns
+            )
+            
+            candidates.append({
+                'name': target_name.title(),
+                'probability': round(probability, 3),
+                'distance_km': round(distance, 1),
+                'eta': eta,
+                'coords': target_coords,
+                'type': target_data['type'],
+                'ensemble_confidence': ensemble['confidence'],
+                'air_defense': target_data.get('air_defense', 'unknown'),
+                'population': target_data.get('population', 0)
+            })
+    
+    # Apply softmax normalization for better distribution
+    if candidates:
+        probs = [c['probability'] for c in candidates]
+        normalized = softmax_normalize(probs)
+        for i, c in enumerate(candidates):
+            c['probability'] = round(normalized[i], 3)
+    
+    # Sort by probability (descending)
+    candidates.sort(key=lambda x: x['probability'], reverse=True)
+    
+    # Take top N
+    top_targets = candidates[:top_n]
+    
+    # Predict waypoints for primary target
+    waypoints = []
+    if top_targets:
+        primary_target = top_targets[0]
+        waypoints = predict_waypoints(
+            source_coords, 
+            primary_target['coords'],
+            threat_type,
+            message_text
+        )
+    
+    # Apply source region boost
+    if message_text:
+        msg_lower = message_text.lower()
+        for src_name, src_info in SOURCE_REGIONS_INFO.items():
+            if src_name in msg_lower:
+                # Boost targets that are typical for this source
+                for target in top_targets:
+                    if target['name'].lower() in src_info.get('typical_targets', []):
+                        target['probability'] *= 1.3
+                        target['source_match'] = True
+                break
+    
+    # Re-normalize after source boost
+    total_prob = sum(c['probability'] for c in top_targets)
+    if total_prob > 0:
+        for c in top_targets:
+            c['probability'] = round(c['probability'] / total_prob, 3)
+    
+    # Re-sort
+    top_targets.sort(key=lambda x: x['probability'], reverse=True)
+    
+    # Use AI to refine and explain
+    reasoning = f"На основі напрямку з {source_region}"
+    
+    # Get current attack context
+    temporal = get_temporal_factors()
+    current_hour = temporal['hour']
+    current_weekday = temporal['weekday']
+    time_context = "ніч" if 0 <= current_hour < 6 else "ранок" if 6 <= current_hour < 12 else "день" if 12 <= current_hour < 18 else "вечір"
+    weekend = current_weekday >= 5
+    special_date = temporal.get('special_date')
+    
+    if GROQ_ENABLED and top_targets:
+        try:
+            _groq_rate_limit()
+            
+            # Get historical context
+            patterns = _load_route_patterns()
+            recent_attacks = []
+            if patterns.get('historical_routes'):
+                for r in patterns['historical_routes'][-10:]:
+                    recent_attacks.append(f"{r.get('source', '?')}→{r.get('target', '?')}")
+            
+            prompt = f"""Ти військовий аналітик з глибоким знанням тактики ворожих атак на Україну.
+
+КОНТЕКСТ АТАКИ:
+- Час: {time_context} ({current_hour}:00), {"вихідний" if weekend else "будній день"}
+- Тип загрози: {threat_type}
+- Регіон виявлення: {source_region}
+- Повідомлення: {message_text[:300] if message_text else 'немає'}
+- Останні атаки: {', '.join(recent_attacks[-5:]) if recent_attacks else 'немає даних'}
+
+МОЇ РОЗРАХУНКИ (статистична модель):
+{json.dumps([{'name': t['name'], 'prob': round(t['probability']*100), 'km': t['distance_km']} for t in top_targets], ensure_ascii=False)}
+
+ТВОЄ ЗАВДАННЯ:
+1. Оціни ймовірності моєї моделі
+2. Скоригуй на основі реальних патернів:
+   - Шахеди з півдня → 70% Київ
+   - Групові атаки вночі → Київ/Харків
+   - КАБи → прифронтові міста
+   - Балістика з Криму → Одеса/Миколаїв
+3. Поясни логіку коротко
+
+JSON формат:
+{{"adjusted": [{{"name": "Київ", "prob": 65}}, {{"name": "Вінниця", "prob": 20}}], "reason": "типовий нічний маршрут на столицю", "conf": 0.75}}"""
+
+            response = groq_client.chat.completions.create(
+                model=GROQ_MODEL,
+                messages=[
+                    {"role": "system", "content": "Ти експерт з аналізу траєкторій атак. Відповідай ТІЛЬКИ валідним JSON без markdown."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.15,
+                max_tokens=300
+            )
+            
+            result_text = response.choices[0].message.content.strip()
+            if result_text.startswith('```'):
+                result_text = re.sub(r'^```(?:json)?\s*', '', result_text)
+                result_text = re.sub(r'\s*```$', '', result_text)
+            
+            ai_result = json.loads(result_text)
+            
+            # Apply AI adjustments (new format)
+            if ai_result.get('adjusted'):
+                for adj in ai_result['adjusted']:
+                    for target in top_targets:
+                        if target['name'].lower() == adj.get('name', '').lower():
+                            # Convert percentage to decimal
+                            new_prob = adj.get('prob', 0)
+                            if isinstance(new_prob, (int, float)):
+                                target['probability'] = new_prob / 100 if new_prob > 1 else new_prob
+                            target['ai_adjusted'] = True
+                
+                # Re-sort after adjustments
+                top_targets.sort(key=lambda x: x['probability'], reverse=True)
+                
+                # Re-normalize
+                total_prob = sum(c['probability'] for c in top_targets)
+                if total_prob > 0:
+                    for c in top_targets:
+                        c['probability'] = round(c['probability'] / total_prob, 3)
+            
+            # Legacy format support
+            elif ai_result.get('adjusted_targets'):
+                for adj in ai_result['adjusted_targets']:
+                    for target in top_targets:
+                        if target['name'].lower() == adj.get('name', '').lower():
+                            target['probability'] = adj.get('probability', target['probability'])
+                            target['ai_adjusted'] = True
+                top_targets.sort(key=lambda x: x['probability'], reverse=True)
+            
+            reasoning = ai_result.get('reason') or ai_result.get('reasoning', reasoning)
+            
+            print(f"DEBUG AI Prediction refined: {[t['name'] + ':' + str(round(t['probability']*100)) + '%' for t in top_targets[:3]]}")
+            
+        except Exception as e:
+            print(f"DEBUG: AI target refinement failed: {e}")
+    
+    # Get primary target
+    primary = top_targets[0] if top_targets else None
+    
+    # Estimate speed based on threat type
+    speed_estimate = THREAT_SPEEDS.get(threat_type, THREAT_SPEEDS['unknown'])['avg']
+    
+    # Calculate overall confidence
+    confidence = 0.5
+    if primary:
+        # Higher probability = higher confidence
+        confidence = min(0.95, primary['probability'] * 1.2)
+        # Boost if AI adjusted
+        if primary.get('ai_adjusted'):
+            confidence = min(0.95, confidence * 1.1)
+        # Boost if ensemble confidence is high
+        if primary.get('ensemble_confidence', 0) > 0.7:
+            confidence = min(0.95, confidence * 1.1)
+    
+    # Get temporal context for response
+    temporal = get_temporal_factors()
+    special_date_info = None
+    if temporal.get('special_date'):
+        special_date_info = {
+            'name': temporal['special_date'],
+            'is_attack_boost': temporal.get('special_date_boost', 1.0) > 1.0
+        }
+    
+    return {
+        'targets': top_targets,
+        'primary_target': primary['name'] if primary else None,
+        'primary_coords': primary['coords'] if primary else None,
+        'confidence': round(confidence, 3),
+        'reasoning': reasoning,
+        'speed_estimate_kmh': speed_estimate,
+        'threat_type': threat_type,
+        'source_region': source_region,
+        'time_context': time_context if 'time_context' in dir() else None,
+        'waypoints': waypoints,  # Predicted intermediate points
+        'temporal_context': {
+            'hour': temporal['hour'],
+            'weekday': temporal['weekday'],
+            'month': temporal['month'],
+            'is_night': 0 <= temporal['hour'] < 6,
+            'is_weekend': temporal['weekday'] >= 5,
+            'special_date': special_date_info
+        }
+    }
+
+def get_enhanced_trajectory_prediction(trajectory_data: dict, message_text: str = None) -> dict:
+    """
+    Main function to get enhanced trajectory prediction with ETA and multi-targets.
+    
+    Takes existing trajectory_data from parse_trajectory_from_message() and enhances it.
+    
+    Returns enhanced trajectory with:
+    - eta: {min_minutes, avg_minutes, max_minutes, formatted}
+    - alternative_targets: [{name, probability, eta, distance_km}, ...]
+    - confidence_level: 'high' | 'medium' | 'low'
+    - speed_kmh: estimated speed
+    """
+    if not trajectory_data:
+        return None
+    
+    start_coords = trajectory_data.get('start')
+    end_coords = trajectory_data.get('end')
+    source_name = trajectory_data.get('source_name', '')
+    target_name = trajectory_data.get('target_name', '')
+    
+    # Determine threat type from message
+    threat_type = 'shahed'  # Default
+    if message_text:
+        msg_lower = message_text.lower()
+        if 'балістик' in msg_lower or 'искандер' in msg_lower or 'кінжал' in msg_lower:
+            threat_type = 'ballistic'
+        elif 'крилат' in msg_lower or 'калібр' in msg_lower or 'х-' in msg_lower:
+            threat_type = 'cruise'
+        elif 'каб' in msg_lower or 'керован' in msg_lower + 'бомб' in msg_lower:
+            threat_type = 'kab'
+        elif 'шахед' in msg_lower or 'герань' in msg_lower:
+            threat_type = 'shahed'
+        elif 'ракет' in msg_lower:
+            threat_type = 'rocket'
+    
+    enhanced = {
+        **trajectory_data,
+        'threat_type': threat_type,
+        'speed_kmh': THREAT_SPEEDS.get(threat_type, THREAT_SPEEDS['unknown'])['avg']
+    }
+    
+    # Calculate ETA to primary target
+    if start_coords and end_coords:
+        distance = calculate_distance_km(
+            start_coords[0], start_coords[1],
+            end_coords[0], end_coords[1]
+        )
+        enhanced['distance_km'] = round(distance, 1)
+        enhanced['eta'] = estimate_eta_minutes(distance, threat_type)
+    
+    # Get alternative targets
+    multi_pred = predict_multiple_targets_with_ai(
+        source_region=source_name,
+        source_coords=tuple(start_coords) if start_coords else None,
+        threat_type=threat_type,
+        message_text=message_text,
+        top_n=3
+    )
+    
+    if multi_pred.get('targets'):
+        enhanced['alternative_targets'] = multi_pred['targets']
+        enhanced['ai_reasoning'] = multi_pred.get('reasoning', '')
+        
+        # Set confidence level
+        confidence = multi_pred.get('confidence', 0.5)
+        if confidence >= 0.7:
+            enhanced['confidence_level'] = 'high'
+        elif confidence >= 0.4:
+            enhanced['confidence_level'] = 'medium'
+        else:
+            enhanced['confidence_level'] = 'low'
+        enhanced['confidence'] = confidence
+    
+    print(f"DEBUG Enhanced Trajectory: {threat_type}, ETA={enhanced.get('eta', {}).get('formatted')}, confidence={enhanced.get('confidence_level')}")
+    
+    return enhanced
 
 def ai_correct_route(route_id: str, correction_data: dict):
     """
@@ -9894,7 +12365,24 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         else:
             threat_type, icon = 'shahed', 'icon_drone.svg'
         
+        # =====================================================================
+        # ENHANCED AI PREDICTION: Add ETA, multi-targets, confidence
+        # =====================================================================
+        enhanced_trajectory = get_enhanced_trajectory_prediction(trajectory_data, text)
+        if enhanced_trajectory:
+            trajectory_data = enhanced_trajectory
+            # Update icon based on refined threat type
+            if enhanced_trajectory.get('threat_type') == 'ballistic':
+                icon = 'icon_balistic.svg'
+            elif enhanced_trajectory.get('threat_type') == 'cruise':
+                icon = 'icon_rocket.svg'
+        
         place_name = f"{trajectory_data.get('target_name', 'Ціль')} ← {trajectory_data.get('source_name', 'Джерело')}"
+        
+        # Add ETA to place name if available
+        eta_info = trajectory_data.get('eta', {})
+        if eta_info.get('formatted'):
+            place_name += f" (ETA: {eta_info['formatted']})"
         
         trajectory_marker = {
             'id': str(mid),
@@ -9909,6 +12397,20 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             'source_match': f'trajectory_{trajectory_data.get("kind", "unknown")}',
             'trajectory': trajectory_data
         }
+        
+        # Add enhanced prediction data
+        if trajectory_data.get('eta'):
+            trajectory_marker['eta'] = trajectory_data['eta']
+        if trajectory_data.get('alternative_targets'):
+            trajectory_marker['alternative_targets'] = trajectory_data['alternative_targets']
+        if trajectory_data.get('confidence'):
+            trajectory_marker['prediction_confidence'] = trajectory_data['confidence']
+        if trajectory_data.get('confidence_level'):
+            trajectory_marker['confidence_level'] = trajectory_data['confidence_level']
+        if trajectory_data.get('distance_km'):
+            trajectory_marker['distance_km'] = trajectory_data['distance_km']
+        if trajectory_data.get('speed_kmh'):
+            trajectory_marker['speed_kmh'] = trajectory_data['speed_kmh']
         
         # AUTO-RECORD: Save observed route for pattern learning (non-blocking)
         try:
@@ -19735,6 +22237,390 @@ def api_get_route_history():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/ai/threat-analysis', methods=['POST'])
+def api_ai_threat_analysis():
+    """
+    Advanced AI threat analysis endpoint.
+    
+    Request body:
+    {
+        "active_threats": [...],  // List of current threats
+        "region": "...",          // Optional: specific region to assess
+        "message": "..."          // Optional: latest message text
+    }
+    
+    Returns comprehensive threat analysis.
+    """
+    try:
+        data = request.get_json() or {}
+        active_threats = data.get('active_threats', [])
+        region = data.get('region')
+        message = data.get('message')
+        
+        result = {}
+        
+        # Analyze attack pattern
+        patterns = _load_route_patterns()
+        attack_analysis = analyze_attack_pattern(active_threats, patterns)
+        result['attack_pattern'] = attack_analysis
+        
+        # Detect decoys
+        if active_threats:
+            threats_with_decoy = detect_decoy_threats(active_threats.copy())
+            result['decoy_analysis'] = {
+                'threats': threats_with_decoy,
+                'high_decoy_count': sum(1 for t in threats_with_decoy if t.get('decoy_probability', 0) > 0.3)
+            }
+        
+        # Prioritize threats
+        if active_threats:
+            prioritized = prioritize_threats(active_threats.copy())
+            result['priority_ranking'] = [
+                {
+                    'name': t.get('name', t.get('target', 'Unknown')),
+                    'type': t.get('type', t.get('threat_type')),
+                    'priority_score': t.get('priority_score', 0)
+                }
+                for t in prioritized[:5]
+            ]
+        
+        # Regional assessment
+        if region:
+            result['regional_assessment'] = get_regional_threat_assessment(region, active_threats)
+        
+        # Prediction accuracy stats
+        result['prediction_stats'] = get_prediction_accuracy_stats()
+        
+        # Temporal context
+        result['temporal_context'] = get_temporal_factors()
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/ai/predict-target', methods=['POST'])
+def api_ai_predict_target():
+    """
+    AI-powered target prediction endpoint.
+    
+    Request body:
+    {
+        "source_region": "одеська",
+        "source_coords": [46.4, 30.7],  // Optional
+        "threat_type": "shahed",
+        "message": "...",  // Optional: message text
+        "top_n": 5  // Optional: number of predictions
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        source_region = data.get('source_region', '')
+        source_coords = data.get('source_coords')
+        threat_type = data.get('threat_type', 'shahed')
+        message = data.get('message', '')
+        top_n = data.get('top_n', 5)
+        
+        if source_coords:
+            source_coords = tuple(source_coords)
+        
+        prediction = predict_multiple_targets_with_ai(
+            source_region=source_region,
+            source_coords=source_coords,
+            threat_type=threat_type,
+            message_text=message,
+            top_n=top_n
+        )
+        
+        # Add confidence intervals
+        for target in prediction.get('targets', []):
+            ci = calculate_confidence_interval(
+                target['probability'],
+                sample_size=20  # Based on historical data
+            )
+            target['confidence_interval'] = ci
+        
+        return jsonify(prediction)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/ai/learn', methods=['POST'])
+def api_ai_learn_outcome():
+    """
+    Record attack outcome for learning.
+    
+    Request body:
+    {
+        "attack_id": "...",
+        "actual_targets": ["Київ", "Харків"],
+        "predicted_targets": [...],
+        "threat_type": "shahed",
+        "source_region": "одеська",
+        "timestamp": "2024-01-15T03:30:00"
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        
+        attack_id = data.get('attack_id', f"attack_{int(time.time())}")
+        actual_targets = data.get('actual_targets', [])
+        predicted_targets = data.get('predicted_targets', [])
+        threat_type = data.get('threat_type', 'unknown')
+        source_region = data.get('source_region', '')
+        timestamp = data.get('timestamp')
+        
+        if not actual_targets:
+            return jsonify({'error': 'actual_targets required'}), 400
+        
+        result = learn_from_attack_outcome(
+            attack_id=attack_id,
+            actual_targets=actual_targets,
+            predicted_targets=predicted_targets,
+            threat_type=threat_type,
+            source_region=source_region,
+            timestamp=timestamp
+        )
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/ai/accuracy', methods=['GET'])
+def api_ai_accuracy_stats():
+    """Get AI prediction accuracy statistics"""
+    try:
+        stats = get_prediction_accuracy_stats()
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/geocode/smart', methods=['POST'])
+def api_smart_geocode():
+    """
+    Smart geocoding endpoint with AI disambiguation.
+    
+    Request body:
+    {
+        "city": "Михайлівка",
+        "region": "запорізька",  // optional
+        "message": "БпЛА з Криму...",  // optional context
+        "source_region": "чорне море"  // optional
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        city = data.get('city', '')
+        region = data.get('region')
+        message = data.get('message')
+        source_region = data.get('source_region')
+        
+        if not city:
+            return jsonify({'error': 'city required'}), 400
+        
+        coords = smart_geocode(city, region, message, source_region)
+        
+        if coords:
+            return jsonify({
+                'city': city,
+                'coords': list(coords),
+                'lat': coords[0],
+                'lng': coords[1],
+                'found': True
+            })
+        else:
+            return jsonify({
+                'city': city,
+                'found': False,
+                'suggestions': []
+            })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/geocode/batch', methods=['POST'])
+def api_batch_geocode():
+    """
+    Batch geocoding endpoint.
+    
+    Request body:
+    {
+        "locations": [
+            {"city": "Михайлівка", "region": "запорізька"},
+            {"city": "Суми"}
+        ],
+        "message": "...",  // optional context
+        "source_region": "..."  // optional
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        locations = data.get('locations', [])
+        message = data.get('message')
+        source_region = data.get('source_region')
+        
+        if not locations:
+            return jsonify({'error': 'locations required'}), 400
+        
+        if len(locations) > 50:
+            return jsonify({'error': 'max 50 locations per request'}), 400
+        
+        results = batch_geocode(locations, message, source_region)
+        
+        return jsonify({
+            'results': results,
+            'total': len(results),
+            'resolved': sum(1 for r in results if r.get('resolved'))
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/geocode/learn', methods=['POST'])
+def api_geocode_learn():
+    """
+    Learn from geocoding correction.
+    
+    Request body:
+    {
+        "query": "михайлівка",
+        "coords": [47.123, 35.456],
+        "oblast": "Запорізька область"
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        query = data.get('query', '')
+        coords = data.get('coords', [])
+        oblast = data.get('oblast')
+        
+        if not query or len(coords) != 2:
+            return jsonify({'error': 'query and coords [lat, lng] required'}), 400
+        
+        learn_geocode_correction(query, tuple(coords), oblast, source='api')
+        
+        return jsonify({'status': 'ok', 'learned': query})
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/geocode/stats', methods=['GET'])
+def api_geocode_stats():
+    """Get geocoding statistics"""
+    try:
+        stats = get_geocode_stats()
+        
+        # Add Nominatim stats if available
+        if NOMINATIM_AVAILABLE:
+            try:
+                from nominatim_geocoder import get_cache_stats
+                stats['nominatim'] = get_cache_stats()
+            except:
+                pass
+        
+        return jsonify(stats)
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/geocode/disambiguate', methods=['POST'])
+def api_disambiguate_city():
+    """
+    Disambiguate city that exists in multiple oblasts.
+    
+    Request body:
+    {
+        "city": "Михайлівка",
+        "message": "БпЛА з Криму курсом на...",  // context
+        "source_region": "чорне море"
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        city = data.get('city', '')
+        message = data.get('message')
+        source_region = data.get('source_region')
+        context_region = data.get('context_region')
+        
+        if not city:
+            return jsonify({'error': 'city required'}), 400
+        
+        # Check if city is ambiguous
+        city_lower = normalize_city_name(city)
+        if city_lower not in AMBIGUOUS_CITIES:
+            return jsonify({
+                'city': city,
+                'ambiguous': False,
+                'resolved_oblast': None
+            })
+        
+        possible_oblasts = AMBIGUOUS_CITIES[city_lower]
+        resolved = disambiguate_city(city, context_region, source_region, message)
+        
+        return jsonify({
+            'city': city,
+            'ambiguous': True,
+            'possible_oblasts': possible_oblasts,
+            'resolved_oblast': resolved,
+            'confidence': 0.8 if resolved else 0.3
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/geocode/normalize', methods=['POST'])
+def api_normalize_city():
+    """
+    Normalize city name (fix typos, aliases, case forms).
+    
+    Request body:
+    {
+        "city": "Суму",
+        "cities": ["Суму", "Полтаву", "Харкова"]  // batch mode
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        city = data.get('city')
+        cities = data.get('cities', [])
+        
+        if city:
+            normalized = normalize_city_name(city)
+            return jsonify({
+                'original': city,
+                'normalized': normalized,
+                'changed': city.lower() != normalized
+            })
+        elif cities:
+            results = []
+            for c in cities[:100]:  # Limit to 100
+                norm = normalize_city_name(c)
+                results.append({
+                    'original': c,
+                    'normalized': norm,
+                    'changed': c.lower() != norm
+                })
+            return jsonify({'results': results})
+        else:
+            return jsonify({'error': 'city or cities required'}), 400
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ==================== END AI GEOCODING API ====================
 
 
 # ==================== END AI ROUTE MANAGEMENT API ====================
