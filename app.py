@@ -7182,6 +7182,12 @@ POLTAVA_CITY_COORDS = {
     # Keep old incorrect entry as fallback for other messages, but correct default
     'златопіль': (49.9800, 35.5300),  # Override with correct Kharkiv oblast coordinates
     
+    # Вільхівка (Харківська область - Чугуївський район) - NOT Volyn!
+    'вільхівка (харківська обл.)': (50.0284, 36.3931),
+    'вільхівка харківська': (50.0284, 36.3931),
+    'вільхівка харківська обл.': (50.0284, 36.3931),
+    'вільхівка харківщина': (50.0284, 36.3931),
+    
     # Чернігівська область - додаткові міста
     'любеч': (51.4961, 30.2675),  # Любеч, Чернігівська область
     'любеч чернігівська': (51.4961, 30.2675),
@@ -11946,12 +11952,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         #   "2х БПЛА Барвінкове (Харківська обл.) Загроза застосування БПЛА."
         #   "БПЛА Єланець (Миколаївська обл.) Загроза застосування БПЛА."
         #   "Димер (Київська обл.) Загроза застосування БПЛА."
-        mapstransler_pattern = r'^[^\w]*(\d+)[xх×]?\s*БПЛА\s+([А-ЯІЇЄЁа-яіїєё\'\'\-\s]+?)\s*\(([^)]+обл[^)]*)\)'
+        #   "БПЛА Федорівку/Піщане (Харківська обл.)" - multiple cities with /
+        mapstransler_pattern = r'^[^\w]*(\d+)[xх×]?\s*БПЛА\s+([А-ЯІЇЄЁа-яіїєё\'\'\-\s/]+?)\s*\(([^)]+обл[^)]*)\)'
         mapstransler_match = re.search(mapstransler_pattern, head, re.IGNORECASE)
         
         # Also try without count prefix
         if not mapstransler_match:
-            mapstransler_pattern2 = r'^[^\w]*БПЛА\s+([А-ЯІЇЄЁа-яіїєё\'\'\-\s]+?)\s*\(([^)]+обл[^)]*)\)'
+            mapstransler_pattern2 = r'^[^\w]*БПЛА\s+([А-ЯІЇЄЁа-яіїєё\'\'\-\s/]+?)\s*\(([^)]+обл[^)]*)\)'
             mapstransler_match2 = re.search(mapstransler_pattern2, head, re.IGNORECASE)
             if mapstransler_match2:
                 city_raw = mapstransler_match2.group(1).strip()
@@ -11966,12 +11973,21 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             city_raw = mapstransler_match.group(2).strip()
             oblast_raw = mapstransler_match.group(3).strip()
         
+        # Handle multiple cities separated by / (take first one)
+        if city_raw and '/' in city_raw:
+            cities_list = city_raw.split('/')
+            city_raw = cities_list[0].strip()  # Take first city
+            add_debug_log(f"Multiple cities in message, using first: '{city_raw}' from {cities_list}", "mapstransler")
+        
         # Also try format without БПЛА prefix: "Димер (Київська обл.) Загроза..."
         if not city_raw:
-            no_bpla_pattern = r'^[^\w]*([А-ЯІЇЄЁа-яіїєё][А-ЯІЇЄЁа-яіїєё\'\'\-\s]+?)\s*\(([^)]+обл[^)]*)\)\s*загроза'
+            no_bpla_pattern = r'^[^\w]*([А-ЯІЇЄЁа-яіїєё][А-ЯІЇЄЁа-яіїєё\'\'\-\s/]+?)\s*\(([^)]+обл[^)]*)\)\s*загроза'
             no_bpla_match = re.search(no_bpla_pattern, head, re.IGNORECASE)
             if no_bpla_match:
                 city_raw = no_bpla_match.group(1).strip()
+                # Handle multiple cities
+                if '/' in city_raw:
+                    city_raw = city_raw.split('/')[0].strip()
                 oblast_raw = no_bpla_match.group(2).strip()
                 uav_count = 1
         
