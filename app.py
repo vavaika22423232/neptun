@@ -9121,6 +9121,22 @@ def _get_region_center(region_name):
     if region_lower in OBLAST_CENTERS:
         return OBLAST_CENTERS[region_lower]
     
+    # Normalize instrumental case "над вінницькою областю" → "вінницька область"
+    # Pattern: Xькою областю → Xька область
+    instrumental_match = re.match(r'^(.+?)(ькою|ською|цькою)\s*(областю|обл\.?)$', region_lower)
+    if instrumental_match:
+        base = instrumental_match.group(1)
+        # Convert back to nominative: ькою→ька, ською→ська, цькою→цька
+        suffix_map = {'ькою': 'ька', 'ською': 'ська', 'цькою': 'цька'}
+        new_suffix = suffix_map.get(instrumental_match.group(2), 'ька')
+        normalized = f"{base}{new_suffix} область"
+        if normalized in OBLAST_CENTERS:
+            return OBLAST_CENTERS[normalized]
+        # Try without ' область'
+        normalized_short = f"{base}{new_suffix}"
+        if normalized_short in OBLAST_CENTERS:
+            return OBLAST_CENTERS[normalized_short]
+    
     # Try removing common endings and searching again
     # Ukrainian oblast name endings: -щина/-щини/-щині/-щину, -ччина/-ччини/-ччині
     base_region = region_lower
@@ -9153,12 +9169,29 @@ def _get_city_coords(city_name):
         return CITY_COORDS[city_lower]
     
     # Try variations without endings
-    endings = ['а', 'у', 'ом', 'і', 'ів', 'ами', 'е', 'ої', 'ою']
+    endings = ['а', 'у', 'ом', 'і', 'ів', 'ами', 'е', 'ої', 'ою', 'и']
     for ending in endings:
         if city_lower.endswith(ending) and len(city_lower) > len(ending) + 2:
             base = city_lower[:-len(ending)]
             if base in CITY_COORDS:
                 return CITY_COORDS[base]
+            # Handle vowel alternations: одеси → одес → одеса
+            if ending == 'и':
+                base_a = base + 'а'  # одеси → одеса
+                if base_a in CITY_COORDS:
+                    return CITY_COORDS[base_a]
+    
+    # Handle Ukrainian vowel alternation in genitive: миколаєва → миколаїв
+    # Pattern: base + 'єва' (genitive) → base + 'їв' (nominative)
+    if city_lower.endswith('єва'):
+        base = city_lower[:-3] + 'їв'  # миколаєва → миколаїв
+        if base in CITY_COORDS:
+            return CITY_COORDS[base]
+    
+    # Also try simple base search for partial matches
+    for key, coords in CITY_COORDS.items():
+        if city_lower.startswith(key) or key.startswith(city_lower.rstrip('аеоуіїю')):
+            return coords
     
     return None
 
@@ -9501,6 +9534,50 @@ def parse_trajectory_from_message(text):
                 'source_name': source_region.title(),
                 'target_name': target_city.title(),
                 'kind': 'region_to_city'
+            }
+    
+    # =========================================================================
+    # Pattern 7b: "БпЛА над [регіон] курсом на [напрямок]"
+    # Example: "🛵 Шахед над Вінницькою областю курсом на північ"
+    # =========================================================================
+    p7b = re.search(r'(?:група\s+)?(?:бпла|шахед|дрон)\s+(?:над|на)\s+([а-яіїєґ]+(?:ою|ій)\s+област[іиюь]|[а-яіїєґ]+(щин|ччин)[іиою])\s*,?\s*курсом?\s+на\s+(північ|південь|схід|захід|північний[\s-]*схід|північний[\s-]*захід|південний[\s-]*схід|південний[\s-]*захід)', text_lower)
+    if p7b:
+        source_region = p7b.group(1)
+        direction = p7b.group(3)
+        
+        source_coords = _get_region_center(source_region)
+        if source_coords:
+            direction_vec = _get_direction_vector(direction)
+            if direction_vec:
+                end_lat = source_coords[0] + direction_vec[0] * 0.5
+                end_lng = source_coords[1] + direction_vec[1] * 0.5
+                return {
+                    'start': [source_coords[0], source_coords[1]],
+                    'end': [end_lat, end_lng],
+                    'source_name': source_region.title(),
+                    'target_name': f'курс на {direction}',
+                    'kind': 'region_course_direction'
+                }
+    
+    # =========================================================================
+    # Pattern 7c: "Група БпЛА на [регіон] в напрямку [місто]"
+    # Example: "🛵 Група БпЛА на Одещині в напрямку Миколаєва"
+    # =========================================================================
+    p7c = re.search(r'(?:група\s+)?(?:бпла|шахед|дрон)\s+(?:на|над)\s+([а-яіїєґ]+(щин|ччин)[іиї])\s*,?\s*(?:в|у)\s+напрямку\s+(?:м\.?|н\.?п\.?)?\s*([а-яіїєґ\'\-]+)', text_lower)
+    if p7c:
+        source_region = p7c.group(1)
+        target_city = p7c.group(3).strip()
+        
+        source_coords = _get_region_center(source_region)
+        target_coords = _get_city_coords(target_city)
+        
+        if source_coords and target_coords:
+            return {
+                'start': [source_coords[0], source_coords[1]],
+                'end': [target_coords[0], target_coords[1]],
+                'source_name': source_region.title(),
+                'target_name': target_city.title(),
+                'kind': 'region_towards_city_v2'
             }
     
     # =========================================================================
@@ -11717,7 +11794,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         if ('тактичн' in text_lower or 'авіаці' in text_lower or 'авиац' in text_lower) and (
             'північно-східн' in text_lower or 'північно східн' in text_lower or 'северо-восточ' in text_lower or 'північного-сходу' in text_lower
         ):
-            lat, lng = 50.9, 34.8  # Near Sumy city (in Ukrainian territory)
+            lat, lng = 51.0, 36.5  # On Russian territory near Belgorod (before Ukraine border)
             all_threats.append({
                 'id': f"{mid}_ne_multi", 'place': 'Північно-східний напрямок', 'lat': lat, 'lng': lng,
                 'threat_type': 'avia', 'text': text[:500], 'date': date_str, 'channel': channel,
@@ -15616,14 +15693,14 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             'threat_type': 'avia', 'text': original_text[:500], 'date': date_str, 'channel': channel,
             'marker_icon': 'avia.png', 'source_match': 'southeast_aviation'
         }]
-    # North-east tactical aviation activity - coordinates moved to Ukrainian territory
-    # Original coordinates (50.4, 36.8) were too close to Russian border
+    # North-east tactical aviation activity - coordinates on Russian territory before Ukraine border
+    # Aviation threats come FROM Russia, so marker should be in Russia
     # SKIP if this is a multi-threat message (handled separately above)
     if ('тактичн' in se_phrase or 'авіаці' in se_phrase or 'авиац' in se_phrase) and (
         'північно-східн' in se_phrase or 'північно східн' in se_phrase or 'северо-восточ' in se_phrase or 'північного-сходу' in se_phrase
     ) and not ('🛬' in original_text and '🛸' in original_text):
-        # Moved coordinates to Sumy area (clearly in Ukrainian territory)
-        lat, lng = 50.9, 34.8  # Near Sumy city
+        # Coordinates on Russian territory (Belgorod area) - aviation source location
+        lat, lng = 51.0, 36.5  # Near Belgorod, Russia (before Ukraine border)
         return [{
             'id': f"{mid}_ne", 'place': 'Північно-східний напрямок', 'lat': lat, 'lng': lng,
             'threat_type': 'avia', 'text': original_text[:500], 'date': date_str, 'channel': channel,
