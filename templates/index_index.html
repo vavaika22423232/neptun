@@ -323,8 +323,8 @@
     .seo-content-block.collapsed { max-height: 44px; }
     /* Prevent layout shift from fonts */
     .material-icons { font-family: 'Material Icons'; font-size: 24px; width: 24px; height: 24px; display: inline-block; }
-    /* Prevent FOUC */
-    .navbar, .donate-modal, .faq-modal { opacity: 0; animation: fadeIn 0.3s ease-in-out forwards; animation-delay: 0.1s; }
+    /* Prevent FOUC - only navbar needs initial fade */
+    .navbar { opacity: 0; animation: fadeIn 0.3s ease-in-out forwards; animation-delay: 0.1s; }
     @keyframes fadeIn { to { opacity: 1; } }
   </style>
   
@@ -1655,14 +1655,45 @@
     
     /* Support button */
     .nav-actions .support-btn {
-      background: rgba(251, 113, 133, 0.12);
-      color: #fb7185 !important;
-      border: 1px solid rgba(251, 113, 133, 0.25);
+      background: linear-gradient(135deg, rgba(251, 113, 133, 0.2) 0%, rgba(244, 63, 94, 0.15) 100%);
+      color: #fff !important;
+      border: 1px solid rgba(251, 113, 133, 0.4);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .nav-actions .support-btn::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+      animation: supportShine 3s ease-in-out infinite;
+    }
+    
+    @keyframes supportShine {
+      0%, 100% { left: -100%; }
+      50% { left: 100%; }
     }
     
     .nav-actions .support-btn:hover {
-      background: rgba(251, 113, 133, 0.2);
-      border-color: rgba(251, 113, 133, 0.4);
+      background: linear-gradient(135deg, rgba(251, 113, 133, 0.35) 0%, rgba(244, 63, 94, 0.25) 100%);
+      border-color: rgba(251, 113, 133, 0.6);
+      transform: scale(1.02);
+    }
+    
+    .nav-actions .support-btn span {
+      background: linear-gradient(135deg, #fda4af, #fb7185);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      font-weight: 600;
+    }
+    
+    .nav-actions .support-btn i {
+      color: #fb7185;
     }
     
     @keyframes appButtonPulse {
@@ -1765,12 +1796,12 @@
     }
     
     @keyframes heartPulse {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.1); }
+      0%, 100% { transform: scale(1); color: #fb7185; }
+      50% { transform: scale(1.2); color: #f43f5e; }
     }
     
     .nav-actions .support-btn i {
-      animation: heartPulse 2s ease infinite;
+      animation: heartPulse 1.5s ease infinite;
     }
     
     /* Donate Modal - Minimal Glass Style */
@@ -2695,27 +2726,6 @@
         </div>
       </div>
       
-      <div class="faq-item faq-warning">
-        <div class="faq-question">
-          <i class="material-icons">block</i>
-          Що заборонено?
-        </div>
-        <div class="faq-answer">
-          <strong>⛔ Категорично заборонено використовувати карту для переливання аудиторії на власні телеграм-канали чи інші ресурси.</strong><br><br>
-          Порушники будуть заблоковані без попередження. Комерційне використання потребує окремої домовленості — зверніться до нас через кнопку "Комерційне використання".
-        </div>
-      </div>
-      
-      <div class="faq-item">
-        <div class="faq-question">
-          <i class="material-icons">business</i>
-          Як використовувати карту для бізнесу?
-        </div>
-        <div class="faq-answer">
-          Якщо ви хочете транслювати мапу в TikTok або іншому сервісі — потрібно придбати підписку. Натисніть кнопку "Комерційне використання" в нижньому меню та заповніть заявку.
-        </div>
-      </div>
-      
       <div class="faq-item">
         <div class="faq-question">
           <i class="material-icons">favorite</i>
@@ -2763,16 +2773,6 @@
         </div>
         <div class="faq-answer">
           Карта охоплює всі області України — від Закарпаття до Луганщини. Ми відстежуємо тривоги в усіх 24 областях, а також у Києві та тимчасово окупованих територіях.
-        </div>
-      </div>
-      
-      <div class="faq-item">
-        <div class="faq-question">
-          <i class="material-icons">code</i>
-          Чи є API для розробників?
-        </div>
-        <div class="faq-answer">
-          Так, ми надаємо API для комерційних партнерів. Для отримання доступу до API заповніть форму комерційного використання або зв'яжіться з нами в Telegram.
         </div>
       </div>
       
@@ -4526,15 +4526,31 @@
     // ========== DONATE FUNCTIONS ==========
     let donateJustOpened = false;
     
+    // DEBUG: Watch for class changes on donateModal
+    setTimeout(() => {
+      const modal = document.getElementById('donateModal');
+      if (modal) {
+        const observer = new MutationObserver((mutations) => {
+          mutations.forEach((m) => {
+            if (m.attributeName === 'class') {
+              console.log('donateModal class changed to:', modal.className, 'stack:', new Error().stack);
+            }
+          });
+        });
+        observer.observe(modal, { attributes: true });
+      }
+    }, 100);
+    
     function toggleDonate(show = null) {
       const modal = document.getElementById('donateModal');
+      console.log('toggleDonate called, show=', show, 'current active=', modal?.classList.contains('active'));
       if (modal) {
         if (show === false) {
           modal.classList.remove('active');
         } else if (show === true) {
           modal.classList.add('active');
           donateJustOpened = true;
-          setTimeout(() => { donateJustOpened = false; }, 100);
+          setTimeout(() => { donateJustOpened = false; }, 300);
         } else {
           // Toggle
           if (modal.classList.contains('active')) {
@@ -4542,7 +4558,7 @@
           } else {
             modal.classList.add('active');
             donateJustOpened = true;
-            setTimeout(() => { donateJustOpened = false; }, 100);
+            setTimeout(() => { donateJustOpened = false; }, 300);
           }
         }
       }
@@ -4567,6 +4583,11 @@
       const faqModal = document.getElementById('faqModal');
       if (e.target === faqModal) {
         toggleFAQ(false);
+      }
+      // Close donate modal on outside click
+      const donateModal = document.getElementById('donateModal');
+      if (e.target === donateModal && !donateJustOpened) {
+        toggleDonate(false);
       }
     });
     
@@ -5253,6 +5274,11 @@
     }
     .bottom-link i {
       font-size: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
     }
     .bottom-link.app {
       background: rgba(52, 211, 153, 0.15);
@@ -5287,6 +5313,8 @@
       }
       .bottom-link i {
         font-size: 20px;
+        width: 20px;
+        height: 20px;
       }
     }
   </style>
