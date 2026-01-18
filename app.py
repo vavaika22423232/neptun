@@ -9275,20 +9275,35 @@ def _ai_trajectory_to_coords(ai_result):
     
     # =========================================================================
     # AI ROUTE PREDICTION: If we have source but no target, use AI to predict
+    # MAX DISTANCE: 300 km (only neighboring regions) - prevents Kharkiv->Lutsk errors
     # =========================================================================
+    MAX_PREDICTION_DISTANCE_KM = 300  # ~neighboring oblast
+    
     if start_coords and not end_coords and GROQ_ENABLED:
         try:
             prediction = predict_route_with_ai(source_name or '')
             if prediction and prediction.get('confidence', 0) >= 0.6:
                 predicted_targets = prediction.get('predicted_targets', [])
                 if predicted_targets:
-                    # Use first predicted target
-                    first_target = predicted_targets[0]
-                    predicted_coords = _get_region_center(first_target) or _get_city_coords(first_target)
-                    if predicted_coords:
-                        end_coords = predicted_coords
-                        target_name = first_target + ' (прогноз)'
-                        print(f"DEBUG AI Route Prediction used: {source_name} -> {first_target} (conf={prediction.get('confidence')})")
+                    # Try each predicted target, use first within distance limit
+                    for target in predicted_targets:
+                        predicted_coords = _get_region_center(target) or _get_city_coords(target)
+                        if predicted_coords:
+                            # Calculate distance between start and predicted end
+                            from math import radians, sin, cos, sqrt, atan2
+                            lat1, lon1 = radians(start_coords[0]), radians(start_coords[1])
+                            lat2, lon2 = radians(predicted_coords[0]), radians(predicted_coords[1])
+                            dlat, dlon = lat2 - lat1, lon2 - lon1
+                            a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+                            distance_km = 6371 * 2 * atan2(sqrt(a), sqrt(1-a))
+                            
+                            if distance_km <= MAX_PREDICTION_DISTANCE_KM:
+                                end_coords = predicted_coords
+                                target_name = target + ' (прогноз)'
+                                print(f"DEBUG AI Route Prediction used: {source_name} -> {target} ({distance_km:.0f}km, conf={prediction.get('confidence')})")
+                                break
+                            else:
+                                print(f"DEBUG AI Route Prediction REJECTED (too far): {source_name} -> {target} ({distance_km:.0f}km > {MAX_PREDICTION_DISTANCE_KM}km)")
         except Exception as e:
             print(f"DEBUG: AI route prediction failed: {e}")
     
@@ -11953,12 +11968,14 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         #   "БПЛА Єланець (Миколаївська обл.) Загроза застосування БПЛА."
         #   "Димер (Київська обл.) Загроза застосування БПЛА."
         #   "БПЛА Федорівку/Піщане (Харківська обл.)" - multiple cities with /
-        mapstransler_pattern = r'^[^\w]*(\d+)[xх×]?\s*БПЛА\s+([А-ЯІЇЄЁа-яіїєё\'\'\-\s/]+?)\s*\(([^)]+обл[^)]*)\)'
+        #   "БПЛА Вільхівку⚠ (Харківська обл.)" - emoji after city name
+        # Note: [^(]* allows any chars (including emoji) between city name and (
+        mapstransler_pattern = r'^[^\w]*(\d+)[xх×]?\s*БПЛА\s+([А-ЯІЇЄЁа-яіїєё\'\'\-\s/]+)[^(]*\(([^)]+обл[^)]*)\)'
         mapstransler_match = re.search(mapstransler_pattern, head, re.IGNORECASE)
         
         # Also try without count prefix
         if not mapstransler_match:
-            mapstransler_pattern2 = r'^[^\w]*БПЛА\s+([А-ЯІЇЄЁа-яіїєё\'\'\-\s/]+?)\s*\(([^)]+обл[^)]*)\)'
+            mapstransler_pattern2 = r'^[^\w]*БПЛА\s+([А-ЯІЇЄЁа-яіїєё\'\'\-\s/]+)[^(]*\(([^)]+обл[^)]*)\)'
             mapstransler_match2 = re.search(mapstransler_pattern2, head, re.IGNORECASE)
             if mapstransler_match2:
                 city_raw = mapstransler_match2.group(1).strip()
@@ -11981,7 +11998,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         
         # Also try format without БПЛА prefix: "Димер (Київська обл.) Загроза..."
         if not city_raw:
-            no_bpla_pattern = r'^[^\w]*([А-ЯІЇЄЁа-яіїєё][А-ЯІЇЄЁа-яіїєё\'\'\-\s/]+?)\s*\(([^)]+обл[^)]*)\)\s*загроза'
+            no_bpla_pattern = r'^[^\w]*([А-ЯІЇЄЁа-яіїєё][А-ЯІЇЄЁа-яіїєё\'\'\-\s/]+)[^(]*\(([^)]+обл[^)]*)\)\s*загроза'
             no_bpla_match = re.search(no_bpla_pattern, head, re.IGNORECASE)
             if no_bpla_match:
                 city_raw = no_bpla_match.group(1).strip()
