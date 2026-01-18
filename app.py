@@ -24585,6 +24585,26 @@ def get_alarm_stats():
             'avg_duration_min': 0,
         })
 
+# =============================================================================
+# DEBUG: Route Patterns Viewer
+# =============================================================================
+@app.route('/api/ai/route-patterns')
+def api_route_patterns():
+    """View AI learned route patterns"""
+    try:
+        patterns = _load_route_patterns()
+        return jsonify({
+            'status': 'ok',
+            'file': ROUTE_PATTERNS_FILE,
+            'patterns_count': len(patterns.get('patterns', {})),
+            'historical_routes_count': len(patterns.get('historical_routes', [])),
+            'ai_corrections_count': len(patterns.get('ai_corrections', [])),
+            'last_updated': patterns.get('last_updated'),
+            'data': patterns
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
 if __name__ == '__main__':
     # Local / container direct run (not needed if a WSGI server like gunicorn is used)
