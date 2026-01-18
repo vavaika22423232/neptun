@@ -192,7 +192,7 @@ _groq_daily_cooldown_until = 0  # If set, skip ALL AI until this timestamp
 _groq_429_backoff = 0  # Exponential backoff counter
 _groq_requests_this_minute = 0  # Counter for requests in current minute
 _groq_minute_start = 0  # Start of current minute window
-_groq_max_per_minute = 15  # Max 15 requests per minute (was unlimited)
+_groq_max_per_minute = 5  # Max 5 requests per minute (cost optimization)
 
 def _get_groq_cache_key(text):
     """Generate cache key for AI request"""
