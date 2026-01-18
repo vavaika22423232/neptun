@@ -3860,12 +3860,64 @@ def extract_trajectory_with_ai(message_text: str):
 # ==================== AI SMART ROUTE SYSTEM ====================
 # System that learns from historical data and AI can modify predictions
 
-ROUTE_PATTERNS_FILE = 'route_patterns.json'
+# Use persistent storage if available (survives Render redeploys)
+_ROUTE_PATTERNS_FILENAME = 'route_patterns.json'
+if PERSISTENT_DATA_DIR and os.path.isdir(PERSISTENT_DATA_DIR):
+    ROUTE_PATTERNS_FILE = os.path.join(PERSISTENT_DATA_DIR, _ROUTE_PATTERNS_FILENAME)
+    print(f"INFO: Route patterns using PERSISTENT storage: {ROUTE_PATTERNS_FILE}")
+else:
+    ROUTE_PATTERNS_FILE = _ROUTE_PATTERNS_FILENAME
+    print(f"WARNING: Route patterns using LOCAL storage (will be lost on redeploy): {ROUTE_PATTERNS_FILE}")
+
+# Default patterns to initialize if file doesn't exist
+_DEFAULT_ROUTE_PATTERNS = {
+    "version": 1,
+    "patterns": {
+        "south_to_kyiv": {
+            "name": "Південь → Київ",
+            "description": "Типовий маршрут шахедів з Чорного моря на столицю",
+            "source_regions": ["одеська", "миколаївська", "херсонська"],
+            "waypoints": ["вінницька", "черкаська", "київська"],
+            "target_regions": ["київська", "київ"],
+            "frequency": 0,
+            "confidence": 0.85
+        },
+        "east_to_kharkiv": {
+            "name": "Схід → Харків",
+            "description": "Атаки з РФ на Харківщину",
+            "source_regions": ["білгородська", "курська"],
+            "target_regions": ["харківська", "харків"],
+            "frequency": 0,
+            "confidence": 0.9
+        },
+        "crimea_to_central": {
+            "name": "Крим → Центр",
+            "description": "Атаки з Криму на центральну Україну",
+            "source_regions": ["крим", "чорне море"],
+            "waypoints": ["херсонська", "запорізька"],
+            "target_regions": ["дніпропетровська", "полтавська", "київська"],
+            "frequency": 0,
+            "confidence": 0.75
+        },
+        "belarus_to_kyiv": {
+            "name": "Білорусь → Київ",
+            "description": "Атаки з півночі",
+            "source_regions": ["білорусь", "гомельська"],
+            "waypoints": ["чернігівська"],
+            "target_regions": ["київська", "київ"],
+            "frequency": 0,
+            "confidence": 0.8
+        }
+    },
+    "historical_routes": [],
+    "ai_corrections": []
+}
+
 _route_patterns_cache = None
 _route_patterns_modified = False
 
 def _load_route_patterns():
-    """Load route patterns from JSON file"""
+    """Load route patterns from JSON file (persistent storage)"""
     global _route_patterns_cache
     if _route_patterns_cache is not None:
         return _route_patterns_cache
@@ -3874,16 +3926,20 @@ def _load_route_patterns():
         if os.path.exists(ROUTE_PATTERNS_FILE):
             with open(ROUTE_PATTERNS_FILE, 'r', encoding='utf-8') as f:
                 _route_patterns_cache = json.load(f)
+                print(f"INFO: Loaded {len(_route_patterns_cache.get('historical_routes', []))} historical routes from {ROUTE_PATTERNS_FILE}")
         else:
-            _route_patterns_cache = {"version": 1, "patterns": {}, "historical_routes": [], "ai_corrections": []}
+            # Initialize with defaults
+            _route_patterns_cache = _DEFAULT_ROUTE_PATTERNS.copy()
+            _save_route_patterns()  # Save immediately to create file
+            print(f"INFO: Created new route patterns file: {ROUTE_PATTERNS_FILE}")
     except Exception as e:
         print(f"WARNING: Failed to load route patterns: {e}")
-        _route_patterns_cache = {"version": 1, "patterns": {}, "historical_routes": [], "ai_corrections": []}
+        _route_patterns_cache = _DEFAULT_ROUTE_PATTERNS.copy()
     
     return _route_patterns_cache
 
 def _save_route_patterns():
-    """Save route patterns to JSON file"""
+    """Save route patterns to JSON file (persistent storage)"""
     global _route_patterns_modified
     if not _route_patterns_cache:
         return
@@ -3893,7 +3949,7 @@ def _save_route_patterns():
         with open(ROUTE_PATTERNS_FILE, 'w', encoding='utf-8') as f:
             json.dump(_route_patterns_cache, f, ensure_ascii=False, indent=2)
         _route_patterns_modified = False
-        print(f"INFO: Route patterns saved to {ROUTE_PATTERNS_FILE}")
+        print(f"INFO: Route patterns saved to {ROUTE_PATTERNS_FILE} ({len(_route_patterns_cache.get('historical_routes', []))} routes)")
     except Exception as e:
         print(f"ERROR: Failed to save route patterns: {e}")
 
