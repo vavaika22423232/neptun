@@ -3857,6 +3857,280 @@ def extract_trajectory_with_ai(message_text: str):
         return None
 
 
+# ==================== AI SMART ROUTE SYSTEM ====================
+# System that learns from historical data and AI can modify predictions
+
+ROUTE_PATTERNS_FILE = 'route_patterns.json'
+_route_patterns_cache = None
+_route_patterns_modified = False
+
+def _load_route_patterns():
+    """Load route patterns from JSON file"""
+    global _route_patterns_cache
+    if _route_patterns_cache is not None:
+        return _route_patterns_cache
+    
+    try:
+        if os.path.exists(ROUTE_PATTERNS_FILE):
+            with open(ROUTE_PATTERNS_FILE, 'r', encoding='utf-8') as f:
+                _route_patterns_cache = json.load(f)
+        else:
+            _route_patterns_cache = {"version": 1, "patterns": {}, "historical_routes": [], "ai_corrections": []}
+    except Exception as e:
+        print(f"WARNING: Failed to load route patterns: {e}")
+        _route_patterns_cache = {"version": 1, "patterns": {}, "historical_routes": [], "ai_corrections": []}
+    
+    return _route_patterns_cache
+
+def _save_route_patterns():
+    """Save route patterns to JSON file"""
+    global _route_patterns_modified
+    if not _route_patterns_cache:
+        return
+    
+    try:
+        _route_patterns_cache['last_updated'] = datetime.now().isoformat()
+        with open(ROUTE_PATTERNS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(_route_patterns_cache, f, ensure_ascii=False, indent=2)
+        _route_patterns_modified = False
+        print(f"INFO: Route patterns saved to {ROUTE_PATTERNS_FILE}")
+    except Exception as e:
+        print(f"ERROR: Failed to save route patterns: {e}")
+
+def predict_route_with_ai(source_region: str, current_position: tuple = None, message_text: str = None):
+    """
+    AI predicts most likely route based on:
+    1. Source region
+    2. Historical patterns
+    3. Current message context
+    
+    Returns dict with:
+    - predicted_targets: list of likely target regions
+    - waypoints: list of intermediate points
+    - confidence: 0-1
+    - reasoning: AI explanation
+    - pattern_used: name of matched pattern or 'ai_inference'
+    """
+    if not GROQ_ENABLED:
+        # Fallback to pattern matching only
+        return _predict_route_from_patterns(source_region)
+    
+    patterns = _load_route_patterns()
+    
+    # Check for exact pattern match first
+    pattern_match = _find_matching_pattern(source_region, patterns)
+    
+    # Use AI to refine prediction
+    _groq_rate_limit()
+    
+    try:
+        historical_context = ""
+        if patterns.get('historical_routes'):
+            recent = patterns['historical_routes'][-10:]  # Last 10 routes
+            historical_context = f"\nОстанні маршрути: {json.dumps(recent, ensure_ascii=False)}"
+        
+        pattern_context = ""
+        if pattern_match:
+            pattern_context = f"\nЗнайдений патерн: {json.dumps(pattern_match, ensure_ascii=False)}"
+        
+        prompt = f"""Ти експерт з аналізу траєкторій дронів/ракет над Україною.
+
+ВХІДНІ ДАНІ:
+- Регіон старту: {source_region}
+- Поточна позиція: {current_position if current_position else 'невідома'}
+- Повідомлення: {message_text[:300] if message_text else 'немає'}
+{pattern_context}
+{historical_context}
+
+ЗАВДАННЯ: Спрогнозуй найбільш ймовірний маршрут.
+
+ВАЖЛИВО:
+- Враховуй типові маршрути (південь→Київ, схід→Харків)
+- Шахеди зазвичай летять 100-150 км/год
+- Ракети швидше - 300-900 км/год
+- Якщо є патерн - використай його, але можеш скоригувати
+
+Відповідай ТІЛЬКИ JSON:
+{{"predicted_targets": ["регіон1", "регіон2"], "waypoints": ["місто1", "місто2"], "confidence": 0.85, "reasoning": "короткий опис", "suggested_correction": null}}"""
+
+        response = groq_client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": "Ти аналізуєш траєкторії атак. Відповідай ТІЛЬКИ JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=300
+        )
+        
+        result_text = response.choices[0].message.content.strip()
+        if result_text.startswith('```'):
+            result_text = re.sub(r'^```(?:json)?\s*', '', result_text)
+            result_text = re.sub(r'\s*```$', '', result_text)
+        
+        result = json.loads(result_text)
+        result['pattern_used'] = pattern_match['name'] if pattern_match else 'ai_inference'
+        
+        print(f"DEBUG AI Route Prediction: {source_region} -> {result.get('predicted_targets')}")
+        return result
+        
+    except Exception as e:
+        print(f"WARNING: AI route prediction failed: {e}")
+        return _predict_route_from_patterns(source_region)
+
+def _find_matching_pattern(source_region: str, patterns: dict):
+    """Find pattern matching the source region"""
+    source_lower = source_region.lower()
+    for pattern_id, pattern in patterns.get('patterns', {}).items():
+        for src in pattern.get('source_regions', []):
+            if src.lower() in source_lower or source_lower in src.lower():
+                return pattern
+    return None
+
+def _predict_route_from_patterns(source_region: str):
+    """Fallback prediction using only stored patterns"""
+    patterns = _load_route_patterns()
+    match = _find_matching_pattern(source_region, patterns)
+    
+    if match:
+        return {
+            'predicted_targets': match.get('target_regions', []),
+            'waypoints': match.get('waypoints', []),
+            'confidence': match.get('confidence', 0.5),
+            'reasoning': match.get('description', 'Pattern match'),
+            'pattern_used': match.get('name', 'unknown')
+        }
+    
+    return {
+        'predicted_targets': [],
+        'waypoints': [],
+        'confidence': 0.1,
+        'reasoning': 'No matching pattern',
+        'pattern_used': None
+    }
+
+def update_route_pattern_with_ai(route_data: dict, actual_target: str = None):
+    """
+    AI updates/corrects route patterns based on actual observed routes.
+    
+    Args:
+        route_data: {source_region, waypoints, target_region, timestamp}
+        actual_target: The actual target that was reached (for correction)
+    """
+    patterns = _load_route_patterns()
+    
+    # Add to historical routes
+    route_entry = {
+        'timestamp': datetime.now().isoformat(),
+        'source': route_data.get('source_region'),
+        'target': actual_target or route_data.get('target_region'),
+        'waypoints': route_data.get('waypoints', [])
+    }
+    
+    if 'historical_routes' not in patterns:
+        patterns['historical_routes'] = []
+    patterns['historical_routes'].append(route_entry)
+    
+    # Keep only last 100 routes
+    if len(patterns['historical_routes']) > 100:
+        patterns['historical_routes'] = patterns['historical_routes'][-100:]
+    
+    # Update pattern frequency
+    match = _find_matching_pattern(route_data.get('source_region', ''), patterns)
+    if match:
+        match['frequency'] = match.get('frequency', 0) + 1
+    
+    global _route_patterns_modified
+    _route_patterns_modified = True
+    _save_route_patterns()
+    
+    # Use AI to suggest pattern updates (async-friendly)
+    if GROQ_ENABLED and len(patterns['historical_routes']) >= 10:
+        _ai_analyze_patterns_for_update(patterns)
+
+def _ai_analyze_patterns_for_update(patterns: dict):
+    """AI analyzes historical data and suggests pattern updates"""
+    try:
+        _groq_rate_limit()
+        
+        recent_routes = patterns['historical_routes'][-20:]
+        current_patterns = patterns.get('patterns', {})
+        
+        prompt = f"""Проаналізуй останні маршрути атак та запропонуй корекції до патернів.
+
+ОСТАННІ МАРШРУТИ:
+{json.dumps(recent_routes, ensure_ascii=False, indent=2)}
+
+ПОТОЧНІ ПАТЕРНИ:
+{json.dumps(current_patterns, ensure_ascii=False, indent=2)}
+
+Чи бачиш нові закономірності? Чи потрібно скоригувати існуючі?
+
+Відповідай JSON:
+{{"corrections": [{{"pattern_id": "south_to_kyiv", "field": "confidence", "new_value": 0.9, "reason": "частіше підтверджується"}}], "new_patterns": [], "observations": "короткий опис"}}"""
+
+        response = groq_client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": "Ти аналітик військових патернів."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2,
+            max_tokens=500
+        )
+        
+        result_text = response.choices[0].message.content.strip()
+        if result_text.startswith('```'):
+            result_text = re.sub(r'^```(?:json)?\s*', '', result_text)
+            result_text = re.sub(r'\s*```$', '', result_text)
+        
+        suggestions = json.loads(result_text)
+        
+        # Store AI corrections for review (don't auto-apply)
+        if 'ai_corrections' not in patterns:
+            patterns['ai_corrections'] = []
+        patterns['ai_corrections'].append({
+            'timestamp': datetime.now().isoformat(),
+            'suggestions': suggestions
+        })
+        
+        # Keep last 10 suggestions
+        patterns['ai_corrections'] = patterns['ai_corrections'][-10:]
+        
+        print(f"DEBUG AI Pattern Analysis: {suggestions.get('observations', 'No observations')}")
+        
+    except Exception as e:
+        print(f"WARNING: AI pattern analysis failed: {e}")
+
+def ai_correct_route(route_id: str, correction_data: dict):
+    """
+    AI manually corrects a specific route prediction.
+    Called when actual route differs from prediction.
+    
+    Args:
+        route_id: ID of the route/marker
+        correction_data: {actual_target, actual_waypoints, notes}
+    """
+    patterns = _load_route_patterns()
+    
+    correction_entry = {
+        'timestamp': datetime.now().isoformat(),
+        'route_id': route_id,
+        'correction': correction_data
+    }
+    
+    if 'ai_corrections' not in patterns:
+        patterns['ai_corrections'] = []
+    patterns['ai_corrections'].append(correction_entry)
+    
+    global _route_patterns_modified
+    _route_patterns_modified = True
+    _save_route_patterns()
+    
+    print(f"INFO: Route correction recorded: {route_id}")
+    return {'status': 'ok', 'message': 'Correction recorded'}
+
+
 # ==================== AI THREAT CLASSIFICATION ====================
 _threat_ai_cache = {}
 _THREAT_AI_CACHE_TTL = 600  # 10 minutes
@@ -4372,6 +4646,14 @@ def geocode_with_context(city: str, oblast_key: str, district: str = None):
         
     except Exception as e:
         print(f"DEBUG: geocode_with_context error: {e}")
+    
+    # FALLBACK: Try Nominatim if Photon failed
+    if NOMINATIM_AVAILABLE and region_name:
+        print(f"DEBUG geocode_with_context: Photon failed, trying Nominatim for '{city}' in {region_name}")
+        nominatim_coords = get_coordinates_nominatim(city, region_name)
+        if nominatim_coords:
+            print(f"DEBUG Nominatim fallback: '{city}' in {region_name} -> {nominatim_coords}")
+            return (nominatim_coords[0], nominatim_coords[1], False)
     
     return None
 
@@ -6197,6 +6479,8 @@ CITY_COORDS = {
     'бородянка': (50.6447, 29.9202), 'кілія': (45.4553, 29.2640),
     # Odesa region settlements for trajectory tracking
     'старі трояни': (45.3833, 28.8000), 'стара трояни': (45.3833, 28.8000),
+    # Khmelnytskyi region settlements
+    'вовковинці': (49.2074, 27.6560), 'вовковинця': (49.2074, 27.6560),
     # Cherkasy region settlement (directional course report: "БпЛА курсом на Цибулів")
     'цибулів': (49.0733, 29.8472),
     # Raion centers (approx: use main settlement or administrative center)
@@ -8796,6 +9080,25 @@ def _ai_trajectory_to_coords(ai_result):
         if dir_vec:
             end_coords = (start_coords[0] + dir_vec[0] * 0.5, start_coords[1] + dir_vec[1] * 0.5)
     
+    # =========================================================================
+    # AI ROUTE PREDICTION: If we have source but no target, use AI to predict
+    # =========================================================================
+    if start_coords and not end_coords and GROQ_ENABLED:
+        try:
+            prediction = predict_route_with_ai(source_name or '')
+            if prediction and prediction.get('confidence', 0) >= 0.6:
+                predicted_targets = prediction.get('predicted_targets', [])
+                if predicted_targets:
+                    # Use first predicted target
+                    first_target = predicted_targets[0]
+                    predicted_coords = _get_region_center(first_target) or _get_city_coords(first_target)
+                    if predicted_coords:
+                        end_coords = predicted_coords
+                        target_name = first_target + ' (прогноз)'
+                        print(f"DEBUG AI Route Prediction used: {source_name} -> {first_target} (conf={prediction.get('confidence')})")
+        except Exception as e:
+            print(f"DEBUG: AI route prediction failed: {e}")
+    
     # Need both start and end to create trajectory
     if not start_coords or not end_coords:
         return None
@@ -8805,7 +9108,8 @@ def _ai_trajectory_to_coords(ai_result):
         'end': [end_coords[0], end_coords[1]],
         'source_name': source_name or 'unknown',
         'target_name': target_name or 'unknown',
-        'kind': f'ai_{source_type}_to_{target_type}'
+        'kind': f'ai_{source_type}_to_{target_type}',
+        'predicted': end_coords and '(прогноз)' in (target_name or '')
     }
 
 def parse_trajectory_from_message(text):
@@ -9353,6 +9657,18 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             'source_match': f'trajectory_{trajectory_data.get("kind", "unknown")}',
             'trajectory': trajectory_data
         }
+        
+        # AUTO-RECORD: Save observed route for pattern learning (non-blocking)
+        try:
+            if not trajectory_data.get('predicted'):  # Only record confirmed routes
+                update_route_pattern_with_ai({
+                    'source_region': trajectory_data.get('source_name'),
+                    'target_region': trajectory_data.get('target_name'),
+                    'waypoints': [],
+                    'threat_type': threat_type
+                })
+        except Exception as e:
+            print(f"DEBUG: Failed to record route pattern: {e}")
         
         return [trajectory_marker]
     
@@ -18969,6 +19285,195 @@ def force_schedule_update():
         'success': False,
         'message': 'Автооновлення недоступне, використовуються статичні дані'
     }), 503
+
+
+# ==================== AI ROUTE MANAGEMENT API ====================
+
+@app.route('/api/routes/predict', methods=['POST'])
+def api_predict_route():
+    """
+    AI predicts most likely route based on source region.
+    
+    POST JSON: {source_region: "одеська", current_position: [lat, lng], message: "optional text"}
+    Returns: {predicted_targets: [...], waypoints: [...], confidence: 0.85, reasoning: "..."}
+    """
+    try:
+        data = request.get_json() or {}
+        source_region = data.get('source_region', '')
+        current_position = data.get('current_position')
+        message_text = data.get('message', '')
+        
+        if not source_region:
+            return jsonify({'error': 'source_region required'}), 400
+        
+        prediction = predict_route_with_ai(source_region, current_position, message_text)
+        return jsonify(prediction)
+        
+    except Exception as e:
+        print(f"ERROR in api_predict_route: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/routes/patterns', methods=['GET'])
+def api_get_route_patterns():
+    """Get all stored route patterns"""
+    try:
+        patterns = _load_route_patterns()
+        return jsonify({
+            'patterns': patterns.get('patterns', {}),
+            'total_historical': len(patterns.get('historical_routes', [])),
+            'ai_corrections_pending': len(patterns.get('ai_corrections', [])),
+            'last_updated': patterns.get('last_updated')
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/routes/patterns', methods=['POST'])
+def api_update_route_pattern():
+    """
+    Update or create a route pattern.
+    
+    POST JSON: {
+        pattern_id: "south_to_kyiv",
+        name: "Південь → Київ",
+        source_regions: ["одеська", "миколаївська"],
+        target_regions: ["київська"],
+        waypoints: ["вінницька"],
+        confidence: 0.85,
+        avg_speed_kmh: 120
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        pattern_id = data.get('pattern_id')
+        
+        if not pattern_id:
+            return jsonify({'error': 'pattern_id required'}), 400
+        
+        patterns = _load_route_patterns()
+        
+        if 'patterns' not in patterns:
+            patterns['patterns'] = {}
+        
+        # Update or create pattern
+        if pattern_id in patterns['patterns']:
+            patterns['patterns'][pattern_id].update(data)
+        else:
+            patterns['patterns'][pattern_id] = data
+        
+        _save_route_patterns()
+        
+        return jsonify({'status': 'ok', 'pattern_id': pattern_id})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/routes/correct', methods=['POST'])
+def api_correct_route():
+    """
+    AI corrects a route prediction.
+    Called when actual route differs from prediction.
+    
+    POST JSON: {
+        route_id: "marker_123",
+        actual_target: "харківська",
+        actual_waypoints: ["полтавська"],
+        notes: "Змінив курс на схід"
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        route_id = data.get('route_id')
+        
+        if not route_id:
+            return jsonify({'error': 'route_id required'}), 400
+        
+        result = ai_correct_route(route_id, {
+            'actual_target': data.get('actual_target'),
+            'actual_waypoints': data.get('actual_waypoints', []),
+            'notes': data.get('notes', '')
+        })
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/routes/record', methods=['POST'])
+def api_record_route():
+    """
+    Record an observed route for pattern learning.
+    
+    POST JSON: {
+        source_region: "одеська",
+        target_region: "київська",
+        waypoints: ["вінницька", "черкаська"],
+        threat_type: "shahed"
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        
+        update_route_pattern_with_ai(data, data.get('target_region'))
+        
+        return jsonify({'status': 'ok', 'message': 'Route recorded'})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/routes/ai-analyze', methods=['POST'])
+def api_ai_analyze_routes():
+    """
+    Trigger AI analysis of historical routes to suggest pattern updates.
+    """
+    try:
+        if not GROQ_ENABLED:
+            return jsonify({'error': 'AI not enabled'}), 503
+        
+        patterns = _load_route_patterns()
+        
+        if len(patterns.get('historical_routes', [])) < 5:
+            return jsonify({'error': 'Need at least 5 historical routes for analysis'}), 400
+        
+        _ai_analyze_patterns_for_update(patterns)
+        _save_route_patterns()
+        
+        # Return latest AI suggestions
+        suggestions = patterns.get('ai_corrections', [])
+        latest = suggestions[-1] if suggestions else None
+        
+        return jsonify({
+            'status': 'ok',
+            'latest_analysis': latest
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/routes/history', methods=['GET'])
+def api_get_route_history():
+    """Get recent historical routes"""
+    try:
+        patterns = _load_route_patterns()
+        limit = request.args.get('limit', 20, type=int)
+        
+        history = patterns.get('historical_routes', [])[-limit:]
+        
+        return jsonify({
+            'routes': history,
+            'total': len(patterns.get('historical_routes', []))
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ==================== END AI ROUTE MANAGEMENT API ====================
 
 
 @app.route('/locate')

@@ -966,6 +966,28 @@
       opacity: 0.9;
     }
     
+    /* Predicted route - yellow dashed line */
+    .trajectory-group.predicted line.traj-line {
+      stroke: #fbbf24;
+      stroke-width: 2;
+      stroke-dasharray: 4 8;
+      opacity: 0.7;
+      animation: predictedPulse 2s ease-in-out infinite;
+    }
+    
+    @keyframes predictedPulse {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 0.9; }
+    }
+    
+    .trajectory-group.predicted .trajectory-direction-arrow {
+      border-top-color: rgba(251, 191, 36, 0.9);
+    }
+    
+    .trajectory-group.predicted .trajectory-target-arrow {
+      color: rgba(251, 191, 36, 0.9);
+    }
+    
     /* Big direction arrow (triangle) in the middle */
     .trajectory-direction-arrow {
       position: absolute;
@@ -3883,9 +3905,9 @@
         // Calculate angle for arrows
         const angle = Math.atan2(endPos.y - startPos.y, endPos.x - startPos.x) * 180 / Math.PI;
         
-        // Create trajectory group
+        // Create trajectory group (add 'predicted' class for AI-predicted routes)
         const group = document.createElement('div');
-        group.className = 'trajectory-group';
+        group.className = 'trajectory-group' + (traj.predicted ? ' predicted' : '');
         
         // Create SVG for the line
         const svgNS = 'http://www.w3.org/2000/svg';
