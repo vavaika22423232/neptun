@@ -185,11 +185,14 @@ GROQ_ENABLED = bool(GROQ_API_KEY)
 
 # AI request caching and rate limiting
 _groq_cache = {}  # Simple in-memory cache {hash: (result, timestamp)}
-_groq_cache_ttl = 1800  # Cache TTL: 30 min (was 5 min) - reduce API calls
+_groq_cache_ttl = 3600  # Cache TTL: 60 min (was 30 min) - reduce API calls significantly
 _groq_last_request = 0  # Timestamp of last request
-_groq_min_interval = 2.0  # Minimum 2 seconds between requests (was 0.5)
+_groq_min_interval = 3.0  # Minimum 3 seconds between requests (was 2)
 _groq_daily_cooldown_until = 0  # If set, skip ALL AI until this timestamp
 _groq_429_backoff = 0  # Exponential backoff counter
+_groq_requests_this_minute = 0  # Counter for requests in current minute
+_groq_minute_start = 0  # Start of current minute window
+_groq_max_per_minute = 15  # Max 15 requests per minute (was unlimited)
 
 def _get_groq_cache_key(text):
     """Generate cache key for AI request"""
@@ -234,7 +237,7 @@ def _groq_handle_429(error_message: str):
 
 def _groq_rate_limit():
     """Smart rate limiter for Groq API"""
-    global _groq_last_request, _groq_429_backoff
+    global _groq_last_request, _groq_429_backoff, _groq_requests_this_minute, _groq_minute_start
     import time as time_module
     
     # Check if in cooldown
@@ -242,10 +245,24 @@ def _groq_rate_limit():
         raise Exception("Groq AI in cooldown mode")
     
     now = time_module.time()
+    
+    # Check per-minute limit
+    if now - _groq_minute_start >= 60:
+        # New minute, reset counter
+        _groq_minute_start = now
+        _groq_requests_this_minute = 0
+    
+    if _groq_requests_this_minute >= _groq_max_per_minute:
+        # Too many requests this minute, skip
+        remaining = 60 - (now - _groq_minute_start)
+        print(f"RATE LIMIT: Groq max {_groq_max_per_minute}/min reached, skipping ({remaining:.0f}s until reset)")
+        raise Exception(f"Groq rate limit: {_groq_max_per_minute}/min exceeded")
+    
     elapsed = now - _groq_last_request
     if elapsed < _groq_min_interval:
         time_module.sleep(_groq_min_interval - elapsed)
     _groq_last_request = time_module.time()
+    _groq_requests_this_minute += 1
     
     # Reset backoff on successful rate limit pass
     if _groq_429_backoff > 0:
