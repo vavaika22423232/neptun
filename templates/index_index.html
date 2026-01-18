@@ -1070,6 +1070,14 @@
       width: 100%;
       height: 100%;
       object-fit: contain;
+      /* Rotation based on trajectory direction */
+      transform: rotate(var(--direction-angle, 0deg));
+      transition: transform 0.2s ease;
+    }
+    
+    .threat-marker:hover img {
+      /* Keep rotation on hover */
+      transform: rotate(var(--direction-angle, 0deg));
     }
     
     /* Count badge for multiple threats at same location */
@@ -3831,6 +3839,46 @@
           img.onerror = function() {
             this.src = '/static/default.png';
           };
+          
+          // Calculate rotation angle from trajectory (if available)
+          const traj = marker.trajectory;
+          if (traj && traj.start && traj.end) {
+            const startLat = parseFloat(traj.start[0]);
+            const startLng = parseFloat(traj.start[1]);
+            const endLat = parseFloat(traj.end[0]);
+            const endLng = parseFloat(traj.end[1]);
+            
+            if (!isNaN(startLat) && !isNaN(startLng) && !isNaN(endLat) && !isNaN(endLng)) {
+              // Calculate bearing angle (direction of movement)
+              const dLng = endLng - startLng;
+              const dLat = endLat - startLat;
+              // atan2 gives angle from positive X axis, we need angle from North (top)
+              // Default icon points West (-90°), so we adjust
+              let angle = Math.atan2(dLng, dLat) * (180 / Math.PI);
+              // Icon default orientation is pointing left (West), rotate to match direction
+              // Angle 0 = North, 90 = East, 180 = South, -90 = West
+              // Icon needs +90 offset since it points West by default
+              angle = angle + 90;
+              img.style.setProperty('--direction-angle', `${angle}deg`);
+            }
+          } else if (marker.course_direction || marker.arrow_direction) {
+            // Fallback: use course_direction text to estimate angle
+            const dir = (marker.course_direction || marker.arrow_direction || '').toLowerCase();
+            let angle = 0;
+            if (dir.includes('північ') || dir.includes('north')) angle = 0;
+            else if (dir.includes('північно-схід') || dir.includes('northeast')) angle = 45;
+            else if (dir.includes('схід') || dir.includes('east')) angle = 90;
+            else if (dir.includes('південно-схід') || dir.includes('southeast')) angle = 135;
+            else if (dir.includes('південь') || dir.includes('south')) angle = 180;
+            else if (dir.includes('південно-захід') || dir.includes('southwest')) angle = 225;
+            else if (dir.includes('захід') || dir.includes('west')) angle = 270;
+            else if (dir.includes('північно-захід') || dir.includes('northwest')) angle = 315;
+            
+            if (angle !== 0 || dir) {
+              // Icon default is West, so North needs +90 rotation
+              img.style.setProperty('--direction-angle', `${angle + 90}deg`);
+            }
+          }
           
           markerEl.appendChild(img);
           
