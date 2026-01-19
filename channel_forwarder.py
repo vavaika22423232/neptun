@@ -26,12 +26,29 @@ SESSION_NAME = 'channel_forwarder'
 
 # Вихідні канали (звідки копіюємо)
 SOURCE_CHANNELS = [
-    'UkraineAlarmSignal',
-    'kpszsu',
-    'war_monitor',
-    'napramok',
-    'raketa_trevoga',
-    'ukrainsiypposhnik'
+    # Офіційні/головні
+    'kpszsu',               # ПС ЗСУ - найвища довіра
+    'UkraineAlarmSignal',   # Офіційні тривоги
+    'povitryanatrivogaaa',  # Повітряна тривога
+    
+    # Загальнонаціональні моніторинги
+    'emonitor_ua',          # E-Monitor
+    'monikppy',             # Моніторинг ППО
+    'war_monitor',          # Військовий моніторинг
+    'napramok',             # Напрямок руху
+    'raketa_trevoga',       # Ракетна тривога
+    'sectorv666',           # Sector V
+    'ukrainsiypposhnik',    # Повітряні сили
+    
+    # Регіональні (південь)
+    'korabely_media',       # Південь: Херсон, Миколаїв, Одеса
+    'vanek_nikolaev',       # Миколаївська область
+    'kherson_monitoring',   # Херсонська область
+    
+    # Регіональні (схід/центр)
+    'gnilayachereha',       # Запорізька область
+    'timofii_kucher',       # Дніпропетровська область
+    'monitor1654',          # Харківська область
 ]
 
 # Цільовий канал (куди пересилаємо)

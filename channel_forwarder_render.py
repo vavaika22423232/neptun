@@ -25,7 +25,7 @@ API_HASH = os.getenv('TELEGRAM_API_HASH', '2daaa58652e315ce52adb1090313d36a')
 STRING_SESSION = os.getenv('TELEGRAM_SESSION', '')  # Буде створено окремим скриптом
 
 # Вихідні канали
-SOURCE_CHANNELS = os.getenv('SOURCE_CHANNELS', 'UkraineAlarmSignal,kpszsu,war_monitor,napramok,raketa_trevoga,ukrainsiypposhnik').split(',')
+SOURCE_CHANNELS = os.getenv('SOURCE_CHANNELS', 'kpszsu,UkraineAlarmSignal,povitryanatrivogaaa,emonitor_ua,monikppy,war_monitor,napramok,raketa_trevoga,sectorv666,ukrainsiypposhnik,korabely_media,vanek_nikolaev,kherson_monitoring,gnilayachereha,timofii_kucher,monitor1654').split(',')
 
 # Цільовий канал
 TARGET_CHANNEL = os.getenv('TARGET_CHANNEL', 'mapstransler')

@@ -330,6 +330,30 @@ def calculate_bearing(lat1, lon1, lat2, lon2):
     bearing = math.degrees(bearing)
     return (bearing + 360) % 360
 
+def haversine(coord1, coord2):
+    """
+    Calculate the great-circle distance between two points on Earth.
+    
+    Args:
+        coord1: tuple (lat, lng) in degrees
+        coord2: tuple (lat, lng) in degrees
+    
+    Returns:
+        Distance in kilometers
+    """
+    R = 6371  # Earth's radius in kilometers
+    
+    lat1, lon1 = math.radians(coord1[0]), math.radians(coord1[1])
+    lat2, lon2 = math.radians(coord2[0]), math.radians(coord2[1])
+    
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    
+    a = math.sin(dlat / 2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2)**2
+    c = 2 * math.asin(math.sqrt(a))
+    
+    return R * c
+
 def get_kyiv_directional_coordinates(threat_text, original_city="київ"):
     """
     For Kyiv threats, calculate directional coordinates based on threat patterns
@@ -3068,6 +3092,15 @@ def save_messages(data, send_notifications=True):
         
         if new_messages:
             log.info(f"Found {len(new_messages)} new messages to process for notifications")
+            
+            # === MULTI-CHANNEL FUSION: Process new messages ===
+            for msg in new_messages:
+                try:
+                    fusion_result = process_message_with_fusion(msg)
+                    if fusion_result:
+                        log.info(f"[FUSION] {fusion_result['action']} event {fusion_result['event_id']}")
+                except Exception as e:
+                    log.debug(f"Fusion system error: {e}")
             
             # === THREAT TRACKER: Process new messages ===
             for msg in new_messages:
@@ -6760,6 +6793,1117 @@ def get_smart_marker_visibility(message: dict, active_alarms: dict = None) -> di
     return should_marker_be_visible(message)
 
 # ==================== END SMART THREAT TRACKING SYSTEM ====================
+
+
+# ==================== MULTI-CHANNEL INTELLIGENCE FUSION ====================
+# Система злиття інформації з різних Telegram каналів
+# Аналізує, комбінує, відстежує рух загроз
+# AI FIRST APPROACH - кожне повідомлення проходить через AI
+
+class ChannelIntelligenceFusion:
+    """
+    Інтелектуальна система злиття даних з різних каналів.
+    AI-FIRST підхід - кожне повідомлення аналізується AI.
+    
+    Функції:
+    1. AI аналіз кожного повідомлення (тип, кількість, координати, дія)
+    2. Розпізнавання тієї ж загрози з різних джерел
+    3. Комбінування інформації для точнішої картини
+    4. Побудова траєкторій з послідовності повідомлень
+    5. Визначення пріоритету джерел
+    6. Автоматичне створення/оновлення/видалення/переміщення маркерів
+    """
+    
+    # Пріоритет каналів (вищий = надійніший)
+    CHANNEL_PRIORITY = {
+        # === Офіційні/головні ===
+        'kpszsu': 100,              # Офіційний канал ПС ЗСУ - найвища довіра
+        'UkraineAlarmSignal': 95,   # Офіційні сигнали тривог
+        'povitryanatrivogaaa': 90,  # Повітряна тривога
+        
+        # === Загальнонаціональні моніторинги ===
+        'emonitor_ua': 85,          # E-Monitor Ukraine
+        'monikppy': 85,             # Моніторинг ППО
+        'war_monitor': 82,          # Військовий моніторинг
+        'napramok': 80,             # Напрямок руху загроз
+        'raketa_trevoga': 78,       # Ракетна тривога
+        'sectorv666': 75,           # Sector V
+        'ukrainsiypposhnik': 72,    # Українські повітряні сили
+        
+        # === Регіональні (південь) ===
+        'korabely_media': 88,       # Південь: Херсон, Миколаїв, Одеса
+        'vanek_nikolaev': 85,       # Миколаївська область
+        'kherson_monitoring': 85,   # Херсонська область
+        
+        # === Регіональні (схід/центр) ===
+        'gnilayachereha': 85,       # Запорізька область
+        'timofii_kucher': 85,       # Дніпропетровська область
+        'monitor1654': 85,          # Харківська область
+        
+        # === Наш канал ===
+        'mapstransler': 60,         # Наш агрегований канал
+    }
+    
+    # Часове вікно для злиття повідомлень (в секундах)
+    FUSION_WINDOW_SECONDS = 600  # 10 хвилин
+    
+    # Мінімальна схожість для злиття
+    MIN_SIMILARITY_SCORE = 0.35  # Знижено для кращого злиття
+    
+    # Максимальна відстань для злиття (км)
+    MAX_FUSION_DISTANCE_KM = 150
+    
+    def __init__(self):
+        self.pending_messages = []  # Повідомлення що очікують обробки
+        self.fused_events = {}      # event_id -> FusedThreatEvent
+        self.message_to_event = {}  # message_id -> event_id
+        self.lock = threading.Lock()
+        self.trajectory_builder = TrajectoryBuilder()
+    
+    def get_channel_priority(self, channel: str) -> int:
+        """Отримує пріоритет каналу"""
+        channel_clean = channel.lower().replace('@', '').strip()
+        return self.CHANNEL_PRIORITY.get(channel_clean, 50)
+    
+    # Регіональна прив'язка каналів для точнішого геокодування
+    CHANNEL_REGIONS = {
+        'gnilayachereha': ['Запоріжжя'],
+        'vanek_nikolaev': ['Миколаїв'],
+        'timofii_kucher': ['Дніпро'],
+        'korabely_media': ['Херсон', 'Миколаїв', 'Одеса'],
+        'kherson_monitoring': ['Херсон'],
+        'monitor1654': ['Харків'],
+    }
+    
+    def get_channel_regions(self, channel: str) -> list:
+        """Отримує регіони пов'язані з каналом"""
+        channel_clean = channel.lower().replace('@', '').strip()
+        return self.CHANNEL_REGIONS.get(channel_clean, [])
+    
+    def extract_message_signature(self, message: dict) -> dict:
+        """
+        AI-FIRST: Витягує "підпис" повідомлення через AI.
+        Fallback на regex якщо AI недоступний.
+        
+        AI визначає:
+        - Тип загрози (shahed/drone/ballistic/cruise/kab)
+        - Кількість
+        - Регіони
+        - Напрямок
+        - Дію (create/move/update/remove)
+        - Координати (якщо можна визначити)
+        """
+        text = (message.get('text') or '').lower()
+        original_text = message.get('text', '')
+        channel = message.get('channel') or message.get('source', '')
+        
+        signature = {
+            'threat_type': None,
+            'regions': set(),
+            'direction': None,
+            'quantity': 1,
+            'keywords': set(),
+            'source_coords': None,
+            'target_coords': None,
+            'timestamp': None,
+            'channel': channel,
+            'action': 'create',  # NEW: create/move/update/remove
+            'ai_analyzed': False,
+            'confidence': 0.0,
+        }
+        
+        # Parse timestamp
+        try:
+            signature['timestamp'] = datetime.strptime(
+                message.get('date', ''), '%Y-%m-%d %H:%M:%S'
+            )
+        except:
+            signature['timestamp'] = datetime.now()
+        
+        # === AI-FIRST ANALYSIS ===
+        if GROQ_ENABLED:
+            try:
+                ai_result = self._ai_full_analysis(original_text, channel)
+                if ai_result and ai_result.get('is_threat'):
+                    signature['ai_analyzed'] = True
+                    signature['confidence'] = ai_result.get('confidence', 0.8)
+                    
+                    # Apply AI results
+                    if ai_result.get('threat_type'):
+                        signature['threat_type'] = ai_result['threat_type']
+                    if ai_result.get('regions'):
+                        for r in ai_result['regions']:
+                            signature['regions'].add(r)
+                    if ai_result.get('quantity'):
+                        signature['quantity'] = ai_result['quantity']
+                    if ai_result.get('direction'):
+                        signature['direction'] = ai_result['direction']
+                    if ai_result.get('action'):
+                        signature['action'] = ai_result['action']
+                    if ai_result.get('coordinates'):
+                        coords = ai_result['coordinates']
+                        if coords.get('lat') and coords.get('lng'):
+                            signature['target_coords'] = (coords['lat'], coords['lng'])
+                    if ai_result.get('keywords'):
+                        for kw in ai_result['keywords']:
+                            signature['keywords'].add(kw)
+                    
+                    # Add coordinates from message if AI didn't provide
+                    if not signature['target_coords'] and message.get('lat') and message.get('lng'):
+                        signature['target_coords'] = (message['lat'], message['lng'])
+                    
+                    return signature
+                    
+            except Exception as e:
+                logger.error(f"AI analysis failed: {e}")
+        
+        # === FALLBACK: REGEX PARSING ===
+        # (використовується якщо AI недоступний або не визначив загрозу)
+        
+        # === THREAT TYPE ===
+        # Порядок важливий! Спочатку специфічні, потім загальні
+        if any(w in text for w in ['шахед', 'герань', 'shahed', 'geran', 'шахедн']):
+            signature['threat_type'] = 'shahed'
+            signature['keywords'].add('shahed')
+        elif any(w in text for w in ['балістик', 'балістич', 'іскандер', 'искандер']):
+            signature['threat_type'] = 'ballistic'
+            signature['keywords'].add('ballistic')
+        elif any(w in text for w in ['крилат', 'калібр', 'калибр', 'х-101', 'х-55', 'х101', 'х55']):
+            signature['threat_type'] = 'cruise'
+            signature['keywords'].add('cruise')
+        elif any(w in text for w in ['каб', 'авіабомб', 'авиабомб', 'кабів', 'кабов']):
+            signature['threat_type'] = 'kab'
+            signature['keywords'].add('kab')
+        elif any(w in text for w in ['кінжал', 'кинжал']):
+            signature['threat_type'] = 'kinzhal'
+            signature['keywords'].add('kinzhal')
+        elif any(w in text for w in ['бпла', 'дрон', 'безпілот', 'беспилот']):
+            signature['threat_type'] = 'drone'
+            signature['keywords'].add('drone')
+        elif any(w in text for w in ['ракет', 'пуск', 'missile']):
+            # Загальна категорія ракет якщо не визначено точніше
+            signature['threat_type'] = 'cruise'
+            signature['keywords'].add('cruise')
+        
+        # Контекстне визначення для коротких повідомлень (стиль Кучера)
+        # Якщо є ознаки загрози але тип не визначено - припускаємо drone/shahed
+        if not signature['threat_type']:
+            # Формат "Nх" (1х, 2х, 5х) зазвичай означає БПЛА
+            if re.search(r'\d+\s*х', text):
+                signature['threat_type'] = 'drone'
+                signature['keywords'].add('implicit_drone')
+            # Загальні індикатори загрози
+            elif any(ind in text for ind in ['загроза', 'уважно', 'воздух', '🚨', 
+                                              'укриття', 'негайно', 'низько', 'йдуть', 
+                                              'заходять', 'над містом', 'удар', 
+                                              'атакув', 'прильот', 'кружля']):
+                signature['threat_type'] = 'drone'
+                signature['keywords'].add('implicit_threat')
+        
+        # === REGIONS ===
+        ua_regions = {
+            'київ': 'Київ', 'киев': 'Київ',
+            'харків': 'Харків', 'харьков': 'Харків',
+            'одес': 'Одеса',
+            'дніпро': 'Дніпро', 'днепр': 'Дніпро', 'дніпр': 'Дніпро',
+            'запоріж': 'Запоріжжя', 'запорож': 'Запоріжжя',
+            'львів': 'Львів', 'львов': 'Львів',
+            'полтав': 'Полтава',
+            'вінниц': 'Вінниця', 'винниц': 'Вінниця',
+            'черкас': 'Черкаси', 'черкащ': 'Черкаси',
+            'чернігів': 'Чернігів', 'чернигов': 'Чернігів',
+            'суми': 'Суми', 'сумщ': 'Суми',
+            'миколаїв': 'Миколаїв', 'николаев': 'Миколаїв',
+            'херсон': 'Херсон',
+            'житомир': 'Житомир',
+            'хмельниц': 'Хмельницький',
+            'рівн': 'Рівне', 'ровн': 'Рівне',
+            'волин': 'Волинь',
+            'тернопіл': 'Тернопіль', 'тернопол': 'Тернопіль',
+            'івано-франків': 'Івано-Франківськ', 'франков': 'Івано-Франківськ',
+            'закарпат': 'Закарпаття',
+            'чернівц': 'Чернівці', 'черновц': 'Чернівці',
+            'кіровоград': 'Кропивницький', 'кировоград': 'Кропивницький', 'кропивниц': 'Кропивницький',
+            'донецьк': 'Донецьк', 'донецк': 'Донецьк',
+            'луганськ': 'Луганськ', 'луганск': 'Луганськ',
+            'крив': 'Дніпро',  # Кривий Ріг -> Дніпро обл
+        }
+        for key, name in ua_regions.items():
+            if key in text:
+                signature['regions'].add(name)
+        
+        # Автоматичне визначення регіону по каналу (якщо не знайдено в тексті)
+        if not signature['regions']:
+            channel_regions = self.get_channel_regions(channel)
+            for region in channel_regions:
+                signature['regions'].add(region)
+        
+        # === DIRECTION ===
+        direction_patterns = [
+            # Курс на Київ, курсом на Київ
+            r'курс(?:ом)?\s*(?:на|-)?\s*([А-ЯІЇЄа-яіїє]{3,})',
+            # Напрямок Київ, напрямок на Київ
+            r'напрям(?:ок|ку)?\s*(?:на|-)?\s*([А-ЯІЇЄа-яіїє]{3,})',
+            # рухається на/до Київ
+            r'рухається\s*(?:на|до)\s*([А-ЯІЇЄа-яіїє]{3,})',
+            # в напрямку Київ
+            r'в\s*напрямку\s*([А-ЯІЇЄа-яіїє]{3,})',
+            # → Київ, -> Київ
+            r'[→\->]\s*([А-ЯІЇЄа-яіїє]{3,})',
+        ]
+        for pattern in direction_patterns:
+            match = re.search(pattern, message.get('text', ''), re.IGNORECASE)
+            if match:
+                direction = match.group(1).strip()
+                # Фільтруємо службові слова
+                if direction.lower() not in ['на', 'до', 'від', 'з', 'через', 'над', 'по', 'ку', 'ом', 'уважно']:
+                    signature['direction'] = direction
+                    break
+        
+        # === QUANTITY ===
+        qty_patterns = [
+            # Формат Кучера: "до 5х", "2х", "1х над містом"
+            r'(?:до\s*)?(\d+)\s*х(?:\s|$|,|\.|!)',
+            # 12 шахедів, 5 БПЛА, 10 дронів
+            r'(\d+)\s*(?:шахед|бпла|дрон|ракет|од\.|одиниц)',
+            # група з 5, група 10
+            r'група\s*(?:з\s*)?(\d+)',
+            # до 10, близько 10 (без х)
+            r'(?:до|близько|біля|около|лишилось)\s*(\d+)(?!\s*х)',
+            # кількість: 10, кількість 5
+            r'кількість[:\s]*(\d+)',
+            # (6 од.), [5 од]
+            r'[\(\[]\s*(\d+)\s*(?:од|шт)',
+            # Дніпро 2 БПЛА (число перед типом)
+            r'(\d+)\s+(?:бпла|дрон)',
+        ]
+        for pattern in qty_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                qty = int(match.group(1))
+                if 1 <= qty <= 100:  # Фільтр нереальних значень
+                    signature['quantity'] = qty
+                    break
+        
+        # === COORDINATES ===
+        if message.get('lat') and message.get('lng'):
+            signature['target_coords'] = (message['lat'], message['lng'])
+        
+        # === ADDITIONAL KEYWORDS ===
+        status_keywords = {
+            'збито': 'destroyed', 'збит': 'destroyed',
+            'знищено': 'destroyed', 'знищен': 'destroyed',
+            'пролетів': 'passed', 'минув': 'passed', 'пройшл': 'passed',
+            'змінив курс': 'changed_course', 'повернув': 'changed_course',
+            'розділ': 'split',  # група розділилась
+        }
+        for kw, status in status_keywords.items():
+            if kw in text:
+                signature['keywords'].add(status)
+        
+        return signature
+    
+    def _ai_full_analysis(self, text: str, channel: str = '') -> dict:
+        """
+        ПОВНИЙ AI-аналіз повідомлення через Groq LLM.
+        AI сам визначає: тип, кількість, регіон, координати, дію.
+        
+        Це ГОЛОВНИЙ метод аналізу - викликається для кожного повідомлення.
+        """
+        if not GROQ_ENABLED or not groq_client:
+            return None
+        
+        # Check cache first (коротший TTL для актуальності)
+        cache_key = _get_groq_cache_key(f"full_threat:{text[:100]}")
+        if cache_key in _groq_cache:
+            cached, ts = _groq_cache[cache_key]
+            if time.time() - ts < 300:  # 5 хвилин кеш
+                return cached
+        
+        try:
+            _groq_rate_limit()
+            
+            # Get channel context
+            channel_context = ""
+            channel_regions = self.get_channel_regions(channel)
+            if channel_regions:
+                channel_context = f"Канал '{channel}' моніторить регіони: {', '.join(channel_regions)}. "
+            
+            # Координати основних міст для AI
+            city_coords = """
+Координати міст:
+- Київ: 50.45, 30.52
+- Харків: 49.99, 36.23
+- Одеса: 46.48, 30.73
+- Дніпро: 48.46, 35.04
+- Запоріжжя: 47.84, 35.14
+- Львів: 49.84, 24.03
+- Миколаїв: 46.97, 32.00
+- Херсон: 46.64, 32.62
+- Полтава: 49.59, 34.55
+- Черкаси: 49.44, 32.06
+- Кривий Ріг: 47.91, 33.39
+- Вінниця: 49.23, 28.48
+- Житомир: 50.25, 28.66
+- Суми: 50.91, 34.80
+- Чернігів: 51.50, 31.29
+- Хмельницький: 49.42, 26.98
+- Кропивницький: 48.51, 32.26
+"""
+            
+            prompt = f"""Ти експерт з аналізу повідомлень про повітряну загрозу в Україні.
+{channel_context}
+{city_coords}
+
+Повідомлення: "{text}"
+
+Проаналізуй це повідомлення та визнач:
+
+1. is_threat: чи це повідомлення про АКТИВНУ повітряну загрозу? (true/false)
+   - true: якщо говориться про дрони, ракети, БПЛА в повітрі
+   - false: якщо це звіт про збиття, загальна інформація, не загроза
+
+2. threat_type: тип загрози (ТІЛЬКИ одне з):
+   - "shahed" - Шахед, Герань, іранські дрони
+   - "drone" - БПЛА, розвідувальний дрон
+   - "ballistic" - балістична ракета, Іскандер
+   - "cruise" - крилата ракета, Калібр, Х-101
+   - "kab" - КАБ, керована авіабомба
+   - "kinzhal" - Кинжал, гіперзвукова
+   - null - якщо не загроза
+
+3. quantity: кількість загроз (число 1-50)
+   - Якщо "2х", "до 5х" - це кількість дронів
+   - Якщо не вказано - поверни 1
+
+4. regions: список областей/міст де загроза (масив)
+   - Наприклад: ["Дніпро"], ["Київ", "Харків"]
+   - Якщо не вказано але канал регіональний - використай регіон каналу
+
+5. direction: напрямок руху загрози
+   - Назва міста/області куди летить
+   - null якщо невідомо
+
+6. action: що робити з маркером на карті:
+   - "create" - нова загроза, створити маркер
+   - "move" - загроза змінила курс/рухається, перемістити маркер
+   - "update" - оновити інформацію про існуючу загрозу
+   - "remove" - загроза знищена/пройшла, видалити маркер
+
+7. coordinates: приблизні координати де зараз загроза
+   - {{"lat": число, "lng": число}}
+   - Визнач по регіону/місту з таблиці координат
+   - null якщо не можеш визначити
+
+8. confidence: впевненість в аналізі (0.0-1.0)
+
+9. keywords: масив ключових слів ["moving", "destroyed", "split", "changed_course"]
+
+Відповідай ТІЛЬКИ валідним JSON:
+{{"is_threat": bool, "threat_type": "...", "quantity": N, "regions": [...], "direction": "...", "action": "...", "coordinates": {{"lat": N, "lng": N}}, "confidence": N, "keywords": [...]}}"""
+
+            response = groq_client.chat.completions.create(
+                model=GROQ_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                max_tokens=300,
+            )
+            
+            result_text = response.choices[0].message.content.strip()
+            
+            # Parse JSON response
+            import json
+            # Clean up response
+            if result_text.startswith('```'):
+                result_text = result_text.split('```')[1]
+                if result_text.startswith('json'):
+                    result_text = result_text[4:]
+            result_text = result_text.strip()
+            
+            result = json.loads(result_text)
+            
+            # Validate
+            if not result.get('is_threat'):
+                result = {'is_threat': False}
+            else:
+                # Normalize threat_type
+                threat_map = {
+                    'shahed': 'shahed', 'шахед': 'shahed', 'герань': 'shahed',
+                    'drone': 'drone', 'бпла': 'drone', 'дрон': 'drone',
+                    'ballistic': 'ballistic', 'балістика': 'ballistic',
+                    'cruise': 'cruise', 'крилата': 'cruise',
+                    'kab': 'kab', 'каб': 'kab',
+                    'kinzhal': 'kinzhal', 'кинжал': 'kinzhal',
+                }
+                if result.get('threat_type'):
+                    result['threat_type'] = threat_map.get(
+                        str(result['threat_type']).lower(), 
+                        result['threat_type']
+                    )
+                
+                # Ensure quantity is int
+                if result.get('quantity'):
+                    try:
+                        result['quantity'] = int(result['quantity'])
+                    except:
+                        result['quantity'] = 1
+                
+                # Validate action
+                valid_actions = ['create', 'move', 'update', 'remove']
+                if result.get('action') not in valid_actions:
+                    result['action'] = 'create'
+                
+                # Log AI decision
+                logger.info(f"AI Analysis: {result.get('threat_type')} x{result.get('quantity')} "
+                           f"-> {result.get('regions')} action={result.get('action')} "
+                           f"conf={result.get('confidence', 0):.0%}")
+            
+            # Cache result
+            _groq_cache[cache_key] = (result, time.time())
+            
+            return result
+            
+        except Exception as e:
+            if '429' in str(e):
+                _groq_handle_429(str(e))
+            logger.error(f"AI full analysis error: {e}")
+            return None
+    
+    def _ai_analyze_message(self, text: str, channel: str = '') -> dict:
+        """
+        [DEPRECATED] Використовуй _ai_full_analysis замість цього.
+        Залишено для сумісності.
+        """
+        return self._ai_full_analysis(text, channel)
+    
+    def calculate_similarity(self, sig1: dict, sig2: dict) -> float:
+        """
+        Розраховує схожість двох підписів повідомлень.
+        
+        Повертає score від 0.0 до 1.0
+        """
+        score = 0.0
+        weights = {
+            'threat_type': 0.30,
+            'regions': 0.15,
+            'direction': 0.15,
+            'quantity': 0.10,
+            'time': 0.15,
+            'coordinates': 0.15,  # New: coordinate proximity
+        }
+        
+        # Threat type match (most important)
+        if sig1['threat_type'] and sig2['threat_type']:
+            if sig1['threat_type'] == sig2['threat_type']:
+                score += weights['threat_type']
+            # Shahed and drone are similar
+            elif {sig1['threat_type'], sig2['threat_type']} <= {'shahed', 'drone'}:
+                score += weights['threat_type'] * 0.8
+        
+        # Region overlap
+        if sig1['regions'] and sig2['regions']:
+            overlap = sig1['regions'] & sig2['regions']
+            union = sig1['regions'] | sig2['regions']
+            if union:
+                region_score = len(overlap) / len(union)
+                score += weights['regions'] * region_score
+            # Bonus for adjacent regions
+            if overlap:
+                score += 0.05  # Adjacent regions bonus
+        elif sig1['regions'] or sig2['regions']:
+            # One has regions, other doesn't - partial credit
+            score += weights['regions'] * 0.3
+        
+        # Direction match
+        if sig1['direction'] and sig2['direction']:
+            # Fuzzy match for direction
+            d1 = sig1['direction'].lower()
+            d2 = sig2['direction'].lower()
+            if d1 == d2:
+                score += weights['direction']
+            elif d1 in d2 or d2 in d1:
+                score += weights['direction'] * 0.7
+        elif sig1['direction'] or sig2['direction']:
+            # Only one has direction - small credit
+            score += weights['direction'] * 0.2
+        
+        # Quantity similarity
+        q1, q2 = sig1['quantity'], sig2['quantity']
+        if q1 and q2:
+            qty_diff = abs(q1 - q2)
+            max_qty = max(q1, q2)
+            qty_score = 1.0 - (qty_diff / max_qty) if max_qty > 0 else 0
+            score += weights['quantity'] * qty_score
+        
+        # Time proximity
+        if sig1['timestamp'] and sig2['timestamp']:
+            time_diff = abs((sig1['timestamp'] - sig2['timestamp']).total_seconds())
+            # Score decreases as time difference increases
+            time_score = max(0, 1.0 - (time_diff / self.FUSION_WINDOW_SECONDS))
+            score += weights['time'] * time_score
+        
+        # Coordinate proximity (new)
+        c1 = sig1.get('target_coords')
+        c2 = sig2.get('target_coords')
+        if c1 and c2:
+            try:
+                distance = haversine(c1, c2)
+                if distance < self.MAX_FUSION_DISTANCE_KM:
+                    coord_score = 1.0 - (distance / self.MAX_FUSION_DISTANCE_KM)
+                    score += weights['coordinates'] * coord_score
+                    # Bonus for very close positions
+                    if distance < 50:
+                        score += 0.1
+            except:
+                pass
+        
+        return score
+    
+    def find_matching_event(self, signature: dict) -> str:
+        """
+        Шукає існуючу подію що відповідає підпису.
+        
+        Повертає event_id або None.
+        """
+        best_match = None
+        best_score = self.MIN_SIMILARITY_SCORE
+        
+        with self.lock:
+            for event_id, event in self.fused_events.items():
+                # Skip old events
+                age = (datetime.now() - event['last_update']).total_seconds()
+                if age > self.FUSION_WINDOW_SECONDS * 2:
+                    continue
+                
+                # Compare with event's combined signature
+                score = self.calculate_similarity(signature, event['signature'])
+                
+                if score > best_score:
+                    best_score = score
+                    best_match = event_id
+        
+        return best_match
+    
+    def create_event(self, message: dict, signature: dict) -> str:
+        """
+        Створює нову об'єднану подію загрози.
+        """
+        import hashlib
+        
+        # Generate event ID
+        event_id = hashlib.md5(
+            f"{signature['threat_type']}:{signature['timestamp']}:{signature['channel']}".encode()
+        ).hexdigest()[:16]
+        
+        channel = signature['channel']
+        priority = self.get_channel_priority(channel)
+        
+        # Initial trajectory with first position
+        initial_trajectory = []
+        if signature['target_coords']:
+            initial_trajectory.append({
+                'coords': signature['target_coords'],
+                'timestamp': signature['timestamp'].isoformat() if signature['timestamp'] else datetime.now().isoformat(),
+                'source': channel,
+            })
+        
+        event = {
+            'id': event_id,
+            'created_at': datetime.now(),
+            'last_update': datetime.now(),
+            'signature': signature.copy(),  # Combined signature
+            'messages': [{
+                'id': message.get('id'),
+                'channel': channel,
+                'priority': priority,
+                'text': message.get('text', ''),
+                'timestamp': signature['timestamp'],
+                'coordinates': signature['target_coords'],
+            }],
+            'threat_type': signature['threat_type'],
+            'quantity': signature['quantity'],
+            'quantity_destroyed': 0,
+            'regions': list(signature['regions']),
+            'direction': signature['direction'],
+            'status': 'active',
+            'best_coordinates': signature['target_coords'],
+            'trajectory': initial_trajectory,  # Start with initial position
+            'confidence': priority / 100.0,
+        }
+        
+        with self.lock:
+            self.fused_events[event_id] = event
+            self.message_to_event[message.get('id')] = event_id
+        
+        print(f"[FUSION] Created event {event_id}: {signature['threat_type']} x{signature['quantity']} -> {signature['direction']}")
+        
+        return event_id
+    
+    def update_event(self, event_id: str, message: dict, signature: dict) -> dict:
+        """
+        Оновлює існуючу подію новою інформацією.
+        
+        Використовує пріоритет каналів для вирішення конфліктів.
+        """
+        with self.lock:
+            if event_id not in self.fused_events:
+                return None
+            
+            event = self.fused_events[event_id]
+            channel = signature['channel']
+            priority = self.get_channel_priority(channel)
+            
+            changes = []
+            
+            # Add message to event
+            event['messages'].append({
+                'id': message.get('id'),
+                'channel': channel,
+                'priority': priority,
+                'text': message.get('text', ''),
+                'timestamp': signature['timestamp'],
+                'coordinates': signature['target_coords'],
+            })
+            self.message_to_event[message.get('id')] = event_id
+            
+            # Update with higher priority info
+            best_priority = max(m['priority'] for m in event['messages'])
+            
+            # Update quantity (take max from high-priority sources)
+            if signature['quantity'] > event['quantity']:
+                high_priority_quantities = [
+                    m for m in event['messages']
+                    if m['priority'] >= best_priority - 10
+                ]
+                if priority >= best_priority - 10:
+                    changes.append(f"quantity: {event['quantity']} -> {signature['quantity']}")
+                    event['quantity'] = signature['quantity']
+            
+            # Update regions (merge)
+            new_regions = signature['regions'] - set(event['regions'])
+            if new_regions:
+                event['regions'].extend(new_regions)
+                changes.append(f"entered: {new_regions}")
+            
+            # Update direction (prefer higher priority)
+            if signature['direction'] and priority >= best_priority - 10:
+                if signature['direction'] != event['direction']:
+                    changes.append(f"direction: {event['direction']} -> {signature['direction']}")
+                    event['direction'] = signature['direction']
+            
+            # Update coordinates and trajectory
+            if signature['target_coords']:
+                # Always add to trajectory if coordinates are different from last point
+                last_traj_coords = event['trajectory'][-1]['coords'] if event['trajectory'] else None
+                coords_are_new = (
+                    not last_traj_coords or 
+                    abs(last_traj_coords[0] - signature['target_coords'][0]) > 0.01 or
+                    abs(last_traj_coords[1] - signature['target_coords'][1]) > 0.01
+                )
+                
+                if coords_are_new:
+                    # Add to trajectory
+                    event['trajectory'].append({
+                        'coords': signature['target_coords'],
+                        'timestamp': signature['timestamp'].isoformat() if signature['timestamp'] else datetime.now().isoformat(),
+                        'source': channel,
+                    })
+                    changes.append(f"moved")
+                
+                # Update best_coordinates (prefer higher priority, more recent)
+                if not event['best_coordinates'] or priority >= best_priority - 10:
+                    event['best_coordinates'] = signature['target_coords']
+            
+            # Check for status updates
+            if 'destroyed' in signature['keywords']:
+                # Count destroyed
+                destroyed_mentions = sum(
+                    1 for m in event['messages']
+                    if 'збит' in m['text'].lower() or 'знищен' in m['text'].lower()
+                )
+                if destroyed_mentions > event['quantity_destroyed']:
+                    event['quantity_destroyed'] = min(destroyed_mentions, event['quantity'])
+                    changes.append(f"destroyed: {event['quantity_destroyed']}")
+                    
+                    if event['quantity_destroyed'] >= event['quantity']:
+                        event['status'] = 'destroyed'
+            
+            if 'passed' in signature['keywords']:
+                if event['status'] == 'active':
+                    event['status'] = 'passed'
+                    changes.append(f"status: passed")
+            
+            if 'changed_course' in signature['keywords']:
+                changes.append(f"changed course")
+            
+            # Update combined signature
+            event['signature']['regions'].update(signature['regions'])
+            if signature['direction']:
+                event['signature']['direction'] = signature['direction']
+            event['signature']['keywords'].update(signature['keywords'])
+            
+            # Update timestamps
+            event['last_update'] = datetime.now()
+            
+            # Update confidence based on number of sources
+            unique_channels = len(set(m['channel'] for m in event['messages']))
+            event['confidence'] = min(1.0, (best_priority / 100.0) + (unique_channels - 1) * 0.1)
+            
+            if changes:
+                print(f"[FUSION] Updated event {event_id}: {', '.join(changes)}")
+        
+        return event
+    
+    def process_message(self, message: dict) -> dict:
+        """
+        AI-FIRST: Обробляє нове повідомлення через AI систему.
+        
+        AI визначає:
+        1. Чи це загроза
+        2. Тип та кількість
+        3. Координати
+        4. Дію: create/move/update/remove
+        """
+        signature = self.extract_message_signature(message)
+        
+        # Skip if not a threat
+        if not signature['threat_type']:
+            return None
+        
+        # AI визначив дію
+        action = signature.get('action', 'create')
+        
+        # Find matching event for move/update/remove actions
+        event_id = None
+        if action in ['move', 'update', 'remove']:
+            event_id = self.find_matching_event(signature)
+        
+        # Execute action based on AI decision
+        if action == 'remove':
+            # AI каже що загрозу знищено/пройшла
+            if event_id:
+                with self.lock:
+                    if event_id in self.fused_events:
+                        self.fused_events[event_id]['status'] = 'destroyed'
+                        print(f"[AI] Marked event {event_id} as destroyed")
+                return {
+                    'action': 'removed',
+                    'event_id': event_id,
+                    'event': self.fused_events.get(event_id),
+                    'signature': signature,
+                }
+        
+        elif action == 'move' and event_id:
+            # AI каже що загроза перемістилась
+            event = self.update_event(event_id, message, signature)
+            if event and signature.get('target_coords'):
+                # Оновити координати
+                event['best_coordinates'] = signature['target_coords']
+                print(f"[AI] Moved event {event_id} to {signature['target_coords']}")
+            return {
+                'action': 'moved',
+                'event_id': event_id,
+                'event': event,
+                'signature': signature,
+            }
+        
+        elif action == 'update' and event_id:
+            # AI каже оновити існуючу загрозу
+            event = self.update_event(event_id, message, signature)
+            return {
+                'action': 'updated',
+                'event_id': event_id,
+                'event': event,
+                'signature': signature,
+            }
+        
+        else:
+            # Default: create or merge
+            if not event_id:
+                event_id = self.find_matching_event(signature)
+            
+            if event_id:
+                # Merge with existing
+                event = self.update_event(event_id, message, signature)
+                return {
+                    'action': 'merged',
+                    'event_id': event_id,
+                    'event': event,
+                    'signature': signature,
+                }
+            else:
+                # Create new
+                event_id = self.create_event(message, signature)
+                return {
+                    'action': 'created',
+                    'event_id': event_id,
+                    'event': self.fused_events.get(event_id),
+                    'signature': signature,
+                }
+    
+    def get_active_events(self) -> list:
+        """Отримує всі активні події"""
+        now = datetime.now()
+        active = []
+        
+        with self.lock:
+            for event_id, event in self.fused_events.items():
+                # Skip old events
+                age = (now - event['last_update']).total_seconds()
+                max_age = 7200  # 2 hours for shaheds
+                if event['threat_type'] in ['ballistic', 'kinzhal', 'kab']:
+                    max_age = 600  # 10 min for fast threats
+                elif event['threat_type'] in ['cruise']:
+                    max_age = 1800  # 30 min
+                
+                if age > max_age:
+                    continue
+                
+                if event['status'] in ['active', 'partially_destroyed']:
+                    active.append(event.copy())
+        
+        return active
+    
+    def generate_marker_from_event(self, event: dict) -> dict:
+        """
+        Генерує маркер для відображення на карті з об'єднаної події.
+        """
+        if not event['best_coordinates']:
+            return None
+        
+        # Build place name from combined info
+        place_parts = []
+        if event['regions']:
+            place_parts.append(event['regions'][-1])  # Latest region
+        if event['direction']:
+            place_parts.append(f"→ {event['direction']}")
+        
+        place = ' '.join(place_parts) if place_parts else 'Невідомо'
+        
+        # Build text with quantity info
+        qty_text = ''
+        if event['quantity'] > 1:
+            remaining = event['quantity'] - event['quantity_destroyed']
+            if event['quantity_destroyed'] > 0:
+                qty_text = f" [{remaining}/{event['quantity']}, збито: {event['quantity_destroyed']}]"
+            else:
+                qty_text = f" [x{event['quantity']}]"
+        
+        # Sources info
+        sources = list(set(m['channel'] for m in event['messages']))
+        sources_text = f" ({len(sources)} джерел)" if len(sources) > 1 else ''
+        
+        # Icon based on threat type
+        icon_map = {
+            'shahed': 'icon_drone.svg',
+            'drone': 'icon_drone.svg',
+            'ballistic': 'icon_balistic.svg',
+            'cruise': 'icon_rocket.svg',
+            'kab': 'icon_balistic.svg',
+            'kinzhal': 'icon_balistic.svg',
+        }
+        
+        marker = {
+            'id': f"fused_{event['id']}",
+            'place': place,
+            'lat': event['best_coordinates'][0],
+            'lng': event['best_coordinates'][1],
+            'threat_type': event['threat_type'],
+            'text': f"{event['threat_type'].upper()}{qty_text}{sources_text}",
+            'date': event['last_update'].strftime('%Y-%m-%d %H:%M:%S'),
+            'channel': 'fusion',
+            'marker_icon': icon_map.get(event['threat_type'], 'icon_drone.svg'),
+            'source_match': 'fusion',
+            # Fusion metadata
+            'fusion_event_id': event['id'],
+            'fusion_confidence': event['confidence'],
+            'fusion_sources': sources,
+            'fusion_trajectory': event['trajectory'],
+            'fusion_status': event['status'],
+            'quantity': event['quantity'],
+            'quantity_destroyed': event['quantity_destroyed'],
+        }
+        
+        return marker
+    
+    def build_trajectory_from_event(self, event: dict) -> dict:
+        """
+        Будує траєкторію з послідовності позицій події.
+        """
+        if len(event['trajectory']) < 2:
+            return None
+        
+        points = event['trajectory']
+        
+        # Sort by timestamp
+        sorted_points = sorted(points, key=lambda p: p['timestamp'])
+        
+        # Build polyline
+        coords = [p['coords'] for p in sorted_points if p['coords']]
+        
+        if len(coords) < 2:
+            return None
+        
+        # Calculate distance and direction
+        start = coords[0]
+        end = coords[-1]
+        
+        total_distance = 0
+        for i in range(1, len(coords)):
+            total_distance += haversine(coords[i-1], coords[i])
+        
+        # Predict continuation
+        if len(coords) >= 2:
+            # Use last two points to predict direction
+            lat_diff = end[0] - coords[-2][0]
+            lng_diff = end[1] - coords[-2][1]
+            
+            # Project forward
+            projection_factor = 0.5  # Project half the path forward
+            predicted_end = (
+                end[0] + lat_diff * projection_factor * len(coords),
+                end[1] + lng_diff * projection_factor * len(coords),
+            )
+        else:
+            predicted_end = end
+        
+        return {
+            'event_id': event['id'],
+            'actual_path': coords,
+            'predicted_path': [end, predicted_end],
+            'start': start,
+            'end': end,
+            'predicted_end': predicted_end,
+            'total_distance_km': total_distance,
+            'point_count': len(coords),
+        }
+    
+    def cleanup_old_events(self, max_age_hours: float = 4):
+        """Видаляє старі події"""
+        now = datetime.now()
+        removed = 0
+        
+        with self.lock:
+            for event_id in list(self.fused_events.keys()):
+                event = self.fused_events[event_id]
+                age_hours = (now - event['created_at']).total_seconds() / 3600
+                
+                should_remove = False
+                
+                # Remove if too old
+                if age_hours > max_age_hours:
+                    should_remove = True
+                
+                # Remove completed events after 30 min
+                if event['status'] in ['destroyed', 'passed'] and age_hours > 0.5:
+                    should_remove = True
+                
+                if should_remove:
+                    del self.fused_events[event_id]
+                    removed += 1
+        
+        if removed > 0:
+            print(f"[FUSION] Cleaned up {removed} old events")
+        
+        return removed
+
+
+class TrajectoryBuilder:
+    """
+    Будівник траєкторій на основі послідовності повідомлень.
+    """
+    
+    def __init__(self):
+        self.active_trajectories = {}  # threat_id -> trajectory data
+        self.lock = threading.Lock()
+    
+    def add_position(self, threat_id: str, lat: float, lng: float, 
+                     timestamp: datetime, source: str):
+        """Додає нову позицію до траєкторії"""
+        with self.lock:
+            if threat_id not in self.active_trajectories:
+                self.active_trajectories[threat_id] = {
+                    'positions': [],
+                    'created_at': timestamp,
+                    'last_update': timestamp,
+                }
+            
+            traj = self.active_trajectories[threat_id]
+            traj['positions'].append({
+                'lat': lat,
+                'lng': lng,
+                'timestamp': timestamp.isoformat(),
+                'source': source,
+            })
+            traj['last_update'] = timestamp
+    
+    def get_trajectory(self, threat_id: str) -> dict:
+        """Отримує побудовану траєкторію"""
+        with self.lock:
+            if threat_id not in self.active_trajectories:
+                return None
+            
+            traj = self.active_trajectories[threat_id]
+            if len(traj['positions']) < 2:
+                return None
+            
+            positions = sorted(traj['positions'], key=lambda p: p['timestamp'])
+            
+            return {
+                'threat_id': threat_id,
+                'positions': positions,
+                'start': (positions[0]['lat'], positions[0]['lng']),
+                'current': (positions[-1]['lat'], positions[-1]['lng']),
+                'point_count': len(positions),
+            }
+
+
+# Global fusion system instance
+CHANNEL_FUSION = ChannelIntelligenceFusion()
+
+def process_message_with_fusion(message: dict) -> dict:
+    """
+    Обробляє повідомлення через систему злиття каналів.
+    
+    Це головна точка входу для обробки нових повідомлень.
+    """
+    result = CHANNEL_FUSION.process_message(message)
+    
+    if result and result['event']:
+        # Also update threat tracker for alarm sync
+        process_message_for_threats(message)
+    
+    return result
+
+def get_fused_markers() -> list:
+    """
+    Отримує маркери з об'єднаних подій.
+    """
+    events = CHANNEL_FUSION.get_active_events()
+    markers = []
+    
+    for event in events:
+        marker = CHANNEL_FUSION.generate_marker_from_event(event)
+        if marker:
+            markers.append(marker)
+    
+    return markers
+
+def get_fused_trajectories() -> list:
+    """
+    Отримує траєкторії з об'єднаних подій.
+    """
+    events = CHANNEL_FUSION.get_active_events()
+    trajectories = []
+    
+    for event in events:
+        traj = CHANNEL_FUSION.build_trajectory_from_event(event)
+        if traj:
+            trajectories.append(traj)
+    
+    return trajectories
+
+# ==================== END MULTI-CHANNEL INTELLIGENCE FUSION ====================
 
 
 def analyze_threat_context(message_text: str, threat_type: str) -> dict:
@@ -26333,6 +27477,170 @@ def api_threats():
             'by_type': {}
         }
     })
+
+@app.route('/api/fusion/events', methods=['GET'])
+def api_fusion_events():
+    """
+    API для отримання об'єднаних подій з системи злиття каналів.
+    
+    Повертає активні події з комбінованою інформацією з різних джерел.
+    """
+    try:
+        events = CHANNEL_FUSION.get_active_events()
+        
+        # Group by status
+        by_status = {
+            'active': [],
+            'partially_destroyed': [],
+            'destroyed': [],
+            'passed': [],
+        }
+        
+        for event in events:
+            status = event.get('status', 'active')
+            if status in by_status:
+                by_status[status].append(event)
+            else:
+                by_status['active'].append(event)
+        
+        # Serialize events
+        serialized = []
+        for event in events:
+            ser_event = {
+                'id': event['id'],
+                'threat_type': event['threat_type'],
+                'quantity': event['quantity'],
+                'quantity_destroyed': event['quantity_destroyed'],
+                'regions': event['regions'],
+                'direction': event['direction'],
+                'status': event['status'],
+                'confidence': event['confidence'],
+                'coordinates': event['best_coordinates'],
+                'trajectory_points': len(event['trajectory']),
+                'source_count': len(set(m['channel'] for m in event['messages'])),
+                'sources': list(set(m['channel'] for m in event['messages'])),
+                'created_at': event['created_at'].isoformat(),
+                'last_update': event['last_update'].isoformat(),
+            }
+            serialized.append(ser_event)
+        
+        return jsonify({
+            'status': 'ok',
+            'events': serialized,
+            'summary': {
+                'total': len(events),
+                'active': len(by_status['active']),
+                'destroyed': len(by_status['destroyed']),
+                'passed': len(by_status['passed']),
+            }
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+@app.route('/api/fusion/markers', methods=['GET'])
+def api_fusion_markers():
+    """
+    API для отримання маркерів з системи злиття.
+    
+    Ці маркери можна використовувати на карті замість звичайних.
+    """
+    try:
+        markers = get_fused_markers()
+        
+        return jsonify({
+            'status': 'ok',
+            'markers': markers,
+            'count': len(markers)
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+@app.route('/api/fusion/trajectories', methods=['GET'])
+def api_fusion_trajectories():
+    """
+    API для отримання траєкторій руху загроз.
+    
+    Повертає траєкторії побудовані з послідовних повідомлень.
+    """
+    try:
+        trajectories = get_fused_trajectories()
+        
+        return jsonify({
+            'status': 'ok',
+            'trajectories': trajectories,
+            'count': len(trajectories)
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+@app.route('/api/fusion/status', methods=['GET'])
+def api_fusion_status():
+    """
+    Статус системи злиття каналів.
+    """
+    try:
+        with CHANNEL_FUSION.lock:
+            total_events = len(CHANNEL_FUSION.fused_events)
+            total_messages = len(CHANNEL_FUSION.message_to_event)
+            
+            # Count by channel
+            channel_counts = {}
+            ai_analyzed_count = 0
+            for event in CHANNEL_FUSION.fused_events.values():
+                for msg in event['messages']:
+                    ch = msg['channel']
+                    channel_counts[ch] = channel_counts.get(ch, 0) + 1
+                # Check if AI analyzed
+                sig = event.get('signature', {})
+                if sig.get('ai_analyzed'):
+                    ai_analyzed_count += 1
+        
+        return jsonify({
+            'status': 'ok',
+            'fusion_enabled': True,
+            'ai_enabled': GROQ_ENABLED,
+            'ai_model': GROQ_MODEL if GROQ_ENABLED else None,
+            'ai_analyzed_events': ai_analyzed_count,
+            'total_events': total_events,
+            'total_messages_processed': total_messages,
+            'by_channel': channel_counts,
+            'channel_priorities': CHANNEL_FUSION.CHANNEL_PRIORITY,
+            'mode': 'AI-FIRST' if GROQ_ENABLED else 'REGEX-FALLBACK',
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+@app.route('/admin/fusion/cleanup', methods=['POST'])
+def admin_fusion_cleanup():
+    """
+    Примусове очищення старих подій fusion.
+    """
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    
+    try:
+        removed = CHANNEL_FUSION.cleanup_old_events(max_age_hours=1)
+        return jsonify({
+            'status': 'ok',
+            'removed_events': removed
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
 
 @app.route('/admin/neg_geocode_clear', methods=['POST'])
 def admin_neg_geocode_clear():

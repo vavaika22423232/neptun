@@ -1039,6 +1039,112 @@
       border-radius: 50%;
     }
 
+    /* === FUSION TRAJECTORIES STYLES === */
+    /* Multi-channel intelligence fusion trajectory visualization */
+    
+    .fusion-trajectories-layer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 8;
+    }
+    
+    .fusion-trajectory-group {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+    
+    /* Actual tracked path - solid orange */
+    .fusion-path-actual {
+      stroke: #ff6600;
+      stroke-width: 3;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      filter: drop-shadow(0 0 4px rgba(255, 102, 0, 0.6));
+    }
+    
+    /* Predicted path - dashed orange */
+    .fusion-path-predicted {
+      stroke: #ff6600;
+      stroke-width: 2;
+      stroke-dasharray: 10 6;
+      opacity: 0.5;
+    }
+    
+    /* Start point marker */
+    .fusion-start-marker {
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      background: #ff6600;
+      border: 2px solid #fff;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 0 8px rgba(255, 102, 0, 0.8);
+      z-index: 11;
+    }
+    
+    /* Current position marker - pulsing */
+    .fusion-current-marker {
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      background: #ff3300;
+      border: 3px solid #fff;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 0 12px rgba(255, 51, 0, 0.9);
+      z-index: 12;
+      animation: fusionPulse 1.5s ease-in-out infinite;
+    }
+    
+    @keyframes fusionPulse {
+      0%, 100% { 
+        transform: translate(-50%, -50%) scale(1);
+        box-shadow: 0 0 12px rgba(255, 51, 0, 0.9);
+      }
+      50% { 
+        transform: translate(-50%, -50%) scale(1.2);
+        box-shadow: 0 0 20px rgba(255, 51, 0, 1);
+      }
+    }
+    
+    /* Predicted end marker - triangle */
+    .fusion-predicted-marker {
+      position: absolute;
+      width: 0;
+      height: 0;
+      border-left: 8px solid transparent;
+      border-right: 8px solid transparent;
+      border-bottom: 14px solid rgba(255, 102, 0, 0.6);
+      transform: translate(-50%, -50%);
+      filter: drop-shadow(0 0 6px rgba(255, 102, 0, 0.5));
+      z-index: 10;
+    }
+    
+    /* Distance label */
+    .fusion-distance-label {
+      position: absolute;
+      transform: translate(-50%, -150%);
+      background: rgba(30, 41, 59, 0.85);
+      color: #ff9933;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid rgba(255, 102, 0, 0.4);
+      white-space: nowrap;
+      z-index: 11;
+    }
+    /* === END FUSION TRAJECTORIES STYLES === */
+
     /* Threat markers layer */
     #markers-layer {
       position: absolute;
@@ -3735,18 +3841,24 @@
           // Fetch threat markers immediately
           await fetchThreatMarkers();
           
+          // Fetch fusion trajectories
+          await fetchFusionTrajectories();
+          
           // BANDWIDTH OPTIMIZATION: Smart polling with visibility detection
           let alarmsIntervalId = null;
           let markersIntervalId = null;
+          let fusionIntervalId = null;
           
           function startPolling() {
             const interval = document.hidden ? hiddenPollingInterval : activePollingInterval;
             
             if (alarmsIntervalId) clearInterval(alarmsIntervalId);
             if (markersIntervalId) clearInterval(markersIntervalId);
+            if (fusionIntervalId) clearInterval(fusionIntervalId);
             
             alarmsIntervalId = setInterval(fetchAlarms, interval);
             markersIntervalId = setInterval(fetchThreatMarkers, interval);
+            fusionIntervalId = setInterval(fetchFusionTrajectories, interval * 2); // Less frequent
             
             console.log(`Polling ${document.hidden ? 'slowed' : 'active'}: ${interval/1000}s`);
           }
@@ -3761,6 +3873,7 @@
             if (!document.hidden) {
               fetchAlarms();
               fetchThreatMarkers();
+              fetchFusionTrajectories();
             }
           });
           
@@ -4232,6 +4345,143 @@
       } catch (error) {
         console.error('Error fetching threat markers:', error);
       }
+    }
+    
+    // Fetch and render fusion trajectories (multi-channel combined data)
+    async function fetchFusionTrajectories() {
+      try {
+        const response = await fetch('/api/fusion/trajectories');
+        if (!response.ok) return;
+        
+        const data = await response.json();
+        if (data.status !== 'ok') return;
+        
+        const trajectories = data.trajectories || [];
+        if (trajectories.length === 0) return;
+        
+        renderFusionTrajectories(trajectories);
+        console.log(`Loaded ${trajectories.length} fusion trajectories`);
+        
+      } catch (error) {
+        console.error('Error fetching fusion trajectories:', error);
+      }
+    }
+    
+    // Render fusion trajectories on the map
+    function renderFusionTrajectories(trajectories) {
+      let fusionLayer = document.getElementById('fusion-trajectories-layer');
+      
+      // Create fusion layer if it doesn't exist
+      if (!fusionLayer) {
+        fusionLayer = document.createElement('div');
+        fusionLayer.id = 'fusion-trajectories-layer';
+        fusionLayer.className = 'fusion-trajectories-layer';
+        const trajLayer = document.getElementById('trajectories-layer');
+        if (trajLayer) {
+          trajLayer.parentNode.insertBefore(fusionLayer, trajLayer);
+        }
+      }
+      
+      // Clear existing fusion trajectories
+      fusionLayer.innerHTML = '';
+      
+      trajectories.forEach(traj => {
+        if (!traj.actual_path || traj.actual_path.length < 2) return;
+        
+        const svgNS = 'http://www.w3.org/2000/svg';
+        const group = document.createElement('div');
+        group.className = 'fusion-trajectory-group';
+        group.dataset.eventId = traj.event_id;
+        
+        // Create SVG for polyline
+        const svg = document.createElementNS(svgNS, 'svg');
+        svg.style.position = 'absolute';
+        svg.style.top = '0';
+        svg.style.left = '0';
+        svg.style.width = '100%';
+        svg.style.height = '100%';
+        svg.style.overflow = 'visible';
+        svg.style.pointerEvents = 'none';
+        
+        // Build polyline points string
+        const points = traj.actual_path.map(coord => {
+          const pos = latLngToSvgPercent(coord[0], coord[1]);
+          return `${pos.x},${pos.y}`;
+        }).join(' ');
+        
+        // Create actual path line (solid)
+        const polyline = document.createElementNS(svgNS, 'polyline');
+        polyline.setAttribute('class', 'fusion-path-actual');
+        polyline.setAttribute('points', points);
+        polyline.setAttribute('fill', 'none');
+        polyline.setAttribute('stroke', '#ff6600');
+        polyline.setAttribute('stroke-width', '2');
+        polyline.setAttribute('stroke-linecap', 'round');
+        polyline.setAttribute('stroke-linejoin', 'round');
+        svg.appendChild(polyline);
+        
+        // Add predicted path if available
+        if (traj.predicted_path && traj.predicted_path.length >= 2) {
+          const predPoints = traj.predicted_path.map(coord => {
+            const pos = latLngToSvgPercent(coord[0], coord[1]);
+            return `${pos.x},${pos.y}`;
+          }).join(' ');
+          
+          const predLine = document.createElementNS(svgNS, 'polyline');
+          predLine.setAttribute('class', 'fusion-path-predicted');
+          predLine.setAttribute('points', predPoints);
+          predLine.setAttribute('fill', 'none');
+          predLine.setAttribute('stroke', '#ff6600');
+          predLine.setAttribute('stroke-width', '2');
+          predLine.setAttribute('stroke-dasharray', '8,4');
+          predLine.setAttribute('opacity', '0.6');
+          svg.appendChild(predLine);
+        }
+        
+        group.appendChild(svg);
+        
+        // Add start point marker
+        const startPos = latLngToSvgPercent(traj.start[0], traj.start[1]);
+        const startMarker = document.createElement('div');
+        startMarker.className = 'fusion-start-marker';
+        startMarker.style.left = `${startPos.x}%`;
+        startMarker.style.top = `${startPos.y}%`;
+        group.appendChild(startMarker);
+        
+        // Add current position marker
+        const endPos = latLngToSvgPercent(traj.end[0], traj.end[1]);
+        const endMarker = document.createElement('div');
+        endMarker.className = 'fusion-current-marker';
+        endMarker.style.left = `${endPos.x}%`;
+        endMarker.style.top = `${endPos.y}%`;
+        group.appendChild(endMarker);
+        
+        // Add predicted end marker if different from current
+        if (traj.predicted_end && 
+            (Math.abs(traj.predicted_end[0] - traj.end[0]) > 0.01 ||
+             Math.abs(traj.predicted_end[1] - traj.end[1]) > 0.01)) {
+          const predEndPos = latLngToSvgPercent(traj.predicted_end[0], traj.predicted_end[1]);
+          const predMarker = document.createElement('div');
+          predMarker.className = 'fusion-predicted-marker';
+          predMarker.style.left = `${predEndPos.x}%`;
+          predMarker.style.top = `${predEndPos.y}%`;
+          group.appendChild(predMarker);
+        }
+        
+        // Add distance label
+        if (traj.total_distance_km) {
+          const midPoint = traj.actual_path[Math.floor(traj.actual_path.length / 2)];
+          const midPos = latLngToSvgPercent(midPoint[0], midPoint[1]);
+          const distLabel = document.createElement('div');
+          distLabel.className = 'fusion-distance-label';
+          distLabel.style.left = `${midPos.x}%`;
+          distLabel.style.top = `${midPos.y}%`;
+          distLabel.textContent = `${Math.round(traj.total_distance_km)} км`;
+          group.appendChild(distLabel);
+        }
+        
+        fusionLayer.appendChild(group);
+      });
     }
     
     // Render trajectory lines from markers with trajectory data (alerts.in.ua style)
