@@ -6880,6 +6880,126 @@ class ChannelIntelligenceFusion:
         channel_clean = channel.lower().replace('@', '').strip()
         return self.CHANNEL_REGIONS.get(channel_clean, [])
     
+    def _find_city_coordinates_from_text(self, text: str) -> tuple:
+        """
+        Знаходить конкретне місто в тексті та повертає його координати.
+        Також обробляє формати типу "на ПнСх Чернігівщини".
+        """
+        text_lower = text.lower()
+        
+        # === SPECIAL: Формат "на [напрямок] [області]" ===
+        # Приклад: "на північний схід Чернігівщини"
+        region_direction_pattern = r'на\s+(північн[а-яіїє\-]*\s*схід|північн[а-яіїє\-]*\s*захід|південн[а-яіїє\-]*\s*схід|південн[а-яіїє\-]*\s*захід|північ[а-яіїє]*|південь|півдня|півдні|схід|захід|сході|заході)\s+([А-ЯІЇЄа-яіїє]+(?:щини|івщини|ської|ської області)?)'
+        match = re.search(region_direction_pattern, text, re.IGNORECASE)
+        if match:
+            direction_text = match.group(1).lower()
+            region_text = match.group(2).lower()
+            
+            # Визначаємо регіон
+            region_to_center = {
+                'чернігівщини': (51.50, 31.29),  # Чернігів
+                'чернігівської': (51.50, 31.29),
+                'сумщини': (50.91, 34.80),  # Суми
+                'сумської': (50.91, 34.80),
+                'харківщини': (49.99, 36.23),  # Харків
+                'харківської': (49.99, 36.23),
+                'київщини': (50.45, 30.52),  # Київ
+                'київської': (50.45, 30.52),
+                'полтавщини': (49.59, 34.55),
+                'полтавської': (49.59, 34.55),
+                'дніпропетровщини': (48.46, 35.04),
+                'дніпропетровської': (48.46, 35.04),
+                'запоріжжя': (47.84, 35.14),
+                'запорізької': (47.84, 35.14),
+                'донеччини': (48.00, 37.80),
+                'донецької': (48.00, 37.80),
+                'луганщини': (48.57, 39.31),
+                'луганської': (48.57, 39.31),
+                'херсонщини': (46.64, 32.62),
+                'херсонської': (46.64, 32.62),
+                'миколаївщини': (46.97, 32.00),
+                'миколаївської': (46.97, 32.00),
+                'одещини': (46.48, 30.73),
+                'одеської': (46.48, 30.73),
+            }
+            
+            # Визначаємо напрямок (зсув від центру області)
+            direction_offsets = {
+                'північ': (0.5, 0), 'північн': (0.5, 0),
+                'південь': (-0.5, 0), 'півдня': (-0.5, 0), 'півдні': (-0.5, 0),
+                'схід': (0, 0.5), 'сході': (0, 0.5),
+                'захід': (0, -0.5), 'заході': (0, -0.5),
+                'північний схід': (0.4, 0.4), 'північно-схід': (0.4, 0.4),
+                'північний захід': (0.4, -0.4), 'північно-захід': (0.4, -0.4),
+                'південний схід': (-0.4, 0.4), 'південно-схід': (-0.4, 0.4),
+                'південний захід': (-0.4, -0.4), 'південно-захід': (-0.4, -0.4),
+            }
+            
+            center = None
+            for key, coords in region_to_center.items():
+                if key in region_text:
+                    center = coords
+                    break
+            
+            offset = (0, 0)
+            for key, off in direction_offsets.items():
+                if key in direction_text:
+                    offset = off
+                    break
+            
+            if center:
+                final_coords = (center[0] + offset[0], center[1] + offset[1])
+                logger.info(f"Parsed regional direction: '{direction_text}' + '{region_text}' -> {final_coords}")
+                return final_coords
+        
+        # === Стандартний пошук міст ===
+        city_patterns = [
+            # Формат "Nх БПЛА Місто" - місто одразу після типу загрози
+            r'\d+\s*х?\s*(?:бпла|дрон|шахед)\s+([А-ЯІЇЄа-яіїє\-]+)',
+            # Формат "Місто (Область)"
+            r'([А-ЯІЇЄа-яіїє\-]+)\s*\([А-ЯІЇЄа-яіїє\s]+обл',
+            # Формат "курсом на Місто", "напрямок Місто"
+            r'(?:курс(?:ом)?|напрям(?:ок)?)\s+(?:на\s+)?([А-ЯІЇЄа-яіїє\-]+)',
+            # Формат "над Містом", "в районі Міста"
+            r'(?:над|в районі|біля)\s+([А-ЯІЇЄа-яіїє\-]+)',
+        ]
+        
+        found_cities = []
+        for pattern in city_patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            for match in matches:
+                city = match.strip().lower()
+                # Фільтруємо службові слова
+                if city in ['на', 'до', 'від', 'з', 'через', 'над', 'по', 'обл', 'області', 'район', 'уважно', 'західний', 'східний', 'північний', 'південний']:
+                    continue
+                if len(city) < 3:
+                    continue
+                found_cities.append(city)
+        
+        # Нормалізуємо знайдені міста (знімаємо закінчення)
+        for city in found_cities:
+            city_norm = city
+            
+            # Accusative -> Nominative
+            if city_norm.endswith('у') and len(city_norm) > 3:
+                city_norm = city_norm[:-1] + 'а'
+            elif city_norm.endswith('ку') and len(city_norm) > 4:
+                city_norm = city_norm[:-2] + 'ка'
+            
+            # Шукаємо в базах координат
+            if city_norm in CITY_COORDS:
+                coords = CITY_COORDS[city_norm]
+                logger.info(f"Found city '{city}' -> '{city_norm}' in CITY_COORDS: {coords}")
+                return coords
+            
+            # Пробуємо оригінальну форму
+            if city in CITY_COORDS:
+                coords = CITY_COORDS[city]
+                logger.info(f"Found city '{city}' in CITY_COORDS: {coords}")
+                return coords
+        
+        return None
+    
     def extract_message_signature(self, message: dict) -> dict:
         """
         AI-FIRST: Витягує "підпис" повідомлення через AI.
@@ -6901,16 +7021,43 @@ class ChannelIntelligenceFusion:
             'threat_type': None,
             'regions': set(),
             'direction': None,
+            'course_direction': None,  # текст напрямку (західний, східний)
+            'course_bearing': None,  # NEW: кут в градусах для обертання іконки
             'quantity': 1,
             'keywords': set(),
             'source_coords': None,
             'target_coords': None,
             'timestamp': None,
             'channel': channel,
-            'action': 'create',  # NEW: create/move/update/remove
+            'action': 'create',  # create/move/update/remove
             'ai_analyzed': False,
             'confidence': 0.0,
         }
+        
+        # === PARSE SOURCE REGION ("із Сумщини", "з Херсонщини") ===
+        source_region_pattern = r'(?:із|з|от)\s+([А-ЯІЇЄа-яіїє]+(?:щини|івщини|ської))'
+        source_match = re.search(source_region_pattern, original_text, re.IGNORECASE)
+        if source_match:
+            source_region = source_match.group(1).lower()
+            source_coords_map = {
+                'сумщини': (50.91, 34.80),
+                'чернігівщини': (51.50, 31.29),
+                'харківщини': (49.99, 36.23),
+                'київщини': (50.45, 30.52),
+                'полтавщини': (49.59, 34.55),
+                'дніпропетровщини': (48.46, 35.04),
+                'запорізької': (47.84, 35.14),
+                'херсонщини': (46.64, 32.62),
+                'миколаївщини': (46.97, 32.00),
+                'одещини': (46.48, 30.73),
+                'донеччини': (48.00, 37.80),
+                'луганщини': (48.57, 39.31),
+            }
+            for key, coords in source_coords_map.items():
+                if key in source_region:
+                    signature['source_coords'] = coords
+                    logger.info(f"Parsed source region: '{source_region}' -> {coords}")
+                    break
         
         # Parse timestamp
         try:
@@ -6940,15 +7087,27 @@ class ChannelIntelligenceFusion:
                         signature['direction'] = ai_result['direction']
                     if ai_result.get('action'):
                         signature['action'] = ai_result['action']
+                    
+                    # NEW: Source coordinates від AI
+                    if ai_result.get('source_coordinates'):
+                        src = ai_result['source_coordinates']
+                        if src.get('lat') and src.get('lng'):
+                            signature['source_coords'] = (src['lat'], src['lng'])
+                            logger.info(f"AI source_coords: {signature['source_coords']}")
+                    
+                    # NEW: Course bearing від AI (для обертання іконки)
+                    if ai_result.get('course_bearing') is not None:
+                        signature['course_bearing'] = ai_result['course_bearing']
+                        logger.info(f"AI course_bearing: {signature['course_bearing']}°")
+                    
+                    # Координати від AI - довіряємо AI повністю
                     if ai_result.get('coordinates'):
                         coords = ai_result['coordinates']
                         if coords.get('lat') and coords.get('lng'):
                             signature['target_coords'] = (coords['lat'], coords['lng'])
-                    if ai_result.get('keywords'):
-                        for kw in ai_result['keywords']:
-                            signature['keywords'].add(kw)
+                            logger.info(f"AI target_coords: {signature['target_coords']}")
                     
-                    # Add coordinates from message if AI didn't provide
+                    # Fallback на координати з повідомлення
                     if not signature['target_coords'] and message.get('lat') and message.get('lng'):
                         signature['target_coords'] = (message['lat'], message['lng'])
                     
@@ -7039,26 +7198,34 @@ class ChannelIntelligenceFusion:
                 signature['regions'].add(region)
         
         # === DIRECTION ===
-        direction_patterns = [
-            # Курс на Київ, курсом на Київ
-            r'курс(?:ом)?\s*(?:на|-)?\s*([А-ЯІЇЄа-яіїє]{3,})',
-            # Напрямок Київ, напрямок на Київ
-            r'напрям(?:ок|ку)?\s*(?:на|-)?\s*([А-ЯІЇЄа-яіїє]{3,})',
-            # рухається на/до Київ
-            r'рухається\s*(?:на|до)\s*([А-ЯІЇЄа-яіїє]{3,})',
-            # в напрямку Київ
-            r'в\s*напрямку\s*([А-ЯІЇЄа-яіїє]{3,})',
-            # → Київ, -> Київ
-            r'[→\->]\s*([А-ЯІЇЄа-яіїє]{3,})',
-        ]
-        for pattern in direction_patterns:
-            match = re.search(pattern, message.get('text', ''), re.IGNORECASE)
-            if match:
-                direction = match.group(1).strip()
-                # Фільтруємо службові слова
-                if direction.lower() not in ['на', 'до', 'від', 'з', 'через', 'над', 'по', 'ку', 'ом', 'уважно']:
-                    signature['direction'] = direction
-                    break
+        # Спочатку шукаємо напрямок курсу (західний, східний тощо)
+        course_direction_pattern = r'курс\s+(західн[а-яіїє]*|східн[а-яіїє]*|північн[а-яіїє]*|південн[а-яіїє]*|північно-західн[а-яіїє]*|північно-східн[а-яіїє]*|південно-західн[а-яіїє]*|південно-східн[а-яіїє]*)'
+        course_match = re.search(course_direction_pattern, message.get('text', ''), re.IGNORECASE)
+        if course_match:
+            signature['direction'] = course_match.group(1).strip()
+            signature['course_direction'] = course_match.group(1).strip()  # Зберігаємо для обертання іконки
+        else:
+            # Інші паттерни для напрямку на місто
+            direction_patterns = [
+                # Курс на Київ, курсом на Київ
+                r'курс(?:ом)?\s*(?:на|-)?\s*([А-ЯІЇЄа-яіїє]{3,})',
+                # Напрямок Київ, напрямок на Київ
+                r'напрям(?:ок|ку)?\s*(?:на|-)?\s*([А-ЯІЇЄа-яіїє]{3,})',
+                # рухається на/до Київ
+                r'рухається\s*(?:на|до)\s*([А-ЯІЇЄа-яіїє]{3,})',
+                # в напрямку Київ
+                r'в\s*напрямку\s*([А-ЯІЇЄа-яіїє]{3,})',
+                # → Київ, -> Київ
+                r'[→\->]\s*([А-ЯІЇЄа-яіїє]{3,})',
+            ]
+            for pattern in direction_patterns:
+                match = re.search(pattern, message.get('text', ''), re.IGNORECASE)
+                if match:
+                    direction = match.group(1).strip()
+                    # Фільтруємо службові слова
+                    if direction.lower() not in ['на', 'до', 'від', 'з', 'через', 'над', 'по', 'ку', 'ом', 'уважно', 'західний', 'східний', 'північний', 'південний']:
+                        signature['direction'] = direction
+                        break
         
         # === QUANTITY ===
         qty_patterns = [
@@ -7129,26 +7296,24 @@ class ChannelIntelligenceFusion:
             if channel_regions:
                 channel_context = f"Канал '{channel}' моніторить регіони: {', '.join(channel_regions)}. "
             
-            # Координати основних міст для AI
+            # Координати основних міст та областей для AI
             city_coords = """
-Координати міст:
-- Київ: 50.45, 30.52
-- Харків: 49.99, 36.23
-- Одеса: 46.48, 30.73
-- Дніпро: 48.46, 35.04
-- Запоріжжя: 47.84, 35.14
-- Львів: 49.84, 24.03
-- Миколаїв: 46.97, 32.00
-- Херсон: 46.64, 32.62
-- Полтава: 49.59, 34.55
-- Черкаси: 49.44, 32.06
-- Кривий Ріг: 47.91, 33.39
-- Вінниця: 49.23, 28.48
-- Житомир: 50.25, 28.66
-- Суми: 50.91, 34.80
-- Чернігів: 51.50, 31.29
-- Хмельницький: 49.42, 26.98
-- Кропивницький: 48.51, 32.26
+КООРДИНАТИ МІСТ (lat, lng):
+Київ: 50.45, 30.52 | Харків: 49.99, 36.23 | Одеса: 46.48, 30.73 | Дніпро: 48.46, 35.04
+Запоріжжя: 47.84, 35.14 | Львів: 49.84, 24.03 | Миколаїв: 46.97, 32.00 | Херсон: 46.64, 32.62
+Полтава: 49.59, 34.55 | Черкаси: 49.44, 32.06 | Вінниця: 49.23, 28.48 | Житомир: 50.25, 28.66
+Суми: 50.91, 34.80 | Чернігів: 51.50, 31.29 | Хмельницький: 49.42, 26.98 | Кропивницький: 48.51, 32.26
+Шостка: 51.87, 33.48 | Конотоп: 51.24, 33.20 | Ромни: 50.75, 33.47 | Охтирка: 50.31, 34.90
+Глухів: 51.68, 33.92 | Новгород-Сіверський: 52.00, 33.27 | Прилуки: 50.59, 32.39 | Ніжин: 51.05, 31.89
+
+НАПРЯМКИ (зсув від центру області):
+- Північ: lat +0.5 | Південь: lat -0.5 | Схід: lng +0.5 | Захід: lng -0.5
+- ПнСх: lat +0.4, lng +0.4 | ПнЗх: lat +0.4, lng -0.4
+- ПдСх: lat -0.4, lng +0.4 | ПдЗх: lat -0.4, lng -0.4
+
+КУРС (кут обертання іконки):
+- північний: 0° | південний: 180° | східний: 90° | західний: -90°
+- пн-сх: 45° | пн-зх: -45° | пд-сх: 135° | пд-зх: -135°
 """
             
             prompt = f"""Ти експерт з аналізу повідомлень про повітряну загрозу в Україні.
@@ -7157,56 +7322,47 @@ class ChannelIntelligenceFusion:
 
 Повідомлення: "{text}"
 
-Проаналізуй це повідомлення та визнач:
+ПРИКЛАДИ ПАРСИНГУ:
+- "БпЛА із Сумщини на північний схід Чернігівщини, курс західний"
+  → source: Суми (50.91, 34.80), coordinates: ПнСх Чернігівщини (51.90, 31.69), course_bearing: -90
+- "2х БПЛА Шостка (Сумська обл.)" → coordinates: Шостка (51.87, 33.48), quantity: 2
+- "Дрон курсом на Київ з Чернігова" → source: Чернігів, target: Київ
 
-1. is_threat: чи це повідомлення про АКТИВНУ повітряну загрозу? (true/false)
-   - true: якщо говориться про дрони, ракети, БПЛА в повітрі
-   - false: якщо це звіт про збиття, загальна інформація, не загроза
+Проаналізуй повідомлення та визнач:
 
-2. threat_type: тип загрози (ТІЛЬКИ одне з):
-   - "shahed" - Шахед, Герань, іранські дрони
-   - "drone" - БПЛА, розвідувальний дрон
-   - "ballistic" - балістична ракета, Іскандер
-   - "cruise" - крилата ракета, Калібр, Х-101
-   - "kab" - КАБ, керована авіабомба
-   - "kinzhal" - Кинжал, гіперзвукова
-   - null - якщо не загроза
+1. is_threat: true якщо активна загроза в повітрі, false якщо збито/минуло
 
-3. quantity: кількість загроз (число 1-50)
-   - Якщо "2х", "до 5х" - це кількість дронів
-   - Якщо не вказано - поверни 1
+2. threat_type: "shahed"|"drone"|"ballistic"|"cruise"|"kab"|"kinzhal"|null
 
-4. regions: список областей/міст де загроза (масив)
-   - Наприклад: ["Дніпро"], ["Київ", "Харків"]
-   - Якщо не вказано але канал регіональний - використай регіон каналу
+3. quantity: кількість (1-50), "2х" = 2, "до 5х" = 5
 
-5. direction: напрямок руху загрози
-   - Назва міста/області куди летить
-   - null якщо невідомо
+4. regions: масив областей ["Чернігів", "Суми"]
 
-6. action: що робити з маркером на карті:
-   - "create" - нова загроза, створити маркер
-   - "move" - загроза змінила курс/рухається, перемістити маркер
-   - "update" - оновити інформацію про існуючу загрозу
-   - "remove" - загроза знищена/пройшла, видалити маркер
+5. source_coordinates: звідки летить {{"lat": N, "lng": N}} (із Сумщини = Суми)
 
-7. coordinates: приблизні координати де зараз загроза
-   - {{"lat": число, "lng": число}}
-   - Визнач по регіону/місту з таблиці координат
-   - null якщо не можеш визначити
+6. coordinates: ДЕ ЗАРАЗ загроза {{"lat": N, "lng": N}}
+   - "на ПнСх Чернігівщини" = Чернігів + зсув (lat+0.4, lng+0.4)
+   - "Шостка" = координати Шостки
+   - Якщо вказано місто - використай його координати!
 
-8. confidence: впевненість в аналізі (0.0-1.0)
+7. course_bearing: кут курсу в градусах (для обертання іконки)
+   - "курс західний" = -90, "курс північний" = 0, "курс східний" = 90
+   - null якщо не вказано
 
-9. keywords: масив ключових слів ["moving", "destroyed", "split", "changed_course"]
+8. direction: куди летить (назва міста/напрямок)
 
-Відповідай ТІЛЬКИ валідним JSON:
-{{"is_threat": bool, "threat_type": "...", "quantity": N, "regions": [...], "direction": "...", "action": "...", "coordinates": {{"lat": N, "lng": N}}, "confidence": N, "keywords": [...]}}"""
+9. action: "create"|"move"|"update"|"remove"
+
+10. confidence: 0.0-1.0
+
+Відповідай ТІЛЬКИ JSON:
+{{"is_threat":bool,"threat_type":"...","quantity":N,"regions":[...],"source_coordinates":{{"lat":N,"lng":N}},"coordinates":{{"lat":N,"lng":N}},"course_bearing":N,"direction":"...","action":"...","confidence":N}}"""
 
             response = groq_client.chat.completions.create(
                 model=GROQ_MODEL,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
-                max_tokens=300,
+                max_tokens=400,
             )
             
             result_text = response.choices[0].message.content.strip()
@@ -7425,6 +7581,9 @@ class ChannelIntelligenceFusion:
             'quantity_destroyed': 0,
             'regions': list(signature['regions']),
             'direction': signature['direction'],
+            'course_direction': signature.get('course_direction'),
+            'course_bearing': signature.get('course_bearing'),  # NEW: кут від AI
+            'source_coords': signature.get('source_coords'),
             'status': 'active',
             'best_coordinates': signature['target_coords'],
             'trajectory': initial_trajectory,  # Start with initial position
@@ -7714,6 +7873,13 @@ class ChannelIntelligenceFusion:
             'channel': 'fusion',
             'marker_icon': icon_map.get(event['threat_type'], 'icon_drone.svg'),
             'source_match': 'fusion',
+            # Direction for icon rotation
+            'course_direction': event.get('course_direction'),
+            'course_bearing': event.get('course_bearing'),  # NEW: кут в градусах від AI
+            'direction': event.get('direction'),
+            # Source coordinates for trajectory
+            'source_lat': event['source_coords'][0] if event.get('source_coords') else None,
+            'source_lng': event['source_coords'][1] if event.get('source_coords') else None,
             # Fusion metadata
             'fusion_event_id': event['id'],
             'fusion_confidence': event['confidence'],

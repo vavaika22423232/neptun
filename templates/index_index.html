@@ -4278,6 +4278,13 @@
                 img.style.setProperty('--direction-angle', `${iconAngle}deg`);
               }
             }
+          } else if (marker.course_bearing !== null && marker.course_bearing !== undefined) {
+            // NEW: Use AI-provided course_bearing directly
+            hasPrediction = true;
+            // course_bearing is already in degrees from North, icon points EAST
+            let iconAngle = marker.course_bearing - 90;
+            img.style.setProperty('--direction-angle', `${iconAngle}deg`);
+            console.log(`🧭 AI course_bearing: ${marker.course_bearing}° -> icon: ${iconAngle}°`);
           } else if (marker.course_direction || marker.arrow_direction) {
             // Fallback: use course_direction text to estimate angle
             const dir = (marker.course_direction || marker.arrow_direction || '').toLowerCase();
@@ -4409,76 +4416,22 @@
           return `${pos.x},${pos.y}`;
         }).join(' ');
         
-        // Create actual path line (solid)
+        // Create actual path line (solid white)
         const polyline = document.createElementNS(svgNS, 'polyline');
         polyline.setAttribute('class', 'fusion-path-actual');
         polyline.setAttribute('points', points);
         polyline.setAttribute('fill', 'none');
-        polyline.setAttribute('stroke', '#ff6600');
+        polyline.setAttribute('stroke', '#ffffff');
         polyline.setAttribute('stroke-width', '2');
         polyline.setAttribute('stroke-linecap', 'round');
         polyline.setAttribute('stroke-linejoin', 'round');
         svg.appendChild(polyline);
         
-        // Add predicted path if available
-        if (traj.predicted_path && traj.predicted_path.length >= 2) {
-          const predPoints = traj.predicted_path.map(coord => {
-            const pos = latLngToSvgPercent(coord[0], coord[1]);
-            return `${pos.x},${pos.y}`;
-          }).join(' ');
-          
-          const predLine = document.createElementNS(svgNS, 'polyline');
-          predLine.setAttribute('class', 'fusion-path-predicted');
-          predLine.setAttribute('points', predPoints);
-          predLine.setAttribute('fill', 'none');
-          predLine.setAttribute('stroke', '#ff6600');
-          predLine.setAttribute('stroke-width', '2');
-          predLine.setAttribute('stroke-dasharray', '8,4');
-          predLine.setAttribute('opacity', '0.6');
-          svg.appendChild(predLine);
-        }
+        // Predicted path removed - only actual white line
         
         group.appendChild(svg);
         
-        // Add start point marker
-        const startPos = latLngToSvgPercent(traj.start[0], traj.start[1]);
-        const startMarker = document.createElement('div');
-        startMarker.className = 'fusion-start-marker';
-        startMarker.style.left = `${startPos.x}%`;
-        startMarker.style.top = `${startPos.y}%`;
-        group.appendChild(startMarker);
-        
-        // Add current position marker
-        const endPos = latLngToSvgPercent(traj.end[0], traj.end[1]);
-        const endMarker = document.createElement('div');
-        endMarker.className = 'fusion-current-marker';
-        endMarker.style.left = `${endPos.x}%`;
-        endMarker.style.top = `${endPos.y}%`;
-        group.appendChild(endMarker);
-        
-        // Add predicted end marker if different from current
-        if (traj.predicted_end && 
-            (Math.abs(traj.predicted_end[0] - traj.end[0]) > 0.01 ||
-             Math.abs(traj.predicted_end[1] - traj.end[1]) > 0.01)) {
-          const predEndPos = latLngToSvgPercent(traj.predicted_end[0], traj.predicted_end[1]);
-          const predMarker = document.createElement('div');
-          predMarker.className = 'fusion-predicted-marker';
-          predMarker.style.left = `${predEndPos.x}%`;
-          predMarker.style.top = `${predEndPos.y}%`;
-          group.appendChild(predMarker);
-        }
-        
-        // Add distance label
-        if (traj.total_distance_km) {
-          const midPoint = traj.actual_path[Math.floor(traj.actual_path.length / 2)];
-          const midPos = latLngToSvgPercent(midPoint[0], midPoint[1]);
-          const distLabel = document.createElement('div');
-          distLabel.className = 'fusion-distance-label';
-          distLabel.style.left = `${midPos.x}%`;
-          distLabel.style.top = `${midPos.y}%`;
-          distLabel.textContent = `${Math.round(traj.total_distance_km)} км`;
-          group.appendChild(distLabel);
-        }
+        // All markers removed - only line remains
         
         fusionLayer.appendChild(group);
       });
