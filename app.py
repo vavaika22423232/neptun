@@ -23567,6 +23567,22 @@ def static_icon_drone_redirect():
 def icon_drone_redirect():
     return redirect('/static/shahed3.webp', code=301)
 
+@app.route('/rozved.png')
+def rozved_png_redirect():
+    return redirect('/static/rozvedka2.png', code=301)
+
+@app.route('/static/rozved.png')
+def static_rozved_png_redirect():
+    return redirect('/static/rozvedka2.png', code=301)
+
+@app.route('/icon_rozved.svg')
+def icon_rozved_svg_redirect():
+    return redirect('/static/rozvedka2.png', code=301)
+
+@app.route('/static/icon_rozved.svg')
+def static_icon_rozved_redirect():
+    return redirect('/static/rozvedka2.png', code=301)
+
 @app.route('/favicon.ico')
 def favicon():
     return redirect('/static/icons/favicon-32x32.png', code=301)
