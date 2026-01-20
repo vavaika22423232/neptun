@@ -15,8 +15,8 @@ class ThreatType(Enum):
     """
     BALLISTIC = ("ballistic", 1, "icon_balistic.svg")
     MISSILE = ("missile", 2, "icon_missile.svg")
-    SHAHED = ("shahed", 3, "icon_drone.svg")
-    DRONE = ("drone", 4, "icon_drone.svg")
+    SHAHED = ("shahed", 3, "shahed3.webp")
+    DRONE = ("drone", 4, "shahed3.webp")
     AVIATION = ("aviation", 5, "icon_aviation.svg")
     HELICOPTER = ("helicopter", 6, "icon_helicopter.svg")
     RECON = ("recon", 7, "icon_recon.svg")

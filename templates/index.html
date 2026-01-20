@@ -980,20 +980,19 @@
     
     /* White dashed line */
     .trajectory-group line.traj-line {
-      stroke: #ffffff;
-      stroke-width: 2;
-      stroke-dasharray: 8 6;
+      stroke: rgba(255, 255, 255, 0.8);
+      stroke-width: 1.5;
+      stroke-dasharray: 6 4;
       stroke-linecap: round;
-      opacity: 0.9;
+      opacity: 0.85;
     }
     
     /* Predicted route - yellow dashed line */
     .trajectory-group.predicted line.traj-line {
-      stroke: #fbbf24;
-      stroke-width: 2;
-      stroke-dasharray: 4 8;
+      stroke: rgba(251, 191, 36, 0.85);
+      stroke-width: 1.5;
+      stroke-dasharray: 5 4;
       opacity: 0.7;
-      /* animation: predictedPulse 2s ease-in-out infinite; - disabled */
     }
     
     /* @keyframes predictedPulse - disabled
@@ -1015,10 +1014,10 @@
       position: absolute;
       width: 0;
       height: 0;
-      border-left: 12px solid transparent;
-      border-right: 12px solid transparent;
-      border-top: 20px solid rgba(255, 255, 255, 0.95);
-      filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+      border-left: 8px solid transparent;
+      border-right: 8px solid transparent;
+      border-top: 14px solid rgba(255, 255, 255, 0.9);
+      filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
       pointer-events: none;
       z-index: 11;
     }
@@ -1026,38 +1025,22 @@
     /* V-shaped arrow at target */
     .trajectory-target-arrow {
       position: absolute;
-      color: rgba(255, 255, 255, 0.9);
-      font-size: 24px;
-      font-weight: 300;
+      color: rgba(255, 255, 255, 0.85);
+      font-size: 18px;
+      font-weight: 400;
       pointer-events: none;
       z-index: 11;
       transform: translate(-50%, -50%);
-      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
     }
     
-    /* Source icon (drone) at start */
+    /* Source icon (drone) at start - HIDDEN */
     .trajectory-source-icon {
-      position: absolute;
-      width: 28px;
-      height: 28px;
-      background: #1e293b;
-      border: 2px solid rgba(255, 255, 255, 0.6);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transform: translate(-50%, -50%);
-      pointer-events: none;
-      z-index: 12;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+      display: none;
     }
     
     .trajectory-source-icon::after {
-      content: '';
-      width: 10px;
-      height: 10px;
-      background: rgba(255, 255, 255, 0.8);
-      border-radius: 50%;
+      display: none;
     }
 
     /* === FUSION TRAJECTORIES STYLES === */
@@ -1189,6 +1172,13 @@
       transition: transform 0.3s ease, filter 0.3s ease;
     }
     
+    /* Bigger size for shahed icon */
+    .threat-marker[data-type="shahed"],
+    .threat-marker[data-type="drone"] {
+      width: 44px;
+      height: 44px;
+    }
+    
     .threat-marker:hover {
       transform: translate(-50%, -50%) scale(1.3);
       z-index: 100;
@@ -1199,14 +1189,14 @@
       width: 100%;
       height: 100%;
       object-fit: contain;
-      /* Rotation based on trajectory direction - icon points EAST (right) */
-      transform: rotate(var(--direction-angle, 0deg));
+      /* Rotation based on trajectory direction - icon points NORTH (up) after -90deg base rotation */
+      transform: rotate(calc(var(--direction-angle, 0deg) - 90deg));
       transition: transform 0.5s ease;
     }
     
     .threat-marker:hover img {
       /* Keep rotation on hover */
-      transform: rotate(var(--direction-angle, 0deg));
+      transform: rotate(calc(var(--direction-angle, 0deg) - 90deg));
     }
     
     /* Marker appearance animation */
@@ -3102,9 +3092,6 @@
     </div>
   </a>
   
-  <div class="tech-notice">
-    ведуться технічні роботи, вибачте за незручності
-  </div>
 
   <div id="map-container">
     <!-- SEO H1 - Візуально прихований але видимий для Google -->
@@ -3697,7 +3684,7 @@
     
     // Icon mapping for threat types
     const THREAT_ICONS = {
-      'shahed': 'icon_drone.svg',
+      'shahed': 'shahed3.webp',
       'raketa': 'icon_balistic.svg',
       'avia': 'avia.png',
       'artillery': 'artillery.png',
@@ -3706,11 +3693,11 @@
       'pusk': 'pusk.png',
       'kab': 'icon_missile.svg',
       'rszv': 'icon_missile.svg',
-      'rozved': 'icon_rozved.svg',
+      'rozved': 'rozvedka.png',
       'vibuh': 'icon_vibuh.svg',
       'alarm': 'trivoga.png',
       'alarm_cancel': 'vidboi.png',
-      'default': 'icon_drone.svg'
+      'default': 'shahed3.webp'
     };
     
     // Threat type names for display

@@ -6722,8 +6722,8 @@ class ThreatTracker:
 
         # Determine icon and color based on status
         status_icons = {
-            'active': {'icon': 'icon_drone.svg', 'color': '#ff4444'},
-            'partially_destroyed': {'icon': 'icon_drone.svg', 'color': '#ff8800'},
+            'active': {'icon': 'shahed3.webp', 'color': '#ff4444'},
+            'partially_destroyed': {'icon': 'shahed3.webp', 'color': '#ff8800'},
             'destroyed': {'icon': 'icon_explosion.svg', 'color': '#00ff00'},
             'passed': {'icon': 'icon_check.svg', 'color': '#888888'},
             'cleared_by_alarm': {'icon': 'icon_check.svg', 'color': '#44ff44'},
@@ -7893,8 +7893,8 @@ class ChannelIntelligenceFusion:
 
         # Icon based on threat type
         icon_map = {
-            'shahed': 'icon_drone.svg',
-            'drone': 'icon_drone.svg',
+            'shahed': 'shahed3.webp',
+            'drone': 'shahed3.webp',
             'ballistic': 'icon_balistic.svg',
             'cruise': 'icon_rocket.svg',
             'kab': 'icon_balistic.svg',
@@ -7910,7 +7910,7 @@ class ChannelIntelligenceFusion:
             'text': f"{event['threat_type'].upper()}{qty_text}{sources_text}",
             'date': event['last_update'].strftime('%Y-%m-%d %H:%M:%S'),
             'channel': 'fusion',
-            'marker_icon': icon_map.get(event['threat_type'], 'icon_drone.svg'),
+            'marker_icon': icon_map.get(event['threat_type'], 'shahed3.webp'),
             'source_match': 'fusion',
             # Direction for icon rotation
             'course_direction': event.get('course_direction'),
@@ -14658,13 +14658,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         # Classify threat type based on message text
         text_lower = text.lower()
         if 'шахед' in text_lower or 'shahed' in text_lower:
-            threat_type, icon = 'shahed', 'icon_drone.svg'
+            threat_type, icon = 'shahed', 'shahed3.webp'
         elif 'бпла' in text_lower or 'дрон' in text_lower:
-            threat_type, icon = 'shahed', 'icon_drone.svg'
+            threat_type, icon = 'shahed', 'shahed3.webp'
         elif 'ракет' in text_lower:
             threat_type, icon = 'raketa', 'icon_balistic.svg'
         else:
-            threat_type, icon = 'shahed', 'icon_drone.svg'
+            threat_type, icon = 'shahed', 'shahed3.webp'
 
         # =====================================================================
         # ENHANCED AI PREDICTION: Add ETA, multi-targets, confidence
@@ -15348,7 +15348,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 is_strike_bpla = 'ударних бпла' in segment_lower or 'ударних безпілотн' in segment_lower
 
                 threat_type = 'avia' if is_aviation else ('shahed' if is_bpla else 'artillery')
-                icon = 'avia.png' if is_aviation else ('icon_drone.svg' if is_bpla else 'artillery.png')
+                icon = 'avia.png' if is_aviation else ('shahed3.webp' if is_bpla else 'artillery.png')
                 threat_label = 'Авіація' if is_aviation else ('Ударні БпЛА' if is_strike_bpla else 'БпЛА')
 
                 # Create marker for each region mentioned in this segment
@@ -15598,7 +15598,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             'text': f"Напрямок → {target_norm.title()}",
                             'date': date_str,
                             'channel': channel,
-                            'marker_icon': 'icon_drone.svg',
+                            'marker_icon': 'shahed3.webp',
                             'source_match': 'immediate_napryamok',
                             'count': uav_count
                         })
@@ -15669,7 +15669,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             'text': f"Повз {bypass_norm.title()} → {target_norm.title()}",
                             'date': date_str,
                             'channel': channel,
-                            'marker_icon': 'icon_drone.svg',
+                            'marker_icon': 'shahed3.webp',
                             'source_match': 'immediate_povz_course',
                             'count': uav_count,
                             'course_source': bypass_norm,
@@ -15726,7 +15726,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             'text': f"{line_stripped} (bracket city)",
                             'date': date_str,
                             'channel': channel,
-                            'marker_icon': 'icon_drone.svg',
+                            'marker_icon': 'shahed3.webp',
                             'source_match': 'immediate_multi_regional_bracket',
                             'count': 1
                         })
@@ -15830,7 +15830,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                     'text': f"{line_stripped} (мультирегіональне)",
                                     'date': date_str,
                                     'channel': channel,
-                                    'marker_icon': 'icon_drone.svg',
+                                    'marker_icon': 'shahed3.webp',
                                     'source_match': f'immediate_multi_regional_uav_{uav_count_num}x',
                                     'count': 1  # Each track represents 1 drone
                                 })
@@ -15904,7 +15904,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             'text': f"{line_stripped} (рух у напрямку {target_direction})",
                             'date': date_str,
                             'channel': channel,
-                            'marker_icon': 'icon_drone.svg',
+                            'marker_icon': 'shahed3.webp',
                             'source_match': 'immediate_multi_regional_movement',
                             'count': 1,
                             'movement_target': target_direction
@@ -15956,7 +15956,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             'text': f"{line_stripped} (регіональний)",
                             'date': date_str,
                             'channel': channel,
-                            'marker_icon': 'icon_drone.svg',
+                            'marker_icon': 'shahed3.webp',
                             'source_match': 'immediate_multi_regional_region',
                             'count': 1
                         })
@@ -16078,7 +16078,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         # PRIORITY: drones (частая путаница). Если присутствуют слова шахед/бпла/дрон -> это shahed
         if any(k in l for k in ['shahed','шахед','шахеді','шахедів','geran','герань','дрон','дрони','бпла','uav']):
             print("[CLASSIFY DEBUG] Classified as shahed (drones/UAV)")
-            return 'shahed', 'icon_drone.svg'
+            return 'shahed', 'shahed3.webp'
         # PRIORITY: Aircraft activity & tactical aviation (avia) -> avia.png (jets, tactical aviation, но БЕЗ КАБов)
         if any(k in l for k in ['літак','самол','avia','tactical','тактичн','fighter','истребит','jets']) or \
            ('авіаційн' in l and ('засоб' in l or 'ураж' in l)):
@@ -16108,7 +16108,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
 
         # General fallback for unclassified threats
         print("[CLASSIFY DEBUG] Using default fallback: shahed")
-        return 'shahed', 'icon_drone.svg'  # default fallback
+        return 'shahed', 'shahed3.webp'  # default fallback
 
     # PRIORITY CHECK: District-level UAV messages (e.g., "вишгородський р-н київська обл.")
     # Added after classify function to ensure it's available
@@ -16675,7 +16675,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             all_threats.append({
                 'id': f"{mid}_mykolaiv_uav", 'place': 'Миколаївщина', 'lat': lat, 'lng': lng,
                 'threat_type': 'shahed', 'text': clean_text(text)[:500], 'date': date_str, 'channel': channel,
-                'marker_icon': 'icon_drone.svg', 'source_match': 'multiple_threats_mykolaiv_uav'
+                'marker_icon': 'shahed3.webp', 'source_match': 'multiple_threats_mykolaiv_uav'
             })
 
         return all_threats
@@ -17352,7 +17352,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             })
                             continue
                         elif 'загроза застосування бпла' in lseg or 'загроза застосування безпілот' in lseg:
-                            threat, icon = 'shahed','icon_drone.svg'
+                            threat, icon = 'shahed','shahed3.webp'
                         elif 'загроза обстрілу' in lseg or 'загроза обстрела' in lseg:
                             threat, icon = 'artillery','obstril.png'
                         else:
@@ -17439,7 +17439,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                 'list_only': True, 'threat_type': 'alarm_cancel', 'place': city_candidate.title()
                             }]
                         elif 'загроза застосування бпла' in l or 'загроза застосування безпілот' in l:
-                            threat, icon = 'shahed','icon_drone.svg'
+                            threat, icon = 'shahed','shahed3.webp'
                         elif 'загроза обстрілу' in l or 'загроза обстрела' in l:
                             threat, icon = 'artillery','obstril.png'
                         else:
@@ -17596,7 +17596,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 coords = (globals().get('SETTLEMENTS_INDEX') or {}).get(base)
             if coords:
                 lat,lng = coords
-                threat, icon = 'shahed','icon_drone.svg'
+                threat, icon = 'shahed','shahed3.webp'
                 return [{
                     'id': str(mid), 'place': base.title(), 'lat': lat, 'lng': lng,
                     'threat_type': threat, 'text': clean_text(text)[:500], 'date': date_str, 'channel': channel,
@@ -17637,7 +17637,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
 
                         # Use specialized icon for directional Kyiv threats
                         if direction_info:
-                            icon = 'icon_drone.svg'  # Could create special directional icon later
+                            icon = 'shahed3.webp'  # Could create special directional icon later
 
                         threats.append({
                             'id': f"{mid}_uav_{idx}_{city_idx}_kyiv_dir", 'place': kyiv_label, 'lat': kyiv_lat, 'lng': kyiv_lng,
@@ -17655,7 +17655,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         threats.append({
                             'id': f"{mid}_uav_{idx}_{city_idx}", 'place': base.title(), 'lat': lat, 'lng': lng,
                             'threat_type': 'shahed', 'text': clean_text(text)[:500], 'date': date_str, 'channel': channel,
-                            'marker_icon': 'icon_drone.svg', 'source_match': 'uav_on_city'
+                            'marker_icon': 'shahed3.webp', 'source_match': 'uav_on_city'
                         })
             if threats:
                 return threats
@@ -18974,7 +18974,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     # Keep shahed as default for UAV if classify doesn't return anything specific
                     if not threat_type:
                         threat_type = 'shahed'
-                        icon = 'icon_drone.svg'
+                        icon = 'shahed3.webp'
 
                     multi_city_tracks.append({
                         'id': f"{mid}_city_threat_{len(multi_city_tracks)+1}",
@@ -19048,7 +19048,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     'text': clean_text(ln)[:500],
                     'date': date_str,
                     'channel': channel,
-                    'marker_icon': 'icon_drone.svg',
+                    'marker_icon': 'shahed3.webp',
                     'source_match': 'multiline_uav_course',
                     'count': per_marker_count
                 })
@@ -19355,7 +19355,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         multi_city_tracks.append({
                             'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': track_label, 'lat': marker_lat, 'lng': marker_lng,
                             'threat_type': 'shahed', 'text': clean_text(ln)[:500], 'date': date_str, 'channel': channel,
-                            'marker_icon': 'icon_drone.svg', 'source_match': 'multiline_oblast_city_shahed', 'count': 1
+                            'marker_icon': 'shahed3.webp', 'source_match': 'multiline_oblast_city_shahed', 'count': 1
                         })
                 continue
 
@@ -19515,7 +19515,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         multi_city_tracks.append({
                             'id': f"{mid}_naprymku{len(multi_city_tracks)+1}", 'place': city_name.title(), 'lat': lat, 'lng': lng,
                             'threat_type': 'shahed', 'text': clean_text(ln)[:500], 'date': date_str, 'channel': channel,
-                            'marker_icon': 'icon_drone.svg', 'source_match': 'naprymku_pattern', 'count': count
+                            'marker_icon': 'shahed3.webp', 'source_match': 'naprymku_pattern', 'count': count
                         })
                         print(f"DEBUG: Added marker for '{city_name}' at {lat}, {lng}")
                 if multi_city_tracks:
@@ -19593,7 +19593,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     multi_city_tracks.append({
                         'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
                         'threat_type': 'shahed', 'text': clean_text(ln)[:500], 'date': date_str, 'channel': channel,
-                        'marker_icon': 'icon_drone.svg', 'source_match': 'multiline_oblast_city_between', 'count': count
+                        'marker_icon': 'shahed3.webp', 'source_match': 'multiline_oblast_city_between', 'count': count
                     })
                     continue
 
@@ -19666,7 +19666,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 else:
                     lat, lng = coords
                     approx_flag = False
-                threat_type, icon = 'shahed', 'icon_drone.svg'
+                threat_type, icon = 'shahed', 'shahed3.webp'
                 label = UA_CITY_NORMALIZE.get(base, base).title()
                 if oblast_hdr and oblast_hdr not in label.lower():
                     label += f" [{oblast_hdr.title()}]"
@@ -19776,7 +19776,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             found_cities.append((norm, coords))
     # Если найдено 2 и более города — создаём отдельный маркер для каждого
     if len(found_cities) >= 2:
-        threat_type, icon = 'shahed', 'icon_drone.svg'  # можно доработать auto-classify
+        threat_type, icon = 'shahed', 'shahed3.webp'  # можно доработать auto-classify
 
         # Extract course information for Shahed threats
         course_info = None
@@ -20744,7 +20744,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             return [{
                 'id': f"{mid}_dir_oblast", 'place': dest_norm.title(), 'lat': dest_lat, 'lng': dest_lng,
                 'threat_type': 'uav', 'text': original_text[:500], 'date': date_str, 'channel': channel,
-                'marker_icon': 'icon_drone.svg', 'source_match': 'singleline_oblast_course'
+                'marker_icon': 'shahed3.webp', 'source_match': 'singleline_oblast_course'
             }]
     # Extract drone / shahed count pattern (e.g. "7х бпла", "6x дронів", "10 х бпла") early so later branches can reuse
     drone_count = None
@@ -23555,9 +23555,9 @@ def icon_missile_redirect():
 def icon_balistic_redirect():
     return redirect('/static/icon_balistic.svg', code=301)
 
-@app.route('/icon_drone.svg')
+@app.route('/shahed3.webp')
 def icon_drone_redirect():
-    return redirect('/static/icon_drone.svg', code=301)
+    return redirect('/static/shahed3.webp', code=301)
 
 @app.route('/favicon.ico')
 def favicon():
@@ -25683,10 +25683,10 @@ def data():
 
     print(f"[DEBUG] Returning {len(out)} tracks and {len(events)} events (limits: {MAX_TRACKS}/{MAX_EVENTS})")
 
-    # Replace old shahed.png with new icon_drone.svg for backward compatibility
+    # Replace old shahed.png with new shahed3.webp for backward compatibility
     for track in out:
         if track.get('marker_icon') == 'shahed.png':
-            track['marker_icon'] = 'icon_drone.svg'
+            track['marker_icon'] = 'shahed3.webp'
 
     # DEBUG: Count tracks with trajectories
     traj_count = sum(1 for t in out if t.get('trajectory'))
