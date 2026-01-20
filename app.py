@@ -23257,7 +23257,7 @@ async def fetch_loop():
         backfill_limit = 100
     backfill_cutoff = datetime.now(tz) - timedelta(minutes=backfill_minutes)
     if backfill_minutes > 0:
-        log.info(f'Starting backfill for last {backfill_minutes} minutes (limit {backfill_limit} per channel)...')
+        log.info(f'Starting FAST backfill for last {backfill_minutes} minutes (limit {backfill_limit} per channel, NO geocoding)...')
         # Track backfill progress
         BACKFILL_STATUS['in_progress'] = True
         BACKFILL_STATUS['started_at'] = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
@@ -23266,7 +23266,6 @@ async def fetch_loop():
         BACKFILL_STATUS['messages_processed'] = 0
         
         total_backfilled = 0
-        total_raw = 0
         for ch in CHANNELS:
             ch_strip = ch.strip()
             if not ch_strip:
@@ -23288,46 +23287,26 @@ async def fetch_loop():
                         continue
                     # Check for ballistic threat messages (backfill - don't add to chat)
                     update_ballistic_state(msg.text, is_realtime=False)
-                    tracks = process_message(msg.text, msg.id, dt.strftime('%Y-%m-%d %H:%M:%S'), ch_strip)
-                    if tracks:
-                        print(f"DEBUG: Message {msg.id} generated {len(tracks)} tracks")
-                        merged_any = False
-                        merged_refs = []
-                        for t in tracks:
-                            if t.get('place'):
-                                t['place'] = ensure_ua_place(t['place'])
-                            merged, ref = maybe_merge_track(all_data, t)
-                            if merged:
-                                merged_any = True
-                                merged_refs.append(ref)
-                            else:
-                                all_data.append(t)
-                        processed.add(msg.id)
-                        if merged_any:
-                            log.info(f'Merged track(s) for {ch_strip} #{msg.id} into existing point(s).')
-                        fetched += 1
-                    else:
-                        print(f"DEBUG: Message {msg.id} generated NO tracks (filtered or no matches)")
-                        if ALWAYS_STORE_RAW:
-                            all_data.append({
-                                'id': str(msg.id),
-                                'place': None,
-                                'lat': None,
-                                'lng': None,
-                                'threat_type': None,
-                                'text': msg.text[:500],
-                                'date': dt.strftime('%Y-%m-%d %H:%M:%S'),
-                                'channel': ch_strip,
-                                'pending_geo': True
-                            })
-                            processed.add(msg.id)
-                            total_raw += 1
-                        print(f"DEBUG: Message {msg.id} - ALWAYS_STORE_RAW={ALWAYS_STORE_RAW}, stored as raw")
-                        log.debug(f'Backfill skip (no geo): {ch_strip} #{msg.id} {msg.text[:80]!r}')
+                    
+                    # SPEED FIX: Skip heavy geocoding during backfill - store raw, process later
+                    # This makes backfill instant instead of 30+ minutes
+                    all_data.append({
+                        'id': str(msg.id),
+                        'place': None,
+                        'lat': None,
+                        'lng': None,
+                        'threat_type': 'shahed',  # default, will be updated on reparse
+                        'text': msg.text[:500],
+                        'date': dt.strftime('%Y-%m-%d %H:%M:%S'),
+                        'channel': ch_strip,
+                        'pending_geo': True  # Flag for lazy geocoding in /data
+                    })
+                    processed.add(msg.id)
+                    fetched += 1
                     BACKFILL_STATUS['messages_processed'] += 1
                 if fetched:
                     total_backfilled += fetched
-                    log.info(f'Backfilled {fetched} messages from {ch_strip}')
+                    log.info(f'Backfilled {fetched} raw messages from {ch_strip}')
                 BACKFILL_STATUS['channels_done'] += 1
             except Exception as e:
                 log.warning(f'Backfill error {ch_strip}: {e}')
@@ -23336,9 +23315,9 @@ async def fetch_loop():
         # Mark backfill complete
         BACKFILL_STATUS['in_progress'] = False
         BACKFILL_STATUS['current_channel'] = None
-        if total_backfilled or (ALWAYS_STORE_RAW and 'total_raw' in locals() and total_raw):
+        if total_backfilled:
             save_messages(all_data)
-            log.info(f'Backfill saved: {total_backfilled} geo, {locals().get("total_raw",0)} raw')
+            log.info(f'Backfill saved: {total_backfilled} raw messages (geocoding deferred to /data)')
         log.info('Backfill completed.')
     while True:
         new_tracks = []
