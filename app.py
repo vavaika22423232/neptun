@@ -21497,6 +21497,43 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 else:
                     add_debug_log(f"Could not find coords for source '{source_norm}'", "uav_course")
 
+            # PRIORITY: Handle "БПЛА [city] курсом на [target]" - marker at CITY (current location), not target
+            # Example: "БПЛА Славутич курсом на Київщина" -> marker at Славутич
+            m_city_kursom = re.search(r'бпла\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`]{3,30})\s+курсом\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', ln_low, re.IGNORECASE)
+            if m_city_kursom:
+                current_city = m_city_kursom.group(1).strip()
+                target_name = m_city_kursom.group(2).strip()
+                add_debug_log(f"Found 'БПЛА [city] курсом на [target]' pattern: city={current_city}, target={target_name}", "uav_course")
+                
+                # Get current city coordinates (this is where UAV is NOW!)
+                city_norm = norm_city_token(current_city)
+                coords = CITY_COORDS.get(city_norm) or (SETTLEMENTS_INDEX.get(city_norm) if SETTLEMENTS_INDEX else None)
+                if not coords:
+                    coords = UKRAINE_ALL_SETTLEMENTS.get(city_norm)
+                if not coords:
+                    # Try region-aware lookup
+                    if region_hdr:
+                        oblast_key = region_hdr.replace('щина', 'ська').replace('ь', 'ська')
+                        for obl in ['ська', 'ка', 'а', '']:
+                            test_key = (city_norm, oblast_key.rstrip('а') + obl if obl else oblast_key)
+                            if test_key in UKRAINE_SETTLEMENTS_BY_OBLAST:
+                                coords = UKRAINE_SETTLEMENTS_BY_OBLAST[test_key]
+                                break
+                
+                if coords:
+                    lat, lng = coords if len(coords) == 2 else (coords[0], coords[1])
+                    threat_type, icon = classify(text)
+                    label = f"{city_norm.title()} → {target_name.title()}"
+                    course_tracks.append({
+                        'id': f"{mid}_city_kursom_{city_norm}", 'place': label, 'lat': lat, 'lng': lng,
+                        'threat_type': threat_type, 'text': ln[:500], 'date': date_str, 'channel': channel,
+                        'marker_icon': icon, 'source_match': 'uav_city_kursom', 'count': 1
+                    })
+                    add_debug_log(f"Created marker at CITY: {city_norm} ({lat}, {lng})", "uav_course")
+                    continue
+                else:
+                    add_debug_log(f"Could not find coords for city '{city_norm}'", "uav_course")
+
             # Check for complex pattern "на/через X в напрямку Y" first
             m_complex = pat_complex_napramku.search(ln_low)
             if m_complex:
