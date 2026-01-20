@@ -1189,13 +1189,23 @@
       width: 100%;
       height: 100%;
       object-fit: contain;
-      /* Rotation based on trajectory direction - icon points NORTH (up) after -90deg base rotation */
-      transform: rotate(calc(var(--direction-angle, 0deg) - 90deg));
+      /* Rotation based on trajectory direction */
+      transform: rotate(var(--direction-angle, 0deg));
       transition: transform 0.5s ease;
     }
     
     .threat-marker:hover img {
       /* Keep rotation on hover */
+      transform: rotate(var(--direction-angle, 0deg));
+    }
+    
+    /* Shahed icon needs -90deg base rotation */
+    .threat-marker[data-type="shahed"] img,
+    .threat-marker[data-type="drone"] img {
+      transform: rotate(calc(var(--direction-angle, 0deg) - 90deg));
+    }
+    .threat-marker[data-type="shahed"]:hover img,
+    .threat-marker[data-type="drone"]:hover img {
       transform: rotate(calc(var(--direction-angle, 0deg) - 90deg));
     }
     
@@ -3693,7 +3703,7 @@
       'pusk': 'pusk.png',
       'kab': 'icon_missile.svg',
       'rszv': 'icon_missile.svg',
-      'rozved': 'rozvedka.png',
+      'rozved': 'rozvedka2.png',
       'vibuh': 'icon_vibuh.svg',
       'alarm': 'trivoga.png',
       'alarm_cancel': 'vidboi.png',
@@ -3774,7 +3784,7 @@
     };
     
     // Cache buster version - change this to force reload SVG files
-    const CACHE_VERSION = 'v4';
+    const CACHE_VERSION = 'v5';
     
     // =====================================================
     // LAZY LOADING MAP - Core Web Vitals Optimization (2025)
@@ -4298,10 +4308,10 @@
           markerEl.dataset.date = marker.date || '';
           
           const img = document.createElement('img');
-          img.src = `/static/${iconFile}`;
+          img.src = `/static/${iconFile}?${CACHE_VERSION}`;
           img.alt = threatType;
           img.onerror = function() {
-            this.src = '/static/default.png';
+            this.src = `/static/default.png?${CACHE_VERSION}`;
           };
           
           // Calculate rotation angle from trajectory (if available)

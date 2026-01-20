@@ -16040,9 +16040,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         # Check both city context and message text for FPV cities
         if any(fpv_city in city_lower for fpv_city in fpv_cities) or any(fpv_city in l for fpv_city in fpv_cities):
             return 'fpv', 'fpv.png'
-        # Recon / розвід дрони -> use pvo icon (rozved.png) per user request - PRIORITY: check BEFORE general БПЛА
+        # Recon / розвід дрони -> use pvo icon (rozvedka2.png) per user request - PRIORITY: check BEFORE general БПЛА
         if 'розвід' in l or 'розвідуваль' in l or 'развед' in l:
-            return 'rozved', 'rozved.png'
+            return 'rozved', 'rozvedka2.png'
         # PRIORITY: КАБы (управляемые авиационные бомбы) -> icon_missile.svg - check BEFORE пуски to avoid misclassification
         if any(k in l for k in ['каб','kab','умпк','umpk','модуль','fab','умпб','фаб','кабу']) or \
            ('авіаційн' in l and 'бомб' in l) or ('керован' in l and 'бомб' in l):
@@ -16666,7 +16666,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             all_threats.append({
                 'id': f"{mid}_mykolaiv_recon", 'place': 'Миколаївщина', 'lat': lat, 'lng': lng,
                 'threat_type': 'rozved', 'text': text[:500], 'date': date_str, 'channel': channel,
-                'marker_icon': 'rozved.png', 'source_match': 'multiple_threats_mykolaiv_recon'
+                'marker_icon': 'rozvedka2.png', 'source_match': 'multiple_threats_mykolaiv_recon'
             })
 
         # 3. Check for general БПЛА threats in oblast format (миколаївщини/миколаївщині) without "розвід"
@@ -23554,6 +23554,14 @@ def icon_missile_redirect():
 @app.route('/icon_balistic.svg')
 def icon_balistic_redirect():
     return redirect('/static/icon_balistic.svg', code=301)
+
+@app.route('/icon_drone.svg')
+def icon_drone_svg_redirect():
+    return redirect('/static/shahed3.webp', code=301)
+
+@app.route('/static/icon_drone.svg')
+def static_icon_drone_redirect():
+    return redirect('/static/shahed3.webp', code=301)
 
 @app.route('/shahed3.webp')
 def icon_drone_redirect():
