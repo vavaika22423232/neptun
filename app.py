@@ -21460,6 +21460,38 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
 
             add_debug_log(f"Processing UAV line: '{ln[:100]}...' (region: {region_hdr})", "uav_course")
 
+            # PRIORITY: Handle "БпЛА із/з [source] ➡️ у напрямку [target]" - marker at SOURCE, not target
+            # Example: "🛵 БпЛА із Чернігівщини ➡️ у напрямку Києва" -> marker at Чернігівщина
+            m_iz_napramku = re.search(r'бпла\s+(?:із|з)\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)\s*[➡️⬆️⬇️⬅️↗️↘️↙️↖️]*\s*(?:в|у)\s+напрямку\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=[,\.\n;:!\?]|$)', ln_low, re.IGNORECASE)
+            if m_iz_napramku:
+                source_region = m_iz_napramku.group(1).strip()
+                target_name = m_iz_napramku.group(2).strip()
+                add_debug_log(f"Found 'із X у напрямку Y' pattern: source={source_region}, target={target_name}", "uav_course")
+                
+                # Get source coordinates (this is where UAV currently is!)
+                source_norm = norm_city_token(source_region)
+                coords = CITY_COORDS.get(source_norm) or OBLAST_CENTERS.get(source_norm) or (SETTLEMENTS_INDEX.get(source_norm) if SETTLEMENTS_INDEX else None)
+                if not coords:
+                    # Try as oblast
+                    for obl_key, obl_coords in OBLAST_CENTERS.items():
+                        if source_norm in obl_key or obl_key in source_norm:
+                            coords = obl_coords
+                            break
+                
+                if coords:
+                    lat, lng = coords
+                    threat_type, icon = classify(text)
+                    label = f"{source_norm.title()} → {target_name.title()}"
+                    course_tracks.append({
+                        'id': f"{mid}_iz_napramku_{source_norm}", 'place': label, 'lat': lat, 'lng': lng,
+                        'threat_type': threat_type, 'text': ln[:500], 'date': date_str, 'channel': channel,
+                        'marker_icon': icon, 'source_match': 'uav_iz_napramku', 'count': 1
+                    })
+                    add_debug_log(f"Created marker at SOURCE: {source_norm} ({lat}, {lng})", "uav_course")
+                    continue
+                else:
+                    add_debug_log(f"Could not find coords for source '{source_norm}'", "uav_course")
+
             # Check for complex pattern "на/через X в напрямку Y" first
             m_complex = pat_complex_napramku.search(ln_low)
             if m_complex:
