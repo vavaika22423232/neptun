@@ -6150,8 +6150,9 @@ def should_marker_be_visible(message: dict, current_time: datetime = None) -> di
         'ttl_info': ttl_info
     }
 
-# Global flag to enable/disable AI TTL
-AI_TTL_ENABLED = True
+# Global flag to enable/disable AI TTL (env override for deploys)
+# Default is disabled unless explicitly enabled via env or admin API
+AI_TTL_ENABLED = str(os.getenv('AI_TTL_ENABLED', 'false')).lower() in ('1', 'true', 'yes', 'y', 'on')
 
 def set_ai_ttl_enabled(enabled: bool):
     """Enable or disable AI TTL system"""
@@ -11268,6 +11269,8 @@ CITY_COORDS = {
     
     # Added per user report (обстріл alert should map): Костянтинівка (Donetsk Obl.)
     'костянтинівка': (48.5277, 37.7050),
+    # Краснокутськ (Харківська обл.)
+    'краснокутськ': (50.0640, 35.1630),
     # Mezhova (Дніпропетровська обл.) to avoid fallback to Dnipro
     'межова': (48.2583, 36.7363),
     # Sviatohirsk (Святогірськ) Donetsk Oblast
@@ -11499,6 +11502,9 @@ CITY_COORDS = {
     ,'пісківка': (50.6767, 29.5283), 'пісківку': (50.6767, 29.5283), 'пісківці': (50.6767, 29.5283)
     ,'зіньків': (49.2019, 34.3744), 'зінькові': (49.2019, 34.3744), 'зіньківу': (49.2019, 34.3744), 'зінькова': (49.2019, 34.3744)
 }
+
+# Optional district centers lookup (may be filled later)
+DISTRICT_CENTERS = {}
 
 # Donetsk Oblast cities (повний перелік міст області). Added per user request to ensure precise mapping.
 # Sources: OpenStreetMap / GeoNames (approx to 4 decimal places). Using setdefault to avoid overriding existing entries.
@@ -16297,6 +16303,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     city_from_general = city_from_general[len(prefix):].strip()
                     city_lower = city_from_general.lower()
                     add_debug_log(f"PRIORITY: Stripped UAV prefix '{prefix}', city now: {repr(city_from_general)}", "emoji_debug")
+
+            # Strip course/direction suffixes from city name
+            city_from_general = re.sub(r'\s+(курсом|курс|напрям(?:ком)?|в\s+напрямку|у\s+напрямку)\s+.+$', '', city_from_general, flags=re.IGNORECASE).strip()
             
             add_debug_log(f"PRIORITY: Found city: {repr(city_from_general)}, oblast: {repr(oblast_from_general)}", "emoji_debug")
             
@@ -16332,6 +16341,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         if district_coords:
                             coords = district_coords
                             add_debug_log(f"PRIORITY: Found district coordinates for '{district_name}': {coords}", "emoji_debug")
+                        else:
+                            coords = CITY_COORDS.get(district_name)
+                            if coords:
+                                add_debug_log(f"PRIORITY: District fallback to city center '{district_name}': {coords}", "emoji_debug")
                 
                 if not coords:
                     # Fallback to general lookup
@@ -16804,6 +16817,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 uav_count = 1
         
         if city_raw and oblast_raw:
+            # Strip course/direction suffixes from city name before normalization
+            city_raw = re.sub(r'\s+(курсом|курс|напрям(?:ком)?|в\s+напрямку|у\s+напрямку)\s+.+$', '', city_raw, flags=re.IGNORECASE).strip()
             # Normalize city name (accusative -> nominative) - COMPREHENSIVE
             city_norm = city_raw.lower().replace('\u02bc',"'").replace('ʼ',"'").replace("'","'").replace('`',"'")
             city_norm = re.sub(r'\s+',' ', city_norm).strip()
@@ -25538,7 +25553,13 @@ def data():
                 add_debug_log(f"Fallback reparse for message ID {msg_id} - first time processing", "reparse")
                 reparsed = process_message(m.get('text') or '', m.get('id'), m.get('date'), m.get('channel') or m.get('source') or '')
                 if isinstance(reparsed, list) and reparsed:
+                    reparsed_any = False
                     for t in reparsed:
+                        if t.get('list_only'):
+                            if not t.get('suppress'):
+                                events.append(t)
+                                reparsed_any = True
+                            continue
                         try:
                             lat_r = round(float(t.get('lat')), 3)
                             lng_r = round(float(t.get('lng')), 3)
@@ -25550,8 +25571,9 @@ def data():
                         if marker_key_r in hidden:
                             continue
                         out.append(t)
-                    # Skip adding original as event if we produced tracks
-                    if reparsed:
+                        reparsed_any = True
+                    # Skip adding original as event if we produced tracks or list-only entries
+                    if reparsed_any:
                         continue
             except Exception:
                 pass
@@ -25595,6 +25617,28 @@ def data():
         if m.get('source_match','').startswith('region') and not any(k in low_txt for k in ['бпла','дрон','шахед','shahed','geran','ракета','ракети','missile','iskander','s-300','s300','каб','артил','града','смерч','ураган','mlrs','avia','авіа','авиа','бомба']):
             continue
         out.append(m)
+
+    # Fallback: if no tracks/events in the selected time range, show latest geo markers
+    # This prevents empty maps during quiet periods.
+    if not out and not events:
+        fallback_added = 0
+        for m in reversed(messages):
+            if m.get('pending_geo') or m.get('list_only'):
+                continue
+            try:
+                lat = round(float(m.get('lat')), 3)
+                lng = round(float(m.get('lng')), 3)
+            except Exception:
+                continue
+            text = (m.get('text') or '')
+            source = m.get('source') or m.get('channel') or ''
+            marker_key = f"{lat},{lng}|{text}|{source}"
+            if marker_key in hidden:
+                continue
+            out.append(m)
+            fallback_added += 1
+            if fallback_added >= 120:
+                break
     
     # Log AI TTL statistics
     if AI_TTL_ENABLED and (ai_ttl_stats['shown'] > 0 or ai_ttl_stats['hidden'] > 0):
