@@ -1,0 +1,39 @@
+# Docker Compose for Neptun 2.0 development
+version: '3.8'
+
+services:
+  neptun:
+    build:
+      context: .
+      dockerfile: Dockerfile.new
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=production
+      - ADMIN_SECRET=${ADMIN_SECRET:-dev_secret}
+      - ALARM_API_TOKEN=${ALARM_API_TOKEN:-}
+      - TELEGRAM_API_ID=${TELEGRAM_API_ID:-}
+      - TELEGRAM_API_HASH=${TELEGRAM_API_HASH:-}
+    volumes:
+      # Persistent storage
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # Optional: Redis for caching/sessions
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    profiles:
+      - full
+
+volumes:
+  redis_data:

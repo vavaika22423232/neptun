@@ -12,7 +12,7 @@
 
 services:
   - type: web
-    name: neptun-alerts
+    name: neptun-ukraine
     runtime: python
     plan: free
     region: frankfurt  # Близько до України
@@ -30,7 +30,7 @@ services:
     
     # Persistent disk для сесій та кешу
     disk:
-      name: data
+      name: neptun-data
       mountPath: /data
       sizeGB: 1
     
