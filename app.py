@@ -5862,69 +5862,136 @@ def get_regional_threat_assessment(region: str, active_threats: list = None) -> 
 
 # Base TTL in minutes - MINIMUM time, adjusted UP based on distance/ETA
 THREAT_BASE_TTL = {
-    'shahed': 15,       # Base 15 min, increases with distance
-    'drone': 15,        # Other drones
-    'cruise': 12,       # Cruise missiles
-    'ballistic': 5,     # Ballistic - very fast
-    'kab': 8,           # Guided bombs - fast
-    'rocket': 8,        # Rockets
-    'kinzhal': 3,       # Hypersonic - extremely fast
-    'iskander': 5,      # Ballistic
-    'kalibr': 15,       # Cruise missile
-    'x101': 20,         # Long-range cruise
-    'unknown': 20,      # Default
-    'explosion': 10,    # Already happened
-    'artillery': 8,     # Artillery
-    'air': 15,          # Air alert general
+    'shahed': 20,       # Base 20 min, increases with distance (slow drones)
+    'drone': 18,        # Other drones (generic)
+    'fpv': 5,           # FPV drones - very short range
+    'rozved': 15,       # Recon drones
+    'cruise': 15,       # Cruise missiles (kalibr, x-101)
+    'ballistic': 4,     # Ballistic - very fast (iskander, kn-23)
+    'kab': 6,           # Guided bombs - fast, short range
+    'rocket': 6,        # S-300/S-400 rockets
+    'kinzhal': 2,       # Hypersonic - extremely fast
+    'iskander': 4,      # Ballistic variant
+    'kalibr': 18,       # Cruise missile specific
+    'x101': 25,         # Long-range cruise (x-101/x-555)
+    'x22': 10,          # Old cruise missile
+    'unknown': 25,      # Default - safer to show longer
+    'explosion': 8,     # Already happened - informational
+    'artillery': 5,     # Artillery/mortars - instant
+    'air': 20,          # Air alert general
+    'avia': 12,         # Aviation (planes)
+    'rszv': 5,          # MLRS
+    'obstril': 5,       # Shelling
 }
 
-# Maximum TTL by threat type (even with long distance)
+# Maximum TTL by threat type (cap even with long distance)
 THREAT_MAX_TTL = {
-    'shahed': 180,      # 3 hours max for shaheds
-    'drone': 120,       # 2 hours
-    'cruise': 45,       # 45 min
-    'ballistic': 15,    # 15 min max
-    'kab': 20,          # 20 min
-    'rocket': 15,       # 15 min
-    'kinzhal': 8,       # 8 min
-    'iskander': 12,     # 12 min
-    'kalibr': 50,       # 50 min
-    'x101': 60,         # 1 hour
-    'unknown': 45,      # 45 min default
-    'explosion': 15,    # 15 min
-    'artillery': 12,    # 12 min
-    'air': 30,          # 30 min
+    'shahed': 240,      # 4 hours max for shaheds (cross-country flights)
+    'drone': 180,       # 3 hours (generic drones)
+    'fpv': 10,          # 10 min max (very short range)
+    'rozved': 60,       # 1 hour (recon can loiter)
+    'cruise': 50,       # 50 min
+    'ballistic': 12,    # 12 min max
+    'kab': 15,          # 15 min
+    'rocket': 12,       # 12 min
+    'kinzhal': 6,       # 6 min max
+    'iskander': 10,     # 10 min
+    'kalibr': 60,       # 1 hour
+    'x101': 90,         # 1.5 hours (very long range)
+    'x22': 30,          # 30 min
+    'unknown': 60,      # 1 hour default
+    'explosion': 15,    # 15 min (info)
+    'artillery': 10,    # 10 min
+    'air': 45,          # 45 min
+    'avia': 30,         # 30 min
+    'rszv': 10,         # 10 min
+    'obstril': 10,      # 10 min
+}
+
+# Average speeds km/h for travel time estimation
+THREAT_SPEEDS = {
+    'shahed': {'min': 100, 'max': 180, 'avg': 140},
+    'drone': {'min': 80, 'max': 200, 'avg': 150},
+    'fpv': {'min': 60, 'max': 140, 'avg': 100},
+    'rozved': {'min': 100, 'max': 180, 'avg': 130},
+    'cruise': {'min': 700, 'max': 950, 'avg': 850},
+    'ballistic': {'min': 2000, 'max': 7000, 'avg': 3500},
+    'kab': {'min': 800, 'max': 1100, 'avg': 950},
+    'rocket': {'min': 1500, 'max': 4000, 'avg': 2500},
+    'kinzhal': {'min': 3500, 'max': 12000, 'avg': 6000},
+    'iskander': {'min': 2000, 'max': 7000, 'avg': 3500},
+    'kalibr': {'min': 700, 'max': 950, 'avg': 850},
+    'x101': {'min': 650, 'max': 900, 'avg': 750},
+    'x22': {'min': 1000, 'max': 1200, 'avg': 1100},
+    'unknown': {'min': 200, 'max': 800, 'avg': 400},
+    'avia': {'min': 500, 'max': 2500, 'avg': 900},
 }
 
 # Keywords indicating DISTANT threat (need more TTL)
 DISTANT_KEYWORDS = [
-    'чорне море', 'каспій', 'азовськ', 'білорусь', 'росія',
-    'запуск', 'старт', 'пуск', 'зліт', 'виявлен', 'увійшл',
-    'перетнув кордон', 'з території', 'від кордону',
+    'чорне море', 'каспій', 'азовськ', 'білорусь', 'росія', 'брянськ',
+    'бєлгород', 'курськ', 'ростов', 'криворіж', 'крим', 'керч',
+    'запуск', 'старт', 'пуск', 'зліт', 'виявлен', 'увійшл', 'зафіксован',
+    'перетнув кордон', 'з території', 'від кордону', 'із зони',
+    'тільки влетів', 'щойно', 'новий пуск', 'черговий', 'масован',
 ]
 
 # Keywords indicating CLOSE/ARRIVED threat (need less TTL)
 CLOSE_KEYWORDS = [
-    'над ', 'в районі', 'у районі', 'біля', 'поблизу',
-    'наближається до', 'на підльоті', 'входить у',
-    'вже в', 'досяг', 'прибув', 'летить над',
+    'над ', 'в районі', 'у районі', 'біля', 'поблизу', 'безпосередньо',
+    'наближається до', 'на підльоті до', 'входить у', 'входить в',
+    'вже в', 'вже над', 'досяг', 'прибув', 'летить над', 'пролітає над',
+    'в межах', 'у межах', 'на околиц', 'в центр', 'у центр',
+    'фінальн', 'кінцев', 'останн', 'вже біля',
 ]
 
-# Keywords that indicate threat is over/destroyed
+# Keywords that indicate threat is OVER/DESTROYED
 THREAT_ENDED_KEYWORDS = [
-    'збит', 'знищен', 'уражен', 'ліквідован', 'нейтралізован',
-    'перехоплен', 'відбит', 'відведен', 'не загроз', 'пішов',
-    'покинув', 'вийшов', 'залишив', 'минув', 'пролетів',
-    'завершен', 'закінч', 'скасуван', 'все чист', 'відбій',
-    'влучан', 'вибух', 'впав', 'упав', 'приземлив',
+    'збит', 'збито', 'знищен', 'уражен', 'ліквідован', 'нейтралізован',
+    'перехоплен', 'відбит', 'відведен', 'не загроз', 'без загроз', 
+    'пішов', 'пішли', 'покинув', 'покинули', 'вийшов', 'вийшли', 
+    'залишив', 'залишили', 'минув', 'минули', 'пролетів', 'пролетіли',
+    'завершен', 'закінч', 'скасуван', 'все чист', 'відбій', 'чисто',
+    'влучан', 'влучив', 'вибух', 'впав', 'упав', 'приземлив',
+    'подолан', 'спрацюван', 'ппо спрацюв', 'робота ппо',
+    '0 з ', 'всі збит', 'всі знищ', 'загрози нема', 'загрози немає',
 ]
 
-# Keywords that indicate ongoing/active threat
+# Keywords that indicate ONGOING/ACTIVE threat
 THREAT_ACTIVE_KEYWORDS = [
-    'курс', 'напрям', 'рухається', 'летить', 'прямує',
-    'наближається', 'атак', 'загроз', 'небезпек', 'увага',
-    'пуск', 'старт', 'виявлен', 'зафіксован', 'в повітр',
+    'курс', 'курсом', 'напрям', 'напрямок', 'рухається', 'летить', 'прямує',
+    'наближається', 'атак', 'загроз', 'небезпек', 'увага', 'обережно',
+    'пуск', 'старт', 'виявлен', 'зафіксован', 'в повітр', 'у повітрі',
+    'тривога', 'терміново', 'негайно', 'укриття', 'небезпечн',
+    'продовжує', 'далі летить', 'змінив курс', 'маневрує',
 ]
+
+# Major cities coordinates for distance-based TTL
+MAJOR_CITIES = {
+    'київ': (50.4501, 30.5234),
+    'харків': (49.9935, 36.2304),
+    'одеса': (46.4825, 30.7233),
+    'дніпро': (48.4647, 35.0462),
+    'львів': (49.8397, 24.0297),
+    'запоріжжя': (47.8388, 35.1396),
+    'миколаїв': (46.9750, 31.9946),
+    'кривий ріг': (47.9086, 33.3431),
+    'полтава': (49.5883, 34.5514),
+    'вінниця': (49.2331, 28.4682),
+    'чернігів': (51.4982, 31.2893),
+    'суми': (50.9077, 34.7981),
+    'житомир': (50.2547, 28.6587),
+    'хмельницький': (49.4229, 26.9872),
+    'черкаси': (49.4285, 32.0621),
+    'рівне': (50.6199, 26.2516),
+    'кропивницький': (48.5079, 32.2623),
+    'херсон': (46.6354, 32.6169),
+    'луцьк': (50.7593, 25.3424),
+    'тернопіль': (49.5535, 25.5948),
+    'ужгород': (48.6208, 22.2879),
+    'івано-франківськ': (48.9226, 24.7111),
+    'чернівці': (48.2921, 25.9358),
+}
 
 def calculate_ai_marker_ttl(message_text: str, threat_type: str = None,
                             distance_km: float = None, eta_minutes: float = None,
@@ -5938,7 +6005,8 @@ def calculate_ai_marker_ttl(message_text: str, threat_type: str = None,
     2. Distance to target (further = longer TTL)
     3. ETA (adjust based on when it should arrive)
     4. Message context (destroyed? changed course? ongoing?)
-    5. Historical patterns
+    5. Proximity to major cities
+    6. Historical patterns
 
     Returns:
     {
@@ -5981,99 +6049,166 @@ def calculate_ai_marker_ttl(message_text: str, threat_type: str = None,
             threat_type = 'kab'
         elif 'кінжал' in tt_lower:
             threat_type = 'kinzhal'
+        elif 'fpv' in tt_lower:
+            threat_type = 'fpv'
+        elif 'розвід' in tt_lower or 'розвед' in tt_lower:
+            threat_type = 'rozved'
     else:
-        # Try to detect threat type from message
-        if any(w in msg_lower for w in ['шахед', 'герань', 'бпла', 'дрон']):
-            threat_type = 'shahed'
-        elif any(w in msg_lower for w in ['балістик', 'іскандер', 'кн-23']):
-            threat_type = 'ballistic'
-        elif any(w in msg_lower for w in ['крилат', 'калібр', 'х-101', 'х-55', 'х-22']):
-            threat_type = 'cruise'
-        elif any(w in msg_lower for w in ['каб', 'керована бомба', 'авіабомб']):
-            threat_type = 'kab'
-        elif any(w in msg_lower for w in ['кінжал', 'гіперзвук']):
+        # Try to detect threat type from message with priority
+        if any(w in msg_lower for w in ['кінжал', 'гіперзвук']):
             threat_type = 'kinzhal'
-        elif 'вибух' in msg_lower:
+        elif any(w in msg_lower for w in ['балістик', 'іскандер', 'кн-23', 'кн23']):
+            threat_type = 'ballistic'
+        elif any(w in msg_lower for w in ['fpv', 'фпв', 'камікадзе']):
+            threat_type = 'fpv'
+        elif any(w in msg_lower for w in ['розвід', 'розвед', 'supercam', 'орлан', 'zala']):
+            threat_type = 'rozved'
+        elif any(w in msg_lower for w in ['шахед', 'герань', 'моджед', 'moped']):
+            threat_type = 'shahed'
+        elif any(w in msg_lower for w in ['бпла', 'дрон', 'ударн']):
+            threat_type = 'drone'
+        elif any(w in msg_lower for w in ['х-101', 'х101', 'х-555', 'х555']):
+            threat_type = 'x101'
+        elif any(w in msg_lower for w in ['х-22', 'х22']):
+            threat_type = 'x22'
+        elif any(w in msg_lower for w in ['калібр', 'calibr']):
+            threat_type = 'kalibr'
+        elif any(w in msg_lower for w in ['крилат', 'cruise']):
+            threat_type = 'cruise'
+        elif any(w in msg_lower for w in ['каб', 'керована бомба', 'авіабомб', 'fab']):
+            threat_type = 'kab'
+        elif any(w in msg_lower for w in ['су-', 'міг-', 'ту-', 'авіац', 'літак', 'бомбард']):
+            threat_type = 'avia'
+        elif any(w in msg_lower for w in ['рсзв', 'град', 'ураган', 'смерч', 'торнадо']):
+            threat_type = 'rszv'
+        elif any(w in msg_lower for w in ['вибух', 'прильот', 'влучан']):
             threat_type = 'explosion'
-        elif 'артилер' in msg_lower or 'обстріл' in msg_lower:
+        elif any(w in msg_lower for w in ['артилер', 'обстріл', 'мінометн']):
             threat_type = 'artillery'
         else:
             threat_type = 'unknown'
 
-    base_ttl = THREAT_BASE_TTL.get(threat_type, 20)
-    max_ttl = THREAT_MAX_TTL.get(threat_type, 45)
-    reason = f"Базовий TTL для {threat_type}"
+    base_ttl = THREAT_BASE_TTL.get(threat_type, 25)
+    max_ttl = THREAT_MAX_TTL.get(threat_type, 60)
+    reason = f"🎯 {threat_type}"
     confidence = 0.7
 
     # === ANALYZE DISTANCE FROM MESSAGE CONTEXT ===
-    # Check if threat is distant (just launched, from far away)
     distant_count = sum(1 for kw in DISTANT_KEYWORDS if kw in msg_lower)
-    # Check if threat is close (already over target area)
     close_count = sum(1 for kw in CLOSE_KEYWORDS if kw in msg_lower)
 
     distance_factor = 1.0
     if distant_count > close_count:
-        # Distant threat - increase TTL significantly
-        distance_factor = 2.5 if threat_type in ['shahed', 'drone'] else 1.8
-        reason += " + далеко"
+        # Distant threat - increase TTL significantly based on threat type
+        if threat_type in ['shahed', 'drone', 'rozved']:
+            distance_factor = 3.0  # Slow drones - much longer TTL
+        elif threat_type in ['cruise', 'kalibr', 'x101']:
+            distance_factor = 2.0  # Cruise missiles
+        else:
+            distance_factor = 1.5  # Fast threats
+        reason += " 📍далеко"
         confidence = 0.75
     elif close_count > distant_count:
-        # Close threat - keep base TTL or reduce
-        distance_factor = 0.8
-        reason += " + близько"
-        confidence = 0.8
+        # Close threat - reduce TTL
+        distance_factor = 0.7
+        reason += " 📍близько"
+        confidence = 0.85
 
     base_ttl = base_ttl * distance_factor
 
+    # === CHECK MARKER COORDINATES FOR MAJOR CITIES ===
+    if marker_data:
+        marker_lat = marker_data.get('lat')
+        marker_lng = marker_data.get('lng')
+        if marker_lat and marker_lng:
+            # Find distance to nearest major city
+            min_city_dist = float('inf')
+            nearest_city = None
+            for city, (city_lat, city_lng) in MAJOR_CITIES.items():
+                dist = ((marker_lat - city_lat)**2 + (marker_lng - city_lng)**2)**0.5 * 111  # Approx km
+                if dist < min_city_dist:
+                    min_city_dist = dist
+                    nearest_city = city
+            
+            if min_city_dist < 50:  # Within 50km of major city
+                # Increase TTL for threats near major cities
+                base_ttl *= 1.3
+                reason += f" 🏙️{nearest_city}"
+                confidence = min(confidence + 0.1, 0.95)
+
     # === ADJUST BY ETA IF KNOWN ===
     if eta_minutes is not None and eta_minutes > 0:
-        # TTL should be at least ETA + buffer
-        eta_buffer = eta_minutes * 1.3 + 5  # 1.3x ETA + 5 min buffer
+        eta_buffer = eta_minutes * 1.4 + 8  # 1.4x ETA + 8 min buffer
         if eta_buffer > base_ttl:
             base_ttl = eta_buffer
-            reason = f"ETA: {eta_minutes:.0f} хв"
-            confidence = 0.85
+            reason = f"⏱️ETA: {eta_minutes:.0f}хв"
+            confidence = 0.88
 
     # === ADJUST BY DISTANCE IF KNOWN ===
     if distance_km is not None and distance_km > 0:
-        # Estimate time based on threat speed
-        speeds = THREAT_SPEEDS.get(threat_type, THREAT_SPEEDS['unknown'])
+        speeds = THREAT_SPEEDS.get(threat_type, THREAT_SPEEDS.get('unknown', {'avg': 400}))
         avg_time = (distance_km / speeds['avg']) * 60  # in minutes
 
-        # TTL should accommodate travel time + buffer
-        travel_ttl = avg_time * 1.2 + 5  # 1.2x travel + 5 min buffer
+        travel_ttl = avg_time * 1.3 + 8  # 1.3x travel + 8 min buffer
         if travel_ttl > base_ttl:
             base_ttl = travel_ttl
-            reason = f"Відстань: {distance_km:.0f} км"
-            confidence = 0.8
+            reason = f"📏{distance_km:.0f}км"
+            confidence = 0.82
 
     # === ADJUST FOR SOURCE REGION ===
     if source_region:
         src_lower = source_region.lower()
-        if 'чорне море' in src_lower or 'каспій' in src_lower:
+        if any(sea in src_lower for sea in ['чорне море', 'каспій', 'азов']):
             if threat_type == 'shahed':
-                base_ttl = max(base_ttl, 90)  # Shaheds from sea - at least 1.5 hours
-            else:
-                base_ttl = max(base_ttl, 40)
-            reason += " (з моря)"
+                base_ttl = max(base_ttl, 120)  # Shaheds from sea - at least 2 hours
+            elif threat_type in ['cruise', 'kalibr', 'x101']:
+                base_ttl = max(base_ttl, 50)
+            reason += " 🌊море"
         elif 'білорусь' in src_lower:
+            base_ttl = max(base_ttl, 35)
+            reason += " 🇧🇾БЛР"
+        elif any(r in src_lower for r in ['росія', 'рф', 'брянськ', 'бєлгород', 'курськ']):
             base_ttl = max(base_ttl, 30)
-            reason += " (з Білорусі)"
+            reason += " 🇷🇺РФ"
+        elif 'крим' in src_lower:
+            base_ttl = max(base_ttl, 45)
+            reason += " 🏝️Крим"
 
-    # === COURSE CHANGES ===
-    if any(w in msg_lower for w in ['змінив курс', 'змінює напрям', 'маневрує', 'повернув']):
-        base_ttl *= 1.2  # Add 20% for unpredictable path
-        reason += " + маневри"
-        confidence *= 0.9
+    # === COURSE CHANGES / MANEUVERS ===
+    maneuver_words = ['змінив курс', 'змінює напрям', 'маневрує', 'повернув', 
+                      'розвернув', 'петля', 'кружля', 'хаотичн']
+    if any(w in msg_lower for w in maneuver_words):
+        base_ttl *= 1.25  # Add 25% for unpredictable path
+        reason += " 🔄маневр"
+        confidence *= 0.85  # Less confident due to unpredictability
 
     # === MULTIPLE THREATS ===
     quantity = 1
-    qty_match = re.search(r'(\d+)\s*(?:бпла|шахед|дрон|ракет)', msg_lower)
-    if qty_match:
-        quantity = int(qty_match.group(1))
-        if quantity > 5:
-            base_ttl *= 1.15  # Large groups take slightly longer
-            reason += f" ({quantity} шт)"
+    qty_patterns = [
+        r'(\d+)\s*[xх×]?\s*(?:бпла|шахед|дрон|ракет|об\'єкт)',
+        r'група\s+(?:з\s+)?(\d+)',
+        r'до\s+(\d+)\s+(?:бпла|шахед)',
+    ]
+    for pat in qty_patterns:
+        qty_match = re.search(pat, msg_lower)
+        if qty_match:
+            quantity = int(qty_match.group(1))
+            break
+    
+    if quantity > 10:
+        base_ttl *= 1.25  # Large groups - add 25%
+        reason += f" 📊{quantity}шт"
+    elif quantity > 5:
+        base_ttl *= 1.15  # Medium groups - add 15%
+        reason += f" 📊{quantity}шт"
+
+    # === PRIORITY TARGETS MENTIONED ===
+    priority_targets = ['київ', 'харків', 'одес', 'дніпр', 'львів', 'запоріж',
+                       'критичн', 'енергетик', 'інфраструктур', 'аеродром']
+    if any(t in msg_lower for t in priority_targets):
+        base_ttl *= 1.15
+        reason += " ⚠️важлив"
+        confidence = min(confidence + 0.05, 0.95)
 
     # === APPLY MAX TTL LIMIT ===
     base_ttl = min(base_ttl, max_ttl)
@@ -16950,11 +17085,16 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     coords = UKRAINE_SETTLEMENTS_BY_OBLAST[(city_norm_lower, oblast_key)]
                     _mapstransler_geocode_cache[cache_key] = coords
                     add_debug_log(f"UKRAINE_SETTLEMENTS_BY_OBLAST HIT: ({city_norm}, {oblast_key}) -> ({coords[0]}, {coords[1]})", "mapstransler")
-                # Fallback to simple lookup
-                elif city_norm_lower in UKRAINE_ALL_SETTLEMENTS:
+                # IMPORTANT: If oblast is EXPLICITLY specified in message, do NOT fallback to UKRAINE_ALL_SETTLEMENTS
+                # because it may return coordinates for a different oblast (e.g., Журавлівка exists in Vinnytsia AND Kharkiv)
+                # Only use UKRAINE_ALL_SETTLEMENTS when NO oblast is specified
+                elif not oblast_key and city_norm_lower in UKRAINE_ALL_SETTLEMENTS:
                     coords = UKRAINE_ALL_SETTLEMENTS[city_norm_lower]
                     _mapstransler_geocode_cache[cache_key] = coords
-                    add_debug_log(f"UKRAINE_ALL_SETTLEMENTS HIT: {city_norm} -> ({coords[0]}, {coords[1]})", "mapstransler")
+                    add_debug_log(f"UKRAINE_ALL_SETTLEMENTS HIT (no oblast specified): {city_norm} -> ({coords[0]}, {coords[1]})", "mapstransler")
+                elif oblast_key:
+                    # Oblast specified but not found in BY_OBLAST - log this for future database update
+                    add_debug_log(f"UKRAINE_SETTLEMENTS_BY_OBLAST MISS: ({city_norm}, {oblast_key}) - need to add to database", "mapstransler")
 
             # PRIORITY 0.5: Check CITY_COORDS (legacy, smaller set but has special entries)
             if not coords and cache_key not in _mapstransler_geocode_cache:
