@@ -4512,35 +4512,47 @@
       let trajCount = 0;
       markers.forEach(marker => {
         const traj = marker.trajectory;
-        if (!traj || !traj.start || !traj.end) return;
+        if (!traj || !traj.end) return;
         
         trajCount++;
         console.log('Drawing trajectory:', traj);
         
-        const startLat = parseFloat(traj.start[0]);
-        const startLng = parseFloat(traj.start[1]);
+        // Use marker's current position as line start (where the drone is NOW)
+        const markerLat = parseFloat(marker.lat);
+        const markerLng = parseFloat(marker.lng);
         const endLat = parseFloat(traj.end[0]);
         const endLng = parseFloat(traj.end[1]);
         
-        if (isNaN(startLat) || isNaN(startLng) || isNaN(endLat) || isNaN(endLng)) return;
+        if (isNaN(markerLat) || isNaN(markerLng) || isNaN(endLat) || isNaN(endLng)) return;
+        
+        // Skip if marker position equals target (no movement)
+        if (Math.abs(markerLat - endLat) < 0.01 && Math.abs(markerLng - endLng) < 0.01) return;
         
         // Convert to SVG percent coordinates
-        const startPos = latLngToSvgPercent(startLat, startLng);
+        const markerPos = latLngToSvgPercent(markerLat, markerLng);
         const endPos = latLngToSvgPercent(endLat, endLng);
         
-        // Calculate middle point for direction arrow
-        const midX = (startPos.x + endPos.x) / 2;
-        const midY = (startPos.y + endPos.y) / 2;
+        // Calculate angle for direction
+        const angle = Math.atan2(endPos.y - markerPos.y, endPos.x - markerPos.x) * 180 / Math.PI;
+        const angleRad = angle * Math.PI / 180;
         
-        // Calculate angle for arrows
-        const angle = Math.atan2(endPos.y - startPos.y, endPos.x - startPos.x) * 180 / Math.PI;
+        // Offset line start from marker center to "nose" of the drone icon
+        // Shahed icon is 44px, offset ~22px in direction of travel (in % of container)
+        // Approximate: 1.5% offset looks good on most screens
+        const offsetPercent = 1.5;
+        const startX = markerPos.x + Math.cos(angleRad) * offsetPercent;
+        const startY = markerPos.y + Math.sin(angleRad) * offsetPercent;
+        
+        // Calculate middle point for direction arrow
+        const midX = (startX + endPos.x) / 2;
+        const midY = (startY + endPos.y) / 2;
         
         // Create trajectory group (add 'predicted' class for AI-predicted routes)
         const group = document.createElement('div');
         group.className = 'trajectory-group' + (traj.predicted ? ' predicted' : '');
         // Store coordinates for region-based cleanup on alarm cancel
-        group.dataset.startLat = startLat;
-        group.dataset.startLng = startLng;
+        group.dataset.startLat = markerLat;
+        group.dataset.startLng = markerLng;
         group.dataset.endLat = endLat;
         group.dataset.endLng = endLng;
         
@@ -4555,31 +4567,20 @@
         svg.style.overflow = 'visible';
         svg.style.pointerEvents = 'none';
         
-        // Create dashed line
+        // Create dashed line FROM marker (offset to nose) TO target
         const line = document.createElementNS(svgNS, 'line');
         line.setAttribute('class', 'traj-line');
-        line.setAttribute('x1', `${startPos.x}%`);
-        line.setAttribute('y1', `${startPos.y}%`);
+        line.setAttribute('x1', `${startX}%`);
+        line.setAttribute('y1', `${startY}%`);
         line.setAttribute('x2', `${endPos.x}%`);
         line.setAttribute('y2', `${endPos.y}%`);
         
         svg.appendChild(line);
         group.appendChild(svg);
         
-        // Add source icon (circle with dot) at start
-        const sourceIcon = document.createElement('div');
-        sourceIcon.className = 'trajectory-source-icon';
-        sourceIcon.style.left = `${startPos.x}%`;
-        sourceIcon.style.top = `${startPos.y}%`;
-        group.appendChild(sourceIcon);
+        // Source icon removed - line starts from drone nose
         
-        // Add big direction arrow (triangle) in the middle
-        const dirArrow = document.createElement('div');
-        dirArrow.className = 'trajectory-direction-arrow';
-        dirArrow.style.left = `${midX}%`;
-        dirArrow.style.top = `${midY}%`;
-        dirArrow.style.transform = `translate(-50%, -50%) rotate(${angle + 90}deg)`;
-        group.appendChild(dirArrow);
+        // Direction arrow removed - line is enough
         
         // Add V-shaped arrow at target
         const targetArrow = document.createElement('div');
