@@ -16288,6 +16288,16 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         if general_emoji_match and any(uav_word in text.lower() for uav_word in ['бпла', 'дрон', 'шахед', 'активність', 'загроза', 'тривога', 'обстріл', 'обстрел']):
             city_from_general = general_emoji_match.group(1).strip()
             oblast_from_general = general_emoji_match.group(2).strip()
+            
+            # Strip UAV-related prefixes from city name (БПЛА, дрон, шахед, etc.)
+            uav_prefixes = ['бпла', 'дрон', 'дрони', 'шахед', 'шахеди', 'безпілотник', 'безпілотники', 'ворожий', 'ворожі']
+            city_lower = city_from_general.lower()
+            for prefix in uav_prefixes:
+                if city_lower.startswith(prefix + ' '):
+                    city_from_general = city_from_general[len(prefix):].strip()
+                    city_lower = city_from_general.lower()
+                    add_debug_log(f"PRIORITY: Stripped UAV prefix '{prefix}', city now: {repr(city_from_general)}", "emoji_debug")
+            
             add_debug_log(f"PRIORITY: Found city: {repr(city_from_general)}, oblast: {repr(oblast_from_general)}", "emoji_debug")
             
             if city_from_general and 2 <= len(city_from_general) <= 40:
@@ -17228,6 +17238,16 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         
         if general_emoji_match and any(uav_word in text.lower() for uav_word in ['бпла', 'дрон', 'шахед', 'активність', 'загроза']):
             city_from_general = general_emoji_match.group(1).strip()
+            
+            # Strip UAV-related prefixes from city name (БПЛА, дрон, шахед, etc.)
+            uav_prefixes = ['бпла', 'дрон', 'дрони', 'шахед', 'шахеди', 'безпілотник', 'безпілотники', 'ворожий', 'ворожі']
+            city_lower = city_from_general.lower()
+            for prefix in uav_prefixes:
+                if city_lower.startswith(prefix + ' '):
+                    city_from_general = city_from_general[len(prefix):].strip()
+                    city_lower = city_from_general.lower()
+                    add_debug_log(f"Stripped UAV prefix '{prefix}', city now: {repr(city_from_general)}", "emoji_debug")
+            
             add_debug_log(f"Found city from general emoji: {repr(city_from_general)}", "emoji_debug")
             
             if city_from_general and 2 <= len(city_from_general) <= 40:
