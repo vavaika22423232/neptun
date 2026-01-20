@@ -25618,27 +25618,6 @@ def data():
             continue
         out.append(m)
 
-    # Fallback: if no tracks/events in the selected time range, show latest geo markers
-    # This prevents empty maps during quiet periods.
-    if not out and not events:
-        fallback_added = 0
-        for m in reversed(messages):
-            if m.get('pending_geo') or m.get('list_only'):
-                continue
-            try:
-                lat = round(float(m.get('lat')), 3)
-                lng = round(float(m.get('lng')), 3)
-            except Exception:
-                continue
-            text = (m.get('text') or '')
-            source = m.get('source') or m.get('channel') or ''
-            marker_key = f"{lat},{lng}|{text}|{source}"
-            if marker_key in hidden:
-                continue
-            out.append(m)
-            fallback_added += 1
-            if fallback_added >= 120:
-                break
     
     # Log AI TTL statistics
     if AI_TTL_ENABLED and (ai_ttl_stats['shown'] > 0 or ai_ttl_stats['hidden'] > 0):
