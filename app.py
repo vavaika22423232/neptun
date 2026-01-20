@@ -170,14 +170,11 @@ SPACY_AVAILABLE = False
 nlp = None
 print("INFO: SpaCy DISABLED to save memory")
 
-# Nominatim geocoding integration
-try:
-    from nominatim_geocoder import get_coordinates_nominatim
-    NOMINATIM_AVAILABLE = True
-except ImportError:
-    NOMINATIM_AVAILABLE = False
-    def get_coordinates_nominatim(city_name, region=None):
-        return None
+# Nominatim geocoding integration - DISABLED (causes timeouts on Render)
+# Was causing 30+ minute startup delays
+NOMINATIM_AVAILABLE = False
+def get_coordinates_nominatim(city_name, region=None):
+    return None
 
 # Groq AI integration for intelligent geocoding
 GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')
