@@ -6735,8 +6735,25 @@ def check_alarms_and_update_threats():
     """
     try:
         # Get current alarms from cache
-        if _alarm_all_cache.get('data'):
-            changed = THREAT_TRACKER.update_from_alarms(_alarm_all_cache['data'])
+        alarm_data = _alarm_all_cache.get('data')
+        if alarm_data:
+            # Convert list format to dict format expected by update_from_alarms
+            # _alarm_all_cache['data'] is a list of regions with active alarms
+            if isinstance(alarm_data, list):
+                # Convert to dict with states/districts
+                states = []
+                districts = []
+                for region in alarm_data:
+                    region_type = region.get('regionType', '')
+                    if region_type == 'State':
+                        states.append(region)
+                    else:
+                        districts.append(region)
+                alarm_dict = {'states': states, 'districts': districts}
+            else:
+                alarm_dict = alarm_data
+            
+            changed = THREAT_TRACKER.update_from_alarms(alarm_dict)
             if changed:
                 print(f"[THREAT TRACKER] Updated {len(changed)} threats based on alarm changes")
     except Exception as e:
