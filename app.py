@@ -147,7 +147,8 @@ except Exception as e:
 
 # Import comprehensive Ukrainian settlements database (26000+ entries)
 # MEMORY OPTIMIZATION: Load only if enough memory, otherwise use empty dict
-MEMORY_OPTIMIZED = os.environ.get('MEMORY_OPTIMIZED', 'true').lower() == 'true'
+# Default to loading the DB (needed for village-level geocoding)
+MEMORY_OPTIMIZED = os.environ.get('MEMORY_OPTIMIZED', 'false').lower() == 'true'
 
 if MEMORY_OPTIMIZED:
     # Don't load the huge settlements database - saves ~100MB RAM
@@ -11271,6 +11272,9 @@ CITY_COORDS = {
     'костянтинівка': (48.5277, 37.7050),
     # Краснокутськ (Харківська обл.)
     'краснокутськ': (50.0640, 35.1630),
+    # Огіївка (Харківська обл.)
+    'огіївка': (49.085201, 35.769772),
+    'огиевка': (49.085201, 35.769772),
     # Mezhova (Дніпропетровська обл.) to avoid fallback to Dnipro
     'межова': (48.2583, 36.7363),
     # Sviatohirsk (Святогірськ) Donetsk Oblast
