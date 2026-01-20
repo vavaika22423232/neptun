@@ -54,13 +54,14 @@ def create_app(test_config=None):
     flask_app.config['ADMIN_API_KEY'] = os.getenv('ADMIN_SECRET', '')
     
     # Register blueprints
-    from api import health_bp, data_bp, alarms_bp, tracks_bp, sse_bp, admin_bp
+    from api import health_bp, data_bp, alarms_bp, tracks_bp, sse_bp, admin_bp, chat_bp
     flask_app.register_blueprint(health_bp)
     flask_app.register_blueprint(data_bp)
     flask_app.register_blueprint(alarms_bp)
     flask_app.register_blueprint(tracks_bp)
     flask_app.register_blueprint(sse_bp)
     flask_app.register_blueprint(admin_bp)
+    flask_app.register_blueprint(chat_bp)
     
     return flask_app
 
@@ -110,18 +111,19 @@ log.info(f"GeocodeCache loaded: {geocode_cache.stats()}")
 # Build geocoder chain
 geocoders = []
 
-# 1. Local geocoder (always first) - try to load from app.py globals
+# 1. Local geocoder (always first) - load from data module
 try:
-    # Import city coords from main app
-    import app as main_app
-    city_coords = getattr(main_app, 'CITY_COORDS', {})
-    settlements = getattr(main_app, 'UKRAINE_ALL_SETTLEMENTS', None)
-    settlements_by_oblast = getattr(main_app, 'UKRAINE_SETTLEMENTS_BY_OBLAST', None)
+    # Import city coords from data module (not app.py!)
+    from data import (
+        CITY_COORDS, 
+        UKRAINE_ALL_SETTLEMENTS, 
+        UKRAINE_SETTLEMENTS_BY_OBLAST
+    )
     
     local_geocoder = LocalGeocoder(
-        city_coords=city_coords,
-        settlements=settlements,
-        settlements_by_oblast=settlements_by_oblast,
+        city_coords=CITY_COORDS,
+        settlements=UKRAINE_ALL_SETTLEMENTS or None,
+        settlements_by_oblast=UKRAINE_SETTLEMENTS_BY_OBLAST or None,
     )
     geocoders.append(local_geocoder)
     log.info(f"LocalGeocoder: {local_geocoder.stats()['city_coords']} cities loaded")
@@ -238,12 +240,14 @@ if config.alarms.is_configured:
         log.warning(f"Failed to initialize alarms: {e}")
 
 # Register blueprints
+from api import chat_bp
 app.register_blueprint(data_bp)
 app.register_blueprint(health_bp)
 app.register_blueprint(alarms_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(tracks_bp)
 app.register_blueprint(sse_bp)
+app.register_blueprint(chat_bp)
 
 
 # ==============================================================================
