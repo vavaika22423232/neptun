@@ -40,7 +40,7 @@ log.info(f"  Persistent storage: {'✓' if config.storage.is_persistent_availabl
 def create_app(test_config=None):
     """Create and configure Flask application (factory pattern)."""
     from flask import Flask
-    from flask_cors import CORS
+    from flask_cors import CORS  # type: ignore[import-not-found]
 
     flask_app = Flask(__name__)
     CORS(flask_app, origins=config.server.cors_origins)
@@ -69,7 +69,7 @@ def create_app(test_config=None):
 # ==============================================================================
 
 from flask import Flask, jsonify
-from flask_cors import CORS
+from flask_cors import CORS  # type: ignore[import-not-found]
 
 app = Flask(__name__)
 CORS(app, origins=config.server.cors_origins)
@@ -216,11 +216,8 @@ if config.alarms.is_configured:
 
         alarm_state = AlarmStateManager()
 
-        # Try to get district mapping from main_app
-        try:
-            district_to_oblast = getattr(main_app, 'DISTRICT_TO_OBLAST', {})
-        except:
-            district_to_oblast = {}
+        # Try to get district mapping
+        district_to_oblast = {}
 
         init_alarms_api(
             alarm_client=alarm_client,

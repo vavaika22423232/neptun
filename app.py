@@ -23586,7 +23586,7 @@ def index():
     # SEO: Detect crawlers and serve optimized response
     if is_seo_bot(user_agent):
         # For bots: add extra SEO headers and potentially serve prerendered content
-        response = render_template('index_index.html')
+        response = render_template('index.html')
         resp = app.response_class(response)
         resp.headers['Cache-Control'] = 'public, max-age=3600'  # 1 hour for bots
         resp.headers['X-Robots-Tag'] = 'index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1'
@@ -23596,7 +23596,7 @@ def index():
         return resp
 
     # BANDWIDTH OPTIMIZATION: Add caching headers for main page
-    response = render_template('index_index.html')
+    response = render_template('index.html')
     resp = app.response_class(response)
     resp.headers['Cache-Control'] = 'public, max-age=300'  # 5 minutes cache
     resp.headers['ETag'] = f'index-{int(time.time() // 300)}'
@@ -23638,7 +23638,7 @@ def region_page(region_slug):
     """SEO page for each region - helps with regional search queries"""
     region = REGIONS_SEO.get(region_slug)
     if not region:
-        return render_template('index_index.html'), 404
+        return render_template('index.html'), 404
 
     return render_template('region.html',
                           region_slug=region_slug,

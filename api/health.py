@@ -112,7 +112,7 @@ def health_detailed():
 
         # Memory status
         try:
-            import psutil
+            import psutil  # type: ignore[import-not-found]
             process = psutil.Process(os.getpid())
             mem_info = process.memory_info()
             status['components']['memory'] = {
