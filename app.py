@@ -28427,6 +28427,50 @@ def healthz():
     except Exception as exc:
         return jsonify({'status': 'error', 'error': str(exc)}), 500
 
+@app.route('/admin/test-nominatim')
+def test_nominatim():
+    """Test if Nominatim is reachable from this server."""
+    import time as time_module
+    results = {
+        'nominatim': {'status': 'unknown', 'time_ms': 0, 'error': None},
+        'settlements_db': {
+            'all_loaded': len(UKRAINE_ALL_SETTLEMENTS) if UKRAINE_ALL_SETTLEMENTS else 0,
+            'oblast_aware_loaded': len(UKRAINE_SETTLEMENTS_BY_OBLAST) if UKRAINE_SETTLEMENTS_BY_OBLAST else 0,
+        },
+        'memory_optimized': os.environ.get('MEMORY_OPTIMIZED', 'false'),
+    }
+    
+    # Test Nominatim
+    try:
+        start = time_module.time()
+        nominatim_url = 'https://nominatim.openstreetmap.org/search'
+        params = {'q': 'Kyiv, Ukraine', 'format': 'json', 'limit': 1}
+        headers = {'User-Agent': 'neptun.in.ua/1.0'}
+        response = requests.get(nominatim_url, params=params, headers=headers, timeout=5)
+        elapsed = (time_module.time() - start) * 1000
+        
+        results['nominatim']['time_ms'] = round(elapsed, 1)
+        if response.status_code == 200:
+            data = response.json()
+            if data and len(data) > 0:
+                results['nominatim']['status'] = 'ok'
+                results['nominatim']['result'] = data[0].get('display_name', '')[:50]
+            else:
+                results['nominatim']['status'] = 'empty_response'
+        else:
+            results['nominatim']['status'] = f'http_{response.status_code}'
+    except requests.exceptions.Timeout:
+        results['nominatim']['status'] = 'timeout'
+        results['nominatim']['error'] = 'Request timed out after 5s'
+    except requests.exceptions.ConnectionError as e:
+        results['nominatim']['status'] = 'connection_error'
+        results['nominatim']['error'] = str(e)[:200]
+    except Exception as e:
+        results['nominatim']['status'] = 'error'
+        results['nominatim']['error'] = str(e)[:200]
+    
+    return jsonify(results)
+
 # Manual trigger (idempotent) if needed before first page hit
 @app.route('/startup_init', methods=['POST'])
 def startup_init():

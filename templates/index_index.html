@@ -4191,6 +4191,7 @@
     }
     
     // Fetch threat markers from /data endpoint with ETag caching
+    // PROGRESSIVE LOADING: Markers appear one by one, newest first
     async function fetchThreatMarkers() {
       try {
         // BANDWIDTH OPTIMIZATION: Use ETag to avoid re-downloading unchanged data
@@ -4225,14 +4226,60 @@
         const markerCounts = {};
         
         // Process markers
-        const markers = data.tracks || data.items || data || [];
+        let markers = data.tracks || data.items || data || [];
         
         if (!Array.isArray(markers)) {
           console.log('No markers array found');
           return;
         }
         
-        markers.forEach((marker, index) => {
+        // PROGRESSIVE LOADING: Sort by date descending (newest first)
+        markers = markers.slice().sort((a, b) => {
+          const dateA = a.date || '';
+          const dateB = b.date || '';
+          return dateB.localeCompare(dateA);
+        });
+        
+        // PROGRESSIVE RENDERING: Add markers one by one with small delay
+        const BATCH_SIZE = 5;  // Add 5 markers at a time
+        const BATCH_DELAY = 50; // 50ms between batches
+        
+        const addMarkerBatch = (startIndex) => {
+          const endIndex = Math.min(startIndex + BATCH_SIZE, markers.length);
+          
+          for (let i = startIndex; i < endIndex; i++) {
+            const marker = markers[i];
+            addSingleMarker(marker, markersLayer, markerCounts);
+          }
+          
+          // Continue with next batch
+          if (endIndex < markers.length) {
+            setTimeout(() => addMarkerBatch(endIndex), BATCH_DELAY);
+          } else {
+            // All markers added - render trajectories and update summary
+            renderTrajectories(markers);
+            updateMarkersSummary(markerCounts);
+            console.log(`Loaded ${markers.length} threat markers (progressive)`);
+          }
+        };
+        
+        // Start progressive loading
+        if (markers.length > 0) {
+          addMarkerBatch(0);
+        }
+        
+        // Check for ballistic threat from Telegram (immediate)
+        if (data.ballistic_threat) {
+          checkBallisticThreats(data.ballistic_threat);
+        }
+        
+      } catch (error) {
+        console.error('Error fetching threat markers:', error);
+      }
+    }
+    
+    // Helper: Add a single marker to the map
+    function addSingleMarker(marker, markersLayer, markerCounts) {
           const lat = parseFloat(marker.lat);
           const lng = parseFloat(marker.lng);
           
@@ -4358,25 +4405,17 @@
           markerEl.addEventListener('mouseenter', (e) => showMarkerTooltip(e, marker, threatType));
           markerEl.addEventListener('mouseleave', hideMarkerTooltip);
           
+          // PROGRESSIVE: Add fade-in animation
+          markerEl.style.opacity = '0';
+          markerEl.style.transform = 'scale(0.5)';
           markersLayer.appendChild(markerEl);
-        });
-        
-        // Render trajectory lines
-        renderTrajectories(markers);
-        
-        // Update markers summary
-        updateMarkersSummary(markerCounts);
-        
-        // Check for ballistic threat from Telegram
-        if (data.ballistic_threat) {
-          checkBallisticThreats(data.ballistic_threat);
-        }
-        
-        console.log(`Loaded ${markers.length} threat markers`);
-        
-      } catch (error) {
-        console.error('Error fetching threat markers:', error);
-      }
+          
+          // Trigger animation after append
+          requestAnimationFrame(() => {
+            markerEl.style.transition = 'opacity 0.2s ease-out, transform 0.2s ease-out';
+            markerEl.style.opacity = '1';
+            markerEl.style.transform = 'scale(1)';
+          });
     }
     
     // Fetch and render fusion trajectories (multi-channel combined data)
