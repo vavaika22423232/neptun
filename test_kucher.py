@@ -3,8 +3,9 @@
 Тест парсингу постів Кучера (timofii_kucher)
 """
 
-from app import CHANNEL_FUSION, GROQ_ENABLED
 from datetime import datetime
+
+from app import CHANNEL_FUSION, GROQ_ENABLED
 
 print(f'AI (Groq) enabled: {GROQ_ENABLED}')
 print()
@@ -53,13 +54,13 @@ for i, text in enumerate(KUCHER_POSTS, 1):
         'date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
     }
     sig = CHANNEL_FUSION.extract_message_signature(msg)
-    
+
     # Підрахунок
     if sig['threat_type']: stats['threat'] += 1
     if sig['regions']: stats['region'] += 1
     if sig['quantity'] > 1: stats['qty'] += 1
     if sig['direction']: stats['direction'] += 1
-    
+
     print(f'{i:2}. "{text[:60]}{"..." if len(text) > 60 else ""}"')
     print(f'    Тип: {sig["threat_type"] or "❌"}  |  Регіон: {list(sig["regions"]) if sig["regions"] else "❌"}  |  К-ть: {sig["quantity"]}  |  Напр: {sig["direction"] or "-"}')
     print()

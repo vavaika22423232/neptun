@@ -48,41 +48,41 @@ for i, line in enumerate(lines, 1):
     if 'бпла' in line_lower:
         print(f"\nLine {i}: {line}")
         print(f"Line lower: {line_lower}")
-        
+
         matched = False
-        
+
         m1 = pat_napramku.search(line_lower)
         if m1:
             print(f"  ✓ pat_napramku: count={m1.group(1)}, city='{m1.group(2)}'")
             matched = True
-        
+
         m2 = pat_simple_na.search(line_lower)
         if m2:
             print(f"  ✓ pat_simple_na: count={m2.group(1)}, city='{m2.group(2)}'")
             matched = True
-        
+
         m3 = pat_vid_do.search(line_lower)
         if m3:
             print(f"  ✓ pat_vid_do: count={m3.group(1)}, city1='{m3.group(2)}', city2='{m3.group(3)}'")
             matched = True
-        
+
         m4 = pat_okolytsi.search(line_lower)
         if m4:
             print(f"  ✓ pat_okolytsi: count={m4.group(1)}, city='{m4.group(2)}'")
             matched = True
-        
+
         m5 = pat_ta.search(line_lower)
         if m5:
             print(f"  ✓ pat_ta: count={m5.group(1)}, city1='{m5.group(2)}', city2='{m5.group(3)}'")
             matched = True
-        
+
         if not matched:
-            print(f"  ✗ NO PATTERN MATCHED!")
+            print("  ✗ NO PATTERN MATCHED!")
             if 'від' in line_lower and 'до' in line_lower:
-                print(f"    Hint: Line has 'від ... до' pattern")
+                print("    Hint: Line has 'від ... до' pattern")
             if 'околиц' in line_lower:
-                print(f"    Hint: Line has 'околицях' pattern")
+                print("    Hint: Line has 'околицях' pattern")
             if ' та ' in line_lower:
-                print(f"    Hint: Line has 'та' (and) pattern for multiple cities")
+                print("    Hint: Line has 'та' (and) pattern for multiple cities")
 
 print("\n" + "=" * 70)

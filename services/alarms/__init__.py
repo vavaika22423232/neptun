@@ -7,8 +7,8 @@ Alarm monitoring service.
 - AlarmState - стан тривог
 """
 from services.alarms.client import AlarmClient
-from services.alarms.state import AlarmStateManager
 from services.alarms.monitor import AlarmMonitor
+from services.alarms.state import AlarmStateManager
 
 __all__ = [
     'AlarmClient',

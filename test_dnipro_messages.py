@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 import re
 
@@ -73,32 +72,32 @@ print("=" * 70)
 for msg in messages:
     print(f"\n📝 Message: {msg}")
     print(f"   Lower: {msg.lower()}")
-    
+
     # Check each pattern
     m1 = pat_count_course.search(msg.lower())
     if m1:
         print(f"   ✓ pat_count_course: count={m1.group(1)}, city='{m1.group(2)}'")
-    
+
     m2 = pat_course.search(msg.lower())
     if m2:
         print(f"   ✓ pat_course: city='{m2.group(1)}'")
-    
+
     m3 = pat_area.search(msg.lower())
     if m3:
         print(f"   ✓ pat_area: count={m3.group(1)}, city='{m3.group(2)}'")
-    
+
     m4 = pat_napramku.search(msg.lower())
     if m4:
         print(f"   ✓ pat_napramku: count={m4.group(1)}, city='{m4.group(2)}'")
-    
+
     m5 = pat_sektor.search(msg.lower())
     if m5:
         print(f"   ✓ pat_sektor: count={m5.group(1)}, city='{m5.group(2)}'")
-    
+
     m6 = pat_simple_na.search(msg.lower())
     if m6:
         print(f"   ✓ pat_simple_na: count={m6.group(1)}, city='{m6.group(2)}'")
-    
+
     if not any([m1, m2, m3, m4, m5, m6]):
         print("   ✗ No pattern matched")
 

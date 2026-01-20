@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """Test script for Multi-Channel Intelligence Fusion System"""
 
-from app import CHANNEL_FUSION, process_message_with_fusion, get_fused_markers, get_fused_trajectories
 from datetime import datetime, timedelta
+
+from app import (
+    CHANNEL_FUSION,
+    get_fused_markers,
+    get_fused_trajectories,
+    process_message_with_fusion,
+)
 
 # Clear existing events
 CHANNEL_FUSION.fused_events.clear()
@@ -62,7 +68,7 @@ for msg in test_messages:
             print(f'  - Type: {e["threat_type"]}, Qty: {e["quantity"]} (destroyed: {e["quantity_destroyed"]})')
             print(f'  - Regions: {e["regions"]}')
             print(f'  - Direction: {e["direction"]}')
-            print(f'  - Unique sources: {len(set(m["channel"] for m in e["messages"]))}')
+            print(f'  - Unique sources: {len({m["channel"] for m in e["messages"]})}')
             print(f'  - Confidence: {e["confidence"]:.2f}')
             print(f'  - Trajectory points: {len(e["trajectory"])}')
     print()
@@ -72,7 +78,7 @@ print('=== Active Events ===')
 events = CHANNEL_FUSION.get_active_events()
 print(f'Total active events: {len(events)}')
 for e in events:
-    sources = list(set(m['channel'] for m in e['messages']))
+    sources = list({m['channel'] for m in e['messages']})
     print(f'\n  Event {e["id"][:8]}...')
     print(f'    Type: {e["threat_type"]} x{e["quantity"]} (destroyed: {e["quantity_destroyed"]})')
     print(f'    Direction: {e["direction"]}')

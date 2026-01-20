@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Test the trajectory parsing fixes"""
 import sys
+
 sys.path.insert(0, '/Users/vladimirmalik/Desktop/render2')
 
 # Import the actual functions from app.py
@@ -10,7 +11,7 @@ exec(open('app.py').read())
 print("=== Тест _get_region_center ===")
 tests = [
     'вінницькою областю',
-    'миколаївською областю', 
+    'миколаївською областю',
     'київською областю',
     'вінницька область',
     'вінницька',

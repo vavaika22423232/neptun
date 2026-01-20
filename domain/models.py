@@ -4,10 +4,10 @@ Domain models - pure data structures.
 Всі моделі immutable де можливо (frozen=True).
 Без бізнес-логіки, тільки дані та валідація.
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, List, Tuple, Dict, Any
 from enum import Enum
+from typing import Any, Optional
 
 from .threat_types import ThreatType
 
@@ -16,21 +16,21 @@ from .threat_types import ThreatType
 class Coordinates:
     """
     Immutable координати.
-    
+
     frozen=True гарантує що координати не змінюватимуться після створення.
     """
     lat: float
     lon: float
-    
+
     def __post_init__(self):
         if not (-90 <= self.lat <= 90):
             raise ValueError(f"Invalid latitude: {self.lat}")
         if not (-180 <= self.lon <= 180):
             raise ValueError(f"Invalid longitude: {self.lon}")
-    
-    def as_tuple(self) -> Tuple[float, float]:
+
+    def as_tuple(self) -> tuple[float, float]:
         return (self.lat, self.lon)
-    
+
     def rounded(self, precision: int = 4) -> 'Coordinates':
         return Coordinates(
             round(self.lat, precision),
@@ -42,7 +42,7 @@ class Coordinates:
 class Trajectory:
     """
     Траєкторія руху загрози.
-    
+
     start: початкова точка
     end: кінцева точка (може бути прогнозована)
     bearing: напрямок в градусах (0=північ)
@@ -52,8 +52,8 @@ class Trajectory:
     end: Coordinates
     bearing: float
     predicted: bool = False
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         return {
             'start': [self.start.lat, self.start.lon],
             'end': [self.end.lat, self.end.lon],
@@ -75,7 +75,7 @@ class TrackStatus(Enum):
 class Track:
     """
     Основна сутність - трек загрози на карті.
-    
+
     Mutable тому що оновлюється по мірі надходження нових даних.
     """
     id: str
@@ -85,18 +85,18 @@ class Track:
     text: str
     timestamp: datetime
     source_channel: str
-    
+
     # Optional fields
     trajectory: Optional[Trajectory] = None
     course_direction: Optional[str] = None
     count: int = 1
     status: TrackStatus = TrackStatus.ACTIVE
-    
+
     # Metadata
     manual: bool = False
     pending_geo: bool = False
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to dict for JSON response."""
         result = {
             'id': self.id,
@@ -111,34 +111,34 @@ class Track:
             'count': self.count,
             'manual': self.manual,
         }
-        
+
         if self.trajectory:
             result['trajectory'] = self.trajectory.to_dict()
-        
+
         if self.course_direction:
             result['course_direction'] = self.course_direction
-            
+
         return result
-    
+
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'Track':
+    def from_dict(cls, data: dict[str, Any]) -> 'Track':
         """Deserialize from stored dict."""
         coords = Coordinates(
             float(data.get('lat', 0)),
             float(data.get('lng', 0))
         )
-        
+
         threat_type_str = data.get('threat_type', 'unknown')
         try:
             threat_type = ThreatType[threat_type_str.upper()]
         except (KeyError, AttributeError):
             threat_type = ThreatType.UNKNOWN
-        
+
         timestamp = datetime.strptime(
             data.get('date', ''),
             '%Y-%m-%d %H:%M:%S'
         ) if data.get('date') else datetime.now()
-        
+
         return cls(
             id=str(data.get('id', '')),
             threat_type=threat_type,
@@ -157,15 +157,15 @@ class Track:
 class RawMessage:
     """
     Сире повідомлення з Telegram до обробки.
-    
+
     Immutable - створюється один раз при отриманні.
     """
     id: str
     text: str
     timestamp: datetime
     channel: str
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         return {
             'id': self.id,
             'text': self.text,
@@ -179,7 +179,7 @@ class RawMessage:
 class AlarmState:
     """
     Стан тривоги для регіону.
-    
+
     Immutable - при зміні створюється новий об'єкт.
     """
     region_id: str
@@ -188,7 +188,7 @@ class AlarmState:
     started_at: Optional[datetime]
     last_update: datetime
     alarm_type: Optional[str] = None  # 'air', 'artillery', etc.
-    
+
     def with_update(self, is_active: bool) -> 'AlarmState':
         """Create new state with updated active status."""
         return AlarmState(
@@ -205,22 +205,22 @@ class AlarmState:
 class BallisticThreat:
     """
     Стан балістичної загрози.
-    
+
     Замість 3 окремих глобальних змінних - один immutable об'єкт.
     """
     is_active: bool
     region: Optional[str]
     timestamp: Optional[datetime]
-    
+
     @classmethod
     def inactive(cls) -> 'BallisticThreat':
         return cls(is_active=False, region=None, timestamp=None)
-    
+
     @classmethod
     def active(cls, region: Optional[str] = None) -> 'BallisticThreat':
         return cls(is_active=True, region=region, timestamp=datetime.now())
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         return {
             'active': self.is_active,
             'region': self.region,
@@ -238,8 +238,8 @@ class ChatMessage:
     region: Optional[str] = None
     threat_type: Optional[str] = None
     user_id: Optional[str] = None
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         return {
             'id': self.id,
             'type': self.message_type,
@@ -260,7 +260,7 @@ class GeocodingResult:
     source: str  # 'local', 'nominatim', 'photon', 'ai'
     confidence: float = 1.0
     region: Optional[str] = None
-    
+
     @property
     def success(self) -> bool:
         return self.coordinates is not None
@@ -275,8 +275,8 @@ class BackfillProgress:
     channels_total: int
     messages_processed: int
     current_channel: Optional[str]
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         return {
             'in_progress': self.in_progress,
             'started_at': self.started_at.isoformat() if self.started_at else None,

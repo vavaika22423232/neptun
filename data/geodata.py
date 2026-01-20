@@ -8,8 +8,7 @@ Provides:
 - REGIONAL_CITY_COORDS: Cities grouped by oblast
 """
 import os
-import json
-from typing import Dict, Tuple, Optional
+from typing import Optional
 
 # Base directory
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -18,7 +17,7 @@ _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # MAJOR CITIES - Always available
 # ============================================================================
 
-CITY_COORDS: Dict[str, Tuple[float, float]] = {
+CITY_COORDS: dict[str, tuple[float, float]] = {
     # Обласні центри
     "київ": (50.4501, 30.5234),
     "харків": (49.9935, 36.2304),
@@ -46,7 +45,7 @@ CITY_COORDS: Dict[str, Tuple[float, float]] = {
     "кропивницький": (48.5079, 32.2623),
     "ужгород": (48.6208, 22.2879),
     "чернівці": (48.2920, 25.9358),
-    
+
     # Великі міста
     "кременчук": (49.0669, 33.4202),
     "біла церква": (49.7983, 30.1073),
@@ -77,7 +76,7 @@ CITY_COORDS: Dict[str, Tuple[float, float]] = {
     "обухів": (50.1167, 30.6167),
     "вишгород": (50.5844, 30.4869),
     "славутич": (51.5213, 30.7485),
-    
+
     # Міста Донецької області
     "горлівка": (48.3358, 38.0550),
     "макіївка": (48.0556, 37.9416),
@@ -97,8 +96,8 @@ CITY_COORDS: Dict[str, Tuple[float, float]] = {
     "часів яр": (48.5936, 37.8481),
     "соледар": (48.6833, 38.0833),
     "сіверськ": (48.8672, 38.0939),
-    
-    # Міста Харківської області  
+
+    # Міста Харківської області
     "лубни": (50.0167, 32.9833),
     "богодухів": (50.1596, 35.5241),
     "валки": (49.8354, 35.6177),
@@ -111,7 +110,7 @@ CITY_COORDS: Dict[str, Tuple[float, float]] = {
     "мерефа": (49.8233, 36.0506),
     "зміїв": (49.6786, 36.3492),
     "красноград": (49.3693, 35.4346),
-    
+
     # Міста Запорізької області
     "токмак": (47.2544, 35.7019),
     "оріхів": (47.5673, 35.7864),
@@ -120,7 +119,7 @@ CITY_COORDS: Dict[str, Tuple[float, float]] = {
     "васильівка": (47.4361, 35.2506),
     "кам'янка-дніпровська": (47.4819, 34.4144),
     "вільнянськ": (47.9397, 35.4350),
-    
+
     # Міста Сумської області
     "конотоп": (51.2397, 33.2031),
     "охтирка": (50.3119, 34.8878),
@@ -132,7 +131,7 @@ CITY_COORDS: Dict[str, Tuple[float, float]] = {
     "буринь": (51.1978, 34.0569),
     "кролевець": (51.5486, 33.3825),
     "білопілля": (51.1467, 34.3097),
-    
+
     # Міста Чернігівської області
     "ніжин": (51.0489, 31.8867),
     "прилуки": (50.5894, 32.3856),
@@ -142,7 +141,7 @@ CITY_COORDS: Dict[str, Tuple[float, float]] = {
     "городня": (51.8867, 31.6017),
     "щорс": (51.8178, 31.9439),
     "семенівка": (52.1831, 32.5683),
-    
+
     # Крим (окуповані території)
     "сімферополь": (44.9521, 34.1024),
     "севастополь": (44.6054, 33.5221),
@@ -160,7 +159,7 @@ CITY_COORDS: Dict[str, Tuple[float, float]] = {
 # REGIONAL CITY COORDS - Grouped by oblast
 # ============================================================================
 
-REGIONAL_CITY_COORDS: Dict[str, Dict[str, Tuple[float, float]]] = {
+REGIONAL_CITY_COORDS: dict[str, dict[str, tuple[float, float]]] = {
     "київська область": {
         "бровари": (50.5116, 30.7904),
         "бориспіль": (50.3521, 30.9575),
@@ -231,18 +230,18 @@ REGIONAL_CITY_COORDS: Dict[str, Dict[str, Tuple[float, float]]] = {
 # SETTLEMENTS - Loaded from file
 # ============================================================================
 
-UKRAINE_ALL_SETTLEMENTS: Dict[str, Tuple[float, float]] = {}
-UKRAINE_SETTLEMENTS_BY_OBLAST: Dict[str, Dict[str, Tuple[float, float]]] = {}
+UKRAINE_ALL_SETTLEMENTS: dict[str, tuple[float, float]] = {}
+UKRAINE_SETTLEMENTS_BY_OBLAST: dict[str, dict[str, tuple[float, float]]] = {}
 
 def load_settlements() -> None:
     """Load settlements from ukraine_all_settlements.py if available."""
     global UKRAINE_ALL_SETTLEMENTS, UKRAINE_SETTLEMENTS_BY_OBLAST
-    
+
     try:
         # Try to import from existing file
         from ukraine_all_settlements import UKRAINE_ALL_SETTLEMENTS as _all
         from ukraine_all_settlements import UKRAINE_SETTLEMENTS_BY_OBLAST as _by_oblast
-        
+
         UKRAINE_ALL_SETTLEMENTS = _all
         UKRAINE_SETTLEMENTS_BY_OBLAST = _by_oblast
         print(f"INFO: Ukraine ALL settlements loaded: {len(_all)} simple + {len(_by_oblast)} oblast-aware entries")
@@ -258,42 +257,42 @@ load_settlements()
 # HELPER FUNCTIONS
 # ============================================================================
 
-def get_coords(name: str, oblast: Optional[str] = None) -> Optional[Tuple[float, float]]:
+def get_coords(name: str, oblast: Optional[str] = None) -> Optional[tuple[float, float]]:
     """
     Get coordinates for a settlement name.
-    
+
     Args:
         name: Settlement name (case insensitive)
         oblast: Optional oblast name for disambiguation
-        
+
     Returns:
         (lat, lon) tuple or None if not found
     """
     name_lower = name.lower().strip()
-    
+
     # 1. Try major cities first
     if name_lower in CITY_COORDS:
         return CITY_COORDS[name_lower]
-    
+
     # 2. Try oblast-specific lookup
     if oblast and oblast.lower() in UKRAINE_SETTLEMENTS_BY_OBLAST:
         oblast_settlements = UKRAINE_SETTLEMENTS_BY_OBLAST[oblast.lower()]
         if name_lower in oblast_settlements:
             return oblast_settlements[name_lower]
-    
+
     # 3. Try all settlements
     if name_lower in UKRAINE_ALL_SETTLEMENTS:
         return UKRAINE_ALL_SETTLEMENTS[name_lower]
-    
+
     return None
 
 
-def get_regional_cities(oblast: str) -> Dict[str, Tuple[float, float]]:
+def get_regional_cities(oblast: str) -> dict[str, tuple[float, float]]:
     """Get all major cities in an oblast."""
     return REGIONAL_CITY_COORDS.get(oblast.lower(), {})
 
 
-def stats() -> Dict:
+def stats() -> dict:
     """Return statistics about loaded data."""
     return {
         "city_coords": len(CITY_COORDS),

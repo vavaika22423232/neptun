@@ -6,15 +6,14 @@ Endpoints для адміністрування:
 - Статистика
 - Налаштування
 """
-import os
+import logging
 import time
 import uuid
-import logging
 from datetime import datetime
 from functools import wraps
-from typing import Callable, Optional, Dict, Any, List
+from typing import Callable, Optional
 
-from flask import Blueprint, jsonify, request, Response
+from flask import Blueprint, Response, jsonify, request
 
 log = logging.getLogger(__name__)
 
@@ -73,8 +72,8 @@ UKRAINE_BOUNDS = {
 }
 
 ALLOWED_THREAT_TYPES = {
-    'shahed', 'raketa', 'avia', 'pvo', 'vibuh', 
-    'alarm', 'alarm_cancel', 'mlrs', 'artillery', 
+    'shahed', 'raketa', 'avia', 'pvo', 'vibuh',
+    'alarm', 'alarm_cancel', 'mlrs', 'artillery',
     'obstril', 'fpv', 'pusk', 'manual', 'drone',
     'rocket', 'kab', 'ballistic',
 }
@@ -85,49 +84,49 @@ ALLOWED_THREAT_TYPES = {
 def add_manual_marker():
     """
     Add a manual marker.
-    
+
     JSON body:
         lat: float - latitude
-        lng: float - longitude  
+        lng: float - longitude
         text: str - marker text
         place: str - place name (optional)
         threat_type: str - type of threat
         rotation: float - rotation angle (optional)
     """
     payload = request.get_json(silent=True) or {}
-    
+
     try:
         # Validate coordinates
         lat = safe_float(payload.get('lat'))
         lng = safe_float(payload.get('lng'))
-        
+
         if lat is None or lng is None:
             return jsonify({'status': 'error', 'error': 'invalid_coordinates'}), 400
-        
+
         if not (UKRAINE_BOUNDS['lat_min'] <= lat <= UKRAINE_BOUNDS['lat_max']):
             return jsonify({'status': 'error', 'error': 'lat_out_of_bounds'}), 400
-        
+
         if not (UKRAINE_BOUNDS['lng_min'] <= lng <= UKRAINE_BOUNDS['lng_max']):
             return jsonify({'status': 'error', 'error': 'lng_out_of_bounds'}), 400
-        
+
         # Validate text
         text = (payload.get('text') or '').strip()
         if not text:
             return jsonify({'status': 'error', 'error': 'empty_text'}), 400
-        
+
         # Optional fields
         place = (payload.get('place') or '').strip()
         threat_type = (payload.get('threat_type') or 'manual').strip().lower()
         if threat_type not in ALLOWED_THREAT_TYPES:
             threat_type = 'manual'
-        
+
         rotation = safe_float(payload.get('rotation')) or 0
-        
+
         # Course info
         course_direction = (payload.get('course_direction') or '').strip() or None
         course_target = (payload.get('course_target') or '').strip() or None
         course_source = (payload.get('course_source') or '').strip() or place or None
-        
+
         # Generate ID and timestamp
         marker_id = f'manual-{uuid.uuid4().hex[:12]}'
         try:
@@ -136,7 +135,7 @@ def add_manual_marker():
             now_dt = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
         except ImportError:
             now_dt = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
-        
+
         # Build marker
         marker = {
             'id': marker_id,
@@ -151,14 +150,14 @@ def add_manual_marker():
             'channel': 'manual',
             'source': 'manual',
         }
-        
+
         if course_direction:
             marker['course_direction'] = course_direction
         if course_target:
             marker['course_target'] = course_target
         if course_source:
             marker['course_source'] = course_source
-        
+
         # Save using provided function or track store
         if _load_messages_fn and _save_messages_fn:
             messages = _load_messages_fn()
@@ -177,10 +176,10 @@ def add_manual_marker():
                 manual=True,
             )
             _track_store.add(entry)
-        
+
         log.info(f"Added manual marker: {marker_id} at ({lat}, {lng})")
         return jsonify({'status': 'ok', 'id': marker_id})
-        
+
     except Exception as e:
         log.error(f"Error adding manual marker: {e}")
         return jsonify({'status': 'error', 'error': str(e)}), 400
@@ -192,26 +191,26 @@ def update_manual_marker():
     """Update existing manual marker."""
     payload = request.get_json(silent=True) or {}
     marker_id = (payload.get('id') or '').strip()
-    
+
     if not marker_id:
         return jsonify({'status': 'error', 'error': 'missing_id'}), 400
-    
+
     try:
         lat = safe_float(payload.get('lat'))
         lng = safe_float(payload.get('lng'))
-        
+
         if lat is None or lng is None:
             return jsonify({'status': 'error', 'error': 'invalid_coordinates'}), 400
-        
+
         text = (payload.get('text') or '').strip()
         if not text:
             return jsonify({'status': 'error', 'error': 'empty_text'}), 400
-        
+
         place = (payload.get('place') or '').strip()
         threat_type = (payload.get('threat_type') or 'manual').strip().lower()
         if threat_type not in ALLOWED_THREAT_TYPES:
             threat_type = 'manual'
-        
+
         # Update via provided function
         if _load_messages_fn and _save_messages_fn:
             messages = _load_messages_fn()
@@ -225,10 +224,10 @@ def update_manual_marker():
                     msg['threat_type'] = threat_type
                     found = True
                     break
-            
+
             if not found:
                 return jsonify({'status': 'error', 'error': 'marker_not_found'}), 404
-            
+
             _save_messages_fn(messages)
         elif _track_store:
             success = _track_store.update(
@@ -241,10 +240,10 @@ def update_manual_marker():
             )
             if not success:
                 return jsonify({'status': 'error', 'error': 'marker_not_found'}), 404
-        
+
         log.info(f"Updated manual marker: {marker_id}")
         return jsonify({'status': 'ok'})
-        
+
     except Exception as e:
         log.error(f"Error updating manual marker: {e}")
         return jsonify({'status': 'error', 'error': str(e)}), 400
@@ -256,28 +255,28 @@ def delete_manual_marker():
     """Delete a manual marker."""
     payload = request.get_json(silent=True) or {}
     marker_id = (payload.get('id') or '').strip()
-    
+
     if not marker_id:
         return jsonify({'status': 'error', 'error': 'missing_id'}), 400
-    
+
     try:
         if _load_messages_fn and _save_messages_fn:
             messages = _load_messages_fn()
             original_len = len(messages)
             messages = [m for m in messages if m.get('id') != marker_id]
-            
+
             if len(messages) == original_len:
                 return jsonify({'status': 'error', 'error': 'marker_not_found'}), 404
-            
+
             _save_messages_fn(messages)
         elif _track_store:
             success = _track_store.remove(marker_id)
             if not success:
                 return jsonify({'status': 'error', 'error': 'marker_not_found'}), 404
-        
+
         log.info(f"Deleted manual marker: {marker_id}")
         return jsonify({'status': 'ok'})
-        
+
     except Exception as e:
         log.error(f"Error deleting manual marker: {e}")
         return jsonify({'status': 'error', 'error': str(e)}), 400
@@ -289,7 +288,7 @@ def list_markers():
     """List all markers (for admin panel)."""
     try:
         markers = []
-        
+
         if _load_messages_fn:
             messages = _load_messages_fn()
             markers = [
@@ -322,9 +321,9 @@ def list_markers():
                 for t in tracks
                 if t.lat and t.lng
             ]
-        
+
         return jsonify(markers)
-        
+
     except Exception as e:
         log.error(f"Error listing markers: {e}")
         return jsonify([])
@@ -337,14 +336,14 @@ def admin_stats():
     stats = {
         'timestamp': time.time(),
     }
-    
+
     if _track_store:
         stats['tracks'] = {
             'total': _track_store.count(include_hidden=True),
             'visible': _track_store.count(include_hidden=False),
             'manual': sum(1 for t in _track_store.get_all(include_hidden=True) if t.manual),
         }
-    
+
     return jsonify(stats)
 
 
@@ -357,13 +356,13 @@ def admin_config():
         return jsonify({
             'message': 'Use POST to update settings',
         })
-    
+
     # POST - update config
     payload = request.get_json(silent=True) or {}
-    
+
     # Handle specific settings
     updated = {}
-    
+
     # Example: monitor period
     if 'monitor_period' in payload:
         try:
@@ -372,5 +371,5 @@ def admin_config():
                 updated['monitor_period'] = period
         except (ValueError, TypeError):
             pass
-    
+
     return jsonify({'status': 'ok', 'updated': updated})

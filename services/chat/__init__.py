@@ -6,7 +6,7 @@ Provides:
 - ChatModerator: Moderation and banning
 """
 
-from services.chat.store import ChatStore
 from services.chat.moderator import ChatModerator
+from services.chat.store import ChatStore
 
 __all__ = ['ChatStore', 'ChatModerator']

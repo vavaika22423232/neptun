@@ -7,12 +7,27 @@
 
 # ...existing code...
 
-import os, re, json, asyncio, threading, logging, pytz, time, subprocess, queue, sys, platform, traceback, uuid
+import asyncio
+import json
+import logging
+import os
+import platform
+import queue
+import re
+import subprocess
+import sys
+import threading
+import time
+import traceback
+import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta
-from flask import Flask, render_template, jsonify, request, Response, send_from_directory
+
+import pytz
+from flask import Flask, Response, jsonify, render_template, request, send_from_directory
 from telethon import TelegramClient
-from core.message_store import MessageStore, DeviceStore
+
+from core.message_store import DeviceStore, MessageStore
 
 # Import expanded Ukraine addresses database
 try:
@@ -54,7 +69,13 @@ except ImportError:
 
 # Gemini AI integration for message enhancement
 try:
-    from gemini_helper import fix_message_typos, extract_city_from_text, classify_threat_type, get_ai_stats, GEMINI_ENABLED
+    from gemini_helper import (
+        GEMINI_ENABLED,
+        classify_threat_type,
+        extract_city_from_text,
+        fix_message_typos,
+        get_ai_stats,
+    )
     print(f"INFO: Gemini AI helper loaded - {'ENABLED' if GEMINI_ENABLED else 'DISABLED (no API key)'}")
 except ImportError as e:
     GEMINI_ENABLED = False
@@ -102,7 +123,7 @@ try:
         AuthKeyDuplicatedError,
         AuthKeyUnregisteredError,
         FloodWaitError,
-        SessionPasswordNeededError
+        SessionPasswordNeededError,
     )
 except ImportError:
     # Fallback dummies if some names not present in current Telethon version
@@ -114,18 +135,20 @@ except ImportError:
         def __init__(self, seconds=60): self.seconds = seconds
     class SessionPasswordNeededError(Exception):
         pass
-from telethon.sessions import StringSession
 import math
+
+from telethon.sessions import StringSession
+
 
 # === Kyiv Directional Enhancement Functions ===
 def calculate_bearing(lat1, lon1, lat2, lon2):
     """Calculate bearing from point 1 to point 2 in degrees (0-360)"""
     lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
-    
+
     dlon = lon2 - lon1
     y = math.sin(dlon) * math.cos(lat2)
     x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
-    
+
     bearing = math.atan2(y, x)
     bearing = math.degrees(bearing)
     return (bearing + 360) % 360
@@ -137,15 +160,15 @@ def get_kyiv_directional_coordinates(threat_text, original_city="київ"):
     """
     kyiv_lat, kyiv_lng = 50.4501, 30.5234
     threat_lower = threat_text.lower()
-    
+
     # Try to extract source city/direction from course patterns
     course_patterns = [
         r'бпла.*?курс.*?на.*?київ.*?з\s+([а-яіїєё\s\-\']+?)(?:\s|$|[,\.\!])',
-        r'бпла.*?курс.*?на.*?київ.*?від\s+([а-яіїєё\s\-\']+?)(?:\s|$|[,\.\!])', 
+        r'бпла.*?курс.*?на.*?київ.*?від\s+([а-яіїєё\s\-\']+?)(?:\s|$|[,\.\!])',
         r'([а-яіїєё\s\-\']+?).*?курс.*?на.*?київ',
         r'z\s+([а-яіїєё\s\-\']+?).*?курс.*?на.*?київ'
     ]
-    
+
     source_city = None
     for pattern in course_patterns:
         matches = re.findall(pattern, threat_lower)
@@ -158,52 +181,52 @@ def get_kyiv_directional_coordinates(threat_text, original_city="київ"):
                 if clean_city:
                     source_city = clean_city
                     break
-    
+
     if source_city:
         # Try to find coordinates for source city (we'll need to implement a simple lookup)
         # For now, use some common approach directions
         approach_directions = {
             'чернігів': (51.4982, 31.2893, "↘ Київ"),
-            'суми': (50.9077, 34.7981, "↙ Київ"), 
+            'суми': (50.9077, 34.7981, "↙ Київ"),
             'харків': (49.9935, 36.2304, "← Київ"),
             'полтава': (49.5883, 34.5514, "↖ Київ"),
             'черкаси': (49.4444, 32.0598, "↑ Київ"),
             'житомир': (50.2547, 28.6587, "→ Київ"),
             'біла церква': (49.7939, 30.1014, "↗ Київ")
         }
-        
+
         if source_city in approach_directions:
             source_lat, source_lng, direction_label = approach_directions[source_city]
-            
+
             # Calculate bearing from source to Kyiv
             bearing = calculate_bearing(source_lat, source_lng, kyiv_lat, kyiv_lng)
-            
+
             # Place marker on approach path (70% of the way from source to Kyiv)
             progress = 0.7  # 70% towards Kyiv
             approach_lat = source_lat + (kyiv_lat - source_lat) * progress
             approach_lng = source_lng + (kyiv_lng - source_lng) * progress
-            
+
             return approach_lat, approach_lng, f"{direction_label} ({int(bearing)}°)", source_city
-    
+
     # Fallback: use directional keywords to offset from center
     direction_offsets = {
         'півдн': (-0.08, 0, "↑ Київ (Пд)"),      # south
-        'півден': (-0.08, 0, "↑ Київ (Пд)"), 
+        'півден': (-0.08, 0, "↑ Київ (Пд)"),
         'пн': (0.08, 0, "↓ Київ (Пн)"),          # north
         'північ': (0.08, 0, "↓ Київ (Пн)"),
-        'сх': (0, 0.08, "← Київ (Сх)"),          # east  
+        'сх': (0, 0.08, "← Київ (Сх)"),          # east
         'схід': (0, 0.08, "← Київ (Сх)"),
         'зх': (0, -0.08, "→ Київ (Зх)"),         # west
         'захід': (0, -0.08, "→ Київ (Зх)"),
         'пд-сх': (-0.06, 0.06, "↖ Київ (ПдСх)"), # southeast
         'пн-зх': (0.06, -0.06, "↘ Київ (ПнЗх)"), # northwest
     }
-    
+
     for direction, (lat_offset, lng_offset, label) in direction_offsets.items():
         if direction in threat_lower:
-            return (kyiv_lat + lat_offset, kyiv_lng + lng_offset, 
+            return (kyiv_lat + lat_offset, kyiv_lng + lng_offset,
                    label, direction)
-    
+
     # Default: return regular Kyiv coordinates
     return kyiv_lat, kyiv_lng, "Київ", None
 
@@ -213,12 +236,12 @@ def extract_shahed_course_info(threat_text):
     Returns: (source_city, target_city, direction, bearing, course_type)
     """
     text_lower = threat_text.lower()
-    
+
     # Common course patterns for Shahed/UAV
     course_patterns = [
         # "БпЛА курсом з [source] на [target]"
         r'бпла\s+.*?курс(?:ом)?\s+з\s+([а-яіїєё\s\-\']+?)\s+на\s+([а-яіїєё\s\-\']+?)(?:\s|$|[,\.\!])',
-        # "БпЛА курсом на [target] з [source]"  
+        # "БпЛА курсом на [target] з [source]"
         r'бпла\s+.*?курс(?:ом)?\s+на\s+([а-яіїєё\s\-\']+?)\s+з\s+([а-яіїєё\s\-\']+?)(?:\s|$|[,\.\!])',
         # "БпЛА з [source] курсом на [target]"
         r'бпла\s+з\s+([а-яіїєё\s\-\']+?)\s+курс(?:ом)?\s+на\s+([а-яіїєё\s\-\']+?)(?:\s|$|[,\.\!])',
@@ -229,17 +252,17 @@ def extract_shahed_course_info(threat_text):
         # "[count]х БпЛА курс [source]-[target]"
         r'\d*х?\s*бпла\s+курс\s+([а-яіїєё\s\-\']+?)\s*[-–—]\s*([а-яіїєё\s\-\']+?)(?:\s|$|[,\.\!])',
     ]
-    
+
     # Try to extract course information
     for pattern_idx, pattern in enumerate(course_patterns):
         matches = re.findall(pattern, text_lower)
         if matches:
             match = matches[0]
-            
+
             if pattern_idx == 0:  # з source на target
                 source = match[0].strip()
                 target = match[1].strip()
-            elif pattern_idx == 1:  # на target з source  
+            elif pattern_idx == 1:  # на target з source
                 target = match[0].strip()
                 source = match[1].strip()
             elif pattern_idx == 2:  # з source курсом на target
@@ -254,14 +277,14 @@ def extract_shahed_course_info(threat_text):
             elif pattern_idx == 5:  # курс source-target
                 source = match[0].strip()
                 target = match[1].strip()
-            
+
             # Clean up noise words
             noise_words = {'область', 'обл', 'район', 'р-н', 'на', 'з', 'від', 'до'}
             if source:
                 source = ' '.join([word for word in source.split() if word not in noise_words]).strip()
             if target:
                 target = ' '.join([word for word in target.split() if word not in noise_words]).strip()
-            
+
             # Determine course type
             if source and target:
                 course_type = "full_course"  # Full trajectory
@@ -269,7 +292,7 @@ def extract_shahed_course_info(threat_text):
                 course_type = "target_only"  # Only destination
             else:
                 course_type = "unknown"
-                
+
             return {
                 'source_city': source,
                 'target_city': target,
@@ -277,19 +300,19 @@ def extract_shahed_course_info(threat_text):
                 'raw_direction': None,
                 'course_type': course_type
             }
-    
+
     # Try to extract directional information
     direction_patterns = {
         'північ': 'N', 'північний': 'N', 'пн': 'N',
-        'південь': 'S', 'південний': 'S', 'пд': 'S', 
+        'південь': 'S', 'південний': 'S', 'пд': 'S',
         'схід': 'E', 'східний': 'E', 'сх': 'E',
         'захід': 'W', 'західний': 'W', 'зх': 'W',
         'північно-східний': 'NE', 'пн-сх': 'NE',
-        'північно-західний': 'NW', 'пн-зх': 'NW', 
+        'північно-західний': 'NW', 'пн-зх': 'NW',
         'південно-східний': 'SE', 'пд-сх': 'SE',
         'південно-західний': 'SW', 'пд-зх': 'SW'
     }
-    
+
     for direction_ukr, direction_eng in direction_patterns.items():
         if direction_ukr in text_lower:
             return {
@@ -299,7 +322,7 @@ def extract_shahed_course_info(threat_text):
                 'raw_direction': direction_ukr,
                 'course_type': "directional"
             }
-    
+
     return None
 
 # Basic minimal subset for Render deployment. Heavy ML parts stripped for now.
@@ -353,11 +376,11 @@ def init_firebase():
     global firebase_initialized
     if firebase_initialized:
         return True
-    
+
     try:
         import firebase_admin
-        from firebase_admin import credentials, messaging
-        
+        from firebase_admin import credentials
+
         # Try to load from environment variable (Render deployment)
         cred_json = os.environ.get('FIREBASE_CREDENTIALS')
         if cred_json:
@@ -371,7 +394,7 @@ def init_firebase():
             else:
                 print("WARNING: Firebase credentials not found")
                 return False
-        
+
         firebase_admin.initialize_app(cred)
         firebase_initialized = True
         print("INFO: Firebase Admin SDK initialized successfully")
@@ -400,6 +423,7 @@ PRESENCE_RATE_LIMIT = 3    # max requests per window per IP
 import gzip
 import io
 
+
 # Add global response compression
 @app.after_request
 def compress_response(response):
@@ -415,18 +439,18 @@ def compress_response(response):
             buffer = io.BytesIO()
             with gzip.GzipFile(fileobj=buffer, mode='wb') as f:
                 f.write(response.get_data())
-            
+
             response.set_data(buffer.getvalue())
             response.headers['Content-Encoding'] = 'gzip'
             response.headers['Content-Length'] = len(response.get_data())
             response.headers['Vary'] = 'Accept-Encoding'
         except Exception:
             pass  # If compression fails, return original response
-    
+
     # Add cache headers for static content
     if request.endpoint == 'static':
         response.headers['Cache-Control'] = 'public, max-age=86400'  # 24 hours
-    
+
     return response
 
 # Custom route for serving pre-compressed static files
@@ -436,67 +460,67 @@ def static_with_gzip(filename):
     # Rate limiting removed
     # ...existing code...
     """Serve static files with gzip compression support."""
-    
+
     # CRITICAL BANDWIDTH PROTECTION: Rate limit static files
     client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
     static_requests = request_counts.get(f"{client_ip}_static", [])
     now_time = time.time()
-    
+
     # Clean old requests (last 60 seconds)
     static_requests = [req_time for req_time in static_requests if now_time - req_time < 60]
-    
+
     # Allow only 5 static file requests per minute per IP
     if len(static_requests) >= 5:
         print(f"[CRITICAL BANDWIDTH] Blocking static file {filename} from {client_ip} - too many requests")
         return jsonify({'error': 'Static files rate limited - wait 1 minute'}), 429
-    
+
     static_requests.append(now_time)
     request_counts[f"{client_ip}_static"] = static_requests
         # Rate limiting removed
-    
+
     # SMART BANDWIDTH PROTECTION: Block only genuinely large files (>1MB)
     try:
         static_folder = os.path.join(os.path.dirname(__file__), 'static')
         file_path = os.path.join(static_folder, filename)
-        
+
         if os.path.exists(file_path):
             file_size = os.path.getsize(file_path)
-            
+
             # Block files larger than 1MB to save bandwidth
-            if file_size > 1024 * 1024:  # 1MB limit 
+            if file_size > 1024 * 1024:  # 1MB limit
                 print(f"[BANDWIDTH PROTECTION] Blocking large file {filename} ({file_size//1024}KB) from {client_ip}")
                 return jsonify({'error': f'Large file blocked - size {file_size//1024}KB exceeds 1MB limit'}), 503
-                
+
             # Log access to files over 100KB for monitoring
             if file_size > 100 * 1024:
                 print(f"[BANDWIDTH MONITOR] Serving large file {filename} ({file_size//1024}KB) to {client_ip}")
         else:
             print(f"[STATIC FILE] File not found: {filename}")
             return jsonify({'error': 'File not found'}), 404
-            
+
     except Exception as e:
         print(f"[BANDWIDTH ERROR] Error checking file {filename}: {e}")
         return jsonify({'error': 'File access error'}), 500
-    
+
     # Check if client accepts gzip and we have a gzipped version
     accepts_gzip = 'gzip' in request.headers.get('Accept-Encoding', '').lower()
-    
+
     if accepts_gzip and filename.endswith('.js'):
         gzip_path = os.path.join(app.static_folder, filename + '.gz')
         if os.path.exists(gzip_path):
             response = send_from_directory(app.static_folder, filename + '.gz')
             response.headers['Content-Encoding'] = 'gzip'
             response.headers['Content-Type'] = 'application/javascript; charset=utf-8'
-            
+
             # Add strong caching for JS files
             response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
             response.headers['Expires'] = (datetime.now() + timedelta(days=365)).strftime('%a, %d %b %Y %H:%M:%S GMT')
-            
+
             return response
-    
+
     # Fall back to regular static file serving
     response = send_from_directory(app.static_folder, filename)
-    
+
     # CRITICAL BANDWIDTH PROTECTION: Check file size
     try:
         file_path = os.path.join(app.static_folder, filename)
@@ -506,7 +530,7 @@ def static_with_gzip(filename):
                 print(f"[CRITICAL BANDWIDTH] Large static file {filename}: {file_size/1024:.1f}KB from {client_ip}")
     except Exception:
         pass
-    
+
     return response
 
 # Configure caching and compression for better performance on slow connections
@@ -526,17 +550,17 @@ def add_cache_headers(response):
             # Cache regular static files for 1 week
             response.headers['Cache-Control'] = 'public, max-age=604800, immutable'
             response.headers['Expires'] = (datetime.now() + timedelta(days=7)).strftime('%a, %d %b %Y %H:%M:%S GMT')
-        
+
         # Add compression hints for images
         if request.path.endswith(('.png', '.jpg', '.jpeg', '.webp')):
             response.headers['Vary'] = 'Accept-Encoding'
             # Add ETag for better caching
             response.headers['ETag'] = f'"{hash(request.path + request.query_string.decode())}"'
-            
+
     elif request.endpoint == 'index':
         # Cache main page for 5 minutes
         response.headers['Cache-Control'] = 'public, max-age=300'
-        
+
     return response
 COMMENTS = []  # retained as a small in-memory cache (recent) but now persisted to SQLite
 COMMENTS_MAX = 500
@@ -709,7 +733,7 @@ def load_active_alarms(ttl_seconds:int):
 def load_dynamic_channels():
     try:
         if os.path.exists(CHANNELS_FILE):
-            with open(CHANNELS_FILE,'r',encoding='utf-8') as f:
+            with open(CHANNELS_FILE,encoding='utf-8') as f:
                 dyn = json.load(f)
             if isinstance(dyn, list):
                 return [str(x).strip() for x in dyn if x]
@@ -742,7 +766,7 @@ def load_config():
     global MONITOR_PERIOD_MINUTES
     try:
         if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            with open(CONFIG_FILE, encoding='utf-8') as f:
                 cfg = json.load(f)
             # Validate range 1..360 else ignore
             mp = int(cfg.get('monitor_period', MONITOR_PERIOD_MINUTES))
@@ -865,20 +889,20 @@ def _get_notification_hash(msg: dict) -> str:
 def _should_send_notification(msg: dict) -> bool:
     """Check if notification should be sent (not a duplicate)."""
     global SENT_NOTIFICATIONS_CACHE
-    
+
     msg_hash = _get_notification_hash(msg)
     now = time.time()
-    
+
     # Clean old entries from cache
     SENT_NOTIFICATIONS_CACHE = {
-        h: t for h, t in SENT_NOTIFICATIONS_CACHE.items() 
+        h: t for h, t in SENT_NOTIFICATIONS_CACHE.items()
         if now - t < NOTIFICATION_CACHE_TTL
     }
-    
+
     if msg_hash in SENT_NOTIFICATIONS_CACHE:
         log.info(f"Skipping duplicate notification (hash: {msg_hash[:8]}...)")
         return False
-    
+
     # Mark as sent
     SENT_NOTIFICATIONS_CACHE[msg_hash] = now
     return True
@@ -893,12 +917,12 @@ def save_messages(data):
         existing = MESSAGE_STORE.load()
         existing_ids = {msg.get('id') for msg in existing}
         new_messages = [msg for msg in data if msg.get('id') and msg.get('id') not in existing_ids]
-        
+
         if new_messages:
             log.info(f"Found {len(new_messages)} new messages to process for notifications")
-        
+
         saved = MESSAGE_STORE.save(data)
-        
+
         # Send FCM notifications for new messages (with deduplication)
         for msg in new_messages:
             if not msg.get('manual'):  # Skip manual markers
@@ -939,7 +963,7 @@ def _parse_dt(s:str):
 
 def _haversine_km(lat1, lon1, lat2, lon2):
     try:
-        from math import radians, sin, cos, asin, sqrt
+        from math import asin, cos, radians, sin, sqrt
         R = 6371.0
         dlat = radians(lat2-lat1)
         dlon = radians(lon2-lon1)
@@ -1028,7 +1052,7 @@ def save_hidden(data):
 def load_blocked():
     if os.path.exists(BLOCKED_FILE):
         try:
-            with open(BLOCKED_FILE, 'r', encoding='utf-8') as f:
+            with open(BLOCKED_FILE, encoding='utf-8') as f:
                 return json.load(f)
         except Exception:
             return []
@@ -1047,7 +1071,7 @@ def _load_visit_stats():
         return VISIT_STATS
     if os.path.exists(STATS_FILE):
         try:
-            with open(STATS_FILE,'r',encoding='utf-8') as f:
+            with open(STATS_FILE,encoding='utf-8') as f:
                 VISIT_STATS = json.load(f)
         except Exception:
             VISIT_STATS = {}
@@ -1086,7 +1110,7 @@ def _load_recent_visits():
         if os.path.exists(RECENT_VISITS_FILE):
             # Guard against oversized/corrupted file (e.g. concurrent writes producing concatenated JSON objects)
             try:
-                raw = open(RECENT_VISITS_FILE, 'r', encoding='utf-8').read()
+                raw = open(RECENT_VISITS_FILE, encoding='utf-8').read()
             except Exception as e_read:
                 log.warning(f"Failed reading {RECENT_VISITS_FILE}: {e_read}")
                 return {}
@@ -1190,7 +1214,6 @@ def _recent_counts():
     return len(set(data.get('today_ids', []))), len(set(data.get('week_ids', [])))
 
 # Simplified message processor placeholder
-import math
 import sqlite3
 
 _opencage_cache = None
@@ -1202,7 +1225,7 @@ def _load_opencage_cache():
         return _opencage_cache
     if os.path.exists(OPENCAGE_CACHE_FILE):
         try:
-            with open(OPENCAGE_CACHE_FILE, 'r', encoding='utf-8') as f:
+            with open(OPENCAGE_CACHE_FILE, encoding='utf-8') as f:
                 _opencage_cache = json.load(f)
         except Exception:
             _opencage_cache = {}
@@ -1231,7 +1254,7 @@ def _load_neg_geocode_cache():
         return _neg_geocode_cache
     if os.path.exists(NEG_GEOCODE_FILE):
         try:
-            with open(NEG_GEOCODE_FILE,'r',encoding='utf-8') as f:
+            with open(NEG_GEOCODE_FILE,encoding='utf-8') as f:
                 _neg_geocode_cache = json.load(f)
         except Exception:
             _neg_geocode_cache = {}
@@ -1258,17 +1281,17 @@ def _msg_timestamp(msg):
     """Extract timestamp from message for sorting and filtering"""
     if not msg:
         return 0
-    
+
     # Try different timestamp fields
     date_str = msg.get('date') or msg.get('timestamp') or msg.get('time')
     if not date_str:
         return 0
-    
+
     try:
         # Handle different date formats
         if isinstance(date_str, (int, float)):
             return float(date_str)
-        
+
         # Parse datetime string
         if isinstance(date_str, str):
             # Try common formats
@@ -1278,7 +1301,7 @@ def _msg_timestamp(msg):
                     return dt.timestamp()
                 except ValueError:
                     continue
-            
+
             # Try parsing with dateutil as fallback
             try:
                 from dateutil import parser
@@ -1288,7 +1311,7 @@ def _msg_timestamp(msg):
                 pass
     except Exception:
         pass
-    
+
     return 0
 
 def neg_geocode_check(name:str):
@@ -1329,7 +1352,7 @@ UA_CITY_NORMALIZE = {
     'улянівку':'улянівка','уляновку':'улянівка',
     # Велика Димерка падежные формы
     'велику димерку':'велика димерка','велика димерку':'велика димерка','великої димерки':'велика димерка','великій димерці':'велика димерка',
-    # Велика Виска падежные формы  
+    # Велика Виска падежные формы
     'велику виску':'велика виска','великої виски':'велика виска','великій висці':'велика виска',
     # Мала дівиця
     'малу дівицю':'мала дівиця','мала дівицю':'мала дівиця',
@@ -1337,7 +1360,7 @@ UA_CITY_NORMALIZE = {
     'олишівку':'олишівка','згурівку':'згурівка','ставищею':'ставище','кегичівку':'кегичівка','кегичевку':'кегичівка',
     # Voznesensk variants
     'вознесенська':'вознесенськ',
-    # Mykolaiv variants  
+    # Mykolaiv variants
     'миколаєва':'миколаїв',
     'корабел':'корабельний район херсон',
     'корабельний':'корабельний район херсон',
@@ -1361,7 +1384,7 @@ UA_CITY_NORMALIZE.update({
     'кролевця':'кролевець','кролевцу':'кролевець','кролевце':'кролевець',
     'дубовʼязівку':'дубовʼязівка','дубовязівку':'дубовʼязівка','дубовязовку':'дубовʼязівка','дубовязовка':'дубовʼязівка',
     'батурина':'батурин','батурині':'батурин','батурином':'батурин'
-    ,'бердичев':'бердичів','бердичева':'бердичів','бердичеве':'бердичів','бердичеву':'бердичів','бердичеві':'бердичів','бердичевом':'бердичів','бердичеву':'бердичів','бердичіву':'бердичів','бердичіва':'бердичів'
+    ,'бердичев':'бердичів','бердичева':'бердичів','бердичеве':'бердичів','бердичеву':'бердичів','бердичеві':'бердичів','бердичевом':'бердичів','бердичіву':'бердичів','бердичіва':'бердичів'
     ,'гостомеля':'гостомель','гостомелю':'гостомель','гостомелі':'гостомель','гостомель':'гостомель'
     ,'боярки':'боярка','боярку':'боярка','боярці':'боярка','боярка':'боярка'
     # Черниговская область - дополнительные формы
@@ -1384,7 +1407,7 @@ UA_CITY_NORMALIZE.update({
     ,'дмитрівку':'дмитрівка','дмитрівку чернігівська':'дмитрівка','берестин':'берестин'
     ,'семенівку':'семенівка','глобине':'глобине','глобину':'глобине','глобиному':'глобине','глобина':'глобине'
     ,'кринички':'кринички','криничок':'кринички','солоне':'солоне','солоного':'солоне','солоному':'солоне'
-    ,'краснопалівку':'краснопавлівка','краснопалівку':'краснопавлівка','краснопалівка':'краснопавлівка'
+    ,'краснопалівку':'краснопавлівка','краснопалівка':'краснопавлівка'
     ,'велику димерку':'велика димерка','великій димерці':'велика димерка','великої димерки':'велика димерка'
     ,'брусилів':'брусилів','брусилова':'брусилів','брусилові':'брусилів'
     # New cities from napramok messages September 2025
@@ -1394,7 +1417,7 @@ UA_CITY_NORMALIZE.update({
     ,'тендрівську косу':'тендрівська коса'
     # Одеська область
     ,'вилково':'вилкове','вилкову':'вилкове'
-    # Common accusative forms for major cities  
+    # Common accusative forms for major cities
     ,'одесу':'одеса','полтаву':'полтава','сумами':'суми','суму':'суми'
 })
 # Apostrophe-less fallback for Sloviansk
@@ -1414,7 +1437,7 @@ def _load_name_region_map():
     if not os.path.exists(path):
         return
     try:
-        with open(path,'r',encoding='utf-8') as f:
+        with open(path,encoding='utf-8') as f:
             data = json.load(f)
         added = 0
         for item in data:
@@ -1451,22 +1474,22 @@ for entry in PROBLEMATIC_ENTRIES:
 
 def extract_location_with_groq_ai(message_text: str):
     """Use Groq AI (Llama 3.1 70B) to intelligently extract location from Ukrainian military message.
-    
+
     Returns dict with:
     - city: settlement name (normalized to nominative case)
     - district: district name if mentioned (or None)
     - oblast: oblast name (or None)
     - confidence: AI confidence score 0-1
-    
+
     Examples:
-    - "Дніпропетровщина: БпЛА маневрує в районі Юріївки" 
+    - "Дніпропетровщина: БпЛА маневрує в районі Юріївки"
       -> {city: "Юріївка", district: None, oblast: "Дніпропетровська область", confidence: 0.95}
     - "БпЛА в Павлоградському районі курсом на Тернівку"
       -> {city: "Тернівка", district: "Павлоградський", oblast: None, confidence: 0.9}
     """
     if not GROQ_ENABLED or not message_text:
         return None
-    
+
     try:
         prompt = f"""Ти експерт з аналізу повідомлень про повітряні тривоги в Україні.
 
@@ -1499,29 +1522,29 @@ def extract_location_with_groq_ai(message_text: str):
             max_tokens=300,
             top_p=0.9
         )
-        
+
         result_text = response.choices[0].message.content.strip()
-        
+
         # Remove markdown code blocks if present
         if result_text.startswith('```'):
             result_text = re.sub(r'^```(?:json)?\s*', '', result_text)
             result_text = re.sub(r'\s*```$', '', result_text)
-        
+
         result = json.loads(result_text)
-        
+
         # Validate and normalize result
         if not isinstance(result, dict):
             return None
-        
+
         city = result.get('city')
         district = result.get('district')
         oblast = result.get('oblast')
         confidence = result.get('confidence', 0.5)
-        
+
         # Skip if no useful info extracted
         if not city and not oblast:
             return None
-        
+
         # Convert null strings to None
         if city in ['null', 'None', '']:
             city = None
@@ -1529,16 +1552,16 @@ def extract_location_with_groq_ai(message_text: str):
             district = None
         if oblast in ['null', 'None', '']:
             oblast = None
-        
+
         print(f"DEBUG Groq AI: city='{city}', district='{district}', oblast='{oblast}', confidence={confidence}")
-        
+
         return {
             'city': city.strip() if city else None,
             'district': district.strip() if district else None,
             'oblast': oblast.strip() if oblast else None,
             'confidence': float(confidence)
         }
-        
+
     except json.JSONDecodeError as e:
         print(f"WARNING: Groq AI returned invalid JSON: {e}")
         print(f"Response: {result_text[:200]}")
@@ -1552,10 +1575,10 @@ def geocode_with_context(city: str, oblast_key: str, district: str = None):
     Returns (lat, lng, is_approx) or None."""
     if not city:
         return None
-    
+
     try:
         import requests
-        
+
         # Map oblast key to full region name for Photon
         oblast_to_region_map = {
             'дніпропетровська область': 'Дніпропетровська область',
@@ -1571,16 +1594,16 @@ def geocode_with_context(city: str, oblast_key: str, district: str = None):
             'донецька область': 'Донецька область',
             'луганська область': 'Луганська область',
         }
-        
+
         region_name = oblast_to_region_map.get(oblast_key.lower(), oblast_key)
-        
+
         photon_url = 'https://photon.komoot.io/api/'
         params = {'q': city, 'limit': 15}
-        
+
         response = requests.get(photon_url, params=params, timeout=3)
         if response.ok:
             data = response.json()
-            
+
             for feature in data.get('features', []):
                 props = feature.get('properties', {})
                 state = props.get('state', '')
@@ -1588,45 +1611,45 @@ def geocode_with_context(city: str, oblast_key: str, district: str = None):
                 country = props.get('country', '')
                 osm_key = props.get('osm_key', '')
                 osm_value = props.get('osm_value', '')
-                
+
                 # Filter out POIs
                 if osm_key not in ['place', 'boundary']:
                     continue
                 valid_place_types = ['city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood', 'administrative', 'borough', 'quarter', 'district']
                 if osm_key == 'place' and osm_value not in valid_place_types:
                     continue
-                
+
                 # Filter by Ukraine and oblast
                 if (country == 'Україна' or country == 'Ukraine'):
                     if region_name in state:
                         coords_arr = feature.get('geometry', {}).get('coordinates', [])
                         if coords_arr and len(coords_arr) >= 2:
                             lat, lng = coords_arr[1], coords_arr[0]
-                            
+
                             # If district provided, prefer district match
                             if district:
                                 county_lower = county.lower()
                                 district_lower = district.lower()
-                                
+
                                 if district_lower in county_lower or county_lower.startswith(district_lower):
                                     print(f"DEBUG Groq+Photon: '{city}' in {county}, {state} (district match!) -> ({lat}, {lng})")
                                     return (lat, lng, False)
                                 else:
                                     continue  # Keep looking for district match
-                            
+
                             # No district filter or found oblast match
                             print(f"DEBUG Groq+Photon: '{city}' in {state} -> ({lat}, {lng})")
                             return (lat, lng, False)
-        
+
     except Exception as e:
         print(f"DEBUG: geocode_with_context error: {e}")
-    
+
     return None
 
 def extract_district_and_oblast_context(message_text: str):
     """Extract district (район) and oblast context from message.
     Returns dict with 'district', 'oblast_key', 'excluded_oblast'.
-    
+
     Examples:
     - "БпЛА маневрує в районі Юріївки" -> Павлоградський район (from context)
     - "БпЛА в Покровському районі" -> Покровський район
@@ -1634,10 +1657,10 @@ def extract_district_and_oblast_context(message_text: str):
     """
     if not message_text:
         return {'district': None, 'oblast_key': None, 'excluded_oblast': None}
-    
+
     message_lower = message_text.lower()
     result = {'district': None, 'oblast_key': None, 'excluded_oblast': None}
-    
+
     # Extract explicit district mentions
     # Pattern: "[назва] район", "в [назва] районі", "[назва]ський район"
     # BUT NOT: "в районі [село]" - this means "near [village]", not district name
@@ -1645,27 +1668,27 @@ def extract_district_and_oblast_context(message_text: str):
         r'([а-яїієґ]{3,}ськ(?:ий|ому|ого))\s+район',  # "павлоградський район" (min 3 chars before "ськ")
         r'([а-яїієґ]{3,})\s+район(?:і)?(?:\s|$)',      # "покровський район" (min 3 chars)
     ]
-    
+
     # Don't extract "в районі X" as district - this means "near X"
     # Only extract explicit district names like "павлоградський район"
-    
+
     for pattern in district_patterns:
         match = re.search(pattern, message_lower)
         if match:
             district = match.group(1).strip()
-            
+
             # Skip common prepositions and short words
             skip_words = ['в', 'на', 'за', 'до', 'від', 'при', 'під', 'над', 'між', 'про', 'для']
             if district in skip_words or len(district) < 3:
                 continue
-            
+
             # Normalize district name
             if district.endswith('ому') or district.endswith('ого'):
                 district = district[:-3] + 'ий'
             result['district'] = district
             print(f"DEBUG: Extracted district: '{district}'")
             break
-    
+
     # Extract oblast (same logic as before)
     # Check for "з [область]" pattern - city is NOT in that oblast
     from_oblast_pattern = r'з\s+([а-яїіє]+щини|[а-яїіє]+ської\s+обл)'
@@ -1673,19 +1696,19 @@ def extract_district_and_oblast_context(message_text: str):
     if from_match:
         excluded = from_match.group(1).strip()
         result['excluded_oblast'] = excluded
-    
+
     # Look for oblast mention in header or text
     oblast_patterns = [
         r'^([а-яїіє]+(?:ч)?чина|[а-яїіє]+щина|волинь):',  # "Хмельниччина:", "Вінниччина:", "Дніпропетровщина:", "Волинь:"
         r'([а-яїіє]+ська\s+обл\.?)',  # "Харківська обл."
         r'([а-яїіє]+ська\s+область)',  # "Полтавська область"
     ]
-    
+
     for pattern in oblast_patterns:
         match = re.search(pattern, message_lower, re.MULTILINE)
         if match:
             oblast_mention = match.group(1).strip()
-            
+
             # Normalize oblast names
             oblast_normalizations = {
                 'харківщина': 'харківська обл.',
@@ -1707,14 +1730,14 @@ def extract_district_and_oblast_context(message_text: str):
                 'донеччина': 'донецька область',
                 'луганщина': 'луганська область',
             }
-            
+
             if oblast_mention in oblast_normalizations:
                 result['oblast_key'] = oblast_normalizations[oblast_mention]
             elif oblast_mention in OBLAST_CENTERS:
                 result['oblast_key'] = oblast_mention
-            
+
             break
-    
+
     return result
 
 def ensure_city_coords(name: str, region_hint: str = None):
@@ -1723,12 +1746,12 @@ def ensure_city_coords(name: str, region_hint: str = None):
     if not name:
         return None
     n = name.strip().lower()
-    
+
     # Apply UA_CITY_NORMALIZE before any lookups
     if n in UA_CITY_NORMALIZE:
         n = UA_CITY_NORMALIZE[n]
         print(f"DEBUG: Normalized '{name.lower()}' -> '{n}'")
-    
+
     # Normalize Ukrainian city name declensions to nominative case
     # This fixes issues like "Тернівку" (accusative) -> "Тернівка" (nominative)
     # for consistent API geocoding results
@@ -1755,10 +1778,10 @@ def ensure_city_coords(name: str, region_hint: str = None):
     elif n.endswith('ом') and len(n) > 4:
         # Instrumental ending: Київом -> Київ
         n = n[:-2]
-    
+
     if n != original_n:
         print(f"DEBUG: Declension normalized '{original_n}' -> '{n}'")
-    
+
     # PRIORITY FIX: Check for "City + Oblast" pattern (e.g., "Вилково Одещини")
     # Split on space and check if we have both a city and oblast
     words = n.split()
@@ -1768,35 +1791,35 @@ def ensure_city_coords(name: str, region_hint: str = None):
         potential_city = words[0]
         if potential_city in UA_CITY_NORMALIZE:
             potential_city = UA_CITY_NORMALIZE[potential_city]
-        
+
         potential_oblast = ' '.join(words[1:])
-        
+
         # Check if remaining words match an oblast
         if potential_oblast in OBLAST_CENTERS or any(potential_oblast in oblast_key for oblast_key in OBLAST_CENTERS.keys()):
             # This is "City+Oblast" pattern - extract region for API query
             n = potential_city
             region_context = potential_oblast
             print(f"DEBUG: Found 'City+Oblast' pattern: '{potential_city}' + '{potential_oblast}' -> will search API with region filter")
-    
+
     # Check if it's a direct oblast/region name
     if n in OBLAST_CENTERS:
         lat,lng = OBLAST_CENTERS[n]; return (lat,lng,True)
     if 'SETTLEMENTS_INDEX' in globals() and n in (globals().get('SETTLEMENTS_INDEX') or {}):
         lat,lng = globals()['SETTLEMENTS_INDEX'][n]; return (lat,lng,False)
-    
+
     # Use Photon API (supports Cyrillic, fast, finds villages)
     try:
         import requests
-        
+
         # Get region hint from explicit parameter, extracted context, or NAME_REGION_MAP
         region_hint = region_hint or region_context or NAME_REGION_MAP.get(n)
         if isinstance(region_hint, str):
             region_hint = region_hint.lower()
-        
+
         # Try Photon first (supports Cyrillic)
         photon_url = 'https://photon.komoot.io/api/'
         photon_params = {'q': n, 'limit': 10}
-        
+
         photon_response = requests.get(photon_url, params=photon_params, timeout=3)
         if photon_response.ok:
             photon_data = photon_response.json()
@@ -1806,14 +1829,14 @@ def ensure_city_coords(name: str, region_hint: str = None):
                 country = props.get('country', '')
                 osm_key = props.get('osm_key', '')
                 osm_value = props.get('osm_value', '')
-                
+
                 # Filter out POIs and tourism - only settlements
                 if osm_key not in ['place', 'boundary']:
                     continue
                 valid_place_types = ['city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood', 'administrative']
                 if osm_key == 'place' and osm_value not in valid_place_types:
                     continue
-                
+
                 # Filter by Ukraine
                 if country in ['Україна', 'Ukraine']:
                     # If we have region hint, filter by it
@@ -1831,7 +1854,7 @@ def ensure_city_coords(name: str, region_hint: str = None):
                             lng, lat = coords_arr[0], coords_arr[1]
                             print(f"DEBUG Photon: Found '{n}' in {state} -> ({lat}, {lng})")
                             return (lat, lng, False)
-        
+
         # Fallback to Nominatim with transliteration
         def transliterate_ua_to_latin(text):
             translit_map = {
@@ -1845,12 +1868,12 @@ def ensure_city_coords(name: str, region_hint: str = None):
                 'Ф': 'F', 'Х': 'Kh', 'Ц': 'Ts', 'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Shch', 'Ь': '', 'Ю': 'Yu', 'Я': 'Ya'
             }
             return ''.join(translit_map.get(c, c) for c in text)
-        
+
         name_latin = transliterate_ua_to_latin(n)
         nominatim_url = 'https://nominatim.openstreetmap.org/search'
         params = {'q': f'{name_latin}, Ukraine', 'format': 'json', 'limit': 5, 'addressdetails': 1}
         headers = {'User-Agent': 'NeptunAlarmMap/1.0 (https://neptun.in.ua)'}
-        
+
         response = requests.get(nominatim_url, params=params, headers=headers, timeout=4)
         if response.ok:
             results = response.json()
@@ -1870,7 +1893,7 @@ def ensure_city_coords(name: str, region_hint: str = None):
                     lng = float(first['lon'])
                     print(f"DEBUG Nominatim: Found '{n}' -> '{name_latin}' -> ({lat}, {lng})")
                     return (lat, lng, False)
-                    
+
     except Exception as e:
         print(f"DEBUG API geocoding error in ensure_city_coords: {e}")
     # Approximate fallback: oblast center (if region hint matches an oblast name substring)
@@ -1884,7 +1907,7 @@ def ensure_city_coords(name: str, region_hint: str = None):
 def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
     """Enhanced version that tries to extract oblast from message if city not found.
     Returns (lat,lng,approx_bool) - approx_bool True means used oblast fallback."""
-    
+
     # PRIORITY 1: Try Groq AI for intelligent context understanding
     if GROQ_ENABLED and message_text:
         try:
@@ -1893,12 +1916,12 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                 ai_city = ai_result.get('city')
                 ai_district = ai_result.get('district')
                 ai_oblast = ai_result.get('oblast')
-                
+
                 # Use AI-extracted city name if provided and confident
                 if ai_city:
                     target_city = ai_city.lower()
                     print(f"DEBUG Groq: Using AI-extracted city '{target_city}' (confidence: {ai_result['confidence']})")
-                    
+
                     # Build context for geocoding
                     oblast_key = None
                     if ai_oblast:
@@ -1919,28 +1942,28 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                         }
                         ai_oblast_lower = ai_oblast.lower()
                         oblast_key = oblast_normalizations.get(ai_oblast_lower, ai_oblast_lower)
-                    
+
                     # Try geocoding with AI-provided context
                     if oblast_key:
                         # Use Photon API with oblast + optional district filtering
                         coords = geocode_with_context(target_city, oblast_key, ai_district)
                         if coords:
                             return coords
-                    
+
                     # Fallback to basic geocoding with AI city name
                     coords = ensure_city_coords(target_city, oblast_key.lower() if isinstance(oblast_key, str) else None)
                     if coords:
                         return coords
-                        
+
         except Exception as e:
             print(f"DEBUG: Groq AI geocoding attempt failed: {e}")
             # Continue to fallback methods
-    
+
     # PRIORITY 2: Original declension normalization and processing
     # Normalize Ukrainian city name declensions FIRST
     original_name = name
     name_lower = name.strip().lower()
-    
+
     # Normalize declensions to nominative case for consistent API results
     if name_lower.endswith('ку') and len(name_lower) > 4:
         name_lower = name_lower[:-2] + 'ка'
@@ -1953,47 +1976,47 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
         name_lower = name_lower[:-3]
     elif name_lower.endswith('ом') and len(name_lower) > 4:
         name_lower = name_lower[:-2]
-    
+
     if name_lower != original_name.lower():
         print(f"DEBUG: Declension '{original_name}' -> '{name_lower}'")
         name = name_lower  # Update name for further processing
-    
+
     # PRIORITY: Try SpaCy first if available
     if SPACY_AVAILABLE and message_text:
         try:
             spacy_results = spacy_enhanced_geocoding(message_text)
-            
+
             # Look for the specific city we're searching for
             name_lower = name.lower()
             for result in spacy_results:
-                if (result['normalized'] == name_lower or 
+                if (result['normalized'] == name_lower or
                     result['name'].lower() == name_lower):
                     if result['coords']:
                         lat, lng = result['coords']
                         print(f"DEBUG SpaCy: Found {name} via SpaCy -> ({lat}, {lng})")
                         return (lat, lng, False)  # Not approximate since SpaCy found exact match
-            
+
         except Exception as e:
             print(f"DEBUG SpaCy fallback error: {e}")
             # Continue to regex-based processing
-    
+
     # FALLBACK: Original regex-based processing
-    
+
     # SMART CONTEXT EXTRACTION: Extract district and oblast from message
     context = extract_district_and_oblast_context(message_text)
     district_hint = context.get('district')
     detected_oblast_key = context.get('oblast_key')
     excluded_oblast = context.get('excluded_oblast')
-    
+
     # Legacy oblast detection (kept for backward compatibility)
     # Initialize detected_oblast_key at function scope
     detected_oblast_key = None
     from_region_hint = None  # Additional region hint from "з [область]" pattern
-    
+
     # First, if we have message text, try to extract oblast info and build specific city keys
     if message_text:
         message_lower = message_text.lower()
-        
+
         # Check for "з [область]" pattern - use as ADDITIONAL region hint (not exclusion)
         # Example: "БпЛА на Юріївку з Харківщини" - Yuriivka is likely IN Kharkiv region
         from_oblast_pattern = r'з\s+([а-яїіє]+щини|[а-яїіє]+ської\s+обл)'
@@ -2005,11 +2028,11 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                 from_region = from_region[:-1]  # миколаївщини -> миколаївщин
             if from_region.endswith('н'):
                 from_region = from_region[:-1] + 'на'  # миколаївщин -> миколаївщина
-            
+
             # Map to oblast key
             from_region_map = {
                 'миколаївщина': 'миколаївська',
-                'одещина': 'одеська', 
+                'одещина': 'одеська',
                 'херсонщина': 'херсонська',
                 'дніпропетровщина': 'дніпропетровська',
                 'харківщина': 'харківська',
@@ -2020,7 +2043,7 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
             from_region_hint = from_region_map.get(from_region)
             if from_region_hint:
                 print(f"DEBUG: Found 'з {from_region}' pattern - using {from_region_hint} oblast as region hint for '{name}'")
-        
+
         # ENHANCED: Find the closest oblast to the specific city name
         city_pos = message_lower.find(name.lower())
         if city_pos != -1:
@@ -2028,7 +2051,7 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
             start_pos = max(0, city_pos - 100)
             end_pos = min(len(message_lower), city_pos + len(name) + 100)
             context = message_lower[start_pos:end_pos]
-            
+
             # PRIORITY: Check for oblast at the START of the line with colon (e.g., "Дніпропетровщина: БпЛА...")
             # This is most reliable indicator in multi-region messages
             line_start_oblast = re.match(r'^([а-яїіє]+щина|[а-яїіє]+ська\s+обл(?:\.|асть)?):?\s+', context.lstrip())
@@ -2043,7 +2066,7 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                     r'\(([^)]+)\s+область\)',
                     # Oblast adjective forms: "харківська обл."
                     r'\b([а-яїіє]+ська)\s+обл(?:\.|асть)?\b',
-                    r'\b([а-яїіє]+цька)\s+обл(?:\.|асть)?\b', 
+                    r'\b([а-яїіє]+цька)\s+обл(?:\.|асть)?\b',
                     # Regional names: "харківщина", "полтавщина", etc.
                     r'\b([а-яїіє]+щина)\b',
                     r'\b([а-яїіє]+щині)\b',
@@ -2053,21 +2076,21 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                     r'\bу\s+([а-яїіє]+щині)\b',   # "у Сумщині"
                     r'\bв\s+([а-яїіє]+щині)\b',   # "в Сумщині"
                 ]
-                
+
                 match = None
                 for pattern in oblast_patterns:
                     matches = re.findall(pattern, context)  # Search in context, not full message
                     if matches:
                         match = matches[0].strip().lower()
                         break
-            
+
             if match:
                 # Normalize regional names to nominative case AND adjective form
                 if match.endswith('щині'):
                     match = match[:-2] + 'на'  # сумщині -> сумщина
                 elif match.endswith('щину'):
                     match = match[:-2] + 'на'  # сумщину -> сумщина
-                
+
                 # Convert regional names to adjective forms for city lookup
                 regional_to_adjective = {
                     'сумщина': 'сумська',
@@ -2082,27 +2105,27 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                     'житомирщина': 'житомирська',
                     'рівненщина': 'рівненська',
                 }
-                
+
                 if match in regional_to_adjective:
                     match = regional_to_adjective[match]
-                
+
                 # Priority: use from_region_hint if present (from "з [область]" pattern)
                 if from_region_hint:
                     print(f"DEBUG: Prioritizing 'з [область]' hint: {from_region_hint} for city '{name}'")
                     match = from_region_hint
-                
+
                 if match:  # Only process if we have a valid match
                     # Create possible city+oblast combinations to search
-                    city_variants = [
+                    [
                         f"{name.lower()}({match})",  # миколаївка(сумська)
                         f"{name.lower()} ({match})",  # миколаївка (сумська)
                         f"{name.lower()} {match}",
                         f"{name.lower()} {match} обл.",
                         f"{name.lower()} {match} область",
                     ]
-                    
+
                     print(f"DEBUG: Checking variants for {name} with oblast {match}: trying API with region filter")
-                    
+
                     # Store oblast key for potential fallback
                     oblast_normalizations = {
                         'харківська': 'харківська обл.',
@@ -2130,18 +2153,18 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                         'черкащина': 'черкаська область',
                         'вінниччина': 'вінницька область',
                     }
-                    
+
                     if match in oblast_normalizations:
                         detected_oblast_key = oblast_normalizations[match]
                     elif match in OBLAST_CENTERS:
                         detected_oblast_key = match
-    
+
     # CRITICAL: Try Photon API with region filtering for multi-regional cities
     # This handles cases like "Ольшанське" which exists in multiple oblasts
     if detected_oblast_key and message_text:
         try:
             import requests
-            
+
             # Map oblast key to region name for API filtering
             oblast_to_region_map = {
                 'харківська обл.': 'Харківська область',
@@ -2166,22 +2189,22 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                 'закарпатська область': 'Закарпатська область',
                 'чернівецька область': 'Чернівецька область',
             }
-            
+
             region_name = oblast_to_region_map.get(detected_oblast_key)
-            
+
             # Try Photon API first (fastest and most reliable for Ukrainian cities)
             photon_url = 'https://photon.komoot.io/api/'
             params = {
                 'q': name,
                 'limit': 10  # Get multiple results to filter by region
             }
-            
+
             response = requests.get(photon_url, params=params, timeout=3)
             if response.ok:
                 data = response.json()
                 best_match = None
                 district_match = None
-                
+
                 for feature in data.get('features', []):
                     props = feature.get('properties', {})
                     state = props.get('state', '')
@@ -2189,14 +2212,14 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                     country = props.get('country', '')
                     osm_key = props.get('osm_key', '')
                     osm_value = props.get('osm_value', '')
-                    
+
                     # Filter out POIs - only settlements
                     if osm_key not in ['place', 'boundary']:
                         continue
                     valid_place_types = ['city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood', 'administrative']
                     if osm_key == 'place' and osm_value not in valid_place_types:
                         continue
-                    
+
                     # Filter by Ukraine and detected region
                     if (country == 'Україна' or country == 'Ukraine'):
                         # Check if state matches detected oblast
@@ -2204,12 +2227,12 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                             coords_arr = feature.get('geometry', {}).get('coordinates', [])
                             if coords_arr and len(coords_arr) >= 2:
                                 lat, lng = coords_arr[1], coords_arr[0]
-                                
+
                                 # PRIORITY: If district hint exists, check if it matches
                                 if district_hint:
                                     county_lower = county.lower()
                                     district_lower = district_hint.lower()
-                                    
+
                                     # Normalize both for comparison
                                     # "Павлоградський район" should match "павлоградський"
                                     if district_lower in county_lower or county_lower.startswith(district_lower):
@@ -2220,18 +2243,18 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                                         if not district_match:
                                             district_match = (lat, lng)
                                         continue
-                                
+
                                 # No district hint or no match yet - use this result
                                 if not best_match:
                                     best_match = (lat, lng)
                                     print(f"DEBUG: Photon API found '{name}' in {state} -> ({lat}, {lng})")
-                
+
                 # Return best match (district match preferred, then first oblast match)
                 if district_match:
                     return (district_match[0], district_match[1], False)
                 if best_match:
                     return (best_match[0], best_match[1], False)
-            
+
             # Fallback to Nominatim API if Photon didn't find the city
             # NOTE: Nominatim doesn't support Cyrillic in query, need transliteration
             if region_name:
@@ -2249,9 +2272,9 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                         'Ф': 'F', 'Х': 'Kh', 'Ц': 'Ts', 'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Shch', 'Ь': '', 'Ю': 'Yu', 'Я': 'Ya'
                     }
                     return ''.join(translit_map.get(c, c) for c in text)
-                
+
                 name_latin = transliterate_ua_to_latin(name)
-                
+
                 nominatim_url = 'https://nominatim.openstreetmap.org/search'
                 params = {
                     'q': f'{name_latin}, Ukraine',
@@ -2262,7 +2285,7 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                 headers = {
                     'User-Agent': 'NeptunAlarmMap/1.0 (https://neptun-alarm.onrender.com)'
                 }
-                
+
                 response = requests.get(nominatim_url, params=params, headers=headers, timeout=4)
                 if response.ok:
                     results = response.json()
@@ -2270,34 +2293,34 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                         # Verify it's in the correct oblast
                         address = result.get('address', {})
                         result_state = address.get('state', '')
-                        
+
                         if region_name in result_state or result_state in region_name:
                             lat = float(result['lat'])
                             lng = float(result['lon'])
-                            display_name = result.get('display_name', '')
+                            result.get('display_name', '')
                             print(f"DEBUG: Nominatim API found '{name}' -> '{name_latin}' in {result_state} -> ({lat}, {lng})")
                             return (lat, lng, False)
         except Exception as e:
             print(f"DEBUG: Multi-regional API lookup error: {e}")
-    
+
     # Second try: standard city lookup via API (without oblast context but with excluded_oblast filter)
     try:
         import requests
-        
+
         # Try Photon API (supports Cyrillic)
         photon_url = 'https://photon.komoot.io/api/'
         photon_params = {'q': name, 'limit': 10}
-        
+
         photon_response = requests.get(photon_url, params=photon_params, timeout=3)
         if photon_response.ok:
             photon_data = photon_response.json()
-            
+
             # Military context priority: if message contains UAV/shahed keywords,
             # prioritize oblasts closer to frontline (Dnipropetrovska, Donetska, Zaporizka, Khersonska)
             military_keywords = ['бпла', 'шахед', 'shahed', 'дрон', 'курс', 'напрямок']
             is_military_context = any(kw in message_text.lower() for kw in military_keywords) if message_text else False
             frontline_oblasts = ['дніпропетровська', 'донецька', 'запорізька', 'херсонська', 'миколаївська', 'харківська', 'луганська']
-            
+
             # Collect all results
             ukraine_results = []
             for feature in photon_data.get('features', []):
@@ -2306,37 +2329,37 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                 country = props.get('country', '')
                 osm_key = props.get('osm_key', '')
                 osm_value = props.get('osm_value', '')
-                
+
                 # CRITICAL: Filter out POIs and tourism objects - only accept actual settlements
                 # This fixes issue where "Тернівка" matched tourism POI "Красивый вид на Терновку" in Crimea
                 if osm_key not in ['place', 'boundary']:
                     continue  # Skip tourism, amenity, etc.
-                
+
                 # Only accept settlement types
                 valid_place_types = ['city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood', 'administrative']
                 if osm_key == 'place' and osm_value not in valid_place_types:
                     continue
-                
+
                 if country in ['Україна', 'Ukraine']:
                     # If we have excluded_oblast, skip results from that oblast
                     if excluded_oblast and excluded_oblast in state.lower():
                         print(f"DEBUG: Skipping Photon result in excluded oblast: {state}")
                         continue
-                    
+
                     coords_arr = feature.get('geometry', {}).get('coordinates', [])
                     if coords_arr and len(coords_arr) >= 2:
                         lng, lat = coords_arr[0], coords_arr[1]
-                        
+
                         # Check if this is a frontline oblast
                         is_frontline = any(oblast in state.lower() for oblast in frontline_oblasts)
-                        
+
                         ukraine_results.append({
                             'lat': lat,
                             'lng': lng,
                             'state': state,
                             'is_frontline': is_frontline
                         })
-            
+
             # Select best result based on context
             if ukraine_results:
                 # If military context, prioritize frontline oblasts
@@ -2346,31 +2369,31 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                         best = frontline_results[0]
                         print(f"DEBUG Photon (military priority): Found '{name}' in {best['state']} -> ({best['lat']}, {best['lng']})")
                         return (best['lat'], best['lng'], False)
-                
+
                 # Otherwise use first result
                 best = ukraine_results[0]
                 print(f"DEBUG Photon: Found '{name}' in {best['state']} (excluded={excluded_oblast}) -> ({best['lat']}, {best['lng']})")
                 return (best['lat'], best['lng'], False)
     except Exception as e:
         print(f"DEBUG: Photon fallback error: {e}")
-    
+
     # Try ensure_city_coords as final fallback
     result = ensure_city_coords(name, detected_oblast_key.lower() if isinstance(detected_oblast_key, str) else None)
     if result:
         return result
-    
+
     # AI FALLBACK: Try to extract city using AI if standard lookup failed
     if GEMINI_ENABLED and message_text:
         try:
             # Extract oblast from message if available
             region_match = re.search(r'([а-яїіє]+щині|[а-яїіє]+щина|[а-яїіє]+ська обл)', message_text.lower())
             region_hint = region_match.group(1) if region_match else None
-            
+
             ai_result = extract_city_from_text(message_text, region_hint)
             if ai_result:
                 city_name, confidence = ai_result
                 add_debug_log(f"AI: Extracted city '{city_name}' from message (confidence: {confidence:.2f})", "ai_city_extract")
-                
+
                 # Try to geocode the AI-extracted city via API (no fallback)
                 ai_coords = ensure_city_coords(city_name, region_hint.lower() if isinstance(region_hint, str) else None)
                 if ai_coords:
@@ -2378,28 +2401,28 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                     return ai_coords
         except Exception as e:
             add_debug_log(f"AI: Error extracting city: {e}", "ai_error")
-    
+
     # Third try: if we have oblast key, return oblast center as fallback
     if message_text and detected_oblast_key and detected_oblast_key in OBLAST_CENTERS:
         lat, lng = OBLAST_CENTERS[detected_oblast_key]
         print(f"DEBUG: Using oblast center fallback for {name}: {detected_oblast_key} -> ({lat}, {lng})")
         return (lat, lng, True)  # True indicates this is an oblast fallback
-    
+
     return None
 
 def normalize_ukrainian_toponym(lemmatized_name: str, original_text: str, grammatical_case: str = None) -> str:
     """
     Universal normalization for Ukrainian place names using linguistic patterns
-    
+
     Args:
         lemmatized_name: SpaCy lemmatized form
         original_text: Original text from message
         grammatical_case: Grammatical case detected by SpaCy (Nom, Gen, Acc, etc.)
-        
+
     Returns:
         Properly normalized toponym
     """
-    
+
     # Rule 1: Special exceptions that need manual handling
     special_exceptions = {
         'чкаловський': 'чкаловське',    # "Чкаловське" wrongly lemmatized as adjective
@@ -2408,73 +2431,69 @@ def normalize_ukrainian_toponym(lemmatized_name: str, original_text: str, gramma
         'чкаловськом': 'чкаловське',    # Instrumental case of Чкаловське
         'олексадрія': 'олександрія',    # Common typo/variant
     }
-    
+
     if lemmatized_name in special_exceptions:
         fixed = special_exceptions[lemmatized_name]
         print(f"DEBUG normalize_toponym: Special exception '{lemmatized_name}' → '{fixed}'")
         return fixed
-    
+
     # Rule 2: Adjective endings → City names (most common SpaCy error)
     adjective_to_city_patterns = [
         (r'(.+)ський$', r'\1ськ'),      # покровський → покровськ
-        (r'(.+)цький$', r'\1цьк'),      # краматорський → краматорськ  
+        (r'(.+)цький$', r'\1цьк'),      # краматорський → краматорськ
         (r'(.+)рський$', r'\1рськ'),    # examples like "петрівський" → "петрівськ"
         (r'(.+)нський$', r'\1нськ'),    # examples like "український" → "українськ"
         (r'(.+)льський$', r'\1льськ'),  # examples like "кривський" → "кривськ"
     ]
-    
+
     for pattern, replacement in adjective_to_city_patterns:
         import re
         if re.match(pattern, lemmatized_name):
             normalized = re.sub(pattern, replacement, lemmatized_name)
             print(f"DEBUG normalize_toponym: Adjective pattern '{lemmatized_name}' → '{normalized}'")
             return normalized
-    
+
     # Rule 3: Handle specific case forms that need different normalization
     case_specific_fixes = {
         # Genitive forms that should be nominative
         'зарічний': 'зарічне',          # "Зарічного" (Gen) → "зарічне" (Nom)
-        
+
         # Instrumental case normalization
         'новоукраїнськом': 'новоукраїнськ',  # "над Новоукраїнськом" (Ins) → base form
         'краматорськом': 'краматорськ',      # "над Краматорськом" (Ins) → base form
         'покровськом': 'покровськ',          # "над Покровськом" (Ins) → base form
     }
-    
+
     if lemmatized_name in case_specific_fixes:
         fixed = case_specific_fixes[lemmatized_name]
         print(f"DEBUG normalize_toponym: Case fix '{lemmatized_name}' → '{fixed}'")
         return fixed
-    
+
     # Rule 4: Handle endings that indicate feminine places
-    feminine_place_patterns = [
-        (r'(.+)івка$', r'\1івка'),      # Keep as is: миколаївка, гусарівка
-        (r'(.+)енка$', r'\1енка'),      # Keep as is: савинка (but handle special cases)
-    ]
-    
+
     # Special feminine cases that need fixing
     feminine_special_cases = {
         'савинка': 'савинці',  # This is actually "Савинці" wrongly lemmatized
     }
-    
+
     if lemmatized_name in feminine_special_cases:
         fixed = feminine_special_cases[lemmatized_name]
         print(f"DEBUG normalize_toponym: Feminine fix '{lemmatized_name}' → '{fixed}'")
         return fixed
-    
+
     # Rule 5: Use original text pattern if lemmatization looks wrong
     original_lower = original_text.lower()
-    
+
     # If original ends with typical city suffixes but lemma doesn't, prefer original pattern
     city_ending_patterns = [r'(.+)ськ$', r'(.+)цьк$', r'(.+)ів$', r'(.+)ине$', r'(.+)не$']
     lemma_is_adjective = any(lemmatized_name.endswith(ending) for ending in ['ський', 'цький', 'рський', 'нський'])
-    
+
     import re
     for pattern in city_ending_patterns:
         if re.match(pattern, original_lower) and lemma_is_adjective:
             print(f"DEBUG normalize_toponym: Using original pattern '{original_lower}' over lemma '{lemmatized_name}'")
             return original_lower
-    
+
     # Rule 6: Default - return the lemmatized form if no patterns match
     return lemmatized_name
 
@@ -2483,25 +2502,25 @@ def determine_regional_context(entity, doc, detected_regions, message_text):
     """
     Determine the correct regional context for a geographical entity
     based on its position in the text relative to regional headers
-    
+
     Args:
         entity: SpaCy entity or PseudoEntity
         doc: SpaCy Doc object
         detected_regions: List of detected region names
         message_text: Original message text
-        
+
     Returns:
         str: Most appropriate region name or None
     """
     if not detected_regions:
         return None
-    
+
     if len(detected_regions) == 1:
         return detected_regions[0]
-    
+
     # For multiple regions, find the closest preceding region header
     entity_start_char = entity.start_char if hasattr(entity, 'start_char') else 0
-    
+
     # If entity doesn't have char positions, estimate from token positions
     if not hasattr(entity, 'start_char'):
         try:
@@ -2512,11 +2531,11 @@ def determine_regional_context(entity, doc, detected_regions, message_text):
                     break
         except:
             entity_start_char = 0
-    
+
     # Find all region positions in text
     region_positions = []
     message_lower = message_text.lower()
-    
+
     region_patterns = {
         'сумщина': ['сумщин'],
         'чернігівщина': ['чернігівщин'],
@@ -2536,7 +2555,7 @@ def determine_regional_context(entity, doc, detected_regions, message_text):
         'черкащина': ['черкащин'],
         'вінниччина': ['вінниччин', 'вінничин'],
     }
-    
+
     for region_name in detected_regions:
         patterns = region_patterns.get(region_name, [region_name])
         for pattern in patterns:
@@ -2544,40 +2563,40 @@ def determine_regional_context(entity, doc, detected_regions, message_text):
             if pos != -1:
                 region_positions.append((pos, region_name))
                 break
-    
+
     # Sort by position
     region_positions.sort(key=lambda x: x[0])
-    
+
     # Find the closest preceding region
     closest_region = None
     closest_distance = float('inf')
-    
+
     for pos, region_name in region_positions:
         if pos <= entity_start_char:
             distance = entity_start_char - pos
             if distance < closest_distance:
                 closest_distance = distance
                 closest_region = region_name
-    
+
     # If no preceding region found, use the first one
     result = closest_region if closest_region else detected_regions[0]
-    
+
     print(f"DEBUG Regional context: Entity '{entity.text}' at char {entity_start_char} -> region '{result}'")
     print(f"DEBUG Region positions: {region_positions}")
-    
+
     return result
 
 
-def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = None, 
+def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = None,
                            existing_normalizer: dict = None) -> list:
     """
     Enhanced city extraction using SpaCy NLP for Ukrainian text with proper entity recognition
-    
+
     Args:
         message_text: Original message text
         existing_city_coords: deprecated parameter (now uses API instead of local dict)
         existing_normalizer: UA_CITY_NORMALIZE dict (defaults to global UA_CITY_NORMALIZE)
-        
+
     Returns:
         List of dicts with city information:
         {
@@ -2592,16 +2611,16 @@ def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = Non
     """
     if not SPACY_AVAILABLE:
         return []
-    
+
     # existing_city_coords is deprecated - we use API now
     if existing_normalizer is None:
         existing_normalizer = UA_CITY_NORMALIZE
-        
+
     results = []
-    
+
     try:
         doc = nlp(message_text)
-        
+
         # Extract regions first for context
         detected_regions = []
         region_patterns = {
@@ -2623,25 +2642,25 @@ def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = Non
             'черкащина': ['черкащин', 'черкаська область', 'черкаська обл'],
             'вінниччина': ['вінниччин', 'вінницька область', 'вінницька обл', 'вінничин'],
         }
-        
+
         message_lower = message_text.lower()
         for region_name, patterns in region_patterns.items():
             if any(pattern in message_lower for pattern in patterns):
                 detected_regions.append(region_name)
-        
+
         print(f"DEBUG SpaCy NLP: Processing text: '{message_text}'")
         print(f"DEBUG SpaCy NLP: Detected regions: {detected_regions}")
-        
+
         # Process named entities from SpaCy NER - this is the proper NLP approach
         geographical_entities = []
         for ent in doc.ents:
             if ent.label_ in ['LOC', 'GPE']:  # Location, Geopolitical entity
                 print(f"DEBUG SpaCy NLP: Found entity '{ent.text}' with label '{ent.label_}' confidence: {ent._.score if hasattr(ent, '_') and hasattr(ent._, 'score') else 'N/A'}")
                 geographical_entities.append(ent)
-        
+
         # Also look for proper nouns that might be geographical names
         for token in doc:
-            if (token.pos_ == 'PROPN' and 
+            if (token.pos_ == 'PROPN' and
                 not any(ent.start <= token.i < ent.end for ent in geographical_entities) and
                 len(token.text) > 2):  # Skip short tokens
                 print(f"DEBUG SpaCy NLP: Found additional PROPN candidate: '{token.text}'")
@@ -2653,17 +2672,17 @@ def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = Non
                         self.end = token.i + 1  # Add missing end attribute
                         self.label_ = 'PROPN_CANDIDATE'
                 geographical_entities.append(PseudoEntity(token))
-        
+
         for ent in geographical_entities:
             entity_text = ent.text.lower()
-            
+
             # Skip if this is a region (already processed)
             is_region = False
             for region_name, patterns in region_patterns.items():
                 if any(pattern in entity_text for pattern in patterns):
                     is_region = True
                     break
-            
+
             if not is_region:
                 # Get morphological info
                 if hasattr(ent, 'start'):
@@ -2673,15 +2692,15 @@ def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = Non
                     token = next((t for t in doc if t.text.lower() == entity_text), None)
                     if not token:
                         continue
-                
+
                 case_info = None
                 if hasattr(token, 'morph') and token.morph:
                     morph_dict = token.morph.to_dict()
                     case_info = morph_dict.get('Case', None)
-                
+
                 # Normalize city name using lemma - this is proper NLP morphological analysis
                 normalized_name = token.lemma_.lower() if token.lemma_ and token.lemma_ != '-PRON-' else entity_text
-                
+
                 # For multi-word geographical entities, handle them specially
                 if len(ent.text.split()) > 1:
                     # For multi-word entities, use custom normalization
@@ -2706,26 +2725,26 @@ def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = Non
                             word_lemma = word_token.lemma_.lower() if word_token.lemma_ and word_token.lemma_ != '-PRON-' else word_token.text.lower()
                             words.append(word_lemma)
                         normalized_name = ' '.join(words)
-                
+
                 print(f"DEBUG SpaCy NLP: Entity '{ent.text}' -> normalized: '{normalized_name}', case: {case_info}")
-                
+
                 # Apply intelligent normalization for Ukrainian place names
                 normalized_name = normalize_ukrainian_toponym(normalized_name, ent.text, case_info)
-                
+
                 # Apply existing normalization rules
                 if normalized_name in existing_normalizer:
                     normalized_name = existing_normalizer[normalized_name]
-                
+
                 # Determine the most appropriate regional context for this entity
                 region_context = determine_regional_context(ent, doc, detected_regions, message_text)
-                
+
                 # Look up coordinates using enhanced lookup with Nominatim fallback
                 coords = get_coordinates_enhanced(normalized_name, region_context, message_text)
-                
+
                 # Determine confidence based on source
                 confidence = 0.9 if ent.label_ in ['LOC', 'GPE'] else 0.7  # Higher for NER entities
                 source = 'spacy_ner' if ent.label_ in ['LOC', 'GPE'] else 'spacy_propn'
-                
+
                 result = {
                     'name': ent.text,
                     'normalized': normalized_name,
@@ -2737,26 +2756,26 @@ def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = Non
                 }
                 results.append(result)
                 print(f"DEBUG SpaCy NLP: Added result: {result}")
-        
+
         # Additional pattern-based extraction for missed entities (as fallback)
         preposition_patterns = ['на', 'повз', 'через', 'у напрямку', 'в напрямку']
-        
+
         for i, token in enumerate(doc):
             # Simple prepositions
             if token.text.lower() in preposition_patterns[:3]:  # на, повз, через
-                city_info = _extract_city_after_preposition_spacy(doc, i, detected_regions, 
+                city_info = _extract_city_after_preposition_spacy(doc, i, detected_regions,
                                                                 existing_city_coords, existing_normalizer)
                 if city_info:
                     results.append(city_info)
-            
+
             # Direction patterns
-            elif (token.text.lower() == 'у' and i + 1 < len(doc) and 
+            elif (token.text.lower() == 'у' and i + 1 < len(doc) and
                   doc[i + 1].text.lower() == 'напрямку'):
                 city_info = _extract_city_after_preposition_spacy(doc, i + 1, detected_regions,
                                                                 existing_city_coords, existing_normalizer)
                 if city_info:
                     results.append(city_info)
-        
+
         # Remove duplicates while preserving order
         unique_results = []
         seen_cities = set()
@@ -2765,10 +2784,10 @@ def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = Non
             if city_key not in seen_cities:
                 seen_cities.add(city_key)
                 unique_results.append(result)
-        
+
         print(f"DEBUG SpaCy NLP: Final results: {unique_results}")
         return unique_results
-        
+
     except Exception as e:
         print(f"SpaCy processing error: {e}")
         return []
@@ -2777,19 +2796,19 @@ def _find_coordinates_multiple_formats(city_name: str, detected_regions: list, e
     """
     Try to find coordinates using API with regional filtering
     Returns coordinates tuple (lat, lng) or None
-    
+
     Note: existing_city_coords parameter is deprecated but kept for backward compatibility
     """
     try:
         import requests
-        
+
         # Build region context from detected_regions
         region_context = None
         if detected_regions:
             # Convert region names to adjective forms
             region_adj_map = {
                 'сумщина': 'сумська',
-                'чернігівщина': 'чернігівська', 
+                'чернігівщина': 'чернігівська',
                 'харківщина': 'харківська',
                 'полтавщина': 'полтавська',
                 'дніпропетровщина': 'дніпропетровська',
@@ -2799,16 +2818,16 @@ def _find_coordinates_multiple_formats(city_name: str, detected_regions: list, e
                 'донеччина': 'донецька',
                 'луганщина': 'луганська'
             }
-            
+
             for region in detected_regions:
                 region_adj = region_adj_map.get(region, region)
                 region_context = region_adj + ' область'
                 break
-        
+
         # Try Photon API (supports Cyrillic)
         photon_url = 'https://photon.komoot.io/api/'
         photon_params = {'q': city_name, 'limit': 10}
-        
+
         photon_response = requests.get(photon_url, params=photon_params, timeout=3)
         if photon_response.ok:
             photon_data = photon_response.json()
@@ -2818,14 +2837,14 @@ def _find_coordinates_multiple_formats(city_name: str, detected_regions: list, e
                 country = props.get('country', '')
                 osm_key = props.get('osm_key', '')
                 osm_value = props.get('osm_value', '')
-                
+
                 # Filter out POIs - only settlements
                 if osm_key not in ['place', 'boundary']:
                     continue
                 valid_place_types = ['city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood', 'administrative']
                 if osm_key == 'place' and osm_value not in valid_place_types:
                     continue
-                
+
                 if country in ['Україна', 'Ukraine']:
                     # Filter by region if available
                     if region_context and region_context in state:
@@ -2841,29 +2860,29 @@ def _find_coordinates_multiple_formats(city_name: str, detected_regions: list, e
                             lng, lat = coords_arr[0], coords_arr[1]
                             print(f"DEBUG SpaCy Photon: Found '{city_name}' in {state} -> ({lat}, {lng})")
                             return (lat, lng)
-    
+
     except Exception as e:
         print(f"DEBUG SpaCy API lookup error: {e}")
-    
+
     print(f"DEBUG SpaCy coord lookup: No coordinates found via API for '{city_name}'")
     return None
 
 def get_coordinates_enhanced(city_name: str, region: str = None, context: str = "") -> tuple:
     """
     Enhanced coordinate lookup with Nominatim API fallback
-    
+
     Args:
         city_name: Name of the settlement
         region: Optional region specification
         context: Context for military priority (e.g., "БпЛА курсом на")
-        
+
     Returns:
         Tuple of (latitude, longitude) or None if not found
     """
-    
+
     # First try local database with regional context prioritization
     context_lower = context.lower()
-    
+
     # Handle Зарічне disambiguation based on context
     if city_name == 'зарічне':
         if any(keyword in context_lower for keyword in ['дніпропетровщина', 'дніпро', 'покровський', 'бпла']):
@@ -2873,32 +2892,32 @@ def get_coordinates_enhanced(city_name: str, region: str = None, context: str = 
                 print(f"DEBUG Enhanced coord lookup: Found '{city_name}' using Dnipropetrovska context -> {coords}")
                 return coords
         elif any(keyword in context_lower for keyword in ['рівненщина', 'рівне']):
-            # For Rivne oblast contexts  
+            # For Rivne oblast contexts
             coords = (51.2167, 26.0833)
             print(f"DEBUG Enhanced coord lookup: Found '{city_name}' using Rivne context -> {coords}")
             return coords
-    
+
     # Handle regional prefixes in context
     regional_indicators = {
         'дніпропетровщина': 'дніпропетровська',
-        'киівщина': 'київська', 
+        'киівщина': 'київська',
         'харківщина': 'харківська',
         'житомирщина': 'житомирська',
         'чернігівщина': 'чернігівська',
         'сумщина': 'сумська'
     }
-    
+
     detected_region = None
     for indicator, region_name in regional_indicators.items():
         if indicator in context_lower:
             detected_region = region_name
             break
-    
+
     # If region detected from context but not passed as parameter, use detected
     if detected_region and not region:
         region = detected_region
         print(f"DEBUG Enhanced coord lookup: Detected region '{region}' from context for '{city_name}'")
-    
+
     # Handle specific directional contexts (e.g., "північніше Чернігова")
     if 'чернігов' in context_lower and any(direction in context_lower for direction in ['північн', 'півн', 'північ']):
         if city_name == 'любеч':
@@ -2906,16 +2925,16 @@ def get_coordinates_enhanced(city_name: str, region: str = None, context: str = 
             coords = (51.4961, 30.2675)  # Правильні координати Любеча
             print(f"DEBUG Enhanced coord lookup: Found '{city_name}' using directional context north of Chernigiv -> {coords}")
             return coords
-    
+
     # PRIORITIZE NOMINATIM API when region is specified
     if region and NOMINATIM_AVAILABLE:
         # Normalize region name for Nominatim API
         normalized_region = region.lower()
-        
+
         # Convert regional nicknames to standard oblast names
         region_mappings = {
             'миколаївщина': 'миколаївська область',
-            'херсонщина': 'херсонська область', 
+            'херсонщина': 'херсонська область',
             'харківщина': 'харківська область',
             'донеччина': 'донецька область',
             'луганщина': 'луганська область',
@@ -2940,10 +2959,10 @@ def get_coordinates_enhanced(city_name: str, region: str = None, context: str = 
             'одещина': 'одеська область',
             'одесщина': 'одеська область',
         }
-        
+
         # Apply mapping if available
         nominatim_region = region_mappings.get(normalized_region, region)
-        
+
         print(f"DEBUG Enhanced coord lookup: Trying Nominatim API first for '{city_name}' in {nominatim_region} (from {region})")
         coords = get_coordinates_nominatim(city_name, nominatim_region)
         if coords:
@@ -2954,19 +2973,19 @@ def get_coordinates_enhanced(city_name: str, region: str = None, context: str = 
             return coords
         else:
             print(f"DEBUG Enhanced coord lookup: Nominatim could not find '{city_name}' in {nominatim_region}")
-    
+
     # API-only geocoding - NO local database fallback
     coords = ensure_city_coords(city_name, region.lower() if isinstance(region, str) else None)
     if coords:
         print(f"DEBUG Enhanced coord lookup: API found '{city_name}' -> {coords}")
         return coords
-    
+
     # API-only geocoding - NO local database fallback
     coords = ensure_city_coords(city_name, region.lower() if isinstance(region, str) else None)
     if coords:
         print(f"DEBUG Enhanced coord lookup: API found '{city_name}' -> {coords}")
         return coords
-    
+
     # Fallback to Nominatim API for precise geocoding
     if NOMINATIM_AVAILABLE:
         print(f"DEBUG Enhanced coord lookup: Trying Nominatim API for '{city_name}'" + (f" in {region}" if region else ""))
@@ -2979,51 +2998,51 @@ def get_coordinates_enhanced(city_name: str, region: str = None, context: str = 
             return coords
         else:
             print(f"DEBUG Enhanced coord lookup: Nominatim could not find '{city_name}'")
-    
+
     print(f"DEBUG Enhanced coord lookup: No coordinates found for '{city_name}' anywhere")
     return None
 
 def get_coordinates_context_aware(text: str) -> tuple:
     """
     Context-aware coordinate lookup using intelligent text analysis
-    
+
     Args:
         text: Full message text for context analysis
-        
+
     Returns:
         Tuple of (latitude, longitude, target_city_name) or None if not found
     """
-    
+
     if not CONTEXT_GEOCODER_AVAILABLE:
         print("DEBUG Context geocoder: Not available")
         return None
-    
+
     print(f"DEBUG Context geocoder: Analyzing text: '{text}'")
-    
+
     # Get prioritized geocoding candidates
     candidates = get_context_aware_geocoding(text)
-    
+
     if not candidates:
         print("DEBUG Context geocoder: No candidates found")
         return None
-    
+
     print(f"DEBUG Context geocoder: Found {len(candidates)} candidates: {candidates}")
-    
+
     # Try each candidate in order of confidence
     for city_name, region, confidence in candidates:
         # Skip obviously invalid candidates
         if len(city_name) < 2 or city_name in ['-', 'над', 'на', 'у', 'в', 'до', 'під', 'біля', 'а', 'курсом']:
             continue
-            
+
         print(f"DEBUG Context geocoder: Trying candidate '{city_name}' (region: {region}, confidence: {confidence})")
-        
+
         # Use enhanced coordinate lookup
         coords = get_coordinates_enhanced(city_name, region=region, context=text)
-        
+
         if coords:
             print(f"DEBUG Context geocoder: SUCCESS - Found '{city_name}' -> {coords}")
             return coords[0], coords[1], city_name
-    
+
     print("DEBUG Context geocoder: No valid coordinates found for any candidate")
     return None
 
@@ -3032,45 +3051,45 @@ def _extract_city_after_preposition_spacy(doc, prep_index: int, detected_regions
     """Extract city name after preposition using SpaCy tokens"""
     if prep_index + 1 >= len(doc):
         return None
-    
+
     # Collect potential city tokens (proper nouns, nouns, adjectives)
     city_tokens = []
     start_idx = prep_index + 1
-    
+
     for i in range(start_idx, min(start_idx + 3, len(doc))):  # Max 3 words
         token = doc[i]
         if token.pos_ in ['PROPN', 'NOUN', 'ADJ'] or token.text == '-':
             city_tokens.append(token)
         else:
             break
-    
+
     if not city_tokens:
         return None
-    
+
     # Build city name
     city_name = ' '.join(token.text for token in city_tokens)
-    
+
     # Get morphological info from the main token (usually the first one)
     main_token = city_tokens[0]
     case_info = None
     if hasattr(main_token, 'morph') and main_token.morph:
         morph_dict = main_token.morph.to_dict()
         case_info = morph_dict.get('Case', None)
-    
+
     # Normalize using lemma
     normalized_name = main_token.lemma_ if main_token.lemma_ != city_name.lower() else city_name.lower()
-    
+
     # Apply intelligent normalization for Ukrainian place names
     normalized_name = normalize_ukrainian_toponym(normalized_name, city_name, case_info)
-    
+
     # Apply existing normalization rules
     if normalized_name in existing_normalizer:
         normalized_name = existing_normalizer[normalized_name]
-    
-    # Look up coordinates using enhanced lookup with Nominatim fallback  
+
+    # Look up coordinates using enhanced lookup with Nominatim fallback
     region_context = detected_regions[0] if detected_regions else None
     coords = get_coordinates_enhanced(normalized_name, region_context, ' '.join(token.text for token in doc))
-    
+
     return {
         'name': city_name,
         'normalized': normalized_name,
@@ -3091,10 +3110,10 @@ CITY_COORDS = {
         'львів': (49.8397, 24.0297), 'запоріжжя': (47.8388, 35.1396), 'вінниця': (49.2331, 28.4682), 'миколаїв': (46.9750, 31.9946),
         'маріуполь': (47.0971, 37.5434), 'полтава': (49.5883, 34.5514), 'чернігів': (51.4982, 31.2893), 'черкаси': (49.4444, 32.0598),
         'житомир': (50.2547, 28.6587), 'суми': (50.9077, 34.7981), 'хмельницький': (49.4229, 26.9871), 'чернівці': (48.2921, 25.9358),
-    
+
     # Житомирська область - усі основні міста
-    'овруч': (51.3244, 28.8006), 'коростень': (50.9550, 28.6336), 'новоград-волинський': (50.5833, 27.6167), 
-    'бердичів': (49.8978, 28.6011), 'звягель': (50.5833, 27.6167), 'малин': (50.7726, 29.2360), 
+    'овруч': (51.3244, 28.8006), 'коростень': (50.9550, 28.6336), 'новоград-волинський': (50.5833, 27.6167),
+    'бердичів': (49.8978, 28.6011), 'звягель': (50.5833, 27.6167), 'малин': (50.7726, 29.2360),
     'радомишль': (50.4972, 29.2292), 'черняхів': (50.4583, 28.8500), 'баранівка': (50.3000, 27.6667),
     'попільня': (49.9333, 28.4167), 'ємільчине': (50.8667, 28.8500), 'олевськ': (51.2167, 27.6667),
     'лугини': (50.9333, 27.2667), 'чудnів': (50.0500, 28.1167), 'андрушівка': (50.0833, 29.8000),
@@ -3102,24 +3121,23 @@ CITY_COORDS = {
     'коростишів': (50.3167, 29.0333), 'народичі': (51.0583, 29.1167), 'іванківець': (50.1333, 29.3333),
     'любар': (49.9167, 27.7333), 'високе': (51.1000, 28.1000), 'чорнобиль': (51.2768, 30.2219),
     'поліське': (51.1833, 29.5000),
-    
+
     # Форми відмінків для Овруча
-    'овручі': (51.3244, 28.8006), 'овручу': (51.3244, 28.8006), 'овручем': (51.3244, 28.8006),
-    'овручем': (51.3244, 28.8006), 'овруча': (51.3244, 28.8006),
-    
+    'овручі': (51.3244, 28.8006), 'овручу': (51.3244, 28.8006), 'овручем': (51.3244, 28.8006), 'овруча': (51.3244, 28.8006),
+
     # Інші форми для міст Житомирської області
     'малині': (50.7726, 29.2360), 'малину': (50.7726, 29.2360), 'малином': (50.7726, 29.2360),
     'коростені': (50.9550, 28.6336), 'коростену': (50.9550, 28.6336), 'коростенем': (50.9550, 28.6336),
     'бердичеві': (49.8978, 28.6011), 'бердичеву': (49.8978, 28.6011), 'бердичевом': (49.8978, 28.6011),
     'новограді-волинському': (50.5833, 27.6167), 'новоград-волинському': (50.5833, 27.6167),
-    
+
     # Бершадь - райцентр Вінницької області
     'бершадь': (48.3667, 29.5167),
     'бершаді': (48.3667, 29.5167),
     'бершадю': (48.3667, 29.5167),
     'бершадью': (48.3667, 29.5167),
     'бершадей': (48.3667, 29.5167),
-    
+
     # Added per user report (обстріл alert should map): Костянтинівка (Donetsk Obl.)
     'костянтинівка': (48.5277, 37.7050),
     # Mezhova (Дніпропетровська обл.) to avoid fallback to Dnipro
@@ -3130,7 +3148,7 @@ CITY_COORDS = {
     'антонівка': (46.6925, 32.7186),
     # Alexandria (Kirovohrad Oblast) - avoid confusion with other cities named Alexandria
     'олександрія': (48.8033, 33.1147),
-    # Vilshany (Kirovohrad Oblast) - separate from Vilshanka in other regions  
+    # Vilshany (Kirovohrad Oblast) - separate from Vilshanka in other regions
     'вільшани': (48.4667, 32.2667),
     'вільшанам': (48.4667, 32.2667),
     'вільшанах': (48.4667, 32.2667),
@@ -3143,7 +3161,7 @@ CITY_COORDS = {
         'корабельний район херсон': (46.6578, 32.5099),
         'білозерка': (46.64, 32.88),  # Херсонська область
         'чорнобаївка': (46.6964, 32.5469),  # Херсонська область
-    
+
     # Недостающие города из UAV сообщений (сентябрь 2025)
     'зарічне': (51.2167, 26.0833),      # Рівненська область (default - first in alphabetical order)
     'зарічне(дніпропетровська)': (48.15, 35.2),  # Зарічне, Дніпропетровська область
@@ -3152,7 +3170,7 @@ CITY_COORDS = {
     'зарічне (рівненська)': (51.2167, 26.0833),  # With space
     'сенкевичівка': (51.5667, 25.8333), # Волинська область
     'голоби': (50.7833, 25.2167),       # Волинська область
-    
+
     # Дополнительные города из UAV сообщений (сентябрь 2025)
     'корнин': (50.9167, 29.1167),       # Житомирська область, Малинський район
     'корнину': (50.9167, 29.1167),
@@ -3176,8 +3194,8 @@ CITY_COORDS = {
         'лубни': (50.0186, 32.9931), 'шишаки': (49.8992, 34.0072), 'широке': (47.6833, 34.5667), 'зеленодольськ': (47.5667, 33.5333),
         'бабанка': (48.9833, 30.4167), 'новий буг': (47.6833, 32.5167), 'березнегувате': (47.3167, 32.8500), 'новоархангельськ': (48.6667, 30.8000),
         'липняжка': (48.6167, 30.8667), 'голованівськ': (48.3772, 30.5322), 'бишів': (50.3167, 29.9833), 'обухів': (50.1072, 30.6211),
-        'гребінки': (50.2500, 30.2500), 'біла церква': (49.7950, 30.1310), 'сквира': (49.7333, 29.6667), 'чорнобиль': (51.2768, 30.2219),
-        'пулини': (50.4333, 28.4333), 'головине': (50.3833, 28.6667), 'радомишль': (50.4972, 29.2292), 'коростень': (50.9500, 28.6333),
+        'гребінки': (50.2500, 30.2500), 'біла церква': (49.7950, 30.1310), 'сквира': (49.7333, 29.6667),
+        'пулини': (50.4333, 28.4333), 'головине': (50.3833, 28.6667), 'коростень': (50.9500, 28.6333),
         'погребище': (49.4833, 29.2667), 'теплик': (48.6667, 29.6667), 'оратів': (48.9333, 29.5167), 'дашів': (48.9000, 29.4333),
         'шаргород': (48.7333, 28.0833), 'бірки': (49.7517, 36.1025), 'златопіль': (49.9800, 35.5300), 'балаклія': (49.4627, 36.8586),
         'берестин': (50.2000, 35.0000), 'старий салтів': (50.0847, 36.7424), 'борки': (49.9380, 36.1260), 'кролевець': (51.5481, 33.3847),
@@ -3209,7 +3227,7 @@ CITY_COORDS = {
         'глухів': (51.6781, 33.9169), 'недригайлів': (50.8281, 33.8781), 'вороніж': (51.8081, 33.3722), 'ромни': (50.7497, 33.4746),
     'ямпіль': (51.2247, 34.3224), 'ямпіль сумська': (51.2247, 34.3224), 'ямполь сумська': (51.2247, 34.3224),
     'хутір-михайлівський': (51.8000, 33.5000),
-        'узин': (49.8216, 30.4567), 'гончарівське': (51.6272, 31.3192), 'голованівськ': (48.3772, 30.5322), 'новоукраїнка': (48.3122, 31.5272),
+        'узин': (49.8216, 30.4567), 'гончарівське': (51.6272, 31.3192), 'новоукраїнка': (48.3122, 31.5272),
         'тульчин': (48.6783, 28.8486), 'бровари': (50.5110, 30.7909), 'канів': (49.7517, 31.4717), 'миронівка': (49.6631, 31.0100),
         'борова': (49.3742, 36.4892), 'буринь': (51.2000, 33.8500), 'конотоп': (51.2417, 33.2022), 'кролевец': (51.5486, 33.3856), 'остер': (50.9481, 30.8831),
         'плавні': (49.0123, 33.6450), 'голованівський район': (48.3772, 30.5322), 'новоукраїнський район': (48.3122, 31.5272),
@@ -3259,14 +3277,12 @@ CITY_COORDS = {
     'нові білокоровичі': (51.1333, 27.7667), 'нові білокоровичів': (51.1333, 27.7667),
     'городниця': (51.3270, 27.3460), 'городницю': (51.3270, 27.3460),
     'березне': (50.9833, 26.7500), 'березному': (50.9833, 26.7500),
-    'божедарівка': (48.3014, 34.5522), 'божедарівку': (48.3014, 34.5522), 'божедарівці': (48.3014, 34.5522),
-    'пʼятихатки': (48.5667, 33.6833), "п'ятихатки": (48.5667, 33.6833), 'пятихатки': (48.5667, 33.6833),
+    'божедарівка': (48.3014, 34.5522), 'божедарівку': (48.3014, 34.5522), 'божедарівці': (48.3014, 34.5522), "п'ятихатки": (48.5667, 33.6833), 'пятихатки': (48.5667, 33.6833),
     'жовті води': (48.3500, 33.5000), 'жовтих вод': (48.3500, 33.5000),
     'згурівку': (50.4950, 31.7780), 'згурівці': (50.4950, 31.7780),
     'козятин': (49.7167, 28.8333), 'козятина': (49.7167, 28.8333),
-    'теплик': (48.6650, 29.7480), 'теплика': (48.6650, 29.7480),
-    'новий буг': (47.6833, 32.5167), 'нового буга': (47.6833, 32.5167),
-    'семенівку': (50.6633, 32.3933), 'лубни': (50.0186, 32.9931),
+    'теплик': (48.6650, 29.7480), 'теплика': (48.6650, 29.7480), 'нового буга': (47.6833, 32.5167),
+    'семенівку': (50.6633, 32.3933),
     'згурівка (київщина)': (50.4950, 31.7780),
     'гребінку': (50.2500, 30.2500), 'згурівко': (50.4950, 31.7780),
     # Гребінка (Полтавська область) - правильні координати
@@ -3329,23 +3345,18 @@ CITY_COORDS = {
     'турійськ': (51.0833, 24.7000), 'турійську': (51.0833, 24.7000), 'турійська': (51.0833, 24.7000),
     # Додаткові міста з великих повідомлень
     'великі мости': (48.9167, 25.3333), 'великих мостів': (48.9167, 25.3333), 'великих мостах': (48.9167, 25.3333),
-    'снігурівка': (46.7500, 32.8167), 'снігурівку': (46.7500, 32.8167), 'снігурівці': (46.7500, 32.8167),
-    'баранівка': (50.3000, 27.6667), 'баранівку': (50.3000, 27.6667), 'баранівці': (50.3000, 27.6667),
-    'новоград-волинський': (50.5833, 27.6167), 'новограда-волинського': (50.5833, 27.6167),
+    'снігурівка': (46.7500, 32.8167), 'снігурівку': (46.7500, 32.8167), 'снігурівці': (46.7500, 32.8167), 'баранівку': (50.3000, 27.6667), 'баранівці': (50.3000, 27.6667), 'новограда-волинського': (50.5833, 27.6167),
     'красилів': (49.6500, 27.1667), 'красилову': (49.6500, 27.1667), 'красилові': (49.6500, 27.1667),
-    'шепетівка': (50.1833, 27.0667), 'шепетівку': (50.1833, 27.0667), 'шепетівці': (50.1833, 27.0667),
     'славута': (50.3000, 26.8667), 'славуту': (50.3000, 26.8667), 'славуті': (50.3000, 26.8667),
     'нетішин': (50.3333, 26.6333), 'нетішину': (50.3333, 26.6333), 'нетішині': (50.3333, 26.6333),
     'острог': (50.3333, 26.5167), 'острогу': (50.3333, 26.5167), 'острозі': (50.3333, 26.5167),
     'дубно': (50.4167, 25.7667), 'дубну': (50.4167, 25.7667), 'дубні': (50.4167, 25.7667),
     'вараш': (51.3500, 25.8500), 'вараші': (51.3500, 25.8500), 'варашу': (51.3500, 25.8500),
-    'костопіль': (50.8833, 26.4500), 'костополю': (50.8833, 26.4500), 'костополі': (50.8833, 26.4500),
-    'сарни': (51.3333, 26.6000), 'сарнам': (51.3333, 26.6000), 'сарнах': (51.3333, 26.6000),
+    'костопіль': (50.8833, 26.4500), 'костополю': (50.8833, 26.4500), 'костополі': (50.8833, 26.4500), 'сарнам': (51.3333, 26.6000),
     'рокитне': (50.9333, 26.1667), 'рокитному': (50.9333, 26.1667), 'рокитного': (50.9333, 26.1667),
     'дубровиця': (51.5667, 26.5667), 'дубровицю': (51.5667, 26.5667), 'дубровиці': (51.5667, 26.5667),
     'березне': (51.4500, 26.7167), 'березному': (51.4500, 26.7167), 'березного': (51.4500, 26.7167),
-    'шостку': (51.8667, 33.4833), 'конотопу': (51.2417, 33.2022), 'недригайлів': (50.8281, 33.8781),
-    'липову долину': (50.5700, 33.7900), 'носівку': (50.9444, 32.0167), 'бахмач': (51.1808, 32.8203), 'бахмача': (51.1808, 32.8203)
+    'шостку': (51.8667, 33.4833), 'конотопу': (51.2417, 33.2022), 'носівку': (50.9444, 32.0167), 'бахмача': (51.1808, 32.8203)
     ,'пісківка': (50.6767, 29.5283), 'пісківку': (50.6767, 29.5283), 'пісківці': (50.6767, 29.5283)
     ,'зіньків': (49.2019, 34.3744), 'зінькові': (49.2019, 34.3744), 'зіньківу': (49.2019, 34.3744), 'зінькова': (49.2019, 34.3744)
 }
@@ -3471,8 +3482,7 @@ CHERNIHIV_CITY_COORDS = {
     'семенівку': (52.1833, 32.5833),
     # Дополнительные города и формы
     'седнів': (51.5211, 32.1897),
-    'новгород': (51.9874, 33.2620),  # новгород-сіверський
-    'новгород-сіверський': (51.9874, 33.2620),
+    'новгород': (51.9874, 33.2620),
 }
 
 for _ch_name, _ch_coords in CHERNIHIV_CITY_COORDS.items():
@@ -3494,7 +3504,7 @@ DNIPRO_CITY_COORDS = {
     'жовті': (48.3456, 33.5022),  # truncated mention mapping
     'новомосковськ': (48.6333, 35.2167),
     'зарічне': (48.15, 35.2),  # Зарічне, Покровський район, Дніпропетровська область
-    'зарічне дніпропетровська': (48.15, 35.2),  # Спеціально для військового контексту  
+    'зарічне дніпропетровська': (48.15, 35.2),  # Спеціально для військового контексту
     'зарічне покровський': (48.15, 35.2),  # Альтернативний ключ
     'синельникове': (48.3167, 35.5167),
     'петропавлівка': (48.5000, 36.4500),  # present
@@ -3735,8 +3745,6 @@ POLTAVA_CITY_COORDS = {
     'дика нок?': (49.8214, 34.5769),
     'дика нок.': (49.8214, 34.5769),
     'дика нок,': (49.8214, 34.5769),
-    'дика нці': (49.8214, 34.5769),
-    'дика нкою': (49.8214, 34.5769),
     'ди ка нок': (49.8214, 34.5769),
     'ди ка нок?': (49.8214, 34.5769),
     'ди ка нок.': (49.8214, 34.5769),
@@ -3751,7 +3759,6 @@ POLTAVA_CITY_COORDS = {
     'шишаки': (49.8992, 34.0072),  # present
     'диканька?': (49.8214, 34.5769),
     'диканьці?': (49.8214, 34.5769),
-    'диканці': (49.8214, 34.5769),
     'диканку': (49.8214, 34.5769),
     'диканкою': (49.8214, 34.5769),
     'диканкою,': (49.8214, 34.5769),
@@ -3763,18 +3770,18 @@ POLTAVA_CITY_COORDS = {
     'дик анок?': (49.8214, 34.5769),
     'дик анок.': (49.8214, 34.5769),
     'дик анок,': (49.8214, 34.5769),
-    
+
     # ========== CITY+OBLAST SPECIFIC COORDINATES ==========
     # These entries resolve ambiguous city names by including oblast context
-    
+
     # Срібне (different cities in different oblasts)
-    'срібне чернігівська': (51.1300, 31.9400),  # Срібне, Чернігівська область  
+    'срібне чернігівська': (51.1300, 31.9400),  # Срібне, Чернігівська область
     'срібне чернігівська обл.': (51.1300, 31.9400),
     'срібне (чернігівська обл.)': (51.1300, 31.9400),
     'срібне чернігівщина': (51.1300, 31.9400),
     'срібне чернігівщині': (51.1300, 31.9400),
     'срібне': (51.1300, 31.9400),  # Default to Chernihiv oblast variant
-    
+
     # Златопіль (fixing incorrect coordinates - was pointing to Donetsk)
     'златопіль харківська': (49.9800, 35.5300),  # Златопіль, Харківська область (correct)
     'златопіль харківська обл.': (49.9800, 35.5300),
@@ -3783,7 +3790,7 @@ POLTAVA_CITY_COORDS = {
     'златопіль харківщині': (49.9800, 35.5300),
     # Keep old incorrect entry as fallback for other messages, but correct default
     'златопіль': (49.9800, 35.5300),  # Override with correct Kharkiv oblast coordinates
-    
+
     # Чернігівська область - додаткові міста
     'любеч': (51.4961, 30.2675),  # Любеч, Чернігівська область
     'любеч чернігівська': (51.4961, 30.2675),
@@ -4194,7 +4201,7 @@ VINNYTSIA_CITY_COORDS = {
     'вінницю': (49.2331, 28.4682),
     'вінницею': (49.2331, 28.4682),
     'вінницей': (49.2331, 28.4682),
-    
+
     # Міста обласного значення
     'козятин': (49.7167, 28.8333),
     'козятині': (49.7167, 28.8333),
@@ -4208,7 +4215,7 @@ VINNYTSIA_CITY_COORDS = {
     'могилів-подільський': (48.4500, 27.7833),
     'могилів-подільському': (48.4500, 27.7833),
     'могилів-подільського': (48.4500, 27.7833),
-    
+
     # Райцентри
     'бар': (49.0667, 27.6833),
     'бару': (49.0667, 27.6833),
@@ -4238,7 +4245,6 @@ VINNYTSIA_CITY_COORDS = {
     'крижополю': (48.3833, 28.8667),
     'липовець': (49.2167, 29.1833),
     'липовці': (49.2167, 29.1833),
-    'липовець': (49.2167, 29.1833),
     'літин': (49.7167, 28.0667),
     'літині': (49.7167, 28.0667),
     'літину': (49.7167, 28.0667),
@@ -4256,7 +4262,6 @@ VINNYTSIA_CITY_COORDS = {
     'піщанку': (49.5833, 29.0833),
     'погребище': (49.4833, 29.2667),
     'погребищі': (49.4833, 29.2667),
-    'погребище': (49.4833, 29.2667),
     'теплик': (48.6667, 29.6667),
     'теплику': (48.6667, 29.6667),
     'тепліка': (48.6667, 29.6667),
@@ -4288,7 +4293,7 @@ VINNYTSIA_CITY_COORDS = {
     'ямпіль вінницький': (48.1333, 28.2833),
     'ямполі вінницька': (48.1333, 28.2833),
     'ямполю вінницька': (48.1333, 28.2833),
-    
+
     # Селища міського типу та важливі села
     'браїлів': (49.0500, 28.2000),
     'браїлові': (49.0500, 28.2000),
@@ -4298,7 +4303,6 @@ VINNYTSIA_CITY_COORDS = {
     'вапнярку': (49.0333, 28.4500),
     'гнівань': (49.2833, 28.9167),
     'гнівані': (49.2833, 28.9167),
-    'гнівань': (49.2833, 28.9167),
     'дашів': (48.9000, 29.4333),
     'дашеві': (48.9000, 29.4333),
     'дашову': (48.9000, 29.4333),
@@ -4308,7 +4312,6 @@ VINNYTSIA_CITY_COORDS = {
     'джулинка': (49.2500, 28.7000),
     'джулинці': (49.2500, 28.7000),
     'джулинку': (49.2500, 28.7000),
-    'крижопіль': (48.3833, 28.8667),
     'лука-мелешківська': (48.6333, 29.1167),
     'луці-мелешківській': (48.6333, 29.1167),
     'луку-мелешківську': (48.6333, 29.1167),
@@ -4330,7 +4333,6 @@ VINNYTSIA_CITY_COORDS = {
     'стрижавку': (49.6833, 28.6000),
     'чорний острів': (49.7167, 28.6167),
     'чорному острові': (49.7167, 28.6167),
-    'чорний острів': (49.7167, 28.6167),
 }
 
 for _vn_name, _vn_coords in VINNYTSIA_CITY_COORDS.items():
@@ -4532,7 +4534,7 @@ MISSING_SETTLEMENTS = {
     'світловодськ': (49.0556, 33.2433),  # Світловодськ, Кіровоградська область
     'гайдамацьке': (48.7833, 32.4333), 'гайдамацьком': (48.7833, 32.4333), 'гайдамацького': (48.7833, 32.4333),
     'вільшани': (48.4667, 32.2667), 'вільшанам': (48.4667, 32.2667), 'вільшанах': (48.4667, 32.2667),
-    # Poltava Oblast  
+    # Poltava Oblast
     'великі сорочинці': (50.0667, 34.2833), 'великих сорочинцях': (50.0667, 34.2833), 'великими сорочинцями': (50.0667, 34.2833),
     'глобине': (49.3833, 33.2667), 'глобиному': (49.3833, 33.2667), 'глобина': (49.3833, 33.2667),
     # Sumy Oblast
@@ -4695,8 +4697,7 @@ RAION_FALLBACK = {
     , 'хмельницький': (49.4229, 26.9871), 'хмельницкий': (49.4229, 26.9871)  # Khmelnytskyi raion (city)
     , 'куп\'янський': (49.7106, 37.6156), 'купянський': (49.7106, 37.6156)   # Kupiansk raion (Kharkiv oblast)
     , 'роменський': (50.7515, 33.4746), 'роменский': (50.7515, 33.4746)      # Romny
-    , 'охтирський': (50.3103, 34.8988), 'ахтырский': (50.3103, 34.8988)      # Okhtyrka translit variant
-    , 'харківський': (49.9935, 36.2304), 'харьковский': (49.9935, 36.2304)   # ensure duplication above
+    , 'охтирський': (50.3103, 34.8988), 'ахтырский': (50.3103, 34.8988)   # ensure duplication above
     , 'голованівський': (48.3833, 30.4500), 'голованевский': (48.3833, 30.4500) # Holovanivsk
     , 'лубенський': (50.0165, 32.9969), 'лубенский': (50.0165, 32.9969)      # Lubny
     , 'шосткинський': (51.8736, 33.4806), 'шосткинский': (51.8736, 33.4806)  # Shostka
@@ -5029,7 +5030,7 @@ def load_recent_comments(limit:int=80)->list[dict]:
             for rid, text, ts, reply_to in fetched:
                 d={'id': rid, 'text': text, 'ts': ts}
                 if reply_to: d['reply_to']=reply_to
-                
+
                 # Load reactions for this comment
                 try:
                     reactions = load_comment_reactions(rid, conn)
@@ -5037,7 +5038,7 @@ def load_recent_comments(limit:int=80)->list[dict]:
                         d['reactions'] = reactions
                 except Exception:
                     pass  # Non-critical, skip reactions if failed
-                
+
                 rows.append(d)
     except Exception as e:
         log.warning(f"load_recent_comments failed: {e}")
@@ -5048,12 +5049,12 @@ def load_comment_reactions(comment_id: str, conn=None) -> dict:
     try:
         if conn:
             cur = conn.execute("""
-                SELECT emoji, COUNT(*) as count 
-                FROM comment_reactions 
-                WHERE comment_id = ? 
+                SELECT emoji, COUNT(*) as count
+                FROM comment_reactions
+                WHERE comment_id = ?
                 GROUP BY emoji
             """, (comment_id,))
-            
+
             reactions = {}
             for emoji, count in cur.fetchall():
                 reactions[emoji] = count
@@ -5061,12 +5062,12 @@ def load_comment_reactions(comment_id: str, conn=None) -> dict:
         else:
             with _visits_db_conn() as use_conn:
                 cur = use_conn.execute("""
-                    SELECT emoji, COUNT(*) as count 
-                    FROM comment_reactions 
-                    WHERE comment_id = ? 
+                    SELECT emoji, COUNT(*) as count
+                    FROM comment_reactions
+                    WHERE comment_id = ?
                     GROUP BY emoji
                 """, (comment_id,))
-                
+
                 reactions = {}
                 for emoji, count in cur.fetchall():
                     reactions[emoji] = count
@@ -5081,12 +5082,12 @@ def toggle_comment_reaction(comment_id: str, emoji: str, user_ip: str) -> dict:
         with _visits_db_conn() as conn:
             # Check if reaction already exists
             cur = conn.execute("""
-                SELECT id FROM comment_reactions 
+                SELECT id FROM comment_reactions
                 WHERE comment_id = ? AND emoji = ? AND user_ip = ?
             """, (comment_id, emoji, user_ip))
-            
+
             existing = cur.fetchone()
-            
+
             if existing:
                 # Remove existing reaction
                 conn.execute("DELETE FROM comment_reactions WHERE id = ?", (existing[0],))
@@ -5098,13 +5099,13 @@ def toggle_comment_reaction(comment_id: str, emoji: str, user_ip: str) -> dict:
                     VALUES (?, ?, ?, ?)
                 """, (comment_id, emoji, user_ip, time.time()))
                 action = 'added'
-            
+
             conn.commit()
-            
+
             # Return updated counts
             reactions = load_comment_reactions(comment_id, conn)
             return {'action': action, 'reactions': reactions}
-            
+
     except Exception as e:
         log.warning(f"toggle_comment_reaction failed: {e}")
         return {'action': 'error', 'reactions': {}}
@@ -5207,7 +5208,7 @@ def _load_settlements():
         log.info('No settlements file present; only basic CITY_COORDS will be used.')
         return
     try:
-        with open(SETTLEMENTS_FILE, 'r', encoding='utf-8') as f:
+        with open(SETTLEMENTS_FILE, encoding='utf-8') as f:
             data = json.load(f)
         count = 0
         for item in data:
@@ -5252,7 +5253,7 @@ def _load_external_cities():
     if not path or not os.path.exists(path):
         return
     try:
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, encoding='utf-8') as f:
             data = json.load(f)
     except Exception as e:
         log.warning(f"Failed reading {path}: {e}")
@@ -5308,11 +5309,11 @@ _load_external_cities()
 def geocode_opencage(place: str):
     if not OPENCAGE_API_KEY:
         return None
-    
+
     # Skip if known negative
     if neg_geocode_check(place):
         return None
-    
+
     # Block general directional terms that don't represent specific places
     place_lower = place.lower().strip()
     directional_terms = [
@@ -5321,12 +5322,12 @@ def geocode_opencage(place: str):
         'північний', 'південний', 'східний', 'західний',
         'nord', 'south', 'east', 'west', 'northeast', 'northwest', 'southeast', 'southwest'
     ]
-    
+
     if any(term in place_lower for term in directional_terms):
         # Add to negative cache to avoid repeated attempts
         neg_geocode_add(place, 'directional')
         return None
-    
+
     cache = _load_opencage_cache()
     key = place.strip().lower()
     now = int(datetime.utcnow().timestamp())
@@ -5364,63 +5365,63 @@ def geocode_opencage(place: str):
 def calculate_projected_path(source_lat, source_lng, target_lat, target_lng, speed_kmh=50):
     """
     Calculate projected path from source to target with intermediate points
-    
+
     Args:
         source_lat, source_lng: Current/source coordinates
-        target_lat, target_lng: Target coordinates  
+        target_lat, target_lng: Target coordinates
         speed_kmh: Estimated speed in km/h (default: 50 km/h for UAVs)
-    
+
     Returns:
         dict with path_points, estimated_arrival, total_distance
     """
     try:
         # Calculate distance using Haversine formula
         R = 6371  # Earth's radius in km
-        
+
         lat1_rad = math.radians(source_lat)
         lon1_rad = math.radians(source_lng)
         lat2_rad = math.radians(target_lat)
         lon2_rad = math.radians(target_lng)
-        
+
         dlat = lat2_rad - lat1_rad
         dlon = lon2_rad - lon1_rad
-        
+
         a = math.sin(dlat/2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon/2)**2
         c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
         distance_km = R * c
-        
+
         # Calculate estimated travel time
         travel_time_hours = distance_km / speed_kmh
         travel_time_minutes = travel_time_hours * 60
-        
+
         # Generate intermediate points along the path (every ~10km or 10 points max)
         num_points = min(10, max(2, int(distance_km / 10)))
         path_points = []
-        
+
         for i in range(num_points + 1):
             fraction = i / num_points
-            
+
             # Linear interpolation for simple path
             lat = source_lat + (target_lat - source_lat) * fraction
             lng = source_lng + (target_lng - source_lng) * fraction
-            
+
             # Calculate ETA for this point
             point_travel_time = travel_time_minutes * fraction
-            
+
             path_points.append({
                 'lat': lat,
                 'lng': lng,
                 'eta_minutes': point_travel_time,
                 'fraction': fraction
             })
-        
+
         return {
             'path_points': path_points,
             'total_distance_km': distance_km,
             'estimated_arrival_minutes': travel_time_minutes,
             'speed_kmh': speed_kmh
         }
-        
+
     except Exception as e:
         print(f"ERROR calculating projected path: {e}")
         return None
@@ -5428,22 +5429,22 @@ def calculate_projected_path(source_lat, source_lng, target_lat, target_lng, spe
 def create_eta_circles(center_lat, center_lng, time_minutes, speed_kmh=50):
     """
     Create ETA circles showing possible positions after given time
-    
+
     Args:
         center_lat, center_lng: Center coordinates
         time_minutes: Time in minutes
         speed_kmh: Speed in km/h
-        
+
     Returns:
         List of circle definitions for different confidence levels
     """
     try:
         # Calculate distance that can be covered in given time
         max_distance_km = (speed_kmh * time_minutes) / 60
-        
+
         # Create circles with different confidence levels
         circles = []
-        
+
         # 90% confidence circle (slightly smaller radius)
         circles.append({
             'center_lat': center_lat,
@@ -5455,7 +5456,7 @@ def create_eta_circles(center_lat, center_lng, time_minutes, speed_kmh=50):
             'stroke_color': '#cc0000',
             'stroke_width': 2
         })
-        
+
         # 50% confidence circle (even smaller)
         circles.append({
             'center_lat': center_lat,
@@ -5467,9 +5468,9 @@ def create_eta_circles(center_lat, center_lng, time_minutes, speed_kmh=50):
             'stroke_color': '#ff8800',
             'stroke_width': 2
         })
-        
+
         return circles
-        
+
     except Exception as e:
         print(f"ERROR creating ETA circles: {e}")
         return []
@@ -5480,15 +5481,14 @@ def _create_directional_trajectory_markers(text, mid, date_str, channel):
     Instead of showing destination marker, show projected path and ETA circles
     """
     import re
-    from datetime import datetime, timedelta
-    
+
     try:
         text_lower = text.lower()
-        
+
         # Extract target city from directional patterns
         target_city = None
         source_direction = None
-        
+
         # Patterns to extract target city
         target_patterns = [
             r'у напрямку\s+([а-яіїєґ\'\-\s]+?)(?:\s|$|з)',
@@ -5496,17 +5496,17 @@ def _create_directional_trajectory_markers(text, mid, date_str, channel):
             r'курс на\s+([а-яіїєґ\'\-\s]+?)(?:\s|$|з)',
             r'прямує до\s+([а-яіїєґ\'\-\s]+?)(?:\s|$|з)'
         ]
-        
+
         for pattern in target_patterns:
             match = re.search(pattern, text_lower)
             if match:
                 target_city = match.group(1).strip()
                 break
-        
+
         # Extract source direction
         direction_patterns = [
             r'з\s+(північного?-?сходу?)',
-            r'з\s+(південного?-?заходу?)', 
+            r'з\s+(південного?-?заходу?)',
             r'з\s+(північного?-?заходу?)',
             r'з\s+(південного?-?сходу?)',
             r'з\s+(півночі)',
@@ -5514,22 +5514,22 @@ def _create_directional_trajectory_markers(text, mid, date_str, channel):
             r'з\s+(заходу)',
             r'з\s+(сходу)'
         ]
-        
+
         for pattern in direction_patterns:
             match = re.search(pattern, text_lower)
             if match:
                 source_direction = match.group(1)
                 break
-        
+
         if not target_city:
             return []
-        
+
         # Normalize target city name and get coordinates
         target_city_normalized = target_city.lower().strip()
-        
+
         # Try to find coordinates for target city
         target_coords = None
-        
+
         # Check in CITY_COORDS
         if target_city_normalized in CITY_COORDS:
             target_coords = CITY_COORDS[target_city_normalized]
@@ -5537,56 +5537,56 @@ def _create_directional_trajectory_markers(text, mid, date_str, channel):
             # Try common variations and declensions
             common_variations = {
                 'дніпро': 'дніпро',
-                'киев': 'київ', 
+                'киев': 'київ',
                 'київа': 'київ',
                 'харков': 'харків',
                 'харкова': 'харків',
                 'одесса': 'одеса',
                 'одеси': 'одеса'
             }
-            
+
             for variant, canonical in common_variations.items():
                 if variant in target_city_normalized or target_city_normalized in variant:
                     if canonical in CITY_COORDS:
                         target_coords = CITY_COORDS[canonical]
                         break
-            
+
             # If still not found, try removing common endings (declensions)
             if not target_coords:
                 endings_to_try = ['а', 'у', 'ом', 'і', 'ів', 'ами']
                 for ending in endings_to_try:
                     if target_city_normalized.endswith(ending) and len(target_city_normalized) > len(ending) + 2:
                         base_form = target_city_normalized[:-len(ending)]
-                        # Special case for київ + а = києва -> київ  
+                        # Special case for київ + а = києва -> київ
                         if base_form + ending == 'києва':
                             base_form = 'київ'
                         if base_form in CITY_COORDS:
                             target_coords = CITY_COORDS[base_form]
                             break
-        
+
         if not target_coords:
             # Fallback - return empty if we can't find target coordinates
             return []
-        
+
         target_lat, target_lng = target_coords
-        
+
         # Estimate source coordinates based on direction
         source_lat, source_lng = _estimate_source_coordinates(target_lat, target_lng, source_direction)
-        
+
         # Create projected path
         projected_path = calculate_projected_path(source_lat, source_lng, target_lat, target_lng)
-        
+
         if not projected_path:
             return []
-        
+
         # Create trajectory markers
         markers = []
-        
+
         # Add path markers (intermediate points)
         for i, point in enumerate(projected_path['path_points'][1:-1], 1):  # Skip first and last
             if i % 2 == 0:  # Only show every other point to avoid clutter
                 continue
-                
+
             markers.append({
                 'id': f"{mid}_path_{i}",
                 'place': f"Траєкторія ({int(point['eta_minutes'])}хв)",
@@ -5602,10 +5602,10 @@ def _create_directional_trajectory_markers(text, mid, date_str, channel):
                 'marker_type': 'trajectory_point',
                 'opacity': 0.7
             })
-        
+
         # Add ETA circles around target
         eta_circles = create_eta_circles(target_lat, target_lng, projected_path['estimated_arrival_minutes'])
-        
+
         # Create main target marker with trajectory info
         markers.append({
             'id': f"{mid}_target",
@@ -5624,43 +5624,42 @@ def _create_directional_trajectory_markers(text, mid, date_str, channel):
             'eta_circles': eta_circles,
             'projected_path': projected_path['path_points']
         })
-        
+
         return markers
-        
+
     except Exception as e:
         print(f"ERROR creating directional trajectory markers: {e}")
         return []
 
 def _estimate_source_coordinates(target_lat, target_lng, direction):
     """Estimate source coordinates based on target and direction"""
-    
+
     # Default distance for estimation (50km)
-    distance_km = 50
-    
+
     # Direction offsets (approximate)
     direction_offsets = {
         'північного-сходу': (-0.45, 0.45),
         'південного-заходу': (0.45, -0.45),
-        'північного-заходу': (-0.45, -0.45), 
+        'північного-заходу': (-0.45, -0.45),
         'південного-сходу': (0.45, 0.45),
         'півночі': (-0.45, 0),
         'півдня': (0.45, 0),
         'заходу': (0, -0.45),
         'сходу': (0, 0.45)
     }
-    
+
     # Get offset or default to east
     lat_offset, lng_offset = direction_offsets.get(direction, (0, 0.45))
-    
+
     # Apply offset (rough approximation: 1 degree ≈ 111km)
     source_lat = target_lat + lat_offset
     source_lng = target_lng + lng_offset
-    
+
     return source_lat, source_lng
 
 def process_message(text, mid, date_str, channel, _disable_multiline=False):  # type: ignore
     import re
-    
+
     # Helper function to clean text from subscription prompts
     def clean_text(text_to_clean):
         if not text_to_clean:
@@ -5674,7 +5673,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             # Remove invisible/unicode spaces and normalize
             ln2 = re_import.sub(r'[\u200B-\u200D\uFEFF\u3164\u2060\u00A0\u1680\u180E\u2000-\u200F\u202A-\u202E\u2028\u2029\u205F\u3000]+', ' ', ln2)
             ln2 = ln2.strip()
-            
+
             # Check if line ends with subscription text after meaningful content (including bold **text**)
             subscription_match = re_import.search(r'^(.+?)\s+[➡→>⬇⬆⬅⬌↗↘↙↖]\s*(\*\*)?підписатися(\*\*)?\s*$', ln2, re_import.IGNORECASE)
             if subscription_match:
@@ -5683,11 +5682,11 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 if main_content and len(main_content) > 5:  # Only keep if meaningful content
                     cleaned.append(main_content)
                 continue
-                
+
             # remove any line that is ONLY a subscribe CTA (including bold)
             if re_import.search(r'^[➡→>⬇⬆⬅⬌↗↘↙↖]?\s*(\*\*)?підписатися(\*\*)?\s*$', ln2, re_import.IGNORECASE):
                 continue
-            
+
             # Remove URLs and links from text
             ln2 = re_import.sub(r'https?://[^\s]+', '', ln2)  # Remove http/https links
             ln2 = re_import.sub(r'www\.[^\s]+', '', ln2)      # Remove www links
@@ -5695,89 +5694,89 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             ln2 = re_import.sub(r'@[a-zA-Z0-9_]+', '', ln2)  # Remove @mentions
             ln2 = re_import.sub(r'_+', '', ln2)  # Remove leftover underscores
             ln2 = re_import.sub(r'[✙✚]+[^✙✚]*✙[^✙✚]*✙', '', ln2)  # Remove ✙...✙ patterns
-            
+
             # Remove card numbers and bank details
             ln2 = re_import.sub(r'\d{4}\s*\d{4}\s*\d{4}\s*\d{4}', '', ln2)  # Card numbers
             ln2 = re_import.sub(r'[—-]\s*Картка:', '', ln2)  # Card labels
             ln2 = re_import.sub(r'[—-]\s*Банка:', '', ln2)   # Bank labels
             ln2 = re_import.sub(r'[—-]\s*Конверт:', '', ln2) # Envelope labels
-            
+
             # Clean up multiple spaces and trim
             ln2 = re_import.sub(r'\s+', ' ', ln2).strip()
-            
+
             # Skip empty lines after cleaning
             if not ln2:
                 continue
-                
+
             cleaned.append(ln2)
         return '\n'.join(cleaned)
-    
+
     # PRIORITY: Check for trajectory patterns FIRST (before any processing)
     # Pattern: "з [source_region] на [target_region(s)]" - trajectory, not multi-target
     trajectory_pattern = r'(\d+(?:-\d+)?)?\s*шахед[іївыиє]*\s+з\s+([а-яіїєґ]+(щин|ччин)[ауиі])\s+на\s+([а-яіїєґ/]+(щин|ччин)[ауиіу])'
     trajectory_match = re.search(trajectory_pattern, text.lower(), re.IGNORECASE)
-    
+
     if trajectory_match:
         count_str = trajectory_match.group(1)
         source_region = trajectory_match.group(2)
         target_regions = trajectory_match.group(4)
-        
+
         print(f"DEBUG: Trajectory detected - {count_str or ''}шахедів з {source_region} на {target_regions}")
         return []
-    
+
     # EARLY FILTERS: Check for messages that should be completely filtered out
     def _is_russian_strategic_aviation(t: str) -> bool:
         """Suppress messages about Russian strategic aviation (Tu-95, etc.) from Russian airbases"""
         t_lower = t.lower()
-        
+
         # Check for Russian strategic bombers
         russian_bombers = ['ту-95', 'tu-95', 'ту-160', 'tu-160', 'ту-22', 'tu-22']
         has_bomber = any(bomber in t_lower for bomber in russian_bombers)
-        
+
         # Check for Russian airbases and regions
         russian_airbases = ['енгельс', 'engels', 'энгельс', 'саратов', 'рязань', 'муром', 'украінка', 'українка']
         has_russian_airbase = any(airbase in t_lower for airbase in russian_airbases)
-        
+
         # Check for Russian regions/areas
         russian_regions = ['саратовській області', 'саратовской области', 'тульській області', 'рязанській області']
         has_russian_region = any(region in t_lower for region in russian_regions)
-        
+
         # Check for terms indicating Russian territory/airbases
         russian_territory_terms = ['аеродрома', 'аэродрома', 'з аеродрому', 'с аэродрома', 'мета вильоту невідома', 'цель вылета неизвестна']
         has_russian_territory = any(term in t_lower for term in russian_territory_terms)
-        
+
         # Check for generic relocation/transfer terms without specific threats
         relocation_terms = ['передислокація', 'передислокация', 'переліт', 'перелет', 'відмічено', 'отмечено']
         has_relocation = any(term in t_lower for term in relocation_terms)
-        
+
         # Suppress if it's about Russian bombers from Russian territory
         if has_bomber and (has_russian_airbase or has_russian_territory or has_russian_region):
             return True
-            
+
         # Suppress relocation/transfer messages between Russian airbases
         if has_relocation and has_bomber and (has_russian_airbase or has_russian_region):
             return True
-            
+
         # Also suppress general strategic aviation reports without specific Ukrainian targets
         if ('борт' in t_lower or 'борти' in t_lower) and ('мета вильоту невідома' in t_lower or 'цель вылета неизвестна' in t_lower):
             return True
-            
+
         return False
 
     def _is_general_warning_without_location(t: str) -> bool:
         """Suppress general warnings without specific locations or threat details"""
         t_lower = t.lower()
-        
+
         # Check for general warning phrases
         warning_phrases = [
             'протягом ночі уважним бути',
-            'протягом дня уважним бути', 
+            'протягом дня уважним бути',
             'уважним бути',
             'загальне попередження',
             'общее предупреждение'
         ]
         has_general_warning = any(phrase in t_lower for phrase in warning_phrases)
-        
+
         # Check for alert messages that should only be in events, not on map
         alert_phrases = [
             'відбій тривоги',
@@ -5786,11 +5785,11 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             'воздушная тревога'
         ]
         has_alert_message = any(phrase in t_lower for phrase in alert_phrases)
-        
+
         # Suppress alert messages - they should only be in events
         if has_alert_message:
             return True
-        
+
         # Check for tactical threat messages first - these should NEVER be filtered
         tactical_phrases = [
             'бпла',
@@ -5813,7 +5812,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             'іскандер'
         ]
         has_tactical_info = any(phrase in t_lower for phrase in tactical_phrases)
-        
+
         # Check for informational/historical messages that should be filtered
         # even if they contain tactical terms
         informational_phrases = [
@@ -5828,7 +5827,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             'фактична активність'
         ]
         has_informational_content = any(phrase in t_lower for phrase in informational_phrases)
-        
+
         # Check if this is actually a current location message (not brief update)
         current_location_phrases = [
             'над',
@@ -5847,14 +5846,14 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             'щині'
         ]
         has_current_location = any(phrase in t_lower for phrase in current_location_phrases)
-        
+
         # Check for count prefix (e.g., "16х БпЛА", "3х БпЛА") - these are real threats
         has_count_prefix = re.search(r'\d+\s*[xх]\s*бпла', t_lower)
-        
+
         # If message has threat count or current location, do NOT filter it
         if has_count_prefix or has_current_location:
             return False
-        
+
         # Check for general status messages that contain tactical terms but are informational
         status_phrases = [
             'український | ппошник',
@@ -5862,27 +5861,27 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             'поділ лук\'янівка'
         ]
         has_status_message = any(phrase in t_lower for phrase in status_phrases)
-        
+
         # Check for route/location listing messages (format: "city — city1/city2 | region:")
         route_listing_pattern = r'київ.*—.*жуляни.*вишневе.*київ'
         has_route_listing = re.search(route_listing_pattern, t_lower, re.IGNORECASE)
-        
+
         # Filter route listing messages as they are informational
         if has_route_listing:
             return True
-        
+
         # If message is informational/historical, filter it out
         if has_informational_content:
             return True
-            
+
         # If message is a general status update with tactical info, filter it out
         if has_status_message and has_tactical_info:
             return True
-        
+
         # If message contains tactical information and is not informational, do NOT filter it
         if has_tactical_info:
             return False
-        
+
         # Check for donation/fundraising messages (use more specific phrases)
         donation_phrases = [
             'підтримайте мене',
@@ -5906,11 +5905,11 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             'дякую за підтримку'
         ]
         has_donation_message = any(phrase in t_lower for phrase in donation_phrases)
-        
+
         # Suppress donation messages
         if has_donation_message:
             return True
-        
+
         # Check for channel promotion messages
         promotion_phrases = [
             'підтримати канал',
@@ -5920,11 +5919,11 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             'наш телеграм'
         ]
         has_promotion_message = any(phrase in t_lower for phrase in promotion_phrases)
-        
+
         # Suppress promotion messages
         if has_promotion_message:
             return True
-        
+
         # Check for general informational messages without threats
         info_phrases = [
             'наразі це єдина',
@@ -5936,37 +5935,37 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             'активність бортів'
         ]
         has_info_message = any(phrase in t_lower for phrase in info_phrases)
-        
+
         # Suppress general info messages
         if has_info_message:
             return True
-        
+
         # Check for very broad regions without specific cities
         broad_regions = [
             'києву, київщина і західна україна',
-            'київ, київщина і західна україна', 
-            'центр і північ', 
+            'київ, київщина і західна україна',
+            'центр і північ',
             'південь і схід'
         ]
         has_broad_region = any(region in t_lower for region in broad_regions)
-        
+
         # Suppress if it's a general warning with broad regions
         if has_general_warning and has_broad_region:
             return True
-            
+
         # Also suppress very short messages that are just general alerts
         if len(t.strip()) < 50 and has_general_warning:
             return True
-            
+
         return False
 
     # Apply early filters
     if _is_russian_strategic_aviation(text):
         return []
-        
+
     if _is_general_warning_without_location(text):
         return []
-    
+
     # AI ENHANCEMENT: Fix typos and improve text quality before parsing
     if GEMINI_ENABLED:
         try:
@@ -5977,44 +5976,44 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         except Exception as e:
             add_debug_log(f"AI: Error fixing typos: {e}", "ai_error")
             # Continue with original text if AI fails
-    
+
     # PRIORITY: Handle directional movement patterns (у напрямку, в направлении)
     # These should show trajectory/direction, not markers at destination
     def _is_directional_movement_message(t: str) -> bool:
         """Check if message describes movement towards a destination"""
         t_lower = t.lower()
-        
+
         # Patterns indicating movement toward destination, not presence at location
         directional_patterns = [
             'у напрямку',
-            'в напрямку', 
+            'в напрямку',
             'напрямок',
             'рухається в напрямку',
             'летить у напрямку',
             'курс на',
             'прямує до'
         ]
-        
+
         # Additional context that suggests this is about movement, not current location
         movement_context = [
             'з північного-сходу',
             'з півдня',
             'з заходу',
-            'з сходу',  
+            'з сходу',
             'рухається',
             'летить',
             'прямує'
         ]
-        
+
         has_directional = any(pattern in t_lower for pattern in directional_patterns)
         has_movement_context = any(context in t_lower for context in movement_context)
-        
+
         return has_directional and has_movement_context
-    
+
     # Handle directional movement messages - create projected path instead of filtering
     if _is_directional_movement_message(text):
         return _create_directional_trajectory_markers(text, mid, date_str, channel)
-    
+
     # PRIORITY: Try SpaCy enhanced processing first
     if SPACY_AVAILABLE:
         try:
@@ -6022,21 +6021,21 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             if spacy_results:
                 # Convert SpaCy results to the format expected by the rest of the system
                 threat_markers = []
-                
+
                 # Process cities with coordinates first
                 cities_with_coords = [city for city in spacy_results if city['coords']]
-                
+
                 for spacy_city in cities_with_coords:
                     lat, lng = spacy_city['coords']
-                    
+
                     # Determine threat type using our classify function
                     threat_type, icon = classify(text, spacy_city['name'])
-                    
+
                     # Create a proper place label
                     place_label = spacy_city['name'].title()
                     if spacy_city['region']:
                         place_label += f" [{spacy_city['region'].title()}]"
-                    
+
                     marker = {
                         'id': f"{mid}_spacy_{len(threat_markers)+1}",
                         'place': place_label,
@@ -6052,34 +6051,34 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         'confidence': spacy_city['confidence']
                     }
                     threat_markers.append(marker)
-                    
+
                     add_debug_log(f"SPACY: Created marker for {spacy_city['name']} -> {spacy_city['normalized']} "
-                                f"(case: {spacy_city.get('case', 'unknown')}, confidence: {spacy_city['confidence']})", 
+                                f"(case: {spacy_city.get('case', 'unknown')}, confidence: {spacy_city['confidence']})",
                                 "spacy_integration")
-                
+
                 if threat_markers:
                     add_debug_log(f"SPACY: Successfully processed message with {len(threat_markers)} markers", "spacy_integration")
                     return threat_markers
-                    
+
         except Exception as e:
             add_debug_log(f"SPACY: Error processing message: {e}", "spacy_integration")
             # Continue with fallback processing
-    
+
     # FALLBACK: Original regex-based processing continues below
-    
+
     # PRIORITY: Handle "[city] на [region]" patterns early to avoid misprocessing
     regional_city_match = re.search(r'(\d+)\s+шахед[а-яіїєёыийї]*\s+на\s+([а-яіїєё\'\-\s]+?)\s+на\s+([а-яіїє]+щині?)', text.lower()) if text else None
     if regional_city_match:
         count_str = regional_city_match.group(1)
         city_raw = regional_city_match.group(2).strip()
         region_raw = regional_city_match.group(3).strip()
-        
+
         # Use context-aware resolution
         coords = ensure_city_coords_with_message_context(city_raw, text)
         if coords:
             lat, lng, approx = coords
             add_debug_log(f"PRIORITY: Regional city pattern - {city_raw} на {region_raw} -> ({lat}, {lng})", "priority_regional_city")
-            
+
             result_entry = {
                 'id': f"{mid}_priority_regional",
                 'place': f"{city_raw.title()} на {region_raw.title()}",
@@ -6088,45 +6087,45 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 'timestamp': date_str, 'channel': channel
             }
             return [result_entry]
-    
+
     # EARLY CHECK: General multi-line threat detection (before specific cases)
     if not _disable_multiline:
         text_lines = (text or '').split('\n')
         threat_lines = []
-        
+
         # Track current oblast context from headers like "Полтавщина:", "Харківщина:"
         current_oblast = None
         oblast_header_pattern = re.compile(r'^([а-яіїєґ]+(?:щина|ська\s+обл(?:асть)?\.?)):?\s*$', re.IGNORECASE)
         # Pattern for inline oblast: "Сумщина: 2 шахеди на Лебедин"
         inline_oblast_pattern = re.compile(r'^([а-яіїєґ]+(?:щина|ська\s+обл(?:асть)?\.?)):\s+(.+)$', re.IGNORECASE)
-        
+
         # Look for lines that contain threats with quantities and targets
         for line in text_lines:
             line_stripped = line.strip()
             if not line_stripped:
                 continue
-            
+
             # Check if this line has inline oblast format: "Область: threat text"
             inline_match = inline_oblast_pattern.match(line_stripped)
             if inline_match:
                 oblast_name = inline_match.group(1).lower()
                 threat_text = inline_match.group(2).strip()
-                
+
                 # Add the threat with oblast context
                 enhanced_line = f"{oblast_name}: {threat_text}"
                 threat_lines.append(enhanced_line)
                 add_debug_log(f"MULTI-LINE: Detected inline oblast threat: {oblast_name} -> {threat_text[:50]}", "multi_line_inline_oblast")
                 continue
-            
+
             # Check if this line is a standalone oblast header
             oblast_match = oblast_header_pattern.match(line_stripped)
             if oblast_match:
                 current_oblast = oblast_match.group(1).lower()
                 add_debug_log(f"MULTI-LINE: Detected oblast header: {current_oblast}", "multi_line_oblast")
                 continue
-                
+
             line_lower = line_stripped.lower()
-            
+
             # Check if line contains threat patterns with quantities and targets
             has_threat_pattern = (
                 # Pattern: "Ціль на [target]" - target city for missiles/drones
@@ -6147,16 +6146,16 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 (re.search(r'\d+\s+шахед[а-яіїєёыийї]*\s+маневру[юєї]+\s+в\s+район[іуи]\s+([а-яіїєё\'\-\s]+)', line_lower)) or
                 # Pattern: "N ударних БпЛА на [target]"
                 (re.search(r'\d+\s+ударн.*?бпла.*?на\s+([а-яіїєё\'\-\s]+)', line_lower)) or
-                # Pattern: "N БпЛА на [target]" or "N бпла на [target]"  
+                # Pattern: "N БпЛА на [target]" or "N бпла на [target]"
                 (re.search(r'\d+\s+бпла.*?на\s+([а-яіїєё\'\-\s]+)', line_lower)) or
                 # Pattern: "БпЛА курсом на [target]" (without count)
                 (re.search(r'бпла.*?курс.*?на\s+([а-яіїєё\'\-\s]+)', line_lower)) or
-                # Pattern: "N шахедів через [target]" - via target  
+                # Pattern: "N шахедів через [target]" - via target
                 (re.search(r'\d+\s+шахед[а-яіїєёыийї]*\s+через\s+([а-яіїєё\'\-\s]+)', line_lower)) or
                 # Pattern: "N шахедів з боку [target]" - from direction of target
                 (re.search(r'\d+\s+шахед[а-яіїєёыийї]*\s+з\s+боку\s+([а-яіїєё\'\-\s]+)', line_lower))
             )
-            
+
             if has_threat_pattern:
                 # If we have oblast context, prepend it to the line
                 if current_oblast:
@@ -6166,18 +6165,18 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     add_debug_log(f"MULTI-LINE: Added threat with oblast context: {current_oblast} -> {line_stripped[:50]}", "multi_line_context")
                 else:
                     threat_lines.append(line_stripped)
-        
+
         # If we have multiple threat lines, process them separately
         if len(threat_lines) >= 2:
             add_debug_log(f"MULTI-LINE THREAT PROCESSING: {len(threat_lines)} threat lines detected", "multi_line_threats")
-            
+
             all_tracks = []
             for i, line in enumerate(threat_lines):
                 if not line.strip():
                     continue
-                    
+
                 add_debug_log(f"Processing threat line {i+1}: {line[:100]}", "threat_line")
-                
+
                 # Process each line as a separate message with multiline disabled
                 line_result = process_message(line.strip(), f"{mid}_threat_{i+1}", date_str, channel, _disable_multiline=True)
                 if line_result and isinstance(line_result, list):
@@ -6185,19 +6184,19 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     add_debug_log(f"Threat line {i+1} produced {len(line_result)} tracks", "threat_line_result")
                 else:
                     add_debug_log(f"Threat line {i+1} produced no tracks", "threat_line_result")
-            
+
             if all_tracks:
                 add_debug_log(f"Multi-line threat processing complete: {len(all_tracks)} total tracks", "multi_line_threats_complete")
                 return all_tracks
-    
+
     # PRIORITY FIRST: All air alarm messages should be list-only (no map markers)
     # This must be checked BEFORE any other processing to prevent other logic from creating markers
     original_text = text or ''
     low_orig = original_text.lower()
-    
+
     # Clear any previous priority result
     globals()['_current_priority_result'] = None
-    
+
     # PRIORITY CHECK: Black Sea aquatory - must check BEFORE multi-regional processing
     # Messages like "БпЛА курсом на Миколаїв з акваторії Чорного моря" or "15 шахедів з моря на Ізмаїл" should NOT place markers on cities
     lower_text = original_text.lower()
@@ -6205,16 +6204,16 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     is_black_sea = (('акватор' in lower_text or 'акваторії' in lower_text) and ('чорного моря' in lower_text or 'чорне море' in lower_text or 'чорному морі' in lower_text)) or \
                    ('з моря' in lower_text and ('курс' in lower_text or 'на ' in lower_text)) or \
                    ('з чорного моря' in lower_text)
-    
+
     if is_black_sea:
         # Extract target region/direction if mentioned
         m_target = re.search(r'курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,})', lower_text)
         m_direction = re.search(r'на\s+(північ|південь|схід|захід|північний\s+схід|північний\s+захід|південний\s+схід|південний\s+захід)', lower_text)
         m_region = re.search(r'(одещин|одеськ|миколаїв|херсон)', lower_text)
-        
+
         target_info = None
         sea_lat, sea_lng = 45.3, 30.7  # Default: northern Black Sea central coords
-        
+
         # Adjust position based on direction/region
         if m_direction:
             direction = m_direction.group(1)
@@ -6226,7 +6225,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 sea_lng = 31.2  # Further east
             elif 'захід' in direction:
                 sea_lng = 30.2  # Further west
-        
+
         if m_region:
             region_name = m_region.group(1)
             if 'одещин' in region_name or 'одеськ' in region_name:
@@ -6239,17 +6238,17 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             elif 'херсон' in region_name:
                 sea_lat, sea_lng = 45.7, 32.5
                 target_info = 'Херсонщини'
-        
+
         if m_target:
             tc = m_target.group(1).lower()
             tc = UA_CITY_NORMALIZE.get(tc, tc)
             target_info = tc.title()
-        
+
         threat_type, icon = classify(original_text)
         place_label = 'Акваторія Чорного моря'
         if target_info:
             place_label += f' (на {target_info})'
-        
+
         # Try to find target city coordinates for trajectory
         target_coords = None
         if m_target:
@@ -6257,13 +6256,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             tc_normalized = UA_CITY_NORMALIZE.get(tc_normalized, tc_normalized)
             if tc_normalized in CITY_COORDS:
                 target_coords = CITY_COORDS[tc_normalized]
-        
+
         result = {
             'id': str(mid), 'place': place_label, 'lat': sea_lat, 'lng': sea_lng,
             'threat_type': threat_type, 'text': original_text[:500], 'date': date_str, 'channel': channel,
             'marker_icon': icon, 'source_match': 'black_sea_course_priority'
         }
-        
+
         # Add trajectory data if we have target coordinates
         if target_coords:
             result['trajectory'] = {
@@ -6271,9 +6270,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 'end': list(target_coords),
                 'target': target_info
             }
-        
+
         return [result]
-    
+
     # IMMEDIATE CHECK: Multi-regional UAV messages (highest priority)
     text_lines = original_text.split('\n')
     region_count = sum(1 for line in text_lines if any(region in line.lower() for region in ['щина:', 'щина]', 'область:', 'край:']) or (
@@ -6282,13 +6281,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     # Look for lines with emoji + UAV mentions (more flexible detection)
     uav_lines = [line for line in text_lines if 'бпла' in line.lower() and ('🛵' in line or '🛸' in line)]
     uav_count = len(uav_lines)
-    
+
     # NEW: Look for lines with Shahed mentions and regions (without emoji requirement)
-    shahed_region_lines = [line for line in text_lines if 
-                          ('шахед' in line.lower() or 'shahed' in line.lower()) and 
+    shahed_region_lines = [line for line in text_lines if
+                          ('шахед' in line.lower() or 'shahed' in line.lower()) and
                           ('щина' in line.lower() or 'щину' in line.lower() or 'щині' in line.lower())]
     shahed_count = len(shahed_region_lines)
-    
+
     # NEW: Check for multiple regional aviation/БПЛА threats in one message
     # Pattern: "🛫 Донеччина та Дніпропетровщина - загроза застосування авіаційних засобів ураження. 🛵 Харківщина - загроза застосування ударних БпЛА"
     aviation_threat_lines = []
@@ -6300,20 +6299,20 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         has_region = any(region in line_lower for region in ['щина', 'область'])
         has_aviation = any(pattern in line_lower for pattern in ['авіаційних засобів', 'авіації', 'тактична авіація'])
         has_bpla = 'бпла' in line_lower or 'безпілотн' in line_lower
-        
+
         if has_region and (has_aviation or has_bpla):
             aviation_threat_lines.append(line)
-    
+
     aviation_threat_count = len(aviation_threat_lines)
-    
+
     add_debug_log(f"DEBUG COUNT CHECK: {region_count} regions, {uav_count} UAV lines, {shahed_count} Shahed+region lines, {aviation_threat_count} aviation threat lines", "count_check")
-    
+
     # Process multiple regional aviation threats
     if aviation_threat_count >= 1:
         add_debug_log(f"MULTI-REGIONAL AVIATION THREATS: {aviation_threat_count} lines detected", "multi_aviation")
-        
+
         all_tracks = []
-        
+
         # Regional aviation coordinates mapping (Black Sea / oblast centers)
         region_aviation_coords = {
             'одещина': (46.373528, 31.284023),  # Black Sea near Odesa
@@ -6326,49 +6325,49 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             'херсонщина': (46.6354, 32.6169),  # Kherson
             'миколаївщина': (46.975, 32.0),  # Mykolaiv oblast
         }
-        
+
         for line in aviation_threat_lines:
             line_stripped = line.strip()
             line_lower = line_stripped.lower()
-            
+
             # Split by emoji or sentence patterns to separate different threats
             # Pattern: "🛫 Region - threat. 🛵 Region - threat"
             import re
-            
+
             # Split by emoji patterns or full stops followed by emoji
             segments = re.split(r'[\.\!]\s*(?=[🛫🛵🛸⚠️])|(?<=[🛫🛵🛸⚠️])\s+(?=[А-ЯІЇЄа-яіїє])', line_stripped)
             if len(segments) <= 1:
                 # No clear segments, treat as one line
                 segments = [line_stripped]
-            
+
             for segment in segments:
                 segment = segment.strip()
                 if not segment or len(segment) < 10:
                     continue
-                    
+
                 segment_lower = segment.lower()
-                
+
                 # Extract all regions from this segment
                 regions_found = re.findall(r'(одещина|одесщина|донеччина|дніпропетровщина|харківщина|луганщина|запорожжя|херсонщина|миколаївщина)', segment_lower)
-                
+
                 # Determine threat type from segment content
                 is_aviation = any(pattern in segment_lower for pattern in ['авіаційних засобів', 'авіації', 'тактична авіація'])
                 is_bpla = 'бпла' in segment_lower or 'безпілотн' in segment_lower
                 is_strike_bpla = 'ударних бпла' in segment_lower or 'ударних безпілотн' in segment_lower
-                
+
                 threat_type = 'avia' if is_aviation else ('shahed' if is_bpla else 'artillery')
                 icon = 'avia.png' if is_aviation else ('shahed.png' if is_bpla else 'artillery.png')
                 threat_label = 'Авіація' if is_aviation else ('Ударні БпЛА' if is_strike_bpla else 'БпЛА')
-                
+
                 # Create marker for each region mentioned in this segment
                 for region in regions_found:
                     if region in region_aviation_coords:
                         coords = region_aviation_coords[region]
                         lat, lng = coords
-                        
+
                         region_display = region.title()
                         place_name = f"{threat_label} [{region_display}]"
-                        
+
                         track = {
                             'id': f"{mid}_aviation_{region}_{len(all_tracks)}",
                             'place': place_name,
@@ -6382,29 +6381,29 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             'source_match': 'multi_regional_aviation',
                             'count': 1
                         }
-                        
+
                         all_tracks.append(track)
                         add_debug_log(f"Aviation threat: {place_name} at {coords} (segment: {segment[:50]})", "multi_aviation")
                     else:
                         add_debug_log(f"No coords for region: {region}", "multi_aviation")
-        
+
         if all_tracks:
             add_debug_log(f"Multi-regional aviation processing complete: {len(all_tracks)} total tracks", "multi_aviation_complete")
             return all_tracks
-    
+
     add_debug_log(f"DEBUG COUNT CHECK: {region_count} regions, {uav_count} UAV lines, {shahed_count} Shahed+region lines", "count_check")
-    
+
     # If we have multiple Shahed lines with regions, process them separately
     if shahed_count >= 2:
         add_debug_log(f"MULTI-LINE SHAHED PROCESSING: {shahed_count} Shahed+region lines detected", "multi_shahed")
-        
+
         all_tracks = []
         for i, line in enumerate(shahed_region_lines):
             if not line.strip():
                 continue
-                
+
             add_debug_log(f"Processing Shahed line {i+1}: {line[:100]}", "shahed_line")
-            
+
             # Process each line as a separate message
             line_result = process_message(line.strip(), f"{mid}_shahed_{i+1}", date_str, channel, _disable_multiline=True)
             if line_result and isinstance(line_result, list):
@@ -6412,22 +6411,22 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 add_debug_log(f"Shahed line {i+1} produced {len(line_result)} tracks", "shahed_line_result")
             else:
                 add_debug_log(f"Shahed line {i+1} produced no tracks", "shahed_line_result")
-        
+
         if all_tracks:
             add_debug_log(f"Multi-line Shahed processing complete: {len(all_tracks)} total tracks", "multi_shahed_complete")
             return all_tracks
-    
+
     # If we have multiple UAV lines with emojis, process them separately even if they don't have explicit regions
     if uav_count >= 2 and (region_count >= 1 or any('району' in line.lower() or 'області' in line.lower() or 'обл.' in line.lower() for line in uav_lines)):
         add_debug_log(f"MULTI-LINE UAV PROCESSING: {uav_count} UAV lines detected", "multi_uav")
-        
+
         all_tracks = []
         for i, line in enumerate(uav_lines):
             if not line.strip():
                 continue
-                
+
             add_debug_log(f"Processing UAV line {i+1}: {line[:100]}", "uav_line")
-            
+
             # Process each line as a separate message
             line_result = process_message(line.strip(), f"{mid}_line_{i+1}", date_str, channel, _disable_multiline=True)
             if line_result and isinstance(line_result, list):
@@ -6435,22 +6434,22 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 add_debug_log(f"Line {i+1} produced {len(line_result)} tracks", "uav_line_result")
             else:
                 add_debug_log(f"Line {i+1} produced no tracks", "uav_line_result")
-        
+
         if all_tracks:
             add_debug_log(f"Multi-line UAV processing complete: {len(all_tracks)} total tracks", "multi_uav_complete")
             return all_tracks
-    
+
     # Legacy multi-regional detection (keep for backward compatibility)
     if region_count >= 2 and sum(1 for line in text_lines if 'бпла' in line.lower() and ('курс' in line.lower() or 'на ' in line.lower())) >= 3:
         add_debug_log(f"IMMEDIATE MULTI-REGIONAL UAV: {region_count} regions, {uav_count} UAVs - ENTERING EARLY PROCESSING", "multi_regional")
         # Process directly without going through other logic
         import re
-        
+
         # Define essential functions inline for immediate processing
         def get_city_coords_quick(city_name, region_hint=None):
             """Quick coordinate lookup with accusative case normalization and regional context"""
             city_norm = city_name.strip().lower()
-            
+
             # Handle specific multi-word cities in accusative case
             if city_norm == 'велику димерку':
                 city_norm = 'велика димерка'
@@ -6464,7 +6463,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 city_norm = 'новгород-сіверський'
             elif city_norm == 'києвом':
                 city_norm = 'київ'
-            
+
             # General accusative case endings (винительный падеж)
             elif city_norm.endswith('у') and len(city_norm) > 3:
                 city_norm = city_norm[:-1] + 'а'
@@ -6472,27 +6471,27 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 city_norm = city_norm[:-1] + 'я'
             elif city_norm.endswith('ку') and len(city_norm) > 4:
                 city_norm = city_norm[:-2] + 'ка'
-            
+
             # Apply UA_CITY_NORMALIZE rules
             if city_norm in UA_CITY_NORMALIZE:
                 city_norm = UA_CITY_NORMALIZE[city_norm]
-            
+
             # Use ONLY API geocoding with message context - NO CITY_COORDS fallback
             coords = ensure_city_coords_with_message_context(city_norm, text)
-            
+
             add_debug_log(f"API-only lookup: '{city_name}' -> '{city_norm}' -> {coords}", "multi_regional")
             return coords
-        
+
         threats = []
         processed_cities = set()  # Избегаем дубликатов
-        
+
         for line in text_lines:
             line_stripped = line.strip()
             if not line_stripped or ':' in line_stripped[:20]:  # Skip region headers
                 continue
-            
+
             line_lower = line_stripped.lower()
-            
+
             # PRIORITY: Handle "напрямок м.X" or "напрямок на X" pattern first
             napryamok_match = re.search(r'напрямок\s+(?:м\.|місто|на)?\s*([а-яїієґ\-]+)', line_lower)
             if napryamok_match:
@@ -6504,27 +6503,27 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     target_norm = target_norm[:-2] + 'ка'
                 if target_norm in UA_CITY_NORMALIZE:
                     target_norm = UA_CITY_NORMALIZE[target_norm]
-                
+
                 # Get coordinates using full message context
                 target_coords = ensure_city_coords_with_message_context(target_norm, text)
-                
+
                 if target_coords:
                     if len(target_coords) == 3:
                         lat, lng, approx = target_coords
                     else:
                         lat, lng = target_coords[:2]
-                    
+
                     # Check if not already processed
                     city_key = target_norm
                     if city_key not in processed_cities:
                         processed_cities.add(city_key)
-                        
+
                         uav_count = 1
                         # Try to extract UAV count from line
                         count_match = re.search(r'(\d+)\s*[xх×]?\s*бпла', line_lower)
                         if count_match:
                             uav_count = int(count_match.group(1))
-                        
+
                         threat_id = f"{mid}_napryamok_{len(threats)}"
                         threats.append({
                             'id': threat_id,
@@ -6539,10 +6538,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             'source_match': 'immediate_napryamok',
                             'count': uav_count
                         })
-                        
+
                         add_debug_log(f"Напрямок pattern: {target_norm} at {target_coords}", "napryamok")
                         continue  # Skip other processing for this line
-            
+
             # Look for UAV course patterns
             if 'бпла' in line_lower and ('курс' in line_lower or ' на ' in line_lower or 'над' in line_lower or 'повз' in line_lower):
                 # Extract city name from patterns - handle both plain text and markdown links
@@ -6556,12 +6555,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     # Must be BEFORE the simple "повз" pattern to capture both cities correctly
                     # Ignored for marker creation - handled separately below to create marker at bypass city with trajectory
                 ]
-                
+
                 # SPECIAL HANDLING: "повз ... курсом на" pattern - create marker at bypass city with trajectory to target
                 povz_course_match = re.search(r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+повз\s+([А-ЯІЇЄЁа-яіїєёʼ\'\-\s]{3,50}?)\s+курсом?\s+на\s+([А-ЯІЇЄЁа-яіїєёʼ\'\-\s]{3,50}?)(?=\s*(?:\n|$|[,\.\!\?;]))', line_lower, re.IGNORECASE)
                 if povz_course_match:
                     count_str, bypass_city_raw, target_city_raw = povz_course_match.groups()
-                    
+
                     # Normalize bypass city name
                     bypass_city = bypass_city_raw.strip()
                     bypass_norm = bypass_city.lower()
@@ -6571,7 +6570,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         bypass_norm = bypass_norm[:-2] + 'ка'
                     if bypass_norm in UA_CITY_NORMALIZE:
                         bypass_norm = UA_CITY_NORMALIZE[bypass_norm]
-                    
+
                     # Normalize target city name
                     target_city = target_city_raw.strip()
                     target_norm = target_city.lower()
@@ -6581,20 +6580,20 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         target_norm = target_norm[:-2] + 'ка'
                     if target_norm in UA_CITY_NORMALIZE:
                         target_norm = UA_CITY_NORMALIZE[target_norm]
-                    
+
                     # Get coordinates for bypass city using full message context for better accuracy
                     bypass_coords = ensure_city_coords_with_message_context(bypass_norm, text)
-                    
+
                     if bypass_coords:
                         if len(bypass_coords) == 3:
                             lat, lng, approx = bypass_coords
                         else:
                             lat, lng = bypass_coords
-                        
+
                         uav_count = 1
                         if count_str and count_str.isdigit():
                             uav_count = int(count_str)
-                        
+
                         # Create marker at bypass city with trajectory info
                         threat_id = f"{mid}_povz_course_{len(threats)}"
                         threats.append({
@@ -6612,39 +6611,39 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             'course_source': bypass_norm,
                             'course_target': target_norm
                         })
-                        
+
                         add_debug_log(f"Повз курсом на: {bypass_norm} -> {target_norm} at {bypass_coords}", "povz_course")
                         continue  # Skip normal processing for this line
-                
+
                 # Normal patterns (after special handling)
                 patterns.append(
                     # Pattern for "повз" without "курсом на" (e.g., "БпЛА повз Славутич в бік Білорусі")
                     r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+(?:.*?)?повз\s+([А-ЯІЇЄЁа-яіїєёʼ\'\-\s]{3,50}?)(?=\s+(?:в\s+бік|до|на|через|$|[,\.\!\?;]))'
                 )
-                
+
                 # Also check for bracket city pattern like "Вилково (Одещина)"
                 bracket_matches = re.finditer(r'([А-ЯІЇЄЁа-яіїєё\'\-\s]{3,30})\s*\(([А-ЯІЇЄЁа-яіїєё\'\-\s]+щина|[А-ЯІЇЄЁа-яіїєё\'\-\s]+обл\.?)\)', line_stripped, re.IGNORECASE)
                 for bmatch in bracket_matches:
                     city_clean = bmatch.group(1).strip()
                     region_info = bmatch.group(2).strip()
-                    
+
                     city_normalized = city_clean.lower()
                     city_key = city_normalized
-                    
+
                     # Skip if already processed
                     if city_key in processed_cities:
                         continue
                     processed_cities.add(city_key)
-                    
+
                     # Try to get coordinates
                     coords = get_city_coords_quick(city_clean)
-                    
+
                     if coords:
                         if len(coords) == 3:
                             lat, lng, approx = coords
                         else:
                             lat, lng = coords
-                        
+
                         threat_id = f"{mid}_imm_bracket_{len(threats)}"
                         threats.append({
                             'id': threat_id,
@@ -6659,11 +6658,11 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             'source_match': 'immediate_multi_regional_bracket',
                             'count': 1
                         })
-                        
+
                         add_debug_log(f"Immediate Multi-regional bracket: {city_clean} -> {coords}", "multi_regional")
                     else:
                         add_debug_log(f"Immediate Multi-regional bracket: No coords for {city_clean}", "multi_regional")
-                
+
                 for pattern in patterns:
                     matches = re.finditer(pattern, line_stripped, re.IGNORECASE)
                     for match in matches:
@@ -6672,16 +6671,16 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         else:
                             count_str = None
                             city_raw = match.group(1)
-                        
+
                         if not city_raw:
                             continue
-                            
+
                         # Clean city name (remove trailing spaces)
                         city_clean = city_raw.strip()
-                        
-                        # Normalize city name for coordinate lookup  
+
+                        # Normalize city name for coordinate lookup
                         city_normalized = city_clean.lower()
-                        
+
                         # Normalize for display (convert accusative to nominative)
                         city_display = city_clean
                         if city_normalized == 'велику димерку':
@@ -6711,35 +6710,35 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             city_display = city_display.title()
                         else:
                             city_display = city_clean.title()
-                        
+
                         city_key = city_normalized
-                        
+
                         # Skip if already processed
                         if city_key in processed_cities:
                             continue
                         processed_cities.add(city_key)
-                        
+
                         # Try to get coordinates
                         coords = get_city_coords_quick(city_clean)
-                        
+
                         if coords:
                             if len(coords) == 3:
                                 lat, lng, approx = coords
                             else:
                                 lat, lng = coords
-                            
+
                             # Extract count if present
                             uav_count_num = 1
                             if count_str and count_str.isdigit():
                                 uav_count_num = int(count_str)
-                            
+
                             # Create multiple tracks for multiple drones
                             tracks_to_create = max(1, uav_count_num)
                             for i in range(tracks_to_create):
                                 track_display_name = city_display
                                 if tracks_to_create > 1:
                                     track_display_name += f" #{i+1}"
-                                
+
                                 # Add small coordinate offsets to prevent marker overlap
                                 marker_lat = lat
                                 marker_lng = lng
@@ -6748,7 +6747,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                     offset_distance = 0.03  # ~3km offset between each drone
                                     marker_lat += offset_distance * i
                                     marker_lng += offset_distance * i * 0.5
-                                
+
                                 threat_id = f"{mid}_imm_multi_{len(threats)}"
                                 threats.append({
                                     'id': threat_id,
@@ -6763,18 +6762,18 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                     'source_match': f'immediate_multi_regional_uav_{uav_count_num}x',
                                     'count': 1  # Each track represents 1 drone
                                 })
-                            
+
                             add_debug_log(f"Immediate Multi-regional: {city_clean} ({uav_count_num}x) -> {tracks_to_create} tracks at {coords}", "multi_regional")
                         else:
                             add_debug_log(f"Immediate Multi-regional: No coords for {city_clean}", "multi_regional")
-        
+
         # Also check for regional UAV references without specific cities
         for line in text_lines:
             line_stripped = line.strip()
             if not line_stripped:
                 continue
             line_lower = line_stripped.lower()
-            
+
             # Look for UAV + region patterns without specific cities
             if 'бпла' in line_lower and any(region in line_lower for region in ['щини', 'щину', 'одещина', 'чернігівщина', 'дніпропетровщини']):
                 # Skip if this specific line contains a city that was already processed
@@ -6783,10 +6782,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     if city in line_lower:
                         line_has_processed_city = True
                         break
-                
+
                 if line_has_processed_city:
                     continue
-                
+
                 # Special case: movement messages with direction in parentheses
                 # Pattern: "БпЛА на півдні Чернігівщини, рухаються на південь (Київщина)"
                 # Here (Київщина) indicates direction, not location
@@ -6795,7 +6794,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     direction = directional_movement.group(1).strip()
                     region_raw = directional_movement.group(2).strip()
                     target_direction = directional_movement.group(3).strip()
-                    
+
                     # Map region to oblast center (current location, not target)
                     region_coords = None
                     if 'дніпропетров' in region_raw:
@@ -6807,7 +6806,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     elif 'одес' in region_raw:
                         region_coords = (46.5197, 30.7495)
                         region_name = 'Одещини'
-                    
+
                     if region_coords:
                         # Apply directional offset for current location
                         lat, lng = region_coords
@@ -6819,10 +6818,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             lng -= 0.8
                         elif 'схід' in direction or 'восток' in direction:
                             lng += 0.8
-                        
+
                         direction_label = direction.replace('півдн', 'південн').replace('північ', 'північн')
                         place_name = f"{region_name} ({direction_label}а частина) → {target_direction}"
-                        
+
                         threat_id = f"{mid}_imm_regional_movement_{len(threats)}"
                         threats.append({
                             'id': threat_id,
@@ -6838,16 +6837,16 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             'count': 1,
                             'movement_target': target_direction
                         })
-                        
+
                         add_debug_log(f"Immediate Multi-regional movement: {place_name} -> {lat}, {lng} (target: {target_direction})", "multi_regional")
                         continue
-                
+
                 # Check if this is a directional reference like "на півдні Дніпропетровщини"
                 region_match = re.search(r'на\s+([\w\-\s/]+?)\s+([а-яіїєґ]+щини|[а-яіїєґ]+щину|дніпропетровщини|одещини|чернігівщини)', line_lower)
                 if region_match:
                     direction = region_match.group(1).strip()
                     region_raw = region_match.group(2).strip()
-                    
+
                     # Map region to oblast center
                     region_coords = None
                     if 'дніпропетров' in region_raw:
@@ -6859,7 +6858,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     elif 'одес' in region_raw:
                         region_coords = (46.5197, 30.7495)
                         region_name = 'Одещини'
-                    
+
                     if region_coords:
                         # Apply directional offset
                         lat, lng = region_coords
@@ -6871,10 +6870,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             lng -= 0.8
                         elif 'схід' in direction or 'восток' in direction:
                             lng += 0.8
-                        
+
                         direction_label = direction.replace('півдн', 'південн').replace('північ', 'північн')
                         place_name = f"{region_name} ({direction_label}а частина)"
-                        
+
                         threat_id = f"{mid}_imm_regional_{len(threats)}"
                         threats.append({
                             'id': threat_id,
@@ -6889,13 +6888,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             'source_match': 'immediate_multi_regional_region',
                             'count': 1
                         })
-                        
+
                         add_debug_log(f"Immediate Multi-regional regional: {place_name} -> {lat}, {lng}", "multi_regional")
-        
+
         if threats:
             add_debug_log(f"IMMEDIATE MULTI-REGIONAL RESULT: {len(threats)} threats", "multi_regional")
             return threats
-    
+
     if 'повітряна тривога' in low_orig or 'тривога' in low_orig or 'тривог' in low_orig:
         # Always event-only record (list), never create map markers for air alarms or cancellations
         place = None
@@ -6905,18 +6904,18 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             if name in low:
                 place = name.title() + ' Обл.'
                 break
-        
+
         # Also try to find city names
         if not place:
             for city in ['запоріжжя', 'одеса', 'миколаїв', 'херсон', 'київ', 'львів', 'харків', 'дніпро', 'чернігів', 'суми', 'полтава']:
                 if city in low:
                     place = city.title()
                     break
-        
+
         # Determine if this is alarm start or cancellation
         threat_type = 'alarm_cancel' if ('відбій' in low_orig or 'отбой' in low_orig) else 'alarm'
         icon = 'vidboi.png' if threat_type == 'alarm_cancel' else 'trivoga.png'
-        
+
         # Clean subscription links from air alarm messages before returning
         import re as re_import
         cleaned_text = original_text
@@ -6935,7 +6934,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     continue
                 cleaned.append(ln2)
             cleaned_text = '\n'.join(cleaned)
-        
+
         return [{
             'id': str(mid), 'place': place, 'lat': None, 'lng': None,
             'threat_type': threat_type, 'text': cleaned_text[:500], 'date': date_str, 'channel': channel,
@@ -6946,7 +6945,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     def classify(th: str, city_context: str = ""):
         import re  # Import re module locally for pattern matching
         l = th.lower()
-        
+
         # Add debug logging (temporarily disabled)
         # print(f"[CLASSIFY DEBUG] Input text: {th}")
         # print(f"[CLASSIFY DEBUG] Lowercase text: {l}")
@@ -6955,17 +6954,17 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         # print(f"[CLASSIFY DEBUG] Contains 'ціль': {'ціль' in l}")
         # print(f"[CLASSIFY DEBUG] Contains 'високошвидкісн': {'високошвидкісн' in l}")
         # print(f"[CLASSIFY DEBUG] Contains 'бпла': {'бпла' in l}")
-        
+
         # PRIORITY: Artillery shelling warning (обстріл / загроза обстрілу) -> use obstril.png
         # This should have priority over FPV cities when explicit shelling threat is mentioned
         if 'обстріл' in l or 'обстрел' in l or 'загроза обстрілу' in l or 'угроза обстрела' in l:
             # print(f"[CLASSIFY DEBUG] Classified as artillery")
             return 'artillery', 'obstril.png'
-        
+
         # Special override for specific cities - Kherson, Nikopol, Marhanets always get FPV icon
         city_lower = city_context.lower() if city_context else ""
         fpv_cities = ['херсон', 'никополь', 'нікополь', 'марганець', 'марганец']
-        
+
         # Check both city context and message text for FPV cities
         if any(fpv_city in city_lower for fpv_city in fpv_cities) or any(fpv_city in l for fpv_city in fpv_cities):
             return 'fpv', 'fpv.png'
@@ -6995,18 +6994,18 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             return 'vibuh', 'vibuh.png'
         # Alarm cancellation (відбій тривоги / отбой тревоги)
         if ('відбій' in l and 'тривог' in l) or ('отбой' in l and 'тревог' in l):
-            print(f"[CLASSIFY DEBUG] Classified as alarm_cancel")
+            print("[CLASSIFY DEBUG] Classified as alarm_cancel")
             return 'alarm_cancel', 'vidboi.png'
-        
+
         # PRIORITY: High-speed targets / missile threats with rocket emoji (🚀) -> raketa.png
         # This should have priority over drones to handle missile-like threats with rocket emoji
         if '🚀' in th or any(k in l for k in ['ціль','цілей','цілі','високошвидкісн','high-speed']):
-            print(f"[CLASSIFY DEBUG] Classified as raketa (high-speed targets/rocket emoji)")
+            print("[CLASSIFY DEBUG] Classified as raketa (high-speed targets/rocket emoji)")
             return 'raketa', 'raketa.png'
-            
+
         # PRIORITY: drones (частая путаница). Если присутствуют слова шахед/бпла/дрон -> это shahed
         if any(k in l for k in ['shahed','шахед','шахеді','шахедів','geran','герань','дрон','дрони','бпла','uav']):
-            print(f"[CLASSIFY DEBUG] Classified as shahed (drones/UAV)")
+            print("[CLASSIFY DEBUG] Classified as shahed (drones/UAV)")
             return 'shahed', 'shahed.png'
         # PRIORITY: Aircraft activity & tactical aviation (avia) -> avia.png (jets, tactical aviation, но БЕЗ КАБов)
         if any(k in l for k in ['літак','самол','avia','tactical','тактичн','fighter','истребит','jets']) or \
@@ -7032,9 +7031,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             return 'raketa', 'raketa.png'
         # FPV drones -> fpv.png
         if any(k in l for k in ['fpv','фпв','камікадз','kamikaze']):
-            print(f"[CLASSIFY DEBUG] Classified as fpv")
+            print("[CLASSIFY DEBUG] Classified as fpv")
             return 'fpv', 'fpv.png'
-        
+
         # AI ENHANCEMENT: Try to classify using AI if no pattern matched
         if GEMINI_ENABLED:
             try:
@@ -7056,35 +7055,35 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     return ai_threat, icon
             except Exception as e:
                 add_debug_log(f"AI: Error classifying threat: {e}", "ai_error")
-        
+
         # General fallback for unclassified threats
-        print(f"[CLASSIFY DEBUG] Using default fallback: shahed")
+        print("[CLASSIFY DEBUG] Using default fallback: shahed")
         return 'shahed', 'shahed.png'  # default fallback
-    
+
     # PRIORITY CHECK: District-level UAV messages (e.g., "вишгородський р-н київська обл.")
     # Added after classify function to ensure it's available
     lower_text = original_text.lower()
     district_pattern = re.compile(r'([а-яіїєґ\'\-\s]+ський|[а-яіїєґ\'\-\s]+цький)\s+р[-\s]*н\s+([а-яіїєґ\'\-\s]+(?:обл\.?|область|щина))', re.IGNORECASE)
     district_match = district_pattern.search(lower_text)
-    
+
     if district_match and 'бпла' in lower_text:
         district_raw = district_match.group(1).strip()
         region_raw = district_match.group(2).strip()
-        
+
         add_debug_log(f"DISTRICT UAV: found '{district_raw} р-н {region_raw}'", "district_uav")
-        
+
         # Try to map district to city coordinates
         district_city = district_raw.replace('ський', '').replace('цький', '').strip()
-        
+
         # Check if we have coordinates for this district city
         coords = CITY_COORDS.get(district_city)
         if not coords and district_city in UA_CITY_NORMALIZE:
             coords = CITY_COORDS.get(UA_CITY_NORMALIZE[district_city])
-        
+
         if coords:
             lat, lng = coords
             threat_type, icon = classify(original_text, district_city)
-            
+
             # Create district-level marker
             district_track = {
                 'id': f"{mid}_district",
@@ -7099,27 +7098,27 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 'source_match': 'district_priority_uav',
                 'count': 1
             }
-            
+
             add_debug_log(f"DISTRICT UAV SUCCESS: {district_city} -> {coords}", "district_uav")
             return [district_track]
         else:
             add_debug_log(f"DISTRICT UAV: No coords for '{district_city}'", "district_uav")
-    
+
     # PRIORITY CHECK: Single-region numbered UAV lists (н.п. patterns)
     # For messages like "Київщина:\n• н.п. Бровари - постійна загроза БпЛА"
     lower_text = original_text.lower()
     text_lines = original_text.split('\n')
-    
+
     # Check if this is a single-region message with numbered н.п. cities
     region_lines = [line for line in text_lines if any(region in line.lower() for region in ['щина:', 'щина]', 'область:']) and line.strip().endswith(':')]
     np_lines = [line for line in text_lines if ('н.п.' in line.lower() or 'н. п.' in line.lower()) and 'бпла' in line.lower()]
-    
+
     if len(region_lines) == 1 and len(np_lines) >= 1:  # Single region with н.п. cities
         region_line = region_lines[0]
         region_name = region_line.replace(':', '').strip()
-        
+
         add_debug_log(f"SINGLE-REGION NUMBERED: found {len(np_lines)} н.п. cities in {region_name}", "single_region_numbered")
-        
+
         numbered_tracks = []
         for i, line in enumerate(np_lines):
             # Extract city name from н.п. pattern
@@ -7128,16 +7127,16 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 city_name_raw = np_match.group(1).strip()
                 # Clean up - take only the city name before any separators
                 city_name = city_name_raw.split(' - ')[0].split(' –')[0].split(' ')[0].strip()
-                
+
                 # Try to find coordinates for this city
                 coords = CITY_COORDS.get(city_name)
                 if not coords and city_name in UA_CITY_NORMALIZE:
                     coords = CITY_COORDS.get(UA_CITY_NORMALIZE[city_name])
-                
+
                 if coords:
                     lat, lng = coords
                     threat_type, icon = classify(line, city_name)
-                    
+
                     numbered_tracks.append({
                         'id': f"{mid}_np_{i+1}",
                         'place': f"{city_name.title()} ({region_name})",
@@ -7159,7 +7158,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     if region_coords:
                         lat, lng = region_coords
                         threat_type, icon = classify(line)
-                        
+
                         numbered_tracks.append({
                             'id': f"{mid}_np_fallback_{i+1}",
                             'place': f"{region_name} (н.п. {city_name.title()})",
@@ -7174,7 +7173,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             'count': 1
                         })
                         add_debug_log(f"NUMBERED UAV FALLBACK: {city_name} -> {region_name} {region_coords}", "single_region_numbered")
-        
+
         if numbered_tracks:
             add_debug_log(f"SINGLE-REGION NUMBERED SUCCESS: {len(numbered_tracks)} markers created", "single_region_numbered")
             return numbered_tracks
@@ -7183,29 +7182,29 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     import re as _re_priority
     region_district_pattern = _re_priority.compile(r'([а-яіїєґ]+щин[ауи]?)\s*\(\s*([а-яіїєґ\'\-\s]+)\s+р[-\s]*н\)', _re_priority.IGNORECASE)
     region_district_match = region_district_pattern.search(original_text)
-    
+
     if region_district_match:
         region_raw, district_raw = region_district_match.groups()
         target_city = district_raw.strip()
-        
+
         add_debug_log(f"PRIORITY REGION-DISTRICT pattern FOUND: region='{region_raw}', district='{district_raw}'", "priority_region_district")
-        
+
         # Normalize city name and try to find coordinates via API
         city_norm = target_city.lower()
         # Apply UA_CITY_NORMALIZE rules if available
         if 'UA_CITY_NORMALIZE' in globals():
             city_norm = UA_CITY_NORMALIZE.get(city_norm, city_norm)
-        
+
         # Use API geocoding with message context
         coords_result = ensure_city_coords_with_message_context(city_norm, original_text)
         coords = (coords_result[0], coords_result[1]) if coords_result else None
-        
+
         add_debug_log(f"Priority district city API lookup: '{target_city}' -> '{city_norm}' -> {coords}", "priority_region_district")
-        
+
         if coords:
             lat, lng = coords
             threat_type, icon = classify(original_text)
-            
+
             priority_result = [{
                 'id': f"{mid}_priority_district",
                 'place': target_city.title(),
@@ -7220,10 +7219,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 'count': 1
             }]
             add_debug_log(f"Created PRIORITY region-district marker: {target_city.title()}", "priority_region_district")
-            
+
             # Store priority result globally for combination with other results
             globals()['_current_priority_result'] = priority_result
-            
+
             # Store priority result and continue with normal processing to catch other cities
             # This allows other parsers to find additional cities in the same message
         else:
@@ -7247,27 +7246,27 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     try:
         import re  # Import re module for pattern matching
         head = text.split('\n', 1)[0][:160] if text else ""
-        
+
         # Handle general emoji + city + oblast format with any UAV threat (more flexible pattern)
         general_emoji_pattern = r'^[^\w\s]*\s*([А-ЯІЇЄЁа-яіїєё\'\-\s]+)\s*\(([^)]*обл[^)]*)\)'
         general_emoji_match = re.search(general_emoji_pattern, head, re.IGNORECASE)
         add_debug_log(f"PRIORITY: Testing general emoji pattern on head: {repr(head)}", "emoji_debug")
         add_debug_log(f"PRIORITY: General emoji match result: {general_emoji_match}", "emoji_debug")
-        
+
         if general_emoji_match and any(uav_word in text.lower() for uav_word in ['бпла', 'дрон', 'шахед', 'активність', 'загроза', 'тривога', 'обстріл', 'обстрел']):
             city_from_general = general_emoji_match.group(1).strip()
             oblast_from_general = general_emoji_match.group(2).strip()
             add_debug_log(f"PRIORITY: Found city: {repr(city_from_general)}, oblast: {repr(oblast_from_general)}", "emoji_debug")
-            
+
             if city_from_general and 2 <= len(city_from_general) <= 40:
                 base = city_from_general.lower().replace('\u02bc',"'").replace('ʼ',"'").replace("'","'").replace('`',"'")
                 base = re.sub(r'\s+',' ', base)
                 norm = UA_CITY_NORMALIZE.get(base, base)
-                
+
                 # First try to find city+oblast specific coordinates
                 oblast_key = oblast_from_general.lower()
                 coords = None
-                
+
                 # Try different lookup strategies for city+oblast disambiguation
                 if 'сум' in oblast_key and norm == 'миколаївка':
                     coords = (51.5667, 34.1333)  # Миколаївка, Сумська область
@@ -7291,21 +7290,21 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         if district_coords:
                             coords = district_coords
                             add_debug_log(f"PRIORITY: Found district coordinates for '{district_name}': {coords}", "emoji_debug")
-                
+
                 if not coords:
                     # Fallback to general lookup
                     coords = CITY_COORDS.get(norm)
                     add_debug_log(f"PRIORITY: General lookup: base={repr(base)}, norm={repr(norm)}, coords={coords}", "emoji_debug")
-                
+
                 if not coords and 'SETTLEMENTS_INDEX' in globals():
                     idx_map = globals().get('SETTLEMENTS_INDEX') or {}
                     coords = idx_map.get(norm)
                 if coords:
                     lat, lon = coords[:2]
-                    
+
                     # Check for threat cancellation BEFORE creating marker
                     text_lower = text.lower()
-                    if ('відбій загрози' in text_lower or 
+                    if ('відбій загрози' in text_lower or
                         'відбій тривоги' in text_lower or
                         ('відбій' in text_lower and any(cancel_word in text_lower for cancel_word in ['загрози', 'тривоги']))):
                         # This is a cancellation message - create list_only entry, no map marker
@@ -7313,15 +7312,15 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             'id': f"{mid}_priority_emoji_cancel_{city_from_general.replace(' ','_')}",
                             'place': city_from_general.title(),
                             'threat_type': 'alarm_cancel',
-                            'text': clean_text(text)[:500], 
-                            'date': date_str, 
+                            'text': clean_text(text)[:500],
+                            'date': date_str,
                             'channel': channel,
                             'list_only': True,  # NO map marker for cancellation
                             'source_match': 'priority_emoji_cancel'
                         }
                         add_debug_log(f'PRIORITY CANCELLATION: {city_from_general} -> list_only=True (no marker)', "emoji_debug")
                         return [track]  # Early return - cancellation handled
-                    
+
                     # Regular threat - create map marker
                     threat_type, icon = classify(text, city_from_general)
                     track = {
@@ -7341,21 +7340,21 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     try:
         import re  # Import re module for pattern matching
         head = text.split('\n', 1)[0][:160] if text else ""
-        
+
         # Handle emoji + oblast format (e.g. "👁️ Миколаївська обл.")
         oblast_emoji_pattern = r'^[^\w\s]*\s*([А-ЯІЇЄЁа-яіїєё\'\-\s]*обл\.?)\s*\*\*'
         oblast_emoji_match = re.search(oblast_emoji_pattern, head, re.IGNORECASE)
         add_debug_log(f"PRIORITY: Testing oblast emoji pattern on head: {repr(head)}", "emoji_debug")
         add_debug_log(f"PRIORITY: Oblast emoji match result: {oblast_emoji_match}", "emoji_debug")
-        
+
         if oblast_emoji_match and any(uav_word in text.lower() for uav_word in ['бпла', 'дрон', 'шахед', 'активність', 'загроза', 'тривога']):
             oblast_from_emoji = oblast_emoji_match.group(1).strip()
             add_debug_log(f"PRIORITY: Found oblast from emoji: {repr(oblast_from_emoji)}", "emoji_debug")
-            
+
             # Map oblast to regional center
             regional_center = None
             coords = None
-            
+
             oblast_key = oblast_from_emoji.lower()
             if 'миколаївськ' in oblast_key:
                 regional_center = 'Миколаїв'
@@ -7381,9 +7380,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             elif 'полтавськ' in oblast_key:
                 regional_center = 'Полтава'
                 coords = CITY_COORDS.get('полтава')
-            
+
             add_debug_log(f"PRIORITY: Oblast {oblast_from_emoji} -> regional center {regional_center} -> coords {coords}", "emoji_debug")
-            
+
             if coords and regional_center:
                 lat, lon = coords[:2]
                 threat_type, icon = classify(text)
@@ -7399,9 +7398,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 return [track]  # Early return - highest priority
     except Exception as e:
         add_debug_log(f"PRIORITY oblast processing error: {e}", "emoji_debug")
-    
+
     # Continue with existing logic...
-    
+
     # Strip embedded links (Markdown [text](url) or raw URLs) while keeping core message text.
     # Requested: if message contains links, remove them but keep the rest.
     try:
@@ -7430,55 +7429,55 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         pass
     # Ensure original_text is defined early to avoid UnboundLocalError in early parsing branches
     original_text = text
-    
+
     # Special handling for oblast+raion format: "чернігівська область (чернігівський район), київська область (вишгородський район)"
     import re as _re_oblast
     oblast_raion_pattern = r'([а-яіїєґ]+ська\s+область)\s*\(([^)]*?райони?[^)]*?)\)'
     oblast_raion_matches = _re_oblast.findall(oblast_raion_pattern, text.lower(), _re_oblast.IGNORECASE)
-    
+
     # Also check for pattern without requiring "райони" in parentheses - some messages might have just names
     if not oblast_raion_matches:
         oblast_raion_pattern_simple = r'([а-яіїєґ]+ська\s+область)\s*\(([^)]+)\)'
         oblast_raion_matches_simple = _re_oblast.findall(oblast_raion_pattern_simple, text.lower(), _re_oblast.IGNORECASE)
         # Filter to only those that contain district-like words
-        oblast_raion_matches = [(oblast, raion) for oblast, raion in oblast_raion_matches_simple 
+        oblast_raion_matches = [(oblast, raion) for oblast, raion in oblast_raion_matches_simple
                                if any(word in raion for word in ['район', 'р-н', 'ський', 'цький'])]
-    
+
     add_debug_log(f"Oblast+raion pattern check: found {len(oblast_raion_matches)} matches in text: {text[:200]}...", "oblast_raion")
-    
+
     if oblast_raion_matches and any(word in text.lower() for word in ['бпла', 'загроза', 'укриття']):
         add_debug_log(f"Oblast+raion format detected: {oblast_raion_matches}", "oblast_raion")
         tracks = []
-        
+
         for oblast_text, raion_text in oblast_raion_matches:
             add_debug_log(f"Processing oblast: '{oblast_text}', raion_text: '{raion_text}'", "oblast_raion")
             # Extract individual raions from the parentheses
             # Handle both single and multiple raions: "сумський, конотопський райони"
             raion_parts = _re_oblast.split(r',\s*|\s+та\s+', raion_text)
             add_debug_log(f"Split raion_parts: {raion_parts}", "oblast_raion")
-            
+
             for raion_part in raion_parts:
                 raion_part = raion_part.strip()
                 if not raion_part:
                     continue
-                    
+
                 add_debug_log(f"Processing raion_part: '{raion_part}'", "oblast_raion")
-                    
+
                 # Extract raion name (remove "район"/"райони" suffix)
                 raion_name = _re_oblast.sub(r'\s*(райони?|р-н\.?).*$', '', raion_part).strip()
                 add_debug_log(f"After removing suffix, raion_name: '{raion_name}'", "oblast_raion")
-                
+
                 # Normalize raion name
                 raion_normalized = _re_oblast.sub(r'(ському|ского|ського|ский|ськiй|ськой|ським|ском)$', 'ський', raion_name)
                 add_debug_log(f"Normalized raion: '{raion_normalized}', checking in RAION_FALLBACK", "oblast_raion")
-                
+
                 if raion_normalized in RAION_FALLBACK:
                     lat, lng = RAION_FALLBACK[raion_normalized]
                     add_debug_log(f"Creating oblast+raion marker: {raion_normalized} at {lat}, {lng}", "oblast_raion")
-                    
+
                     # Use classify function to determine correct threat type and icon
                     threat_type, icon = classify(original_text, raion_normalized)
-                    
+
                     tracks.append({
                         'id': f"{mid}_raion_{raion_normalized}",
                         'place': f"{raion_normalized.title()} район",
@@ -7493,11 +7492,11 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     })
                 else:
                     add_debug_log(f"Raion not found in RAION_FALLBACK: '{raion_normalized}'. Available keys: {list(RAION_FALLBACK.keys())[:10]}...", "oblast_raion")
-        
+
         if tracks:
             add_debug_log(f"Returning {len(tracks)} oblast+raion markers", "oblast_raion")
             return tracks
-    
+
     large_message_mode = False
     LARGE_THRESHOLD = 15000
     HARD_CUTOFF = 40000  # safety to avoid pathological regex backtracking
@@ -7575,13 +7574,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     return []
     except Exception:
         pass
-    
+
     # SPECIAL: Handle multiple threats in one message BEFORE other parsing
     def handle_multiple_threats():
         """Check for messages with multiple different threats and process each separately"""
         all_threats = []
         text_lower = text.lower()
-        
+
         # 1. Check for northeast tactical aviation threat
         if ('тактичн' in text_lower or 'авіаці' in text_lower or 'авиац' in text_lower) and (
             'північно-східн' in text_lower or 'північно східн' in text_lower or 'северо-восточ' in text_lower or 'північного-сходу' in text_lower
@@ -7592,7 +7591,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 'threat_type': 'avia', 'text': text[:500], 'date': date_str, 'channel': channel,
                 'marker_icon': 'avia.png', 'source_match': 'multiple_threats_northeast_aviation'
             })
-        
+
         # 2. Check for reconnaissance UAV in Mykolaiv oblast (миколаївщини/миколаївщині)
         if ('розвід' in text_lower or 'розведуваль' in text_lower) and ('миколаївщини' in text_lower or 'миколаївщині' in text_lower or 'миколаївщина' in text_lower):
             # Use Mykolaiv city coordinates
@@ -7602,7 +7601,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 'threat_type': 'rozved', 'text': text[:500], 'date': date_str, 'channel': channel,
                 'marker_icon': 'rozved.png', 'source_match': 'multiple_threats_mykolaiv_recon'
             })
-        
+
         # 3. Check for general БПЛА threats in oblast format (миколаївщини/миколаївщині) without "розвід"
         elif ('бпла' in text_lower or 'дрон' in text_lower) and ('миколаївщини' in text_lower or 'миколаївщині' in text_lower or 'миколаївщина' in text_lower):
             lat, lng = 46.9750, 31.9946
@@ -7611,7 +7610,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 'threat_type': 'shahed', 'text': clean_text(text)[:500], 'date': date_str, 'channel': channel,
                 'marker_icon': 'shahed.png', 'source_match': 'multiple_threats_mykolaiv_uav'
             })
-        
+
         return all_threats
 
     # Check if this is a multi-threat message
@@ -7627,7 +7626,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         'щина' in line.lower() and line.lower().strip().endswith(':')
     ))
     uav_count = sum(1 for line in text_lines if 'бпла' in line.lower() and ('курс' in line.lower() or 'на ' in line.lower()))
-    
+
     if region_count >= 2 and uav_count >= 3:
         add_debug_log(f"EARLY MULTI-REGIONAL UAV DETECTION: {region_count} regions, {uav_count} UAVs", "multi_regional")
         # We'll process this later when all functions are defined
@@ -7715,7 +7714,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     try:
         orig = text
         head = orig.split('\n',1)[0][:160]
-        
+
         # NEW: Handle emoji-prefixed threat messages like "🛸 Звягель (Житомирська обл.) Загроза застосування БПЛА"
         emoji_threat_pattern = r'^[^\w\s]*\s*([А-ЯІЇЄЁа-яіїєё\'\-\s]+)\s*\([^)]*обл[^)]*\)\s*загроза\s+застосування\s+бпла'
         emoji_match = re.search(emoji_threat_pattern, head, re.IGNORECASE)
@@ -7742,24 +7741,24 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     }
                     log.debug(f'Emoji threat parser: {city_from_emoji} -> {coords} -> {icon}')
                     return [track]  # Early return
-        
+
         # NEW: Handle general emoji + city + oblast format with any UAV threat (more flexible pattern)
         general_emoji_pattern = r'^[^\w\s]*\s*([А-ЯІЇЄЁа-яіїєё\'\-\s]+)\s*\([^)]*обл[^)]*\)'
         general_emoji_match = re.search(general_emoji_pattern, head, re.IGNORECASE)
         add_debug_log(f"Testing general emoji pattern on head: {repr(head)}", "emoji_debug")
         add_debug_log(f"General emoji match result: {general_emoji_match}", "emoji_debug")
-        
+
         if general_emoji_match and any(uav_word in text.lower() for uav_word in ['бпла', 'дрон', 'шахед', 'активність', 'загроза']):
             city_from_general = general_emoji_match.group(1).strip()
             add_debug_log(f"Found city from general emoji: {repr(city_from_general)}", "emoji_debug")
-            
+
             if city_from_general and 2 <= len(city_from_general) <= 40:
                 base = city_from_general.lower().replace('\u02bc',"'").replace('ʼ',"'").replace("'","'").replace('`',"'")
                 base = re.sub(r'\s+',' ', base)
                 norm = UA_CITY_NORMALIZE.get(base, base)
                 coords = CITY_COORDS.get(norm)
                 add_debug_log(f"Looking up coordinates: base={repr(base)}, norm={repr(norm)}, coords={coords}", "emoji_debug")
-                
+
                 if not coords and 'SETTLEMENTS_INDEX' in globals():
                     idx_map = globals().get('SETTLEMENTS_INDEX') or {}
                     coords = idx_map.get(norm)
@@ -7776,7 +7775,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     }
                     add_debug_log(f'EARLY RETURN: General emoji threat parser: {city_from_general} -> {coords} -> {icon}', "emoji_debug")
                     return [track]  # Early return
-        
+
         if '(' in head and ('обл' in head.lower() or 'область' in head.lower()):
             import re as _re_early
             cleaned = head.replace('**','')
@@ -7896,7 +7895,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     except Exception:
         pass
 
-    
+
     # Directional multi-region (e.g. "група БпЛА на Донеччині курсом на Дніпропетровщину") -> list-only, no fixed marker
     try:
         lorig = text.lower()
@@ -7908,24 +7907,24 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             # e.g., "БпЛА в північно-західній частині Полтавщини, курсом на Київщину"
             # or "БпЛА в південно-східній частині Харківщини"
             import re as _re_loc
-            
+
             # Look for current location patterns
             location_match = _re_loc.search(r'(?:бпла|дрон[иа]?)\s+(?:в|на|над)\s+([а-яіїєґ\-\s]+(?:частин[іа]|район[іе]|округ[уі])\s+[а-яіїєґ]+щин[иаю])', lorig)
             if location_match:
                 current_location = location_match.group(1).strip()
                 print(f"DEBUG: Found current BPLA location: {current_location}")
-                
+
                 # Extract region from current location
                 region_in_location = None
                 for reg_key in OBLAST_CENTERS.keys():
                     if reg_key in current_location:
                         region_in_location = reg_key
                         break
-                
+
                 if region_in_location:
                     # Get region center and apply directional offset
                     region_coords = OBLAST_CENTERS.get(region_in_location, (50.0, 30.0))
-                    
+
                     # Apply directional offset based on specified part of region
                     offset_lat, offset_lon = 0, 0
                     if 'північно-західн' in current_location:
@@ -7946,10 +7945,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         offset_lat, offset_lon = 0, 0.8     # East
                     elif 'центральн' in current_location:
                         offset_lat, offset_lon = 0, 0       # Center
-                    
+
                     final_lat = region_coords[0] + offset_lat
                     final_lon = region_coords[1] + offset_lon
-                    
+
                     # Clean up city name for display
                     region_name = region_in_location.replace('щини', 'щина').replace('щину', 'щина')
                     direction_part = ""
@@ -7971,17 +7970,17 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         direction_part = "Сх "
                     elif 'центральн' in current_location:
                         direction_part = "Центр "
-                    
+
                     display_name = f"{direction_part}{region_name.title()}"
-                    
+
                     print(f"DEBUG: Location '{current_location}' in {region_in_location} -> ({final_lat}, {final_lon})")
-                    
+
                     return [{
                         'id': str(mid), 'text': clean_text(text)[:600], 'date': date_str, 'channel': channel,
                         'lat': final_lat, 'lon': final_lon, 'city': display_name,
                         'source_match': 'trajectory_current_location'
                     }]
-            
+
             # Quick reject if explicit single settlement in parentheses (handled elsewhere)
             if '(' not in lorig:
                 present_regions = []
@@ -7997,13 +7996,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     # Check if message contains specific cities that should create markers instead
                     city_keywords = ['на кролевец', 'на конотоп', 'на чернігів', 'на вишгород', 'на петрівці', 'на велика димерка', 'на білу церкву', 'на бровари', 'на суми', 'на харків', 'на дніпро', 'на кропивницький', 'на житомир', 'на миколаївку', 'на липовець', 'на ріпки', 'на терни', 'на павлоград']
                     has_specific_cities = any(city_kw in lorig for city_kw in city_keywords)
-                    
+
                     # Also check for pattern "БпЛА на [city]" which should create markers
                     import re as _re_cities
                     bpla_na_pattern = _re_cities.findall(r'бпла\s+на\s+([a-zа-яіїєґʼ`\-\s]{3,20})', lorig)
                     if bpla_na_pattern:
                         has_specific_cities = True
-                    
+
                     if has_specific_cities:
                         # Let multi-city parser handle this instead
                         pass
@@ -8055,30 +8054,30 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 if 'курс' in tail:
                     continue
                 rc = rc.replace('\u02bc',"'").replace('ʼ',"'").replace("'","'").replace('`',"'")
-                
+
                 # Handle cities separated by slash (e.g., "вишгород/петрівці")
                 cities_to_process = []
                 if '/' in rc:
                     cities_to_process.extend(rc.split('/'))
                 else:
                     cities_to_process.append(rc)
-                
+
                 for city_idx, city in enumerate(cities_to_process):
                     city = city.strip()
                     if not city:
                         continue
-                        
+
                     base = UA_CITY_NORMALIZE.get(city, city)
-                    
+
                     # Special handling for Kyiv - show directional approach instead of center point
                     if base.lower() == 'київ':
                         kyiv_lat, kyiv_lng, kyiv_label, direction_info = get_kyiv_directional_coordinates(text, base)
                         threat_type, icon = classify(text)
-                        
+
                         # Use specialized icon for directional Kyiv threats
                         if direction_info:
                             icon = 'shahed.png'  # Could create special directional icon later
-                            
+
                         threats.append({
                             'id': f"{mid}_uav_{idx}_{city_idx}_kyiv_dir", 'place': kyiv_label, 'lat': kyiv_lat, 'lng': kyiv_lng,
                             'threat_type': threat_type, 'text': clean_text(text)[:500], 'date': date_str, 'channel': channel,
@@ -8086,7 +8085,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             'direction_info': direction_info
                         })
                         continue
-                    
+
                     coords = CITY_COORDS.get(base)
                     if not coords and 'SETTLEMENTS_INDEX' in globals():
                         coords = (globals().get('SETTLEMENTS_INDEX') or {}).get(base)
@@ -8134,18 +8133,18 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             if len(segments) >= 2:  # At least 2 segments
                 threats = []
                 import re as _re_multi
-                
+
                 for seg_idx, segment in enumerate(segments):
                     seg_lower = segment.lower()
                     if 'бпла' not in seg_lower:
                         continue
-                    
+
                     # Pattern 1: "БпЛА курсом на [city]" (with optional н.п. prefix)
                     course_match = _re_multi.search(r'бпла\s+курсом?\s+на\s+(?:н\.п\.?\s*)?([а-яіїєґ\'\-\s]+?)(?:\s*$|\s*\|)', seg_lower)
                     if course_match:
                         city_name = course_match.group(1).strip()
                         city_norm = clean_text(city_name).lower()
-                        
+
                         # Accusative case normalization (винительный падеж)
                         if city_norm == 'велику димерку':
                             city_norm = 'велика димерка'
@@ -8162,12 +8161,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             city_norm = city_norm[:-1] + 'я'
                         elif city_norm.endswith('ку') and len(city_norm) > 4:
                             city_norm = city_norm[:-2] + 'ка'
-                        
+
                         if city_norm in UA_CITY_NORMALIZE:
                             city_norm = UA_CITY_NORMALIZE[city_norm]
-                        
+
                         coords = ensure_city_coords_with_message_context(city_norm, text)
-                        
+
                         if coords and isinstance(coords, tuple) and len(coords) >= 2:
                             lat, lng = coords[0], coords[1]
                             threat_type, icon = classify(text)
@@ -8186,20 +8185,20 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                 'source_match': 'multi_segment_course',
                                 'count': 1
                             })
-                    
-                    # Pattern 1.5: "БпЛА повз [city1] курсом на [city2]" - extract both cities  
+
+                    # Pattern 1.5: "БпЛА повз [city1] курсом на [city2]" - extract both cities
                     povz_match = _re_multi.search(r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+повз\s+([а-яіїєґ\'\-\s]+?)\s+курсом?\s+на\s+([а-яіїєґ\'\-\s]+?)(?:\s*$|\s*\|)', seg_lower)
                     if povz_match and not course_match:  # Don't double-process if already handled by Pattern 1
                         count_str, city1_name, city2_name = povz_match.groups()
                         count = int(count_str) if count_str and count_str.isdigit() else 1
-                        
+
                         for city_idx, city_raw in enumerate([city1_name, city2_name]):
                             if not city_raw:
                                 continue
-                                
+
                             city_name = city_raw.strip()
                             city_norm = clean_text(city_name).lower()
-                            
+
                             # Accusative case normalization for both cities
                             if city_norm == 'велику димерку':
                                 city_norm = 'велика димерка'
@@ -8216,12 +8215,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                 city_norm = city_norm[:-1] + 'я'
                             elif city_norm.endswith('ку') and len(city_norm) > 4:
                                 city_norm = city_norm[:-2] + 'ка'
-                            
+
                             if city_norm in UA_CITY_NORMALIZE:
                                 city_norm = UA_CITY_NORMALIZE[city_norm]
-                            
+
                             coords = ensure_city_coords(city_norm)
-                            
+
                             if coords and isinstance(coords, tuple) and len(coords) >= 2:
                                 lat, lng = coords[0], coords[1]
                                 threat_type, icon = classify(text)
@@ -8241,14 +8240,14 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                     'source_match': 'multi_segment_povz',
                                     'count': count
                                 })
-                    
+
                     # Pattern 2: "[N]х БпЛА [location]" - extract cities
                     location_match = _re_multi.search(r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+(.+?)(?:\.|$)', seg_lower)
                     if location_match and not course_match:  # Don't double-process course segments
                         count_str = location_match.group(1) or "1"
                         location_text = location_match.group(2).strip()
                         count = int(count_str) if count_str.isdigit() else 1
-                        
+
                         # Split by common separators to get individual cities
                         cities = []
                         for sep in [' / ', ' та ', ' і ', ', ']:
@@ -8257,32 +8256,32 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                 break
                         if not cities:
                             cities = [location_text]
-                        
+
                         for city_idx, city in enumerate(cities):
                             city = city.strip()
                             if not city:
                                 continue
-                            
+
                             # Handle district references (e.g., "Білоцерківський район")
                             if 'район' in city:
                                 # Extract district name and try to find main city
                                 district_name = city.replace('район', '').replace('ський', '').replace('цький', '').strip()
-                                
+
                                 # Special case mappings
                                 if 'білоцерків' in district_name:
                                     district_name = 'біла церква'
-                                
+
                                 if district_name:
                                     city = district_name
                                 else:
                                     continue
-                                
+
                             city_norm = clean_text(city).lower()
                             if city_norm in UA_CITY_NORMALIZE:
                                 city_norm = UA_CITY_NORMALIZE[city_norm]
-                            
+
                             coords = ensure_city_coords(city_norm)
-                            
+
                             if coords and isinstance(coords, tuple) and len(coords) >= 2:
                                 lat, lng = coords[0], coords[1]
                                 threat_type, icon = classify(text)
@@ -8299,28 +8298,28 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                     'source_match': f'multi_segment_location_{count}x',
                                     'count': count
                                 })
-                
+
                 if threats:
-                    # ALSO: Extract cities from emoji structure in the same text 
+                    # ALSO: Extract cities from emoji structure in the same text
                     # Pattern for "| 🛸 Город (Область)"
                     emoji_pattern = r'\|\s*🛸\s*([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)\s*\([^)]*обл[^)]*\)'
                     emoji_matches = re.finditer(emoji_pattern, text, re.IGNORECASE)
-                    
+
                     for match in emoji_matches:
                         city_raw = match.group(1).strip()
                         if not city_raw or len(city_raw) < 2:
                             continue
-                            
+
                         city_norm = clean_text(city_raw).lower()
                         if city_norm in UA_CITY_NORMALIZE:
                             city_norm = UA_CITY_NORMALIZE[city_norm]
-                        
+
                         coords = ensure_city_coords(city_norm)
-                        
+
                         if coords:
                             lat, lng = coords[:2]
                             threat_type, icon = classify(text)
-                            
+
                             threat_id = f"{mid}_emoji_struct_{len(threats)}"
                             threats.append({
                                 'id': threat_id,
@@ -8335,11 +8334,11 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                 'source_match': 'emoji_structure_multi',
                                 'count': 1
                             })
-                            
+
                             add_debug_log(f"Multi emoji structure: {city_raw} -> {coords}", "emoji_struct_multi")
                         else:
                             add_debug_log(f"Multi emoji structure: No coords for {city_raw}", "emoji_struct_multi")
-                    
+
                     # Check for priority result to combine
                     if '_current_priority_result' in globals() and globals()['_current_priority_result']:
                         combined_result = globals()['_current_priority_result'] + threats
@@ -8348,10 +8347,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         globals()['_current_priority_result'] = None
                         return combined_result
                     return threats
-                    
+
     except Exception:
         pass
-    
+
     # Course towards single city ("курс(ом) на Батурин") -> place marker at that city
     try:
         import re as _re_course
@@ -8361,10 +8360,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             raw_city = m_course.group(1).strip()
             raw_city = raw_city.replace('\u02bc',"'").replace('ʼ',"'").replace('’',"'").replace('`',"'")
             base = UA_CITY_NORMALIZE.get(raw_city, raw_city)
-            
+
             # Use enhanced coordinate lookup with Nominatim fallback
             coords = get_coordinates_enhanced(base, context="БпЛА курсом на")
-            
+
             if not coords:
                 # Legacy fallback for backwards compatibility
                 enriched = ensure_city_coords(base)
@@ -8380,28 +8379,28 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             if coords:
                 lat,lng = coords
                 threat_type, icon = classify(text)
-                
+
                 # Extract course information for Shahed threats
                 course_info = None
                 if threat_type == 'shahed':
                     course_info = extract_shahed_course_info(text)
-                
+
                 # Extract count from text (look for pattern like "10х БпЛА")
                 uav_count = 1
                 import re as _re_count
                 count_match = _re_count.search(r'(\d+)\s*[xх×]\s*бпла', low_txt2)
                 if count_match:
                     uav_count = int(count_match.group(1))
-                
+
                 # Create multiple tracks for multiple drones
                 tracks_to_create = max(1, uav_count)
                 threat_tracks = []
-                
+
                 for i in range(tracks_to_create):
                     track_name = base.title()
                     if tracks_to_create > 1:
                         track_name += f" #{i+1}"
-                    
+
                     # Add small coordinate offsets to prevent marker overlap
                     marker_lat = lat
                     marker_lng = lng
@@ -8410,13 +8409,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         offset_distance = 0.03  # ~3km offset between each drone
                         marker_lat += offset_distance * i
                         marker_lng += offset_distance * i * 0.5
-                    
+
                     threat_data = {
                         'id': f"{mid}_{i+1}", 'place': track_name, 'lat': marker_lat, 'lng': marker_lng,
                         'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
                         'marker_icon': icon, 'source_match': 'course_to_city', 'count': 1
                     }
-                    
+
                     # Add course information if available
                     if course_info:
                         threat_data.update({
@@ -8425,13 +8424,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             'course_direction': course_info.get('course_direction'),
                             'course_type': course_info.get('course_type')
                         })
-                    
+
                     threat_tracks.append(threat_data)
-                
+
                 return threat_tracks
     except Exception:
         pass
-    
+
     # --- PRIORITY: Early explicit pattern for districts - MOVED UP TO AVOID CONFLICTS ---
     # Check before region direction processing to prevent fallback to oblast centers
     try:
@@ -8473,7 +8472,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 add_debug_log(f"Early district processing (format 2) - {raion_base} not found in RAION_FALLBACK", "district_early")
     except Exception as e:
         add_debug_log(f"Early district processing error: {e}", "district_early")
-    
+
     # Region directional segments specifying part of oblast ("на сході Дніпропетровщини") possibly multiple in one line
     try:
         import re as _re_seg
@@ -8543,13 +8542,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     }
                     label = f"{label_region} ({dir_label_map.get(code,'частина')})"
                     threat_type, icon = classify(text)
-                    
+
                     # Skip if this segment contains "курсом на [city]" after the region match
                     # to give priority to specific city course tracking
                     segment_after = text[m.end():]
                     if _re_seg.search(r'курсом?\s+на\s+(?:н\.п\.?\s*)?[А-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,}', segment_after, _re_seg.IGNORECASE):
                         continue
-                    
+
                     seg_tracks.append({
                         'id': f"{mid}_rd{len(seg_tracks)+1}", 'place': label, 'lat': lat_o, 'lng': lng_o,
                         'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
@@ -8562,7 +8561,6 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         except: pass
     # --- Pre-split case: several bold oblast headers inside a single line (e.g. **Полтавщина:** ... **Дніпропетровщина:** ... ) ---
     try:
-        import re as _pre_hdr_re
         # Detect two or more bold oblast headers
         hdr_pat = re.compile(r'(\*\*[A-Za-zА-Яа-яЇїІіЄєҐґ]+щина\*\*:)')
         if text.count('**') >= 4:  # quick filter
@@ -8598,19 +8596,19 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         n = name.lower().strip()
         n = n.replace('ʼ', "'").replace('’', "'").replace('`', "'")
         n = unicodedata.normalize('NFC', n)
-        
+
         # Convert mixed Latin/Cyrillic to full Cyrillic (e.g. "Kov'яги" -> "ков'яги")
         # Common Latin-Cyrillic lookalikes in Ukrainian city names
         latin_to_cyrillic = {
-            'a': 'а', 'e': 'е', 'i': 'і', 'o': 'о', 'p': 'р', 'c': 'с', 
+            'a': 'а', 'e': 'е', 'i': 'і', 'o': 'о', 'p': 'р', 'c': 'с',
             'y': 'у', 'x': 'х', 'k': 'к', 'h': 'н', 't': 'т', 'm': 'м',
             'b': 'в', 'v': 'в', 'n': 'н', 's': 'с', 'r': 'р'
         }
-        
+
         # Only convert if string contains mixed Latin + Cyrillic (heuristic: has both ranges)
         has_cyrillic = any(ord(c) >= 0x0400 and ord(c) <= 0x04FF for c in n)
         has_latin = any('a' <= c <= 'z' for c in n)
-        
+
         if has_cyrillic and has_latin:
             # Convert Latin lookalikes to Cyrillic
             n_converted = ''
@@ -8620,7 +8618,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 else:
                     n_converted += c
             n = n_converted
-        
+
         return n
 
     def sanitize_course_destination(name: str) -> str:
@@ -8650,7 +8648,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     # Если сообщение содержит несколько строк с заголовками-областями и городами
     # Предварительно уберём чисто донатные/подписи строки из многострочного блока, чтобы они не мешали
     raw_lines = text.splitlines()
-    
+
     # NEW: Handle single-line messages with multiple regions like "Чернігівщина: 1 БпЛА на Козелець ... Сумщина: 3 БпЛА..."
     # First try to split by region headers in single line
     single_line_regions = ['чернігівщин', 'сумщин', 'харківщин', 'полтавщин', 'херсонщин', 'донецьк', 'луганщин']
@@ -8674,7 +8672,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 add_debug_log(f"Split single line into {len(raw_lines)} lines for multi-region processing", "multi_region")
         else:
             add_debug_log("Region split failed, keeping original format", "multi_region")
-    
+
     cleaned_for_multiline = []
     import re as _re_clean
     donation_keys = ['монобанк','send.monobank','patreon','donat','донат','підтримати канал','підтримати']
@@ -8713,56 +8711,56 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             ls_no_links = ' '.join(low_no_links.split())
         cleaned_for_multiline.append(ls_no_links.strip())
     lines = cleaned_for_multiline
-    
+
     oblast_hdr = None
     multi_city_tracks = []
     processed_lines_count = 0
     add_debug_log(f"Processing {len(lines)} cleaned lines for multi-city tracks", "multi_region")
-    
+
     for ln in lines:
         processed_lines_count += 1
         add_debug_log(f"Processing line {processed_lines_count}/{len(lines)}: '{ln[:80]}...'", "multi_region")
-        
+
         # PRIORITY: Check for specific region-city patterns FIRST
         import re as _re_region_city
         ln_lower = ln.lower()
-        
+
         # Pattern 1: "на [region] [count] шахедів на [city]"
         region_city_pattern1 = _re_region_city.compile(r'на\s+([а-яіїєґ]+щин[іау]?)\s+(\d+)\s+шахед[іїв]*\s+на\s+([а-яіїєґ\'\-\s]+)', _re_region_city.IGNORECASE)
         region_city_match1 = region_city_pattern1.search(ln_lower)
-        
+
         # Pattern 2: "[region] - шахеди на [city]"
         region_city_pattern2 = _re_region_city.compile(r'([а-яіїєґ]+щин[ауи]?)\s*-\s*шахед[іїив]*\s+на\s+([а-яіїєґ\'\-\s]+)', _re_region_city.IGNORECASE)
         region_city_match2 = region_city_pattern2.search(ln_lower)
-        
+
         # Pattern 3: "[region] ([city] р-н)" - for district headquarters
         region_district_pattern = _re_region_city.compile(r'([а-яіїєґ]+щин[ауи]?)\s*\(\s*([а-яіїєґ\'\-\s]+)\s+р[-\s]*н\)', _re_region_city.IGNORECASE)
         region_district_match = region_district_pattern.search(ln_lower)
-        
+
         add_debug_log(f"CHECKING region-city patterns for line: '{ln_lower}'", "region_city_debug")
-        
+
         region_city_match = region_city_match1 or region_city_match2
-        
+
         if region_district_match:
             # Handle "чернігівщина (новгород-сіверський р-н)" format
             region_raw, district_raw = region_district_match.groups()
             target_city = district_raw.strip()
-            
+
             add_debug_log(f"REGION-DISTRICT pattern FOUND: region='{region_raw}', district='{district_raw}'", "region_district")
-            
+
             # Normalize city name and try to find coordinates
             city_norm = target_city.lower()
             # Apply UA_CITY_NORMALIZE rules if available
             if 'UA_CITY_NORMALIZE' in globals():
                 city_norm = UA_CITY_NORMALIZE.get(city_norm, city_norm)
             coords = CITY_COORDS.get(city_norm)
-            
+
             add_debug_log(f"District city lookup: '{target_city}' -> '{city_norm}' -> {coords}", "region_district")
-            
+
             if coords:
                 lat, lng = coords
                 threat_type, icon = classify(ln)
-                
+
                 multi_city_tracks.append({
                     'id': f"{mid}_region_district_{len(multi_city_tracks)+1}",
                     'place': target_city.title(),
@@ -8780,7 +8778,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 continue  # Skip further processing of this line
             else:
                 add_debug_log(f"No coordinates found for district city: '{target_city}' (normalized: '{city_norm}')", "region_district")
-        
+
         elif region_city_match:
             if region_city_match1:
                 region_raw, count_str, city_raw = region_city_match1.groups()
@@ -8788,24 +8786,24 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             else:  # region_city_match2
                 region_raw, city_raw = region_city_match2.groups()
                 count = 1  # default count for pattern 2
-                
+
             target_city = city_raw.strip()
-            
+
             add_debug_log(f"REGION-CITY pattern FOUND: region='{region_raw}', count={count}, city='{target_city}'", "region_city")
-            
+
             # Normalize city name and try to find coordinates
             city_norm = target_city.lower()
             # Apply UA_CITY_NORMALIZE rules if available
             if 'UA_CITY_NORMALIZE' in globals():
                 city_norm = UA_CITY_NORMALIZE.get(city_norm, city_norm)
             coords = CITY_COORDS.get(city_norm)
-            
+
             add_debug_log(f"City lookup: '{target_city}' -> '{city_norm}' -> {coords}", "region_city")
-            
+
             if coords:
                 lat, lng = coords
                 threat_type, icon = classify(ln)
-                
+
                 multi_city_tracks.append({
                     'id': f"{mid}_region_city_{len(multi_city_tracks)+1}",
                     'place': target_city.title(),
@@ -8825,7 +8823,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 add_debug_log(f"No coordinates found for city: '{target_city}' (normalized: '{city_norm}')", "region_city")
         else:
             add_debug_log(f"REGION-CITY pattern NOT FOUND for line: '{ln_lower}'", "region_city_debug")
-        
+
         # NEW: Pattern "БпЛА на [direction] [region_genitive] курсом на [target]"
         # Example: "БпЛА на півночі Херсонщини курсом на Миколаївщину"
         regional_course_pattern = re.search(r'(бпла|безпілотник|шахед|дрон).*(на\s+(півночі|півдні|сході|заході|центрі))?\s*([а-яіїєґ]+щин[іуиа])\s*.*курсом\s+на\s+([а-яіїєґ\'\-\s]+)', ln_lower, re.IGNORECASE)
@@ -8833,19 +8831,19 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             direction_part = regional_course_pattern.group(3) if regional_course_pattern.group(2) else None
             region_genitive = regional_course_pattern.group(4)
             target_raw = regional_course_pattern.group(5).strip()
-            
+
             # Normalize target (could be city or region)
             target_norm = target_raw.replace('щину', 'щина').replace('щини', 'щина').strip()
-            
+
             add_debug_log(f"REGIONAL COURSE pattern: direction={direction_part}, region={region_genitive}, target={target_raw} -> {target_norm}", "regional_course")
-            
+
             # Try to find coordinates for target
             target_city = normalize_city_name(target_norm)
             target_city = UA_CITY_NORMALIZE.get(target_city, target_city)
             coords = CITY_COORDS.get(target_city)
             if not coords and SETTLEMENTS_INDEX:
                 coords = SETTLEMENTS_INDEX.get(target_city)
-            
+
             # If target is a region (щина), use region center
             if not coords and ('щина' in target_city or 'щини' in target_city):
                 # Try to get region center coordinates
@@ -8863,19 +8861,19 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 coords = region_centers.get(target_city)
                 if coords:
                     add_debug_log(f"Using region center for '{target_city}': {coords}", "regional_course")
-            
+
             if coords:
                 lat, lng = coords
                 threat_type, icon = classify(ln)
-                
+
                 # Extract count if present
                 count_match = re.search(r'(\d+)\s*[xх×]?\s*(бпла|шахед)', ln_lower)
                 count = int(count_match.group(1)) if count_match else 1
-                
+
                 place_label = target_norm.title()
                 if direction_part:
                     place_label += f" ({direction_part})"
-                
+
                 multi_city_tracks.append({
                     'id': f"{mid}_regional_course_{len(multi_city_tracks)+1}",
                     'place': place_label,
@@ -8893,7 +8891,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 continue
             else:
                 add_debug_log(f"No coordinates for regional course target: '{target_raw}' (norm: '{target_city}')", "regional_course")
-        
+
         # NEW: Check for regional direction patterns WITHOUT specific city (e.g. "БпЛА на сході Сумщини ➡️ курсом на південь")
         # These should create regional markers, not skip
         region_direction_pattern = re.search(r'(бпла|безпілотник|шахед|дрон).*(на\s+(півночі|півдні|сході|заході)).*([а-яіїєґ]+щин[іуиа])', ln_lower, re.IGNORECASE)
@@ -8902,29 +8900,29 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             # This line should be processed by regional parser - don't add to multi_city_tracks yet
             # Instead, extract the region and direction to create a regional marker later
             # For now, just mark it for special processing
-        
+
         # Check if line contains БпЛА information without specific course
         ln_lower = ln.lower()
         # Support both Cyrillic БпЛА and Latin-mixed БпЛA variants, and also Shahed
         has_uav = 'бпла' in ln_lower or 'бпла' in ln_lower or 'безпілотник' in ln_lower or 'дрон' in ln_lower or 'bpla' in ln_lower or 'шахед' in ln_lower or 'shahed' in ln_lower
         if has_uav:
-            add_debug_log(f"Line contains UAV keywords", "multi_region")
+            add_debug_log("Line contains UAV keywords", "multi_region")
             if not any(keyword in ln_lower for keyword in ['курс', 'на ', 'районі']):
-                add_debug_log(f"UAV line lacks direction keywords (курс/на/районі) - general activity message", "multi_region")
+                add_debug_log("UAV line lacks direction keywords (курс/на/районі) - general activity message", "multi_region")
         else:
-            add_debug_log(f"Line does not contain UAV keywords", "multi_region")
+            add_debug_log("Line does not contain UAV keywords", "multi_region")
         # Если строка — это заголовок области (например, "Сумщина:")
         # Заголовок области: строка, заканчивающаяся на ':' (возможен пробел перед / после) или формой '<область>:' с лишними пробелами
         # NEW: Also handle format like "**🚨 Конотопський район (Сумська обл.)**"
         import re
         oblast_hdr_match = None
-        
+
         # Standard format: "Сумщина:" or "Чернігівщина:"
         if re.match(r'^[A-Za-zА-Яа-яЇїІіЄєҐґ\-ʼ`\s]+:\s*$', ln):
             oblast_hdr = ln.split(':')[0].strip().lower()
             oblast_hdr_match = True
             add_debug_log(f"Standard region header format detected: '{oblast_hdr}'", "multi_region")
-        
+
         # NEW format: "**🚨 Конотопський район (Сумська обл.)**" or similar with oblast in parentheses
         elif re.search(r'\(([А-ЯІЇЄЁа-яіїєё]+ська\s+обл\.?)\)', ln):
             oblast_match = re.search(r'\(([А-ЯІЇЄЁа-яіїєё]+ська\s+обл\.?)\)', ln)
@@ -8934,7 +8932,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 oblast_hdr = oblast_full.replace('ська обл.', 'щина').replace('ська обл', 'щина')
                 oblast_hdr_match = True
                 add_debug_log(f"Parentheses region header format detected: '{oblast_full}' -> '{oblast_hdr}'", "multi_region")
-        
+
         # NEW format: "Харківщина — БпЛА на Гути" - region with dash followed by content
         elif re.search(r'^([А-ЯІЇЄЁа-яіїєё]+щина)\s*[-–—]\s*(.+)', ln):
             dash_match = re.search(r'^([А-ЯІЇЄЁа-яіїєё]+щина)\s*[-–—]\s*(.+)', ln)
@@ -8945,7 +8943,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 add_debug_log(f"Dash region header format detected: '{oblast_hdr}' with content: '{remaining_content}'", "multi_region")
                 # Set the line content to just the remaining part after dash for further processing
                 ln = remaining_content
-        
+
         # NEW: Detect regional genitive forms like "Сумщини", "Харківщини", etc.
         elif re.search(r'\b([а-яіїєґ]+щин[иі])\b', ln_lower):
             genitive_match = re.search(r'\b([а-яіїєґ]+щин[иі])\b', ln_lower)
@@ -8953,14 +8951,14 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 genitive_form = genitive_match.group(1)
                 # Convert genitive to nominative: "сумщини" -> "сумщина"
                 potential_oblast = genitive_form.replace('щини', 'щина').replace('щині', 'щина')
-                
+
                 # Validate that this is actually a known region, not just any word ending with щин[иі]
-                known_regions = ['сумщина', 'чернігівщина', 'харківщина', 'полтавщина', 'херсонщина', 
+                known_regions = ['сумщина', 'чернігівщина', 'харківщина', 'полтавщина', 'херсонщина',
                                'донеччина', 'луганщина', 'запорожжя', 'дніпропетровщина', 'київщина',
                                'львівщина', 'івано-франківщина', 'тернопільщина', 'хмельниччина',
                                'рівненщина', 'волинщина', 'житомирщина', 'вінниччина', 'черкащина',
                                'кіровоградщина', 'миколаївщина', 'одещина']
-                
+
                 if potential_oblast in known_regions:
                     oblast_hdr = potential_oblast
                     oblast_hdr_match = True
@@ -8968,7 +8966,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     add_debug_log(f"POTENTIAL ISSUE: Oblast set to '{oblast_hdr}' from genitive pattern in: '{ln}'", "oblast_detection")
                 else:
                     add_debug_log(f"Ignored potential genitive form '{genitive_form}' -> '{potential_oblast}' (not in known regions) in line: '{ln}'", "multi_region")
-        
+
         if oblast_hdr_match:
             add_debug_log(f"Region header detected: '{oblast_hdr}'", "multi_region")
             if oblast_hdr.startswith('на '):  # handle 'на харківщина:' header variant
@@ -8988,11 +8986,11 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             add_debug_log(f"MLINE_LINE oblast={oblast_hdr} raw='{ln}'", "multi_region")
         except Exception:
             pass
-        
+
         # NEW: Check for specific direction patterns before falling back to general UAV activity
         import re
         ln_lower = ln.lower()
-        
+
         # NEW: Pattern "кружляє над/над [city]"
         if 'кружляє' in ln_lower or 'кружля' in ln_lower:
             kruzhlia_match = re.search(r'кружля[єюя]\s+(?:над\s+)?([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*[\.\,\!\?;]|$)', ln, re.IGNORECASE)
@@ -9001,28 +8999,28 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 city_norm = normalize_city_name(city_raw)
                 city_norm = UA_CITY_NORMALIZE.get(city_norm, city_norm)
                 coords = CITY_COORDS.get(city_norm) or (SETTLEMENTS_INDEX.get(city_norm) if SETTLEMENTS_INDEX else None)
-                
+
                 if coords:
                     lat, lng = coords
                     threat_type, icon = classify(ln)
                     count_match = re.search(r'(\d+)[xх×]?\s*бпла', ln_lower)
                     count = int(count_match.group(1)) if count_match else 1
-                    
+
                     # Create multiple tracks if count > 1
                     for i in range(count):
                         place_label = city_norm.title()
                         if count > 1:
                             place_label += f" #{i+1} (кружляє)"
                         else:
-                            place_label += f" (кружляє)"
-                        
+                            place_label += " (кружляє)"
+
                         # Add offset for multiple drones
                         marker_lat, marker_lng = lat, lng
                         if count > 1:
                             offset_distance = 0.03
                             marker_lat += offset_distance * i
                             marker_lng += offset_distance * i * 0.5
-                        
+
                         multi_city_tracks.append({
                             'id': f"{mid}_kruzhlia_{len(multi_city_tracks)+1}",
                             'place': place_label,
@@ -9038,7 +9036,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         })
                     add_debug_log(f"Created {count} marker(s) for 'кружляє': {city_norm.title()}", "kruzhlia")
                     continue
-        
+
         # NEW: Pattern "північніше/південніше/східніше/західніше [city]"
         if any(direction in ln_lower for direction in ['північніше', 'південніше', 'східніше', 'західніше']):
             direction_match = re.search(r'(північніше|південніше|східніше|західніше)\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*[\.\,\!\?;]|$)', ln, re.IGNORECASE)
@@ -9048,7 +9046,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 city_norm = normalize_city_name(city_raw)
                 city_norm = UA_CITY_NORMALIZE.get(city_norm, city_norm)
                 coords = CITY_COORDS.get(city_norm) or (SETTLEMENTS_INDEX.get(city_norm) if SETTLEMENTS_INDEX else None)
-                
+
                 if coords:
                     lat, lng = coords
                     # Apply directional offset based on direction type
@@ -9061,24 +9059,24 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         lng += offset
                     elif direction_type == 'західніше':
                         lng -= offset
-                    
+
                     threat_type, icon = classify(ln)
                     count_match = re.search(r'(\d+)[xх×]?\s*бпла', ln_lower)
                     count = int(count_match.group(1)) if count_match else 1
-                    
+
                     # Create multiple tracks if count > 1
                     for i in range(count):
                         place_label = f"{direction_type.title()} {city_norm.title()}"
                         if count > 1:
                             place_label += f" #{i+1}"
-                        
+
                         # Add offset for multiple drones
                         marker_lat, marker_lng = lat, lng
                         if count > 1:
                             offset_distance = 0.03
                             marker_lat += offset_distance * i
                             marker_lng += offset_distance * i * 0.5
-                        
+
                         multi_city_tracks.append({
                             'id': f"{mid}_direction_{len(multi_city_tracks)+1}",
                             'place': place_label,
@@ -9094,7 +9092,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         })
                     add_debug_log(f"Created {count} marker(s) for '{direction_type}': {city_norm.title()}", "directional")
                     continue
-        
+
         # NEW: Pattern "на/через [city]" - combined "на" and "через"
         if re.search(r'на/через\s+[А-ЯІЇЄЁа-яіїєё]', ln, re.IGNORECASE):
             na_cherez_match = re.search(r'(\d+)[xх×]?\s*бпла\s+на/через\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*[\.\,\!\?;]|$)', ln, re.IGNORECASE)
@@ -9104,26 +9102,26 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 city_norm = normalize_city_name(city_raw)
                 city_norm = UA_CITY_NORMALIZE.get(city_norm, city_norm)
                 coords = CITY_COORDS.get(city_norm) or (SETTLEMENTS_INDEX.get(city_norm) if SETTLEMENTS_INDEX else None)
-                
+
                 if coords:
                     lat, lng = coords
                     threat_type, icon = classify(ln)
-                    
+
                     # Create multiple tracks if count > 1
                     for i in range(count):
                         place_label = city_norm.title()
                         if count > 1:
                             place_label += f" #{i+1} (на/через)"
                         else:
-                            place_label += f" (на/через)"
-                        
+                            place_label += " (на/через)"
+
                         # Add offset for multiple drones
                         marker_lat, marker_lng = lat, lng
                         if count > 1:
                             offset_distance = 0.03
                             marker_lat += offset_distance * i
                             marker_lng += offset_distance * i * 0.5
-                        
+
                         multi_city_tracks.append({
                             'id': f"{mid}_na_cherez_{len(multi_city_tracks)+1}",
                             'place': place_label,
@@ -9139,7 +9137,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         })
                     add_debug_log(f"Created {count} marker(s) for 'на/через': {city_norm.title()}", "na_cherez")
                     continue
-        
+
         # NEW: Pattern "з ТОТ в напрямку [city]" - drones from occupied territory
         if 'з тот' in ln_lower or 'з tot' in ln_lower:
             tot_match = re.search(r'(\d+)[xх×]?\s*бпла\s+з\s+тот\s+(?:в\s+напрямку|на)\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*[\.\,\!\?;]|$)', ln, re.IGNORECASE)
@@ -9149,26 +9147,26 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 city_norm = normalize_city_name(city_raw)
                 city_norm = UA_CITY_NORMALIZE.get(city_norm, city_norm)
                 coords = CITY_COORDS.get(city_norm) or (SETTLEMENTS_INDEX.get(city_norm) if SETTLEMENTS_INDEX else None)
-                
+
                 if coords:
                     lat, lng = coords
                     threat_type, icon = classify(ln)
-                    
+
                     # Create multiple tracks if count > 1
                     for i in range(count):
                         place_label = city_norm.title()
                         if count > 1:
                             place_label += f" #{i+1} (з ТОТ)"
                         else:
-                            place_label += f" (з ТОТ)"
-                        
+                            place_label += " (з ТОТ)"
+
                         # Add offset for multiple drones
                         marker_lat, marker_lng = lat, lng
                         if count > 1:
                             offset_distance = 0.03
                             marker_lat += offset_distance * i
                             marker_lng += offset_distance * i * 0.5
-                        
+
                         multi_city_tracks.append({
                             'id': f"{mid}_tot_{len(multi_city_tracks)+1}",
                             'place': place_label,
@@ -9184,64 +9182,64 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         })
                     add_debug_log(f"Created {count} marker(s) for 'з ТОТ': {city_norm.title()}", "z_tot")
                     continue
-        
+
         # Check if line has БпЛА or starts with a number (implying drones)
         has_bpla = 'бпла' in ln_lower
         starts_with_number = re.match(r'^\d+', ln.strip())
         has_direction_pattern = any(pattern in ln_lower for pattern in ['у напрямку', 'через', 'повз'])
-        
+
         if (has_bpla or starts_with_number) and has_direction_pattern:
             target_cities = []
-            
+
             # Pattern 1: "у напрямку [city]"
             naprym_pattern = r'у\s+напрямку\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*[\.\,\!\?;]|$)'
             naprym_matches = re.findall(naprym_pattern, ln, re.IGNORECASE)
             for city_raw in naprym_matches:
                 target_cities.append(('у напрямку', city_raw.strip()))
-            
+
             # Pattern 2: "через [city]"
             cherez_pattern = r'через\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*[\.\,\!\?;]|$)'
             cherez_matches = re.findall(cherez_pattern, ln, re.IGNORECASE)
             for city_raw in cherez_matches:
                 target_cities.append(('через', city_raw.strip()))
-            
+
             # Pattern 3: "повз [city]"
             povz_pattern = r'повз\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*[\.\,\!\?;]|$)'
             povz_matches = re.findall(povz_pattern, ln, re.IGNORECASE)
             for city_raw in povz_matches:
                 target_cities.append(('повз', city_raw.strip()))
-            
+
             # Process extracted target cities
             for direction_type, city_raw in target_cities:
                 city_clean = city_raw.strip()
                 city_norm = city_clean.lower()
-                
+
                 # Apply UA_CITY_NORMALIZE rules
                 if city_norm in UA_CITY_NORMALIZE:
                     city_norm = UA_CITY_NORMALIZE[city_norm]
-                
+
                 # Try to get coordinates
                 coords = CITY_COORDS.get(city_norm)
                 if not coords and SETTLEMENTS_INDEX:
                     coords = SETTLEMENTS_INDEX.get(city_norm)
                 if not coords:
                     coords = SETTLEMENT_FALLBACK.get(city_norm) if 'SETTLEMENT_FALLBACK' in globals() else None
-                
+
                 add_debug_log(f"Direction pattern '{direction_type}' found city: '{city_raw}' -> '{city_norm}' -> coords: {coords}", "direction_processing")
-                
+
                 if coords:
                     lat, lng = coords
                     threat_type, icon = classify(ln)
-                    
+
                     # Create label showing direction
                     place_label = city_clean.title()
                     if direction_type == 'у напрямку':
-                        place_label += f" (напрямок)"
+                        place_label += " (напрямок)"
                     elif direction_type == 'через':
-                        place_label += f" (через)"
+                        place_label += " (через)"
                     elif direction_type == 'повз':
-                        place_label += f" (повз)"
-                    
+                        place_label += " (повз)"
+
                     multi_city_tracks.append({
                         'id': f"{mid}_direction_{len(multi_city_tracks)+1}",
                         'place': place_label,
@@ -9258,24 +9256,24 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     add_debug_log(f"Created direction marker: {place_label} ({direction_type})", "direction_processing")
                 else:
                     add_debug_log(f"No coordinates found for direction target: '{city_raw}' (normalized: '{city_norm}')", "direction_processing")
-            
+
             # If we found any target cities with valid coordinates, skip general UAV processing
             if any(coords for _, coords in [(city_norm, CITY_COORDS.get(UA_CITY_NORMALIZE.get(city_raw.strip().lower(), city_raw.strip().lower()))) for _, city_raw in target_cities]):
                 add_debug_log(f"Direction processing complete, skipping general UAV activity for line: '{ln}'", "direction_processing")
                 continue
-        
+
         # NEW: Create markers for general UAV activity messages (without specific direction)
         if 'бпла' in ln_lower or 'безпілотник' in ln_lower or 'дрон' in ln_lower:
             add_debug_log(f"UAV activity detected in line: '{ln}', oblast_hdr: '{oblast_hdr}'", "uav_processing")
-            
+
             # CRITICAL: Check if message has specific directional patterns - if yes, skip general marker
             # Let the main parser handle "курсом на", "напрямок на", "у напрямку", "на [місто]" etc.
             has_directional_pattern = any(pattern in ln_lower for pattern in [
-                'курсом на', 'курс на', 'напрямок на', 'напрямку на', 
+                'курсом на', 'курс на', 'напрямок на', 'напрямку на',
                 'ціль на', 'у напрямку', 'у бік', 'в бік', 'через', 'повз',
                 'маневрує в районі', 'в районі', 'бпла на ', 'дрон на '
             ])
-            
+
             # Check for emoji arrows BUT only if there's actual text (city name) after the arrow
             if '➡' in ln and not has_directional_pattern:
                 # Extract text after arrow to see if there's a city name
@@ -9285,12 +9283,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     # If there's meaningful text after arrow (not just punctuation/links), treat as directional
                     if text_after_arrow and len(text_after_arrow) > 1 and not text_after_arrow.startswith(('http', '[', '**', '➡')):
                         has_directional_pattern = True
-            
+
             if has_directional_pattern:
                 add_debug_log(f"SKIP general UAV marker - has directional pattern: '{ln}'", "uav_processing")
                 # Don't create general marker - let main parser extract specific city
                 continue
-            
+
             # Check if we have a region and this is a UAV message
             if oblast_hdr:
                 add_debug_log(f"Processing UAV with region context: '{oblast_hdr}'", "uav_processing")
@@ -9319,13 +9317,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     'миколаївщина': 'миколаїв',
                     'одещина': 'одеса'
                 }
-                
+
                 # Special coordinates for aviation threats over regions (e.g., aircraft over Black Sea for Odesa)
                 region_aviation_coords = {
                     'одещина': (46.373528, 31.284023),  # Black Sea near Odesa for aviation threats
                     'одесщина': (46.373528, 31.284023),
                 }
-                
+
                 region_city = region_cities.get(oblast_hdr)
                 if region_city:
                     # Check if message refers to entire region rather than specific city
@@ -9333,30 +9331,30 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     genitive_form = oblast_hdr.replace('щина', 'щини')  # сумщина -> сумщини
                     dative_form = oblast_hdr.replace('щина', 'щині')    # сумщина -> сумщині
                     accusative_form = oblast_hdr + 'у'                  # сумщина -> сумщину
-                    
+
                     is_regional_threat = any(regional_ref in ln_lower for regional_ref in [
                         f'на {oblast_hdr}', f'{accusative_form}', f'{genitive_form}', f'{dative_form}',
                         f'для {genitive_form}', f'по {dative_form}'
                     ])
-                    
+
                     # For KAB/aviation bombs and aviation threats, always create marker even for regional threats
                     has_kab = any(kab_word in ln_lower for kab_word in ['каб', 'авіабомб', 'авиабомб'])
                     has_aviation_threat = any(avia_word in ln_lower for avia_word in [
                         'авіаційних засобів ураження', 'авіаційних засобів', 'застосування авіації',
                         'тактична авіація', 'тактичної авіації'
                     ])
-                    
+
                     if is_regional_threat and not has_kab and not has_aviation_threat:
                         add_debug_log(f"Skipping regional threat marker - affects entire region: {oblast_hdr} (found: {[ref for ref in [f'на {oblast_hdr}', accusative_form, genitive_form, dative_form] if ref in ln_lower]})", "multi_region")
                         continue
-                    
+
                     # Check if this is an aviation threat and use special coordinates if available
                     coords = None
                     if has_aviation_threat and oblast_hdr in region_aviation_coords:
                         coords = region_aviation_coords[oblast_hdr]
                         label = f"Авіація [{oblast_hdr.title()}]"
                         add_debug_log(f"Using aviation coordinates for {oblast_hdr}: {coords}", "aviation_region")
-                    
+
                     # Otherwise, try to find coordinates for the region's main city
                     if not coords:
                         base_city = normalize_city_name(region_city)
@@ -9364,16 +9362,16 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         coords = CITY_COORDS.get(base_city) or (SETTLEMENTS_INDEX.get(base_city) if SETTLEMENTS_INDEX else None)
                         label = base_city.title()
                         label += f" [{oblast_hdr.title()}]"
-                    
+
                     if coords:
                         lat, lng = coords
-                        
+
                         # Determine threat type based on message content using classify function
                         threat_type, icon = classify(ln)
                         # Keep shahed as default for UAV if classify doesn't return anything specific
                         if not threat_type:
                             threat_type = 'shahed'
-                        
+
                         multi_city_tracks.append({
                             'id': f"{mid}_general_uav_{len(multi_city_tracks)+1}",
                             'place': label,
@@ -9390,7 +9388,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         add_debug_log(f"Created general UAV marker: {label} ({threat_type})", "multi_region")
                         add_debug_log(f"MARKER CREATION: oblast_hdr='{oblast_hdr}', region_city='{region_city}', coords=({lat}, {lng})", "marker_creation")
                         continue  # move to next line
-        
+
         # NEW: Handle UAV messages without region but with city name
         ln_lower = ln.lower()
         if (not oblast_hdr) and ('бпла' in ln_lower or 'безпілотник' in ln_lower or 'дрон' in ln_lower or 'обстріл' in ln_lower or 'вибух' in ln_lower):
@@ -9400,23 +9398,23 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             city_match = re.search(r'[❗️⚠️🛸💥]*\s*([А-ЯІЇЄа-яіїєґ][А-Яа-яІіЇїЄєґ\-\'ʼ]{2,30}(?:ське|цьке|ський|ський район|ове|еве|ине|ино|івка|івськ|ськ|град|город)?)', ln)
             if city_match:
                 city_name = city_match.group(1).strip()
-                
+
                 # Normalize city name
                 base_city = normalize_city_name(city_name)
                 base_city = UA_CITY_NORMALIZE.get(base_city, base_city)
                 coords = CITY_COORDS.get(base_city) or (SETTLEMENTS_INDEX.get(base_city) if SETTLEMENTS_INDEX else None)
-                
+
                 if coords:
                     lat, lng = coords
                     label = base_city.title()
-                    
+
                     # Determine threat type based on message content using classify function
                     threat_type, icon = classify(ln)
                     # Keep shahed as default for UAV if classify doesn't return anything specific
                     if not threat_type:
                         threat_type = 'shahed'
                         icon = 'shahed.png'
-                    
+
                     multi_city_tracks.append({
                         'id': f"{mid}_city_threat_{len(multi_city_tracks)+1}",
                         'place': label,
@@ -9432,7 +9430,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     })
                     add_debug_log(f"Created city threat marker: {label} ({threat_type})", "multi_region")
                     continue  # move to next line
-        
+
         # --- NEW: БпЛА курсом на [city] pattern (e.g., "4х БпЛА курсом на Конотоп") ---
         # ВАЖЛИВО: Підтримка багатослівних назв міст (наприклад "Жовті Води")
         uav_course_city = None
@@ -9447,9 +9445,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 except:
                     uav_course_count = 1
             uav_course_city = m_uav_course.group(2).strip()
-            
+
             add_debug_log(f"UAV course pattern found: {uav_course_count}x БпЛА курсом на '{uav_course_city}'", "multi_region")
-        
+
         if uav_course_city:
             candidate_cities = extract_course_targets(uav_course_city)
             add_debug_log(f"extract_course_targets('{uav_course_city}') returned: {candidate_cities}", "multi_region")
@@ -9462,13 +9460,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 base_uav = UA_CITY_NORMALIZE.get(base_uav, base_uav)
                 coords_uav = CITY_COORDS.get(base_uav) or (SETTLEMENTS_INDEX.get(base_uav) if SETTLEMENTS_INDEX else None)
                 add_debug_log(f"Geocoding '{dest_city}' -> normalized: '{base_uav}' -> coords: {coords_uav}", "multi_region")
-                
+
                 # Try region-specific lookup if oblast_hdr is set
                 if not coords_uav and oblast_hdr:
                     combo_uav = f"{base_uav} {oblast_hdr}"
                     coords_uav = CITY_COORDS.get(combo_uav) or (SETTLEMENTS_INDEX.get(combo_uav) if SETTLEMENTS_INDEX else None)
                     add_debug_log(f"Trying region combo: '{combo_uav}' -> {coords_uav}", "multi_region")
-                
+
                 if not coords_uav:
                     add_debug_log(f"No coords found for '{dest_city}' (normalized: '{base_uav}', oblast: '{oblast_hdr}')", "multi_region")
                     continue
@@ -9479,7 +9477,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     label += f" ({per_marker_count}x)"
                 if oblast_hdr and oblast_hdr not in label.lower():
                     label += f" [{oblast_hdr.title()}]"
-                
+
                 multi_city_tracks.append({
                     'id': f"{mid}_mc{len(multi_city_tracks)+1}",
                     'place': label,
@@ -9499,10 +9497,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             else:
                 base_uav = normalize_city_name(sanitize_course_destination(uav_course_city))
                 add_debug_log(f"No coordinates found for UAV course city: '{uav_course_city}' (normalized: '{base_uav}')", "multi_region")
-        
+
         # Continue processing other patterns even if UAV course didn't match
         # Don't skip the line completely
-        
+
         # Пытаемся найти город и количество (например, "2х БпЛА курсом на Десну")
         import re
         # --- NEW: распознавание ракетных строк внутри многострочного блока ---
@@ -9776,14 +9774,14 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     per_count = scount if len(raw_parts) == 1 else 1
                     if oblast_hdr and oblast_hdr not in label.lower():
                         label += f" [{oblast_hdr.title()}]"
-                    
+
                     # Create multiple tracks for multiple shaheds
                     tracks_to_create = max(1, per_count)
                     for i in range(tracks_to_create):
                         track_label = label
                         if tracks_to_create > 1:
                             track_label += f" #{i+1}"
-                        
+
                         # Add small coordinate offsets to prevent marker overlap
                         marker_lat = lat
                         marker_lng = lng
@@ -9792,25 +9790,25 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             offset_distance = 0.03  # ~3km offset between each drone
                             marker_lat += offset_distance * i
                             marker_lng += offset_distance * i * 0.5
-                        
+
                         multi_city_tracks.append({
                             'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': track_label, 'lat': marker_lat, 'lng': marker_lng,
                             'threat_type': 'shahed', 'text': clean_text(ln)[:500], 'date': date_str, 'channel': channel,
                             'marker_icon': 'shahed.png', 'source_match': 'multiline_oblast_city_shahed', 'count': 1
                         })
                 continue
-        
+
         # --- NEW: Pattern "N на City1 N на City2..." (e.g. "Харківщина 1 на Вільшани 1 на Kov'яги 1 на Бірки") ---
         # Handles multiple "number + на + city" sequences in a single line WITHOUT repeating "БпЛА"
         # IMPORTANT: Pattern supports mixed Cyrillic/Latin city names (e.g. "Kov'яги")
         if re.search(r'(\d+)\s+на\s+[A-ZА-ЯІЇЄa-zа-яіїєґ\'\-]+', ln, re.IGNORECASE):
             # Find all "N на City" patterns in the line (supports mixed Cyrillic/Latin)
             multi_na_pattern = re.findall(r'(\d+)\s+на\s+([A-ZА-ЯІЇЄa-zа-яіїєґ\'\-]+(?:/[A-ZА-ЯІЇЄa-zа-яіїєґ\'\-]+)?)', ln, re.IGNORECASE)
-            
+
             if len(multi_na_pattern) > 1:  # Multiple "N на City" patterns found - this is our case!
                 add_debug_log(f"MULTI-NA pattern found {len(multi_na_pattern)} cities in line: '{ln}'", "multi_na")
                 add_debug_log(f"MULTI-NA current region header (oblast_hdr): '{oblast_hdr}'", "multi_na")
-                
+
                 # Regional overrides for cities with duplicate names in different oblasts
                 REGIONAL_CITY_COORDS = {
                     'харківщина': {
@@ -9820,15 +9818,15 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     },
                     # Add more regional overrides as needed
                 }
-                
+
                 for count_str, city_raw in multi_na_pattern:
                     count = int(count_str) if count_str.isdigit() else 1
                     city_name = city_raw.strip()
-                    
+
                     # Normalize city name (handle Latin/Cyrillic mix)
                     city_norm = normalize_city_name(city_name)
                     city_norm = UA_CITY_NORMALIZE.get(city_norm, city_norm)
-                    
+
                     # TRY 1: Regional override if oblast_hdr is set (e.g. "Харківщина:")
                     coords = None
                     if oblast_hdr and oblast_hdr in REGIONAL_CITY_COORDS:
@@ -9836,40 +9834,40 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         coords = region_coords.get(city_norm)
                         if coords:
                             add_debug_log(f"  Multi-NA city: '{city_name}' ({count}x) -> norm: '{city_norm}' -> REGIONAL OVERRIDE coords: {coords} (oblast: {oblast_hdr})", "multi_na")
-                    
+
                     # TRY 2: Default database lookup if no regional override
                     if not coords:
                         coords = CITY_COORDS.get(city_norm)
                         if coords:
                             add_debug_log(f"  Multi-NA city: '{city_name}' ({count}x) -> norm: '{city_norm}' -> DATABASE coords: {coords}", "multi_na")
-                    
+
                     # TRY 3: Settlements index fallback
                     if not coords and SETTLEMENTS_INDEX:
                         coords = SETTLEMENTS_INDEX.get(city_norm)
                         if coords:
                             add_debug_log(f"  Multi-NA city: '{city_name}' ({count}x) -> norm: '{city_norm}' -> SETTLEMENTS coords: {coords}", "multi_na")
-                    
+
                     if not coords:
                         add_debug_log(f"  WARNING: No coordinates for '{city_name}' (normalized: '{city_norm}', oblast: {oblast_hdr})", "multi_na")
                         continue
-                    
+
                     if coords:
                         lat, lng = coords
                         threat_type, icon = classify(ln)
-                        
+
                         # Create separate markers for each count
                         for i in range(count):
                             place_label = city_norm.title()
                             if count > 1:
                                 place_label += f" #{i+1}"
-                            
+
                             # Add offset for multiple drones at same location
                             marker_lat, marker_lng = lat, lng
                             if count > 1:
                                 offset_distance = 0.03  # ~3km offset
                                 marker_lat += offset_distance * i
                                 marker_lng += offset_distance * i * 0.5
-                            
+
                             multi_city_tracks.append({
                                 'id': f"{mid}_multi_na_{len(multi_city_tracks)+1}",
                                 'place': place_label,
@@ -9886,15 +9884,15 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         add_debug_log(f"  Created {count} marker(s) for '{city_norm.title()}'", "multi_na")
                     else:
                         add_debug_log(f"  WARNING: No coordinates for '{city_name}' (normalized: '{city_norm}')", "multi_na")
-                
+
                 add_debug_log(f"Multi-NA pattern processed: {len(multi_city_tracks)} total markers created", "multi_na")
                 continue  # Skip further processing of this line
-        
+
         # --- NEW: Simple "X БпЛА на <city>" pattern (e.g. '1 БпЛА на Козелець', '2 БпЛА на Куликівку') ---
         # Also handle "Ціль на <city>" pattern for missile/rocket targets
         if not city:
             print(f"DEBUG: Checking simple БпЛА/Ціль pattern for line: '{ln}'")
-            
+
             # Pattern 1: "Ціль на <city>" - rocket/missile target
             m_target = re.search(r'ціль\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,40}?)(?=\s|$|[,\.\!\?;\[])', ln, re.IGNORECASE)
             if m_target:
@@ -9919,7 +9917,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     count = 1
                     city = m_simple_no_count.group(1).strip()
                     print(f"DEBUG: Found simple БпЛА pattern (no count) - city: '{city}'")
-        
+
         # --- NEW: Handle "X у напрямку City1, City2" pattern (e.g. "4 у напрямку Карлівки, Полтави") ---
         if not city:
             print(f"DEBUG: Checking 'X у напрямку' pattern for line: '{ln}'")
@@ -9931,26 +9929,26 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     count = 1
                 cities_raw = m_naprymku.group(2).strip()
                 print(f"DEBUG: Found 'у напрямку' pattern - count: {count}, cities: '{cities_raw}'")
-                
+
                 # Split cities by comma
                 cities_list = [c.strip() for c in cities_raw.split(',') if c.strip()]
                 for city_name in cities_list:
                     base = normalize_city_name(city_name)
                     base = UA_CITY_NORMALIZE.get(base, base)
                     coords = CITY_COORDS.get(base)
-                    
+
                     # If not found, try to handle declensions (ending with -и, -ми, -у, etc)
                     if not coords and base:
                         if base.endswith('і') or base.endswith('и'):
                             base_nom = base[:-1] + 'а'  # карлівки -> карлівка
                             coords = CITY_COORDS.get(base_nom)
                         elif base.endswith('у'):
-                            base_nom = base[:-1] + 'а'  # полтаву -> полтава  
+                            base_nom = base[:-1] + 'а'  # полтаву -> полтава
                             coords = CITY_COORDS.get(base_nom)
                         elif base.endswith('ми'):
                             base_nom = base[:-2] + 'а'  # київми -> києва -> doesn't work, try other variants
                             coords = CITY_COORDS.get(base_nom)
-                    
+
                     if coords:
                         lat, lng = coords
                         multi_city_tracks.append({
@@ -9961,7 +9959,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         print(f"DEBUG: Added marker for '{city_name}' at {lat}, {lng}")
                 if multi_city_tracks:
                     continue
-                
+
         # --- NEW: Handle "X БпЛА City1 / City2" pattern (e.g. "2х БпЛА Гнідин / Бориспіль") ---
         if not city:
             print(f"DEBUG: Checking БпЛА city/city pattern for line: '{ln}'")
@@ -9974,7 +9972,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 city1 = m_cities.group(2).strip()
                 city2 = m_cities.group(3).strip()
                 print(f"DEBUG: Found БпЛА city/city pattern - count: {count}, cities: '{city1}' / '{city2}'")
-                
+
                 # Process both cities separately
                 for city_name in [city1, city2]:
                     base = normalize_city_name(city_name)
@@ -9994,7 +9992,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         })
                     else:
                         print(f"DEBUG: No coordinates found for {city_name} (base: {base})")
-                
+
                 # Set city to processed to prevent further processing
                 city = f"{city1} / {city2}"
         # --- NEW: Handle "між X та Y" pattern (e.g. "між Корюківкою та Меною") ---
@@ -10008,17 +10006,17 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 base2 = normalize_city_name(city2)
                 base1 = UA_CITY_NORMALIZE.get(base1, base1)
                 base2 = UA_CITY_NORMALIZE.get(base2, base2)
-                
+
                 coords1 = CITY_COORDS.get(base1) or (SETTLEMENTS_INDEX.get(base1) if SETTLEMENTS_INDEX else None)
                 coords2 = CITY_COORDS.get(base2) or (SETTLEMENTS_INDEX.get(base2) if SETTLEMENTS_INDEX else None)
-                
+
                 if not coords1 and oblast_hdr:
                     combo1 = f"{base1} {oblast_hdr}"
                     coords1 = CITY_COORDS.get(combo1) or (SETTLEMENTS_INDEX.get(combo1) if SETTLEMENTS_INDEX else None)
                 if not coords2 and oblast_hdr:
                     combo2 = f"{base2} {oblast_hdr}"
                     coords2 = CITY_COORDS.get(combo2) or (SETTLEMENTS_INDEX.get(combo2) if SETTLEMENTS_INDEX else None)
-                
+
                 if coords1 and coords2:
                     # Place marker at midpoint
                     lat = (coords1[0] + coords2[0]) / 2
@@ -10026,18 +10024,18 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     label = f"Між {base1.title()} та {base2.title()}"
                     if oblast_hdr and oblast_hdr not in label.lower():
                         label += f" [{oblast_hdr.title()}]"
-                    
+
                     # Extract count from beginning of line if present
                     count_match = re.search(r'^(\d+(?:-\d+)?)\s*бпла', ln, re.IGNORECASE)
                     count = int(count_match.group(1)) if count_match else 1
-                    
+
                     multi_city_tracks.append({
                         'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': label, 'lat': lat, 'lng': lng,
                         'threat_type': 'shahed', 'text': clean_text(ln)[:500], 'date': date_str, 'channel': channel,
                         'marker_icon': 'shahed.png', 'source_match': 'multiline_oblast_city_between', 'count': count
                     })
                     continue
-        
+
         # --- NEW: Handle "неподалік X" pattern (e.g. "неподалік Ічні") ---
         if not city:
             m_near = re.search(r'неподалік\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,30}?)(?=\s|$|[,\.\!\?;])', ln, re.IGNORECASE)
@@ -10046,7 +10044,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 # Extract count from beginning of line if present
                 count_match = re.search(r'^(\d+(?:-\d+)?)\s*бпла', ln, re.IGNORECASE)
                 count = int(count_match.group(1)) if count_match else 1
-        
+
         # --- NEW: Handle "в районі X" pattern (e.g. "в районі Конотопу") ---
         if not city:
             m_area = re.search(r'в\s+районі\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,30}?)(?=\s|$|[,\.\!\?;])', ln, re.IGNORECASE)
@@ -10055,7 +10053,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 # Extract count from beginning of line if present
                 count_match = re.search(r'^(\d+(?:-\d+)?)\s*бпла', ln, re.IGNORECASE)
                 count = int(count_match.group(1)) if count_match else 1
-        
+
         if city:
             print(f"DEBUG: Processing city '{city}' with oblast_hdr '{oblast_hdr}' and count {count}")
             base = normalize_city_name(city)
@@ -10076,12 +10074,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             base = UA_CITY_NORMALIZE.get(base, base)
             if base == 'троєщину':
                 base = 'троєщина'
-                
+
             # Use enhanced coordinate lookup with Nominatim fallback and region context
             coords = get_coordinates_enhanced(base, region=oblast_hdr, context="БпЛА курсом на")
-            
+
             print(f"DEBUG: Enhanced lookup for '{base}'" + (f" in {oblast_hdr}" if oblast_hdr else "") + f": {coords}")
-            
+
             if not coords and oblast_hdr:
                 # Legacy combo lookup as fallback
                 combo = f"{base} {oblast_hdr}"
@@ -10111,14 +10109,14 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 label = UA_CITY_NORMALIZE.get(base, base).title()
                 if oblast_hdr and oblast_hdr not in label.lower():
                     label += f" [{oblast_hdr.title()}]"
-                
+
                 # Create multiple tracks for multiple drones instead of one track with count
                 tracks_to_create = max(1, count)
                 for i in range(tracks_to_create):
                     track_label = label
                     if tracks_to_create > 1:
                         track_label += f" #{i+1}"
-                    
+
                     # Add small coordinate offsets to prevent marker overlap
                     marker_lat = lat
                     marker_lng = lng
@@ -10127,7 +10125,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         offset_distance = 0.03  # ~3km offset between each drone
                         marker_lat += offset_distance * i
                         marker_lng += offset_distance * i * 0.5
-                    
+
                     print(f"DEBUG: Creating track {i+1}/{tracks_to_create} with label '{track_label}' at {marker_lat}, {marker_lng}")
                     multi_city_tracks.append({
                         'id': f"{mid}_mc{len(multi_city_tracks)+1}", 'place': track_label, 'lat': marker_lat, 'lng': marker_lng,
@@ -10138,7 +10136,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 print(f"DEBUG: No coordinates found for city '{base}'")
     print(f"DEBUG: Multi-city tracks processing complete. Found {len(multi_city_tracks)} tracks")
     add_debug_log(f"Multi-region processing complete: {len(multi_city_tracks)} markers from {processed_lines_count} lines", "multi_region")
-    
+
     if multi_city_tracks:
         print(f"DEBUG: Returning {len(multi_city_tracks)} multi-city tracks")
         add_debug_log(f"Returning {len(multi_city_tracks)} multi-city tracks: {[t['place'] for t in multi_city_tracks]}", "multi_region")
@@ -10151,7 +10149,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     else:
         # If no multi-city tracks were created, continue with main parsing logic
         # This allows regional direction messages like "БпЛА на сході Сумщини" to be processed by regional parser
-        add_debug_log(f"No multi-city tracks created, continuing to main parser", "multi_region_fallback")
+        add_debug_log("No multi-city tracks created, continuing to main parser", "multi_region_fallback")
     # --- Detect and split multiple city targets in one message ---
     import re
     multi_city_tracks = []
@@ -10175,7 +10173,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     def _resolve_city_candidate(raw: str):
         cand = raw.strip().lower()
         cand = re.sub(r'["“”«»\(\)\[\]]','', cand)
-        
+
         # CRITICAL: Remove trailing geographic qualifiers (e.g., "Канів по межі з Київщиною" → "Канів")
         trailing_patterns = [
             r'\s+по\s+межі\s+з\s+.*$',
@@ -10187,7 +10185,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         ]
         for pattern in trailing_patterns:
             cand = re.sub(pattern, '', cand).strip()
-        
+
         cand = re.sub(r'\s+',' ', cand)
         # Пробуем от длинного к короткому (до 3 слов достаточно для наших случаев)
         words = cand.split()
@@ -10218,19 +10216,19 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     # Если найдено 2 и более города — создаём отдельный маркер для каждого
     if len(found_cities) >= 2:
         threat_type, icon = 'shahed', 'shahed.png'  # можно доработать auto-classify
-        
+
         # Extract course information for Shahed threats
         course_info = None
         if threat_type == 'shahed':
             course_info = extract_shahed_course_info(original_text)
-        
+
         for idx, (city, (lat, lng)) in enumerate(found_cities, 1):
             track = {
                 'id': f"{mid}_mc{idx}", 'place': city.title(), 'lat': lat, 'lng': lng,
                 'threat_type': threat_type, 'text': clean_text(original_text)[:500], 'date': date_str, 'channel': channel,
                 'marker_icon': icon, 'source_match': 'multi_city_auto'
             }
-            
+
             # Add course information if available
             if course_info:
                 track.update({
@@ -10239,7 +10237,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     'course_direction': course_info.get('course_direction'),
                     'course_type': course_info.get('course_type')
                 })
-            
+
             multi_city_tracks.append(track)
         if multi_city_tracks:
             return multi_city_tracks
@@ -10474,23 +10472,23 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     def has_threat(txt: str):
         l = txt.lower()
         return any(k in l for k in THREAT_KEYS)
-    
+
     # PRIORITY: Structured messages with regional headers (e.g., "Область:\n city details")
     if not _disable_multiline and has_threat(original_text):
         import re as _struct_re
         # Look for pattern: "RegionName:\n threats with cities"
         region_header_pattern = r'^([А-Яа-яЇїІіЄєҐґ]+щина):\s*$'
         text_lines = original_text.split('\n')
-        
+
         structured_sections = []
         current_region = None
         current_threats = []
-        
+
         for line in text_lines:
             line = line.strip()
             if not line or 'підписатися' in line.lower():
                 continue
-                
+
             # Check if line is a region header
             region_match = _struct_re.match(region_header_pattern, line)
             if region_match:
@@ -10503,75 +10501,75 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             elif current_region and ('шахед' in line.lower() or 'бпла' in line.lower()):
                 # This is a threat line under current region
                 current_threats.append(line)
-        
+
         # Don't forget last section
         if current_region and current_threats:
             structured_sections.append((current_region, current_threats))
-        
+
         # Process structured sections if we found any
         if len(structured_sections) >= 2:
             add_debug_log(f"STRUCTURED REGIONS: Found {len(structured_sections)} regions with threats", "structured_regions")
-            
+
             all_structured_tracks = []
             for region_name, threat_lines in structured_sections:
                 add_debug_log(f"Processing region {region_name} with {len(threat_lines)} threats", "structured_region_detail")
-                
+
                 for threat_line in threat_lines:
                     # Process each threat line with region context
                     region_context_text = f"{region_name}:\n{threat_line}"
-                    line_tracks = process_message(region_context_text, f"{mid}_{region_name}_{len(all_structured_tracks)}", 
+                    line_tracks = process_message(region_context_text, f"{mid}_{region_name}_{len(all_structured_tracks)}",
                                                 date_str, channel, _disable_multiline=True)
                     if line_tracks:
                         all_structured_tracks.extend(line_tracks)
                         add_debug_log(f"Region {region_name} threat '{threat_line[:50]}...' produced {len(line_tracks)} tracks", "structured_threat_result")
-            
+
             if all_structured_tracks:
                 add_debug_log(f"Structured processing complete: {len(all_structured_tracks)} total tracks", "structured_complete")
                 return all_structured_tracks
-    
-    # NEW: Handle UAV messages with "через [city]" and "повз [city]" patterns - BEFORE trajectory_phrase  
+
+    # NEW: Handle UAV messages with "через [city]" and "повз [city]" patterns - BEFORE trajectory_phrase
     try:
         lorig = text.lower()
         if 'бпла' in lorig and ('через' in lorig or 'повз' in lorig):
             threats = []
-            
+
             # Extract cities from "через [city1], [city2]" pattern
             import re as _re_route
             route_pattern = r'через\s+([А-ЯІЇЄЁа-яіїєё\s\',\-]+?)(?:\s*\.\s+|$)'
             route_matches = _re_route.findall(route_pattern, text, re.IGNORECASE)
-            
+
             for route_match in route_matches:
                 # Split by comma to get individual cities
                 cities_raw = [c.strip() for c in route_match.split(',') if c.strip()]
-                
+
                 for city_raw in cities_raw:
                     city_clean = city_raw.strip().strip('.,')
                     city_norm = clean_text(city_clean).lower()
-                    
+
                     # Apply normalization rules
                     if city_norm in UA_CITY_NORMALIZE:
                         city_norm = UA_CITY_NORMALIZE[city_norm]
-                    
+
                     # Try to get coordinates
                     coords = region_enhanced_coords(city_norm)
                     if not coords:
                         coords = ensure_city_coords(city_norm)
-                    
+
                     if coords:
                         # Handle different coordinate formats
                         if isinstance(coords, tuple) and len(coords) >= 2:
                             lat, lng = coords[0], coords[1]
                         else:
                             continue
-                        
+
                         threat_type, icon = classify(text)
-                        
+
                         # Extract count from text context (look for patterns like "15х БпЛА через")
                         count = 1
                         count_match = _re_route.search(rf'(\d+)[xх×]?\s*бпла.*?через.*?{re.escape(city_clean)}', text, re.IGNORECASE)
                         if count_match:
                             count = int(count_match.group(1))
-                        
+
                         threats.append({
                             'id': f"{mid}_route_{len(threats)}",
                             'place': city_clean.title(),
@@ -10585,26 +10583,26 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             'source_match': f'route_via_{count}x',
                             'count': count
                         })
-                        
+
                         add_debug_log(f"Route via: {city_clean} ({count}x) -> {coords}", "route_via")
-            
+
             # Extract cities from "повз [city]" pattern
             past_pattern = r'повз\s+([А-ЯІЇЄЁа-яіїєё\s\',\-]+?)(?:\s*\.\s*|$)'
             past_matches = _re_route.findall(past_pattern, text, re.IGNORECASE)
-            
+
             for past_match in past_matches:
                 city_clean = past_match.strip().strip('.,')
                 city_norm = clean_text(city_clean).lower()
-                
+
                 # Apply normalization rules
                 if city_norm in UA_CITY_NORMALIZE:
                     city_norm = UA_CITY_NORMALIZE[city_norm]
-                
+
                 # Try to get coordinates
                 coords = region_enhanced_coords(city_norm)
                 if not coords:
                     coords = ensure_city_coords_with_message_context(city_norm, text)
-                
+
                 # Fallback: try accusative case normalization (e.g., "олександрію" -> "олександрія")
                 if not coords and city_norm.endswith('ію'):
                     accusative_fallback = city_norm[:-2] + 'ія'
@@ -10614,22 +10612,22 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     if coords:
                         city_norm = accusative_fallback
                         city_clean = accusative_fallback.title()  # Use normalized name for display
-                
+
                 if coords:
                     # Handle different coordinate formats
                         if isinstance(coords, tuple) and len(coords) >= 2:
                             lat, lng = coords[0], coords[1]
                         else:
                             continue
-                        
+
                         threat_type, icon = classify(text)
-                        
+
                         # Extract count from text context (look for patterns like "4х БпЛА повз")
                         count = 1
                         count_match = _re_route.search(rf'(\d+)[xх×]?\s*бпла.*?повз.*?{re.escape(city_clean)}', text, re.IGNORECASE)
                         if count_match:
                             count = int(count_match.group(1))
-                    
+
                         threats.append({
                             'id': f"{mid}_past_{len(threats)}",
                             'place': city_clean.title(),
@@ -10643,17 +10641,17 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             'source_match': f'route_past_{count}x',
                             'count': count
                         })
-                        
+
                         add_debug_log(f"Route past: {city_clean} ({count}x) -> {coords}", "route_past")
-            
+
             if threats:
                 return threats
             else:
                 pass
-                
+
     except Exception:
         pass
-    
+
     # --- Trajectory phrase pattern: "з дніпропетровщини через харківщину у напрямку полтавщини" ---
     # We map region stems to canonical OBLAST_CENTERS keys (simplistic stem matching).
     lower_full = text.lower()
@@ -10769,7 +10767,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             region_key = 'полтавщина'
         else:
             region_key = None
-            
+
         if region_key and region_key in OBLAST_CENTERS:
             lat, lng = OBLAST_CENTERS[region_key]
             # For KAB threats, offset coordinates slightly from city center to avoid implying direct city impact
@@ -10785,13 +10783,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 'threat_type': 'raketa', 'text': original_text[:500], 'date': date_str, 'channel': channel,
                 'marker_icon': 'raketa.png', 'source_match': 'kab_regional_threat'
             }]
-    
+
     # SPECIAL: Handle multi-regional UAV messages (like the user's example)
     def handle_multi_regional_uav():
         """Handle messages with multiple regional UAV threats listed separately"""
         threats = []
         text_lines = text.split('\n')
-        
+
         # Check if this looks like a multi-regional UAV message
         region_count = 0
         uav_count = 0
@@ -10799,26 +10797,26 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             line_lower = line.lower().strip()
             if not line_lower:
                 continue
-                
+
             # Count regions mentioned
             if any(region in line_lower for region in ['щина:', 'область:', 'край:']):
                 region_count += 1
-            
+
             # Count UAV mentions
             if 'бпла' in line_lower and ('курс' in line_lower or 'на ' in line_lower):
                 uav_count += 1
-        
+
         # If we have multiple regions and multiple UAV mentions, process each line
         if region_count >= 2 and uav_count >= 3:
             add_debug_log(f"MULTI-REGIONAL UAV MESSAGE: {region_count} regions, {uav_count} UAVs", "multi_regional")
-            
+
             for line in text_lines:
                 line_stripped = line.strip()
                 if not line_stripped or ':' in line_stripped[:20]:  # Skip region headers
                     continue
-                
+
                 line_lower = line_stripped.lower()
-                
+
                 # Look for UAV course patterns
                 if 'бпла' in line_lower and ('курс' in line_lower or ' на ' in line_lower):
                     # Extract city name from patterns like "БпЛА курсом на Конотоп" or "2х БпЛА курсом на Велику Димерку"
@@ -10827,7 +10825,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         r'бпла\s+курсом?\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*$|\s*[,\.\!\?\|])',
                         r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*$|\s*[,\.\!\?\|])'
                     ]
-                    
+
                     for pattern in patterns:
                         matches = re.finditer(pattern, line_stripped, re.IGNORECASE)
                         for match in matches:
@@ -10836,32 +10834,32 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             else:
                                 count_str = None
                                 city_raw = match.group(1)
-                            
+
                             if not city_raw:
                                 continue
-                                
+
                             # Clean and normalize city name
                             city_clean = city_raw.strip()
                             city_norm = clean_text(city_clean).lower()
-                            
+
                             # Apply normalization rules
                             if city_norm in UA_CITY_NORMALIZE:
                                 city_norm = UA_CITY_NORMALIZE[city_norm]
-                            
+
                             # Try to get coordinates
                             coords = region_enhanced_coords(city_norm)
                             if not coords:
                                 coords = ensure_city_coords(city_norm)
-                            
+
                             if coords:
                                 lat, lng = coords
                                 threat_type, icon = classify(text)
-                                
+
                                 # Extract count if present
                                 uav_count_num = 1
                                 if count_str and count_str.isdigit():
                                     uav_count_num = int(count_str)
-                                
+
                                 threat_id = f"{mid}_multi_{len(threats)}"
                                 threats.append({
                                     'id': threat_id,
@@ -10876,25 +10874,25 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                     'source_match': f'multi_regional_uav_{uav_count_num}x',
                                     'count': uav_count_num
                                 })
-                                
+
                                 add_debug_log(f"Multi-regional UAV: {city_clean} ({uav_count_num}x) -> {coords}", "multi_regional")
                             else:
                                 add_debug_log(f"Multi-regional UAV: No coords for {city_clean}", "multi_regional")
-        
+
         return threats
 
     # SPECIAL: Handle single UAV course mentions in regular messages
     def handle_single_uav_courses():
         """Handle UAV course mentions like '4х БпЛА курсом на Добротвір' in regular alert messages"""
         threats = []
-        
+
         # Look for UAV course patterns in the entire message
         patterns = [
             r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+курсом?\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*$|\s*[,\.\!\?\|\(])',
             r'бпла\s+курсом?\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*$|\s*[,\.\!\?\|\(])',
             r'(\d+(?:-\d+)?)?[xх×]?\s*бпла\s+на\s+([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)(?:\s*$|\s*[,\.\!\?\|\(])'
         ]
-        
+
         for pattern in patterns:
             matches = re.finditer(pattern, text, re.IGNORECASE)
             for match in matches:
@@ -10903,32 +10901,32 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 else:
                     count_str = None
                     city_raw = match.group(1)
-                
+
                 if not city_raw:
                     continue
-                    
+
                 # Clean and normalize city name
                 city_clean = city_raw.strip()
                 city_norm = clean_text(city_clean).lower()
-                
+
                 # Apply normalization rules
                 if city_norm in UA_CITY_NORMALIZE:
                     city_norm = UA_CITY_NORMALIZE[city_norm]
-                
+
                 # Try to get coordinates
                 coords = region_enhanced_coords(city_norm)
                 if not coords:
                     coords = ensure_city_coords(city_norm)
-                
+
                 if coords:
                     lat, lng = coords[:2]
                     threat_type, icon = classify(text)
-                    
+
                     # Extract count if present
                     uav_count_num = 1
                     if count_str and count_str.isdigit():
                         uav_count_num = int(count_str)
-                    
+
                     threat_id = f"{mid}_uav_course_{len(threats)}"
                     threats.append({
                         'id': threat_id,
@@ -10943,33 +10941,33 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         'source_match': f'single_uav_course_{uav_count_num}x',
                         'count': uav_count_num
                     })
-                    
+
                     add_debug_log(f"Single UAV course: {city_clean} ({uav_count_num}x) -> {coords}", "single_uav")
                 else:
                     add_debug_log(f"Single UAV course: No coords for {city_clean}", "single_uav")
-        
-        # ALSO: Extract cities from emoji structure in the same text 
+
+        # ALSO: Extract cities from emoji structure in the same text
         # Pattern for "| 🛸 Город (Область)"
         emoji_pattern = r'\|\s*🛸\s*([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)\s*\([^)]*обл[^)]*\)'
         emoji_matches = re.finditer(emoji_pattern, text, re.IGNORECASE)
-        
+
         for match in emoji_matches:
             city_raw = match.group(1).strip()
             if not city_raw or len(city_raw) < 2:
                 continue
-                
+
             city_norm = clean_text(city_raw).lower()
             if city_norm in UA_CITY_NORMALIZE:
                 city_norm = UA_CITY_NORMALIZE[city_norm]
-            
+
             coords = region_enhanced_coords(city_norm)
             if not coords:
                 coords = ensure_city_coords(city_norm)
-            
+
             if coords:
                 lat, lng = coords[:2]
                 threat_type, icon = classify(text)
-                
+
                 threat_id = f"{mid}_emoji_struct_{len(threats)}"
                 threats.append({
                     'id': threat_id,
@@ -10984,11 +10982,11 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     'source_match': 'emoji_structure',
                     'count': 1
                 })
-                
+
                 add_debug_log(f"Emoji structure: {city_raw} -> {coords}", "emoji_struct")
             else:
                 add_debug_log(f"Emoji structure: No coords for {city_raw}", "emoji_struct")
-        
+
         return threats
 
     # Check for single UAV course mentions first (before multi-regional check)
@@ -11287,46 +11285,46 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     def _is_russian_strategic_aviation(t: str) -> bool:
         """Suppress messages about Russian strategic aviation (Tu-95, etc.) from Russian airbases"""
         t_lower = t.lower()
-        
+
         # Check for Russian strategic bombers
         russian_bombers = ['ту-95', 'tu-95', 'ту-160', 'tu-160', 'ту-22', 'tu-22']
         has_bomber = any(bomber in t_lower for bomber in russian_bombers)
-        
+
         # Check for Russian airbases and regions
         russian_airbases = ['енгельс', 'engels', 'энгельс', 'саратов', 'рязань', 'муром', 'украінка', 'українка']
         has_russian_airbase = any(airbase in t_lower for airbase in russian_airbases)
-        
+
         # Check for Russian regions/areas
         russian_regions = ['саратовській області', 'саратовской области', 'тульській області', 'рязанській області']
         has_russian_region = any(region in t_lower for region in russian_regions)
-        
+
         # Check for terms indicating Russian territory/airbases
         russian_territory_terms = ['аеродрома', 'аэродрома', 'з аеродрому', 'с аэродрома', 'мета вильоту невідома', 'цель вылета неизвестна']
         has_russian_territory = any(term in t_lower for term in russian_territory_terms)
-        
+
         # Check for generic relocation/transfer terms without specific threats
         relocation_terms = ['передислокація', 'передислокация', 'переліт', 'перелет', 'відмічено', 'отмечено']
         has_relocation = any(term in t_lower for term in relocation_terms)
-        
+
         # Suppress if it's about Russian bombers from Russian territory
         if has_bomber and (has_russian_airbase or has_russian_territory or has_russian_region):
             return True
-            
+
         # Suppress relocation/transfer messages between Russian airbases
         if has_relocation and has_bomber and (has_russian_airbase or has_russian_region):
             return True
-            
+
         # Also suppress general strategic aviation reports without specific Ukrainian targets
         if ('борт' in t_lower or 'борти' in t_lower) and ('мета вильоту невідома' in t_lower or 'цель вылета неизвестна' in t_lower):
             return True
-            
+
         return False
 
     # --- General warning suppression ---
 
     if _is_russian_strategic_aviation(text):
         return None
-        
+
     if _is_general_warning_without_location(text):
         return None
 
@@ -11334,7 +11332,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     def _is_western_border_reconnaissance(t: str) -> bool:
         """Suppress messages about drones crossing western borders (Hungary, etc.) - not related to Russian threats"""
         t_lower = t.lower()
-        
+
         # Check for western border crossing indicators
         border_crossing_terms = [
             'перетнув державний кордон', 'пересек государственную границу',
@@ -11343,23 +11341,23 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             'з території угорщини', 'с территории венгрии'
         ]
         has_border_crossing = any(term in t_lower for term in border_crossing_terms)
-        
+
         # Check for western regions (primarily Zakarpattya)
         western_regions = ['закарпатт', 'закарпать', 'ужгород', 'мукачев']
         has_western_region = any(region in t_lower for region in western_regions)
-        
+
         # Check for reconnaissance/monitoring context (not combat threats)
         recon_terms = ['радари зсу', 'радары всу', 'зафіксували проліт', 'зафиксировали пролет', 'стежити за обстановкою', 'следить за обстановкой']
         has_recon_context = any(term in t_lower for term in recon_terms)
-        
+
         # Suppress if it's about western border reconnaissance
         if has_border_crossing and has_western_region:
             return True
-            
+
         # Also suppress general monitoring messages about western regions
         if has_western_region and has_recon_context and ('дрон' in t_lower or 'бпла' in t_lower):
             return True
-            
+
         return False
 
     if _is_western_border_reconnaissance(text):
@@ -11482,30 +11480,30 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
 
     # --- Multi-segment / enumerated lines (1. 2. 3.) region extraction ---
     # Разбиваем по переносам, собираем упоминания нескольких областей; создаём отдельные маркеры
-    
+
     # PRIORITY: Detect trajectory patterns BEFORE multi-region processing
     # Pattern: "з [source_region] на [target_region(s)]" - trajectory, not multi-target
     trajectory_pattern = r'(\d+(?:-\d+)?)?\s*шахед[іївыиє]*\s+з\s+([а-яіїєґ]+(щин|ччин)[ауиі])\s+на\s+([а-яіїєґ/]+(щин|ччин)[ауиіу])'
     trajectory_match = re.search(trajectory_pattern, text.lower(), re.IGNORECASE)
-    
+
     if trajectory_match:
         count_str = trajectory_match.group(1)
         source_region = trajectory_match.group(2)
         target_regions = trajectory_match.group(4)
-        
+
         print(f"DEBUG: Trajectory detected - {count_str or ''}шахедів з {source_region} на {target_regions}")
-        
+
         # For trajectory messages, we should NOT create markers in region centers
         # This represents movement through airspace, not attacks on specific locations
         # Options:
         # 1. Don't create any markers (trajectory only)
-        # 2. Create trajectory line visualization 
+        # 2. Create trajectory line visualization
         # 3. Create border crossing markers
-        
+
         # For now, suppress markers for pure trajectory messages
-        print(f"DEBUG: Suppressing region markers for trajectory message")
+        print("DEBUG: Suppressing region markers for trajectory message")
         return None
-    
+
     region_hits = []  # list of (display_name, (lat,lng), snippet)
     # Treat semicolons as separators like newlines for multi-segment parsing
     seg_text = text.replace(';', '\n')
@@ -11702,22 +11700,22 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     # Triggered when region multi list suppressed earlier due to presence of course lines or simple "на" pattern.
     if 'бпла' in lower and ('курс' in lower or 'в районі' in lower or 'в напрямку' in lower or 'в бік' in lower or 'від' in lower or 'околиц' in lower or 'сектор' in lower or 'бпла на ' in lower or (re.search(r'\d+\s*[xх×]?\s*бпла\s+на\s+', lower))):
         add_debug_log(f"UAV course parser triggered for message length: {len(text)} chars", "uav_course")
-        
+
         # --- EARLY CHECK: Black Sea aquatory (e.g. "курсом на Миколаїв з акваторії Чорного моря" or "15 шахедів з моря на Ізмаїл") ---
         # Must check BEFORE "курсом на" parser to prevent placing marker on target city
         is_black_sea = (('акватор' in lower or 'акваторії' in lower) and ('чорного моря' in lower or 'чорне море' in lower or 'чорному морі' in lower)) or \
                        ('з моря' in lower and ('курс' in lower or 'на ' in lower)) or \
                        ('з чорного моря' in lower)
-        
+
         if is_black_sea:
             # Extract target region/direction if mentioned
             m_target = re.search(r'курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,})', lower)
             m_direction = re.search(r'на\s+(північ|південь|схід|захід|північний\s+схід|північний\s+захід|південний\s+схід|південний\s+захід)', lower)
             m_region = re.search(r'(одещин|одеськ|миколаїв|херсон)', lower)
-            
+
             target_info = None
             sea_lat, sea_lng = 45.3, 30.7  # Default: northern Black Sea central coords
-            
+
             # Adjust position based on direction/region
             if m_direction:
                 direction = m_direction.group(1)
@@ -11729,7 +11727,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     sea_lng = 31.2  # Further east
                 elif 'захід' in direction:
                     sea_lng = 30.2  # Further west
-            
+
             if m_region:
                 region_name = m_region.group(1)
                 if 'одещин' in region_name or 'одеськ' in region_name:
@@ -11742,17 +11740,17 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 elif 'херсон' in region_name:
                     sea_lat, sea_lng = 45.7, 32.5
                     target_info = 'Херсонщини'
-            
+
             if m_target:
                 tc = m_target.group(1).lower()
                 tc = UA_CITY_NORMALIZE.get(tc, tc)
                 target_info = tc.title()
-            
+
             threat_type, icon = classify(text)
             place_label = 'Акваторія Чорного моря'
             if target_info:
                 place_label += f' (на {target_info})'
-            
+
             # Try to find target city coordinates for trajectory
             target_coords = None
             if m_target:
@@ -11760,13 +11758,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 tc_normalized = UA_CITY_NORMALIZE.get(tc_normalized, tc_normalized)
                 if tc_normalized in CITY_COORDS:
                     target_coords = CITY_COORDS[tc_normalized]
-            
+
             result = {
                 'id': str(mid), 'place': place_label, 'lat': sea_lat, 'lng': sea_lng,
                 'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
                 'marker_icon': icon, 'source_match': 'black_sea_course'
             }
-            
+
             # Add trajectory data if we have target coordinates
             if target_coords:
                 result['trajectory'] = {
@@ -11774,9 +11772,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     'end': list(target_coords),
                     'target': target_info
                 }
-            
+
             return [result]
-        
+
         original_text_norm = re.sub(r'(?i)(\b[А-Яа-яЇїІіЄєҐґ\-]{3,}(?:щина|область|обл\.)):(?!\s*\n)', r'\1:\n', original_text)
         lines_with_region = []
         current_region_hdr = None
@@ -11855,14 +11853,14 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             if 'бпла' not in ln_low:
                 continue
             add_debug_log(f"Processing UAV line: '{ln[:100]}...' (region: {region_hdr})", "uav_course")
-            
+
             # Check for complex pattern "на/через X в напрямку Y" first
             m_complex = pat_complex_napramku.search(ln_low)
             if m_complex:
                 count = int(m_complex.group(1)) if m_complex.group(1) else 1
                 city1 = m_complex.group(2)  # через це місто
                 city2 = m_complex.group(3)  # в напрямку цього міста
-                
+
                 # Process both cities
                 for city_raw in [city1, city2]:
                     multi_norm = _resolve_city_candidate(city_raw)
@@ -11897,14 +11895,14 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                 'marker_icon': icon, 'source_match': 'uav_complex', 'count': 1
                             })
                 continue  # Skip to next line
-            
+
             # Check for "від X до Y" pattern (trajectory)
             m_vid_do = pat_vid_do.search(ln_low)
             if m_vid_do:
                 count = int(m_vid_do.group(1)) if m_vid_do.group(1) else 1
                 city1 = m_vid_do.group(2)  # від цього міста
                 city2 = m_vid_do.group(3)  # до цього міста
-                
+
                 # Process both cities
                 for city_raw in [city1, city2]:
                     multi_norm = _resolve_city_candidate(city_raw)
@@ -11938,14 +11936,14 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                 'marker_icon': icon, 'source_match': 'uav_vid_do', 'count': 1
                             })
                 continue
-            
+
             # Check for "в напрямку X та Y" pattern (multiple cities)
             m_ta = pat_napramku_ta.search(ln_low)
             if m_ta:
                 count = int(m_ta.group(1)) if m_ta.group(1) else 1
                 city1 = m_ta.group(2)
                 city2 = m_ta.group(3)
-                
+
                 # Process both cities
                 for city_raw in [city1, city2]:
                     multi_norm = _resolve_city_candidate(city_raw)
@@ -11979,7 +11977,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                 'marker_icon': icon, 'source_match': 'uav_ta', 'count': 1
                             })
                 continue
-            
+
             count = None; city = None; approx_flag = False
             m1 = pat_count_course.search(ln_low)
             if m1:
@@ -12031,13 +12029,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             multi_norm = _resolve_city_candidate(city)
             base = norm_city_token(multi_norm)
             add_debug_log(f"City normalized to '{base}'", "uav_course")
-            
+
             # FILTER: Skip oblast/region names (e.g., "БпЛА на Дніпропетровщині" should be regional threat, not city marker)
             oblast_suffixes = ['щина', 'щині', 'область', 'обл']
             if any(base.endswith(suffix) for suffix in oblast_suffixes):
                 add_debug_log(f"Skipping oblast name '{base}' - this is a regional threat, not a city target", "uav_course")
                 continue
-            
+
             # PRIORITY: Try region-specific variant first (e.g., "шевченкове(миколаївська)" for "шевченкове" with region_hdr="миколаївщина")
             coords = None
             if region_hdr:
@@ -12046,7 +12044,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 coords = CITY_COORDS.get(region_variant)
                 if coords:
                     add_debug_log(f"Found region-specific coordinates for '{region_variant}': {coords}", "uav_course")
-            
+
             # Fallback to base name without region
             if not coords:
                 coords = CITY_COORDS.get(base) or (SETTLEMENTS_INDEX.get(base) if SETTLEMENTS_INDEX else None)
@@ -12317,7 +12315,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 'миколаївський': 'Миколаїв',
                 'дніпровський': 'Дніпро'
             }
-            
+
             if name.lower() in district_to_city_mapping:
                 title = district_to_city_mapping[name.lower()]
             else:
@@ -12430,16 +12428,16 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     is_black_sea = (('акватор' in lower_sea or 'акваторії' in lower_sea) and ('чорного моря' in lower_sea or 'чорне море' in lower_sea or 'чорному морі' in lower_sea)) or \
                    ('з моря' in lower_sea and ('курс' in lower_sea or 'на ' in lower_sea)) or \
                    ('з чорного моря' in lower_sea)
-    
+
     if is_black_sea:
         # Extract target region/direction if mentioned
         m_target = re.search(r'курс(?:ом)?\s+на\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-]{3,})', lower_sea)
         m_direction = re.search(r'на\s+(північ|південь|схід|захід|північний\s+схід|північний\s+захід|південний\s+схід|південний\s+захід)', lower_sea)
         m_region = re.search(r'(одещин|одеськ|миколаїв|херсон)', lower_sea)
-        
+
         target_info = None
         sea_lat, sea_lng = 45.3, 30.7  # Default: northern Black Sea central coords
-        
+
         # Adjust position based on direction/region
         if m_direction:
             direction = m_direction.group(1)
@@ -12451,7 +12449,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 sea_lng = 31.2  # Further east
             elif 'захід' in direction:
                 sea_lng = 30.2  # Further west
-        
+
         if m_region:
             region_name = m_region.group(1)
             if 'одещин' in region_name or 'одеськ' in region_name:
@@ -12464,17 +12462,17 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             elif 'херсон' in region_name:
                 sea_lat, sea_lng = 45.7, 32.5
                 target_info = 'Херсонщини'
-        
+
         if m_target:
             tc = m_target.group(1).lower()
             tc = UA_CITY_NORMALIZE.get(tc, tc)
             target_info = tc.title()
-        
+
         threat_type, icon = classify(text)
         place_label = 'Акваторія Чорного моря'
         if target_info:
             place_label += f' (на {target_info})'
-        
+
         # Try to find target city coordinates for trajectory
         target_coords = None
         if m_target:
@@ -12482,13 +12480,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             tc_normalized = UA_CITY_NORMALIZE.get(tc_normalized, tc_normalized)
             if tc_normalized in CITY_COORDS:
                 target_coords = CITY_COORDS[tc_normalized]
-        
+
         result = {
             'id': str(mid), 'place': place_label, 'lat': sea_lat, 'lng': sea_lng,
             'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
             'marker_icon': icon, 'source_match': 'black_sea_course'
         }
-        
+
         # Add trajectory data if we have target coordinates
         if target_coords:
             result['trajectory'] = {
@@ -12496,7 +12494,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 'end': list(target_coords),
                 'target': target_info
             }
-        
+
         return [result]
 
     # --- Bilhorod-Dnistrovskyi coastal UAV patrol ("вздовж узбережжя Білгород-Дністровського району") ---
@@ -12715,38 +12713,38 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     # --- PRIORITY: Direction patterns (у напрямку, через, повз) - BEFORE region boundary logic ---
     try:
         import re as _re_direction
-        
+
         if has_threat(text) and any(pattern in text.lower() for pattern in ['у напрямку', 'через', 'повз']):
             direction_targets = []
-            
+
             # Pattern 1: "у напрямку [city], [oblast]"
             naprym_pattern = r'у\s+напрямку\s+([А-Яа-яЇїІіЄєҐґ\'\-\s]+?)(?:\s*,\s*([А-Яа-яЇїІіЄєҐґ\'\-\s]*області?))?(?:[\.\,\!\?;]|$)'
             naprym_matches = _re_direction.findall(naprym_pattern, text, _re_direction.IGNORECASE)
             for city_raw, oblast_raw in naprym_matches:
                 direction_targets.append(('у напрямку', city_raw.strip(), oblast_raw.strip() if oblast_raw else ''))
-            
+
             # Process direction targets
             for direction_type, city_raw, oblast_raw in direction_targets:
                 if direction_type == 'у напрямку':
                     city_norm = city_raw.lower().replace('\u02bc',"'").replace('ʼ',"'").replace("'","'").replace('`',"'")
                     city_norm = re.sub(r'\s+',' ', city_norm).strip()
-                    
+
                     # Try exact lookup
                     coords = CITY_COORDS.get(city_norm)
                     if not coords:
                         # Try normalized lookup
                         city_base = UA_CITY_NORMALIZE.get(city_norm, city_norm)
                         coords = CITY_COORDS.get(city_base)
-                    
+
                     if coords:
                         lat, lng = coords
                         threat_type, icon = classify(text)
-                        
+
                         # Extract drone count
                         import re as _re_count
                         count_match = _re_count.search(r'(\d+)\s*[хx]?\s*(?:бпла|дрон|шахед)', text.lower())
                         drone_count = int(count_match.group(1)) if count_match else 1
-                        
+
                         add_debug_log(f"PRIORITY: Direction target found - {city_norm} -> {coords}", "direction_priority")
                         return [{
                             'id': str(mid), 'place': city_raw.title(), 'lat': lat, 'lng': lng,
@@ -12762,39 +12760,39 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     try:
         import re as _re_shahed
         all_shahed_tracks = []
-        
+
         # Pattern 1: "N шахедів біля [city]" or "N шахедів біля [city1]/[city2]"
         bilya_pattern = r'(\d+)\s+шахед[а-яіїєёыийї]*\s+біля\s+([А-Яа-яЏїІіЄєҐґ\'\-\s\/]+?)(?:\s+та\s+район)?(?:\s+на\s+[А-Яа-яЇїІіЄєҐґ\'\-\s]+)?(?:[\.\,\!\?;]|$)'
         bilya_matches = _re_shahed.findall(bilya_pattern, text, _re_shahed.IGNORECASE)
-        
+
         # Pattern 2: "N шахед на [city]"
         na_pattern = r'(\d+)\s+шахед[а-яіїєёыийї]*\s+на\s+([А-Яа-яЇїІіЄєҐґ\'\-\s]+?)(?:[\.\,\!\?;]|$)'
         na_matches = _re_shahed.findall(na_pattern, text, _re_shahed.IGNORECASE)
-        
+
         # Pattern 3: "N шахедів з боку [city]"
         z_boku_pattern = r'(\d+)\s+шахед[а-яіїєёыийї]*\s+з\s+боку\s+([А-Яа-яЇїІіЄєҐґ\'\-\s]+?)(?:[\.\,\!\?;]|$)'
         z_boku_matches = _re_shahed.findall(z_boku_pattern, text, _re_shahed.IGNORECASE)
-        
+
         # Pattern 4: "N шахедів через [city1]/[city2]" - multiple cities
         cherez_multi_pattern = r'(\d+)\s+шахед[а-яіїєёыийї]*\s+через\s+([А-Яа-яЇїІіЄєҐґ\'\-\s\/]+?)(?:\s+район)?(?:\s+на\s+[А-Яа-яЇїІіЄєҐґ\'\-\s]+)?(?:[\.\,\!\?;]|$)'
         cherez_matches = _re_shahed.findall(cherez_multi_pattern, text, _re_shahed.IGNORECASE)
-        
+
         all_patterns = [
             (bilya_matches, 'bilya'),
-            (na_matches, 'na'), 
+            (na_matches, 'na'),
             (z_boku_matches, 'z_boku'),
             (cherez_matches, 'cherez')
         ]
-        
+
         for matches, pattern_type in all_patterns:
             for count_str, city_raw in matches:
                 # Handle multiple cities separated by /
                 cities = [c.strip() for c in city_raw.split('/')]
-                
+
                 for city_part in cities:
                     city_norm = city_part.lower().replace('\u02bc',"'").replace('ʼ',"'").replace("'","'").replace('`',"'")
                     city_norm = re.sub(r'\s+',' ', city_norm).strip()
-                    
+
                     # Special handling for "[city] на [region]" patterns
                     region_match = re.match(r'^(.+?)\s+на\s+([а-яіїє]+щині?|[а-яіїє]+ській?\s+обл?\.?|[а-яіїє]+ській?\s+області?)$', city_norm)
                     if region_match:
@@ -12805,7 +12803,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         if coords:
                             lat, lng, approx = coords
                             add_debug_log(f"SHAHED: Regional pattern found - {city_norm} на {region_hint} -> ({lat}, {lng})", "shahed_regional")
-                            
+
                             result_entry = {
                                 'id': f"{mid}_sha_{len(threats)+1}",
                                 'place': f"{city_part.title()}",
@@ -12815,12 +12813,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             }
                             threats.append(result_entry)
                             continue  # Skip regular processing for this city
-                    
+
                     # Apply normalization rules for accusative/genitive cases
                     original_norm = city_norm
                     if city_norm in UA_CITY_NORMALIZE:
                         city_norm = UA_CITY_NORMALIZE[city_norm]
-                    
+
                     # Try accusative endings for cities like "миколаєва" -> "миколаїв", "полтави" -> "полтава"
                     if not (city_norm in CITY_COORDS or region_enhanced_coords(city_norm)):
                         # Try various ending transformations
@@ -12831,31 +12829,31 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             variants.extend([city_norm[:-1] + 'а', city_norm[:-1] + 'я'])
                         elif city_norm.endswith('у'):
                             variants.extend([city_norm[:-1] + 'п', city_norm[:-1] + 'к'])
-                        
+
                         for variant in variants:
                             if variant in CITY_COORDS or region_enhanced_coords(variant):
                                 city_norm = variant
                                 break
-                    
+
                     # Try to get coordinates
                     coords = region_enhanced_coords(city_norm)
                     if not coords:
                         context_result = ensure_city_coords_with_message_context(city_norm, text)
                         if context_result:
                             coords = context_result[:2]  # Take only lat, lng
-                    
+
                     if coords:
                         lat, lng = coords
                         threat_type, icon = classify(text)
                         count = int(count_str) if count_str.isdigit() else 1
-                        
+
                         # Create multiple tracks for multiple drones
                         tracks_to_create = max(1, count)
                         for i in range(tracks_to_create):
                             track_label = city_part.title()
                             if tracks_to_create > 1:
                                 track_label += f" #{i+1}"
-                            
+
                             # Add small coordinate offsets to prevent marker overlap
                             marker_lat = lat
                             marker_lng = lng
@@ -12864,22 +12862,22 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                 offset_distance = 0.03  # ~3km offset between each drone
                                 marker_lat += offset_distance * i
                                 marker_lng += offset_distance * i * 0.5
-                                
+
                             all_shahed_tracks.append({
-                                'id': f"{mid}_{pattern_type}_{len(all_shahed_tracks)}", 
-                                'place': track_label, 
-                                'lat': marker_lat, 
+                                'id': f"{mid}_{pattern_type}_{len(all_shahed_tracks)}",
+                                'place': track_label,
+                                'lat': marker_lat,
                                 'lng': marker_lng,
-                                'threat_type': threat_type, 
-                                'text': text[:500], 
-                                'date': date_str, 
+                                'threat_type': threat_type,
+                                'text': text[:500],
+                                'date': date_str,
                                 'channel': channel,
-                                'marker_icon': icon, 
-                                'source_match': f'{pattern_type}_shahed_priority', 
+                                'marker_icon': icon,
+                                'source_match': f'{pattern_type}_shahed_priority',
                                 'count': 1
                             })
                         add_debug_log(f"SHAHED {pattern_type.upper()}: {city_norm} ({count}x) -> {coords}", f"shahed_{pattern_type}")
-        
+
         if all_shahed_tracks:
             return all_shahed_tracks
     except Exception as e:
@@ -12897,15 +12895,15 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             if context_result:
                 lat, lng, target_city = context_result
                 threat_type, icon = classify(text)
-                
+
                 print(f"DEBUG Context-aware geocoding: Found primary target '{target_city}' at ({lat}, {lng})")
-                
+
                 return [{
                     'id': str(mid), 'place': target_city.title(), 'lat': lat, 'lng': lng,
                     'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
                     'marker_icon': icon, 'source_match': 'context_aware_geocoding', 'count': 1
                 }]
-        
+
         # Если только области упомянуты и нет ключей угроз, пропускаем.
         # Дополнительная защита: иногда в messages.json могли сохраниться старые записи без угроз.
         if not has_threat(text):
@@ -12973,7 +12971,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             'marker_icon': icon, 'source_match': 'course_sector', 'count': drone_count
                         }]
                 (reg_name, (base_lat, base_lng)) = matched_regions[0]
-                
+
                 # Define offset function for coordinate calculations
                 def offset(lat, lng, code):
                     # Уменьшенные дельты для более точного позиционирования в пределах области
@@ -12993,12 +12991,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     if code == 'se': return lat-lat_diag, lng+lng_diag
                     if code == 'sw': return lat-lat_diag, lng-lng_diag
                     return lat, lng
-                
+
                 # SPECIAL: Handle messages with start position + course direction
                 # e.g. "на півночі тернопільщини ➡️ курсом на південно-західний напрямок"
                 start_direction = None
                 course_direction = None
-                
+
                 # Detect start position (на півночі/півдні/сході/заході)
                 if re.search(r'\bна\s+півночі\b', lower) or re.search(r'\bпівнічн\w+\s+частин\w*\b', lower):
                     start_direction = 'n'
@@ -13008,14 +13006,14 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     start_direction = 'e'
                 elif re.search(r'\bна\s+заході\b', lower) or re.search(r'\bзахідн\w+\s+частин\w*\b', lower):
                     start_direction = 'w'
-                
+
                 # Detect course direction (курсом на направление)
                 # Support patterns: "курсом на", "рух на", "продовжує рух на", "прямують на", "в напрямку"
                 has_direction_keyword = ('курс' in lower and 'напрямок' in lower) or ('➡' in lower or '→' in lower) or \
                                        ('рух' in lower and 'на' in lower) or ('прямують' in lower and 'на' in lower) or \
                                        ('продовжує' in lower and ('рух' in lower or 'на' in lower)) or \
                                        ('в' in lower and ('напрямку' in lower or 'напрямок' in lower or 'напрям' in lower))
-                
+
                 if has_direction_keyword:
                     if 'північно-західн' in lower or 'північно-захід' in lower:
                         course_direction = 'nw'
@@ -13034,19 +13032,19 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         course_direction = 'e'
                     elif re.search(r'(курс\w*|рух|прямують|продовжує)\s+(на\s+)?захід', lower) or re.search(r'в\s+захід\w*\s+напрям', lower):
                         course_direction = 'w'
-                
+
                 # If we have both start position and course direction, apply them sequentially
                 if start_direction and course_direction:
                     # First offset: move to start position within region
                     lat_start, lng_start = offset(base_lat, base_lng, start_direction)
-                    # Second offset: apply course direction from start position  
+                    # Second offset: apply course direction from start position
                     lat_final, lng_final = offset(lat_start, lng_start, course_direction)
-                    
+
                     # Create descriptive label with arrow for trajectory visualization
                     start_labels = {'n':'півночі', 's':'півдні', 'e':'сході', 'w':'заході'}
                     course_labels = {
                         'n':'північ', 's':'південь', 'e':'схід', 'w':'захід',
-                        'ne':'північний схід', 'nw':'північний захід', 
+                        'ne':'північний схід', 'nw':'північний захід',
                         'se':'південний схід', 'sw':'південний захід'
                     }
                     # Direction labels for arrow (Ukrainian names compatible with frontend)
@@ -13059,12 +13057,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     course_label = course_labels.get(course_direction, 'напрямок')
                     arrow_label = arrow_labels.get(course_direction, '')
                     base_disp = reg_name.split()[0].title()
-                    
+
                     # Add arrow to place name for trajectory visualization in frontend
                     place_name = f"{base_disp} (з {start_label})"
                     if arrow_label:
                         place_name += f" ←{arrow_label}"
-                    
+
                     trajectory = {
                         'start': [lat_start, lng_start],
                         'end': [lat_final, lng_final],
@@ -13075,7 +13073,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
 
                     threat_type, icon = classify(text)
                     return [{
-                        'id': str(mid), 'place': place_name, 
+                        'id': str(mid), 'place': place_name,
                         'lat': lat_final, 'lng': lng_final,
                         'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
                         'marker_icon': icon, 'source_match': 'region_start_course', 'count': drone_count,
@@ -13085,11 +13083,11 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         'course_target': course_label,
                         'course_type': 'region_start_course'
                     }]
-                
+
                 # If only course_direction (no start position), use it as the direction
                 if course_direction and not start_direction:
                     direction_code = course_direction
-                
+
                 # смещение ~50-70 км в сторону указанного направления (fallback for single direction)
                 lat_o, lng_o = offset(base_lat, base_lng, direction_code)
                 threat_type, icon = classify(text)
@@ -13107,12 +13105,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 dir_phrase = dir_label_map.get(direction_code, 'частина')
                 arrow_label = arrow_labels.get(direction_code, '')
                 base_disp = reg_name.split()[0].title()
-                
+
                 # Add arrow to place name for trajectory visualization
                 place_name = f"{base_disp} ({dir_phrase})"
                 if arrow_label:
                     place_name += f" ←{arrow_label}"
-                
+
                 return [{
                     'id': str(mid), 'place': place_name, 'lat': lat_o, 'lng': lng_o,
                     'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
@@ -13320,25 +13318,25 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     break
             if not course_target_hint:
                 threat_type, icon = classify(text)
-                
+
                 # Extract course information for Shahed threats
                 course_info = None
                 if threat_type == 'shahed':
                     course_info = extract_shahed_course_info(original_text or text)
-                
+
                 tracks = []
                 seen = set()
                 for idx,(n1,(lat,lng)) in enumerate(matched_regions,1):
                     base = n1.split()[0].title()
                     if base in seen: continue
                     seen.add(base)
-                    
+
                     track = {
                         'id': f"{mid}_r{idx}", 'place': base, 'lat': lat, 'lng': lng,
                         'threat_type': threat_type, 'text': text[:500], 'date': date_str, 'channel': channel,
                         'marker_icon': icon, 'source_match': 'region_multi_simple', 'count': drone_count
                     }
-                    
+
                     # Add course information if available
                     if course_info:
                         track.update({
@@ -13347,7 +13345,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             'course_direction': course_info.get('course_direction'),
                             'course_type': course_info.get('course_type')
                         })
-                    
+
                     tracks.append(track)
                 if tracks:
                     return tracks
@@ -13519,22 +13517,22 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         for idx,(name,(lat,lng),snippet,line_count) in enumerate(course_matches,1):
             if name in seen_places: continue
             seen_places.add(name)
-            
+
             # Extract Shahed course information if this is a Shahed threat
             course_info = None
             if threat_type == 'shahed':
                 course_info = extract_shahed_course_info(original_text or text)
-            
+
             # Determine how many tracks to create
             count = line_count if line_count else drone_count
             tracks_to_create = max(1, count if count else 1)
-            
+
             # Create multiple tracks for multiple drones
             for i in range(tracks_to_create):
                 track_name = name
                 if tracks_to_create > 1:
                     track_name += f" #{i+1}"
-                
+
                 # Add small coordinate offsets to prevent marker overlap
                 marker_lat = lat
                 marker_lng = lng
@@ -13543,13 +13541,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     offset_distance = 0.03  # ~3km offset between each drone
                     marker_lat += offset_distance * i
                     marker_lng += offset_distance * i * 0.5
-                
+
                 track = {
                     'id': f"{mid}_c{idx}_{i+1}", 'place': track_name, 'lat': marker_lat, 'lng': marker_lng,
                     'threat_type': threat_type, 'text': snippet[:500], 'date': date_str, 'channel': channel,
                     'marker_icon': icon, 'source_match': 'course_target', 'count': 1
                 }
-                
+
                 # Add course information if available
                 if course_info:
                     track.update({
@@ -13558,28 +13556,28 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         'course_direction': course_info.get('course_direction'),
                         'course_type': course_info.get('course_type')
                     })
-                
+
                 tracks.append(track)
         if tracks:
             return tracks
-    
+
     # Логируем длинные сообщения, которые не сгенерировали треков
     try:
         if text and len(text) > 1000:
             print(f"DEBUG: LONG MESSAGE NO TRACKS - mid={mid}, length={len(text)}, preview: {text[:200]}...")
             # Проверим наличие ключевых слов
             lower_check = text.lower()
-            keywords = {'бпла': lower_check.count('бпла'), 'шахед': lower_check.count('шахед'), 
+            keywords = {'бпла': lower_check.count('бпла'), 'шахед': lower_check.count('шахед'),
                        'курс': lower_check.count('курс'), 'район': lower_check.count('район')}
             print(f"DEBUG: Long message keywords: {keywords}")
     except Exception:
         pass
-    
+
     # Final check: if we found single UAV threats earlier but no other tracks, return the UAV threats
     if 'single_uav_threats' in locals() and single_uav_threats:
         add_debug_log(f"FINAL: Returning single UAV threats only: {len(single_uav_threats)}", "final_single_uav")
         return single_uav_threats
-    
+
     return None
 
 async def fetch_loop():
@@ -13839,7 +13837,6 @@ def start_fetch_thread():
             AUTH_STATUS.update({'authorized': False, 'reason': f'crash:{e.__class__.__name__}'})
             log.error(f'Fetch loop crashed: {e}')
         finally:
-            FETCH_THREAD_STARTED = False
             log.info('fetch_thread runner finished')
     threading.Thread(target=runner, daemon=True).start()
     log.info('start_fetch_thread: thread started successfully')
@@ -13880,7 +13877,7 @@ def start_session_watcher():
                     mt = os.path.getmtime(SESSION_WATCH_FILE)
                     if mt != _last_session_file_mtime:
                         _last_session_file_mtime = mt
-                        with open(SESSION_WATCH_FILE,'r',encoding='utf-8') as f:
+                        with open(SESSION_WATCH_FILE,encoding='utf-8') as f:
                             new_s = f.read().strip()
                         if new_s and new_s != session_str:
                             log.info('Session watcher: detected updated session file, reloading...')
@@ -13986,10 +13983,10 @@ def track_redirect_click():
         page_name = data.get('page', 'unknown')
         user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
         user_agent = request.headers.get('User-Agent', '')
-        
+
         # Track as click (we'll add a suffix to differentiate)
         track_redirect_visit(f"{page_name}_click", user_ip, user_agent)
-        
+
         return jsonify({'status': 'ok'})
     except Exception as e:
         log.warning(f"Failed to track redirect click: {e}")
@@ -14047,7 +14044,7 @@ BLACKOUT_ADDRESSES = {
     'київ теремки': {'group': '1.2', 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
     'київ вишневе': {'group': '2.1', 'city': 'Київ', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
     'київ бориспіль': {'group': '1.1', 'city': 'Бориспіль', 'oblast': 'Київська', 'provider': 'ДТЕК Київські електромережі'},
-    
+
     # Odesa - all subgroups
     'одеса дерибасівська': {'group': '1.1', 'city': 'Одеса', 'oblast': 'Одеська', 'provider': 'ДТЕК Одеські електромережі'},
     'одеса приморський': {'group': '1.2', 'city': 'Одеса', 'oblast': 'Одеська', 'provider': 'ДТЕК Одеські електромережі'},
@@ -14059,7 +14056,7 @@ BLACKOUT_ADDRESSES = {
     'одеса пересипь': {'group': '2.1', 'city': 'Одеса', 'oblast': 'Одеська', 'provider': 'ДТЕК Одеські електромережі'},
     'одеса суворовський': {'group': '3.1', 'city': 'Одеса', 'oblast': 'Одеська', 'provider': 'ДТЕК Одеські електромережі'},
     'одеса чорноморка': {'group': '1.2', 'city': 'Одеса', 'oblast': 'Одеська', 'provider': 'ДТЕК Одеські електромережі'},
-    
+
     # Kharkiv - all subgroups
     'харків сумська': {'group': '1.1', 'city': 'Харків', 'oblast': 'Харківська', 'provider': 'ДТЕК Східенерго'},
     'харків центр': {'group': '1.2', 'city': 'Харків', 'oblast': 'Харківська', 'provider': 'ДТЕК Східенерго'},
@@ -14070,7 +14067,7 @@ BLACKOUT_ADDRESSES = {
     'харків московський': {'group': '1.1', 'city': 'Харків', 'oblast': 'Харківська', 'provider': 'ДТЕК Східенерго'},
     'харків індустріальний': {'group': '2.1', 'city': 'Харків', 'oblast': 'Харківська', 'provider': 'ДТЕК Східенерго'},
     'харків київський': {'group': '1.2', 'city': 'Харків', 'oblast': 'Харківська', 'provider': 'ДТЕК Східенерго'},
-    
+
     # Dnipro - all subgroups
     'дніпро центр': {'group': '1.1', 'city': 'Дніпро', 'oblast': 'Дніпропетровська', 'provider': 'ДТЕК Дніпровські електромережі'},
     'дніпро гагаріна': {'group': '1.2', 'city': 'Дніпро', 'oblast': 'Дніпропетровська', 'provider': 'ДТЕК Дніпровські електромережі'},
@@ -14080,7 +14077,7 @@ BLACKOUT_ADDRESSES = {
     'дніпро новокодацький': {'group': '3.2', 'city': 'Дніпро', 'oblast': 'Дніпропетровська', 'provider': 'ДТЕК Дніпровські електромережі'},
     'дніпро соборний': {'group': '1.1', 'city': 'Дніпро', 'oblast': 'Дніпропетровська', 'provider': 'ДТЕК Дніпровські електромережі'},
     'дніпро амур': {'group': '2.1', 'city': 'Дніпро', 'oblast': 'Дніпропетровська', 'provider': 'ДТЕК Дніпровські електромережі'},
-    
+
     # Lviv - all subgroups
     'львів центр': {'group': '1.1', 'city': 'Львів', 'oblast': 'Львівська', 'provider': 'Львівобленерго'},
     'львів площа ринок': {'group': '1.2', 'city': 'Львів', 'oblast': 'Львівська', 'provider': 'Львівобленерго'},
@@ -14090,7 +14087,7 @@ BLACKOUT_ADDRESSES = {
     'львів сихівська': {'group': '3.2', 'city': 'Львів', 'oblast': 'Львівська', 'provider': 'Львівобленерго'},
     'львів залізничний': {'group': '1.1', 'city': 'Львів', 'oblast': 'Львівська', 'provider': 'Львівобленерго'},
     'львів шевченківський': {'group': '2.1', 'city': 'Львів', 'oblast': 'Львівська', 'provider': 'Львівобленерго'},
-    
+
     # Zaporizhzhia - all subgroups
     'запоріжжя центр': {'group': '1.1', 'city': 'Запоріжжя', 'oblast': 'Запорізька', 'provider': 'ДТЕК Запорізькі електромережі'},
     'запоріжжя проспект': {'group': '1.2', 'city': 'Запоріжжя', 'oblast': 'Запорізька', 'provider': 'ДТЕК Запорізькі електромережі'},
@@ -14098,96 +14095,96 @@ BLACKOUT_ADDRESSES = {
     'запоріжжя шевченківський': {'group': '2.2', 'city': 'Запоріжжя', 'oblast': 'Запорізька', 'provider': 'ДТЕК Запорізькі електромережі'},
     'запоріжжя заводський': {'group': '3.1', 'city': 'Запоріжжя', 'oblast': 'Запорізька', 'provider': 'ДТЕК Запорізькі електромережі'},
     'запоріжжя дніпровський': {'group': '3.2', 'city': 'Запоріжжя', 'oblast': 'Запорізька', 'provider': 'ДТЕК Запорізькі електромережі'},
-    
+
     # Vinnytsia - all subgroups
     'вінниця центр': {'group': '1.1', 'city': 'Вінниця', 'oblast': 'Вінницька', 'provider': 'Вінницяобленерго'},
     'вінниця соборна': {'group': '1.2', 'city': 'Вінниця', 'oblast': 'Вінницька', 'provider': 'Вінницяобленерго'},
     'вінниця хмельницьке': {'group': '2.1', 'city': 'Вінниця', 'oblast': 'Вінницька', 'provider': 'Вінницяобленерго'},
     'вінниця вишенька': {'group': '2.2', 'city': 'Вінниця', 'oblast': 'Вінницька', 'provider': 'Вінницяобленерго'},
     'вінниця замостя': {'group': '3.1', 'city': 'Вінниця', 'oblast': 'Вінницька', 'provider': 'Вінницяобленерго'},
-    
+
     # Poltava - all subgroups
     'полтава центр': {'group': '1.1', 'city': 'Полтава', 'oblast': 'Полтавська', 'provider': 'Полтаваобленерго'},
     'полтава соборності': {'group': '1.2', 'city': 'Полтава', 'oblast': 'Полтавська', 'provider': 'Полтаваобленерго'},
     'полтава київський': {'group': '2.1', 'city': 'Полтава', 'oblast': 'Полтавська', 'provider': 'Полтаваобленерго'},
     'полтава подільський': {'group': '2.2', 'city': 'Полтава', 'oblast': 'Полтавська', 'provider': 'Полтаваобленерго'},
-    
+
     # Chernihiv - all subgroups
     'чернігів центр': {'group': '1.1', 'city': 'Чернігів', 'oblast': 'Чернігівська', 'provider': 'Чернігівобленерго'},
     'чернігів мира': {'group': '1.2', 'city': 'Чернігів', 'oblast': 'Чернігівська', 'provider': 'Чернігівобленерго'},
     'чернігів деснянський': {'group': '2.1', 'city': 'Чернігів', 'oblast': 'Чернігівська', 'provider': 'Чернігівобленерго'},
-    
+
     # Zhytomyr - all subgroups
     'житомир центр': {'group': '1.1', 'city': 'Житомир', 'oblast': 'Житомирська', 'provider': 'Житомиробленерго'},
     'житомир київська': {'group': '1.2', 'city': 'Житомир', 'oblast': 'Житомирська', 'provider': 'Житомиробленерго'},
     'житомир богунія': {'group': '2.1', 'city': 'Житомир', 'oblast': 'Житомирська', 'provider': 'Житомиробленерго'},
     'житомир корольовський': {'group': '2.2', 'city': 'Житомир', 'oblast': 'Житомирська', 'provider': 'Житомиробленерго'},
-    
+
     # Cherkasy - all subgroups
     'черкаси центр': {'group': '1.1', 'city': 'Черкаси', 'oblast': 'Черкаська', 'provider': 'Черкасиобленерго'},
     'черкаси соборна': {'group': '1.2', 'city': 'Черкаси', 'oblast': 'Черкаська', 'provider': 'Черкасиобленерgo'},
     'черкаси придніпровський': {'group': '2.1', 'city': 'Черкаси', 'oblast': 'Черкаська', 'provider': 'Черкасиобленерго'},
-    
+
     # Sumy - all subgroups
     'суми центр': {'group': '1.1', 'city': 'Суми', 'oblast': 'Сумська', 'provider': 'Сумиобленерго'},
     'суми соборна': {'group': '1.2', 'city': 'Суми', 'oblast': 'Сумська', 'provider': 'Сумиобленерго'},
     'суми ковпаківський': {'group': '2.1', 'city': 'Суми', 'oblast': 'Сумська', 'provider': 'Сумиобленерго'},
-    
+
     # Khmelnytskyi - all subgroups
     'хмельницький центр': {'group': '1.1', 'city': 'Хмельницький', 'oblast': 'Хмельницька', 'provider': 'Хмельницькобленерго'},
     'хмельницький проспект': {'group': '1.2', 'city': 'Хмельницький', 'oblast': 'Хмельницька', 'provider': 'Хмельницькобленерго'},
     'хмельницький загоцька': {'group': '2.1', 'city': 'Хмельницький', 'oblast': 'Хмельницька', 'provider': 'Хмельницькобленерго'},
-    
+
     # Rivne - all subgroups
     'рівне центр': {'group': '1.1', 'city': 'Рівне', 'oblast': 'Рівненська', 'provider': 'Рівненобленерго'},
     'рівне соборна': {'group': '1.2', 'city': 'Рівне', 'oblast': 'Рівненська', 'provider': 'Рівненобленерго'},
     'рівне північний': {'group': '2.1', 'city': 'Рівне', 'oblast': 'Рівненська', 'provider': 'Рівненобленерго'},
-    
+
     # Ivano-Frankivsk - all subgroups
     'івано-франківськ центр': {'group': '1.1', 'city': 'Івано-Франківськ', 'oblast': 'Івано-Франківська', 'provider': 'Прикарпаттяобленерго'},
     'івано-франківськ незалежності': {'group': '1.2', 'city': 'Івано-Франківськ', 'oblast': 'Івано-Франківська', 'provider': 'Прикарпаттяобленерго'},
     'івано-франківськ пасічна': {'group': '2.1', 'city': 'Івано-Франківськ', 'oblast': 'Івано-Франківська', 'provider': 'Прикарпаттяобленерго'},
-    
+
     # Ternopil - all subgroups
     'тернопіль центр': {'group': '1.1', 'city': 'Тернопіль', 'oblast': 'Тернопільська', 'provider': 'Тернопільобленерго'},
     'тернопіль руська': {'group': '1.2', 'city': 'Тернопіль', 'oblast': 'Тернопільська', 'provider': 'Тернопільобленерго'},
     'тернопіль східний': {'group': '2.1', 'city': 'Тернопіль', 'oblast': 'Тернопільська', 'provider': 'Тернопільобленерго'},
-    
+
     # Lutsk - all subgroups
     'луцьк центр': {'group': '1.1', 'city': 'Луцьк', 'oblast': 'Волинська', 'provider': 'Волиньобленерго'},
     'луцьк волі': {'group': '1.2', 'city': 'Луцьк', 'oblast': 'Волинська', 'provider': 'Волиньобленерго'},
     'луцьк вокзальна': {'group': '2.1', 'city': 'Луцьк', 'oblast': 'Волинська', 'provider': 'Волиньобленерго'},
-    
+
     # Chernivtsi - all subgroups
     'чернівці центр': {'group': '1.1', 'city': 'Чернівці', 'oblast': 'Чернівецька', 'provider': 'Чернівціобленерго'},
     'чернівці головна': {'group': '1.2', 'city': 'Чернівці', 'oblast': 'Чернівецька', 'provider': 'Чернівціобленерго'},
     'чернівці садгора': {'group': '2.1', 'city': 'Чернівці', 'oblast': 'Чернівецька', 'provider': 'Чернівціобленерго'},
-    
+
     # Uzhhorod - all subgroups
     'ужгород центр': {'group': '1.1', 'city': 'Ужгород', 'oblast': 'Закарпатська', 'provider': 'Закарпаттяобленерго'},
     'ужгород корзо': {'group': '1.2', 'city': 'Ужгород', 'oblast': 'Закарпатська', 'provider': 'Закарпаттяобленерго'},
     'ужгород боздош': {'group': '2.1', 'city': 'Ужгород', 'oblast': 'Закарпатська', 'provider': 'Закарпаттяобленерго'},
-    
+
     # Kropyvnytskyi (Kirovohrad) - all subgroups
     'кропивницький центр': {'group': '1.1', 'city': 'Кропивницький', 'oblast': 'Кіровоградська', 'provider': 'Кіровоградобленерго'},
     'кропивницький велика перспективна': {'group': '1.2', 'city': 'Кропивницький', 'oblast': 'Кіровоградська', 'provider': 'Кіровоградобленерго'},
     'кропивницький фортечний': {'group': '2.1', 'city': 'Кропивницький', 'oblast': 'Кіровоградська', 'provider': 'Кіровоградобленерго'},
-    
+
     # Mykolaiv - all subgroups
     'миколаїв центр': {'group': '1.1', 'city': 'Миколаїв', 'oblast': 'Миколаївська', 'provider': 'Миколаївобленерго'},
     'миколаїв соборна': {'group': '1.2', 'city': 'Миколаїв', 'oblast': 'Миколаївська', 'provider': 'Миколаївобленерго'},
     'миколаїв інгульський': {'group': '2.1', 'city': 'Миколаїв', 'oblast': 'Миколаївська', 'provider': 'Миколаївобленерго'},
     'миколаїв корабельний': {'group': '2.2', 'city': 'Миколаїв', 'oblast': 'Миколаївська', 'provider': 'Миколаївобленерго'},
-    
+
     # Kherson - all subgroups
     'херсон центр': {'group': '1.1', 'city': 'Херсон', 'oblast': 'Херсонська', 'provider': 'Херсонобленерго'},
     'херсон ушакова': {'group': '1.2', 'city': 'Херсон', 'oblast': 'Херсонська', 'provider': 'Херсонобленерго'},
     'херсон дніпровський': {'group': '2.1', 'city': 'Херсон', 'oblast': 'Херсонська', 'provider': 'Херсонобленерго'},
-    
+
     # Mariupol (DTEK Donetsk region)
     'маріуполь центр': {'group': '1.1', 'city': 'Маріуполь', 'oblast': 'Донецька', 'provider': 'ДТЕК Донецькі електромережі'},
     'маріуполь лівобережний': {'group': '2.1', 'city': 'Маріуполь', 'oblast': 'Донецька', 'provider': 'ДТЕК Донецькі електромережі'},
-    
+
     # Kremenchuk - all subgroups
     'кременчук центр': {'group': '1.1', 'city': 'Кременчук', 'oblast': 'Полтавська', 'provider': 'Полтаваобленерго'},
     'кременчук київська': {'group': '1.2', 'city': 'Кременчук', 'oblast': 'Полтавська', 'provider': 'Полтаваобленерго'},
@@ -14221,7 +14218,7 @@ BLACKOUT_SCHEDULES = {
         {'time': '16:00 - 20:00', 'label': 'Активне відключення', 'status': 'active'},
         {'time': '20:00 - 24:00', 'label': 'Електропостачання', 'status': 'normal'},
     ],
-    
+
     # Group 2 subgroups
     '2.1': [
         {'time': '00:00 - 04:00', 'label': 'Електропостачання', 'status': 'normal'},
@@ -14239,7 +14236,7 @@ BLACKOUT_SCHEDULES = {
         {'time': '16:00 - 20:00', 'label': 'Можливе відключення', 'status': 'upcoming'},
         {'time': '20:00 - 24:00', 'label': 'Електропостачання', 'status': 'normal'},
     ],
-    
+
     # Group 3 subgroups
     '3.1': [
         {'time': '00:00 - 04:00', 'label': 'Можливе відключення', 'status': 'upcoming'},
@@ -14257,7 +14254,7 @@ BLACKOUT_SCHEDULES = {
         {'time': '16:00 - 20:00', 'label': 'Електропостачання', 'status': 'normal'},
         {'time': '20:00 - 24:00', 'label': 'Активне відключення', 'status': 'active'},
     ],
-    
+
     # Fallback for old integer groups (backward compatibility)
     1: [
         {'time': '06:00 - 10:00', 'label': 'Можливе відключення', 'status': 'normal'},
@@ -14289,12 +14286,12 @@ def search_cities():
         # Collect unique cities
         cities_set = set()
         addresses_list = []
-        
+
         for address_key, data in BLACKOUT_ADDRESSES.items():
             city = data.get('city', '')
             if city:
                 cities_set.add(city)
-            
+
             # Parse address_key to extract street and building
             # Format: "city street" or "city street building"
             parts = address_key.split()
@@ -14308,15 +14305,15 @@ def search_cities():
                     'oblast': data.get('oblast', ''),
                     'provider': data.get('provider', '')
                 })
-        
+
         # Convert cities set to sorted list
-        cities_list = sorted(list(cities_set))
-        
+        cities_list = sorted(cities_set)
+
         return jsonify({
             'cities': cities_list,
             'addresses': addresses_list[:200]  # Limit for performance
         })
-        
+
     except Exception as e:
         print(f"ERROR in search_cities: {str(e)}")
         return jsonify({
@@ -14331,19 +14328,19 @@ def get_all_cities_with_queues():
     try:
         # Group addresses by city and queue
         cities_data = {}
-        
-        for address_key, data in BLACKOUT_ADDRESSES.items():
+
+        for _address_key, data in BLACKOUT_ADDRESSES.items():
             city = data.get('city', '')
             oblast = data.get('oblast', '')
             queue = data.get('group', '')
             provider = data.get('provider', '')
-            
+
             if not city:
                 continue
-            
+
             # Create city key
             city_key = f"{city}, {oblast}"
-            
+
             if city_key not in cities_data:
                 cities_data[city_key] = {
                     'city': city,
@@ -14351,22 +14348,22 @@ def get_all_cities_with_queues():
                     'provider': provider,
                     'queues': set()
                 }
-            
+
             if queue:
                 cities_data[city_key]['queues'].add(queue)
-        
+
         # Convert to list and format
         result = []
         for city_key, data in cities_data.items():
-            queues_list = sorted(list(data['queues']))
-            
+            queues_list = sorted(data['queues'])
+
             # Determine current hour for status
             current_hour = datetime.now(pytz.timezone('Europe/Kiev')).hour
-            
+
             # Check if any queue has active blackout now
             has_active_blackout = False
             active_queues = []
-            
+
             for queue in queues_list:
                 schedule = BLACKOUT_SCHEDULES.get(queue, [])
                 for slot in schedule:
@@ -14377,11 +14374,11 @@ def get_all_cities_with_queues():
                             start_time = time_range.split(' - ')[0]
                             start_hour = int(start_time.split(':')[0])
                             end_hour = (start_hour + 4) % 24
-                            
+
                             if start_hour <= current_hour < end_hour or (end_hour < start_hour and (current_hour >= start_hour or current_hour < end_hour)):
                                 has_active_blackout = True
                                 active_queues.append(queue)
-            
+
             # Determine status
             if has_active_blackout:
                 status = 'active'
@@ -14392,7 +14389,7 @@ def get_all_cities_with_queues():
             else:
                 status = 'stable'
                 status_text = "Стабільно"
-            
+
             result.append({
                 'city': data['city'],
                 'oblast': data['oblast'],
@@ -14402,16 +14399,16 @@ def get_all_cities_with_queues():
                 'statusText': status_text,
                 'queuesCount': len(queues_list)
             })
-        
+
         # Sort by city name
         result.sort(key=lambda x: x['city'])
-        
+
         return jsonify({
             'success': True,
             'cities': result,
             'total': len(result)
         })
-        
+
     except Exception as e:
         log.error(f"Error in get_all_cities_with_queues: {e}")
         return jsonify({
@@ -14425,20 +14422,20 @@ def get_schedule():
     city = request.args.get('city', '').strip()
     street = request.args.get('street', '').strip()
     building = request.args.get('building', '').strip()
-    
+
     if not city:
         return jsonify({'error': 'Місто обов\'язкове для заповнення'}), 400
-    
+
     # Try to use live schedule updater first
     if SCHEDULE_UPDATER_AVAILABLE:
         try:
             # Ensure cache is fresh
             if not schedule_updater.is_cache_valid(max_age_hours=1):
                 schedule_updater.update_all_schedules()
-            
+
             # Get schedule from live updater
             result = schedule_updater.get_schedule_for_address(city, street, building)
-            
+
             if result and result.get('schedule'):
                 return jsonify({
                     'found': True,
@@ -14452,20 +14449,20 @@ def get_schedule():
                 })
         except Exception as e:
             log.warning(f"Live schedule failed, falling back: {e}")
-    
+
     # Fallback to API client
     if not BLACKOUT_API_AVAILABLE:
         return get_schedule_fallback(city, street, building)
-    
+
     try:
         # Use real API client to get schedule
         result = blackout_client.get_schedule_for_address(city, street, building)
-        
+
         if not result['found']:
             return jsonify({
                 'error': f'Адресу "{city}" не знайдено. Перевірте правильність написання міста.'
             }), 404
-        
+
         # Add oblast info if available
         if 'київ' in city.lower():
             result['oblast'] = 'Київська'
@@ -14479,9 +14476,9 @@ def get_schedule():
             result['oblast'] = 'Львівська'
         else:
             result['oblast'] = 'Україна'
-        
+
         return jsonify(result)
-        
+
     except Exception as e:
         logging.error(f"Error in get_schedule: {e}")
         return jsonify({
@@ -14493,31 +14490,31 @@ def get_schedule_fallback(city, street, building):
     """Fallback method using static data if API client is unavailable"""
     city_lower = city.lower()
     street_lower = street.lower() if street else ''
-    
+
     # Try to find matching address in static database
     best_match = None
     best_match_data = None
     best_score = 0
-    
+
     for address_key, data in BLACKOUT_ADDRESSES.items():
         key_parts = address_key.split()
         key_city = key_parts[0] if len(key_parts) > 0 else ''
         key_street = ' '.join(key_parts[1:]) if len(key_parts) > 1 else ''
-        
+
         score = 0
         if city_lower in key_city or key_city in city_lower:
             score += 2
         if street_lower and (street_lower in key_street or key_street in street_lower):
             score += 2
-        
+
         if score > best_score:
             best_score = score
             best_match = address_key
             best_match_data = data
-    
+
     if not best_match_data or best_score < 2:
         return jsonify({'error': f'Адресу не знайдено для {city}. Спробуйте інше місто або вулицю.'}), 404
-    
+
     # Reconstruct readable address
     parts = best_match.split()
     city_name = parts[0].capitalize()
@@ -14527,11 +14524,11 @@ def get_schedule_fallback(city, street, building):
         readable_address += f', {street_name}'
     if building:
         readable_address += f', {building}'
-    
+
     # Get schedule for the group
     group = best_match_data['group']
     schedule = BLACKOUT_SCHEDULES.get(group, [])
-    
+
     return jsonify({
         'address': readable_address,
         'city': best_match_data['city'],
@@ -14551,28 +14548,28 @@ def get_live_schedules():
                 'error': 'Автооновлення графіків недоступне',
                 'fallback': True
             }), 503
-        
+
         # Check if cache is still valid
         if not schedule_updater.is_cache_valid(max_age_hours=1):
             log.info("Cache expired, triggering update...")
             schedule_updater.update_all_schedules()
-        
+
         # Get cached schedules
         schedules = schedule_updater.get_cached_schedules()
-        
+
         if not schedules:
             return jsonify({
                 'error': 'Графіки тимчасово недоступні',
                 'retry_after': 60
             }), 503
-        
+
         return jsonify({
             'success': True,
             'schedules': schedules,
             'last_update': schedules.get('last_update'),
             'next_update': 'через годину'
         })
-        
+
     except Exception as e:
         log.error(f"Error in get_live_schedules: {e}")
         return jsonify({
@@ -14589,10 +14586,10 @@ def get_schedule_status():
                 'available': False,
                 'message': 'Автооновлення недоступне'
             })
-        
+
         last_update = schedule_updater.last_update
         cache_valid = schedule_updater.is_cache_valid()
-        
+
         return jsonify({
             'available': True,
             'last_update': last_update.isoformat() if last_update else None,
@@ -14601,7 +14598,7 @@ def get_schedule_status():
             'scheduler_running': scheduler.running if scheduler_initialized else False,
             'scheduler_initialized': scheduler_initialized
         })
-        
+
     except Exception as e:
         log.error(f"Error in get_schedule_status: {e}")
         return jsonify({'error': str(e)}), 500
@@ -14616,17 +14613,17 @@ def force_schedule_update():
                 'success': False,
                 'error': 'Schedule updater not available'
             }), 503
-        
+
         log.info("🔄 Manual schedule update triggered")
         result = schedule_updater.update_all_schedules()
-        
+
         return jsonify({
             'success': True,
             'message': 'Графіки успішно оновлено',
             'last_update': schedule_updater.last_update.isoformat() if schedule_updater.last_update else None,
             'data': result is not None
         })
-        
+
     except Exception as e:
         log.error(f"Error in force_schedule_update: {e}")
         return jsonify({
@@ -14639,19 +14636,19 @@ def force_schedule_update():
 def locate_place():
     """Search for a city/settlement and return coordinates or suggestions"""
     query = request.args.get('q', '').strip()
-    
+
     if not query:
         return jsonify({'status': 'error', 'message': 'No query provided'})
-    
+
     # Clean query from region suffixes before searching
     query_clean = query
     for suffix in [' область', ' Область', 'область', 'Область', 'ська область', 'цька область']:
         if suffix in query_clean:
             query_clean = query_clean.split(suffix)[0].strip()
             break
-    
+
     query_lower = query_clean.lower()
-    
+
     # First, try exact match in CITY_COORDS
     if query_lower in CITY_COORDS:
         lat, lng = CITY_COORDS[query_lower]
@@ -14662,7 +14659,7 @@ def locate_place():
             'lng': lng,
             'source': 'city_coords'
         })
-    
+
     # Try exact match in SETTLEMENTS_INDEX
     if query_lower in SETTLEMENTS_INDEX:
         lat, lng = SETTLEMENTS_INDEX[query_lower]
@@ -14673,10 +14670,10 @@ def locate_place():
             'lng': lng,
             'source': 'settlements'
         })
-    
+
     # Try exact match in UKRAINE_ADDRESSES_DB (extract city names)
     if UKRAINE_ADDRESSES_DB:
-        for key, value in UKRAINE_ADDRESSES_DB.items():
+        for _key, value in UKRAINE_ADDRESSES_DB.items():
             city_name = value.get('city', '').lower()
             if city_name == query_lower:
                 # Use CITY_COORDS or SETTLEMENTS_INDEX for this city
@@ -14689,7 +14686,7 @@ def locate_place():
                         'lng': lng,
                         'source': 'addresses_db'
                     })
-    
+
     # Try normalized version with UA_CITY_NORMALIZE
     if query_lower in UA_CITY_NORMALIZE:
         normalized = UA_CITY_NORMALIZE[query_lower]
@@ -14711,10 +14708,10 @@ def locate_place():
                 'lng': lng,
                 'source': 'normalized'
             })
-    
+
     # Try API sources for exact match (используем 3 API параллельно)
     api_results = []
-    
+
     # 1. Nominatim API (добавляем Ukraine в строку запроса)
     try:
         import requests
@@ -14728,7 +14725,7 @@ def locate_place():
         headers = {
             'User-Agent': 'NeptunAlarmMap/1.0 (https://neptun-alarm.onrender.com)'
         }
-        
+
         response = requests.get(nominatim_url, params=params, headers=headers, timeout=3)
         if response.ok:
             results = response.json()
@@ -14742,7 +14739,7 @@ def locate_place():
                 })
     except Exception as e:
         log.warning(f'Nominatim exact match error: {e}')
-    
+
     # 2. Photon API (самый быстрый и надёжный для украинских сел)
     try:
         photon_url = 'https://photon.komoot.io/api/'
@@ -14750,7 +14747,7 @@ def locate_place():
             'q': query,
             'limit': 1
         }
-        
+
         response = requests.get(photon_url, params=params, timeout=3)
         if response.ok:
             data = response.json()
@@ -14768,10 +14765,10 @@ def locate_place():
                     })
     except Exception as e:
         log.warning(f'Photon exact match error: {e}')
-    
+
     # 3. GeoNames API отключён (требует регистрацию, demo лимит исчерпан)
     # Photon + Nominatim дают полное покрытие всех украинских населённых пунктов
-    
+
     # Если хотя бы один API вернул результат, используем его
     if api_results:
         # Приоритет: Photon (самый точный для украинских сел) > Nominatim
@@ -14785,17 +14782,17 @@ def locate_place():
                         'lng': result['lng'],
                         'source': result['source']
                     })
-    
+
     # If no exact match, return suggestions (prefix/substring match)
     suggestions = set()
-    
+
     # Search in CITY_COORDS first (priority)
     for city_name in CITY_COORDS.keys():
         if query_lower in city_name:
             suggestions.add(city_name.title())
             if len(suggestions) >= 50:
                 break
-    
+
     # Then search in SETTLEMENTS_INDEX
     if len(suggestions) < 50:
         for settlement_name in SETTLEMENTS_INDEX.keys():
@@ -14804,7 +14801,7 @@ def locate_place():
                 suggestions.add(city_title)
                 if len(suggestions) >= 100:
                     break
-    
+
     # Also search in UKRAINE_ADDRESSES_DB cities
     if len(suggestions) < 100 and UKRAINE_ADDRESSES_DB:
         cities_from_db = set()
@@ -14813,16 +14810,16 @@ def locate_place():
             if city_name and query_lower in city_name.lower():
                 cities_from_db.add(city_name)
         suggestions.update(cities_from_db)
-    
+
     # Add UKRAINE_CITIES if available
     if len(suggestions) < 100 and UKRAINE_CITIES:
         for city in UKRAINE_CITIES:
             if query_lower in city.lower():
                 suggestions.add(city)
-    
+
     # ВСЕГДА используем несколько API для максимальной полноты поиска
     api_suggestions = set()
-    
+
     # 1. Photon API (быстрее чем Nominatim, использует OpenStreetMap данные)
     try:
         import requests
@@ -14831,7 +14828,7 @@ def locate_place():
             'q': query,
             'limit': 20
         }
-        
+
         response = requests.get(photon_url, params=params, timeout=3)
         if response.ok:
             data = response.json()
@@ -14843,7 +14840,7 @@ def locate_place():
                     api_suggestions.add(name)
     except Exception as e:
         log.warning(f'Photon API error: {e}')
-    
+
     # 2. Nominatim API (OpenStreetMap)
     try:
         import requests
@@ -14858,7 +14855,7 @@ def locate_place():
         headers = {
             'User-Agent': 'NeptunAlarmMap/1.0 (https://neptun-alarm.onrender.com)'
         }
-        
+
         response = requests.get(nominatim_url, params=params, headers=headers, timeout=4)
         if response.ok:
             results = response.json()
@@ -14866,38 +14863,38 @@ def locate_place():
                 # Пробуем разные поля для названия
                 name = None
                 address = result.get('address', {})
-                
+
                 # Приоритет полям
                 for field in ['village', 'town', 'city', 'hamlet', 'suburb', 'municipality']:
                     if field in address:
                         name = address[field]
                         break
-                
+
                 if not name:
                     display_name = result.get('display_name', '')
                     if display_name:
                         name = display_name.split(',')[0]
-                
+
                 if name:
                     api_suggestions.add(name)
     except Exception as e:
         log.warning(f'Nominatim API error: {e}')
-    
+
     # 3. GeoNames API отключён (требует регистрацию, demo лимит 20к/день исчерпан)
     # Photon + Nominatim дают полное покрытие всех украинских населённых пунктов
-    
+
     # Объединяем локальные и API результаты
     suggestions.update(api_suggestions)
-    
+
     # Sort and limit
-    suggestions_list = sorted(list(suggestions), key=lambda x: (len(x), x))[:50]
-    
+    suggestions_list = sorted(suggestions, key=lambda x: (len(x), x))[:50]
+
     if suggestions_list:
         return jsonify({
             'status': 'suggest',
             'matches': suggestions_list
         })
-    
+
     # No matches found
     return jsonify({
         'status': 'not_found',
@@ -14938,7 +14935,7 @@ def comments_endpoint():
         rt = getattr(app, '_comment_rate', None)
         if rt is None:
             rt = {}
-            setattr(app, '_comment_rate', rt)
+            app._comment_rate = rt
         arr = rt.get(ip, [])
         # drop entries older than 60s
         arr = [t for t in arr if now_ts - t < 60]
@@ -14981,44 +14978,44 @@ def comment_react_endpoint():
         data = request.get_json(force=True, silent=True) or {}
     except Exception:
         return jsonify({'ok': False, 'error': 'invalid_json'}), 400
-    
+
     comment_id = (data.get('comment_id') or '').strip()
     emoji = (data.get('emoji') or '').strip()
-    
+
     # Validation
     if not comment_id or not emoji:
         return jsonify({'ok': False, 'error': 'missing_params'}), 400
-        
+
     # Validate emoji is in allowed list
     allowed_emojis = ['👍', '❤️', '🔥', '😢', '😡', '😂', '👎']
     if emoji not in allowed_emojis:
         return jsonify({'ok': False, 'error': 'invalid_emoji'}), 400
-    
+
     # Get user IP for uniqueness
     ip = request.headers.get('X-Forwarded-For', request.remote_addr) or 'unknown'
-    
+
     # Rate limiting: max 20 reactions per minute per IP
     now_ts = time.time()
     rt = getattr(app, '_reaction_rate', None)
     if rt is None:
         rt = {}
-        setattr(app, '_reaction_rate', rt)
-    
+        app._reaction_rate = rt
+
     arr = rt.get(ip, [])
     arr = [t for t in arr if now_ts - t < 60]  # Keep last 60 seconds
     if len(arr) >= 20:
         return jsonify({'ok': False, 'error': 'rate_limited'}), 429
     arr.append(now_ts)
     rt[ip] = arr
-    
+
     # Toggle reaction
     result = toggle_comment_reaction(comment_id, emoji, ip)
-    
+
     if result['action'] == 'error':
         return jsonify({'ok': False, 'error': 'server_error'}), 500
-    
+
     return jsonify({
-        'ok': True, 
+        'ok': True,
         'action': result['action'],
         'reactions': result['reactions']
     })
@@ -15026,9 +15023,9 @@ def comment_react_endpoint():
 @app.route('/active_alarms')
 def active_alarms_endpoint():
     """Return current active oblast & raion air alarms (for polygon styling)."""
-    
+
     # Rate limit отключен: все пользователи имеют свободный доступ
-    
+
     try:
         now_ep = time.time()
         cutoff = now_ep - APP_ALARM_TTL_MINUTES*60
@@ -15080,21 +15077,21 @@ def alarms_stats():
 @app.route('/data')
 def data():
     global FALLBACK_REPARSE_CACHE, MAX_REPARSE_CACHE_SIZE
-    
+
     # Rate limit отключен: все пользователи имеют свободный доступ
-    
-    # BANDWIDTH OPTIMIZATION: Add aggressive caching headers  
+
+    # BANDWIDTH OPTIMIZATION: Add aggressive caching headers
     response_headers = {
         'Cache-Control': 'public, max-age=60, s-maxage=60',  # Increased cache to 60 seconds
         'ETag': f'data-{int(time.time() // 60)}',  # Cache for 60 seconds
         'Vary': 'Accept-Encoding'
     }
-    
+
     # Check if client has cached version
     client_etag = request.headers.get('If-None-Match')
     if client_etag == response_headers['ETag']:
         return Response(status=304, headers=response_headers)
-    
+
     # Use user-provided timeRange or fall back to global configured MONITOR_PERIOD_MINUTES
     try:
         time_range = int(request.args.get('timeRange', MONITOR_PERIOD_MINUTES))
@@ -15102,7 +15099,7 @@ def data():
         time_range = max(10, min(time_range, 100))  # Reduced from 200 to 100
     except (ValueError, TypeError):
         time_range = MONITOR_PERIOD_MINUTES
-    
+
     print(f"[DEBUG] /data endpoint called with timeRange={request.args.get('timeRange')}, MONITOR_PERIOD_MINUTES={MONITOR_PERIOD_MINUTES}, using time_range={time_range}")
     messages = load_messages()
     print(f"[DEBUG] Loaded {len(messages)} total messages")
@@ -15124,7 +15121,7 @@ def data():
             # Fallback reparse: if message lacks geo but contains course pattern, try to derive markers now
             txt_low = (m.get('text') or '').lower()
             msg_id = m.get('id')
-            
+
             # Skip multi-regional UAV messages - they're already handled by immediate processing
             text_full = m.get('text') or ''
             text_lines = text_full.split('\n')
@@ -15132,18 +15129,18 @@ def data():
                 'щина' in line.lower() and line.lower().strip().endswith(':')
             ))
             uav_count = sum(1 for line in text_lines if 'бпла' in line.lower() and ('курс' in line.lower() or 'на ' in line.lower()))
-            
+
             if (not m.get('lat')) and (not m.get('lng')) and ('бпла' in txt_low and 'курс' in txt_low and ' на ' in txt_low):
                 # Skip if this is a multi-regional UAV message (already processed immediately)
                 if region_count >= 2 and uav_count >= 3:
                     add_debug_log(f"Skipping fallback reparse for multi-regional UAV message ID {msg_id}", "reparse")
                     continue
-                    
+
                 # Check if we've already reparsed this message to avoid duplicate processing
                 if msg_id in FALLBACK_REPARSE_CACHE:
                     add_debug_log(f"Skipping fallback reparse for message ID {msg_id} - already processed", "reparse")
                     continue
-                
+
                 try:
                     # Add to cache to prevent future reprocessing
                     FALLBACK_REPARSE_CACHE.add(msg_id)
@@ -15152,7 +15149,7 @@ def data():
                         # Remove oldest half of the cache (approximate LRU)
                         cache_list = list(FALLBACK_REPARSE_CACHE)
                         FALLBACK_REPARSE_CACHE = set(cache_list[len(cache_list)//2:])
-                    
+
                     add_debug_log(f"Fallback reparse for message ID {msg_id} - first time processing", "reparse")
                     reparsed = process_message(m.get('text') or '', m.get('id'), m.get('date'), m.get('channel') or m.get('source') or '')
                     if isinstance(reparsed, list) and reparsed:
@@ -15220,9 +15217,9 @@ def data():
         events.sort(key=lambda x: x.get('date',''), reverse=True)
     except Exception:
         pass
-    
+
     print(f"[DEBUG] Returning {len(out)} tracks and {len(events)} events")
-    
+
     # Return all data without limits
     response_data = {
         'tracks': out,  # All tracks without limit
@@ -15230,7 +15227,7 @@ def data():
         'all_sources': CHANNELS,  # All sources
         'trajectories': []
     }
-    
+
     resp = jsonify(response_data)
     # Add aggressive caching headers to reduce bandwidth
     resp.headers.update(response_headers)
@@ -15310,13 +15307,13 @@ def visitor_count():
         import sqlite3
         conn = sqlite3.connect('visits.db')
         cursor = conn.cursor()
-        
+
         # Get total unique visitors
         cursor.execute('SELECT COUNT(DISTINCT ip) FROM visits')
         total_visitors = cursor.fetchone()[0]
-        
+
         conn.close()
-        
+
         return str(total_visitors), 200, {
             'Content-Type': 'text/plain',
             'Cache-Control': 'public, max-age=10',
@@ -15333,7 +15330,7 @@ def android_visitor_count():
         import sqlite3
         conn = sqlite3.connect('visits.db')
         cursor = conn.cursor()
-        
+
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS app_visits (
                 device_id TEXT PRIMARY KEY,
@@ -15344,9 +15341,9 @@ def android_visitor_count():
         ''')
         cursor.execute('SELECT COUNT(*) FROM app_visits WHERE platform = ?', ('android',))
         android_visitors = cursor.fetchone()[0] or 0
-        
+
         conn.close()
-        
+
         return str(android_visitors), 200, {
             'Content-Type': 'text/plain',
             'Cache-Control': 'public, max-age=10',
@@ -15367,10 +15364,10 @@ def track_android_visit():
         platform_hint = payload.get('platform') or 'android'
         ua = request.headers.get('User-Agent', '')
         platform_label = _normalize_platform(platform_hint, ua)
-        
+
         conn = sqlite3.connect('visits.db')
         cursor = conn.cursor()
-        
+
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS app_visits (
                 device_id TEXT PRIMARY KEY,
@@ -15379,7 +15376,7 @@ def track_android_visit():
                 last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        
+
         cursor.execute('''
             INSERT INTO app_visits (device_id, platform, ip, last_seen)
             VALUES (?, ?, ?, CURRENT_TIMESTAMP)
@@ -15388,10 +15385,10 @@ def track_android_visit():
                 ip=excluded.ip,
                 last_seen=CURRENT_TIMESTAMP
         ''', (device_id, platform_label, client_ip))
-        
+
         conn.commit()
         conn.close()
-        
+
         return jsonify({'ok': True, 'platform': platform_label}), 200
     except Exception as e:
         print(f"[ERROR] Failed to track Android visit: {e}")
@@ -15403,20 +15400,20 @@ def get_events():
     try:
         messages = load_messages()
         events = []
-        
+
         # Process ALL messages, not just last 200
         for msg in messages:
             if not isinstance(msg, dict):
                 continue
-                
+
             text = msg.get('text', '').strip()
             channel = msg.get('channel', '')
             timestamp = msg.get('time', '')
-            
+
             # Detect alarm type by emoji or text
             emoji = None
             status = None
-            
+
             if '🚨' in text or 'Повітряна тривога' in text:
                 emoji = '🚨'
                 status = 'Повітряна тривога'
@@ -15425,12 +15422,12 @@ def get_events():
                 status = 'Відбій тривоги'
             else:
                 continue
-            
+
             # Extract region from multiple formats:
             # Format 1: "**🚨 Дніпропетровська область**"
             # Format 2: "**🚨 Харківський район (Харківська обл.)**"
             region = ''
-            
+
             if '**' in text:
                 parts = text.split('**')
                 for part in parts:
@@ -15440,7 +15437,7 @@ def get_events():
                         # Remove emoji and clean up
                         region = part.replace('🚨', '').replace('🟢', '').strip()
                         break
-            
+
             # Fallback: extract from first line
             if not region and text:
                 first_line = text.split('\n')[0].strip()
@@ -15449,11 +15446,11 @@ def get_events():
                 # Remove common phrases
                 region = region.replace('Повітряна тривога.', '').replace('Прямуйте в укриття!', '').strip()
                 region = region.replace('Відбій тривоги.', '').replace('Будьте обережні!', '').strip()
-            
+
             # Skip if no region found
             if not region:
                 continue
-            
+
             events.append({
                 'timestamp': timestamp,
                 'channel': channel,
@@ -15462,16 +15459,16 @@ def get_events():
                 'status': status,
                 'text': text[:200]  # First 200 chars
             })
-        
+
         # Sort by timestamp (newest first) and return last 100 events
         # This ensures stable results regardless of message order in file
         events.reverse()
-        
+
         response = jsonify(events[:100])  # Return last 100 events
         response.headers['Cache-Control'] = 'public, max-age=30'
         response.headers['Access-Control-Allow-Origin'] = '*'
         return response
-        
+
     except Exception as e:
         print(f"[ERROR] /api/events failed: {e}")
         return jsonify([]), 500
@@ -15482,13 +15479,13 @@ def get_messages():
     try:
         messages = load_messages()
         result_messages = []
-        
+
         for msg in messages[-200:]:  # Last 200 messages
             if not isinstance(msg, dict):
                 continue
-            
+
             text = msg.get('text', '').strip()
-            
+
             # Detect alarm type
             alarm_type = 'Тривога'
             if 'БпЛА' in text or 'дрон' in text:
@@ -15497,12 +15494,12 @@ def get_messages():
                 alarm_type = 'Ракетна загроза'
             elif 'Повітряна тривога' in text:
                 alarm_type = 'Повітряна тривога'
-            
+
             # Try to extract location and coordinates
             location = ''
             latitude = 48.3794  # Default: center of Ukraine
             longitude = 31.1656
-            
+
             # Extract region/city from text
             if '**' in text:
                 parts = text.split('**')
@@ -15511,12 +15508,12 @@ def get_messages():
                     if '🚨' in part or '🟢' in part or 'область' in part.lower():
                         location = part.replace('🚨', '').replace('🟢', '').strip()
                         break
-            
+
             # If no location found, try first line
             if not location and text:
                 first_line = text.split('\n')[0].strip()
                 location = first_line.replace('**', '').replace('🚨', '').replace('🟢', '').strip()[:100]
-            
+
             # Try to get coordinates from UKRAINE_ADDRESSES_DB
             if location:
                 location_lower = location.lower()
@@ -15527,12 +15524,12 @@ def get_messages():
                         if not location:
                             location = city_name
                         break
-            
+
             # Get timestamp in Kyiv time
             import pytz
             kyiv_tz = pytz.timezone('Europe/Kiev')
             msg_time = msg.get('time', '') or msg.get('timestamp', '') or msg.get('date', '')
-            
+
             # If no timestamp from message, use current time
             if not msg_time:
                 msg_time = datetime.now(kyiv_tz).strftime('%d.%m.%Y %H:%M')
@@ -15549,7 +15546,7 @@ def get_messages():
                         pass  # Keep original string
                     else:
                         msg_time = datetime.now(kyiv_tz).strftime('%d.%m.%Y %H:%M')
-            
+
             result_messages.append({
                 'type': alarm_type,
                 'location': location or 'Україна',
@@ -15559,10 +15556,10 @@ def get_messages():
                 'longitude': longitude,
                 'channel': msg.get('channel', ''),
             })
-        
+
         # Sort by timestamp (newest first)
         result_messages.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
-        
+
         response = jsonify({
             'messages': result_messages,
             'count': len(result_messages),
@@ -15571,7 +15568,7 @@ def get_messages():
         response.headers['Cache-Control'] = 'public, max-age=30'
         response.headers['Access-Control-Allow-Origin'] = '*'
         return response
-        
+
     except Exception as e:
         print(f"[ERROR] /api/messages failed: {e}")
         import traceback
@@ -15582,7 +15579,7 @@ def get_messages():
 def test_parse():
     """Test endpoint to manually test message parsing without auth."""
     test_message = "Чернігівщина: 1 БпЛА на Козелець 1 БпЛА на Носівку 1 БпЛА неподалік Ічні 2 БпЛА на Куликівку 2 БпЛА між Корюківкою та Меною Сумщина: 3 БпЛА в районі Конотопу ㅤ ➡Підписатися"
-    
+
     try:
         print("="*50)
         print("MANUAL TEST STARTED")
@@ -15591,7 +15588,7 @@ def test_parse():
         print("="*50)
         print("MANUAL TEST COMPLETED")
         print("="*50)
-        
+
         return jsonify({
             'success': True,
             'message': test_message,
@@ -15874,11 +15871,11 @@ def admin_markers():
     """API endpoint to get recent markers for admin map"""
     if not _require_secret(request):
         return jsonify({'status':'forbidden'}), 403
-    
+
     all_msgs = load_messages()
     # Get recent markers (exclude pending geo)
     recent_markers = [m for m in reversed(all_msgs) if m.get('lat') and m.get('lng') and not m.get('pending_geo')][:120]
-    
+
     return jsonify({
         'status': 'ok',
         'markers': recent_markers,
@@ -15890,11 +15887,11 @@ def admin_raw_msgs():
     """API endpoint to get raw messages (pending geo) for admin panel"""
     if not _require_secret(request):
         return jsonify({'status':'forbidden'}), 403
-    
+
     all_msgs = load_messages()
     raw_msgs = [m for m in reversed(all_msgs) if m.get('pending_geo')][:100]  # latest 100
     raw_count = len([m for m in all_msgs if m.get('pending_geo')])
-    
+
     return jsonify({
         'status': 'ok',
         'raw_msgs': raw_msgs,
@@ -15995,7 +15992,7 @@ if 'health' not in app.view_functions:
     @app.route('/health')
     def health():  # type: ignore
         now = time.time()
-        
+
         # Basic stats + prune visitors
         with ACTIVE_LOCK:
             for vid, meta in list(ACTIVE_VISITORS.items()):
@@ -16122,7 +16119,7 @@ def presence():
 @app.route('/raion_alarms')
 def raion_alarms():
     # ...existing code...
-    
+
     # Expose current active district air alarms
     out = []
     now = time.time()
@@ -16209,10 +16206,10 @@ def version_check():
 def test_oblast_raion():
     if not _require_secret(request):
         return Response('Forbidden', status=403)
-    
+
     test_text = "Загроза застосування БПЛА. Перейдіть в укриття! | чернігівська область (чернігівський район), київська область (вишгородський район), сумська область (сумський, конотопський райони) - загроза ударних бпла!"
     result = process_message(test_text, 'test_99999', '2024-12-06', 'test_channel')
-    
+
     return {
         'test_text': test_text,
         'result': result,
@@ -16222,7 +16219,7 @@ def test_oblast_raion():
 @app.route('/test-pusk')
 def test_pusk_icon():
     """Test route to debug pusk.png display issues"""
-    with open('/Users/vladimirmalik/Desktop/render2/test_pusk_icon.html', 'r', encoding='utf-8') as f:
+    with open('/Users/vladimirmalik/Desktop/render2/test_pusk_icon.html', encoding='utf-8') as f:
         return f.read()
 
 @app.route('/admin')
@@ -16387,28 +16384,28 @@ def admin_stats():
     """Get comprehensive system statistics for admin dashboard"""
     if not _require_secret(request):
         return jsonify({'status':'forbidden'}), 403
-    
+
     try:
         all_msgs = load_messages()
         now = time.time()
-        tz = pytz.timezone('Europe/Kyiv')
-        
+        pytz.timezone('Europe/Kyiv')
+
         # Message statistics
         total_messages = len(all_msgs)
         pending_geo = len([m for m in all_msgs if m.get('pending_geo')])
         with_coordinates = len([m for m in all_msgs if m.get('lat') and m.get('lng')])
-        
+
         # Recent activity (last 24h)
         cutoff_24h = now - 86400
         recent_msgs = [m for m in all_msgs if _msg_timestamp(m) > cutoff_24h]
-        
+
         # Threat type breakdown
         threat_counts = {}
         for msg in all_msgs:
             if not msg.get('pending_geo') and msg.get('lat') and msg.get('lng'):
                 threat_type = msg.get('threat_type', 'unknown')
                 threat_counts[threat_type] = threat_counts.get(threat_type, 0) + 1
-        
+
         # System health
         with ACTIVE_LOCK:
             active_users = len(ACTIVE_VISITORS)
@@ -16416,7 +16413,7 @@ def admin_stats():
         hidden_markers = len(load_hidden())
         neg_cache_size = len(_load_neg_geocode_cache())
         debug_logs_count = len(DEBUG_LOGS)
-        
+
         return jsonify({
             'status': 'ok',
             'stats': {
@@ -16446,29 +16443,29 @@ def admin_cleanup():
     """Clean up old data to maintain performance"""
     if not _require_secret(request):
         return jsonify({'status':'forbidden'}), 403
-    
+
     payload = request.get_json(silent=True) or {}
     days_to_keep = int(payload.get('days', 7))  # Keep last 7 days by default
-    
-    try:    
+
+    try:
         cutoff_time = time.time() - (days_to_keep * 86400)
-        
+
         # Clean old messages
         all_msgs = load_messages()
         old_count = len(all_msgs)
         new_msgs = [m for m in all_msgs if _msg_timestamp(m) > cutoff_time]
-        
+
         # Always keep at least 100 most recent messages
         if len(new_msgs) < 100 and len(all_msgs) >= 100:
             new_msgs = sorted(all_msgs, key=_msg_timestamp, reverse=True)[:100]
-        
+
         save_messages(new_msgs)
-        
+
         # Clean old debug logs (keep last 500)
         global DEBUG_LOGS
         if len(DEBUG_LOGS) > 500:
             DEBUG_LOGS = DEBUG_LOGS[-500:]
-        
+
         # Clean old visitor data from SQLite
         try:
             conn = sqlite3.connect(VISIT_DB_PATH)
@@ -16479,7 +16476,7 @@ def admin_cleanup():
             conn.close()
         except Exception:
             deleted_visits = 0
-        
+
         return jsonify({
             'status': 'ok',
             'cleaned': {
@@ -16500,9 +16497,9 @@ def admin_export():
     """Export data for backup/analysis"""
     if not _require_secret(request):
         return jsonify({'status':'forbidden'}), 403
-    
+
     export_type = request.args.get('type', 'messages')
-    
+
     try:
         if export_type == 'messages':
             all_msgs = load_messages()
@@ -16512,11 +16509,11 @@ def admin_export():
                 clean_msg = {k: v for k, v in msg.items() if k not in ['id']}
                 clean_msgs.append(clean_msg)
             return jsonify({'status': 'ok', 'data': clean_msgs, 'count': len(clean_msgs)})
-        
+
         elif export_type == 'stats':
             with ACTIVE_LOCK:
                 active_count = len(ACTIVE_VISITORS)
-            
+
             return jsonify({
                 'status': 'ok',
                 'data': {
@@ -16529,10 +16526,10 @@ def admin_export():
                     'export_time': time.time()
                 }
             })
-        
+
         else:
             return jsonify({'status': 'error', 'error': 'Invalid export type'}), 400
-    
+
     except Exception as e:
         return jsonify({'status': 'error', 'error': str(e)}), 500
         _save_neg_geocode_cache()
@@ -16667,27 +16664,27 @@ def git_pull_on_startup():
         return
     try:
         def run(cmd):
-            return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        
+            return subprocess.run(cmd, shell=True, capture_output=True, text=True)
+
         run('git config user.email "bot@local"')
         run('git config user.name "Auto Sync Bot"')
-        
+
         safe_remote = f'https://x-access-token:{GIT_SYNC_TOKEN}@github.com/{GIT_REPO_SLUG}.git'
         remotes = run('git remote -v').stdout
         if 'origin' not in remotes or GIT_REPO_SLUG not in remotes:
             run('git remote remove origin')
             run(f'git remote add origin "{safe_remote}"')
-        
+
         # Stash any local changes, pull, then pop
         run('git stash')
         pull_result = run('git pull origin main --rebase')
         run('git stash pop')
-        
+
         if pull_result.returncode == 0:
             log.info("Git pull on startup successful - chat messages restored")
         else:
             log.warning(f"Git pull failed: {pull_result.stderr}")
-        
+
         _git_pull_done = True
     except Exception as e:
         log.error(f"Git pull on startup error: {e}")
@@ -16711,7 +16708,7 @@ def maybe_git_autocommit():
         raise RuntimeError('Not a git repo')
     # Configure user (once)
     def run(cmd):
-        return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        return subprocess.run(cmd, shell=True, capture_output=True, text=True)
     run('git config user.email "bot@local"')
     run('git config user.name "Auto Sync Bot"')
     # Set remote URL embedding token (avoid logging token!)
@@ -16729,7 +16726,7 @@ def maybe_git_autocommit():
     status = run('git status --porcelain').stdout
     if MESSAGES_FILE not in status and CHAT_MESSAGES_FILE not in status and 'devices.json' not in status:
         return  # no actual diff
-    commit_msg = f'Update messages (auto)'  # no secrets
+    commit_msg = 'Update messages (auto)'  # no secrets
     run(f'git commit -m "{commit_msg}"')
     push_res = run('git push origin HEAD:main')
     if push_res.returncode == 0:
@@ -16829,6 +16826,7 @@ def startup_init():
 import atexit
 import signal
 
+
 # Force reload endpoints for admin
 @app.route('/api/force-reload-status')
 def force_reload_status():
@@ -16837,7 +16835,7 @@ def force_reload_status():
     with FORCE_RELOAD_LOCK:
         current_time = time.time()
         # Check if force reload is still active (within duration window)
-        should_reload = (FORCE_RELOAD_TIMESTAMP > 0 and 
+        should_reload = (FORCE_RELOAD_TIMESTAMP > 0 and
                         (current_time - FORCE_RELOAD_TIMESTAMP) < FORCE_RELOAD_DURATION)
     return jsonify({'reload': should_reload})
 
@@ -16846,13 +16844,13 @@ def trigger_force_reload():
     """Admin endpoint to trigger force reload for all users"""
     if not _require_secret(request):
         return Response('Forbidden', status=403)
-    
+
     global FORCE_RELOAD_TIMESTAMP
     with FORCE_RELOAD_LOCK:
         FORCE_RELOAD_TIMESTAMP = time.time()
-    
-    log.info("🔄 ADMIN: Force reload triggered for all users (active for {} seconds)".format(FORCE_RELOAD_DURATION))
-    return jsonify({'success': True, 'message': 'Force reload activated for {} seconds'.format(FORCE_RELOAD_DURATION)})
+
+    log.info(f"🔄 ADMIN: Force reload triggered for all users (active for {FORCE_RELOAD_DURATION} seconds)")
+    return jsonify({'success': True, 'message': f'Force reload activated for {FORCE_RELOAD_DURATION} seconds'})
 
 def shutdown_scheduler():
     """Shutdown scheduler gracefully"""
@@ -16922,7 +16920,7 @@ def get_registered_devices():
     try:
         devices = device_store._load()
         # Mask tokens for security (show only last 10 chars)
-        for device_id, data in devices.items():
+        for _device_id, data in devices.items():
             if 'token' in data:
                 token = data['token']
                 data['token'] = '...' + token[-10:] if len(token) > 10 else token
@@ -16943,7 +16941,7 @@ def test_notification():
 
     try:
         from firebase_admin import messaging
-        
+
         data = request.get_json()
         token = data.get('token')
 
@@ -16967,13 +16965,13 @@ def test_notification():
         return jsonify({'success': True, 'message_id': response})
     except messaging.UnregisteredError:
         # Token is invalid - remove device from store
-        log.warning(f"Token is invalid (UnregisteredError), removing device...")
+        log.warning("Token is invalid (UnregisteredError), removing device...")
         device_store.remove_device(token)
         return jsonify({'error': 'NotRegistered', 'message': 'Token is invalid and was removed. Please re-register the device.'}), 410
     except Exception as e:
         error_msg = str(e)
         if 'NotRegistered' in error_msg or 'not registered' in error_msg.lower():
-            log.warning(f"Token not registered, removing device...")
+            log.warning("Token not registered, removing device...")
             device_store.remove_device(token)
             return jsonify({'error': 'NotRegistered', 'message': 'Token is invalid and was removed. Please re-register the device.'}), 410
         log.error(f"Error sending test notification: {e}")
@@ -16988,26 +16986,26 @@ def send_fcm_notification(message_data: dict):
 
     try:
         from firebase_admin import messaging
-        
+
         # Extract location from multiple possible fields
         location = message_data.get('location', '') or message_data.get('place', '') or message_data.get('text', '')[:100]
         threat_type = message_data.get('type', '') or message_data.get('threat_type', '') or 'Загроза'
-        
+
         # Also check 'text' field for region info if location is empty
         text = message_data.get('text', '')
         if not location and text:
             location = text[:100]
-        
-        log.info(f"=== FCM NOTIFICATION TRIGGERED ===")
+
+        log.info("=== FCM NOTIFICATION TRIGGERED ===")
         log.info(f"Location: {location}")
         log.info(f"Threat type: {threat_type}")
         log.info(f"Full message data keys: {list(message_data.keys())}")
-        
+
         # Find matching region - handle both full names and abbreviations
         region = None
         # Search in both location and text
         search_text = f"{location} {text}".lower()
-        
+
         # Region mapping with abbreviations
         regions_map = {
             'Київ': ['київ', 'києв'],
@@ -17036,7 +17034,7 @@ def send_fcm_notification(message_data: dict):
             'Чернівецька область': ['чернівецька', 'черновицкая', 'чернівц'],
             'Луганська область': ['луганська', 'луганская', 'луган'],
         }
-        
+
         for region_name, keywords in regions_map.items():
             for keyword in keywords:
                 if keyword in search_text:
@@ -17045,25 +17043,25 @@ def send_fcm_notification(message_data: dict):
                     break
             if region:
                 break
-        
+
         if not region:
             log.warning(f"Could not determine region for location: {location}, text: {text[:100]}")
             return
 
         # Get devices subscribed to this region
         devices = device_store.get_devices_for_region(region)
-        log.info(f"=== DEVICE LOOKUP ===")
+        log.info("=== DEVICE LOOKUP ===")
         log.info(f"Region: {region}")
         log.info(f"Devices found: {len(devices)}")
         log.info(f"Device details: {devices}")
-        
+
         if not devices:
             log.warning(f"No devices subscribed to region: {region}")
             return
 
         # Determine if critical
         is_critical = 'ракет' in threat_type.lower() or 'балістич' in threat_type.lower()
-        
+
         # Create notification
         title = f"{'🚨' if is_critical else '⚠️'} {threat_type}"
         body = f"{location}"
@@ -17101,7 +17099,7 @@ def send_fcm_notification(message_data: dict):
                     ),
                     token=device['token'],
                 )
-                
+
                 response = messaging.send(message)
                 success_count += 1
                 log.info(f"Notification sent to device {device['device_id'][:20]}...: {response}")
@@ -17117,7 +17115,7 @@ def send_fcm_notification(message_data: dict):
                     device_store.remove_device(device['device_id'])
                 else:
                     log.error(f"Failed to send to device {device['device_id'][:20]}...: {e}")
-        
+
         log.info(f"Sent {success_count}/{len(devices)} notifications for region: {region}")
     except Exception as e:
         log.error(f"Error in send_fcm_notification: {e}")
@@ -17138,9 +17136,9 @@ def load_chat_messages():
                 git_pull_on_startup()
             except Exception as e:
                 log.warning(f"Git pull on chat init failed: {e}")
-        
+
         if os.path.exists(CHAT_MESSAGES_FILE):
-            with open(CHAT_MESSAGES_FILE, 'r', encoding='utf-8') as f:
+            with open(CHAT_MESSAGES_FILE, encoding='utf-8') as f:
                 return json.load(f)
     except Exception as e:
         log.error(f"Error loading chat messages: {e}")
@@ -17161,7 +17159,7 @@ def get_chat_messages():
     """Get chat messages, optionally after a specific timestamp."""
     try:
         messages = load_chat_messages()
-        
+
         # Optional: get only messages after timestamp
         after = request.args.get('after')
         if after:
@@ -17170,11 +17168,11 @@ def get_chat_messages():
                 messages = [m for m in messages if m.get('timestamp', 0) > after_ts]
             except:
                 pass
-        
+
         # Return last 100 messages by default
         limit = min(int(request.args.get('limit', 100)), 500)
         messages = messages[-limit:]
-        
+
         return jsonify({
             'success': True,
             'messages': messages,
@@ -17189,21 +17187,21 @@ def send_chat_message():
     """Send a new chat message."""
     try:
         data = request.get_json()
-        
+
         user_id = data.get('userId', '')
         message = data.get('message', '').strip()
-        
+
         if not user_id or not message:
             return jsonify({'error': 'Missing userId or message'}), 400
-        
+
         # Sanitize message (basic)
         if len(message) > 1000:
             message = message[:1000]
-        
+
         # Create message object
         kyiv_tz = pytz.timezone('Europe/Kiev')
         now = datetime.now(kyiv_tz)
-        
+
         new_message = {
             'id': str(uuid.uuid4()),
             'userId': user_id,
@@ -17212,20 +17210,20 @@ def send_chat_message():
             'time': now.strftime('%H:%M'),
             'date': now.strftime('%d.%m.%Y')
         }
-        
+
         # Load, append, save
         messages = load_chat_messages()
         messages.append(new_message)
         save_chat_messages(messages)
-        
+
         # Trigger git sync for persistence
         try:
             maybe_git_autocommit()
         except Exception as git_err:
             log.warning(f"Git autocommit failed for chat: {git_err}")
-        
+
         log.info(f"Chat message from {user_id[:20]}: {message[:50]}...")
-        
+
         return jsonify({
             'success': True,
             'message': new_message

@@ -5,13 +5,13 @@ Geocoding interface - base class for all geocoders.
 """
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional, Tuple, Any
+from typing import Any, Optional
 
 
 @dataclass(frozen=True)
 class GeocodingResult:
     """Result from geocoding operation."""
-    coordinates: Tuple[float, float]  # (lat, lng)
+    coordinates: tuple[float, float]  # (lat, lng)
     place_name: Optional[str] = None
     source: str = 'unknown'
     confidence: float = 1.0
@@ -21,10 +21,10 @@ class GeocodingResult:
 class GeocoderInterface(ABC):
     """
     Base interface for geocoding services.
-    
+
     All geocoders must implement this interface.
     """
-    
+
     @abstractmethod
     def geocode(
         self,
@@ -33,22 +33,22 @@ class GeocoderInterface(ABC):
     ) -> Optional[GeocodingResult]:
         """
         Convert location name to coordinates.
-        
+
         Args:
             query: Location name to geocode
             region: Optional region hint for disambiguation
-            
+
         Returns:
             GeocodingResult or None if not found
         """
         pass
-    
+
     @property
     @abstractmethod
     def name(self) -> str:
         """Human-readable name of this geocoder."""
         pass
-    
+
     @property
     def priority(self) -> int:
         """
@@ -56,12 +56,12 @@ class GeocoderInterface(ABC):
         Default is 50.
         """
         return 50
-    
+
     @property
     def is_available(self) -> bool:
         """Check if geocoder is currently available."""
         return True
-    
+
     def stats(self) -> dict:
         """Get geocoder statistics."""
         return {'name': self.name}

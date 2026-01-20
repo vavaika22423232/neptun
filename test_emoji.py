@@ -25,7 +25,7 @@ if match_v3:
     city = match_v3.group(1).strip()
     oblast = match_v3.group(2).strip()
     print(f'V3 pattern: city="{city}", oblast="{oblast}"')
-    
+
     # Normalize
     city_norm = city.lower()
     if city_norm.endswith('ку'):
@@ -33,7 +33,7 @@ if match_v3:
     elif city_norm.endswith('у'):
         city_norm = city_norm[:-1] + 'а'
     print(f'Normalized: "{city_norm}"')
-    
+
     # Check
     from ukraine_all_settlements import UKRAINE_SETTLEMENTS_BY_OBLAST
     key = (city_norm, 'харківська')

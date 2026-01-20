@@ -22,20 +22,20 @@ if match2:
     oblast_raw = match2.group(2).strip()
     print(f'Pattern with /: City: "{city_raw}"')
     print(f'Pattern with /: Oblast: "{oblast_raw}"')
-    
+
     # Split by slash and take first
     cities = city_raw.split('/')
     print(f'Cities: {cities}')
     first_city = cities[0].strip().lower()
     print(f'First city: "{first_city}"')
-    
+
     # Normalize accusative -> nominative
     if first_city.endswith('ку'):
         first_city = first_city[:-2] + 'ка'
     elif first_city.endswith('у'):
         first_city = first_city[:-1] + 'а'
     print(f'Normalized: "{first_city}"')
-    
+
     # Check in dictionary
     from ukraine_all_settlements import UKRAINE_SETTLEMENTS_BY_OBLAST
     key = (first_city, 'харківська')

@@ -11,17 +11,17 @@ if match:
     oblast_raw = match.group(2).strip()
     print(f'City: {city_raw}')
     print(f'Oblast: {oblast_raw}')
-    
+
     # Normalize city
     city_norm = city_raw.lower()
     print(f'City norm: {city_norm}')
-    
+
     # Extract oblast key
     oblast_lower = oblast_raw.lower()
     if 'харківська' in oblast_lower:
         oblast_key = 'харківська'
         print(f'Oblast key: {oblast_key}')
-    
+
     # Check in UKRAINE_SETTLEMENTS_BY_OBLAST
     from ukraine_all_settlements import UKRAINE_SETTLEMENTS_BY_OBLAST
     key = (city_norm, oblast_key)

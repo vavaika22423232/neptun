@@ -5,14 +5,14 @@ Regex patterns for parsing Telegram messages.
 з Telegram каналів про загрози (БПЛА, ракети, вибухи тощо).
 """
 import re
-from typing import Dict, List, Tuple, Pattern
+from re import Pattern
 
 # ==============================================================================
 # THREAT TYPE PATTERNS
 # ==============================================================================
 
 # Ballistic missiles - highest priority, immediate danger
-BALLISTIC_PATTERNS: List[Pattern] = [
+BALLISTIC_PATTERNS: list[Pattern] = [
     re.compile(r'балістик[аи]?\b', re.IGNORECASE),
     re.compile(r'балістичн(?:а|ий|их|ою|і)\s+(?:загроз|ракет|небезпек)', re.IGNORECASE),
     re.compile(r'загроз(?:а|и)?\s+(?:балістик|застосування)', re.IGNORECASE),
@@ -20,20 +20,20 @@ BALLISTIC_PATTERNS: List[Pattern] = [
 ]
 
 # Cruise missiles
-CRUISE_MISSILE_PATTERNS: List[Pattern] = [
+CRUISE_MISSILE_PATTERNS: list[Pattern] = [
     re.compile(r'крилат(?:а|і|их)\s+ракет', re.IGNORECASE),
     re.compile(r'КР\b', re.IGNORECASE),
     re.compile(r'(?:x-101|x-555|калібр|томагавк|kh-101|kh-555)', re.IGNORECASE),
 ]
 
 # Any rockets/missiles
-ROCKET_PATTERNS: List[Pattern] = [
+ROCKET_PATTERNS: list[Pattern] = [
     re.compile(r'ракет(?:а|и|у|ою|ні|ний|них)?\b', re.IGNORECASE),
     re.compile(r'(?:іскандер|точка-у|с-300|с-400)', re.IGNORECASE),
 ]
 
 # UAVs / Drones / Shaheds
-DRONE_PATTERNS: List[Pattern] = [
+DRONE_PATTERNS: list[Pattern] = [
     re.compile(r'бпла\b', re.IGNORECASE),
     re.compile(r'дрон(?:и|ів|а|ом)?\b', re.IGNORECASE),
     re.compile(r'шахед(?:и|ів|а|ом)?\b', re.IGNORECASE),
@@ -44,14 +44,14 @@ DRONE_PATTERNS: List[Pattern] = [
 ]
 
 # KABs (Guided aerial bombs)
-KAB_PATTERNS: List[Pattern] = [
+KAB_PATTERNS: list[Pattern] = [
     re.compile(r'каб(?:и|ів|ами)?\b', re.IGNORECASE),
     re.compile(r'(?:керован(?:а|і|их)\s+)?авіабомб', re.IGNORECASE),
     re.compile(r'(?:fab|фаб)(?:\s*-?\s*\d+)?', re.IGNORECASE),
 ]
 
 # Explosions
-EXPLOSION_PATTERNS: List[Pattern] = [
+EXPLOSION_PATTERNS: list[Pattern] = [
     re.compile(r'вибух(?:и|ів|у|нув)?', re.IGNORECASE),
     re.compile(r'(?:луна|звук)\s+вибух', re.IGNORECASE),
     re.compile(r'пролунав', re.IGNORECASE),
@@ -59,14 +59,14 @@ EXPLOSION_PATTERNS: List[Pattern] = [
 ]
 
 # Air alarms
-ALARM_PATTERNS: List[Pattern] = [
+ALARM_PATTERNS: list[Pattern] = [
     re.compile(r'повітрян(?:а|ий|ої)\s+тривог', re.IGNORECASE),
     re.compile(r'тривог(?:а|и|у)\s+(?:оголошен|повітрян)', re.IGNORECASE),
     re.compile(r'🚨\s*тривог', re.IGNORECASE),
 ]
 
 # All clear / Alarm ended
-ALL_CLEAR_PATTERNS: List[Pattern] = [
+ALL_CLEAR_PATTERNS: list[Pattern] = [
     re.compile(r'відбій(?:\s+тривоги)?', re.IGNORECASE),
     re.compile(r'відміна\s+(?:тривоги|загрози)', re.IGNORECASE),
     re.compile(r'тривогу?\s+(?:знят|скасован|відмін)', re.IGNORECASE),
@@ -75,7 +75,7 @@ ALL_CLEAR_PATTERNS: List[Pattern] = [
 ]
 
 # MiG takeoff warnings
-MIG_PATTERNS: List[Pattern] = [
+MIG_PATTERNS: list[Pattern] = [
     re.compile(r'(?:міг|миг|mig)(?:\s*-?\s*31)?', re.IGNORECASE),
     re.compile(r'(?:зліт|взліт)\s+(?:міг|мигів|тактичної)', re.IGNORECASE),
     re.compile(r'тактичн(?:а|ої)\s+авіаці', re.IGNORECASE),
@@ -122,7 +122,7 @@ COURSE_DASH: Pattern = re.compile(
 )
 
 # All course patterns in order of specificity
-COURSE_PATTERNS: List[Tuple[str, Pattern, Tuple[int, int]]] = [
+COURSE_PATTERNS: list[tuple[str, Pattern, tuple[int, int]]] = [
     ('from_to', COURSE_FROM_TO, (0, 1)),        # source, target
     ('to_from', COURSE_TO_FROM, (1, 0)),        # target, source -> swap
     ('source_to', COURSE_SOURCE_TO, (0, 1)),    # source, target
@@ -142,14 +142,14 @@ OBLAST_PATTERN: Pattern = re.compile(
     re.IGNORECASE
 )
 
-# District extraction  
+# District extraction
 DISTRICT_PATTERN: Pattern = re.compile(
     r'([\w\-]+(?:ський|ська|ське)\s*район)',
     re.IGNORECASE
 )
 
 # City/settlement extraction (near/in/over patterns)
-CITY_PATTERNS: List[Pattern] = [
+CITY_PATTERNS: list[Pattern] = [
     # над містом X
     re.compile(r'над\s+(?:містом\s+)?([А-ЯІЇЄа-яіїє][а-яіїє\'\-]+)', re.IGNORECASE),
     # в районі X
@@ -167,7 +167,7 @@ CITY_PATTERNS: List[Pattern] = [
 # COUNT PATTERNS (для "2х БПЛА", "3 ракети" тощо)
 # ==============================================================================
 
-COUNT_PATTERNS: List[Pattern] = [
+COUNT_PATTERNS: list[Pattern] = [
     re.compile(r'(\d+)\s*[xхX]\s*(?:бпла|дрон|шахед)', re.IGNORECASE),
     re.compile(r'(\d+)\s*(?:бпла|дрон|шахед)', re.IGNORECASE),
     re.compile(r'(?:група|групи)\s+(?:з\s+)?(\d+)', re.IGNORECASE),
@@ -179,7 +179,7 @@ COUNT_PATTERNS: List[Pattern] = [
 # DIRECTION MAPPING (Ukrainian -> Cardinal)
 # ==============================================================================
 
-DIRECTION_MAP: Dict[str, str] = {
+DIRECTION_MAP: dict[str, str] = {
     # Full names
     'північ': 'N',
     'північний': 'N',
@@ -189,14 +189,13 @@ DIRECTION_MAP: Dict[str, str] = {
     'східний': 'E',
     'захід': 'W',
     'західний': 'W',
-    
+
     # Compound directions
-    'північно-східний': 'NE',
     'північно-східний': 'NE',
     'північно-західний': 'NW',
     'південно-східний': 'SE',
     'південно-західний': 'SW',
-    
+
     # Abbreviated
     'пн': 'N',
     'пд': 'S',
@@ -209,7 +208,7 @@ DIRECTION_MAP: Dict[str, str] = {
 }
 
 # Reverse mapping for display
-DIRECTION_MAP_REVERSE: Dict[str, str] = {
+DIRECTION_MAP_REVERSE: dict[str, str] = {
     'N': 'Північ',
     'S': 'Південь',
     'E': 'Схід',
@@ -261,42 +260,42 @@ EMOJI_PATTERN: Pattern = re.compile(
 
 class ThreatPatterns:
     """Compiled patterns for threat detection - for easy import."""
-    
+
     SHAHED = re.compile(
         r'шахед|дрон|бпла|безпілотн|камікадзе|герань',
         re.IGNORECASE
     )
-    
+
     MISSILE = re.compile(
         r'ракет|балістик|крилат|калібр|кінжал|іскандер|х-101|х-22',
         re.IGNORECASE
     )
-    
+
     LOCATION = re.compile(
         r'(?:над|біля|в|у|до|через|поблизу)\s+([А-ЯІЇЄҐа-яіїєґ\'\-]+(?:ськ[аоіий]+)?)',
         re.IGNORECASE
     )
-    
+
     DIRECTION = re.compile(
         r'(?:курс(?:ом)?|напрям(?:ок|ку)?|рух(?:ається)?)\s+(?:на|до|в)\s+([А-ЯІЇЄҐа-яіїєґ\'\-\s]+)',
         re.IGNORECASE
     )
-    
+
     REGION = re.compile(
         r'([А-ЯІЇЄҐа-яіїєґ]+ськ[аоіий]+)\s+(?:област|район)',
         re.IGNORECASE
     )
-    
+
     COUNT = re.compile(
         r'(\d+)\s*(?:од\.?|одиниц|шт\.?|штук|дрон|шахед|бпла)',
         re.IGNORECASE
     )
-    
+
     ALTITUDE = re.compile(
         r'(?:висот[аі]|altitude)\s*[-:]?\s*(\d+)\s*(?:м|метр|m)',
         re.IGNORECASE
     )
-    
+
     SPEED = re.compile(
         r'(?:швидкіст[ьі]|speed)\s*[-:]?\s*(\d+)\s*(?:км|km)',
         re.IGNORECASE
@@ -307,7 +306,7 @@ class ThreatPatterns:
 # THREAT_PATTERNS - Dictionary of patterns for string matching
 # ==============================================================================
 
-THREAT_PATTERNS: Dict[str, List[str]] = {
+THREAT_PATTERNS: dict[str, list[str]] = {
     'shahed': ['шахед', 'shahed', 'герань', 'бпла', 'дрон', 'безпілотн', 'камікадзе'],
     'missile': ['ракет', 'крилат'],
     'ballistic': ['балістик', 'іскандер', 'кінжал'],

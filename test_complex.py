@@ -6,7 +6,7 @@ test_msg = """⚠️Одещина:
 
 ⚠️Миколаївщина:
 8х БПЛА на/через Баштанку в напрямку Дорошівки
-4х БПЛА на Возсіятське 
+4х БПЛА на Возсіятське
 2х БпЛА в бік Володимирівки з Херсонщини
 
 Український | ППОшник"""
@@ -42,21 +42,21 @@ for i, line in enumerate(lines, 1):
     if 'бпла' in line_lower:
         print(f"\nLine {i}: {line}")
         print(f"Line lower: {line_lower}")
-        
+
         m1 = pat_napramku.search(line_lower)
         if m1:
             print(f"  ✓ pat_napramku: count={m1.group(1)}, city='{m1.group(2)}'")
-        
+
         m2 = pat_simple_na.search(line_lower)
         if m2:
             print(f"  ✓ pat_simple_na: count={m2.group(1)}, city='{m2.group(2)}'")
-        
+
         m3 = pat_vik.search(line_lower)
         if m3:
             print(f"  ✓ pat_vik: count={m3.group(1)}, city='{m3.group(2)}'")
-        
+
         if not (m1 or m2 or m3):
-            print(f"  ✗ NO PATTERN MATCHED!")
-            print(f"  Problem: Complex line with 'на/через' or other complex pattern")
+            print("  ✗ NO PATTERN MATCHED!")
+            print("  Problem: Complex line with 'на/через' or other complex pattern")
 
 print("\n" + "=" * 70)

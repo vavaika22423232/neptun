@@ -31,7 +31,7 @@ def _get_region_center(region_name):
     # Check in OBLAST_CENTERS directly
     if region_lower in OBLAST_CENTERS:
         return OBLAST_CENTERS[region_lower]
-    
+
     # Normalize instrumental case "над вінницькою областю" → "вінницька область"
     # Pattern: Xькою областю → Xька область
     instrumental_match = re.match(r'^(.+?)(ькою|ською|цькою)\s*(областю|обл\.?)$', region_lower)
@@ -47,25 +47,25 @@ def _get_region_center(region_name):
         normalized_short = f"{base}{new_suffix}"
         if normalized_short in OBLAST_CENTERS:
             return OBLAST_CENTERS[normalized_short]
-    
+
     # Try removing common endings and searching again
     base_region = region_lower
     for ending in ['щині', 'щину', 'щини', 'щина', 'ччині', 'ччину', 'ччини', 'ччина']:
         if region_lower.endswith(ending):
             base_region = region_lower[:-len(ending)]
             break
-    
+
     # Try to find with base + common endings
     for ending in ['щина', 'щини', 'ччина', 'ччини']:
         test_key = base_region + ending
         if test_key in OBLAST_CENTERS:
             return OBLAST_CENTERS[test_key]
-    
+
     # Try partial match
     for key, coords in OBLAST_CENTERS.items():
         if base_region in key or key.startswith(base_region):
             return coords
-    
+
     return None
 
 
@@ -74,11 +74,11 @@ def _get_city_coords(city_name):
     city_lower = city_name.lower().strip()
     # Remove prefixes like "м.", "н.п.", "с."
     city_lower = re.sub(r'^(м\.|м\s|н\.п\.|н\.п\s|с\.|с\s|сел\.|смт\.?|смт\s)', '', city_lower).strip()
-    
+
     # Check in CITY_COORDS
     if city_lower in CITY_COORDS:
         return CITY_COORDS[city_lower]
-    
+
     # Try variations without endings
     endings = ['а', 'у', 'ом', 'і', 'ів', 'ами', 'е', 'ої', 'ою']
     for ending in endings:
@@ -86,19 +86,19 @@ def _get_city_coords(city_name):
             base = city_lower[:-len(ending)]
             if base in CITY_COORDS:
                 return CITY_COORDS[base]
-    
+
     # Handle Ukrainian vowel alternation in genitive: миколаєва → миколаїв
     # Pattern: base + 'єва' (genitive) → base + 'їв' (nominative)
     if city_lower.endswith('єва'):
         base = city_lower[:-3] + 'їв'  # миколаєва → миколаїв
         if base in CITY_COORDS:
             return CITY_COORDS[base]
-    
+
     # Also try simple base search for partial matches
     for key, coords in CITY_COORDS.items():
         if city_lower.startswith(key) or key.startswith(city_lower.rstrip('аеоуіїю')):
             return coords
-    
+
     return None
 
 
@@ -115,7 +115,7 @@ if __name__ == '__main__':
         result = _get_region_center(t)
         status = '✓' if result else '✗'
         print(f"  {status} '{t}' -> {result}  ({desc})")
-    
+
     print("\n=== Тест _get_city_coords ===")
     city_tests = [
         ('миколаєва', 'Genitive єва→їв'),

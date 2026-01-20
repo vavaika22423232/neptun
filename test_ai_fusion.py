@@ -11,14 +11,15 @@ AI сам визначає:
 - Будувати траєкторії
 """
 
-import sys
 import os
+import sys
 
 # Додаємо шлях до app.py
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Імпортуємо класи з app.py
-from app import ChannelIntelligenceFusion, GROQ_ENABLED
+from app import GROQ_ENABLED, ChannelIntelligenceFusion
+
 
 def main():
     print("=" * 70)
@@ -26,10 +27,10 @@ def main():
     print("=" * 70)
     print(f"\n📊 Groq AI: {'✅ ENABLED' if GROQ_ENABLED else '❌ DISABLED (fallback to regex)'}")
     print()
-    
+
     # Створюємо систему
     fusion = ChannelIntelligenceFusion()
-    
+
     # Тестові повідомлення - імітація реального потоку
     test_messages = [
         # === НОВИЙ ДРОН ===
@@ -109,17 +110,17 @@ def main():
             'date': '2026-01-19 04:25:00',
         },
     ]
-    
+
     print("📨 ОБРОБКА ПОВІДОМЛЕНЬ:")
     print("-" * 70)
-    
+
     for i, msg in enumerate(test_messages, 1):
         print(f"\n[{i}] Канал: @{msg['channel']}")
         print(f"    Текст: {msg['text'][:60]}...")
-        
+
         # Обробка через AI-first систему
         result = fusion.process_message(msg)
-        
+
         if result:
             sig = result['signature']
             print(f"    ✅ Дія: {result['action'].upper()}")
@@ -130,17 +131,17 @@ def main():
             if sig.get('target_coords'):
                 print(f"    📌 Координати: {sig['target_coords']}")
         else:
-            print(f"    ⚪ Не загроза або не розпізнано")
-    
+            print("    ⚪ Не загроза або не розпізнано")
+
     # === ПІДСУМОК ===
     print("\n" + "=" * 70)
     print("📊 РЕЗУЛЬТАТ ЗЛИТТЯ:")
     print("=" * 70)
-    
+
     active_events = fusion.get_active_events()
-    
+
     print(f"\n🔥 Активних подій: {len(active_events)}")
-    
+
     for event in active_events:
         print(f"\n  📌 Event: {event['id']}")
         print(f"     Тип: {event['threat_type']} x{event['quantity']}")
@@ -149,21 +150,21 @@ def main():
         print(f"     Регіони: {event['regions']}")
         print(f"     Напрямок: {event['direction']}")
         print(f"     Статус: {event['status']}")
-        print(f"     Джерел: {len(set(m['channel'] for m in event['messages']))}")
+        print(f"     Джерел: {len({m['channel'] for m in event['messages']})}")
         print(f"     Впевненість: {event['confidence']:.0%}")
-        
+
         # Траєкторія
         if len(event['trajectory']) > 1:
             print(f"     🛤️ Траєкторія: {len(event['trajectory'])} точок")
             trajectory = fusion.build_trajectory_from_event(event)
             if trajectory:
                 print(f"        Відстань: {trajectory['total_distance_km']:.1f} км")
-    
+
     # === МАРКЕРИ ===
     print("\n" + "-" * 70)
     print("🗺️ МАРКЕРИ ДЛЯ КАРТИ:")
     print("-" * 70)
-    
+
     for event in active_events:
         marker = fusion.generate_marker_from_event(event)
         if marker:
@@ -172,11 +173,11 @@ def main():
             print(f"     Координати: ({marker['lat']:.4f}, {marker['lng']:.4f})")
             print(f"     Текст: {marker['text']}")
             print(f"     Іконка: {marker['marker_icon']}")
-    
+
     print("\n" + "=" * 70)
     print("✅ ТЕСТ ЗАВЕРШЕНО")
     print("=" * 70)
-    
+
     if GROQ_ENABLED:
         print("\n💡 AI активний - повідомлення аналізуються через Groq LLM")
         print("   AI сам визначає: тип, кількість, координати, дії (create/move/remove)")

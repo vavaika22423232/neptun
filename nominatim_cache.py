@@ -5,7 +5,7 @@ Persistent cache for Nominatim geocoding results
 
 import json
 import os
-from typing import Optional, Tuple
+from typing import Optional
 
 CACHE_FILE = 'nominatim_cache.json'
 
@@ -13,7 +13,7 @@ def load_cache() -> dict:
     """Load cache from file"""
     if os.path.exists(CACHE_FILE):
         try:
-            with open(CACHE_FILE, 'r', encoding='utf-8') as f:
+            with open(CACHE_FILE, encoding='utf-8') as f:
                 return json.load(f)
         except Exception as e:
             print(f"Warning: Failed to load cache: {e}")
@@ -27,7 +27,7 @@ def save_cache(cache: dict):
     except Exception as e:
         print(f"Warning: Failed to save cache: {e}")
 
-def get_from_cache(city: str, region: Optional[str] = None) -> Optional[Tuple[float, float]]:
+def get_from_cache(city: str, region: Optional[str] = None) -> Optional[tuple[float, float]]:
     """Get coordinates from cache"""
     cache = load_cache()
     key = f"{city}_{region or ''}"
@@ -37,7 +37,7 @@ def get_from_cache(city: str, region: Optional[str] = None) -> Optional[Tuple[fl
             return tuple(coords)
     return None
 
-def add_to_cache(city: str, coords: Tuple[float, float], region: Optional[str] = None):
+def add_to_cache(city: str, coords: tuple[float, float], region: Optional[str] = None):
     """Add coordinates to cache"""
     cache = load_cache()
     key = f"{city}_{region or ''}"
@@ -51,7 +51,7 @@ def export_to_python_dict():
     if not cache:
         print("Cache is empty")
         return
-    
+
     print("\n# === Auto-discovered cities from Nominatim API ===")
     for key, coords in sorted(cache.items()):
         city = key.split('_')[0]
@@ -64,12 +64,12 @@ if __name__ == '__main__':
     print("=" * 50)
     cache = load_cache()
     print(f"Cache contains {len(cache)} entries")
-    
+
     if cache:
         print("\nRecent entries:")
         for key, coords in list(cache.items())[-10:]:
             city = key.split('_')[0]
             print(f"  {city}: {coords}")
-        
+
         print("\nTo export as Python dict, run:")
         print("  python3 -c 'from nominatim_cache import export_to_python_dict; export_to_python_dict()'")

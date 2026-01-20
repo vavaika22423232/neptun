@@ -5,9 +5,9 @@ import os
 import shutil
 import tempfile
 import threading
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Optional
 
-Message = Dict[str, Any]
+Message = dict[str, Any]
 
 log = logging.getLogger(__name__)
 
@@ -18,7 +18,7 @@ class MessageStore:
     def __init__(
         self,
         path: str,
-        prune_fn: Optional[Callable[[List[Message]], List[Message]]] = None,
+        prune_fn: Optional[Callable[[list[Message]], list[Message]]] = None,
         preserve_manual: bool = True,
         backup_count: int = 3,
     ) -> None:
@@ -26,16 +26,16 @@ class MessageStore:
         self.prune_fn = prune_fn
         self.preserve_manual = preserve_manual
         self.backup_count = max(0, backup_count)
-        self._cache: List[Message] = []
+        self._cache: list[Message] = []
         self._cache_mtime: float = 0.0
         self._lock = threading.RLock()
 
-    def load(self) -> List[Message]:
+    def load(self) -> list[Message]:
         with self._lock:
             data = self._ensure_cache()
             return copy.deepcopy(data)
 
-    def save(self, data: List[Message]) -> List[Message]:
+    def save(self, data: list[Message]) -> list[Message]:
         with self._lock:
             working = self._apply_retention(copy.deepcopy(data))
             if self.preserve_manual:
@@ -46,7 +46,7 @@ class MessageStore:
             return copy.deepcopy(working)
 
     # ----- Internal helpers -----
-    def _ensure_cache(self) -> List[Message]:
+    def _ensure_cache(self) -> list[Message]:
         current_mtime = self._current_mtime()
         if self._cache and current_mtime == self._cache_mtime:
             return self._cache
@@ -60,7 +60,7 @@ class MessageStore:
         except OSError:
             return 0.0
 
-    def _read_from_disk(self) -> List[Message]:
+    def _read_from_disk(self) -> list[Message]:
         if not os.path.exists(self.path):
             return []
         try:
@@ -76,7 +76,7 @@ class MessageStore:
                 log.warning("Failed to backup corrupted messages file: %s", exc)
             return []
 
-    def _apply_retention(self, data: List[Message]) -> List[Message]:
+    def _apply_retention(self, data: list[Message]) -> list[Message]:
         if self.prune_fn:
             try:
                 return self.prune_fn(data)
@@ -84,7 +84,7 @@ class MessageStore:
                 return data
         return data
 
-    def _merge_manual_markers(self, data: List[Message]) -> List[Message]:
+    def _merge_manual_markers(self, data: list[Message]) -> list[Message]:
         existing = self._ensure_cache()
         if not existing:
             return data
@@ -98,7 +98,7 @@ class MessageStore:
             log.debug("Restored %d manual markers during save merge", len(restored))
         return data
 
-    def _write_atomic(self, data: List[Message]) -> None:
+    def _write_atomic(self, data: list[Message]) -> None:
         base_dir = os.path.dirname(self.path) or "."
         os.makedirs(base_dir, exist_ok=True)
         if os.path.exists(self.path):
@@ -162,7 +162,7 @@ class DeviceStore:
         self.path = path if path else _get_persistent_path("devices.json")
         self._lock = threading.RLock()
 
-    def register_device(self, token: str, regions: List[str], device_id: str) -> None:
+    def register_device(self, token: str, regions: list[str], device_id: str) -> None:
         """Register or update a device."""
         with self._lock:
             devices = self._load()
@@ -176,7 +176,7 @@ class DeviceStore:
             self._save(devices)
             log.info(f"Registered device {device_id[:20]}... with {len(regions)} regions")
 
-    def save_device(self, device_id: str, token: str, regions: List[str], enabled: bool = True) -> None:
+    def save_device(self, device_id: str, token: str, regions: list[str], enabled: bool = True) -> None:
         """Save or update device information."""
         with self._lock:
             devices = self._load()
@@ -190,7 +190,7 @@ class DeviceStore:
             self._save(devices)
             log.info(f"Saved device {device_id[:20]}... with {len(regions)} regions (enabled={enabled})")
 
-    def update_regions(self, device_id: str, regions: List[str]) -> None:
+    def update_regions(self, device_id: str, regions: list[str]) -> None:
         """Update regions for an existing device."""
         with self._lock:
             devices = self._load()
@@ -246,7 +246,7 @@ class DeviceStore:
                         return True
         return False
 
-    def get_devices_for_region(self, region: str) -> List[Dict[str, Any]]:
+    def get_devices_for_region(self, region: str) -> list[dict[str, Any]]:
         """Get all devices subscribed to a specific region (with fuzzy matching)."""
         with self._lock:
             devices = self._load()
@@ -281,7 +281,7 @@ class DeviceStore:
             from datetime import datetime, timedelta
             cutoff = datetime.utcnow() - timedelta(days=days)
             to_remove = []
-            
+
             for device_id, data in devices.items():
                 last_active_str = data.get("last_active")
                 if not last_active_str:
@@ -293,17 +293,17 @@ class DeviceStore:
                         to_remove.append(device_id)
                 except (ValueError, TypeError):
                     to_remove.append(device_id)
-            
+
             for device_id in to_remove:
                 del devices[device_id]
-            
+
             if to_remove:
                 self._save(devices)
                 log.info(f"Cleaned {len(to_remove)} inactive devices")
-            
+
             return len(to_remove)
 
-    def _load(self) -> Dict[str, Any]:
+    def _load(self) -> dict[str, Any]:
         """Load devices from disk."""
         if not os.path.exists(self.path):
             return {}
@@ -314,7 +314,7 @@ class DeviceStore:
             log.error(f"Failed to load devices: {exc}")
             return {}
 
-    def _save(self, devices: Dict[str, Any]) -> None:
+    def _save(self, devices: dict[str, Any]) -> None:
         """Save devices to disk."""
         try:
             with open(self.path, "w", encoding="utf-8") as fp:
@@ -330,7 +330,7 @@ class FamilyStore:
         self.path = path if path else _get_persistent_path("family_status.json")
         self._lock = threading.RLock()
 
-    def _load(self) -> Dict[str, Any]:
+    def _load(self) -> dict[str, Any]:
         """Load family data from disk."""
         if not os.path.exists(self.path):
             return {"statuses": {}, "members": {}}
@@ -347,7 +347,7 @@ class FamilyStore:
             log.error(f"Failed to load family data: {exc}")
             return {"statuses": {}, "members": {}}
 
-    def _save(self, data: Dict[str, Any]) -> None:
+    def _save(self, data: dict[str, Any]) -> None:
         """Save family data to disk."""
         try:
             with open(self.path, "w", encoding="utf-8") as fp:
@@ -355,13 +355,13 @@ class FamilyStore:
         except Exception as exc:
             log.error(f"Failed to save family data: {exc}")
 
-    def get_status(self, code: str) -> Optional[Dict[str, Any]]:
+    def get_status(self, code: str) -> Optional[dict[str, Any]]:
         """Get status for a single family code."""
         with self._lock:
             data = self._load()
             return data["statuses"].get(code.upper())
 
-    def get_statuses(self, codes: List[str]) -> Dict[str, Dict[str, Any]]:
+    def get_statuses(self, codes: list[str]) -> dict[str, dict[str, Any]]:
         """Get statuses for multiple family codes."""
         with self._lock:
             data = self._load()
@@ -380,14 +380,14 @@ class FamilyStore:
         with self._lock:
             data = self._load()
             code_upper = code.upper()
-            
+
             # Update status
             data["statuses"][code_upper] = {
                 "is_safe": is_safe,
                 "last_update": datetime.utcnow().isoformat(),
                 "name": name,
             }
-            
+
             # Store FCM token if provided (for SOS notifications)
             if fcm_token or device_id:
                 if code_upper not in data["members"]:
@@ -397,17 +397,17 @@ class FamilyStore:
                 if device_id:
                     data["members"][code_upper]["device_id"] = device_id
                 data["members"][code_upper]["last_active"] = datetime.utcnow().isoformat()
-            
+
             self._save(data)
             log.info(f"Updated family status: {code_upper} -> is_safe={is_safe}")
 
-    def send_sos(self, sender_code: str, family_codes: List[str]) -> Dict[str, Any]:
+    def send_sos(self, sender_code: str, family_codes: list[str]) -> dict[str, Any]:
         """Mark sender as needing help and return FCM tokens of family members."""
         from datetime import datetime
         with self._lock:
             data = self._load()
             sender_upper = sender_code.upper()
-            
+
             # Mark sender as NOT safe with SOS flag
             data["statuses"][sender_upper] = {
                 "is_safe": False,
@@ -415,7 +415,7 @@ class FamilyStore:
                 "sos": True,
                 "sos_time": datetime.utcnow().isoformat(),
             }
-            
+
             # Get FCM tokens for family members
             tokens_to_notify = []
             for code in family_codes:
@@ -428,10 +428,10 @@ class FamilyStore:
                             "fcm_token": member["fcm_token"],
                             "device_id": member.get("device_id"),
                         })
-            
+
             self._save(data)
             log.warning(f"🆘 SOS from {sender_upper} to {len(family_codes)} family members, {len(tokens_to_notify)} have FCM tokens")
-            
+
             return {
                 "sender_code": sender_upper,
                 "family_codes": family_codes,
@@ -455,15 +455,15 @@ class FamilyStore:
         with self._lock:
             data = self._load()
             code_upper = code.upper()
-            
+
             if code_upper not in data["members"]:
                 data["members"][code_upper] = {}
-            
+
             data["members"][code_upper]["fcm_token"] = fcm_token
             if device_id:
                 data["members"][code_upper]["device_id"] = device_id
             data["members"][code_upper]["last_active"] = datetime.utcnow().isoformat()
-            
+
             self._save(data)
             log.info(f"Registered FCM token for family code {code_upper}")
 

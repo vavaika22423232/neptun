@@ -10,18 +10,19 @@ Enhanced version 2.0:
 - Geographic validation
 """
 
-import requests
-import time
 import logging
 import re
-from typing import Optional, Tuple, List, Dict
+import time
 from difflib import SequenceMatcher
+from typing import Optional
+
+import requests
 
 log = logging.getLogger(__name__)
 
 # Try to import persistent cache
 try:
-    from nominatim_cache import get_from_cache, add_to_cache
+    from nominatim_cache import add_to_cache, get_from_cache
     PERSISTENT_CACHE = True
 except ImportError:
     PERSISTENT_CACHE = False
@@ -87,7 +88,7 @@ REGION_MAP = {
     'херсонщина': 'Херсонська область',
     'кіровоградщина': 'Кіровоградська область',
     'буковина': 'Чернівецька область',
-    
+
     # Short adjective forms
     'київська': 'Київська область',
     'харківська': 'Харківська область',
@@ -148,22 +149,22 @@ def normalize_region(region: str) -> Optional[str]:
     """Normalize region name to full Ukrainian oblast name"""
     if not region:
         return None
-    
+
     region_lower = region.lower().strip()
-    
+
     # Direct lookup
     if region_lower in REGION_MAP:
         return REGION_MAP[region_lower]
-    
+
     # Try to extract oblast name from various formats
     for key, value in REGION_MAP.items():
         if key in region_lower:
             return value
-    
+
     # If already looks like full oblast name
     if 'область' in region_lower:
         return region.title()
-    
+
     return region
 
 
@@ -171,16 +172,16 @@ def clean_city_name(city: str) -> str:
     """Clean city name for search"""
     if not city:
         return ''
-    
+
     cleaned = city.lower().strip()
-    
+
     # Remove common prefixes/suffixes
     for pattern in CLEAN_PATTERNS:
         cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
-    
+
     # Remove multiple spaces
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
-    
+
     return cleaned
 
 
@@ -198,27 +199,27 @@ def fuzzy_match_score(s1: str, s2: str) -> float:
 def _apply_rate_limiting():
     """Apply rate limiting with exponential backoff"""
     global last_request_time, _consecutive_failures, _backoff_until
-    
+
     current_time = time.time()
-    
+
     # Check if we're in backoff period
     if current_time < _backoff_until:
         wait_time = _backoff_until - current_time
         log.debug(f"In backoff period, waiting {wait_time:.1f}s")
         time.sleep(wait_time)
-    
+
     # Regular rate limiting
     time_since_last = current_time - last_request_time
     if time_since_last < MIN_REQUEST_INTERVAL:
         time.sleep(MIN_REQUEST_INTERVAL - time_since_last)
-    
+
     last_request_time = time.time()
 
 
 def _handle_request_failure():
     """Handle request failure with exponential backoff"""
     global _consecutive_failures, _backoff_until
-    
+
     _consecutive_failures += 1
     backoff_time = min(60, 2 ** _consecutive_failures)  # Max 60 seconds
     _backoff_until = time.time() + backoff_time
@@ -232,47 +233,47 @@ def _handle_request_success():
     _backoff_until = 0
 
 
-def get_coordinates_nominatim(city_name: str, region: Optional[str] = None) -> Optional[Tuple[float, float]]:
+def get_coordinates_nominatim(city_name: str, region: Optional[str] = None) -> Optional[tuple[float, float]]:
     """
     Get coordinates for a Ukrainian city using Nominatim API
-    
+
     Enhanced with:
     - Multiple search strategies
     - Fuzzy matching
     - Negative caching
     - Exponential backoff
-    
+
     Args:
         city_name: Name of the city/settlement
         region: Optional region/oblast name for better accuracy
-        
+
     Returns:
         Tuple of (latitude, longitude) or None if not found
     """
     global last_request_time
-    
+
     if not city_name:
         return None
-    
+
     # Clean and normalize input
     city_clean = clean_city_name(city_name)
     if not city_clean:
         return None
-    
+
     region_full = normalize_region(region)
-    
+
     # Check in-memory cache first
     cache_key = f"{city_clean}_{region_full or ''}"
     if cache_key in _cache:
         return _cache[cache_key]
-    
+
     # Check negative cache
     if cache_key in _negative_cache:
         age = time.time() - _negative_cache[cache_key]
         if age < 3600:  # Negative cache for 1 hour
             log.debug(f"Negative cache hit for {city_name}")
             return None
-    
+
     # Check persistent cache
     if PERSISTENT_CACHE:
         cached_coords = get_from_cache(city_clean, region_full)
@@ -280,10 +281,10 @@ def get_coordinates_nominatim(city_name: str, region: Optional[str] = None) -> O
             _cache[cache_key] = cached_coords
             log.debug(f"Found in persistent cache: {city_name} -> {cached_coords}")
             return cached_coords
-    
+
     # Try multiple search strategies
     strategies = _build_search_strategies(city_clean, region_full)
-    
+
     for strategy_name, params in strategies:
         coords = _execute_nominatim_search(params, strategy_name, city_name)
         if coords:
@@ -295,24 +296,24 @@ def get_coordinates_nominatim(city_name: str, region: Optional[str] = None) -> O
                 except Exception as e:
                     log.warning(f"Failed to save to persistent cache: {e}")
             return coords
-    
+
     # Cache negative result
     _negative_cache[cache_key] = time.time()
     log.debug(f"All strategies failed for {city_name}")
     return None
 
 
-def _build_search_strategies(city: str, region: str = None) -> List[Tuple[str, Dict]]:
+def _build_search_strategies(city: str, region: str = None) -> list[tuple[str, dict]]:
     """Build list of search strategies to try"""
     strategies = []
-    
+
     # Strategy 1: Structured search with region (most accurate)
     if region:
         osm_region = None
         region_lower = region.lower().replace(' область', '')
         if region_lower in OSM_REGION_NAMES:
             osm_region = OSM_REGION_NAMES[region_lower]
-        
+
         strategies.append(('structured_with_osm_region', {
             'city': city,
             'state': osm_region or region,
@@ -321,7 +322,7 @@ def _build_search_strategies(city: str, region: str = None) -> List[Tuple[str, D
             'limit': 3,
             'addressdetails': 1
         }))
-        
+
         # Also try with Ukrainian region name
         strategies.append(('structured_with_ua_region', {
             'city': city,
@@ -331,7 +332,7 @@ def _build_search_strategies(city: str, region: str = None) -> List[Tuple[str, D
             'limit': 3,
             'addressdetails': 1
         }))
-    
+
     # Strategy 2: Free-form query with region
     if region:
         query = f"{city}, {region}, Ukraine"
@@ -342,7 +343,7 @@ def _build_search_strategies(city: str, region: str = None) -> List[Tuple[str, D
             'countrycodes': 'ua',
             'addressdetails': 1
         }))
-    
+
     # Strategy 3: Free-form query without region
     strategies.append(('freeform_simple', {
         'q': f"{city}, Ukraine",
@@ -351,7 +352,7 @@ def _build_search_strategies(city: str, region: str = None) -> List[Tuple[str, D
         'countrycodes': 'ua',
         'addressdetails': 1
     }))
-    
+
     # Strategy 4: Just the city name (for unique names)
     strategies.append(('city_only', {
         'q': city,
@@ -360,18 +361,18 @@ def _build_search_strategies(city: str, region: str = None) -> List[Tuple[str, D
         'countrycodes': 'ua',
         'addressdetails': 1
     }))
-    
+
     return strategies
 
 
-def _execute_nominatim_search(params: Dict, strategy_name: str, original_city: str) -> Optional[Tuple[float, float]]:
+def _execute_nominatim_search(params: dict, strategy_name: str, original_city: str) -> Optional[tuple[float, float]]:
     """Execute a single Nominatim search"""
-    
+
     _apply_rate_limiting()
-    
+
     try:
         headers = {'User-Agent': USER_AGENT}
-        
+
         # Use structured search if 'city' in params, otherwise free-form
         if 'city' in params:
             endpoint = NOMINATIM_ENDPOINT
@@ -379,45 +380,45 @@ def _execute_nominatim_search(params: Dict, strategy_name: str, original_city: s
         else:
             endpoint = NOMINATIM_ENDPOINT
             params_final = params
-        
+
         log.debug(f"Nominatim {strategy_name}: {params_final}")
-        
+
         response = requests.get(
             endpoint,
             params=params_final,
             headers=headers,
             timeout=10
         )
-        
+
         if response.status_code == 429:
             _handle_request_failure()
             log.warning("Nominatim rate limited (429)")
             return None
-        
+
         if response.status_code != 200:
             log.warning(f"Nominatim returned status {response.status_code}")
             return None
-        
+
         _handle_request_success()
-        
+
         results = response.json()
         if not results:
             return None
-        
+
         # Find best matching result
         best_result = _find_best_result(results, original_city)
         if best_result:
             lat = float(best_result['lat'])
             lon = float(best_result['lon'])
-            
+
             if is_within_ukraine(lat, lon):
                 log.info(f"Nominatim {strategy_name} found: {original_city} -> ({lat}, {lon})")
                 return (lat, lon)
             else:
                 log.warning(f"Result outside Ukraine bounds for {original_city}: ({lat}, {lon})")
-        
+
         return None
-        
+
     except requests.Timeout:
         log.warning(f"Nominatim timeout for {original_city}")
         _handle_request_failure()
@@ -431,60 +432,60 @@ def _execute_nominatim_search(params: Dict, strategy_name: str, original_city: s
         return None
 
 
-def _find_best_result(results: List[Dict], original_city: str) -> Optional[Dict]:
+def _find_best_result(results: list[dict], original_city: str) -> Optional[dict]:
     """Find best matching result from Nominatim response"""
     if not results:
         return None
-    
+
     # Score each result
     scored_results = []
     for r in results:
         score = 0
-        
+
         # Check display name for city match
         display_name = r.get('display_name', '').lower()
         city_lower = original_city.lower()
-        
+
         # Direct match in display name
         if city_lower in display_name:
             score += 10
-        
+
         # Fuzzy match
         fuzzy = fuzzy_match_score(city_lower, display_name.split(',')[0])
         score += fuzzy * 5
-        
+
         # Prefer place types that indicate settlements
         place_type = r.get('type', '').lower()
         settlement_types = ['city', 'town', 'village', 'hamlet', 'suburb', 'locality']
         if place_type in settlement_types:
             score += 5
-        
+
         # Check OSM class
         osm_class = r.get('class', '').lower()
         if osm_class == 'place':
             score += 3
-        
+
         # Check importance (0-1 scale from Nominatim)
         importance = float(r.get('importance', 0))
         score += importance * 2
-        
+
         scored_results.append((score, r))
-    
+
     # Sort by score descending
     scored_results.sort(key=lambda x: x[0], reverse=True)
-    
+
     # Return best result if score is reasonable
     if scored_results and scored_results[0][0] > 3:
         return scored_results[0][1]
-    
+
     # Fallback to first result
     return results[0] if results else None
 
 
-def reverse_geocode(lat: float, lng: float) -> Optional[Dict]:
+def reverse_geocode(lat: float, lng: float) -> Optional[dict]:
     """
     Reverse geocode coordinates to get location name.
-    
+
     Returns dict with:
     - city: settlement name
     - region: oblast name
@@ -492,9 +493,9 @@ def reverse_geocode(lat: float, lng: float) -> Optional[Dict]:
     """
     if not is_within_ukraine(lat, lng):
         return None
-    
+
     _apply_rate_limiting()
-    
+
     try:
         params = {
             'lat': lat,
@@ -503,34 +504,34 @@ def reverse_geocode(lat: float, lng: float) -> Optional[Dict]:
             'addressdetails': 1,
             'zoom': 14  # City/village level
         }
-        
+
         headers = {'User-Agent': USER_AGENT}
-        
+
         response = requests.get(
             NOMINATIM_REVERSE_ENDPOINT,
             params=params,
             headers=headers,
             timeout=10
         )
-        
+
         if response.status_code != 200:
             return None
-        
+
         _handle_request_success()
-        
+
         result = response.json()
         address = result.get('address', {})
-        
+
         # Extract city (try multiple fields)
-        city = (address.get('city') or 
-                address.get('town') or 
-                address.get('village') or 
+        city = (address.get('city') or
+                address.get('town') or
+                address.get('village') or
                 address.get('hamlet') or
                 address.get('locality'))
-        
+
         # Extract region
         region = address.get('state')
-        
+
         return {
             'city': city,
             'region': region,
@@ -538,7 +539,7 @@ def reverse_geocode(lat: float, lng: float) -> Optional[Dict]:
             'lat': lat,
             'lng': lng
         }
-        
+
     except Exception as e:
         log.error(f"Reverse geocode error: {e}")
         return None
@@ -552,7 +553,7 @@ def clear_cache():
     log.info("Nominatim caches cleared")
 
 
-def get_cache_stats() -> Dict:
+def get_cache_stats() -> dict:
     """Get cache statistics"""
     return {
         'positive_cache_size': len(_cache),

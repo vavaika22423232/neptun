@@ -27,15 +27,15 @@ for i, line in enumerate(lines, 1):
     if 'бпла' in line_lower:
         print(f"\nLine {i}: {line}")
         print(f"Line lower: {line_lower}")
-        
+
         m = pat_simple.search(line_lower)
         if m:
             print(f"  ✓ pat_simple matched: count={m.group(1)}, city='{m.group(2)}'")
         else:
-            print(f"  ✗ pat_simple did NOT match")
-            print(f"  Trying to understand why...")
+            print("  ✗ pat_simple did NOT match")
+            print("  Trying to understand why...")
             if 'бпла' in line_lower and 'на' in line_lower:
-                print(f"  Both 'бпла' and 'на' are present")
+                print("  Both 'бпла' and 'на' are present")
                 # Check what's between them
                 bpla_pos = line_lower.find('бпла')
                 na_pos = line_lower.find('на')

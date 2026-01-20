@@ -4,10 +4,11 @@ Channel Forwarder Bot для Render
 Використовує STRING_SESSION для автоматичної авторизації
 """
 
-import os
 import asyncio
 import logging
+import os
 from datetime import datetime
+
 import pytz
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
@@ -41,32 +42,32 @@ else:
 
 async def main():
     """Головна функція бота"""
-    
+
     logger.info("🚀 Запуск Channel Forwarder Bot на Render...")
-    
+
     # Київський часовий пояс
     kyiv_tz = pytz.timezone('Europe/Kiev')
-    
+
     # Підключення до Telegram
     await client.start()
-    
+
     if not await client.is_user_authorized():
         logger.error("❌ Сесія недійсна! Перегенеруйте STRING_SESSION")
         return
-    
+
     me = await client.get_me()
     logger.info(f"✅ Авторизовано як: {me.first_name} ({me.phone})")
-    
+
     # Перевірка доступу до каналів
     logger.info("🔍 Перевірка доступу до каналів...")
-    
+
     try:
         target_entity = await client.get_entity(TARGET_CHANNEL)
         logger.info(f"✅ Цільовий канал: {target_entity.title}")
     except Exception as e:
         logger.error(f"❌ Не вдалося знайти цільовий канал {TARGET_CHANNEL}: {e}")
         return
-    
+
     # Перевірка вихідних каналів
     valid_sources = []
     for channel in SOURCE_CHANNELS:
@@ -79,40 +80,40 @@ async def main():
             logger.info(f"✅ Вихідний канал: {entity.title} (@{channel})")
         except Exception as e:
             logger.warning(f"⚠️ Не вдалося знайти канал @{channel}: {e}")
-    
+
     if not valid_sources:
         logger.error("❌ Жодного вихідного каналу не знайдено!")
         return
-    
-    logger.info(f"\n📊 Статистика:")
+
+    logger.info("\n📊 Статистика:")
     logger.info(f"   Вихідних каналів: {len(valid_sources)}/{len(SOURCE_CHANNELS)}")
     logger.info(f"   Цільовий канал: @{TARGET_CHANNEL}")
-    logger.info(f"\n🎯 Бот запущено на Render! Очікую нові повідомлення...\n")
-    
+    logger.info("\n🎯 Бот запущено на Render! Очікую нові повідомлення...\n")
+
     # Лічильник
     forwarded_count = 0
-    
+
     @client.on(events.NewMessage(chats=valid_sources))
     async def handler(event):
         """Обробник нових повідомлень"""
         nonlocal forwarded_count
-        
+
         try:
             message = event.message
             source_chat = await event.get_chat()
             source_name = getattr(source_chat, 'title', source_chat.username or 'Unknown')
-            
+
             logger.info(f"📨 Нове повідомлення з @{source_chat.username or source_name}")
-            
+
             # Формуємо текст
             kyiv_time = datetime.now(kyiv_tz)
             forward_text = f"📢 Джерело: @{source_chat.username or source_name}\n"
             forward_text += f"⏰ Час: {kyiv_time.strftime('%H:%M:%S %d.%m.%Y')} (Київ)\n"
             forward_text += f"{'─' * 40}\n\n"
-            
+
             if message.text:
                 forward_text += message.text
-            
+
             # Пересилаємо
             try:
                 if message.media:
@@ -126,16 +127,16 @@ async def main():
                         TARGET_CHANNEL,
                         forward_text
                     )
-                
+
                 forwarded_count += 1
                 logger.info(f"✅ Переслано до @{TARGET_CHANNEL} (всього: {forwarded_count})")
-                
+
             except Exception as e:
                 logger.error(f"❌ Помилка при пересиланні: {e}")
-                
+
         except Exception as e:
             logger.error(f"❌ Помилка обробки повідомлення: {e}")
-    
+
     # Запуск
     logger.info("🔄 Бот працює на Render...")
     await client.run_until_disconnected()

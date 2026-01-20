@@ -4,30 +4,31 @@ Local geocoder using pre-loaded coordinate dictionaries.
 Найшвидший geocoder - не робить HTTP запитів.
 Використовує CITY_COORDS та UKRAINE_ALL_SETTLEMENTS.
 """
-from typing import Optional, Tuple, Dict
 import re
+from typing import Optional
+
 from .base import GeocoderInterface, GeocodingResult
 
 
 class LocalGeocoder(GeocoderInterface):
     """
     Geocoder using local coordinate dictionaries.
-    
+
     Переваги:
     - Миттєвий (без мережевих запитів)
     - Працює офлайн
     - Не має rate limits
-    
+
     Недоліки:
     - Обмежена база даних
     - Потрібно оновлювати вручну
     """
-    
+
     def __init__(
         self,
-        city_coords: Dict[str, Tuple[float, float]],
-        settlements: Optional[Dict[str, Tuple[float, float]]] = None,
-        settlements_by_oblast: Optional[Dict[str, Dict[str, Tuple[float, float]]]] = None,
+        city_coords: dict[str, tuple[float, float]],
+        settlements: Optional[dict[str, tuple[float, float]]] = None,
+        settlements_by_oblast: Optional[dict[str, dict[str, tuple[float, float]]]] = None,
     ):
         """
         Args:
@@ -38,15 +39,15 @@ class LocalGeocoder(GeocoderInterface):
         self._city_coords = city_coords or {}
         self._settlements = settlements or {}
         self._settlements_by_oblast = settlements_by_oblast or {}
-    
+
     @property
     def name(self) -> str:
         return "local"
-    
+
     @property
     def priority(self) -> int:
         return 10  # Highest priority (try first)
-    
+
     def geocode(
         self,
         query: str,
@@ -54,7 +55,7 @@ class LocalGeocoder(GeocoderInterface):
     ) -> Optional[GeocodingResult]:
         """
         Find coordinates for location name.
-        
+
         Search order:
         1. Exact match in city_coords
         2. Normalized match in city_coords
@@ -63,9 +64,9 @@ class LocalGeocoder(GeocoderInterface):
         """
         if not query:
             return None
-        
+
         normalized = self._normalize(query)
-        
+
         # 1. Exact match in main cities
         if normalized in self._city_coords:
             coords = self._city_coords[normalized]
@@ -75,7 +76,7 @@ class LocalGeocoder(GeocoderInterface):
                 source=self.name,
                 confidence=1.0,
             )
-        
+
         # 2. Try variations
         for variant in self._get_variants(normalized):
             if variant in self._city_coords:
@@ -86,7 +87,7 @@ class LocalGeocoder(GeocoderInterface):
                     source=self.name,
                     confidence=0.9,
                 )
-        
+
         # 3. Oblast-specific search
         if region and self._settlements_by_oblast:
             region_key = self._normalize_region(region)
@@ -100,7 +101,7 @@ class LocalGeocoder(GeocoderInterface):
                         source=self.name,
                         confidence=0.95,
                     )
-                
+
                 # Try variants in oblast
                 for variant in self._get_variants(normalized):
                     if variant in oblast_settlements:
@@ -111,7 +112,7 @@ class LocalGeocoder(GeocoderInterface):
                             source=self.name,
                             confidence=0.85,
                         )
-        
+
         # 4. All settlements search
         if self._settlements:
             if normalized in self._settlements:
@@ -122,7 +123,7 @@ class LocalGeocoder(GeocoderInterface):
                     source=self.name,
                     confidence=0.8,
                 )
-            
+
             for variant in self._get_variants(normalized):
                 if variant in self._settlements:
                     coords = self._settlements[variant]
@@ -132,75 +133,75 @@ class LocalGeocoder(GeocoderInterface):
                         source=self.name,
                         confidence=0.7,
                     )
-        
+
         return None
-    
+
     def _normalize(self, name: str) -> str:
         """Normalize location name for matching."""
         if not name:
             return ""
-        
+
         # Lowercase
         result = name.lower().strip()
-        
+
         # Remove common prefixes/suffixes
         prefixes_to_remove = [
-            'м.', 'м ', 'с.', 'с ', 'смт.', 'смт ', 
+            'м.', 'м ', 'с.', 'с ', 'смт.', 'смт ',
             'село ', 'місто ', 'селище ',
         ]
         for prefix in prefixes_to_remove:
             if result.startswith(prefix):
                 result = result[len(prefix):].strip()
-        
+
         # Remove directional suffixes like "курсом на ..."
         result = re.sub(r'\s+курсом?\s+на\s+.*$', '', result)
         result = re.sub(r'\s+напрям(?:ок|ку)?\s+на\s+.*$', '', result)
-        
+
         # Remove region suffixes
         result = re.sub(r'\s*\(.*область.*\)$', '', result)
         result = re.sub(r'\s*,\s*.*область.*$', '', result)
-        
+
         # Normalize apostrophes and quotes
         result = result.replace("'", "'").replace("`", "'").replace("ʼ", "'")
-        
+
         # Remove extra whitespace
         result = ' '.join(result.split())
-        
+
         return result
-    
+
     def _normalize_region(self, region: str) -> str:
         """Normalize region name for dict lookup."""
         if not region:
             return ""
-        
+
         result = region.lower().strip()
-        
+
         # Remove 'область', 'ська' endings
         result = re.sub(r'\s*область\s*$', '', result)
         result = re.sub(r'ська\s*$', '', result)
         result = re.sub(r'ький\s*$', '', result)
-        
+
         return result.strip()
-    
+
     def _get_variants(self, normalized: str) -> list:
         """Generate name variants for fuzzy matching."""
         variants = []
-        
+
         # Without common suffixes
         for suffix in ['ка', 'ки', 'ку', 'ці', 'ий', 'а', 'і', 'у']:
             if normalized.endswith(suffix) and len(normalized) > len(suffix) + 2:
                 variants.append(normalized[:-len(suffix)])
-        
+
         # With common suffixes if not present
         if not normalized.endswith(('ка', 'ки', 'ський', 'ське')):
             variants.extend([
                 normalized + 'ка',
                 normalized + 'ки',
             ])
-        
+
         return variants
-    
-    def stats(self) -> Dict[str, int]:
+
+    def stats(self) -> dict[str, int]:
         """Get statistics about loaded data."""
         return {
             'city_coords': len(self._city_coords),

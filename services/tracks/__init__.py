@@ -6,8 +6,8 @@ Track storage and management service.
 - TrackProcessor - обробка та геокодинг
 - TrackMerger - об'єднання дублікатів
 """
-from services.tracks.store import TrackStore
 from services.tracks.processor import TrackProcessor
+from services.tracks.store import TrackStore
 
 __all__ = [
     'TrackStore',

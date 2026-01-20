@@ -3,9 +3,10 @@ Health check API blueprint.
 
 Endpoints для моніторингу стану сервісу.
 """
-import time
-import os
 import logging
+import os
+import time
+
 from flask import Blueprint, jsonify
 
 log = logging.getLogger(__name__)
@@ -33,7 +34,7 @@ def init_health_api(track_store=None, telegram_status_fn=None, alarm_status_fn=N
 def health():
     """
     Basic health check.
-    
+
     Returns 200 if service is running.
     """
     return jsonify({
@@ -46,7 +47,7 @@ def health():
 def health_detailed():
     """
     Detailed health check with component status.
-    
+
     Returns comprehensive status for monitoring.
     """
     try:
@@ -56,7 +57,7 @@ def health_detailed():
             'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
             'components': {},
         }
-        
+
         # Track store status
         if _track_store:
             try:
@@ -72,7 +73,7 @@ def health_detailed():
                     'status': 'error',
                     'error': str(e),
                 }
-        
+
         # Telegram status
         if _telegram_status:
             try:
@@ -86,7 +87,7 @@ def health_detailed():
                     'status': 'error',
                     'error': str(e),
                 }
-        
+
         # Alarm API status
         if _alarm_status:
             try:
@@ -100,7 +101,7 @@ def health_detailed():
                     'status': 'error',
                     'error': str(e),
                 }
-        
+
         # Storage status
         persistent_dir = os.getenv('PERSISTENT_DATA_DIR', '/data')
         status['components']['storage'] = {
@@ -108,7 +109,7 @@ def health_detailed():
             'persistent_available': os.path.isdir(persistent_dir),
             'persistent_dir': persistent_dir,
         }
-        
+
         # Memory status
         try:
             import psutil
@@ -129,17 +130,17 @@ def health_detailed():
                 'status': 'error',
                 'error': str(e),
             }
-        
+
         # Set overall status based on components
         component_statuses = [
-            c.get('status', 'unknown') 
+            c.get('status', 'unknown')
             for c in status['components'].values()
         ]
         if 'error' in component_statuses:
             status['status'] = 'degraded'
-        
+
         return jsonify(status)
-        
+
     except Exception as e:
         log.error(f"Error in /health/detailed: {e}")
         return jsonify({
@@ -152,21 +153,21 @@ def health_detailed():
 def ready():
     """
     Readiness probe.
-    
+
     Returns 200 when service is ready to accept traffic.
     Used by load balancers and orchestrators.
     """
     # Check if we have essential data loaded
     ready_checks = []
-    
+
     if _track_store:
         ready_checks.append(True)
     else:
         ready_checks.append(False)
-    
+
     # Service is ready if all checks pass
     is_ready = all(ready_checks) if ready_checks else True
-    
+
     if is_ready:
         return jsonify({'ready': True})
     else:
@@ -177,7 +178,7 @@ def ready():
 def live():
     """
     Liveness probe.
-    
+
     Returns 200 if service is alive.
     Should not check dependencies - only that the process is responding.
     """

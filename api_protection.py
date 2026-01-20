@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 API PROTECTION MODULE - Production-grade hardening for Neptune backend.
 Prevents server crashes from:
@@ -10,15 +9,16 @@ Prevents server crashes from:
 This module is internet-facing, unauthenticated, and must survive hostile usage.
 """
 
-import time
-import threading
 import hashlib
 import json
+import logging
 import os
+import threading
+import time
 from collections import defaultdict
 from functools import wraps
-from flask import request, jsonify, Response, g
-import logging
+
+from flask import Response, g, jsonify, request
 
 log = logging.getLogger(__name__)
 
@@ -44,18 +44,18 @@ ENDPOINT_RATE_LIMITS = {
     '/api/alarms': {'rpm': 60, 'burst': 10},
     '/api/alarms/all': {'rpm': 60, 'burst': 10},
     '/api/alarms/proxy': {'rpm': 60, 'burst': 10},
-    
+
     # Medium endpoints
     '/presence': {'rpm': 20, 'burst': 3},
     '/stream': {'rpm': 5, 'burst': 2},
     '/comments': {'rpm': 30, 'burst': 5},
-    
+
     # Light endpoints
     '/api/visitor_count': {'rpm': 60, 'burst': 10},
     '/active_alarms': {'rpm': 60, 'burst': 10},
     '/alarms_stats': {'rpm': 30, 'burst': 5},
     '/raion_alarms': {'rpm': 60, 'burst': 10},
-    
+
     # Default for unlisted endpoints
     'default': {'rpm': 120, 'burst': 20},
 }
@@ -120,7 +120,7 @@ def _cleanup_old_entries(ip):
     cutoff = time.time() - RATE_LIMIT_WINDOW_SECONDS
     with _lock:
         _request_history[ip] = [
-            (ts, ep) for ts, ep in _request_history[ip] 
+            (ts, ep) for ts, ep in _request_history[ip]
             if ts > cutoff
         ]
 
@@ -130,12 +130,12 @@ def _get_rate_limit_for_endpoint(endpoint):
     # Exact match
     if endpoint in ENDPOINT_RATE_LIMITS:
         return ENDPOINT_RATE_LIMITS[endpoint]
-    
+
     # Prefix match (e.g., /api/family/* -> /api/family)
     for pattern, limits in ENDPOINT_RATE_LIMITS.items():
         if endpoint.startswith(pattern):
             return limits
-    
+
     return ENDPOINT_RATE_LIMITS['default']
 
 
@@ -147,56 +147,56 @@ def check_rate_limit(endpoint=None):
     ip = _get_client_ip()
     now = time.time()
     endpoint = endpoint or request.path
-    
+
     # Check if IP is banned
     with _lock:
         abuse_info = _abuse_tracker[ip]
         if abuse_info['banned_until'] > now:
             return False, int(abuse_info['banned_until'] - now), 'temporarily_banned'
-    
+
     # Cleanup old entries
     _cleanup_old_entries(ip)
-    
+
     # Get limits for this endpoint
     limits = _get_rate_limit_for_endpoint(endpoint)
     rpm_limit = limits['rpm']
     burst_limit = limits['burst']
-    
+
     with _lock:
         # Count requests in last minute to this endpoint
         endpoint_requests = [
             (ts, ep) for ts, ep in _request_history[ip]
             if ep == endpoint and now - ts < RATE_LIMIT_WINDOW_SECONDS
         ]
-        
+
         # Count burst requests (last 10 seconds)
         burst_requests = [
             (ts, ep) for ts, ep in _request_history[ip]
             if ep == endpoint and now - ts < RATE_LIMIT_STRICT_WINDOW
         ]
-        
+
         # Count all requests for abuse detection
         all_requests = len(_request_history[ip])
-    
+
     # Check burst limit first (stricter)
     if len(burst_requests) >= burst_limit:
         _record_abuse_strike(ip, 'burst_limit')
         return False, RATE_LIMIT_STRICT_WINDOW, 'burst_rate_exceeded'
-    
+
     # Check RPM limit
     if len(endpoint_requests) >= rpm_limit:
         _record_abuse_strike(ip, 'rpm_limit')
         return False, 30, 'rate_limit_exceeded'
-    
+
     # Check if this client is being abusive overall
     if all_requests >= ABUSE_THRESHOLD_RPM:
         _record_abuse_strike(ip, 'abuse_threshold')
         return False, 60, 'too_many_requests'
-    
+
     # Record this request
     with _lock:
         _request_history[ip].append((now, endpoint))
-    
+
     return True, None, None
 
 
@@ -205,7 +205,7 @@ def _record_abuse_strike(ip, reason):
     with _lock:
         _abuse_tracker[ip]['strikes'] += 1
         strikes = _abuse_tracker[ip]['strikes']
-        
+
         if strikes >= ABUSE_STRIKE_THRESHOLD:
             _abuse_tracker[ip]['banned_until'] = time.time() + ABUSE_BAN_DURATION
             log.warning(f"[ABUSE] IP {ip} BANNED for {ABUSE_BAN_DURATION}s - reason: {reason}, strikes: {strikes}")
@@ -224,23 +224,23 @@ def acquire_request_slot(is_heavy=False):
     """
     global _global_heavy_count
     ip = _get_client_ip()
-    
+
     with _lock:
         # Check per-IP limit
         if _concurrent_requests[ip] >= MAX_CONCURRENT_REQUESTS_PER_IP:
             log.warning(f"[CONCURRENCY] IP {ip} exceeded concurrent limit ({MAX_CONCURRENT_REQUESTS_PER_IP})")
             return False
-        
+
         # Check global heavy request limit
         if is_heavy and _global_heavy_count >= MAX_GLOBAL_CONCURRENT_HEAVY:
             log.warning(f"[CONCURRENCY] Global heavy request limit reached ({MAX_GLOBAL_CONCURRENT_HEAVY})")
             return False
-        
+
         # Acquire slot
         _concurrent_requests[ip] += 1
         if is_heavy:
             _global_heavy_count += 1
-        
+
         return True
 
 
@@ -248,7 +248,7 @@ def release_request_slot(is_heavy=False):
     """Release a concurrent request slot."""
     global _global_heavy_count
     ip = _get_client_ip()
-    
+
     with _lock:
         _concurrent_requests[ip] = max(0, _concurrent_requests[ip] - 1)
         if is_heavy:
@@ -265,7 +265,7 @@ def check_response_size(data, max_size=None):
     Returns (ok: bool, size: int, truncated_data: any)
     """
     max_size = max_size or MAX_RESPONSE_SIZE_BYTES
-    
+
     # Serialize to check size
     if isinstance(data, (dict, list)):
         serialized = json.dumps(data, separators=(',', ':'))
@@ -273,13 +273,13 @@ def check_response_size(data, max_size=None):
         serialized = data
     else:
         serialized = str(data)
-    
+
     size = len(serialized.encode('utf-8'))
-    
+
     if size > max_size:
         log.error(f"[RESPONSE SIZE] Response exceeds limit: {size} > {max_size} bytes")
         return False, size, None
-    
+
     return True, size, data
 
 
@@ -327,7 +327,7 @@ def get_pagination_params():
     except (ValueError, TypeError):
         page = 1
         per_page = DEFAULT_PAGE_SIZE
-    
+
     return page, per_page
 
 
@@ -338,22 +338,22 @@ def paginate_list(items, page=None, per_page=None, max_total=None):
     """
     if page is None or per_page is None:
         page, per_page = get_pagination_params()
-    
+
     max_total = max_total or MAX_TOTAL_ITEMS
     total = len(items)
-    
+
     # Apply max total limit first
     if total > max_total:
         items = items[:max_total]
         total = max_total
-    
+
     # Calculate pagination
     start = (page - 1) * per_page
     end = start + per_page
     paginated = items[start:end]
-    
+
     total_pages = (total + per_page - 1) // per_page
-    
+
     pagination_info = {
         'page': page,
         'per_page': per_page,
@@ -362,7 +362,7 @@ def paginate_list(items, page=None, per_page=None, max_total=None):
         'has_next': page < total_pages,
         'has_prev': page > 1,
     }
-    
+
     return paginated, pagination_info
 
 
@@ -402,7 +402,7 @@ def get_protection_stats():
                     'max': max(sizes),
                     'count': len(sizes)
                 }
-        
+
         # Slow request stats
         slow_stats = {}
         for endpoint, requests in _slow_requests.items():
@@ -413,13 +413,13 @@ def get_protection_stats():
                     'max': max(durations),
                     'count': len(requests)
                 }
-        
+
         # Abuse stats
         banned_ips = [
             ip for ip, info in _abuse_tracker.items()
             if info['banned_until'] > time.time()
         ]
-        
+
         return {
             'response_sizes': size_stats,
             'slow_requests': slow_stats,
@@ -465,7 +465,7 @@ def protected_endpoint(is_heavy=False, max_response_size=None):
         def wrapper(*args, **kwargs):
             start_time = time.time()
             endpoint = request.path
-            
+
             # Rate limiting
             allowed, retry_after, reason = check_rate_limit(endpoint)
             if not allowed:
@@ -473,27 +473,27 @@ def protected_endpoint(is_heavy=False, max_response_size=None):
                     'error': reason,
                     'retry_after': retry_after
                 }), 429
-            
+
             # Concurrency check
             if not acquire_request_slot(is_heavy):
                 return jsonify({
                     'error': 'too_many_concurrent_requests',
                     'message': 'Server is busy. Please try again shortly.'
                 }), 503
-            
+
             try:
                 # Execute the endpoint
                 result = func(*args, **kwargs)
-                
+
                 # Record timing
                 duration = time.time() - start_time
                 record_slow_request(endpoint, duration)
-                
+
                 # If result is a Response, try to check its size
                 if isinstance(result, Response):
                     size = result.content_length or len(result.get_data())
                     record_response_size(endpoint, size)
-                    
+
                     # Check max response size
                     max_size = max_response_size or MAX_RESPONSE_SIZE_BYTES
                     if size > max_size:
@@ -502,12 +502,12 @@ def protected_endpoint(is_heavy=False, max_response_size=None):
                             'error': 'response_too_large',
                             'message': 'Response exceeds maximum allowed size.'
                         }), 500
-                
+
                 return result
-                
+
             finally:
                 release_request_slot(is_heavy)
-        
+
         return wrapper
     return decorator
 
@@ -521,7 +521,7 @@ def size_guarded(max_items=100, list_field='items'):
         @wraps(func)
         def wrapper(*args, **kwargs):
             result = func(*args, **kwargs)
-            
+
             # If it's a tuple (data, status_code)
             if isinstance(result, tuple):
                 data, status = result[0], result[1] if len(result) > 1 else 200
@@ -530,7 +530,7 @@ def size_guarded(max_items=100, list_field='items'):
                     json_data = truncate_response(json_data, list_field, max_items)
                     return jsonify(json_data), status
                 return result
-            
+
             # If it's a Response with JSON
             if isinstance(result, Response) and result.content_type.startswith('application/json'):
                 try:
@@ -546,7 +546,7 @@ def size_guarded(max_items=100, list_field='items'):
                         return new_response
                 except Exception:
                     pass
-            
+
             return result
         return wrapper
     return decorator
@@ -566,7 +566,7 @@ def get_since_timestamp():
     since = request.args.get('since')
     if not since:
         return None
-    
+
     try:
         # Accept Unix timestamp (seconds)
         ts = float(since)
@@ -587,13 +587,13 @@ def filter_by_since(items, timestamp_field='timestamp', since=None):
         since = get_since_timestamp()
     if since is None:
         return items
-    
+
     filtered = []
     for item in items:
         item_ts = item.get(timestamp_field)
         if item_ts is None:
             continue
-        
+
         # Handle different timestamp formats
         try:
             if isinstance(item_ts, (int, float)):
@@ -605,13 +605,13 @@ def filter_by_since(items, timestamp_field='timestamp', since=None):
                 ts = dt.timestamp()
             else:
                 continue
-            
+
             if ts > since:
                 filtered.append(item)
         except Exception:
             # Include items we can't parse
             filtered.append(item)
-    
+
     return filtered
 
 
@@ -629,7 +629,7 @@ def init_protection(app):
     def before_request_protection():
         g.request_start_time = time.time()
         g.client_ip = _get_client_ip()
-    
+
     # Add after_request handler for observability
     @app.after_request
     def after_request_protection(response):
@@ -638,19 +638,19 @@ def init_protection(app):
             duration = time.time() - g.request_start_time
             if duration > REQUEST_TIMEOUT_WARNING:
                 log.warning(f"[SLOW] {request.path}: {duration:.2f}s from {getattr(g, 'client_ip', 'unknown')}")
-        
+
         # Record response size for API endpoints
         if request.path.startswith('/api/') or request.path in ['/data', '/presence', '/stream']:
             size = response.content_length or 0
             if size > 0:
                 record_response_size(request.path, size)
-        
+
         return response
-    
+
     log.info("[PROTECTION] API protection module initialized")
     log.info(f"[PROTECTION] Max response size: {MAX_RESPONSE_SIZE_BYTES / 1024 / 1024:.1f}MB")
     log.info(f"[PROTECTION] Abuse ban duration: {ABUSE_BAN_DURATION}s")
-    
+
     return True
 
 

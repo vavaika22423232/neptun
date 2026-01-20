@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 import re
+
 
 def test_resolve(raw):
     cand = raw.strip().lower()
     cand = re.sub(r'["""«»\(\)\[\]]','', cand)
-    
+
     trailing_patterns = [
         r'\s+по\s+межі\s+з\s+.*$',
         r'\s+на\s+межі\s+з\s+.*$',
@@ -17,7 +17,7 @@ def test_resolve(raw):
     ]
     for pattern in trailing_patterns:
         cand = re.sub(pattern, '', cand).strip()
-    
+
     cand = re.sub(r'\s+',' ', cand)
     return cand
 

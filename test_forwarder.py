@@ -5,6 +5,7 @@
 
 # ВАЖЛИВО: Встановлюємо environment variables ПЕРЕД імпортом
 import os
+
 os.environ['TELEGRAM_API_ID'] = '24031340'
 os.environ['TELEGRAM_API_HASH'] = '2daaa58652e315ce52adb1090313d36a'
 os.environ['TELEGRAM_SESSION'] = '1BJWap1sBuy6rg3J6zXFs4Xtq-nKAqnHnKjxRIh7T3rmY4zF1YRHhhDX9UzPzw29NLqAVArSEV-XFx2KWHBZEQxsOLHLArWEgLkH2L_Q9-5p8zR5qnQU-yd8XXh0gGP5IAptyEcpM-U0FVi3lNaOBdAN9KqLko8Q0HfuzEaeJSu_tRV7rAHCcP1qd-CbeB9NQ8eZM-eSMph2nahucd__C27fJreae5OUaDgi6-jwxuoeJJsfv-wGTJWyZ1mmdCQL_Zg3nfVw8P0MEiIQG2Ha4WWPBD3ZF9TEg3w0Uhis2obwHJ3CRNM9nPg7fZH1dN29lUeAznpnnHVzPip0TBrZp0sE1n6qeru4='
@@ -12,6 +13,7 @@ os.environ['SOURCE_CHANNELS'] = 'UkraineAlarmSignal,kpszsu,war_monitor,napramok,
 os.environ['TARGET_CHANNEL'] = 'mapstransler'
 
 import asyncio
+
 from channel_forwarder_render import main
 
 print("╔════════════════════════════════════════════════════╗")

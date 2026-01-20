@@ -1,0 +1,26 @@
+# Ignore legacy files and scripts
+app.py
+app_backup*.py
+
+# Ignore root-level test files (not in tests/ folder)
+test_*.py
+
+# Ignore research and utility scripts
+*_research*.py
+*_scraper*.py
+generate_*.py
+manual_*.py
+check_*.py
+quick_*.py
+schedule_*.py
+channel_*.py
+setup_*.py
+nominatim_*.py
+blackout_*.py
+api_protection.py
+monitor_*.py
+create_*.py
+
+# Ignore large data files
+ukraine_*.py
+gadm*.json

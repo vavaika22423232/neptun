@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 import re
 
@@ -22,7 +21,7 @@ for test in test_cases:
         city = m.group(2)
         print(f'  ✓ Match! Count: {count or "1"}, City: "{city}"')
     else:
-        print(f'  ✗ No match')
+        print('  ✗ No match')
 
 # Test directional pattern detection
 print("\n\nTesting directional pattern detection:")
@@ -35,10 +34,10 @@ test_lines = [
 for ln in test_lines:
     ln_lower = ln.lower()
     has_directional = any(pattern in ln_lower for pattern in [
-        'курсом на', 'курс на', 'напрямок на', 'напрямку на', 
+        'курсом на', 'курс на', 'напрямок на', 'напрямку на',
         'ціль на', 'у напрямку', 'у бік', 'в бік', 'через', 'повз',
         'маневрує в районі', 'в районі', 'бпла на ', 'дрон на '
     ]) or '➡' in ln
-    
+
     print(f'\nLine: "{ln}"')
     print(f'  Has directional pattern: {has_directional}')

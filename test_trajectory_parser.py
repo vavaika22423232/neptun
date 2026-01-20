@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Test the trajectory parser with sample messages"""
 
 import sys
+
 sys.path.insert(0, '.')
 
 # Test messages
@@ -27,7 +27,7 @@ test_messages = [
 
 print('Testing trajectory parser...\n')
 
-from app import parse_trajectory_from_message, GROQ_ENABLED
+from app import GROQ_ENABLED, parse_trajectory_from_message
 
 if GROQ_ENABLED:
     print('✅ Groq AI is ENABLED - using intelligent parsing\n')
@@ -53,4 +53,4 @@ for i, msg in enumerate(test_messages, 1):
     print()
 
 print(f'\n=== Results: {success} success, {failed} failed ===')
-print(f'🤖 = AI parsed, 📝 = Regex parsed')
+print('🤖 = AI parsed, 📝 = Regex parsed')
