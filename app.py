@@ -555,8 +555,10 @@ _load_local_env()
 API_ID = int(os.getenv('TELEGRAM_API_ID', '0') or '0')
 API_HASH = os.getenv('TELEGRAM_API_HASH', '')
 _DEFAULT_CHANNELS = 'mapstransler'
-# TELEGRAM_CHANNELS env var (comma-separated) overrides; fallback includes numeric channel ID.
-CHANNELS = [c.strip() for c in os.getenv('TELEGRAM_CHANNELS', _DEFAULT_CHANNELS).split(',') if c.strip()]
+# SPEED FIX: Only use mapstransler to reduce backfill time (was 21 channels)
+# To restore all channels, remove the override below
+CHANNELS = ['mapstransler']  # HARDCODED for speed
+# Original: CHANNELS = [c.strip() for c in os.getenv('TELEGRAM_CHANNELS', _DEFAULT_CHANNELS).split(',') if c.strip()]
 
 # Channels which failed resolution (entity not found / access denied) to avoid repeated spam
 INVALID_CHANNELS = set()
@@ -2503,6 +2505,16 @@ SUBSCRIBERS = set()  # queues for SSE clients
 INIT_ONCE = False  # guard to ensure background startup once
 # Persistent dynamic channels file
 CHANNELS_FILE = 'channels_dynamic.json'
+
+# Backfill progress tracking
+BACKFILL_STATUS = {
+    'in_progress': False,
+    'started_at': None,
+    'channels_done': 0,
+    'channels_total': 0,
+    'messages_processed': 0,
+    'current_channel': None
+}
 
 # Global debug storage for admin panel
 DEBUG_LOGS = []
@@ -23238,22 +23250,35 @@ async def fetch_loop():
         backfill_minutes = int(os.getenv('BACKFILL_MINUTES', '50'))
     except ValueError:
         backfill_minutes = 50
+    # SPEED FIX: Limit backfill messages per channel (was 400, now 100)
+    try:
+        backfill_limit = int(os.getenv('BACKFILL_LIMIT', '100'))
+    except ValueError:
+        backfill_limit = 100
     backfill_cutoff = datetime.now(tz) - timedelta(minutes=backfill_minutes)
     if backfill_minutes > 0:
-        log.info(f'Starting backfill for last {backfill_minutes} minutes...')
+        log.info(f'Starting backfill for last {backfill_minutes} minutes (limit {backfill_limit} per channel)...')
+        # Track backfill progress
+        BACKFILL_STATUS['in_progress'] = True
+        BACKFILL_STATUS['started_at'] = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
+        BACKFILL_STATUS['channels_total'] = len([c for c in CHANNELS if c.strip()])
+        BACKFILL_STATUS['channels_done'] = 0
+        BACKFILL_STATUS['messages_processed'] = 0
+        
         total_backfilled = 0
         total_raw = 0
         for ch in CHANNELS:
             ch_strip = ch.strip()
             if not ch_strip:
                 continue
+            BACKFILL_STATUS['current_channel'] = ch_strip
             print(f"DEBUG: Processing backfill for channel: {ch_strip}")
             fetched = 0
             try:
                 if not await ensure_connected():
                     log.warning('Disconnected during backfill; aborting backfill early.')
                     break
-                async for msg in client.iter_messages(ch_strip, limit=400):  # cap to avoid huge history
+                async for msg in client.iter_messages(ch_strip, limit=backfill_limit):  # SPEED FIX: reduced from 400
                     if not msg.text:
                         continue
                     dt = msg.date.astimezone(tz)
@@ -23299,12 +23324,18 @@ async def fetch_loop():
                             total_raw += 1
                         print(f"DEBUG: Message {msg.id} - ALWAYS_STORE_RAW={ALWAYS_STORE_RAW}, stored as raw")
                         log.debug(f'Backfill skip (no geo): {ch_strip} #{msg.id} {msg.text[:80]!r}')
+                    BACKFILL_STATUS['messages_processed'] += 1
                 if fetched:
                     total_backfilled += fetched
                     log.info(f'Backfilled {fetched} messages from {ch_strip}')
+                BACKFILL_STATUS['channels_done'] += 1
             except Exception as e:
                 log.warning(f'Backfill error {ch_strip}: {e}')
+                BACKFILL_STATUS['channels_done'] += 1
     if backfill_minutes > 0:
+        # Mark backfill complete
+        BACKFILL_STATUS['in_progress'] = False
+        BACKFILL_STATUS['current_channel'] = None
         if total_backfilled or (ALWAYS_STORE_RAW and 'total_raw' in locals() and total_raw):
             save_messages(all_data)
             log.info(f'Backfill saved: {total_backfilled} geo, {locals().get("total_raw",0)} raw')
@@ -28418,6 +28449,7 @@ def healthz():
             'messages_file_present': file_exists,
             'latest_message_at': latest_date,
             'fetch_thread_started': FETCH_THREAD_STARTED,
+            'backfill': BACKFILL_STATUS.copy(),
             'retention': {
                 'minutes': MESSAGES_RETENTION_MINUTES,
                 'max_count': MESSAGES_MAX_COUNT,
@@ -28431,11 +28463,22 @@ def healthz():
 def test_nominatim():
     """Test if Nominatim is reachable from this server."""
     import time as time_module
+    
+    # Safely get settlements count
+    try:
+        all_settlements_count = len(UKRAINE_ALL_SETTLEMENTS) if UKRAINE_ALL_SETTLEMENTS else 0
+    except:
+        all_settlements_count = 0
+    try:
+        oblast_settlements_count = len(UKRAINE_SETTLEMENTS_BY_OBLAST) if UKRAINE_SETTLEMENTS_BY_OBLAST else 0
+    except:
+        oblast_settlements_count = 0
+    
     results = {
         'nominatim': {'status': 'unknown', 'time_ms': 0, 'error': None},
         'settlements_db': {
-            'all_loaded': len(UKRAINE_ALL_SETTLEMENTS) if UKRAINE_ALL_SETTLEMENTS else 0,
-            'oblast_aware_loaded': len(UKRAINE_SETTLEMENTS_BY_OBLAST) if UKRAINE_SETTLEMENTS_BY_OBLAST else 0,
+            'all_loaded': all_settlements_count,
+            'oblast_aware_loaded': oblast_settlements_count,
         },
         'memory_optimized': os.environ.get('MEMORY_OPTIMIZED', 'false'),
     }
