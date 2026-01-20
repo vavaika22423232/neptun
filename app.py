@@ -782,8 +782,9 @@ def compress_response(response):
 # ===== UKRAINE ALARM API PROXY =====
 import requests as http_requests
 
-ALARM_API_KEY = '57fe8a39:7698ad50f0f15d502b280a83019bab25'
-ALARM_API_BASE = 'https://api.ukrainealarm.com/api/v3'
+# API key from environment variable (can be updated in Render without redeploy)
+ALARM_API_KEY = os.getenv('ALARM_API_KEY', '57fe8a39:7698ad50f0f15d502b280a83019bab25')
+ALARM_API_BASE = os.getenv('ALARM_API_BASE', 'https://api.ukrainealarm.com/api/v3')
 
 # Mapping district names to oblast names (for oblast-level coloring)
 DISTRICT_TO_OBLAST = {
