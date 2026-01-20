@@ -19830,19 +19830,44 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     break
 
     def region_enhanced_coords(base_name: str, region_hint_override: str = None):
-        """Resolve coordinates for a settlement name by weighted order (remote first):
+        """Resolve coordinates for a settlement name by weighted order:
+        0) FIRST: Local oblast-aware lookup (UKRAINE_SETTLEMENTS_BY_OBLAST) - MOST RELIABLE
         1) External geocode (region-qualified, then plain)
         2) Exact local datasets (CITY_COORDS, SETTLEMENTS_INDEX)
         3) Fuzzy approximate local match (Levenshtein-like via difflib)
-
-        Rationale (user requirement): prefer freshest external resolution, fall back to local known list,
-        and only then attempt approximate similarity mapping.
         """
         if not base_name:
             return None
         name_norm = UA_CITY_NORMALIZE.get(base_name, base_name).strip().lower()
-        # --- 1. Remote geocode first ---
+        
+        # --- 0. PRIORITY: Local oblast-aware lookup (handles duplicate city names!) ---
         region_for_query = region_hint_override or region_hint_global
+        if region_for_query and UKRAINE_SETTLEMENTS_BY_OBLAST:
+            # Normalize region name to match database format
+            region_norm = region_for_query.lower().strip()
+            # Map regional names to adjective forms
+            region_to_adj = {
+                'харківщина': 'харківська', 'сумщина': 'сумська', 'полтавщина': 'полтавська',
+                'чернігівщина': 'чернігівська', 'київщина': 'київська', 'одещина': 'одеська',
+                'миколаївщина': 'миколаївська', 'херсонщина': 'херсонська', 'запорізька': 'запорізька',
+                'дніпропетровщина': 'дніпропетровська', 'донецька': 'донецька', 'луганська': 'луганська',
+                'черкащина': 'черкаська', 'вінниччина': 'вінницька', 'житомирщина': 'житомирська',
+                'рівненщина': 'рівненська', 'волинь': 'волинська', 'львівщина': 'львівська',
+                'тернопільщина': 'тернопільська', 'хмельниччина': 'хмельницька',
+                'івано-франківщина': 'івано-франківська', 'закарпаття': 'закарпатська',
+                'чернівецька': 'чернівецька', 'кіровоградщина': 'кіровоградська',
+            }
+            if region_norm in region_to_adj:
+                region_norm = region_to_adj[region_norm]
+            
+            # Try looking up (city, oblast) tuple
+            lookup_key = (name_norm, region_norm)
+            if lookup_key in UKRAINE_SETTLEMENTS_BY_OBLAST:
+                coords = UKRAINE_SETTLEMENTS_BY_OBLAST[lookup_key]
+                log.info(f"region_enhanced_coords: Found '{name_norm}' in '{region_norm}' oblast: {coords}")
+                return coords
+        
+        # --- 1. Remote geocode ---
         if region_for_query:
             canon = REGION_GEOCODE_CANON.get(region_for_query)
             if canon:
@@ -21487,12 +21512,29 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     lat, lng = coords
                     threat_type, icon = classify(text)
                     label = f"{source_norm.title()} → {target_name.title()}"
+                    
+                    # Get target coordinates for trajectory
+                    target_norm = norm_city_token(target_name)
+                    target_coords = CITY_COORDS.get(target_norm) or OBLAST_CENTERS.get(target_norm) or (SETTLEMENTS_INDEX.get(target_norm) if SETTLEMENTS_INDEX else None)
+                    if not target_coords:
+                        target_coords = UKRAINE_ALL_SETTLEMENTS.get(target_norm)
+                    
+                    trajectory_data = None
+                    if target_coords:
+                        target_lat, target_lng = target_coords if len(target_coords) == 2 else (target_coords[0], target_coords[1])
+                        trajectory_data = {
+                            'start': [lat, lng],
+                            'end': [target_lat, target_lng],
+                            'target': target_name.title()
+                        }
+                    
                     course_tracks.append({
                         'id': f"{mid}_iz_napramku_{source_norm}", 'place': label, 'lat': lat, 'lng': lng,
                         'threat_type': threat_type, 'text': ln[:500], 'date': date_str, 'channel': channel,
-                        'marker_icon': icon, 'source_match': 'uav_iz_napramku', 'count': 1
+                        'marker_icon': icon, 'source_match': 'uav_iz_napramku', 'count': 1,
+                        'trajectory': trajectory_data
                     })
-                    add_debug_log(f"Created marker at SOURCE: {source_norm} ({lat}, {lng})", "uav_course")
+                    add_debug_log(f"Created marker at SOURCE: {source_norm} ({lat}, {lng}) with trajectory to {target_name}", "uav_course")
                     continue
                 else:
                     add_debug_log(f"Could not find coords for source '{source_norm}'", "uav_course")
@@ -21524,12 +21566,29 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     lat, lng = coords if len(coords) == 2 else (coords[0], coords[1])
                     threat_type, icon = classify(text)
                     label = f"{city_norm.title()} → {target_name.title()}"
+                    
+                    # Get target coordinates for trajectory
+                    target_norm = norm_city_token(target_name)
+                    target_coords = CITY_COORDS.get(target_norm) or OBLAST_CENTERS.get(target_norm) or (SETTLEMENTS_INDEX.get(target_norm) if SETTLEMENTS_INDEX else None)
+                    if not target_coords:
+                        target_coords = UKRAINE_ALL_SETTLEMENTS.get(target_norm)
+                    
+                    trajectory_data = None
+                    if target_coords:
+                        target_lat, target_lng = target_coords if len(target_coords) == 2 else (target_coords[0], target_coords[1])
+                        trajectory_data = {
+                            'start': [lat, lng],
+                            'end': [target_lat, target_lng],
+                            'target': target_name.title()
+                        }
+                    
                     course_tracks.append({
                         'id': f"{mid}_city_kursom_{city_norm}", 'place': label, 'lat': lat, 'lng': lng,
                         'threat_type': threat_type, 'text': ln[:500], 'date': date_str, 'channel': channel,
-                        'marker_icon': icon, 'source_match': 'uav_city_kursom', 'count': 1
+                        'marker_icon': icon, 'source_match': 'uav_city_kursom', 'count': 1,
+                        'trajectory': trajectory_data
                     })
-                    add_debug_log(f"Created marker at CITY: {city_norm} ({lat}, {lng})", "uav_course")
+                    add_debug_log(f"Created marker at CITY: {city_norm} ({lat}, {lng}) with trajectory to {target_name}", "uav_course")
                     continue
                 else:
                     add_debug_log(f"Could not find coords for city '{city_norm}'", "uav_course")
