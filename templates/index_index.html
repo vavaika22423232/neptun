@@ -927,6 +927,27 @@
       margin-top: 4px;
     }
 
+    .tech-notice {
+      width: 100%;
+      max-width: 1100px;
+      margin: 10px auto 0;
+      padding: 10px 14px;
+      border-radius: 10px;
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid rgba(99, 102, 241, 0.35);
+      color: rgba(226, 232, 240, 0.95);
+      font-size: 12px;
+      text-align: center;
+      letter-spacing: 0.2px;
+    }
+
+    @media (max-width: 768px) {
+      .tech-notice {
+        margin: 8px 12px 0;
+        font-size: 11px;
+      }
+    }
+
     /* Trajectory lines layer - alerts.in.ua style */
     #trajectories-layer {
       position: absolute;
@@ -3081,6 +3102,10 @@
     </div>
   </a>
   
+  <div class="tech-notice">
+    ведуться технічні роботи, вибачте за незручності
+  </div>
+
   <div id="map-container">
     <!-- SEO H1 - Візуально прихований але видимий для Google -->
     <h1 class="seo-h1">Карта тривог України онлайн — карта шахедів, радар шахедів, мапа тривог в реальному часі</h1>
