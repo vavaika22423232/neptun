@@ -14776,6 +14776,28 @@ def parse_trajectory_from_message(text):
                         'kind': 'region_towards_city'
                     }
 
+    # =========================================================================
+    # Pattern 14: "БпЛА [місто] курсом на [місто]"
+    # Example: "БпЛА Боромля курсом на Тростянець"
+    # CRITICAL: Marker should be at SOURCE city (where drone IS), NOT at target!
+    # =========================================================================
+    p14 = re.search(r'(?:група\s+)?(?:бпла|шахед|дрон)\s+(?:м\.?|н\.?п\.?)?\s*([а-яіїєґ\'\-]+)\s+курсом\s+на\s+(?:м\.?|н\.?п\.?)?\s*([а-яіїєґ\'\-]+)', text_lower)
+    if p14:
+        source_city = p14.group(1)
+        target_city = p14.group(2)
+
+        source_coords = _get_city_coords(source_city)
+        target_coords = _get_city_coords(target_city)
+
+        if source_coords and target_coords:
+            return {
+                'start': [source_coords[0], source_coords[1]],  # SOURCE - current position
+                'end': [target_coords[0], target_coords[1]],    # TARGET - where going
+                'source_name': source_city.title(),
+                'target_name': target_city.title(),
+                'kind': 'city_course_to_city'
+            }
+
     return None
 
 def process_message(text, mid, date_str, channel, _disable_multiline=False):  # type: ignore
