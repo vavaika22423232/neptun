@@ -101,11 +101,12 @@ class MessagePipeline:
 
     def process_message(
         self,
-        message_id: int,
-        channel_id: int,
+        message_id,  # int or str
+        channel_id,  # int or str
         text: str,
         timestamp: Optional[datetime] = None,
         media_info: Optional[dict[str, Any]] = None,
+        channel: Optional[str] = None,  # Channel name for track store
     ) -> ProcessingResult:
         """
         Process a single message.
@@ -113,39 +114,45 @@ class MessagePipeline:
         Returns:
             ProcessingResult with status and created markers count
         """
+        # Normalize IDs
+        msg_id = int(message_id) if isinstance(message_id, str) and message_id.isdigit() else hash(str(message_id)) % 10**9
+        chan_id = int(channel_id) if isinstance(channel_id, str) and channel_id.isdigit() else hash(str(channel_id)) % 10**9
+        
         # Check if already processed
-        msg_key = (channel_id, message_id)
+        msg_key = (chan_id, msg_id)
         if msg_key in self._processed_ids:
             return ProcessingResult(
-                message_id=message_id,
-                channel_id=channel_id,
+                message_id=msg_id,
+                channel_id=chan_id,
                 success=True,
                 markers_created=0,
             )
 
         try:
             # Parse message
-            parsed = self._parser.parse(text, channel_id)
+            parsed = self._parser.parse(text, chan_id)
 
             if not parsed.locations and not parsed.threat_types:
                 # Nothing to process
                 self._processed_ids.append(msg_key)
                 return ProcessingResult(
-                    message_id=message_id,
-                    channel_id=channel_id,
+                    message_id=msg_id,
+                    channel_id=chan_id,
                     success=True,
                     markers_created=0,
                 )
 
             markers_created = 0
+            channel_name = channel or f"channel_{chan_id}"
 
             # Process each location
             for location in parsed.locations:
                 marker = self._create_marker(
                     location=location,
                     parsed=parsed,
-                    message_id=message_id,
-                    channel_id=channel_id,
+                    message_id=msg_id,
+                    channel_id=chan_id,
+                    channel_name=channel_name,
                     timestamp=timestamp,
                     media_info=media_info,
                 )
@@ -160,25 +167,25 @@ class MessagePipeline:
             self._total_processed.set(self._total_processed.get() + 1)
             self._total_markers.set(self._total_markers.get() + markers_created)
             self._last_process_time.set(datetime.now(timezone.utc))
-            self._update_channel_stats(channel_id, markers_created)
+            self._update_channel_stats(chan_id, markers_created)
 
             # Mark as processed
             self._processed_ids.append(msg_key)
 
             return ProcessingResult(
-                message_id=message_id,
-                channel_id=channel_id,
+                message_id=msg_id,
+                channel_id=chan_id,
                 success=True,
                 markers_created=markers_created,
             )
 
         except Exception as e:
-            log.error(f"Error processing message {message_id}: {e}")
+            log.error(f"Error processing message {msg_id}: {e}")
             self._total_errors.set(self._total_errors.get() + 1)
 
             return ProcessingResult(
-                message_id=message_id,
-                channel_id=channel_id,
+                message_id=msg_id,
+                channel_id=chan_id,
                 success=False,
                 error=str(e),
             )
@@ -189,6 +196,7 @@ class MessagePipeline:
         parsed: ParsedMessage,
         message_id: int,
         channel_id: int,
+        channel_name: str,
         timestamp: Optional[datetime],
         media_info: Optional[dict[str, Any]],
     ) -> Optional[Marker]:
@@ -198,8 +206,18 @@ class MessagePipeline:
         if parsed.regions:
             region = parsed.regions[0]
 
-        # Try to geocode
-        result = self._geocoder.geocode(location, region)
+        # Try to geocode with context if SmartGeocoder
+        # SmartGeocoder.geocode_with_context provides better results
+        if hasattr(self._geocoder, 'geocode_with_context'):
+            result = self._geocoder.geocode_with_context(
+                query=location,
+                region=region,
+                message_text=parsed.raw_text,
+                source_region=channel_name,  # Channel often indicates region
+            )
+        else:
+            # Fallback for basic geocoders
+            result = self._geocoder.geocode(location, region)
 
         if not result:
             log.debug(f"Could not geocode: {location}")
@@ -228,7 +246,7 @@ class MessagePipeline:
             place=result.place_name or location,
             text=parsed.raw_text[:500] if parsed.raw_text else '',
             timestamp=timestamp,
-            source_channel=f"channel_{channel_id}",
+            source_channel=channel_name,
             course_direction=parsed.direction,
             status=TrackStatus.ACTIVE,
         )

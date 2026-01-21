@@ -84,10 +84,11 @@ app.config['ADMIN_API_KEY'] = os.getenv('ADMIN_SECRET', '')
 
 from services.geocoding import (
     GeocodeCache,
-    GeocoderChain,
     LocalGeocoder,
     OpenCageGeocoder,
     PhotonGeocoder,
+    SmartGeocoder,
+    create_smart_geocoder,
 )
 from services.processing import MessagePipeline
 from services.realtime import RealtimeService, create_marker_callback
@@ -102,61 +103,73 @@ track_store = TrackStore(
 )
 log.info(f"TrackStore initialized with {track_store.count()} tracks")
 
-# Initialize geocoding chain
+# Initialize geocoding cache
 geocode_cache = GeocodeCache(
     cache_file=config.storage.geocode_cache_file,
     negative_cache_file=config.storage.negative_cache_file,
 )
 log.info(f"GeocodeCache loaded: {geocode_cache.stats()}")
 
-# Build geocoder chain
-geocoders = []
+# ==============================================================================
+# SMART GEOCODER - Best-in-class Ukrainian geocoding
+# ==============================================================================
 
-# 1. Local geocoder (always first) - load from data module
+# Load city coordinates and settlements
 try:
-    # Import city coords from data module (not app.py!)
     from data import CITY_COORDS, UKRAINE_ALL_SETTLEMENTS, UKRAINE_SETTLEMENTS_BY_OBLAST
-
-    local_geocoder = LocalGeocoder(
-        city_coords=CITY_COORDS,
-        settlements=UKRAINE_ALL_SETTLEMENTS or None,
-        settlements_by_oblast=UKRAINE_SETTLEMENTS_BY_OBLAST or None,
-    )
-    geocoders.append(local_geocoder)
-    log.info(f"LocalGeocoder: {local_geocoder.stats()['city_coords']} cities loaded")
+    log.info(f"Loaded {len(CITY_COORDS)} cities, {len(UKRAINE_ALL_SETTLEMENTS or {})} settlements")
 except Exception as e:
-    log.warning(f"Failed to load LocalGeocoder: {e}")
-    local_geocoder = None
+    log.warning(f"Failed to load city data: {e}")
+    CITY_COORDS = {}
+    UKRAINE_ALL_SETTLEMENTS = None
+    UKRAINE_SETTLEMENTS_BY_OBLAST = None
 
-# 2. Photon geocoder (free, OpenStreetMap based)
+# Build API geocoders list
+api_geocoders = []
+
+# 1. Photon geocoder (free, OpenStreetMap based)
 if config.geocoding.photon_enabled:
     try:
         photon_geocoder = PhotonGeocoder(
             url=config.geocoding.photon_url or PhotonGeocoder.DEFAULT_URL,
             timeout=3.0,
         )
-        geocoders.append(photon_geocoder)
+        api_geocoders.append(photon_geocoder)
         log.info("PhotonGeocoder enabled")
     except Exception as e:
         log.warning(f"Failed to initialize PhotonGeocoder: {e}")
 
-# 3. OpenCage geocoder (paid, fallback)
+# 2. OpenCage geocoder (paid, fallback)
 opencage_key = os.getenv('OPENCAGE_API_KEY')
 if opencage_key:
     try:
         opencage_geocoder = OpenCageGeocoder(api_key=opencage_key)
-        geocoders.append(opencage_geocoder)
+        api_geocoders.append(opencage_geocoder)
         log.info("OpenCageGeocoder enabled (with API key)")
     except Exception as e:
         log.warning(f"Failed to initialize OpenCageGeocoder: {e}")
 
-geocoder_chain = GeocoderChain(geocoders=geocoders, cache=geocode_cache)
-log.info(f"GeocoderChain initialized with {len(geocoders)} geocoders")
+# Create SmartGeocoder with all components
+smart_geocoder = create_smart_geocoder(
+    city_coords=CITY_COORDS,
+    settlements=UKRAINE_ALL_SETTLEMENTS,
+    settlements_by_oblast=UKRAINE_SETTLEMENTS_BY_OBLAST,
+    api_geocoders=api_geocoders,
+    cache=geocode_cache,
+    learning_file=os.path.join(
+        config.storage.persistent_dir or '.',
+        'geocode_learning.json'
+    ),
+)
+log.info(f"SmartGeocoder initialized: {smart_geocoder.stats()}")
+
+# Use smart_geocoder as main geocoder
+geocoder_chain = smart_geocoder  # Alias for compatibility
 
 # Initialize track processor
 track_processor = TrackProcessor(
     store=track_store,
-    geocoder=geocoder_chain,
+    geocoder=smart_geocoder,
 )
 
 # Initialize message parser
@@ -269,6 +282,97 @@ def show_config():
     return jsonify(config.to_dict())
 
 
+@app.route('/api/telegram/status')
+def telegram_status():
+    """Get Telegram fetcher status."""
+    if telegram_fetcher:
+        return jsonify(telegram_fetcher.get_status())
+    return jsonify({
+        'running': False,
+        'connected': False,
+        'error': 'Telegram fetcher not initialized',
+    })
+
+
+# ==============================================================================
+# TELEGRAM FETCHER (message ingestion)
+# ==============================================================================
+
+telegram_fetcher = None
+
+
+def _on_telegram_message(msg):
+    """
+    Callback for new Telegram messages.
+    Processes message through pipeline and adds to track store.
+    """
+    try:
+        # Use message pipeline to process
+        result = message_pipeline.process_message(
+            text=msg.text,
+            channel_id=msg.channel,
+            message_id=str(msg.id),
+            timestamp=msg.timestamp,
+            channel=msg.channel,  # Pass channel name for storage
+        )
+        
+        if result and result.markers_created > 0:
+            log.info(f"Processed message from {msg.channel}: {result.markers_created} markers created")
+            
+            # Notify realtime clients
+            realtime_service.broadcast({
+                'type': 'new_track',
+                'markers_created': result.markers_created,
+            })
+    except Exception as e:
+        log.error(f"Error processing Telegram message: {e}")
+
+
+def start_telegram_fetcher():
+    """Start Telegram message fetcher if configured."""
+    global telegram_fetcher
+    
+    if not config.telegram.is_configured:
+        log.warning("Telegram not configured - skipping fetcher")
+        return False
+    
+    try:
+        from services.telegram import TelegramFetcher
+        
+        # Get channels from config or environment
+        channels = config.telegram.channels or []
+        if not channels:
+            # Fallback to hardcoded channels from app.py
+            channels = [
+                'alerts_feed',
+                'harkiv_alarm',
+                'Kharkiv_Now',
+                'dnipro_alerts',
+                'kyiv_alert',
+                # Add more as needed
+            ]
+        
+        telegram_fetcher = TelegramFetcher(
+            api_id=config.telegram.api_id,
+            api_hash=config.telegram.api_hash,
+            session_string=config.telegram.session_string,
+            channels=channels,
+            on_message=_on_telegram_message,
+        )
+        
+        if telegram_fetcher.start():
+            log.info(f"TelegramFetcher started with {len(channels)} channels")
+            app.extensions['telegram_fetcher'] = telegram_fetcher
+            return True
+        else:
+            log.error("TelegramFetcher failed to start")
+            return False
+            
+    except Exception as e:
+        log.error(f"Failed to initialize TelegramFetcher: {e}")
+        return False
+
+
 # ==============================================================================
 # STARTUP
 # ==============================================================================
@@ -285,6 +389,9 @@ def startup():
     # Start background processor
     track_processor.start()
     log.info("Track processor started")
+
+    # Start Telegram message fetcher (CRITICAL for data ingestion!)
+    start_telegram_fetcher()
 
     # Start alarm monitoring if configured
     if alarm_client and config.alarms.is_configured:
@@ -316,12 +423,30 @@ def startup():
 
 
 # ==============================================================================
+# AUTO-START ON IMPORT (for Gunicorn)
+# ==============================================================================
+
+# Run startup when module is loaded by Gunicorn
+_startup_done = False
+
+def ensure_startup():
+    """Ensure startup runs exactly once."""
+    global _startup_done
+    if not _startup_done:
+        _startup_done = True
+        startup()
+
+# Call startup on import (Gunicorn imports the module)
+ensure_startup()
+
+
+# ==============================================================================
 # MAIN
 # ==============================================================================
 
 if __name__ == '__main__':
-    startup()
-
+    # startup() already called via ensure_startup()
+    
     # Run Flask
     log.info(f"Starting server on {config.server.host}:{config.server.port}")
     app.run(

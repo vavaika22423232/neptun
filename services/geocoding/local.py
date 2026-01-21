@@ -3,11 +3,19 @@ Local geocoder using pre-loaded coordinate dictionaries.
 
 Найшвидший geocoder - не робить HTTP запитів.
 Використовує CITY_COORDS та UKRAINE_ALL_SETTLEMENTS.
+
+СТРУКТУРА ДАНИХ:
+- CITY_COORDS: {city_name: (lat, lon)} - 120 основних міст
+- UKRAINE_ALL_SETTLEMENTS: {normalized_name: (lat, lon)} - 24862 населених пунктів
+- UKRAINE_SETTLEMENTS_BY_OBLAST: {(name, oblast): (lat, lon)} - 35019 записів з областю
 """
-import re
-from typing import Optional
+import logging
+from typing import Dict, List, Optional, Tuple
 
 from .base import GeocoderInterface, GeocodingResult
+from .normalizer import get_name_variants, normalize_city, normalize_oblast
+
+log = logging.getLogger(__name__)
 
 
 class LocalGeocoder(GeocoderInterface):
@@ -18,27 +26,83 @@ class LocalGeocoder(GeocoderInterface):
     - Миттєвий (без мережевих запитів)
     - Працює офлайн
     - Не має rate limits
+    - 26000+ населених пунктів
 
-    Недоліки:
-    - Обмежена база даних
-    - Потрібно оновлювати вручну
+    Пошук:
+    1. Точний збіг в основних містах
+    2. Варіанти назв (відмінки)
+    3. По області (якщо вказано) - шукає в settlements_by_oblast
+    4. Всі населені пункти (settlements)
     """
 
     def __init__(
         self,
-        city_coords: dict[str, tuple[float, float]],
-        settlements: Optional[dict[str, tuple[float, float]]] = None,
-        settlements_by_oblast: Optional[dict[str, dict[str, tuple[float, float]]]] = None,
+        city_coords: Optional[Dict] = None,
+        settlements: Optional[Dict] = None,
+        settlements_by_oblast: Optional[Dict] = None,
     ):
         """
         Args:
-            city_coords: Main city coordinates {normalized_name: (lat, lon)}
+            city_coords: Main city coordinates {name: (lat, lon)} or {name: [lat, lon]}
             settlements: All settlements {normalized_name: (lat, lon)}
-            settlements_by_oblast: Oblast-aware settlements {oblast: {name: (lat, lon)}}
+            settlements_by_oblast: {(settlement_name, oblast_name): (lat, lon)}
+                                   OR {oblast: {name: (lat, lon)}}
         """
-        self._city_coords = city_coords or {}
-        self._settlements = settlements or {}
-        self._settlements_by_oblast = settlements_by_oblast or {}
+        # Normalize city_coords
+        self._city_coords: Dict[str, Tuple[float, float]] = {}
+        for name, coords in (city_coords or {}).items():
+            normalized = normalize_city(name)
+            if isinstance(coords, (list, tuple)) and len(coords) >= 2:
+                self._city_coords[normalized] = (float(coords[0]), float(coords[1]))
+        
+        # Settlements by normalized name
+        self._settlements: Dict[str, Tuple[float, float]] = {}
+        for name, coords in (settlements or {}).items():
+            if isinstance(coords, (list, tuple)) and len(coords) >= 2:
+                self._settlements[name] = (float(coords[0]), float(coords[1]))
+        
+        # Process settlements_by_oblast
+        # Format can be:
+        # A) {(settlement, oblast): coords} - tuple keys
+        # B) {oblast: {settlement: coords}} - nested dict
+        self._settlements_by_name_oblast: Dict[Tuple[str, str], Tuple[float, float]] = {}
+        self._oblasts_for_settlement: Dict[str, List[str]] = {}
+        
+        if settlements_by_oblast:
+            # Check format by first key
+            first_key = next(iter(settlements_by_oblast.keys()), None)
+            
+            if isinstance(first_key, tuple):
+                # Format A: {(settlement, oblast): coords}
+                for (settlement, oblast), coords in settlements_by_oblast.items():
+                    if isinstance(coords, (list, tuple)) and len(coords) >= 2:
+                        key = (settlement.lower(), oblast.lower())
+                        self._settlements_by_name_oblast[key] = (float(coords[0]), float(coords[1]))
+                        
+                        # Build reverse index
+                        if settlement.lower() not in self._oblasts_for_settlement:
+                            self._oblasts_for_settlement[settlement.lower()] = []
+                        if oblast.lower() not in self._oblasts_for_settlement[settlement.lower()]:
+                            self._oblasts_for_settlement[settlement.lower()].append(oblast.lower())
+            
+            elif isinstance(first_key, str):
+                # Format B: {oblast: {settlement: coords}}
+                for oblast, setts in settlements_by_oblast.items():
+                    if isinstance(setts, dict):
+                        oblast_lower = oblast.lower()
+                        for settlement, coords in setts.items():
+                            if isinstance(coords, (list, tuple)) and len(coords) >= 2:
+                                key = (settlement.lower(), oblast_lower)
+                                self._settlements_by_name_oblast[key] = (float(coords[0]), float(coords[1]))
+                                
+                                if settlement.lower() not in self._oblasts_for_settlement:
+                                    self._oblasts_for_settlement[settlement.lower()] = []
+                                if oblast_lower not in self._oblasts_for_settlement[settlement.lower()]:
+                                    self._oblasts_for_settlement[settlement.lower()].append(oblast_lower)
+        
+        log.info(f"LocalGeocoder initialized: {len(self._city_coords)} cities, "
+                 f"{len(self._settlements)} settlements, "
+                 f"{len(self._settlements_by_name_oblast)} oblast-entries")
 
     @property
     def name(self) -> str:
@@ -58,14 +122,19 @@ class LocalGeocoder(GeocoderInterface):
 
         Search order:
         1. Exact match in city_coords
-        2. Normalized match in city_coords
+        2. Variants in city_coords
         3. Oblast-specific settlements (if region provided)
-        4. All settlements
+        4. All settlements with variants
         """
         if not query:
             return None
 
-        normalized = self._normalize(query)
+        normalized = normalize_city(query)
+        if not normalized:
+            return None
+        
+        # Normalize region
+        normalized_region = normalize_oblast(region) if region else None
 
         # 1. Exact match in main cities
         if normalized in self._city_coords:
@@ -77,43 +146,25 @@ class LocalGeocoder(GeocoderInterface):
                 confidence=1.0,
             )
 
-        # 2. Try variations
-        for variant in self._get_variants(normalized):
+        # 2. Try variants in city_coords
+        variants = get_name_variants(normalized)
+        for variant in variants[1:]:  # Skip first (already tried)
             if variant in self._city_coords:
                 coords = self._city_coords[variant]
                 return GeocodingResult(
                     coordinates=coords,
                     place_name=query,
                     source=self.name,
-                    confidence=0.9,
+                    confidence=0.95,
                 )
 
-        # 3. Oblast-specific search
-        if region and self._settlements_by_oblast:
-            region_key = self._normalize_region(region)
-            if region_key in self._settlements_by_oblast:
-                oblast_settlements = self._settlements_by_oblast[region_key]
-                if normalized in oblast_settlements:
-                    coords = oblast_settlements[normalized]
-                    return GeocodingResult(
-                        coordinates=coords,
-                        place_name=f"{query}, {region}",
-                        source=self.name,
-                        confidence=0.95,
-                    )
+        # 3. Oblast-specific search (most accurate for small villages)
+        if normalized_region and self._settlements_by_name_oblast:
+            result = self._search_in_oblast(normalized, variants, normalized_region, query)
+            if result:
+                return result
 
-                # Try variants in oblast
-                for variant in self._get_variants(normalized):
-                    if variant in oblast_settlements:
-                        coords = oblast_settlements[variant]
-                        return GeocodingResult(
-                            coordinates=coords,
-                            place_name=f"{query}, {region}",
-                            source=self.name,
-                            confidence=0.85,
-                        )
-
-        # 4. All settlements search
+        # 4. All settlements (exact)
         if self._settlements:
             if normalized in self._settlements:
                 coords = self._settlements[normalized]
@@ -121,90 +172,88 @@ class LocalGeocoder(GeocoderInterface):
                     coordinates=coords,
                     place_name=query,
                     source=self.name,
-                    confidence=0.8,
+                    confidence=0.85,
                 )
 
-            for variant in self._get_variants(normalized):
+            # 5. Variants in settlements
+            for variant in variants[1:]:
                 if variant in self._settlements:
                     coords = self._settlements[variant]
                     return GeocodingResult(
                         coordinates=coords,
                         place_name=query,
                         source=self.name,
-                        confidence=0.7,
+                        confidence=0.8,
                     )
 
         return None
 
-    def _normalize(self, name: str) -> str:
-        """Normalize location name for matching."""
-        if not name:
-            return ""
+    def _search_in_oblast(
+        self,
+        normalized: str,
+        variants: List[str],
+        oblast: str,
+        original_query: str,
+    ) -> Optional[GeocodingResult]:
+        """Search in specific oblast's settlements using tuple keys."""
+        # Direct key lookup (most common)
+        key = (normalized, oblast)
+        if key in self._settlements_by_name_oblast:
+            coords = self._settlements_by_name_oblast[key]
+            return GeocodingResult(
+                coordinates=coords,
+                place_name=original_query,
+                source=self.name,
+                confidence=0.95,
+            )
+        
+        # Try variants
+        for variant in variants:
+            key = (variant, oblast)
+            if key in self._settlements_by_name_oblast:
+                coords = self._settlements_by_name_oblast[key]
+                return GeocodingResult(
+                    coordinates=coords,
+                    place_name=original_query,
+                    source=self.name,
+                    confidence=0.9,
+                )
+        
+        # Try partial oblast match (e.g., "харківська" vs "харківська область")
+        for variant in [normalized] + variants:
+            for (name, obl), coords in self._settlements_by_name_oblast.items():
+                if name == variant and (oblast in obl or obl in oblast):
+                    return GeocodingResult(
+                        coordinates=coords,
+                        place_name=original_query,
+                        source=self.name,
+                        confidence=0.88,
+                    )
+        
+        return None
 
-        # Lowercase
-        result = name.lower().strip()
+    def get_oblasts_for_settlement(self, settlement: str) -> List[str]:
+        """Get list of oblasts where settlement exists (for disambiguation)."""
+        normalized = normalize_city(settlement)
+        return self._oblasts_for_settlement.get(normalized, [])
 
-        # Remove common prefixes/suffixes
-        prefixes_to_remove = [
-            'м.', 'м ', 'с.', 'с ', 'смт.', 'смт ',
-            'село ', 'місто ', 'селище ',
-        ]
-        for prefix in prefixes_to_remove:
-            if result.startswith(prefix):
-                result = result[len(prefix):].strip()
-
-        # Remove directional suffixes like "курсом на ..."
-        result = re.sub(r'\s+курсом?\s+на\s+.*$', '', result)
-        result = re.sub(r'\s+напрям(?:ок|ку)?\s+на\s+.*$', '', result)
-
-        # Remove region suffixes
-        result = re.sub(r'\s*\(.*область.*\)$', '', result)
-        result = re.sub(r'\s*,\s*.*область.*$', '', result)
-
-        # Normalize apostrophes and quotes
-        result = result.replace("'", "'").replace("`", "'").replace("ʼ", "'")
-
-        # Remove extra whitespace
-        result = ' '.join(result.split())
-
-        return result
-
-    def _normalize_region(self, region: str) -> str:
-        """Normalize region name for dict lookup."""
-        if not region:
-            return ""
-
-        result = region.lower().strip()
-
-        # Remove 'область', 'ська' endings
-        result = re.sub(r'\s*область\s*$', '', result)
-        result = re.sub(r'ська\s*$', '', result)
-        result = re.sub(r'ький\s*$', '', result)
-
-        return result.strip()
-
-    def _get_variants(self, normalized: str) -> list:
-        """Generate name variants for fuzzy matching."""
-        variants = []
-
-        # Without common suffixes
-        for suffix in ['ка', 'ки', 'ку', 'ці', 'ий', 'а', 'і', 'у']:
-            if normalized.endswith(suffix) and len(normalized) > len(suffix) + 2:
-                variants.append(normalized[:-len(suffix)])
-
-        # With common suffixes if not present
-        if not normalized.endswith(('ка', 'ки', 'ський', 'ське')):
-            variants.extend([
-                normalized + 'ка',
-                normalized + 'ки',
-            ])
-
-        return variants
-
-    def stats(self) -> dict[str, int]:
-        """Get statistics about loaded data."""
+    def stats(self) -> dict:
+        """Get geocoder statistics."""
         return {
+            'name': self.name,
             'city_coords': len(self._city_coords),
             'settlements': len(self._settlements),
-            'oblasts_with_settlements': len(self._settlements_by_oblast),
+            'oblast_entries': len(self._settlements_by_name_oblast),
+            'unique_settlements_with_oblast': len(self._oblasts_for_settlement),
         }
+
+    def add_city(self, name: str, coords: tuple, region: Optional[str] = None):
+        """Add or update city coordinates."""
+        normalized = normalize_city(name)
+        self._city_coords[normalized] = coords
+        
+        if region:
+            normalized_region = normalize_oblast(region)
+            if normalized_region:
+                key = (normalized, normalized_region)
+                self._settlements_by_name_oblast[key] = coords
