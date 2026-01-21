@@ -42,6 +42,7 @@ class TrackEntry:
     source: Optional[str] = None
     target: Optional[str] = None
     direction: Optional[str] = None
+    trajectory: Optional[list] = None  # List of [lat, lng] points
 
     # Metadata
     geocoded: bool = False
@@ -552,11 +553,37 @@ class TrackStore:
 
         Compatible with existing /data endpoint format.
         """
+        # Map threat types to icons
+        icon_map = {
+            'shahed': 'shahed3.webp',
+            'uav': 'shahed3.webp',
+            'drone': 'shahed3.webp',
+            'бпла': 'shahed3.webp',
+            'missile': 'rocket.webp',
+            'rocket': 'rocket.webp',
+            'ballistic': 'ballistic.webp',
+            'cruise': 'rocket.webp',
+            'caliber': 'rocket.webp',
+            'iskander': 'ballistic.webp',
+            'kinzhal': 'ballistic.webp',
+            'kab': 'kab.webp',
+            'aircraft': 'jet.webp',
+            'jet': 'jet.webp',
+            'mig': 'jet.webp',
+            'su': 'jet.webp',
+            'tu': 'jet.webp',
+            'helicopter': 'helicopter.webp',
+        }
+        
         tracks = self.get_all(include_hidden=include_hidden)
 
         result = []
         for track in tracks:
             if track.lat is not None and track.lng is not None:
+                # Determine icon based on threat type
+                threat_type = (track.threat_type or 'unknown').lower()
+                marker_icon = icon_map.get(threat_type, 'shahed3.webp')
+                
                 result.append({
                     'id': track.id,
                     'lat': track.lat,
@@ -565,6 +592,7 @@ class TrackStore:
                     'text': track.text[:500] if track.text else '',
                     'date': track.timestamp.strftime('%Y-%m-%d %H:%M:%S') if track.timestamp else '',
                     'type': track.threat_type or 'unknown',
+                    'marker_icon': marker_icon,
                     'channel': track.channel or '',
                     'oblast': track.oblast or '',
                     'source': track.source,
@@ -572,6 +600,7 @@ class TrackStore:
                     'direction': track.direction,
                     'count': track.count,
                     'manual': track.manual,
+                    'trajectory': track.trajectory,
                 })
 
         return result

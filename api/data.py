@@ -73,21 +73,48 @@ def get_data():
     Get all current track markers for the map.
 
     Returns:
-        JSON array of track objects with coordinates
+        JSON object with tracks, events, metadata (compatible with app.py format)
     """
     try:
+        tracks = []
+        events = []
+        
         # If we have the new track store, use it
         if _track_store:
             markers = _track_store.to_api_format(include_hidden=False)
-            return jsonify(markers)
+            tracks = markers
 
         # Fall back to legacy function
-        if _get_legacy_data:
+        elif _get_legacy_data:
             return _get_legacy_data()
 
-        # No data source configured
-        log.warning("No data source configured for /data endpoint")
-        return jsonify([])
+        # Build response in app.py compatible format
+        response_data = {
+            'tracks': tracks,
+            'events': events,
+            'all_sources': [],  # TODO: add channel list
+            'ballistic_threat': {
+                'active': False,
+                'region': None,
+                'timestamp': None,
+            },
+            'threat_tracking': None,
+            'ai_ttl': {
+                'enabled': False,
+                'stats': None
+            },
+            '_meta': {
+                'tracks_total': len(tracks),
+                'tracks_returned': len(tracks),
+                'tracks_truncated': False,
+                'events_total': len(events),
+                'events_returned': len(events),
+                'events_truncated': False,
+                'time_range_minutes': 60,
+            }
+        }
+        
+        return jsonify(response_data)
 
     except Exception as e:
         log.error(f"Error in /data endpoint: {e}")
