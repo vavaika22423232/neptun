@@ -14798,6 +14798,44 @@ def parse_trajectory_from_message(text):
                 'kind': 'city_course_to_city'
             }
 
+    # =========================================================================
+    # Pattern 15: "БпЛА на [регіон], на [напрямок] від [місто], курс на [напрямок]"
+    # Example: "БпЛА на Дніпропетровщині, на південь від Павлограду, курс на захід"
+    # Position: south of Pavlograd, course: west
+    # =========================================================================
+    p15 = re.search(r'(?:група\s+)?(?:бпла|шахед|дрон)\s+на\s+([а-яіїєґ]+(щин|ччин)[іи])[,\s]+на\s+(північ|південь?|схід|захід|північн\w*[\s-]*схід|північн\w*[\s-]*захід|південн\w*[\s-]*схід|південн\w*[\s-]*захід)\s+від\s+(?:м\.?|н\.?п\.?)?\s*([а-яіїєґ\'\-]+)[,\s]+курс\s+(?:на\s+)?(північ|південь?|схід|захід|північн\w*[\s-]*схід\w*|північн\w*[\s-]*захід\w*|південн\w*[\s-]*схід\w*|південн\w*[\s-]*захід\w*)', text_lower)
+    if p15:
+        region = p15.group(1)
+        direction_from_city = p15.group(3)
+        reference_city = p15.group(4)
+        course_direction = p15.group(5)
+
+        city_coords = _get_city_coords(reference_city)
+        if city_coords:
+            # Calculate position offset from reference city
+            dir_vec = _get_direction_vector(direction_from_city)
+            if dir_vec:
+                start_lat = city_coords[0] + dir_vec[0] * 0.15  # ~15km offset
+                start_lng = city_coords[1] + dir_vec[1] * 0.15
+            else:
+                start_lat, start_lng = city_coords
+
+            # Calculate end point based on course
+            course_vec = _get_direction_vector(course_direction)
+            if course_vec:
+                end_lat = start_lat + course_vec[0] * 0.5
+                end_lng = start_lng + course_vec[1] * 0.5
+            else:
+                end_lat, end_lng = start_lat, start_lng
+
+            return {
+                'start': [start_lat, start_lng],
+                'end': [end_lat, end_lng],
+                'source_name': f'{direction_from_city} від {reference_city} ({region})'.title(),
+                'target_name': f'курс {course_direction}',
+                'kind': 'region_city_offset_course'
+            }
+
     return None
 
 def process_message(text, mid, date_str, channel, _disable_multiline=False):  # type: ignore
