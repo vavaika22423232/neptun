@@ -28063,23 +28063,134 @@ def admin_threat_tracker():
 
 @app.route('/api/threats', methods=['GET'])
 def api_threats():
-    """Public API for active threats - used by frontend"""
-    active_threats = THREAT_TRACKER.get_all_active_threats()
-
-    # Generate markers for each threat
-    markers = []
-    for t in active_threats:
-        marker = THREAT_TRACKER.get_marker_for_threat(t['id'])
-        if marker and marker.get('lat') and marker.get('lng'):
-            markers.append(marker)
-
-    return jsonify({
-        'threats': markers,
-        'summary': {
-            'total': len(markers),
-            'by_type': {}
-        }
-    })
+    """
+    Public API for active threats - counts from recent messages.
+    Used by mobile widget for real-time threat display.
+    """
+    try:
+        from datetime import datetime, timedelta
+        import pytz
+        kyiv_tz = pytz.timezone('Europe/Kyiv')
+        now_kyiv = datetime.now(kyiv_tz)
+        cutoff_time = now_kyiv - timedelta(minutes=30)  # Only last 30 minutes
+        
+        messages = load_messages()
+        
+        # Count threats by type from recent messages
+        drones = 0
+        missiles = 0  
+        kab = 0
+        ballistic = 0
+        
+        seen_texts = set()  # Avoid counting duplicates
+        
+        for msg in messages[-200:]:  # Check last 200 messages
+            if not isinstance(msg, dict):
+                continue
+            
+            text = (msg.get('text') or '').lower()
+            
+            # Check timestamp if available
+            msg_date = msg.get('date') or msg.get('timestamp', '')
+            if msg_date:
+                try:
+                    if isinstance(msg_date, str):
+                        # Parse various date formats
+                        for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S']:
+                            try:
+                                dt = datetime.strptime(msg_date[:19], fmt)
+                                dt = kyiv_tz.localize(dt)
+                                break
+                            except:
+                                continue
+                        else:
+                            continue
+                    else:
+                        continue
+                    
+                    if dt < cutoff_time:
+                        continue
+                except:
+                    pass
+            
+            # Normalize text for dedup
+            text_key = text[:50]
+            if text_key in seen_texts:
+                continue
+            seen_texts.add(text_key)
+            
+            # Parse quantity if present (e.g. "2х БПЛА", "3 шахеди")
+            qty = 1
+            qty_match = re.search(r'(\d+)\s*[xхХ]?\s*(?:бпла|шахед|дрон|ракет|каб)', text)
+            if qty_match:
+                qty = int(qty_match.group(1))
+            
+            # Count by type
+            if any(w in text for w in ['шахед', 'shahed', 'герань']):
+                drones += qty
+            elif any(w in text for w in ['бпла', 'дрон', 'uav', 'безпілот']):
+                drones += qty
+            elif any(w in text for w in ['каб', 'керована бомба', 'авіабомб']):
+                kab += qty
+            elif any(w in text for w in ['балістик', 'іскандер', 'ballistic']):
+                ballistic += qty
+            elif any(w in text for w in ['крилат', 'калібр', 'х-101', 'cruise', 'ракет']):
+                missiles += qty
+        
+        # Build response with threat data
+        threats = []
+        if drones > 0:
+            threats.append({
+                'threat_type': 'drone',
+                'quantity': drones,
+                'quantity_remaining': drones,
+                'status': 'active',
+                'created_at': now_kyiv.isoformat()
+            })
+        if missiles > 0:
+            threats.append({
+                'threat_type': 'cruise',
+                'quantity': missiles,
+                'quantity_remaining': missiles,
+                'status': 'active',
+                'created_at': now_kyiv.isoformat()
+            })
+        if kab > 0:
+            threats.append({
+                'threat_type': 'kab',
+                'quantity': kab,
+                'quantity_remaining': kab,
+                'status': 'active',
+                'created_at': now_kyiv.isoformat()
+            })
+        if ballistic > 0:
+            threats.append({
+                'threat_type': 'ballistic',
+                'quantity': ballistic,
+                'quantity_remaining': ballistic,
+                'status': 'active',
+                'created_at': now_kyiv.isoformat()
+            })
+        
+        return jsonify({
+            'threats': threats,
+            'summary': {
+                'total': drones + missiles + kab + ballistic,
+                'drones': drones,
+                'missiles': missiles,
+                'kab': kab,
+                'ballistic': ballistic
+            },
+            'updated_at': now_kyiv.isoformat()
+        })
+        
+    except Exception as e:
+        print(f"[API /api/threats] Error: {e}")
+        return jsonify({
+            'threats': [],
+            'summary': {'total': 0, 'drones': 0, 'missiles': 0, 'kab': 0, 'ballistic': 0},
+            'error': str(e)
+        })
 
 @app.route('/api/fusion/events', methods=['GET'])
 def api_fusion_events():
