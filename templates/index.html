@@ -1712,7 +1712,6 @@
       * {
         -webkit-tap-highlight-color: transparent;
         -webkit-touch-callout: none;
-        tap-highlight-color: transparent;
       }
       
       /* Larger touch targets */
@@ -4851,13 +4850,42 @@
         wrapper.style.cursor = 'grab';
       });
       
-      // Mouse wheel zoom
+      // Mouse wheel zoom - zoom towards cursor position
       wrapper.addEventListener('wheel', (e) => {
         e.preventDefault();
-        if (e.deltaY < 0) {
-          zoomIn();
-        } else {
-          zoomOut();
+        const wrapperRect = wrapper.getBoundingClientRect();
+        const mouseX = e.clientX - wrapperRect.left;
+        const mouseY = e.clientY - wrapperRect.top;
+        
+        // Calculate current position of mouse on the map
+        const currentWidth = containerWidth * currentScale;
+        const currentHeight = containerHeight * currentScale;
+        const currentLeft = (wrapperRect.width - currentWidth) / 2 + offsetX;
+        const currentTop = (wrapperRect.height - currentHeight) / 2 + offsetY;
+        
+        // Point on map (0-1 ratio) under cursor
+        const mapPointX = (mouseX - currentLeft) / currentWidth;
+        const mapPointY = (mouseY - currentTop) / currentHeight;
+        
+        // Calculate new scale
+        const zoomFactor = e.deltaY < 0 ? 1.3 : (1 / 1.3);
+        const newScale = Math.min(Math.max(currentScale * zoomFactor, 1.0), 5);
+        
+        if (Math.abs(newScale - currentScale) > 0.01) {
+          currentScale = newScale;
+          
+          // Calculate new dimensions
+          const newWidth = containerWidth * currentScale;
+          const newHeight = containerHeight * currentScale;
+          
+          // Adjust offset to keep same map point under cursor
+          const newLeft = mouseX - mapPointX * newWidth;
+          const newTop = mouseY - mapPointY * newHeight;
+          
+          offsetX = newLeft - (wrapperRect.width - newWidth) / 2;
+          offsetY = newTop - (wrapperRect.height - newHeight) / 2;
+          
+          updateZoom(true);
         }
       }, { passive: false });
       
@@ -4889,9 +4917,10 @@
           offsetY = dragStartOffsetY + (e.touches[0].clientY - dragStartY);
           updateZoom();
         } else if (e.touches.length === 2) {
-          // Pinch to zoom
+          // Pinch to zoom with proper anchor point
           e.preventDefault();
           const newDistance = getTouchDistance(e.touches);
+          const newCenter = getTouchCenter(e.touches);
           
           if (lastTouchDistance > 0) {
             const scale = newDistance / lastTouchDistance;
@@ -4900,12 +4929,42 @@
             
             // Only update if change is significant (reduces redraws)
             if (Math.abs(newScale - currentScale) > 0.02) {
+              // Calculate the zoom center relative to wrapper
+              const wrapperRect = wrapper.getBoundingClientRect();
+              const pinchCenterX = newCenter.x - wrapperRect.left;
+              const pinchCenterY = newCenter.y - wrapperRect.top;
+              
+              // Calculate current position of pinch center on the map
+              const currentWidth = containerWidth * currentScale;
+              const currentHeight = containerHeight * currentScale;
+              const currentLeft = (wrapperRect.width - currentWidth) / 2 + offsetX;
+              const currentTop = (wrapperRect.height - currentHeight) / 2 + offsetY;
+              
+              // Point on map (0-1 ratio) under pinch center
+              const mapPointX = (pinchCenterX - currentLeft) / currentWidth;
+              const mapPointY = (pinchCenterY - currentTop) / currentHeight;
+              
+              // Update scale
+              const oldScale = currentScale;
               currentScale = newScale;
+              
+              // Calculate new dimensions
+              const newWidth = containerWidth * currentScale;
+              const newHeight = containerHeight * currentScale;
+              
+              // Adjust offset to keep same map point under pinch center
+              const newLeft = pinchCenterX - mapPointX * newWidth;
+              const newTop = pinchCenterY - mapPointY * newHeight;
+              
+              offsetX = newLeft - (wrapperRect.width - newWidth) / 2;
+              offsetY = newTop - (wrapperRect.height - newHeight) / 2;
+              
               updateZoom();
             }
           }
           
           lastTouchDistance = newDistance;
+          lastTouchCenter = newCenter;
         }
       }, { passive: false });
       

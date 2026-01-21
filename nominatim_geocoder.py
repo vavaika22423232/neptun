@@ -304,7 +304,11 @@ def get_coordinates_nominatim(city_name: str, region: Optional[str] = None) -> O
 
 
 def _build_search_strategies(city: str, region: str = None) -> list[tuple[str, dict]]:
-    """Build list of search strategies to try"""
+    """Build list of search strategies to try
+    
+    If region is provided, ALL strategies will include it to prevent
+    results from wrong regions (e.g., Вільшанка in Volyn instead of Kirovohrad)
+    """
     strategies = []
 
     # Strategy 1: Structured search with region (most accurate)
@@ -319,7 +323,7 @@ def _build_search_strategies(city: str, region: str = None) -> list[tuple[str, d
             'state': osm_region or region,
             'country': 'Ukraine',
             'format': 'json',
-            'limit': 3,
+            'limit': 5,
             'addressdetails': 1
         }))
 
@@ -329,38 +333,54 @@ def _build_search_strategies(city: str, region: str = None) -> list[tuple[str, d
             'state': region,
             'country': 'Ukraine',
             'format': 'json',
-            'limit': 3,
+            'limit': 5,
             'addressdetails': 1
         }))
 
-    # Strategy 2: Free-form query with region
-    if region:
-        query = f"{city}, {region}, Ukraine"
-        strategies.append(('freeform_with_region', {
+        # Strategy 2: Free-form query with region - ALWAYS include region
+        query = f"{city}, {region}, Україна"
+        strategies.append(('freeform_with_region_ua', {
             'q': query,
+            'state': region,  # Pass for validation
             'format': 'json',
-            'limit': 3,
+            'limit': 5,
+            'countrycodes': 'ua',
+            'addressdetails': 1
+        }))
+        
+        # Also try English region name
+        if osm_region:
+            query_en = f"{city}, {osm_region}, Ukraine"
+            strategies.append(('freeform_with_region_en', {
+                'q': query_en,
+                'state': region,  # Pass for validation
+                'format': 'json',
+                'limit': 5,
+                'countrycodes': 'ua',
+                'addressdetails': 1
+            }))
+        
+        # DO NOT add strategies without region when region is specified!
+        # This prevents matching wrong cities with same name in different oblasts
+        
+    else:
+        # Only search without region restriction if no region provided
+        strategies.append(('freeform_simple', {
+            'q': f"{city}, Ukraine",
+            'format': 'json',
+            'limit': 5,
             'countrycodes': 'ua',
             'addressdetails': 1
         }))
 
-    # Strategy 3: Free-form query without region
-    strategies.append(('freeform_simple', {
-        'q': f"{city}, Ukraine",
-        'format': 'json',
-        'limit': 5,
-        'countrycodes': 'ua',
-        'addressdetails': 1
-    }))
-
-    # Strategy 4: Just the city name (for unique names)
-    strategies.append(('city_only', {
-        'q': city,
-        'format': 'json',
-        'limit': 5,
-        'countrycodes': 'ua',
-        'addressdetails': 1
-    }))
+        # Strategy 4: Just the city name (for unique names)
+        strategies.append(('city_only', {
+            'q': city,
+            'format': 'json',
+            'limit': 5,
+            'countrycodes': 'ua',
+            'addressdetails': 1
+        }))
 
     return strategies
 
@@ -405,8 +425,9 @@ def _execute_nominatim_search(params: dict, strategy_name: str, original_city: s
         if not results:
             return None
 
-        # Find best matching result
-        best_result = _find_best_result(results, original_city)
+        # Find best matching result (with region validation if provided)
+        required_region = params.get('state') or None
+        best_result = _find_best_result(results, original_city, required_region)
         if best_result:
             lat = float(best_result['lat'])
             lon = float(best_result['lon'])
@@ -432,8 +453,14 @@ def _execute_nominatim_search(params: dict, strategy_name: str, original_city: s
         return None
 
 
-def _find_best_result(results: list[dict], original_city: str) -> Optional[dict]:
-    """Find best matching result from Nominatim response"""
+def _find_best_result(results: list[dict], original_city: str, required_region: str = None) -> Optional[dict]:
+    """Find best matching result from Nominatim response
+    
+    Args:
+        results: Nominatim search results
+        original_city: Original city name searched
+        required_region: If provided, result MUST be in this region
+    """
     if not results:
         return None
 
@@ -445,6 +472,14 @@ def _find_best_result(results: list[dict], original_city: str) -> Optional[dict]
         # Check display name for city match
         display_name = r.get('display_name', '').lower()
         city_lower = original_city.lower()
+        
+        # CRITICAL: If region is required, SKIP results not in that region
+        if required_region:
+            region_match = _check_region_match(r, required_region)
+            if not region_match:
+                log.debug(f"Skipping result not in {required_region}: {display_name[:80]}")
+                continue  # Skip this result entirely
+            score += 20  # Big bonus for matching region
 
         # Direct match in display name
         if city_lower in display_name:
@@ -478,8 +513,75 @@ def _find_best_result(results: list[dict], original_city: str) -> Optional[dict]
     if scored_results and scored_results[0][0] > 3:
         return scored_results[0][1]
 
-    # Fallback to first result
-    return results[0] if results else None
+    # No results match (especially if region was required)
+    if required_region and not scored_results:
+        log.warning(f"No results in required region {required_region} for {original_city}")
+        return None
+
+    # Fallback to first result only if no region required
+    return results[0] if results and not required_region else None
+
+
+def _check_region_match(result: dict, required_region: str) -> bool:
+    """Check if Nominatim result is in the required Ukrainian region"""
+    if not required_region:
+        return True
+        
+    display_name = result.get('display_name', '').lower()
+    address = result.get('address', {})
+    state = (address.get('state', '') or '').lower()
+    
+    # Normalize required region for comparison
+    required_lower = required_region.lower()
+    
+    # Ukrainian region names mapping - comprehensive variants
+    region_variants = {
+        'кіровоград': ['кіровоград', 'kirovohrad', 'kirovograd', 'kropyvnytskyi', 'кропивницьк'],
+        'київ': ['київ', 'kyiv', 'kiev', 'київськ'],
+        'харків': ['харків', 'kharkiv', 'kharkov', 'харківськ'],
+        'одес': ['одес', 'odesa', 'odessa', 'одеськ'],
+        'дніпропетровськ': ['дніпропетровськ', 'дніпро', 'dnipro', 'dnipropetrovsk', 'дніпропетровщин'],
+        'львів': ['львів', 'lviv', 'lvov', 'львівськ'],
+        'запоріж': ['запоріж', 'zaporizhzhia', 'zaporozhye', 'запорізьк'],
+        'донец': ['донец', 'donetsk', 'донецьк', 'донеччин'],
+        'луган': ['луган', 'luhansk', 'lugansk', 'луганськ', 'луганщин'],
+        'миколаїв': ['миколаїв', 'mykolaiv', 'nikolaev', 'миколаївськ', 'миколаївщин'],
+        'черкас': ['черкас', 'cherkasy', 'черкаськ', 'черкащин'],
+        'чернігів': ['чернігів', 'chernihiv', 'chernigov', 'чернігівськ', 'чернігівщин'],
+        'сум': ['сум', 'sumy', 'сумськ', 'сумщин'],
+        'полтав': ['полтав', 'poltava', 'полтавськ', 'полтавщин'],
+        'житомир': ['житомир', 'zhytomyr', 'житомирськ', 'житомирщин'],
+        'вінниц': ['вінниц', 'vinnytsia', 'vinnitsa', 'вінницьк', 'вінниччин'],
+        'хмельниц': ['хмельниц', 'khmelnytskyi', 'khmelnitsky', 'хмельницьк', 'хмельниччин'],
+        'рівн': ['рівн', 'rivne', 'rovno', 'рівненськ', 'рівненщин'],
+        'волин': ['волин', 'volyn', 'lutsk', 'волинськ', 'луцьк'],
+        'закарпат': ['закарпат', 'zakarpattia', 'transcarpathia', 'uzhhorod', 'ужгород', 'закарпатськ'],
+        'івано-франків': ['івано-франків', 'ivano-frankivsk', 'франківськ', 'франківщин'],
+        'тернопіль': ['тернопіль', 'ternopil', 'тернопільськ', 'тернопільщин'],
+        'херсон': ['херсон', 'kherson', 'херсонськ', 'херсонщин'],
+        'чернівец': ['чернівец', 'chernivtsi', 'буковин', 'чернівецьк'],
+    }
+    
+    # Find which region we're looking for
+    matched_variants = None
+    for key, variants in region_variants.items():
+        if key in required_lower:
+            matched_variants = variants
+            break
+    
+    if not matched_variants:
+        # Try direct substring match - clean up common suffixes
+        region_base = required_lower.replace(' область', '').replace('ська', '').replace('ка', '').replace('щина', '')
+        matched_variants = [region_base]
+    
+    # Check if any variant appears in the result
+    search_text = f"{display_name} {state}".lower()
+    
+    for variant in matched_variants:
+        if variant in search_text:
+            return True
+    
+    return False
 
 
 def reverse_geocode(lat: float, lng: float) -> Optional[dict]:

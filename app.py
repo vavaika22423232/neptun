@@ -3844,34 +3844,68 @@ TYPO_CORRECTIONS = {
 }
 
 # Disambiguation map for cities that exist in multiple oblasts
+# CRITICAL: These cities MUST have explicit oblast in message to avoid wrong markers
 AMBIGUOUS_CITIES = {
-    'михайлівка': ['запорізька', 'донецька', 'одеська', 'миколаївська'],
-    'новоселівка': ['харківська', 'донецька', 'запорізька', 'дніпропетровська'],
-    'петрівка': ['кіровоградська', 'донецька', 'харківська', 'одеська'],
-    'олександрівка': ['донецька', 'кіровоградська', 'миколаївська', 'одеська'],
-    'василівка': ['запорізька', 'дніпропетровська', 'київська'],
-    'новогригорівка': ['дніпропетровська', 'херсонська', 'одеська'],
-    'зеленівка': ['херсонська', 'одеська', 'миколаївська'],
-    'кам\'янка': ['черкаська', 'дніпропетровська', 'запорізька'],
-    'покровське': ['донецька', 'дніпропетровська', 'харківська'],
+    # Common village/town names that exist in many oblasts
+    'михайлівка': ['запорізька', 'донецька', 'одеська', 'миколаївська', 'харківська', 'кіровоградська'],
+    'новоселівка': ['харківська', 'донецька', 'запорізька', 'дніпропетровська', 'київська', 'полтавська'],
+    'петрівка': ['кіровоградська', 'донецька', 'харківська', 'одеська', 'дніпропетровська', 'миколаївська'],
+    'олександрівка': ['донецька', 'кіровоградська', 'миколаївська', 'одеська', 'харківська', 'полтавська'],
+    'василівка': ['запорізька', 'дніпропетровська', 'київська', 'харківська', 'донецька'],
+    'новогригорівка': ['дніпропетровська', 'херсонська', 'одеська', 'запорізька'],
+    'зеленівка': ['херсонська', 'одеська', 'миколаївська', 'харківська'],
+    'кам\'янка': ['черкаська', 'дніпропетровська', 'запорізька', 'харківська', 'полтавська'],
+    'покровське': ['донецька', 'дніпропетровська', 'харківська', 'запорізька'],
     'мар\'їнка': ['донецька', 'київська'],
-    'юр\'ївка': ['дніпропетровська', 'донецька', 'кіровоградська'],
-    'юріївка': ['дніпропетровська', 'донецька', 'кіровоградська'],
-    'андріївка': ['харківська', 'донецька', 'запорізька', 'київська'],
-    'семенівка': ['чернігівська', 'полтавська', 'сумська'],
+    'юр\'ївка': ['дніпропетровська', 'донецька', 'кіровоградська', 'харківська'],
+    'юріївка': ['дніпропетровська', 'донецька', 'кіровоградська', 'харківська'],
+    'андріївка': ['харківська', 'донецька', 'запорізька', 'київська', 'полтавська'],
+    'семенівка': ['чернігівська', 'полтавська', 'сумська', 'харківська'],
     'білозерка': ['херсонська', 'запорізька'],
-    'широке': ['дніпропетровська', 'запорізька', 'донецька'],
+    'широке': ['дніпропетровська', 'запорізька', 'донецька', 'миколаївська'],
     'тернівка': ['дніпропетровська', 'донецька', 'кіровоградська'],
-    'степове': ['дніпропетровська', 'запорізька', 'миколаївська'],
-    'новопавлівка': ['донецька', 'запорізька', 'харківська'],
-    'воскресенка': ['миколаївська', 'запорізька'],
+    'степове': ['дніпропетровська', 'запорізька', 'миколаївська', 'херсонська'],
+    'новопавлівка': ['донецька', 'запорізька', 'харківська', 'дніпропетровська'],
+    'воскресенка': ['миколаївська', 'запорізька', 'одеська'],
     'першотравневе': ['донецька', 'харківська', 'дніпропетровська'],
-    'веселе': ['запорізька', 'харківська', 'донецька'],
+    'веселе': ['запорізька', 'харківська', 'донецька', 'миколаївська'],
     'українка': ['київська', 'донецька', 'дніпропетровська'],
-    'калинівка': ['вінницька', 'київська', 'чернігівська'],
+    'калинівка': ['вінницька', 'київська', 'чернігівська', 'черкаська'],
     'красногорівка': ['донецька', 'дніпропетровська'],
-    'лисичанськ': ['луганська'],
-    'сєвєродонецьк': ['луганська'],
+    # New additions - more common duplicates
+    'вільшанка': ['кіровоградська', 'волинська', 'харківська', 'вінницька'],
+    'вільшани': ['харківська', 'кіровоградська', 'черкаська'],
+    'іванівка': ['одеська', 'херсонська', 'миколаївська', 'кіровоградська', 'харківська', 'донецька'],
+    'павлівка': ['донецька', 'харківська', 'запорізька', 'миколаївська'],
+    'катеринівка': ['донецька', 'луганська', 'запорізька', 'дніпропетровська'],
+    'григорівка': ['донецька', 'харківська', 'запорізька', 'київська'],
+    'дмитрівка': ['донецька', 'харківська', 'запорізька', 'київська', 'чернігівська'],
+    'костянтинівка': ['донецька', 'миколаївська', 'запорізька'],
+    'малинівка': ['харківська', 'донецька', 'запорізька', 'київська'],
+    'миколаївка': ['донецька', 'харківська', 'запорізька', 'дніпропетровська', 'одеська'],
+    'софіївка': ['дніпропетровська', 'донецька', 'запорізька', 'миколаївська'],
+    'червоне': ['одеська', 'миколаївська', 'херсонська', 'запорізька', 'донецька'],
+    'вербівка': ['полтавська', 'черкаська', 'київська'],
+    'водяне': ['донецька', 'запорізька', 'дніпропетровська'],
+    'піщане': ['харківська', 'донецька', 'запорізька'],
+    'лозове': ['харківська', 'донецька', 'дніпропетровська'],
+    'лозова': ['харківська', 'дніпропетровська'],
+    'зелений гай': ['одеська', 'миколаївська', 'херсонська'],
+    'федорівка': ['харківська', 'донецька', 'запорізька', 'кіровоградська'],
+    'степанівка': ['харківська', 'донецька', 'запорізька', 'миколаївська', 'одеська'],
+    'шевченко': ['донецька', 'харківська', 'дніпропетровська'],
+    'шевченкове': ['харківська', 'донецька', 'кіровоградська'],
+    'красне': ['одеська', 'миколаївська', 'донецька', 'харківська'],
+    'новоукраїнка': ['кіровоградська', 'одеська', 'миколаївська'],
+    'первомайськ': ['миколаївська', 'луганська', 'харківська'],
+    'соснівка': ['львівська', 'дніпропетровська', 'київська'],
+    'зоря': ['запорізька', 'донецька', 'луганська'],
+    'мирне': ['донецька', 'харківська', 'запорізька', 'херсонська'],
+    'новомиколаївка': ['запорізька', 'донецька', 'харківська'],
+    'новоолександрівка': ['донецька', 'харківська', 'запорізька'],
+    'благодатне': ['донецька', 'миколаївська', 'харківська'],
+    'богданівка': ['донецька', 'миколаївська', 'київська'],
+    'орлівка': ['донецька', 'запорізька', 'харківська'],
 }
 
 # Source region to oblast mapping for trajectory context
@@ -10097,15 +10131,27 @@ def ensure_city_coords_with_message_context(name: str, message_text: str = ""):
                 return (coords[0], coords[1], False)
             else:
                 print(f"DEBUG GEOLOOKUP: Nominatim could not find '{name}' in {explicit_oblast}")
+                # IMPORTANT: If explicit oblast was specified but not found, DO NOT fallback to
+                # UKRAINE_ALL_SETTLEMENTS without oblast - this would return wrong city!
+                # Instead, try oblast center as approximate location
+                oblast_full = explicit_oblast.lower() + 'ська' if not explicit_oblast.lower().endswith('ська') else explicit_oblast.lower()
+                if oblast_full in OBLAST_CENTERS:
+                    center = OBLAST_CENTERS[oblast_full]
+                    print(f"DEBUG GEOLOOKUP: Using oblast center for '{name}' in {explicit_oblast} -> {center}")
+                    return (center[0], center[1], True)  # True = approximate
+                # Skip to next strategies but don't use ambiguous lookup
+                explicit_oblast_required = True
+    else:
+        explicit_oblast_required = False
 
     # PRIORITY 1: Check UKRAINE_ALL_SETTLEMENTS (26000+ entries, BEST coverage)
-    # Only if no explicit oblast in message or API failed
-    if name_lower in UKRAINE_ALL_SETTLEMENTS:
+    # ONLY if no explicit oblast was specified (to avoid wrong city in different oblast)
+    if not explicit_oblast_required and name_lower in UKRAINE_ALL_SETTLEMENTS:
         coords = UKRAINE_ALL_SETTLEMENTS[name_lower]
         return (coords[0], coords[1], False)
 
-    # Also check CITY_COORDS for legacy entries
-    if name_lower in CITY_COORDS:
+    # Also check CITY_COORDS for legacy entries (only if no explicit oblast required)
+    if not explicit_oblast_required and name_lower in CITY_COORDS:
         coords = CITY_COORDS[name_lower]
         if len(coords) >= 2:
             return (coords[0], coords[1], False)
@@ -21744,7 +21790,16 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 for city_raw in [city1, city2]:
                     multi_norm = _resolve_city_candidate(city_raw)
                     base = norm_city_token(multi_norm)
-                    coords = CITY_COORDS.get(base) or (SETTLEMENTS_INDEX.get(base) if SETTLEMENTS_INDEX else None)
+                    
+                    # PRIORITY: Try region-specific lookup first if region is known
+                    coords = None
+                    if region_hdr:
+                        region_key = f"{base}_{region_hdr}"
+                        coords = CITY_COORDS.get(region_key)
+                    
+                    # Fallback to base lookup
+                    if not coords:
+                        coords = CITY_COORDS.get(base) or (SETTLEMENTS_INDEX.get(base) if SETTLEMENTS_INDEX else None)
                     if not coords:
                         try:
                             coords = region_enhanced_coords(base, region_hint_override=region_hdr)
@@ -21756,7 +21811,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             nominatim_coords = get_coordinates_nominatim(base, region=region_hdr)
                             if nominatim_coords:
                                 coords = nominatim_coords
-                                CITY_COORDS[base] = coords
+                                # Cache with region to avoid conflicts
+                                cache_key = f"{base}_{region_hdr}" if region_hdr else base
+                                CITY_COORDS[cache_key] = coords
                         except Exception:
                             pass
                     if coords:
@@ -21786,7 +21843,16 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 for city_raw in [city1, city2]:
                     multi_norm = _resolve_city_candidate(city_raw)
                     base = norm_city_token(multi_norm)
-                    coords = CITY_COORDS.get(base) or (SETTLEMENTS_INDEX.get(base) if SETTLEMENTS_INDEX else None)
+                    
+                    # PRIORITY: Try region-specific lookup first if region is known
+                    coords = None
+                    if region_hdr:
+                        region_key = f"{base}_{region_hdr}"
+                        coords = CITY_COORDS.get(region_key)
+                    
+                    # Fallback to base lookup
+                    if not coords:
+                        coords = CITY_COORDS.get(base) or (SETTLEMENTS_INDEX.get(base) if SETTLEMENTS_INDEX else None)
                     if not coords:
                         try:
                             coords = region_enhanced_coords(base, region_hint_override=region_hdr)
@@ -21797,7 +21863,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             nominatim_coords = get_coordinates_nominatim(base, region=region_hdr)
                             if nominatim_coords:
                                 coords = nominatim_coords
-                                CITY_COORDS[base] = coords
+                                # Cache with region to avoid conflicts (vid_do)
+                                cache_key = f"{base}_{region_hdr}" if region_hdr else base
+                                CITY_COORDS[cache_key] = coords
                         except Exception:
                             pass
                     if coords:
@@ -21827,7 +21895,16 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 for city_raw in [city1, city2]:
                     multi_norm = _resolve_city_candidate(city_raw)
                     base = norm_city_token(multi_norm)
-                    coords = CITY_COORDS.get(base) or (SETTLEMENTS_INDEX.get(base) if SETTLEMENTS_INDEX else None)
+                    
+                    # PRIORITY: Try region-specific lookup first if region is known
+                    coords = None
+                    if region_hdr:
+                        region_key = f"{base}_{region_hdr}"
+                        coords = CITY_COORDS.get(region_key)
+                    
+                    # Fallback to base lookup
+                    if not coords:
+                        coords = CITY_COORDS.get(base) or (SETTLEMENTS_INDEX.get(base) if SETTLEMENTS_INDEX else None)
                     if not coords:
                         try:
                             coords = region_enhanced_coords(base, region_hint_override=region_hdr)
@@ -21838,7 +21915,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             nominatim_coords = get_coordinates_nominatim(base, region=region_hdr)
                             if nominatim_coords:
                                 coords = nominatim_coords
-                                CITY_COORDS[base] = coords
+                                # Cache with region to avoid conflicts (ta pattern)
+                                cache_key = f"{base}_{region_hdr}" if region_hdr else base
+                                CITY_COORDS[cache_key] = coords
                         except Exception:
                             pass
                     if coords:
@@ -21915,14 +21994,20 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 add_debug_log(f"Skipping oblast name '{base}' - this is a regional threat, not a city target", "uav_course")
                 continue
 
-            # PRIORITY: Try region-specific variant first (e.g., "шевченкове(миколаївська)" for "шевченкове" with region_hdr="миколаївщина")
+            # PRIORITY: Try region-specific variant first
             coords = None
             if region_hdr:
-                # Try variant with region suffix
-                region_variant = f"{base}({region_hdr})"
-                coords = CITY_COORDS.get(region_variant)
+                # Try variant with region suffix (underscore format used by Nominatim cache)
+                region_key = f"{base}_{region_hdr}"
+                coords = CITY_COORDS.get(region_key)
                 if coords:
-                    add_debug_log(f"Found region-specific coordinates for '{region_variant}': {coords}", "uav_course")
+                    add_debug_log(f"Found region-specific coordinates for '{region_key}': {coords}", "uav_course")
+                else:
+                    # Also try old format for backwards compatibility
+                    region_variant = f"{base}({region_hdr})"
+                    coords = CITY_COORDS.get(region_variant)
+                    if coords:
+                        add_debug_log(f"Found region-specific coordinates (old format) for '{region_variant}': {coords}", "uav_course")
 
             # Fallback to base name without region
             if not coords:
@@ -21936,12 +22021,14 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             # Try Nominatim API if still no coordinates
             if not coords and NOMINATIM_AVAILABLE:
                 try:
-                    add_debug_log(f"Trying Nominatim API for city '{base}'", "uav_course")
+                    add_debug_log(f"Trying Nominatim API for city '{base}' with region '{region_hdr}'", "uav_course")
                     nominatim_coords = get_coordinates_nominatim(base, region=region_hdr)
                     if nominatim_coords:
                         coords = nominatim_coords
-                        CITY_COORDS[base] = coords  # Cache for future use
-                        add_debug_log(f"Nominatim found coordinates for '{base}': {coords}", "uav_course")
+                        # Cache with region key to avoid conflicts between same city names in different oblasts
+                        cache_key = f"{base}_{region_hdr}" if region_hdr else base
+                        CITY_COORDS[cache_key] = coords
+                        add_debug_log(f"Nominatim found coordinates for '{base}' in '{region_hdr}': {coords}", "uav_course")
                 except Exception as e:
                     add_debug_log(f"Nominatim API error for '{base}': {e}", "uav_course")
             if not coords:
@@ -21958,8 +22045,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     # skip THIS city but continue processing other cities
                     add_debug_log(f"Skipping unrecognized city '{base}' - no coordinates and no region context", "uav_course")
                     continue
-            if base not in CITY_COORDS:
-                CITY_COORDS[base] = coords
+            # Cache with region key if region is known
+            cache_key = f"{base}_{region_hdr}" if region_hdr else base
+            if cache_key not in CITY_COORDS:
+                CITY_COORDS[cache_key] = coords
             lat, lng = coords
             threat_type, icon = classify(text)
             # Generate individual markers per drone for progressive map loading
