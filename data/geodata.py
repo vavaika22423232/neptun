@@ -238,13 +238,19 @@ def load_settlements() -> None:
     global UKRAINE_ALL_SETTLEMENTS, UKRAINE_SETTLEMENTS_BY_OBLAST
 
     try:
-        # Try to import from existing file
-        from ukraine_all_settlements import UKRAINE_ALL_SETTLEMENTS as _all
-        from ukraine_all_settlements import UKRAINE_SETTLEMENTS_BY_OBLAST as _by_oblast
+        # Try to import from data module
+        from data.ukraine_all_settlements import UKRAINE_ALL_SETTLEMENTS as _all
 
         UKRAINE_ALL_SETTLEMENTS = _all
-        UKRAINE_SETTLEMENTS_BY_OBLAST = _by_oblast
-        print(f"INFO: Ukraine ALL settlements loaded: {len(_all)} simple + {len(_by_oblast)} oblast-aware entries")
+        
+        # Check if UKRAINE_SETTLEMENTS_BY_OBLAST exists in the file
+        try:
+            from data.ukraine_all_settlements import UKRAINE_SETTLEMENTS_BY_OBLAST as _by_oblast
+            UKRAINE_SETTLEMENTS_BY_OBLAST = _by_oblast
+        except ImportError:
+            pass  # Old format without oblast data
+            
+        print(f"INFO: Ukraine ALL settlements loaded: {len(_all)} entries")
     except ImportError:
         print("WARNING: ukraine_all_settlements.py not found, using only CITY_COORDS")
     except Exception as e:

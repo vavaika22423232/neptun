@@ -33,7 +33,12 @@ def get_messages():
     """
     store = get_chat_store()
     if not store:
-        return jsonify({'error': 'Chat not configured'}), 503
+        # Return empty messages if chat not configured
+        return jsonify({
+            'success': True,
+            'messages': [],
+            'count': 0,
+        })
 
     try:
         after = request.args.get('after', '')

@@ -294,6 +294,20 @@ def telegram_status():
     })
 
 
+@app.route('/presence', methods=['GET', 'POST'])
+def presence():
+    """Presence endpoint for tracking active users."""
+    # Simple stub - just accept and return OK
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/api/fusion/trajectories')
+def fusion_trajectories():
+    """Get trajectory data for fusion display."""
+    # Return empty trajectories for now
+    return jsonify([])
+
+
 # ==============================================================================
 # TELEGRAM FETCHER (message ingestion)
 # ==============================================================================
