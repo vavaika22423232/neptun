@@ -332,10 +332,14 @@ class TrackStore:
 
         with self._lock:
             # Find expired (but preserve manual)
-            to_remove = [
-                track_id for track_id, track in self._tracks.items()
-                if track.timestamp < cutoff and not track.manual
-            ]
+            to_remove = []
+            for track_id, track in self._tracks.items():
+                # Make timestamp timezone-aware if naive
+                ts = track.timestamp
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                if ts < cutoff and not track.manual:
+                    to_remove.append(track_id)
 
             for track_id in to_remove:
                 del self._tracks[track_id]
