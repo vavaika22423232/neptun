@@ -14837,9 +14837,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     if trajectory_data:
         print(f"DEBUG: Trajectory parsed - kind={trajectory_data.get('kind')}, source={trajectory_data.get('source_name')}, target={trajectory_data.get('target_name')}")
 
-        # Create marker at target location with trajectory data
-        target_coords = trajectory_data['end']
+        # IMPORTANT: Marker should be at SOURCE (current position), NOT at target!
+        # The drone is at source and flying TOWARDS target
         source_coords = trajectory_data['start']
+        target_coords = trajectory_data['end']
 
         # Classify threat type based on message text
         text_lower = text.lower()
@@ -14864,7 +14865,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             elif enhanced_trajectory.get('threat_type') == 'cruise':
                 icon = 'icon_rocket.svg'
 
-        place_name = f"{trajectory_data.get('target_name', 'Ціль')} ← {trajectory_data.get('source_name', 'Джерело')}"
+        # Place name shows direction: Source → Target
+        place_name = f"{trajectory_data.get('source_name', 'Джерело')} → {trajectory_data.get('target_name', 'Ціль')}"
 
         # ETA in place name - DISABLED
         # eta_info = trajectory_data.get('eta', {})
@@ -14874,8 +14876,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         trajectory_marker = {
             'id': str(mid),
             'place': place_name,
-            'lat': target_coords[0],
-            'lng': target_coords[1],
+            'lat': source_coords[0],  # MARKER AT SOURCE (current position)
+            'lng': source_coords[1],  # NOT at target!
             'threat_type': threat_type,
             'text': text[:500],
             'date': date_str,
