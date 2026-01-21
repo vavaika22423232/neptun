@@ -1,7 +1,0 @@
-# Залежності для Channel Forwarder Bot
-
-# Telethon - для channel_forwarder.py (РЕКОМЕНДОВАНО)
-telethon>=1.34.0
-
-# Python Telegram Bot - для channel_forwarder_bot.py (альтернатива)
-python-telegram-bot>=20.7

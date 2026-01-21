@@ -1,9 +1,0 @@
-{
-  "max_tracks_default": 20,
-  "max_tracks_limit": 50,
-  "cache_duration_static": 604800,
-  "cache_duration_api": 300,
-  "gzip_enabled": true,
-  "image_optimization": true,
-  "api_rate_limit": 30
-}
