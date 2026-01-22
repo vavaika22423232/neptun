@@ -29268,6 +29268,165 @@ def test_notification():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/test-ios-push', methods=['POST'])
+def test_ios_push():
+    """Send a test push notification to iOS device with full APNs config."""
+    if not firebase_initialized:
+        return jsonify({'error': 'Firebase not initialized'}), 500
+
+    try:
+        from firebase_admin import messaging
+
+        data = request.get_json() or {}
+        token = data.get('token')
+
+        if not token:
+            return jsonify({'error': 'Missing token parameter'}), 400
+
+        log.info(f"=== TEST iOS PUSH to token: {token[:50]}... ===")
+
+        # Full iOS push with APNs config (like telegram_threat)
+        message = messaging.Message(
+            data={
+                'type': 'telegram_threat',
+                'title': '🧪 ТЕСТ iOS Push',
+                'body': 'Якщо ви бачите це - APNs працює!',
+                'location': 'Тест',
+                'region': 'Тест',
+                'alarm_state': 'active',
+                'is_critical': 'true',
+                'threat_type': 'Тестове сповіщення',
+                'timestamp': datetime.now(pytz.timezone('Europe/Kiev')).isoformat(),
+            },
+            apns=messaging.APNSConfig(
+                headers={
+                    'apns-priority': '10',
+                    'apns-push-type': 'alert',
+                    'apns-expiration': '0',
+                },
+                payload=messaging.APNSPayload(
+                    aps=messaging.Aps(
+                        alert=messaging.ApsAlert(
+                            title='🧪 ТЕСТ iOS Push',
+                            body='Якщо ви бачите це - APNs працює!'
+                        ),
+                        sound='default',
+                        badge=1,
+                        content_available=True,
+                        mutable_content=True,
+                    ),
+                ),
+            ),
+            token=token,
+        )
+
+        response = messaging.send(message)
+        log.info(f"✅ Test iOS push sent: {response}")
+        return jsonify({'success': True, 'message_id': response})
+
+    except messaging.UnregisteredError as e:
+        log.error(f"Token unregistered: {e}")
+        return jsonify({'error': 'Token unregistered - device needs to re-register'}), 410
+    except Exception as e:
+        log.error(f"Error sending iOS test push: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/test-telegram-threat', methods=['POST'])
+def test_telegram_threat():
+    """Send a test telegram_threat notification to all_regions topic AND specific token."""
+    if not firebase_initialized:
+        return jsonify({'error': 'Firebase not initialized'}), 500
+
+    try:
+        from firebase_admin import messaging
+
+        data = request.get_json() or {}
+        token = data.get('token')  # Optional: send to specific device
+        region = data.get('region', 'Київська область')
+        threat_type = data.get('threat_type', 'Тестова загроза')
+
+        title = f"🧪 ТЕСТ: {region}"
+        body = f"Тестове telegram_threat повідомлення - {threat_type}"
+
+        timestamp = datetime.now(pytz.timezone('Europe/Kiev')).isoformat()
+
+        # Build APNs config
+        apns_config = messaging.APNSConfig(
+            headers={
+                'apns-priority': '10',
+                'apns-push-type': 'alert',
+                'apns-expiration': '0',
+            },
+            payload=messaging.APNSPayload(
+                aps=messaging.Aps(
+                    alert=messaging.ApsAlert(title=title, body=body),
+                    sound='default',
+                    badge=1,
+                    content_available=True,
+                    mutable_content=True,
+                ),
+            ),
+        )
+
+        android_config = messaging.AndroidConfig(
+            priority='high',
+            ttl=timedelta(seconds=300),
+        )
+
+        fcm_data = {
+            'type': 'telegram_threat',
+            'title': title,
+            'body': body,
+            'location': region,
+            'region': region,
+            'alarm_state': 'active',
+            'is_critical': 'false',
+            'threat_type': threat_type,
+            'timestamp': timestamp,
+            'click_action': 'FLUTTER_NOTIFICATION_CLICK',
+        }
+
+        results = []
+
+        # 1. Send to all_regions topic
+        try:
+            topic_message = messaging.Message(
+                data=fcm_data,
+                android=android_config,
+                apns=apns_config,
+                topic='all_regions',
+            )
+            response = messaging.send(topic_message)
+            results.append({'target': 'topic:all_regions', 'success': True, 'response': response})
+            log.info(f"✅ Test telegram_threat sent to all_regions: {response}")
+        except Exception as e:
+            results.append({'target': 'topic:all_regions', 'success': False, 'error': str(e)})
+            log.error(f"❌ Failed to send to all_regions: {e}")
+
+        # 2. If token provided, also send directly to device
+        if token:
+            try:
+                token_message = messaging.Message(
+                    data=fcm_data,
+                    android=android_config,
+                    apns=apns_config,
+                    token=token,
+                )
+                response = messaging.send(token_message)
+                results.append({'target': f'token:{token[:20]}...', 'success': True, 'response': response})
+                log.info(f"✅ Test telegram_threat sent to token: {response}")
+            except Exception as e:
+                results.append({'target': f'token:{token[:20]}...', 'success': False, 'error': str(e)})
+                log.error(f"❌ Failed to send to token: {e}")
+
+        return jsonify({'success': True, 'results': results})
+
+    except Exception as e:
+        log.error(f"Error in test_telegram_threat: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 def send_fcm_notification(message_data: dict):
     """Send FCM notification for a new threat message."""
     if not firebase_initialized:
