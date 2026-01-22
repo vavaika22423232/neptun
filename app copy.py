@@ -174,30 +174,18 @@ except ImportError as e:
     API_PROTECTION_ENABLED = False
     print(f"WARNING: API Protection module not available: {e}")
     # Fallback stubs
-    def protected_endpoint(*_args, **_kwargs):
+    def protected_endpoint(*args, **kwargs):
         def decorator(f): return f
         return decorator
     def rate_limited(f): return f
-    def size_guarded(*_args, **_kwargs):
+    def size_guarded(*args, **kwargs):
         def decorator(f): return f
         return decorator
-    def init_protection(_app): return False
+    def init_protection(app): return False
     MAX_RESPONSE_SIZE_BYTES = 5 * 1024 * 1024
     MAX_PAGE_SIZE = 100
     DEFAULT_PAGE_SIZE = 50
     MAX_TOTAL_ITEMS = 500
-    # Unused imports from api_protection module when not available
-    check_etag_match = None
-    check_rate_limit = None
-    check_response_size = None
-    compute_etag = None
-    filter_by_since = None
-    get_pagination_params = None
-    get_protection_status_endpoint = None
-    get_since_timestamp = None
-    paginate_list = None
-    record_response_size = None
-    supports_since_param = None
 # ============================================================================
 
 # Import expanded Ukraine addresses database
@@ -241,7 +229,7 @@ try:
     print("INFO: Nominatim geocoding ENABLED")
 except ImportError as e:
     NOMINATIM_AVAILABLE = False
-    def get_coordinates_nominatim(_city_name, _region=None):
+    def get_coordinates_nominatim(city_name, region=None):
         return None
     print(f"WARNING: Nominatim geocoder not available: {e}")
 
@@ -272,7 +260,8 @@ def _groq_is_available():
     if not GROQ_ENABLED:
         return False
     if _groq_daily_cooldown_until > 0:
-        if time.time() < _groq_daily_cooldown_until:
+        import time as time_module
+        if time_module.time() < _groq_daily_cooldown_until:
             return False
         else:
             # Cooldown expired, reset
@@ -283,6 +272,7 @@ def _groq_is_available():
 def _groq_handle_429(error_message: str):
     """Handle 429 rate limit error - set global cooldown"""
     global _groq_daily_cooldown_until, _groq_429_backoff
+    import re
 
     # Parse wait time from error message
     # Example: "Please try again in 4m56.352s"
@@ -296,7 +286,7 @@ def _groq_handle_429(error_message: str):
         _groq_429_backoff = min(_groq_429_backoff + 1, 6)  # Max 6 = 640 seconds
         wait_seconds = 60 * (2 ** _groq_429_backoff)  # 2, 4, 8, 16, 32, 64 minutes
 
-    _groq_daily_cooldown_until = time.time() + wait_seconds
+    _groq_daily_cooldown_until = time_module.time() + wait_seconds
     print(f"WARNING: Groq rate limit hit! Pausing ALL AI requests for {wait_seconds/60:.1f} minutes")
 
 def _groq_rate_limit():
@@ -307,7 +297,7 @@ def _groq_rate_limit():
     if not _groq_is_available():
         raise Exception("Groq AI in cooldown mode")
 
-    now = time.time()
+    now = time_module.time()
 
     # Check per-minute limit
     if now - _groq_minute_start >= 60:
@@ -323,8 +313,8 @@ def _groq_rate_limit():
 
     elapsed = now - _groq_last_request
     if elapsed < _groq_min_interval:
-        time.sleep(_groq_min_interval - elapsed)
-    _groq_last_request = time.time()
+        time_module.sleep(_groq_min_interval - elapsed)
+    _groq_last_request = time_module.time()
     _groq_requests_this_minute += 1
 
     # Reset backoff on successful rate limit pass
@@ -354,8 +344,9 @@ try:
     CONTEXT_GEOCODER_AVAILABLE = True
 except ImportError:
     CONTEXT_GEOCODER_AVAILABLE = False
-    def get_context_aware_geocoding(_text):
+    def get_context_aware_geocoding(text):
         return []
+        return None
     nlp = None
     SPACY_AVAILABLE = False
     print("WARNING: SpaCy Ukrainian model not available. Using fallback geocoding methods.")
@@ -374,7 +365,7 @@ except ImportError:
         pass
     class FloodWaitError(Exception):
         def __init__(self, seconds=60): self.seconds = seconds
-    class SessionPasswordNeededError(Exception):  # noqa: F841
+    class SessionPasswordNeededError(Exception):
         pass
 import math
 
@@ -389,36 +380,6 @@ from telethon.sessions import StringSession
 # - Text parsing and normalization
 # - Caching helpers
 # - File I/O utilities
-
-# --- Firebase Topic Mapping (used for FCM push notifications) ---
-# Maps Ukrainian region names to Firebase topic identifiers
-REGION_TOPIC_MAP = {
-    'Київ': 'region_kyiv_city',
-    'Київська область': 'region_kyivska',
-    'Дніпропетровська область': 'region_dnipropetrovska',
-    'Харківська область': 'region_kharkivska',
-    'Одеська область': 'region_odeska',
-    'Львівська область': 'region_lvivska',
-    'Донецька область': 'region_donetska',
-    'Запорізька область': 'region_zaporizka',
-    'Вінницька область': 'region_vinnytska',
-    'Житомирська область': 'region_zhytomyrska',
-    'Черкаська область': 'region_cherkaska',
-    'Чернігівська область': 'region_chernihivska',
-    'Полтавська область': 'region_poltavska',
-    'Сумська область': 'region_sumska',
-    'Миколаївська область': 'region_mykolaivska',
-    'Херсонська область': 'region_khersonska',
-    'Кіровоградська область': 'region_kirovohradska',
-    'Хмельницька область': 'region_khmelnytska',
-    'Рівненська область': 'region_rivnenska',
-    'Волинська область': 'region_volynska',
-    'Тернопільська область': 'region_ternopilska',
-    'Івано-Франківська область': 'region_ivano_frankivska',
-    'Закарпатська область': 'region_zakarpatska',
-    'Чернівецька область': 'region_chernivetska',
-    'Луганська область': 'region_luhanska',
-}
 
 # --- Geographic Utilities ---
 # Used for: trajectory calculation, threat direction, marker positioning
@@ -731,61 +692,26 @@ from flask_compress import Compress
 compress = Compress()
 compress.init_app(app)
 
-# ══════════════════════════════════════════════════════════════════════════════
-# UNIFIED CACHE HEADERS MIDDLEWARE
-# ══════════════════════════════════════════════════════════════════════════════
-# IMPORTANT: Flask allows only ONE @app.after_request per function name.
-# This unified handler combines all caching strategies:
-# 1. Static assets (images, fonts, JS/CSS)
-# 2. Versioned static files (?v= parameter) 
-# 3. API endpoints (no-cache)
-# 4. HTML pages
+# Cache control headers for static assets
 @app.after_request
 def add_cache_headers(response):
-    """
-    Unified cache control for all response types.
-    
-    Caching strategy:
-    - Versioned static (?v=): 1 month, immutable
-    - Static images/fonts: 7 days
-    - Static JS/CSS: 1 day  
-    - API endpoints: no-cache, no-store
-    - HTML pages: 5 minutes
-    """
-    # --- Static files (highest priority) ---
-    if request.endpoint == 'static' or request.path.startswith('/static/'):
-        # Versioned resources (with ?v= parameter) - cache aggressively
-        query_string = request.query_string.decode() if request.query_string else ''
-        if 'v=' in query_string:
-            response.headers['Cache-Control'] = 'public, max-age=2592000, immutable'
-            response.headers['Expires'] = (datetime.now() + timedelta(days=30)).strftime('%a, %d %b %Y %H:%M:%S GMT')
-        else:
-            # Non-versioned static files
-            if any(request.path.endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.woff', '.woff2', '.ttf', '.webp']):
-                response.cache_control.max_age = 604800  # 7 days
-                response.cache_control.public = True
-                response.headers['Vary'] = 'Accept-Encoding'
-                # Add ETag for better cache validation
-                response.headers['ETag'] = f'"{hash(request.path + query_string)}"'
-            elif any(request.path.endswith(ext) for ext in ['.js', '.css']):
-                response.cache_control.max_age = 86400  # 1 day
-                response.cache_control.public = True
-            else:
-                # Other static files - 1 week default
-                response.headers['Cache-Control'] = 'public, max-age=604800, immutable'
-                response.headers['Expires'] = (datetime.now() + timedelta(days=7)).strftime('%a, %d %b %Y %H:%M:%S GMT')
-    
-    # --- API endpoints (no caching) ---
+    # Cache static assets for 7 days
+    if request.path.startswith('/static/'):
+        if any(request.path.endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.woff', '.woff2', '.ttf']):
+            response.cache_control.max_age = 604800  # 7 days
+            response.cache_control.public = True
+        elif any(request.path.endswith(ext) for ext in ['.js', '.css']):
+            response.cache_control.max_age = 86400  # 1 day
+            response.cache_control.public = True
+    # No cache for API endpoints
     elif request.path.startswith('/api/'):
         response.cache_control.no_cache = True
         response.cache_control.no_store = True
         response.cache_control.must_revalidate = True
-    
-    # --- HTML pages (short cache) ---
-    elif request.endpoint == 'index' or request.path == '/' or request.path == '/index.html':
-        response.cache_control.max_age = 300  # 5 minutes
+    # Cache HTML for 5 minutes
+    elif request.path == '/' or request.path == '/index.html':
+        response.cache_control.max_age = 300
         response.cache_control.public = True
-    
     return response
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1987,8 +1913,37 @@ def send_alarm_notification(region_data, alarm_started: bool):
         log.info(f"State: {'STARTED' if alarm_started else 'ENDED'}")
         log.info(f"Message: {title} - {body}")
 
-        # Get topic for this region (using global REGION_TOPIC_MAP)
-        topic = REGION_TOPIC_MAP.get(region_name)
+        # Map region name to Firebase topic
+        region_topic_map = {
+            'Київ': 'region_kyiv_city',
+            'Київська область': 'region_kyivska',
+            'Дніпропетровська область': 'region_dnipropetrovska',
+            'Харківська область': 'region_kharkivska',
+            'Одеська область': 'region_odeska',
+            'Львівська область': 'region_lvivska',
+            'Донецька область': 'region_donetska',
+            'Запорізька область': 'region_zaporizka',
+            'Вінницька область': 'region_vinnytska',
+            'Житомирська область': 'region_zhytomyrska',
+            'Черкаська область': 'region_cherkaska',
+            'Чернігівська область': 'region_chernihivska',
+            'Полтавська область': 'region_poltavska',
+            'Сумська область': 'region_sumska',
+            'Миколаївська область': 'region_mykolaivska',
+            'Херсонська область': 'region_khersonska',
+            'Кіровоградська область': 'region_kirovohradska',
+            'Хмельницька область': 'region_khmelnytska',
+            'Рівненська область': 'region_rivnenska',
+            'Волинська область': 'region_volynska',
+            'Тернопільська область': 'region_ternopilska',
+            'Івано-Франківська область': 'region_ivano_frankivska',
+            'Закарпатська область': 'region_zakarpatska',
+            'Чернівецька область': 'region_chernivetska',
+            'Луганська область': 'region_luhanska',
+        }
+
+        # Get topic for this region
+        topic = region_topic_map.get(region_name)
 
         # If district, also get oblast topic
         region_type = region_data.get('regionType', '')
@@ -1996,7 +1951,7 @@ def send_alarm_notification(region_data, alarm_started: bool):
         if region_type == 'District':
             oblast = DISTRICT_TO_OBLAST.get(region_name, '')
             if oblast:
-                oblast_topic = REGION_TOPIC_MAP.get(oblast)
+                oblast_topic = region_topic_map.get(oblast)
                 log.info(f"District {region_name} maps to oblast {oblast} (topic: {oblast_topic})")
 
         if not topic and not oblast_topic:
@@ -2058,7 +2013,6 @@ def send_alarm_notification(region_data, alarm_started: bool):
                         headers={
                             'apns-priority': '10',
                             'apns-push-type': 'alert',
-                            'apns-expiration': '0',  # Immediate delivery, no storing
                         },
                         payload=messaging.APNSPayload(
                             aps=messaging.Aps(
@@ -2066,7 +2020,6 @@ def send_alarm_notification(region_data, alarm_started: bool):
                                 sound='default',
                                 badge=1,
                                 content_available=True,
-                                mutable_content=True,  # Allows Notification Service Extension to modify
                             ),
                         ),
                     ),
@@ -2174,20 +2127,7 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
                 city_name = city_match.group(1).strip()
             oblast_match = re.search(r'\(([^)]*обл[^)]*)\)', location)
             if oblast_match:
-                region_name = oblast_match.group(1).strip()
-                # Normalize: "Харківська обл." -> "Харківська область"
-                region_name = re.sub(r'обл\.?$', 'область', region_name).strip()
-
-        # Try to find matching region in REGION_TOPIC_MAP if not exact match
-        if region_name not in REGION_TOPIC_MAP:
-            # Try to find by partial match
-            region_lower = region_name.lower()
-            for topic_region in REGION_TOPIC_MAP.keys():
-                if topic_region.lower().replace(' область', '') in region_lower or \
-                   region_lower.replace(' область', '') in topic_region.lower():
-                    log.info(f"Matched region '{region_name}' to '{topic_region}'")
-                    region_name = topic_region
-                    break
+                region_name = oblast_match.group(1).replace('обл.', 'область').strip()
 
         title = f"{emoji} {region_name}"
 
@@ -2210,16 +2150,45 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
         log.info(f"Threat: {threat_type}")
         log.info(f"Message: {title} - {body}")
 
-        # Get topic for this region (using global REGION_TOPIC_MAP)
-        topic = REGION_TOPIC_MAP.get(region_name)
+        # Map region name to Firebase topic
+        region_topic_map = {
+            'Київ': 'region_kyiv_city',
+            'Київська область': 'region_kyivska',
+            'Дніпропетровська область': 'region_dnipropetrovska',
+            'Харківська область': 'region_kharkivska',
+            'Одеська область': 'region_odeska',
+            'Львівська область': 'region_lvivska',
+            'Донецька область': 'region_donetska',
+            'Запорізька область': 'region_zaporizka',
+            'Вінницька область': 'region_vinnytska',
+            'Житомирська область': 'region_zhytomyrska',
+            'Черкаська область': 'region_cherkaska',
+            'Чернігівська область': 'region_chernihivska',
+            'Полтавська область': 'region_poltavska',
+            'Сумська область': 'region_sumska',
+            'Миколаївська область': 'region_mykolaivska',
+            'Херсонська область': 'region_khersonska',
+            'Кіровоградська область': 'region_kirovohradska',
+            'Хмельницька область': 'region_khmelnytska',
+            'Рівненська область': 'region_rivnenska',
+            'Волинська область': 'region_volynska',
+            'Тернопільська область': 'region_ternopilska',
+            'Івано-Франківська область': 'region_ivano_frankivska',
+            'Закарпатська область': 'region_zakarpatska',
+            'Чернівецька область': 'region_chernivetska',
+            'Луганська область': 'region_luhanska',
+        }
+
+        # Get topic for this region
+        topic = region_topic_map.get(region_name)
 
         # Also try matching by city in parentheses -> extract oblast
         if not topic and '(' in location:
             city = location.split('(')[0].strip()
             # Try to find oblast from city
-            for oblast_name in REGION_TOPIC_MAP.keys():
+            for oblast_name in region_topic_map.keys():
                 if oblast_name.replace(' область', '').lower() in location.lower():
-                    topic = REGION_TOPIC_MAP.get(oblast_name)
+                    topic = region_topic_map.get(oblast_name)
                     log.info(f"Matched city {city} to oblast {oblast_name}")
                     break
 
@@ -2261,7 +2230,6 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
                     headers={
                         'apns-priority': '10',
                         'apns-push-type': 'alert',
-                        'apns-expiration': '0',
                     },
                     payload=messaging.APNSPayload(
                         aps=messaging.Aps(
@@ -2269,7 +2237,6 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
                             sound='default',
                             badge=1,
                             content_available=True,
-                            mutable_content=True,
                         ),
                     ),
                 ),
@@ -2281,48 +2248,6 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
             log.info(f"✅ Telegram threat notification sent to topic {topic}: {response}")
         except Exception as e:
             log.error(f"Failed to send telegram threat to topic {topic}: {e}")
-
-        # Also send to 'all_regions' topic for users who want all alerts
-        try:
-            message_all = messaging.Message(
-                data={
-                    'type': 'telegram_threat',
-                    'title': title,
-                    'body': body,
-                    'location': tts_location,
-                    'region': region_name,
-                    'alarm_state': 'active',
-                    'is_critical': 'true' if is_critical else 'false',
-                    'threat_type': threat_type_readable,
-                    'timestamp': datetime.now(pytz.timezone('Europe/Kiev')).isoformat(),
-                    'click_action': 'FLUTTER_NOTIFICATION_CLICK',
-                },
-                android=messaging.AndroidConfig(
-                    priority='high',
-                    ttl=timedelta(seconds=300),
-                ),
-                apns=messaging.APNSConfig(
-                    headers={
-                        'apns-priority': '10',
-                        'apns-push-type': 'alert',
-                        'apns-expiration': '0',
-                    },
-                    payload=messaging.APNSPayload(
-                        aps=messaging.Aps(
-                            alert=messaging.ApsAlert(title=title, body=body),
-                            sound='default',
-                            badge=1,
-                            content_available=True,
-                            mutable_content=True,
-                        ),
-                    ),
-                ),
-                topic='all_regions',
-            )
-            messaging.send(message_all)
-            log.info(f"✅ Telegram threat also sent to all_regions topic")
-        except Exception as e:
-            log.error(f"Failed to send telegram threat to all_regions: {e}")
 
         log.info(f"Sent telegram threat notification to topic: {topic}")
 
@@ -2622,9 +2547,31 @@ def static_with_gzip(filename):
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000  # 1 year for static files
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
-# NOTE: Cache headers handled by unified add_cache_headers() in SECTION [PERFORMANCE OPTIMIZATION]
-# Duplicate @app.after_request removed to fix Flask middleware conflict
+# Add cache headers for static files
+@app.after_request
+def add_cache_headers(response):
+    if request.endpoint == 'static':
+        # Check if this is a versioned resource (with ?v= parameter)
+        if 'v=' in request.query_string.decode():
+            # Cache versioned static files for 1 month (they won't change)
+            response.headers['Cache-Control'] = 'public, max-age=2592000, immutable'
+            response.headers['Expires'] = (datetime.now() + timedelta(days=30)).strftime('%a, %d %b %Y %H:%M:%S GMT')
+        else:
+            # Cache regular static files for 1 week
+            response.headers['Cache-Control'] = 'public, max-age=604800, immutable'
+            response.headers['Expires'] = (datetime.now() + timedelta(days=7)).strftime('%a, %d %b %Y %H:%M:%S GMT')
 
+        # Add compression hints for images
+        if request.path.endswith(('.png', '.jpg', '.jpeg', '.webp')):
+            response.headers['Vary'] = 'Accept-Encoding'
+            # Add ETag for better caching
+            response.headers['ETag'] = f'"{hash(request.path + request.query_string.decode())}"'
+
+    elif request.endpoint == 'index':
+        # Cache main page for 5 minutes
+        response.headers['Cache-Control'] = 'public, max-age=300'
+
+    return response
 COMMENTS = []  # retained as a small in-memory cache (recent) but now persisted to SQLite
 COMMENTS_MAX = 500
 ACTIVE_VISITORS = {}
@@ -3367,15 +3314,14 @@ def _parse_dt(s:str):
         return None
 
 def _haversine_km(lat1, lon1, lat2, lon2):
-    """
-    Calculate distance in km between two points.
-    Wrapper around haversine() for (lat, lon, lat, lon) signature.
-    
-    NOTE: Prefer using haversine((lat1,lon1), (lat2,lon2)) directly.
-    This function exists for backward compatibility.
-    """
     try:
-        return haversine((lat1, lon1), (lat2, lon2))
+        from math import asin, cos, radians, sin, sqrt
+        R = 6371.0
+        dlat = radians(lat2-lat1)
+        dlon = radians(lon2-lon1)
+        a = sin(dlat/2)**2 + cos(radians(lat1))*cos(radians(lat2))*sin(dlon/2)**2
+        c = 2*asin(sqrt(a))
+        return R*c
     except Exception:
         return 999999
 
@@ -5000,24 +4946,19 @@ def _ai_analyze_patterns_for_update(patterns: dict):
 # Version 2.0 - Maximum optimization with Bayesian updates, ensemble prediction
 
 
-# Speed constants (km/h) based on threat type - UNIFIED
-# Contains: min, avg, max speeds + typical_altitude (meters)
+# Speed constants (km/h) based on threat type - REFINED
 THREAT_SPEEDS = {
     'shahed': {'min': 120, 'avg': 150, 'max': 185, 'typical_altitude': 500},
     'drone': {'min': 80, 'avg': 130, 'max': 170, 'typical_altitude': 300},
-    'fpv': {'min': 60, 'avg': 100, 'max': 140, 'typical_altitude': 100},
-    'rozved': {'min': 100, 'avg': 130, 'max': 180, 'typical_altitude': 1000},
-    'cruise': {'min': 680, 'avg': 850, 'max': 1000, 'typical_altitude': 50},
+    'cruise': {'min': 680, 'avg': 850, 'max': 1000, 'typical_altitude': 50},  # Low-flying
     'ballistic': {'min': 2000, 'avg': 4000, 'max': 7000, 'typical_altitude': 100000},
     'kab': {'min': 200, 'avg': 350, 'max': 550, 'typical_altitude': 5000},
     'rocket': {'min': 650, 'avg': 850, 'max': 1000, 'typical_altitude': 100},
     'x101': {'min': 700, 'avg': 850, 'max': 950, 'typical_altitude': 50},
-    'x22': {'min': 1000, 'avg': 1100, 'max': 1200, 'typical_altitude': 100},
     'kalibr': {'min': 700, 'avg': 880, 'max': 1000, 'typical_altitude': 20},
     'kinzhal': {'min': 3000, 'avg': 4500, 'max': 6000, 'typical_altitude': 20000},
     'iskander': {'min': 2100, 'avg': 3000, 'max': 4000, 'typical_altitude': 50000},
-    'avia': {'min': 500, 'avg': 900, 'max': 2500, 'typical_altitude': 10000},
-    'unknown': {'min': 150, 'avg': 300, 'max': 500, 'typical_altitude': 500},
+    'unknown': {'min': 150, 'avg': 300, 'max': 500, 'typical_altitude': 500}
 }
 
 # Seasonal attack patterns (month -> target type preferences)
@@ -5289,23 +5230,31 @@ PRIOR_TARGET_PROBABILITIES = {
 }
 
 def calculate_distance_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
-    """
-    Calculate distance between two points in kilometers.
-    Typed wrapper around haversine() for AI/ML prediction system.
-    
-    Args:
-        lat1, lng1: First point coordinates
-        lat2, lng2: Second point coordinates
-    
-    Returns:
-        Distance in kilometers
-    
-    NOTE: This is a typed wrapper. Core implementation is in haversine().
-    """
-    return haversine((lat1, lng1), (lat2, lng2))
+    """Calculate distance between two points in kilometers using Haversine formula"""
+    R = 6371  # Earth's radius in km
 
-# NOTE: calculate_bearing is defined in SECTION 5 (line ~387)
-# Do not redefine here - use the canonical version from UTILITIES section
+    lat1_r, lat2_r = math.radians(lat1), math.radians(lat2)
+    lng1_r, lng2_r = math.radians(lng1), math.radians(lng2)
+
+    dlat = lat2_r - lat1_r
+    dlng = lng2_r - lng1_r
+
+    a = math.sin(dlat/2)**2 + math.cos(lat1_r) * math.cos(lat2_r) * math.sin(dlng/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+
+    return R * c
+
+def calculate_bearing(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Calculate bearing from point 1 to point 2 in degrees (0-360)"""
+    lat1_r, lat2_r = math.radians(lat1), math.radians(lat2)
+    lng1_r, lng2_r = math.radians(lng1), math.radians(lng2)
+    dLng = lng2_r - lng1_r
+
+    x = math.sin(dLng) * math.cos(lat2_r)
+    y = math.cos(lat1_r) * math.sin(lat2_r) - math.sin(lat1_r) * math.cos(lat2_r) * math.cos(dLng)
+
+    bearing = math.degrees(math.atan2(x, y))
+    return (bearing + 360) % 360
 
 def get_temporal_factors() -> dict:
     """Get all temporal factors for current time"""
@@ -5469,7 +5418,72 @@ def analyze_attack_pattern(active_threats: list, patterns: dict = None) -> dict:
         'time_spread_minutes': round(time_spread_minutes, 1)
     }
 
-# NOTE: calculate_intercept_probability and estimate_threat_altitude removed - unused dead code
+def calculate_intercept_probability(threat_type: str, region: str, air_defense: str = 'unknown') -> float:
+    """
+    Estimate probability of interception based on threat and air defense.
+
+    Args:
+        threat_type: Type of threat (shahed, cruise, ballistic, etc.)
+        region: Target region
+        air_defense: 'heavy' | 'medium' | 'light' | 'unknown'
+
+    Returns probability 0-1
+    """
+    # Base intercept rates by threat type (rough estimates)
+    base_rates = {
+        'shahed': 0.75,      # High intercept rate for slow drones
+        'drone': 0.80,       # Other drones
+        'cruise': 0.60,      # Cruise missiles harder to intercept
+        'ballistic': 0.45,   # Ballistic very difficult
+        'kab': 0.25,         # KABs almost impossible to intercept
+        'rocket': 0.35,      # S-300 used as ground attack
+        'unknown': 0.50
+    }
+
+    base_rate = base_rates.get(threat_type, 0.5)
+
+    # Modify by air defense level
+    defense_multipliers = {
+        'heavy': 1.3,    # Kyiv, major cities
+        'medium': 1.0,   # Regional centers
+        'light': 0.7,    # Rural areas
+        'unknown': 0.9
+    }
+
+    multiplier = defense_multipliers.get(air_defense, 0.9)
+
+    # Cap at realistic levels
+    return min(0.95, max(0.1, base_rate * multiplier))
+
+def estimate_threat_altitude(threat_type: str, phase: str = 'cruise') -> dict:
+    """
+    Estimate threat altitude based on type and flight phase.
+
+    Args:
+        threat_type: Type of threat
+        phase: 'launch' | 'cruise' | 'terminal' | 'unknown'
+
+    Returns altitude info in meters
+    """
+    altitudes = THREAT_SPEEDS.get(threat_type, THREAT_SPEEDS['unknown'])
+    typical_alt = altitudes.get('altitude', 1000)
+
+    # Adjust by phase
+    if phase == 'launch':
+        alt_range = (typical_alt * 0.8, typical_alt * 1.5)
+    elif phase == 'cruise':
+        alt_range = (typical_alt * 0.7, typical_alt * 1.2)
+    elif phase == 'terminal':
+        alt_range = (50, typical_alt * 0.5)  # Diving to target
+    else:
+        alt_range = (typical_alt * 0.5, typical_alt * 1.5)
+
+    return {
+        'min_m': int(alt_range[0]),
+        'max_m': int(alt_range[1]),
+        'typical_m': typical_alt,
+        'phase': phase
+    }
 
 def estimate_eta_minutes(distance_km: float, threat_type: str) -> dict:
     """
@@ -5997,8 +6011,24 @@ THREAT_MAX_TTL = {
     'obstril': 10,      # 10 min
 }
 
-# NOTE: THREAT_SPEEDS is now unified in SECTION 6 (line ~4945)
-# Contains: min, avg, max speeds + typical_altitude for all threat types
+# Average speeds km/h for travel time estimation
+THREAT_SPEEDS = {
+    'shahed': {'min': 100, 'max': 180, 'avg': 140},
+    'drone': {'min': 80, 'max': 200, 'avg': 150},
+    'fpv': {'min': 60, 'max': 140, 'avg': 100},
+    'rozved': {'min': 100, 'max': 180, 'avg': 130},
+    'cruise': {'min': 700, 'max': 950, 'avg': 850},
+    'ballistic': {'min': 2000, 'max': 7000, 'avg': 3500},
+    'kab': {'min': 800, 'max': 1100, 'avg': 950},
+    'rocket': {'min': 1500, 'max': 4000, 'avg': 2500},
+    'kinzhal': {'min': 3500, 'max': 12000, 'avg': 6000},
+    'iskander': {'min': 2000, 'max': 7000, 'avg': 3500},
+    'kalibr': {'min': 700, 'max': 950, 'avg': 850},
+    'x101': {'min': 650, 'max': 900, 'avg': 750},
+    'x22': {'min': 1000, 'max': 1200, 'avg': 1100},
+    'unknown': {'min': 200, 'max': 800, 'avg': 400},
+    'avia': {'min': 500, 'max': 2500, 'avg': 900},
+}
 
 # Keywords indicating DISTANT threat (need more TTL)
 DISTANT_KEYWORDS = [
@@ -7003,7 +7033,46 @@ def process_message_for_threats(message: dict) -> dict:
         print(f"[THREAT TRACKER] Error processing message: {e}")
         return None
 
-# NOTE: get_smart_marker_visibility removed - unused dead code (use should_marker_be_visible instead)
+def get_smart_marker_visibility(message: dict, active_alarms: dict = None) -> dict:
+    """
+    Визначає чи повинен маркер бути видимим.
+
+    Враховує:
+    1. AI TTL для типу загрози
+    2. Стан тривоги в регіоні
+    3. Статус загрози (якщо відстежується)
+
+    Повертає:
+    {
+        'visible': bool,
+        'reason': str,
+        'remaining_minutes': int,
+        'threat_info': dict (якщо є)
+    }
+    """
+    # First, check if there's a tracked threat
+    msg_id = message.get('id')
+    threat = THREAT_TRACKER.get_threat_for_message(msg_id) if msg_id else None
+
+    if threat:
+        # Use threat tracking info
+        if threat['status'] in ['destroyed', 'cleared_by_alarm', 'passed']:
+            # Threat is over - short visibility
+            return {
+                'visible': True,
+                'reason': f"Загроза завершена: {threat['status']}",
+                'remaining_minutes': 5,
+                'auto_hide_at': (datetime.now() + timedelta(minutes=5)).isoformat(),
+                'threat_info': threat
+            }
+        else:
+            # Active threat - check TTL
+            ttl_info = should_marker_be_visible(message)
+            ttl_info['threat_info'] = threat
+            return ttl_info
+
+    # No tracked threat - use standard AI TTL
+    return should_marker_be_visible(message)
 
 # ==================== END SMART THREAT TRACKING SYSTEM ====================
 
@@ -8284,7 +8353,58 @@ def get_fused_trajectories() -> list:
 
 # ==================== END MULTI-CHANNEL INTELLIGENCE FUSION ====================
 
-# NOTE: analyze_threat_context removed - unused dead code
+
+def analyze_threat_context(message_text: str, threat_type: str) -> dict:
+    """
+    Analyze message context to improve prediction accuracy.
+
+    Returns context clues for prediction adjustment.
+    """
+    if not message_text:
+        return {}
+
+    msg_lower = message_text.lower()
+    context = {}
+
+    # Attack scale
+    context['scale'] = extract_attack_scale(message_text)
+
+    # Target infrastructure hints
+    if any(w in msg_lower for w in ['енерг', 'електр', 'тец', 'гес', 'підстанц', 'інфраструктур']):
+        context['likely_target_type'] = 'energy_infrastructure'
+    elif any(w in msg_lower for w in ['порт', 'морськ', 'судно', 'зерно', 'термінал']):
+        context['likely_target_type'] = 'port'
+    elif any(w in msg_lower for w in ['військов', 'аеродром', 'склад', 'база']):
+        context['likely_target_type'] = 'military'
+    elif any(w in msg_lower for w in ['житлов', 'цивільн', 'центр міста']):
+        context['likely_target_type'] = 'civilian'
+
+    # Urgency indicators
+    urgent_words = ['терміново', 'увага', 'небезпека', 'загроза', 'швидко', 'негайно']
+    context['urgency'] = any(w in msg_lower for w in urgent_words)
+
+    # Direction certainty
+    direction_certain = ['курсом на', 'напрямок на', 'рухається до', 'тримає курс']
+    direction_uncertain = ['ймовірно', 'можливо', 'орієнтовно', 'приблизно']
+
+    if any(d in msg_lower for d in direction_certain):
+        context['direction_certainty'] = 'high'
+    elif any(d in msg_lower for d in direction_uncertain):
+        context['direction_certainty'] = 'low'
+    else:
+        context['direction_certainty'] = 'medium'
+
+    # Speed/altitude indicators
+    if any(w in msg_lower for w in ['малій висоті', 'низько', 'низьколетяч']):
+        context['altitude'] = 'low'
+    elif any(w in msg_lower for w in ['великій висоті', 'високо']):
+        context['altitude'] = 'high'
+
+    # Maneuvers
+    if any(w in msg_lower for w in ['маневрує', 'змінює курс', 'змінив напрямок']):
+        context['maneuvering'] = True
+
+    return context
 
 def predict_waypoints(source_coords: tuple, target_coords: tuple, threat_type: str, message_text: str = None) -> list:
     """
@@ -9292,7 +9412,72 @@ def classify_threat_with_ai(message_text: str):
         return None
 
 
-# NOTE: summarize_message_with_ai removed - unused dead code
+# ==================== AI MESSAGE SUMMARIZATION ====================
+_summary_ai_cache = {}
+_SUMMARY_AI_CACHE_TTL = 1800  # 30 minutes
+
+def summarize_message_with_ai(message_text: str, max_length: int = 100):
+    """Use Groq AI to create a concise summary of a military message.
+
+    Returns dict with:
+    - summary: short summary in Ukrainian (max max_length chars)
+    - key_info: list of key facts extracted
+    - urgency: 'critical' | 'high' | 'medium' | 'low'
+    """
+    if not GROQ_ENABLED or not message_text or len(message_text) < 50:
+        return None
+
+    # Check cache
+    cache_key = hashlib.md5(f"{message_text}_{max_length}".encode()).hexdigest()
+    cached = _summary_ai_cache.get(cache_key)
+    if cached and time.time() - cached['ts'] < _SUMMARY_AI_CACHE_TTL:
+        return cached['data']
+
+    try:
+        prompt = f"""Ти експерт з аналізу військових повідомлень.
+
+Створи КОРОТКИЙ підсумок повідомлення (до {max_length} символів) українською мовою.
+Виділи ключові факти та визнач терміновість.
+
+Повідомлення:
+{message_text}
+
+Відповідь у форматі JSON:
+{{"summary": "короткий опис до {max_length} символів", "key_info": ["факт 1", "факт 2"], "urgency": "high"}}"""
+
+        response = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "Створюй короткі інформативні підсумки. Відповідай JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2,
+            max_tokens=300,
+            top_p=0.9
+        )
+
+        result_text = response.choices[0].message.content.strip()
+        if result_text.startswith('```'):
+            result_text = re.sub(r'^```(?:json)?\s*', '', result_text)
+            result_text = re.sub(r'\s*```$', '', result_text)
+
+        result = json.loads(result_text)
+
+        # Truncate summary if too long
+        if result.get('summary') and len(result['summary']) > max_length:
+            result['summary'] = result['summary'][:max_length-3] + '...'
+
+        _summary_ai_cache[cache_key] = {'ts': time.time(), 'data': result}
+        return result
+
+    except Exception as e:
+        error_str = str(e)
+        if '429' in error_str or 'rate_limit' in error_str.lower():
+            _groq_handle_429(error_str)
+        else:
+            print(f"WARNING: AI summarization failed: {e}")
+        return None
+
 
 # ==================== AI CHAT MODERATION ====================
 _moderation_ai_cache = {}
@@ -9388,7 +9573,107 @@ def moderate_chat_message_with_ai(message_text: str, nickname: str = None):
         return {'is_safe': True, 'reason': None, 'category': None, 'severity': 0}
 
 
-# NOTE: analyze_message_comprehensive_ai removed - unused dead code
+# ==================== AI COMPREHENSIVE ANALYSIS ====================
+def analyze_message_comprehensive_ai(message_text: str):
+    """Single AI call to extract ALL information from a military message.
+
+    Combines: location extraction, trajectory parsing, threat classification, summarization.
+    More efficient than multiple separate AI calls.
+
+    Returns dict with all extracted data or None on failure.
+    """
+    if not GROQ_ENABLED or not message_text:
+        return None
+
+    # Check combined cache
+    cache_key = hashlib.md5(f"comprehensive_{message_text}".encode()).hexdigest()
+    cached = _threat_ai_cache.get(cache_key)
+    if cached and time.time() - cached['ts'] < _THREAT_AI_CACHE_TTL:
+        return cached['data']
+
+    try:
+        prompt = f"""Ти експерт з аналізу військових повідомлень про повітряні тривоги в Україні.
+
+Проаналізуй повідомлення та витягни ВСЮ інформацію одним запитом:
+
+1. ЛОКАЦІЯ:
+   - city: назва міста/села в називному відмінку
+   - district: район (якщо вказано)
+   - oblast: область
+
+2. ТРАЄКТОРІЯ (якщо є курс/напрямок):
+   - source_type: 'city'|'region'|'direction'|null
+   - source_name: звідки
+   - target_type: 'city'|'region'|'direction'|null
+   - target_name: куди
+
+3. ЗАГРОЗА:
+   - threat_type: 'shahed'|'ballistic'|'cruise'|'kab'|'drone'|'explosion'|'artillery'|'unknown'
+   - emoji: 🛵|🚀|🎯|💣|🔭|💥|💨
+   - priority: 1-5 (5 найвища)
+   - quantity: кількість або null
+
+4. ПІДСУМОК:
+   - summary: короткий опис до 80 символів
+   - urgency: 'critical'|'high'|'medium'|'low'
+
+Повідомлення:
+{message_text}
+
+Відповідь ТІЛЬКИ валідний JSON:
+{{
+  "location": {{"city": null, "district": null, "oblast": null}},
+  "trajectory": {{"source_type": null, "source_name": null, "target_type": null, "target_name": null}},
+  "threat": {{"threat_type": "unknown", "emoji": "⚠️", "priority": 1, "quantity": null}},
+  "summary": {{"text": "опис", "urgency": "medium"}}
+}}"""
+
+        response = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "Ти військовий аналітик. Відповідай ТІЛЬКИ валідним JSON без markdown."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.1,
+            max_tokens=600,
+            top_p=0.9
+        )
+
+        result_text = response.choices[0].message.content.strip()
+        if result_text.startswith('```'):
+            result_text = re.sub(r'^```(?:json)?\s*', '', result_text)
+            result_text = re.sub(r'\s*```$', '', result_text)
+
+        result = json.loads(result_text)
+
+        if not isinstance(result, dict):
+            return None
+
+        # Normalize null values
+        def normalize_nulls(obj):
+            if isinstance(obj, dict):
+                return {k: normalize_nulls(v) for k, v in obj.items()}
+            if obj in ['null', 'None', '']:
+                return None
+            return obj
+
+        result = normalize_nulls(result)
+
+        print(f"DEBUG AI Comprehensive: threat={result.get('threat',{}).get('threat_type')}, "
+              f"city={result.get('location',{}).get('city')}, "
+              f"target={result.get('trajectory',{}).get('target_name')}")
+
+        _threat_ai_cache[cache_key] = {'ts': time.time(), 'data': result}
+        return result
+
+    except Exception as e:
+        error_str = str(e)
+        if '429' in error_str or 'rate_limit' in error_str.lower():
+            _groq_handle_429(error_str)
+        else:
+            print(f"WARNING: AI comprehensive analysis failed: {e}")
+        return None
+
 
 def safe_float(value, default=None):
     """Safely convert value to float, returning default on failure."""
@@ -10915,7 +11200,84 @@ def spacy_enhanced_geocoding(message_text: str, existing_city_coords: dict = Non
         print(f"SpaCy processing error: {e}")
         return []
 
-# NOTE: _find_coordinates_multiple_formats removed - unused dead code (use get_coordinates_enhanced instead)
+def _find_coordinates_multiple_formats(city_name: str, detected_regions: list, existing_city_coords: dict) -> tuple:
+    """
+    Try to find coordinates using API with regional filtering
+    Returns coordinates tuple (lat, lng) or None
+
+    Note: existing_city_coords parameter is deprecated but kept for backward compatibility
+    """
+    try:
+        import requests
+
+        # Build region context from detected_regions
+        region_context = None
+        if detected_regions:
+            # Convert region names to adjective forms
+            region_adj_map = {
+                'сумщина': 'сумська',
+                'чернігівщина': 'чернігівська',
+                'харківщина': 'харківська',
+                'полтавщина': 'полтавська',
+                'дніпропетровщина': 'дніпропетровська',
+                'херсонщина': 'херсонська',
+                'миколаївщина': 'миколаївська',
+                'київщина': 'київська',
+                'донеччина': 'донецька',
+                'луганщина': 'луганська'
+            }
+
+            for region in detected_regions:
+                region_adj = region_adj_map.get(region, region)
+                region_context = region_adj + ' область'
+                break
+
+        # Try Photon API (supports Cyrillic)
+        photon_url = 'https://photon.komoot.io/api/'
+        photon_params = {'q': city_name, 'limit': 10}
+
+        photon_response = requests.get(photon_url, params=photon_params, timeout=3)
+        if photon_response.ok:
+            photon_data = photon_response.json()
+            for feature in photon_data.get('features', []):
+                props = feature.get('properties', {})
+                state = props.get('state', '')
+                country = props.get('country', '')
+                osm_key = props.get('osm_key', '')
+                osm_value = props.get('osm_value', '')
+
+                # Filter out POIs - only settlements
+                if osm_key not in ['place', 'boundary']:
+                    continue
+                valid_place_types = ['city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood', 'administrative']
+                if osm_key == 'place' and osm_value not in valid_place_types:
+                    continue
+
+                if country in ['Україна', 'Ukraine']:
+                    # Filter by region if available
+                    if region_context and region_context in state:
+                        coords_arr = feature.get('geometry', {}).get('coordinates', [])
+                        if coords_arr and len(coords_arr) >= 2:
+                            lng_val = safe_float(coords_arr[0])
+                            lat_val = safe_float(coords_arr[1])
+                            if lat_val is not None and lng_val is not None and validate_ukraine_coords(lat_val, lng_val):
+                                print(f"DEBUG SpaCy Photon: Found '{city_name}' in {state} -> ({lat_val}, {lng_val})")
+                                return (lat_val, lng_val)
+                    elif not region_context:
+                        # No region filter, use first Ukraine result
+                        coords_arr = feature.get('geometry', {}).get('coordinates', [])
+                        if coords_arr and len(coords_arr) >= 2:
+                            lng_val = safe_float(coords_arr[0])
+                            lat_val = safe_float(coords_arr[1])
+                            if lat_val is not None and lng_val is not None and validate_ukraine_coords(lat_val, lng_val):
+                                print(f"DEBUG SpaCy Photon: Found '{city_name}' in {state} -> ({lat_val}, {lng_val})")
+                                return (lat_val, lng_val)
+
+    except Exception as e:
+        print(f"DEBUG SpaCy API lookup error: {e}")
+
+    print(f"DEBUG SpaCy coord lookup: No coordinates found via API for '{city_name}'")
+    return None
 
 def get_coordinates_enhanced(city_name: str, region: str = None, context: str = "") -> tuple:
     """
@@ -20791,7 +21153,47 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             except Exception as _e:
                 log.debug(f"raion_oblast secondary error={_e}")
 
-    # --- Russian strategic aviation suppression (uses _is_russian_strategic_aviation defined earlier) ---
+    # --- Russian strategic aviation suppression ---
+    def _is_russian_strategic_aviation(t: str) -> bool:
+        """Suppress messages about Russian strategic aviation (Tu-95, etc.) from Russian airbases"""
+        t_lower = t.lower()
+
+        # Check for Russian strategic bombers
+        russian_bombers = ['ту-95', 'tu-95', 'ту-160', 'tu-160', 'ту-22', 'tu-22']
+        has_bomber = any(bomber in t_lower for bomber in russian_bombers)
+
+        # Check for Russian airbases and regions
+        russian_airbases = ['енгельс', 'engels', 'энгельс', 'саратов', 'рязань', 'муром', 'украінка', 'українка']
+        has_russian_airbase = any(airbase in t_lower for airbase in russian_airbases)
+
+        # Check for Russian regions/areas
+        russian_regions = ['саратовській області', 'саратовской области', 'тульській області', 'рязанській області']
+        has_russian_region = any(region in t_lower for region in russian_regions)
+
+        # Check for terms indicating Russian territory/airbases
+        russian_territory_terms = ['аеродрома', 'аэродрома', 'з аеродрому', 'с аэродрома', 'мета вильоту невідома', 'цель вылета неизвестна']
+        has_russian_territory = any(term in t_lower for term in russian_territory_terms)
+
+        # Check for generic relocation/transfer terms without specific threats
+        relocation_terms = ['передислокація', 'передислокация', 'переліт', 'перелет', 'відмічено', 'отмечено']
+        has_relocation = any(term in t_lower for term in relocation_terms)
+
+        # Suppress if it's about Russian bombers from Russian territory
+        if has_bomber and (has_russian_airbase or has_russian_territory or has_russian_region):
+            return True
+
+        # Suppress relocation/transfer messages between Russian airbases
+        if has_relocation and has_bomber and (has_russian_airbase or has_russian_region):
+            return True
+
+        # Also suppress general strategic aviation reports without specific Ukrainian targets
+        if ('борт' in t_lower or 'борти' in t_lower) and ('мета вильоту невідома' in t_lower or 'цель вылета неизвестна' in t_lower):
+            return True
+
+        return False
+
+    # --- General warning suppression ---
+
     if _is_russian_strategic_aviation(text):
         return None
 
@@ -23599,36 +24001,46 @@ def shahed_map():
     """Shahed map landing page"""
     return render_template('shahed_map.html')
 
-# --- Consolidated static asset redirects (table-driven) ---
-STATIC_REDIRECTS = {
-    '/icon_missile.svg': '/static/icon_missile.svg',
-    '/icon_balistic.svg': '/static/icon_balistic.svg',
-    '/icon_drone.svg': '/static/shahed3.webp',
-    '/static/icon_drone.svg': '/static/shahed3.webp',
-    '/shahed3.webp': '/static/shahed3.webp',
-    '/rozved.png': '/static/rozvedka2.png',
-    '/static/rozved.png': '/static/rozvedka2.png',
-    '/icon_rozved.svg': '/static/rozvedka2.png',
-    '/static/icon_rozved.svg': '/static/rozvedka2.png',
-    '/favicon.ico': '/static/icons/favicon-32x32.png',
-}
-
+# Redirects for icons requested without /static/ prefix
 @app.route('/icon_missile.svg')
+def icon_missile_redirect():
+    return redirect('/static/icon_missile.svg', code=301)
+
 @app.route('/icon_balistic.svg')
+def icon_balistic_redirect():
+    return redirect('/static/icon_balistic.svg', code=301)
+
 @app.route('/icon_drone.svg')
+def icon_drone_svg_redirect():
+    return redirect('/static/shahed3.webp', code=301)
+
 @app.route('/static/icon_drone.svg')
+def static_icon_drone_redirect():
+    return redirect('/static/shahed3.webp', code=301)
+
 @app.route('/shahed3.webp')
+def icon_drone_redirect():
+    return redirect('/static/shahed3.webp', code=301)
+
 @app.route('/rozved.png')
+def rozved_png_redirect():
+    return redirect('/static/rozvedka2.png', code=301)
+
 @app.route('/static/rozved.png')
+def static_rozved_png_redirect():
+    return redirect('/static/rozvedka2.png', code=301)
+
 @app.route('/icon_rozved.svg')
+def icon_rozved_svg_redirect():
+    return redirect('/static/rozvedka2.png', code=301)
+
 @app.route('/static/icon_rozved.svg')
+def static_icon_rozved_redirect():
+    return redirect('/static/rozvedka2.png', code=301)
+
 @app.route('/favicon.ico')
-def static_redirect():
-    """Consolidated redirect handler for static assets"""
-    target = STATIC_REDIRECTS.get(request.path)
-    if target:
-        return redirect(target, code=301)
-    return '', 404
+def favicon():
+    return redirect('/static/icons/favicon-32x32.png', code=301)
 
 # SEO: Bot detection patterns for prerender
 SEO_BOT_PATTERNS = [
@@ -26521,11 +26933,7 @@ def send_family_sos():
                             ttl=3600,
                         ),
                         apns=messaging.APNSConfig(
-                            headers={
-                                'apns-priority': '10',
-                                'apns-push-type': 'alert',
-                                'apns-expiration': '0',
-                            },
+                            headers={'apns-priority': '10'},
                             payload=messaging.APNSPayload(
                                 aps=messaging.Aps(
                                     alert=messaging.ApsAlert(
@@ -26534,8 +26942,6 @@ def send_family_sos():
                                     ),
                                     sound='default',
                                     badge=1,
-                                    content_available=True,
-                                    mutable_content=True,
                                 ),
                             ),
                         ),
@@ -29440,8 +29846,37 @@ def send_fcm_notification(message_data: dict):
             body = f"{specific_location}"
             alarm_state = 'active'
 
-        # Send to Firebase topic for this region (using global REGION_TOPIC_MAP)
-        topic = REGION_TOPIC_MAP.get(region)
+        # Send to Firebase topic for this region (more efficient than individual tokens)
+        # Topic name format: region_kyivska, region_kharkivska, etc.
+        region_topic_map = {
+            'Київ': 'region_kyiv_city',
+            'Київська область': 'region_kyivska',
+            'Дніпропетровська область': 'region_dnipropetrovska',
+            'Харківська область': 'region_kharkivska',
+            'Одеська область': 'region_odeska',
+            'Львівська область': 'region_lvivska',
+            'Донецька область': 'region_donetska',
+            'Запорізька область': 'region_zaporizka',
+            'Вінницька область': 'region_vinnytska',
+            'Житомирська область': 'region_zhytomyrska',
+            'Черкаська область': 'region_cherkaska',
+            'Чернігівська область': 'region_chernihivska',
+            'Полтавська область': 'region_poltavska',
+            'Сумська область': 'region_sumska',
+            'Миколаївська область': 'region_mykolaivska',
+            'Херсонська область': 'region_khersonska',
+            'Кіровоградська область': 'region_kirovohradska',
+            'Хмельницька область': 'region_khmelnytska',
+            'Рівненська область': 'region_rivnenska',
+            'Волинська область': 'region_volynska',
+            'Тернопільська область': 'region_ternopilska',
+            'Івано-Франківська область': 'region_ivano_frankivska',
+            'Закарпатська область': 'region_zakarpatska',
+            'Чернівецька область': 'region_chernivetska',
+            'Луганська область': 'region_luhanska',
+        }
+
+        topic = region_topic_map.get(region)
         if not topic:
             log.warning(f"No topic mapping for region: {region}")
             return
@@ -29478,15 +29913,12 @@ def send_fcm_notification(message_data: dict):
                     headers={
                         'apns-priority': '10',
                         'apns-push-type': 'alert',
-                        'apns-expiration': '0',
                     },
                     payload=messaging.APNSPayload(
                         aps=messaging.Aps(
                             alert=messaging.ApsAlert(title=title, body=body),
                             sound='default',
-                            badge=1,
                             content_available=True,
-                            mutable_content=True,
                         ),
                     ),
                 ),
@@ -30271,18 +30703,10 @@ def _send_alarm_notification(region, alerts, status):
                         ),
                     ),
                     apns=messaging.APNSConfig(
-                        headers={
-                            'apns-priority': '10',
-                            'apns-push-type': 'alert',
-                            'apns-expiration': '0',
-                        },
                         payload=messaging.APNSPayload(
                             aps=messaging.Aps(
-                                alert=messaging.ApsAlert(title=title, body=body),
                                 sound='default',
                                 badge=1,
-                                content_available=True,
-                                mutable_content=True,
                             ),
                         ),
                     ),

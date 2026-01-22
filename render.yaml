@@ -58,6 +58,10 @@ services:
       - key: ALARMS_API_KEY
         sync: false
       
+      # Firebase (FCM push notifications)
+      - key: FIREBASE_CREDENTIALS
+        sync: false
+      
       # Storage paths
       - key: PERSISTENT_DATA_DIR
         value: /data
