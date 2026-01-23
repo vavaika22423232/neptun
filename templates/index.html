@@ -520,6 +520,8 @@
       transform-origin: center center;
       -webkit-backface-visibility: hidden;
       backface-visibility: hidden;
+      /* Lock aspect ratio to match SVG viewBox 260:175 */
+      aspect-ratio: 260 / 175;
     }
     
     /* Shadow disabled for performance */
@@ -4776,8 +4778,11 @@
         }
         
         // Size-based zoom for all devices (markers need correct % positioning)
-        const newWidth = containerWidth * currentScale;
-        const newHeight = containerHeight * currentScale;
+        // Maintain SVG aspect ratio (260:175)
+        const SVG_ASPECT_RATIO = 260 / 175;
+        let newWidth = containerWidth * currentScale;
+        let newHeight = newWidth / SVG_ASPECT_RATIO;
+        
         const wrapperRect = wrapper.getBoundingClientRect();
         const centerX = (wrapperRect.width - newWidth) / 2 + offsetX;
         const centerY = (wrapperRect.height - newHeight) / 2 + offsetY;
@@ -4857,9 +4862,10 @@
         const mouseX = e.clientX - wrapperRect.left;
         const mouseY = e.clientY - wrapperRect.top;
         
-        // Calculate current position of mouse on the map
+        // Calculate current position of mouse on the map (maintain aspect ratio)
+        const SVG_ASPECT_RATIO = 260 / 175;
         const currentWidth = containerWidth * currentScale;
-        const currentHeight = containerHeight * currentScale;
+        const currentHeight = currentWidth / SVG_ASPECT_RATIO;
         const currentLeft = (wrapperRect.width - currentWidth) / 2 + offsetX;
         const currentTop = (wrapperRect.height - currentHeight) / 2 + offsetY;
         
@@ -4874,9 +4880,9 @@
         if (Math.abs(newScale - currentScale) > 0.01) {
           currentScale = newScale;
           
-          // Calculate new dimensions
+          // Calculate new dimensions (maintain aspect ratio)
           const newWidth = containerWidth * currentScale;
-          const newHeight = containerHeight * currentScale;
+          const newHeight = newWidth / SVG_ASPECT_RATIO;
           
           // Adjust offset to keep same map point under cursor
           const newLeft = mouseX - mapPointX * newWidth;
@@ -4934,9 +4940,10 @@
               const pinchCenterX = newCenter.x - wrapperRect.left;
               const pinchCenterY = newCenter.y - wrapperRect.top;
               
-              // Calculate current position of pinch center on the map
+              // Calculate current position of pinch center on the map (maintain aspect ratio)
+              const SVG_ASPECT_RATIO = 260 / 175;
               const currentWidth = containerWidth * currentScale;
-              const currentHeight = containerHeight * currentScale;
+              const currentHeight = currentWidth / SVG_ASPECT_RATIO;
               const currentLeft = (wrapperRect.width - currentWidth) / 2 + offsetX;
               const currentTop = (wrapperRect.height - currentHeight) / 2 + offsetY;
               
@@ -4948,9 +4955,9 @@
               const oldScale = currentScale;
               currentScale = newScale;
               
-              // Calculate new dimensions
+              // Calculate new dimensions (maintain aspect ratio)
               const newWidth = containerWidth * currentScale;
-              const newHeight = containerHeight * currentScale;
+              const newHeight = newWidth / SVG_ASPECT_RATIO;
               
               // Adjust offset to keep same map point under pinch center
               const newLeft = pinchCenterX - mapPointX * newWidth;
