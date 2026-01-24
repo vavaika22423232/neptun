@@ -228,6 +228,105 @@ else:
         UKRAINE_SETTLEMENTS_BY_OBLAST = {}
         print(f"WARNING: Ukraine ALL settlements not available: {e}")
 
+# RAION_FALLBACK - Coordinates for Ukrainian districts (raions)
+# Used when messages mention "X район" format
+RAION_FALLBACK = {
+    # Харківська область
+    'богодухівський': (50.1622, 35.5233),
+    'богодухів': (50.1622, 35.5233),
+    'валківський': (49.8331, 35.8117),
+    'дергачівський': (50.1031, 36.1114),
+    'зміївський': (49.6833, 36.3500),
+    'золочівський': (50.2833, 35.9833),
+    'ізюмський': (49.2092, 37.2614),
+    'красноградський': (49.3853, 35.4439),
+    'куп\'янський': (49.7144, 37.6186),
+    'лозівський': (48.8897, 36.3181),
+    'первомайський': (48.6206, 36.2372),
+    'харківський': (50.0000, 36.2500),
+    'чугуївський': (49.8372, 36.6811),
+    # Полтавська область
+    'полтавський': (49.5883, 34.5514),
+    'кременчуцький': (49.0667, 33.4167),
+    'миргородський': (49.9667, 33.6000),
+    'лубенський': (50.0167, 32.9833),
+    # Дніпропетровська область
+    'дніпровський': (48.4647, 35.0462),
+    'криворізький': (47.9083, 33.3433),
+    'кам\'янський': (48.5083, 34.6153),
+    'нікопольський': (47.5692, 34.3978),
+    'павлоградський': (48.5333, 35.8667),
+    'новомосковський': (48.6333, 35.2167),
+    'синельниківський': (48.3167, 35.5000),
+    # Київська область
+    'білоцерківський': (49.7958, 30.1250),
+    'бориспільський': (50.3517, 30.9556),
+    'броварський': (50.5106, 30.7978),
+    'бучанський': (50.5433, 30.2142),
+    'вишгородський': (50.5847, 30.4897),
+    'обухівський': (50.1167, 30.6167),
+    'фастівський': (50.0767, 29.9186),
+    # Херсонська область
+    'херсонський': (46.6354, 32.6169),
+    'генічеський': (46.1739, 34.8158),
+    'каховський': (46.8158, 33.4831),
+    'скадовський': (46.1167, 32.9000),
+    # Запорізька область
+    'запорізький': (47.8388, 35.1396),
+    'мелітопольський': (46.8489, 35.3675),
+    'бердянський': (46.7586, 36.7853),
+    'василівський': (47.4333, 35.2667),
+    'пологівський': (47.4833, 36.2667),
+    # Донецька область
+    'донецький': (48.0159, 37.8029),
+    'маріупольський': (47.0958, 37.5494),
+    'краматорський': (48.7233, 37.5567),
+    'бахмутський': (48.5944, 37.9994),
+    'волноваський': (47.6000, 37.4833),
+    'покровський': (48.2833, 37.1667),
+    # Сумська область
+    'сумський': (50.9077, 34.7981),
+    'конотопський': (51.2417, 33.2000),
+    'охтирський': (50.3097, 34.8789),
+    'роменський': (50.7500, 33.4667),
+    'шосткинський': (51.8650, 33.4733),
+    # Чернігівська область
+    'чернігівський': (51.4939, 31.2947),
+    'ніжинський': (51.0500, 31.8833),
+    'прилуцький': (50.5903, 32.3858),
+    'новгород-сіверський': (52.0000, 33.2500),
+    # Миколаївська область
+    'миколаївський': (46.9750, 31.9946),
+    'вознесенський': (47.5667, 31.3333),
+    'баштанський': (47.4000, 32.4500),
+    'первомайський': (48.0500, 30.8667),
+    # Одеська область
+    'одеський': (46.4825, 30.7233),
+    'білгород-дністровський': (46.1958, 30.3450),
+    'ізмаїльський': (45.3500, 28.8333),
+    'подільський': (47.7500, 29.5333),
+    # Вінницька область
+    'вінницький': (49.2331, 28.4682),
+    'жмеринський': (49.0333, 28.1167),
+    'тульчинський': (48.6833, 28.8500),
+    'гайсинський': (48.8000, 29.3833),
+    # Житомирська область
+    'житомирський': (50.2547, 28.6587),
+    'бердичівський': (49.8833, 28.6000),
+    'коростенський': (50.9500, 28.6333),
+    'новоград-волинський': (50.6000, 27.6167),
+    # Кіровоградська область
+    'кропивницький': (48.5079, 32.2623),
+    'олександрійський': (48.6667, 33.1000),
+    'новоукраїнський': (48.3167, 31.5167),
+    # Черкаська область
+    'черкаський': (49.4444, 32.0597),
+    'уманський': (48.7500, 30.2167),
+    'золотоніський': (49.6667, 32.0333),
+    'звенигородський': (49.0833, 30.9667),
+}
+print(f"INFO: RAION_FALLBACK loaded: {len(RAION_FALLBACK)} district entries")
+
 # SpaCy integration DISABLED to save memory (~150MB)
 # Enable only if server has >1GB RAM
 SPACY_AVAILABLE = False
@@ -6466,6 +6565,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     try:
         orig = text
         head = orig.split('\n',1)[0][:160]
+        
+        # DEBUG: Log incoming message for mapstransler parsing
+        print(f"[PARSER_DEBUG] Processing message: {repr(head[:80])}...")
 
         # PRIORITY: Handle mapstransler_bot format: "[count]х БПЛА Місто (Область обл.) Загроза застосування БПЛА"
         # Examples:
@@ -6512,10 +6614,15 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     city_raw = city_raw.split('/')[0].strip()
                 oblast_raw = no_bpla_match.group(2).strip()
                 uav_count = 1
+                print(f"[PARSER_DEBUG] no_bpla_pattern matched: city='{city_raw}', oblast='{oblast_raw}'")
 
         if city_raw and oblast_raw:
+            print(f"[PARSER_DEBUG] mapstransler MATCHED: city='{city_raw}', oblast='{oblast_raw}', count={uav_count}")
             # Strip course/direction suffixes from city name before normalization
             city_raw = re.sub(r'\s+(курсом|курс|напрям(?:ком)?|в\s+напрямку|у\s+напрямку)\s+.+$', '', city_raw, flags=re.IGNORECASE).strip()
+            # Strip "район" suffix - e.g., "Богодухів район" -> "Богодухів"
+            city_raw = re.sub(r'\s+район\s*$', '', city_raw, flags=re.IGNORECASE).strip()
+            print(f"[PARSER_DEBUG] After cleanup: city='{city_raw}'")
             # Normalize city name (accusative -> nominative) - COMPREHENSIVE
             city_norm = city_raw.lower().replace('\u02bc',"'").replace('ʼ',"'").replace("'","'").replace('`',"'")
             city_norm = re.sub(r'\s+',' ', city_norm).strip()
@@ -6651,6 +6758,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
 
             # PRIORITY 1: Nominatim API (best for Ukrainian cities)
             if not coords and target_state and cache_key not in _mapstransler_geocode_cache:
+                print(f"[NOMINATIM_P1] Starting inline Nominatim for '{city_norm}' in '{target_state}'")
                 try:
                     import requests
 
@@ -6806,7 +6914,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     add_debug_log(f"GeoNames API error: {e}", "mapstransler")
 
             # PRIORITY 4: Use nominatim_geocoder module (with caching and rate limiting)
+            print(f"[NOMINATIM_P4] coords={coords}, NOMINATIM_AVAILABLE={NOMINATIM_AVAILABLE}, city='{city_norm}'")
             if not coords and NOMINATIM_AVAILABLE:
+                print(f"[NOMINATIM_P4] Calling nominatim_geocoder for '{city_norm}'")
                 try:
                     # Extract region name from target_state for better geocoding
                     region_for_nominatim = None
@@ -14086,6 +14196,11 @@ def data():
     # HARDENED /data ENDPOINT - Prevents 23GB+ traffic spikes
     # HIGH-LOAD OPTIMIZED: Added in-memory caching
     # ===========================================================================
+    
+    # Allow forced reparse by clearing cache (admin use)
+    if request.args.get('force_reparse') == 'true':
+        print(f"[DATA] Force reparse requested, clearing FALLBACK_REPARSE_CACHE ({len(FALLBACK_REPARSE_CACHE)} items)")
+        FALLBACK_REPARSE_CACHE.clear()
 
     # HIGH-LOAD: Check memory cache first (5 second TTL)
     cache_key = f'data_{MONITOR_PERIOD_MINUTES}'
@@ -14245,8 +14360,11 @@ def data():
                     cache_list = list(FALLBACK_REPARSE_CACHE)
                     FALLBACK_REPARSE_CACHE = set(cache_list[len(cache_list)//2:])
 
+                msg_text = m.get('text') or ''
+                print(f"[REPARSE] Processing pending_geo message {msg_id}: {repr(msg_text[:60])}...")
                 add_debug_log(f"Fallback reparse for message ID {msg_id} - first time processing", "reparse")
-                reparsed = process_message(m.get('text') or '', m.get('id'), m.get('date'), m.get('channel') or m.get('source') or '')
+                reparsed = process_message(msg_text, m.get('id'), m.get('date'), m.get('channel') or m.get('source') or '')
+                print(f"[REPARSE] Result for {msg_id}: {len(reparsed) if reparsed else 0} tracks, coords: {reparsed[0].get('lat') if reparsed else 'none'}")
                 if isinstance(reparsed, list) and reparsed:
                     debug_counts['reparse_success'] = debug_counts.get('reparse_success', 0) + 1
                     reparsed_any = False
