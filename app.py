@@ -29657,35 +29657,10 @@ def send_fcm_notification(message_data: dict):
         except Exception as e:
             log.error(f"Failed to send topic notification to {topic}: {e}")
 
-        # Also send to 'all_regions' topic for users who want all alerts
-        try:
-            message_all = messaging.Message(
-                notification=messaging.Notification(
-                    title=title,
-                    body=body,
-                ),
-                data={
-                    'type': 'all_clear' if is_all_clear else ('rocket' if is_critical else 'drone'),
-                    'location': specific_location,
-                    'body': specific_location,
-                    'threat_type': readable_threat_type if readable_threat_type else 'Повітряна тривога',
-                    'region': region,
-                    'alarm_state': alarm_state,
-                    'is_critical': 'true' if is_critical else 'false',
-                    'timestamp': message_data.get('date', ''),
-                    'click_action': 'FLUTTER_NOTIFICATION_CLICK',
-                },
-                android=messaging.AndroidConfig(
-                    priority='high' if not is_all_clear else 'normal',
-                    ttl=timedelta(seconds=300),
-                ),
-                topic='all_regions',
-            )
-
-            response_all = messaging.send(message_all)
-            log.info(f"✅ All-regions notification sent: {response_all}")
-        except Exception as e:
-            log.error(f"Failed to send all_regions notification: {e}")
+        # NOTE: Removed all_regions broadcast for regular alerts
+        # Users should only receive alerts for regions they subscribed to
+        # all_regions is now only used for telegram_threat notifications
+        # which have their own filtering logic in the app
 
         log.info(f"Sent notifications for region: {region} (topic: {topic})")
     except Exception as e:
