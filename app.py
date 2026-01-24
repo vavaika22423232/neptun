@@ -14144,12 +14144,30 @@ def data():
     out = []  # geo tracks
     events = []  # list-only (alarms, cancellations, other non-geo informational)
     ai_ttl_stats = {'shown': 0, 'hidden': 0, 'reasons': {}}
+    
+    # DEBUG: Count messages by category
+    debug_counts = {'too_old': 0, 'no_date': 0, 'pending_geo': 0, 'has_coords': 0, 'recent': 0}
 
     for m in messages:
         try:
             dt = datetime.strptime(m.get('date',''), '%Y-%m-%d %H:%M:%S')
         except Exception:
+            debug_counts['no_date'] += 1
             continue
+        
+        # DEBUG: Track message categories
+        has_coords = bool(m.get('lat') and m.get('lng'))
+        is_pending = bool(m.get('pending_geo'))
+        is_recent = dt >= min_time
+        
+        if has_coords:
+            debug_counts['has_coords'] += 1
+        if is_pending:
+            debug_counts['pending_geo'] += 1
+        if is_recent:
+            debug_counts['recent'] += 1
+        if not is_recent:
+            debug_counts['too_old'] += 1
 
         manual_marker = bool(m.get('manual'))
 
@@ -14346,6 +14364,7 @@ def data():
         events = events[:MAX_EVENTS]  # Already sorted newest first
         print(f"[BANDWIDTH PROTECTION] Truncated events: {total_events} -> {MAX_EVENTS}")
 
+    print(f"[DEBUG] Message categories: {debug_counts}")
     print(f"[DEBUG] Returning {len(out)} tracks and {len(events)} events (limits: {MAX_TRACKS}/{MAX_EVENTS})")
 
     # Replace old shahed.png with new shahed3.webp for backward compatibility
