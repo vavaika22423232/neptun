@@ -6933,6 +6933,19 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 if not coords and 'SETTLEMENTS_INDEX' in globals():
                     idx_map = globals().get('SETTLEMENTS_INDEX') or {}
                     coords = idx_map.get(norm)
+                # Try Nominatim API if still no coords
+                if not coords and NOMINATIM_AVAILABLE:
+                    oblast_match = re.search(r'\(([А-Яа-яЇїІіЄєҐґ\-]+)\s*обл', head, re.IGNORECASE)
+                    region_for_nominatim = oblast_match.group(1) if oblast_match else None
+                    try:
+                        nominatim_coords = get_coordinates_nominatim(norm, region=region_for_nominatim)
+                        if nominatim_coords:
+                            coords = nominatim_coords
+                            cache_key = f"{norm}_{region_for_nominatim}" if region_for_nominatim else norm
+                            CITY_COORDS[cache_key] = coords
+                            print(f"[NOMINATIM] emoji_threat: Geocoded '{norm}' (region={region_for_nominatim}) -> {coords}")
+                    except Exception as e:
+                        print(f"[NOMINATIM] emoji_threat error for '{norm}': {e}")
                 if coords:
                     lat, lon = coords[:2]
                     threat_type, icon = classify(text)
@@ -6977,6 +6990,22 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 if not coords and 'SETTLEMENTS_INDEX' in globals():
                     idx_map = globals().get('SETTLEMENTS_INDEX') or {}
                     coords = idx_map.get(norm)
+                
+                # Try Nominatim API if still no coords
+                if not coords and NOMINATIM_AVAILABLE:
+                    # Extract oblast from parentheses for better geocoding
+                    oblast_match = re.search(r'\(([А-Яа-яЇїІіЄєҐґ\-]+)\s*обл', head, re.IGNORECASE)
+                    region_for_nominatim = oblast_match.group(1) if oblast_match else None
+                    try:
+                        nominatim_coords = get_coordinates_nominatim(norm, region=region_for_nominatim)
+                        if nominatim_coords:
+                            coords = nominatim_coords
+                            cache_key = f"{norm}_{region_for_nominatim}" if region_for_nominatim else norm
+                            CITY_COORDS[cache_key] = coords
+                            print(f"[NOMINATIM] general_emoji: Geocoded '{norm}' (region={region_for_nominatim}) -> {coords}")
+                    except Exception as e:
+                        print(f"[NOMINATIM] general_emoji error for '{norm}': {e}")
+                
                 if coords:
                     lat, lon = coords[:2]
                     threat_type, icon = classify(text)
@@ -14223,6 +14252,8 @@ def data():
 
         # Process ALL messages without coordinates through process_message()
         if (not m.get('lat')) and (not m.get('lng')):
+            debug_counts['pending_geo_processing'] = debug_counts.get('pending_geo_processing', 0) + 1
+            
             # Skip if this is a multi-regional UAV message (already processed immediately)
             if region_count >= 2 and uav_count >= 3:
                 add_debug_log(f"Skipping fallback reparse for multi-regional UAV message ID {msg_id}", "reparse")
@@ -14230,7 +14261,7 @@ def data():
 
             # Check if we've already reparsed this message to avoid duplicate processing
             if msg_id in FALLBACK_REPARSE_CACHE:
-                add_debug_log(f"Skipping fallback reparse for message ID {msg_id} - already processed", "reparse")
+                debug_counts['already_cached'] = debug_counts.get('already_cached', 0) + 1
                 continue
 
             try:
@@ -14245,6 +14276,7 @@ def data():
                 add_debug_log(f"Fallback reparse for message ID {msg_id} - first time processing", "reparse")
                 reparsed = process_message(m.get('text') or '', m.get('id'), m.get('date'), m.get('channel') or m.get('source') or '')
                 if isinstance(reparsed, list) and reparsed:
+                    debug_counts['reparse_success'] = debug_counts.get('reparse_success', 0) + 1
                     reparsed_any = False
                     for t in reparsed:
                         if t.get('list_only'):
@@ -14256,6 +14288,7 @@ def data():
                             lat_r = round(float(t.get('lat')), 3)
                             lng_r = round(float(t.get('lng')), 3)
                         except Exception:
+                            debug_counts['reparse_no_coords'] = debug_counts.get('reparse_no_coords', 0) + 1
                             continue
                         text_r = (t.get('text') or '')
                         source_r = t.get('channel') or t.get('source') or ''
@@ -14266,9 +14299,12 @@ def data():
                         reparsed_any = True
                     # Skip adding original as event if we produced tracks or list-only entries
                     if reparsed_any:
+                        debug_counts['reparse_produced_tracks'] = debug_counts.get('reparse_produced_tracks', 0) + 1
                         continue
-            except Exception:
-                pass
+                else:
+                    debug_counts['reparse_empty'] = debug_counts.get('reparse_empty', 0) + 1
+            except Exception as e:
+                debug_counts['reparse_error'] = debug_counts.get('reparse_error', 0) + 1
         # list-only (no coordinates) -> push into events list if not suppressed
         if m.get('list_only'):
             if not m.get('suppress'):
