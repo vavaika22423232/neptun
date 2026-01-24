@@ -29460,10 +29460,19 @@ def send_fcm_notification(message_data: dict):
         # Use 'place' field for location (it's the geocoded place name)
         location = message_data.get('place', '') or message_data.get('location', '') or ''
 
-        # CRITICAL: Extract specific city from text if format is "City (Oblast обл.)"
-        # Example: "Овруч (Житомирська обл.) Загроза застосування БПЛА" -> city = "Овруч"
+        # CRITICAL: Extract specific city from place or text if format is "City (Oblast обл.)"
+        # Example: "Овруч (Житомирська обл.)" -> city = "Овруч"
         city_from_text = ''
-        if text:
+        
+        # First try to extract from place field (more reliable)
+        if location and '(' in location:
+            city_from_place = location.split('(')[0].strip()
+            if city_from_place:
+                city_from_text = city_from_place
+                log.info(f"Extracted city from place: '{city_from_text}' (full place: {location})")
+        
+        # Fallback: try to extract from text
+        if not city_from_text and text:
             # Pattern: "City (Oblast обл.)" - extract city before parentheses
             city_oblast_match = re.search(r'^[^а-яіїєґА-ЯІЇЄҐ]*([А-ЯІЇЄҐа-яіїєґ][а-яіїєґА-ЯІЇЄҐ\'\-\s]+?)\s*\([^)]*обл[^)]*\)', text)
             if city_oblast_match:
@@ -29616,8 +29625,8 @@ def send_fcm_notification(message_data: dict):
                 ),
                 data={
                     'type': 'all_clear' if is_all_clear else ('rocket' if is_critical else 'drone'),
-                    'location': specific_location,  # Specific city for TTS
-                    'body': specific_location,  # Also in body for foreground handler
+                    'location': location,  # FULL place with city AND region for filtering
+                    'body': specific_location,  # City for TTS display
                     'threat_type': readable_threat_type if readable_threat_type else 'Повітряна тривога',
                     'region': region,
                     'alarm_state': alarm_state,
