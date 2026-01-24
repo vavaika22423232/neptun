@@ -30009,11 +30009,10 @@ def is_chat_moderator(device_id):
 
 @app.route('/api/chat/message/<message_id>', methods=['DELETE'])
 def delete_chat_message(message_id):
-    """Delete a chat message (moderator only)."""
+    """Delete a chat message (moderator or owner only)."""
     try:
         data = request.get_json() or {}
         device_id = data.get('deviceId', '')
-        is_moderator = data.get('isModerator', False)
 
         messages = load_chat_messages()
 
@@ -30023,8 +30022,11 @@ def delete_chat_message(message_id):
         if not message_to_delete:
             return jsonify({'error': 'Повідомлення не знайдено'}), 404
 
+        # SERVER-SIDE moderator check - don't trust client isModerator flag!
+        is_actual_moderator = is_chat_moderator(device_id)
+        
         # Check permissions - either moderator or message owner
-        if is_moderator:
+        if is_actual_moderator:
             # Moderators can delete any message
             pass
         elif device_id:
@@ -30041,7 +30043,7 @@ def delete_chat_message(message_id):
         messages = [m for m in messages if m.get('id') != message_id]
         save_chat_messages(messages)
 
-        log.info(f"Chat message {message_id} deleted by {'moderator' if is_moderator else device_id[:20]}")
+        log.info(f"Chat message {message_id} deleted by {'moderator' if is_actual_moderator else device_id[:20]}")
 
         return jsonify({
             'success': True,
@@ -30057,10 +30059,12 @@ def ban_chat_user():
     try:
         data = request.get_json() or {}
         target_nickname = data.get('nickname', '')
-        is_moderator = data.get('isModerator', False)
+        device_id = data.get('deviceId', '')
         reason = data.get('reason', 'Порушення правил чату')
 
-        if not is_moderator:
+        # SERVER-SIDE moderator check - don't trust client isModerator flag!
+        if not is_chat_moderator(device_id):
+            log.warning(f"Unauthorized ban attempt from device: {device_id[:20] if device_id else 'unknown'}...")
             return jsonify({'error': 'Тільки модератори можуть блокувати'}), 403
 
         if not target_nickname:
@@ -30102,9 +30106,11 @@ def unban_chat_user():
     try:
         data = request.get_json() or {}
         target_nickname = data.get('nickname', '')
-        is_moderator = data.get('isModerator', False)
+        device_id = data.get('deviceId', '')
 
-        if not is_moderator:
+        # SERVER-SIDE moderator check - don't trust client isModerator flag!
+        if not is_chat_moderator(device_id):
+            log.warning(f"Unauthorized unban attempt from device: {device_id[:20] if device_id else 'unknown'}...")
             return jsonify({'error': 'Тільки модератори можуть розблоковувати'}), 403
 
         if not target_nickname:
@@ -30171,9 +30177,9 @@ def check_user_ban():
 def get_banned_users():
     """Get list of banned users (moderator only)."""
     try:
-        # Check moderator via query param (simple check)
-        is_mod = request.args.get('isModerator', 'false').lower() == 'true'
-        if not is_mod:
+        # SERVER-SIDE moderator check
+        device_id = request.args.get('deviceId', '')
+        if not is_chat_moderator(device_id):
             return jsonify({'error': 'Доступ заборонено'}), 403
 
         banned = load_banned_users()
