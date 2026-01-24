@@ -2260,14 +2260,11 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
                 apns=messaging.APNSConfig(
                     headers={
                         'apns-priority': '10',
-                        'apns-push-type': 'alert',
+                        'apns-push-type': 'background',
                         'apns-expiration': '0',
                     },
                     payload=messaging.APNSPayload(
                         aps=messaging.Aps(
-                            alert=messaging.ApsAlert(title=title, body=body),
-                            sound='default',
-                            badge=1,
                             content_available=True,
                             mutable_content=True,
                         ),
@@ -2304,14 +2301,11 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
                 apns=messaging.APNSConfig(
                     headers={
                         'apns-priority': '10',
-                        'apns-push-type': 'alert',
+                        'apns-push-type': 'background',
                         'apns-expiration': '0',
                     },
                     payload=messaging.APNSPayload(
                         aps=messaging.Aps(
-                            alert=messaging.ApsAlert(title=title, body=body),
-                            sound='default',
-                            badge=1,
                             content_available=True,
                             mutable_content=True,
                         ),
@@ -29617,14 +29611,13 @@ def send_fcm_notification(message_data: dict):
         log.info(f"Sending FCM to topic: {topic}")
 
         # Send via topic (reaches all subscribed devices at once)
+        # CRITICAL: Use DATA-ONLY message (no notification block) so Flutter can filter by region!
+        # If we include notification={}, Android shows it automatically bypassing Flutter filtering
         try:
             message = messaging.Message(
-                notification=messaging.Notification(
-                    title=title,
-                    body=body,
-                ),
                 data={
                     'type': 'all_clear' if is_all_clear else ('rocket' if is_critical else 'drone'),
+                    'title': title,  # Include title in data for Flutter to show
                     'location': location,  # FULL place with city AND region for filtering
                     'body': specific_location,  # City for TTS display
                     'threat_type': readable_threat_type if readable_threat_type else 'Повітряна тривога',
@@ -29637,24 +29630,19 @@ def send_fcm_notification(message_data: dict):
                 android=messaging.AndroidConfig(
                     priority='high' if not is_all_clear else 'normal',
                     ttl=timedelta(seconds=300),
-                    notification=messaging.AndroidNotification(
-                        channel_id='critical_alerts' if is_critical else ('normal_alerts' if not is_all_clear else 'all_clear_alerts'),
-                        priority='max' if is_critical else ('high' if not is_all_clear else 'default'),
-                    ),
+                    # NO notification block - Flutter handles showing notification after filtering
                 ),
                 apns=messaging.APNSConfig(
                     headers={
                         'apns-priority': '10',
-                        'apns-push-type': 'alert',
+                        'apns-push-type': 'background',  # background so Flutter can filter
                         'apns-expiration': '0',
                     },
                     payload=messaging.APNSPayload(
                         aps=messaging.Aps(
-                            alert=messaging.ApsAlert(title=title, body=body),
-                            sound='default',
-                            badge=1,
-                            content_available=True,
+                            content_available=True,  # Wake app to process
                             mutable_content=True,
+                            # NO alert - Flutter shows notification after filtering
                         ),
                     ),
                 ),
