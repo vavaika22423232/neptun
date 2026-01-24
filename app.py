@@ -2999,6 +2999,24 @@ def maybe_merge_track(all_data:list, new_track:dict):
     return False, new_track
 
 
+# ---------------- SQL/Stats stub functions ----------------
+def _seed_recent_from_sql():
+    """Seed recent visits from SQL - stub"""
+    pass
+
+def _active_sessions_from_db(ttl):
+    """Get active sessions from DB - stub, returns empty dict"""
+    return {}
+
+def sql_unique_counts():
+    """Get unique visitor counts from SQL - stub"""
+    return None, None
+
+def get_redirect_stats():
+    """Get redirect statistics - stub"""
+    return {}
+
+
 def load_hidden():
     if os.path.exists(HIDDEN_FILE):
         try:
@@ -3211,6 +3229,64 @@ def _save_opencage_cache():
             json.dump(cache_to_save, f, ensure_ascii=False, indent=2)
     except Exception as e:
         log.warning(f"Failed saving OpenCage cache: {e}")
+
+def geocode_opencage(query: str):
+    """
+    Geocode a place name using OpenCage API with caching.
+    Returns (lat, lng) tuple or None if not found.
+    """
+    if not OPENCAGE_API_KEY or not query:
+        return None
+    
+    query = query.strip()
+    if not query:
+        return None
+    
+    # Check cache first
+    cache = _load_opencage_cache()
+    cache_key = query.lower()
+    if cache_key in cache:
+        entry = cache[cache_key]
+        # Check TTL
+        if time.time() - entry.get('ts', 0) < OPENCAGE_TTL:
+            coords = entry.get('coords')
+            if coords:
+                return tuple(coords)
+            return None
+    
+    # Call OpenCage API
+    try:
+        url = 'https://api.opencagedata.com/geocode/v1/json'
+        params = {
+            'q': f"{query}, Ukraine",
+            'key': OPENCAGE_API_KEY,
+            'limit': 1,
+            'no_annotations': 1,
+            'countrycode': 'ua',
+            'language': 'uk'
+        }
+        resp = http_requests.get(url, params=params, timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            results = data.get('results', [])
+            if results:
+                geo = results[0].get('geometry', {})
+                lat = geo.get('lat')
+                lng = geo.get('lng')
+                if lat and lng:
+                    # Validate Ukraine bounds
+                    if 43.0 <= lat <= 53.8 and 20.0 <= lng <= 42.0:
+                        coords = (lat, lng)
+                        cache[cache_key] = {'coords': list(coords), 'ts': time.time()}
+                        _save_opencage_cache()
+                        return coords
+        # Cache negative result
+        cache[cache_key] = {'coords': None, 'ts': time.time()}
+        _save_opencage_cache()
+        return None
+    except Exception as e:
+        log.debug(f"OpenCage geocode error for '{query}': {e}")
+        return None
 
 def _load_neg_geocode_cache():
     global _neg_geocode_cache
@@ -18212,7 +18288,7 @@ def get_chat_messages():
     try:
         # HIGH-LOAD OPTIMIZATION: Cache chat messages for 3 seconds
         after = request.args.get('after', '')
-        limit = min(int(request.args.get('limit', 100)), 500)
+        limit = min(int(request.args.get('limit', 50)), 200)  # Default 50, max 200
         cache_key = f'chat_messages_{after}_{limit}'
 
         cached = RESPONSE_CACHE.get(cache_key)
