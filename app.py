@@ -6805,51 +6805,23 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 except Exception as e:
                     add_debug_log(f"GeoNames API error: {e}", "mapstransler")
 
-            # PRIORITY 4: Nominatim with looser search (just city name + Ukraine)
-            if not coords:
+            # PRIORITY 4: Use nominatim_geocoder module (with caching and rate limiting)
+            if not coords and NOMINATIM_AVAILABLE:
                 try:
-                    import requests
-
-                    nominatim_url = 'https://nominatim.openstreetmap.org/search'
-                    headers = {'User-Agent': 'NeptunAlarm/1.0'}
-
-                    city_norm_title = city_norm.title()
-                    # Looser search without strict oblast matching
-                    params = {
-                        'q': f"{city_norm_title}",
-                        'format': 'json',
-                        'limit': 20,
-                        'addressdetails': 1,
-                        'countrycodes': 'ua'
-                    }
-
-                    response = requests.get(nominatim_url, params=params, headers=headers, timeout=4)
-                    if response.ok:
-                        data = response.json()
-                        oblast_name = target_state.replace('область', '').strip().lower() if target_state else ''
-
-                        for item in data:
-                            item_type = item.get('type', '')
-                            display_name = item.get('display_name', '').lower()
-
-                            valid_types = ['village', 'town', 'city', 'hamlet', 'suburb', 'neighbourhood', 'residential', 'administrative']
-                            if item_type not in valid_types:
-                                continue
-
-                            # Looser oblast check - also accept if no oblast specified
-                            if oblast_name and oblast_name not in display_name:
-                                continue
-
-                            lat_val = safe_float(item.get('lat'))
-                            lon_val = safe_float(item.get('lon'))
-
-                            if lat_val and lon_val and validate_ukraine_coords(lat_val, lon_val):
-                                coords = (lat_val, lon_val)
-                                add_debug_log(f"Nominatim LOOSE: '{city_norm_title}' -> '{display_name[:50]}' ({lat_val}, {lon_val})", "mapstransler")
-                                break
-
+                    # Extract region name from target_state for better geocoding
+                    region_for_nominatim = None
+                    if target_state:
+                        region_for_nominatim = target_state.replace(' область', '').replace('область', '').strip()
+                    
+                    nominatim_coords = get_coordinates_nominatim(city_norm, region=region_for_nominatim)
+                    if nominatim_coords:
+                        coords = nominatim_coords
+                        _mapstransler_geocode_cache[cache_key] = coords
+                        print(f"[NOMINATIM] mapstransler: Geocoded '{city_norm}' (region={region_for_nominatim}) -> {coords}")
+                        add_debug_log(f"Nominatim geocoder: '{city_norm}' -> {coords}", "mapstransler")
                 except Exception as e:
-                    add_debug_log(f"Nominatim loose search error: {e}", "mapstransler")
+                    print(f"[NOMINATIM] mapstransler error for '{city_norm}': {e}")
+                    add_debug_log(f"Nominatim geocoder error: {e}", "mapstransler")
 
             # PRIORITY 5: OSM Overpass API for small villages (last resort)
             if not coords and target_state:
