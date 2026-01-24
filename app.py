@@ -11273,8 +11273,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                 # Cache with region to avoid conflicts
                                 cache_key = f"{base}_{region_hdr}" if region_hdr else base
                                 CITY_COORDS[cache_key] = coords
-                        except Exception:
-                            pass
+                                print(f"[NOMINATIM] Geocoded '{base}' (region={region_hdr}) -> {coords}")
+                        except Exception as e:
+                            print(f"[NOMINATIM] Error geocoding '{base}': {e}")
                     if coords:
                         lat, lng = coords
                         threat_type, icon = classify(text)
