@@ -156,6 +156,52 @@ def _save_negative_cache():
         pass
 
 
+# Bounding boxes for EASTERN/FRONTLINE oblasts (priority regions for war context)
+# Format: (lat_min, lat_max, lng_min, lng_max)
+PRIORITY_OBLAST_BOUNDS = {
+    'харківська': (48.5, 50.5, 34.5, 38.5),
+    'харківськ': (48.5, 50.5, 34.5, 38.5),
+    'донецька': (47.0, 49.5, 36.5, 39.5),
+    'донецьк': (47.0, 49.5, 36.5, 39.5),
+    'луганська': (48.0, 50.0, 37.5, 40.5),
+    'луганськ': (48.0, 50.0, 37.5, 40.5),
+    'запорізька': (46.5, 48.5, 34.0, 37.5),
+    'запорізьк': (46.5, 48.5, 34.0, 37.5),
+    'херсонська': (45.5, 47.5, 32.0, 35.5),
+    'херсонськ': (45.5, 47.5, 32.0, 35.5),
+    'дніпропетровська': (47.5, 49.5, 33.5, 36.5),
+    'дніпропетровськ': (47.5, 49.5, 33.5, 36.5),
+    'миколаївська': (46.0, 48.5, 30.5, 33.5),
+    'миколаївськ': (46.0, 48.5, 30.5, 33.5),
+    'одеська': (45.0, 48.5, 28.5, 33.5),
+    'одеськ': (45.0, 48.5, 28.5, 33.5),
+    'полтавська': (48.5, 50.5, 32.0, 35.5),
+    'полтавськ': (48.5, 50.5, 32.0, 35.5),
+    'сумська': (50.0, 52.5, 32.5, 35.5),
+    'сумськ': (50.0, 52.5, 32.5, 35.5),
+    'чернігівська': (50.5, 52.5, 30.5, 33.5),
+    'чернігівськ': (50.5, 52.5, 30.5, 33.5),
+    'київська': (49.0, 51.5, 29.0, 32.5),
+    'київськ': (49.0, 51.5, 29.0, 32.5),
+    'черкаська': (48.5, 50.0, 30.5, 33.0),
+    'черкаськ': (48.5, 50.0, 30.5, 33.0),
+    'кіровоградська': (47.5, 49.5, 30.5, 33.5),
+    'кіровоградськ': (47.5, 49.5, 30.5, 33.5),
+}
+
+
+def _coords_in_oblast(lat: float, lng: float, region: str) -> bool:
+    """Check if coordinates fall within oblast bounds"""
+    if not region:
+        return True
+    region_lower = region.lower().strip()
+    for oblast_key, bounds in PRIORITY_OBLAST_BOUNDS.items():
+        if oblast_key in region_lower:
+            lat_min, lat_max, lng_min, lng_max = bounds
+            return lat_min <= lat <= lat_max and lng_min <= lng <= lng_max
+    return True  # Unknown oblast - accept any coords
+
+
 def _call_api(city: str, region: str = None) -> tuple:
     """Make actual API call to OpenCage. Returns (lat, lon) or None."""
     _stats['api_calls'] += 1
@@ -203,7 +249,8 @@ def _call_api(city: str, region: str = None) -> tuple:
                 return _call_api(city, None)
             return None
         
-        # Filter results - prefer settlements in Ukraine
+        # Filter results - prefer settlements in Ukraine within the specified region
+        best_match = None
         for r in results:
             components = r.get('components', {})
             
@@ -211,24 +258,37 @@ def _call_api(city: str, region: str = None) -> tuple:
             if components.get('country_code', '').lower() != 'ua':
                 continue
             
+            geo = r.get('geometry', {})
+            lat = geo.get('lat')
+            lng = geo.get('lng')
+            if not lat or not lng:
+                continue
+            
+            # CRITICAL: If region specified, check coords fall within that region
+            # This prevents returning Золочів (Львівська) when Золочів (Харківська) is requested
+            if region and not _coords_in_oblast(lat, lng, region):
+                print(f"[OPENCAGE] Skipping ({lat:.2f}, {lng:.2f}) - outside {region}", flush=True)
+                continue
+            
             # Prefer specific place types
             comp_type = components.get('_type', '')
             if comp_type in ['city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood']:
-                geo = r.get('geometry', {})
-                lat = geo.get('lat')
-                lng = geo.get('lng')
-                if lat and lng:
-                    return (lat, lng)
+                print(f"[OPENCAGE] Found match in {region or 'any'}: ({lat:.4f}, {lng:.4f})", flush=True)
+                return (lat, lng)
+            
+            # Keep as fallback
+            if not best_match:
+                best_match = (lat, lng)
         
-        # Fallback to first UA result
-        for r in results:
-            components = r.get('components', {})
-            if components.get('country_code', '').lower() == 'ua':
-                geo = r.get('geometry', {})
-                lat = geo.get('lat')
-                lng = geo.get('lng')
-                if lat and lng:
-                    return (lat, lng)
+        # Return fallback if found
+        if best_match:
+            print(f"[OPENCAGE] Using fallback match: {best_match}", flush=True)
+            return best_match
+        
+        # No results in specified region - DON'T retry without region
+        # This is intentional: if user specifies Харківська обл., we should NOT return Львівський Золочів
+        if region:
+            print(f"[OPENCAGE] No results found in {region}", flush=True)
         
         return None
         

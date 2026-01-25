@@ -13102,6 +13102,11 @@ async def fetch_loop():
                     # Add other important messages to chat
                     add_telegram_message_to_chat(msg.text, is_realtime=True)
                     tracks = process_message(msg.text, msg.id, dt.strftime('%Y-%m-%d %H:%M:%S'), ch)
+                    
+                    # DEBUG: Log what process_message returned
+                    print(f"[FETCH_DEBUG] msg.id={msg.id}, tracks={len(tracks) if tracks else 0}, has_coords={bool(tracks and tracks[0].get('lat'))}", flush=True)
+                    if tracks:
+                        print(f"[FETCH_DEBUG] First track: place={tracks[0].get('place')}, lat={tracks[0].get('lat')}, lng={tracks[0].get('lng')}", flush=True)
 
                     # Send push notification for threat messages (КАБи, ракети, БПЛА)
                     msg_lower = msg.text.lower()
@@ -13122,9 +13127,8 @@ async def fetch_loop():
                         merged_any = False
                         appended = []
                         for t in tracks:
-                            if t.get('place'):
-                                t['place'] = ensure_ua_place(t['place'])
                             merged, ref = maybe_merge_track(all_data, t)
+                            print(f"[FETCH_DEBUG] Track {t.get('place')}: merged={merged}", flush=True)
                             if merged:
                                 merged_any = True
                             else:
@@ -13132,6 +13136,7 @@ async def fetch_loop():
                                 appended.append(t)
                         geo_added += 1
                         processed.add(msg.id)
+                        print(f"[FETCH_DEBUG] Result: merged_any={merged_any}, appended={len(appended)}, new_tracks_total={len(new_tracks)}", flush=True)
                         if merged_any and not appended:
                             log.info(f'Merged live track(s) {ch} #{msg.id} (no new marker).')
                         else:
@@ -14220,6 +14225,25 @@ def data():
                             continue
                         out.append(t)
                         reparsed_any = True
+                        
+                        # IMPORTANT: Atomically update this message in storage
+                        # This avoids race conditions with fetch thread
+                        updates = {
+                            'lat': lat_r,
+                            'lng': lng_r,
+                            'place': t.get('place'),
+                            'threat_type': t.get('threat_type'),
+                            'marker_icon': t.get('marker_icon'),
+                            'pending_geo': False  # Mark as resolved
+                        }
+                        try:
+                            if MESSAGE_STORE.update_message(str(msg_id), updates):
+                                print(f"[REPARSE] Atomically updated message {msg_id} with coords ({lat_r}, {lng_r})")
+                            else:
+                                print(f"[REPARSE] Message {msg_id} not found in store")
+                        except Exception as se:
+                            print(f"[REPARSE] Failed to update: {se}")
+                        
                     # Skip adding original as event if we produced tracks or list-only entries
                     if reparsed_any:
                         debug_counts['reparse_produced_tracks'] = debug_counts.get('reparse_produced_tracks', 0) + 1

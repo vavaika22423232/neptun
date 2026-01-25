@@ -45,6 +45,32 @@ class MessageStore:
             self._cache_mtime = self._current_mtime()
             return copy.deepcopy(working)
 
+    def update_message(self, msg_id: str, updates: dict) -> bool:
+        """Atomically update a single message by ID.
+        
+        Args:
+            msg_id: The message ID to update
+            updates: Dictionary of fields to update
+            
+        Returns:
+            True if message was found and updated, False otherwise
+        """
+        with self._lock:
+            data = self._ensure_cache()
+            # Find and update the message
+            found = False
+            for m in data:
+                if str(m.get('id')) == str(msg_id):
+                    m.update(updates)
+                    found = True
+                    break
+            if found:
+                self._write_atomic(data)
+                self._cache = data
+                self._cache_mtime = self._current_mtime()
+                log.debug(f"Updated message {msg_id} with {list(updates.keys())}")
+            return found
+
     # ----- Internal helpers -----
     def _ensure_cache(self) -> list[Message]:
         current_mtime = self._current_mtime()
