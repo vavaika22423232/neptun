@@ -6749,7 +6749,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     add_debug_log(f"UKRAINE_SETTLEMENTS_BY_OBLAST MISS: ({city_norm}, {oblast_key}) - need to add to database", "mapstransler")
 
             # PRIORITY 0.5: Check CITY_COORDS (legacy, smaller set but has special entries)
-            if not coords and cache_key not in _mapstransler_geocode_cache:
+            if not coords:
                 city_norm_lower = city_norm.lower()
                 if city_norm_lower in CITY_COORDS:
                     coords = CITY_COORDS[city_norm_lower]
@@ -6757,8 +6757,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     add_debug_log(f"CITY_COORDS HIT: {city_norm} -> ({coords[0]}, {coords[1]})", "mapstransler")
 
             # PRIORITY 1: Nominatim API (best for Ukrainian cities)
-            if not coords and target_state and cache_key not in _mapstransler_geocode_cache:
-                print(f"[NOMINATIM_P1] Starting inline Nominatim for '{city_norm}' in '{target_state}'")
+            if not coords and target_state:
+                print(f"[NOMINATIM_P1] Starting inline Nominatim for '{city_norm}' in '{target_state}'", flush=True)
                 try:
                     import requests
 
@@ -6914,9 +6914,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     add_debug_log(f"GeoNames API error: {e}", "mapstransler")
 
             # PRIORITY 4: Use nominatim_geocoder module (with caching and rate limiting)
-            print(f"[NOMINATIM_P4] coords={coords}, NOMINATIM_AVAILABLE={NOMINATIM_AVAILABLE}, city='{city_norm}'")
+            print(f"[NOMINATIM_P4] coords={coords}, NOMINATIM_AVAILABLE={NOMINATIM_AVAILABLE}, city='{city_norm}'", flush=True)
             if not coords and NOMINATIM_AVAILABLE:
-                print(f"[NOMINATIM_P4] Calling nominatim_geocoder for '{city_norm}'")
+                print(f"[NOMINATIM_P4] Calling nominatim_geocoder for '{city_norm}'", flush=True)
                 try:
                     # Extract region name from target_state for better geocoding
                     region_for_nominatim = None
@@ -7025,9 +7025,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             coords = nominatim_coords
                             cache_key = f"{norm}_{region_for_nominatim}" if region_for_nominatim else norm
                             CITY_COORDS[cache_key] = coords
-                            print(f"[NOMINATIM] emoji_threat: Geocoded '{norm}' (region={region_for_nominatim}) -> {coords}")
+                            print(f"[NOMINATIM] emoji_threat: Geocoded '{norm}' (region={region_for_nominatim}) -> {coords}", flush=True)
                     except Exception as e:
-                        print(f"[NOMINATIM] emoji_threat error for '{norm}': {e}")
+                        print(f"[NOMINATIM] emoji_threat error for '{norm}': {e}", flush=True)
                 if coords:
                     lat, lon = coords[:2]
                     threat_type, icon = classify(text)
@@ -7084,9 +7084,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             coords = nominatim_coords
                             cache_key = f"{norm}_{region_for_nominatim}" if region_for_nominatim else norm
                             CITY_COORDS[cache_key] = coords
-                            print(f"[NOMINATIM] general_emoji: Geocoded '{norm}' (region={region_for_nominatim}) -> {coords}")
+                            print(f"[NOMINATIM] general_emoji: Geocoded '{norm}' (region={region_for_nominatim}) -> {coords}", flush=True)
                     except Exception as e:
-                        print(f"[NOMINATIM] general_emoji error for '{norm}': {e}")
+                        print(f"[NOMINATIM] general_emoji error for '{norm}': {e}", flush=True)
                 
                 if coords:
                     lat, lon = coords[:2]
@@ -11384,9 +11384,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                                 # Cache with region to avoid conflicts
                                 cache_key = f"{base}_{region_hdr}" if region_hdr else base
                                 CITY_COORDS[cache_key] = coords
-                                print(f"[NOMINATIM] Geocoded '{base}' (region={region_hdr}) -> {coords}")
+                                print(f"[NOMINATIM] Geocoded '{base}' (region={region_hdr}) -> {coords}", flush=True)
                         except Exception as e:
-                            print(f"[NOMINATIM] Error geocoding '{base}': {e}")
+                            print(f"[NOMINATIM] Error geocoding '{base}': {e}", flush=True)
                     if coords:
                         lat, lng = coords
                         threat_type, icon = classify(text)
@@ -14244,6 +14244,20 @@ def data():
     print(f"[DEBUG] /data endpoint called with timeRange={request.args.get('timeRange')}, MONITOR_PERIOD_MINUTES={MONITOR_PERIOD_MINUTES}, using time_range={time_range}")
     messages = load_messages()
     print(f"[DEBUG] Loaded {len(messages)} total messages")
+    
+    # DEDUPLICATE messages by text+date to avoid showing same message multiple times
+    seen_keys = set()
+    unique_messages = []
+    for m in messages:
+        # Create key from text + date (messages with same text at same time are duplicates)
+        msg_key = f"{m.get('text', '')[:100]}|{m.get('date', '')}"
+        if msg_key not in seen_keys:
+            seen_keys.add(msg_key)
+            unique_messages.append(m)
+    if len(unique_messages) < len(messages):
+        print(f"[DEDUP] Removed {len(messages) - len(unique_messages)} duplicate messages")
+    messages = unique_messages
+    
     tz = pytz.timezone('Europe/Kyiv')
     now = datetime.now(tz).replace(tzinfo=None)
 
