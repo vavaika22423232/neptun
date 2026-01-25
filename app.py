@@ -1760,9 +1760,11 @@ _telegram_region_notified = {}
 
 def send_telegram_threat_notification(message_text: str, location: str, message_id: str):
     """Send FCM notification for threat messages from Telegram (КАБи, ракети, БПЛА etc.)."""
+    print(f"[TELEGRAM_PUSH] Called: location='{location}', msg_id={message_id}, firebase_init={firebase_initialized}", flush=True)
     log.info(f"📲 send_telegram_threat_notification called: location='{location}', msg_id={message_id}")
     
     if not firebase_initialized:
+        print("[TELEGRAM_PUSH] ❌ Firebase NOT initialized, skipping push", flush=True)
         log.warning("⚠️ Firebase not initialized, skipping push")
         return
 
@@ -1841,22 +1843,34 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
             city_match = re.match(r'^([^(]+)\s*\(', location)
             if city_match:
                 city_name = city_match.group(1).strip()
+                # Remove threat type prefixes from city name (БПЛА, ракети, каби, etc.)
+                threat_prefixes = ['бпла', 'ракет', 'каб', 'шахед', 'дрон', 'удар', 'вибух', 'балістик']
+                city_words = city_name.split()
+                filtered_words = [w for w in city_words if not any(p in w.lower() for p in threat_prefixes)]
+                city_name = ' '.join(filtered_words).strip()
             oblast_match = re.search(r'\(([^)]*обл[^)]*)\)', location)
             if oblast_match:
                 region_name = oblast_match.group(1).strip()
+                print(f"[TELEGRAM_PUSH] Extracted oblast from parens: '{region_name}'", flush=True)
                 # Normalize: "Харківська обл." -> "Харківська область"
                 region_name = re.sub(r'обл\.?$', 'область', region_name).strip()
+                print(f"[TELEGRAM_PUSH] Normalized region name: '{region_name}'", flush=True)
 
         # Try to find matching region in REGION_TOPIC_MAP if not exact match
+        print(f"[TELEGRAM_PUSH] Looking for '{region_name}' in REGION_TOPIC_MAP (has {len(REGION_TOPIC_MAP)} entries)", flush=True)
         if region_name not in REGION_TOPIC_MAP:
+            print(f"[TELEGRAM_PUSH] Exact match not found, trying partial match...", flush=True)
             # Try to find by partial match
             region_lower = region_name.lower()
             for topic_region in REGION_TOPIC_MAP.keys():
                 if topic_region.lower().replace(' область', '') in region_lower or \
                    region_lower.replace(' область', '') in topic_region.lower():
+                    print(f"[TELEGRAM_PUSH] Partial match: '{region_name}' -> '{topic_region}'", flush=True)
                     log.info(f"Matched region '{region_name}' to '{topic_region}'")
                     region_name = topic_region
                     break
+        else:
+            print(f"[TELEGRAM_PUSH] Exact match found for '{region_name}'", flush=True)
 
         title = f"{emoji} {region_name}"
 
@@ -1881,6 +1895,7 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
 
         # Get topic for this region (using global REGION_TOPIC_MAP)
         topic = REGION_TOPIC_MAP.get(region_name)
+        print(f"[TELEGRAM_PUSH] Topic lookup for '{region_name}': {topic}", flush=True)
 
         # Also try matching by city in parentheses -> extract oblast
         if not topic and '(' in location:
@@ -1889,15 +1904,18 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
             for oblast_name in REGION_TOPIC_MAP.keys():
                 if oblast_name.replace(' область', '').lower() in location.lower():
                     topic = REGION_TOPIC_MAP.get(oblast_name)
+                    print(f"[TELEGRAM_PUSH] Matched city '{city}' to oblast '{oblast_name}', topic: {topic}", flush=True)
                     log.info(f"Matched city {city} to oblast {oblast_name}")
                     break
 
         if not topic:
+            print(f"[TELEGRAM_PUSH] ⚠️ No topic found for '{region_name}', falling back to all_regions", flush=True)
             log.warning(f"⚠️ No topic mapping for region: {region_name}, location was: {location}")
             # Try to send to all_regions anyway so users with all_regions get it
             topic = 'all_regions'
             log.info(f"Fallback to all_regions topic for {region_name}")
 
+        print(f"[TELEGRAM_PUSH] Final topic: {topic}", flush=True)
         log.info(f"Sending telegram threat to topic: {topic}")
 
         # Map internal threat codes to human-readable Ukrainian for TTS
@@ -1912,6 +1930,10 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
         success_count = 0
         try:
             message = messaging.Message(
+                notification=messaging.Notification(
+                    title=title,
+                    body=body,
+                ),
                 data={
                     'type': 'telegram_threat',
                     'title': title,
@@ -1927,15 +1949,27 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
                 android=messaging.AndroidConfig(
                     priority='high',
                     ttl=timedelta(seconds=300),
+                    notification=messaging.AndroidNotification(
+                        title=title,
+                        body=body,
+                        icon='ic_notification',
+                        channel_id='critical_alerts',
+                        priority='max',
+                        default_vibrate_timings=True,
+                        default_sound=True,
+                    ),
                 ),
                 apns=messaging.APNSConfig(
                     headers={
                         'apns-priority': '10',
-                        'apns-push-type': 'background',
+                        'apns-push-type': 'alert',
                         'apns-expiration': '0',
                     },
                     payload=messaging.APNSPayload(
                         aps=messaging.Aps(
+                            alert=messaging.ApsAlert(title=title, body=body),
+                            sound='default',
+                            badge=1,
                             content_available=True,
                             mutable_content=True,
                         ),
@@ -1946,13 +1980,19 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
 
             response = messaging.send(message)
             success_count = 1
+            print(f"[TELEGRAM_PUSH] ✅ Sent to topic '{topic}': {response}", flush=True)
             log.info(f"✅ Telegram threat notification sent to topic {topic}: {response}")
         except Exception as e:
+            print(f"[TELEGRAM_PUSH] ❌ Failed to send to topic '{topic}': {e}", flush=True)
             log.error(f"Failed to send telegram threat to topic {topic}: {e}")
 
         # Also send to 'all_regions' topic for users who want all alerts
         try:
             message_all = messaging.Message(
+                notification=messaging.Notification(
+                    title=title,
+                    body=body,
+                ),
                 data={
                     'type': 'telegram_threat',
                     'title': title,
@@ -1968,15 +2008,27 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
                 android=messaging.AndroidConfig(
                     priority='high',
                     ttl=timedelta(seconds=300),
+                    notification=messaging.AndroidNotification(
+                        title=title,
+                        body=body,
+                        icon='ic_notification',
+                        channel_id='critical_alerts',
+                        priority='max',
+                        default_vibrate_timings=True,
+                        default_sound=True,
+                    ),
                 ),
                 apns=messaging.APNSConfig(
                     headers={
                         'apns-priority': '10',
-                        'apns-push-type': 'background',
+                        'apns-push-type': 'alert',
                         'apns-expiration': '0',
                     },
                     payload=messaging.APNSPayload(
                         aps=messaging.Aps(
+                            alert=messaging.ApsAlert(title=title, body=body),
+                            sound='default',
+                            badge=1,
                             content_available=True,
                             mutable_content=True,
                         ),
