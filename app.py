@@ -346,6 +346,55 @@ except ImportError as e:
         return {}
     print(f"WARNING: OpenCage geocoder not available: {e}", flush=True)
 
+
+# === LEGACY COMPATIBILITY: Proxy dicts that use OpenCage ===
+class _OpenCageProxy(dict):
+    """Dict-like object that proxies all lookups to OpenCage geocoder"""
+    def __getitem__(self, key):
+        coords = opencage_geocode(key)
+        if coords:
+            return coords
+        raise KeyError(key)
+    
+    def __contains__(self, key):
+        return opencage_geocode(key) is not None
+    
+    def get(self, key, default=None):
+        coords = opencage_geocode(key)
+        return coords if coords else default
+    
+    def keys(self):
+        return []  # Empty - we don't enumerate
+    
+    def items(self):
+        return []
+    
+    def values(self):
+        return []
+
+# These now proxy to OpenCage instead of being static dicts
+CITY_COORDS = _OpenCageProxy()
+SETTLEMENTS_INDEX = _OpenCageProxy()
+
+def ensure_city_coords(city_name, region=None):
+    """Legacy function - now uses OpenCage"""
+    if not city_name:
+        return None
+    return opencage_geocode(city_name, region)
+
+def ensure_city_coords_with_message_context(city_name, message_text=None):
+    """Legacy function - now uses OpenCage with region extraction"""
+    if not city_name:
+        return None
+    region = None
+    if message_text:
+        import re
+        oblast_match = re.search(r'([А-Яа-яЇїІіЄєҐґ]+)\s*(?:обл|область)', message_text, re.IGNORECASE)
+        if oblast_match:
+            region = oblast_match.group(1)
+    return opencage_geocode(city_name, region)
+
+
 # Groq AI integration for intelligent geocoding
 GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')
 GROQ_MODEL = 'llama-3.3-70b-versatile'
@@ -13590,7 +13639,7 @@ def locate_place():
             'accept-language': 'uk'
         }
         headers = {
-            'User-Agent': 'NeptunAlarmMap/1.0 (https://neptun-alarm.onrender.com)'
+            'User-Agent': 'NeptunAlarmMap/1.0 (https://neptun.in.ua)'
         }
 
         response = requests.get(nominatim_url, params=params, headers=headers, timeout=3)
@@ -13727,7 +13776,7 @@ def locate_place():
             'addressdetails': 1
         }
         headers = {
-            'User-Agent': 'NeptunAlarmMap/1.0 (https://neptun-alarm.onrender.com)'
+            'User-Agent': 'NeptunAlarmMap/1.0 (https://neptun.in.ua)'
         }
 
         response = requests.get(nominatim_url, params=params, headers=headers, timeout=4)

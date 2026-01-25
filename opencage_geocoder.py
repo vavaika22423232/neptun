@@ -1,223 +1,244 @@
 """
-OpenCage Geocoder with persistent cache
-- Checks cache first, only calls API if not found
-- Deduplicates requests in-flight
-- Saves to JSON file for persistence
+OpenCage Geocoder with MAXIMUM economy mode
+- Single API call per unique city
+- Persistent JSON cache
+- Negative cache for not-found cities
 """
 
 import json
 import os
-import threading
-import time
 import requests
 
 OPENCAGE_API_KEY = os.environ.get('OPENCAGE_API_KEY', 'c30fbe219d5d49ada3657da3326ca9b7')
 CACHE_FILE = os.path.join(os.path.dirname(__file__), 'geocode_cache.json')
+NEGATIVE_CACHE_FILE = os.path.join(os.path.dirname(__file__), 'geocode_cache_negative.json')
 
-# In-memory cache
-_cache = {}
-_cache_lock = threading.Lock()
+# Global caches
+_cache = {}  # city_key -> (lat, lon)
+_negative_cache = set()  # city_keys that were not found
 
-# Track in-flight requests to avoid duplicates
-_pending_requests = {}
-_pending_lock = threading.Lock()
+# Stats
+_stats = {'hits': 0, 'misses': 0, 'api_calls': 0}
 
-# Negative cache (cities not found)
-_negative_cache = set()
+
+def _normalize_key(city: str, region: str = None) -> str:
+    """Create normalized cache key from city and region"""
+    if not city:
+        return ""
+    
+    # Normalize city
+    city_norm = city.lower().strip()
+    city_norm = city_norm.replace('\u02bc', "'").replace('ʼ', "'").replace("'", "'").replace('`', "'")
+    city_norm = city_norm.replace('ё', 'е')  # normalize ё -> е
+    
+    # Normalize region - keep original form, just lowercase
+    if region:
+        region_norm = region.lower().strip()
+        # Only remove "область" and "обл" words, keep regional suffix like "ська"
+        region_norm = region_norm.replace(' область', '').replace(' обл.', '').replace(' обл', '')
+        region_norm = region_norm.strip()
+        if region_norm:
+            return f"{city_norm}|{region_norm}"
+    
+    return city_norm
+
 
 def _load_cache():
-    """Load cache from file on startup"""
+    """Load cache from disk"""
     global _cache, _negative_cache
+    
+    # Load positive cache
     try:
         if os.path.exists(CACHE_FILE):
             with open(CACHE_FILE, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                _cache = {k: tuple(v) if isinstance(v, list) else v for k, v in data.items()}
-                print(f"[OPENCAGE] Loaded {len(_cache)} entries from cache", flush=True)
+                # Handle both formats: {key: [lat, lon]} and {key: {coords: [lat, lon], ...}}
+                for k, v in data.items():
+                    if isinstance(v, dict) and 'coords' in v:
+                        # New format with metadata
+                        coords = v['coords']
+                        _cache[k] = tuple(coords) if isinstance(coords, list) else coords
+                    elif isinstance(v, list):
+                        # Simple format [lat, lon]
+                        _cache[k] = tuple(v)
+                    elif isinstance(v, tuple):
+                        _cache[k] = v
+                print(f"[OPENCAGE] Cache loaded: {len(_cache)} cities", flush=True)
     except Exception as e:
         print(f"[OPENCAGE] Error loading cache: {e}", flush=True)
         _cache = {}
     
     # Load negative cache
-    neg_file = CACHE_FILE.replace('.json', '_negative.json')
     try:
-        if os.path.exists(neg_file):
-            with open(neg_file, 'r', encoding='utf-8') as f:
+        if os.path.exists(NEGATIVE_CACHE_FILE):
+            with open(NEGATIVE_CACHE_FILE, 'r', encoding='utf-8') as f:
                 _negative_cache = set(json.load(f))
-                print(f"[OPENCAGE] Loaded {len(_negative_cache)} negative cache entries", flush=True)
+                print(f"[OPENCAGE] Negative cache loaded: {len(_negative_cache)} entries", flush=True)
     except:
         _negative_cache = set()
 
+
 def _save_cache():
-    """Save cache to file"""
+    """Save positive cache to disk"""
     try:
+        data = {k: list(v) if isinstance(v, tuple) else v for k, v in _cache.items()}
         with open(CACHE_FILE, 'w', encoding='utf-8') as f:
-            json.dump({k: list(v) if isinstance(v, tuple) else v for k, v in _cache.items()}, f, ensure_ascii=False, indent=2)
+            json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as e:
         print(f"[OPENCAGE] Error saving cache: {e}", flush=True)
 
+
 def _save_negative_cache():
-    """Save negative cache to file"""
-    neg_file = CACHE_FILE.replace('.json', '_negative.json')
+    """Save negative cache to disk"""
     try:
-        with open(neg_file, 'w', encoding='utf-8') as f:
+        with open(NEGATIVE_CACHE_FILE, 'w', encoding='utf-8') as f:
             json.dump(list(_negative_cache), f, ensure_ascii=False)
     except:
         pass
 
-def _normalize_key(city: str, region: str = None) -> str:
-    """Normalize cache key"""
-    city_norm = city.lower().strip()
-    # Normalize apostrophes
-    city_norm = city_norm.replace('\u02bc', "'").replace('ʼ', "'").replace("'", "'").replace('`', "'")
-    
-    if region:
-        region_norm = region.lower().strip()
-        region_norm = region_norm.replace('область', '').replace('обл.', '').replace('обл', '').strip()
-        return f"{city_norm}|{region_norm}"
-    return city_norm
 
-def geocode(city: str, region: str = None) -> tuple:
-    """
-    Geocode a city name, using cache first.
+def _call_api(city: str, region: str = None) -> tuple:
+    """Make actual API call to OpenCage. Returns (lat, lon) or None."""
+    _stats['api_calls'] += 1
     
-    Args:
-        city: City name (e.g., "Харків", "Богодухів")
-        region: Optional region/oblast (e.g., "Харківська", "Харківська область")
-    
-    Returns:
-        (lat, lon) tuple or None if not found
-    """
-    if not city or len(city) < 2:
-        return None
-    
-    cache_key = _normalize_key(city, region)
-    
-    # 1. Check memory cache
-    with _cache_lock:
-        if cache_key in _cache:
-            return _cache[cache_key]
-    
-    # 2. Check negative cache (previously not found)
-    if cache_key in _negative_cache:
-        return None
-    
-    # 3. Check if request already in-flight (deduplication)
-    with _pending_lock:
-        if cache_key in _pending_requests:
-            # Wait for the other request to complete
-            event = _pending_requests[cache_key]
-        else:
-            event = threading.Event()
-            _pending_requests[cache_key] = event
-    
-    # If we're waiting for another request
-    if event.is_set() or (cache_key in _pending_requests and _pending_requests[cache_key] != event):
-        event.wait(timeout=10)
-        with _cache_lock:
-            return _cache.get(cache_key)
-    
-    # 4. Call OpenCage API
-    try:
-        result = _call_opencage_api(city, region)
-        
-        with _cache_lock:
-            if result:
-                _cache[cache_key] = result
-                _save_cache()
-                print(f"[OPENCAGE] Geocoded '{city}' (region={region}) -> {result}", flush=True)
-            else:
-                _negative_cache.add(cache_key)
-                _save_negative_cache()
-                print(f"[OPENCAGE] Not found: '{city}' (region={region})", flush=True)
-        
-        return result
-        
-    except Exception as e:
-        print(f"[OPENCAGE] Error geocoding '{city}': {e}", flush=True)
-        return None
-    finally:
-        # Signal waiting threads
-        with _pending_lock:
-            if cache_key in _pending_requests:
-                _pending_requests[cache_key].set()
-                del _pending_requests[cache_key]
-
-def _call_opencage_api(city: str, region: str = None) -> tuple:
-    """Call OpenCage API"""
-    
-    # Build query
+    # Build query with region context
     if region:
         region_clean = region.replace('область', '').replace('обл.', '').replace('обл', '').strip()
         query = f"{city}, {region_clean} область, Україна"
     else:
         query = f"{city}, Україна"
     
-    url = "https://api.opencagedata.com/geocode/v1/json"
-    params = {
-        'q': query,
-        'key': OPENCAGE_API_KEY,
-        'countrycode': 'ua',
-        'limit': 3,
-        'no_annotations': 1,
-        'language': 'uk'
-    }
+    print(f"[OPENCAGE] API call #{_stats['api_calls']}: '{query}'", flush=True)
     
-    response = requests.get(url, params=params, timeout=5)
-    
-    if response.status_code == 402:
-        print("[OPENCAGE] API quota exceeded!", flush=True)
-        return None
-    
-    if not response.ok:
-        print(f"[OPENCAGE] API error: {response.status_code}", flush=True)
-        return None
-    
-    data = response.json()
-    results = data.get('results', [])
-    
-    if not results:
-        # Try without region
-        if region:
-            return _call_opencage_api(city, None)
-        return None
-    
-    # Filter results - prefer settlements
-    for r in results:
-        components = r.get('components', {})
-        comp_type = components.get('_type', '')
+    try:
+        url = "https://api.opencagedata.com/geocode/v1/json"
+        params = {
+            'q': query,
+            'key': OPENCAGE_API_KEY,
+            'countrycode': 'ua',
+            'limit': 3,
+            'no_annotations': 1,
+            'language': 'uk'
+        }
         
-        # Check if it's in Ukraine
-        if components.get('country_code', '').lower() != 'ua':
-            continue
+        response = requests.get(url, params=params, timeout=5)
         
-        # Prefer cities/villages/towns
-        if comp_type in ['city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood']:
-            geo = r.get('geometry', {})
-            lat = geo.get('lat')
-            lng = geo.get('lng')
-            if lat and lng:
-                return (lat, lng)
+        if response.status_code == 402:
+            print("[OPENCAGE] QUOTA EXCEEDED!", flush=True)
+            return None
+        
+        if not response.ok:
+            print(f"[OPENCAGE] API error: {response.status_code}", flush=True)
+            return None
+        
+        data = response.json()
+        results = data.get('results', [])
+        
+        if not results:
+            # Retry without region if we had one
+            if region:
+                print(f"[OPENCAGE] No results with region, retrying without...", flush=True)
+                return _call_api(city, None)
+            return None
+        
+        # Filter results - prefer settlements in Ukraine
+        for r in results:
+            components = r.get('components', {})
+            
+            # Must be in Ukraine
+            if components.get('country_code', '').lower() != 'ua':
+                continue
+            
+            # Prefer specific place types
+            comp_type = components.get('_type', '')
+            if comp_type in ['city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood']:
+                geo = r.get('geometry', {})
+                lat = geo.get('lat')
+                lng = geo.get('lng')
+                if lat and lng:
+                    return (lat, lng)
+        
+        # Fallback to first UA result
+        for r in results:
+            components = r.get('components', {})
+            if components.get('country_code', '').lower() == 'ua':
+                geo = r.get('geometry', {})
+                lat = geo.get('lat')
+                lng = geo.get('lng')
+                if lat and lng:
+                    return (lat, lng)
+        
+        return None
+        
+    except Exception as e:
+        print(f"[OPENCAGE] API exception: {e}", flush=True)
+        return None
+
+
+def geocode(city: str, region: str = None) -> tuple:
+    """
+    Geocode a city. Uses cache first, only calls API if needed.
     
-    # Fallback to first UA result
-    for r in results:
-        components = r.get('components', {})
-        if components.get('country_code', '').lower() == 'ua':
-            geo = r.get('geometry', {})
-            lat = geo.get('lat')
-            lng = geo.get('lng')
-            if lat and lng:
-                return (lat, lng)
+    Returns: (lat, lon) tuple or None
+    """
+    if not city or len(city) < 2:
+        return None
     
-    return None
+    cache_key = _normalize_key(city, region)
+    if not cache_key:
+        return None
+    
+    # === STEP 1: Check positive cache ===
+    if cache_key in _cache:
+        _stats['hits'] += 1
+        return _cache[cache_key]
+    
+    # === STEP 2: Check negative cache ===
+    if cache_key in _negative_cache:
+        _stats['hits'] += 1
+        return None
+    
+    # === STEP 3: Call API ===
+    _stats['misses'] += 1
+    result = _call_api(city, region)
+    
+    if result:
+        _cache[cache_key] = result
+        _save_cache()
+        print(f"[OPENCAGE] Cached: '{city}' -> {result}", flush=True)
+    else:
+        _negative_cache.add(cache_key)
+        _save_negative_cache()
+        print(f"[OPENCAGE] Not found (cached negative): '{city}'", flush=True)
+    
+    return result
+
 
 def get_cache_stats() -> dict:
-    """Get cache statistics"""
+    """Get geocoding statistics"""
     return {
         'cached': len(_cache),
-        'negative': len(_negative_cache),
-        'pending': len(_pending_requests)
+        'negative_cached': len(_negative_cache),
+        'hits': _stats['hits'],
+        'misses': _stats['misses'],
+        'api_calls': _stats['api_calls']
     }
+
+
+def preload_from_dict(coords_dict: dict):
+    """Preload cache from existing coordinates dictionary (e.g., CITY_COORDS)"""
+    count = 0
+    with _cache_lock:
+        for key, coords in coords_dict.items():
+            if coords and isinstance(coords, (tuple, list)) and len(coords) >= 2:
+                cache_key = _normalize_key(key)
+                if cache_key and cache_key not in _cache:
+                    _cache[cache_key] = (coords[0], coords[1])
+                    count += 1
+    if count:
+        _save_cache()
+        print(f"[OPENCAGE] Preloaded {count} entries from existing coords", flush=True)
+
 
 # Load cache on module import
 _load_cache()
