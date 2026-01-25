@@ -1760,7 +1760,10 @@ _telegram_region_notified = {}
 
 def send_telegram_threat_notification(message_text: str, location: str, message_id: str):
     """Send FCM notification for threat messages from Telegram (КАБи, ракети, БПЛА etc.)."""
+    log.info(f"📲 send_telegram_threat_notification called: location='{location}', msg_id={message_id}")
+    
     if not firebase_initialized:
+        log.warning("⚠️ Firebase not initialized, skipping push")
         return
 
     # Deduplicate - don't send same message within 5 minutes
@@ -1890,8 +1893,10 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
                     break
 
         if not topic:
-            log.info(f"No topic mapping for region: {region_name}")
-            return
+            log.warning(f"⚠️ No topic mapping for region: {region_name}, location was: {location}")
+            # Try to send to all_regions anyway so users with all_regions get it
+            topic = 'all_regions'
+            log.info(f"Fallback to all_regions topic for {region_name}")
 
         log.info(f"Sending telegram threat to topic: {topic}")
 
@@ -6192,6 +6197,21 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     }
                     add_debug_log(f'PRIORITY EARLY RETURN: {city_from_general} -> {coords} -> {icon}', "emoji_debug")
                     return [track]  # Early return - highest priority
+                else:
+                    # NO COORDS FOUND - create list_only entry for push notifications but no map marker
+                    threat_type, icon = classify(text, city_from_general)
+                    track = {
+                        'id': f"{mid}_priority_emoji_nocoords_{city_from_general.replace(' ','_')}",
+                        'place': city_from_general.title(),
+                        'threat_type': threat_type,
+                        'text': clean_text(text)[:500],
+                        'date': date_str,
+                        'channel': channel,
+                        'list_only': True,  # NO map marker - coords not found
+                        'source_match': 'priority_emoji_no_coords'
+                    }
+                    add_debug_log(f'PRIORITY NO COORDS: {city_from_general} -> list_only=True (push will be sent)', "emoji_debug")
+                    return [track]
     except Exception as e:
         add_debug_log(f"PRIORITY emoji processing error: {e}", "emoji_debug")
 
@@ -13041,10 +13061,25 @@ async def fetch_loop():
                             location = msg.text.split(')')[0] + ')'
                         elif tracks and tracks[0].get('place'):
                             location = tracks[0]['place']
+                        
+                        # DEBUG: Log location extraction
+                        print(f"[PUSH_DEBUG] msg_id={msg.id}, location='{location}', has_tracks={bool(tracks)}", flush=True)
 
                         if location:
                             # Pass FULL message text - function will extract threat part
                             send_telegram_threat_notification(msg.text, location, str(msg.id))
+                        else:
+                            # No location found - still try to send with raw text as fallback
+                            print(f"[PUSH_DEBUG] No location found, trying with first 50 chars of msg", flush=True)
+                            # Try to extract any region-like word from text
+                            import re
+                            oblast_match = re.search(r'([А-Яа-яІіЇїЄє]+(?:ська|ський)\s*обл)', msg.text, re.IGNORECASE)
+                            if oblast_match:
+                                location = oblast_match.group(1)
+                                print(f"[PUSH_DEBUG] Found oblast in text: '{location}'", flush=True)
+                                send_telegram_threat_notification(msg.text, location, str(msg.id))
+                            else:
+                                print(f"[PUSH_DEBUG] Could not extract location, skipping push for msg {msg.id}", flush=True)
 
                     if tracks:
                         merged_any = False
