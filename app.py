@@ -16087,6 +16087,26 @@ def test_pusk_icon():
     with open('/Users/vladimirmalik/Desktop/render2/test_pusk_icon.html', encoding='utf-8') as f:
         return f.read()
 
+@app.route('/clear_geocache')
+def clear_geocache():
+    """Clear all geocoding caches (in-memory and negative) to force re-geocoding"""
+    global _mapstransler_geocode_cache
+    
+    # Clear in-memory cache
+    old_count = len(_mapstransler_geocode_cache)
+    _mapstransler_geocode_cache = {}
+    
+    # Clear OpenCage negative cache
+    try:
+        import opencage_geocoder
+        neg_count = len(opencage_geocoder._negative_cache)
+        opencage_geocoder._negative_cache = set()
+        opencage_geocoder._save_negative_cache()
+    except Exception as e:
+        neg_count = 0
+    
+    return f"Cleared {old_count} in-memory entries and {neg_count} negative cache entries. Geocoding will now retry all cities."
+
 @app.route('/admin')
 def admin_panel():
     if not _require_secret(request):

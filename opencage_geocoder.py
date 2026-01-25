@@ -62,6 +62,8 @@ def _normalize_city_name(city: str) -> str:
         'велику димерку': 'Велика Димерка',
         'велику виску': 'Велика Виска',
         'стару салтівку': 'Стара Салтівка',
+        # Single-word accusative endings -у/-ю
+        'грушуваху': 'Грушуваха',
     }
     
     if city_lower in known_transforms:
