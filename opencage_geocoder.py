@@ -323,6 +323,9 @@ def geocode(city: str, region: str = None) -> tuple:
     """
     Geocode a city. Uses cache first, only calls API if needed.
     
+    IMPORTANT: When region is specified, we ONLY use cache with matching region key.
+    This prevents returning wrong city when same name exists in multiple oblasts.
+    
     Returns: (lat, lon) tuple or None
     """
     if not city or len(city) < 2:
@@ -337,6 +340,9 @@ def geocode(city: str, region: str = None) -> tuple:
         _stats['hits'] += 1
         return _cache[cache_key]
     
+    # === STEP 1.5: If region specified but not in cache, DON'T fall back to no-region key ===
+    # This prevents "Комишуваха|запорізька" from using cached "Комишуваха" (which may be Донецька)
+    
     # === STEP 2: Check negative cache ===
     if cache_key in _negative_cache:
         _stats['hits'] += 1
@@ -349,11 +355,11 @@ def geocode(city: str, region: str = None) -> tuple:
     if result:
         _cache[cache_key] = result
         _save_cache()
-        print(f"[OPENCAGE] Cached: '{city}' -> {result}", flush=True)
+        print(f"[OPENCAGE] Cached: '{cache_key}' -> {result}", flush=True)
     else:
         _negative_cache.add(cache_key)
         _save_negative_cache()
-        print(f"[OPENCAGE] Not found (cached negative): '{city}'", flush=True)
+        print(f"[OPENCAGE] Not found (cached negative): '{cache_key}'", flush=True)
     
     return result
 

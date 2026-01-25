@@ -376,10 +376,22 @@ class _OpenCageProxy(dict):
 CITY_COORDS = _OpenCageProxy()
 SETTLEMENTS_INDEX = _OpenCageProxy()
 
-def ensure_city_coords(city_name, region=None):
-    """Legacy function - now uses OpenCage"""
+def ensure_city_coords(city_name, region=None, context=None):
+    """Legacy function - now uses OpenCage.
+    
+    Args:
+        city_name: City name to geocode
+        region: Optional region name (e.g., "Харківська")
+        context: Optional message text to extract region from "(Область обл.)" format
+    """
     if not city_name:
         return None
+    # If no region but context provided, extract region from context
+    if not region and context:
+        import re
+        paren_match = re.search(r'\(([А-Яа-яЇїІіЄєҐґ]+(?:ська|ський|ка)?)\s*обл', context, re.IGNORECASE)
+        if paren_match:
+            region = paren_match.group(1)
     return opencage_geocode(city_name, region)
 
 def ensure_city_coords_with_message_context(city_name, message_text=None):
@@ -389,9 +401,16 @@ def ensure_city_coords_with_message_context(city_name, message_text=None):
     region = None
     if message_text:
         import re
-        oblast_match = re.search(r'([А-Яа-яЇїІіЄєҐґ]+)\s*(?:обл|область)', message_text, re.IGNORECASE)
-        if oblast_match:
-            region = oblast_match.group(1)
+        # PRIORITY: Extract region from parentheses format "Місто (Область обл.)"
+        paren_match = re.search(r'\(([А-Яа-яЇїІіЄєҐґ]+(?:ська|ська|ький|ка)?)\s*обл', message_text, re.IGNORECASE)
+        if paren_match:
+            region = paren_match.group(1)
+        else:
+            # Fallback: look for oblast anywhere in text
+            oblast_match = re.search(r'([А-Яа-яЇїІіЄєҐґ]+)\s*(?:обл|область)', message_text, re.IGNORECASE)
+            if oblast_match:
+                region = oblast_match.group(1)
+    print(f"[GEOCODE_CONTEXT] city='{city_name}', extracted_region='{region}'", flush=True)
     return opencage_geocode(city_name, region)
 
 
@@ -6988,7 +7007,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             coords = idx_map.get(norm)
                         approx_flag = False
                         if not coords:
-                            enriched = ensure_city_coords(norm)
+                            enriched = ensure_city_coords(norm, context=part)
                             if enriched:
                                 if isinstance(enriched, tuple) and len(enriched) == 3:
                                     coords = (enriched[0], enriched[1])
@@ -7328,7 +7347,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 idx = globals().get('SETTLEMENTS_INDEX') or {}
                 coords = idx.get(base)
             if not coords:
-                enriched = ensure_city_coords(base)
+                enriched = ensure_city_coords(base, context=text)
                 if enriched:
                     if isinstance(enriched, tuple) and len(enriched)==3:
                         coords = (enriched[0], enriched[1])
@@ -7437,7 +7456,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             if city_norm in UA_CITY_NORMALIZE:
                                 city_norm = UA_CITY_NORMALIZE[city_norm]
 
-                            coords = ensure_city_coords(city_norm)
+                            coords = ensure_city_coords(city_norm, context=text)
 
                             if coords and isinstance(coords, tuple) and len(coords) >= 2:
                                 lat, lng = coords[0], coords[1]
@@ -7498,7 +7517,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             if city_norm in UA_CITY_NORMALIZE:
                                 city_norm = UA_CITY_NORMALIZE[city_norm]
 
-                            coords = ensure_city_coords(city_norm)
+                            coords = ensure_city_coords(city_norm, context=text)
 
                             if coords and isinstance(coords, tuple) and len(coords) >= 2:
                                 lat, lng = coords[0], coords[1]
@@ -7532,7 +7551,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         if city_norm in UA_CITY_NORMALIZE:
                             city_norm = UA_CITY_NORMALIZE[city_norm]
 
-                        coords = ensure_city_coords(city_norm)
+                        coords = ensure_city_coords(city_norm, context=text)
 
                         if coords:
                             lat, lng = coords[:2]
@@ -7584,7 +7603,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
 
             if not coords:
                 # Legacy fallback for backwards compatibility
-                enriched = ensure_city_coords(base)
+                enriched = ensure_city_coords(base, context=text)
                 if enriched:
                     if isinstance(enriched, tuple) and len(enriched)==3:
                         coords = (enriched[0], enriched[1])
@@ -9313,7 +9332,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 coords = ensure_city_coords_with_message_context(base, context_message)
                 if not coords:
                     print(f"DEBUG: Context-based lookup failed, trying standard ensure_city_coords for '{base}'")
-                    coords = ensure_city_coords(base)
+                    coords = ensure_city_coords(base, context=text)
                 print(f"DEBUG: ensure_city_coords result: {coords}")
             if coords:
                 print(f"DEBUG: Found coords {coords} for city '{base}', creating track")
@@ -9796,7 +9815,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     # Try to get coordinates
                     coords = region_enhanced_coords(city_norm)
                     if not coords:
-                        coords = ensure_city_coords(city_norm)
+                        coords = ensure_city_coords(city_norm, context=text)
 
                     if coords:
                         # Handle different coordinate formats
@@ -10092,7 +10111,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             # Try to get coordinates
                             coords = region_enhanced_coords(city_norm)
                             if not coords:
-                                coords = ensure_city_coords(city_norm)
+                                coords = ensure_city_coords(city_norm, context=text)
 
                             if coords:
                                 lat, lng = coords
@@ -10159,7 +10178,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 # Try to get coordinates
                 coords = region_enhanced_coords(city_norm)
                 if not coords:
-                    coords = ensure_city_coords(city_norm)
+                    coords = ensure_city_coords(city_norm, context=text)
 
                 if coords:
                     lat, lng = coords[:2]
@@ -10205,7 +10224,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
 
             coords = region_enhanced_coords(city_norm)
             if not coords:
-                coords = ensure_city_coords(city_norm)
+                coords = ensure_city_coords(city_norm, context=text)
 
             if coords:
                 lat, lng = coords[:2]
@@ -12833,7 +12852,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     coords = region_enhanced_coords(norm_city)
                     if not coords:
                         log.debug(f'course_target_lookup miss city={norm_city} mid={mid} line={line.strip()[:120]!r} region_hint={region_hint_global}')
-                        coords = ensure_city_coords(norm_city)
+                        coords = ensure_city_coords(norm_city, context=text)
                         # Try context-based lookup if standard lookup fails
                         if not coords:
                             context_result = ensure_city_coords_with_message_context(norm_city, text)
