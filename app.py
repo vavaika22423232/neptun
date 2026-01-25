@@ -2544,6 +2544,19 @@ def add_system_chat_message(message_type, text, region=None, threat_type='ballis
         kyiv_tz = pytz.timezone('Europe/Kiev')
         now = datetime.now(kyiv_tz)
 
+        # Load existing messages
+        messages = load_chat_messages()
+        
+        # DEDUPE: Check if same message was added recently (last 5 minutes)
+        text_short = text[:80]  # Compare first 80 chars
+        five_min_ago = now.timestamp() - 300
+        for m in messages[-50:]:  # Check last 50 messages
+            if m.get('isSystem') and m.get('timestamp', 0) > five_min_ago:
+                existing_text = (m.get('message') or '')[:80]
+                if existing_text == text_short:
+                    # Same message recently - skip
+                    return
+        
         # Create system message
         system_message = {
             'id': f'system_{uuid.uuid4()}',
@@ -2559,8 +2572,6 @@ def add_system_chat_message(message_type, text, region=None, threat_type='ballis
             'region': region
         }
 
-        # Load, append, save
-        messages = load_chat_messages()
         messages.append(system_message)
         save_chat_messages(messages)
 
