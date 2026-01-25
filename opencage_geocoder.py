@@ -21,13 +21,70 @@ _negative_cache = set()  # city_keys that were not found
 _stats = {'hits': 0, 'misses': 0, 'api_calls': 0}
 
 
+def _normalize_city_name(city: str) -> str:
+    """Normalize Ukrainian city name from accusative to nominative case"""
+    city_norm = city.strip()
+    city_lower = city_norm.lower()
+    
+    # Specific known transformations (accusative -> nominative)
+    known_transforms = {
+        'хотімлю': 'Хотімля',
+        'балаклію': 'Балаклія',
+        'вовчанську': 'Вовчанськ',
+        'богодухову': 'Богодухів',
+        'мену': 'Мена',
+        'конотопу': 'Конотоп',
+        'шостку': 'Шостка',
+        'суму': 'Суми',
+        'харкову': 'Харків',
+        'києву': 'Київ',
+        'одесу': 'Одеса',
+        'полтаву': 'Полтава',
+        'дніпру': 'Дніпро',
+        'херсону': 'Херсон',
+        'запоріжжю': 'Запоріжжя',
+        'миколаєву': 'Миколаїв',
+        'чернігову': 'Чернігів',
+        'ізюму': 'Ізюм',
+        'куп\'янську': 'Куп\'янськ',
+        'павлограду': 'Павлоград',
+        'кременчуку': 'Кременчук',
+        'бахмуту': 'Бахмут',
+        'покровську': 'Покровськ',
+        'маріуполю': 'Маріуполь',
+        'мелітополю': 'Мелітополь',
+        'енергодару': 'Енергодар',
+        'лозову': 'Лозова',
+        'бровари': 'Бровари',
+        'славутичу': 'Славутич',
+        # Multi-word cities in accusative case
+        'гнилицю першу': 'Гнилиця Перша',
+        'велику димерку': 'Велика Димерка',
+        'велику виску': 'Велика Виска',
+        'стару салтівку': 'Стара Салтівка',
+    }
+    
+    if city_lower in known_transforms:
+        return known_transforms[city_lower]
+    
+    # General rules for accusative -> nominative
+    # -лю -> -ля (Хотімлю -> Хотімля)
+    if city_lower.endswith('лю') and len(city_lower) > 3:
+        return city_norm[:-1] + 'я'
+    
+    return city_norm
+
+
 def _normalize_key(city: str, region: str = None) -> str:
     """Create normalized cache key from city and region"""
     if not city:
         return ""
     
-    # Normalize city
-    city_norm = city.lower().strip()
+    # First normalize accusative case to nominative
+    city_normalized = _normalize_city_name(city)
+    
+    # Then lowercase and clean
+    city_norm = city_normalized.lower().strip()
     city_norm = city_norm.replace('\u02bc', "'").replace('ʼ', "'").replace("'", "'").replace('`', "'")
     city_norm = city_norm.replace('ё', 'е')  # normalize ё -> е
     
@@ -101,12 +158,15 @@ def _call_api(city: str, region: str = None) -> tuple:
     """Make actual API call to OpenCage. Returns (lat, lon) or None."""
     _stats['api_calls'] += 1
     
+    # Normalize city name (accusative -> nominative)
+    city_normalized = _normalize_city_name(city)
+    
     # Build query with region context
     if region:
         region_clean = region.replace('область', '').replace('обл.', '').replace('обл', '').strip()
-        query = f"{city}, {region_clean} область, Україна"
+        query = f"{city_normalized}, {region_clean} область, Україна"
     else:
-        query = f"{city}, Україна"
+        query = f"{city_normalized}, Україна"
     
     print(f"[OPENCAGE] API call #{_stats['api_calls']}: '{query}'", flush=True)
     
@@ -228,13 +288,12 @@ def get_cache_stats() -> dict:
 def preload_from_dict(coords_dict: dict):
     """Preload cache from existing coordinates dictionary (e.g., CITY_COORDS)"""
     count = 0
-    with _cache_lock:
-        for key, coords in coords_dict.items():
-            if coords and isinstance(coords, (tuple, list)) and len(coords) >= 2:
-                cache_key = _normalize_key(key)
-                if cache_key and cache_key not in _cache:
-                    _cache[cache_key] = (coords[0], coords[1])
-                    count += 1
+    for key, coords in coords_dict.items():
+        if coords and isinstance(coords, (tuple, list)) and len(coords) >= 2:
+            cache_key = _normalize_key(key)
+            if cache_key and cache_key not in _cache:
+                _cache[cache_key] = (coords[0], coords[1])
+                count += 1
     if count:
         _save_cache()
         print(f"[OPENCAGE] Preloaded {count} entries from existing coords", flush=True)
