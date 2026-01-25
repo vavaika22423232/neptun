@@ -16145,6 +16145,22 @@ def clear_geocache():
     
     return f"Cleared {old_count} in-memory entries and {neg_count} negative cache entries. Geocoding will now retry all cities."
 
+@app.route('/view_geocache')
+def view_geocache():
+    """View current geocoding cache contents"""
+    try:
+        import opencage_geocoder
+        cache_data = dict(opencage_geocoder._cache)
+        neg_cache = list(opencage_geocoder._negative_cache)
+        stats = opencage_geocoder.get_cache_stats()
+        return jsonify({
+            'positive_cache': {k: list(v) if isinstance(v, tuple) else v for k, v in cache_data.items()},
+            'negative_cache': neg_cache,
+            'stats': stats
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
 @app.route('/admin')
 def admin_panel():
     if not _require_secret(request):
