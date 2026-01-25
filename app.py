@@ -348,9 +348,12 @@ except ImportError as e:
 
 
 # === LEGACY COMPATIBILITY: Proxy dicts that use OpenCage ===
+# WARNING: These proxies DON'T have region context - should be replaced with ensure_city_coords_with_message_context
 class _OpenCageProxy(dict):
-    """Dict-like object that proxies all lookups to OpenCage geocoder"""
+    """Dict-like object that proxies all lookups to OpenCage geocoder.
+    WARNING: No region context - use ensure_city_coords_with_message_context instead!"""
     def __getitem__(self, key):
+        print(f"[WARNING] CITY_COORDS['{key}'] called WITHOUT region context - may return wrong city!", flush=True)
         coords = opencage_geocode(key)
         if coords:
             return coords
@@ -360,6 +363,10 @@ class _OpenCageProxy(dict):
         return opencage_geocode(key) is not None
     
     def get(self, key, default=None):
+        # Don't spam warnings for known major cities that are unambiguous
+        known_major = {'харків', 'київ', 'одеса', 'дніпро', 'львів', 'миколаїв', 'запоріжжя', 'херсон', 'суми', 'полтава', 'чернігів'}
+        if key and key.lower() not in known_major:
+            print(f"[WARNING] CITY_COORDS.get('{key}') called WITHOUT region context - may return wrong city!", flush=True)
         coords = opencage_geocode(key)
         return coords if coords else default
     
@@ -3797,42 +3804,11 @@ def _get_region_center(region_name):
 
     return None
 
-def _get_city_coords(city_name):
-    """Get coordinates for a city"""
-    city_lower = city_name.lower().strip()
-    # Remove prefixes like "м.", "н.п.", "с."
-    city_lower = re.sub(r'^(м\.|м\s|н\.п\.|н\.п\s|с\.|с\s|сел\.|смт\.?|смт\s)', '', city_lower).strip()
-
-    # Check in CITY_COORDS
-    if city_lower in CITY_COORDS:
-        return CITY_COORDS[city_lower]
-
-    # Try variations without endings
-    endings = ['а', 'у', 'ом', 'і', 'ів', 'ами', 'е', 'ої', 'ою', 'и']
-    for ending in endings:
-        if city_lower.endswith(ending) and len(city_lower) > len(ending) + 2:
-            base = city_lower[:-len(ending)]
-            if base in CITY_COORDS:
-                return CITY_COORDS[base]
-            # Handle vowel alternations: одеси → одес → одеса
-            if ending == 'и':
-                base_a = base + 'а'  # одеси → одеса
-                if base_a in CITY_COORDS:
-                    return CITY_COORDS[base_a]
-
-    # Handle Ukrainian vowel alternation in genitive: миколаєва → миколаїв
-    # Pattern: base + 'єва' (genitive) → base + 'їв' (nominative)
-    if city_lower.endswith('єва'):
-        base = city_lower[:-3] + 'їв'  # миколаєва → миколаїв
-        if base in CITY_COORDS:
-            return CITY_COORDS[base]
-
-    # Also try simple base search for partial matches
-    for key, coords in CITY_COORDS.items():
-        if city_lower.startswith(key) or key.startswith(city_lower.rstrip('аеоуіїю')):
-            return coords
-
-    return None
+def _get_city_coords(city_name, context=None):
+    """Get coordinates for a city - uses ONLY OpenCage API"""
+    if not city_name:
+        return None
+    return ensure_city_coords_with_message_context(city_name, context)
 
 def _offset_coords(lat, lng, direction_vector):
     """Apply direction offset to coordinates"""
@@ -5336,37 +5312,15 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             if city_norm in UA_CITY_NORMALIZE:
                 city_norm = UA_CITY_NORMALIZE[city_norm]
 
-            # PRIORITY 0: Check UKRAINE_ALL_SETTLEMENTS first (26000+ entries, fastest)
-            if city_norm in UKRAINE_ALL_SETTLEMENTS:
-                coords = UKRAINE_ALL_SETTLEMENTS[city_norm]
-                add_debug_log(f"UKRAINE_ALL_SETTLEMENTS HIT: '{city_norm}' -> {coords}", "multi_regional")
-                return coords
-
-            # Also try original city name (without normalization)
-            city_orig = city_name.strip().lower()
-            if city_orig in UKRAINE_ALL_SETTLEMENTS:
-                coords = UKRAINE_ALL_SETTLEMENTS[city_orig]
-                add_debug_log(f"UKRAINE_ALL_SETTLEMENTS HIT (orig): '{city_orig}' -> {coords}", "multi_regional")
-                return coords
-
-            # PRIORITY 1: Check CITY_COORDS (legacy, smaller set)
-            if city_norm in CITY_COORDS:
-                coords = CITY_COORDS[city_norm]
-                add_debug_log(f"CITY_COORDS HIT: '{city_norm}' -> {coords}", "multi_regional")
-                return coords
-
-            # CRITICAL FIX: If region_hint is provided, build a context string with it
-            # This ensures the city is geocoded in the correct oblast
+            # ONLY OpenCage API - no local dictionaries!
+            # Build context with region if available
             if region_hint:
-                context_text = f"{region_hint}: БпЛА курсом на {city_norm}"
-                add_debug_log(f"Using region context: '{region_hint}' for city '{city_norm}'", "multi_regional")
+                context_text = f"({region_hint} обл.) {city_norm}"
             else:
                 context_text = text
-
-            # FALLBACK: Use API geocoding with proper regional context
+            
             coords = ensure_city_coords_with_message_context(city_norm, context_text)
-
-            add_debug_log(f"API lookup: '{city_name}' -> '{city_norm}' (region={region_hint}) -> {coords}", "multi_regional")
+            add_debug_log(f"OpenCage lookup: '{city_name}' -> '{city_norm}' (region={region_hint}) -> {coords}", "multi_regional")
             return coords
 
         # Map regional header patterns to oblast names for API
@@ -6194,46 +6148,16 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 base = re.sub(r'\s+',' ', base)
                 norm = UA_CITY_NORMALIZE.get(base, base)
 
-                # First try to find city+oblast specific coordinates
+                # Extract region name from oblast string for OpenCage
                 oblast_key = oblast_from_general.lower()
-                coords = None
+                region_for_geocode = oblast_key.replace(' обл.', '').replace(' обл', '').replace('область', '').strip()
+                
+                # ONLY OpenCage API - no local dictionaries!
+                # Build context with explicit oblast
+                context_text = f"{city_from_general} ({oblast_from_general})"
+                coords = ensure_city_coords_with_message_context(norm, context_text)
+                add_debug_log(f"PRIORITY: OpenCage lookup: city={repr(norm)}, region={repr(region_for_geocode)}, coords={coords}", "emoji_debug")
 
-                # Try different lookup strategies for city+oblast disambiguation
-                if 'сум' in oblast_key and norm == 'миколаївка':
-                    coords = (51.5667, 34.1333)  # Миколаївка, Сумська область
-                    add_debug_log(f"PRIORITY: Using specific coordinates for Миколаївка (Сумська обл.): {coords}", "emoji_debug")
-                elif 'миколаївськ' in oblast_key and norm == 'миколаївка':
-                    coords = (47.0667, 31.8333)  # Миколаївка, Миколаївська область
-                    add_debug_log(f"PRIORITY: Using specific coordinates for Миколаївка (Миколаївська обл.): {coords}", "emoji_debug")
-                # Handle districts by mapping to their administrative centers
-                elif 'район' in norm:
-                    if 'синельниківський район' in norm:
-                        coords = CITY_COORDS.get('синельникове')  # Синельникове - центр району
-                        add_debug_log(f"PRIORITY: Mapping Синельниківський район -> Синельникове: {coords}", "emoji_debug")
-                    elif 'миколаївський район' in norm and 'миколаївськ' in oblast_key:
-                        coords = CITY_COORDS.get('миколаїв')  # Миколаїв - центр району
-                        add_debug_log(f"PRIORITY: Mapping Миколаївський район -> Миколаїв: {coords}", "emoji_debug")
-                    # For other districts, try to find coordinates in DISTRICT_CENTERS first
-                    else:
-                        # Extract district name without 'район' suffix
-                        district_name = norm.replace('район', '').strip()
-                        district_coords = DISTRICT_CENTERS.get(district_name)
-                        if district_coords:
-                            coords = district_coords
-                            add_debug_log(f"PRIORITY: Found district coordinates for '{district_name}': {coords}", "emoji_debug")
-                        else:
-                            coords = CITY_COORDS.get(district_name)
-                            if coords:
-                                add_debug_log(f"PRIORITY: District fallback to city center '{district_name}': {coords}", "emoji_debug")
-
-                if not coords:
-                    # Fallback to general lookup
-                    coords = CITY_COORDS.get(norm)
-                    add_debug_log(f"PRIORITY: General lookup: base={repr(base)}, norm={repr(norm)}, coords={coords}", "emoji_debug")
-
-                if not coords and 'SETTLEMENTS_INDEX' in globals():
-                    idx_map = globals().get('SETTLEMENTS_INDEX') or {}
-                    coords = idx_map.get(norm)
                 if coords:
                     lat, lon = coords[:2]
 
@@ -6808,40 +6732,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 else:
                     add_debug_log(f"Cache HIT (negative): {city_norm} not found previously", "mapstransler")
 
-            # PRIORITY 0: Check UKRAINE_SETTLEMENTS_BY_OBLAST first (oblast-aware, BEST for disambiguation)
-            if not coords and cache_key not in _mapstransler_geocode_cache:
-                city_norm_lower = city_norm.lower()
-                # Extract oblast key from target_state (e.g., "Миколаївська область" -> "миколаївська")
-                oblast_key = None
-                if target_state:
-                    oblast_key = target_state.lower().replace(' область', '').replace('область', '').strip()
-
-                # Try oblast-aware lookup first
-                if oblast_key and (city_norm_lower, oblast_key) in UKRAINE_SETTLEMENTS_BY_OBLAST:
-                    coords = UKRAINE_SETTLEMENTS_BY_OBLAST[(city_norm_lower, oblast_key)]
-                    _mapstransler_geocode_cache[cache_key] = coords
-                    add_debug_log(f"UKRAINE_SETTLEMENTS_BY_OBLAST HIT: ({city_norm}, {oblast_key}) -> ({coords[0]}, {coords[1]})", "mapstransler")
-                # IMPORTANT: If oblast is EXPLICITLY specified in message, do NOT fallback to UKRAINE_ALL_SETTLEMENTS
-                # because it may return coordinates for a different oblast (e.g., Журавлівка exists in Vinnytsia AND Kharkiv)
-                # Only use UKRAINE_ALL_SETTLEMENTS when NO oblast is specified
-                elif not oblast_key and city_norm_lower in UKRAINE_ALL_SETTLEMENTS:
-                    coords = UKRAINE_ALL_SETTLEMENTS[city_norm_lower]
-                    _mapstransler_geocode_cache[cache_key] = coords
-                    add_debug_log(f"UKRAINE_ALL_SETTLEMENTS HIT (no oblast specified): {city_norm} -> ({coords[0]}, {coords[1]})", "mapstransler")
-                elif oblast_key:
-                    # Oblast specified but not found in BY_OBLAST - log this for future database update
-                    add_debug_log(f"UKRAINE_SETTLEMENTS_BY_OBLAST MISS: ({city_norm}, {oblast_key}) - need to add to database", "mapstransler")
-
-            # PRIORITY 0.5: Check CITY_COORDS (legacy, smaller set but has special entries)
-            if not coords:
-                city_norm_lower = city_norm.lower()
-                if city_norm_lower in CITY_COORDS:
-                    coords = CITY_COORDS[city_norm_lower]
-                    _mapstransler_geocode_cache[cache_key] = coords
-                    add_debug_log(f"CITY_COORDS HIT: {city_norm} -> ({coords[0]}, {coords[1]})", "mapstransler")
-
-            # PRIORITY 1: OpenCage API (with cache - only calls API if not in cache)
-            if not coords and GEOCODER_AVAILABLE:
+            # ONLY OpenCage API - no local dictionaries!
+            if not coords and cache_key not in _mapstransler_geocode_cache and GEOCODER_AVAILABLE:
                 try:
                     region_for_geocode = None
                     if target_state:
@@ -6897,12 +6789,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 base = city_from_emoji.lower().replace('\u02bc',"'").replace('ʼ',"'").replace("'","'").replace('`',"'")
                 base = re.sub(r'\s+',' ', base)
                 norm = UA_CITY_NORMALIZE.get(base, base)
-                coords = CITY_COORDS.get(norm)
-                if not coords and 'SETTLEMENTS_INDEX' in globals():
-                    idx_map = globals().get('SETTLEMENTS_INDEX') or {}
-                    coords = idx_map.get(norm)
-                # Try OpenCage API if still no coords
-                if not coords and GEOCODER_AVAILABLE:
+                
+                # ONLY OpenCage API
+                coords = None
+                if GEOCODER_AVAILABLE:
                     oblast_match = re.search(r'\(([А-Яа-яЇїІіЄєҐґ\-]+)\s*обл', head, re.IGNORECASE)
                     region_for_geocode = oblast_match.group(1) if oblast_match else None
                     try:
