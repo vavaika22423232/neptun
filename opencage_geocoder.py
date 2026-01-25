@@ -251,16 +251,11 @@ def _call_api(city: str, region: str = None) -> tuple:
         results = data.get('results', [])
         
         if not results:
-            # Retry without region if we had one
-            if region:
-                print(f"[OPENCAGE] No results with region, retrying without...", flush=True)
-                return _call_api(city, None)
+            print(f"[OPENCAGE] No results for '{city}' in {region or 'any region'}", flush=True)
             return None
         
-        # Filter results - prefer settlements in Ukraine within the specified region
-        # PRIORITY: When no region specified, prefer EASTERN locations (higher longitude)
+        # Simple logic: return first result that matches the specified region
         best_match = None
-        best_lng = -999  # Track easternmost match
         
         for r in results:
             components = r.get('components', {})
@@ -275,42 +270,18 @@ def _call_api(city: str, region: str = None) -> tuple:
             if not lat or not lng:
                 continue
             
-            # CRITICAL: If region specified, check coords fall within that region
-            # This prevents returning Золочів (Львівська) when Золочів (Харківська) is requested
+            # If region specified, STRICTLY check coords fall within that region
             if region and not _coords_in_oblast(lat, lng, region):
                 print(f"[OPENCAGE] Skipping ({lat:.2f}, {lng:.2f}) - outside {region}", flush=True)
                 continue
             
-            # Prefer specific place types
-            comp_type = components.get('_type', '')
-            is_settlement = comp_type in ['city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood']
-            
-            # If region is specified and we found a settlement - return immediately
-            if region and is_settlement:
-                print(f"[OPENCAGE] Found match in {region}: ({lat:.4f}, {lng:.4f})", flush=True)
-                return (lat, lng)
-            
-            # If NO region specified - prefer EASTERNMOST location (higher longitude = more east)
-            # This is because eastern Ukraine is closer to front lines
-            if not region:
-                if is_settlement and lng > best_lng:
-                    best_lng = lng
-                    best_match = (lat, lng)
-                    print(f"[OPENCAGE] East-priority: candidate ({lat:.4f}, {lng:.4f}) lng={lng:.2f}", flush=True)
-                elif not best_match and lng > best_lng:
-                    # Fallback for non-settlement types
-                    best_lng = lng
-                    best_match = (lat, lng)
+            # Found a match in the correct region (or any region if not specified)
+            print(f"[OPENCAGE] Found match: ({lat:.4f}, {lng:.4f}) in {region or 'Ukraine'}", flush=True)
+            return (lat, lng)
         
-        # Return best easternmost match if found
-        if best_match:
-            print(f"[OPENCAGE] Using easternmost match: {best_match} (lng={best_lng:.2f})", flush=True)
-            return best_match
-        
-        # No results in specified region - DON'T retry without region
-        # This is intentional: if user specifies Харківська обл., we should NOT return Львівський Золочів
+        # No results in specified region
         if region:
-            print(f"[OPENCAGE] No results found in {region}", flush=True)
+            print(f"[OPENCAGE] No results found in {region} for '{city}'", flush=True)
         
         return None
         
