@@ -16146,23 +16146,30 @@ def test_pusk_icon():
 
 @app.route('/clear_geocache')
 def clear_geocache():
-    """Clear all geocoding caches (in-memory and negative) to force re-geocoding"""
+    """Clear all geocoding caches (in-memory, file, and negative) to force re-geocoding"""
     global _mapstransler_geocode_cache
     
     # Clear in-memory cache
     old_count = len(_mapstransler_geocode_cache)
     _mapstransler_geocode_cache = {}
     
-    # Clear OpenCage negative cache
+    # Clear OpenCage caches (both in-memory and file)
     try:
         import opencage_geocoder
+        pos_count = len(opencage_geocoder._cache)
         neg_count = len(opencage_geocoder._negative_cache)
+        
+        # Clear in-memory
+        opencage_geocoder._cache = {}
         opencage_geocoder._negative_cache = set()
+        
+        # Clear files
+        opencage_geocoder._save_cache()
         opencage_geocoder._save_negative_cache()
+        
+        return f"Cleared {old_count} mapstransler + {pos_count} positive + {neg_count} negative cache entries. All cities will be re-geocoded."
     except Exception as e:
-        neg_count = 0
-    
-    return f"Cleared {old_count} in-memory entries and {neg_count} negative cache entries. Geocoding will now retry all cities."
+        return f"Cleared {old_count} mapstransler entries. OpenCage error: {e}"
 
 @app.route('/view_geocache')
 def view_geocache():
