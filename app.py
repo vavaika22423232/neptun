@@ -834,6 +834,9 @@ ALWAYS_STORE_RAW = os.getenv('ALWAYS_STORE_RAW', '1') not in ('0','false','False
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 log = logging.getLogger(__name__)
 
+# Suppress noisy HTTP request logs from werkzeug/gunicorn
+logging.getLogger('werkzeug').setLevel(logging.WARNING)
+
 app = Flask(__name__)
 
 # ============= CLOUDFLARE CDN SUPPORT =============

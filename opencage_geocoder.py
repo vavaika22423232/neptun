@@ -10,8 +10,16 @@ import os
 import requests
 
 OPENCAGE_API_KEY = os.environ.get('OPENCAGE_API_KEY', 'c30fbe219d5d49ada3657da3326ca9b7')
-CACHE_FILE = os.path.join(os.path.dirname(__file__), 'geocode_cache.json')
-NEGATIVE_CACHE_FILE = os.path.join(os.path.dirname(__file__), 'geocode_cache_negative.json')
+
+# Use /data for persistent storage on Render, fallback to local dir
+def _get_cache_path(filename):
+    persistent_dir = os.environ.get('PERSISTENT_DATA_DIR', '/data')
+    if os.path.isdir(persistent_dir):
+        return os.path.join(persistent_dir, filename)
+    return os.path.join(os.path.dirname(__file__), filename)
+
+CACHE_FILE = _get_cache_path('geocode_cache.json')
+NEGATIVE_CACHE_FILE = _get_cache_path('geocode_cache_negative.json')
 
 # Global caches
 _cache = {}  # city_key -> (lat, lon)
@@ -224,7 +232,7 @@ def _call_api(city: str, region: str = None) -> tuple:
             'q': query,
             'key': OPENCAGE_API_KEY,
             'countrycode': 'ua',
-            'limit': 3,
+            'limit': 5,  # Get more results to choose easternmost
             'no_annotations': 1,
             'language': 'uk'
         }
@@ -250,7 +258,10 @@ def _call_api(city: str, region: str = None) -> tuple:
             return None
         
         # Filter results - prefer settlements in Ukraine within the specified region
+        # PRIORITY: When no region specified, prefer EASTERN locations (higher longitude)
         best_match = None
+        best_lng = -999  # Track easternmost match
+        
         for r in results:
             components = r.get('components', {})
             
@@ -272,17 +283,28 @@ def _call_api(city: str, region: str = None) -> tuple:
             
             # Prefer specific place types
             comp_type = components.get('_type', '')
-            if comp_type in ['city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood']:
-                print(f"[OPENCAGE] Found match in {region or 'any'}: ({lat:.4f}, {lng:.4f})", flush=True)
+            is_settlement = comp_type in ['city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood']
+            
+            # If region is specified and we found a settlement - return immediately
+            if region and is_settlement:
+                print(f"[OPENCAGE] Found match in {region}: ({lat:.4f}, {lng:.4f})", flush=True)
                 return (lat, lng)
             
-            # Keep as fallback
-            if not best_match:
-                best_match = (lat, lng)
+            # If NO region specified - prefer EASTERNMOST location (higher longitude = more east)
+            # This is because eastern Ukraine is closer to front lines
+            if not region:
+                if is_settlement and lng > best_lng:
+                    best_lng = lng
+                    best_match = (lat, lng)
+                    print(f"[OPENCAGE] East-priority: candidate ({lat:.4f}, {lng:.4f}) lng={lng:.2f}", flush=True)
+                elif not best_match and lng > best_lng:
+                    # Fallback for non-settlement types
+                    best_lng = lng
+                    best_match = (lat, lng)
         
-        # Return fallback if found
+        # Return best easternmost match if found
         if best_match:
-            print(f"[OPENCAGE] Using fallback match: {best_match}", flush=True)
+            print(f"[OPENCAGE] Using easternmost match: {best_match} (lng={best_lng:.2f})", flush=True)
             return best_match
         
         # No results in specified region - DON'T retry without region
