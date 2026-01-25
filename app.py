@@ -333,16 +333,18 @@ SPACY_AVAILABLE = False
 nlp = None
 print("INFO: SpaCy DISABLED to save memory")
 
-# Nominatim geocoding integration
+# OpenCage geocoding integration (with persistent cache)
 try:
-    from nominatim_geocoder import get_coordinates_nominatim
-    NOMINATIM_AVAILABLE = True
-    print("INFO: Nominatim geocoding ENABLED")
+    from opencage_geocoder import geocode as opencage_geocode, get_cache_stats
+    GEOCODER_AVAILABLE = True
+    print("INFO: OpenCage geocoding ENABLED", flush=True)
 except ImportError as e:
-    NOMINATIM_AVAILABLE = False
-    def get_coordinates_nominatim(_city_name, _region=None):
+    GEOCODER_AVAILABLE = False
+    def opencage_geocode(_city, _region=None):
         return None
-    print(f"WARNING: Nominatim geocoder not available: {e}")
+    def get_cache_stats():
+        return {}
+    print(f"WARNING: OpenCage geocoder not available: {e}", flush=True)
 
 # Groq AI integration for intelligent geocoding
 GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')
@@ -6756,218 +6758,20 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     _mapstransler_geocode_cache[cache_key] = coords
                     add_debug_log(f"CITY_COORDS HIT: {city_norm} -> ({coords[0]}, {coords[1]})", "mapstransler")
 
-            # PRIORITY 1: Nominatim API (best for Ukrainian cities)
-            if not coords and target_state:
-                print(f"[NOMINATIM_P1] Starting inline Nominatim for '{city_norm}' in '{target_state}'", flush=True)
+            # PRIORITY 1: OpenCage API (with cache - only calls API if not in cache)
+            if not coords and GEOCODER_AVAILABLE:
                 try:
-                    import requests
-
-                    # Build search query with oblast context
-                    oblast_name = target_state.replace('область', '').strip()
-                    # Use title case for better Nominatim matching
-                    city_norm_title = city_norm.title()
-                    search_queries = [
-                        f"{city_norm_title}, {oblast_name} область, Україна",  # normalized first
-                        f"{city_raw}, {oblast_name} область, Україна",
-                        f"{city_norm_title}, Ukraine",
-                        f"{city_raw}, Ukraine",
-                    ]
-
-                    nominatim_url = 'https://nominatim.openstreetmap.org/search'
-                    headers = {'User-Agent': 'NeptunAlarm/1.0'}
-
-                    for search_q in search_queries:
-                        params = {
-                            'q': search_q,
-                            'format': 'json',
-                            'limit': 5,
-                            'addressdetails': 1,
-                            'countrycodes': 'ua'
-                        }
-
-                        response = requests.get(nominatim_url, params=params, headers=headers, timeout=4)
-                        if response.ok:
-                            data = response.json()
-
-                            for item in data:
-                                item_type = item.get('type', '')
-                                item_class = item.get('class', '')
-                                display_name = item.get('display_name', '')
-
-                                # Filter: only settlements (village, town, city, hamlet, etc)
-                                valid_types = ['village', 'town', 'city', 'hamlet', 'suburb', 'neighbourhood', 'residential', 'administrative']
-                                if item_type not in valid_types and item_class != 'place':
-                                    continue
-
-                                # Check oblast match in display_name
-                                oblast_keywords = [oblast_name.lower(), target_state.lower()]
-                                display_lower = display_name.lower()
-
-                                oblast_match = any(kw in display_lower for kw in oblast_keywords)
-                                if not oblast_match:
-                                    continue
-
-                                lat_val = safe_float(item.get('lat'))
-                                lon_val = safe_float(item.get('lon'))
-
-                                if lat_val and lon_val and validate_ukraine_coords(lat_val, lon_val):
-                                    coords = (lat_val, lon_val)
-                                    add_debug_log(f"Nominatim FOUND: '{search_q}' -> '{display_name[:60]}' ({lat_val}, {lon_val})", "mapstransler")
-                                    break
-
-                            if coords:
-                                break  # Found, stop searching
-
-                except Exception as e:
-                    add_debug_log(f"Nominatim API error: {e}", "mapstransler")
-
-            # PRIORITY 2: Photon API as backup
-            if not coords and target_state:
-                try:
-                    import requests
-
-                    name_variants = [city_norm, city_raw.lower()]
-                    name_variants = list(dict.fromkeys(name_variants))
-
-                    for search_name in name_variants:
-                        photon_url = 'https://photon.komoot.io/api/'
-                        params = {'q': search_name, 'limit': 15}
-
-                        response = requests.get(photon_url, params=params, timeout=3)
-                        if response.ok:
-                            data = response.json()
-
-                            for feature in data.get('features', []):
-                                props = feature.get('properties', {})
-                                state = props.get('state', '')
-                                country = props.get('country', '')
-                                osm_key = props.get('osm_key', '')
-                                osm_value = props.get('osm_value', '')
-                                name_found = props.get('name', '')
-
-                                if osm_key not in ['place', 'boundary']:
-                                    continue
-                                valid_types = ['city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood', 'administrative']
-                                if osm_key == 'place' and osm_value not in valid_types:
-                                    continue
-
-                                if (country == 'Україна' or country == 'Ukraine') and target_state in state:
-                                    coords_arr = feature.get('geometry', {}).get('coordinates', [])
-                                    if coords_arr and len(coords_arr) >= 2:
-                                        lng_val = safe_float(coords_arr[0])
-                                        lat_val = safe_float(coords_arr[1])
-                                        if lat_val and lng_val and validate_ukraine_coords(lat_val, lng_val):
-                                            coords = (lat_val, lng_val)
-                                            add_debug_log(f"Photon FOUND: '{search_name}' -> '{name_found}' ({lat_val}, {lng_val})", "mapstransler")
-                                            break
-
-                            if coords:
-                                break
-
-                except Exception as e:
-                    add_debug_log(f"Photon API error: {e}", "mapstransler")
-
-            # PRIORITY 3: GeoNames API (free, good coverage of settlements)
-            if not coords and target_state:
-                try:
-                    import requests
-
-                    # GeoNames search - uses username 'demo' or can set GEONAMES_USER env var
-                    geonames_user = os.environ.get('GEONAMES_USER', 'demo')
-                    geonames_url = 'http://api.geonames.org/searchJSON'
-
-                    city_norm_title = city_norm.title()
-                    for search_name in [city_norm_title, city_raw]:
-                        params = {
-                            'q': search_name,
-                            'country': 'UA',
-                            'featureClass': 'P',  # populated places only
-                            'maxRows': 10,
-                            'username': geonames_user
-                        }
-
-                        response = requests.get(geonames_url, params=params, timeout=4)
-                        if response.ok:
-                            data = response.json()
-                            oblast_name = target_state.replace('область', '').strip().lower()
-
-                            for place in data.get('geonames', []):
-                                admin_name = place.get('adminName1', '').lower()
-
-                                # Check oblast match
-                                if oblast_name not in admin_name and target_state.lower() not in admin_name:
-                                    continue
-
-                                lat_val = safe_float(place.get('lat'))
-                                lng_val = safe_float(place.get('lng'))
-                                place_name = place.get('name', '')
-
-                                if lat_val and lng_val and validate_ukraine_coords(lat_val, lng_val):
-                                    coords = (lat_val, lng_val)
-                                    add_debug_log(f"GeoNames FOUND: '{search_name}' -> '{place_name}' in {admin_name} ({lat_val}, {lng_val})", "mapstransler")
-                                    break
-
-                            if coords:
-                                break
-
-                except Exception as e:
-                    add_debug_log(f"GeoNames API error: {e}", "mapstransler")
-
-            # PRIORITY 4: Use nominatim_geocoder module (with caching and rate limiting)
-            print(f"[NOMINATIM_P4] coords={coords}, NOMINATIM_AVAILABLE={NOMINATIM_AVAILABLE}, city='{city_norm}'", flush=True)
-            if not coords and NOMINATIM_AVAILABLE:
-                print(f"[NOMINATIM_P4] Calling nominatim_geocoder for '{city_norm}'", flush=True)
-                try:
-                    # Extract region name from target_state for better geocoding
-                    region_for_nominatim = None
+                    region_for_geocode = None
                     if target_state:
-                        region_for_nominatim = target_state.replace(' область', '').replace('область', '').strip()
+                        region_for_geocode = target_state.replace(' область', '').replace('область', '').strip()
                     
-                    nominatim_coords = get_coordinates_nominatim(city_norm, region=region_for_nominatim)
-                    if nominatim_coords:
-                        coords = nominatim_coords
+                    opencage_coords = opencage_geocode(city_norm, region=region_for_geocode)
+                    if opencage_coords:
+                        coords = opencage_coords
                         _mapstransler_geocode_cache[cache_key] = coords
-                        print(f"[NOMINATIM] mapstransler: Geocoded '{city_norm}' (region={region_for_nominatim}) -> {coords}")
-                        add_debug_log(f"Nominatim geocoder: '{city_norm}' -> {coords}", "mapstransler")
+                        add_debug_log(f"OpenCage: '{city_norm}' -> {coords}", "mapstransler")
                 except Exception as e:
-                    print(f"[NOMINATIM] mapstransler error for '{city_norm}': {e}")
-                    add_debug_log(f"Nominatim geocoder error: {e}", "mapstransler")
-
-            # PRIORITY 5: OSM Overpass API for small villages (last resort)
-            if not coords and target_state:
-                try:
-                    import requests
-
-                    city_norm_title = city_norm.title()
-                    # Overpass query for place nodes with name
-                    overpass_url = 'https://overpass-api.de/api/interpreter'
-                    query = f'''
-                    [out:json][timeout:10];
-                    area["name"="Україна"]->.ua;
-                    (
-                      node["place"~"village|hamlet|town|city"]["name"~"{city_norm_title}",i](area.ua);
-                    );
-                    out center 5;
-                    '''
-
-                    response = requests.post(overpass_url, data={'data': query}, timeout=12)
-                    if response.ok:
-                        data = response.json()
-                        oblast_name = target_state.replace('область', '').strip().lower() if target_state else ''
-
-                        for element in data.get('elements', []):
-                            lat_val = safe_float(element.get('lat'))
-                            lon_val = safe_float(element.get('lon'))
-                            tags = element.get('tags', {})
-                            name = tags.get('name', '')
-
-                            if lat_val and lon_val and validate_ukraine_coords(lat_val, lon_val):
-                                coords = (lat_val, lon_val)
-                                add_debug_log(f"Overpass FOUND: '{city_norm_title}' -> '{name}' ({lat}, {lon})", "mapstransler")
-                                break
-
-                except Exception as e:
-                    add_debug_log(f"Overpass API error: {e}", "mapstransler")
+                    add_debug_log(f"OpenCage error: {e}", "mapstransler")
 
             # Save to cache (both positive and negative results)
             if coords:
@@ -7015,19 +6819,14 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 if not coords and 'SETTLEMENTS_INDEX' in globals():
                     idx_map = globals().get('SETTLEMENTS_INDEX') or {}
                     coords = idx_map.get(norm)
-                # Try Nominatim API if still no coords
-                if not coords and NOMINATIM_AVAILABLE:
+                # Try OpenCage API if still no coords
+                if not coords and GEOCODER_AVAILABLE:
                     oblast_match = re.search(r'\(([А-Яа-яЇїІіЄєҐґ\-]+)\s*обл', head, re.IGNORECASE)
-                    region_for_nominatim = oblast_match.group(1) if oblast_match else None
+                    region_for_geocode = oblast_match.group(1) if oblast_match else None
                     try:
-                        nominatim_coords = get_coordinates_nominatim(norm, region=region_for_nominatim)
-                        if nominatim_coords:
-                            coords = nominatim_coords
-                            cache_key = f"{norm}_{region_for_nominatim}" if region_for_nominatim else norm
-                            CITY_COORDS[cache_key] = coords
-                            print(f"[NOMINATIM] emoji_threat: Geocoded '{norm}' (region={region_for_nominatim}) -> {coords}", flush=True)
+                        coords = opencage_geocode(norm, region=region_for_geocode)
                     except Exception as e:
-                        print(f"[NOMINATIM] emoji_threat error for '{norm}': {e}", flush=True)
+                        pass
                 if coords:
                     lat, lon = coords[:2]
                     threat_type, icon = classify(text)
@@ -7073,20 +6872,14 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     idx_map = globals().get('SETTLEMENTS_INDEX') or {}
                     coords = idx_map.get(norm)
                 
-                # Try Nominatim API if still no coords
-                if not coords and NOMINATIM_AVAILABLE:
-                    # Extract oblast from parentheses for better geocoding
+                # Try OpenCage API if still no coords
+                if not coords and GEOCODER_AVAILABLE:
                     oblast_match = re.search(r'\(([А-Яа-яЇїІіЄєҐґ\-]+)\s*обл', head, re.IGNORECASE)
-                    region_for_nominatim = oblast_match.group(1) if oblast_match else None
+                    region_for_geocode = oblast_match.group(1) if oblast_match else None
                     try:
-                        nominatim_coords = get_coordinates_nominatim(norm, region=region_for_nominatim)
-                        if nominatim_coords:
-                            coords = nominatim_coords
-                            cache_key = f"{norm}_{region_for_nominatim}" if region_for_nominatim else norm
-                            CITY_COORDS[cache_key] = coords
-                            print(f"[NOMINATIM] general_emoji: Geocoded '{norm}' (region={region_for_nominatim}) -> {coords}", flush=True)
+                        coords = opencage_geocode(norm, region=region_for_geocode)
                     except Exception as e:
-                        print(f"[NOMINATIM] general_emoji error for '{norm}': {e}", flush=True)
+                        pass
                 
                 if coords:
                     lat, lon = coords[:2]
@@ -11375,18 +11168,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             coords = region_enhanced_coords(base, region_hint_override=region_hdr)
                         except Exception:
                             coords = None
-                    # Try Nominatim API if still no coordinates
-                    if not coords and NOMINATIM_AVAILABLE:
+                    # Try OpenCage API if still no coordinates
+                    if not coords and GEOCODER_AVAILABLE:
                         try:
-                            nominatim_coords = get_coordinates_nominatim(base, region=region_hdr)
-                            if nominatim_coords:
-                                coords = nominatim_coords
-                                # Cache with region to avoid conflicts
-                                cache_key = f"{base}_{region_hdr}" if region_hdr else base
-                                CITY_COORDS[cache_key] = coords
-                                print(f"[NOMINATIM] Geocoded '{base}' (region={region_hdr}) -> {coords}", flush=True)
-                        except Exception as e:
-                            print(f"[NOMINATIM] Error geocoding '{base}': {e}", flush=True)
+                            coords = opencage_geocode(base, region=region_hdr)
+                        except Exception:
+                            pass
                     if coords:
                         lat, lng = coords
                         threat_type, icon = classify(text)
@@ -11429,14 +11216,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             coords = region_enhanced_coords(base, region_hint_override=region_hdr)
                         except Exception:
                             coords = None
-                    if not coords and NOMINATIM_AVAILABLE:
+                    if not coords and GEOCODER_AVAILABLE:
                         try:
-                            nominatim_coords = get_coordinates_nominatim(base, region=region_hdr)
-                            if nominatim_coords:
-                                coords = nominatim_coords
-                                # Cache with region to avoid conflicts (vid_do)
-                                cache_key = f"{base}_{region_hdr}" if region_hdr else base
-                                CITY_COORDS[cache_key] = coords
+                            coords = opencage_geocode(base, region=region_hdr)
                         except Exception:
                             pass
                     if coords:
@@ -11481,14 +11263,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             coords = region_enhanced_coords(base, region_hint_override=region_hdr)
                         except Exception:
                             coords = None
-                    if not coords and NOMINATIM_AVAILABLE:
+                    if not coords and GEOCODER_AVAILABLE:
                         try:
-                            nominatim_coords = get_coordinates_nominatim(base, region=region_hdr)
-                            if nominatim_coords:
-                                coords = nominatim_coords
-                                # Cache with region to avoid conflicts (ta pattern)
-                                cache_key = f"{base}_{region_hdr}" if region_hdr else base
-                                CITY_COORDS[cache_key] = coords
+                            coords = opencage_geocode(base, region=region_hdr)
                         except Exception:
                             pass
                     if coords:
@@ -11589,19 +11366,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     coords = region_enhanced_coords(base, region_hint_override=region_hdr)
                 except Exception:
                     coords = None
-            # Try Nominatim API if still no coordinates
-            if not coords and NOMINATIM_AVAILABLE:
+            # Try OpenCage API if still no coordinates
+            if not coords and GEOCODER_AVAILABLE:
                 try:
-                    add_debug_log(f"Trying Nominatim API for city '{base}' with region '{region_hdr}'", "uav_course")
-                    nominatim_coords = get_coordinates_nominatim(base, region=region_hdr)
-                    if nominatim_coords:
-                        coords = nominatim_coords
-                        # Cache with region key to avoid conflicts between same city names in different oblasts
-                        cache_key = f"{base}_{region_hdr}" if region_hdr else base
-                        CITY_COORDS[cache_key] = coords
-                        add_debug_log(f"Nominatim found coordinates for '{base}' in '{region_hdr}': {coords}", "uav_course")
-                except Exception as e:
-                    add_debug_log(f"Nominatim API error for '{base}': {e}", "uav_course")
+                    coords = opencage_geocode(base, region=region_hdr)
+                except Exception:
+                    pass
             if not coords:
                 # Fallback: if we have a region header, place placeholder near its oblast center with slight jitter
                 if region_hdr and region_hdr in OBLAST_CENTERS:
