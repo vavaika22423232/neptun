@@ -1542,8 +1542,10 @@ def send_alarm_notification(region_data, alarm_started: bool):
             for msg in recent_messages:
                 msg_text = (msg.get('text', '') or '')
                 msg_text_lower = msg_text.lower()
-                msg_location = (msg.get('location', '') or '').lower()
-                combined = msg_text_lower + ' ' + msg_location
+                # Use 'place' field - messages use 'place' not 'location'
+                msg_location = (msg.get('place', '') or msg.get('location', '') or '').lower()
+                msg_oblast = (msg.get('oblast', '') or '').lower()
+                combined = msg_text_lower + ' ' + msg_location + ' ' + msg_oblast
 
                 # Check if message relates to this region (fuzzy match)
                 # Note: Telegram messages use "Харків (Харківська обл.)" format
@@ -1557,12 +1559,18 @@ def send_alarm_notification(region_data, alarm_started: bool):
 
                 if region_match:
                     # Витягуємо конкретну локацію (місто) з повідомлення
-                    # Формат: "Харків (Харківська обл.)" або просто текст
+                    # Повідомлення мають поле 'place' з назвою міста
+                    msg_place = msg.get('place', '') or ''
                     msg_location_raw = msg.get('location', '') or ''
-                    if msg_location_raw and '(' in msg_location_raw:
-                        # Витягуємо місто до дужок
+                    
+                    # Спочатку пробуємо 'place' - чистий назва міста
+                    if msg_place and len(msg_place) >= 3:
+                        # Капіталізуємо першу букву
+                        tts_location = msg_place.strip().capitalize()
+                    elif msg_location_raw and '(' in msg_location_raw:
+                        # Формат: "Харків (Харківська обл.)" - витягуємо місто до дужок
                         tts_location = msg_location_raw.split('(')[0].strip()
-                    elif msg_location_raw:
+                    elif msg_location_raw and len(msg_location_raw) >= 3:
                         tts_location = msg_location_raw.strip()
 
                     # Use the FULL message text as threat_text for TTS
@@ -1697,7 +1705,13 @@ def send_alarm_notification(region_data, alarm_started: bool):
                     tts_threat = 'Відбій тривоги'
 
                 # Визначаємо локацію для TTS: конкретне місто або область
-                fcm_location = tts_location if tts_location else region_name
+                # Мінімальна довжина 5 символів щоб уникнути "Кам" замість "Каменське"
+                if tts_location and len(tts_location) >= 5:
+                    fcm_location = tts_location
+                else:
+                    fcm_location = region_name
+                
+                log.info(f"TTS location for FCM: tts_location={tts_location}, region_name={region_name}, fcm_location={fcm_location}")
 
                 # For Android: DATA-ONLY message so background handler can process TTS
                 # For iOS: Include notification so system shows alert (TTS won't work in background on iOS)
@@ -1874,8 +1888,14 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
 
         title = f"{emoji} {region_name}"
 
-        # For TTS: use city if available, otherwise region
-        tts_location = city_name if city_name else region_name
+        # For TTS: use city if available and long enough (>= 5 chars), otherwise region
+        # This prevents "Кам" instead of "Каменське"
+        if city_name and len(city_name) >= 5:
+            tts_location = city_name
+        else:
+            tts_location = region_name
+        
+        log.info(f"TTS location: city_name='{city_name}', region_name='{region_name}', tts_location='{tts_location}'")
 
         # Extract threat description from message (remove location prefix)
         body = message_text
@@ -18116,8 +18136,14 @@ def send_fcm_notification(message_data: dict):
                 city_from_text = re.sub(r'^[^\w\s]+\s*', '', city_from_text).strip()
                 log.info(f"Extracted city from text: '{city_from_text}' (full text: {text[:80]})")
 
-        # Use extracted city if available, otherwise fall back to place
-        specific_location = city_from_text if city_from_text else location
+        # Use extracted city if available and long enough (>= 5 chars), otherwise fall back to place/region
+        # This prevents "Кам" instead of "Каменське"
+        if city_from_text and len(city_from_text) >= 5:
+            specific_location = city_from_text
+        elif location and len(location) >= 3:
+            specific_location = location
+        else:
+            specific_location = ''
 
         if not specific_location and not location:
             log.info("Skipping FCM for message without place")
@@ -18126,7 +18152,7 @@ def send_fcm_notification(message_data: dict):
         log.info("=== FCM NOTIFICATION TRIGGERED ===")
         log.info(f"Place (original): {location}")
         log.info(f"City (extracted): {city_from_text}")
-        log.info(f"Location for TTS: {specific_location}")
+        log.info(f"Location for TTS (min 5 chars): {specific_location}")
         log.info(f"Threat type: {threat_type}")
 
         # Find matching region - search in place field AND in text for oblast pattern
@@ -18313,6 +18339,111 @@ _chat_initialized = False
 CHAT_SUBSCRIBERS = set()  # queues for chat SSE clients
 CHAT_TYPING_USERS = {}  # {deviceId: {'nickname': str, 'timestamp': float}}
 CHAT_TYPING_TTL = 5  # seconds before typing indicator expires
+
+# ============== CHAT RATE LIMITING ==============
+# Configurable rate limits (sliding window approach)
+CHAT_RATE_LIMIT_MESSAGES = 10  # Max messages per window
+CHAT_RATE_LIMIT_WINDOW = 60    # Window size in seconds (1 minute)
+CHAT_RATE_LIMIT_COOLDOWN = 30  # Cooldown penalty in seconds after hitting limit
+
+class ChatRateLimiter:
+    """
+    Sliding window rate limiter for chat messages.
+    Tracks message timestamps per device and enforces limits.
+    Thread-safe implementation.
+    """
+    def __init__(self, max_messages: int = 10, window_seconds: int = 60, cooldown_seconds: int = 30):
+        self.max_messages = max_messages
+        self.window_seconds = window_seconds
+        self.cooldown_seconds = cooldown_seconds
+        self._timestamps: dict = {}  # device_id -> list of timestamps
+        self._cooldowns: dict = {}   # device_id -> cooldown_end_time
+        self._lock = threading.RLock()
+    
+    def _cleanup_old_timestamps(self, device_id: str, now: float) -> list:
+        """Remove timestamps outside the sliding window."""
+        window_start = now - self.window_seconds
+        timestamps = self._timestamps.get(device_id, [])
+        return [ts for ts in timestamps if ts > window_start]
+    
+    def is_rate_limited(self, device_id: str) -> tuple:
+        """
+        Check if device is rate limited.
+        Returns: (is_limited: bool, wait_seconds: int, reason: str)
+        """
+        if not device_id:
+            return (False, 0, '')
+        
+        now = time.time()
+        
+        with self._lock:
+            # Check if in cooldown period
+            cooldown_end = self._cooldowns.get(device_id, 0)
+            if now < cooldown_end:
+                wait = int(cooldown_end - now) + 1
+                return (True, wait, 'cooldown')
+            
+            # Clean up and get recent timestamps
+            timestamps = self._cleanup_old_timestamps(device_id, now)
+            self._timestamps[device_id] = timestamps
+            
+            # Check if over limit
+            if len(timestamps) >= self.max_messages:
+                # Apply cooldown penalty
+                self._cooldowns[device_id] = now + self.cooldown_seconds
+                wait = self.cooldown_seconds
+                return (True, wait, 'limit_exceeded')
+            
+            return (False, 0, '')
+    
+    def record_message(self, device_id: str):
+        """Record a new message timestamp for the device."""
+        if not device_id:
+            return
+        
+        now = time.time()
+        
+        with self._lock:
+            if device_id not in self._timestamps:
+                self._timestamps[device_id] = []
+            self._timestamps[device_id].append(now)
+            
+            # Cleanup: remove very old entries periodically
+            if len(self._timestamps) > 10000:
+                self._cleanup_all_old_entries(now)
+    
+    def _cleanup_all_old_entries(self, now: float):
+        """Periodic cleanup of all old entries to prevent memory growth."""
+        window_start = now - self.window_seconds - 3600  # Keep extra hour buffer
+        devices_to_remove = []
+        
+        for device_id, timestamps in self._timestamps.items():
+            fresh = [ts for ts in timestamps if ts > window_start]
+            if fresh:
+                self._timestamps[device_id] = fresh
+            else:
+                devices_to_remove.append(device_id)
+        
+        for device_id in devices_to_remove:
+            del self._timestamps[device_id]
+            self._cooldowns.pop(device_id, None)
+    
+    def get_remaining(self, device_id: str) -> int:
+        """Get remaining messages allowed in current window."""
+        if not device_id:
+            return self.max_messages
+        
+        now = time.time()
+        with self._lock:
+            timestamps = self._cleanup_old_timestamps(device_id, now)
+            return max(0, self.max_messages - len(timestamps))
+
+# Global rate limiter instance
+_chat_rate_limiter = ChatRateLimiter(
+    max_messages=CHAT_RATE_LIMIT_MESSAGES,
+    window_seconds=CHAT_RATE_LIMIT_WINDOW,
+    cooldown_seconds=CHAT_RATE_LIMIT_COOLDOWN
+)
 
 def load_chat_messages():
     """Load chat messages from file. On first call, try git pull to restore from repo."""
@@ -18707,6 +18838,19 @@ def send_chat_message():
         if is_user_banned(device_id):
             return jsonify({'error': 'Ви заблоковані в чаті', 'banned': True}), 403
 
+        # Rate limiting check (skip for moderators)
+        if not is_chat_moderator(device_id):
+            is_limited, wait_seconds, reason = _chat_rate_limiter.is_rate_limited(device_id)
+            if is_limited:
+                remaining = _chat_rate_limiter.get_remaining(device_id)
+                log.warning(f"Rate limited user {user_id[:20]} ({reason}), wait {wait_seconds}s")
+                return jsonify({
+                    'error': f'Забагато повідомлень. Зачекайте {wait_seconds} сек.',
+                    'rate_limited': True,
+                    'wait_seconds': wait_seconds,
+                    'remaining': remaining
+                }), 429
+
         # Validate nickname ownership if device_id provided
         if device_id:
             nicknames = load_chat_nicknames()
@@ -18756,6 +18900,9 @@ def send_chat_message():
         messages = load_chat_messages()
         messages.append(new_message)
         save_chat_messages(messages)
+
+        # Record message for rate limiting
+        _chat_rate_limiter.record_message(device_id)
 
         # Broadcast new message via SSE
         broadcast_chat_event('new_message', new_message)
