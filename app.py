@@ -18309,6 +18309,11 @@ def send_fcm_notification(message_data: dict):
 MAX_CHAT_MESSAGES = 500  # Keep last 500 messages
 _chat_initialized = False
 
+# SSE subscribers for real-time chat
+CHAT_SUBSCRIBERS = set()  # queues for chat SSE clients
+CHAT_TYPING_USERS = {}  # {deviceId: {'nickname': str, 'timestamp': float}}
+CHAT_TYPING_TTL = 5  # seconds before typing indicator expires
+
 def load_chat_messages():
     """Load chat messages from file. On first call, try git pull to restore from repo."""
     global _chat_initialized
@@ -18382,6 +18387,170 @@ def get_chat_messages():
         return response
     except Exception as e:
         log.error(f"Error getting chat messages: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# ============== CHAT SSE (Server-Sent Events) ==============
+def broadcast_chat_event(event_type: str, data: dict):
+    """Broadcast chat event to all SSE subscribers."""
+    if not CHAT_SUBSCRIBERS:
+        return
+    try:
+        payload = json.dumps({
+            'type': event_type,
+            'data': data,
+            'timestamp': time.time()
+        }, ensure_ascii=False)
+    except Exception:
+        return
+    dead = []
+    for q in list(CHAT_SUBSCRIBERS):
+        try:
+            q.put_nowait(payload)
+        except Exception:
+            dead.append(q)
+    for d in dead:
+        CHAT_SUBSCRIBERS.discard(d)
+
+@app.route('/api/chat/stream')
+def chat_stream():
+    """SSE endpoint for real-time chat updates."""
+    def gen():
+        q = queue.Queue()
+        CHAT_SUBSCRIBERS.add(q)
+        last_ping = time.time()
+        log.info(f"[CHAT_SSE] Client connected. Total subscribers: {len(CHAT_SUBSCRIBERS)}")
+        try:
+            while True:
+                try:
+                    item = q.get(timeout=5)
+                    yield f'data: {item}\n\n'
+                except Exception:
+                    pass
+                now_t = time.time()
+                if now_t - last_ping > 25:
+                    last_ping = now_t
+                    yield ': ping\n\n'
+        except GeneratorExit:
+            pass
+        finally:
+            CHAT_SUBSCRIBERS.discard(q)
+            log.info(f"[CHAT_SSE] Client disconnected. Total subscribers: {len(CHAT_SUBSCRIBERS)}")
+    
+    headers = {
+        'Cache-Control': 'no-store',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no'
+    }
+    return Response(gen(), mimetype='text/event-stream', headers=headers)
+
+@app.route('/api/chat/typing', methods=['POST'])
+def chat_typing():
+    """Notify that user is typing."""
+    try:
+        data = request.get_json() or {}
+        device_id = data.get('deviceId', '')
+        nickname = data.get('nickname', '')
+        is_typing = data.get('isTyping', True)
+        
+        if not device_id or not nickname:
+            return jsonify({'error': 'Missing deviceId or nickname'}), 400
+        
+        if is_typing:
+            CHAT_TYPING_USERS[device_id] = {
+                'nickname': nickname,
+                'timestamp': time.time()
+            }
+        else:
+            CHAT_TYPING_USERS.pop(device_id, None)
+        
+        # Clean up expired typing indicators
+        now = time.time()
+        expired = [k for k, v in CHAT_TYPING_USERS.items() if now - v['timestamp'] > CHAT_TYPING_TTL]
+        for k in expired:
+            del CHAT_TYPING_USERS[k]
+        
+        # Broadcast typing status
+        typing_users = [v['nickname'] for v in CHAT_TYPING_USERS.values()]
+        broadcast_chat_event('typing', {'users': typing_users})
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        log.error(f"Error in chat_typing: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/chat/react', methods=['POST'])
+def chat_react():
+    """Add or remove reaction to a message."""
+    try:
+        data = request.get_json() or {}
+        message_id = data.get('messageId', '')
+        device_id = data.get('deviceId', '')
+        emoji = data.get('emoji', '')
+        nickname = data.get('nickname', '')
+        
+        if not message_id or not device_id or not emoji:
+            return jsonify({'error': 'Missing required fields'}), 400
+        
+        # Validate emoji (only allowed reactions)
+        allowed_emojis = ['👍', '❤️', '😂', '😮', '😢', '🔥', '💪', '🙏']
+        if emoji not in allowed_emojis:
+            return jsonify({'error': 'Invalid emoji'}), 400
+        
+        messages = load_chat_messages()
+        message = next((m for m in messages if m.get('id') == message_id), None)
+        
+        if not message:
+            return jsonify({'error': 'Message not found'}), 404
+        
+        # Initialize reactions if not present
+        if 'reactions' not in message:
+            message['reactions'] = {}
+        
+        # Toggle reaction
+        if emoji not in message['reactions']:
+            message['reactions'][emoji] = []
+        
+        reaction_list = message['reactions'][emoji]
+        user_reacted = next((r for r in reaction_list if r.get('deviceId') == device_id), None)
+        
+        if user_reacted:
+            # Remove reaction
+            message['reactions'][emoji] = [r for r in reaction_list if r.get('deviceId') != device_id]
+            if not message['reactions'][emoji]:
+                del message['reactions'][emoji]
+            action = 'removed'
+        else:
+            # Add reaction
+            reaction_list.append({
+                'deviceId': device_id,
+                'nickname': nickname,
+                'timestamp': time.time()
+            })
+            action = 'added'
+        
+        # Clean up empty reactions
+        if not message['reactions']:
+            del message['reactions']
+        
+        save_chat_messages(messages)
+        
+        # Broadcast reaction update
+        broadcast_chat_event('reaction', {
+            'messageId': message_id,
+            'emoji': emoji,
+            'action': action,
+            'deviceId': device_id,
+            'nickname': nickname,
+            'reactions': message.get('reactions', {})
+        })
+        
+        return jsonify({
+            'success': True,
+            'action': action,
+            'reactions': message.get('reactions', {})
+        })
+    except Exception as e:
+        log.error(f"Error in chat_react: {e}")
         return jsonify({'error': str(e)}), 500
 
 # File to store registered nicknames with device IDs
@@ -18588,6 +18757,12 @@ def send_chat_message():
         messages.append(new_message)
         save_chat_messages(messages)
 
+        # Broadcast new message via SSE
+        broadcast_chat_event('new_message', new_message)
+        
+        # Clear typing indicator for this user
+        CHAT_TYPING_USERS.pop(device_id, None)
+
         # Trigger git sync for persistence
         try:
             maybe_git_autocommit()
@@ -18670,6 +18845,9 @@ def delete_chat_message(message_id):
         # Remove the message
         messages = [m for m in messages if m.get('id') != message_id]
         save_chat_messages(messages)
+        
+        # Broadcast message deletion via SSE
+        broadcast_chat_event('delete_message', {'messageId': message_id})
 
         log.info(f"Chat message {message_id} deleted by {'moderator' if is_actual_moderator else device_id[:20]}")
 
