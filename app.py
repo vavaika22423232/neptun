@@ -68,6 +68,32 @@ from telethon import TelegramClient
 
 from core.message_store import DeviceStore, FamilyStore, MessageStore
 
+# JWT Authentication (optional, graceful fallback if not available)
+try:
+    from core.jwt_auth import (
+        JWT_AVAILABLE,
+        create_token,
+        create_token_pair,
+        verify_token,
+        jwt_required,
+        jwt_optional,
+        moderator_required,
+        get_current_user,
+        get_token_from_request,
+        get_device_id_from_request,
+        register_jwt_routes,
+    )
+    print("INFO: JWT Authentication module loaded")
+except ImportError as e:
+    JWT_AVAILABLE = False
+    print(f"WARNING: JWT Auth not available: {e}")
+    # Fallback stubs
+    def jwt_required(f): return f
+    def jwt_optional(f): return f
+    def moderator_required(f): return f
+    def get_current_user(): return None
+    def register_jwt_routes(_app): pass
+
 # MEMORY OPTIMIZATION: Force garbage collection on startup
 gc.collect()
 
@@ -902,6 +928,15 @@ if API_PROTECTION_ENABLED:
     init_protection(app)
     print("INFO: API Protection hooks registered")
 # =========================================================
+
+# ============= JWT AUTHENTICATION ROUTES =============
+# Register JWT endpoints (/api/auth/token, /api/auth/refresh, etc.)
+try:
+    register_jwt_routes(app)
+    print("INFO: JWT auth routes registered")
+except Exception as e:
+    print(f"WARNING: Failed to register JWT routes: {e}")
+# ====================================================
 
 # ============= PERFORMANCE OPTIMIZATION =============
 # Enable gzip compression for faster response times
@@ -3055,6 +3090,16 @@ def save_messages(data, send_notifications=True):
         if new_messages:
             log.info(f"Found {len(new_messages)} new messages to process for notifications")
 
+            # === INCREMENT ALARM STATISTICS (persistent) ===
+            for msg in new_messages:
+                try:
+                    # Get region from message
+                    region = msg.get('region') or msg.get('location', '')
+                    if region:
+                        increment_alarm_stat(region)
+                except Exception as e:
+                    log.debug(f"Failed to increment alarm stat: {e}")
+
             # === MULTI-CHANNEL FUSION: Process new messages ===
             for msg in new_messages:
                 try:
@@ -3463,6 +3508,124 @@ def _recent_counts():
 
 # Simplified message processor placeholder
 import sqlite3
+from contextlib import contextmanager
+
+# ---- SQLite Database Connection (persistent storage in /data) ----
+# Path to SQLite database - use persistent storage if available
+_DB_PATH = None
+
+def _get_db_path():
+    """Get path to SQLite database, preferring persistent storage."""
+    global _DB_PATH
+    if _DB_PATH is not None:
+        return _DB_PATH
+    
+    # Try persistent directory first
+    if PERSISTENT_DATA_DIR and os.path.isdir(PERSISTENT_DATA_DIR):
+        _DB_PATH = os.path.join(PERSISTENT_DATA_DIR, 'neptun.db')
+    else:
+        # Fallback to local directory
+        _DB_PATH = 'neptun.db'
+    
+    return _DB_PATH
+
+@contextmanager
+def _visits_db_conn():
+    """Context manager for SQLite database connections."""
+    db_path = _get_db_path()
+    conn = sqlite3.connect(db_path, timeout=10)
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+# ---- Alarm Statistics Table (persistent across deploys) ----
+def init_alarm_stats_db():
+    """Initialize alarm_stats table for persistent statistics."""
+    try:
+        with _visits_db_conn() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS alarm_stats (
+                    date TEXT NOT NULL,
+                    region TEXT NOT NULL,
+                    count INTEGER DEFAULT 0,
+                    PRIMARY KEY (date, region)
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_alarm_stats_date ON alarm_stats(date)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_alarm_stats_region ON alarm_stats(region)")
+            log.info("alarm_stats table initialized")
+    except Exception as e:
+        log.warning(f"alarm_stats db init failed: {e}")
+
+def increment_alarm_stat(region: str):
+    """Increment alarm counter for today and given region."""
+    today = datetime.now(pytz.timezone('Europe/Kyiv')).strftime('%Y-%m-%d')
+    try:
+        with _visits_db_conn() as conn:
+            # Use UPSERT to increment counter
+            conn.execute("""
+                INSERT INTO alarm_stats (date, region, count) VALUES (?, ?, 1)
+                ON CONFLICT(date, region) DO UPDATE SET count = count + 1
+            """, (today, region))
+            log.debug(f"Incremented alarm stat: {region} on {today}")
+    except Exception as e:
+        log.debug(f"increment_alarm_stat failed: {e}")
+
+def get_alarm_stats_from_db(region: str) -> dict:
+    """Get alarm statistics from database for given region."""
+    kyiv_tz = pytz.timezone('Europe/Kyiv')
+    now = datetime.now(kyiv_tz)
+    today = now.strftime('%Y-%m-%d')
+    week_ago = (now - timedelta(days=7)).strftime('%Y-%m-%d')
+    month_ago = (now - timedelta(days=30)).strftime('%Y-%m-%d')
+    
+    today_count = 0
+    week_count = 0
+    month_count = 0
+    
+    try:
+        with _visits_db_conn() as conn:
+            # Today
+            cur = conn.execute(
+                "SELECT COALESCE(SUM(count), 0) FROM alarm_stats WHERE region LIKE ? AND date = ?",
+                (f'%{region}%', today)
+            )
+            today_count = cur.fetchone()[0] or 0
+            
+            # Week
+            cur = conn.execute(
+                "SELECT COALESCE(SUM(count), 0) FROM alarm_stats WHERE region LIKE ? AND date >= ?",
+                (f'%{region}%', week_ago)
+            )
+            week_count = cur.fetchone()[0] or 0
+            
+            # Month
+            cur = conn.execute(
+                "SELECT COALESCE(SUM(count), 0) FROM alarm_stats WHERE region LIKE ? AND date >= ?",
+                (f'%{region}%', month_ago)
+            )
+            month_count = cur.fetchone()[0] or 0
+            
+    except Exception as e:
+        log.debug(f"get_alarm_stats_from_db failed: {e}")
+    
+    return {
+        'today_alarms': today_count,
+        'week_alarms': week_count,
+        'month_alarms': month_count
+    }
+
+# Initialize alarm stats DB on import
+try:
+    init_alarm_stats_db()
+except Exception as e:
+    log.warning(f"Failed to init alarm_stats on import: {e}")
 
 _opencage_cache = None
 _neg_geocode_cache = None
@@ -18951,9 +19114,22 @@ def save_chat_moderators(moderators):
         log.error(f"Error saving chat moderators: {e}")
 
 def is_chat_moderator(device_id):
-    """Check if device is a chat moderator."""
+    """Check if device is a chat moderator.
+    
+    Also checks JWT token claim if available.
+    """
     if not device_id:
         return False
+    
+    # Check JWT token claim first (more secure)
+    try:
+        user = get_current_user()
+        if user and user.get('is_moderator'):
+            return True
+    except Exception:
+        pass
+    
+    # Fallback to device_id list
     moderators = load_chat_moderators()
     return device_id in moderators
 
@@ -19416,58 +19592,21 @@ log.info("Old alarm monitoring thread DISABLED - using monitor_alarms() instead"
 
 @app.route('/api/stats')
 def get_alarm_stats():
-    """Get alarm statistics for a region."""
+    """Get alarm statistics for a region from persistent database."""
     try:
         region = request.args.get('region', 'Дніпропетровська')
-
-        # Load messages from file to calculate stats
-        messages = []
-        try:
-            with open(MESSAGES_FILE, encoding='utf-8') as f:
-                all_messages = json.load(f)
-                # Filter by region if needed
-                for msg in all_messages:
-                    msg_region = msg.get('region', '') or msg.get('location', '')
-                    if region.lower() in msg_region.lower():
-                        messages.append(msg)
-        except FileNotFoundError:
-            pass
-
-        # Calculate stats
-        now = datetime.now(pytz.timezone('Europe/Kyiv'))
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        week_start = today_start - timedelta(days=7)
-        month_start = today_start - timedelta(days=30)
-
-        today_count = 0
-        week_count = 0
-        month_count = 0
-
-        for msg in messages:
-            try:
-                timestamp = msg.get('timestamp', '')
-                msg_time = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                if msg_time.tzinfo is None:
-                    msg_time = pytz.timezone('Europe/Kyiv').localize(msg_time)
-
-                if msg_time >= today_start:
-                    today_count += 1
-                if msg_time >= week_start:
-                    week_count += 1
-                if msg_time >= month_start:
-                    month_count += 1
-
-            except (ValueError, TypeError):
-                continue
-
-        # Average alarm duration (rough estimate based on message pairs)
-        avg_duration = 25  # Default 25 min if no data
+        
+        # Get stats from persistent SQLite database
+        stats = get_alarm_stats_from_db(region)
+        
+        # Average alarm duration (rough estimate)
+        avg_duration = 25  # Default 25 min
 
         return jsonify({
             'region': region,
-            'today_alarms': today_count,
-            'week_alarms': week_count,
-            'month_alarms': month_count,
+            'today_alarms': stats['today_alarms'],
+            'week_alarms': stats['week_alarms'],
+            'month_alarms': stats['month_alarms'],
             'avg_duration_min': avg_duration,
         })
     except Exception as e:

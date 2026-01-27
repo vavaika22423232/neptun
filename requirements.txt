@@ -11,6 +11,7 @@ firebase-admin>=6.5.0
 flask-mail==0.9.1
 gunicorn==22.0.0
 gevent>=24.0.0
+PyJWT>=2.8.0
 
 # Optional heavy dependencies - comment out to speed up deployment
 groq>=0.34.0
