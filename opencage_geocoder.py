@@ -98,11 +98,24 @@ def _normalize_city_name(city: str) -> str:
         'березну': 'Березна',
         'васильківку': 'Васильківка',
         'дмитрівку': 'Дмитрівка',
+        'пантаївку': 'Пантаївка',
+        'новоукраїнку': 'Новоукраїнка',
+        'голованівську': 'Голованівськ',
+        'добровеличківку': 'Добровеличківка',
+        'устинівку': 'Устинівка',
+        'компаніївку': 'Компаніївка',
+        'петрівку': 'Петрівка',
+        'новомиргороду': 'Новомиргород',
+        'гайворону': 'Гайворон',
     }
     
     if city_lower in known_transforms:
         return known_transforms[city_lower]
     
+    # General rules for accusative -> nominative
+    # -ку -> -ка (villages ending in -ка: Пантаївку -> Пантаївка)
+    if city_lower.endswith('ку') and len(city_lower) > 3:
+        return city_norm[:-1] + 'а'
     # General rules for accusative -> nominative
     # -лю -> -ля (Хотімлю -> Хотімля)
     if city_lower.endswith('лю') and len(city_lower) > 3:
