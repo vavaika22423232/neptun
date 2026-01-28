@@ -160,6 +160,7 @@ def load_messages_cached():
         return _MESSAGES_CACHE['data']
     # Load fresh
     data = MESSAGE_STORE.load()
+    log.info(f"[MESSAGES] Loaded {len(data)} messages from {MESSAGE_STORE.path}")
     _MESSAGES_CACHE = {'data': data, 'expires': now + _MESSAGES_CACHE_TTL}
     return data
 
@@ -13552,6 +13553,11 @@ def is_seo_bot(user_agent):
         return False
     ua_lower = user_agent.lower()
     return any(bot in ua_lower for bot in SEO_BOT_PATTERNS)
+
+@app.route('/dev')
+def index_dev():
+    """Development/experimental version of the map"""
+    return render_template('index_dev.html')
 
 @app.route('/')
 def index():
