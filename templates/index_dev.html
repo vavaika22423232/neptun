@@ -530,7 +530,30 @@
       width: 100%;
       height: 100%;
       z-index: 1;
-      background: transparent;
+    }
+    
+    /* Blue background overlay - fades with SVG via JS-controlled CSS variable */
+    #leaflet-map {
+      --bg-opacity: 1;
+      --map-opacity: 0;
+    }
+    
+    #leaflet-map::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #0a0e17 0%, #0d1929 50%, #0a192f 100%);
+      z-index: -1;
+      pointer-events: none;
+      opacity: var(--bg-opacity, 1);
+    }
+    
+    /* OpenFreeMap opacity controlled by JS - synced with background */
+    #leaflet-map .maplibregl-map {
+      opacity: var(--map-opacity, 0);
     }
     
     /* Hide Leaflet attribution but keep zoom controls hidden */
@@ -600,15 +623,23 @@
       opacity: 0.15;
     }
     
-    /* Names layer text styling */
-    .svg-overlay-content text {
+    /* Names layer - region labels */
+    .svg-names-layer {
+      pointer-events: none;
+    }
+    
+    .svg-names-layer text {
       fill: rgba(255, 255, 255, 0.9);
       font-family: 'Exo 2', sans-serif;
       font-weight: 400;
       text-shadow: 
         0 0 10px rgba(0, 212, 255, 0.5),
         0 2px 4px rgba(0, 0, 0, 0.8);
-      pointer-events: none;
+    }
+    
+    /* Hide reason icons in names layer */
+    .svg-names-layer .reasonIcon {
+      display: none;
     }
     
     /* NEPTUN style - Oblast regions (inside SVG overlay) */
@@ -6210,8 +6241,8 @@
     let fusionLayerGroup = null;
     
     // SVG fade thresholds (Leaflet zoom levels)
-    const SVG_FADE_START_ZOOM = 8;   // Start fading SVG at this zoom
-    const SVG_FADE_END_ZOOM = 10;    // SVG nearly transparent at this zoom
+    const SVG_FADE_START_ZOOM = 7;   // Start fading SVG at this zoom
+    const SVG_FADE_END_ZOOM = 8;     // SVG completely gone at this zoom
     
     // Ukraine bounds for SVG overlay
     const UKRAINE_BOUNDS = L.latLngBounds(
@@ -6279,11 +6310,11 @@
         });
         
         // Add OpenFreeMap as base layer
-        const maplibreLayer = L.maplibreGL({
+        window.maplibreLayer = L.maplibreGL({
           style: style,
           attribution: ''
         });
-        maplibreLayer.addTo(leafletMap);
+        window.maplibreLayer.addTo(leafletMap);
         
         console.log('OpenFreeMap base layer added (dark, Ukrainian labels)');
       } catch (e) {
@@ -6333,18 +6364,25 @@
         const districtsResponse = await fetch(`/static/ukraine_districts_detailed.svg?${CACHE_VERSION}`);
         const districtsText = await districtsResponse.text();
         
+        // Load names SVG (region labels)
+        const namesResponse = await fetch(`/static/ukraine_names.svg?${CACHE_VERSION}`);
+        const namesText = await namesResponse.text();
+        
         // Parse SVG content
         const parser = new DOMParser();
         const statesSvgDoc = parser.parseFromString(statesText, 'image/svg+xml');
         const districtsSvgDoc = parser.parseFromString(districtsText, 'image/svg+xml');
+        const namesSvgDoc = parser.parseFromString(namesText, 'image/svg+xml');
         
         // Get SVG elements
         const statesSvg = statesSvgDoc.documentElement;
         const districtsSvg = districtsSvgDoc.documentElement;
+        const namesSvg = namesSvgDoc.documentElement;
         
         // Add classes for styling
         statesSvg.classList.add('svg-states-layer');
         districtsSvg.classList.add('svg-districts-layer');
+        namesSvg.classList.add('svg-names-layer');
         
         // Create SVG overlay with Ukraine bounds
         // Using L.svgOverlay for proper geographic positioning
@@ -6362,9 +6400,16 @@
           zIndex: 101
         }).addTo(leafletMap);
         
+        // Create names overlay (above states and districts)
+        window.namesOverlay = L.svgOverlay(namesSvg, svgBounds, {
+          interactive: false,
+          zIndex: 102
+        }).addTo(leafletMap);
+        
         // Store SVG elements for alarm updates
         window.statesSvgElement = statesSvg;
         window.districtsSvgElement = districtsSvg;
+        window.namesSvgElement = namesSvg;
         
         console.log('SVG overlays loaded and positioned');
         
@@ -6373,39 +6418,42 @@
       }
     }
     
-    // Update SVG opacity based on zoom level
+    // Update SVG opacity and OpenFreeMap visibility based on zoom level
     function updateSvgOpacity() {
       if (!leafletMap) return;
       
       const zoom = leafletMap.getZoom();
-      let opacity;
+      const container = document.getElementById('leaflet-map');
       
+      // Calculate opacity (same for SVG and background - they fade together)
+      let fadeOpacity;
       if (zoom < SVG_FADE_START_ZOOM) {
-        opacity = 0.6;  // Full opacity at low zoom
-      } else if (zoom > SVG_FADE_END_ZOOM) {
-        opacity = 0.1;  // Nearly transparent at high zoom (OpenFreeMap shows through)
+        fadeOpacity = 1;  // Full opacity at low zoom
+      } else if (zoom >= SVG_FADE_END_ZOOM) {
+        fadeOpacity = 0;  // Completely hidden at high zoom
       } else {
-        // Linear interpolation
+        // Linear interpolation from 1 to 0
         const t = (zoom - SVG_FADE_START_ZOOM) / (SVG_FADE_END_ZOOM - SVG_FADE_START_ZOOM);
-        opacity = 0.6 - (t * 0.5);  // From 0.6 to 0.1
+        fadeOpacity = 1 - t;
       }
       
-      // Apply opacity to SVG overlays
+      // Set CSS variables for synchronized fading
+      if (container) {
+        // Background fades OUT (1 -> 0), OpenFreeMap fades IN (0 -> 1)
+        container.style.setProperty('--bg-opacity', fadeOpacity);
+        container.style.setProperty('--map-opacity', 1 - fadeOpacity);
+      }
+      
+      // Apply opacity to SVG overlays (states, districts, names - all fade together)
+      const svgOpacity = fadeOpacity * 0.7;  // SVG base opacity is 0.7
       if (window.statesOverlay) {
-        window.statesOverlay.getElement().style.opacity = opacity;
+        window.statesOverlay.getElement().style.opacity = svgOpacity;
       }
       if (window.districtsOverlay) {
-        window.districtsOverlay.getElement().style.opacity = opacity;
+        window.districtsOverlay.getElement().style.opacity = svgOpacity;
       }
-      
-      // Add/remove class for high zoom styling
-      const container = document.getElementById('leaflet-map');
-      if (container) {
-        if (zoom >= SVG_FADE_START_ZOOM) {
-          container.classList.add('high-zoom');
-        } else {
-          container.classList.remove('high-zoom');
-        }
+      if (window.namesOverlay) {
+        window.namesOverlay.getElement().style.opacity = fadeOpacity;
       }
     }
     

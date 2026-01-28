@@ -13180,8 +13180,9 @@ async def fetch_loop():
     else:
         AUTH_STATUS.update({'authorized': True, 'reason': 'ok'})
     tz = pytz.timezone('Europe/Kyiv')
-    processed = {m.get('id') for m in load_messages()}
+    # Load existing messages and create ID set (convert to strings for comparison)
     all_data = load_messages()
+    processed = {str(m.get('id')) for m in all_data if m.get('id')}
     # -------- Initial backfill (last BACKFILL_MINUTES, default 50) --------
     try:
         backfill_minutes = int(os.getenv('BACKFILL_MINUTES', '50'))
@@ -13220,7 +13221,8 @@ async def fetch_loop():
                     dt = msg.date.astimezone(tz)
                     if dt < backfill_cutoff:
                         break  # older than needed
-                    if msg.id in processed:
+                    msg_id_str = str(msg.id)
+                    if msg_id_str in processed:
                         continue
                     # Check for ballistic threat messages (backfill - don't add to chat)
                     update_ballistic_state(msg.text, is_realtime=False)
@@ -13228,7 +13230,7 @@ async def fetch_loop():
                     # SPEED FIX: Skip heavy geocoding during backfill - store raw, process later
                     # This makes backfill instant instead of 30+ minutes
                     all_data.append({
-                        'id': str(msg.id),
+                        'id': msg_id_str,
                         'place': None,
                         'lat': None,
                         'lng': None,
@@ -13238,7 +13240,7 @@ async def fetch_loop():
                         'channel': ch_strip,
                         'pending_geo': True  # Flag for lazy geocoding in /data
                     })
-                    processed.add(msg.id)
+                    processed.add(msg_id_str)
                     fetched += 1
                     BACKFILL_STATUS['messages_processed'] += 1
                 if fetched:
@@ -13280,7 +13282,8 @@ async def fetch_loop():
                     msgs_seen += 1
                     if not msg.text:
                         continue
-                    if msg.id in processed:
+                    msg_id_str = str(msg.id)
+                    if msg_id_str in processed:
                         continue
                     dt = msg.date.astimezone(tz)
                     if dt < datetime.now(tz) - timedelta(minutes=30):
@@ -13340,7 +13343,7 @@ async def fetch_loop():
                                 new_tracks.append(t)
                                 appended.append(t)
                         geo_added += 1
-                        processed.add(msg.id)
+                        processed.add(msg_id_str)
                         print(f"[FETCH_DEBUG] Result: merged_any={merged_any}, appended={len(appended)}, new_tracks_total={len(new_tracks)}", flush=True)
                         if merged_any and not appended:
                             log.info(f'Merged live track(s) {ch} #{msg.id} (no new marker).')
@@ -13350,11 +13353,11 @@ async def fetch_loop():
                         # Store raw if enabled to allow later reprocessing / debugging (e.g., napramok multi-line posts)
                         if ALWAYS_STORE_RAW:
                             all_data.append({
-                                'id': str(msg.id), 'place': None, 'lat': None, 'lng': None,
+                                'id': msg_id_str, 'place': None, 'lat': None, 'lng': None,
                                 'threat_type': None, 'text': msg.text[:800], 'date': dt.strftime('%Y-%m-%d %H:%M:%S'),
                                 'channel': ch, 'pending_geo': True
                             })
-                            processed.add(msg.id)
+                            processed.add(msg_id_str)
                         log.debug(f'Live skip (no geo): {ch} #{msg.id} {msg.text[:80]!r}')
             except AuthKeyDuplicatedError:
                 log.error('AuthKeyDuplicatedError during live fetch. Ending loop until session replaced.')
@@ -13385,16 +13388,21 @@ async def fetch_loop():
                 elif geo_added == 0:
                     log.debug(f'Channel {ch} had {msgs_recent_window} recent messages but none produced geo tracks.')
         if new_tracks:
-            # Append truly new tracks (merges already applied in-place)
-            all_data.extend(new_tracks)
-            save_messages(all_data)
-            try:
-                broadcast_new(new_tracks)
-            except Exception as e:
-                log.debug(f'SSE broadcast failed: {e}')
-        else:
-            # If only merges happened (no brand-new tracks), still persist periodically
-            save_messages(all_data)
+            # RACE CONDITION FIX: Reload all_data from disk before extending
+            # This preserves updates made by /data endpoint's update_message()
+            all_data = load_messages()
+            processed = {m.get('id') for m in all_data}
+            # Only add tracks that aren't already in the data (check by id)
+            existing_ids = {m.get('id') for m in all_data}
+            truly_new = [t for t in new_tracks if t.get('id') not in existing_ids]
+            if truly_new:
+                all_data.extend(truly_new)
+                save_messages(all_data)
+                try:
+                    broadcast_new(truly_new)
+                except Exception as e:
+                    log.debug(f'SSE broadcast failed: {e}')
+        # Note: removed periodic save_messages when no new tracks to avoid overwriting /data updates
         await asyncio.sleep(45)  # Check every 45 seconds (CPU optimized)
 
 def start_fetch_thread():
