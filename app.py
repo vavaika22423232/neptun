@@ -170,6 +170,45 @@ def invalidate_messages_cache():
     _MESSAGES_CACHE = {'data': None, 'expires': 0}
 
 # ============================================================================
+# PERSISTENT DATA CACHE - Survives server restarts/deploys
+# ============================================================================
+DATA_CACHE_TTL = 30 * 60  # 30 minutes - markers stay visible after deploy
+
+def load_data_cache():
+    """Load cached /data response from persistent storage."""
+    try:
+        # DATA_CACHE_FILE is defined later, use fallback
+        cache_file = globals().get('DATA_CACHE_FILE', 'data_cache.json')
+        if not os.path.exists(cache_file):
+            return None
+        with open(cache_file, 'r', encoding='utf-8') as f:
+            cache = json.load(f)
+        # Check if cache is still valid
+        if time.time() - cache.get('timestamp', 0) < DATA_CACHE_TTL:
+            log.info(f"[DATA_CACHE] Loaded {len(cache.get('data', {}).get('tracks', []))} tracks from persistent cache")
+            return cache
+        log.info("[DATA_CACHE] Cache expired, will regenerate")
+        return None
+    except Exception as e:
+        log.warning(f"[DATA_CACHE] Failed to load: {e}")
+        return None
+
+def save_data_cache(data: dict):
+    """Save /data response to persistent storage."""
+    try:
+        cache_file = globals().get('DATA_CACHE_FILE', 'data_cache.json')
+        cache = {
+            'timestamp': time.time(),
+            'data': data
+        }
+        with open(cache_file, 'w', encoding='utf-8') as f:
+            json.dump(cache, f, ensure_ascii=False)
+        tracks_count = len(data.get('tracks', []))
+        log.info(f"[DATA_CACHE] Saved {tracks_count} tracks to persistent cache")
+    except Exception as e:
+        log.warning(f"[DATA_CACHE] Failed to save: {e}")
+
+# ============================================================================
 # API PROTECTION - Production-grade hardening (prevents 23GB+ traffic spikes)
 # ============================================================================
 try:
@@ -2925,6 +2964,7 @@ if PERSISTENT_DATA_DIR and os.path.isdir(PERSISTENT_DATA_DIR):
     COMMERCIAL_SUBSCRIPTIONS_FILE = os.path.join(PERSISTENT_DATA_DIR, 'commercial_subscriptions.json')
     STATS_FILE = os.path.join(PERSISTENT_DATA_DIR, 'visits_stats.json')
     RECENT_VISITS_FILE = os.path.join(PERSISTENT_DATA_DIR, 'visits_recent.json')
+    DATA_CACHE_FILE = os.path.join(PERSISTENT_DATA_DIR, 'data_cache.json')  # Persistent cache for /data endpoint
     log.info(f'Using PERSISTENT storage: {CHAT_MESSAGES_FILE}')
 else:
     # Fallback to local files (for development)
@@ -2934,6 +2974,7 @@ else:
     COMMERCIAL_SUBSCRIPTIONS_FILE = 'commercial_subscriptions.json'
     STATS_FILE = 'visits_stats.json'
     RECENT_VISITS_FILE = 'visits_recent.json'
+    DATA_CACHE_FILE = 'data_cache.json'  # Persistent cache for /data endpoint
     log.warning(f'Using LOCAL storage (will be lost on redeploy): {CHAT_MESSAGES_FILE}')
 OPENCAGE_CACHE_FILE = 'opencage_cache.json'
 OPENCAGE_TTL = 60 * 60 * 24 * 30  # 30 days
@@ -14228,7 +14269,8 @@ def data():
 
     # ===========================================================================
     # HARDENED /data ENDPOINT - Prevents 23GB+ traffic spikes
-    # HIGH-LOAD OPTIMIZED: Added in-memory caching
+    # HIGH-LOAD OPTIMIZED: Added in-memory + persistent caching
+    # DEPLOY-SAFE: Persistent cache survives server restarts (30 min TTL)
     # ===========================================================================
     
     # Allow forced reparse by clearing cache (admin use)
@@ -14251,6 +14293,28 @@ def data():
         if cached.get('etag'):
             response.headers['ETag'] = cached['etag']
         return response
+    
+    # DEPLOY-SAFE: Check persistent file cache (30 min TTL) - survives restarts
+    persistent_cache = load_data_cache()
+    if persistent_cache:
+        cached_data = persistent_cache.get('data', {})
+        cached_tracks = cached_data.get('tracks', [])
+        # Only use persistent cache if it has actual data
+        if cached_tracks:
+            # Store in memory cache for fast access
+            etag = f'data-{int(persistent_cache.get("timestamp", 0) // 5)}'
+            RESPONSE_CACHE.set(cache_key, {'data': cached_data, 'etag': etag}, ttl=5)
+            
+            client_etag = request.headers.get('If-None-Match')
+            if client_etag == etag:
+                return Response(status=304, headers={'Cache-Control': 'public, max-age=5'})
+            
+            response = jsonify(cached_data)
+            response.headers['Cache-Control'] = 'public, max-age=5'
+            response.headers['X-Cache'] = 'PERSISTENT'
+            response.headers['ETag'] = etag
+            print(f"[DATA] Returning {len(cached_tracks)} tracks from persistent cache")
+            return response
 
     # PROTECTION: Hard limits to prevent memory/bandwidth exhaustion
     MAX_TRACKS = 200       # HARD LIMIT: max tracks per response (was unlimited)
@@ -14614,11 +14678,16 @@ def data():
         response_data['_meta']['emergency_truncated'] = True
         response_json = json.dumps(response_data, separators=(',', ':'))
 
-    # HIGH-LOAD: Cache the response for 5 seconds
+    # HIGH-LOAD: Cache the response for 5 seconds (in-memory)
     RESPONSE_CACHE.set(cache_key, {
         'data': response_data,
         'etag': response_headers.get('ETag')
     }, ttl=5)
+    
+    # DEPLOY-SAFE: Save to persistent cache if we have actual tracks
+    # This ensures markers survive server restarts for 30 minutes
+    if out:  # Only cache if we have tracks
+        save_data_cache(response_data)
 
     resp = Response(response_json, mimetype='application/json')
     # Add aggressive caching headers to reduce bandwidth

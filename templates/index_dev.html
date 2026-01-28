@@ -3665,7 +3665,29 @@
     // Make available globally for hybrid map
     window.MAP_BOUNDS = MAP_BOUNDS;
     
-    let currentScale = 0.7;
+    // Adaptive min scale: 0.5 default, but calculate for small screens (MacBook)
+    function calculateMinScale() {
+      const wrapper = document.getElementById('map-wrapper');
+      if (!wrapper) return 0.5;
+      
+      const wrapperRect = wrapper.getBoundingClientRect();
+      const SVG_ASPECT_RATIO = 260 / 175; // ~1.486
+      
+      // Calculate scale needed to fit entire map
+      const scaleToFitWidth = wrapperRect.width / (wrapperRect.height * SVG_ASPECT_RATIO);
+      const scaleToFitHeight = 1;
+      
+      // For portrait screens (mobile), width is limiting
+      // For landscape (desktop/MacBook), height might be limiting
+      const fitScale = Math.min(scaleToFitWidth, scaleToFitHeight) * 0.95; // 95% to have some padding
+      
+      // Return max of 0.5 or calculated fit scale (never go below 0.3)
+      return Math.max(0.3, Math.min(0.5, fitScale));
+    }
+    
+    // Will be calculated on load
+    let minScale = 0.5;
+    let currentScale = 0.5;
     let currentX = 0;
     let currentY = 0;
     let isDragging = false;
@@ -4007,13 +4029,25 @@
             icon.style.display = 'none';
           });
           
+          // Calculate adaptive minScale based on screen size
+          minScale = calculateMinScale();
+          currentScale = minScale;
+          console.log('Adaptive minScale:', minScale);
+          
           // Setup drag functionality
           setupDrag();
+          
+          // INSTANT LOAD: Show cached markers immediately while fetching fresh data
+          const cachedMarkers = getCachedMarkers();
+          if (cachedMarkers) {
+            console.log('Showing cached markers immediately...');
+            renderMarkersFromData(cachedMarkers);
+          }
           
           // Fetch alarms immediately
           await fetchAlarms();
           
-          // Fetch threat markers immediately
+          // Fetch threat markers (will update/replace cached if newer data available)
           await fetchThreatMarkers();
           
           // Fetch fusion trajectories
@@ -4340,6 +4374,40 @@
       return { x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) };
     }
     
+    // LocalStorage cache for markers - survives page reloads and server deploys
+    const MARKERS_CACHE_KEY = 'neptun_markers_cache';
+    const MARKERS_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+    
+    function getCachedMarkers() {
+      try {
+        const cached = localStorage.getItem(MARKERS_CACHE_KEY);
+        if (!cached) return null;
+        const { data, timestamp } = JSON.parse(cached);
+        // Check if cache is still valid (30 min)
+        if (Date.now() - timestamp < MARKERS_CACHE_TTL && data && data.length > 0) {
+          console.log(`Using cached markers (${data.length} items, age: ${Math.round((Date.now() - timestamp) / 1000)}s)`);
+          return data;
+        }
+      } catch (e) {
+        console.log('Cache read error:', e);
+      }
+      return null;
+    }
+    
+    function setCachedMarkers(data) {
+      try {
+        if (data && data.length > 0) {
+          localStorage.setItem(MARKERS_CACHE_KEY, JSON.stringify({
+            data: data,
+            timestamp: Date.now()
+          }));
+          console.log(`Cached ${data.length} markers`);
+        }
+      } catch (e) {
+        console.log('Cache write error:', e);
+      }
+    }
+    
     // Fetch threat markers from /data endpoint with ETag caching
     // PROGRESSIVE LOADING: Markers appear one by one, newest first
     async function fetchThreatMarkers() {
@@ -4358,7 +4426,15 @@
           return;
         }
         
-        if (!response.ok) return;
+        // If server error or empty response - use cached markers
+        if (!response.ok) {
+          console.log(`Server error ${response.status}, checking cache...`);
+          const cached = getCachedMarkers();
+          if (cached) {
+            renderMarkersFromData(cached);
+          }
+          return;
+        }
         
         // Save ETag for next request
         const newETag = response.headers.get('ETag');
@@ -4367,7 +4443,40 @@
         }
         
         const data = await response.json();
+        let markers = data.tracks || data.items || data || [];
+        
+        // If server returned empty but we have cache - use cache temporarily
+        if ((!markers || markers.length === 0) && !Array.isArray(markers)) {
+          console.log('Server returned empty, checking cache...');
+          const cached = getCachedMarkers();
+          if (cached) {
+            renderMarkersFromData(cached);
+            return;
+          }
+        }
+        
+        // Cache the new markers
+        if (Array.isArray(markers) && markers.length > 0) {
+          setCachedMarkers(markers);
+        }
+        
+        // Render markers
+        renderMarkersFromData(markers, data.ballistic_threat);
+        
+      } catch (error) {
+        console.log('Fetch error, checking cache...', error);
+        // Network error - use cached markers
+        const cached = getCachedMarkers();
+        if (cached) {
+          renderMarkersFromData(cached);
+        }
+      }
+    }
+    
+    // Render markers from data (either fresh or cached)
+    function renderMarkersFromData(markersData, ballisticThreat) {
         const markersLayer = document.getElementById('markers-layer');
+        if (!markersLayer) return;
         
         // Clear existing markers
         markersLayer.innerHTML = '';
@@ -4376,10 +4485,10 @@
         const markerCounts = {};
         
         // Process markers
-        let markers = data.tracks || data.items || data || [];
+        let markers = Array.isArray(markersData) ? markersData : [];
         
-        if (!Array.isArray(markers)) {
-          console.log('No markers array found');
+        if (!Array.isArray(markers) || markers.length === 0) {
+          console.log('No markers to render');
           return;
         }
         
@@ -4414,18 +4523,12 @@
         };
         
         // Start progressive loading
-        if (markers.length > 0) {
-          addMarkerBatch(0);
-        }
+        addMarkerBatch(0);
         
         // Check for ballistic threat from Telegram (immediate)
-        if (data.ballistic_threat) {
-          checkBallisticThreats(data.ballistic_threat);
+        if (ballisticThreat) {
+          checkBallisticThreats(ballisticThreat);
         }
-        
-      } catch (error) {
-        console.error('Error fetching threat markers:', error);
-      }
     }
     
     // Helper: Add a single marker to the map
@@ -4894,13 +4997,12 @@
     }
     
     function zoomOut() {
-      // Minimum scale 1.0 to prevent blurriness on small screens
-      currentScale = Math.max(currentScale / 1.3, 1.0);
+      currentScale = Math.max(currentScale / 1.3, minScale);
       updateZoom(true);
     }
     
     function resetZoom() {
-      currentScale = 0.7;
+      currentScale = minScale;
       currentX = 0;
       currentY = 0;
       offsetX = 0;
@@ -5035,7 +5137,7 @@
         
         // Calculate new scale
         const zoomFactor = e.deltaY < 0 ? 1.3 : (1 / 1.3);
-        const newScale = Math.min(Math.max(currentScale * zoomFactor, 0.7), 5);
+        const newScale = Math.min(Math.max(currentScale * zoomFactor, minScale), 5);
         
         if (Math.abs(newScale - currentScale) > 0.01) {
           currentScale = newScale;
@@ -5102,8 +5204,8 @@
           
           if (lastTouchDistance > 0 && !rafPending) {
             const scale = newDistance / lastTouchDistance;
-            // Min scale 0.5 for better overview
-            const newScale = Math.min(Math.max(currentScale * scale, 0.5), 5);
+            // Use adaptive minScale
+            const newScale = Math.min(Math.max(currentScale * scale, minScale), 5);
             
             // Only update if change is significant (reduces redraws)
             if (Math.abs(newScale - currentScale) > 0.02) {
@@ -6106,17 +6208,20 @@
     
     let leafletMap = null;
     let leafletInitialized = false;
+    let leafletInitPromise = null;
     const SVG_FADE_START = 2.0;  // Start fading SVG at this scale
     const SVG_FADE_END = 3.5;    // SVG fully transparent at this scale
     
     // Initialize Leaflet map (lazy - only when needed at high zoom)
     async function initLeafletMap() {
-      if (leafletInitialized) return;
+      if (leafletInitialized) return Promise.resolve();
+      if (leafletInitPromise) return leafletInitPromise;
       
+      leafletInitPromise = (async () => {
       const mapEl = document.getElementById('leaflet-map');
       if (!mapEl) return;
       
-      // Center of Ukraine
+      // Center of Ukraine - will be synced immediately after
       const ukraineCenter = [48.5, 31.5];
       
       // Mobile-optimized Leaflet options
@@ -6124,7 +6229,7 @@
       
       leafletMap = L.map('leaflet-map', {
         center: ukraineCenter,
-        zoom: 6,
+        zoom: 8,  // Start at higher zoom - will be synced
         zoomControl: false,
         attributionControl: false,
         dragging: false,      // Disable - we use SVG drag
@@ -6133,8 +6238,8 @@
         touchZoom: false,
         // Mobile optimizations
         preferCanvas: isMobileDevice, // Canvas rendering faster on mobile
-        fadeAnimation: !isMobileDevice,
-        zoomAnimation: !isMobileDevice
+        fadeAnimation: false,  // Disable animations for instant response
+        zoomAnimation: false
       });
       
       // Load OpenFreeMap dark style and modify for Ukrainian-only labels
@@ -6180,9 +6285,13 @@
       }
       
       leafletInitialized = true;
+      console.log('Leaflet initialized, ready for sync');
+      })();
+      
+      return leafletInitPromise;
     }
     
-    // Sync Leaflet view with SVG container position - precise bounds matching
+    // Sync Leaflet view with SVG container position - smooth zoom preservation
     function syncLeafletWithSVG(scale) {
       if (!leafletMap || !window.MAP_BOUNDS) return;
       
@@ -6194,39 +6303,47 @@
       const wrapperRect = wrapper.getBoundingClientRect();
       const MAP_BOUNDS = window.MAP_BOUNDS;
       
-      // Calculate visible portion of SVG in normalized coordinates (0-1)
-      // Left edge of visible area
-      const visibleLeftNorm = Math.max(0, (wrapperRect.left - containerRect.left) / containerRect.width);
-      // Right edge of visible area  
-      const visibleRightNorm = Math.min(1, (wrapperRect.right - containerRect.left) / containerRect.width);
-      // Top edge of visible area
-      const visibleTopNorm = Math.max(0, (wrapperRect.top - containerRect.top) / containerRect.height);
-      // Bottom edge of visible area
-      const visibleBottomNorm = Math.min(1, (wrapperRect.bottom - containerRect.top) / containerRect.height);
+      // If SVG container is not visible or has zero size, skip
+      if (containerRect.width <= 0 || containerRect.height <= 0) return;
       
-      // Convert normalized coords to lat/lng
-      // X -> Lng (left to right)
-      const westLng = MAP_BOUNDS.minLng + visibleLeftNorm * (MAP_BOUNDS.maxLng - MAP_BOUNDS.minLng);
-      const eastLng = MAP_BOUNDS.minLng + visibleRightNorm * (MAP_BOUNDS.maxLng - MAP_BOUNDS.minLng);
-      // Y -> Lat (top to bottom, but lat increases upward)
-      const northLat = MAP_BOUNDS.maxLat - visibleTopNorm * (MAP_BOUNDS.maxLat - MAP_BOUNDS.minLat);
-      const southLat = MAP_BOUNDS.maxLat - visibleBottomNorm * (MAP_BOUNDS.maxLat - MAP_BOUNDS.minLat);
+      // Calculate center of visible area in normalized coordinates (0-1)
+      const centerXNorm = ((wrapperRect.left + wrapperRect.width / 2) - containerRect.left) / containerRect.width;
+      const centerYNorm = ((wrapperRect.top + wrapperRect.height / 2) - containerRect.top) / containerRect.height;
       
-      // Create Leaflet bounds and fit to them
-      const bounds = L.latLngBounds(
-        [southLat, westLng],  // Southwest corner
-        [northLat, eastLng]   // Northeast corner
-      );
+      // Clamp to valid range
+      const clampedCenterX = Math.max(0, Math.min(1, centerXNorm));
+      const clampedCenterY = Math.max(0, Math.min(1, centerYNorm));
       
-      // Fit Leaflet to exact same bounds as visible SVG area
-      leafletMap.fitBounds(bounds, {
+      // Convert to lat/lng
+      const centerLng = MAP_BOUNDS.minLng + clampedCenterX * (MAP_BOUNDS.maxLng - MAP_BOUNDS.minLng);
+      const centerLat = MAP_BOUNDS.maxLat - clampedCenterY * (MAP_BOUNDS.maxLat - MAP_BOUNDS.minLat);
+      
+      // Calculate Leaflet zoom based on SVG scale
+      // At scale 1, we see full Ukraine (~6 degrees lat) which is about Leaflet zoom 5-6
+      // At scale 3.5, we see ~2 degrees which is about zoom 8
+      // At scale 5, we see ~1.2 degrees which is about zoom 9
+      
+      // Visible lat range
+      const visibleLatRange = (MAP_BOUNDS.maxLat - MAP_BOUNDS.minLat) / scale;
+      
+      // Convert lat range to Leaflet zoom level
+      // Formula: zoom = log2(360 / latRange) - approximate for Ukraine latitudes
+      // Adjusted for better match: zoom = log2(180 / latRange) + offset
+      const leafletZoom = Math.log2(180 / visibleLatRange) + 0.5;
+      
+      // Clamp zoom to reasonable values
+      const clampedZoom = Math.max(5, Math.min(15, leafletZoom));
+      
+      // Use setView instead of fitBounds - preserves zoom smoothly
+      leafletMap.setView([centerLat, centerLng], clampedZoom, {
         animate: false,
-        padding: [0, 0]
+        duration: 0
       });
     }
     
     // Track hybrid state
     let lastHybridState = false;
+    let leafletSyncPending = false;
     
     // Update hybrid mode based on current SVG scale - instant class toggle
     function updateHybridMode(scale) {
@@ -6242,7 +6359,11 @@
         if (shouldShowHybrid) {
           // High zoom - show OpenFreeMap
           if (!leafletInitialized) {
-            initLeafletMap();
+            // Init and sync after it's ready
+            initLeafletMap().then(() => {
+              // Sync position after map is ready
+              setTimeout(() => syncLeafletWithSVG(scale), 100);
+            });
           }
           if (mapEl) mapEl.classList.add('visible');
           if (svgContainer) svgContainer.classList.add('hybrid-active');
@@ -6253,9 +6374,13 @@
         }
       }
       
-      // Always sync Leaflet position when it's visible
-      if (leafletInitialized && scale >= SVG_FADE_START) {
-        syncLeafletWithSVG(scale);
+      // Sync Leaflet position with RAF to avoid jank
+      if (leafletInitialized && scale >= SVG_FADE_START && !leafletSyncPending) {
+        leafletSyncPending = true;
+        requestAnimationFrame(() => {
+          syncLeafletWithSVG(scale);
+          leafletSyncPending = false;
+        });
       }
     }
     
