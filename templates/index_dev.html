@@ -6305,7 +6305,6 @@
       if (containerRect.width <= 0 || containerRect.height <= 0) return;
       
       // Calculate what part of SVG is visible in viewport (0-1 normalized)
-      // Left edge: where wrapper starts relative to container
       const visibleLeftNorm = (wrapperRect.left - containerRect.left) / containerRect.width;
       const visibleRightNorm = (wrapperRect.right - containerRect.left) / containerRect.width;
       const visibleTopNorm = (wrapperRect.top - containerRect.top) / containerRect.height;
@@ -6323,21 +6322,40 @@
       
       const westLng = MAP_BOUNDS.minLng + left * lngRange;
       const eastLng = MAP_BOUNDS.minLng + right * lngRange;
-      const northLat = MAP_BOUNDS.maxLat - top * latRange;  // Y is inverted
+      const northLat = MAP_BOUNDS.maxLat - top * latRange;
       const southLat = MAP_BOUNDS.maxLat - bottom * latRange;
       
-      // Use fitBounds for exact geographic alignment
-      const bounds = L.latLngBounds(
-        [southLat, westLng],  // southwest
-        [northLat, eastLng]   // northeast
-      );
+      // Calculate center point
+      const centerLat = (northLat + southLat) / 2;
+      const centerLng = (westLng + eastLng) / 2;
+      
+      // Calculate zoom level based on how much of the map is visible
+      // Full Ukraine is about 8.2 degrees lat, which is roughly zoom 5.5
+      const visibleLatRange = northLat - southLat;
+      const visibleLngRange = eastLng - westLng;
+      
+      // Use longitude range for zoom calculation (more accurate for Ukraine's shape)
+      // Full width (18.2 deg) = zoom ~5.5, so: zoom = log2(18.2 / visibleLng) + 5.5
+      const fullLngRange = MAP_BOUNDS.maxLng - MAP_BOUNDS.minLng;
+      const zoomFromLng = Math.log2(fullLngRange / visibleLngRange) + 5.3;
+      
+      // Also calculate from lat for comparison
+      const fullLatRange = MAP_BOUNDS.maxLat - MAP_BOUNDS.minLat;
+      const zoomFromLat = Math.log2(fullLatRange / visibleLatRange) + 5.3;
+      
+      // Use the smaller zoom (shows more area) to ensure everything fits
+      const calculatedZoom = Math.min(zoomFromLng, zoomFromLat);
+      
+      // Clamp zoom to valid range
+      const clampedZoom = Math.max(5, Math.min(18, calculatedZoom));
       
       // Ensure Leaflet knows its container size
       leafletMap.invalidateSize({ animate: false });
       
-      leafletMap.fitBounds(bounds, {
+      // Use setView for precise control (fitBounds adjusts zoom unpredictably)
+      leafletMap.setView([centerLat, centerLng], clampedZoom, {
         animate: false,
-        padding: [0, 0]
+        duration: 0
       });
     }
     
