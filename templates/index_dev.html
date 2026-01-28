@@ -1245,7 +1245,7 @@
       position: absolute;
       width: 32px;
       height: 32px;
-      transform: translate(-50%, -50%);
+      /* REMOVED: transform: translate(-50%, -50%); - conflicts with Leaflet iconAnchor */
       pointer-events: auto;
       cursor: pointer;
       filter: drop-shadow(0 0 6px rgba(255, 100, 100, 0.7));
@@ -1261,7 +1261,7 @@
     }
     
     .threat-marker:hover {
-      transform: translate(-50%, -50%) scale(1.3);
+      transform: scale(1.3);
       z-index: 100;
       filter: drop-shadow(0 0 12px rgba(255, 100, 100, 0.9));
     }

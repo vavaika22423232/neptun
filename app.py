@@ -3322,8 +3322,84 @@ def _active_sessions_from_db(ttl):
     return {}
 
 def sql_unique_counts():
-    """Get unique visitor counts from SQL - stub"""
-    return None, None
+    """Get unique visitor counts from SQLite database (thread-safe, survives deploys)."""
+    try:
+        db_path = _get_db_path()
+        conn = sqlite3.connect(db_path, timeout=10)
+        try:
+            cursor = conn.cursor()
+            
+            # Ensure table exists
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS visitor_log (
+                    visitor_id TEXT NOT NULL,
+                    visit_date TEXT NOT NULL,
+                    created_at REAL DEFAULT (strftime('%s', 'now')),
+                    PRIMARY KEY (visitor_id, visit_date)
+                )
+            """)
+            conn.commit()
+            
+            tz = pytz.timezone('Europe/Kyiv')
+            now_dt = datetime.now(tz)
+            today = now_dt.strftime('%Y-%m-%d')
+            week_ago = (now_dt - timedelta(days=7)).strftime('%Y-%m-%d')
+            
+            # Count unique visitors today
+            cursor.execute("SELECT COUNT(DISTINCT visitor_id) FROM visitor_log WHERE visit_date = ?", (today,))
+            daily = cursor.fetchone()[0] or 0
+            
+            # Count unique visitors in last 7 days
+            cursor.execute("SELECT COUNT(DISTINCT visitor_id) FROM visitor_log WHERE visit_date >= ?", (week_ago,))
+            weekly = cursor.fetchone()[0] or 0
+            
+            return daily, weekly
+        finally:
+            conn.close()
+    except Exception as e:
+        log.warning(f"sql_unique_counts error: {e}")
+        return None, None
+
+def sql_record_visit(visitor_id: str):
+    """Record visitor in SQLite (thread-safe, prevents race conditions)."""
+    if not visitor_id:
+        return
+    try:
+        db_path = _get_db_path()
+        conn = sqlite3.connect(db_path, timeout=10)
+        try:
+            cursor = conn.cursor()
+            
+            # Ensure table exists
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS visitor_log (
+                    visitor_id TEXT NOT NULL,
+                    visit_date TEXT NOT NULL,
+                    created_at REAL DEFAULT (strftime('%s', 'now')),
+                    PRIMARY KEY (visitor_id, visit_date)
+                )
+            """)
+            
+            tz = pytz.timezone('Europe/Kyiv')
+            today = datetime.now(tz).strftime('%Y-%m-%d')
+            
+            # INSERT OR IGNORE - no duplicates, thread-safe
+            cursor.execute(
+                "INSERT OR IGNORE INTO visitor_log (visitor_id, visit_date) VALUES (?, ?)",
+                (visitor_id, today)
+            )
+            conn.commit()
+            
+            # Cleanup old entries (older than 30 days) - run occasionally
+            import random
+            if random.random() < 0.01:  # 1% chance
+                cutoff = (datetime.now(tz) - timedelta(days=30)).strftime('%Y-%m-%d')
+                cursor.execute("DELETE FROM visitor_log WHERE visit_date < ?", (cutoff,))
+                conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        log.warning(f"sql_record_visit error: {e}")
 
 def get_redirect_stats():
     """Get redirect statistics - stub"""
@@ -3472,32 +3548,39 @@ def _update_recent_visits(vid:str):
     tz = pytz.timezone('Europe/Kyiv')
     now_dt = datetime.now(tz)
     today = now_dt.strftime('%Y-%m-%d')
-    # ISO week (Monday start) anchor date for 7-day rolling window (not strictly calendar week) -> we store date 6 days prior cutoff
-    # We'll implement simple 7-day rolling: if stored week_start older than 7 days, reset week_ids
+    
+    # Week window: 7-day rolling window from week_start
     stored_week_start = data.get('week_start') or today
     try:
         sw_dt = datetime.strptime(stored_week_start, '%Y-%m-%d')
-        # make tz-aware in same timezone
         sw_dt = tz.localize(sw_dt)
     except Exception:
         sw_dt = now_dt
+    
+    # If week window expired (7+ days), reset week
     if (now_dt - sw_dt).days >= 7:
-        # reset week window
         stored_week_start = today
         data['week_ids'] = []
-    # day rollover
+        data['week_start'] = stored_week_start
+    
+    # Day rollover - reset today_ids but KEEP week_ids!
     if data.get('day') != today:
         data['day'] = today
         data['today_ids'] = []
-    # ensure lists
+        # DON'T reset week_ids here - they accumulate for 7 days
+    
+    # Ensure lists exist
     if 'today_ids' not in data or not isinstance(data['today_ids'], list):
         data['today_ids'] = []
     if 'week_ids' not in data or not isinstance(data['week_ids'], list):
         data['week_ids'] = []
+    
+    # Add visitor to both lists if not already present
     if vid not in data['today_ids']:
         data['today_ids'].append(vid)
     if vid not in data['week_ids']:
         data['week_ids'].append(vid)
+    
     data['week_start'] = stored_week_start
     _save_recent_visits(data)
 
@@ -16169,6 +16252,12 @@ def presence():
         _update_recent_visits(vid)
     except Exception as e:
         log.warning(f"recent visits update failed: {e}")
+
+    # Record visit in SQLite for accurate daily/weekly counts (thread-safe)
+    try:
+        sql_record_visit(vid)
+    except Exception as e:
+        log.warning(f"sql_record_visit failed: {e}")
 
     try:
         record_visit_sql(vid, now, remote_ip)
