@@ -522,14 +522,14 @@
       overflow: hidden;
     }
     
-    /* Leaflet map layer - inside svg-container for perfect alignment */
+    /* Leaflet map layer - fast smooth fade */
     #leaflet-map {
       position: absolute;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
-      z-index: 0;  /* Below SVG layers */
+      z-index: 0;
       opacity: 0;
       transition: opacity 0.4s ease-out;
       pointer-events: none;
@@ -563,9 +563,10 @@
     /* Markers and trajectories stay visible over OpenFreeMap */
     /* They're inside svg-container which moves with the map */
 
-    /* Container for SVG layers - Leaflet is now INSIDE this container */
+    /* Container for SVG layers */
     .svg-container {
       position: absolute;
+      z-index: 1; /* Above leaflet-map (z-index: 0) */
       /* GPU acceleration - force layer composition */
       will-change: transform;
       transform: translateZ(0);
@@ -3244,9 +3245,10 @@
     <h1 class="seo-h1">Карта тривог України онлайн — карта шахедів, радар шахедів, мапа тривог в реальному часі</h1>
     
     <div id="map-wrapper">
+      <!-- Leaflet map (shows at high zoom) -->
+      <div id="leaflet-map"></div>
+      
       <div class="svg-container" id="svg-container">
-        <!-- Leaflet map (shows at high zoom) - INSIDE svg-container for perfect alignment -->
-        <div id="leaflet-map"></div>
         <!-- States SVG will be loaded here -->
         <div id="states-layer"></div>
         <!-- Districts SVG will be loaded here -->
@@ -6206,13 +6208,12 @@
     // HYBRID MAP: SVG + OpenFreeMap at high zoom
     // При низькому зумі - тільки SVG з синім фоном
     // При високому зумі (scale > 2) - з'являється OpenFreeMap
-    // DISABLED: OpenFreeMap causes marker floating issues
     // ============================================
     
     let leafletMap = null;
     let leafletInitialized = false;
-    const SVG_FADE_START = 999;  // DISABLED - never fade SVG
-    const SVG_FADE_END = 999;    // DISABLED - never show OpenFreeMap
+    const SVG_FADE_START = 2.0;  // Start fading SVG at this scale
+    const SVG_FADE_END = 3.5;    // SVG fully transparent at this scale
     
     // Initialize Leaflet map (lazy - only when needed at high zoom)
     async function initLeafletMap() {
@@ -6287,27 +6288,53 @@
       console.log('Leaflet map initialized with OpenFreeMap (dark)');
     }
     
-    // Sync Leaflet view with SVG container - now Leaflet is INSIDE svg-container
-    // So it just needs to show the full Ukraine bounds (same as SVG)
+    // Sync Leaflet view with SVG container position - pixel-perfect alignment
     function syncLeafletWithSVG(scale) {
       if (!leafletMap || !window.MAP_BOUNDS) return;
       
       const container = document.getElementById('svg-container');
-      if (!container) return;
+      const wrapper = document.getElementById('map-wrapper');
+      const leafletEl = document.getElementById('leaflet-map');
+      if (!container || !wrapper || !leafletEl) return;
       
+      const containerRect = container.getBoundingClientRect();
+      const wrapperRect = wrapper.getBoundingClientRect();
       const MAP_BOUNDS = window.MAP_BOUNDS;
       
-      // Leaflet is inside svg-container, so it should show the FULL SVG area
-      // The container handles positioning/scaling, Leaflet just shows Ukraine
+      // If SVG container is not visible or has zero size, skip
+      if (containerRect.width <= 0 || containerRect.height <= 0) return;
+      
+      // Calculate what part of SVG is visible in viewport (0-1 normalized)
+      // Left edge: where wrapper starts relative to container
+      const visibleLeftNorm = (wrapperRect.left - containerRect.left) / containerRect.width;
+      const visibleRightNorm = (wrapperRect.right - containerRect.left) / containerRect.width;
+      const visibleTopNorm = (wrapperRect.top - containerRect.top) / containerRect.height;
+      const visibleBottomNorm = (wrapperRect.bottom - containerRect.top) / containerRect.height;
+      
+      // Clamp to 0-1
+      const left = Math.max(0, Math.min(1, visibleLeftNorm));
+      const right = Math.max(0, Math.min(1, visibleRightNorm));
+      const top = Math.max(0, Math.min(1, visibleTopNorm));
+      const bottom = Math.max(0, Math.min(1, visibleBottomNorm));
+      
+      // Convert normalized coords to lat/lng bounds
+      const lngRange = MAP_BOUNDS.maxLng - MAP_BOUNDS.minLng;
+      const latRange = MAP_BOUNDS.maxLat - MAP_BOUNDS.minLat;
+      
+      const westLng = MAP_BOUNDS.minLng + left * lngRange;
+      const eastLng = MAP_BOUNDS.minLng + right * lngRange;
+      const northLat = MAP_BOUNDS.maxLat - top * latRange;  // Y is inverted
+      const southLat = MAP_BOUNDS.maxLat - bottom * latRange;
+      
+      // Use fitBounds for exact geographic alignment
       const bounds = L.latLngBounds(
-        [MAP_BOUNDS.minLat, MAP_BOUNDS.minLng],  // southwest
-        [MAP_BOUNDS.maxLat, MAP_BOUNDS.maxLng]   // northeast
+        [southLat, westLng],  // southwest
+        [northLat, eastLng]   // northeast
       );
       
-      // Ensure Leaflet knows its container size changed
+      // Ensure Leaflet knows its container size
       leafletMap.invalidateSize({ animate: false });
       
-      // Fit to full Ukraine bounds - container handles the zoom/pan
       leafletMap.fitBounds(bounds, {
         animate: false,
         padding: [0, 0]
@@ -6317,7 +6344,6 @@
     // Track hybrid state
     let lastHybridState = false;
     let leafletSyncPending = false;
-    let lastContainerSize = { w: 0, h: 0 };
     
     // Update hybrid mode based on current SVG scale - instant class toggle
     function updateHybridMode(scale) {
@@ -6333,10 +6359,7 @@
         if (shouldShowHybrid) {
           // High zoom - show OpenFreeMap
           if (!leafletInitialized) {
-            initLeafletMap().then(() => {
-              // Sync after init
-              syncLeafletWithSVG(scale);
-            });
+            initLeafletMap();
           }
           if (mapEl) mapEl.classList.add('visible');
           if (svgContainer) svgContainer.classList.add('hybrid-active');
@@ -6347,18 +6370,9 @@
         }
       }
       
-      // Sync Leaflet on every update when visible (container size may have changed)
+      // Sync Leaflet position (only when visible and initialized)
       if (leafletInitialized && shouldShowHybrid) {
-        const container = document.getElementById('svg-container');
-        if (container) {
-          const rect = container.getBoundingClientRect();
-          // Only sync if size actually changed
-          if (rect.width !== lastContainerSize.w || rect.height !== lastContainerSize.h) {
-            lastContainerSize.w = rect.width;
-            lastContainerSize.h = rect.height;
-            syncLeafletWithSVG(scale);
-          }
-        }
+        syncLeafletWithSVG(scale);
       }
     }
     
