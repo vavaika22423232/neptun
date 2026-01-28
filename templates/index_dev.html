@@ -4992,7 +4992,7 @@
     let offsetY = 0;
     
     function zoomIn() {
-      currentScale = Math.min(currentScale * 1.3, 5);
+      currentScale = Math.min(currentScale * 1.3, 10);
       updateZoom(true);
     }
     
@@ -5137,7 +5137,7 @@
         
         // Calculate new scale
         const zoomFactor = e.deltaY < 0 ? 1.3 : (1 / 1.3);
-        const newScale = Math.min(Math.max(currentScale * zoomFactor, minScale), 5);
+        const newScale = Math.min(Math.max(currentScale * zoomFactor, minScale), 10);
         
         if (Math.abs(newScale - currentScale) > 0.01) {
           currentScale = newScale;
@@ -5205,7 +5205,7 @@
           if (lastTouchDistance > 0 && !rafPending) {
             const scale = newDistance / lastTouchDistance;
             // Use adaptive minScale
-            const newScale = Math.min(Math.max(currentScale * scale, minScale), 5);
+            const newScale = Math.min(Math.max(currentScale * scale, minScale), 10);
             
             // Only update if change is significant (reduces redraws)
             if (Math.abs(newScale - currentScale) > 0.02) {
@@ -6208,20 +6208,17 @@
     
     let leafletMap = null;
     let leafletInitialized = false;
-    let leafletInitPromise = null;
     const SVG_FADE_START = 2.0;  // Start fading SVG at this scale
     const SVG_FADE_END = 3.5;    // SVG fully transparent at this scale
     
     // Initialize Leaflet map (lazy - only when needed at high zoom)
     async function initLeafletMap() {
-      if (leafletInitialized) return Promise.resolve();
-      if (leafletInitPromise) return leafletInitPromise;
+      if (leafletInitialized) return;
       
-      leafletInitPromise = (async () => {
       const mapEl = document.getElementById('leaflet-map');
       if (!mapEl) return;
       
-      // Center of Ukraine - will be synced immediately after
+      // Center of Ukraine
       const ukraineCenter = [48.5, 31.5];
       
       // Mobile-optimized Leaflet options
@@ -6229,16 +6226,15 @@
       
       leafletMap = L.map('leaflet-map', {
         center: ukraineCenter,
-        zoom: 8,  // Start at higher zoom - will be synced
+        zoom: 6,
         zoomControl: false,
         attributionControl: false,
         dragging: false,      // Disable - we use SVG drag
         scrollWheelZoom: false,
         doubleClickZoom: false,
         touchZoom: false,
-        // Mobile optimizations
-        preferCanvas: isMobileDevice, // Canvas rendering faster on mobile
-        fadeAnimation: false,  // Disable animations for instant response
+        // Disable all animations for instant response
+        fadeAnimation: false,
         zoomAnimation: false
       });
       
@@ -6285,10 +6281,7 @@
       }
       
       leafletInitialized = true;
-      console.log('Leaflet initialized, ready for sync');
-      })();
-      
-      return leafletInitPromise;
+      console.log('Leaflet map initialized with OpenFreeMap (dark)');
     }
     
     // Sync Leaflet view with SVG container position - smooth zoom preservation
@@ -6332,7 +6325,7 @@
       const leafletZoom = Math.log2(180 / visibleLatRange) + 0.5;
       
       // Clamp zoom to reasonable values
-      const clampedZoom = Math.max(5, Math.min(15, leafletZoom));
+      const clampedZoom = Math.max(5, Math.min(18, leafletZoom));
       
       // Use setView instead of fitBounds - preserves zoom smoothly
       leafletMap.setView([centerLat, centerLng], clampedZoom, {
@@ -6359,11 +6352,7 @@
         if (shouldShowHybrid) {
           // High zoom - show OpenFreeMap
           if (!leafletInitialized) {
-            // Init and sync after it's ready
-            initLeafletMap().then(() => {
-              // Sync position after map is ready
-              setTimeout(() => syncLeafletWithSVG(scale), 100);
-            });
+            initLeafletMap();
           }
           if (mapEl) mapEl.classList.add('visible');
           if (svgContainer) svgContainer.classList.add('hybrid-active');
@@ -6374,13 +6363,9 @@
         }
       }
       
-      // Sync Leaflet position with RAF to avoid jank
-      if (leafletInitialized && scale >= SVG_FADE_START && !leafletSyncPending) {
-        leafletSyncPending = true;
-        requestAnimationFrame(() => {
-          syncLeafletWithSVG(scale);
-          leafletSyncPending = false;
-        });
+      // Sync Leaflet position (only when visible and initialized)
+      if (leafletInitialized && shouldShowHybrid) {
+        syncLeafletWithSVG(scale);
       }
     }
     
