@@ -319,7 +319,7 @@
   <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/favicon-16x16.png">
   <meta name="apple-mobile-web-app-title" content="Карта тривог">
   <meta name="application-name" content="Карта тривог NEPTUN">
-  <meta name="msapplication-TileColor" content="#0f172a">
+  <meta name="msapplication-TileColor" content="#0a0e17">
   <meta name="msapplication-TileImage" content="/static/icons/icon-144.png">
   
   <!-- CRITICAL CSS - Inlined for faster FCP/LCP -->
@@ -329,7 +329,7 @@
     body { background: #0a0e17; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
     #map-container { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; position: relative; }
     .seo-h1 { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 5; color: rgba(255,255,255,0.7); font-size: 12px; }
-    .seo-content-block { position: fixed; bottom: 0; left: 0; right: 0; z-index: 100; background: rgba(10,14,23,0.98); max-height: 44px; overflow: hidden; }
+    .seo-content-block { position: fixed; bottom: 0; left: 0; right: 0; z-index: 100; background: #0a0e17; max-height: 44px; overflow: hidden; }
     .seo-content-block.collapsed { max-height: 44px; }
     /* Prevent layout shift from fonts */
     .material-icons { font-family: 'Material Icons'; font-size: 24px; width: 24px; height: 24px; display: inline-block; }
@@ -436,8 +436,8 @@
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background: linear-gradient(135deg, #0a0e17 0%, #0d1929 50%, #0a192f 100%);
-      font-family: 'Inter', 'Exo 2', -apple-system, sans-serif;
+      background: #0a0e17;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
       -webkit-tap-highlight-color: transparent !important;
       -webkit-touch-callout: none !important;
       -webkit-user-select: none !important;
@@ -454,20 +454,9 @@
       -webkit-user-drag: none !important;
     }
     
-    /* Animated background grid */
+    /* Background - clean, no grid */
     #map-container::before {
-      content: '';
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background-image: 
-        linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
-      background-size: 50px 50px;
-      pointer-events: none;
-      z-index: 0;
+      display: none;
     }
     
     #map-container {
@@ -490,14 +479,13 @@
       left: 50%;
       transform: translateX(-50%);
       z-index: 5;
-      color: rgba(255, 255, 255, 0.7);
-      font-size: 12px;
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 11px;
       font-weight: 400;
       font-family: 'Inter', sans-serif;
       text-align: center;
       white-space: nowrap;
       pointer-events: none;
-      text-shadow: 0 1px 3px rgba(0,0,0,0.8);
       letter-spacing: 0.3px;
     }
     
@@ -545,7 +533,7 @@
       left: 0;
       width: 100%;
       height: 100%;
-      background: linear-gradient(135deg, #0a0e17 0%, #0d1929 50%, #0a192f 100%);
+      background: #0a0e17;
       z-index: -1;
       pointer-events: none;
       opacity: var(--bg-opacity, 1);
@@ -710,25 +698,22 @@
     }
     
     .neptun-logo h1 {
-      font-family: 'Orbitron', sans-serif;
-      font-size: 28px;
-      font-weight: 900;
-      background: linear-gradient(135deg, #00d4ff 0%, #0099cc 50%, #00d4ff 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      letter-spacing: 8px;
-      text-shadow: 0 0 30px rgba(0, 212, 255, 0.5);
+      font-family: 'Inter', sans-serif;
+      font-size: 22px;
+      font-weight: 500;
+      color: #ffffff;
+      letter-spacing: 6px;
       margin: 0;
     }
     
     .neptun-logo .subtitle {
-      font-family: 'Exo 2', sans-serif;
-      font-size: 10px;
-      color: rgba(0, 212, 255, 0.6);
-      letter-spacing: 4px;
+      font-family: 'Inter', sans-serif;
+      font-size: 9px;
+      color: rgba(255, 255, 255, 0.4);
+      letter-spacing: 2px;
       margin-top: 4px;
       text-transform: uppercase;
+      font-weight: 400;
     }
     
     /* Zoom controls - NEPTUN style */
@@ -738,35 +723,32 @@
       right: 30px;
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 6px;
       z-index: 1000;
     }
     
     .zoom-btn {
       width: 44px;
       height: 44px;
-      background: rgba(10, 25, 47, 0.9);
-      border: 1px solid rgba(0, 212, 255, 0.3);
-      border-radius: 8px;
-      color: #00d4ff;
-      font-size: 20px;
-      font-weight: bold;
+      background: #2c2c2e;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      color: rgba(255, 255, 255, 0.8);
+      font-size: 18px;
+      font-weight: 400;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       transition: all 0.2s ease;
-      /* backdrop-filter: blur(10px); - disabled for performance */
     }
     
     .zoom-btn:hover {
-      background: rgba(0, 212, 255, 0.15);
-      border-color: #00d4ff;
-      box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
-      transform: scale(1.05);
+      background: #3a3a3c;
+      color: #fff;
     }
     
-    /* Floating Buttons Container - Minimal Style */
+    /* Floating Buttons Container - Copilot Style */
     .floating-buttons {
       position: fixed;
       bottom: 24px;
@@ -774,7 +756,7 @@
       z-index: 1100;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 10px;
     }
     
     .floating-btn {
@@ -782,16 +764,15 @@
       align-items: center;
       justify-content: center;
       gap: 8px;
-      padding: 12px 18px;
-      border: none;
-      border-radius: 50px;
+      padding: 12px 20px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 100px;
       font-size: 13px;
       font-weight: 500;
-      letter-spacing: 0.3px;
+      letter-spacing: 0.2px;
       cursor: pointer;
-      transition: all 0.25s ease;
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
+      transition: all 0.2s ease;
+      background: #2c2c2e;
     }
     
     .floating-btn i.material-icons {
@@ -799,43 +780,37 @@
     }
     
     .floating-btn.commercial-btn {
-      background: rgba(139, 92, 246, 0.15);
-      color: #a78bfa;
-      border: 1px solid rgba(139, 92, 246, 0.25);
+      background: #2c2c2e;
+      color: rgba(255, 255, 255, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.1);
     }
     
     .floating-btn.commercial-btn:hover {
-      background: rgba(139, 92, 246, 0.25);
-      color: #c4b5fd;
-      transform: translateX(-4px);
-      box-shadow: 0 4px 20px rgba(139, 92, 246, 0.2);
+      background: #3a3a3c;
+      color: #fff;
     }
     
     .floating-btn.map-btn {
-      background: rgba(0, 212, 255, 0.1);
-      color: #67e8f9;
-      border: 1px solid rgba(0, 212, 255, 0.2);
+      background: #2c2c2e;
+      color: rgba(255, 255, 255, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.1);
     }
     
     .floating-btn.map-btn:hover {
-      background: rgba(0, 212, 255, 0.2);
-      color: #a5f3fc;
-      transform: translateX(-4px);
-      box-shadow: 0 4px 20px rgba(0, 212, 255, 0.15);
+      background: #3a3a3c;
+      color: #fff;
     }
     
     .floating-btn.app-btn {
-      background: rgba(52, 211, 153, 0.15);
-      color: #6ee7b7;
-      border: 1px solid rgba(52, 211, 153, 0.25);
+      background: #2c2c2e;
+      color: rgba(255, 255, 255, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.1);
       text-decoration: none;
     }
     
     .floating-btn.app-btn:hover {
-      background: rgba(52, 211, 153, 0.25);
-      color: #a7f3d0;
-      transform: translateX(-4px);
-      box-shadow: 0 4px 20px rgba(52, 211, 153, 0.2);
+      background: #3a3a3c;
+      color: #fff;
     }
     
     @media (max-width: 768px) {
@@ -847,7 +822,7 @@
       
       .floating-btn {
         padding: 10px 14px;
-        border-radius: 50px;
+        border-radius: 100px;
         width: auto;
         height: auto;
         font-size: 11px;
@@ -862,71 +837,61 @@
       }
     }
     
-    /* Status panel - NEPTUN style */
+    /* Status panel - copilot style */
     .status-panel {
       position: fixed;
       top: 80px;
       left: 20px;
-      background: rgba(10, 25, 47, 0.95);
-      border: 1px solid rgba(0, 212, 255, 0.2);
-      border-radius: 12px;
+      background: #2c2c2e;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
       padding: 16px 20px;
       color: white;
       z-index: 1000;
-      /* backdrop-filter removed for performance */
-      min-width: 160px;
+      min-width: 140px;
     }
     
     .status-panel::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 2px;
-      background: linear-gradient(90deg, transparent, #00d4ff, transparent);
-      border-radius: 12px 12px 0 0;
+      display: none;
     }
     
     .status-panel h3 {
-      font-family: 'Exo 2', sans-serif;
-      font-size: 11px;
-      font-weight: 400;
+      font-family: 'Inter', sans-serif;
+      font-size: 10px;
+      font-weight: 500;
       margin-bottom: 8px;
-      color: rgba(0, 212, 255, 0.8);
+      color: rgba(255, 255, 255, 0.5);
       text-transform: uppercase;
-      letter-spacing: 2px;
+      letter-spacing: 1px;
     }
     
     .alarm-count {
-      font-family: 'Orbitron', sans-serif;
+      font-family: 'Inter', sans-serif;
       font-size: 36px;
-      font-weight: 700;
-      color: #ff4444;
-      text-shadow: 0 0 20px rgba(255, 68, 68, 0.5);
+      font-weight: 500;
+      color: #fff;
       line-height: 1;
     }
     
     .alarm-count.safe {
-      color: #00ff88;
-      text-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
+      color: rgba(255, 255, 255, 0.5);
     }
     
-    /* Ballistic threat banner - minimalist style */
+    /* Ballistic threat banner - copilot style */
     .ballistic-banner {
       position: fixed;
       top: 90px;
       right: 20px;
-      background: rgba(220, 38, 38, 0.95);
-      border-radius: 8px;
-      padding: 10px 16px;
+      background: #ef4444;
+      border-radius: 12px;
+      padding: 12px 18px;
       color: white;
       z-index: 9999;
       display: none;
       align-items: center;
       gap: 10px;
       font-size: 13px;
-      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+      font-weight: 500;
     }
     
     .ballistic-banner.visible {
@@ -992,7 +957,7 @@
     
     .api-status {
       font-size: 9px;
-      color: rgba(0, 212, 255, 0.5);
+      color: rgba(255, 255, 255, 0.4);
       margin-top: 4px;
     }
 
@@ -1002,9 +967,9 @@
       margin: 10px auto 0;
       padding: 10px 14px;
       border-radius: 10px;
-      background: rgba(15, 23, 42, 0.7);
-      border: 1px solid rgba(99, 102, 241, 0.35);
-      color: rgba(226, 232, 240, 0.95);
+      background: #2c2c2e;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: rgba(255, 255, 255, 0.8);
       font-size: 12px;
       text-align: center;
       letter-spacing: 0.2px;
@@ -1362,13 +1327,12 @@
       position: absolute;
       top: -6px;
       right: -6px;
-      background: linear-gradient(135deg, #dc2626, #b91c1c);
+      background: #ef4444;
       color: #fff;
       font-size: 10px;
-      font-weight: 700;
+      font-weight: 600;
       padding: 2px 5px;
       border-radius: 10px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.5);
       font-family: 'Inter', system-ui, sans-serif;
       line-height: 1;
       z-index: 10;
@@ -1385,26 +1349,25 @@
     /* Marker tooltip */
     .marker-tooltip {
       position: fixed;
-      background: rgba(10, 25, 47, 0.95);
-      border: 1px solid rgba(0, 212, 255, 0.4);
-      border-radius: 8px;
-      padding: 10px 14px;
+      background: #2c2c2e;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 14px 18px;
       color: white;
-      font-size: 12px;
-      max-width: 280px;
+      font-size: 13px;
+      max-width: 300px;
       z-index: 2000;
       pointer-events: none;
-      /* backdrop-filter removed for performance */
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
     }
     
     .marker-tooltip .tooltip-type {
-      font-family: 'Orbitron', sans-serif;
-      font-size: 11px;
-      color: #00d4ff;
+      font-family: 'Inter', sans-serif;
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.5);
       text-transform: uppercase;
       letter-spacing: 1px;
       margin-bottom: 6px;
+      font-weight: 500;
     }
     
     .marker-tooltip .tooltip-place {
@@ -1414,7 +1377,7 @@
     
     .marker-tooltip .tooltip-time {
       font-size: 10px;
-      color: rgba(255, 255, 255, 0.5);
+      color: rgba(255, 255, 255, 0.4);
     }
     
     /* Enhanced AI prediction tooltip styles */
@@ -1457,7 +1420,7 @@
     }
     
     .marker-tooltip .tooltip-ai-info span {
-      background: rgba(0, 212, 255, 0.1);
+      background: rgba(255, 255, 255, 0.1);
       padding: 2px 6px;
       border-radius: 3px;
     }
@@ -1465,12 +1428,12 @@
     .marker-tooltip .tooltip-alt-targets {
       margin-top: 10px;
       padding-top: 8px;
-      border-top: 1px solid rgba(0, 212, 255, 0.2);
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
     }
     
     .marker-tooltip .alt-targets-title {
       font-size: 10px;
-      color: #00d4ff;
+      color: rgba(255, 255, 255, 0.6);
       margin-bottom: 6px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
@@ -1502,10 +1465,10 @@
     }
     
     .marker-tooltip .alt-prob {
-      background: linear-gradient(135deg, rgba(251, 191, 36, 0.3), rgba(251, 191, 36, 0.1));
+      background: rgba(251, 191, 36, 0.15);
       padding: 2px 6px;
       border-radius: 3px;
-      font-weight: 600;
+      font-weight: 500;
       color: #fbbf24;
       font-size: 10px;
     }
@@ -1519,12 +1482,12 @@
     .markers-info {
       margin-top: 12px;
       padding-top: 12px;
-      border-top: 1px solid rgba(0, 212, 255, 0.2);
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
     }
     
     .markers-info h4 {
       font-size: 10px;
-      color: rgba(0, 212, 255, 0.7);
+      color: rgba(255, 255, 255, 0.5);
       text-transform: uppercase;
       letter-spacing: 1px;
       margin-bottom: 6px;
@@ -1989,20 +1952,18 @@
       }
     }
     
-    /* ========== NAVBAR STYLES - Minimal Glass ========== */
+    /* ========== NAVBAR STYLES - Minimal ========== */
     .navbar {
       width: 100%;
-      background: rgba(15, 23, 42, 0.75);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      color: #e2e8f0;
+      background: #0a0e17;
+      color: #fff;
       font-weight: 500;
       font-size: 1rem;
       padding: 0.5rem 1rem;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      border-bottom: 1px solid rgba(103, 232, 249, 0.1);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
       position: fixed;
       top: 0;
       left: 0;
@@ -2021,11 +1982,11 @@
     }
     
     .logo-text {
-      font-family: 'Orbitron', sans-serif;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
       font-size: 1.1rem;
-      font-weight: 700;
-      color: #67e8f9;
-      letter-spacing: 3px;
+      font-weight: 600;
+      color: #fff;
+      letter-spacing: 1px;
     }
     
     .nav-actions {
@@ -2041,33 +2002,33 @@
     }
     
     .nav-links a, .nav-actions .nav-btn {
-      color: #94a3b8;
+      color: rgba(255, 255, 255, 0.6);
       text-decoration: none;
       font-weight: 500;
       padding: 0.45rem 0.85rem;
-      border-radius: 8px;
+      border-radius: 100px;
       font-size: 0.75rem;
       display: flex;
       align-items: center;
       gap: 0.4rem;
-      transition: all 0.25s ease;
-      border: 1px solid rgba(100, 116, 139, 0.25);
-      background: rgba(100, 116, 139, 0.08);
+      transition: all 0.2s ease;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: transparent;
       cursor: pointer;
       height: 34px;
       box-sizing: border-box;
     }
     
     .nav-links a:hover, .nav-actions .nav-btn:hover {
-      color: #e2e8f0;
-      background: rgba(100, 116, 139, 0.15);
-      border-color: rgba(100, 116, 139, 0.35);
+      color: #fff;
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.15);
     }
     
     .nav-links a.active {
-      color: #67e8f9;
-      background: rgba(103, 232, 249, 0.15);
-      border-color: rgba(103, 232, 249, 0.25);
+      color: #fff;
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.15);
     }
     
     .nav-links a i, .nav-actions .nav-btn i {
@@ -2080,89 +2041,67 @@
       height: 16px;
     }
     
-    /* App download button - minimal glass style */
+    /* App download button - minimal style */
     .nav-actions .app-link {
-      background: rgba(61, 220, 132, 0.1);
+      background: rgba(74, 222, 128, 0.1);
       color: #4ade80 !important;
-      border: 1px solid rgba(61, 220, 132, 0.2);
+      border: 1px solid rgba(74, 222, 128, 0.2);
       text-decoration: none;
     }
     
     .nav-actions .app-link:hover {
-      background: rgba(61, 220, 132, 0.18);
-      border-color: rgba(61, 220, 132, 0.35);
-      transform: translateY(-1px);
+      background: rgba(74, 222, 128, 0.15);
+      border-color: rgba(74, 222, 128, 0.3);
     }
     
     /* FAQ button */
     .nav-actions .faq-btn {
-      background: rgba(147, 51, 234, 0.12);
-      color: #a78bfa !important;
-      border: 1px solid rgba(147, 51, 234, 0.25);
+      background: transparent;
+      color: rgba(255, 255, 255, 0.6) !important;
+      border: 1px solid rgba(255, 255, 255, 0.1);
     }
     
     .nav-actions .faq-btn:hover {
-      background: rgba(147, 51, 234, 0.2);
-      border-color: rgba(147, 51, 234, 0.4);
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff !important;
+      border-color: rgba(255, 255, 255, 0.15);
     }
     
     /* Support button */
     .nav-actions .support-btn {
-      background: linear-gradient(135deg, rgba(251, 113, 133, 0.2) 0%, rgba(244, 63, 94, 0.15) 100%);
-      color: #fff !important;
-      border: 1px solid rgba(251, 113, 133, 0.4);
+      background: rgba(239, 68, 68, 0.15);
+      color: #ef4444 !important;
+      border: 1px solid rgba(239, 68, 68, 0.25);
       position: relative;
       overflow: hidden;
     }
     
     .nav-actions .support-btn::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: -100%;
-      width: 100%;
-      height: 100%;
-      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
-      animation: supportShine 3s ease-in-out infinite;
-    }
-    
-    @keyframes supportShine {
-      0%, 100% { left: -100%; }
-      50% { left: 100%; }
+      display: none;
     }
     
     .nav-actions .support-btn:hover {
-      background: linear-gradient(135deg, rgba(251, 113, 133, 0.35) 0%, rgba(244, 63, 94, 0.25) 100%);
-      border-color: rgba(251, 113, 133, 0.6);
-      transform: scale(1.02);
+      background: rgba(239, 68, 68, 0.2);
+      border-color: rgba(239, 68, 68, 0.35);
     }
-    
+
     .nav-actions .support-btn span {
-      background: linear-gradient(135deg, #fda4af, #fb7185);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      font-weight: 600;
+      color: #ef4444;
+      font-weight: 500;
     }
     
     .nav-actions .support-btn i {
-      color: #fb7185;
-    }
-    
-    @keyframes appButtonPulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.85; }
+      color: #ef4444;
     }
     
     /* Navbar stats container */
     .navbar-stats {
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 0.45rem 0.85rem;
-      background: rgba(103, 232, 249, 0.08);
-      border: 1px solid rgba(103, 232, 249, 0.2);
-      border-radius: 8px;
+      gap: 6px;
+      padding: 0 0.5rem;
+      background: transparent;
+      border: none;
       height: 34px;
       box-sizing: border-box;
     }
@@ -2171,23 +2110,36 @@
     .live-users {
       display: flex;
       align-items: center;
-      gap: 5px;
-      font-size: 0.65rem;
+      gap: 8px;
+      font-size: 0.75rem;
     }
     
     .live-label {
-      color: #64748b;
-      font-weight: 500;
-      font-size: 0.55rem;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+      display: none;
     }
     
     .live-count {
       color: #4ade80;
-      font-weight: 700;
-      font-size: 0.8rem;
-      font-family: 'Orbitron', sans-serif;
+      font-weight: 500;
+      font-size: 0.85rem;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    
+    .live-count::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      background: #4ade80;
+      border-radius: 50%;
+      animation: pulse 2s ease-in-out infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
     }
     
     .live-count.updating {
@@ -2195,25 +2147,11 @@
     }
     
     @keyframes countUpdate {
-      50% { transform: scale(1.15); }
+      50% { transform: scale(1.1); }
     }
     
     .live-breakdown {
-      display: flex;
-      gap: 4px;
-    }
-    
-    .live-chip {
-      display: flex;
-      align-items: center;
-      gap: 2px;
-      font-size: 0.55rem;
-      color: #64748b;
-    }
-    
-    .live-chip strong {
-      color: #94a3b8;
-      font-weight: 600;
+      display: none;
     }
     
     /* User ID in navbar */
@@ -2222,8 +2160,8 @@
       align-items: center;
       gap: 4px;
       padding-left: 8px;
-      border-left: 1px solid rgba(103, 232, 249, 0.15);
-      color: #67e8f9;
+      border-left: 1px solid rgba(255, 255, 255, 0.1);
+      color: #fff;
       font-size: 0.7rem;
       font-weight: 500;
     }
@@ -2234,10 +2172,10 @@
       align-items: center;
       gap: 0.4rem;
       padding: 0.45rem 0.85rem;
-      background: rgba(103, 232, 249, 0.12);
-      border: 1px solid rgba(103, 232, 249, 0.25);
-      border-radius: 8px;
-      color: #67e8f9;
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 100px;
+      color: #fff;
       font-size: 0.75rem;
       font-weight: 500;
       height: 34px;
@@ -2257,13 +2195,11 @@
       animation: heartPulse 1.5s ease infinite;
     }
     
-    /* Donate Modal - Minimal Glass Style */
+    /* Donate Modal - Copilot Style */
     .donate-modal-overlay {
       position: fixed;
       inset: 0;
       background: rgba(0, 0, 0, 0.7);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
       display: none;
       align-items: center;
       justify-content: center;
@@ -2272,7 +2208,7 @@
     
     .donate-modal-overlay.active {
       display: flex;
-      animation: fadeIn 0.3s ease;
+      animation: fadeIn 0.2s ease;
     }
     
     @keyframes fadeIn {
@@ -2281,14 +2217,13 @@
     }
     
     .donate-modal {
-      width: min(420px, 92vw);
-      background: #0f172a;
-      border: 1px solid rgba(103, 232, 249, 0.25);
-      border-radius: 20px;
-      padding: 1.75rem;
+      width: min(440px, 92vw);
+      background: #2c2c2e;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 24px;
+      padding: 2rem;
       position: relative;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
-      animation: modalSlide 0.3s ease;
+      animation: modalSlide 0.2s ease;
     }
     
     @keyframes modalSlide {
@@ -2297,121 +2232,119 @@
     }
     
     .donate-title {
-      margin: 0 0 0.75rem;
-      font-size: 1.15rem;
-      font-weight: 600;
-      color: #a5f3fc;
+      margin: 0 0 1rem;
+      font-size: 1.25rem;
+      font-weight: 500;
+      color: #fff;
       display: flex;
       align-items: center;
       gap: 0.5rem;
     }
     
     .donate-title i {
-      color: #fb7185;
+      color: rgba(255, 255, 255, 0.6);
     }
     
     .donate-sub {
-      color: #64748b;
-      font-size: 0.8rem;
-      line-height: 1.5;
-      margin-bottom: 1.25rem;
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 0.85rem;
+      line-height: 1.6;
+      margin-bottom: 1.5rem;
     }
     
     .donate-grid {
       display: flex;
       flex-direction: column;
       gap: 0.75rem;
-      margin-bottom: 1.25rem;
+      margin-bottom: 1.5rem;
     }
     
     .donate-card {
-      background: rgba(103, 232, 249, 0.05);
-      border: 1px solid rgba(103, 232, 249, 0.12);
-      border-radius: 12px;
-      padding: 0.85rem;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 14px;
+      padding: 1rem;
       display: flex;
       flex-direction: column;
-      gap: 0.4rem;
+      gap: 0.5rem;
     }
     
     .donate-label {
-      font-size: 0.6rem;
+      font-size: 0.65rem;
       text-transform: uppercase;
-      letter-spacing: 1px;
-      font-weight: 600;
-      color: #67e8f9;
+      letter-spacing: 0.5px;
+      font-weight: 500;
+      color: rgba(255, 255, 255, 0.5);
     }
     
     .donate-value {
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'SF Mono', 'JetBrains Mono', monospace;
       font-weight: 500;
-      font-size: 0.85rem;
-      color: #e2e8f0;
+      font-size: 0.9rem;
+      color: #fff;
       word-break: break-all;
     }
     
     .donate-actions {
       display: flex;
-      gap: 0.4rem;
-      margin-top: 0.4rem;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
     }
     
     .btn-mini {
-      background: rgba(103, 232, 249, 0.12);
-      color: #67e8f9;
-      border: 1px solid rgba(103, 232, 249, 0.2);
-      border-radius: 50px;
-      padding: 0.4rem 0.7rem;
-      font-size: 0.65rem;
-      font-weight: 600;
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 100px;
+      padding: 0.5rem 0.8rem;
+      font-size: 0.7rem;
+      font-weight: 500;
       cursor: pointer;
       display: flex;
       align-items: center;
       gap: 0.25rem;
-      transition: all 0.25s ease;
+      transition: all 0.2s ease;
     }
     
     .btn-mini:hover {
-      background: rgba(103, 232, 249, 0.2);
-      border-color: rgba(103, 232, 249, 0.35);
+      background: rgba(255, 255, 255, 0.12);
+      color: #fff;
     }
     
     .btn-mini.alt {
-      background: rgba(148, 163, 184, 0.1);
-      border-color: rgba(148, 163, 184, 0.15);
-      color: #94a3b8;
+      background: transparent;
+      border-color: rgba(255, 255, 255, 0.1);
+      color: rgba(255, 255, 255, 0.6);
     }
     
     .donate-close {
       position: absolute;
-      top: 0.85rem;
-      right: 0.85rem;
-      width: 32px;
-      height: 32px;
-      background: rgba(103, 232, 249, 0.08);
-      border: 1px solid rgba(103, 232, 249, 0.15);
+      top: 1rem;
+      right: 1rem;
+      width: 36px;
+      height: 36px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #94a3b8;
+      color: rgba(255, 255, 255, 0.5);
       cursor: pointer;
       font-size: 18px;
       transition: all 0.25s ease;
     }
     
     .donate-close:hover {
-      background: rgba(251, 113, 133, 0.15);
-      border-color: rgba(251, 113, 133, 0.25);
-      color: #fb7185;
-      transform: rotate(90deg);
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
     }
     
     .jar-link-button {
       width: 100%;
-      background: rgba(103, 232, 249, 0.15);
-      color: #67e8f9;
-      border: 1px solid rgba(103, 232, 249, 0.3);
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.12);
       border-radius: 50px;
       padding: 0.85rem;
       font-size: 0.85rem;
@@ -2425,25 +2358,22 @@
     }
     
     .jar-link-button:hover {
-      background: rgba(103, 232, 249, 0.25);
-      transform: translateY(-2px);
-      box-shadow: 0 4px 16px rgba(103, 232, 249, 0.2);
+      background: rgba(255, 255, 255, 0.12);
+      color: #fff;
     }
     
     .donate-footer {
-      font-size: 0.6rem;
-      color: #475569;
-      margin-top: 0.85rem;
+      font-size: 0.7rem;
+      color: rgba(255, 255, 255, 0.4);
+      margin-top: 1rem;
       text-align: center;
     }
     
-    /* FAQ Modal - Minimal Glass Style */
+    /* FAQ Modal - Copilot Style */
     .faq-modal-overlay {
       position: fixed;
       inset: 0;
       background: rgba(0, 0, 0, 0.7);
-      backdrop-filter: blur(4px);
-      -webkit-backdrop-filter: blur(4px);
       display: none;
       align-items: center;
       justify-content: center;
@@ -2456,10 +2386,8 @@
     }
     
     .faq-modal {
-      background: rgba(15, 23, 42, 0.92);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border: 1px solid rgba(103, 232, 249, 0.15);
+      background: #2c2c2e;
+      border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 24px;
       padding: 1.75rem;
       max-width: 520px;
@@ -2467,7 +2395,6 @@
       max-height: 85vh;
       overflow-y: auto;
       position: relative;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
     }
     
     .faq-modal::-webkit-scrollbar {
@@ -2475,12 +2402,12 @@
     }
     
     .faq-modal::-webkit-scrollbar-track {
-      background: rgba(103, 232, 249, 0.05);
+      background: rgba(255, 255, 255, 0.03);
       border-radius: 3px;
     }
     
     .faq-modal::-webkit-scrollbar-thumb {
-      background: rgba(103, 232, 249, 0.2);
+      background: rgba(255, 255, 255, 0.1);
       border-radius: 3px;
     }
     
@@ -2490,16 +2417,16 @@
       gap: 0.75rem;
       margin-bottom: 1.25rem;
       padding-bottom: 1rem;
-      border-bottom: 1px solid rgba(103, 232, 249, 0.1);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
     }
     
     .faq-header i {
       font-size: 1.5rem;
-      color: #67e8f9;
+      color: rgba(255, 255, 255, 0.6);
     }
     
     .faq-header h3 {
-      color: #e2e8f0;
+      color: rgba(255, 255, 255, 0.9);
       font-size: 1.1rem;
       font-weight: 600;
       margin: 0;
@@ -2511,28 +2438,26 @@
       right: 0.85rem;
       width: 32px;
       height: 32px;
-      background: rgba(103, 232, 249, 0.08);
-      border: 1px solid rgba(103, 232, 249, 0.15);
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #94a3b8;
+      color: rgba(255, 255, 255, 0.5);
       cursor: pointer;
       font-size: 18px;
       transition: all 0.25s ease;
     }
     
     .faq-close:hover {
-      background: rgba(251, 113, 133, 0.15);
-      border-color: rgba(251, 113, 133, 0.25);
-      color: #fb7185;
-      transform: rotate(90deg);
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
     }
     
     .faq-item {
-      background: rgba(103, 232, 249, 0.04);
-      border: 1px solid rgba(103, 232, 249, 0.08);
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
       border-radius: 16px;
       padding: 1rem;
       margin-bottom: 0.75rem;
@@ -2543,7 +2468,7 @@
     }
     
     .faq-question {
-      color: #67e8f9;
+      color: rgba(255, 255, 255, 0.8);
       font-size: 0.85rem;
       font-weight: 600;
       margin-bottom: 0.5rem;
@@ -2555,37 +2480,38 @@
     .faq-question i {
       font-size: 1rem;
       margin-top: 2px;
+      color: rgba(255, 255, 255, 0.5);
     }
     
     .faq-answer {
-      color: #94a3b8;
+      color: rgba(255, 255, 255, 0.5);
       font-size: 0.78rem;
       line-height: 1.6;
       padding-left: 1.5rem;
     }
     
     .faq-warning {
-      background: rgba(251, 113, 133, 0.08);
-      border: 1px solid rgba(251, 113, 133, 0.2);
+      background: rgba(239, 68, 68, 0.06);
+      border: 1px solid rgba(239, 68, 68, 0.15);
     }
     
     .faq-warning .faq-question {
-      color: #fb7185;
+      color: #f87171;
     }
     
     .faq-warning .faq-question i {
-      color: #fb7185;
+      color: #f87171;
     }
     
     .faq-footer {
       margin-top: 1.25rem;
       padding-top: 1rem;
-      border-top: 1px solid rgba(103, 232, 249, 0.1);
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
       text-align: center;
     }
     
     .faq-footer a {
-      color: #67e8f9;
+      color: rgba(255, 255, 255, 0.6);
       text-decoration: none;
       font-size: 0.75rem;
       display: inline-flex;
@@ -2595,25 +2521,23 @@
     }
     
     .faq-footer a:hover {
-      color: #a5f3fc;
+      color: #fff;
     }
     
-    /* Copy toast - minimal glass */
+    /* Copy toast - minimal */
     .copy-toast {
       position: fixed;
       bottom: 80px;
       right: 20px;
-      background: rgba(103, 232, 249, 0.12);
-      border: 1px solid rgba(103, 232, 249, 0.25);
-      color: #67e8f9;
-      padding: 0.6rem 0.9rem;
-      border-radius: 50px;
-      font-size: 0.75rem;
+      background: #2c2c2e;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #4ade80;
+      padding: 0.7rem 1rem;
+      border-radius: 100px;
+      font-size: 0.8rem;
       font-weight: 500;
       display: none;
       z-index: 2100;
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
     }
     
     .copy-toast.show {
@@ -2625,20 +2549,15 @@
       to { opacity: 0; }
     }
     
-    /* Telegram Banner - HIGH CONVERSION WARNING STYLE */
-    @keyframes tg-urgent-pulse {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(251, 146, 60, 0.5), 0 4px 20px rgba(0, 0, 0, 0.3); }
-      50% { box-shadow: 0 0 0 6px rgba(251, 146, 60, 0), 0 4px 20px rgba(0, 0, 0, 0.3); }
-    }
-    
-    @keyframes tg-dot-blink {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.3; }
-    }
-    
+    /* Telegram Banner - Copilot Style */
     @keyframes tg-slide-up {
       from { opacity: 0; transform: translateY(20px); }
       to { opacity: 1; transform: translateY(0); }
+    }
+    
+    @keyframes tg-urgent-pulse {
+      0%, 100% { border-color: rgba(251, 146, 60, 0.35); }
+      50% { border-color: rgba(251, 146, 60, 0.6); }
     }
     
     .tg-banner {
@@ -2692,12 +2611,11 @@
     
     .tg-banner:hover .tg-banner-icon {
       box-shadow: 0 4px 16px rgba(249, 115, 22, 0.45);
-      transform: scale(1.05);
     }
     
     .tg-banner-icon svg {
-      width: 20px;
-      height: 20px;
+      width: 22px;
+      height: 22px;
       fill: white;
     }
     
@@ -2707,53 +2625,37 @@
     }
     
     .tg-banner-warning {
-      font-size: 0.6rem;
-      color: #fb923c;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.3px;
-      margin-bottom: 3px;
-      display: flex;
-      align-items: center;
-      gap: 5px;
-    }
-    
-    .tg-banner-warning-dot {
-      width: 6px;
-      height: 6px;
-      background: #fb923c;
-      border-radius: 50%;
-      animation: tg-dot-blink 1.5s infinite;
+      display: none;
     }
     
     .tg-banner-title {
-      font-weight: 700;
-      font-size: 0.88rem;
+      font-weight: 600;
+      font-size: 0.85rem;
       display: block;
-      color: #ffffff;
+      color: rgba(255, 255, 255, 0.9);
       margin-bottom: 2px;
       line-height: 1.3;
     }
     
     .tg-banner-title strong {
-      color: #fb923c;
+      color: rgba(255, 255, 255, 0.9);
     }
     
     .tg-banner-desc {
-      font-size: 0.72rem;
-      color: #a1a1aa;
+      font-size: 0.7rem;
+      color: rgba(255, 255, 255, 0.4);
       display: block;
       line-height: 1.3;
     }
     
     .tg-banner-desc strong {
-      color: #d4d4d8;
-      font-weight: 600;
+      color: rgba(255, 255, 255, 0.6);
+      font-weight: 500;
     }
     
     .tg-banner-stats {
       font-size: 0.65rem;
-      color: #71717a;
+      color: rgba(255, 255, 255, 0.3);
       margin-top: 5px;
       display: flex;
       align-items: center;
@@ -2763,7 +2665,7 @@
     .tg-banner-stats-dot {
       width: 4px;
       height: 4px;
-      background: #22c55e;
+      background: #6ee7b7;
       border-radius: 50%;
     }
     
@@ -2773,19 +2675,21 @@
       padding: 8px 12px;
       border-radius: 8px;
       font-size: 0.75rem;
-      font-weight: 700;
-      color: white;
+      font-weight: 600;
+      color: #fff;
       display: flex;
       align-items: center;
       gap: 5px;
       flex-shrink: 0;
       transition: all 0.2s ease;
       white-space: nowrap;
+      box-shadow: 0 2px 8px rgba(249, 115, 22, 0.3);
     }
     
     .tg-banner:hover .tg-banner-btn {
-      background: linear-gradient(135deg, #ea580c 0%, #c2410c 100%);
-      transform: scale(1.03);
+      background: linear-gradient(135deg, #fb923c 0%, #f97316 100%);
+      box-shadow: 0 3px 12px rgba(249, 115, 22, 0.4);
+      color: #fff;
     }
     
     .tg-banner-btn svg {
@@ -3083,14 +2987,6 @@
       </div>
     </div>
     <div class="nav-actions">
-      <button class="nav-btn faq-btn" onclick="toggleFAQ()" title="FAQ та правила">
-        <i class="material-icons">help_outline</i>
-        <span>FAQ</span>
-      </button>
-      <button class="nav-btn support-btn" onclick="toggleDonate()" title="Підтримати проєкт">
-        <i class="material-icons">favorite</i>
-        <span>Підтримати</span>
-      </button>
     </div>
   </div>
   
@@ -3310,27 +3206,22 @@
         margin: 40px auto;
         padding: 20px;
         background: #0a0e17;
-        color: #e2e8f0;
+        color: rgba(255, 255, 255, 0.8);
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         line-height: 1.7;
       }
-      .noscript-seo-content h2 { color: #00d4ff; font-size: 28px; margin-bottom: 16px; }
-      .noscript-seo-content h3 { color: #00d4ff; font-size: 20px; margin: 24px 0 12px; }
+      .noscript-seo-content h2 { color: #fff; font-size: 28px; margin-bottom: 16px; }
+      .noscript-seo-content h3 { color: #fff; font-size: 20px; margin: 24px 0 12px; }
       .noscript-seo-content p { margin: 12px 0; }
       .noscript-seo-content ul { margin: 12px 0; padding-left: 24px; }
       .noscript-seo-content li { margin: 8px 0; }
-      .noscript-seo-content a { color: #00d4ff; }
+      .noscript-seo-content a { color: #4ade80; }
       .noscript-seo-content strong { color: #fff; }
     </style>
   </noscript>
   
-  <!-- SEO EXPANDABLE CONTENT BLOCK - ВИДИМИЙ ДЛЯ GOOGLE -->
-  <div class="seo-content-block" id="seoContentBlock">
-    <button class="seo-toggle" onclick="toggleSeoContent()" aria-expanded="false" aria-controls="seoContentInner">
-      <i class="material-icons seo-toggle-icon">info_outline</i>
-      <span class="seo-toggle-text">Про сервіс</span>
-    </button>
-    <div class="seo-content-inner" id="seoContentInner" aria-hidden="true">
+  <!-- SEO EXPANDABLE CONTENT - INSIDE BOTTOM BAR -->
+  <div class="seo-content-inner" id="seoContentInner" aria-hidden="true">
       <article class="seo-article" itemscope itemtype="https://schema.org/Article">
         <meta itemprop="headline" content="Карта тривог України онлайн — повітряна тривога в реальному часі">
         <meta itemprop="author" content="NEPTUN">
@@ -3424,229 +3315,168 @@
         <p class="seo-updated">Останнє оновлення: <time datetime="2025-01-12">12 січня 2025</time></p>
       </article>
     </div>
-  </div>
   
   <style>
-    /* SEO Content Block Styles */
-    .seo-content-block {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      z-index: 100;
-      background: rgba(10, 14, 23, 0.92);
-      border-top: 1px solid rgba(100, 116, 139, 0.15);
-      max-height: 40vh;
-      overflow: hidden;
-      transition: max-height 0.3s ease;
-      border-radius: 0;
-    }
-    
-    .seo-content-block.collapsed {
-      max-height: 36px;
-    }
-    
-    .seo-toggle {
-      width: 100%;
-      height: 36px;
-      padding: 0 16px;
-      background: transparent;
-      border: none;
-      border-radius: 0;
-      color: rgba(148, 163, 184, 0.7);
-      font-size: 11px;
-      font-weight: 400;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      transition: all 0.2s ease;
-      user-select: none;
-      -webkit-user-select: none;
-    }
-    
-    .seo-toggle:hover {
-      color: rgba(148, 163, 184, 1);
-      background: rgba(100, 116, 139, 0.08);
-    }
-    
-    .seo-toggle:focus {
-      outline: none;
-    }
-    
-    .seo-toggle:focus-visible {
-      outline: 1px solid rgba(100, 116, 139, 0.3);
-      outline-offset: -1px;
-    }
-    
-    .seo-toggle-icon {
-      font-size: 14px;
-      opacity: 0.8;
-      transition: transform 0.3s;
-    }
-    
-    .seo-content-block:not(.collapsed) .seo-toggle-icon {
-      transform: rotate(180deg);
-    }
-    
+    /* SEO Content Styles - inside bottom bar */
     .seo-content-inner {
-      padding: 0 20px 20px;
-      max-height: calc(50vh - 44px);
-      overflow-y: auto;
-      scrollbar-width: thin;
-      scrollbar-color: rgba(100, 116, 139, 0.3) transparent;
+      display: none;
+    }
+    
+    #bottom-bar.expanded .seo-panel .seo-content-inner {
+      display: block;
     }
     
     .seo-article {
-      max-width: 900px;
+      max-width: 100%;
       margin: 0 auto;
-      color: #94a3b8;
-      font-size: 14px;
-      line-height: 1.7;
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 13px;
+      line-height: 1.8;
+      font-weight: 400;
     }
     
     .seo-article h2 {
-      color: #94a3b8;
-      font-size: 16px;
-      margin: 20px 0 12px;
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 20px;
+      margin: 24px 0 12px;
       font-weight: 600;
+      letter-spacing: -0.3px;
+      line-height: 1.3;
+    }
+    
+    .seo-article h2:first-of-type {
+      margin-top: 0;
     }
     
     .seo-article h3 {
-      color: #94a3b8;
-      font-size: 15px;
-      margin: 18px 0 10px;
+      color: rgba(255, 255, 255, 0.8);
+      font-size: 16px;
+      margin: 20px 0 10px;
       font-weight: 600;
     }
     
     .seo-article h4 {
-      color: #94a3b8;
+      color: rgba(255, 255, 255, 0.7);
       font-size: 14px;
-      margin: 14px 0 8px;
+      margin: 16px 0 8px;
       font-weight: 600;
     }
     
     .seo-article p {
-      margin: 10px 0;
+      margin: 12px 0;
     }
     
     .seo-article ul, .seo-article ol {
-      margin: 10px 0;
-      padding-left: 24px;
+      margin: 12px 0;
+      padding-left: 0;
+      list-style: none;
     }
     
     .seo-article li {
-      margin: 6px 0;
+      margin: 8px 0;
+      padding-left: 20px;
+      position: relative;
+    }
+    
+    .seo-article ul li::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 8px;
+      width: 5px;
+      height: 5px;
+      background: rgba(255, 255, 255, 0.25);
+      border-radius: 50%;
+    }
+    
+    .seo-article ol {
+      counter-reset: item;
+    }
+    
+    .seo-article ol li {
+      counter-increment: item;
+    }
+    
+    .seo-article ol li::before {
+      content: counter(item);
+      position: absolute;
+      left: 0;
+      top: 0;
+      font-size: 11px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.4);
     }
     
     .seo-article strong {
-      color: #cbd5e1;
+      color: rgba(255, 255, 255, 0.8);
+      font-weight: 500;
     }
     
     .seo-article a {
-      color: #94a3b8;
-      text-decoration: underline;
+      color: rgba(255, 255, 255, 0.6);
+      text-decoration: none;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+      transition: all 0.2s ease;
     }
     
     .seo-article a:hover {
-      color: #cbd5e1;
+      color: rgba(255, 255, 255, 0.9);
+      border-color: rgba(255, 255, 255, 0.5);
     }
     
     .seo-updated {
-      margin-top: 20px;
-      font-size: 12px;
-      color: #64748b;
-      font-style: italic;
+      margin-top: 24px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.3);
     }
     
-    @media (max-width: 768px) {
-      .seo-content-block {
-        max-height: 35vh;
-      }
-      .seo-content-block.collapsed {
-        max-height: 32px;
-      }
-      .seo-toggle {
-        height: 32px;
-        padding: 0 12px;
-        font-size: 10px;
-        -webkit-tap-highlight-color: rgba(100, 116, 139, 0.1);
-        touch-action: manipulation;
-      }
-      .seo-toggle:active {
-        background: rgba(100, 116, 139, 0.08);
-      }
-      .seo-toggle-icon {
-        font-size: 14px;
-      }
-      .seo-toggle-text {
-        flex: 1;
-        text-align: left;
-      }
-      .seo-content-inner {
-        padding: 0 12px 12px;
-        -webkit-overflow-scrolling: touch;
-      }
+    @media (max-width: 640px) {
       .seo-article {
         font-size: 12px;
-        line-height: 1.7;
       }
       .seo-article h2 {
         font-size: 17px;
-        margin: 24px 0 14px;
       }
       .seo-article h3 {
-        font-size: 15px;
-      }
-      .seo-article p {
-        margin: 12px 0;
-      }
-      .seo-article li {
-        margin: 8px 0;
-      }
-    }
-    
-    @media (max-width: 480px) {
-      .seo-content-block.collapsed {
-        max-height: 48px;
-      }
-      .seo-toggle {
-        padding: 12px 14px;
-        min-height: 48px;
-        gap: 6px;
-      }
-      .seo-toggle-icon {
-        font-size: 22px;
-      }
-      .seo-content-inner {
-        padding: 0 14px 14px;
-      }
-      .seo-article {
-        font-size: 13px;
+        font-size: 14px;
       }
     }
   </style>
   
   <script>
-    // SEO Content Toggle
+    // SEO Content Toggle - integrated into bottom bar
     function toggleSeoContent() {
-      const block = document.getElementById('seoContentBlock');
-      const inner = document.getElementById('seoContentInner');
-      const toggle = block.querySelector('.seo-toggle');
+      const bottomBar = document.getElementById('bottom-bar');
+      const seoPanel = document.getElementById('seoPanel');
+      const seoInner = document.getElementById('seoContentInner');
+      const toggle = document.querySelector('.seo-toggle');
       
-      block.classList.toggle('collapsed');
-      const isCollapsed = block.classList.contains('collapsed');
+      const isExpanded = bottomBar.classList.contains('expanded');
       
-      toggle.setAttribute('aria-expanded', !isCollapsed);
-      inner.setAttribute('aria-hidden', isCollapsed);
+      if (isExpanded) {
+        bottomBar.classList.remove('expanded');
+        bottomBar.classList.add('collapsed');
+        toggle.classList.remove('active');
+        toggle.setAttribute('aria-expanded', 'false');
+      } else {
+        // Move SEO content into panel
+        if (seoInner && seoPanel && !seoPanel.contains(seoInner)) {
+          seoPanel.appendChild(seoInner);
+        }
+        bottomBar.classList.remove('collapsed');
+        bottomBar.classList.add('expanded');
+        toggle.classList.add('active');
+        toggle.setAttribute('aria-expanded', 'true');
+      }
     }
     
     // Start collapsed by default
     document.addEventListener('DOMContentLoaded', function() {
-      const block = document.getElementById('seoContentBlock');
-      if (block) {
-        block.classList.add('collapsed');
+      const bottomBar = document.getElementById('bottom-bar');
+      if (bottomBar) {
+        bottomBar.classList.add('collapsed');
       }
     });
   </script>
@@ -5368,8 +5198,8 @@
     
     function showBlockedOverlay() {
       const overlay = document.createElement('div');
-      overlay.style.cssText = 'position:fixed;inset:0;background:#0a0f1f;display:flex;align-items:center;justify-content:center;z-index:99999;font-family:Inter,sans-serif;color:#fff;padding:2rem;text-align:center;';
-      overlay.innerHTML = '<div style="max-width:480px;"><h2 style="color:#ef4444;margin-bottom:1rem;">⛔ Доступ обмежено</h2><p style="color:#94a3b8;margin-bottom:1.5rem;">Ваш доступ до NEPTUN тимчасово обмежено адміністратором. Використання мапи в комерційних цілях</p><p style="color:#64748b;font-size:0.9rem;margin-bottom:1.5rem;">Якщо ви стрімер і хочете вести трансляції з картою NEPTUN — придбайте підписку для стрімерів.</p><button id="blockedStreamerBtn" style="background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;padding:12px 24px;border-radius:12px;font-size:1rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;"><span class="material-icons" style="font-size:20px;">live_tv</span> Для стрімерів</button></div>';
+      overlay.style.cssText = 'position:fixed;inset:0;background:#0a0e17;display:flex;align-items:center;justify-content:center;z-index:99999;font-family:Inter,sans-serif;color:#fff;padding:2rem;text-align:center;';
+      overlay.innerHTML = '<div style="max-width:480px;"><h2 style="color:#ef4444;margin-bottom:1rem;">⛔ Доступ обмежено</h2><p style="color:rgba(255,255,255,0.7);margin-bottom:1.5rem;">Ваш доступ до NEPTUN тимчасово обмежено адміністратором. Використання мапи в комерційних цілях</p><p style="color:rgba(255,255,255,0.5);font-size:0.9rem;margin-bottom:1.5rem;">Якщо ви стрімер і хочете вести трансляції з картою NEPTUN — придбайте підписку для стрімерів.</p><button id="blockedStreamerBtn" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.15);padding:12px 24px;border-radius:100px;font-size:1rem;font-weight:500;cursor:pointer;display:inline-flex;align-items:center;gap:8px;"><span class="material-icons" style="font-size:20px;">live_tv</span> Для стрімерів</button></div>';
       document.body.appendChild(overlay);
       
       // Add click handler after element is in DOM
@@ -5608,7 +5438,7 @@
       </button>
 
       <div class="commercial-modal-header">
-        <span class="material-icons" style="font-size:32px;color:#67e8f9;">storefront</span>
+        <span class="material-icons" style="font-size:32px;color:rgba(255, 255, 255, 0.6);">storefront</span>
         <div class="commercial-modal-title">Комерційне використання</div>
         <p class="commercial-modal-subtitle">
           Для TikTok ефірів, YouTube стрімів та Telegram каналів
@@ -5678,7 +5508,7 @@
   </div>
   
   <style>
-    /* Commercial Modal - Minimal Glass Style */
+    /* Commercial Modal - Minimal Style */
     .commercial-modal-overlay {
       position: fixed;
       top: 0;
@@ -5686,8 +5516,6 @@
       right: 0;
       bottom: 0;
       background: rgba(0, 0, 0, 0.7);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
       z-index: 999999;
       display: none;
       align-items: center;
@@ -5697,8 +5525,8 @@
     }
     
     .commercial-modal-content {
-      background: rgba(15, 23, 42, 0.85);
-      border: 1px solid rgba(103, 232, 249, 0.15);
+      background: #2c2c2e;
+      border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 24px;
       padding: 40px;
       max-width: 500px;
@@ -5706,30 +5534,28 @@
       max-height: 90vh;
       overflow-y: auto;
       position: relative;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
     }
     
     .commercial-modal-close {
       position: absolute;
       top: 16px;
       right: 16px;
-      background: rgba(103, 232, 249, 0.08);
-      border: 1px solid rgba(103, 232, 249, 0.15);
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 50%;
       width: 36px;
       height: 36px;
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #94a3b8;
+      color: rgba(255, 255, 255, 0.5);
       cursor: pointer;
-      transition: all 0.25s ease;
+      transition: all 0.2s ease;
     }
     
     .commercial-modal-close:hover {
-      background: rgba(103, 232, 249, 0.15);
-      color: #67e8f9;
-      transform: rotate(90deg);
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
     }
     
     .commercial-modal-close .material-icons {
@@ -5742,15 +5568,15 @@
     }
     
     .commercial-modal-title {
-      color: #a5f3fc;
+      color: #fff;
       font-size: 22px;
-      font-weight: 600;
+      font-weight: 500;
       margin: 12px 0 8px;
-      letter-spacing: 0.5px;
+      letter-spacing: 0;
     }
     
     .commercial-modal-subtitle {
-      color: #64748b;
+      color: rgba(255, 255, 255, 0.5);
       font-size: 13px;
       margin: 0;
     }
@@ -5764,26 +5590,26 @@
     }
     
     .commercial-feature-card {
-      background: rgba(103, 232, 249, 0.06);
-      border: 1px solid rgba(103, 232, 249, 0.12);
-      border-radius: 50px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 100px;
       padding: 8px 16px;
       display: flex;
       align-items: center;
       gap: 6px;
-      color: #94a3b8;
+      color: rgba(255, 255, 255, 0.7);
       font-size: 12px;
       font-weight: 500;
     }
     
     .commercial-feature-card .material-icons {
       font-size: 16px;
-      color: #67e8f9;
+      color: rgba(255, 255, 255, 0.5);
     }
     
     .commercial-price-card {
-      background: rgba(103, 232, 249, 0.08);
-      border: 1px solid rgba(103, 232, 249, 0.2);
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 16px;
       padding: 20px;
       text-align: center;
@@ -5791,34 +5617,34 @@
     }
     
     .commercial-price {
-      color: #67e8f9;
+      color: #fff;
       font-size: 36px;
-      font-weight: 700;
+      font-weight: 600;
     }
     
     .commercial-price span {
       font-size: 14px;
-      color: #64748b;
+      color: rgba(255, 255, 255, 0.5);
       font-weight: 400;
     }
     
     .commercial-price-note {
-      color: #64748b;
+      color: rgba(255, 255, 255, 0.4);
       font-size: 11px;
       margin: 8px 0 0;
     }
     
     .commercial-form {
-      background: rgba(103, 232, 249, 0.04);
-      border: 1px solid rgba(103, 232, 249, 0.1);
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.08);
       border-radius: 16px;
       padding: 24px;
     }
     
     .commercial-form-title {
-      color: #a5f3fc;
+      color: #fff;
       font-size: 16px;
-      font-weight: 600;
+      font-weight: 500;
       margin-bottom: 20px;
       display: flex;
       align-items: center;
@@ -5828,7 +5654,7 @@
     
     .commercial-form-title .material-icons {
       font-size: 20px;
-      color: #67e8f9;
+      color: rgba(255, 255, 255, 0.6);
     }
     
     .commercial-form-group {
@@ -5837,7 +5663,7 @@
     
     .commercial-form-group label {
       display: block;
-      color: #64748b;
+      color: rgba(255, 255, 255, 0.5);
       font-size: 12px;
       font-weight: 500;
       margin-bottom: 6px;
@@ -5848,31 +5674,30 @@
     .commercial-form-group textarea {
       width: 100%;
       padding: 12px 14px;
-      background: rgba(15, 23, 42, 0.6);
-      border: 1px solid rgba(103, 232, 249, 0.15);
+      background: #0a0e17;
+      border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 10px;
-      color: #e2e8f0;
+      color: #fff;
       font-size: 14px;
       outline: none;
-      transition: all 0.25s ease;
+      transition: all 0.2s ease;
       box-sizing: border-box;
     }
     
     .commercial-form-group input:focus,
     .commercial-form-group select:focus,
     .commercial-form-group textarea:focus {
-      border-color: rgba(103, 232, 249, 0.4);
-      background: rgba(15, 23, 42, 0.8);
+      border-color: rgba(255, 255, 255, 0.2);
     }
     
     .commercial-form-group input::placeholder,
     .commercial-form-group textarea::placeholder {
-      color: #475569;
+      color: rgba(255, 255, 255, 0.3);
     }
     
     .commercial-form-group select option {
-      background: #0f172a;
-      color: #e2e8f0;
+      background: #0a0e17;
+      color: #fff;
     }
     
     .commercial-form-group textarea {
@@ -5883,25 +5708,23 @@
     .commercial-submit-btn {
       width: 100%;
       padding: 14px;
-      background: rgba(103, 232, 249, 0.15);
-      border: 1px solid rgba(103, 232, 249, 0.3);
-      border-radius: 50px;
-      color: #67e8f9;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 100px;
+      color: #fff;
       font-size: 14px;
-      font-weight: 600;
+      font-weight: 500;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 8px;
-      transition: all 0.25s ease;
+      transition: all 0.2s ease;
       margin-top: 20px;
     }
     
     .commercial-submit-btn:hover {
-      background: rgba(103, 232, 249, 0.25);
-      transform: translateY(-2px);
-      box-shadow: 0 4px 16px rgba(103, 232, 249, 0.2);
+      background: rgba(255, 255, 255, 0.15);
     }
     
     .commercial-submit-btn .material-icons {
@@ -6090,108 +5913,152 @@
   </style>
 
   <!-- BOTTOM BAR - Combined footer and actions -->
-  <footer id="bottom-bar">
+  <footer id="bottom-bar" class="collapsed">
     <div class="bottom-bar-content">
+      <button class="bottom-link seo-toggle" onclick="toggleSeoContent()" aria-expanded="false" aria-controls="seoContentInner" title="Про сервіс">
+        <i class="material-icons">info_outline</i>
+        <span>Інфо</span>
+      </button>
       <span class="bottom-brand">© 2026 NEPTUN</span>
-      <div class="bottom-links">
-        <a href="/map-old" class="bottom-link" title="Стара карта">
-          <i class="material-icons">map</i>
-          <span>Стара карта</span>
-        </a>
-        <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" target="_blank" rel="noopener" class="bottom-link app" title="Додаток">
-          <i class="material-icons">android</i>
-          <span>Додаток</span>
-        </a>
-      </div>
+      <button class="bottom-link support" onclick="toggleDonate()" title="Підтримати">
+        <i class="material-icons">favorite</i>
+        <span>Підтримати</span>
+      </button>
+      <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" target="_blank" rel="noopener" class="bottom-link app" title="Додаток">
+        <i class="material-icons">android</i>
+        <span>Додаток</span>
+      </a>
     </div>
+    <div class="seo-panel" id="seoPanel"></div>
   </footer>
   
   <style>
     #bottom-bar {
       position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      background: rgba(15, 23, 42, 0.95);
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
-      padding: 8px 16px;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #2c2c2e;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 100px;
+      padding: 6px 10px;
       z-index: 1000;
+      max-width: 700px;
+      width: auto;
+      transition: all 0.3s ease;
+    }
+    #bottom-bar.collapsed {
+      border-radius: 100px;
+    }
+    #bottom-bar.expanded {
+      width: calc(100% - 40px);
+      max-height: 60vh;
+      border-radius: 24px;
     }
     .bottom-bar-content {
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      max-width: 100%;
+      justify-content: center;
+      gap: 4px;
     }
     .bottom-brand {
-      color: #64748b;
+      color: rgba(255, 255, 255, 0.4);
       font-size: 11px;
-      font-weight: 500;
-    }
-    .bottom-links {
-      display: flex;
-      gap: 4px;
+      font-weight: 400;
+      letter-spacing: 0.2px;
+      padding: 0 12px;
+      white-space: nowrap;
     }
     .bottom-link {
       display: flex;
       align-items: center;
-      gap: 4px;
-      padding: 6px 12px;
-      border-radius: 6px;
-      color: #94a3b8;
+      gap: 6px;
+      padding: 10px 16px;
+      border-radius: 100px;
+      color: rgba(255, 255, 255, 0.7);
       text-decoration: none;
       font-size: 12px;
       font-weight: 500;
-      transition: all 0.2s;
-      background: rgba(255, 255, 255, 0.05);
+      transition: all 0.2s ease;
+      background: transparent;
+      border: none;
+      cursor: pointer;
     }
     .bottom-link:hover {
       background: rgba(255, 255, 255, 0.1);
-      color: #e2e8f0;
+      color: #fff;
     }
     .bottom-link i {
-      font-size: 16px;
+      font-size: 18px;
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 16px;
-      height: 16px;
+      width: 18px;
+      height: 18px;
     }
     .bottom-link.app {
-      background: rgba(52, 211, 153, 0.15);
-      color: #6ee7b7;
+      background: transparent;
+      color: rgba(255, 255, 255, 0.7);
     }
     .bottom-link.app:hover {
-      background: rgba(52, 211, 153, 0.25);
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+    }
+    .bottom-link.support {
+      color: #fb7185;
+    }
+    .bottom-link.support:hover {
+      background: rgba(251, 113, 133, 0.15);
+      color: #fb7185;
+    }
+    .bottom-link.seo-toggle.active {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+    }
+    .seo-panel {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease;
+    }
+    #bottom-bar.expanded .seo-panel {
+      max-height: 50vh;
+      overflow-y: auto;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+      padding: 20px 24px 24px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      margin-top: 10px;
+    }
+    .seo-panel::-webkit-scrollbar {
+      display: none;
     }
     
     @media (max-width: 640px) {
       #bottom-bar {
-        padding: 6px 10px;
+        bottom: 12px;
+        padding: 4px 6px;
+      }
+      #bottom-bar.expanded {
+        width: calc(100% - 24px);
       }
       .bottom-brand {
         display: none;
       }
       .bottom-links {
-        width: 100%;
-        justify-content: center;
-        gap: 8px;
+        gap: 4px;
       }
       .bottom-link {
-        padding: 8px 14px;
-        flex: 1;
-        justify-content: center;
+        padding: 10px 14px;
         flex-direction: column;
         gap: 2px;
       }
       .bottom-link span {
-        display: block;
-        font-size: 10px;
+        font-size: 9px;
       }
       .bottom-link i {
-        font-size: 20px;
-        width: 20px;
-        height: 20px;
+        font-size: 18px;
+        width: 18px;
+        height: 18px;
       }
     }
   </style>
