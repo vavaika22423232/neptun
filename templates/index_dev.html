@@ -560,9 +560,13 @@
       opacity: 0 !important;
     }
     
+    /* Markers and trajectories stay visible over OpenFreeMap */
+    /* They're inside svg-container which moves with the map */
+
     /* Container for SVG layers */
     .svg-container {
       position: absolute;
+      z-index: 1; /* Above leaflet-map (z-index: 0) */
       /* GPU acceleration - force layer composition */
       will-change: transform;
       transform: translateZ(0);
@@ -6284,13 +6288,14 @@
       console.log('Leaflet map initialized with OpenFreeMap (dark)');
     }
     
-    // Sync Leaflet view with SVG container position - smooth zoom preservation
+    // Sync Leaflet view with SVG container position - pixel-perfect alignment
     function syncLeafletWithSVG(scale) {
       if (!leafletMap || !window.MAP_BOUNDS) return;
       
       const container = document.getElementById('svg-container');
       const wrapper = document.getElementById('map-wrapper');
-      if (!container || !wrapper) return;
+      const leafletEl = document.getElementById('leaflet-map');
+      if (!container || !wrapper || !leafletEl) return;
       
       const containerRect = container.getBoundingClientRect();
       const wrapperRect = wrapper.getBoundingClientRect();
@@ -6299,38 +6304,40 @@
       // If SVG container is not visible or has zero size, skip
       if (containerRect.width <= 0 || containerRect.height <= 0) return;
       
-      // Calculate center of visible area in normalized coordinates (0-1)
-      const centerXNorm = ((wrapperRect.left + wrapperRect.width / 2) - containerRect.left) / containerRect.width;
-      const centerYNorm = ((wrapperRect.top + wrapperRect.height / 2) - containerRect.top) / containerRect.height;
+      // Calculate what part of SVG is visible in viewport (0-1 normalized)
+      // Left edge: where wrapper starts relative to container
+      const visibleLeftNorm = (wrapperRect.left - containerRect.left) / containerRect.width;
+      const visibleRightNorm = (wrapperRect.right - containerRect.left) / containerRect.width;
+      const visibleTopNorm = (wrapperRect.top - containerRect.top) / containerRect.height;
+      const visibleBottomNorm = (wrapperRect.bottom - containerRect.top) / containerRect.height;
       
-      // Clamp to valid range
-      const clampedCenterX = Math.max(0, Math.min(1, centerXNorm));
-      const clampedCenterY = Math.max(0, Math.min(1, centerYNorm));
+      // Clamp to 0-1
+      const left = Math.max(0, Math.min(1, visibleLeftNorm));
+      const right = Math.max(0, Math.min(1, visibleRightNorm));
+      const top = Math.max(0, Math.min(1, visibleTopNorm));
+      const bottom = Math.max(0, Math.min(1, visibleBottomNorm));
       
-      // Convert to lat/lng
-      const centerLng = MAP_BOUNDS.minLng + clampedCenterX * (MAP_BOUNDS.maxLng - MAP_BOUNDS.minLng);
-      const centerLat = MAP_BOUNDS.maxLat - clampedCenterY * (MAP_BOUNDS.maxLat - MAP_BOUNDS.minLat);
+      // Convert normalized coords to lat/lng bounds
+      const lngRange = MAP_BOUNDS.maxLng - MAP_BOUNDS.minLng;
+      const latRange = MAP_BOUNDS.maxLat - MAP_BOUNDS.minLat;
       
-      // Calculate Leaflet zoom based on SVG scale
-      // At scale 1, we see full Ukraine (~6 degrees lat) which is about Leaflet zoom 5-6
-      // At scale 3.5, we see ~2 degrees which is about zoom 8
-      // At scale 5, we see ~1.2 degrees which is about zoom 9
+      const westLng = MAP_BOUNDS.minLng + left * lngRange;
+      const eastLng = MAP_BOUNDS.minLng + right * lngRange;
+      const northLat = MAP_BOUNDS.maxLat - top * latRange;  // Y is inverted
+      const southLat = MAP_BOUNDS.maxLat - bottom * latRange;
       
-      // Visible lat range
-      const visibleLatRange = (MAP_BOUNDS.maxLat - MAP_BOUNDS.minLat) / scale;
+      // Use fitBounds for exact geographic alignment
+      const bounds = L.latLngBounds(
+        [southLat, westLng],  // southwest
+        [northLat, eastLng]   // northeast
+      );
       
-      // Convert lat range to Leaflet zoom level
-      // Formula: zoom = log2(360 / latRange) - approximate for Ukraine latitudes
-      // Adjusted for better match: zoom = log2(180 / latRange) + offset
-      const leafletZoom = Math.log2(180 / visibleLatRange) + 0.5;
+      // Ensure Leaflet knows its container size
+      leafletMap.invalidateSize({ animate: false });
       
-      // Clamp zoom to reasonable values
-      const clampedZoom = Math.max(5, Math.min(18, leafletZoom));
-      
-      // Use setView instead of fitBounds - preserves zoom smoothly
-      leafletMap.setView([centerLat, centerLng], clampedZoom, {
+      leafletMap.fitBounds(bounds, {
         animate: false,
-        duration: 0
+        padding: [0, 0]
       });
     }
     
