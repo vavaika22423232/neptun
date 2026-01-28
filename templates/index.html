@@ -4405,14 +4405,14 @@
           
           // PROGRESSIVE: Add fade-in animation
           markerEl.style.opacity = '0';
-          markerEl.style.transform = 'scale(0.5)';
+          markerEl.style.transform = 'translate(-50%, -50%) scale(0.5)';
           markersLayer.appendChild(markerEl);
           
           // Trigger animation after append
           requestAnimationFrame(() => {
             markerEl.style.transition = 'opacity 0.2s ease-out, transform 0.2s ease-out';
             markerEl.style.opacity = '1';
-            markerEl.style.transform = 'scale(1)';
+            markerEl.style.transform = 'translate(-50%, -50%) scale(1)';
           });
     }
     

@@ -3567,15 +3567,20 @@ def increment_alarm_stat(region: str):
     """Increment alarm counter for today and given region."""
     today = datetime.now(pytz.timezone('Europe/Kyiv')).strftime('%Y-%m-%d')
     try:
-        with _visits_db_conn() as conn:
+        db_path = _get_db_path()
+        conn = sqlite3.connect(db_path, timeout=10)
+        try:
             # Use UPSERT to increment counter
             conn.execute("""
                 INSERT INTO alarm_stats (date, region, count) VALUES (?, ?, 1)
                 ON CONFLICT(date, region) DO UPDATE SET count = count + 1
             """, (today, region))
-            log.debug(f"Incremented alarm stat: {region} on {today}")
+            conn.commit()
+            log.info(f"[ALARM_STAT] Incremented: {region} on {today}, db={db_path}")
+        finally:
+            conn.close()
     except Exception as e:
-        log.debug(f"increment_alarm_stat failed: {e}")
+        log.error(f"[ALARM_STAT] increment_alarm_stat FAILED: {e}")
 
 def get_alarm_stats_from_db(region: str) -> dict:
     """Get alarm statistics from database for given region."""
@@ -3590,7 +3595,9 @@ def get_alarm_stats_from_db(region: str) -> dict:
     month_count = 0
     
     try:
-        with _visits_db_conn() as conn:
+        db_path = _get_db_path()
+        conn = sqlite3.connect(db_path, timeout=10)
+        try:
             # Today
             cur = conn.execute(
                 "SELECT COALESCE(SUM(count), 0) FROM alarm_stats WHERE region LIKE ? AND date = ?",
@@ -3612,8 +3619,12 @@ def get_alarm_stats_from_db(region: str) -> dict:
             )
             month_count = cur.fetchone()[0] or 0
             
+            log.info(f"[ALARM_STAT] Read stats for {region}: today={today_count}, week={week_count}, month={month_count}, db={db_path}")
+        finally:
+            conn.close()
+            
     except Exception as e:
-        log.debug(f"get_alarm_stats_from_db failed: {e}")
+        log.error(f"[ALARM_STAT] get_alarm_stats_from_db FAILED: {e}")
     
     return {
         'today_alarms': today_count,
