@@ -519,7 +519,7 @@
       overflow: hidden;
     }
     
-    /* Leaflet map layer (hidden by default, shows at high zoom) */
+    /* Leaflet map layer (hidden by default, shows at high zoom with cinematic effect) */
     #leaflet-map {
       position: absolute;
       top: 0;
@@ -528,15 +528,25 @@
       height: 100%;
       z-index: 0;
       opacity: 0;
-      filter: blur(10px);
-      transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1), filter 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+      filter: blur(20px) saturate(0.5);
+      transform: scale(1.05);
+      transition: 
+        opacity 1.2s cubic-bezier(0.16, 1, 0.3, 1),
+        filter 1.5s cubic-bezier(0.16, 1, 0.3, 1),
+        transform 1.5s cubic-bezier(0.16, 1, 0.3, 1);
       pointer-events: none;
     }
     
     #leaflet-map.visible {
       opacity: 1;
-      filter: blur(0px);
-      pointer-events: auto;
+      filter: blur(0px) saturate(1);
+      transform: scale(1);
+      pointer-events: none; /* SVG still handles interaction */
+    }
+    
+    /* Hide Leaflet controls - SVG handles zoom */
+    #leaflet-map .leaflet-control-zoom {
+      display: none;
     }
     
     /* Hide Leaflet attribution in hybrid mode */
@@ -544,16 +554,30 @@
       display: none;
     }
     
+    /* SVG layers transition for hybrid mode */
+    #states-layer, #districts-layer, #names-layer {
+      transition: 
+        opacity 1s cubic-bezier(0.16, 1, 0.3, 1),
+        filter 1s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    
+    /* Glow effect on SVG during transition */
+    .svg-container.transitioning #states-layer,
+    .svg-container.transitioning #districts-layer {
+      filter: drop-shadow(0 0 30px rgba(0, 200, 255, 0.4));
+    }
+    
     /* Container for SVG layers */
     .svg-container {
       position: absolute;
       /* GPU acceleration */
-      will-change: transform;
+      will-change: transform, opacity;
       transform-origin: center center;
       -webkit-backface-visibility: hidden;
       backface-visibility: hidden;
       /* Lock aspect ratio to match SVG viewBox 260:175 */
       aspect-ratio: 260 / 175;
+      transition: filter 0.8s cubic-bezier(0.16, 1, 0.3, 1);
     }
     
     /* Shadow disabled for performance */
@@ -5972,6 +5996,8 @@
   <script>
     // ============================================
     // HYBRID MAP: SVG + OpenFreeMap at high zoom
+    // При низькому зумі - тільки SVG з синім фоном
+    // При високому зумі (scale > 2) - з'являється OpenFreeMap
     // ============================================
     
     let leafletMap = null;
@@ -5979,7 +6005,7 @@
     const SVG_FADE_START = 2.0;  // Start fading SVG at this scale
     const SVG_FADE_END = 3.5;    // SVG fully transparent at this scale
     
-    // Initialize Leaflet map (lazy - only when needed)
+    // Initialize Leaflet map (lazy - only when needed at high zoom)
     async function initLeafletMap() {
       if (leafletInitialized) return;
       
@@ -6031,7 +6057,7 @@
       leafletInitialized = true;
     }
     
-    // Sync Leaflet view with SVG container position
+    // Sync Leaflet view with SVG container position - precise bounds matching
     function syncLeafletWithSVG(scale) {
       if (!leafletMap || !window.MAP_BOUNDS) return;
       
@@ -6041,89 +6067,147 @@
       
       const containerRect = container.getBoundingClientRect();
       const wrapperRect = wrapper.getBoundingClientRect();
-      
-      // Calculate center of visible SVG area in lat/lng
-      const visibleCenterX = (wrapperRect.width / 2 - (containerRect.left - wrapperRect.left)) / containerRect.width;
-      const visibleCenterY = (wrapperRect.height / 2 - (containerRect.top - wrapperRect.top)) / containerRect.height;
-      
-      // Clamp to 0-1 range
-      const clampedX = Math.max(0, Math.min(1, visibleCenterX));
-      const clampedY = Math.max(0, Math.min(1, visibleCenterY));
-      
-      // Convert to lat/lng
       const MAP_BOUNDS = window.MAP_BOUNDS;
-      const centerLng = MAP_BOUNDS.minLng + clampedX * (MAP_BOUNDS.maxLng - MAP_BOUNDS.minLng);
-      const centerLat = MAP_BOUNDS.maxLat - clampedY * (MAP_BOUNDS.maxLat - MAP_BOUNDS.minLat);
       
-      // Calculate Leaflet zoom based on SVG scale
-      // Base: SVG covers Ukraine at scale 1, Leaflet zoom ~6 shows similar area
-      const baseLeafletZoom = 5.5;
-      const leafletZoom = baseLeafletZoom + Math.log2(scale);
+      // Calculate visible portion of SVG in normalized coordinates (0-1)
+      // Left edge of visible area
+      const visibleLeftNorm = Math.max(0, (wrapperRect.left - containerRect.left) / containerRect.width);
+      // Right edge of visible area  
+      const visibleRightNorm = Math.min(1, (wrapperRect.right - containerRect.left) / containerRect.width);
+      // Top edge of visible area
+      const visibleTopNorm = Math.max(0, (wrapperRect.top - containerRect.top) / containerRect.height);
+      // Bottom edge of visible area
+      const visibleBottomNorm = Math.min(1, (wrapperRect.bottom - containerRect.top) / containerRect.height);
       
-      leafletMap.setView([centerLat, centerLng], leafletZoom, { animate: false });
+      // Convert normalized coords to lat/lng
+      // X -> Lng (left to right)
+      const westLng = MAP_BOUNDS.minLng + visibleLeftNorm * (MAP_BOUNDS.maxLng - MAP_BOUNDS.minLng);
+      const eastLng = MAP_BOUNDS.minLng + visibleRightNorm * (MAP_BOUNDS.maxLng - MAP_BOUNDS.minLng);
+      // Y -> Lat (top to bottom, but lat increases upward)
+      const northLat = MAP_BOUNDS.maxLat - visibleTopNorm * (MAP_BOUNDS.maxLat - MAP_BOUNDS.minLat);
+      const southLat = MAP_BOUNDS.maxLat - visibleBottomNorm * (MAP_BOUNDS.maxLat - MAP_BOUNDS.minLat);
+      
+      // Create Leaflet bounds and fit to them
+      const bounds = L.latLngBounds(
+        [southLat, westLng],  // Southwest corner
+        [northLat, eastLng]   // Northeast corner
+      );
+      
+      // Fit Leaflet to exact same bounds as visible SVG area
+      leafletMap.fitBounds(bounds, {
+        animate: false,
+        padding: [0, 0]
+      });
     }
     
-    // Update hybrid mode based on current zoom
+    // Smoothstep function for smooth transitions
+    function smoothstep(edge0, edge1, x) {
+      const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+      return t * t * (3 - 2 * t);
+    }
+    
+    // Smoother easing - quintic ease out
+    function easeOutQuint(x) {
+      return 1 - Math.pow(1 - x, 5);
+    }
+    
+    // Track transition state
+    let isTransitioning = false;
+    let transitionTimeout = null;
+    
+    // Update hybrid mode based on current SVG scale
     function updateHybridMode(scale) {
       const mapEl = document.getElementById('leaflet-map');
+      const svgContainer = document.getElementById('svg-container');
       const statesLayer = document.getElementById('states-layer');
       const districtsLayer = document.getElementById('districts-layer');
       const namesLayer = document.getElementById('names-layer');
       
-      if (!mapEl) return;
+      // Calculate transition progress
+      const inTransitionZone = scale >= SVG_FADE_START * 0.9 && scale <= SVG_FADE_END * 1.1;
+      
+      // Add/remove transitioning class for glow effect
+      if (svgContainer) {
+        if (inTransitionZone && !isTransitioning) {
+          isTransitioning = true;
+          svgContainer.classList.add('transitioning');
+        } else if (!inTransitionZone && isTransitioning) {
+          // Delay removing transition class for smooth effect
+          clearTimeout(transitionTimeout);
+          transitionTimeout = setTimeout(() => {
+            svgContainer.classList.remove('transitioning');
+            isTransitioning = false;
+          }, 500);
+        }
+      }
       
       if (scale >= SVG_FADE_START) {
-        // Initialize Leaflet if not done
+        // High zoom - show OpenFreeMap, fade SVG with cinematic effect
         if (!leafletInitialized) {
           initLeafletMap();
         }
         
-        // Show Leaflet map
-        mapEl.classList.add('visible');
-        
-        // Calculate SVG opacity (fade out as zoom increases)
-        let svgOpacity = 1;
-        if (scale >= SVG_FADE_START && scale <= SVG_FADE_END) {
-          svgOpacity = 1 - (scale - SVG_FADE_START) / (SVG_FADE_END - SVG_FADE_START);
-        } else if (scale > SVG_FADE_END) {
-          svgOpacity = 0;
+        if (mapEl) {
+          mapEl.classList.add('visible');
         }
         
-        // Fade SVG layers (but keep markers visible!)
-        if (statesLayer) statesLayer.style.opacity = svgOpacity * 0.5;
-        if (districtsLayer) districtsLayer.style.opacity = svgOpacity * 0.5;
-        if (namesLayer) namesLayer.style.opacity = svgOpacity;
-        
-        // Sync Leaflet position
+        // Sync Leaflet with current SVG view
         syncLeafletWithSVG(scale);
         
+        // Fade out SVG layers with smooth easing
+        const rawProgress = (scale - SVG_FADE_START) / (SVG_FADE_END - SVG_FADE_START);
+        const fadeProgress = easeOutQuint(Math.max(0, Math.min(1, rawProgress)));
+        const svgOpacity = 1 - fadeProgress;
+        
+        // Apply opacity with slight blur at high zoom
+        if (statesLayer) {
+          statesLayer.style.opacity = svgOpacity * 0.5;
+          statesLayer.style.filter = fadeProgress > 0.5 ? `blur(${(fadeProgress - 0.5) * 4}px)` : 'none';
+        }
+        if (districtsLayer) {
+          districtsLayer.style.opacity = svgOpacity * 0.5;
+          districtsLayer.style.filter = fadeProgress > 0.5 ? `blur(${(fadeProgress - 0.5) * 4}px)` : 'none';
+        }
+        if (namesLayer) {
+          namesLayer.style.opacity = svgOpacity;
+          namesLayer.style.filter = fadeProgress > 0.3 ? `blur(${(fadeProgress - 0.3) * 3}px)` : 'none';
+        }
+        
       } else {
-        // Hide Leaflet, show full SVG
-        mapEl.classList.remove('visible');
-        if (statesLayer) statesLayer.style.opacity = 0.5;
-        if (districtsLayer) districtsLayer.style.opacity = 0.5;
-        if (namesLayer) namesLayer.style.opacity = 1;
+        // Low zoom - SVG only, hide OpenFreeMap
+        if (mapEl) {
+          mapEl.classList.remove('visible');
+        }
+        
+        // Full opacity for SVG layers, no blur
+        if (statesLayer) {
+          statesLayer.style.opacity = 0.5;
+          statesLayer.style.filter = 'none';
+        }
+        if (districtsLayer) {
+          districtsLayer.style.opacity = 0.5;
+          districtsLayer.style.filter = 'none';
+        }
+        if (namesLayer) {
+          namesLayer.style.opacity = 1;
+          namesLayer.style.filter = 'none';
+        }
       }
     }
     
-    // Register callback for zoom updates
+    // Register callback for zoom updates from main map code
     window.onZoomUpdate = updateHybridMode;
     
-    // Also update on drag end
-    document.addEventListener('mouseup', () => {
-      if (leafletInitialized) {
-        const scale = window.getCurrentScale ? window.getCurrentScale() : 1;
-        syncLeafletWithSVG(scale);
-      }
-    });
-    document.addEventListener('touchend', () => {
-      if (leafletInitialized) {
-        const scale = window.getCurrentScale ? window.getCurrentScale() : 1;
-        syncLeafletWithSVG(scale);
+    // Initial state (low zoom - SVG only)
+    document.addEventListener('DOMContentLoaded', () => {
+      // Ensure OpenFreeMap is hidden at start
+      const mapEl = document.getElementById('leaflet-map');
+      if (mapEl) {
+        mapEl.classList.remove('visible');
       }
     });
     
-    console.log('Hybrid map mode enabled (OpenFreeMap dark at scale >= ' + SVG_FADE_START + ')');
+    console.log('Hybrid map mode enabled (SVG + OpenFreeMap at high zoom)');
   </script>
 </body>
 </html>
