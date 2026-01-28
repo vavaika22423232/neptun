@@ -8,6 +8,9 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#0a0e17">
   <meta name="format-detection" content="telephone=no">
+  <!-- Mobile Performance Hints -->
+  <meta name="color-scheme" content="dark">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
   
   <!-- =========================================== -->
   <!-- PRIMARY SEO - AGGRESSIVE #1 RANKING STRATEGY -->
@@ -519,7 +522,7 @@
       overflow: hidden;
     }
     
-    /* Leaflet map layer (hidden by default, shows at high zoom with cinematic effect) */
+    /* Leaflet map layer - fast smooth fade */
     #leaflet-map {
       position: absolute;
       top: 0;
@@ -528,56 +531,48 @@
       height: 100%;
       z-index: 0;
       opacity: 0;
-      filter: blur(20px) saturate(0.5);
-      transform: scale(1.05);
-      transition: 
-        opacity 1.2s cubic-bezier(0.16, 1, 0.3, 1),
-        filter 1.5s cubic-bezier(0.16, 1, 0.3, 1),
-        transform 1.5s cubic-bezier(0.16, 1, 0.3, 1);
+      transition: opacity 0.4s ease-out;
       pointer-events: none;
     }
     
     #leaflet-map.visible {
       opacity: 1;
-      filter: blur(0px) saturate(1);
-      transform: scale(1);
-      pointer-events: none; /* SVG still handles interaction */
     }
     
     /* Hide Leaflet controls - SVG handles zoom */
-    #leaflet-map .leaflet-control-zoom {
-      display: none;
-    }
-    
-    /* Hide Leaflet attribution in hybrid mode */
+    #leaflet-map .leaflet-control-zoom,
     #leaflet-map .leaflet-control-attribution {
       display: none;
     }
     
-    /* SVG layers transition for hybrid mode */
+    /* SVG layers - fast smooth transitions */
     #states-layer, #districts-layer, #names-layer {
-      transition: 
-        opacity 1s cubic-bezier(0.16, 1, 0.3, 1),
-        filter 1s cubic-bezier(0.16, 1, 0.3, 1);
+      transition: opacity 0.4s ease-out;
     }
     
-    /* Glow effect on SVG during transition */
-    .svg-container.transitioning #states-layer,
-    .svg-container.transitioning #districts-layer {
-      filter: drop-shadow(0 0 30px rgba(0, 200, 255, 0.4));
+    /* SVG fade states */
+    .svg-container.hybrid-active #states-layer,
+    .svg-container.hybrid-active #districts-layer {
+      opacity: 0 !important;
+    }
+    
+    .svg-container.hybrid-active #names-layer {
+      opacity: 0 !important;
     }
     
     /* Container for SVG layers */
     .svg-container {
       position: absolute;
-      /* GPU acceleration */
-      will-change: transform, opacity;
+      /* GPU acceleration - force layer composition */
+      will-change: transform;
+      transform: translateZ(0);
       transform-origin: center center;
       -webkit-backface-visibility: hidden;
       backface-visibility: hidden;
+      /* Contain layout/paint for performance */
+      contain: layout style;
       /* Lock aspect ratio to match SVG viewBox 260:175 */
       aspect-ratio: 260 / 175;
-      transition: filter 0.8s cubic-bezier(0.16, 1, 0.3, 1);
     }
     
     /* Shadow disabled for performance */
@@ -1774,10 +1769,34 @@
         -webkit-touch-callout: none;
       }
       
+      /* Force GPU layer for smooth scrolling */
+      .svg-container {
+        transform: translate3d(0, 0, 0);
+        -webkit-transform: translate3d(0, 0, 0);
+      }
+      
+      /* Reduce layer complexity on mobile */
+      #map-container::before {
+        display: none !important; /* Disable grid pattern */
+      }
+      
+      /* Faster transitions on mobile */
+      #leaflet-map,
+      #states-layer,
+      #districts-layer,
+      #names-layer {
+        transition: opacity 0.25s ease-out !important;
+      }
+      
+      /* Disable SVG filters on touch devices */
+      .svg-container svg {
+        filter: none !important;
+      }
+      
       /* Larger touch targets */
       .zoom-btn {
-        min-width: 44px;
-        min-height: 44px;
+        min-width: 48px;
+        min-height: 48px;
       }
       
       /* Disable hover effects completely on touch */
@@ -1858,6 +1877,34 @@
       display: none;
     }
     
+    /* iOS-specific optimizations */
+    .ios-device .svg-container {
+      -webkit-transform: translateZ(0);
+      transform: translateZ(0);
+    }
+    
+    .ios-device #states-layer .stateObject,
+    .ios-device #districts-layer .dist {
+      /* Faster transitions on iOS */
+      transition: fill 0.15s ease-out !important;
+    }
+    
+    .ios-device .threat-marker {
+      /* Simpler animations on iOS */
+      animation: none !important;
+      filter: drop-shadow(0 0 4px rgba(255, 100, 100, 0.6)) !important;
+    }
+    
+    /* Mobile device general optimizations */
+    .mobile-device .trajectory-group line.traj-line {
+      stroke-width: 1.5;
+      filter: none !important;
+    }
+    
+    .mobile-device .trajectory-direction-arrow {
+      filter: none !important;
+    }
+    
     /* Touch device optimizations - disable heavy effects */
     @media (hover: none) and (pointer: coarse) {
       .threat-marker {
@@ -1886,6 +1933,33 @@
       .zoom-controls {
         right: max(10px, env(safe-area-inset-right));
         bottom: max(10px, env(safe-area-inset-bottom));
+      }
+      .navbar {
+        padding-top: max(0.5rem, env(safe-area-inset-top));
+        padding-left: max(1rem, env(safe-area-inset-left));
+        padding-right: max(1rem, env(safe-area-inset-right));
+      }
+    }
+    
+    /* iOS momentum scrolling fix */
+    @supports (-webkit-overflow-scrolling: touch) {
+      #map-wrapper {
+        -webkit-overflow-scrolling: touch;
+      }
+      /* Prevent iOS rubber-banding */
+      body {
+        overscroll-behavior: none;
+      }
+    }
+    
+    /* Reduce motion for battery saving */
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
       }
     }
     
@@ -3647,11 +3721,23 @@
       return;
     }
     
-    // Android detection for performance optimizations
+    // Device detection for performance optimizations
     const isAndroid = /Android/i.test(navigator.userAgent);
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isMobile = isAndroid || isIOS || /Mobile|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
     if (isAndroid) {
       document.body.classList.add('android-device');
       console.log('Android detected - applying performance optimizations');
+    }
+    if (isIOS) {
+      document.body.classList.add('ios-device');
+      console.log('iOS detected - applying performance optimizations');
+    }
+    if (isMobile) {
+      document.body.classList.add('mobile-device');
+      // Reduce polling frequency on mobile to save battery
+      hiddenPollingInterval = 180000; // 3 minutes when hidden
     }
     
     // =====================================================
@@ -4969,8 +5055,10 @@
         }
       }, { passive: false });
       
-      // Touch events for mobile
+      // Touch events for mobile - optimized for 60fps
+      let touchStartTime = 0;
       wrapper.addEventListener('touchstart', (e) => {
+        touchStartTime = performance.now();
         if (e.touches.length === 1) {
           // Single touch - drag
           isTouching = true;
@@ -4988,27 +5076,38 @@
         }
       }, { passive: false });
       
-      // No throttling - maximum smoothness on all devices
+      // RAF-optimized touch handling for smooth 60fps
+      let rafPending = false;
       wrapper.addEventListener('touchmove', (e) => {
         if (e.touches.length === 1 && isDragging) {
-          // Single touch drag
+          // Single touch drag - use RAF for smooth updates
           e.preventDefault();
-          offsetX = dragStartOffsetX + (e.touches[0].clientX - dragStartX);
-          offsetY = dragStartOffsetY + (e.touches[0].clientY - dragStartY);
-          updateZoom();
+          const newOffsetX = dragStartOffsetX + (e.touches[0].clientX - dragStartX);
+          const newOffsetY = dragStartOffsetY + (e.touches[0].clientY - dragStartY);
+          
+          if (!rafPending) {
+            rafPending = true;
+            requestAnimationFrame(() => {
+              offsetX = newOffsetX;
+              offsetY = newOffsetY;
+              updateZoom();
+              rafPending = false;
+            });
+          }
         } else if (e.touches.length === 2) {
-          // Pinch to zoom with proper anchor point
+          // Pinch to zoom with proper anchor point - RAF optimized
           e.preventDefault();
           const newDistance = getTouchDistance(e.touches);
           const newCenter = getTouchCenter(e.touches);
           
-          if (lastTouchDistance > 0) {
+          if (lastTouchDistance > 0 && !rafPending) {
             const scale = newDistance / lastTouchDistance;
             // Min scale 0.5 for better overview
             const newScale = Math.min(Math.max(currentScale * scale, 0.5), 5);
             
             // Only update if change is significant (reduces redraws)
             if (Math.abs(newScale - currentScale) > 0.02) {
+              rafPending = true;
               // Calculate the zoom center relative to wrapper
               const wrapperRect = wrapper.getBoundingClientRect();
               const pinchCenterX = newCenter.x - wrapperRect.left;
@@ -5040,7 +5139,10 @@
               offsetX = newLeft - (wrapperRect.width - newWidth) / 2;
               offsetY = newTop - (wrapperRect.height - newHeight) / 2;
               
-              updateZoom();
+              requestAnimationFrame(() => {
+                updateZoom();
+                rafPending = false;
+              });
             }
           }
           
@@ -5069,10 +5171,12 @@
         isDragging = false;
         isTouching = false;
         lastTouchDistance = 0;
+        rafPending = false;
       });
       
-      // Double tap to reset zoom on mobile
+      // Double tap to reset zoom on mobile - optimized
       let lastTap = 0;
+      let lastTapX = 0, lastTapY = 0;
       wrapper.addEventListener('touchend', (e) => {
         if (e.touches.length !== 0) return;
         
@@ -6015,6 +6119,9 @@
       // Center of Ukraine
       const ukraineCenter = [48.5, 31.5];
       
+      // Mobile-optimized Leaflet options
+      const isMobileDevice = document.body.classList.contains('mobile-device');
+      
       leafletMap = L.map('leaflet-map', {
         center: ukraineCenter,
         zoom: 6,
@@ -6023,7 +6130,11 @@
         dragging: false,      // Disable - we use SVG drag
         scrollWheelZoom: false,
         doubleClickZoom: false,
-        touchZoom: false
+        touchZoom: false,
+        // Mobile optimizations
+        preferCanvas: isMobileDevice, // Canvas rendering faster on mobile
+        fadeAnimation: !isMobileDevice,
+        zoomAnimation: !isMobileDevice
       });
       
       // Load OpenFreeMap dark style and modify for Ukrainian-only labels
@@ -6031,11 +6142,25 @@
         const response = await fetch('https://tiles.openfreemap.org/styles/dark');
         const style = await response.json();
         
+        const isMobileDevice = document.body.classList.contains('mobile-device');
+        
         // Modify all text-field properties to show only native names (Ukrainian in Ukraine)
         style.layers.forEach(layer => {
           if (layer.layout && layer.layout['text-field']) {
             // Replace complex multilingual text-field with simple native name
             layer.layout['text-field'] = ['coalesce', ['get', 'name:uk'], ['get', 'name']];
+          }
+          
+          // Mobile optimizations: simplify rendering
+          if (isMobileDevice) {
+            // Reduce label density on mobile
+            if (layer.layout && layer.layout['symbol-spacing']) {
+              layer.layout['symbol-spacing'] = (layer.layout['symbol-spacing'] || 250) * 1.5;
+            }
+            // Disable text halos on mobile for performance
+            if (layer.paint && layer.paint['text-halo-width']) {
+              layer.paint['text-halo-width'] = 0;
+            }
           }
         });
         
@@ -6100,98 +6225,37 @@
       });
     }
     
-    // Smoothstep function for smooth transitions
-    function smoothstep(edge0, edge1, x) {
-      const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
-      return t * t * (3 - 2 * t);
-    }
+    // Track hybrid state
+    let lastHybridState = false;
     
-    // Smoother easing - quintic ease out
-    function easeOutQuint(x) {
-      return 1 - Math.pow(1 - x, 5);
-    }
-    
-    // Track transition state
-    let isTransitioning = false;
-    let transitionTimeout = null;
-    
-    // Update hybrid mode based on current SVG scale
+    // Update hybrid mode based on current SVG scale - instant class toggle
     function updateHybridMode(scale) {
       const mapEl = document.getElementById('leaflet-map');
       const svgContainer = document.getElementById('svg-container');
-      const statesLayer = document.getElementById('states-layer');
-      const districtsLayer = document.getElementById('districts-layer');
-      const namesLayer = document.getElementById('names-layer');
       
-      // Calculate transition progress
-      const inTransitionZone = scale >= SVG_FADE_START * 0.9 && scale <= SVG_FADE_END * 1.1;
+      const shouldShowHybrid = scale >= SVG_FADE_END;
       
-      // Add/remove transitioning class for glow effect
-      if (svgContainer) {
-        if (inTransitionZone && !isTransitioning) {
-          isTransitioning = true;
-          svgContainer.classList.add('transitioning');
-        } else if (!inTransitionZone && isTransitioning) {
-          // Delay removing transition class for smooth effect
-          clearTimeout(transitionTimeout);
-          transitionTimeout = setTimeout(() => {
-            svgContainer.classList.remove('transitioning');
-            isTransitioning = false;
-          }, 500);
+      // Instant state change - CSS handles the smooth transition
+      if (shouldShowHybrid !== lastHybridState) {
+        lastHybridState = shouldShowHybrid;
+        
+        if (shouldShowHybrid) {
+          // High zoom - show OpenFreeMap
+          if (!leafletInitialized) {
+            initLeafletMap();
+          }
+          if (mapEl) mapEl.classList.add('visible');
+          if (svgContainer) svgContainer.classList.add('hybrid-active');
+        } else {
+          // Low zoom - SVG only
+          if (mapEl) mapEl.classList.remove('visible');
+          if (svgContainer) svgContainer.classList.remove('hybrid-active');
         }
       }
       
-      if (scale >= SVG_FADE_START) {
-        // High zoom - show OpenFreeMap, fade SVG with cinematic effect
-        if (!leafletInitialized) {
-          initLeafletMap();
-        }
-        
-        if (mapEl) {
-          mapEl.classList.add('visible');
-        }
-        
-        // Sync Leaflet with current SVG view
+      // Always sync Leaflet position when it's visible
+      if (leafletInitialized && scale >= SVG_FADE_START) {
         syncLeafletWithSVG(scale);
-        
-        // Fade out SVG layers with smooth easing
-        const rawProgress = (scale - SVG_FADE_START) / (SVG_FADE_END - SVG_FADE_START);
-        const fadeProgress = easeOutQuint(Math.max(0, Math.min(1, rawProgress)));
-        const svgOpacity = 1 - fadeProgress;
-        
-        // Apply opacity with slight blur at high zoom
-        if (statesLayer) {
-          statesLayer.style.opacity = svgOpacity * 0.5;
-          statesLayer.style.filter = fadeProgress > 0.5 ? `blur(${(fadeProgress - 0.5) * 4}px)` : 'none';
-        }
-        if (districtsLayer) {
-          districtsLayer.style.opacity = svgOpacity * 0.5;
-          districtsLayer.style.filter = fadeProgress > 0.5 ? `blur(${(fadeProgress - 0.5) * 4}px)` : 'none';
-        }
-        if (namesLayer) {
-          namesLayer.style.opacity = svgOpacity;
-          namesLayer.style.filter = fadeProgress > 0.3 ? `blur(${(fadeProgress - 0.3) * 3}px)` : 'none';
-        }
-        
-      } else {
-        // Low zoom - SVG only, hide OpenFreeMap
-        if (mapEl) {
-          mapEl.classList.remove('visible');
-        }
-        
-        // Full opacity for SVG layers, no blur
-        if (statesLayer) {
-          statesLayer.style.opacity = 0.5;
-          statesLayer.style.filter = 'none';
-        }
-        if (districtsLayer) {
-          districtsLayer.style.opacity = 0.5;
-          districtsLayer.style.filter = 'none';
-        }
-        if (namesLayer) {
-          namesLayer.style.opacity = 1;
-          namesLayer.style.filter = 'none';
-        }
       }
     }
     
