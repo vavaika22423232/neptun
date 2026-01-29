@@ -11,6 +11,13 @@ import requests
 
 OPENCAGE_API_KEY = os.environ.get('OPENCAGE_API_KEY', 'c30fbe219d5d49ada3657da3326ca9b7')
 
+# Hardcoded coordinates for ambiguous cities that confuse geocoder
+# These override geocoder results to prevent wrong locations
+HARDCODED_COORDS = {
+    'степногірськ|запорізька': (47.295, 35.482),  # Степногірськ, Запорізька область
+    'степногірськ': (47.295, 35.482),  # Default to Ukraine location, not Kazakhstan
+}
+
 # Use /data for persistent storage on Render, fallback to local dir
 def _get_cache_path(filename):
     persistent_dir = os.environ.get('PERSISTENT_DATA_DIR', '/data')
@@ -107,6 +114,9 @@ def _normalize_city_name(city: str) -> str:
         'петрівку': 'Петрівка',
         'новомиргороду': 'Новомиргород',
         'гайворону': 'Гайворон',
+        # Ambiguous cities that can be confused with other countries
+        'степногірську': 'Степногірськ',
+        'степногорськ': 'Степногірськ',
     }
     
     if city_lower in known_transforms:
@@ -344,6 +354,11 @@ def geocode(city: str, region: str = None) -> tuple:
     cache_key = _normalize_key(city, region)
     if not cache_key:
         return None
+    
+    # === STEP 0: Check hardcoded coordinates (for ambiguous cities) ===
+    if cache_key in HARDCODED_COORDS:
+        print(f"[OPENCAGE] Using hardcoded coords for '{cache_key}': {HARDCODED_COORDS[cache_key]}", flush=True)
+        return HARDCODED_COORDS[cache_key]
     
     # === STEP 1: Check positive cache ===
     if cache_key in _cache:

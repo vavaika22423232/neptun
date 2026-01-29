@@ -102,7 +102,7 @@ gc.collect()
 # ============================================================================
 class ResponseCache:
     """Thread-safe in-memory cache for API responses with TTL."""
-    def __init__(self, default_ttl: int = 30, max_items: int = 100):
+    def __init__(self, default_ttl: int = 30, max_items: int = 50):
         self._cache: dict = {}
         self._lock = threading.RLock()
         self.default_ttl = default_ttl
@@ -464,8 +464,8 @@ GROQ_ENABLED = bool(GROQ_API_KEY)
 
 # AI request caching and rate limiting
 _groq_cache = {}  # Simple in-memory cache {hash: (result, timestamp)}
-_groq_cache_ttl = 3600  # Cache TTL: 60 min (was 30 min) - reduce API calls significantly
-_groq_cache_max_size = 500  # MEMORY PROTECTION: Max cached AI responses
+_groq_cache_ttl = 1800  # Cache TTL: 30 min (reduced from 60 min)
+_groq_cache_max_size = 200  # MEMORY PROTECTION: Max cached AI responses (reduced from 500)
 _groq_last_request = 0  # Timestamp of last request
 _groq_min_interval = 3.0  # Minimum 3 seconds between requests (was 2)
 _groq_daily_cooldown_until = 0  # If set, skip ALL AI until this timestamp
@@ -1045,7 +1045,7 @@ init_firebase()
 
 # Shared rate tracking for lightweight bandwidth protection rules
 request_counts = defaultdict(list)
-_request_counts_max_keys = 10000  # MEMORY PROTECTION: Max tracked IPs
+_request_counts_max_keys = 2000  # MEMORY PROTECTION: Max tracked IPs (reduced from 10000)
 
 def _cleanup_request_counts():
     """Periodically cleanup old request count entries to prevent memory leak."""
@@ -2407,6 +2407,7 @@ AUTH_SECRET = os.getenv('AUTH_SECRET')  # simple shared secret to protect /auth 
 FETCH_THREAD_STARTED = False
 AUTH_STATUS = {'authorized': False, 'reason': 'init'}
 SUBSCRIBERS = set()  # queues for SSE clients
+MAX_STREAM_SUBSCRIBERS = 100  # MEMORY PROTECTION: Limit main SSE connections
 INIT_ONCE = False  # guard to ensure background startup once
 # Persistent dynamic channels file
 CHANNELS_FILE = 'channels_dynamic.json'
@@ -2427,7 +2428,7 @@ MAX_DEBUG_LOGS = 20  # Reduced to save memory
 
 # Cache for fallback reparse to avoid duplicate processing
 FALLBACK_REPARSE_CACHE = set()  # message IDs that have been reparsed
-MAX_REPARSE_CACHE_SIZE = 200  # Reduced to save memory
+MAX_REPARSE_CACHE_SIZE = 100  # Reduced to save memory (was 200)
 
 
 def _normalize_platform(platform_hint: str, ua: str) -> str:
@@ -3655,7 +3656,7 @@ except Exception as e:
 _opencage_cache = None
 _neg_geocode_cache = None
 _mapstransler_geocode_cache = {}  # In-memory cache for mapstransler geocoding
-_mapstransler_cache_max_size = 2000  # MEMORY PROTECTION: Max cached geocode results
+_mapstransler_cache_max_size = 500  # MEMORY PROTECTION: Max cached geocode results (reduced from 2000)
 
 def _load_opencage_cache():
     global _opencage_cache
@@ -16210,6 +16211,11 @@ def raion_alarms():
 # SSE stream endpoint
 @app.route('/stream')
 def stream():
+    # MEMORY PROTECTION: Reject if too many subscribers
+    if len(SUBSCRIBERS) >= MAX_STREAM_SUBSCRIBERS:
+        log.warning(f"[SSE] Rejected /stream connection - limit reached ({MAX_STREAM_SUBSCRIBERS})")
+        return jsonify({'error': 'Server busy, please poll /api/data'}), 503
+    
     def gen():
         q = queue.Queue()
         SUBSCRIBERS.add(q)
@@ -17374,6 +17380,22 @@ def _memory_cleanup_worker():
             if cleaned > 0:
                 print(f"[MEMORY] Cleaned {cleaned} expired cache entries")
             
+            # Clean _groq_cache - remove old entries and enforce size limit
+            now = time.time()
+            if _groq_cache:
+                old_size = len(_groq_cache)
+                # Remove expired entries
+                expired_keys = [k for k, (_, ts) in _groq_cache.items() if now - ts > _groq_cache_ttl]
+                for k in expired_keys:
+                    del _groq_cache[k]
+                # If still over limit, remove oldest entries
+                if len(_groq_cache) > _groq_cache_max_size:
+                    sorted_keys = sorted(_groq_cache.keys(), key=lambda k: _groq_cache[k][1])
+                    for k in sorted_keys[:len(_groq_cache) - _groq_cache_max_size // 2]:
+                        del _groq_cache[k]
+                if old_size != len(_groq_cache):
+                    print(f"[MEMORY] Cleaned groq cache: {old_size} -> {len(_groq_cache)}")
+            
             # Clean _telegram_alert_sent (keep only last 5 min)
             now = time.time()
             with _telegram_alert_lock:
@@ -17400,6 +17422,19 @@ def _memory_cleanup_worker():
                     del ACTIVE_VISITORS[k]
                 if stale_keys:
                     print(f"[MEMORY] Cleaned {len(stale_keys)} stale visitors")
+            
+            # Clean _mapstransler_geocode_cache if over limit
+            if len(_mapstransler_geocode_cache) > _mapstransler_cache_max_size:
+                old_size = len(_mapstransler_geocode_cache)
+                # Remove half of the entries (oldest would require tracking timestamps)
+                keys_to_remove = list(_mapstransler_geocode_cache.keys())[:old_size // 2]
+                for k in keys_to_remove:
+                    del _mapstransler_geocode_cache[k]
+                print(f"[MEMORY] Cleaned mapstransler cache: {old_size} -> {len(_mapstransler_geocode_cache)}")
+            
+            # Force garbage collection periodically
+            import gc
+            gc.collect()
                     
         except Exception as e:
             print(f"[MEMORY] Cleanup worker error: {e}")
@@ -18544,6 +18579,7 @@ _chat_initialized = False
 CHAT_SUBSCRIBERS = set()  # queues for chat SSE clients
 CHAT_TYPING_USERS = {}  # {deviceId: {'nickname': str, 'timestamp': float}}
 CHAT_TYPING_TTL = 5  # seconds before typing indicator expires
+MAX_SSE_SUBSCRIBERS = 100  # MEMORY PROTECTION: Limit SSE connections to prevent OOM
 
 # ============== CHAT RATE LIMITING ==============
 # Configurable rate limits (sliding window approach)
@@ -18750,6 +18786,11 @@ def broadcast_chat_event(event_type: str, data: dict):
 @app.route('/api/chat/stream')
 def chat_stream():
     """SSE endpoint for real-time chat updates."""
+    # MEMORY PROTECTION: Reject if too many subscribers
+    if len(CHAT_SUBSCRIBERS) >= MAX_SSE_SUBSCRIBERS:
+        log.warning(f"[CHAT_SSE] Rejected connection - limit reached ({MAX_SSE_SUBSCRIBERS})")
+        return jsonify({'error': 'Server busy, please use polling'}), 503
+    
     def gen():
         q = queue.Queue()
         CHAT_SUBSCRIBERS.add(q)
