@@ -102,10 +102,11 @@ gc.collect()
 # ============================================================================
 class ResponseCache:
     """Thread-safe in-memory cache for API responses with TTL."""
-    def __init__(self, default_ttl: int = 30):
+    def __init__(self, default_ttl: int = 30, max_items: int = 100):
         self._cache: dict = {}
         self._lock = threading.RLock()
         self.default_ttl = default_ttl
+        self.max_items = max_items
         self.hits = 0
         self.misses = 0
 
@@ -123,6 +124,14 @@ class ResponseCache:
 
     def set(self, key: str, data, ttl: int = None):
         with self._lock:
+            # MEMORY PROTECTION: Enforce max items limit
+            if len(self._cache) >= self.max_items and key not in self._cache:
+                # Remove oldest/expired entries first
+                self.clear_expired()
+                # If still over limit, remove oldest entry
+                if len(self._cache) >= self.max_items:
+                    oldest_key = min(self._cache.keys(), key=lambda k: self._cache[k][1])
+                    del self._cache[oldest_key]
             expires_at = time.time() + (ttl or self.default_ttl)
             self._cache[key] = (data, expires_at)
 
@@ -456,6 +465,7 @@ GROQ_ENABLED = bool(GROQ_API_KEY)
 # AI request caching and rate limiting
 _groq_cache = {}  # Simple in-memory cache {hash: (result, timestamp)}
 _groq_cache_ttl = 3600  # Cache TTL: 60 min (was 30 min) - reduce API calls significantly
+_groq_cache_max_size = 500  # MEMORY PROTECTION: Max cached AI responses
 _groq_last_request = 0  # Timestamp of last request
 _groq_min_interval = 3.0  # Minimum 3 seconds between requests (was 2)
 _groq_daily_cooldown_until = 0  # If set, skip ALL AI until this timestamp
@@ -463,11 +473,6 @@ _groq_429_backoff = 0  # Exponential backoff counter
 _groq_requests_this_minute = 0  # Counter for requests in current minute
 _groq_minute_start = 0  # Start of current minute window
 _groq_max_per_minute = 5  # Max 5 requests per minute (cost optimization)
-
-def _get_groq_cache_key(text):
-    """Generate cache key for AI request"""
-    import hashlib
-    return hashlib.md5(text.encode()).hexdigest()[:16]
 
 def _groq_is_available():
     """Check if Groq AI is currently available (not in cooldown)"""
@@ -482,57 +487,6 @@ def _groq_is_available():
             _groq_daily_cooldown_until = 0
             print("INFO: Groq AI cooldown expired, resuming")
     return True
-
-def _groq_handle_429(error_message: str):
-    """Handle 429 rate limit error - set global cooldown"""
-    global _groq_daily_cooldown_until, _groq_429_backoff
-
-    # Parse wait time from error message
-    # Example: "Please try again in 4m56.352s"
-    wait_match = re.search(r'try again in (\d+)m([\d.]+)s', error_message)
-    if wait_match:
-        minutes = int(wait_match.group(1))
-        seconds = float(wait_match.group(2))
-        wait_seconds = minutes * 60 + seconds + 60  # Add 1 min buffer
-    else:
-        # Default: 10 minutes cooldown with exponential backoff
-        _groq_429_backoff = min(_groq_429_backoff + 1, 6)  # Max 6 = 640 seconds
-        wait_seconds = 60 * (2 ** _groq_429_backoff)  # 2, 4, 8, 16, 32, 64 minutes
-
-    _groq_daily_cooldown_until = time.time() + wait_seconds
-    print(f"WARNING: Groq rate limit hit! Pausing ALL AI requests for {wait_seconds/60:.1f} minutes")
-
-def _groq_rate_limit():
-    """Smart rate limiter for Groq API"""
-    global _groq_last_request, _groq_429_backoff, _groq_requests_this_minute, _groq_minute_start
-
-    # Check if in cooldown
-    if not _groq_is_available():
-        raise Exception("Groq AI in cooldown mode")
-
-    now = time.time()
-
-    # Check per-minute limit
-    if now - _groq_minute_start >= 60:
-        # New minute, reset counter
-        _groq_minute_start = now
-        _groq_requests_this_minute = 0
-
-    if _groq_requests_this_minute >= _groq_max_per_minute:
-        # Too many requests this minute, skip
-        remaining = 60 - (now - _groq_minute_start)
-        print(f"RATE LIMIT: Groq max {_groq_max_per_minute}/min reached, skipping ({remaining:.0f}s until reset)")
-        raise Exception(f"Groq rate limit: {_groq_max_per_minute}/min exceeded")
-
-    elapsed = now - _groq_last_request
-    if elapsed < _groq_min_interval:
-        time.sleep(_groq_min_interval - elapsed)
-    _groq_last_request = time.time()
-    _groq_requests_this_minute += 1
-
-    # Reset backoff on successful rate limit pass
-    if _groq_429_backoff > 0:
-        _groq_429_backoff = max(0, _groq_429_backoff - 1)
 
 if GROQ_ENABLED:
     try:
@@ -893,22 +847,6 @@ logging.getLogger('werkzeug').setLevel(logging.WARNING)
 app = Flask(__name__)
 
 # ============= CLOUDFLARE CDN SUPPORT =============
-# Cloudflare passes real client IP in CF-Connecting-IP header
-def get_real_ip():
-    """Get real client IP, supporting Cloudflare proxy."""
-    # Cloudflare specific headers (most reliable)
-    cf_ip = request.headers.get('CF-Connecting-IP')
-    if cf_ip:
-        return cf_ip
-    # Standard proxy headers
-    x_forwarded = request.headers.get('X-Forwarded-For')
-    if x_forwarded:
-        return x_forwarded.split(',')[0].strip()
-    x_real_ip = request.headers.get('X-Real-IP')
-    if x_real_ip:
-        return x_real_ip
-    return request.remote_addr or 'unknown'
-
 # Cloudflare cache status header
 @app.after_request
 def add_cloudflare_headers(response):
@@ -1107,6 +1045,28 @@ init_firebase()
 
 # Shared rate tracking for lightweight bandwidth protection rules
 request_counts = defaultdict(list)
+_request_counts_max_keys = 10000  # MEMORY PROTECTION: Max tracked IPs
+
+def _cleanup_request_counts():
+    """Periodically cleanup old request count entries to prevent memory leak."""
+    global request_counts
+    now = time.time()
+    # Remove entries older than 5 minutes
+    keys_to_remove = []
+    for key, timestamps in list(request_counts.items()):
+        # Keep only timestamps from last 5 minutes
+        recent = [t for t in timestamps if now - t < 300]
+        if recent:
+            request_counts[key] = recent
+        else:
+            keys_to_remove.append(key)
+    for key in keys_to_remove:
+        del request_counts[key]
+    # If still too many keys, remove oldest
+    if len(request_counts) > _request_counts_max_keys:
+        sorted_keys = sorted(request_counts.keys(), key=lambda k: min(request_counts[k]) if request_counts[k] else 0)
+        for key in sorted_keys[:len(request_counts) - _request_counts_max_keys // 2]:
+            del request_counts[key]
 
 # Presence counter configuration
 VALID_PLATFORMS = {'web', 'android', 'ios'}
@@ -1122,27 +1082,39 @@ PRESENCE_RATE_LIMIT = 3    # max requests per window per IP
 import gzip
 import io
 
+# MEMORY PROTECTION: Max response size to compress (10MB)
+MAX_COMPRESS_SIZE = 10 * 1024 * 1024
 
 # Add global response compression
 @app.after_request
 def compress_response(response):
     """Apply gzip compression to reduce bandwidth usage."""
+    # MEMORY PROTECTION: Skip compression for very large responses to avoid OOM
     if (
         response.status_code == 200 and
         'gzip' in request.headers.get('Accept-Encoding', '').lower() and
         response.content_length and response.content_length > 500 and
+        response.content_length < MAX_COMPRESS_SIZE and  # Don't compress huge responses
         response.content_type.startswith(('application/json', 'text/html', 'text/css', 'application/javascript'))
     ):
         try:
             # Compress the response data
+            data = response.get_data()
+            # Double-check size to prevent memory issues
+            if len(data) > MAX_COMPRESS_SIZE:
+                return response
+                
             buffer = io.BytesIO()
             with gzip.GzipFile(fileobj=buffer, mode='wb') as f:
-                f.write(response.get_data())
+                f.write(data)
 
-            response.set_data(buffer.getvalue())
-            response.headers['Content-Encoding'] = 'gzip'
-            response.headers['Content-Length'] = len(response.get_data())
-            response.headers['Vary'] = 'Accept-Encoding'
+            compressed = buffer.getvalue()
+            # Only use compressed version if it's actually smaller
+            if len(compressed) < len(data):
+                response.set_data(compressed)
+                response.headers['Content-Encoding'] = 'gzip'
+                response.headers['Content-Length'] = len(compressed)
+                response.headers['Vary'] = 'Accept-Encoding'
         except Exception:
             pass  # If compression fails, return original response
 
@@ -2395,6 +2367,25 @@ def static_with_gzip(filename):
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000  # 1 year for static files
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
+# MEMORY PROTECTION: Max response size limit
+MAX_RESPONSE_SIZE_MB = 50  # 50MB absolute max - anything larger is an error
+
+@app.after_request
+def check_response_size_limit(response):
+    """Emergency protection against huge responses that could crash the server."""
+    try:
+        if response.content_length and response.content_length > MAX_RESPONSE_SIZE_MB * 1024 * 1024:
+            print(f"[CRITICAL] Response too large: {response.content_length / 1024 / 1024:.1f}MB for {request.path}")
+            # Don't send the huge response - return error instead
+            return Response(
+                json.dumps({'error': 'Response too large', 'size_mb': response.content_length / 1024 / 1024}),
+                status=500,
+                mimetype='application/json'
+            )
+    except:
+        pass
+    return response
+
 # NOTE: Cache headers handled by unified add_cache_headers() in SECTION [PERFORMANCE OPTIMIZATION]
 # Duplicate @app.after_request removed to fix Flask middleware conflict
 
@@ -2501,39 +2492,6 @@ OBLAST_PCODE = {
 }
 
 # ---- Alarm persistence (SQLite) ----
-def init_alarms_db():
-    try:
-        with _visits_db_conn() as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS alarms (
-                    id TEXT PRIMARY KEY,
-                    level TEXT,
-                    name TEXT,
-                    since REAL,
-                    last REAL
-                )
-            """)
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_alarms_level ON alarms(level)")
-    except Exception as e:
-        log.warning(f"alarms db init failed: {e}")
-
-def init_alarm_events_db():
-    try:
-        with _visits_db_conn() as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS alarm_events (
-                    id TEXT PRIMARY KEY,
-                    level TEXT,
-                    name TEXT,
-                    event TEXT,
-                    ts REAL
-                )
-            """)
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_alarm_events_time ON alarm_events(ts)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_alarm_events_name ON alarm_events(name)")
-    except Exception as e:
-        log.warning(f"alarm_events db init failed: {e}")
-
 def log_alarm_event(level:str, name:str, event:str, ts=None):
     ts = ts or time.time()
     try:
@@ -2560,20 +2518,6 @@ def remove_alarm(level:str, name:str):
             conn.execute("DELETE FROM alarms WHERE id=?", (_alarm_key(level,name),))
     except Exception as e:
         log.debug(f"remove_alarm failed: {e}")
-
-def load_active_alarms(ttl_seconds:int):
-    out_obl = {}
-    out_raion = {}
-    cutoff = time.time() - ttl_seconds
-    try:
-        with _visits_db_conn() as conn:
-            cur = conn.execute("SELECT level,name,since,last FROM alarms WHERE last >= ?", (cutoff,))
-            for level,name,since,last in cur.fetchall():
-                if level == 'oblast': out_obl[name] = {'since': since, 'last': last}
-                elif level == 'raion': out_raion[name] = {'since': since, 'last': last}
-    except Exception as e:
-        log.debug(f"load_active_alarms failed: {e}")
-    return out_obl, out_raion
 
 def load_dynamic_channels():
     try:
@@ -3711,6 +3655,7 @@ except Exception as e:
 _opencage_cache = None
 _neg_geocode_cache = None
 _mapstransler_geocode_cache = {}  # In-memory cache for mapstransler geocoding
+_mapstransler_cache_max_size = 2000  # MEMORY PROTECTION: Max cached geocode results
 
 def _load_opencage_cache():
     global _opencage_cache
@@ -3864,29 +3809,6 @@ def _msg_timestamp(msg):
         pass
 
     return 0
-
-def neg_geocode_check(name:str):
-    if not name:
-        return False
-    cache = _load_neg_geocode_cache()
-    key = name.strip().lower()
-    entry = cache.get(key)
-    if not entry:
-        return False
-    # expire
-    if int(time.time()) - entry.get('ts',0) > NEG_GEOCODE_TTL:
-        try: del cache[key]; _save_neg_geocode_cache()
-        except Exception: pass
-        return False
-    return True
-
-def neg_geocode_add(name:str, reason:str='not_found'):
-    if not name:
-        return
-    cache = _load_neg_geocode_cache()
-    key = name.strip().lower()
-    cache[key] = {'ts': int(time.time()), 'reason': reason}
-    _save_neg_geocode_cache()
 
 UA_CITIES = [
     'київ','харків','одеса','одесса','дніпро','дніпропетровськ','львів','запоріжжя','запорожье','вінниця','миколаїв','николаев',
@@ -4130,11 +4052,6 @@ def _get_city_coords(city_name, context=None):
     if not city_name:
         return None
     return ensure_city_coords_with_message_context(city_name, context)
-
-def _offset_coords(lat, lng, direction_vector):
-    """Apply direction offset to coordinates"""
-    lat_offset, lng_offset = direction_vector
-    return (lat + lat_offset, lng + lng_offset)
 
 def _ai_trajectory_to_coords(ai_result):
     """Convert AI trajectory result to coordinates.
@@ -7060,6 +6977,14 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
 
             # Check in-memory cache first
             cache_key = f"{city_norm}|{target_state}"
+            
+            # MEMORY PROTECTION: Limit cache size
+            if len(_mapstransler_geocode_cache) >= _mapstransler_cache_max_size:
+                # Remove ~half of the cache (oldest entries - FIFO approximation)
+                keys_to_remove = list(_mapstransler_geocode_cache.keys())[:_mapstransler_cache_max_size // 2]
+                for k in keys_to_remove:
+                    del _mapstransler_geocode_cache[k]
+            
             if cache_key in _mapstransler_geocode_cache:
                 cached = _mapstransler_geocode_cache[cache_key]
                 if cached:
@@ -15493,6 +15418,10 @@ def test_parse():
             'error': str(e),
             'traceback': error_details
         }), 500
+
+
+@app.route('/locate')
+def locate_settlement():
     """Locate a settlement or raion by name. Query param: q=<name>
     Returns: {status:'ok', name, lat, lng, source:'dict'|'geocode'|'fallback'} or {status:'not_found'}
     Lightweight normalization reusing UA_CITY_NORMALIZE and CITY_COORDS. Falls back to ensure_city_coords (may geocode if key allowed).
@@ -17054,6 +16983,66 @@ def admin_cleanup():
     except Exception as e:
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
+@app.route('/admin/memory', methods=['GET'])
+def admin_memory():
+    """Get memory usage statistics for debugging memory leaks."""
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    
+    import gc
+    try:
+        import psutil
+        process = psutil.Process()
+        mem_info = process.memory_info()
+        mem_mb = mem_info.rss / 1024 / 1024
+        mem_percent = process.memory_percent()
+    except ImportError:
+        mem_mb = 0
+        mem_percent = 0
+    
+    # Count sizes of major in-memory caches
+    cache_sizes = {
+        'response_cache': len(RESPONSE_CACHE._cache),
+        'request_counts_keys': len(request_counts),
+        'request_counts_total_timestamps': sum(len(v) for v in request_counts.values()),
+        'telegram_alert_sent': len(_telegram_alert_sent),
+        'telegram_region_notified': len(_telegram_region_notified),
+        'active_visitors': len(ACTIVE_VISITORS),
+        'debug_logs': len(DEBUG_LOGS),
+        'fallback_reparse_cache': len(FALLBACK_REPARSE_CACHE),
+        'mapstransler_geocode_cache': len(_mapstransler_geocode_cache),
+        'groq_cache': len(_groq_cache) if '_groq_cache' in dir() else 0,
+        'messages_cache': len(_MESSAGES_CACHE.get('data') or []) if _MESSAGES_CACHE.get('data') else 0,
+    }
+    
+    # Estimate sizes
+    try:
+        import sys
+        estimated_sizes = {}
+        for name, obj in [
+            ('request_counts', request_counts),
+            ('ACTIVE_VISITORS', ACTIVE_VISITORS),
+            ('_mapstransler_geocode_cache', _mapstransler_geocode_cache),
+        ]:
+            estimated_sizes[name] = sys.getsizeof(obj)
+    except:
+        estimated_sizes = {}
+    
+    # Garbage collection stats
+    gc_stats = {
+        'objects': len(gc.get_objects()),
+        'garbage': len(gc.garbage),
+    }
+    
+    return jsonify({
+        'status': 'ok',
+        'memory_mb': round(mem_mb, 2),
+        'memory_percent': round(mem_percent, 2),
+        'cache_sizes': cache_sizes,
+        'estimated_bytes': estimated_sizes,
+        'gc': gc_stats,
+    })
+
 @app.route('/admin/export', methods=['GET'])
 def admin_export():
     """Export data for backup/analysis"""
@@ -17371,6 +17360,50 @@ def _copy_persistent_files_to_git_repo():
 # CPU OPTIMIZATION: Use before_first_request pattern manually
 _INIT_BACKGROUND_DONE = False
 
+def _memory_cleanup_worker():
+    """Background worker to periodically clean up caches and prevent memory leaks."""
+    while True:
+        try:
+            time.sleep(300)  # Run every 5 minutes
+            
+            # Clean request_counts
+            _cleanup_request_counts()
+            
+            # Clean ResponseCache expired entries
+            cleaned = RESPONSE_CACHE.clear_expired()
+            if cleaned > 0:
+                print(f"[MEMORY] Cleaned {cleaned} expired cache entries")
+            
+            # Clean _telegram_alert_sent (keep only last 5 min)
+            now = time.time()
+            with _telegram_alert_lock:
+                old_size = len(_telegram_alert_sent)
+                keys_to_del = [k for k, v in _telegram_alert_sent.items() if now - v > 300]
+                for k in keys_to_del:
+                    del _telegram_alert_sent[k]
+                if keys_to_del:
+                    print(f"[MEMORY] Cleaned {len(keys_to_del)} old telegram alerts")
+            
+            # Clean _telegram_region_notified (keep only last 10 min)
+            old_size = len(_telegram_region_notified)
+            keys_to_del = [k for k, v in _telegram_region_notified.items() if now - v > 600]
+            for k in keys_to_del:
+                del _telegram_region_notified[k]
+            if keys_to_del:
+                print(f"[MEMORY] Cleaned {len(keys_to_del)} old region notifications")
+                
+            # Clean ACTIVE_VISITORS (remove stale visitors)
+            with ACTIVE_LOCK:
+                old_size = len(ACTIVE_VISITORS)
+                stale_keys = [k for k, v in ACTIVE_VISITORS.items() if now - v.get('last_seen', 0) > ACTIVE_TTL * 2]
+                for k in stale_keys:
+                    del ACTIVE_VISITORS[k]
+                if stale_keys:
+                    print(f"[MEMORY] Cleaned {len(stale_keys)} stale visitors")
+                    
+        except Exception as e:
+            print(f"[MEMORY] Cleanup worker error: {e}")
+
 def _init_background():
     global _INIT_BACKGROUND_DONE, INIT_ONCE
     if _INIT_BACKGROUND_DONE:
@@ -17387,7 +17420,12 @@ def _init_background():
         start_session_watcher()
     except Exception as e:
         log.error(f'Failed to start session watcher: {e}\n{traceback.format_exc()}')
-
+    # MEMORY PROTECTION: Start memory cleanup worker
+    try:
+        threading.Thread(target=_memory_cleanup_worker, daemon=True, name='memory_cleanup').start()
+        print("INFO: Memory cleanup worker started")
+    except Exception as e:
+        log.error(f'Failed to start memory cleanup worker: {e}')
 @app.before_request
 def _maybe_init_background():
     # CPU OPTIMIZATION: Skip quickly if already initialized

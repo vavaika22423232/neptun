@@ -14,6 +14,7 @@ from typing import Dict, List, Optional, Tuple, Any
 GROQ_ENABLED = False
 _groq_cache = {}
 _groq_cache_ttl = 300
+_groq_cache_max_size = 500  # MEMORY PROTECTION: Max cached AI responses
 _groq_last_call = 0
 _groq_min_interval = 0.5
 
@@ -24,6 +25,19 @@ def init_groq(enabled: bool, cache: dict, cache_ttl: int, min_interval: float):
     _groq_cache = cache
     _groq_cache_ttl = cache_ttl
     _groq_min_interval = min_interval
+
+def _cleanup_groq_cache():
+    """Clean up Groq cache to prevent memory growth"""
+    global _groq_cache
+    if len(_groq_cache) > _groq_cache_max_size:
+        # Remove expired entries first
+        now = time.time()
+        _groq_cache = {k: v for k, v in _groq_cache.items() 
+                       if isinstance(v, tuple) and len(v) > 1 and now - v[1] < _groq_cache_ttl}
+        # If still too big, remove oldest half
+        if len(_groq_cache) > _groq_cache_max_size:
+            items = sorted(_groq_cache.items(), key=lambda x: x[1][1] if isinstance(x[1], tuple) else 0)
+            _groq_cache = dict(items[len(items)//2:])
 
 
 # Stub - will use the actual instance from app.py
