@@ -3,255 +3,1045 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>🌊 Neptun Admin</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<title>Neptun Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-:root{--bg:#0a0e1a;--card:#141b2d;--border:#1e2942;--blue:#3b82f6;--purple:#8b5cf6;--green:#10b981;--red:#ef4444;--yellow:#f59e0b;--text:#f1f5f9;--muted:#64748b}
-body{font-family:'Inter',system-ui,sans-serif;background:linear-gradient(135deg,#0a0e1a,#1a1f35);color:var(--text);min-height:100vh;line-height:1.6}
-.container{max-width:1600px;margin:0 auto;padding:1.5rem}
-.header{background:linear-gradient(135deg,rgba(59,130,246,0.1),rgba(139,92,246,0.1));backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:1rem;padding:1.5rem 2rem;margin-bottom:2rem;box-shadow:0 8px 32px rgba(0,0,0,0.4)}
-.header-content{display:flex;align-items:center;justify-content:space-between;gap:1.5rem;flex-wrap:wrap}
-.header-title h1{font-size:2rem;font-weight:800;background:linear-gradient(135deg,var(--blue),var(--purple));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:-0.5px}
-.status-badges{display:flex;gap:0.75rem;flex-wrap:wrap}
-.badge{display:inline-flex;align-items:center;gap:0.5rem;padding:0.5rem 1rem;border-radius:0.5rem;font-size:0.875rem;font-weight:600;border:1px solid}
-.badge.success{background:rgba(16,185,129,0.2);border-color:rgba(16,185,129,0.5);color:#10b981}
-.badge.danger{background:rgba(239,68,68,0.2);border-color:rgba(239,68,68,0.5);color:#ef4444}
-.badge.info{background:rgba(59,130,246,0.2);border-color:rgba(59,130,246,0.5);color:#3b82f6}
-.badge.warning{background:rgba(245,158,11,0.2);border-color:rgba(245,158,11,0.5);color:#f59e0b}
-.status-dot{width:8px;height:8px;border-radius:50%;animation:pulse 2s infinite}
-.status-dot.online{background:#10b981;box-shadow:0 0 12px rgba(16,185,129,0.8)}
-.status-dot.offline{background:var(--muted)}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
-.btn{display:inline-flex;align-items:center;gap:0.5rem;padding:0.75rem 1.25rem;border:none;border-radius:0.5rem;font-size:0.875rem;font-weight:600;cursor:pointer;transition:all 0.2s;text-decoration:none;white-space:nowrap}
-.btn:disabled{opacity:0.5;cursor:not-allowed}
-.btn-primary{background:linear-gradient(135deg,var(--blue),#6366f1);color:#fff}
-.btn-primary:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 8px 24px rgba(59,130,246,0.5)}
-.btn-success{background:linear-gradient(135deg,var(--green),#059669);color:#fff}
-.btn-success:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 8px 24px rgba(16,185,129,0.5)}
-.btn-danger{background:linear-gradient(135deg,var(--red),#dc2626);color:#fff}
-.btn-danger:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 8px 24px rgba(239,68,68,0.5)}
-.btn-warning{background:linear-gradient(135deg,var(--yellow),#d97706);color:#fff}
-.btn-secondary{background:var(--card);color:var(--text);border:1px solid var(--border)}
-.btn-secondary:hover:not(:disabled){border-color:var(--blue);transform:translateY(-2px)}
-.btn-sm{padding:0.5rem 0.875rem;font-size:0.8rem}
-.input{background:rgba(10,14,26,0.8);border:1px solid var(--border);border-radius:0.5rem;padding:0.75rem 1rem;color:var(--text);font-size:0.875rem;transition:all 0.2s;width:100%}
-.input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(59,130,246,0.2)}
-textarea.input{resize:vertical;min-height:80px;font-family:inherit}
-.card{background:linear-gradient(135deg,rgba(20,27,45,0.8),rgba(30,41,66,0.6));backdrop-filter:blur(10px);border:1px solid var(--border);border-radius:1rem;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.3);transition:all 0.3s;margin-bottom:2rem}
-.card.card-map{overflow:visible}
-.card.card-map .card-body{overflow:visible}
-.card:hover{transform:translateY(-4px);box-shadow:0 8px 32px rgba(0,0,0,0.5);border-color:rgba(59,130,246,0.3)}
-.card-header{background:rgba(30,41,66,0.5);padding:1.25rem 1.75rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem}
-.card-title{font-size:1.125rem;font-weight:700;display:flex;align-items:center;gap:0.5rem}
-.card-body{padding:1.75rem}
-.card-body.compact{padding:1rem}
-.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1.25rem;margin-bottom:2rem}
-.stat-card{background:linear-gradient(135deg,rgba(20,27,45,0.9),rgba(30,41,66,0.7));border:1px solid var(--border);border-radius:1rem;padding:1.5rem;text-align:center;transition:all 0.3s;position:relative;overflow:hidden}
-.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--blue),var(--purple));opacity:0;transition:opacity 0.3s}
-.stat-card:hover{transform:translateY(-4px);border-color:var(--blue);box-shadow:0 8px 24px rgba(0,0,0,0.4)}
-.stat-card:hover::before{opacity:1}
-.stat-value{font-size:2.5rem;font-weight:800;background:linear-gradient(135deg,var(--blue),var(--purple));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:0.5rem;line-height:1}
-.stat-label{font-size:0.875rem;color:var(--muted);font-weight:500}
-.table-container{overflow-x:auto;border-radius:0.75rem;border:1px solid var(--border)}
-.table{width:100%;border-collapse:collapse;font-size:0.875rem}
-.table th{background:rgba(30,41,66,0.6);padding:1rem;text-align:left;font-weight:700;border-bottom:1px solid var(--border);white-space:nowrap}
-.table td{padding:1rem;border-bottom:1px solid rgba(30,41,66,0.3);color:#cbd5e1}
-.table tbody tr{transition:all 0.2s}
-.table tbody tr:hover{background:rgba(30,41,66,0.4)}
-.table tbody tr:last-child td{border-bottom:none}
-.truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.form-group{display:flex;flex-direction:column;gap:0.5rem}
-.form-label{font-size:0.875rem;font-weight:600;color:#cbd5e1}
-.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1.25rem;align-items:end}
-.debug-console{background:rgba(10,14,26,0.95);border:1px solid var(--border);border-radius:0.75rem;max-height:500px;overflow-y:auto;font-family:Monaco,monospace;font-size:0.8rem}
-.debug-entry{padding:0.75rem 1.25rem;border-bottom:1px solid rgba(30,41,66,0.2);display:flex;gap:1rem;align-items:flex-start}
-.debug-entry:last-child{border-bottom:none}
-.debug-timestamp{color:var(--muted);font-size:0.75rem;flex-shrink:0}
-.debug-category{background:rgba(59,130,246,0.2);color:var(--blue);padding:0.25rem 0.625rem;border-radius:0.375rem;font-size:0.7rem;font-weight:700;flex-shrink:0;text-transform:uppercase;letter-spacing:0.5px}
-.debug-message{color:var(--text);flex:1;word-break:break-word}
-#adminMap{height:600px;width:100%;border-radius:0.75rem;border:1px solid var(--border);transition:all 0.3s;cursor:crosshair}
-.map-toolbar{display:flex;gap:0.75rem;margin-top:1rem;flex-wrap:wrap;align-items:center}
-.map-stats{background:rgba(10,14,26,0.9);padding:0.5rem 1rem;border-radius:0.5rem;font-size:0.8rem;color:#cbd5e1;border:1px solid var(--border);font-weight:600}
-.marker-editor{position:absolute;top:10px;right:10px;background:rgba(10,14,26,0.95);border:1px solid var(--border);border-radius:0.75rem;padding:1rem 1rem 1.25rem;z-index:1000;min-width:280px;max-height:calc(100vh - 40px);height:calc(100% - 20px);overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.6);display:flex;flex-direction:column;gap:0.75rem}
-.marker-editor h3{margin:0;font-size:0.9rem;color:var(--blue);font-weight:700}
-.marker-editor-field{margin-bottom:0.75rem}
-.marker-editor-field label{display:block;font-size:0.75rem;color:#cbd5e1;margin-bottom:0.25rem;font-weight:600}
-.marker-editor-field input,.marker-editor-field select{width:100%;padding:0.5rem;background:rgba(20,27,45,0.8);border:1px solid var(--border);border-radius:0.375rem;color:var(--text);font-size:0.8rem}
-.marker-editor-buttons{display:flex;gap:0.5rem;margin-top:auto;position:sticky;bottom:0;background:rgba(10,14,26,0.95);padding-top:0.75rem}
-.marker-editor-buttons button{flex:1;padding:0.5rem;border:none;border-radius:0.375rem;font-size:0.75rem;font-weight:600;cursor:pointer;transition:all 0.2s}
-.rotatable-marker{transition:transform 0.2s ease;cursor:move}
-.rotation-handle{width:20px;height:20px;background:var(--blue);border:2px solid white;border-radius:50%;position:absolute;top:-30px;left:50%;transform:translateX(-50%);cursor:grab;box-shadow:0 2px 8px rgba(0,0,0,0.4);z-index:1001}
-.rotation-handle:active{cursor:grabbing;background:var(--purple)}
-.vector-summary{min-height:42px;border:1px solid var(--border);border-radius:0.375rem;padding:0.45rem 0.6rem;background:rgba(20,27,45,0.8);color:#e2e8f0;font-size:0.8rem;line-height:1.4}
-.empty-state{text-align:center;padding:3rem 2rem;color:var(--muted)}
-.empty-state-icon{font-size:3rem;margin-bottom:1rem;opacity:0.5}
-.notification{position:fixed;top:20px;right:20px;padding:1rem 1.5rem;border-radius:0.75rem;color:#fff;font-size:0.9rem;font-weight:600;z-index:10000;max-width:400px;box-shadow:0 8px 32px rgba(0,0,0,0.5);animation:slideIn 0.3s}
-.notification-success{background:linear-gradient(135deg,var(--green),#059669)}
-.notification-error{background:linear-gradient(135deg,var(--red),#dc2626)}
-.notification-warning{background:linear-gradient(135deg,var(--yellow),#d97706)}
-.notification-info{background:linear-gradient(135deg,var(--blue),#6366f1)}
-@keyframes slideIn{from{opacity:0;transform:translateX(100px)}to{opacity:1;transform:translateX(0)}}
-@media(max-width:768px){.container{padding:1rem}.header-content{flex-direction:column;align-items:stretch}.stats-grid{grid-template-columns:repeat(2,1fr)}.form-grid{grid-template-columns:1fr}}
-::-webkit-scrollbar{width:10px;height:10px}
-::-webkit-scrollbar-track{background:var(--bg)}
-::-webkit-scrollbar-thumb{background:var(--card);border-radius:5px}
-::-webkit-scrollbar-thumb:hover{background:var(--border)}
-.menu-section{background:linear-gradient(135deg,rgba(20,27,45,0.9),rgba(30,41,66,0.7));border:1px solid var(--border);border-radius:1rem;padding:2rem;cursor:pointer;transition:all 0.3s;text-align:center;position:relative;overflow:hidden}
-.menu-section::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,var(--blue),var(--purple));opacity:0;transition:opacity 0.3s}
-.menu-section:hover{transform:translateY(-8px);border-color:var(--blue);box-shadow:0 12px 40px rgba(59,130,246,0.4)}
-.menu-section:hover::before{opacity:1}
-.menu-icon{font-size:3.5rem;margin-bottom:1rem;filter:grayscale(0.3);transition:all 0.3s}
-.menu-section:hover .menu-icon{filter:grayscale(0);transform:scale(1.1)}
-.menu-title{font-size:1.25rem;font-weight:700;color:var(--text);margin-bottom:0.5rem}
-.menu-desc{font-size:0.875rem;color:var(--muted);line-height:1.5}
-.admin-section{animation:fadeIn 0.3s}
-@keyframes fadeIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
-.toggle-switch{position:relative;display:inline-block;width:52px;height:28px}
-.toggle-switch input{opacity:0;width:0;height:0}
-.toggle-slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:rgba(100,116,139,0.5);transition:0.3s;border-radius:28px;border:1px solid var(--border)}
-.toggle-slider:before{position:absolute;content:"";height:22px;width:22px;left:2px;bottom:2px;background:white;transition:0.3s;border-radius:50%;box-shadow:0 2px 4px rgba(0,0,0,0.3)}
-.toggle-switch input:checked + .toggle-slider{background:linear-gradient(135deg,var(--green),#059669);border-color:var(--green)}
-.toggle-switch input:checked + .toggle-slider:before{transform:translateX(24px)}
+/* ═══════════════════════════════════════════════════════════════
+   NEPTUN ADMIN — Apple/Linear Style Redesign
+   Design System: Minimal, Calm, Premium
+   ═══════════════════════════════════════════════════════════════ */
+
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  /* Core Palette — Neutral Dark */
+  --bg-primary: #0c0c0e;
+  --bg-secondary: #141416;
+  --bg-tertiary: #1c1c1f;
+  --bg-elevated: #232326;
+  
+  /* Borders — Subtle */
+  --border-subtle: rgba(255,255,255,0.06);
+  --border-default: rgba(255,255,255,0.08);
+  --border-hover: rgba(255,255,255,0.12);
+  
+  /* Accent — Single Cold Blue */
+  --accent: #3b82f6;
+  --accent-muted: rgba(59,130,246,0.15);
+  --accent-subtle: rgba(59,130,246,0.08);
+  
+  /* Semantic */
+  --success: #22c55e;
+  --success-muted: rgba(34,197,94,0.12);
+  --danger: #ef4444;
+  --danger-muted: rgba(239,68,68,0.12);
+  --warning: #f59e0b;
+  --warning-muted: rgba(245,158,11,0.12);
+  
+  /* Text */
+  --text-primary: #fafafa;
+  --text-secondary: rgba(250,250,250,0.64);
+  --text-tertiary: rgba(250,250,250,0.4);
+  
+  /* Timing */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-fast: 150ms;
+  --duration-normal: 200ms;
+  --duration-slow: 300ms;
+  
+  /* Spacing */
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
+  
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  line-height: 1.5;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Layout
+   ───────────────────────────────────────────────────────────── */
+.container {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: var(--space-xl);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Header — Clean, Minimal
+   ───────────────────────────────────────────────────────────── */
+.header {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg) var(--space-xl);
+  margin-bottom: var(--space-xl);
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
+}
+
+.header-title h1 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.header-title h1::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  background: var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 12px var(--accent);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Badges — Subtle, Calm
+   ───────────────────────────────────────────────────────────── */
+.status-badges {
+  display: flex;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.badge.success {
+  background: var(--success-muted);
+  color: var(--success);
+  border-color: transparent;
+}
+
+.badge.danger {
+  background: var(--danger-muted);
+  color: var(--danger);
+  border-color: transparent;
+}
+
+.badge.info {
+  background: var(--accent-subtle);
+  color: var(--accent);
+  border-color: transparent;
+}
+
+.badge.warning {
+  background: var(--warning-muted);
+  color: var(--warning);
+  border-color: transparent;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot.online {
+  background: var(--success);
+  animation: softPulse 2.5s ease-in-out infinite;
+}
+
+.status-dot.offline {
+  background: var(--text-tertiary);
+}
+
+@keyframes softPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Buttons — Apple-style
+   ───────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+  text-decoration: none;
+  white-space: nowrap;
+  position: relative;
+  overflow: hidden;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #4b8ef7;
+  box-shadow: 0 4px 16px rgba(59,130,246,0.3);
+}
+
+.btn-success {
+  background: var(--success);
+  color: #fff;
+}
+
+.btn-success:hover:not(:disabled) {
+  background: #2dd468;
+  box-shadow: 0 4px 16px rgba(34,197,94,0.25);
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: #fff;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #f55a5a;
+  box-shadow: 0 4px 16px rgba(239,68,68,0.25);
+}
+
+.btn-warning {
+  background: var(--warning);
+  color: #fff;
+}
+
+.btn-secondary {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--bg-elevated);
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+}
+
+.btn-sm {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Inputs — Clean
+   ───────────────────────────────────────────────────────────── */
+.input {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  color: var(--text-primary);
+  font-size: 13px;
+  transition: all var(--duration-fast) var(--ease-out);
+  width: 100%;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-muted);
+}
+
+.input::placeholder {
+  color: var(--text-tertiary);
+}
+
+textarea.input {
+  resize: vertical;
+  min-height: 72px;
+  font-family: inherit;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Cards — No gradient, subtle elevation
+   ───────────────────────────────────────────────────────────── */
+.card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: var(--space-xl);
+  transition: border-color var(--duration-normal) var(--ease-out);
+}
+
+.card.card-map {
+  overflow: visible;
+}
+
+.card.card-map .card-body {
+  overflow: visible;
+}
+
+.card:hover {
+  border-color: var(--border-hover);
+}
+
+.card-header {
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+}
+
+.card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.card-body {
+  padding: var(--space-lg);
+}
+
+.card-body.compact {
+  padding: var(--space-md);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Stats Grid — Clean metrics
+   ───────────────────────────────────────────────────────────── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-md);
+  margin-bottom: var(--space-xl);
+}
+
+.stat-card {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-lg);
+  text-align: center;
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-hover);
+}
+
+.stat-value {
+  font-size: 2rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Tables — Minimal
+   ───────────────────────────────────────────────────────────── */
+.table-container {
+  overflow-x: auto;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table th {
+  background: var(--bg-tertiary);
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+.table tbody tr {
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.table tbody tr:hover {
+  background: var(--bg-tertiary);
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Forms
+   ───────────────────────────────────────────────────────────── */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-md);
+  align-items: end;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Debug Console
+   ───────────────────────────────────────────────────────────── */
+.debug-console {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  max-height: 400px;
+  overflow-y: auto;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  font-size: 12px;
+}
+
+.debug-entry {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.debug-entry:last-child {
+  border-bottom: none;
+}
+
+.debug-timestamp {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.debug-category {
+  background: var(--accent-subtle);
+  color: var(--accent);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.debug-message {
+  color: var(--text-secondary);
+  flex: 1;
+  word-break: break-word;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Map — Hero Element
+   ───────────────────────────────────────────────────────────── */
+#adminMap {
+  height: 640px;
+  width: 100%;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  cursor: crosshair;
+}
+
+.map-toolbar {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.map-stats {
+  background: var(--bg-tertiary);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  font-weight: 500;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Marker Editor Panel
+   ───────────────────────────────────────────────────────────── */
+.marker-editor {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: var(--space-md);
+  z-index: 1000;
+  min-width: 260px;
+  max-height: calc(100vh - 48px);
+  height: calc(100% - 24px);
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.marker-editor h3 {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.marker-editor-field {
+  margin-bottom: 8px;
+}
+
+.marker-editor-field label {
+  display: block;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-bottom: 4px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.marker-editor-field input,
+.marker-editor-field select {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.marker-editor-field input:focus,
+.marker-editor-field select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.marker-editor-buttons {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: auto;
+  position: sticky;
+  bottom: 0;
+  background: var(--bg-secondary);
+  padding-top: var(--space-sm);
+}
+
+.marker-editor-buttons button {
+  flex: 1;
+  padding: 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.rotatable-marker {
+  transition: transform var(--duration-fast) var(--ease-out);
+  cursor: move;
+}
+
+.rotation-handle {
+  width: 18px;
+  height: 18px;
+  background: var(--accent);
+  border: 2px solid white;
+  border-radius: 50%;
+  position: absolute;
+  top: -28px;
+  left: 50%;
+  transform: translateX(-50%);
+  cursor: grab;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  z-index: 1001;
+}
+
+.rotation-handle:active {
+  cursor: grabbing;
+}
+
+.vector-summary {
+  min-height: 36px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Empty States
+   ───────────────────────────────────────────────────────────── */
+.empty-state {
+  text-align: center;
+  padding: var(--space-2xl) var(--space-xl);
+  color: var(--text-tertiary);
+}
+
+.empty-state-icon {
+  font-size: 2rem;
+  margin-bottom: var(--space-md);
+  opacity: 0.4;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Notifications — Subtle
+   ───────────────────────────────────────────────────────────── */
+.notification {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  padding: 12px 20px;
+  border-radius: var(--radius-md);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  z-index: 10000;
+  max-width: 360px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  animation: slideIn var(--duration-slow) var(--ease-out);
+}
+
+.notification-success { background: var(--success); }
+.notification-error { background: var(--danger); }
+.notification-warning { background: var(--warning); }
+.notification-info { background: var(--accent); }
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(24px) translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) translateY(0);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Menu Sections — Apple Grid Style
+   ───────────────────────────────────────────────────────────── */
+.menu-section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-xl);
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+  text-align: center;
+}
+
+.menu-section:hover {
+  transform: translateY(-4px);
+  border-color: var(--border-hover);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.2);
+}
+
+.menu-icon {
+  font-size: 2.5rem;
+  margin-bottom: var(--space-md);
+  transition: transform var(--duration-normal) var(--ease-out);
+  filter: grayscale(0.2);
+}
+
+.menu-section:hover .menu-icon {
+  transform: scale(1.08);
+  filter: grayscale(0);
+}
+
+.menu-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.menu-desc {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Section Animations — Smooth Enter
+   ───────────────────────────────────────────────────────────── */
+.admin-section {
+  animation: sectionEnter var(--duration-slow) var(--ease-out);
+}
+
+@keyframes sectionEnter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Toggle Switch — Minimal
+   ───────────────────────────────────────────────────────────── */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--bg-tertiary);
+  transition: var(--duration-normal) var(--ease-out);
+  border-radius: 24px;
+  border: 1px solid var(--border-default);
+}
+
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 2px;
+  bottom: 2px;
+  background: white;
+  transition: var(--duration-normal) var(--ease-out);
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background: var(--success);
+  border-color: var(--success);
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+  transform: translateX(20px);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Scrollbar — Minimal
+   ───────────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bg-elevated);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-hover);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Responsive
+   ───────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .container {
+    padding: var(--space-md);
+  }
+  
+  .header-content {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  #adminMap {
+    height: 400px;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Utility — Page Load Animation
+   ───────────────────────────────────────────────────────────── */
+.container {
+  animation: pageEnter var(--duration-slow) var(--ease-out);
+}
+
+@keyframes pageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 </style>
 </head>
 <body>
 <div class="container">
+<!-- ═══════════════════════════════════════════════════════════════
+     Header — Clean & Minimal
+     ═══════════════════════════════════════════════════════════════ -->
 <header class="header">
 <div class="header-content">
-<div class="header-title"><h1>🌊 Neptun Admin Dashboard</h1></div>
+<div class="header-title"><h1>Neptun Admin</h1></div>
 <div class="status-badges">
 {% if secret %}
-<span class="badge success"><span class="status-dot online"></span>Authenticated</span>
+<span class="badge success"><span class="status-dot online"></span>Online</span>
 {% else %}
 <span class="badge danger"><span class="status-dot offline"></span>Not Authorized</span>
 {% endif %}
-<span class="badge info">📅 Today: {{ daily_unique }}</span>
-<span class="badge info">📊 Week: {{ week_unique }}</span>
+<span class="badge">Today {{ daily_unique }}</span>
+<span class="badge">Week {{ week_unique }}</span>
 </div>
-<form method="get" action="/admin" style="display:flex;gap:0.75rem;align-items:center">
-<input type="text" name="secret" placeholder="Secret key..." value="{{ secret }}" class="input" style="min-width:200px;width:auto">
-<button type="submit" class="btn btn-primary btn-sm">🔐 Login</button>
+<form method="get" action="/admin" style="display:flex;gap:8px;align-items:center">
+<input type="text" name="secret" placeholder="Secret key" value="{{ secret }}" class="input" style="width:160px">
+<button type="submit" class="btn btn-primary btn-sm">Login</button>
 </form>
 </div>
 </header>
 
-<!-- Main Menu -->
+<!-- ═══════════════════════════════════════════════════════════════
+     Main Menu — Apple Grid Style
+     ═══════════════════════════════════════════════════════════════ -->
 <div id="mainMenu" style="display:block">
 <div class="card">
 <div class="card-header">
-<h2 class="card-title">📂 Select Section</h2>
+<h2 class="card-title">Navigation</h2>
 </div>
 <div class="card-body">
-<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.5rem">
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:var(--space-md)">
 <div class="menu-section" onclick="showSection('overview')">
 <div class="menu-icon">📊</div>
-<div class="menu-title">Overview & Stats</div>
-<div class="menu-desc">System statistics, active users, daily metrics</div>
+<div class="menu-title">Overview</div>
+<div class="menu-desc">System statistics & metrics</div>
 </div>
 <div class="menu-section" onclick="showSection('map')">
 <div class="menu-icon">🗺️</div>
-<div class="menu-title">Live Map & Markers</div>
-<div class="menu-desc">Interactive map, add/edit markers, trajectories</div>
+<div class="menu-title">Live Map</div>
+<div class="menu-desc">Markers & trajectories</div>
 </div>
 <div class="menu-section" onclick="showSection('subscriptions')">
 <div class="menu-icon">💳</div>
-<div class="menu-title">Commercial Subscriptions</div>
-<div class="menu-desc">Payment management, approvals, revenue stats</div>
+<div class="menu-title">Subscriptions</div>
+<div class="menu-desc">Payments & approvals</div>
 </div>
 <div class="menu-section" onclick="showSection('nicknames')">
 <div class="menu-icon">🆔</div>
 <div class="menu-title">User IDs</div>
-<div class="menu-desc">All registered user IDs from localStorage</div>
+<div class="menu-desc">Registered identifiers</div>
 </div>
 <div class="menu-section" onclick="showSection('users')">
 <div class="menu-icon">👥</div>
-<div class="menu-title">Users & Blocking</div>
-<div class="menu-desc">Active visitors, blocked users, sessions</div>
+<div class="menu-title">Users</div>
+<div class="menu-desc">Visitors & blocking</div>
 </div>
 <div class="menu-section" onclick="showSection('messages')">
 <div class="menu-icon">📨</div>
-<div class="menu-title">Raw Messages</div>
-<div class="menu-desc">Pending geocoding, message processing</div>
+<div class="menu-title">Messages</div>
+<div class="menu-desc">Pending geocoding</div>
 </div>
 <div class="menu-section" onclick="showSection('debug')">
-<div class="menu-icon">🐛</div>
-<div class="menu-title">Debug & Logs</div>
-<div class="menu-desc">System logs, cache management, diagnostics</div>
+<div class="menu-icon">🔧</div>
+<div class="menu-title">Debug</div>
+<div class="menu-desc">Logs & diagnostics</div>
 </div>
 </div>
 </div>
 </div>
 </div>
 
-<!-- Section: Overview -->
+<!-- ═══════════════════════════════════════════════════════════════
+     Section: Overview
+     ═══════════════════════════════════════════════════════════════ -->
 <div id="section-overview" class="admin-section" style="display:none">
-<button class="btn btn-secondary" onclick="showMainMenu()" style="margin-bottom:1rem">← Back to Menu</button>
+<button class="btn btn-secondary btn-sm" onclick="showMainMenu()" style="margin-bottom:var(--space-lg)">← Back</button>
 
 <div class="stats-grid">
 <div class="stat-card">
 <div class="stat-value" id="statActive">{{ visitors|length }}</div>
-<div class="stat-label">👥 Active Users</div>
+<div class="stat-label">Active Users</div>
 </div>
 <div class="stat-card">
 <div class="stat-value" id="statBlocked">{{ blocked|length }}</div>
-<div class="stat-label">🚫 Blocked</div>
+<div class="stat-label">Blocked</div>
 </div>
 <div class="stat-card">
 <div class="stat-value" id="statPending">{{ raw_count }}</div>
-<div class="stat-label">⏳ Pending Geo</div>
+<div class="stat-label">Pending</div>
 </div>
 <div class="stat-card">
 <div class="stat-value" id="statMarkers">{{ markers|length }}</div>
-<div class="stat-label">📍 Markers</div>
+<div class="stat-label">Markers</div>
 </div>
 <div class="stat-card">
 <div class="stat-value" id="statDebug">{{ debug_logs|length }}</div>
-<div class="stat-label">🐛 Debug Logs</div>
+<div class="stat-label">Logs</div>
 </div>
 </div>
 
 <div class="card card-map">
 <div class="card-header">
-<h2 class="card-title">⚙️ System Configuration</h2>
+<h2 class="card-title">Configuration</h2>
 </div>
 <div class="card-body">
 <div class="form-grid">
 <div class="form-group">
-<label class="form-label">Monitor Period (minutes) <small style="color:#888">(fallback when AI TTL disabled)</small></label>
+<label class="form-label">Monitor Period (min)</label>
 <input type="number" id="monPeriod" value="{{ monitor_period }}" min="1" max="360" class="input">
 </div>
-<div style="display:flex;align-items:flex-end;gap:0.75rem">
-<button class="btn btn-success" onclick="saveMonPeriod()">💾 Save Changes</button>
-<span id="monStatus" class="badge info" style="display:none"></span>
+<div style="display:flex;align-items:flex-end;gap:var(--space-sm)">
+<button class="btn btn-success btn-sm" onclick="saveMonPeriod()">Save</button>
+<span id="monStatus" class="badge" style="display:none"></span>
 </div>
 </div>
 
-<!-- AI TTL Section -->
-<div class="form-grid" style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid #333">
+<div style="margin-top:var(--space-xl);padding-top:var(--space-lg);border-top:1px solid var(--border-subtle)">
 <div class="form-group">
-<label class="form-label">🤖 AI-керований час життя міток</label>
-<p style="font-size:0.85rem;color:#aaa;margin:0.5rem 0">
-Коли увімкнено, ІІ визначає час відображення кожної мітки на основі:
-типу загрози (шахеди ~90хв, балістика ~8хв), ETA до цілі, контексту повідомлення (збито/пролетіло).
+<label class="form-label">AI-Managed Marker TTL</label>
+<p style="font-size:12px;color:var(--text-tertiary);margin:var(--space-sm) 0">
+When enabled, AI determines display time for each marker based on threat type, ETA, and message context.
 </p>
-<div style="display:flex;align-items:center;gap:1rem;margin-top:0.75rem">
+<div style="display:flex;align-items:center;gap:var(--space-md);margin-top:var(--space-sm)">
 <label class="toggle-switch">
 <input type="checkbox" id="aiTtlToggle" onchange="toggleAiTtl()">
 <span class="toggle-slider"></span>
 </label>
-<span id="aiTtlStatus" style="font-size:0.9rem;color:#888">Loading...</span>
+<span id="aiTtlStatus" style="font-size:13px;color:var(--text-tertiary)">Loading...</span>
 </div>
 </div>
-<div class="form-group" id="aiTtlInfo" style="display:none;background:#1a1a2e;padding:1rem;border-radius:8px;margin-top:1rem">
-<div style="font-weight:600;margin-bottom:0.5rem;color:#00ff88">📊 AI TTL Configuration</div>
-<div style="font-size:0.85rem;color:#ccc">
-<div>• Шахеди/дрони: <span style="color:#ffd700">60-90 хв</span></div>
-<div>• Крилаті ракети: <span style="color:#ffd700">25-35 хв</span></div>
-<div>• Балістика: <span style="color:#ffd700">5-8 хв</span></div>
-<div>• КАБ: <span style="color:#ffd700">15 хв</span></div>
-<div>• Знищено/пролетіло: <span style="color:#ff6b6b">5 хв</span></div>
+<div class="form-group" id="aiTtlInfo" style="display:none;background:var(--bg-tertiary);padding:var(--space-md);border-radius:var(--radius-md);margin-top:var(--space-md)">
+<div style="font-weight:500;margin-bottom:var(--space-sm);color:var(--success);font-size:13px">AI TTL Configuration</div>
+<div style="font-size:12px;color:var(--text-secondary)">
+<div>• Shahed/Drones: 60-90 min</div>
+<div>• Cruise missiles: 25-35 min</div>
+<div>• Ballistic: 5-8 min</div>
+<div>• KAB: 15 min</div>
+<div>• Destroyed: 5 min</div>
 </div>
 </div>
 </div>
@@ -259,31 +1049,33 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 </div>
 </div>
 
-<!-- Section: Map -->
+<!-- ═══════════════════════════════════════════════════════════════
+     Section: Map — Hero Element
+     ═══════════════════════════════════════════════════════════════ -->
 <div id="section-map" class="admin-section" style="display:none">
-<button class="btn btn-secondary" onclick="showMainMenu()" style="margin-bottom:1rem">← Back to Menu</button>
+<button class="btn btn-secondary btn-sm" onclick="showMainMenu()" style="margin-bottom:var(--space-lg)">← Back</button>
 
 <div class="card">
 <div class="card-header">
-<h2 class="card-title">🗺️ Live Operations Map</h2>
-<div style="display:flex;gap:0.5rem;flex-wrap:wrap">
-<button class="btn btn-primary btn-sm" id="addModeBtn" onclick="toggleAddMode()">➕ Add Mode: OFF</button>
-<button class="btn btn-secondary btn-sm" onclick="copySelectedMarker()" id="copyBtn" disabled>📋 Copy</button>
-<button class="btn btn-secondary btn-sm" onclick="pasteMarker()" id="pasteBtn" disabled>📌 Paste</button>
-<button class="btn btn-warning btn-sm" onclick="rotateSelected(-15)">↶ -15°</button>
-<button class="btn btn-warning btn-sm" onclick="rotateSelected(15)">↷ +15°</button>
-<button class="btn btn-secondary btn-sm" onclick="toggleVectorMode()" id="vectorBtn">🎯 Vector: OFF</button>
-<button class="btn btn-secondary btn-sm" onclick="clearMarkerVector()" id="clearVectorBtn" disabled>🧹 Clear Vector</button>
-<button class="btn btn-danger btn-sm" onclick="deleteSelected()">🗑️ Delete</button>
-<button class="btn btn-secondary btn-sm" onclick="reloadMarkers()">🔄 Refresh</button>
-<button class="btn btn-success btn-sm" onclick="toggleAuto()" id="autoBtn">🔁 Auto: ON</button>
-<button class="btn btn-danger btn-sm" onclick="forceReload()">💥 Force Reload Users</button>
+<h2 class="card-title">Live Map</h2>
+<div style="display:flex;gap:6px;flex-wrap:wrap">
+<button class="btn btn-primary btn-sm" id="addModeBtn" onclick="toggleAddMode()">Add Mode</button>
+<button class="btn btn-secondary btn-sm" onclick="copySelectedMarker()" id="copyBtn" disabled>Copy</button>
+<button class="btn btn-secondary btn-sm" onclick="pasteMarker()" id="pasteBtn" disabled>Paste</button>
+<button class="btn btn-secondary btn-sm" onclick="rotateSelected(-15)">−15°</button>
+<button class="btn btn-secondary btn-sm" onclick="rotateSelected(15)">+15°</button>
+<button class="btn btn-secondary btn-sm" onclick="toggleVectorMode()" id="vectorBtn">Vector</button>
+<button class="btn btn-secondary btn-sm" onclick="clearMarkerVector()" id="clearVectorBtn" disabled>Clear</button>
+<button class="btn btn-danger btn-sm" onclick="deleteSelected()">Delete</button>
+<button class="btn btn-secondary btn-sm" onclick="reloadMarkers()">Refresh</button>
+<button class="btn btn-success btn-sm" onclick="toggleAuto()" id="autoBtn">Auto: ON</button>
+<button class="btn btn-secondary btn-sm" onclick="forceReload()">Force Reload</button>
 </div>
 </div>
 <div class="card-body" style="padding:0;position:relative">
 <div id="adminMap"></div>
 <div id="markerEditor" class="marker-editor" style="display:none">
-<h3>✏️ Edit Marker</h3>
+<h3>Edit Marker</h3>
 <div class="marker-editor-field">
 <label>Latitude</label>
 <input type="number" step="0.000001" id="editLat" class="input">
@@ -297,35 +1089,35 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 <input type="text" id="editPlace" class="input">
 </div>
 <div class="marker-editor-field">
-<label>Rotation (degrees)</label>
+<label>Rotation (deg)</label>
 <input type="number" id="editRotation" value="0" min="-180" max="180" step="15" class="input" oninput="updateSelectedRotation(this.value)">
 </div>
 <div class="marker-editor-field">
-<label>Vector Target Label</label>
-<input type="text" id="editVectorLabel" class="input" placeholder="Ціль / напрямок" oninput="updateMarkerVectorLabel(this.value)">
+<label>Vector Target</label>
+<input type="text" id="editVectorLabel" class="input" placeholder="Target / direction" oninput="updateMarkerVectorLabel(this.value)">
 </div>
 <div class="marker-editor-field">
 <label>Vector Summary</label>
 <div id="vectorSummary" class="vector-summary">—</div>
 </div>
 <div class="marker-editor-field">
-<label>Animation Target (Lat, Lng)</label>
-<div style="display:flex;gap:0.5rem">
-<input type="number" step="0.000001" id="animTargetLat" class="input" placeholder="50.000000" oninput="storeAnimationTarget()">
-<input type="number" step="0.000001" id="animTargetLng" class="input" placeholder="30.000000" oninput="storeAnimationTarget()">
+<label>Animation Target</label>
+<div style="display:flex;gap:6px">
+<input type="number" step="0.000001" id="animTargetLat" class="input" placeholder="Lat" oninput="storeAnimationTarget()">
+<input type="number" step="0.000001" id="animTargetLng" class="input" placeholder="Lng" oninput="storeAnimationTarget()">
 </div>
 </div>
 <div class="marker-editor-field">
-<label>Animation Duration (sec)</label>
+<label>Duration (sec)</label>
 <input type="number" id="animDuration" class="input" min="0.5" step="0.5" value="4" oninput="storeAnimationTarget()">
 </div>
 <div class="marker-editor-field">
-<label>Animation Actions</label>
-<div style="display:flex;flex-wrap:wrap;gap:0.5rem">
-<button type="button" class="btn btn-secondary btn-sm" onclick="setAnimationTargetFromMarker()">📍 Use Current Point</button>
-<button type="button" class="btn btn-secondary btn-sm" onclick="useVectorForAnimation()">🎯 Use Vector Target</button>
-<button type="button" class="btn btn-success btn-sm" onclick="animateSelectedMarker()">▶️ Animate</button>
-<button type="button" id="cancelAnimBtn" class="btn btn-danger btn-sm" onclick="cancelMarkerAnimation()" disabled>⏹ Stop</button>
+<label>Animation</label>
+<div style="display:flex;flex-wrap:wrap;gap:4px">
+<button type="button" class="btn btn-secondary btn-sm" onclick="setAnimationTargetFromMarker()">Current</button>
+<button type="button" class="btn btn-secondary btn-sm" onclick="useVectorForAnimation()">Vector</button>
+<button type="button" class="btn btn-success btn-sm" onclick="animateSelectedMarker()">Play</button>
+<button type="button" id="cancelAnimBtn" class="btn btn-danger btn-sm" onclick="cancelMarkerAnimation()" disabled>Stop</button>
 </div>
 </div>
 <div class="marker-editor-field">
@@ -348,55 +1140,56 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 </select>
 </div>
 <div class="marker-editor-field">
-<label>Icon Preview</label>
-<div style="display:flex;align-items:center;gap:0.5rem">
-<img id="markerIconPreview" src="/static/shahed3.webp" alt="Marker icon" style="width:36px;height:36px;border-radius:4px;border:1px solid #e2e8f0;background:#fff;padding:2px">
+<label>Icon</label>
+<div style="display:flex;align-items:center;gap:8px">
+<img id="markerIconPreview" src="/static/shahed3.webp" alt="Icon" style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border-subtle);background:#fff;padding:2px">
 <span id="markerIconLabel" class="badge">shahed3.webp</span>
 </div>
 </div>
 <div class="marker-editor-field">
 <label>Description</label>
-<textarea id="editText" class="input" rows="3"></textarea>
+<textarea id="editText" class="input" rows="2"></textarea>
 </div>
 <div class="marker-editor-buttons">
-<button id="editSaveBtn" class="btn btn-success" style="background:#10b981" onclick="saveMarkerEdit()">💾 Сохранить</button>
-<button class="btn btn-secondary" style="background:#64748b" onclick="closeMarkerEditor()">✖ Cancel</button>
+<button id="editSaveBtn" class="btn btn-success" onclick="saveMarkerEdit()">Save</button>
+<button class="btn btn-secondary" onclick="closeMarkerEditor()">Cancel</button>
 </div>
 </div>
 <div class="map-toolbar">
-<span class="map-stats" id="mapStats">Loading map...</span>
-</div>
+<span class="map-stats" id="mapStats">Loading...</span>
 </div>
 </div>
 </div>
 </div>
 
-<!-- Section: Subscriptions -->
+<!-- ═══════════════════════════════════════════════════════════════
+     Section: Subscriptions
+     ═══════════════════════════════════════════════════════════════ -->
 <div id="section-subscriptions" class="admin-section" style="display:none">
-<button class="btn btn-secondary" onclick="showMainMenu()" style="margin-bottom:1rem">← Back to Menu</button>
+<button class="btn btn-secondary btn-sm" onclick="showMainMenu()" style="margin-bottom:var(--space-lg)">← Back</button>
 
 <div class="card">
 <div class="card-header">
-<h2 class="card-title">💳 Commercial Subscriptions <span class="badge success">{{ subscriptions|length if subscriptions else 0 }}</span></h2>
+<h2 class="card-title">Subscriptions <span class="badge success">{{ subscriptions|length if subscriptions else 0 }}</span></h2>
 </div>
 <div class="card-body">
 {% if subscriptions %}
-<div class="stats-grid" style="margin-bottom:1.5rem">
+<div class="stats-grid" style="margin-bottom:var(--space-lg)">
 <div class="stat-card">
 <div class="stat-value">{{ subscriptions|length }}</div>
 <div class="stat-label">Total</div>
 </div>
 <div class="stat-card">
 <div class="stat-value">{{ subscriptions|selectattr('status', 'equalto', 'paid')|list|length }}</div>
-<div class="stat-label">✅ Paid</div>
+<div class="stat-label">Paid</div>
 </div>
 <div class="stat-card">
 <div class="stat-value">{{ subscriptions|selectattr('status', 'equalto', 'pending')|list|length }}</div>
-<div class="stat-label">⏳ Pending</div>
+<div class="stat-label">Pending</div>
 </div>
 <div class="stat-card">
-<div class="stat-value">{{ (subscriptions|selectattr('status', 'equalto', 'paid')|map(attribute='amount')|sum)|int }} UAH</div>
-<div class="stat-label">💰 Revenue</div>
+<div class="stat-value">{{ (subscriptions|selectattr('status', 'equalto', 'paid')|map(attribute='amount')|sum)|int }}</div>
+<div class="stat-label">Revenue (UAH)</div>
 </div>
 </div>
 <div class="table-container">
@@ -406,11 +1199,10 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 <th>Name</th>
 <th>Telegram</th>
 <th>Type</th>
-<th>Comment</th>
 <th>Amount</th>
 <th>Status</th>
 <th>Date</th>
-<th>Actions</th>
+<th>Action</th>
 </tr>
 </thead>
 <tbody>
@@ -419,28 +1211,23 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 <td><strong>{{ sub.name }}</strong></td>
 <td>
 {% if sub.telegram %}
-<a href="https://t.me/{{ sub.telegram|replace('@', '')|replace('https://t.me/', '') }}" target="_blank" style="color:#00d4ff">{{ sub.telegram }}</a>
-{% else %}
-<span style="color:var(--muted)">-</span>
-{% endif %}
+<a href="https://t.me/{{ sub.telegram|replace('@', '')|replace('https://t.me/', '') }}" target="_blank" style="color:var(--accent)">{{ sub.telegram }}</a>
+{% else %}—{% endif %}
 </td>
-<td style="font-size:0.8rem">{{ sub.type }}</td>
-<td class="truncate" style="max-width:200px;font-size:0.8rem;color:var(--muted)">{{ sub.comment or '-' }}</td>
+<td style="font-size:12px">{{ sub.type }}</td>
 <td><strong>{{ sub.amount }} {{ sub.currency }}</strong></td>
 <td>
 {% if sub.status == 'paid' %}
-<span class="badge success">✅ Paid</span>
+<span class="badge success">Paid</span>
 {% else %}
-<span class="badge warning">⏳ Pending</span>
+<span class="badge warning">Pending</span>
 {% endif %}
 </td>
-<td style="font-size:0.75rem;color:var(--muted)">{{ sub.timestamp[:16].replace('T', ' ') }}</td>
+<td style="font-size:11px;color:var(--text-tertiary)">{{ sub.timestamp[:16].replace('T', ' ') }}</td>
 <td>
 {% if sub.status == 'pending' %}
-<button class="btn btn-success btn-sm" onclick="approveSubscription('{{ sub.id }}')">✓ Approve</button>
-{% else %}
-<span style="color:var(--muted);font-size:0.75rem">Approved</span>
-{% endif %}
+<button class="btn btn-success btn-sm" onclick="approveSubscription('{{ sub.id }}')">Approve</button>
+{% else %}—{% endif %}
 </td>
 </tr>
 {% endfor %}
@@ -450,49 +1237,48 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 {% else %}
 <div class="empty-state">
 <div class="empty-state-icon">💳</div>
-<p>No subscriptions yet</p>
+<p>No subscriptions</p>
 </div>
 {% endif %}
 </div>
 </div>
 </div>
 
-<!-- Section: User Nicknames -->
+<!-- ═══════════════════════════════════════════════════════════════
+     Section: User Nicknames
+     ═══════════════════════════════════════════════════════════════ -->
 <div id="section-nicknames" class="admin-section" style="display:none">
-<button class="btn btn-secondary" onclick="showMainMenu()" style="margin-bottom:1rem">← Back to Menu</button>
+<button class="btn btn-secondary btn-sm" onclick="showMainMenu()" style="margin-bottom:var(--space-lg)">← Back</button>
 
 <div class="card">
 <div class="card-header">
-<h2 class="card-title">🆔 User IDs</h2>
-<span class="badge info" id="nicknamesCount">0 IDs</span>
+<h2 class="card-title">User IDs</h2>
+<span class="badge" id="nicknamesCount">0</span>
 </div>
 <div class="card-body">
-<div style="margin-bottom:1.5rem">
-<p style="color:var(--muted);font-size:0.875rem">
-ℹ️ This section displays all user IDs stored in localStorage. Since localStorage is client-side, 
-this data is collected from active sessions via JavaScript. Refresh the page to see real-time updates.
+<p style="color:var(--text-tertiary);font-size:12px;margin-bottom:var(--space-md)">
+User IDs stored in localStorage. Collected from active sessions via JavaScript.
 </p>
+
+<div style="margin-bottom:var(--space-md);display:flex;gap:var(--space-sm);align-items:center">
+<input type="text" id="nicknameSearch" placeholder="Search..." class="input" style="max-width:240px" oninput="filterNicknames()">
+<button class="btn btn-primary btn-sm" onclick="loadNicknamesFromSessions()">Refresh</button>
 </div>
 
-<div style="margin-bottom:1rem;display:flex;gap:1rem;align-items:center">
-<input type="text" id="nicknameSearch" placeholder="🔍 Search IDs..." class="input" style="max-width:300px" oninput="filterNicknames()">
-<button class="btn btn-primary btn-sm" onclick="loadNicknamesFromSessions()">🔄 Refresh List</button>
-</div>
-
-<div id="nicknamesTable" style="overflow-x:auto">
-<table style="width:100%;border-collapse:collapse;background:var(--card);border-radius:0.5rem;overflow:hidden">
-<thead style="background:rgba(59,130,246,0.1)">
+<div id="nicknamesTable" class="table-container">
+<table class="table">
+<thead>
 <tr>
-<th style="padding:1rem;text-align:left;font-weight:600;color:var(--text)">#</th>
-<th style="padding:1rem;text-align:left;font-weight:600;color:var(--text)">🆔 User ID</th>
-<th style="padding:1rem;text-align:left;font-weight:600;color:var(--text)">📅 First Seen</th>
-<th style="padding:1rem;text-align:left;font-weight:600;color:var(--text)">🔗 Source</th>
+<th>#</th>
+<th>User ID</th>
+<th>First Seen</th>
+<th>Source</th>
 </tr>
 </thead>
 <tbody id="nicknamesBody">
 <tr>
-<td colspan="4" style="padding:2rem;text-align:center;color:var(--muted)">
-Loading user IDs... Please wait.
+<td colspan="4" style="padding:var(--space-xl);text-align:center;color:var(--text-tertiary)">
+Loading...
 </td>
 </tr>
 </tbody>
@@ -502,13 +1288,15 @@ Loading user IDs... Please wait.
 </div>
 </div>
 
-<!-- Section: Users -->
+<!-- ═══════════════════════════════════════════════════════════════
+     Section: Users
+     ═══════════════════════════════════════════════════════════════ -->
 <div id="section-users" class="admin-section" style="display:none">
-<button class="btn btn-secondary" onclick="showMainMenu()" style="margin-bottom:1rem">← Back to Menu</button>
+<button class="btn btn-secondary btn-sm" onclick="showMainMenu()" style="margin-bottom:var(--space-lg)">← Back</button>
 
 <div class="card">
 <div class="card-header">
-<h2 class="card-title">📌 Add Manual Marker</h2>
+<h2 class="card-title">Add Marker</h2>
 </div>
 <div class="card-body">
 <form id="markerForm" class="form-grid">
@@ -521,11 +1309,11 @@ Loading user IDs... Please wait.
 <input type="number" step="0.000001" required id="mmLng" placeholder="31.1200" class="input">
 </div>
 <div class="form-group">
-<label class="form-label">Location Name</label>
-<input type="text" id="mmPlace" placeholder="Київ" class="input">
+<label class="form-label">Location</label>
+<input type="text" id="mmPlace" placeholder="Kyiv" class="input">
 </div>
 <div class="form-group">
-<label class="form-label">Threat Type</label>
+<label class="form-label">Type</label>
 <select id="mmType" class="input">
 <option value="shahed">Shahed</option>
 <option value="raketa">Rocket</option>
@@ -547,9 +1335,9 @@ Loading user IDs... Please wait.
 <label class="form-label">Description</label>
 <textarea id="mmText" required placeholder="Event description..." class="input"></textarea>
 </div>
-<div style="grid-column:1/-1;display:flex;gap:1rem">
-<button type="submit" class="btn btn-primary">➕ Add Marker</button>
-<span id="mmStatus" class="badge info" style="display:none"></span>
+<div style="grid-column:1/-1;display:flex;gap:var(--space-sm)">
+<button type="submit" class="btn btn-primary btn-sm">Add</button>
+<span id="mmStatus" class="badge" style="display:none"></span>
 </div>
 </form>
 </div>
@@ -557,7 +1345,7 @@ Loading user IDs... Please wait.
 
 <div class="card">
 <div class="card-header">
-<h2 class="card-title">👥 Active Visitors <span class="badge info">{{ visitors|length }}</span></h2>
+<h2 class="card-title">Active Visitors <span class="badge info">{{ visitors|length }}</span></h2>
 </div>
 <div class="card-body compact">
 {% if visitors %}
@@ -565,31 +1353,29 @@ Loading user IDs... Please wait.
 <table class="table">
 <thead>
 <tr>
-<th>Session ID</th>
+<th>Session</th>
 <th>User ID</th>
-<th>IP Address</th>
+<th>IP</th>
 <th>Device</th>
 <th>Duration</th>
-<th>Last Seen</th>
+<th>Last</th>
 <th>Action</th>
 </tr>
 </thead>
 <tbody>
 {% for v in visitors %}
 <tr>
-<td class="truncate" style="max-width:150px" title="{{ v.id }}">{{ v.id[:16] }}...</td>
+<td class="truncate" style="max-width:120px" title="{{ v.id }}">{{ v.id[:12] }}...</td>
 <td>
-  {% if v.nickname %}
-  <span class="badge success" title="User ID">🆔 {{ v.nickname }}</span>
-  {% else %}
-  <span style="color:#888">—</span>
-  {% endif %}
+{% if v.nickname %}
+<span class="badge success">{{ v.nickname }}</span>
+{% else %}—{% endif %}
 </td>
-<td>{{ v.ip or 'N/A' }}</td>
-<td class="truncate" style="max-width:200px" title="{{ v.ua }}">{{ v.ua_short }}</td>
-<td><span class="badge info">{{ v.age_fmt }}</span></td>
+<td>{{ v.ip or '—' }}</td>
+<td class="truncate" style="max-width:160px" title="{{ v.ua }}">{{ v.ua_short }}</td>
+<td><span class="badge">{{ v.age_fmt }}</span></td>
 <td><span class="badge warning">{{ v.last_seen }}</span></td>
-<td><button class="btn btn-danger btn-sm" onclick="blockUser('{{ v.id }}')">🚫 Block</button></td>
+<td><button class="btn btn-danger btn-sm" onclick="blockUser('{{ v.id }}')">Block</button></td>
 </tr>
 {% endfor %}
 </tbody>
@@ -606,7 +1392,7 @@ Loading user IDs... Please wait.
 
 <div class="card">
 <div class="card-header">
-<h2 class="card-title">🚫 Blocked Users <span class="badge danger">{{ blocked|length }}</span></h2>
+<h2 class="card-title">Blocked <span class="badge danger">{{ blocked|length }}</span></h2>
 </div>
 <div class="card-body compact">
 {% if blocked %}
@@ -614,15 +1400,15 @@ Loading user IDs... Please wait.
 <table class="table">
 <thead>
 <tr>
-<th>Blocked ID</th>
+<th>ID</th>
 <th>Action</th>
 </tr>
 </thead>
 <tbody>
 {% for b in blocked %}
 <tr>
-<td class="truncate" style="max-width:400px" title="{{ b }}">{{ b[:30] }}...</td>
-<td><button class="btn btn-success btn-sm" onclick="unblockUser('{{ b }}')">✅ Unblock</button></td>
+<td class="truncate" style="max-width:300px" title="{{ b }}">{{ b[:24] }}...</td>
+<td><button class="btn btn-success btn-sm" onclick="unblockUser('{{ b }}')">Unblock</button></td>
 </tr>
 {% endfor %}
 </tbody>
@@ -637,15 +1423,16 @@ Loading user IDs... Please wait.
 </div>
 </div>
 </div>
-</div>
 
-<!-- Section: Messages -->
+<!-- ═══════════════════════════════════════════════════════════════
+     Section: Messages
+     ═══════════════════════════════════════════════════════════════ -->
 <div id="section-messages" class="admin-section" style="display:none">
-<button class="btn btn-secondary" onclick="showMainMenu()" style="margin-bottom:1rem">← Back to Menu</button>
+<button class="btn btn-secondary btn-sm" onclick="showMainMenu()" style="margin-bottom:var(--space-lg)">← Back</button>
 
 <div class="card">
 <div class="card-header">
-<h2 class="card-title">📨 Raw Messages (Pending Geo) <span class="badge warning" id="rawCount">{{ raw_count }}</span></h2>
+<h2 class="card-title">Raw Messages <span class="badge warning" id="rawCount">{{ raw_count }}</span></h2>
 </div>
 <div class="card-body compact">
 {% if raw_msgs %}
@@ -661,9 +1448,9 @@ Loading user IDs... Please wait.
 <tbody id="rawTable">
 {% for r in raw_msgs %}
 <tr>
-<td style="white-space:nowrap;font-size:0.8rem">{{ r.date }}</td>
+<td style="white-space:nowrap;font-size:12px">{{ r.date }}</td>
 <td><span class="badge info">{{ r.channel }}</span></td>
-<td class="truncate" style="max-width:500px" title="{{ r.text }}">{{ r.text }}</td>
+<td class="truncate" style="max-width:400px" title="{{ r.text }}">{{ r.text }}</td>
 </tr>
 {% endfor %}
 </tbody>
@@ -680,7 +1467,7 @@ Loading user IDs... Please wait.
 
 <div class="card">
 <div class="card-header">
-<h2 class="card-title">📍 Recent Markers <span class="badge success">{{ markers|length }}</span></h2>
+<h2 class="card-title">Recent Markers <span class="badge success">{{ markers|length }}</span></h2>
 </div>
 <div class="card-body compact">
 {% if markers %}
@@ -698,11 +1485,11 @@ Loading user IDs... Please wait.
 <tbody>
 {% for m in markers %}
 <tr>
-<td style="white-space:nowrap;font-size:0.8rem">{{ m.date }}</td>
+<td style="white-space:nowrap;font-size:12px">{{ m.date }}</td>
 <td><span class="badge {% if m.threat_type=='shahed' %}info{% elif m.threat_type=='raketa' %}danger{% else %}warning{% endif %}">{{ m.threat_type }}</span></td>
-<td style="font-weight:600">{{ m.place }}</td>
-<td class="truncate" style="max-width:400px" title="{{ m.text }}">{{ (m.text or '')[:100] }}{% if (m.text|length or 0)>100 %}...{% endif %}</td>
-<td><button class="btn btn-danger btn-sm" data-lat="{{ m.lat }}" data-lng="{{ m.lng }}" data-text="{{ (m.text or '')|e }}" data-source="{{ (m.channel or m.source)|e }}" onclick="hideMarker(this.dataset.lat,this.dataset.lng,this.dataset.text,this.dataset.source)">👁️ Hide</button></td>
+<td style="font-weight:500">{{ m.place }}</td>
+<td class="truncate" style="max-width:300px" title="{{ m.text }}">{{ (m.text or '')[:80] }}{% if (m.text|length or 0)>80 %}...{% endif %}</td>
+<td><button class="btn btn-secondary btn-sm" data-lat="{{ m.lat }}" data-lng="{{ m.lng }}" data-text="{{ (m.text or '')|e }}" data-source="{{ (m.channel or m.source)|e }}" onclick="hideMarker(this.dataset.lat,this.dataset.lng,this.dataset.text,this.dataset.source)">Hide</button></td>
 </tr>
 {% endfor %}
 </tbody>
@@ -719,8 +1506,8 @@ Loading user IDs... Please wait.
 
 <div class="card">
 <div class="card-header">
-<h2 class="card-title">👁️ Hidden Markers <span id="hiddenCount" class="badge danger">0</span></h2>
-<button class="btn btn-sm btn-secondary" onclick="loadHiddenMarkers()">🔄 Refresh</button>
+<h2 class="card-title">Hidden <span id="hiddenCount" class="badge danger">0</span></h2>
+<button class="btn btn-sm btn-secondary" onclick="loadHiddenMarkers()">Refresh</button>
 </div>
 <div class="card-body">
 <div id="hiddenMarkersContainer">
@@ -734,16 +1521,16 @@ Loading user IDs... Please wait.
 
 <div class="card">
 <div class="card-header">
-<h2 class="card-title">🗃️ Cache Management <span class="badge warning">{{ neg_geocode|length }}</span></h2>
-<button class="btn btn-danger btn-sm" onclick="clearCache()">🗑️ Clear All</button>
+<h2 class="card-title">Cache <span class="badge warning">{{ neg_geocode|length }}</span></h2>
+<button class="btn btn-danger btn-sm" onclick="clearCache()">Clear All</button>
 </div>
 <div class="card-body compact">
 {% if neg_geocode %}
-<div class="table-container" style="max-height:400px;overflow-y:auto">
+<div class="table-container" style="max-height:320px;overflow-y:auto">
 <table class="table">
 <thead>
 <tr>
-<th>City Name</th>
+<th>City</th>
 <th>Region</th>
 <th>Action</th>
 </tr>
@@ -753,7 +1540,7 @@ Loading user IDs... Please wait.
 <tr>
 <td>{{ name }}</td>
 <td>{{ region or "—" }}</td>
-<td><button class="btn btn-danger btn-sm" onclick="delCache('{{ name }}')">🗑️ Delete</button></td>
+<td><button class="btn btn-danger btn-sm" onclick="delCache('{{ name }}')">Delete</button></td>
 </tr>
 {% endfor %}
 </tbody>
@@ -762,23 +1549,23 @@ Loading user IDs... Please wait.
 {% else %}
 <div class="empty-state">
 <div class="empty-state-icon">🗂️</div>
-<p>Cache is empty</p>
+<p>Cache empty</p>
 </div>
 {% endif %}
 </div>
 </div>
 </div>
-</div>
-</div>
 
-<!-- Section: Debug -->
+<!-- ═══════════════════════════════════════════════════════════════
+     Section: Debug
+     ═══════════════════════════════════════════════════════════════ -->
 <div id="section-debug" class="admin-section" style="display:none">
-<button class="btn btn-secondary" onclick="showMainMenu()" style="margin-bottom:1rem">← Back to Menu</button>
+<button class="btn btn-secondary btn-sm" onclick="showMainMenu()" style="margin-bottom:var(--space-lg)">← Back</button>
 
 <div class="card">
 <div class="card-header">
-<h2 class="card-title">🐛 Debug Console <span class="badge info">{{ debug_logs|length }}</span></h2>
-<button class="btn btn-danger btn-sm" onclick="clearLogs()">🗑️ Clear Logs</button>
+<h2 class="card-title">Debug Console <span class="badge info">{{ debug_logs|length }}</span></h2>
+<button class="btn btn-danger btn-sm" onclick="clearLogs()">Clear</button>
 </div>
 <div class="card-body compact">
 {% if debug_logs %}
@@ -794,7 +1581,7 @@ Loading user IDs... Please wait.
 {% else %}
 <div class="empty-state">
 <div class="empty-state-icon">📝</div>
-<p>No debug logs available</p>
+<p>No logs</p>
 </div>
 {% endif %}
 </div>
@@ -802,30 +1589,30 @@ Loading user IDs... Please wait.
 
 <div class="card">
 <div class="card-header">
-<h2 class="card-title">🛠️ Advanced Tools</h2>
+<h2 class="card-title">Tools</h2>
 </div>
 <div class="card-body">
 <div class="form-grid">
 <div class="form-group">
-<label class="form-label">System Statistics</label>
-<button class="btn btn-info" onclick="loadStats()">📊 Load Stats</button>
+<label class="form-label">Statistics</label>
+<button class="btn btn-secondary btn-sm" onclick="loadStats()">Load Stats</button>
 </div>
 <div class="form-group">
-<label class="form-label">Data Cleanup (Keep Days)</label>
-<div style="display:flex;gap:0.5rem">
-<input type="number" id="cleanDays" value="7" min="1" max="30" class="input" style="width:100px">
-<button class="btn btn-warning" onclick="cleanup()">🧹 Clean</button>
+<label class="form-label">Cleanup (days)</label>
+<div style="display:flex;gap:6px">
+<input type="number" id="cleanDays" value="7" min="1" max="30" class="input" style="width:80px">
+<button class="btn btn-warning btn-sm" onclick="cleanup()">Clean</button>
 </div>
 </div>
 <div class="form-group">
-<label class="form-label">Export Data</label>
-<div style="display:flex;gap:0.5rem;flex-wrap:wrap">
-<button class="btn btn-secondary btn-sm" onclick="exportData('messages')">📝 Messages</button>
-<button class="btn btn-secondary btn-sm" onclick="exportData('stats')">📈 Stats</button>
+<label class="form-label">Export</label>
+<div style="display:flex;gap:6px">
+<button class="btn btn-secondary btn-sm" onclick="exportData('messages')">Messages</button>
+<button class="btn btn-secondary btn-sm" onclick="exportData('stats')">Stats</button>
 </div>
 </div>
 </div>
-<div id="advStatus" class="debug-console" style="margin-top:1rem;display:none"></div>
+<div id="advStatus" class="debug-console" style="margin-top:var(--space-md);display:none"></div>
 </div>
 </div>
 
@@ -852,7 +1639,7 @@ function updateMarkerIcon(type,markerOverride=null){const iconUrl=`/static/${typ
 
 function updateVectorSummary(data){const summary=document.getElementById('vectorSummary');const clearBtn=document.getElementById('clearVectorBtn');if(!summary)return;const hasVector=data&&data.trajectory&&data.trajectory.end;const label=(data&&data.course_target)||'';const coords=hasVector?`${data.trajectory.end[0].toFixed(2)}, ${data.trajectory.end[1].toFixed(2)}`:'';const dir=data&&data.course_direction?` (${data.course_direction})`:'';summary.textContent=hasVector?(label?`${label}${dir}`:`${coords}${dir}`):'—';if(clearBtn){clearBtn.disabled=!hasVector}}
 
-function setVectorMode(state){const btn=document.getElementById('vectorBtn');let desired=!!state;if(desired&&!selectedMarker){notif('Сначала выберите метку для направления','warning');desired=false;}vectorMode=desired;if(btn){btn.textContent=`🎯 Vector: ${vectorMode?'ON':'OFF'}`;btn.className=vectorMode?'btn btn-success btn-sm':'btn btn-secondary btn-sm';}if(vectorMode){setAddMode(false,{keepTemp:true});if(map)map.getContainer().style.cursor='crosshair';notif('Кликните по карте, чтобы задать направление от выбранной метки','info');}else{if(map&&!addMode)map.getContainer().style.cursor='';}}
+function setVectorMode(state){const btn=document.getElementById('vectorBtn');let desired=!!state;if(desired&&!selectedMarker){notif('Select a marker first','warning');desired=false;}vectorMode=desired;if(btn){btn.textContent=vectorMode?'Vector: ON':'Vector';btn.className=vectorMode?'btn btn-success btn-sm':'btn btn-secondary btn-sm';}if(vectorMode){setAddMode(false,{keepTemp:true});if(map)map.getContainer().style.cursor='crosshair';notif('Click map to set direction','info');}else{if(map&&!addMode)map.getContainer().style.cursor='';}}
 function toggleVectorMode(){setVectorMode(!vectorMode)}
 
 function clearMarkerVector(){if(!selectedMarker){notif('Select a marker first','warning');return;}const data=selectedMarker._markerData||{};data.trajectory=null;data.course_direction=null;data.course_target=null;data.course_source=null;data.course_type=null;removeVectorForMarker(selectedMarker);const labelInput=document.getElementById('editVectorLabel');if(labelInput)labelInput.value='';updateVectorSummary(data);notif('Vector cleared','info');}
@@ -925,7 +1712,7 @@ async function reloadMarkers(){if(!map||!layer)return;if(markerAnimation){consol
 
 async function persistMarkerPosition(marker){const data=marker?._markerData||{};if(!data.manual){const now=Date.now();if(now-autoMarkerWarningAt>5000){notif('This marker comes from live feed; drag changes reset on refresh. Save manual markers instead.','warning');autoMarkerWarningAt=now;}setTimeout(()=>reloadMarkers(),500);return;}if(!data.id){console.warn('Cannot persist marker without id');return;}const payload={id:data.id,lat:data.lat,lng:data.lng,place:data.place||'',threat_type:data.type||'manual',text:data.text||'',rotation:data.rotation||0,trajectory:data.trajectory||null,course_direction:data.course_direction||null,course_target:data.course_target||null,course_source:data.course_source||null,course_type:data.course_type||null};try{const response=await fetch('/admin/update_manual_marker?secret='+encodeURIComponent(S),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});if(!response.ok){const txt=await response.text();throw new Error(txt||'Failed to save position');}console.log(`💾 Position saved for manual marker ${data.id}`);}catch(err){console.error('Position save failed:',err);notif('Failed to save marker position: '+err.message,'error');setTimeout(()=>reloadMarkers(),800);}}
 
-function setAddMode(state,{keepTemp=false}={}){addMode=state;const btn=document.getElementById('addModeBtn');if(!btn||!map)return;if(addMode){btn.textContent='➕ Add Mode: ON';btn.className='btn btn-success btn-sm';map.getContainer().style.cursor='crosshair';setVectorMode(false);notif('Кликните по карте, чтобы поставить новую метку','info')}else{btn.textContent='➕ Add Mode: OFF';btn.className='btn btn-primary btn-sm';if(!vectorMode)map.getContainer().style.cursor='';if(!keepTemp&&tempNewMarker){layer.removeLayer(tempNewMarker);tempNewMarker=null}}}
+function setAddMode(state,{keepTemp=false}={}){addMode=state;const btn=document.getElementById('addModeBtn');if(!btn||!map)return;if(addMode){btn.textContent='Add Mode: ON';btn.className='btn btn-success btn-sm';map.getContainer().style.cursor='crosshair';setVectorMode(false);notif('Click map to place marker','info')}else{btn.textContent='Add Mode';btn.className='btn btn-primary btn-sm';if(!vectorMode)map.getContainer().style.cursor='';if(!keepTemp&&tempNewMarker){layer.removeLayer(tempNewMarker);tempNewMarker=null}}}
 function toggleAddMode(){setAddMode(!addMode)}
 
 function onMapClick(e){if(vectorMode){if(!selectedMarker){notif('Select a marker first','warning');setVectorMode(false);return;}applyVectorToMarker(selectedMarker,e.latlng);return;}if(!addMode)return;const lat=e.latlng.lat;const lng=e.latlng.lng;if(tempNewMarker){layer.removeLayer(tempNewMarker);}const iconUrl='/static/shahed3.webp';tempNewMarker=createRotatableMarker(lat,lng,iconUrl,0);tempNewMarker._markerData={id:null,lat:lat,lng:lng,place:'',type:'manual',text:'',rotation:0,channel:'admin',manual:true,trajectory:null,course_direction:null,course_target:null,course_source:null,course_type:null};tempNewMarker._isNew=true;tempNewMarker.addTo(layer);tempNewMarker.on('drag',function(){const pos=tempNewMarker.getLatLng();document.getElementById('editLat').value=pos.lat.toFixed(6);document.getElementById('editLng').value=pos.lng.toFixed(6)});tempNewMarker.on('dragend',function(){const pos=tempNewMarker.getLatLng();tempNewMarker._markerData.lat=pos.lat;tempNewMarker._markerData.lng=pos.lng;if(tempNewMarker._markerData.trajectory){tempNewMarker._markerData.trajectory.start=[pos.lat,pos.lng];renderVectorForMarker(tempNewMarker);}document.getElementById('editLat').value=pos.lat.toFixed(6);document.getElementById('editLng').value=pos.lng.toFixed(6)});setAddMode(false,{keepTemp:true});const latFixed=lat.toFixed(6);const lngFixed=lng.toFixed(6);document.getElementById('mmLat').value=latFixed;document.getElementById('mmLng').value=lngFixed;if(document.getElementById('mmPlace'))document.getElementById('mmPlace').value='';document.getElementById('mmText').value=`Marker at ${latFixed}, ${lngFixed}`;selectMarker(tempNewMarker);document.getElementById('editPlace').value='';document.getElementById('editType').value='manual';document.getElementById('editText').value='';document.getElementById('editRotation').value=0;notif('Новая метка создана. Заполните поля и нажмите Создать.','success')}
@@ -1000,7 +1787,7 @@ async function saveMarkerEdit(){
 	}
 }
 async function deleteMarkerFromMap(lat,lng,text,source){try{await fetch('/hide_marker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,text,source})});notif('Marker deleted','success');reloadMarkers()}catch(e){notif('Failed to delete marker','error')}}
-function toggleAuto(){auto=!auto;const b=document.getElementById('autoBtn');b.textContent=`🔁 Auto: ${auto?'ON':'OFF'}`;b.className=auto?'btn btn-success btn-sm':'btn btn-secondary btn-sm'}
+function toggleAuto(){auto=!auto;const b=document.getElementById('autoBtn');b.textContent=`Auto: ${auto?'ON':'OFF'}`;b.className=auto?'btn btn-success btn-sm':'btn btn-secondary btn-sm'}
 async function blockUser(id){try{await api('/block',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});notif('User blocked successfully','success');setTimeout(()=>location.reload(),1000)}catch(e){}}
 async function unblockUser(id){try{await api('/unblock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});notif('User unblocked successfully','success');setTimeout(()=>location.reload(),1000)}catch(e){}}
 async function saveMonPeriod(){const v=document.getElementById('monPeriod').value;const s=document.getElementById('monStatus');s.style.display='inline-flex';s.textContent='Saving...';try{await api('/admin/set_monitor_period',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:parseInt(v)})});s.textContent='✅ Saved';notif('Monitor period updated','success')}catch(e){s.textContent='❌ Error'}}
