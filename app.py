@@ -37,7 +37,7 @@ ARCHITECTURE NOTES:
 - All state centralized in STATE registry (see SECTION 4)
 - Thread-safe operations via explicit locks
 - Caching at multiple levels: ResponseCache, messages, geocode
-- AI features: Groq LLM for geocoding disambiguation, TTL prediction
+- AI features: Groq LLM for geocoding disambiguation
 """
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2605,20 +2605,6 @@ if _dyn:
 CONFIG_FILE = 'config.json'
 MONITOR_PERIOD_MINUTES = 30  # default; editable only via admin panel
 MANUAL_MARKER_WINDOW_MINUTES = int(os.getenv('MANUAL_MARKER_WINDOW_MINUTES', '720'))  # manual markers stay visible at least 12h
-AI_TTL_ENABLED = False  # AI-based marker TTL system (disabled by default)
-
-# TTL по типу угрозы (в минутах)
-THREAT_BASE_TTL = {
-    'balistic': 5,        # Баллистика - очень коротко
-    'cruise': 15,         # Крылатые ракеты
-    'shahed': 45,         # Дроны - долго летят
-    'caliber': 20,        # Калибры
-    'kinzhal': 3,         # Кинжалы - очень быстро
-    'iskander': 5,        # Искандеры
-    'aircraft': 30,       # Авиация
-    'helicopter': 20,     # Вертолёты
-    'default': 30         # По умолчанию
-}
 
 # ---------------- Threat Tracker (simple stub) ----------------
 class ThreatTracker:
@@ -14387,20 +14373,19 @@ def data():
     tz = pytz.timezone('Europe/Kyiv')
     now = datetime.now(tz).replace(tzinfo=None)
 
-    # For AI TTL, we need to check each message individually
-    # But first do a pre-filter to avoid checking very old messages
+    # Check each message individually
+    # Pre-filter to avoid checking very old messages
     max_possible_ttl = 240  # 4 hours - max possible TTL for any threat type
     min_time_prefilter = now - timedelta(minutes=max_possible_ttl)
 
-    # Fallback to fixed time if AI TTL is disabled
+    # Use fixed time window
     min_time = now - timedelta(minutes=time_range)
     manual_cutoff = now - timedelta(minutes=max(time_range, MANUAL_MARKER_WINDOW_MINUTES))
 
-    print(f"[DEBUG] Filtering messages since {min_time} (last {time_range} minutes), AI_TTL_ENABLED={AI_TTL_ENABLED}")
+    print(f"[DEBUG] Filtering messages since {min_time} (last {time_range} minutes)")
     hidden = set(load_hidden())
     out = []  # geo tracks
     events = []  # list-only (alarms, cancellations, other non-geo informational)
-    ai_ttl_stats = {'shown': 0, 'hidden': 0, 'reasons': {}}
     
     # DEBUG: Count messages by category
     debug_counts = {'too_old': 0, 'no_date': 0, 'pending_geo': 0, 'has_coords': 0, 'recent': 0}
@@ -14428,43 +14413,12 @@ def data():
 
         manual_marker = bool(m.get('manual'))
 
-        # === AI TTL LOGIC ===
-        # Check if message should be visible using AI-calculated TTL
-        if AI_TTL_ENABLED and not manual_marker:
-            # Pre-filter: skip messages older than max possible TTL
-            if dt < min_time_prefilter:
-                continue
-
-            # Calculate individual marker TTL
-            visibility = should_marker_be_visible(m, now)
-
-            if not visibility['visible']:
-                ai_ttl_stats['hidden'] += 1
-                reason = visibility.get('ttl_info', {}).get('reason', 'unknown')
-                ai_ttl_stats['reasons'][reason] = ai_ttl_stats['reasons'].get(reason, 0) + 1
-                continue
-
-            # Add TTL info to marker for frontend display
-            if visibility.get('ttl_info'):
-                m['ai_ttl'] = {
-                    'remaining_minutes': visibility.get('remaining_minutes', 0),
-                    'reason': visibility['ttl_info'].get('reason', ''),
-                    'status': visibility['ttl_info'].get('status', 'active'),
-                    'threat_type_detected': visibility['ttl_info'].get('threat_type_detected', '')
-                }
-            ai_ttl_stats['shown'] += 1
-            # Continue to marker processing below
-
-        # === FALLBACK LOGIC ===
-        # If AI TTL is disabled, use fixed time
-        elif not AI_TTL_ENABLED:
-            if not (dt >= min_time or (manual_marker and dt >= manual_cutoff)):
-                continue
-        else:
-            # AI TTL was enabled but marker was already processed above, continue
+        # === TIME FILTERING ===
+        # Use fixed time window
+        if not (dt >= min_time or (manual_marker and dt >= manual_cutoff)):
             continue
 
-        # === MARKER PROCESSING (shared for both AI TTL and fallback) ===
+        # === MARKER PROCESSING ===
         # Fallback reparse: if message lacks geo but contains course pattern, try to derive markers now
         (m.get('text') or '').lower()
         msg_id = m.get('id')
@@ -14596,12 +14550,7 @@ def data():
         out.append(m)
 
 
-    # Log AI TTL statistics
-    if AI_TTL_ENABLED and (ai_ttl_stats['shown'] > 0 or ai_ttl_stats['hidden'] > 0):
-        print(f"[AI TTL] Shown: {ai_ttl_stats['shown']}, Hidden by TTL: {ai_ttl_stats['hidden']}")
-        if ai_ttl_stats['reasons']:
-            for reason, count in list(ai_ttl_stats['reasons'].items())[:3]:
-                print(f"[AI TTL]   - {reason}: {count}")
+
 
     # === THREAT TRACKER: Update from alarms and get active threats ===
     try:
@@ -14677,11 +14626,6 @@ def data():
         },
         # Smart threat tracking info
         'threat_tracking': threat_info,
-        # AI TTL stats
-        'ai_ttl': {
-            'enabled': AI_TTL_ENABLED,
-            'stats': ai_ttl_stats if AI_TTL_ENABLED else None
-        },
         # Metadata for clients to know if data was truncated
         '_meta': {
             'tracks_total': total_tracks,
@@ -16607,61 +16551,6 @@ def set_monitor_period():
         return jsonify({'status':'ok','monitor_period':MONITOR_PERIOD_MINUTES})
     except Exception as e:
         return jsonify({'status':'error','error':str(e)}), 400
-
-@app.route('/admin/set_ai_ttl', methods=['POST'])
-def set_ai_ttl():
-    """Enable or disable AI-based marker TTL system"""
-    if not _require_secret(request):
-        return jsonify({'status': 'forbidden'}), 403
-    global AI_TTL_ENABLED
-    payload = request.get_json(silent=True) or request.form
-    try:
-        enabled = payload.get('enabled')
-        if isinstance(enabled, str):
-            enabled = enabled.lower() in ('true', '1', 'yes', 'on')
-        AI_TTL_ENABLED = bool(enabled)
-        print(f"[DEBUG] AI_TTL_ENABLED updated to {AI_TTL_ENABLED}")
-        return jsonify({
-            'status': 'ok',
-            'ai_ttl_enabled': AI_TTL_ENABLED,
-            'description': 'AI визначає час життя міток на основі типу загрози та контексту' if AI_TTL_ENABLED else 'Фіксований час життя міток з адмін панелі'
-        })
-    except Exception as e:
-        return jsonify({'status': 'error', 'error': str(e)}), 400
-
-@app.route('/admin/ai_ttl_status', methods=['GET'])
-def get_ai_ttl_status():
-    """Get current AI TTL status and configuration"""
-    return jsonify({
-        'ai_ttl_enabled': AI_TTL_ENABLED,
-        'fallback_minutes': MONITOR_PERIOD_MINUTES,
-        'threat_base_ttl': THREAT_BASE_TTL,
-        'description': 'AI визначає час життя міток на основі типу загрози та контексту' if AI_TTL_ENABLED else 'Фіксований час життя міток з адмін панелі'
-    })
-
-@app.route('/admin/test_ai_ttl', methods=['POST'])
-def test_ai_ttl():
-    """Test AI TTL calculation for a message"""
-    if not _require_secret(request):
-        return jsonify({'status': 'forbidden'}), 403
-    payload = request.get_json(silent=True) or {}
-    text = payload.get('text', '')
-    threat_type = payload.get('threat_type')
-    distance_km = payload.get('distance_km')
-    eta_minutes = payload.get('eta_minutes')
-
-    result = calculate_ai_marker_ttl(
-        message_text=text,
-        threat_type=threat_type,
-        distance_km=distance_km,
-        eta_minutes=eta_minutes
-    )
-
-    # Convert datetime to string for JSON
-    if 'expires_at' in result:
-        result['expires_at'] = result['expires_at'].strftime('%Y-%m-%d %H:%M:%S')
-
-    return jsonify(result)
 
 @app.route('/admin/threat_tracker', methods=['GET'])
 def admin_threat_tracker():

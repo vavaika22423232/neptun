@@ -1020,31 +1020,7 @@ textarea.input {
 </div>
 </div>
 
-<div style="margin-top:var(--space-xl);padding-top:var(--space-lg);border-top:1px solid var(--border-subtle)">
-<div class="form-group">
-<label class="form-label">AI-Managed Marker TTL</label>
-<p style="font-size:12px;color:var(--text-tertiary);margin:var(--space-sm) 0">
-When enabled, AI determines display time for each marker based on threat type, ETA, and message context.
-</p>
-<div style="display:flex;align-items:center;gap:var(--space-md);margin-top:var(--space-sm)">
-<label class="toggle-switch">
-<input type="checkbox" id="aiTtlToggle" onchange="toggleAiTtl()">
-<span class="toggle-slider"></span>
-</label>
-<span id="aiTtlStatus" style="font-size:13px;color:var(--text-tertiary)">Loading...</span>
-</div>
-</div>
-<div class="form-group" id="aiTtlInfo" style="display:none;background:var(--bg-tertiary);padding:var(--space-md);border-radius:var(--radius-md);margin-top:var(--space-md)">
-<div style="font-weight:500;margin-bottom:var(--space-sm);color:var(--success);font-size:13px">AI TTL Configuration</div>
-<div style="font-size:12px;color:var(--text-secondary)">
-<div>• Shahed/Drones: 60-90 min</div>
-<div>• Cruise missiles: 25-35 min</div>
-<div>• Ballistic: 5-8 min</div>
-<div>• KAB: 15 min</div>
-<div>• Destroyed: 5 min</div>
-</div>
-</div>
-</div>
+
 </div>
 </div>
 </div>
@@ -1791,9 +1767,7 @@ function toggleAuto(){auto=!auto;const b=document.getElementById('autoBtn');b.te
 async function blockUser(id){try{await api('/block',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});notif('User blocked successfully','success');setTimeout(()=>location.reload(),1000)}catch(e){}}
 async function unblockUser(id){try{await api('/unblock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});notif('User unblocked successfully','success');setTimeout(()=>location.reload(),1000)}catch(e){}}
 async function saveMonPeriod(){const v=document.getElementById('monPeriod').value;const s=document.getElementById('monStatus');s.style.display='inline-flex';s.textContent='Saving...';try{await api('/admin/set_monitor_period',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:parseInt(v)})});s.textContent='✅ Saved';notif('Monitor period updated','success')}catch(e){s.textContent='❌ Error'}}
-async function loadAiTtlStatus(){try{const res=await fetch('/admin/ai_ttl_status');const data=await res.json();document.getElementById('aiTtlToggle').checked=data.ai_ttl_enabled;document.getElementById('aiTtlStatus').textContent=data.ai_ttl_enabled?'🤖 ІІ керує TTL':'⏱️ Фіксований час ('+data.fallback_minutes+' хв)';document.getElementById('aiTtlStatus').style.color=data.ai_ttl_enabled?'#00ff88':'#f59e0b';document.getElementById('aiTtlInfo').style.display=data.ai_ttl_enabled?'block':'none'}catch(e){document.getElementById('aiTtlStatus').textContent='❌ Error loading';document.getElementById('aiTtlStatus').style.color='#ef4444'}}
-async function toggleAiTtl(){const enabled=document.getElementById('aiTtlToggle').checked;const statusEl=document.getElementById('aiTtlStatus');statusEl.textContent='Saving...';statusEl.style.color='#888';try{const res=await api('/admin/set_ai_ttl',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled})});statusEl.textContent=enabled?'🤖 ІІ керує TTL':'⏱️ Фіксований час';statusEl.style.color=enabled?'#00ff88':'#f59e0b';document.getElementById('aiTtlInfo').style.display=enabled?'block':'none';notif(enabled?'AI TTL увімкнено':'AI TTL вимкнено','success')}catch(e){statusEl.textContent='❌ Error';statusEl.style.color='#ef4444';document.getElementById('aiTtlToggle').checked=!enabled;notif('Failed to toggle AI TTL','error')}}
-setTimeout(loadAiTtlStatus,500);
+
 document.getElementById('markerForm').addEventListener('submit',async(e)=>{e.preventDefault();const lat=document.getElementById('mmLat').value;const lng=document.getElementById('mmLng').value;const place=document.getElementById('mmPlace').value;const threat_type=document.getElementById('mmType').value;const text=document.getElementById('mmText').value;const s=document.getElementById('mmStatus');s.style.display='inline-flex';s.textContent='Creating...';try{await api('/admin/add_manual_marker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,place,threat_type,text})});s.textContent='✅ Created';notif('Marker created successfully','success');setTimeout(()=>location.reload(),1000)}catch(err){s.textContent=`❌ ${err.message||'Error'}`}});
 async function hideMarker(lat,lng,text,source){try{await fetch('/hide_marker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,text,source})});notif('Marker hidden','success');setTimeout(()=>location.reload(),1000)}catch(e){}}
 async function loadHiddenMarkers(){try{const d=await api('/admin/hidden_markers');const h=d.hidden||[];document.getElementById('hiddenCount').textContent=h.length;const c=document.getElementById('hiddenMarkersContainer');if(h.length===0){c.innerHTML='<div class="empty-state"><div class="empty-state-icon">👁️</div><p>No hidden markers</p></div>';return}let html='<div style="max-height:400px;overflow-y:auto"><table class="table"><thead><tr><th>Location</th><th>Text</th><th>Hidden Date</th><th>Action</th></tr></thead><tbody>';h.forEach(m=>{html+=`<tr><td>${m.lat.toFixed(4)}, ${m.lng.toFixed(4)}</td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">${(m.text||'').substring(0,100)}</td><td>${m.hidden_date||''}</td><td><button class="btn btn-success btn-sm" onclick="unhideMarker(${m.lat},${m.lng},'${(m.text||'').replace(/'/g,"\\'")}','${m.source||''}')">↩️ Restore</button></td></tr>`});html+='</tbody></table></div>';c.innerHTML=html}catch(e){console.error('Failed to load hidden markers:',e);notif('Failed to load hidden markers','error')}}

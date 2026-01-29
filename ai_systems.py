@@ -1,5 +1,5 @@
 # AI Systems Module - extracted from app.py
-# Contains: AI Geocoding, AI Route, AI Prediction, AI TTL, Threat Tracking, Intelligence Fusion
+# Contains: AI Geocoding, AI Route, AI Prediction, Threat Tracking, Intelligence Fusion
 
 import time
 import re
@@ -32,32 +32,6 @@ groq_client = None
 def set_groq_client(client):
     global groq_client
     groq_client = client
-
-# ==================== AI TTL SYSTEM ====================
-
-def calculate_ai_marker_ttl(threat_type: str, region: str, source_confidence: float = 0.8) -> int:
-    """Calculate intelligent TTL for AI markers based on threat characteristics"""
-    base_ttl = {
-        'shahed': 1800,  # 30 min
-        'missile': 600,  # 10 min
-        'aircraft': 900, # 15 min
-        'helicopter': 720, # 12 min
-        'recon': 1200,  # 20 min
-        'default': 900
-    }
-    
-    ttl = base_ttl.get(threat_type.lower(), base_ttl['default'])
-    
-    # Adjust for source confidence
-    ttl = int(ttl * (0.5 + source_confidence * 0.5))
-    
-    # Border regions get longer TTL
-    border_regions = ['Харківська', 'Сумська', 'Чернігівська', 'Луганська', 'Донецька', 'Запорізька', 'Херсонська']
-    if any(r in region for r in border_regions):
-        ttl = int(ttl * 1.3)
-    
-    return min(max(ttl, 300), 3600)  # 5 min to 1 hour
-
 
 # ==================== THREAT TRACKER ====================
 

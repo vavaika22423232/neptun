@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Threat Analysis Module for NEPTUN API
-Contains: AI TTL system, Threat Tracking, Channel Intelligence Fusion, Trajectory Builder
+Contains: Threat Tracking, Channel Intelligence Fusion, Trajectory Builder
 
 Extracted from app.py to reduce main file size.
 """
@@ -74,12 +74,7 @@ def set_threat_speeds(speeds: dict):
     global THREAT_SPEEDS
     THREAT_SPEEDS = speeds
 
-# Global flag for AI TTL
-AI_TTL_ENABLED = str(os.getenv('AI_TTL_ENABLED', 'false')).lower() in ('1', 'true', 'yes')
 
-def set_ai_ttl_enabled(enabled: bool):
-    global AI_TTL_ENABLED
-    AI_TTL_ENABLED = enabled
 
 def calculate_ai_marker_ttl(message_text: str, threat_type: str = None,
                             distance_km: float = None, eta_minutes: float = None,
@@ -457,9 +452,9 @@ TRAJECTORY_BUILDER = TrajectoryBuilder()
 
 # Export all
 __all__ = [
-    'THREAT_BASE_TTL', 'THREAT_MAX_TTL', 'AI_TTL_ENABLED',
+    'THREAT_BASE_TTL', 'THREAT_MAX_TTL',
     'calculate_ai_marker_ttl', 'get_marker_ttl_from_message',
-    'set_ai_ttl_enabled', 'set_threat_speeds',
+    'set_threat_speeds',
     'ThreatTracker', 'THREAT_TRACKER', 'ACTIVE_THREATS', 'ACTIVE_THREATS_LOCK',
     'ChannelIntelligenceFusion', 'CHANNEL_FUSION',
     'TrajectoryBuilder', 'TRAJECTORY_BUILDER',
