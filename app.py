@@ -1800,8 +1800,10 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
                 del _telegram_alert_sent[mid]
 
         if message_id in _telegram_alert_sent:
+            print(f"[TELEGRAM_PUSH] ⏭️ Skipping duplicate msg_id={message_id}", flush=True)
             return
         _telegram_alert_sent[message_id] = now
+        print(f"[TELEGRAM_PUSH] ✅ New message, proceeding with msg_id={message_id}", flush=True)
 
     try:
         from firebase_admin import messaging
