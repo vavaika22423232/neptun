@@ -1809,9 +1809,15 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
         from firebase_admin import messaging
 
         msg_lower = message_text.lower()
+        print(f"[TELEGRAM_PUSH] 📝 Processing: '{message_text[:50]}...'", flush=True)
 
         # Try AI classification first for more accurate results
-        ai_result = classify_threat_with_ai(message_text)
+        try:
+            ai_result = classify_threat_with_ai(message_text)
+            print(f"[TELEGRAM_PUSH] 🤖 AI result: {ai_result}", flush=True)
+        except Exception as ai_err:
+            print(f"[TELEGRAM_PUSH] ⚠️ AI classification failed: {ai_err}", flush=True)
+            ai_result = None
 
         if ai_result and ai_result.get('threat_type') not in ['unknown', None]:
             # Use AI classification
@@ -1959,11 +1965,9 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
         # Send to topic
         success_count = 0
         try:
+            # NO top-level notification - Android uses AndroidNotification, iOS uses APNSPayload
+            # Having both notification AND apns.payload can cause iOS delivery issues
             message = messaging.Message(
-                notification=messaging.Notification(
-                    title=title,
-                    body=body,
-                ),
                 data={
                     'type': 'telegram_threat',
                     'title': title,
@@ -2018,11 +2022,8 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
 
         # Also send to 'all_regions' topic for users who want all alerts
         try:
+            # NO top-level notification - same fix as above for iOS
             message_all = messaging.Message(
-                notification=messaging.Notification(
-                    title=title,
-                    body=body,
-                ),
                 data={
                     'type': 'telegram_threat',
                     'title': title,
