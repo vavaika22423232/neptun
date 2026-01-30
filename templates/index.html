@@ -3141,7 +3141,7 @@
 <a href="https://t.me/+aBR79kExNQM1ZjZi" target="_blank" class="tg-banner" id="tgBanner">
   <div class="tg-banner-icon">
     <svg viewBox="0 0 24 24" fill="white">
-      <path d="M13 3L4 14h7v7l9-11h-7V3z"/>
+      <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
     </svg>
   </div>
 
@@ -3152,11 +3152,11 @@
     </div>
 
     <span class="tg-banner-title">
-      Ми <strong>напишемо</strong>
+      Хлопці <strong>напишуть напряму</strong>
     </span>
 
     <span class="tg-banner-desc">
-      Коли буде тривога або рух дронів
+      Який рух шахедів і куди летять
     </span>
   </div>
 
@@ -5938,10 +5938,16 @@
         <i class="material-icons">favorite</i>
         <span>Підтримати</span>
       </button>
-      <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" target="_blank" rel="noopener" class="bottom-link app" title="Додаток">
-        <i class="material-icons">android</i>
-        <span>Додаток</span>
-      </a>
+      <div class="app-buttons">
+        <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" target="_blank" rel="noopener" class="app-link android" title="Google Play">
+          <i class="material-icons">android</i>
+          <span>Android</span>
+        </a>
+        <a href="https://apps.apple.com/ua/app/%D0%BA%D0%B0%D1%80%D1%82%D0%B0-%D1%82%D1%80%D0%B8%D0%B2%D0%BE%D0%B3-dron-alerts/id6758108122?l=uk" target="_blank" rel="noopener" class="app-link ios" title="App Store">
+          <i class="material-icons">apple</i>
+          <span>iOS</span>
+        </a>
+      </div>
     </div>
     <div class="seo-panel" id="seoPanel"></div>
   </footer>
@@ -6010,13 +6016,48 @@
       width: 18px;
       height: 18px;
     }
-    .bottom-link.app {
-      background: rgba(34, 197, 94, 0.15);
+    /* App dropdown */
+    .app-dropdown {
+      position: relative;
+      padding: 0;
+      background: transparent;
+    }
+    /* App store buttons - unified pill */
+    .app-buttons {
+      display: flex;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 100px;
+      padding: 4px;
+      gap: 4px;
+    }
+    .app-link {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 100px;
+      font-size: 13px;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+    .app-link.android {
       color: #4ade80;
     }
-    .bottom-link.app:hover {
-      background: rgba(34, 197, 94, 0.25);
-      color: #22c55e;
+    .app-link.android:hover {
+      background: rgba(34, 197, 94, 0.2);
+    }
+    .app-link.ios {
+      color: #93c5fd;
+    }
+    .app-link.ios:hover {
+      background: rgba(147, 197, 253, 0.2);
+    }
+    .app-link i {
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     .bottom-link.support {
       color: #fb7185;
