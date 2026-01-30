@@ -6834,20 +6834,24 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         # DEBUG: Log incoming message for mapstransler parsing
         print(f"[PARSER_DEBUG] Processing message: {repr(head[:80])}...")
 
-        # PRIORITY: Handle mapstransler_bot format: "[count]х БПЛА Місто (Область обл.) Загроза застосування БПЛА"
+        # PRIORITY: Handle mapstransler_bot format: "[count]х БПЛА/КАБ/Ракета Місто (Область обл.)"
         # Examples:
         #   "2х БПЛА Барвінкове (Харківська обл.) Загроза застосування БПЛА."
         #   "БПЛА Єланець (Миколаївська обл.) Загроза застосування БПЛА."
+        #   "КАБ Вовчанськ (Харківська обл.)"
+        #   "Ракета Запоріжжя (Запорізька обл.)"
         #   "Димер (Київська обл.) Загроза застосування БПЛА."
         #   "БПЛА Федорівку/Піщане (Харківська обл.)" - multiple cities with /
         #   "БПЛА Вільхівку⚠ (Харківська обл.)" - emoji after city name
         # Note: [^(]* allows any chars (including emoji) between city name and (
-        mapstransler_pattern = r'^[^\w]*(\d+)[xх×]?\s*БПЛА\s+([А-ЯІЇЄЁа-яіїєё\'\'\-\s/]+)[^(]*\(([^)]+обл[^)]*)\)'
+        # THREAT_TYPES: БПЛА, КАБ, Ракета, Шахед, Дрон
+        threat_type_pattern = r'(?:БПЛА|КАБ|Ракета|Ракети|Шахед|Дрон|Дрони)'
+        mapstransler_pattern = rf'^[^\w]*(\d+)[xх×]?\s*{threat_type_pattern}\s+([А-ЯІЇЄЁа-яіїєё\'\'\-\s/]+)[^(]*\(([^)]+обл[^)]*)\)'
         mapstransler_match = re.search(mapstransler_pattern, head, re.IGNORECASE)
 
         # Also try without count prefix
         if not mapstransler_match:
-            mapstransler_pattern2 = r'^[^\w]*БПЛА\s+([А-ЯІЇЄЁа-яіїєё\'\'\-\s/]+)[^(]*\(([^)]+обл[^)]*)\)'
+            mapstransler_pattern2 = rf'^[^\w]*{threat_type_pattern}\s+([А-ЯІЇЄЁа-яіїєё\'\'\-\s/]+)[^(]*\(([^)]+обл[^)]*)\)'
             mapstransler_match2 = re.search(mapstransler_pattern2, head, re.IGNORECASE)
             if mapstransler_match2:
                 city_raw = mapstransler_match2.group(1).strip()
