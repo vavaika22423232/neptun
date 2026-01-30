@@ -18579,8 +18579,8 @@ def send_fcm_notification(message_data: dict):
 
 
 # ============== ANONYMOUS CHAT API ==============
-MAX_CHAT_MESSAGES = 2000  # Keep max 2000 messages (increased from 500)
-CHAT_RETENTION_DAYS = 7   # Keep messages for 7 days
+MAX_SYSTEM_MESSAGES = 200  # Limit for system/service messages
+CHAT_RETENTION_DAYS = 7    # Keep user messages for 7 days
 _chat_initialized = False
 
 # SSE subscribers for real-time chat
@@ -18714,17 +18714,29 @@ def load_chat_messages():
     return []
 
 def save_chat_messages(messages):
-    """Save chat messages to file with retention policy."""
+    """Save chat messages to file with retention policy.
+    
+    User messages: kept for CHAT_RETENTION_DAYS (7 days)
+    System messages: limited to MAX_SYSTEM_MESSAGES (200)
+    """
     try:
-        # Time-based retention: keep only messages from last CHAT_RETENTION_DAYS
-        cutoff_ts = time.time() - (CHAT_RETENTION_DAYS * 24 * 60 * 60)
-        messages = [m for m in messages if m.get('timestamp', 0) > cutoff_ts]
+        # Separate user messages and system messages
+        user_messages = [m for m in messages if not m.get('isSystem', False)]
+        system_messages = [m for m in messages if m.get('isSystem', False)]
         
-        # Also apply max count limit (as safety net)
-        messages = messages[-MAX_CHAT_MESSAGES:]
+        # User messages: time-based retention (7 days)
+        cutoff_ts = time.time() - (CHAT_RETENTION_DAYS * 24 * 60 * 60)
+        user_messages = [m for m in user_messages if m.get('timestamp', 0) > cutoff_ts]
+        
+        # System messages: count-based limit (200)
+        system_messages = system_messages[-MAX_SYSTEM_MESSAGES:]
+        
+        # Merge and sort by timestamp
+        all_messages = user_messages + system_messages
+        all_messages.sort(key=lambda m: m.get('timestamp', 0))
         
         with open(CHAT_MESSAGES_FILE, 'w', encoding='utf-8') as f:
-            json.dump(messages, f, ensure_ascii=False, indent=2)
+            json.dump(all_messages, f, ensure_ascii=False, indent=2)
     except Exception as e:
         log.error(f"Error saving chat messages: {e}")
 
