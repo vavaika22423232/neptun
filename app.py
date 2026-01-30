@@ -18579,7 +18579,8 @@ def send_fcm_notification(message_data: dict):
 
 
 # ============== ANONYMOUS CHAT API ==============
-MAX_CHAT_MESSAGES = 500  # Keep last 500 messages
+MAX_CHAT_MESSAGES = 2000  # Keep max 2000 messages (increased from 500)
+CHAT_RETENTION_DAYS = 7   # Keep messages for 7 days
 _chat_initialized = False
 
 # SSE subscribers for real-time chat
@@ -18713,10 +18714,15 @@ def load_chat_messages():
     return []
 
 def save_chat_messages(messages):
-    """Save chat messages to file."""
+    """Save chat messages to file with retention policy."""
     try:
-        # Keep only last MAX_CHAT_MESSAGES
+        # Time-based retention: keep only messages from last CHAT_RETENTION_DAYS
+        cutoff_ts = time.time() - (CHAT_RETENTION_DAYS * 24 * 60 * 60)
+        messages = [m for m in messages if m.get('timestamp', 0) > cutoff_ts]
+        
+        # Also apply max count limit (as safety net)
         messages = messages[-MAX_CHAT_MESSAGES:]
+        
         with open(CHAT_MESSAGES_FILE, 'w', encoding='utf-8') as f:
             json.dump(messages, f, ensure_ascii=False, indent=2)
     except Exception as e:
