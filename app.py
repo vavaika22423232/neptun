@@ -17417,7 +17417,7 @@ def _memory_cleanup_worker():
             # Clean ACTIVE_VISITORS (remove stale visitors)
             with ACTIVE_LOCK:
                 old_size = len(ACTIVE_VISITORS)
-                stale_keys = [k for k, v in ACTIVE_VISITORS.items() if now - v.get('last_seen', 0) > ACTIVE_TTL * 2]
+                stale_keys = [k for k, v in ACTIVE_VISITORS.items() if now - v.get('ts', 0) > ACTIVE_TTL * 2]
                 for k in stale_keys:
                     del ACTIVE_VISITORS[k]
                 if stale_keys:
