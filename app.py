@@ -431,11 +431,29 @@ def ensure_city_coords(city_name, region=None, context=None):
         return None
     # If no region but context provided, extract region from context
     if not region and context:
-        import re
-        paren_match = re.search(r'\(([А-Яа-яЇїІіЄєҐґ]+(?:ська|ський|ка)?)\s*обл', context, re.IGNORECASE)
-        if paren_match:
-            region = paren_match.group(1)
-    return opencage_geocode(city_name, region)
+        region = _extract_oblast_from_text(context) or region
+    coords = opencage_geocode(city_name, region)
+    if coords:
+        return coords
+    # AI fallback for disambiguation (if enabled)
+    if context and GROQ_ENABLED:
+        try:
+            ai_hint = _ai_geocode_hint(city_name, context, region)
+            if ai_hint:
+                ai_city = ai_hint.get('city') or city_name
+                ai_region = ai_hint.get('region') or region
+                ai_query = ai_hint.get('query')
+                if ai_query:
+                    coords = opencage_geocode(ai_query, None)
+                    if coords:
+                        return coords
+                if ai_city or ai_region:
+                    coords = opencage_geocode(ai_city or city_name, ai_region)
+                    if coords:
+                        return coords
+        except Exception:
+            pass
+    return None
 
 def ensure_city_coords_with_message_context(city_name, message_text=None):
     """Legacy function - now uses OpenCage with region extraction"""
@@ -443,18 +461,31 @@ def ensure_city_coords_with_message_context(city_name, message_text=None):
         return None
     region = None
     if message_text:
-        import re
         # PRIORITY: Extract region from parentheses format "Місто (Область обл.)"
-        paren_match = re.search(r'\(([А-Яа-яЇїІіЄєҐґ]+(?:ська|ська|ький|ка)?)\s*обл', message_text, re.IGNORECASE)
-        if paren_match:
-            region = paren_match.group(1)
-        else:
-            # Fallback: look for oblast anywhere in text
-            oblast_match = re.search(r'([А-Яа-яЇїІіЄєҐґ]+)\s*(?:обл|область)', message_text, re.IGNORECASE)
-            if oblast_match:
-                region = oblast_match.group(1)
+        region = _extract_oblast_from_text(message_text)
     print(f"[GEOCODE_CONTEXT] city='{city_name}', extracted_region='{region}'", flush=True)
-    return opencage_geocode(city_name, region)
+    coords = opencage_geocode(city_name, region)
+    if coords:
+        return coords
+    # AI fallback for geocoding disambiguation
+    if message_text and GROQ_ENABLED:
+        try:
+            ai_hint = _ai_geocode_hint(city_name, message_text, region)
+            if ai_hint:
+                ai_city = ai_hint.get('city') or city_name
+                ai_region = ai_hint.get('region') or region
+                ai_query = ai_hint.get('query')
+                if ai_query:
+                    coords = opencage_geocode(ai_query, None)
+                    if coords:
+                        return coords
+                if ai_city or ai_region:
+                    coords = opencage_geocode(ai_city or city_name, ai_region)
+                    if coords:
+                        return coords
+        except Exception:
+            pass
+    return None
 
 
 # Groq AI integration for intelligent geocoding
@@ -504,6 +535,143 @@ if GROQ_ENABLED:
 else:
     groq_client = None
     print("INFO: Groq AI disabled (no API key)")
+
+# --- Groq AI helper functions (geocoding, classification, trajectory) ---
+def _groq_cache_get(key: str):
+    entry = _groq_cache.get(key)
+    if not entry:
+        return None
+    value, ts = entry
+    if time.time() - ts > _groq_cache_ttl:
+        _groq_cache.pop(key, None)
+        return None
+    return value
+
+def _groq_cache_set(key: str, value):
+    if len(_groq_cache) >= _groq_cache_max_size:
+        # Drop oldest 10% to avoid unbounded growth
+        cutoff = max(1, int(_groq_cache_max_size * 0.1))
+        for old_key in sorted(_groq_cache.keys(), key=lambda k: _groq_cache[k][1])[:cutoff]:
+            _groq_cache.pop(old_key, None)
+    _groq_cache[key] = (value, time.time())
+
+def _groq_can_request() -> bool:
+    global _groq_last_request, _groq_requests_this_minute, _groq_minute_start
+    if not _groq_is_available() or not groq_client:
+        return False
+    now = time.time()
+    if now - _groq_minute_start > 60:
+        _groq_minute_start = now
+        _groq_requests_this_minute = 0
+    if _groq_requests_this_minute >= _groq_max_per_minute:
+        return False
+    # Minimum interval
+    wait = _groq_min_interval - (now - _groq_last_request)
+    if wait > 0:
+        time.sleep(wait)
+    _groq_last_request = time.time()
+    _groq_requests_this_minute += 1
+    return True
+
+def _extract_json_from_text(text: str) -> dict | None:
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    try:
+        match = re.search(r'\{.*\}', text, re.DOTALL)
+        if match:
+            return json.loads(match.group(0))
+    except Exception:
+        return None
+    return None
+
+def _groq_request_json(cache_key: str, system_prompt: str, user_prompt: str, max_tokens: int = 256) -> dict | None:
+    if not GROQ_ENABLED or not groq_client or not _groq_can_request():
+        return None
+    cached = _groq_cache_get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        resp = groq_client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.2,
+            max_tokens=max_tokens,
+        )
+        content = resp.choices[0].message.content if resp and resp.choices else None
+        data = _extract_json_from_text(content or '')
+        if data is not None:
+            _groq_cache_set(cache_key, data)
+        return data
+    except Exception as e:
+        # Backoff on rate limits
+        if '429' in str(e):
+            global _groq_daily_cooldown_until, _groq_429_backoff
+            _groq_429_backoff = min(_groq_429_backoff + 1, 6)
+            _groq_daily_cooldown_until = time.time() + (60 * (2 ** _groq_429_backoff))
+            print(f"WARNING: Groq rate limited, cooldown set for {_groq_429_backoff} step(s)")
+        return None
+
+def _ai_geocode_hint(city_name: str, message_text: str, region_hint: str | None = None) -> dict | None:
+    if not GROQ_ENABLED or not message_text:
+        return None
+    cache_key = f"geocode_hint:{hashlib.sha256((city_name + '|' + message_text[:500] + '|' + (region_hint or '')).encode('utf-8')).hexdigest()}"
+    system_prompt = (
+        "You extract Ukrainian geographic locations for geocoding. "
+        "Return ONLY valid JSON with keys: city, region, raion, query, confidence. "
+        "Use Ukrainian names, region should be full like 'Харківська область' if known. "
+        "If unknown, use null."
+    )
+    user_prompt = (
+        f"Message: {message_text}\n"
+        f"City hint: {city_name}\n"
+        f"Region hint: {region_hint or ''}\n"
+        "Extract best geocoding hint for Ukraine."
+    )
+    return _groq_request_json(cache_key, system_prompt, user_prompt, max_tokens=200)
+
+def classify_threat_with_ai(message_text: str) -> dict | None:
+    if not GROQ_ENABLED or not message_text:
+        return None
+    cache_key = f"threat_class:{hashlib.sha256(message_text[:500].encode('utf-8')).hexdigest()}"
+    system_prompt = (
+        "You classify Ukrainian air threat messages. Return ONLY JSON with keys: "
+        "threat_type, emoji, priority, confidence. "
+        "threat_type must be one of: shahed, ballistic, cruise, kab, drone, explosion, artillery, pusk, unknown. "
+        "priority is 1-5."
+    )
+    user_prompt = f"Message: {message_text}"
+    return _groq_request_json(cache_key, system_prompt, user_prompt, max_tokens=120)
+
+def extract_trajectory_with_ai(text: str) -> dict | None:
+    if not GROQ_ENABLED or not text:
+        return None
+    cache_key = f"traj_extract:{hashlib.sha256(text[:500].encode('utf-8')).hexdigest()}"
+    system_prompt = (
+        "Extract drone trajectory info from Ukrainian text. Return ONLY JSON with keys: "
+        "source_type (city|region|direction|unknown), source_name, source_position, "
+        "target_type (city|region|direction|unknown), target_name, confidence (0-1)."
+    )
+    user_prompt = f"Text: {text}"
+    return _groq_request_json(cache_key, system_prompt, user_prompt, max_tokens=200)
+
+def predict_route_with_ai(source_text: str) -> dict | None:
+    if not GROQ_ENABLED or not source_text:
+        return None
+    cache_key = f"route_pred:{hashlib.sha256(source_text[:200].encode('utf-8')).hexdigest()}"
+    system_prompt = (
+        "Predict likely next Ukrainian regions (oblasts) for an air threat. "
+        "Return ONLY JSON with keys: predicted_targets (array of oblast or city names), confidence (0-1). "
+        "Prefer neighboring oblasts only."
+    )
+    user_prompt = f"Source: {source_text}"
+    return _groq_request_json(cache_key, system_prompt, user_prompt, max_tokens=120)
 
 # Context-aware geocoding integration
 try:
@@ -609,6 +777,54 @@ REGION_TO_OBLAST_ID = {
     'АР Крим': 'UA-43',
     'Севастополь': 'UA-40',
 }
+
+# --- Hot-path regex (compiled once) ---
+RE_PARENS_STRIP = re.compile(r'\s*\([^)]*\)\s*')
+RE_OBLAST_IN_PARENS = re.compile(r'\(([^)]*обл[^)]*)\)', re.IGNORECASE)
+RE_CITY_BEFORE_PARENS = re.compile(r'^([^(]+)\s*\(')
+RE_OBLAST_SUFFIX = re.compile(r'обл\.?$', re.IGNORECASE)
+RE_OBLAST_PARENS_NAME = re.compile(r'\(([А-Яа-яЇїІіЄєҐґ]+(?:ська|ський|ка)?)\s*обл', re.IGNORECASE)
+RE_OBLAST_ANYWHERE = re.compile(r'([А-Яа-яЇїІіЄєҐґ]+)\s*(?:обл|область)', re.IGNORECASE)
+RE_PLACE_PREFIX = re.compile(r'^(м\.|смт|с\.|місто|селище)\s+', re.IGNORECASE)
+RE_MULTI_SPACE = re.compile(r'\s+')
+RE_OBLAST_SUFFIX_REMOVE = re.compile(r'( область| обл\.?| обл)\b', re.IGNORECASE)
+RE_RAION_SUFFIX_REMOVE = re.compile(r'( район| р-н)\b', re.IGNORECASE)
+RE_REGION_IN_TEXT = re.compile(r'([\w\-]+(?:ська|ький|ка)\s*(?:область|район))', re.IGNORECASE)
+
+# --- Region ID cache (reduces repeated parsing/lookup work) ---
+_REGION_IDS_CACHE: dict[str, dict] = {}
+_REGION_IDS_CACHE_TTL = int(os.getenv('REGION_IDS_CACHE_TTL', '3600'))  # seconds
+_REGION_IDS_CACHE_MAX = int(os.getenv('REGION_IDS_CACHE_MAX', '3000'))
+
+_OBLAST_ID_CACHE: dict[str, str | None] = {}
+
+def _extract_oblast_from_text(text: str) -> str | None:
+    if not text:
+        return None
+    paren_match = RE_OBLAST_PARENS_NAME.search(text)
+    if paren_match:
+        return paren_match.group(1).strip()
+    match = RE_OBLAST_ANYWHERE.search(text)
+    if match:
+        return match.group(1).strip()
+    return None
+
+def _region_ids_cache_get(key: str) -> tuple | None:
+    entry = _REGION_IDS_CACHE.get(key)
+    if not entry:
+        return None
+    if time.time() - entry['ts'] > _REGION_IDS_CACHE_TTL:
+        _REGION_IDS_CACHE.pop(key, None)
+        return None
+    return entry['value']
+
+def _region_ids_cache_set(key: str, value: tuple) -> None:
+    if len(_REGION_IDS_CACHE) >= _REGION_IDS_CACHE_MAX:
+        # Drop oldest 10% to avoid unbounded growth
+        cutoff = int(_REGION_IDS_CACHE_MAX * 0.1) or 1
+        for old_key in list(_REGION_IDS_CACHE.keys())[:cutoff]:
+            _REGION_IDS_CACHE.pop(old_key, None)
+    _REGION_IDS_CACHE[key] = {'value': value, 'ts': time.time()}
 
 # --- Raion ID Mapping for precise district filtering ---
 # Key cities/places to their raion IDs
@@ -936,7 +1152,10 @@ def get_region_ids_from_place(place: str, region: str) -> tuple:
     Extract oblast_id and raion_id from place name and region.
     Returns (oblast_id, raion_id) or (None, None) if not found.
     """
-    import re
+    cache_key = f"{(place or '').lower().strip()}|{(region or '').lower().strip()}"
+    cached = _region_ids_cache_get(cache_key)
+    if cached is not None:
+        return cached
     
     oblast_id = REGION_TO_OBLAST_ID.get(region)
     raion_id = None
@@ -949,9 +1168,9 @@ def get_region_ids_from_place(place: str, region: str) -> tuple:
     if place:
         place_lower = place.lower().strip()
         # Remove parenthetical suffixes like "(Дніпропетровська обл.)"
-        place_clean = re.sub(r'\s*\([^)]*\)\s*', '', place_lower).strip()
+        place_clean = RE_PARENS_STRIP.sub('', place_lower).strip()
         # Remove common prefixes (м., смт, с., місто, селище)
-        place_clean = re.sub(r'^(м\.|смт|с\.|місто|селище)\s+', '', place_clean).strip()
+        place_clean = RE_PLACE_PREFIX.sub('', place_clean).strip()
         
         # Check direct match first
         if place_clean in PLACE_TO_RAION_ID:
@@ -999,7 +1218,9 @@ def get_region_ids_from_place(place: str, region: str) -> tuple:
                             raion_id = kw_raion
                             break
     
-    return (oblast_id, raion_id)
+    result = (oblast_id, raion_id)
+    _region_ids_cache_set(cache_key, result)
+    return result
 
 # --- Geographic Utilities ---
 # Used for: trajectory calculation, threat direction, marker positioning
@@ -2218,10 +2439,10 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
     with _telegram_alert_lock:
         now = time.time()
         # Clean old entries
-        _telegram_alert_sent.clear() if len(_telegram_alert_sent) > 1000 else None
-        for mid in list(_telegram_alert_sent.keys()):
-            if now - _telegram_alert_sent[mid] > 300:
-                del _telegram_alert_sent[mid]
+        if _telegram_alert_sent:
+            _telegram_alert_sent.update({k: v for k, v in _telegram_alert_sent.items() if now - v <= 300})
+            if len(_telegram_alert_sent) > 1000:
+                _telegram_alert_sent.clear()
 
         if message_id in _telegram_alert_sent:
             print(f"[TELEGRAM_PUSH] ⏭️ Skipping duplicate msg_id={message_id}", flush=True)
@@ -2259,12 +2480,6 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
                 emoji = ai_result['emoji']
             is_critical = ai_result.get('priority', 3) >= 3
 
-            # Use AI short description if available
-            if ai_result.get('description_short'):
-                ai_result['description_short']
-            else:
-                pass
-
             print(f"AI threat classification: {threat_type} {emoji} (priority {ai_result.get('priority')})")
         else:
             # Fallback to regex-based classification
@@ -2293,8 +2508,7 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
         city_name = ''  # Specific city for TTS
         if '(' in location and 'обл' in location:
             # Extract city (before parentheses) and oblast (in parentheses)
-            import re
-            city_match = re.match(r'^([^(]+)\s*\(', location)
+            city_match = RE_CITY_BEFORE_PARENS.match(location)
             if city_match:
                 city_name = city_match.group(1).strip()
                 # Remove threat type prefixes from city name (БПЛА, ракети, каби, etc.)
@@ -2302,13 +2516,17 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
                 city_words = city_name.split()
                 filtered_words = [w for w in city_words if not any(p in w.lower() for p in threat_prefixes)]
                 city_name = ' '.join(filtered_words).strip()
-            oblast_match = re.search(r'\(([^)]*обл[^)]*)\)', location)
+            oblast_match = RE_OBLAST_IN_PARENS.search(location)
             if oblast_match:
                 region_name = oblast_match.group(1).strip()
                 print(f"[TELEGRAM_PUSH] Extracted oblast from parens: '{region_name}'", flush=True)
                 # Normalize: "Харківська обл." -> "Харківська область"
-                region_name = re.sub(r'обл\.?$', 'область', region_name).strip()
+                region_name = RE_OBLAST_SUFFIX.sub('область', region_name).strip()
                 print(f"[TELEGRAM_PUSH] Normalized region name: '{region_name}'", flush=True)
+        else:
+            region_from_text = _extract_oblast_from_text(location)
+            if region_from_text:
+                region_name = RE_OBLAST_SUFFIX.sub('область', region_from_text).strip()
 
         # Try to find matching region in REGION_TOPIC_MAP if not exact match
         print(f"[TELEGRAM_PUSH] Looking for '{region_name}' in REGION_TOPIC_MAP (has {len(REGION_TOPIC_MAP)} entries)", flush=True)
@@ -3009,29 +3227,106 @@ def check_alarms_and_update_threats():
     """Update threat tracker based on alarm state"""
     pass
 
-# ---------------- Channel Fusion stub ----------------
+# ---------------- Channel Fusion (lightweight AI overlay) ----------------
 class ChannelFusionStub:
-    """Stub for channel fusion system"""
+    """Lightweight fusion container (AI overlays are computed from recent markers)."""
     def __init__(self):
         self.fused_events = {}
         self.message_to_event = {}
         self.lock = threading.Lock()
         self.CHANNEL_PRIORITY = {}
-    
+
     def get_active_events(self):
         return []
-    
+
     def cleanup_old_events(self, max_age_hours=4):
         return 0
 
 CHANNEL_FUSION = ChannelFusionStub()
 
+_FUSION_TRAJ_CACHE = {'time': 0, 'data': []}
+_FUSION_CACHE_TTL = int(os.getenv('FUSION_CACHE_TTL', '10'))
+_FUSION_MAX_TRAJ = int(os.getenv('FUSION_MAX_TRAJ', '150'))
+_FUSION_WINDOW_MIN = int(os.getenv('FUSION_WINDOW_MIN', '90'))
+
+def _project_point(lat: float, lng: float, bearing_deg: float, distance_km: float) -> tuple | None:
+    try:
+        from math import radians, degrees, sin, cos, asin, atan2
+        r = 6371.0
+        brng = radians(bearing_deg)
+        d = distance_km / r
+        lat1 = radians(lat)
+        lon1 = radians(lng)
+        lat2 = asin(sin(lat1) * cos(d) + cos(lat1) * sin(d) * cos(brng))
+        lon2 = lon1 + atan2(sin(brng) * sin(d) * cos(lat1), cos(d) - sin(lat1) * sin(lat2))
+        return (degrees(lat2), degrees(lon2))
+    except Exception:
+        return None
+
 def get_fused_trajectories():
-    """Get fused trajectories - stub"""
-    return []
+    """Return AI-enhanced trajectories built from recent markers."""
+    now_ts = time.time()
+    cached = _FUSION_TRAJ_CACHE.get('data')
+    if cached and (now_ts - _FUSION_TRAJ_CACHE.get('time', 0)) <= _FUSION_CACHE_TTL:
+        return cached
+
+    out = []
+    seen = set()
+    cutoff = datetime.now(pytz.timezone('Europe/Kyiv')).replace(tzinfo=None) - timedelta(minutes=_FUSION_WINDOW_MIN)
+
+    for m in load_messages()[-800:]:
+        if not isinstance(m, dict):
+            continue
+        try:
+            dt = datetime.strptime(m.get('date', ''), '%Y-%m-%d %H:%M:%S')
+        except Exception:
+            continue
+        if dt < cutoff:
+            continue
+
+        traj = m.get('trajectory') or m.get('enhanced_trajectory')
+        start = traj.get('start') if isinstance(traj, dict) else None
+        end = traj.get('end') if isinstance(traj, dict) else None
+
+        if not (start and end):
+            # AI fallback: project from course bearing if present
+            bearing = m.get('course_bearing')
+            if bearing is not None and m.get('lat') and m.get('lng'):
+                projected = _project_point(float(m['lat']), float(m['lng']), float(bearing), 30)
+                if projected:
+                    start = [float(m['lat']), float(m['lng'])]
+                    end = [projected[0], projected[1]]
+                    traj = {'predicted': True, 'kind': 'ai_bearing_projection'}
+        if not (start and end):
+            continue
+
+        event_id = str(m.get('id') or f"{start[0]}:{start[1]}->{end[0]}:{end[1]}")
+        if event_id in seen:
+            continue
+        seen.add(event_id)
+
+        out.append({
+            'event_id': event_id,
+            'threat_type': m.get('threat_type') or (traj.get('threat_type') if isinstance(traj, dict) else None),
+            'actual_path': [start, end],
+            'predicted_path': [start, end] if (isinstance(traj, dict) and traj.get('predicted')) else None,
+            'confidence': (traj.get('confidence') if isinstance(traj, dict) else None) or m.get('prediction_confidence'),
+            'distance_km': (traj.get('distance_km') if isinstance(traj, dict) else None) or m.get('distance_km'),
+            'speed_kmh': (traj.get('speed_kmh') if isinstance(traj, dict) else None) or m.get('speed_kmh'),
+            'eta': traj.get('eta') if isinstance(traj, dict) else None,
+            'source_name': traj.get('source_name') if isinstance(traj, dict) else m.get('place'),
+            'target_name': traj.get('target_name') if isinstance(traj, dict) else None,
+        })
+
+        if len(out) >= _FUSION_MAX_TRAJ:
+            break
+
+    _FUSION_TRAJ_CACHE['time'] = now_ts
+    _FUSION_TRAJ_CACHE['data'] = out
+    return out
 
 def get_fused_markers():
-    """Get fused markers - stub"""
+    """Return markers with AI-related fields for optional frontend use."""
     return []
 
 # ---------------- Ballistic threat state ----------------
@@ -3166,10 +3461,11 @@ def add_telegram_message_to_chat(text, is_realtime=False):
     region = None
 
     # Extract region from text
-    import re
-    region_match = re.search(r'([\w\-]+(?:ська|ький|ка)\s*(?:область|район))', text, re.IGNORECASE)
+    region_match = RE_REGION_IN_TEXT.search(text)
     if region_match:
         region = region_match.group(1)
+    else:
+        region = _extract_oblast_from_text(text) or region
 
     # КАБи (Керовані авіабомби)
     if 'каб' in text_lower and 'відбій' not in text_lower:
@@ -4186,22 +4482,25 @@ def _normalize_admin_name(value: str) -> str:
     """Normalize admin/place names for matching."""
     if not value:
         return ''
-    import re
     name = value.lower().strip()
     name = name.replace('ʼ', "'").replace('’', "'")
-    name = re.sub(r'\s+', ' ', name)
-    name = name.replace(' область', '').replace(' обл.', '').replace(' обл', '')
-    name = name.replace(' район', '').replace(' р-н', '')
+    name = RE_MULTI_SPACE.sub(' ', name)
+    name = RE_OBLAST_SUFFIX_REMOVE.sub('', name)
+    name = RE_RAION_SUFFIX_REMOVE.sub('', name)
     return name.strip()
 
 def _resolve_oblast_id_from_name(name: str) -> str | None:
     """Resolve oblast ID from a possibly unnormalized oblast name."""
     if not name:
         return None
+    if name in _OBLAST_ID_CACHE:
+        return _OBLAST_ID_CACHE[name]
     name_norm = _normalize_admin_name(name)
     for key, val in REGION_TO_OBLAST_ID.items():
         if _normalize_admin_name(key) == name_norm:
+            _OBLAST_ID_CACHE[name] = val
             return val
+    _OBLAST_ID_CACHE[name] = None
     return None
 
 def opencage_lookup_components(place: str, region: str | None = None) -> dict | None:
@@ -8553,6 +8852,17 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         cleaned = re.sub(r'(район|району|районі|районів|района|р-н|область|області|обл\.|громада|громаді|громади|community|district|sector|сектор|місто|місті)$', '', cleaned, flags=re.IGNORECASE).strip()
         cleaned = re.sub(r'\b(район|району|районі|района|р-н|область|області|обл\.|громада|громади|community|district|sector|сектор|місто|місті)\b', '', cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r'\s+', ' ', cleaned).strip(" .,'-\"")
+        low = cleaned.lower()
+        tokens = {t for t in re.split(r'\s+', low) if t}
+        garbage_tokens = {
+            'передмісті', 'передмістя', 'передмістях',
+            'містом', 'місті', 'місто', 'містами',
+            'чисто', 'чистий', 'чиста', 'чисті'
+        }
+        if not tokens or tokens.issubset(garbage_tokens):
+            return ''
+        if 'передміст' in low and 'чист' in low:
+            return ''
         return cleaned
 
     def extract_course_targets(raw: str):
