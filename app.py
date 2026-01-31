@@ -577,6 +577,430 @@ REGION_TOPIC_MAP = {
     'Луганська область': 'region_luhanska',
 }
 
+# --- Oblast ID Mapping (UA ISO codes for ID-based filtering) ---
+# Maps Ukrainian region names to ISO 3166-2:UA codes
+REGION_TO_OBLAST_ID = {
+    'м. Київ': 'UA-30',
+    'Київ': 'UA-30',
+    'Київська область': 'UA-32',
+    'Дніпропетровська область': 'UA-12',
+    'Харківська область': 'UA-63',
+    'Одеська область': 'UA-51',
+    'Львівська область': 'UA-46',
+    'Донецька область': 'UA-14',
+    'Запорізька область': 'UA-23',
+    'Вінницька область': 'UA-05',
+    'Житомирська область': 'UA-18',
+    'Черкаська область': 'UA-71',
+    'Чернігівська область': 'UA-74',
+    'Полтавська область': 'UA-53',
+    'Сумська область': 'UA-59',
+    'Миколаївська область': 'UA-48',
+    'Херсонська область': 'UA-65',
+    'Кіровоградська область': 'UA-35',
+    'Хмельницька область': 'UA-68',
+    'Рівненська область': 'UA-56',
+    'Волинська область': 'UA-07',
+    'Тернопільська область': 'UA-61',
+    'Івано-Франківська область': 'UA-26',
+    'Закарпатська область': 'UA-21',
+    'Чернівецька область': 'UA-77',
+    'Луганська область': 'UA-44',
+    'АР Крим': 'UA-43',
+    'Севастополь': 'UA-40',
+}
+
+# --- Raion ID Mapping for precise district filtering ---
+# Key cities/places to their raion IDs
+# Format: 'keyword': ('oblast_id', 'raion_id')
+PLACE_TO_RAION_ID = {
+    # Дніпропетровська область (UA-12)
+    'дніпро': ('UA-12', 'UA-12-01'),
+    'дніпропетровськ': ('UA-12', 'UA-12-01'),
+    'днепр': ('UA-12', 'UA-12-01'),
+    'днепропетровск': ('UA-12', 'UA-12-01'),
+    'підгородне': ('UA-12', 'UA-12-01'),
+    'кривий ріг': ('UA-12', 'UA-12-02'),
+    'криворіж': ('UA-12', 'UA-12-02'),
+    'інгулець': ('UA-12', 'UA-12-02'),
+    'кам\'янське': ('UA-12', 'UA-12-03'),
+    'камянське': ('UA-12', 'UA-12-03'),
+    'нікополь': ('UA-12', 'UA-12-04'),
+    'марганець': ('UA-12', 'UA-12-04'),
+    'покров': ('UA-12', 'UA-12-04'),
+    'павлоград': ('UA-12', 'UA-12-05'),
+    'тернівка': ('UA-12', 'UA-12-05'),
+    'синельникове': ('UA-12', 'UA-12-06'),
+    'васильківка': ('UA-12', 'UA-12-06'),
+    'новомосковськ': ('UA-12', 'UA-12-07'),
+    'перещепине': ('UA-12', 'UA-12-07'),
+    
+    # Харківська область (UA-63)
+    'харків': ('UA-63', 'UA-63-01'),
+    'харьков': ('UA-63', 'UA-63-01'),
+    'дергачі': ('UA-63', 'UA-63-01'),
+    'мерефа': ('UA-63', 'UA-63-01'),
+    'куп\'янськ': ('UA-63', 'UA-63-02'),
+    'купянськ': ('UA-63', 'UA-63-02'),
+    'великий бурлук': ('UA-63', 'UA-63-02'),
+    'ізюм': ('UA-63', 'UA-63-03'),
+    'балаклія': ('UA-63', 'UA-63-03'),
+    'барвінкове': ('UA-63', 'UA-63-03'),
+    'чугуїв': ('UA-63', 'UA-63-04'),
+    'вовчанськ': ('UA-63', 'UA-63-04'),
+    'печеніги': ('UA-63', 'UA-63-04'),
+    'богодухів': ('UA-63', 'UA-63-05'),
+    'золочів': ('UA-63', 'UA-63-05'),
+    'красноград': ('UA-63', 'UA-63-06'),
+    'кегичівка': ('UA-63', 'UA-63-06'),
+    'лозова': ('UA-63', 'UA-63-07'),
+    'первомайський': ('UA-63', 'UA-63-07'),
+    
+    # Донецька область (UA-14)
+    'краматорськ': ('UA-14', 'UA-14-01'),
+    'слов\'янськ': ('UA-14', 'UA-14-01'),
+    'словянськ': ('UA-14', 'UA-14-01'),
+    'лиман': ('UA-14', 'UA-14-01'),
+    'бахмут': ('UA-14', 'UA-14-02'),
+    'соледар': ('UA-14', 'UA-14-02'),
+    'костянтинівка': ('UA-14', 'UA-14-02'),
+    'покровськ': ('UA-14', 'UA-14-03'),
+    'мирноград': ('UA-14', 'UA-14-03'),
+    'добропілля': ('UA-14', 'UA-14-03'),
+    'волноваха': ('UA-14', 'UA-14-04'),
+    'маріуполь': ('UA-14', 'UA-14-06'),
+    'старобешеве': ('UA-14', 'UA-14-05'),
+    'комсомольське': ('UA-14', 'UA-14-05'),
+    'тельманове': ('UA-14', 'UA-14-05'),
+    'донецьк': ('UA-14', 'UA-14-07'),
+    'макіївка': ('UA-14', 'UA-14-07'),
+    'ясинувата': ('UA-14', 'UA-14-07'),
+    'авдіївка': ('UA-14', 'UA-14-07'),
+    'горлівка': ('UA-14', 'UA-14-08'),
+    'торецьк': ('UA-14', 'UA-14-08'),
+    'дзержинськ': ('UA-14', 'UA-14-08'),
+    
+    # Запорізька область (UA-23)
+    'запоріжжя': ('UA-23', 'UA-23-01'),
+    'мелітополь': ('UA-23', 'UA-23-02'),
+    'веселе': ('UA-23', 'UA-23-02'),
+    'бердянськ': ('UA-23', 'UA-23-03'),
+    'приморськ': ('UA-23', 'UA-23-03'),
+    'пологи': ('UA-23', 'UA-23-04'),
+    'василівка': ('UA-23', 'UA-23-05'),
+    'оріхів': ('UA-23', 'UA-23-04'),
+    'гуляйполе': ('UA-23', 'UA-23-04'),
+    'токмак': ('UA-23', 'UA-23-04'),
+    'енергодар': ('UA-23', 'UA-23-05'),
+    
+    # Херсонська область (UA-65)
+    'херсон': ('UA-65', 'UA-65-01'),
+    'берислав': ('UA-65', 'UA-65-02'),
+    'генічеськ': ('UA-65', 'UA-65-03'),
+    'каховка': ('UA-65', 'UA-65-04'),
+    'нова каховка': ('UA-65', 'UA-65-04'),
+    'скадовськ': ('UA-65', 'UA-65-05'),
+    'олешки': ('UA-65', 'UA-65-01'),
+    'голая пристань': ('UA-65', 'UA-65-01'),
+    'чаплинка': ('UA-65', 'UA-65-05'),
+    
+    # Одеська область (UA-51)
+    'одеса': ('UA-51', 'UA-51-01'),
+    'одесса': ('UA-51', 'UA-51-01'),
+    'чорноморськ': ('UA-51', 'UA-51-01'),
+    'ильичевск': ('UA-51', 'UA-51-01'),
+    'южне': ('UA-51', 'UA-51-01'),
+    'білгород-дністровський': ('UA-51', 'UA-51-02'),
+    'белгород-днестровский': ('UA-51', 'UA-51-02'),
+    'затока': ('UA-51', 'UA-51-02'),
+    'сергіївка': ('UA-51', 'UA-51-02'),
+    'болград': ('UA-51', 'UA-51-03'),
+    'арциз': ('UA-51', 'UA-51-03'),
+    'тарутине': ('UA-51', 'UA-51-03'),
+    'ізмаїл': ('UA-51', 'UA-51-04'),
+    'измаил': ('UA-51', 'UA-51-04'),
+    'кілія': ('UA-51', 'UA-51-04'),
+    'рені': ('UA-51', 'UA-51-04'),
+    'подільськ': ('UA-51', 'UA-51-05'),
+    'подольск': ('UA-51', 'UA-51-05'),
+    'балта': ('UA-51', 'UA-51-05'),
+    'березівка': ('UA-51', 'UA-51-06'),
+    'роздільна': ('UA-51', 'UA-51-07'),
+    'біляївка': ('UA-51', 'UA-51-07'),
+
+    # Київська область (UA-32)
+    'біла церква': ('UA-32', 'UA-32-01'),
+    'білацерква': ('UA-32', 'UA-32-01'),
+    'бориспіль': ('UA-32', 'UA-32-02'),
+    'переяслав': ('UA-32', 'UA-32-02'),
+    'бровари': ('UA-32', 'UA-32-03'),
+    'буча': ('UA-32', 'UA-32-04'),
+    'ірпінь': ('UA-32', 'UA-32-04'),
+    'гостомель': ('UA-32', 'UA-32-04'),
+    'вишгород': ('UA-32', 'UA-32-05'),
+    'славутич': ('UA-32', 'UA-32-05'),
+    'обухів': ('UA-32', 'UA-32-06'),
+    'українка': ('UA-32', 'UA-32-06'),
+    'фастів': ('UA-32', 'UA-32-07'),
+    'васильків': ('UA-32', 'UA-32-07'),
+
+
+    # Львівська область (UA-46)
+    'львів': ('UA-46', 'UA-46-01'),
+    'львов': ('UA-46', 'UA-46-01'),
+    'винники': ('UA-46', 'UA-46-01'),
+    'рудно': ('UA-46', 'UA-46-01'),
+    'стрий': ('UA-46', 'UA-46-02'),
+    'сколе': ('UA-46', 'UA-46-02'),
+    'жидачів': ('UA-46', 'UA-46-02'),
+    'самбір': ('UA-46', 'UA-46-03'),
+    'турка': ('UA-46', 'UA-46-03'),
+    'дрогобич': ('UA-46', 'UA-46-04'),
+    'трускавець': ('UA-46', 'UA-46-04'),
+    'борислав': ('UA-46', 'UA-46-04'),
+    'червоноград': ('UA-46', 'UA-46-05'),
+    'сокаль': ('UA-46', 'UA-46-05'),
+    'яворів': ('UA-46', 'UA-46-06'),
+    'новояворівськ': ('UA-46', 'UA-46-06'),
+    'золочів': ('UA-46', 'UA-46-07'),
+    'броди': ('UA-46', 'UA-46-07'),
+
+    # Миколаївська область (UA-48)
+    'миколаїв': ('UA-48', 'UA-48-01'),
+    'миколаев': ('UA-48', 'UA-48-01'),
+    'очаків': ('UA-48', 'UA-48-01'),
+    'очаков': ('UA-48', 'UA-48-01'),
+    'баштанка': ('UA-48', 'UA-48-02'),
+    'вознесенськ': ('UA-48', 'UA-48-03'),
+    'южноукраїнськ': ('UA-48', 'UA-48-03'),
+    'первомайськ': ('UA-48', 'UA-48-04'),
+
+    # Полтавська область (UA-53)
+    'полтава': ('UA-53', 'UA-53-01'),
+    'кременчук': ('UA-53', 'UA-53-02'),
+    'горішні плавні': ('UA-53', 'UA-53-02'),
+    'комсомольськ': ('UA-53', 'UA-53-02'),
+    'лубни': ('UA-53', 'UA-53-03'),
+    'миргород': ('UA-53', 'UA-53-04'),
+    'гадяч': ('UA-53', 'UA-53-04'),
+
+    # Сумська область (UA-59)
+    'суми': ('UA-59', 'UA-59-01'),
+    'сумы': ('UA-59', 'UA-59-01'),
+    'лебедин': ('UA-59', 'UA-59-01'),
+    'конотоп': ('UA-59', 'UA-59-02'),
+    'путивль': ('UA-59', 'UA-59-02'),
+    'шостка': ('UA-59', 'UA-59-03'),
+    'глухів': ('UA-59', 'UA-59-03'),
+    'охтирка': ('UA-59', 'UA-59-04'),
+    'краснопілля': ('UA-59', 'UA-59-04'),
+    'ромни': ('UA-59', 'UA-59-05'),
+
+    # Чернігівська область (UA-74)
+    'чернігів': ('UA-74', 'UA-74-01'),
+    'чернигов': ('UA-74', 'UA-74-01'),
+    'новгород-сіверський': ('UA-74', 'UA-74-02'),
+    'ніжин': ('UA-74', 'UA-74-03'),
+    'прилуки': ('UA-74', 'UA-74-04'),
+    'корюківка': ('UA-74', 'UA-74-05'),
+    'мена': ('UA-74', 'UA-74-05'),
+
+    # Черкаська область (UA-71)
+    'черкаси': ('UA-71', 'UA-71-01'),
+    'черкассы': ('UA-71', 'UA-71-01'),
+    'золотоноша': ('UA-71', 'UA-71-02'),
+    'умань': ('UA-71', 'UA-71-03'),
+    'звенигородка': ('UA-71', 'UA-71-04'),
+    'шпола': ('UA-71', 'UA-71-04'),
+
+    # Кіровоградська область (UA-35)
+    'кропивницький': ('UA-35', 'UA-35-01'),
+    'кіровоград': ('UA-35', 'UA-35-01'),
+    'олександрія': ('UA-35', 'UA-35-02'),
+    'світловодськ': ('UA-35', 'UA-35-02'),
+    'голованівськ': ('UA-35', 'UA-35-03'),
+    'новоукраїнка': ('UA-35', 'UA-35-04'),
+
+    # Вінницька область (UA-05)
+    'вінниця': ('UA-05', 'UA-05-01'),
+    'немирів': ('UA-05', 'UA-05-01'),
+    'гайсин': ('UA-05', 'UA-05-02'),
+    'бершадь': ('UA-05', 'UA-05-02'),
+    'жмеринка': ('UA-05', 'UA-05-03'),
+    'козятин': ('UA-05', 'UA-05-03'),
+    'могилів-подільський': ('UA-05', 'UA-05-04'),
+    'ямпіль': ('UA-05', 'UA-05-04'),
+    'тульчин': ('UA-05', 'UA-05-05'),
+    'ладижин': ('UA-05', 'UA-05-05'),
+    'хмільник': ('UA-05', 'UA-05-06'),
+
+    # Житомирська область (UA-18)
+    'житомир': ('UA-18', 'UA-18-01'),
+    'коростишів': ('UA-18', 'UA-18-01'),
+    'бердичів': ('UA-18', 'UA-18-02'),
+    'чуднів': ('UA-18', 'UA-18-02'),
+    'коростень': ('UA-18', 'UA-18-03'),
+    'овруч': ('UA-18', 'UA-18-03'),
+    'звягель': ('UA-18', 'UA-18-04'),
+    'новоград-волинський': ('UA-18', 'UA-18-04'),
+
+    # Рівненська область (UA-56)
+    'рівне': ('UA-56', 'UA-56-01'),
+    'здолбунів': ('UA-56', 'UA-56-01'),
+    'дубно': ('UA-56', 'UA-56-02'),
+    'радивилів': ('UA-56', 'UA-56-02'),
+    'вараш': ('UA-56', 'UA-56-03'),
+    'кузнецовськ': ('UA-56', 'UA-56-03'),
+    'сарни': ('UA-56', 'UA-56-04'),
+    'костопіль': ('UA-56', 'UA-56-04'),
+
+    # Волинська область (UA-07)
+    'луцьк': ('UA-07', 'UA-07-01'),
+    'ківерці': ('UA-07', 'UA-07-01'),
+    'володимир': ('UA-07', 'UA-07-02'),
+    'нововолинськ': ('UA-07', 'UA-07-02'),
+    'ковель': ('UA-07', 'UA-07-03'),
+    'любомль': ('UA-07', 'UA-07-03'),
+    'камінь-каширський': ('UA-07', 'UA-07-04'),
+    'маневичі': ('UA-07', 'UA-07-04'),
+
+    # Тернопільська область (UA-61)
+    'тернопіль': ('UA-61', 'UA-61-01'),
+    'зборів': ('UA-61', 'UA-61-01'),
+    'чортків': ('UA-61', 'UA-61-02'),
+    'заліщики': ('UA-61', 'UA-61-02'),
+    'кременець': ('UA-61', 'UA-61-03'),
+    'почаїв': ('UA-61', 'UA-61-03'),
+
+    # Хмельницька область (UA-68)
+    'хмельницький': ('UA-68', 'UA-68-01'),
+    'красилів': ('UA-68', 'UA-68-01'),
+    'шепетівка': ('UA-68', 'UA-68-02'),
+    'кам\'янець-подільський': ('UA-68', 'UA-68-03'),
+    'дунаївці': ('UA-68', 'UA-68-03'),
+
+    # Івано-Франківська область (UA-26)
+    'івано-франківськ': ('UA-26', 'UA-26-01'),
+    'франківськ': ('UA-26', 'UA-26-01'),
+    'калуш': ('UA-26', 'UA-26-02'),
+    'долина': ('UA-26', 'UA-26-02'),
+    'коломия': ('UA-26', 'UA-26-03'),
+    'снятин': ('UA-26', 'UA-26-03'),
+    'косів': ('UA-26', 'UA-26-04'),
+    'куті': ('UA-26', 'UA-26-04'),
+    'надвірна': ('UA-26', 'UA-26-05'),
+    'яремче': ('UA-26', 'UA-26-05'),
+    'верховина': ('UA-26', 'UA-26-06'),
+
+    # Закарпатська область (UA-21)
+    'ужгород': ('UA-21', 'UA-21-01'),
+    'перечин': ('UA-21', 'UA-21-01'),
+    'мукачево': ('UA-21', 'UA-21-02'),
+    'свалява': ('UA-21', 'UA-21-02'),
+    'берегово': ('UA-21', 'UA-21-03'),
+    'виноградів': ('UA-21', 'UA-21-03'),
+    'хуст': ('UA-21', 'UA-21-04'),
+    'іршава': ('UA-21', 'UA-21-04'),
+    'рахів': ('UA-21', 'UA-21-05'),
+    'ясіня': ('UA-21', 'UA-21-05'),
+    'тячів': ('UA-21', 'UA-21-06'),
+    'солотвино': ('UA-21', 'UA-21-06'),
+
+    # Чернівецька область (UA-77)
+    'чернівці': ('UA-77', 'UA-77-01'),
+    'вижниця': ('UA-77', 'UA-77-02'),
+    'новодністровськ': ('UA-77', 'UA-77-03'),
+    'хотин': ('UA-77', 'UA-77-03'),
+
+    # Луганська область (UA-44)
+    'луганськ': ('UA-44', 'UA-44-01'),
+    'сєвєродонецьк': ('UA-44', 'UA-44-02'),
+    'северодонецьк': ('UA-44', 'UA-44-02'),
+    'лисичанськ': ('UA-44', 'UA-44-02'),
+    'рубіжне': ('UA-44', 'UA-44-02'),
+    'алчевськ': ('UA-44', 'UA-44-03'),
+    'довжанськ': ('UA-44', 'UA-44-04'),
+    'свердловськ': ('UA-44', 'UA-44-04'),
+    'ровеньки': ('UA-44', 'UA-44-05'),
+    'щастя': ('UA-44', 'UA-44-06'),
+    'новоайдар': ('UA-44', 'UA-44-06'),
+    'станиця луганська': ('UA-44', 'UA-44-06'),
+    'старобільськ': ('UA-44', 'UA-44-07'),
+    'сватове': ('UA-44', 'UA-44-08'),
+    'кремінна': ('UA-44', 'UA-44-08'),
+    'троїцьке': ('UA-44', 'UA-44-08'),
+}
+
+def get_region_ids_from_place(place: str, region: str) -> tuple:
+    """
+    Extract oblast_id and raion_id from place name and region.
+    Returns (oblast_id, raion_id) or (None, None) if not found.
+    """
+    import re
+    
+    oblast_id = REGION_TO_OBLAST_ID.get(region)
+    raion_id = None
+    
+    if not oblast_id:
+        return (None, None)
+    
+    # Try to find raion from place
+    place_clean = ''
+    if place:
+        place_lower = place.lower().strip()
+        # Remove parenthetical suffixes like "(Дніпропетровська обл.)"
+        place_clean = re.sub(r'\s*\([^)]*\)\s*', '', place_lower).strip()
+        # Remove common prefixes (м., смт, с., місто, селище)
+        place_clean = re.sub(r'^(м\.|смт|с\.|місто|селище)\s+', '', place_clean).strip()
+        
+        # Check direct match first
+        if place_clean in PLACE_TO_RAION_ID:
+            found_oblast, found_raion = PLACE_TO_RAION_ID[place_clean]
+            if found_oblast == oblast_id:
+                raion_id = found_raion
+        
+        # If no direct match, try partial matching
+        if not raion_id:
+            for keyword, (kw_oblast, kw_raion) in PLACE_TO_RAION_ID.items():
+                if kw_oblast == oblast_id and keyword in place_clean:
+                    raion_id = kw_raion
+                    break
+
+    # Hybrid: try OpenCage components to improve oblast/raion resolution
+    if OPENCAGE_API_KEY and (not oblast_id or not raion_id):
+        components = opencage_lookup_components(place_clean or place or '', region)
+        if components:
+            if not oblast_id:
+                state_code = components.get('state_code')
+                if isinstance(state_code, str) and state_code.startswith('UA-'):
+                    oblast_id = state_code
+                else:
+                    state_name = components.get('state') or components.get('region')
+                    if state_name:
+                        oblast_id = _resolve_oblast_id_from_name(state_name)
+
+            if not raion_id:
+                settlement = (
+                    components.get('city') or components.get('town') or components.get('village') or
+                    components.get('hamlet') or components.get('municipality')
+                )
+                settlement_norm = _normalize_admin_name(settlement) if settlement else ''
+                if settlement_norm and settlement_norm in PLACE_TO_RAION_ID:
+                    found_oblast, found_raion = PLACE_TO_RAION_ID[settlement_norm]
+                    if not oblast_id or found_oblast == oblast_id:
+                        raion_id = found_raion
+
+            if not raion_id:
+                county = components.get('county') or components.get('district') or components.get('state_district')
+                county_norm = _normalize_admin_name(county) if county else ''
+                if county_norm:
+                    for keyword, (kw_oblast, kw_raion) in PLACE_TO_RAION_ID.items():
+                        if (not oblast_id or kw_oblast == oblast_id) and keyword in county_norm:
+                            raion_id = kw_raion
+                            break
+    
+    return (oblast_id, raion_id)
+
 # --- Geographic Utilities ---
 # Used for: trajectory calculation, threat direction, marker positioning
 
@@ -3746,6 +4170,90 @@ def geocode_opencage(query: str):
         return None
     except Exception as e:
         log.debug(f"OpenCage geocode error for '{query}': {e}")
+        return None
+
+def _normalize_admin_name(value: str) -> str:
+    """Normalize admin/place names for matching."""
+    if not value:
+        return ''
+    import re
+    name = value.lower().strip()
+    name = name.replace('ʼ', "'").replace('’', "'")
+    name = re.sub(r'\s+', ' ', name)
+    name = name.replace(' область', '').replace(' обл.', '').replace(' обл', '')
+    name = name.replace(' район', '').replace(' р-н', '')
+    return name.strip()
+
+def _resolve_oblast_id_from_name(name: str) -> str | None:
+    """Resolve oblast ID from a possibly unnormalized oblast name."""
+    if not name:
+        return None
+    name_norm = _normalize_admin_name(name)
+    for key, val in REGION_TO_OBLAST_ID.items():
+        if _normalize_admin_name(key) == name_norm:
+            return val
+    return None
+
+def opencage_lookup_components(place: str, region: str | None = None) -> dict | None:
+    """
+    Get OpenCage components for a place (cached).
+    Returns components dict or None.
+    """
+    if not OPENCAGE_API_KEY or not place:
+        return None
+
+    place = place.strip()
+    if not place:
+        return None
+
+    cache = _load_opencage_cache()
+    region_part = (region or '').strip()
+    cache_key = f"components|{place.lower()}|{region_part.lower()}"
+
+    if cache_key in cache:
+        entry = cache[cache_key]
+        if time.time() - entry.get('ts', 0) < OPENCAGE_TTL:
+            components = entry.get('components')
+            if components:
+                return components
+
+    query = place
+    if region_part:
+        query = f"{place}, {region_part}"
+
+    try:
+        url = 'https://api.opencagedata.com/geocode/v1/json'
+        params = {
+            'q': f"{query}, Ukraine",
+            'key': OPENCAGE_API_KEY,
+            'limit': 1,
+            'no_annotations': 1,
+            'countrycode': 'ua',
+            'language': 'uk'
+        }
+        resp = http_requests.get(url, params=params, timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            results = data.get('results', [])
+            if results:
+                r0 = results[0]
+                components = r0.get('components', {})
+                geo = r0.get('geometry', {})
+                lat = geo.get('lat')
+                lng = geo.get('lng')
+                if components and components.get('country_code', '').lower() == 'ua':
+                    cache[cache_key] = {
+                        'components': components,
+                        'coords': [lat, lng] if lat and lng else None,
+                        'ts': time.time()
+                    }
+                    _save_opencage_cache()
+                    return components
+        cache[cache_key] = {'components': None, 'ts': time.time()}
+        _save_opencage_cache()
+        return None
+    except Exception as e:
+        log.debug(f"OpenCage components error for '{query}': {e}")
         return None
 
 def _load_neg_geocode_cache():
@@ -17636,11 +18144,23 @@ def register_device():
         data = request.get_json()
         token = data.get('token')
         regions = data.get('regions', [])
+        oblast_ids = data.get('oblast_ids', [])
+        raion_ids = data.get('raion_ids', [])
         device_id = data.get('device_id', token)
         enabled = data.get('enabled', True)  # Support disabling notifications
+        platform = data.get('platform', 'unknown')  # iOS/Android
 
         if not token and not device_id:
             return jsonify({'error': 'Missing token or device_id'}), 400
+
+        # Log registration with platform info
+        log.info(
+            f"📱 Device registration: platform={platform}, device_id={device_id[:20]}..., regions={regions[:3]}..., oblast_ids={oblast_ids[:3]}..., raion_ids={raion_ids[:3]}..."
+        )
+        print(
+            f"[REGISTER] platform={platform}, token_prefix={token[:30] if token else 'None'}..., regions={regions}, oblast_ids={oblast_ids}, raion_ids={raion_ids}",
+            flush=True,
+        )
 
         # If notifications disabled or no regions, remove device
         if not enabled or not regions:
@@ -17648,8 +18168,14 @@ def register_device():
             log.info(f"Device {device_id[:20]}... unregistered (notifications disabled)")
             return jsonify({'success': True, 'device_id': device_id, 'status': 'unregistered'})
 
-        device_store.register_device(token, regions, device_id)
-        return jsonify({'success': True, 'device_id': device_id})
+        device_store.register_device(
+            token,
+            regions,
+            device_id,
+            oblast_ids=oblast_ids,
+            raion_ids=raion_ids,
+        )
+        return jsonify({'success': True, 'device_id': device_id, 'platform': platform})
     except Exception as e:
         log.error(f"Error registering device: {e}")
         return jsonify({'error': str(e)}), 500
@@ -17662,11 +18188,13 @@ def update_regions():
         data = request.get_json()
         device_id = data.get('device_id')
         regions = data.get('regions', [])
+        oblast_ids = data.get('oblast_ids', [])
+        raion_ids = data.get('raion_ids', [])
 
         if not device_id or not regions:
             return jsonify({'error': 'Missing device_id or regions'}), 400
 
-        device_store.update_regions(device_id, regions)
+        device_store.update_regions(device_id, regions, oblast_ids=oblast_ids, raion_ids=raion_ids)
         return jsonify({'success': True})
     except Exception as e:
         log.error(f"Error updating regions: {e}")
@@ -17690,6 +18218,58 @@ def get_registered_devices():
         })
     except Exception as e:
         log.error(f"Error getting devices: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/test-push/<token>', methods=['POST'])
+def test_push_to_token(token):
+    """Send a test push notification directly to a specific FCM token (for debugging)."""
+    if not firebase_initialized:
+        return jsonify({'error': 'Firebase not initialized'}), 500
+    
+    try:
+        from firebase_admin import messaging
+        
+        title = request.json.get('title', '🧪 Test Push') if request.is_json else '🧪 Test Push'
+        body = request.json.get('body', 'Тестове сповіщення для перевірки push') if request.is_json else 'Тестове сповіщення для перевірки push'
+        
+        message = messaging.Message(
+            data={
+                'type': 'test',
+                'title': title,
+                'body': body,
+                'timestamp': datetime.now(pytz.timezone('Europe/Kiev')).isoformat(),
+            },
+            android=messaging.AndroidConfig(
+                priority='high',
+                notification=messaging.AndroidNotification(
+                    title=title,
+                    body=body,
+                    icon='ic_notification',
+                    channel_id='critical_alerts',
+                ),
+            ),
+            apns=messaging.APNSConfig(
+                headers={
+                    'apns-priority': '10',
+                    'apns-push-type': 'alert',
+                },
+                payload=messaging.APNSPayload(
+                    aps=messaging.Aps(
+                        alert=messaging.ApsAlert(title=title, body=body),
+                        sound='default',
+                        badge=1,
+                    ),
+                ),
+            ),
+            token=token,
+        )
+        
+        response = messaging.send(message)
+        log.info(f"✅ Test push sent to token {token[:20]}...: {response}")
+        return jsonify({'success': True, 'response': response})
+    except Exception as e:
+        log.error(f"❌ Test push failed: {e}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -18481,6 +19061,14 @@ def send_fcm_notification(message_data: dict):
             log.info(f"Could not determine region for place: {location}")
             return
 
+        # Resolve ID-based region identifiers for strict client filtering
+        place_for_ids = specific_location or location
+        oblast_id, raion_id = get_region_ids_from_place(place_for_ids, region)
+        if oblast_id:
+            log.info(f"Resolved oblast_id={oblast_id} for region={region}")
+        if raion_id:
+            log.info(f"Resolved raion_id={raion_id} for place={place_for_ids}")
+
         # Determine if critical
         threat_lower = threat_type.lower()
         is_critical = any(kw in threat_lower for kw in ['ракет', 'балістич', 'kab', 'cruise', 'ballistic'])
@@ -18528,19 +19116,26 @@ def send_fcm_notification(message_data: dict):
         # CRITICAL: Use DATA-ONLY message (no notification block) so Flutter can filter by region!
         # If we include notification={}, Android shows it automatically bypassing Flutter filtering
         try:
+            data_payload = {
+                'type': 'all_clear' if is_all_clear else ('rocket' if is_critical else 'drone'),
+                'title': title,  # Include title in data for Flutter to show
+                'location': location,  # FULL place with city AND region for filtering
+                'body': specific_location,  # City for TTS display
+                'threat_type': readable_threat_type if readable_threat_type else 'Повітряна тривога',
+                'region': region,
+                'alarm_state': alarm_state,
+                'is_critical': 'true' if is_critical else 'false',
+                'timestamp': message_data.get('date', ''),
+                'click_action': 'FLUTTER_NOTIFICATION_CLICK',
+            }
+
+            if oblast_id:
+                data_payload['oblast_id'] = oblast_id
+            if raion_id:
+                data_payload['raion_id'] = raion_id
+
             message = messaging.Message(
-                data={
-                    'type': 'all_clear' if is_all_clear else ('rocket' if is_critical else 'drone'),
-                    'title': title,  # Include title in data for Flutter to show
-                    'location': location,  # FULL place with city AND region for filtering
-                    'body': specific_location,  # City for TTS display
-                    'threat_type': readable_threat_type if readable_threat_type else 'Повітряна тривога',
-                    'region': region,
-                    'alarm_state': alarm_state,
-                    'is_critical': 'true' if is_critical else 'false',
-                    'timestamp': message_data.get('date', ''),
-                    'click_action': 'FLUTTER_NOTIFICATION_CLICK',
-                },
+                data=data_payload,
                 android=messaging.AndroidConfig(
                     priority='high' if not is_all_clear else 'normal',
                     ttl=timedelta(seconds=300),

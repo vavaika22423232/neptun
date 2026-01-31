@@ -188,7 +188,14 @@ class DeviceStore:
         self.path = path if path else _get_persistent_path("devices.json")
         self._lock = threading.RLock()
 
-    def register_device(self, token: str, regions: list[str], device_id: str) -> None:
+    def register_device(
+        self,
+        token: str,
+        regions: list[str],
+        device_id: str,
+        oblast_ids: list[str] | None = None,
+        raion_ids: list[str] | None = None,
+    ) -> None:
         """Register or update a device."""
         with self._lock:
             devices = self._load()
@@ -196,13 +203,23 @@ class DeviceStore:
             devices[device_id] = {
                 "token": token,
                 "regions": regions,
+                "oblast_ids": oblast_ids or [],
+                "raion_ids": raion_ids or [],
                 "enabled": True,
                 "last_active": datetime.utcnow().isoformat(),
             }
             self._save(devices)
             log.info(f"Registered device {device_id[:20]}... with {len(regions)} regions")
 
-    def save_device(self, device_id: str, token: str, regions: list[str], enabled: bool = True) -> None:
+    def save_device(
+        self,
+        device_id: str,
+        token: str,
+        regions: list[str],
+        enabled: bool = True,
+        oblast_ids: list[str] | None = None,
+        raion_ids: list[str] | None = None,
+    ) -> None:
         """Save or update device information."""
         with self._lock:
             devices = self._load()
@@ -210,18 +227,30 @@ class DeviceStore:
             devices[device_id] = {
                 "token": token,
                 "regions": regions,
+                "oblast_ids": oblast_ids or [],
+                "raion_ids": raion_ids or [],
                 "enabled": enabled,
                 "last_active": datetime.utcnow().isoformat(),
             }
             self._save(devices)
             log.info(f"Saved device {device_id[:20]}... with {len(regions)} regions (enabled={enabled})")
 
-    def update_regions(self, device_id: str, regions: list[str]) -> None:
+    def update_regions(
+        self,
+        device_id: str,
+        regions: list[str],
+        oblast_ids: list[str] | None = None,
+        raion_ids: list[str] | None = None,
+    ) -> None:
         """Update regions for an existing device."""
         with self._lock:
             devices = self._load()
             if device_id in devices:
                 devices[device_id]["regions"] = regions
+                if oblast_ids is not None:
+                    devices[device_id]["oblast_ids"] = oblast_ids
+                if raion_ids is not None:
+                    devices[device_id]["raion_ids"] = raion_ids
                 from datetime import datetime
                 devices[device_id]["last_active"] = datetime.utcnow().isoformat()
                 self._save(devices)

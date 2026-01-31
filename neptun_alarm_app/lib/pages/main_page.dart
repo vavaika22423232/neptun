@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:in_app_update/in_app_update.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http;
 import 'dart:io';
 import 'dart:async';
@@ -264,19 +266,118 @@ class MainPageState extends State<MainPage> with WidgetsBindingObserver {
   }
 
   Future<void> _checkForUpdate() async {
-    if (!Platform.isAndroid) return;
     try {
-      final updateInfo = await InAppUpdate.checkForUpdate();
-      if (updateInfo.updateAvailability == UpdateAvailability.updateAvailable) {
-        if (updateInfo.immediateUpdateAllowed) {
-          await InAppUpdate.performImmediateUpdate();
-        } else if (updateInfo.flexibleUpdateAllowed) {
-          _showUpdateSnackBar();
+      if (Platform.isAndroid) {
+        // Android: Use in_app_update
+        final updateInfo = await InAppUpdate.checkForUpdate();
+        if (updateInfo.updateAvailability == UpdateAvailability.updateAvailable) {
+          if (updateInfo.immediateUpdateAllowed) {
+            await InAppUpdate.performImmediateUpdate();
+          } else if (updateInfo.flexibleUpdateAllowed) {
+            _showUpdateSnackBar();
+          }
         }
+      } else if (Platform.isIOS) {
+        // iOS: Check App Store version via iTunes API
+        await _checkiOSUpdate();
       }
     } catch (e) {
       debugPrint('Error checking for updates: $e');
     }
+  }
+
+  /// Check for iOS update via iTunes Lookup API
+  Future<void> _checkiOSUpdate() async {
+    try {
+      // Don't show update dialog too often (once per day)
+      final prefs = await SharedPreferences.getInstance();
+      final lastCheck = prefs.getInt('ios_update_last_check') ?? 0;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (now - lastCheck < 24 * 60 * 60 * 1000) {
+        debugPrint('iOS update check skipped (checked within 24h)');
+        return;
+      }
+      
+      // Get current app version
+      final packageInfo = await PackageInfo.fromPlatform();
+      final currentVersion = packageInfo.version;
+      
+      // Query App Store for latest version
+      // Bundle ID: com.neptunalarm.neptunAlarmApp
+      const bundleId = 'com.neptunalarm.neptunAlarmApp';
+      final response = await http.get(
+        Uri.parse('https://itunes.apple.com/lookup?bundleId=$bundleId&country=ua'),
+      );
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['resultCount'] > 0) {
+          final storeVersion = data['results'][0]['version'] as String;
+          final storeUrl = data['results'][0]['trackViewUrl'] as String;
+          
+          debugPrint('iOS version check: current=$currentVersion, store=$storeVersion');
+          
+          if (_isNewerVersion(storeVersion, currentVersion)) {
+            await prefs.setInt('ios_update_last_check', now);
+            if (mounted) {
+              _showIOSUpdateDialog(storeVersion, storeUrl);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error checking iOS update: $e');
+    }
+  }
+
+  /// Compare version strings (e.g., "1.6.9" > "1.6.8")
+  bool _isNewerVersion(String storeVersion, String currentVersion) {
+    try {
+      final storeParts = storeVersion.split('.').map(int.parse).toList();
+      final currentParts = currentVersion.split('.').map(int.parse).toList();
+      
+      for (int i = 0; i < storeParts.length && i < currentParts.length; i++) {
+        if (storeParts[i] > currentParts[i]) return true;
+        if (storeParts[i] < currentParts[i]) return false;
+      }
+      return storeParts.length > currentParts.length;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Show iOS update dialog
+  void _showIOSUpdateDialog(String newVersion, String storeUrl) {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.system_update, color: Theme.of(context).primaryColor),
+            const SizedBox(width: 12),
+            const Text('Нова версія'),
+          ],
+        ),
+        content: Text(
+          'Доступна нова версія $newVersion\n\nОновіть додаток для отримання нових функцій та виправлень.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Пізніше'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              launchUrl(Uri.parse(storeUrl), mode: LaunchMode.externalApplication);
+            },
+            child: const Text('Оновити'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showUpdateSnackBar() {
@@ -589,7 +690,10 @@ class MainPageState extends State<MainPage> with WidgetsBindingObserver {
                   child: SizedBox(
                     width: _adService.bannerAd!.size.width.toDouble(),
                     height: _adService.bannerAd!.size.height.toDouble(),
-                    child: AdWidget(ad: _adService.bannerAd!),
+                    child: AdWidget(
+                      key: ValueKey(_adService.bannerAd!.hashCode),
+                      ad: _adService.bannerAd!,
+                    ),
                   ),
                 ),
               ),
