@@ -778,6 +778,61 @@ REGION_TO_OBLAST_ID = {
     'Севастополь': 'UA-40',
 }
 
+# --- Known launch sites (incl. RF) for explicit "пуск" markers ---
+# NOTE: These are approximate coordinates to place markers on launch locations.
+LAUNCH_SITES = {
+    # РФ (основные точки запусков)
+    'приморск-ахтарск': (46.0514, 38.1742),
+    'приморск-ахтарская': (46.0514, 38.1742),
+    'приморськ-ахтарськ': (46.0514, 38.1742),
+    'приморськ-ахтарська': (46.0514, 38.1742),
+    'халино': (51.7510, 36.2950),
+    'курск': (51.7304, 36.1938),
+    'курська': (51.7304, 36.1938),
+    'орел': (52.9708, 36.0635),
+    'орёл': (52.9708, 36.0635),
+    'орла': (52.9708, 36.0635),
+    'орле': (52.9708, 36.0635),
+    'орел-південний': (52.8950, 36.0010),
+    'орел-южный': (52.8950, 36.0010),
+    'орел южный': (52.8950, 36.0010),
+    # РФ (доп. аэродромы)
+    'шайковка': (54.2281, 34.2856),
+    'энгельс': (51.4800, 46.2000),
+    'енгельс': (51.4800, 46.2000),
+    'морозовск': (48.3520, 41.8260),
+    'цимбулово': (52.9980, 36.4800),
+    'цимбулова': (52.9980, 36.4800),
+    'навля': (52.8249, 34.4983),
+    'миллерово': (48.9238, 40.3984),
+    'міллерово': (48.9238, 40.3984),
+    'ейск': (46.7056, 38.2728),
+    'єйськ': (46.7056, 38.2728),
+    'приморсько-ахтарськ': (46.0514, 38.1742),
+    'приморсько-ахтарск': (46.0514, 38.1742),
+    'астраханская область': (46.3497, 48.0408),
+    'астраханська область': (46.3497, 48.0408),
+    'каспийское море': (42.0000, 51.0000),
+    'каспійське море': (42.0000, 51.0000),
+    # Крим (аэродромы/полигоны)
+    'чауда': (45.0043420, 35.8307884),
+    'мыс чауда': (45.0043420, 35.8307884),
+    'cape chauda': (45.0043420, 35.8307884),
+    'гвардейское': (45.1155000, 33.9780077),
+    'гвардійське': (45.1155000, 33.9780077),
+    'gvardeyskoye': (45.1155000, 33.9780077),
+    'hvardiiske': (45.1155000, 33.9780077),
+    'аэродром гвардейское': (45.1155000, 33.9780077),
+    'кiровське': (45.1665650, 35.1866323),
+    'кіровське': (45.1665650, 35.1866323),
+    'кировское': (45.1665650, 35.1866323),
+    'kirovske': (45.1665650, 35.1866323),
+    'аэродром кировское': (45.1665650, 35.1866323),
+    'саки': (45.0909250, 33.5934182),
+    'saky': (45.0909250, 33.5934182),
+    'аэродром саки': (45.0909250, 33.5934182),
+}
+
 # --- Hot-path regex (compiled once) ---
 RE_PARENS_STRIP = re.compile(r'\s*\([^)]*\)\s*')
 RE_OBLAST_IN_PARENS = re.compile(r'\(([^)]*обл[^)]*)\)', re.IGNORECASE)
@@ -797,16 +852,55 @@ _REGION_IDS_CACHE_TTL = int(os.getenv('REGION_IDS_CACHE_TTL', '3600'))  # second
 _REGION_IDS_CACHE_MAX = int(os.getenv('REGION_IDS_CACHE_MAX', '3000'))
 
 _OBLAST_ID_CACHE: dict[str, str | None] = {}
+_RF_GEOCODE_CACHE: dict[str, tuple] = {}
+_RF_GEOCODE_CACHE_TTL = int(os.getenv('RF_GEOCODE_CACHE_TTL', '604800'))  # 7 days
 
 def _extract_oblast_from_text(text: str) -> str | None:
     if not text:
         return None
     paren_match = RE_OBLAST_PARENS_NAME.search(text)
     if paren_match:
-        return paren_match.group(1).strip()
+        candidate = paren_match.group(1).strip()
+        if re.search(r'невідом|неизвест|unknown', candidate, re.IGNORECASE):
+            return None
+        return candidate
     match = RE_OBLAST_ANYWHERE.search(text)
     if match:
-        return match.group(1).strip()
+        candidate = match.group(1).strip()
+        if re.search(r'невідом|неизвест|unknown', candidate, re.IGNORECASE):
+            return None
+        return candidate
+    return None
+
+def _geocode_rf_place(place: str) -> tuple | None:
+    """Geocode RF place via Nominatim (lightweight, cached)."""
+    if not place:
+        return None
+    key = place.lower().strip()
+    cached = _RF_GEOCODE_CACHE.get(key)
+    if cached:
+        coords, ts = cached
+        if time.time() - ts <= _RF_GEOCODE_CACHE_TTL:
+            return coords
+
+    try:
+        query = f"{place}, Russia"
+        url = 'https://nominatim.openstreetmap.org/search'
+        params = {'q': query, 'format': 'json', 'limit': 1, 'countrycodes': 'ru'}
+        headers = {'User-Agent': 'neptun-geocoder/1.0'}
+        resp = http_requests.get(url, params=params, headers=headers, timeout=4)
+        if resp.status_code == 200:
+            data = resp.json() or []
+            if data:
+                lat = float(data[0].get('lat'))
+                lon = float(data[0].get('lon'))
+                coords = (lat, lon)
+                _RF_GEOCODE_CACHE[key] = (coords, time.time())
+                return coords
+    except Exception:
+        pass
+
+    _RF_GEOCODE_CACHE[key] = (None, time.time())
     return None
 
 def _region_ids_cache_get(key: str) -> tuple | None:
@@ -3263,6 +3357,20 @@ def _project_point(lat: float, lng: float, bearing_deg: float, distance_km: floa
     except Exception:
         return None
 
+def _estimate_speed_kmh(threat_type: str | None) -> float:
+    if not threat_type:
+        return 150.0
+    t = str(threat_type).lower()
+    if t in ['shahed', 'drone', 'bpla']:
+        return 160.0
+    if t in ['cruise', 'raketa', 'missile']:
+        return 700.0
+    if t in ['ballistic']:
+        return 2000.0
+    if t in ['pusk', 'avia']:
+        return 300.0
+    return 180.0
+
 def get_fused_trajectories():
     """Return AI-enhanced trajectories built from recent markers."""
     now_ts = time.time()
@@ -3300,6 +3408,24 @@ def get_fused_trajectories():
         if not (start and end):
             continue
 
+        # AI predicted path (time-based projection)
+        predicted_path = None
+        speed_kmh = None
+        try:
+            bearing = calculate_bearing(start[0], start[1], end[0], end[1])
+            speed_kmh = (traj.get('speed_kmh') if isinstance(traj, dict) else None) or m.get('speed_kmh')
+            if not speed_kmh:
+                speed_kmh = _estimate_speed_kmh(m.get('threat_type') or (traj.get('threat_type') if isinstance(traj, dict) else None))
+            if bearing is not None and speed_kmh:
+                predicted_path = [end]
+                for minutes in (10, 20, 30):
+                    dist_km = speed_kmh * (minutes / 60.0)
+                    pt = _project_point(end[0], end[1], bearing, dist_km)
+                    if pt:
+                        predicted_path.append([pt[0], pt[1]])
+        except Exception:
+            predicted_path = None
+
         event_id = str(m.get('id') or f"{start[0]}:{start[1]}->{end[0]}:{end[1]}")
         if event_id in seen:
             continue
@@ -3309,10 +3435,10 @@ def get_fused_trajectories():
             'event_id': event_id,
             'threat_type': m.get('threat_type') or (traj.get('threat_type') if isinstance(traj, dict) else None),
             'actual_path': [start, end],
-            'predicted_path': [start, end] if (isinstance(traj, dict) and traj.get('predicted')) else None,
-            'confidence': (traj.get('confidence') if isinstance(traj, dict) else None) or m.get('prediction_confidence'),
+            'predicted_path': predicted_path,
+            'confidence': (traj.get('confidence') if isinstance(traj, dict) else None) or m.get('prediction_confidence') or (0.6 if predicted_path else None),
             'distance_km': (traj.get('distance_km') if isinstance(traj, dict) else None) or m.get('distance_km'),
-            'speed_kmh': (traj.get('speed_kmh') if isinstance(traj, dict) else None) or m.get('speed_kmh'),
+            'speed_kmh': (traj.get('speed_kmh') if isinstance(traj, dict) else None) or m.get('speed_kmh') or (speed_kmh if predicted_path else None),
             'eta': traj.get('eta') if isinstance(traj, dict) else None,
             'source_name': traj.get('source_name') if isinstance(traj, dict) else m.get('place'),
             'target_name': traj.get('target_name') if isinstance(traj, dict) else None,
@@ -4502,6 +4628,54 @@ def _resolve_oblast_id_from_name(name: str) -> str | None:
             return val
     _OBLAST_ID_CACHE[name] = None
     return None
+
+def _derive_region_ids_from_regions(regions: list) -> tuple[list, list]:
+    """Derive oblast_ids/raion_ids from region strings when client doesn't send IDs."""
+    if not regions:
+        return [], []
+    derived_oblasts: set[str] = set()
+    derived_raions: set[str] = set()
+
+    # First pass: resolve oblasts
+    for r in regions:
+        if not r:
+            continue
+        oblast_id = _resolve_oblast_id_from_name(str(r))
+        if oblast_id:
+            derived_oblasts.add(oblast_id)
+
+    default_oblast = next(iter(derived_oblasts), None)
+
+    # Second pass: resolve raions
+    for r in regions:
+        if not r:
+            continue
+        r_low = str(r).lower()
+        if 'район' not in r_low and 'р-н' not in r_low:
+            continue
+        raion_base = _normalize_admin_name(str(r))
+        raion_key = raion_base
+        if raion_key.endswith('ський') or raion_key.endswith('цький') or raion_key.endswith('зький'):
+            raion_key = raion_key[:-2]  # "ський" -> "ськ"
+
+        # Direct match
+        if raion_key in PLACE_TO_RAION_ID:
+            ob, ra = PLACE_TO_RAION_ID[raion_key]
+            if not default_oblast or ob == default_oblast:
+                derived_oblasts.add(ob)
+                derived_raions.add(ra)
+                continue
+
+        # Substring match
+        for keyword, (kw_ob, kw_ra) in PLACE_TO_RAION_ID.items():
+            if default_oblast and kw_ob != default_oblast:
+                continue
+            if keyword in raion_key or raion_key in keyword:
+                derived_oblasts.add(kw_ob)
+                derived_raions.add(kw_ra)
+                break
+
+    return list(derived_oblasts), list(derived_raions)
 
 def opencage_lookup_components(place: str, region: str | None = None) -> dict | None:
     """
@@ -10642,6 +10816,54 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         original_text = new_orig
     # --- Explicit launch site detection (multi-line). Create one marker per detected launch location.
     low_work = text.lower()
+    # --- Single-line explicit RF launch: "пуск <place> (рф)" ---
+    if 'пуск' in low_work and 'рф' in low_work:
+        try:
+            m = re.search(r'пуск(?:и)?\s+([A-Za-zА-Яа-яЇїІіЄєҐґ0-9\-–—\s]{2,60})', low_work)
+            if m:
+                raw_place = m.group(1)
+                raw_place = raw_place.split('(')[0].split(',')[0].strip()
+                raw_place = raw_place.replace('–', '-').replace('—', '-')
+                raw_place = raw_place.replace('ё', 'е')
+                raw_place = re.sub(r'\bрф\b', '', raw_place).strip()
+                raw_place = re.sub(r'\bрайон(у|а)?\b', '', raw_place).strip()
+                raw_place = re.sub(r'\bр-н\b', '', raw_place).strip()
+                raw_place = re.sub(r'\s+', ' ', raw_place)
+                variants = {
+                    raw_place,
+                    raw_place.replace(' ', '-'),
+                    raw_place.replace('-', ' '),
+                }
+                if raw_place.endswith('ова'):
+                    variants.add(raw_place[:-3] + 'ово')
+                if raw_place.endswith('ева'):
+                    variants.add(raw_place[:-3] + 'ево')
+                coord = None
+                chosen = None
+                for v in variants:
+                    key = v.strip()
+                    if key in LAUNCH_SITES:
+                        coord = LAUNCH_SITES[key]
+                        chosen = key
+                        break
+                if not coord:
+                    coord = _geocode_rf_place(raw_place)
+                if coord:
+                    lat, lng = coord
+                    return [{
+                        'id': f"{mid}_pusk_rf",
+                        'place': (chosen or raw_place).title(),
+                        'lat': lat,
+                        'lng': lng,
+                        'threat_type': 'pusk',
+                        'text': original_text[:500],
+                        'date': date_str,
+                        'channel': channel,
+                        'marker_icon': 'pusk.png',
+                        'source_match': 'launch_site_rf'
+                    }]
+        except Exception:
+            pass
     if ('пуск' in low_work or 'пуски' in low_work or '+ пуски' in low_work):
         # find quoted or dash-separated site tokens: «Name», "Name", or after 'з ' preposition
         sites_found = set()
@@ -18497,6 +18719,14 @@ def register_device():
             log.info(f"Device {device_id[:20]}... unregistered (notifications disabled)")
             return jsonify({'success': True, 'device_id': device_id, 'status': 'unregistered'})
 
+        # Derive IDs on server if client didn't send them
+        if not oblast_ids or not raion_ids:
+            derived_oblasts, derived_raions = _derive_region_ids_from_regions(regions)
+            if not oblast_ids and derived_oblasts:
+                oblast_ids = derived_oblasts
+            if not raion_ids and derived_raions:
+                raion_ids = derived_raions
+
         device_store.register_device(
             token,
             regions,
@@ -18522,6 +18752,13 @@ def update_regions():
 
         if not device_id or not regions:
             return jsonify({'error': 'Missing device_id or regions'}), 400
+
+        if not oblast_ids or not raion_ids:
+            derived_oblasts, derived_raions = _derive_region_ids_from_regions(regions)
+            if not oblast_ids and derived_oblasts:
+                oblast_ids = derived_oblasts
+            if not raion_ids and derived_raions:
+                raion_ids = derived_raions
 
         device_store.update_regions(device_id, regions, oblast_ids=oblast_ids, raion_ids=raion_ids)
         return jsonify({'success': True})

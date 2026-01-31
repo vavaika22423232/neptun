@@ -4614,7 +4614,22 @@
         polyline.setAttribute('stroke-linejoin', 'round');
         svg.appendChild(polyline);
         
-        // Predicted path removed - only actual white line
+        // Predicted path (AI projection)
+        if (traj.predicted_path && traj.predicted_path.length >= 2) {
+          const predPoints = traj.predicted_path.map(coord => {
+            const pos = latLngToSvgPercent(coord[0], coord[1]);
+            return `${pos.x},${pos.y}`;
+          }).join(' ');
+          const predLine = document.createElementNS(svgNS, 'polyline');
+          predLine.setAttribute('class', 'fusion-path-predicted');
+          predLine.setAttribute('points', predPoints);
+          predLine.setAttribute('fill', 'none');
+          predLine.setAttribute('stroke', '#ffffff');
+          predLine.setAttribute('stroke-width', '1.5');
+          predLine.setAttribute('stroke-dasharray', '8 6');
+          predLine.setAttribute('opacity', '0.6');
+          svg.appendChild(predLine);
+        }
         
         group.appendChild(svg);
         
