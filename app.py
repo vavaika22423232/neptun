@@ -2386,6 +2386,10 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
             'вибухи': 'Повідомляють про вибухи',
         }.get(threat_type, 'Повітряна тривога')  # Default to general alert
 
+        # Resolve region IDs for ID-based filtering on client
+        place_for_ids = city_name or location
+        oblast_id, raion_id = get_region_ids_from_place(place_for_ids, region_name)
+
         # Send to topic
         success_count = 0
         try:
@@ -2398,6 +2402,9 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
                     'body': body,
                     'location': tts_location,  # City or region for TTS
                     'region': region_name,
+                    'oblast_id': oblast_id or '',
+                    'raion_id': raion_id or '',
+                    'settlement_id': '',
                     'alarm_state': 'active',
                     'is_critical': 'true' if is_critical else 'false',
                     'threat_type': threat_type_readable,  # Human-readable threat for TTS
@@ -2421,7 +2428,7 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
                     headers={
                         'apns-priority': '10',
                         'apns-push-type': 'alert',
-                        'apns-expiration': '0',
+                        'apns-expiration': str(int(time.time()) + 300),
                     },
                     payload=messaging.APNSPayload(
                         aps=messaging.Aps(
@@ -2454,6 +2461,9 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
                     'body': body,
                     'location': tts_location,
                     'region': region_name,
+                    'oblast_id': oblast_id or '',
+                    'raion_id': raion_id or '',
+                    'settlement_id': '',
                     'alarm_state': 'active',
                     'is_critical': 'true' if is_critical else 'false',
                     'threat_type': threat_type_readable,
@@ -2477,7 +2487,7 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
                     headers={
                         'apns-priority': '10',
                         'apns-push-type': 'alert',
-                        'apns-expiration': '0',
+                        'apns-expiration': str(int(time.time()) + 300),
                     },
                     payload=messaging.APNSPayload(
                         aps=messaging.Aps(
@@ -6619,6 +6629,15 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         if any(k in l for k in ['каб','kab','умпк','umpk','модуль','fab','умпб','фаб','кабу']) or \
            ('авіаційн' in l and 'бомб' in l) or ('керован' in l and 'бомб' in l):
             return 'kab', 'icon_missile.svg'
+        # Launch site detections for explicit "Пуск ... (РФ)" style messages
+        # Examples: "Пуск Приморськ-Ахтарська (РФ)", "Пуск Халино (РФ)", "Пуск Орел-Південний (РФ)", "Пуск Курська (РФ)"
+        launch_locations = [
+            'приморськ-ахтарськ', 'приморськ-ахтарська', 'приморсько-ахтарськ', 'приморсько-ахтарська',
+            'приморск-ахтарск', 'приморск-ахтарская', 'приморско-ахтарск', 'приморско-ахтарская',
+            'халино', 'орел-південний', 'орел-южный', 'курськ', 'курська', 'курск', 'курской', 'курскую'
+        ]
+        if ('пуск' in l or 'пуски' in l) and (('рф' in l) or any(loc in l for loc in launch_locations)):
+            return 'pusk', 'pusk.png'
         # Launch site detections for Shahed / UAV launches ("пуски" + origin phrases). User wants pusk.png marker.
         # Exclude КАБ launches - they should be classified as КАБ, not пуски
         if ('пуск' in l or 'пуски' in l) and (any(k in l for k in ['shahed','шахед','шахеді','шахедів','бпла','uav','дрон']) or ('аеродром' in l) or ('аэродром' in l)) and not any(k in l for k in ['каб','kab','умпк','fab','фаб']):
