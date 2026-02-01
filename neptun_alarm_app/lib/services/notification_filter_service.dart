@@ -49,17 +49,10 @@ class NotificationFilterService {
         return match;
       }
       
-      // Якщо подія не має raionId (тільки oblast) - перевіряємо oblast
-      // Показуємо повідомлення для всієї області якщо користувач вибрав райони з цієї області
-      // (сервер не завжди може визначити точний район)
-      final userOblastIds = user.raionIds
-          .map((raionId) => _db.getOblastIdForRaion(raionId))
-          .whereType<String>()
-          .toSet();
-      
-      final match = userOblastIds.contains(event.oblastId);
-      debugPrint('🔍 Filter: raion → oblast fallback ${event.oblastId} in $userOblastIds → $match');
-      return match;
+      // Якщо подія не має raionId (тільки oblast) - НЕ показуємо
+      // Користувач вибрав конкретні райони, йому не потрібні загальні повідомлення про область
+      debugPrint('🚫 Filter: user selected raions but event has no raionId (oblast=${event.oblastId})');
+      return false;
     }
 
     // 3. Перевірка по області

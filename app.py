@@ -1301,28 +1301,38 @@ def get_region_ids_from_place(place: str, region: str) -> tuple:
                         oblast_id = _resolve_oblast_id_from_name(state_name)
 
             if not raion_id:
-                settlement = (
-                    components.get('city') or components.get('town') or components.get('village') or
-                    components.get('hamlet') or components.get('municipality')
-                )
-                settlement_norm = _normalize_admin_name(settlement) if settlement else ''
-                if settlement_norm and settlement_norm in PLACE_TO_RAION_ID:
-                    found_oblast, found_raion = PLACE_TO_RAION_ID[settlement_norm]
-                    if not oblast_id or found_oblast == oblast_id:
-                        raion_id = found_raion
-
-            if not raion_id:
+                # Try to extract raion from OpenCage county/district field
+                # OpenCage returns format like "Kharkivskyi district" or "Харківський район"
                 county = components.get('county') or components.get('district') or components.get('state_district')
-                county_norm = _normalize_admin_name(county) if county else ''
-                if county_norm:
+                if county:
+                    county_lower = county.lower()
+                    # Remove "district", "район", "raion" suffixes
+                    county_clean = county_lower.replace(' district', '').replace(' район', '').replace(' raion', '').strip()
+                    
+                    # Try to map district name to raion ID
+                    # Pattern: "kharkivskyi" -> "харківський" -> check in PLACE_TO_RAION_ID
                     for keyword, (kw_oblast, kw_raion) in PLACE_TO_RAION_ID.items():
-                        if (not oblast_id or kw_oblast == oblast_id) and keyword in county_norm:
+                        keyword_root = keyword.replace('ський', '').replace('цький', '').strip()
+                        if (not oblast_id or kw_oblast == oblast_id) and keyword_root in county_clean:
                             raion_id = kw_raion
                             break
+                
+                # If still no raion, try settlement name itself
+                if not raion_id:
+                    settlement = (
+                        components.get('city') or components.get('town') or components.get('village') or
+                        components.get('hamlet') or components.get('municipality')
+                    )
+                    settlement_norm = _normalize_admin_name(settlement) if settlement else ''
+                    if settlement_norm and settlement_norm in PLACE_TO_RAION_ID:
+                        found_oblast, found_raion = PLACE_TO_RAION_ID[settlement_norm]
+                        if not oblast_id or found_oblast == oblast_id:
+                            raion_id = found_raion
     
     result = (oblast_id, raion_id)
     _region_ids_cache_set(cache_key, result)
     return result
+
 
 # --- Geographic Utilities ---
 # Used for: trajectory calculation, threat direction, marker positioning
