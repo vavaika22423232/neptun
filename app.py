@@ -2695,11 +2695,9 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
                     break
 
         if not topic:
-            print(f"[TELEGRAM_PUSH] ⚠️ No topic found for '{region_name}', falling back to all_regions", flush=True)
-            log.warning(f"⚠️ No topic mapping for region: {region_name}, location was: {location}")
-            # Try to send to all_regions anyway so users with all_regions get it
-            topic = 'all_regions'
-            log.info(f"Fallback to all_regions topic for {region_name}")
+            print(f"[TELEGRAM_PUSH] ❌ No topic found for '{region_name}', skipping notification", flush=True)
+            log.warning(f"❌ No topic mapping for region: {region_name}, location was: {location} - notification NOT sent")
+            return  # Don't send if we can't determine the region
 
         print(f"[TELEGRAM_PUSH] Final topic: {topic}", flush=True)
         log.info(f"Sending telegram threat to topic: {topic}")
@@ -2776,63 +2774,6 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
         except Exception as e:
             print(f"[TELEGRAM_PUSH] ❌ Failed to send to topic '{topic}': {e}", flush=True)
             log.error(f"Failed to send telegram threat to topic {topic}: {e}")
-
-        # Do NOT broadcast to all_regions by default.
-        # Only send to all_regions if this message already targets all_regions.
-        if topic == 'all_regions':
-            try:
-                # NO top-level notification - same fix as above for iOS
-                message_all = messaging.Message(
-                    data={
-                        'type': 'telegram_threat',
-                        'title': title,
-                        'body': body,
-                        'location': tts_location,
-                        'region': region_name,
-                        'oblast_id': oblast_id or '',
-                        'raion_id': raion_id or '',
-                        'settlement_id': '',
-                        'alarm_state': 'active',
-                        'is_critical': 'true' if is_critical else 'false',
-                        'threat_type': threat_type_readable,
-                        'timestamp': datetime.now(pytz.timezone('Europe/Kiev')).isoformat(),
-                        'click_action': 'FLUTTER_NOTIFICATION_CLICK',
-                    },
-                    android=messaging.AndroidConfig(
-                        priority='high',
-                        ttl=timedelta(seconds=300),
-                        notification=messaging.AndroidNotification(
-                            title=title,
-                            body=body,
-                            icon='ic_notification',
-                            channel_id='critical_alerts',
-                            priority='max',
-                            default_vibrate_timings=True,
-                            default_sound=True,
-                        ),
-                    ),
-                    apns=messaging.APNSConfig(
-                        headers={
-                            'apns-priority': '10',
-                            'apns-push-type': 'alert',
-                            'apns-expiration': str(int(time.time()) + 300),
-                        },
-                        payload=messaging.APNSPayload(
-                            aps=messaging.Aps(
-                                alert=messaging.ApsAlert(title=title, body=body),
-                                sound='default',
-                                badge=1,
-                                content_available=True,
-                                mutable_content=True,
-                            ),
-                        ),
-                    ),
-                    topic='all_regions',
-                )
-                messaging.send(message_all)
-                log.info("✅ Telegram threat sent to all_regions topic (explicit)")
-            except Exception as e:
-                log.error(f"Failed to send telegram threat to all_regions: {e}")
 
         log.info(f"Sent telegram threat notification to topic: {topic}")
 
