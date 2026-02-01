@@ -463,6 +463,10 @@ def ensure_city_coords_with_message_context(city_name, message_text=None):
     if message_text:
         # PRIORITY: Extract region from parentheses format "Місто (Область обл.)"
         region = _extract_oblast_from_text(message_text)
+        if region:
+            region_lower = region.lower()
+            if 'область' not in region_lower and not region_lower.startswith('м.') and not region_lower.startswith('ар '):
+                region = f"{region} область"
     print(f"[GEOCODE_CONTEXT] city='{city_name}', extracted_region='{region}'", flush=True)
     coords = opencage_geocode(city_name, region)
     if coords:
@@ -992,6 +996,10 @@ PLACE_TO_RAION_ID = {
     
     # Запорізька область (UA-23)
     'запоріжжя': ('UA-23', 'UA-23-01'),
+    'біленьке': ('UA-23', 'UA-23-01'),
+    'беленке': ('UA-23', 'UA-23-01'),
+    'беленьке': ('UA-23', 'UA-23-01'),
+    'bilenke': ('UA-23', 'UA-23-01'),
     'мелітополь': ('UA-23', 'UA-23-02'),
     'веселе': ('UA-23', 'UA-23-02'),
     'бердянськ': ('UA-23', 'UA-23-03'),
@@ -2460,6 +2468,9 @@ def send_alarm_notification(region_data, alarm_started: bool):
                 
                 log.info(f"TTS location for FCM: tts_location={tts_location}, region_name={region_name}, fcm_location={fcm_location}")
 
+                # Resolve region IDs for client-side filtering
+                oblast_id, raion_id = get_region_ids_from_place(fcm_location, region_name)
+
                 # For Android: DATA-ONLY message so background handler can process TTS
                 # For iOS: Include notification so system shows alert (TTS won't work in background on iOS)
                 message = messaging.Message(
@@ -2471,6 +2482,9 @@ def send_alarm_notification(region_data, alarm_started: bool):
                         'location': fcm_location,  # Конкретне місто або область для TTS
                         'region': region_name,  # Область (для фільтрації)
                         'region_id': region_id,
+                        'oblast_id': oblast_id or '',
+                        'raion_id': raion_id or '',
+                        'settlement_id': '',
                         'alarm_state': 'active' if alarm_started else 'ended',
                         'is_critical': 'true' if is_critical else 'false',
                         'threat_type': tts_threat,  # Чіткий тип загрози для TTS
@@ -2763,60 +2777,62 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
             print(f"[TELEGRAM_PUSH] ❌ Failed to send to topic '{topic}': {e}", flush=True)
             log.error(f"Failed to send telegram threat to topic {topic}: {e}")
 
-        # Also send to 'all_regions' topic for users who want all alerts
-        try:
-            # NO top-level notification - same fix as above for iOS
-            message_all = messaging.Message(
-                data={
-                    'type': 'telegram_threat',
-                    'title': title,
-                    'body': body,
-                    'location': tts_location,
-                    'region': region_name,
-                    'oblast_id': oblast_id or '',
-                    'raion_id': raion_id or '',
-                    'settlement_id': '',
-                    'alarm_state': 'active',
-                    'is_critical': 'true' if is_critical else 'false',
-                    'threat_type': threat_type_readable,
-                    'timestamp': datetime.now(pytz.timezone('Europe/Kiev')).isoformat(),
-                    'click_action': 'FLUTTER_NOTIFICATION_CLICK',
-                },
-                android=messaging.AndroidConfig(
-                    priority='high',
-                    ttl=timedelta(seconds=300),
-                    notification=messaging.AndroidNotification(
-                        title=title,
-                        body=body,
-                        icon='ic_notification',
-                        channel_id='critical_alerts',
-                        priority='max',
-                        default_vibrate_timings=True,
-                        default_sound=True,
-                    ),
-                ),
-                apns=messaging.APNSConfig(
-                    headers={
-                        'apns-priority': '10',
-                        'apns-push-type': 'alert',
-                        'apns-expiration': str(int(time.time()) + 300),
+        # Do NOT broadcast to all_regions by default.
+        # Only send to all_regions if this message already targets all_regions.
+        if topic == 'all_regions':
+            try:
+                # NO top-level notification - same fix as above for iOS
+                message_all = messaging.Message(
+                    data={
+                        'type': 'telegram_threat',
+                        'title': title,
+                        'body': body,
+                        'location': tts_location,
+                        'region': region_name,
+                        'oblast_id': oblast_id or '',
+                        'raion_id': raion_id or '',
+                        'settlement_id': '',
+                        'alarm_state': 'active',
+                        'is_critical': 'true' if is_critical else 'false',
+                        'threat_type': threat_type_readable,
+                        'timestamp': datetime.now(pytz.timezone('Europe/Kiev')).isoformat(),
+                        'click_action': 'FLUTTER_NOTIFICATION_CLICK',
                     },
-                    payload=messaging.APNSPayload(
-                        aps=messaging.Aps(
-                            alert=messaging.ApsAlert(title=title, body=body),
-                            sound='default',
-                            badge=1,
-                            content_available=True,
-                            mutable_content=True,
+                    android=messaging.AndroidConfig(
+                        priority='high',
+                        ttl=timedelta(seconds=300),
+                        notification=messaging.AndroidNotification(
+                            title=title,
+                            body=body,
+                            icon='ic_notification',
+                            channel_id='critical_alerts',
+                            priority='max',
+                            default_vibrate_timings=True,
+                            default_sound=True,
                         ),
                     ),
-                ),
-                topic='all_regions',
-            )
-            messaging.send(message_all)
-            log.info(f"✅ Telegram threat also sent to all_regions topic")
-        except Exception as e:
-            log.error(f"Failed to send telegram threat to all_regions: {e}")
+                    apns=messaging.APNSConfig(
+                        headers={
+                            'apns-priority': '10',
+                            'apns-push-type': 'alert',
+                            'apns-expiration': str(int(time.time()) + 300),
+                        },
+                        payload=messaging.APNSPayload(
+                            aps=messaging.Aps(
+                                alert=messaging.ApsAlert(title=title, body=body),
+                                sound='default',
+                                badge=1,
+                                content_available=True,
+                                mutable_content=True,
+                            ),
+                        ),
+                    ),
+                    topic='all_regions',
+                )
+                messaging.send(message_all)
+                log.info("✅ Telegram threat sent to all_regions topic (explicit)")
+            except Exception as e:
+                log.error(f"Failed to send telegram threat to all_regions: {e}")
 
         log.info(f"Sent telegram threat notification to topic: {topic}")
 
