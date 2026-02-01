@@ -7961,15 +7961,15 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             # ONLY OpenCage API - no local dictionaries!
             if not coords and cache_key not in _mapstransler_geocode_cache and GEOCODER_AVAILABLE:
                 try:
-                    region_for_geocode = None
-                    if target_state:
-                        region_for_geocode = target_state.replace(' область', '').replace('область', '').strip()
+                    # Use target_state directly (with "область") for better disambiguation
+                    # OpenCage understands "Дніпропетровська область" better than just "Дніпропетровська"
+                    region_for_geocode = target_state if target_state else None
                     
                     opencage_coords = opencage_geocode(city_norm, region=region_for_geocode)
                     if opencage_coords:
                         coords = opencage_coords
                         _mapstransler_geocode_cache[cache_key] = coords
-                        add_debug_log(f"OpenCage: '{city_norm}' -> {coords}", "mapstransler")
+                        add_debug_log(f"OpenCage: '{city_norm}' with region '{region_for_geocode}' -> {coords}", "mapstransler")
                 except Exception as e:
                     add_debug_log(f"OpenCage error: {e}", "mapstransler")
 

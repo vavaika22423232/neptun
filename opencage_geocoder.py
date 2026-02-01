@@ -16,6 +16,10 @@ OPENCAGE_API_KEY = os.environ.get('OPENCAGE_API_KEY', 'c30fbe219d5d49ada3657da33
 HARDCODED_COORDS = {
     'степногірськ|запорізька': (47.295, 35.482),  # Степногірськ, Запорізька область
     'степногірськ': (47.295, 35.482),  # Default to Ukraine location, not Kazakhstan
+    'біленьке|запорізька': (47.8525, 35.1883),  # Біленьке, Запорізька область (near Zaporizhzhia)
+    'біленьке': (47.8525, 35.1883),  # Default to Zaporizhzhia location
+    'беленьке|запорізька': (47.8525, 35.1883),  # Variant spelling
+    'беленьке': (47.8525, 35.1883),  # Variant spelling
 }
 
 # Use /data for persistent storage on Render, fallback to local dir
