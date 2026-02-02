@@ -98,6 +98,44 @@ except ImportError as e:
 gc.collect()
 
 # ============================================================================
+# HTTP Session with connection pooling for better performance
+# ============================================================================
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+def _create_http_session():
+    """Create HTTP session with connection pooling and retry logic"""
+    session = requests.Session()
+    
+    # Retry strategy
+    retry_strategy = Retry(
+        total=3,
+        status_forcelist=[429, 500, 502, 503, 504],
+        backoff_factor=0.5,
+        allowed_methods=["HEAD", "GET", "OPTIONS", "POST"]
+    )
+    
+    # Connection pooling (10 connections per host, keep-alive)
+    adapter = HTTPAdapter(
+        max_retries=retry_strategy,
+        pool_connections=10,
+        pool_maxsize=20,
+        pool_block=False
+    )
+    
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    
+    # Set default timeout
+    session.timeout = (5, 10)  # (connect timeout, read timeout)
+    
+    return session
+
+# Global HTTP session
+http_requests = _create_http_session()
+
+# ============================================================================
 # HIGH-LOAD OPTIMIZATION: Response caching for API endpoints
 # ============================================================================
 class ResponseCache:
@@ -135,7 +173,7 @@ class ResponseCache:
             expires_at = time.time() + (ttl or self.default_ttl)
             self._cache[key] = (data, expires_at)
 
-    def clear_expired(self):
+    def cleanup(self):
         """Remove expired entries (call periodically)."""
         with self._lock:
             now = time.time()
@@ -143,6 +181,11 @@ class ResponseCache:
             for k in expired_keys:
                 del self._cache[k]
             return len(expired_keys)
+    
+    @property
+    def cache(self):
+        """Direct access to cache dict for size metrics"""
+        return self._cache
 
     def stats(self) -> dict:
         with self._lock:
@@ -1306,17 +1349,22 @@ def get_region_ids_from_place(place: str, region: str) -> tuple:
     """
     Extract oblast_id and raion_id from place name and region.
     Returns (oblast_id, raion_id) or (None, None) if not found.
+    Uses aggressive caching for performance.
     """
+    # Fast path: check cache first
     cache_key = f"{(place or '').lower().strip()}|{(region or '').lower().strip()}"
     cached = _region_ids_cache_get(cache_key)
     if cached is not None:
         return cached
     
+    # Direct lookup in REGION_TO_OBLAST_ID
     oblast_id = REGION_TO_OBLAST_ID.get(region)
     raion_id = None
     
     if not oblast_id:
-        return (None, None)
+        result = (None, None)
+        _region_ids_cache_set(cache_key, result)
+        return result
     
     # Try to find raion from place
     place_clean = ''
@@ -2598,11 +2646,15 @@ def send_alarm_notification(region_data, alarm_started: bool):
                     topic=target_topic,  # Send to topic instead of individual token
                 )
 
-                response = messaging.send(message)
-                success_count += 1
-                log.info(f"✅ Alarm notification sent to topic {target_topic}: {response}")
+                success, response, error = _send_fcm_with_retry(message)
+                
+                if success:
+                    success_count += 1
+                    log.info(f"✅ Alarm notification sent to topic {target_topic}: {response}")
+                else:
+                    log.error(f"Failed to send alarm to topic {target_topic} after retries: {error}")
             except Exception as e:
-                log.error(f"Failed to send alarm to topic {target_topic}: {e}")
+                log.error(f"Exception sending alarm to topic {target_topic}: {e}")
 
         log.info(f"Sent alarm notifications to {success_count} topics for region: {region_name}")
     except Exception as e:
@@ -2616,6 +2668,234 @@ _telegram_alert_lock = threading.Lock()
 # Track regions that received Telegram notifications recently to suppress duplicate alarm notifications
 # region_name (normalized) -> timestamp
 _telegram_region_notified = {}
+
+# Cache for region topic lookups (region_name -> topic)
+_region_topic_cache = {}
+_region_topic_cache_lock = threading.Lock()
+
+# Cache for threat classifications (message_hash -> classification)
+_threat_classification_cache = {}
+_threat_classification_cache_lock = threading.Lock()
+_THREAT_CACHE_TTL = 3600  # 1 hour
+
+# ============================================================================
+# Memory Management & Automatic Cleanup
+# ============================================================================
+
+class MemoryManager:
+    """Automatic memory cleanup for caches"""
+    
+    def __init__(self):
+        self.last_cleanup = time.time()
+        self.cleanup_interval = 600  # 10 minutes
+        self.metrics = {
+            'cleanups': 0,
+            'items_removed': 0,
+            'memory_freed_mb': 0
+        }
+    
+    def should_cleanup(self):
+        return time.time() - self.last_cleanup > self.cleanup_interval
+    
+    def cleanup_all_caches(self):
+        """Clean up all caches - call periodically"""
+        if not self.should_cleanup():
+            return
+        
+        import psutil
+        process = psutil.Process()
+        mem_before = process.memory_info().rss / 1024 / 1024  # MB
+        
+        removed = 0
+        
+        # Cleanup ResponseCache
+        removed += RESPONSE_CACHE.cleanup()
+        
+        # Cleanup threat classification cache
+        with _threat_classification_cache_lock:
+            now = time.time()
+            old_keys = [k for k, (_, ts) in _threat_classification_cache.items() 
+                       if now - ts > _THREAT_CACHE_TTL]
+            for key in old_keys:
+                del _threat_classification_cache[key]
+            removed += len(old_keys)
+        
+        # Cleanup telegram alert cache
+        with _telegram_alert_lock:
+            now = time.time()
+            old_keys = [k for k, ts in _telegram_alert_sent.items() 
+                       if now - ts > 600]
+            for key in old_keys:
+                del _telegram_alert_sent[key]
+            removed += len(old_keys)
+        
+        # Cleanup region notified cache
+        old_keys = [k for k, ts in _telegram_region_notified.items() 
+                   if now - ts > 300]
+        for key in old_keys:
+            del _telegram_region_notified[key]
+        removed += len(old_keys)
+        
+        # Force garbage collection
+        gc.collect()
+        
+        mem_after = process.memory_info().rss / 1024 / 1024
+        mem_freed = max(0, mem_before - mem_after)
+        
+        self.metrics['cleanups'] += 1
+        self.metrics['items_removed'] += removed
+        self.metrics['memory_freed_mb'] += mem_freed
+        self.last_cleanup = time.time()
+        
+        if removed > 0:
+            log.info(f"🧹 Memory cleanup: removed {removed} cached items, freed ~{mem_freed:.1f}MB")
+        
+        return removed
+
+_memory_manager = MemoryManager()
+
+def _auto_cleanup_if_needed():
+    """Call this in request handlers to trigger cleanup"""
+    if _memory_manager.should_cleanup():
+        threading.Thread(target=_memory_manager.cleanup_all_caches, daemon=True).start()
+
+
+# ============================================================================
+# Request Deduplication - Coalesce identical concurrent requests
+# ============================================================================
+
+_pending_requests = {}  # request_key -> Future-like object
+_pending_requests_lock = threading.Lock()
+
+class RequestResult:
+    """Thread-safe result container"""
+    def __init__(self):
+        self.result = None
+        self.error = None
+        self.ready = threading.Event()
+    
+    def set_result(self, value):
+        self.result = value
+        self.ready.set()
+    
+    def set_error(self, error):
+        self.error = error
+        self.ready.set()
+    
+    def wait(self, timeout=10):
+        """Wait for result, return (result, error)"""
+        self.ready.wait(timeout)
+        return self.result, self.error
+
+def deduplicate_request(key: str, func, *args, **kwargs):
+    """Deduplicate identical concurrent requests"""
+    with _pending_requests_lock:
+        if key in _pending_requests:
+            # Request already in progress, wait for it
+            pending = _pending_requests[key]
+            is_waiting = True
+        else:
+            # First request with this key
+            pending = RequestResult()
+            _pending_requests[key] = pending
+            is_waiting = False
+    
+    if is_waiting:
+        # Wait for original request to complete
+        result, error = pending.wait()
+        if error:
+            raise error
+        return result
+    
+    # Execute the request
+    try:
+        result = func(*args, **kwargs)
+        pending.set_result(result)
+        return result
+    except Exception as e:
+        pending.set_error(e)
+        raise
+    finally:
+        # Cleanup
+        with _pending_requests_lock:
+            _pending_requests.pop(key, None)
+
+
+# Cache for threat classifications (message_hash -> classification)
+# (declarations moved above for MemoryManager)
+
+
+def _get_cached_topic(region_name: str) -> str | None:
+    """Get topic from cache with thread safety"""
+    with _region_topic_cache_lock:
+        return _region_topic_cache.get(region_name)
+
+
+def _cache_topic(region_name: str, topic: str):
+    """Cache topic lookup result"""
+    with _region_topic_cache_lock:
+        _region_topic_cache[region_name] = topic
+
+
+def _classify_threat_cached(message_text: str) -> dict | None:
+    """Classify threat with caching"""
+    import hashlib
+    msg_hash = hashlib.md5(message_text.encode()).hexdigest()
+    
+    with _threat_classification_cache_lock:
+        # Check cache
+        if msg_hash in _threat_classification_cache:
+            cached, timestamp = _threat_classification_cache[msg_hash]
+            if time.time() - timestamp < _THREAT_CACHE_TTL:
+                return cached
+        
+        # Classify
+        try:
+            result = classify_threat_with_ai(message_text)
+            _threat_classification_cache[msg_hash] = (result, time.time())
+            
+            # Cleanup old entries (keep last 1000)
+            if len(_threat_classification_cache) > 1000:
+                items = sorted(_threat_classification_cache.items(), 
+                             key=lambda x: x[1][1])
+                _threat_classification_cache.clear()
+                _threat_classification_cache.update(dict(items[-500:]))
+            
+            return result
+        except Exception as e:
+            log.warning(f"Threat classification error: {e}")
+            return None
+
+
+def _send_fcm_with_retry(message, max_retries=2, initial_delay=0.5):
+    """
+    Send FCM message with exponential backoff retry.
+    Returns (success: bool, response: str, error: str)
+    """
+    from firebase_admin import messaging
+    
+    for attempt in range(max_retries + 1):
+        try:
+            response = messaging.send(message)
+            return (True, response, None)
+        except Exception as e:
+            error_str = str(e)
+            
+            # Don't retry on quota/auth errors
+            if 'quota' in error_str.lower() or 'auth' in error_str.lower():
+                return (False, None, error_str)
+            
+            # Last attempt - give up
+            if attempt >= max_retries:
+                return (False, None, error_str)
+            
+            # Exponential backoff
+            delay = initial_delay * (2 ** attempt)
+            log.warning(f"FCM send failed (attempt {attempt + 1}/{max_retries + 1}), retrying in {delay}s: {error_str}")
+            time.sleep(delay)
+    
+    return (False, None, "Max retries exceeded")
+
 
 def send_telegram_threat_notification(message_text: str, location: str, message_id: str):
     """Send FCM notification for threat messages from Telegram (КАБи, ракети, БПЛА etc.)."""
@@ -2648,13 +2928,15 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
         msg_lower = message_text.lower()
         print(f"[TELEGRAM_PUSH] 📝 Processing: '{message_text[:50]}...'", flush=True)
 
-        # Try AI classification first for more accurate results
-        try:
-            ai_result = classify_threat_with_ai(message_text)
-            print(f"[TELEGRAM_PUSH] 🤖 AI result: {ai_result}", flush=True)
-        except Exception as ai_err:
-            print(f"[TELEGRAM_PUSH] ⚠️ AI classification failed: {ai_err}", flush=True)
-            ai_result = None
+        # Try AI classification first with caching
+        ai_result = None
+        if GROQ_ENABLED:
+            try:
+                ai_result = _classify_threat_cached(message_text)
+                if ai_result:
+                    print(f"[TELEGRAM_PUSH] 🤖 AI result (cached): {ai_result}", flush=True)
+            except Exception as ai_err:
+                print(f"[TELEGRAM_PUSH] ⚠️ AI classification failed: {ai_err}", flush=True)
 
         if ai_result and ai_result.get('threat_type') not in ['unknown', None]:
             # Use AI classification
@@ -2900,13 +3182,18 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
                 topic=topic,  # Send to topic instead of individual token
             )
 
-            response = messaging.send(message)
-            success_count = 1
-            print(f"[TELEGRAM_PUSH] ✅ Sent to topic '{topic}': {response}", flush=True)
-            log.info(f"✅ Telegram threat notification sent to topic {topic}: {response}")
+            success, response, error = _send_fcm_with_retry(message)
+            
+            if success:
+                success_count = 1
+                print(f"[TELEGRAM_PUSH] ✅ Sent to topic '{topic}': {response}", flush=True)
+                log.info(f"✅ Telegram threat notification sent to topic {topic}: {response}")
+            else:
+                print(f"[TELEGRAM_PUSH] ❌ Failed to send to topic '{topic}' after retries: {error}", flush=True)
+                log.error(f"Failed to send telegram threat to topic {topic} after retries: {error}")
         except Exception as e:
-            print(f"[TELEGRAM_PUSH] ❌ Failed to send to topic '{topic}': {e}", flush=True)
-            log.error(f"Failed to send telegram threat to topic {topic}: {e}")
+            print(f"[TELEGRAM_PUSH] ❌ Exception during send: {e}", flush=True)
+            log.error(f"Exception sending telegram threat to topic {topic}: {e}")
 
         log.info(f"Sent telegram threat notification to topic: {topic}")
 
@@ -16000,6 +16287,8 @@ def get_events():
 @protected_endpoint(is_heavy=False)  # PROTECTION: Rate limiting
 def get_messages():
     """Get recent alarm messages with coordinates for mobile apps."""
+    _auto_cleanup_if_needed()  # Periodic memory cleanup
+    
     # ===========================================================================
     # HARDENED /api/messages ENDPOINT - HIGH LOAD OPTIMIZED
     # Uses response cache to avoid reprocessing on every request
@@ -16986,6 +17275,19 @@ if 'health' not in app.view_functions:
             import time as time_module
             groq_cooldown_remaining = max(0, int(_groq_daily_cooldown_until - time_module.time()))
 
+        # Add memory manager metrics
+        memory_metrics = {
+            'cleanups_total': _memory_manager.metrics['cleanups'],
+            'items_removed': _memory_manager.metrics['items_removed'],
+            'memory_freed_mb': round(_memory_manager.metrics['memory_freed_mb'], 1),
+            'cache_sizes': {
+                'response_cache': len(RESPONSE_CACHE.cache),
+                'threat_cache': len(_threat_classification_cache),
+                'telegram_alerts': len(_telegram_alert_sent),
+                'region_topics': len(_region_topic_cache)
+            }
+        }
+
         return jsonify({
             'status':'ok',
             'messages':len(load_messages()),
@@ -16996,7 +17298,8 @@ if 'health' not in app.view_functions:
             'groq_enabled': GROQ_ENABLED,
             'groq_model': GROQ_MODEL if GROQ_ENABLED else None,
             'groq_available': groq_available,
-            'groq_cooldown_seconds': groq_cooldown_remaining
+            'groq_cooldown_seconds': groq_cooldown_remaining,
+            'memory': memory_metrics
         })
 
 @app.route('/ads.txt')

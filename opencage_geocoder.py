@@ -3,11 +3,14 @@ OpenCage Geocoder with MAXIMUM economy mode
 - Single API call per unique city
 - Persistent JSON cache
 - Negative cache for not-found cities
+- Rate limiting and batch processing
 """
 
 import json
 import os
 import requests
+import time
+import threading
 
 OPENCAGE_API_KEY = os.environ.get('OPENCAGE_API_KEY', 'c30fbe219d5d49ada3657da3326ca9b7')
 
@@ -176,6 +179,37 @@ _negative_cache = set()  # city_keys that were not found
 
 # Stats
 _stats = {'hits': 0, 'misses': 0, 'api_calls': 0}
+
+# Rate limiting for API calls
+_api_call_times = []
+_api_rate_limit_lock = threading.Lock()
+_MAX_API_CALLS_PER_SECOND = 1  # OpenCage free tier: 1 req/sec
+_MAX_API_CALLS_PER_DAY = 2500  # OpenCage free tier daily limit
+
+
+def _check_rate_limit() -> bool:
+    """Check if we can make an API call within rate limits"""
+    with _api_rate_limit_lock:
+        now = time.time()
+        
+        # Clean old timestamps (older than 24 hours)
+        _api_call_times[:] = [t for t in _api_call_times if now - t < 86400]
+        
+        # Check daily limit
+        if len(_api_call_times) >= _MAX_API_CALLS_PER_DAY:
+            print(f"[OPENCAGE] Daily rate limit reached ({_MAX_API_CALLS_PER_DAY} calls)", flush=True)
+            return False
+        
+        # Check per-second limit
+        recent_calls = [t for t in _api_call_times if now - t < 1.0]
+        if len(recent_calls) >= _MAX_API_CALLS_PER_SECOND:
+            # Wait a bit
+            sleep_time = 1.0 - (now - recent_calls[0])
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+        
+        _api_call_times.append(now)
+        return True
 
 
 def _normalize_city_name(city: str) -> str:
@@ -650,6 +684,12 @@ def _is_valid_settlement_result(result: dict, city: str, region: str = None) -> 
 
 def _call_api(city: str, region: str = None) -> tuple:
     """Make actual API call to OpenCage. Returns (lat, lon) or None."""
+    
+    # Check rate limit
+    if not _check_rate_limit():
+        print(f"[OPENCAGE] Rate limit exceeded, skipping API call for '{city}'", flush=True)
+        return None
+    
     _stats['api_calls'] += 1
     
     # Normalize city name (accusative -> nominative)
@@ -768,6 +808,47 @@ def _call_api(city: str, region: str = None) -> tuple:
     except Exception as e:
         print(f"[OPENCAGE] API exception: {e}", flush=True)
         return None
+
+
+def geocode_batch(cities: list, region: str = None) -> dict:
+    """
+    Geocode multiple cities at once for better efficiency.
+    Returns dict: {city: (lat, lon) or None}
+    """
+    results = {}
+    uncached = []
+    
+    # Check cache first for all cities
+    for city in cities:
+        cache_key = _normalize_key(city, region)
+        if not cache_key:
+            results[city] = None
+            continue
+        
+        # Check hardcoded
+        if cache_key in HARDCODED_COORDS:
+            results[city] = HARDCODED_COORDS[cache_key]
+            continue
+        
+        # Check positive cache
+        if cache_key in _cache:
+            results[city] = _cache[cache_key]
+            _stats['hits'] += 1
+            continue
+        
+        # Check negative cache
+        if cache_key in _negative_cache:
+            results[city] = None
+            _stats['hits'] += 1
+            continue
+        
+        uncached.append(city)
+    
+    # Geocode uncached cities
+    for city in uncached:
+        results[city] = geocode(city, region)
+    
+    return results
 
 
 def geocode(city: str, region: str = None) -> tuple:
