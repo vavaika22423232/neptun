@@ -4567,11 +4567,10 @@
           // Get threat type and icon
           const threatType = marker.threat_type || 'default';
           
-          // Skip if outside Ukraine bounds (but allow 'pusk' markers from RF territory)
-          if (threatType !== 'pusk') {
-            if (lat < MAP_BOUNDS.minLat || lat > MAP_BOUNDS.maxLat ||
-                lng < MAP_BOUNDS.minLng || lng > MAP_BOUNDS.maxLng) return;
-          }
+          // Skip if outside Ukraine bounds
+          if (lat < MAP_BOUNDS.minLat || lat > MAP_BOUNDS.maxLat ||
+              lng < MAP_BOUNDS.minLng || lng > MAP_BOUNDS.maxLng) return;
+          
           const iconFile = marker.marker_icon || THREAT_ICONS[threatType] || 'default.png';
           
           // Count markers by type
@@ -6572,11 +6571,10 @@
         if (isNaN(lat) || isNaN(lng)) return;
         
         const threatType = marker.threat_type || 'default';
-        // Skip if outside Ukraine bounds (but allow 'pusk' markers from RF territory)
-        if (threatType !== 'pusk') {
-          if (lat < MAP_BOUNDS.minLat || lat > MAP_BOUNDS.maxLat ||
-              lng < MAP_BOUNDS.minLng || lng > MAP_BOUNDS.maxLng) return;
-        }
+        // Skip if outside Ukraine bounds
+        if (lat < MAP_BOUNDS.minLat || lat > MAP_BOUNDS.maxLat ||
+            lng < MAP_BOUNDS.minLng || lng > MAP_BOUNDS.maxLng) return;
+        
         markerCounts[threatType] = (markerCounts[threatType] || 0) + 1;
         
         const leafletMarker = createLeafletMarker(marker, threatType);

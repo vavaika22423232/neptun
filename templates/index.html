@@ -2864,12 +2864,120 @@
   </style>
 </head>
 <body>
+  <!-- Deployment Loading Screen -->
+  <div id="deployment-screen" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#0a0e17;z-index:99999;justify-content:center;align-items:center;flex-direction:column;">
+    <style>
+      #deployment-screen {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        color: #fff;
+        text-align: center;
+      }
+      .deploy-logo {
+        font-size: 48px;
+        font-weight: 700;
+        color: #3b82f6;
+        margin-bottom: 20px;
+        animation: pulse 2s ease-in-out infinite;
+      }
+      .deploy-message {
+        font-size: 20px;
+        margin-bottom: 10px;
+        color: #e2e8f0;
+      }
+      .deploy-submessage {
+        font-size: 14px;
+        color: #94a3b8;
+        margin-bottom: 30px;
+      }
+      .deploy-spinner {
+        width: 40px;
+        height: 40px;
+        border: 3px solid #1e293b;
+        border-top-color: #3b82f6;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+      .deploy-timer {
+        margin-top: 20px;
+        font-size: 12px;
+        color: #64748b;
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+    </style>
+    <div class="deploy-logo">NEPTUN</div>
+    <div class="deploy-message">🔄 Вносяться зміни</div>
+    <div class="deploy-submessage">Треба хвилинку почекати...</div>
+    <div class="deploy-spinner"></div>
+    <div class="deploy-timer">Перевірка: <span id="deploy-timer">0</span> сек</div>
+  </div>
+
   <style>
     /* Smooth scroll behavior */
     html {
       scroll-behavior: smooth;
     }
   </style>
+
+  <script>
+    // Check API health on page load
+    (function checkServerHealth() {
+      let attempts = 0;
+      let startTime = Date.now();
+      const deployScreen = document.getElementById('deployment-screen');
+      const timerEl = document.getElementById('deploy-timer');
+      
+      function updateTimer() {
+        if (deployScreen.style.display === 'flex') {
+          const elapsed = Math.floor((Date.now() - startTime) / 1000);
+          timerEl.textContent = elapsed;
+        }
+      }
+      setInterval(updateTimer, 1000);
+      
+      function checkHealth() {
+        attempts++;
+        
+        fetch('/health', { 
+          method: 'GET',
+          cache: 'no-store',
+          signal: AbortSignal.timeout(5000)
+        })
+        .then(res => {
+          if (res.ok) {
+            // Server is healthy
+            if (deployScreen.style.display === 'flex') {
+              deployScreen.style.display = 'none';
+            }
+          } else if (res.status === 502 || res.status === 503) {
+            // Deployment in progress
+            deployScreen.style.display = 'flex';
+            setTimeout(checkHealth, 3000);
+          } else {
+            // Other error - hide screen
+            deployScreen.style.display = 'none';
+          }
+        })
+        .catch(err => {
+          // Network error or timeout - likely deployment
+          console.log('Health check failed:', err.message);
+          deployScreen.style.display = 'flex';
+          
+          // Retry with exponential backoff (max 10s)
+          const delay = Math.min(3000 * Math.pow(1.5, Math.min(attempts, 5)), 10000);
+          setTimeout(checkHealth, delay);
+        });
+      }
+      
+      // Initial check
+      checkHealth();
+    })();
+  </script>
 
   <script>
     // Generate unique user ID on first visit

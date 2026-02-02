@@ -2992,11 +2992,12 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
                 city_name = ' '.join(filtered_words).strip()
                 
                 # ВАЖЛИВО: Якщо після фільтрації залишилось тільки "р-н", "район" або інші загальні позначки
-                # це означає, що конкретне місто не вказане - використовуємо область
-                generic_markers = ['р-н', 'р-н.', 'рн', 'район', 'районі', 'району', 'районом', 'р н', 'р.н.']
+                # це означає, що конкретне місто не вказане - НЕ НАДСИЛАТИ повідомлення
+                generic_markers = ['р-н', 'р-н.', 'рн', 'район', 'районі', 'району', 'районом', 'р н', 'р.н.', 'н.п.', 'нп']
                 if city_name.lower().strip() in generic_markers or len(city_name) < 3:
-                    log.info(f"📍 Generic location marker detected: '{city_name}' - using oblast for notification")
-                    city_name = ''  # Скидаємо, щоб використати область
+                    log.info(f"🚫 Generic location marker detected: '{city_name}' from location '{location}' - SKIPPING notification (no specific city)")
+                    print(f"[TELEGRAM_PUSH] ❌ No specific city in location '{location}', skipping notification", flush=True)
+                    return  # НЕ надсилаємо якщо немає конкретного міста
                     
             oblast_match = RE_OBLAST_IN_PARENS.search(location)
             if oblast_match:
@@ -3119,15 +3120,39 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
         if not oblast_id:
             log.warning(f"⚠️ Failed to resolve oblast_id for region: {region_name} (location: {location})")
         
+        # Покращена резолюція raion_id з назви міста
         if not raion_id and city_name:
             # Try to resolve raion from city name
             city_lower = city_name.lower().strip()
-            for keyword, (kw_oblast, kw_raion) in PLACE_TO_RAION_ID.items():
-                if keyword in city_lower or city_lower in keyword:
-                    if not oblast_id or kw_oblast == oblast_id:
-                        raion_id = kw_raion
-                        log.info(f"📍 Resolved raion_id={raion_id} from city name: {city_name} (keyword: {keyword})")
-                        break
+            
+            # Мапа популярних міст → raion_id для точної фільтрації
+            # Формат: 'місто': 'UA-XX-YY' (код району)
+            CITY_TO_RAION = {
+                # Київська область
+                'біла церква': 'UA-32-01',  # Білоцерківський район
+                'білоцерківськ': 'UA-32-01',
+                'бориспіль': 'UA-32-02',  # Бориспільський район
+                'бровари': 'UA-32-03',  # Броварський район
+                'буча': 'UA-32-04',  # Бучанський район
+                'ірпінь': 'UA-32-04',
+                'вишгород': 'UA-32-05',  # Вишгородський район
+                'обухів': 'UA-32-06',  # Обухівський район
+                'фастів': 'UA-32-07',  # Фастівський район
+                # Додайте інші популярні міста за потреби
+            }
+            
+            # Спробувати exact match
+            if city_lower in CITY_TO_RAION:
+                raion_id = CITY_TO_RAION[city_lower]
+                log.info(f"📍 Exact match: city '{city_name}' -> raion_id={raion_id}")
+            else:
+                # Fallback to keyword matching in PLACE_TO_RAION_ID
+                for keyword, (kw_oblast, kw_raion) in PLACE_TO_RAION_ID.items():
+                    if keyword in city_lower or city_lower in keyword:
+                        if not oblast_id or kw_oblast == oblast_id:
+                            raion_id = kw_raion
+                            log.info(f"📍 Keyword match: '{city_name}' -> raion_id={raion_id} (keyword: {keyword})")
+                            break
 
         # Додаємо позначку якщо немає офіційної тривоги
         warning_prefix = ''
@@ -3149,6 +3174,7 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
                     'title': title,
                     'body': body,
                     'location': tts_location,  # City or region for TTS
+                    'city': city_name or '',  # Конкретне місто для фільтрації на клієнті
                     'region': region_name,
                     'oblast_id': oblast_id or '',
                     'raion_id': raion_id or '',
@@ -11206,6 +11232,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 raw_place = re.sub(r'\bрайон(у|а)?\b', '', raw_place).strip()
                 raw_place = re.sub(r'\bр-н\b', '', raw_place).strip()
                 raw_place = re.sub(r'\s+', ' ', raw_place)
+                
+                # Фільтр неправильних/жартівливих локацій
+                invalid_locations = ['пусківка', 'пуськівка', 'хуйовка', 'залупинськ']
+                if any(inv in raw_place.lower() for inv in invalid_locations):
+                    return []
+                
                 variants = {
                     raw_place,
                     raw_place.replace(' ', '-'),
