@@ -3514,12 +3514,12 @@
     // timeRange is controlled by server (MONITOR_PERIOD_MINUTES in admin)
     const urlParams = new URLSearchParams(window.location.search);
     
-    // SVG map bounds (Ukraine approximate bounds)
+    // SVG map bounds (Ukraine approximate bounds + RF launch sites)
     const MAP_BOUNDS = {
       minLat: 44.2,
-      maxLat: 52.4,
+      maxLat: 54.5,  // Extended to include RF launch sites like Шайковка
       minLng: 22.0,
-      maxLng: 40.2
+      maxLng: 52.0   // Extended to include eastern RF launch sites (Енгельс, Каспійське море)
     };
     // Make available globally for hybrid map
     window.MAP_BOUNDS = MAP_BOUNDS;
@@ -4409,12 +4409,14 @@
           // Skip markers without valid coordinates
           if (isNaN(lat) || isNaN(lng)) return;
           
-          // Skip if outside Ukraine bounds
-          if (lat < MAP_BOUNDS.minLat || lat > MAP_BOUNDS.maxLat ||
-              lng < MAP_BOUNDS.minLng || lng > MAP_BOUNDS.maxLng) return;
-          
           // Get threat type and icon
           const threatType = marker.threat_type || 'default';
+          
+          // Skip if outside Ukraine bounds (but allow 'pusk' markers from RF territory)
+          if (threatType !== 'pusk') {
+            if (lat < MAP_BOUNDS.minLat || lat > MAP_BOUNDS.maxLat ||
+                lng < MAP_BOUNDS.minLng || lng > MAP_BOUNDS.maxLng) return;
+          }
           const iconFile = marker.marker_icon || THREAT_ICONS[threatType] || 'default.png';
           
           // Count markers by type
@@ -6506,10 +6508,13 @@
         const lng = parseFloat(marker.lng);
         
         if (isNaN(lat) || isNaN(lng)) return;
-        if (lat < MAP_BOUNDS.minLat || lat > MAP_BOUNDS.maxLat ||
-            lng < MAP_BOUNDS.minLng || lng > MAP_BOUNDS.maxLng) return;
         
         const threatType = marker.threat_type || 'default';
+        // Skip if outside Ukraine bounds (but allow 'pusk' markers from RF territory)
+        if (threatType !== 'pusk') {
+          if (lat < MAP_BOUNDS.minLat || lat > MAP_BOUNDS.maxLat ||
+              lng < MAP_BOUNDS.minLng || lng > MAP_BOUNDS.maxLng) return;
+        }
         markerCounts[threatType] = (markerCounts[threatType] || 0) + 1;
         
         const leafletMarker = createLeafletMarker(marker, threatType);

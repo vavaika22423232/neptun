@@ -371,15 +371,23 @@ print("INFO: SpaCy DISABLED to save memory")
 
 # OpenCage geocoding integration (with persistent cache)
 try:
-    from opencage_geocoder import geocode as opencage_geocode, get_cache_stats
+    from opencage_geocoder import geocode as opencage_geocode, get_cache_stats, cleanup_bad_cache_entries, invalidate_cache_entry
     GEOCODER_AVAILABLE = True
     print("INFO: OpenCage geocoding ENABLED", flush=True)
+    # Run cache cleanup on startup to remove bad "round" coordinates
+    cleanup_result = cleanup_bad_cache_entries()
+    if cleanup_result['removed_count'] > 0:
+        print(f"INFO: Cleaned up {cleanup_result['removed_count']} bad geocode cache entries", flush=True)
 except ImportError as e:
     GEOCODER_AVAILABLE = False
     def opencage_geocode(_city, _region=None):
         return None
     def get_cache_stats():
         return {}
+    def cleanup_bad_cache_entries():
+        return {'removed_count': 0, 'kept_count': 0, 'removed_entries': []}
+    def invalidate_cache_entry(_city, _region=None):
+        return False
     print(f"WARNING: OpenCage geocoder not available: {e}", flush=True)
 
 
@@ -860,20 +868,60 @@ _RF_GEOCODE_CACHE: dict[str, tuple] = {}
 _RF_GEOCODE_CACHE_TTL = int(os.getenv('RF_GEOCODE_CACHE_TTL', '604800'))  # 7 days
 
 def _extract_oblast_from_text(text: str) -> str | None:
+    """
+    Extract oblast name from text with improved accuracy.
+    Handles formats: "Місто (Область обл.)", "в Області", "Область область"
+    """
     if not text:
         return None
+    
+    # Priority 1: Extract from parentheses - most reliable
     paren_match = RE_OBLAST_PARENS_NAME.search(text)
     if paren_match:
         candidate = paren_match.group(1).strip()
         if re.search(r'невідом|неизвест|unknown', candidate, re.IGNORECASE):
             return None
+        # Normalize: "Харківська обл." -> "Харківська область"
+        candidate = candidate.replace(' обл.', ' область').replace(' обл', ' область')
+        if 'область' not in candidate.lower():
+            candidate = f"{candidate} область"
         return candidate
+    
+    # Priority 2: Find oblast mentioned anywhere in text
     match = RE_OBLAST_ANYWHERE.search(text)
     if match:
         candidate = match.group(1).strip()
         if re.search(r'невідом|неизвест|unknown', candidate, re.IGNORECASE):
             return None
+        # Normalize
+        candidate = candidate.replace(' обл.', ' область').replace(' обл', ' область')
+        if 'область' not in candidate.lower():
+            candidate = f"{candidate} область"
         return candidate
+    
+    # Priority 3: Try to match major oblast names even without word "область"
+    text_lower = text.lower()
+    major_oblasts = [
+        'харківськ', 'донецьк', 'луганськ', 'запорізьк', 'херсонськ',
+        'дніпропетровськ', 'київськ', 'одеськ', 'львівськ', 'полтавськ',
+        'сумськ', 'чернігівськ', 'миколаївськ', 'черкаськ', 'кіровоградськ'
+    ]
+    for oblast_stem in major_oblasts:
+        if oblast_stem in text_lower:
+            # Find full word
+            pattern = rf'\b({oblast_stem}\w*)\b'
+            word_match = re.search(pattern, text_lower)
+            if word_match:
+                oblast_word = word_match.group(1)
+                # Capitalize properly
+                if oblast_word.endswith('ська') or oblast_word.endswith('ське'):
+                    oblast_name = oblast_word.capitalize() + ' область'
+                elif oblast_word.endswith('ський'):
+                    oblast_name = oblast_word.capitalize() + ' область'
+                else:
+                    oblast_name = oblast_word.capitalize() + 'а область'
+                return oblast_name
+    
     return None
 
 def _geocode_rf_place(place: str) -> tuple | None:
@@ -1046,12 +1094,17 @@ PLACE_TO_RAION_ID = {
     'роздільна': ('UA-51', 'UA-51-07'),
     'біляївка': ('UA-51', 'UA-51-07'),
 
+    # м. Київ (UA-30) - місто зі спеціальним статусом
+    'київ': ('UA-30', ''),  # Київ не має raion_id, тільки oblast_id
+    'киев': ('UA-30', ''),
+
     # Київська область (UA-32)
     'біла церква': ('UA-32', 'UA-32-01'),
     'білацерква': ('UA-32', 'UA-32-01'),
     'бориспіль': ('UA-32', 'UA-32-02'),
     'переяслав': ('UA-32', 'UA-32-02'),
     'бровари': ('UA-32', 'UA-32-03'),
+    'броварський': ('UA-32', 'UA-32-03'),
     'буча': ('UA-32', 'UA-32-04'),
     'ірпінь': ('UA-32', 'UA-32-04'),
     'гостомель': ('UA-32', 'UA-32-04'),
@@ -2479,12 +2532,33 @@ def send_alarm_notification(region_data, alarm_started: bool):
                 log.info(f"TTS location for FCM: tts_location={tts_location}, region_name={region_name}, fcm_location={fcm_location}")
 
                 # Resolve region IDs for client-side filtering
-                oblast_id, raion_id = get_region_ids_from_place(fcm_location, region_name)
+                # CRITICAL FIX: If region is a District, resolve its Oblast first
+                region_type = region_data.get('regionType', '')
+                oblast_name = region_name
+                if region_type == 'District':
+                    oblast_name = DISTRICT_TO_OBLAST.get(region_name, region_name)
+                    log.info(f"District {region_name} resolved to oblast: {oblast_name}")
+                
+                oblast_id, raion_id = get_region_ids_from_place(fcm_location, oblast_name)
+                
+                # If district, also try to resolve raion_id from district name directly
+                if region_type == 'District' and not raion_id:
+                    # Try to find raion_id from PLACE_TO_RAION_ID using district name
+                    district_lower = region_name.lower().replace(' район', '').replace('ський', '').replace('цький', '').strip()
+                    for keyword, (kw_oblast, kw_raion) in PLACE_TO_RAION_ID.items():
+                        keyword_root = keyword.replace('ський', '').replace('цький', '').strip()
+                        if oblast_id and kw_oblast == oblast_id and keyword_root in district_lower:
+                            raion_id = kw_raion
+                            log.info(f"Resolved raion_id={raion_id} from district name: {region_name}")
+                            break
+                
+                log.info(f"📍 Resolved IDs for FCM: oblast_id={oblast_id}, raion_id={raion_id}, region_type={region_type}")
+                if not oblast_id:
+                    log.warning(f"⚠️ Failed to resolve oblast_id for region: {region_name} (oblast: {oblast_name})")
 
-                # For Android: DATA-ONLY message so background handler can process TTS
-                # For iOS: Include notification so system shows alert (TTS won't work in background on iOS)
+                # For Android: DATA-ONLY (no notification block) so background handler can process TTS
+                # For iOS: Use APNSPayload (not top-level notification) for more reliable delivery
                 message = messaging.Message(
-                    # NO notification block - Android needs data-only for background handler + TTS
                     data={
                         'type': 'alarm',
                         'title': title,
@@ -2634,6 +2708,14 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
                 city_words = city_name.split()
                 filtered_words = [w for w in city_words if not any(p in w.lower() for p in threat_prefixes)]
                 city_name = ' '.join(filtered_words).strip()
+                
+                # ВАЖЛИВО: Якщо після фільтрації залишилось тільки "р-н", "район" або інші загальні позначки
+                # це означає, що конкретне місто не вказане - використовуємо область
+                generic_markers = ['р-н', 'р-н.', 'рн', 'район', 'районі', 'району', 'районом', 'р н', 'р.н.']
+                if city_name.lower().strip() in generic_markers or len(city_name) < 3:
+                    log.info(f"📍 Generic location marker detected: '{city_name}' - using oblast for notification")
+                    city_name = ''  # Скидаємо, щоб використати область
+                    
             oblast_match = RE_OBLAST_IN_PARENS.search(location)
             if oblast_match:
                 region_name = oblast_match.group(1).strip()
@@ -2711,6 +2793,31 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
 
         print(f"[TELEGRAM_PUSH] Final topic: {topic}", flush=True)
         log.info(f"Sending telegram threat to topic: {topic}")
+        
+        # Перевірка чи є офіційна тривога в регіоні (гібридний режим)
+        has_official_alarm = False
+        try:
+            # Перевіряємо чи є активна тривога в цьому регіоні
+            if oblast_id or region_name:
+                # Намагаємось знайти регіон в _alarm_states
+                for region_data in _alarm_states:
+                    region_display = get_region_display_name(region_data)
+                    region_id = region_data.get('regionId', '')
+                    
+                    # Перевіряємо співпадіння по назві або ID
+                    if (region_display.lower() == region_name.lower() or
+                        (oblast_id and oblast_id in region_id)):
+                        # Перевіряємо чи є активна тривога
+                        alert_types = region_data.get('activeAlerts', [])
+                        if alert_types:
+                            has_official_alarm = True
+                            log.info(f"✅ Official alarm active in {region_name}: {alert_types}")
+                            break
+                
+                if not has_official_alarm:
+                    log.info(f"⚠️ No official alarm in {region_name} - marking as Telegram warning")
+        except Exception as check_err:
+            log.warning(f"Error checking official alarm: {check_err}")
 
         # Map internal threat codes to human-readable Ukrainian for TTS
         threat_type_readable = {
@@ -2723,12 +2830,37 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
         # Resolve region IDs for ID-based filtering on client
         place_for_ids = city_name or location
         oblast_id, raion_id = get_region_ids_from_place(place_for_ids, region_name)
+        
+        log.info(f"📍 Telegram threat: place_for_ids='{place_for_ids}', region_name='{region_name}'")
+        log.info(f"📍 Resolved IDs: oblast_id={oblast_id}, raion_id={raion_id}")
+        
+        if not oblast_id:
+            log.warning(f"⚠️ Failed to resolve oblast_id for region: {region_name} (location: {location})")
+        
+        if not raion_id and city_name:
+            # Try to resolve raion from city name
+            city_lower = city_name.lower().strip()
+            for keyword, (kw_oblast, kw_raion) in PLACE_TO_RAION_ID.items():
+                if keyword in city_lower or city_lower in keyword:
+                    if not oblast_id or kw_oblast == oblast_id:
+                        raion_id = kw_raion
+                        log.info(f"📍 Resolved raion_id={raion_id} from city name: {city_name} (keyword: {keyword})")
+                        break
+
+        # Додаємо позначку якщо немає офіційної тривоги
+        warning_prefix = ''
+        if not has_official_alarm:
+            warning_prefix = '⚠️ '
+            # Додаємо пояснення в body
+            if not body.startswith('⚠️'):
+                body = f"{body} (попередження з Telegram, офіційної тривоги ще немає)"
+            title = f"{warning_prefix}{title}"
 
         # Send to topic
         success_count = 0
         try:
-            # NO top-level notification - Android uses AndroidNotification, iOS uses APNSPayload
-            # Having both notification AND apns.payload can cause iOS delivery issues
+            # DATA-ONLY for Android (enables background handler + TTS)
+            # APNSPayload for iOS (shows notification + data for foreground TTS)
             message = messaging.Message(
                 data={
                     'type': 'telegram_threat',
@@ -2748,15 +2880,6 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
                 android=messaging.AndroidConfig(
                     priority='high',
                     ttl=timedelta(seconds=300),
-                    notification=messaging.AndroidNotification(
-                        title=title,
-                        body=body,
-                        icon='ic_notification',
-                        channel_id='critical_alerts',
-                        priority='max',
-                        default_vibrate_timings=True,
-                        default_sound=True,
-                    ),
                 ),
                 apns=messaging.APNSConfig(
                     headers={
@@ -17875,6 +17998,57 @@ def admin_neg_geocode_delete():
         _save_neg_geocode_cache()
         return jsonify({'status':'ok','deleted':True})
     return jsonify({'status':'error','error':'not found'}),404
+
+@app.route('/admin/geocode_cleanup', methods=['POST'])
+def admin_geocode_cleanup():
+    """Clean up bad geocode cache entries (region center fallbacks with round coordinates)"""
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    
+    try:
+        result = cleanup_bad_cache_entries()
+        return jsonify({
+            'status': 'ok',
+            'removed_count': result['removed_count'],
+            'kept_count': result['kept_count'],
+            'removed_entries': [{'key': k, 'coords': list(c)} for k, c in result['removed_entries'][:50]]
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+@app.route('/admin/geocode_invalidate', methods=['POST'])
+def admin_geocode_invalidate():
+    """Invalidate a specific geocode cache entry to force re-geocoding"""
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    
+    payload = request.get_json(silent=True) or {}
+    city = payload.get('city', '').strip()
+    region = payload.get('region', '').strip() or None
+    
+    if not city:
+        return jsonify({'status': 'error', 'error': 'city required'}), 400
+    
+    removed = invalidate_cache_entry(city, region)
+    return jsonify({
+        'status': 'ok',
+        'invalidated': removed,
+        'city': city,
+        'region': region
+    })
+
+@app.route('/admin/geocode_stats', methods=['GET'])
+def admin_geocode_stats():
+    """Get OpenCage geocoder statistics"""
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    
+    stats = get_cache_stats()
+    return jsonify({
+        'status': 'ok',
+        'geocoder_available': GEOCODER_AVAILABLE,
+        **stats
+    })
 
 @app.route('/admin/stats', methods=['GET'])
 def admin_stats():
