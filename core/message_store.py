@@ -370,12 +370,32 @@ class DeviceStore:
             return {}
 
     def _save(self, devices: dict[str, Any]) -> None:
-        """Save devices to disk."""
+        """Save devices to disk with atomic write to prevent corruption."""
+        import tempfile
+        base_dir = os.path.dirname(self.path) or "."
+        os.makedirs(base_dir, exist_ok=True)
+        temp_file = None
         try:
-            with open(self.path, "w", encoding="utf-8") as fp:
-                json.dump(devices, fp, ensure_ascii=False, indent=2)
+            temp = tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                delete=False,
+                dir=base_dir,
+                suffix=".tmp",
+            )
+            temp_file = temp.name
+            with temp:
+                json.dump(devices, temp, ensure_ascii=False, indent=2)
+                temp.flush()
+                os.fsync(temp.fileno())
+            os.replace(temp_file, self.path)
         except Exception as exc:
             log.error(f"Failed to save devices: {exc}")
+            if temp_file and os.path.exists(temp_file):
+                try:
+                    os.remove(temp_file)
+                except OSError:
+                    pass
 
 
 class FamilyStore:

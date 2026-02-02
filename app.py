@@ -3549,6 +3549,7 @@ ACTIVE_TTL = 70  # seconds of inactivity before a visitor is dropped
 BLOCKED_FILE = 'blocked_ids.json'
 # STATS_FILE and RECENT_VISITS_FILE are defined below in persistent storage section
 VISIT_STATS = None  # lazy-loaded dict: {id: first_seen_epoch}
+_visit_stats_lock = threading.RLock()  # Prevent concurrent modification errors
 FORCE_RELOAD_TIMESTAMP = 0  # Timestamp when force reload was triggered
 FORCE_RELOAD_DURATION = 120  # Duration in seconds to keep force reload active (2 minutes)
 FORCE_RELOAD_LOCK = threading.Lock()
@@ -4645,9 +4646,12 @@ def _load_visit_stats():
 def _save_visit_stats():
     if VISIT_STATS is None:
         return
+    # Use thread-safe copy to prevent 'dictionary changed size during iteration'
+    with _visit_stats_lock:
+        stats_copy = dict(VISIT_STATS)
     try:
         with open(STATS_FILE,'w',encoding='utf-8') as f:
-            json.dump(VISIT_STATS, f, ensure_ascii=False, indent=2)
+            json.dump(stats_copy, f, ensure_ascii=False, indent=2)
     except Exception as e:
         log.warning(f'Failed saving {STATS_FILE}: {e}')
 
@@ -15792,7 +15796,7 @@ def data():
 
     # Check each message individually
     # Pre-filter to avoid checking very old messages
-    max_possible_ttl = 240  # 4 hours - max possible TTL for any threat type
+    max_possible_ttl = 30  # 30 minutes - max possible TTL for any threat type (was 240)
     min_time_prefilter = now - timedelta(minutes=max_possible_ttl)
 
     # Use fixed time window

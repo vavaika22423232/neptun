@@ -20,17 +20,17 @@ from datetime import datetime, timedelta
 
 # Base TTL in minutes - MINIMUM time, adjusted UP based on distance/ETA
 THREAT_BASE_TTL = {
-    'shahed': 20, 'drone': 18, 'fpv': 5, 'rozved': 15, 'cruise': 15,
-    'ballistic': 4, 'kab': 6, 'rocket': 6, 'kinzhal': 2, 'iskander': 4,
-    'kalibr': 18, 'x101': 25, 'x22': 10, 'unknown': 25, 'explosion': 8,
+    'shahed': 20, 'drone': 18, 'fpv': 5, 'rozved': 15, 'cruise': 5,
+    'ballistic': 4, 'kab': 5, 'rocket': 5, 'kinzhal': 2, 'iskander': 4,
+    'kalibr': 5, 'x101': 5, 'x22': 5, 'unknown': 25, 'explosion': 8,
     'artillery': 5, 'air': 20, 'avia': 12, 'rszv': 5, 'obstril': 5, 'pusk': 8,
 }
 
 # Maximum TTL by threat type
 THREAT_MAX_TTL = {
-    'shahed': 240, 'drone': 180, 'fpv': 10, 'rozved': 60, 'cruise': 50,
-    'ballistic': 12, 'kab': 15, 'rocket': 12, 'kinzhal': 6, 'iskander': 10,
-    'kalibr': 60, 'x101': 90, 'x22': 30, 'unknown': 60, 'explosion': 15,
+    'shahed': 240, 'drone': 180, 'fpv': 10, 'rozved': 60, 'cruise': 5,
+    'ballistic': 5, 'kab': 5, 'rocket': 5, 'kinzhal': 5, 'iskander': 5,
+    'kalibr': 5, 'x101': 5, 'x22': 5, 'unknown': 60, 'explosion': 15,
     'artillery': 10, 'air': 45, 'avia': 30, 'rszv': 10, 'obstril': 10, 'pusk': 25,
 }
 
