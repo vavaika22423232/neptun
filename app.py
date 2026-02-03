@@ -67,6 +67,7 @@ from flask import Flask, Response, jsonify, redirect, render_template, request, 
 from telethon import TelegramClient
 
 from core.message_store import DeviceStore, FamilyStore, MessageStore
+from threat_analysis import THREAT_BASE_TTL, THREAT_MAX_TTL
 
 # JWT Authentication (optional, graceful fallback if not available)
 try:
@@ -3550,6 +3551,7 @@ BLOCKED_FILE = 'blocked_ids.json'
 # STATS_FILE and RECENT_VISITS_FILE are defined below in persistent storage section
 VISIT_STATS = None  # lazy-loaded dict: {id: first_seen_epoch}
 _visit_stats_lock = threading.RLock()  # Prevent concurrent modification errors
+_recent_visits_lock = threading.RLock()  # Prevent concurrent modification of recent visits
 FORCE_RELOAD_TIMESTAMP = 0  # Timestamp when force reload was triggered
 FORCE_RELOAD_DURATION = 120  # Duration in seconds to keep force reload active (2 minutes)
 FORCE_RELOAD_LOCK = threading.Lock()
@@ -4673,68 +4675,76 @@ def _prune_visit_stats(days:int=30):
 
 # ---- Rolling daily / weekly visit tracking (for persistence of counts across deploys) ----
 def _load_recent_visits():
-    try:
-        if os.path.exists(RECENT_VISITS_FILE):
-            # Guard against oversized/corrupted file (e.g. concurrent writes producing concatenated JSON objects)
-            try:
-                raw = open(RECENT_VISITS_FILE, encoding='utf-8').read()
-            except Exception as e_read:
-                log.warning(f"Failed reading {RECENT_VISITS_FILE}: {e_read}")
-                return {}
-            # Quick heuristic: if multiple top-level JSON objects concatenated, keep first valid
-            data = None
-            if raw.strip():
+    with _recent_visits_lock:
+        try:
+            if os.path.exists(RECENT_VISITS_FILE):
+                # Guard against oversized/corrupted file (e.g. concurrent writes producing concatenated JSON objects)
                 try:
-                    data = json.loads(raw)
-                except json.JSONDecodeError as je:
-                    # Try to split by newlines and stitch until first valid JSON object
-                    fragments = raw.splitlines()
-                    buf = ''
-                    for line in fragments:
-                        buf += line.strip() + '\n'
-                        try:
-                            data = json.loads(buf)
-                            log.warning(f"Recovered first valid JSON segment from {RECENT_VISITS_FILE} after decode error: {je}")
-                            break
-                        except Exception:
-                            continue
-                    if data is None:
-                        log.warning(f"Unable to repair {RECENT_VISITS_FILE}: {je}")
-                        return {}
-                except Exception as e_generic:
-                    log.warning(f"Generic JSON load failure {RECENT_VISITS_FILE}: {e_generic}")
+                    raw = open(RECENT_VISITS_FILE, encoding='utf-8').read()
+                except Exception as e_read:
+                    log.warning(f"Failed reading {RECENT_VISITS_FILE}: {e_read}")
                     return {}
-            else:
-                return {}
-            if not isinstance(data, dict):
-                log.warning(f"Unexpected structure in {RECENT_VISITS_FILE}, resetting")
-                return {}
-            data.setdefault('day', '')
-            data.setdefault('week_start', '')
-            data.setdefault('today_ids', [])
-            data.setdefault('week_ids', [])
-            return data
-    except Exception as e:
-        log.warning(f"Failed loading {RECENT_VISITS_FILE}: {e}")
-    return {}
+                # Quick heuristic: if multiple top-level JSON objects concatenated, keep first valid
+                data = None
+                if raw.strip():
+                    try:
+                        data = json.loads(raw)
+                    except json.JSONDecodeError as je:
+                        # Try to split by newlines and stitch until first valid JSON object
+                        fragments = raw.splitlines()
+                        buf = ''
+                        for line in fragments:
+                            buf += line.strip() + '\n'
+                            try:
+                                data = json.loads(buf)
+                                log.warning(f"Recovered first valid JSON segment from {RECENT_VISITS_FILE} after decode error: {je}")
+                                break
+                            except Exception:
+                                continue
+                        if data is None:
+                            log.warning(f"Unable to repair {RECENT_VISITS_FILE}: {je}")
+                            return {}
+                    except Exception as e_generic:
+                        log.warning(f"Generic JSON load failure {RECENT_VISITS_FILE}: {e_generic}")
+                        return {}
+                else:
+                    return {}
+                if not isinstance(data, dict):
+                    log.warning(f"Unexpected structure in {RECENT_VISITS_FILE}, resetting")
+                    return {}
+                data.setdefault('day', '')
+                data.setdefault('week_start', '')
+                data.setdefault('today_ids', [])
+                data.setdefault('week_ids', [])
+                return data
+        except Exception as e:
+            log.warning(f"Failed loading {RECENT_VISITS_FILE}: {e}")
+        return {}
 
 def _save_recent_visits(data:dict):
-    try:
-        tmp = RECENT_VISITS_FILE + '.tmp'
-        # Ensure directory exists (in case path was changed to subfolder later); here file in CWD so skip
-        with open(tmp, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+    with _recent_visits_lock:
         try:
-            os.replace(tmp, RECENT_VISITS_FILE)
-        except FileNotFoundError:
-            # Rare race on some FS / AV scanners: fall back to simple write
+            # Make a safe copy to avoid modification during serialization
+            data_copy = {
+                'day': data.get('day', ''),
+                'week_start': data.get('week_start', ''),
+                'today_ids': list(data.get('today_ids', [])),
+                'week_ids': list(data.get('week_ids', []))
+            }
+            tmp = RECENT_VISITS_FILE + '.tmp'
+            with open(tmp, 'w', encoding='utf-8') as f:
+                json.dump(data_copy, f, ensure_ascii=False, indent=2)
             try:
-                with open(RECENT_VISITS_FILE, 'w', encoding='utf-8') as f2:
-                    json.dump(data, f2, ensure_ascii=False, indent=2)
-            except Exception as e2:
-                log.warning(f"Fallback direct save failed {RECENT_VISITS_FILE}: {e2}")
-    except Exception as e:
-        log.warning(f"Failed saving {RECENT_VISITS_FILE}: {e}")
+                os.replace(tmp, RECENT_VISITS_FILE)
+            except FileNotFoundError:
+                # Rare race on some FS / AV scanners: fall back to simple write
+                try:
+                    with open(RECENT_VISITS_FILE, 'w', encoding='utf-8') as f2:
+                        json.dump(data_copy, f2, ensure_ascii=False, indent=2)
+                except Exception as e2:
+                    log.warning(f"Fallback direct save failed {RECENT_VISITS_FILE}: {e2}")
+        except Exception as e:
+            log.warning(f"Failed saving {RECENT_VISITS_FILE}: {e}")
 
 def _update_recent_visits(vid:str):
     """Update rolling daily/week sets with visitor id. Uses Europe/Kyiv timezone.
@@ -15968,6 +15978,20 @@ def data():
         low_txt = text.lower()
         if m.get('source_match','').startswith('region') and not any(k in low_txt for k in ['бпла','дрон','шахед','shahed','geran','ракета','ракети','missile','iskander','s-300','s300','каб','артил','града','смерч','ураган','mlrs','avia','авіа','авиа','бомба']):
             continue
+        
+        # === TTL FILTERING: Apply per-threat-type TTL limits ===
+        threat_type = m.get('threat_type', '').lower()
+        # Determine TTL for this marker type
+        marker_ttl = THREAT_MAX_TTL.get(threat_type, 30)  # Default 30 min if unknown
+        # For rockets/missiles/KAB, use strict 5 min TTL
+        if threat_type in ['kab', 'rocket', 'cruise', 'ballistic', 'kinzhal', 'iskander', 'kalibr', 'x101', 'x22']:
+            marker_ttl = 5
+        # Check if marker is expired based on its TTL
+        marker_age_minutes = (now - dt).total_seconds() / 60
+        if marker_age_minutes > marker_ttl and not manual_marker:
+            debug_counts['ttl_expired'] = debug_counts.get('ttl_expired', 0) + 1
+            continue
+        
         out.append(m)
 
 
