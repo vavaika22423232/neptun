@@ -18369,6 +18369,69 @@ def admin_geocode_stats():
         **stats
     })
 
+@app.route('/admin/memory', methods=['GET'])
+def admin_memory():
+    """Memory usage endpoint - check what's using RAM"""
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    
+    import gc
+    gc.collect()
+    
+    def get_size(obj, seen=None):
+        size = sys.getsizeof(obj)
+        if seen is None:
+            seen = set()
+        obj_id = id(obj)
+        if obj_id in seen:
+            return 0
+        seen.add(obj_id)
+        if isinstance(obj, dict):
+            size += sum([get_size(v, seen) for v in obj.values()])
+            size += sum([get_size(k, seen) for k in obj.keys()])
+        elif hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes, bytearray)):
+            try:
+                size += sum([get_size(i, seen) for i in obj])
+            except:
+                pass
+        return size
+    
+    def fmt(size):
+        for unit in ['B', 'KB', 'MB']:
+            if size < 1024:
+                return f"{size:.1f} {unit}"
+            size /= 1024
+        return f"{size:.1f} GB"
+    
+    caches = {
+        'response_cache': (len(RESPONSE_CACHE._cache), get_size(RESPONSE_CACHE._cache)),
+        'messages_cache': (1 if _MESSAGES_CACHE.get('data') else 0, get_size(_MESSAGES_CACHE)),
+        'notifications_cache': (len(SENT_NOTIFICATIONS_CACHE), get_size(SENT_NOTIFICATIONS_CACHE)),
+        'region_topic_cache': (len(_region_topic_cache), get_size(_region_topic_cache)),
+        'threat_class_cache': (len(_threat_classification_cache), get_size(_threat_classification_cache)),
+        'mapstransler_cache': (len(_mapstransler_geocode_cache), get_size(_mapstransler_geocode_cache)),
+        'visitors': (len(ACTIVE_VISITORS), get_size(ACTIVE_VISITORS)),
+        'visit_stats': (len(VISIT_STATS) if VISIT_STATS else 0, get_size(VISIT_STATS) if VISIT_STATS else 0),
+        'debug_logs': (len(DEBUG_LOGS), get_size(DEBUG_LOGS)),
+        'reparse_cache': (len(FALLBACK_REPARSE_CACHE), get_size(FALLBACK_REPARSE_CACHE)),
+    }
+    
+    total = sum(v[1] for v in caches.values())
+    
+    result = {'caches': {}, 'total': fmt(total)}
+    for name, (count, size) in caches.items():
+        result['caches'][name] = {'items': count, 'size': fmt(size)}
+    
+    # Process memory if psutil available
+    try:
+        import psutil
+        mem = psutil.Process().memory_info()
+        result['process'] = {'rss': fmt(mem.rss), 'vms': fmt(mem.vms)}
+    except:
+        pass
+    
+    return jsonify(result)
+
 @app.route('/admin/stats', methods=['GET'])
 def admin_stats():
     """Get comprehensive system statistics for admin dashboard"""

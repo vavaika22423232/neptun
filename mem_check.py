@@ -1,56 +1,14 @@
 #!/usr/bin/env python3
-"""Memory analysis script"""
+"""
+Memory usage checker for Neptune app.
+Run: python3 mem_check.py
+"""
+
 import sys
 import gc
 
-print("=== Memory Analysis ===")
-
-# Check process memory
-try:
-    import psutil
-    process = psutil.Process()
-    print(f"Initial memory: {process.memory_info().rss / 1024 / 1024:.1f} MB")
-except ImportError:
-    print("psutil not available")
-
-# Import app
-print("\nImporting app...")
-import app
-gc.collect()
-
-try:
-    process = psutil.Process()
-    print(f"After import: {process.memory_info().rss / 1024 / 1024:.1f} MB")
-except:
-    pass
-
-# Check large objects
-print("\n=== Large data structures ===")
-objects_to_check = [
-    'UKRAINE_ALL_SETTLEMENTS',
-    'UKRAINE_SETTLEMENTS_BY_OBLAST', 
-    'UKRAINE_ADDRESSES_DB',
-    'UKRAINE_CITIES',
-    'REGION_MAPPING',
-    'request_counts',
-    '_groq_cache',
-    '_mapstransler_geocode_cache',
-    'ACTIVE_VISITORS',
-]
-
-for name in objects_to_check:
-    obj = getattr(app, name, None)
-    if obj is not None:
-        if isinstance(obj, dict):
-            print(f"{name}: {len(obj)} keys")
-        elif isinstance(obj, (list, set)):
-            print(f"{name}: {len(obj)} items")
-        else:
-            print(f"{name}: {type(obj)}")
-
-# Deep size estimation
-print("\n=== Deep size estimation ===")
-def deep_getsizeof(obj, seen=None):
+def get_size(obj, seen=None):
+    """Recursively calculate size of objects"""
     size = sys.getsizeof(obj)
     if seen is None:
         seen = set()
@@ -59,20 +17,69 @@ def deep_getsizeof(obj, seen=None):
         return 0
     seen.add(obj_id)
     if isinstance(obj, dict):
-        size += sum([deep_getsizeof(v, seen) for v in obj.values()])
-        size += sum([deep_getsizeof(k, seen) for k in obj.keys()])
-    elif hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes)):
-        try:
-            size += sum([deep_getsizeof(i, seen) for i in obj])
-        except:
-            pass
+        size += sum([get_size(v, seen) for v in obj.values()])
+        size += sum([get_size(k, seen) for k in obj.keys()])
+    elif hasattr(obj, '__dict__'):
+        size += get_size(obj.__dict__, seen)
+    elif hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes, bytearray)):
+        size += sum([get_size(i, seen) for i in obj])
     return size
 
-for name in ['UKRAINE_ALL_SETTLEMENTS', 'UKRAINE_SETTLEMENTS_BY_OBLAST']:
-    obj = getattr(app, name, None)
-    if obj:
-        try:
-            size_mb = deep_getsizeof(obj) / 1024 / 1024
-            print(f"{name}: ~{size_mb:.1f} MB")
-        except Exception as e:
-            print(f"{name}: error - {e}")
+def format_bytes(size):
+    for unit in ['B', 'KB', 'MB', 'GB']:
+        if size < 1024:
+            return f"{size:.2f} {unit}"
+        size /= 1024
+    return f"{size:.2f} TB"
+
+def check_memory():
+    """Check memory usage of key objects"""
+    print("=" * 60)
+    print("MEMORY USAGE REPORT")
+    print("=" * 60)
+    
+    gc.collect()
+    
+    try:
+        import app
+        
+        checks = [
+            ('RESPONSE_CACHE._cache', getattr(getattr(app, 'RESPONSE_CACHE', None), '_cache', {})),
+            ('_MESSAGES_CACHE', getattr(app, '_MESSAGES_CACHE', {})),
+            ('SENT_NOTIFICATIONS_CACHE', getattr(app, 'SENT_NOTIFICATIONS_CACHE', {})),
+            ('_region_topic_cache', getattr(app, '_region_topic_cache', {})),
+            ('_threat_classification_cache', getattr(app, '_threat_classification_cache', {})),
+            ('_mapstransler_geocode_cache', getattr(app, '_mapstransler_geocode_cache', {})),
+            ('ACTIVE_VISITORS', getattr(app, 'ACTIVE_VISITORS', {})),
+            ('VISIT_STATS', getattr(app, 'VISIT_STATS', None) or {}),
+            ('DEBUG_LOGS', getattr(app, 'DEBUG_LOGS', [])),
+            ('FALLBACK_REPARSE_CACHE', getattr(app, 'FALLBACK_REPARSE_CACHE', set())),
+        ]
+        
+        total = 0
+        for name, obj in checks:
+            if obj is not None:
+                size = get_size(obj)
+                total += size
+                count = len(obj) if hasattr(obj, '__len__') else 'N/A'
+                print(f"{name:40} {format_bytes(size):>12}  items: {count}")
+        
+        print("-" * 60)
+        print(f"{'TOTAL tracked':40} {format_bytes(total):>12}")
+        
+    except Exception as e:
+        print(f"Error importing app: {e}")
+    
+    try:
+        import psutil
+        process = psutil.Process()
+        mem = process.memory_info()
+        print()
+        print("PROCESS MEMORY:")
+        print(f"  RSS (Resident):  {format_bytes(mem.rss)}")
+        print(f"  VMS (Virtual):   {format_bytes(mem.vms)}")
+    except ImportError:
+        print("\nInstall psutil for process memory: pip install psutil")
+
+if __name__ == '__main__':
+    check_memory()
