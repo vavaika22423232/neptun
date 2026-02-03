@@ -417,18 +417,31 @@ SPACY_AVAILABLE = False
 nlp = None
 print("INFO: SpaCy DISABLED to save memory")
 
-# OpenCage geocoding integration (with persistent cache)
+# Geocoding integration: Visicom (primary) -> OpenCage (fallback)
+# Visicom is Ukrainian service, much better for Ukrainian city names with all grammatical cases
+_visicom_available = False
+_opencage_available = False
+
 try:
-    from opencage_geocoder import geocode as opencage_geocode, get_cache_stats, cleanup_bad_cache_entries, invalidate_cache_entry
-    GEOCODER_AVAILABLE = True
-    print("INFO: OpenCage geocoding ENABLED", flush=True)
+    from visicom_geocoder import visicom_geocode as _visicom_geocode
+    _visicom_available = True
+    print("INFO: Visicom geocoding ENABLED (primary)", flush=True)
+except ImportError as e:
+    print(f"WARNING: Visicom geocoder not available: {e}", flush=True)
+    def _visicom_geocode(_city, _region=None):
+        return None
+
+try:
+    from opencage_geocoder import geocode as _opencage_geocode, get_cache_stats, cleanup_bad_cache_entries, invalidate_cache_entry
+    _opencage_available = True
+    print("INFO: OpenCage geocoding ENABLED (fallback)", flush=True)
     # Run cache cleanup on startup to remove bad "round" coordinates
     cleanup_result = cleanup_bad_cache_entries()
     if cleanup_result['removed_count'] > 0:
         print(f"INFO: Cleaned up {cleanup_result['removed_count']} bad geocode cache entries", flush=True)
 except ImportError as e:
-    GEOCODER_AVAILABLE = False
-    def opencage_geocode(_city, _region=None):
+    print(f"WARNING: OpenCage geocoder not available: {e}", flush=True)
+    def _opencage_geocode(_city, _region=None):
         return None
     def get_cache_stats():
         return {}
@@ -436,7 +449,33 @@ except ImportError as e:
         return {'removed_count': 0, 'kept_count': 0, 'removed_entries': []}
     def invalidate_cache_entry(_city, _region=None):
         return False
-    print(f"WARNING: OpenCage geocoder not available: {e}", flush=True)
+
+GEOCODER_AVAILABLE = _visicom_available or _opencage_available
+
+def opencage_geocode(city, region=None):
+    """Unified geocoder: tries Visicom first (Ukrainian service), falls back to OpenCage.
+    
+    Visicom advantages:
+    - Ukrainian service, knows all grammatical cases (Межова/Межову/Межовою)
+    - adm_settlement category - only searches cities/villages
+    - No confusion with same-named cities in other countries
+    """
+    if not city:
+        return None
+    
+    # 1. Try Visicom first (better for Ukrainian names)
+    if _visicom_available:
+        result = _visicom_geocode(city, region)
+        if result:
+            return result
+    
+    # 2. Fallback to OpenCage
+    if _opencage_available:
+        result = _opencage_geocode(city, region)
+        if result:
+            return result
+    
+    return None
 
 
 # === LEGACY COMPATIBILITY: Proxy dicts that use OpenCage ===
