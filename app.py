@@ -15815,6 +15815,34 @@ def alarms_stats():
         return jsonify({'error': str(e)}), 500
     return jsonify({'items': rows, 'count': len(rows), 'window_minutes': minutes})
 
+# ===========================================================================
+# AGGRESSIVE RATE LIMIT FOR /data - 1 request per 5 seconds per IP
+# ===========================================================================
+_data_rate_limit = {}  # {ip: last_request_time}
+_data_rate_limit_window = 5  # seconds between requests
+_data_rate_limit_max_ips = 1000  # max tracked IPs
+
+def _check_data_rate_limit():
+    """Check if IP is rate limited for /data endpoint. Returns True if blocked."""
+    global _data_rate_limit
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    if client_ip:
+        client_ip = client_ip.split(',')[0].strip()
+    
+    now = time.time()
+    last_request = _data_rate_limit.get(client_ip, 0)
+    
+    # Cleanup old entries periodically
+    if len(_data_rate_limit) > _data_rate_limit_max_ips:
+        cutoff = now - 60  # Remove IPs not seen in 60 seconds
+        _data_rate_limit = {ip: ts for ip, ts in _data_rate_limit.items() if ts > cutoff}
+    
+    if now - last_request < _data_rate_limit_window:
+        return True  # Rate limited
+    
+    _data_rate_limit[client_ip] = now
+    return False  # OK
+
 @app.route('/data')
 @protected_endpoint(is_heavy=True)  # PROTECTION: Rate limit + concurrency control
 def data():
@@ -15825,6 +15853,15 @@ def data():
     # HIGH-LOAD OPTIMIZED: Added in-memory + persistent caching
     # DEPLOY-SAFE: Persistent cache survives server restarts (30 min TTL)
     # ===========================================================================
+    
+    # AGGRESSIVE RATE LIMIT: 1 request per 5 seconds per IP
+    if _check_data_rate_limit():
+        return Response(
+            '{"error":"rate_limited","retry_after":5}',
+            status=429,
+            mimetype='application/json',
+            headers={'Retry-After': '5', 'Cache-Control': 'no-store'}
+        )
     
     # Allow forced reparse by clearing cache (admin use)
     if request.args.get('force_reparse') == 'true':
