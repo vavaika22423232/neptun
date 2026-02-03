@@ -1917,6 +1917,32 @@ def init_firebase():
 # Initialize Firebase on startup
 init_firebase()
 
+# ============================================================================
+# CLOUDFLARE SUPPORT - Get real client IP behind Cloudflare proxy
+# ============================================================================
+def get_real_ip():
+    """Get real client IP, supporting Cloudflare and other proxies.
+    Priority: CF-Connecting-IP > X-Real-IP > X-Forwarded-For > remote_addr
+    """
+    # Cloudflare sends real IP in CF-Connecting-IP header
+    cf_ip = request.headers.get('CF-Connecting-IP')
+    if cf_ip:
+        return cf_ip.strip()
+    
+    # Some proxies use X-Real-IP
+    real_ip = request.headers.get('X-Real-IP')
+    if real_ip:
+        return real_ip.strip()
+    
+    # Standard proxy header (may contain chain: "client, proxy1, proxy2")
+    forwarded = request.headers.get('X-Forwarded-For')
+    if forwarded:
+        # First IP in the chain is the original client
+        return forwarded.split(',')[0].strip()
+    
+    # Fallback to direct connection IP
+    return request.remote_addr or 'unknown'
+
 # Shared rate tracking for lightweight bandwidth protection rules
 request_counts = defaultdict(list)
 _request_counts_max_keys = 500  # MEMORY PROTECTION: Max tracked IPs (reduced from 2000)
@@ -15842,9 +15868,8 @@ _data_rate_limit_max_ips = 1000  # max tracked IPs
 def _check_data_rate_limit():
     """Check if IP is rate limited for /data endpoint. Returns True if blocked."""
     global _data_rate_limit
-    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    if client_ip:
-        client_ip = client_ip.split(',')[0].strip()
+    # Use Cloudflare-aware IP detection
+    client_ip = get_real_ip()
     
     now = time.time()
     last_request = _data_rate_limit.get(client_ip, 0)
@@ -19400,8 +19425,8 @@ def _ddos_protection():
     if request.path in ['/healthz', '/health', '/startup_diag', '/presence']:
         return None
     
-    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    if client_ip:
+    # Use Cloudflare-aware IP detection
+    client_ip = get_real_ip()
         client_ip = client_ip.split(',')[0].strip()
     
     now = time.time()
