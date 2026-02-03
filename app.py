@@ -555,8 +555,8 @@ GROQ_ENABLED = bool(GROQ_API_KEY)
 
 # AI request caching and rate limiting
 _groq_cache = {}  # Simple in-memory cache {hash: (result, timestamp)}
-_groq_cache_ttl = 900  # Cache TTL: 15 min (reduced from 30 min)
-_groq_cache_max_size = 100  # MEMORY PROTECTION: Max cached AI responses (reduced from 200)
+_groq_cache_ttl = 300  # Cache TTL: 5 min (reduced from 15 min)
+_groq_cache_max_size = 30  # MEMORY PROTECTION: Max cached AI responses (reduced from 100)
 _groq_last_request = 0  # Timestamp of last request
 _groq_min_interval = 3.0  # Minimum 3 seconds between requests (was 2)
 _groq_daily_cooldown_until = 0  # If set, skip ALL AI until this timestamp
@@ -3578,7 +3578,7 @@ AUTH_SECRET = os.getenv('AUTH_SECRET')  # simple shared secret to protect /auth 
 FETCH_THREAD_STARTED = False
 AUTH_STATUS = {'authorized': False, 'reason': 'init'}
 SUBSCRIBERS = set()  # queues for SSE clients
-MAX_STREAM_SUBSCRIBERS = 200  # MEMORY PROTECTION: Limit main SSE connections (reduced from 500)
+MAX_STREAM_SUBSCRIBERS = 100  # MEMORY PROTECTION: Limit main SSE connections (reduced from 200)
 INIT_ONCE = False  # guard to ensure background startup once
 # Persistent dynamic channels file
 CHANNELS_FILE = 'channels_dynamic.json'
@@ -4153,7 +4153,7 @@ OPENCAGE_TTL = 60 * 60 * 24 * 30  # 30 days
 NEG_GEOCODE_FILE = 'negative_geocode_cache.json'
 NEG_GEOCODE_TTL = 60 * 60 * 24 * 3  # 3 days for 'not found' entries
 MESSAGES_RETENTION_MINUTES = int(os.getenv('MESSAGES_RETENTION_MINUTES', '720'))  # 12 hours retention (reduced from 24h)
-MESSAGES_MAX_COUNT = int(os.getenv('MESSAGES_MAX_COUNT', '300'))  # Default limit 300 to prevent memory issues (reduced from 500)
+MESSAGES_MAX_COUNT = int(os.getenv('MESSAGES_MAX_COUNT', '150'))  # Default limit 150 to prevent memory issues (reduced from 300)
 
 def _startup_diagnostics():
     """Log one-time startup diagnostics to help investigate early exit issues on hosting platforms."""
@@ -4224,8 +4224,8 @@ MESSAGE_STORE = MessageStore(
 # Cache for sent FCM notifications to prevent duplicates
 # Format: {notification_hash: timestamp}
 SENT_NOTIFICATIONS_CACHE = {}
-NOTIFICATION_CACHE_TTL = 180  # 3 minutes - don't repeat same location+threat within this time
-NOTIFICATION_CACHE_MAX_SIZE = 200  # MEMORY PROTECTION: Max cached notification hashes
+NOTIFICATION_CACHE_TTL = 120  # 2 minutes - don't repeat same location+threat within this time
+NOTIFICATION_CACHE_MAX_SIZE = 100  # MEMORY PROTECTION: Max cached notification hashes
 
 def _normalize_location_name(name: str) -> str:
     """Normalize location name for deduplication - remove common suffixes/prefixes."""
@@ -4959,7 +4959,7 @@ except Exception as e:
 _opencage_cache = None
 _neg_geocode_cache = None
 _mapstransler_geocode_cache = {}  # In-memory cache for mapstransler geocoding
-_mapstransler_cache_max_size = 200  # MEMORY PROTECTION: Max cached geocode results (reduced from 500)
+_mapstransler_cache_max_size = 100  # MEMORY PROTECTION: Max cached geocode results (reduced from 200)
 
 def _load_opencage_cache():
     global _opencage_cache
@@ -15848,9 +15848,23 @@ def data():
         return response
 
     # PROTECTION: Hard limits to prevent memory/bandwidth exhaustion
-    MAX_TRACKS = 200       # HARD LIMIT: max tracks per response (was unlimited)
-    MAX_EVENTS = 100       # HARD LIMIT: max events per response (was unlimited)
-    MAX_RESPONSE_MB = 2    # HARD LIMIT: max response size in MB
+    MAX_TRACKS = 100       # HARD LIMIT: max tracks per response (reduced from 200)
+    MAX_EVENTS = 50        # HARD LIMIT: max events per response (reduced from 100)
+    MAX_RESPONSE_MB = 1    # HARD LIMIT: max response size in MB (reduced from 2)
+    
+    # MEMORY CHECK: Log memory usage periodically
+    import random
+    if random.random() < 0.05:  # 5% of requests
+        try:
+            import psutil
+            mem_mb = psutil.Process().memory_info().rss / 1024 / 1024
+            print(f"[MEMORY] /data request: {mem_mb:.1f}MB used")
+            if mem_mb > 1500:  # Warn if over 1.5GB
+                print(f"[MEMORY] WARNING: High memory usage! {mem_mb:.1f}MB")
+                import gc
+                gc.collect()
+        except:
+            pass
 
     # BANDWIDTH OPTIMIZATION: Add aggressive caching headers
     response_headers = {
@@ -19094,10 +19108,14 @@ def _memory_cleanup_worker():
     cleanup_counter = 0
     while True:
         try:
-            time.sleep(120)  # Run every 2 minutes (more aggressive)
+            time.sleep(60)  # Run every 1 minute (more aggressive)
             cleanup_counter += 1
             now = time.time()
             total_cleaned = 0
+            
+            # Force garbage collection EVERY cycle
+            import gc
+            gc.collect()
             
             # Clean request_counts
             _cleanup_request_counts()
@@ -20438,7 +20456,7 @@ _chat_initialized = False
 CHAT_SUBSCRIBERS = set()  # queues for chat SSE clients
 CHAT_TYPING_USERS = {}  # {deviceId: {'nickname': str, 'timestamp': float}}
 CHAT_TYPING_TTL = 5  # seconds before typing indicator expires
-MAX_SSE_SUBSCRIBERS = 200  # MEMORY PROTECTION: Limit SSE connections to prevent OOM (reduced from 500)
+MAX_SSE_SUBSCRIBERS = 100  # MEMORY PROTECTION: Limit SSE connections to prevent OOM (reduced from 200)
 
 # ============== CHAT RATE LIMITING ==============
 # Configurable rate limits (sliding window approach)
@@ -20509,7 +20527,7 @@ class ChatRateLimiter:
             self._timestamps[device_id].append(now)
             
             # Cleanup: remove very old entries periodically
-            if len(self._timestamps) > 10000:
+            if len(self._timestamps) > 1000:  # Reduced from 10000
                 self._cleanup_all_old_entries(now)
     
     def _cleanup_all_old_entries(self, now: float):
