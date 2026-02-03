@@ -15196,32 +15196,60 @@ def index_dev():
     """Development/experimental version of the map"""
     return render_template('index_dev.html')
 
+# BANDWIDTH PROTECTION: Cache rendered HTML in memory
+_INDEX_HTML_CACHE = {'html': None, 'ts': 0, 'etag': ''}
+_INDEX_CACHE_TTL = 60  # Cache for 60 seconds
+
 @app.route('/')
 def index():
     """Main page - Карта тривог України онлайн"""
+    global _INDEX_HTML_CACHE
+    
     user_agent = request.headers.get('User-Agent', '')
-
+    
+    # DDOS PROTECTION: Block empty/suspicious User-Agents (except legitimate bots)
+    if not user_agent or len(user_agent) < 10:
+        if not is_seo_bot(user_agent):
+            return Response('Bad Request', status=400)
+    
     # SEO: Detect crawlers and serve optimized response
     if is_seo_bot(user_agent):
-        # For bots: add extra SEO headers and potentially serve prerendered content
-        response = render_template('index.html')
+        response = _get_cached_index()
         resp = app.response_class(response)
         resp.headers['Cache-Control'] = 'public, max-age=3600'  # 1 hour for bots
         resp.headers['X-Robots-Tag'] = 'index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1'
         resp.headers['Link'] = '<https://neptun.in.ua/>; rel="canonical"'
-        # Mark as bot request for debugging
         resp.headers['X-Bot-Detected'] = 'true'
         return resp
-
-    # BANDWIDTH OPTIMIZATION: Add caching headers for main page
-    response = render_template('index.html')
+    
+    now = time.time()
+    cache_etag = f'index-{int(now // _INDEX_CACHE_TTL)}'
+    
+    # Check ETag for 304 response (saves bandwidth)
+    client_etag = request.headers.get('If-None-Match')
+    if client_etag and client_etag == cache_etag:
+        return Response(status=304, headers={
+            'Cache-Control': 'public, max-age=60',
+            'ETag': cache_etag
+        })
+    
+    # BANDWIDTH OPTIMIZATION: Serve cached HTML
+    response = _get_cached_index()
     resp = app.response_class(response)
-    resp.headers['Cache-Control'] = 'public, max-age=300'  # 5 minutes cache
-    resp.headers['ETag'] = f'index-{int(time.time() // 300)}'
-    # SEO Headers for search engines
+    resp.headers['Cache-Control'] = 'public, max-age=60'  # 1 minute cache
+    resp.headers['ETag'] = cache_etag
     resp.headers['X-Robots-Tag'] = 'index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1'
     resp.headers['Link'] = '<https://neptun.in.ua/>; rel="canonical"'
     return resp
+
+def _get_cached_index():
+    """Get cached index.html content."""
+    global _INDEX_HTML_CACHE
+    now = time.time()
+    if _INDEX_HTML_CACHE['html'] is None or now - _INDEX_HTML_CACHE['ts'] > _INDEX_CACHE_TTL:
+        _INDEX_HTML_CACHE['html'] = render_template('index.html')
+        _INDEX_HTML_CACHE['ts'] = now
+    return _INDEX_HTML_CACHE['html']
 
 # SEO: Regional pages for each oblast
 REGIONS_SEO = {
@@ -19363,6 +19391,30 @@ def _memory_cleanup_worker():
                 h: t for h, t in SENT_NOTIFICATIONS_CACHE.items()
                 if now - t < NOTIFICATION_CACHE_TTL
             }
+            
+            # CRITICAL: Clean _region_topic_cache (can grow unbounded)
+            with _region_topic_cache_lock:
+                if len(_region_topic_cache) > 100:
+                    keys_to_remove = list(_region_topic_cache.keys())[:len(_region_topic_cache) - 50]
+                    for k in keys_to_remove:
+                        _region_topic_cache.pop(k, None)
+                    total_cleaned += len(keys_to_remove)
+            
+            # CRITICAL: Clean _ddos_ip_counts more aggressively
+            if len(_ddos_ip_counts) > 100:
+                old_size = len(_ddos_ip_counts)
+                for ip in list(_ddos_ip_counts.keys()):
+                    _ddos_ip_counts[ip] = [t for t in _ddos_ip_counts[ip] if now - t < 10]
+                    if not _ddos_ip_counts[ip]:
+                        del _ddos_ip_counts[ip]
+                total_cleaned += old_size - len(_ddos_ip_counts)
+            
+            # Clean _active_alarms_cache (can grow unbounded)
+            if len(_active_alarms_cache) > 50:
+                keys_to_remove = list(_active_alarms_cache.keys())[:len(_active_alarms_cache) - 30]
+                for k in keys_to_remove:
+                    _active_alarms_cache.pop(k, None)
+                total_cleaned += len(keys_to_remove)
             
             # Force garbage collection every cleanup
             gc.collect()
