@@ -18479,7 +18479,7 @@ def admin_memory():
     
     return jsonify(result)
 
-@app.route('/admin/clear_geocache', methods=['POST'])
+@app.route('/admin/clear_geocache', methods=['GET', 'POST'])
 def admin_clear_geocache():
     """Clear Visicom negative cache to retry failed geocoding."""
     if not _require_secret(request):
