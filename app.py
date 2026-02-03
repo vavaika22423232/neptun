@@ -15902,9 +15902,9 @@ def data():
         return response
 
     # PROTECTION: Hard limits to prevent memory/bandwidth exhaustion
-    MAX_TRACKS = 100       # HARD LIMIT: max tracks per response (reduced from 200)
-    MAX_EVENTS = 50        # HARD LIMIT: max events per response (reduced from 100)
-    MAX_RESPONSE_MB = 1    # HARD LIMIT: max response size in MB (reduced from 2)
+    MAX_TRACKS = 50        # HARD LIMIT: max tracks per response (reduced from 100)
+    MAX_EVENTS = 25        # HARD LIMIT: max events per response (reduced from 50)
+    MAX_RESPONSE_MB = 0.5  # HARD LIMIT: max response size in MB (reduced from 1)
     
     # MEMORY CHECK: Log memory usage periodically
     import random
@@ -16232,19 +16232,23 @@ def data():
     for track in out:
         if track.get('marker_icon') == 'shahed.png':
             track['marker_icon'] = 'shahed3.webp'
-        # Trim text to 200 chars to save bandwidth
-        if track.get('text') and len(track.get('text', '')) > 200:
-            track['text'] = track['text'][:200] + '...'
+        # Trim text to 100 chars to save bandwidth (was 200)
+        if track.get('text') and len(track.get('text', '')) > 100:
+            track['text'] = track['text'][:100] + '...'
         # Remove heavy fields that frontend doesn't need
         track.pop('raw_text', None)
         track.pop('full_text', None)
+        track.pop('trajectory', None)  # Remove trajectory - saves a lot of bandwidth
+        track.pop('_raw', None)
+        track.pop('source_text', None)
         
     # Same trimming for events
     for event in events:
-        if event.get('text') and len(event.get('text', '')) > 200:
-            event['text'] = event['text'][:200] + '...'
+        if event.get('text') and len(event.get('text', '')) > 100:
+            event['text'] = event['text'][:100] + '...'
         event.pop('raw_text', None)
         event.pop('full_text', None)
+        event.pop('_raw', None)
 
     # DEBUG: Count tracks with trajectories
     traj_count = sum(1 for t in out if t.get('trajectory'))
@@ -16256,15 +16260,15 @@ def data():
         'tracks': out,
         'events': events,
         'all_sources': CHANNELS,
-        'trajectories': [],
+        # 'trajectories': [],  # REMOVED - too heavy, saves bandwidth
         # Ballistic threat state from Telegram
         'ballistic_threat': {
             'active': BALLISTIC_THREAT_ACTIVE,
             'region': BALLISTIC_THREAT_REGION,
             'timestamp': BALLISTIC_THREAT_TIMESTAMP,
         },
-        # Smart threat tracking info
-        'threat_tracking': threat_info,
+        # Smart threat tracking info removed to save bandwidth
+        # 'threat_tracking': threat_info,
         # Metadata for clients to know if data was truncated
         '_meta': {
             'tracks_total': total_tracks,
@@ -19380,9 +19384,11 @@ def _init_background():
 _ddos_ip_counts = {}  # {ip: [timestamps]}
 _ddos_blocked_ips = set()  # Temporarily blocked IPs
 _ddos_block_time = {}  # {ip: block_until_timestamp}
-DDOS_RATE_LIMIT = 30  # Max requests per IP per 10 seconds
-DDOS_BLOCK_DURATION = 60  # Block IP for 60 seconds if exceeds limit
+_ddos_last_cleanup = 0  # Last cleanup timestamp
+DDOS_RATE_LIMIT = 20  # Max requests per IP per 10 seconds (lowered from 30)
+DDOS_BLOCK_DURATION = 120  # Block IP for 120 seconds (increased from 60)
 DDOS_ENABLED = True  # Kill switch
+DDOS_MAX_TRACKED_IPS = 300  # Max IPs to track before forced cleanup
 
 @app.before_request
 def _ddos_protection():
@@ -19433,10 +19439,22 @@ def _ddos_protection():
             mimetype='application/json'
         )
     
-    # Cleanup old IPs periodically (every 100 requests approximately)
-    if len(_ddos_ip_counts) > 1000:
-        cutoff = now - 60
-        _ddos_ip_counts.clear()
+    # Aggressive cleanup to prevent memory leak
+    global _ddos_last_cleanup
+    if now - _ddos_last_cleanup > 30 or len(_ddos_ip_counts) > DDOS_MAX_TRACKED_IPS:
+        _ddos_last_cleanup = now
+        # Remove old entries
+        for ip in list(_ddos_ip_counts.keys()):
+            _ddos_ip_counts[ip] = [t for t in _ddos_ip_counts[ip] if now - t < 10]
+            if not _ddos_ip_counts[ip]:
+                del _ddos_ip_counts[ip]
+        # Remove expired blocks
+        for ip in list(_ddos_block_time.keys()):
+            if now > _ddos_block_time[ip]:
+                _ddos_blocked_ips.discard(ip)
+                del _ddos_block_time[ip]
+        # Also cleanup request_counts
+        _cleanup_request_counts()
     
     return None
 
