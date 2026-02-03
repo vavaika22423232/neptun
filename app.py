@@ -19410,10 +19410,12 @@ _ddos_ip_counts = {}  # {ip: [timestamps]}
 _ddos_blocked_ips = set()  # Temporarily blocked IPs
 _ddos_block_time = {}  # {ip: block_until_timestamp}
 _ddos_last_cleanup = 0  # Last cleanup timestamp
-DDOS_RATE_LIMIT = 20  # Max requests per IP per 10 seconds (lowered from 30)
-DDOS_BLOCK_DURATION = 120  # Block IP for 120 seconds (increased from 60)
+DDOS_RATE_LIMIT = 50  # Max requests per IP per 10 seconds (raised - Cloudflare handles DDoS now)
+DDOS_BLOCK_DURATION = 60  # Block IP for 60 seconds
 DDOS_ENABLED = True  # Kill switch
 DDOS_MAX_TRACKED_IPS = 300  # Max IPs to track before forced cleanup
+# Admin IPs that bypass DDoS protection (add your IP here)
+DDOS_WHITELIST = set(os.environ.get('DDOS_WHITELIST', '').split(',')) - {''}
 
 @app.before_request
 def _ddos_protection():
@@ -19421,13 +19423,18 @@ def _ddos_protection():
     if not DDOS_ENABLED:
         return None
     
-    # Skip for health checks and presence (live count)
+    # Skip for health checks, presence, and static files
     if request.path in ['/healthz', '/health', '/startup_diag', '/presence']:
+        return None
+    if request.path.startswith('/static/'):
         return None
     
     # Use Cloudflare-aware IP detection
     client_ip = get_real_ip()
-        client_ip = client_ip.split(',')[0].strip()
+    
+    # Skip whitelisted IPs (admins)
+    if client_ip in DDOS_WHITELIST:
+        return None
     
     now = time.time()
     
