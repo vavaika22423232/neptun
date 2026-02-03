@@ -18479,6 +18479,24 @@ def admin_memory():
     
     return jsonify(result)
 
+@app.route('/admin/clear_geocache', methods=['POST'])
+def admin_clear_geocache():
+    """Clear Visicom negative cache to retry failed geocoding."""
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    
+    try:
+        from visicom_geocoder import clear_negative_cache, _negative_cache, _cache
+        old_neg = len(_negative_cache)
+        clear_negative_cache()
+        return jsonify({
+            'status': 'ok',
+            'cleared_negative': old_neg,
+            'cache_size': len(_cache)
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
 @app.route('/admin/stats', methods=['GET'])
 def admin_stats():
     """Get comprehensive system statistics for admin dashboard"""
