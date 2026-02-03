@@ -15906,6 +15906,11 @@ def data():
     
     # DEBUG: Count messages by category
     debug_counts = {'too_old': 0, 'no_date': 0, 'pending_geo': 0, 'has_coords': 0, 'recent': 0}
+    
+    # DEBUG: Log first message time vs current time
+    if messages:
+        sample_date = messages[0].get('date', '')
+        print(f"[DEBUG_TIME] now={now}, min_time={min_time}, sample_msg_date='{sample_date}'")
 
     for m in messages:
         try:
