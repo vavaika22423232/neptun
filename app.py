@@ -4521,7 +4521,7 @@ def sql_unique_counts():
     """Get unique visitor counts from SQLite database (thread-safe, survives deploys)."""
     try:
         db_path = _get_db_path()
-        conn = sqlite3.connect(db_path, timeout=10)
+        conn = sqlite3.connect(db_path, timeout=30)
         try:
             cursor = conn.cursor()
             
@@ -4562,7 +4562,7 @@ def sql_record_visit(visitor_id: str):
         return
     try:
         db_path = _get_db_path()
-        conn = sqlite3.connect(db_path, timeout=10)
+        conn = sqlite3.connect(db_path, timeout=30)
         try:
             cursor = conn.cursor()
             
@@ -4824,8 +4824,11 @@ def _get_db_path():
 def _visits_db_conn():
     """Context manager for SQLite database connections."""
     db_path = _get_db_path()
-    conn = sqlite3.connect(db_path, timeout=10)
+    conn = sqlite3.connect(db_path, timeout=30)
     conn.row_factory = sqlite3.Row
+    # Enable WAL mode for better concurrent access
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=30000")
     try:
         yield conn
         conn.commit()
@@ -4859,7 +4862,7 @@ def increment_alarm_stat(region: str):
     today = datetime.now(pytz.timezone('Europe/Kyiv')).strftime('%Y-%m-%d')
     try:
         db_path = _get_db_path()
-        conn = sqlite3.connect(db_path, timeout=10)
+        conn = sqlite3.connect(db_path, timeout=30)
         try:
             # Use UPSERT to increment counter
             conn.execute("""
@@ -4887,7 +4890,7 @@ def get_alarm_stats_from_db(region: str) -> dict:
     
     try:
         db_path = _get_db_path()
-        conn = sqlite3.connect(db_path, timeout=10)
+        conn = sqlite3.connect(db_path, timeout=30)
         try:
             # Today
             cur = conn.execute(
