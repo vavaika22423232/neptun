@@ -872,6 +872,7 @@ LAUNCH_SITES = {
     'каспійське море': (42.0000, 51.0000),
     # Крим (аэродромы/полигоны)
     'чауда': (45.0043420, 35.8307884),
+    'чауди': (45.0043420, 35.8307884),
     'мыс чауда': (45.0043420, 35.8307884),
     'cape chauda': (45.0043420, 35.8307884),
     'гвардейское': (45.1155000, 33.9780077),
@@ -11281,6 +11282,26 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     variants.add(raw_place[:-3] + 'ово')
                 if raw_place.endswith('ева'):
                     variants.add(raw_place[:-3] + 'ево')
+                # Simple case normalization for RF launch sites (genitive -> nominative)
+                case_variants = set()
+                for v in list(variants):
+                    parts = v.split()
+                    if not parts:
+                        continue
+                    last = parts[-1]
+                    candidates = set()
+                    if last.endswith(('и', 'ы', 'і')) and len(last) > 2:
+                        candidates.add(last[:-1] + 'а')
+                    if last.endswith('ої') and len(last) > 3:
+                        candidates.add(last[:-2] + 'а')
+                        candidates.add(last[:-2] + 'е')
+                    if last.endswith('ю') and len(last) > 2:
+                        candidates.add(last[:-1] + 'а')
+                    for cand in candidates:
+                        new_name = ' '.join(parts[:-1] + [cand]).strip()
+                        if new_name in LAUNCH_SITES:
+                            case_variants.add(new_name)
+                variants |= case_variants
                 coord = None
                 chosen = None
                 for v in variants:
