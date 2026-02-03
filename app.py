@@ -2910,23 +2910,27 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
         try:
             # Перевіряємо чи є активна тривога в цьому регіоні
             if oblast_id or region_name:
-                # Намагаємось знайти регіон в _alarm_states
-                for region_data in _alarm_states.values():
-                    region_display = get_region_display_name(region_data)
-                    region_id = region_data.get('regionId', '')
+                # _alarm_states формат: {region_id: {'active': bool, 'types': [...]}}
+                for stored_region_id, alarm_data in _alarm_states.items():
+                    # Перевіряємо співпадіння по ID регіону
+                    region_match = False
+                    if oblast_id and oblast_id in stored_region_id:
+                        region_match = True
+                    elif region_name:
+                        # Перевірка по назві в ID (напр. "Сумська" в "5:Сумська область")
+                        region_name_lower = region_name.lower().replace(' область', '').replace(' обл.', '').strip()
+                        if region_name_lower in stored_region_id.lower():
+                            region_match = True
                     
-                    # Перевіряємо співпадіння по назві або ID
-                    if (region_display.lower() == region_name.lower() or
-                        (oblast_id and oblast_id in region_id)):
+                    if region_match:
                         # Перевіряємо чи є активна тривога
-                        alert_types = region_data.get('activeAlerts', [])
-                        if alert_types:
+                        if alarm_data.get('active') and alarm_data.get('types'):
                             has_official_alarm = True
-                            log.info(f"✅ Official alarm active in {region_name}: {alert_types}")
+                            log.info(f"✅ Official alarm active in {region_name}: {alarm_data.get('types')}")
                             break
                 
                 if not has_official_alarm:
-                    log.info(f"⚠️ No official alarm in {region_name} - marking as Telegram warning")
+                    log.info(f"⚠️ No official alarm in {region_name} (checked {len(_alarm_states)} regions)")
         except Exception as check_err:
             log.warning(f"Error checking official alarm: {check_err}")
 
