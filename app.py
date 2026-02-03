@@ -9300,8 +9300,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             raw_city = raw_city.replace('\u02bc',"'").replace('ʼ',"'").replace('’',"'").replace('`',"'")
             base = UA_CITY_NORMALIZE.get(raw_city, raw_city)
 
-            # Use enhanced coordinate lookup with Nominatim fallback
-            coords = get_coordinates_enhanced(base, context="БпЛА курсом на")
+            # Use OpenCage geocoder
+            coords = ensure_city_coords(base, context=text)
 
             if not coords:
                 # Legacy fallback for backwards compatibility
@@ -9931,7 +9931,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 oblast_hdr = 'вінниччина'
             # header detected
             add_debug_log(f"Final region header: '{oblast_hdr}'", "multi_region")
-            continue
+            # IMPORTANT: Only continue (skip processing) if this is JUST a header, 
+            # NOT a БПЛА message with oblast in parentheses like "БПЛА Семенівка (Полтавська обл.)"
+            ln_lower_check = ln.lower()
+            if not any(kw in ln_lower_check for kw in ['бпла', 'дрон', 'шахед', 'ракет', 'каб', 'балістик']):
+                continue
+            # Otherwise fall through to process this line as a threat message
         try:
             add_debug_log(f"MLINE_LINE oblast={oblast_hdr} raw='{ln}'", "multi_region")
         except Exception:
@@ -11032,8 +11037,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             if base == 'троєщину':
                 base = 'троєщина'
 
-            # Use enhanced coordinate lookup with Nominatim fallback and region context
-            coords = get_coordinates_enhanced(base, region=oblast_hdr, context="БпЛА курсом на")
+            # Use OpenCage geocoder with region context
+            coords = ensure_city_coords(base, region=oblast_hdr, context=text)
 
             print(f"DEBUG: Enhanced lookup for '{base}'" + (f" in {oblast_hdr}" if oblast_hdr else "") + f": {coords}")
 
@@ -15529,86 +15534,21 @@ def locate_place():
                 'source': 'normalized'
             })
 
-    # Try API sources for exact match (используем 3 API параллельно)
-    api_results = []
-
-    # 1. Nominatim API (добавляем Ukraine в строку запроса)
+    # Try OpenCage geocoder as fallback
     try:
-        import requests
-        nominatim_url = 'https://nominatim.openstreetmap.org/search'
-        params = {
-            'q': f'{query}, Ukraine',
-            'format': 'json',
-            'limit': 1,
-            'accept-language': 'uk'
-        }
-        headers = {
-            'User-Agent': 'NeptunAlarmMap/1.0 (https://neptun.in.ua)'
-        }
-
-        response = requests.get(nominatim_url, params=params, headers=headers, timeout=3)
-        if response.ok:
-            results = response.json()
-            if isinstance(results, list) and len(results) > 0:
-                result = results[0]
-                if isinstance(result, dict):
-                    lat_val = safe_float(result.get('lat'))
-                    lng_val = safe_float(result.get('lon'))
-                    if lat_val is not None and lng_val is not None and validate_ukraine_coords(lat_val, lng_val):
-                        api_results.append({
-                            'name': result.get('display_name', query).split(',')[0],
-                            'lat': lat_val,
-                            'lng': lng_val,
-                            'source': 'nominatim'
-                        })
+        coords = opencage_geocode(query)
+        if coords:
+            lat_val, lng_val = coords
+            if validate_ukraine_coords(lat_val, lng_val):
+                return jsonify({
+                    'status': 'ok',
+                    'name': query.title(),
+                    'lat': lat_val,
+                    'lng': lng_val,
+                    'source': 'opencage'
+                })
     except Exception as e:
-        log.warning(f'Nominatim exact match error: {e}')
-
-    # 2. Photon API (самый быстрый и надёжный для украинских сел)
-    try:
-        photon_url = 'https://photon.komoot.io/api/'
-        params = {
-            'q': query,
-            'limit': 1
-        }
-
-        response = requests.get(photon_url, params=params, timeout=3)
-        if response.ok:
-            data = response.json()
-            features = data.get('features', [])
-            if features and len(features) > 0:
-                feature = features[0]
-                props = feature.get('properties', {}) if isinstance(feature, dict) else {}
-                coords = feature.get('geometry', {}).get('coordinates', []) if isinstance(feature, dict) else []
-                if coords and len(coords) >= 2 and (props.get('country') == 'Україна' or props.get('country') == 'Ukraine'):
-                    lng_val = safe_float(coords[0])
-                    lat_val = safe_float(coords[1])
-                    if lat_val is not None and lng_val is not None and validate_ukraine_coords(lat_val, lng_val):
-                        api_results.append({
-                            'name': props.get('name', query),
-                            'lat': lat_val,
-                            'lng': lng_val,
-                            'source': 'photon'
-                        })
-    except Exception as e:
-        log.warning(f'Photon exact match error: {e}')
-
-    # 3. GeoNames API отключён (требует регистрацию, demo лимит исчерпан)
-    # Photon + Nominatim дают полное покрытие всех украинских населённых пунктов
-
-    # Если хотя бы один API вернул результат, используем его
-    if api_results:
-        # Приоритет: Photon (самый точный для украинских сел) > Nominatim
-        for source_priority in ['photon', 'nominatim']:
-            for result in api_results:
-                if result['source'] == source_priority:
-                    return jsonify({
-                        'status': 'ok',
-                        'name': result['name'],
-                        'lat': result['lat'],
-                        'lng': result['lng'],
-                        'source': result['source']
-                    })
+        log.warning(f'OpenCage geocode error: {e}')
 
     # If no exact match, return suggestions (prefix/substring match)
     suggestions = set()
@@ -15644,76 +15584,6 @@ def locate_place():
             if query_lower in city.lower():
                 suggestions.add(city)
 
-    # ВСЕГДА используем несколько API для максимальной полноты поиска
-    api_suggestions = set()
-
-    # 1. Photon API (быстрее чем Nominatim, использует OpenStreetMap данные)
-    try:
-        import requests
-        photon_url = 'https://photon.komoot.io/api/'
-        params = {
-            'q': query,
-            'limit': 20
-        }
-
-        response = requests.get(photon_url, params=params, timeout=3)
-        if response.ok:
-            data = response.json()
-            for feature in data.get('features', []):
-                props = feature.get('properties', {})
-                name = props.get('name', '')
-                country = props.get('country', '')
-                if country == 'Україна' and name:
-                    api_suggestions.add(name)
-    except Exception as e:
-        log.warning(f'Photon API error: {e}')
-
-    # 2. Nominatim API (OpenStreetMap)
-    try:
-        import requests
-        nominatim_url = 'https://nominatim.openstreetmap.org/search'
-        params = {
-            'q': f'{query}, Ukraine',
-            'format': 'json',
-            'limit': 30,
-            'accept-language': 'uk',
-            'addressdetails': 1
-        }
-        headers = {
-            'User-Agent': 'NeptunAlarmMap/1.0 (https://neptun.in.ua)'
-        }
-
-        response = requests.get(nominatim_url, params=params, headers=headers, timeout=4)
-        if response.ok:
-            results = response.json()
-            for result in results:
-                # Пробуем разные поля для названия
-                name = None
-                address = result.get('address', {})
-
-                # Приоритет полям
-                for field in ['village', 'town', 'city', 'hamlet', 'suburb', 'municipality']:
-                    if field in address:
-                        name = address[field]
-                        break
-
-                if not name:
-                    display_name = result.get('display_name', '')
-                    if display_name:
-                        name = display_name.split(',')[0]
-
-                if name:
-                    api_suggestions.add(name)
-    except Exception as e:
-        log.warning(f'Nominatim API error: {e}')
-
-    # 3. GeoNames API отключён (требует регистрацию, demo лимит 20к/день исчерпан)
-    # Photon + Nominatim дают полное покрытие всех украинских населённых пунктов
-
-    # Объединяем локальные и API результаты
-    suggestions.update(api_suggestions)
-
-    # Sort and limit
     suggestions_list = sorted(suggestions, key=lambda x: (len(x), x))[:50]
 
     if suggestions_list:
