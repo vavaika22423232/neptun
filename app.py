@@ -6289,15 +6289,16 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
 
         # =====================================================================
         # ENHANCED AI PREDICTION: Add ETA, multi-targets, confidence
+        # DISABLED - function not implemented
         # =====================================================================
-        enhanced_trajectory = get_enhanced_trajectory_prediction(trajectory_data, text)
-        if enhanced_trajectory:
-            trajectory_data = enhanced_trajectory
-            # Update icon based on refined threat type
-            if enhanced_trajectory.get('threat_type') == 'ballistic':
-                icon = 'icon_balistic.svg'
-            elif enhanced_trajectory.get('threat_type') == 'cruise':
-                icon = 'icon_rocket.svg'
+        # enhanced_trajectory = get_enhanced_trajectory_prediction(trajectory_data, text)
+        # if enhanced_trajectory:
+        #     trajectory_data = enhanced_trajectory
+        #     # Update icon based on refined threat type
+        #     if enhanced_trajectory.get('threat_type') == 'ballistic':
+        #         icon = 'icon_balistic.svg'
+        #     elif enhanced_trajectory.get('threat_type') == 'cruise':
+        #         icon = 'icon_rocket.svg'
 
         # Place name shows direction: Source → Target
         place_name = f"{trajectory_data.get('source_name', 'Джерело')} → {trajectory_data.get('target_name', 'Ціль')}"
