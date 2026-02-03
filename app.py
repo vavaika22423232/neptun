@@ -4493,8 +4493,9 @@ def _save_visit_stats():
     except Exception as e:
         log.warning(f'Failed saving {STATS_FILE}: {e}')
 
-def _prune_visit_stats(days:int=14):
-    # remove entries older than N days - reduced to 14 days to save memory
+def _prune_visit_stats(days:int=3, max_entries:int=2000):
+    # remove entries older than N days - reduced to 3 days to save memory
+    # Also limit total entries to max_entries
     if VISIT_STATS is None:
         return
     cutoff = time.time() - days*86400
@@ -4506,6 +4507,15 @@ def _prune_visit_stats(days:int=14):
                 removed += 1
         except Exception:
             continue
+    
+    # If still over limit, remove oldest entries
+    if len(VISIT_STATS) > max_entries:
+        sorted_items = sorted(VISIT_STATS.items(), key=lambda x: float(x[1]) if isinstance(x[1], (int, float, str)) else 0)
+        to_remove = len(VISIT_STATS) - max_entries
+        for vid, _ in sorted_items[:to_remove]:
+            del VISIT_STATS[vid]
+            removed += 1
+    
     if removed:
         _save_visit_stats()
 
@@ -17568,7 +17578,7 @@ def presence():
     stats = _load_visit_stats()
     if vid not in stats:
         stats[vid] = now
-        if int(now) % 200 == 0:
+        if int(now) % 50 == 0 or len(stats) > 2500:
             _prune_visit_stats()
         _save_visit_stats()
 
