@@ -18648,66 +18648,6 @@ def admin_cleanup():
     except Exception as e:
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
-@app.route('/admin/memory', methods=['GET'])
-def admin_memory():
-    """Get memory usage statistics for debugging memory leaks."""
-    if not _require_secret(request):
-        return jsonify({'status':'forbidden'}), 403
-    
-    import gc
-    try:
-        import psutil
-        process = psutil.Process()
-        mem_info = process.memory_info()
-        mem_mb = mem_info.rss / 1024 / 1024
-        mem_percent = process.memory_percent()
-    except ImportError:
-        mem_mb = 0
-        mem_percent = 0
-    
-    # Count sizes of major in-memory caches
-    cache_sizes = {
-        'response_cache': len(RESPONSE_CACHE._cache),
-        'request_counts_keys': len(request_counts),
-        'request_counts_total_timestamps': sum(len(v) for v in request_counts.values()),
-        'telegram_alert_sent': len(_telegram_alert_sent),
-        'telegram_region_notified': len(_telegram_region_notified),
-        'active_visitors': len(ACTIVE_VISITORS),
-        'debug_logs': len(DEBUG_LOGS),
-        'fallback_reparse_cache': len(FALLBACK_REPARSE_CACHE),
-        'mapstransler_geocode_cache': len(_mapstransler_geocode_cache),
-        'groq_cache': len(_groq_cache) if '_groq_cache' in dir() else 0,
-        'messages_cache': len(_MESSAGES_CACHE.get('data') or []) if _MESSAGES_CACHE.get('data') else 0,
-    }
-    
-    # Estimate sizes
-    try:
-        import sys
-        estimated_sizes = {}
-        for name, obj in [
-            ('request_counts', request_counts),
-            ('ACTIVE_VISITORS', ACTIVE_VISITORS),
-            ('_mapstransler_geocode_cache', _mapstransler_geocode_cache),
-        ]:
-            estimated_sizes[name] = sys.getsizeof(obj)
-    except:
-        estimated_sizes = {}
-    
-    # Garbage collection stats
-    gc_stats = {
-        'objects': len(gc.get_objects()),
-        'garbage': len(gc.garbage),
-    }
-    
-    return jsonify({
-        'status': 'ok',
-        'memory_mb': round(mem_mb, 2),
-        'memory_percent': round(mem_percent, 2),
-        'cache_sizes': cache_sizes,
-        'estimated_bytes': estimated_sizes,
-        'gc': gc_stats,
-    })
-
 @app.route('/admin/export', methods=['GET'])
 def admin_export():
     """Export data for backup/analysis"""
