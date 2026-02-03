@@ -14,7 +14,7 @@ from typing import Dict, List, Optional, Tuple, Any
 GROQ_ENABLED = False
 _groq_cache = {}
 _groq_cache_ttl = 300
-_groq_cache_max_size = 500  # MEMORY PROTECTION: Max cached AI responses
+_groq_cache_max_size = 20  # MEMORY PROTECTION: Max cached AI responses (reduced)
 _groq_last_call = 0
 _groq_min_interval = 0.5
 
@@ -55,7 +55,7 @@ class ThreatTracker:
     def __init__(self):
         self.active_threats: Dict[str, dict] = {}
         self.threat_history: List[dict] = []
-        self.max_history = 1000
+        self.max_history = 200  # Reduced from 1000 to save memory
         self._lock_time = 0
         
     def add_threat(self, threat_id: str, data: dict) -> bool:

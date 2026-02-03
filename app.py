@@ -203,7 +203,7 @@ class ResponseCache:
             }
 
 # Global response cache
-RESPONSE_CACHE = ResponseCache(default_ttl=30, max_items=30)  # MEMORY: Reduced from 50
+RESPONSE_CACHE = ResponseCache(default_ttl=30, max_items=20)  # MEMORY: Reduced to 20
 
 # Cached messages - avoid repeated file reads
 _MESSAGES_CACHE = {'data': None, 'expires': 0}
@@ -435,7 +435,7 @@ try:
     from opencage_geocoder import geocode as _opencage_geocode, get_cache_stats, cleanup_bad_cache_entries, invalidate_cache_entry
     _opencage_available = True
     print("INFO: OpenCage geocoding ENABLED (fallback)", flush=True)
-    # Run cache cleanup on startup to remove bad "round" coordinates
+    # Run cache cleanup on startup
     cleanup_result = cleanup_bad_cache_entries()
     if cleanup_result['removed_count'] > 0:
         print(f"INFO: Cleaned up {cleanup_result['removed_count']} bad geocode cache entries", flush=True)
@@ -453,38 +453,26 @@ except ImportError as e:
 GEOCODER_AVAILABLE = _visicom_available or _opencage_available
 
 def opencage_geocode(city, region=None):
-    """Unified geocoder: tries Visicom first (Ukrainian service), falls back to OpenCage.
-    
-    Visicom advantages:
-    - Ukrainian service, knows all grammatical cases (Межова/Межову/Межовою)
-    - adm_settlement category - only searches cities/villages
-    - No confusion with same-named cities in other countries
-    """
+    """Unified geocoder: tries Visicom first, falls back to OpenCage."""
     if not city:
         return None
-    
     # 1. Try Visicom first (better for Ukrainian names)
     if _visicom_available:
         result = _visicom_geocode(city, region)
         if result:
             return result
-    
     # 2. Fallback to OpenCage
     if _opencage_available:
         result = _opencage_geocode(city, region)
         if result:
             return result
-    
     return None
 
 
-# === LEGACY COMPATIBILITY: Proxy dicts that use OpenCage ===
-# WARNING: These proxies DON'T have region context - should be replaced with ensure_city_coords_with_message_context
+# === LEGACY COMPATIBILITY ===
 class _OpenCageProxy(dict):
-    """Dict-like object that proxies all lookups to OpenCage geocoder.
-    WARNING: No region context - use ensure_city_coords_with_message_context instead!"""
+    """Dict-like object that proxies lookups to geocoder."""
     def __getitem__(self, key):
-        print(f"[WARNING] CITY_COORDS['{key}'] called WITHOUT region context - may return wrong city!", flush=True)
         coords = opencage_geocode(key)
         if coords:
             return coords
@@ -494,295 +482,59 @@ class _OpenCageProxy(dict):
         return opencage_geocode(key) is not None
     
     def get(self, key, default=None):
-        # Don't spam warnings for known major cities that are unambiguous
-        known_major = {'харків', 'київ', 'одеса', 'дніпро', 'львів', 'миколаїв', 'запоріжжя', 'херсон', 'суми', 'полтава', 'чернігів'}
-        if key and key.lower() not in known_major:
-            print(f"[WARNING] CITY_COORDS.get('{key}') called WITHOUT region context - may return wrong city!", flush=True)
         coords = opencage_geocode(key)
         return coords if coords else default
     
     def keys(self):
-        return []  # Empty - we don't enumerate
-    
+        return []
     def items(self):
         return []
-    
     def values(self):
         return []
 
-# These now proxy to OpenCage instead of being static dicts
 CITY_COORDS = _OpenCageProxy()
 SETTLEMENTS_INDEX = _OpenCageProxy()
 
 def ensure_city_coords(city_name, region=None, context=None):
-    """Legacy function - now uses OpenCage.
-    
-    Args:
-        city_name: City name to geocode
-        region: Optional region name (e.g., "Харківська")
-        context: Optional message text to extract region from "(Область обл.)" format
-    """
+    """Simple geocoding function."""
     if not city_name:
         return None
-    # If no region but context provided, extract region from context
     if not region and context:
-        region = _extract_oblast_from_text(context) or region
-    coords = opencage_geocode(city_name, region)
-    if coords:
-        return coords
-    # AI fallback for disambiguation (if enabled)
-    if context and GROQ_ENABLED:
-        try:
-            ai_hint = _ai_geocode_hint(city_name, context, region)
-            if ai_hint:
-                ai_city = ai_hint.get('city') or city_name
-                ai_region = ai_hint.get('region') or region
-                ai_query = ai_hint.get('query')
-                if ai_query:
-                    coords = opencage_geocode(ai_query, None)
-                    if coords:
-                        return coords
-                if ai_city or ai_region:
-                    coords = opencage_geocode(ai_city or city_name, ai_region)
-                    if coords:
-                        return coords
-        except Exception:
-            pass
-    return None
+        region = _extract_oblast_from_text(context)
+    return opencage_geocode(city_name, region)
 
 def ensure_city_coords_with_message_context(city_name, message_text=None):
-    """Legacy function - now uses OpenCage with region extraction"""
+    """Simple geocoding with region extraction from message text."""
     if not city_name:
         return None
     region = None
     if message_text:
-        # PRIORITY: Extract region from parentheses format "Місто (Область обл.)"
         region = _extract_oblast_from_text(message_text)
-        if region:
-            region_lower = region.lower()
-            if 'область' not in region_lower and not region_lower.startswith('м.') and not region_lower.startswith('ар '):
-                region = f"{region} область"
-    print(f"[GEOCODE_CONTEXT] city='{city_name}', extracted_region='{region}'", flush=True)
-    coords = opencage_geocode(city_name, region)
-    if coords:
-        return coords
-    # AI fallback for geocoding disambiguation
-    if message_text and GROQ_ENABLED:
-        try:
-            ai_hint = _ai_geocode_hint(city_name, message_text, region)
-            if ai_hint:
-                ai_city = ai_hint.get('city') or city_name
-                ai_region = ai_hint.get('region') or region
-                ai_query = ai_hint.get('query')
-                if ai_query:
-                    coords = opencage_geocode(ai_query, None)
-                    if coords:
-                        return coords
-                if ai_city or ai_region:
-                    coords = opencage_geocode(ai_city or city_name, ai_region)
-                    if coords:
-                        return coords
-        except Exception:
-            pass
+    return opencage_geocode(city_name, region)
+
+# AI DISABLED - using simple geocoding only
+GROQ_ENABLED = False
+GROQ_API_KEY = ''
+groq_client = None
+print("INFO: AI features DISABLED to save memory")
+
+# Stub functions for compatibility
+def _ai_geocode_hint(*args, **kwargs):
+    return None
+def classify_threat_with_ai(*args, **kwargs):
+    return None
+def extract_trajectory_with_ai(*args, **kwargs):
+    return None
+def predict_route_with_ai(*args, **kwargs):
     return None
 
+# Context geocoder disabled
+CONTEXT_GEOCODER_AVAILABLE = False
+def get_context_aware_geocoding(_text):
+    return []
+nlp = None
+SPACY_AVAILABLE = False
 
-# Groq AI integration for intelligent geocoding
-GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')
-GROQ_MODEL = 'llama-3.3-70b-versatile'
-GROQ_ENABLED = bool(GROQ_API_KEY)
-
-# AI request caching and rate limiting
-_groq_cache = {}  # Simple in-memory cache {hash: (result, timestamp)}
-_groq_cache_ttl = 300  # Cache TTL: 5 min (reduced from 15 min)
-_groq_cache_max_size = 30  # MEMORY PROTECTION: Max cached AI responses (reduced from 100)
-_groq_last_request = 0  # Timestamp of last request
-_groq_min_interval = 3.0  # Minimum 3 seconds between requests (was 2)
-_groq_daily_cooldown_until = 0  # If set, skip ALL AI until this timestamp
-_groq_429_backoff = 0  # Exponential backoff counter
-_groq_requests_this_minute = 0  # Counter for requests in current minute
-_groq_minute_start = 0  # Start of current minute window
-_groq_max_per_minute = 5  # Max 5 requests per minute (cost optimization)
-
-def _groq_is_available():
-    """Check if Groq AI is currently available (not in cooldown)"""
-    global _groq_daily_cooldown_until
-    if not GROQ_ENABLED:
-        return False
-    if _groq_daily_cooldown_until > 0:
-        if time.time() < _groq_daily_cooldown_until:
-            return False
-        else:
-            # Cooldown expired, reset
-            _groq_daily_cooldown_until = 0
-            print("INFO: Groq AI cooldown expired, resuming")
-    return True
-
-if GROQ_ENABLED:
-    try:
-        from groq import Groq
-        groq_client = Groq(api_key=GROQ_API_KEY)
-        print("INFO: Groq AI initialized successfully")
-    except ImportError:
-        GROQ_ENABLED = False
-        groq_client = None
-        print("WARNING: Groq library not installed. Run: pip install groq")
-    except Exception as e:
-        GROQ_ENABLED = False
-        groq_client = None
-        print(f"WARNING: Groq initialization failed: {e}")
-else:
-    groq_client = None
-    print("INFO: Groq AI disabled (no API key)")
-
-# --- Groq AI helper functions (geocoding, classification, trajectory) ---
-def _groq_cache_get(key: str):
-    entry = _groq_cache.get(key)
-    if not entry:
-        return None
-    value, ts = entry
-    if time.time() - ts > _groq_cache_ttl:
-        _groq_cache.pop(key, None)
-        return None
-    return value
-
-def _groq_cache_set(key: str, value):
-    if len(_groq_cache) >= _groq_cache_max_size:
-        # Drop oldest 10% to avoid unbounded growth
-        cutoff = max(1, int(_groq_cache_max_size * 0.1))
-        for old_key in sorted(_groq_cache.keys(), key=lambda k: _groq_cache[k][1])[:cutoff]:
-            _groq_cache.pop(old_key, None)
-    _groq_cache[key] = (value, time.time())
-
-def _groq_can_request() -> bool:
-    global _groq_last_request, _groq_requests_this_minute, _groq_minute_start
-    if not _groq_is_available() or not groq_client:
-        return False
-    now = time.time()
-    if now - _groq_minute_start > 60:
-        _groq_minute_start = now
-        _groq_requests_this_minute = 0
-    if _groq_requests_this_minute >= _groq_max_per_minute:
-        return False
-    # Minimum interval
-    wait = _groq_min_interval - (now - _groq_last_request)
-    if wait > 0:
-        time.sleep(wait)
-    _groq_last_request = time.time()
-    _groq_requests_this_minute += 1
-    return True
-
-def _extract_json_from_text(text: str) -> dict | None:
-    if not text:
-        return None
-    try:
-        return json.loads(text)
-    except Exception:
-        pass
-    try:
-        match = re.search(r'\{.*\}', text, re.DOTALL)
-        if match:
-            return json.loads(match.group(0))
-    except Exception:
-        return None
-    return None
-
-def _groq_request_json(cache_key: str, system_prompt: str, user_prompt: str, max_tokens: int = 256) -> dict | None:
-    if not GROQ_ENABLED or not groq_client or not _groq_can_request():
-        return None
-    cached = _groq_cache_get(cache_key)
-    if cached is not None:
-        return cached
-    try:
-        resp = groq_client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.2,
-            max_tokens=max_tokens,
-        )
-        content = resp.choices[0].message.content if resp and resp.choices else None
-        data = _extract_json_from_text(content or '')
-        if data is not None:
-            _groq_cache_set(cache_key, data)
-        return data
-    except Exception as e:
-        # Backoff on rate limits
-        if '429' in str(e):
-            global _groq_daily_cooldown_until, _groq_429_backoff
-            _groq_429_backoff = min(_groq_429_backoff + 1, 6)
-            _groq_daily_cooldown_until = time.time() + (60 * (2 ** _groq_429_backoff))
-            print(f"WARNING: Groq rate limited, cooldown set for {_groq_429_backoff} step(s)")
-        return None
-
-def _ai_geocode_hint(city_name: str, message_text: str, region_hint: str | None = None) -> dict | None:
-    if not GROQ_ENABLED or not message_text:
-        return None
-    cache_key = f"geocode_hint:{hashlib.sha256((city_name + '|' + message_text[:500] + '|' + (region_hint or '')).encode('utf-8')).hexdigest()}"
-    system_prompt = (
-        "You extract Ukrainian geographic locations for geocoding. "
-        "Return ONLY valid JSON with keys: city, region, raion, query, confidence. "
-        "Use Ukrainian names, region should be full like 'Харківська область' if known. "
-        "If unknown, use null."
-    )
-    user_prompt = (
-        f"Message: {message_text}\n"
-        f"City hint: {city_name}\n"
-        f"Region hint: {region_hint or ''}\n"
-        "Extract best geocoding hint for Ukraine."
-    )
-    return _groq_request_json(cache_key, system_prompt, user_prompt, max_tokens=200)
-
-def classify_threat_with_ai(message_text: str) -> dict | None:
-    if not GROQ_ENABLED or not message_text:
-        return None
-    cache_key = f"threat_class:{hashlib.sha256(message_text[:500].encode('utf-8')).hexdigest()}"
-    system_prompt = (
-        "You classify Ukrainian air threat messages. Return ONLY JSON with keys: "
-        "threat_type, emoji, priority, confidence. "
-        "threat_type must be one of: shahed, ballistic, cruise, kab, drone, explosion, artillery, pusk, unknown. "
-        "priority is 1-5."
-    )
-    user_prompt = f"Message: {message_text}"
-    return _groq_request_json(cache_key, system_prompt, user_prompt, max_tokens=120)
-
-def extract_trajectory_with_ai(text: str) -> dict | None:
-    if not GROQ_ENABLED or not text:
-        return None
-    cache_key = f"traj_extract:{hashlib.sha256(text[:500].encode('utf-8')).hexdigest()}"
-    system_prompt = (
-        "Extract drone trajectory info from Ukrainian text. Return ONLY JSON with keys: "
-        "source_type (city|region|direction|unknown), source_name, source_position, "
-        "target_type (city|region|direction|unknown), target_name, confidence (0-1)."
-    )
-    user_prompt = f"Text: {text}"
-    return _groq_request_json(cache_key, system_prompt, user_prompt, max_tokens=200)
-
-def predict_route_with_ai(source_text: str) -> dict | None:
-    if not GROQ_ENABLED or not source_text:
-        return None
-    cache_key = f"route_pred:{hashlib.sha256(source_text[:200].encode('utf-8')).hexdigest()}"
-    system_prompt = (
-        "Predict likely next Ukrainian regions (oblasts) for an air threat. "
-        "Return ONLY JSON with keys: predicted_targets (array of oblast or city names), confidence (0-1). "
-        "Prefer neighboring oblasts only."
-    )
-    user_prompt = f"Source: {source_text}"
-    return _groq_request_json(cache_key, system_prompt, user_prompt, max_tokens=120)
-
-# Context-aware geocoding integration
-try:
-    from context_aware_geocoder import get_context_aware_geocoding
-    CONTEXT_GEOCODER_AVAILABLE = True
-except ImportError:
-    CONTEXT_GEOCODER_AVAILABLE = False
-    def get_context_aware_geocoding(_text):
-        return []
-    nlp = None
-    SPACY_AVAILABLE = False
-    print("WARNING: SpaCy Ukrainian model not available. Using fallback geocoding methods.")
 try:
     from telethon.errors import (
         AuthKeyDuplicatedError,
@@ -791,14 +543,13 @@ try:
         SessionPasswordNeededError,
     )
 except ImportError:
-    # Fallback dummies if some names not present in current Telethon version
     class AuthKeyDuplicatedError(Exception):
         pass
     class AuthKeyUnregisteredError(Exception):
         pass
     class FloodWaitError(Exception):
         def __init__(self, seconds=60): self.seconds = seconds
-    class SessionPasswordNeededError(Exception):  # noqa: F841
+    class SessionPasswordNeededError(Exception):
         pass
 import math
 
@@ -808,14 +559,8 @@ from telethon.sessions import StringSession
 # ══════════════════════════════════════════════════════════════════════════════
 # [SECTION 5] UTILITIES & HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
-# General-purpose utility functions used across the application.
-# - Geographic calculations (bearing, distance, coordinates)
-# - Text parsing and normalization
-# - Caching helpers
-# - File I/O utilities
 
-# --- Firebase Topic Mapping (used for FCM push notifications) ---
-# Maps Ukrainian region names to Firebase topic identifiers
+# --- Firebase Topic Mapping ---
 REGION_TOPIC_MAP = {
     'Київ': 'region_kyiv_city',
     'Київська область': 'region_kyivska',
@@ -844,8 +589,7 @@ REGION_TOPIC_MAP = {
     'Луганська область': 'region_luhanska',
 }
 
-# --- Oblast ID Mapping (UA ISO codes for ID-based filtering) ---
-# Maps Ukrainian region names to ISO 3166-2:UA codes
+# --- Oblast ID Mapping ---
 REGION_TO_OBLAST_ID = {
     'м. Київ': 'UA-30',
     'Київ': 'UA-30',
@@ -2947,22 +2691,8 @@ def _classify_threat_cached(message_text: str) -> dict | None:
             if time.time() - timestamp < _THREAT_CACHE_TTL:
                 return cached
         
-        # Classify
-        try:
-            result = classify_threat_with_ai(message_text)
-            _threat_classification_cache[msg_hash] = (result, time.time())
-            
-            # Cleanup old entries (keep last 1000)
-            if len(_threat_classification_cache) > 1000:
-                items = sorted(_threat_classification_cache.items(), 
-                             key=lambda x: x[1][1])
-                _threat_classification_cache.clear()
-                _threat_classification_cache.update(dict(items[-500:]))
-            
-            return result
-        except Exception as e:
-            log.warning(f"Threat classification error: {e}")
-            return None
+        # Classify - AI DISABLED, return None
+        return None
 
 
 def _send_fcm_with_retry(message, max_retries=2, initial_delay=0.5):
@@ -3677,11 +3407,11 @@ BACKFILL_STATUS = {
 
 # Global debug storage for admin panel
 DEBUG_LOGS = []
-MAX_DEBUG_LOGS = 20  # Reduced to save memory
+MAX_DEBUG_LOGS = 10  # Reduced to save memory
 
 # Cache for fallback reparse to avoid duplicate processing
 FALLBACK_REPARSE_CACHE = set()  # message IDs that have been reparsed
-MAX_REPARSE_CACHE_SIZE = 100  # Reduced to save memory (was 200)
+MAX_REPARSE_CACHE_SIZE = 50  # Reduced to save memory (was 100)
 
 
 def _normalize_platform(platform_hint: str, ua: str) -> str:
@@ -4234,8 +3964,8 @@ OPENCAGE_CACHE_FILE = 'opencage_cache.json'
 OPENCAGE_TTL = 60 * 60 * 24 * 30  # 30 days
 NEG_GEOCODE_FILE = 'negative_geocode_cache.json'
 NEG_GEOCODE_TTL = 60 * 60 * 24 * 3  # 3 days for 'not found' entries
-MESSAGES_RETENTION_MINUTES = int(os.getenv('MESSAGES_RETENTION_MINUTES', '720'))  # 12 hours retention (reduced from 24h)
-MESSAGES_MAX_COUNT = int(os.getenv('MESSAGES_MAX_COUNT', '150'))  # Default limit 150 to prevent memory issues (reduced from 300)
+MESSAGES_RETENTION_MINUTES = int(os.getenv('MESSAGES_RETENTION_MINUTES', '360'))  # 6 hours retention (reduced from 12h to save memory)
+MESSAGES_MAX_COUNT = int(os.getenv('MESSAGES_MAX_COUNT', '100'))  # Default limit 100 to prevent memory issues (reduced from 150)
 
 def _startup_diagnostics():
     """Log one-time startup diagnostics to help investigate early exit issues on hosting platforms."""
@@ -4306,8 +4036,8 @@ MESSAGE_STORE = MessageStore(
 # Cache for sent FCM notifications to prevent duplicates
 # Format: {notification_hash: timestamp}
 SENT_NOTIFICATIONS_CACHE = {}
-NOTIFICATION_CACHE_TTL = 120  # 2 minutes - don't repeat same location+threat within this time
-NOTIFICATION_CACHE_MAX_SIZE = 100  # MEMORY PROTECTION: Max cached notification hashes
+NOTIFICATION_CACHE_TTL = 120  # 2 minutes
+NOTIFICATION_CACHE_MAX_SIZE = 50  # MEMORY: Reduced to 50
 
 def _normalize_location_name(name: str) -> str:
     """Normalize location name for deduplication - remove common suffixes/prefixes."""
@@ -4763,8 +4493,8 @@ def _save_visit_stats():
     except Exception as e:
         log.warning(f'Failed saving {STATS_FILE}: {e}')
 
-def _prune_visit_stats(days:int=30):
-    # remove entries older than N days to limit file growth - reduced from 45 to 30 days
+def _prune_visit_stats(days:int=14):
+    # remove entries older than N days - reduced to 14 days to save memory
     if VISIT_STATS is None:
         return
     cutoff = time.time() - days*86400
@@ -5041,7 +4771,7 @@ except Exception as e:
 _opencage_cache = None
 _neg_geocode_cache = None
 _mapstransler_geocode_cache = {}  # In-memory cache for mapstransler geocoding
-_mapstransler_cache_max_size = 100  # MEMORY PROTECTION: Max cached geocode results (reduced from 200)
+_mapstransler_cache_max_size = 50  # MEMORY: Reduced to 50
 
 def _load_opencage_cache():
     global _opencage_cache
