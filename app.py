@@ -4473,8 +4473,21 @@ def _load_visit_stats():
         return VISIT_STATS
     if os.path.exists(STATS_FILE):
         try:
+            # Check file size - if too big, reset to save memory
+            file_size = os.path.getsize(STATS_FILE)
+            if file_size > 500_000:  # 500KB max
+                log.warning(f"visit_stats file too large ({file_size} bytes), resetting")
+                VISIT_STATS = {}
+                _save_visit_stats()
+                return VISIT_STATS
             with open(STATS_FILE,encoding='utf-8') as f:
                 VISIT_STATS = json.load(f)
+            # Immediately prune if too many entries
+            if len(VISIT_STATS) > 2000:
+                log.warning(f"visit_stats has {len(VISIT_STATS)} entries, pruning to 2000")
+                sorted_items = sorted(VISIT_STATS.items(), key=lambda x: float(x[1]) if isinstance(x[1], (int, float, str)) else 0, reverse=True)
+                VISIT_STATS = dict(sorted_items[:2000])
+                _save_visit_stats()
         except Exception:
             VISIT_STATS = {}
     else:
@@ -4524,6 +4537,14 @@ def _load_recent_visits():
     with _recent_visits_lock:
         try:
             if os.path.exists(RECENT_VISITS_FILE):
+                # Check file size first - reset if too large
+                try:
+                    file_size = os.path.getsize(RECENT_VISITS_FILE)
+                    if file_size > 200_000:  # 200KB max
+                        log.warning(f"recent_visits file too large ({file_size} bytes), resetting")
+                        return {}
+                except:
+                    pass
                 # Guard against oversized/corrupted file (e.g. concurrent writes producing concatenated JSON objects)
                 try:
                     raw = open(RECENT_VISITS_FILE, encoding='utf-8').read()
