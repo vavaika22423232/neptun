@@ -6154,6 +6154,23 @@ def parse_trajectory_from_message(text):
                 'kind': 'city_course_to_city'
             }
 
+    # =========================================================================
+    # Pattern 15: "БпЛА [місто] ([область])" - Simple city with region
+    # Example: "БПЛА Кривий Ріг (Дніпропетровська обл.)"
+    # =========================================================================
+    p15 = re.search(r'(?:бпла|шахед|дрон)и?\s+(?:м\.?|н\.?п\.?)?\s*([а-яіїєґ\'\-\s]{3,30}?)\s*\([^)]*(?:обл|область|щина)[^)]*\)', text_lower)
+    if p15:
+        city = p15.group(1).strip()
+        city_coords = _get_city_coords(city)
+        if city_coords:
+            return {
+                'start': [city_coords[0], city_coords[1]],
+                'end': None,
+                'source_name': city.title(),
+                'target_name': None,
+                'kind': 'city_position'
+            }
+
     return None
 
 def process_message(text, mid, date_str, channel, _disable_multiline=False):  # type: ignore
@@ -10850,6 +10867,13 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     count = 1
                     city = m_simple_no_count.group(1).strip()
                     print(f"DEBUG: Found simple БпЛА pattern (no count) - city: '{city}'")
+            # Pattern 4: "БПЛА <city> (область)" WITHOUT "на" - e.g. "БПЛА Кривий Ріг (Дніпропетровська обл.)"
+            elif re.search(r'бпла\s+[A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,}?\s*\(', ln, re.IGNORECASE):
+                m_city_oblast = re.search(r'бпла\s+([A-Za-zА-Яа-яЇїІіЄєҐґ\-\'ʼ`\s]{3,}?)\s*\([^)]*(?:обл|область|щина)[^)]*\)', ln, re.IGNORECASE)
+                if m_city_oblast:
+                    count = 1
+                    city = m_city_oblast.group(1).strip()
+                    print(f"DEBUG: Found 'БПЛА City (oblast)' pattern - city: '{city}'")
 
         # --- NEW: Handle "X у напрямку City1, City2" pattern (e.g. "4 у напрямку Карлівки, Полтави") ---
         if not city:
