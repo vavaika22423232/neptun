@@ -3085,7 +3085,7 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
             # Перевіряємо чи є активна тривога в цьому регіоні
             if oblast_id or region_name:
                 # Намагаємось знайти регіон в _alarm_states
-                for region_data in _alarm_states:
+                for region_data in _alarm_states.values():
                     region_display = get_region_display_name(region_data)
                     region_id = region_data.get('regionId', '')
                     
@@ -5307,6 +5307,8 @@ UA_CITY_NORMALIZE.update({
     ,'тендрівську косу':'тендрівська коса'
     # Одеська область
     ,'вилково':'вилкове','вилкову':'вилкове'
+    ,'черноморск':'чорноморськ','черноморское':'чорноморськ','черноморське':'чорноморськ'
+    ,'чорноморське':'чорноморськ','чорноморске':'чорноморськ'
     # Common accusative forms for major cities
     ,'одесу':'одеса','полтаву':'полтава','сумами':'суми','суму':'суми'
 })
