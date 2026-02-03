@@ -16174,9 +16174,23 @@ def data():
     print(f"[DEBUG] Returning {len(out)} tracks and {len(events)} events (limits: {MAX_TRACKS}/{MAX_EVENTS})")
 
     # Replace old shahed.png with new shahed3.webp for backward compatibility
+    # OPTIMIZATION: Trim large text fields to reduce response size (223KB -> ~50KB target)
     for track in out:
         if track.get('marker_icon') == 'shahed.png':
             track['marker_icon'] = 'shahed3.webp'
+        # Trim text to 200 chars to save bandwidth
+        if track.get('text') and len(track.get('text', '')) > 200:
+            track['text'] = track['text'][:200] + '...'
+        # Remove heavy fields that frontend doesn't need
+        track.pop('raw_text', None)
+        track.pop('full_text', None)
+        
+    # Same trimming for events
+    for event in events:
+        if event.get('text') and len(event.get('text', '')) > 200:
+            event['text'] = event['text'][:200] + '...'
+        event.pop('raw_text', None)
+        event.pop('full_text', None)
 
     # DEBUG: Count tracks with trajectories
     traj_count = sum(1 for t in out if t.get('trajectory'))
