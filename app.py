@@ -17596,12 +17596,13 @@ def presence():
     platform_label = _normalize_platform(data.get('platform') or '', ua)
     nickname = data.get('nickname', '')[:20] if data.get('nickname') else ''  # Max 20 chars
 
-    stats = _load_visit_stats()
-    if vid not in stats:
-        stats[vid] = now
-        if int(now) % 50 == 0 or len(stats) > 2500:
-            _prune_visit_stats()
-        _save_visit_stats()
+    # DISABLED: visit_stats in memory - using SQLite instead
+    # stats = _load_visit_stats()
+    # if vid not in stats:
+    #     stats[vid] = now
+    #     if int(now) % 50 == 0 or len(stats) > 2500:
+    #         _prune_visit_stats()
+    #     _save_visit_stats()
 
     try:
         _update_recent_visits(vid)
@@ -17634,19 +17635,24 @@ def presence():
 
     with ACTIVE_LOCK:
         prev = ACTIVE_VISITORS.get(vid) if isinstance(ACTIVE_VISITORS.get(vid), dict) else {}
-        first_seen = prev.get('first') or db_first or stats.get(vid) or now
+        first_seen = prev.get('first') or db_first or now
+        # Simplified visitor data to save memory
         ACTIVE_VISITORS[vid] = {
             'ts': now,
             'first': first_seen,
-            'ip': remote_ip,
-            'ua': prev.get('ua') or ua,
             'platform': platform_label,
-            'nickname': nickname if nickname else prev.get('nickname', '')
         }
+        # Cleanup stale visitors
         for key, meta in list(ACTIVE_VISITORS.items()):
             ts = meta if isinstance(meta, (int, float)) else meta.get('ts', 0)
             if now - ts > ACTIVE_TTL:
                 del ACTIVE_VISITORS[key]
+        
+        # Hard limit - keep only 300 newest
+        if len(ACTIVE_VISITORS) > 300:
+            sorted_keys = sorted(ACTIVE_VISITORS.keys(), key=lambda k: ACTIVE_VISITORS[k].get('ts', 0))
+            for k in sorted_keys[:len(ACTIVE_VISITORS) - 300]:
+                del ACTIVE_VISITORS[k]
 
         platform_counts = {}
         for meta in ACTIVE_VISITORS.values():
@@ -18442,7 +18448,6 @@ def admin_memory():
         'threat_class_cache': (len(_threat_classification_cache), get_size(_threat_classification_cache)),
         'mapstransler_cache': (len(_mapstransler_geocode_cache), get_size(_mapstransler_geocode_cache)),
         'visitors': (len(ACTIVE_VISITORS), get_size(ACTIVE_VISITORS)),
-        'visit_stats': (len(VISIT_STATS) if VISIT_STATS else 0, get_size(VISIT_STATS) if VISIT_STATS else 0),
         'debug_logs': (len(DEBUG_LOGS), get_size(DEBUG_LOGS)),
         'reparse_cache': (len(FALLBACK_REPARSE_CACHE), get_size(FALLBACK_REPARSE_CACHE)),
     }
@@ -19154,13 +19159,6 @@ def _memory_cleanup_worker():
                             sorted_keys = sorted(ACTIVE_VISITORS.keys(), key=lambda k: ACTIVE_VISITORS[k].get('ts', 0))
                             for k in sorted_keys[:len(ACTIVE_VISITORS) - 200]:
                                 ACTIVE_VISITORS.pop(k, None)
-                    
-                    # Trim visit_stats to 1000
-                    if VISIT_STATS and len(VISIT_STATS) > 1000:
-                        sorted_items = sorted(VISIT_STATS.items(), key=lambda x: float(x[1]) if isinstance(x[1], (int, float, str)) else 0, reverse=True)
-                        VISIT_STATS.clear()
-                        VISIT_STATS.update(dict(sorted_items[:1000]))
-                        _save_visit_stats()
                     
                     gc.collect()
                     gc.collect()  # Double collect
