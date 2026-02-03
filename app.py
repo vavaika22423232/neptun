@@ -15984,10 +15984,30 @@ def data():
         
         # === TTL FILTERING: Apply per-threat-type TTL limits ===
         threat_type = m.get('threat_type', '').lower()
+        marker_icon = m.get('marker_icon', '').lower()
+        
+        # If threat_type is empty, try to infer from marker_icon or text
+        if not threat_type:
+            if 'raketa' in marker_icon or 'rocket' in marker_icon or 'missile' in marker_icon:
+                threat_type = 'rocket'
+            elif 'kab' in marker_icon or 'bomb' in marker_icon:
+                threat_type = 'kab'
+            elif 'cruise' in marker_icon or 'kalibr' in marker_icon or 'x101' in marker_icon:
+                threat_type = 'cruise'
+            elif 'ballistic' in marker_icon or 'iskander' in marker_icon:
+                threat_type = 'ballistic'
+            elif 'kinzhal' in marker_icon:
+                threat_type = 'kinzhal'
+            # Also check text for rocket/kab keywords
+            elif any(kw in low_txt for kw in ['ракета', 'ракети', 'балістик', 'крилат', 'калібр', 'х-101', 'х-22', 'іскандер', 'кінжал', 'missile', 'rocket']):
+                threat_type = 'rocket'
+            elif any(kw in low_txt for kw in ['каб', 'kab', 'керован', 'бомб']):
+                threat_type = 'kab'
+        
         # Determine TTL for this marker type
         marker_ttl = THREAT_MAX_TTL.get(threat_type, 30)  # Default 30 min if unknown
         # For rockets/missiles/KAB, use strict 5 min TTL
-        if threat_type in ['kab', 'rocket', 'cruise', 'ballistic', 'kinzhal', 'iskander', 'kalibr', 'x101', 'x22']:
+        if threat_type in ['kab', 'rocket', 'cruise', 'ballistic', 'kinzhal', 'iskander', 'kalibr', 'x101', 'x22', 'raketa']:
             marker_ttl = 5
         # Check if marker is expired based on its TTL
         marker_age_minutes = (now - dt).total_seconds() / 60
