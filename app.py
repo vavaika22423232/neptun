@@ -183,6 +183,10 @@ class ResponseCache:
                 del self._cache[k]
             return len(expired_keys)
     
+    def clear_expired(self):
+        """Alias for cleanup() - removes expired entries."""
+        return self.cleanup()
+    
     @property
     def cache(self):
         """Direct access to cache dict for size metrics"""
@@ -199,7 +203,7 @@ class ResponseCache:
             }
 
 # Global response cache
-RESPONSE_CACHE = ResponseCache(default_ttl=30)
+RESPONSE_CACHE = ResponseCache(default_ttl=30, max_items=30)  # MEMORY: Reduced from 50
 
 # Cached messages - avoid repeated file reads
 _MESSAGES_CACHE = {'data': None, 'expires': 0}
@@ -551,8 +555,8 @@ GROQ_ENABLED = bool(GROQ_API_KEY)
 
 # AI request caching and rate limiting
 _groq_cache = {}  # Simple in-memory cache {hash: (result, timestamp)}
-_groq_cache_ttl = 1800  # Cache TTL: 30 min (reduced from 60 min)
-_groq_cache_max_size = 200  # MEMORY PROTECTION: Max cached AI responses (reduced from 500)
+_groq_cache_ttl = 900  # Cache TTL: 15 min (reduced from 30 min)
+_groq_cache_max_size = 100  # MEMORY PROTECTION: Max cached AI responses (reduced from 200)
 _groq_last_request = 0  # Timestamp of last request
 _groq_min_interval = 3.0  # Minimum 3 seconds between requests (was 2)
 _groq_daily_cooldown_until = 0  # If set, skip ALL AI until this timestamp
@@ -905,12 +909,13 @@ RE_REGION_IN_TEXT = re.compile(r'([\w\-]+(?:ська|ький|ка)\s*(?:обл�
 
 # --- Region ID cache (reduces repeated parsing/lookup work) ---
 _REGION_IDS_CACHE: dict[str, dict] = {}
-_REGION_IDS_CACHE_TTL = int(os.getenv('REGION_IDS_CACHE_TTL', '3600'))  # seconds
-_REGION_IDS_CACHE_MAX = int(os.getenv('REGION_IDS_CACHE_MAX', '3000'))
+_REGION_IDS_CACHE_TTL = int(os.getenv('REGION_IDS_CACHE_TTL', '1800'))  # 30 min (reduced from 1h)
+_REGION_IDS_CACHE_MAX = int(os.getenv('REGION_IDS_CACHE_MAX', '500'))  # Reduced from 3000
 
 _OBLAST_ID_CACHE: dict[str, str | None] = {}
 _RF_GEOCODE_CACHE: dict[str, tuple] = {}
-_RF_GEOCODE_CACHE_TTL = int(os.getenv('RF_GEOCODE_CACHE_TTL', '604800'))  # 7 days
+_RF_GEOCODE_CACHE_TTL = int(os.getenv('RF_GEOCODE_CACHE_TTL', '86400'))  # 1 day (reduced from 7 days)
+_RF_GEOCODE_CACHE_MAX = 200  # MEMORY PROTECTION: Max RF geocode entries
 
 def _extract_oblast_from_text(text: str) -> str | None:
     """
@@ -979,6 +984,15 @@ def _geocode_rf_place(place: str) -> tuple | None:
         coords, ts = cached
         if time.time() - ts <= _RF_GEOCODE_CACHE_TTL:
             return coords
+        else:
+            _RF_GEOCODE_CACHE.pop(key, None)  # Remove expired
+    
+    # MEMORY PROTECTION: Enforce max size
+    if len(_RF_GEOCODE_CACHE) >= _RF_GEOCODE_CACHE_MAX:
+        # Remove oldest 20% of entries
+        sorted_keys = sorted(_RF_GEOCODE_CACHE.keys(), key=lambda k: _RF_GEOCODE_CACHE[k][1])
+        for old_key in sorted_keys[:len(_RF_GEOCODE_CACHE) // 5]:
+            _RF_GEOCODE_CACHE.pop(old_key, None)
 
     try:
         query = f"{place}, Russia"
@@ -1905,7 +1919,7 @@ init_firebase()
 
 # Shared rate tracking for lightweight bandwidth protection rules
 request_counts = defaultdict(list)
-_request_counts_max_keys = 2000  # MEMORY PROTECTION: Max tracked IPs (reduced from 10000)
+_request_counts_max_keys = 500  # MEMORY PROTECTION: Max tracked IPs (reduced from 2000)
 
 def _cleanup_request_counts():
     """Periodically cleanup old request count entries to prevent memory leak."""
@@ -3564,7 +3578,7 @@ AUTH_SECRET = os.getenv('AUTH_SECRET')  # simple shared secret to protect /auth 
 FETCH_THREAD_STARTED = False
 AUTH_STATUS = {'authorized': False, 'reason': 'init'}
 SUBSCRIBERS = set()  # queues for SSE clients
-MAX_STREAM_SUBSCRIBERS = 500  # MEMORY PROTECTION: Limit main SSE connections
+MAX_STREAM_SUBSCRIBERS = 200  # MEMORY PROTECTION: Limit main SSE connections (reduced from 500)
 INIT_ONCE = False  # guard to ensure background startup once
 # Persistent dynamic channels file
 CHANNELS_FILE = 'channels_dynamic.json'
@@ -3617,6 +3631,7 @@ def add_debug_log(message, category="general"):
 APP_ALARM_TTL_MINUTES = 65  # auto-expire if no update ~1h
 ACTIVE_OBLAST_ALARMS = {}   # canonical oblast key -> {'since': epoch, 'last': epoch}
 ACTIVE_RAION_ALARMS = {}    # raion base (lowercase) -> {'since': epoch, 'last': epoch}
+RAION_ALARMS = {}           # Display/API raion alarm cache (separate from internal tracking)
 
 # P-code mapping for ADM1 (області + special status cities)
 OBLAST_PCODE = {
@@ -4137,8 +4152,8 @@ OPENCAGE_CACHE_FILE = 'opencage_cache.json'
 OPENCAGE_TTL = 60 * 60 * 24 * 30  # 30 days
 NEG_GEOCODE_FILE = 'negative_geocode_cache.json'
 NEG_GEOCODE_TTL = 60 * 60 * 24 * 3  # 3 days for 'not found' entries
-MESSAGES_RETENTION_MINUTES = int(os.getenv('MESSAGES_RETENTION_MINUTES', '1440'))  # 24 hours retention by default
-MESSAGES_MAX_COUNT = int(os.getenv('MESSAGES_MAX_COUNT', '500'))  # Default limit 500 to prevent memory issues
+MESSAGES_RETENTION_MINUTES = int(os.getenv('MESSAGES_RETENTION_MINUTES', '720'))  # 12 hours retention (reduced from 24h)
+MESSAGES_MAX_COUNT = int(os.getenv('MESSAGES_MAX_COUNT', '300'))  # Default limit 300 to prevent memory issues (reduced from 500)
 
 def _startup_diagnostics():
     """Log one-time startup diagnostics to help investigate early exit issues on hosting platforms."""
@@ -4209,7 +4224,8 @@ MESSAGE_STORE = MessageStore(
 # Cache for sent FCM notifications to prevent duplicates
 # Format: {notification_hash: timestamp}
 SENT_NOTIFICATIONS_CACHE = {}
-NOTIFICATION_CACHE_TTL = 300  # 5 minutes - don't repeat same location+threat within this time
+NOTIFICATION_CACHE_TTL = 180  # 3 minutes - don't repeat same location+threat within this time
+NOTIFICATION_CACHE_MAX_SIZE = 200  # MEMORY PROTECTION: Max cached notification hashes
 
 def _normalize_location_name(name: str) -> str:
     """Normalize location name for deduplication - remove common suffixes/prefixes."""
@@ -4262,6 +4278,12 @@ def _should_send_notification(msg: dict) -> bool:
         h: t for h, t in SENT_NOTIFICATIONS_CACHE.items()
         if now - t < NOTIFICATION_CACHE_TTL
     }
+    
+    # MEMORY PROTECTION: Enforce max size limit
+    if len(SENT_NOTIFICATIONS_CACHE) > NOTIFICATION_CACHE_MAX_SIZE:
+        # Keep only the newest entries
+        sorted_items = sorted(SENT_NOTIFICATIONS_CACHE.items(), key=lambda x: x[1], reverse=True)
+        SENT_NOTIFICATIONS_CACHE = dict(sorted_items[:NOTIFICATION_CACHE_MAX_SIZE // 2])
 
     if msg_hash in SENT_NOTIFICATIONS_CACHE:
         log.info(f"Skipping duplicate notification (hash: {msg_hash[:8]}...)")
@@ -4937,7 +4959,7 @@ except Exception as e:
 _opencage_cache = None
 _neg_geocode_cache = None
 _mapstransler_geocode_cache = {}  # In-memory cache for mapstransler geocoding
-_mapstransler_cache_max_size = 500  # MEMORY PROTECTION: Max cached geocode results (reduced from 2000)
+_mapstransler_cache_max_size = 200  # MEMORY PROTECTION: Max cached geocode results (reduced from 500)
 
 def _load_opencage_cache():
     global _opencage_cache
@@ -4959,10 +4981,10 @@ def _save_opencage_cache():
     try:
         # Limit cache size to prevent memory issues
         cache_to_save = _opencage_cache
-        if len(_opencage_cache) > 1000:
-            # Keep only the 1000 most recent entries (approximate)
+        if len(_opencage_cache) > 500:  # Reduced from 1000
+            # Keep only the 500 most recent entries (approximate)
             items = list(_opencage_cache.items())
-            cache_to_save = dict(items[-1000:])
+            cache_to_save = dict(items[-500:])
         with open(OPENCAGE_CACHE_FILE, 'w', encoding='utf-8') as f:
             json.dump(cache_to_save, f, ensure_ascii=False, indent=2)
     except Exception as e:
@@ -8448,9 +8470,46 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 _mapstransler_geocode_cache[cache_key] = None  # Negative cache
                 add_debug_log(f"Cache SAVED (negative): {city_norm} not found", "mapstransler")
 
-            # NO FALLBACK TO OBLAST CENTER - if not found, skip this city
+            # FALLBACK TO OBLAST CENTER if city not found
+            if not coords and target_state:
+                # Oblast center coordinates (approximate)
+                oblast_centers = {
+                    'Дніпропетровська область': (48.4647, 35.0462),
+                    'Харківська область': (50.0047, 36.2314),
+                    'Київська область': (50.4501, 30.5234),
+                    'Чернігівська область': (51.4982, 31.2893),
+                    'Сумська область': (50.9077, 34.7981),
+                    'Полтавська область': (49.5883, 34.5514),
+                    'Миколаївська область': (46.9750, 31.9946),
+                    'Одеська область': (46.4825, 30.7233),
+                    'Херсонська область': (46.6354, 32.6169),
+                    'Запорізька область': (47.8388, 35.1396),
+                    'Донецька область': (48.0159, 37.8029),
+                    'Луганська область': (48.5740, 39.3078),
+                    'Черкаська область': (49.4444, 32.0598),
+                    'Вінницька область': (49.2331, 28.4682),
+                    'Житомирська область': (50.2547, 28.6587),
+                    'Рівненська область': (50.6199, 26.2516),
+                    'Волинська область': (50.7472, 25.3254),
+                    'Львівська область': (49.8397, 24.0297),
+                    'Тернопільська область': (49.5535, 25.5948),
+                    'Хмельницька область': (49.4229, 26.9871),
+                    'Івано-Франківська область': (48.9226, 24.7111),
+                    'Закарпатська область': (48.6208, 22.2879),
+                    'Чернівецька область': (48.2921, 25.9358),
+                    'Кіровоградська область': (48.5079, 32.2623),
+                }
+                fallback_coords = oblast_centers.get(target_state)
+                if fallback_coords:
+                    # Add small random offset so multiple fallbacks don't overlap
+                    import random
+                    offset_lat = random.uniform(-0.15, 0.15)
+                    offset_lng = random.uniform(-0.15, 0.15)
+                    coords = (fallback_coords[0] + offset_lat, fallback_coords[1] + offset_lng)
+                    add_debug_log(f"FALLBACK to oblast center: {city_raw} ({target_state}) -> {coords}", "mapstransler")
+
             if not coords:
-                add_debug_log(f"City NOT FOUND after all APIs, skipping: {city_raw} ({oblast_raw})", "mapstransler")
+                add_debug_log(f"City NOT FOUND, no fallback: {city_raw} ({oblast_raw})", "mapstransler")
 
             if coords:
                 if len(coords) == 3:
@@ -19027,73 +19086,106 @@ _INIT_BACKGROUND_DONE = False
 
 def _memory_cleanup_worker():
     """Background worker to periodically clean up caches and prevent memory leaks."""
+    cleanup_counter = 0
     while True:
         try:
-            time.sleep(300)  # Run every 5 minutes
+            time.sleep(120)  # Run every 2 minutes (more aggressive)
+            cleanup_counter += 1
+            now = time.time()
+            total_cleaned = 0
             
             # Clean request_counts
             _cleanup_request_counts()
             
             # Clean ResponseCache expired entries
             cleaned = RESPONSE_CACHE.clear_expired()
-            if cleaned > 0:
-                print(f"[MEMORY] Cleaned {cleaned} expired cache entries")
+            total_cleaned += cleaned
             
             # Clean _groq_cache - remove old entries and enforce size limit
-            now = time.time()
             if _groq_cache:
                 old_size = len(_groq_cache)
-                # Remove expired entries
                 expired_keys = [k for k, (_, ts) in _groq_cache.items() if now - ts > _groq_cache_ttl]
                 for k in expired_keys:
-                    del _groq_cache[k]
+                    _groq_cache.pop(k, None)
                 # If still over limit, remove oldest entries
                 if len(_groq_cache) > _groq_cache_max_size:
                     sorted_keys = sorted(_groq_cache.keys(), key=lambda k: _groq_cache[k][1])
                     for k in sorted_keys[:len(_groq_cache) - _groq_cache_max_size // 2]:
-                        del _groq_cache[k]
-                if old_size != len(_groq_cache):
-                    print(f"[MEMORY] Cleaned groq cache: {old_size} -> {len(_groq_cache)}")
+                        _groq_cache.pop(k, None)
+                total_cleaned += old_size - len(_groq_cache)
             
-            # Clean _telegram_alert_sent (keep only last 5 min)
-            now = time.time()
+            # Clean _telegram_alert_sent (keep only last 3 min)
             with _telegram_alert_lock:
-                old_size = len(_telegram_alert_sent)
-                keys_to_del = [k for k, v in _telegram_alert_sent.items() if now - v > 300]
+                keys_to_del = [k for k, v in _telegram_alert_sent.items() if now - v > 180]
                 for k in keys_to_del:
-                    del _telegram_alert_sent[k]
-                if keys_to_del:
-                    print(f"[MEMORY] Cleaned {len(keys_to_del)} old telegram alerts")
+                    _telegram_alert_sent.pop(k, None)
+                total_cleaned += len(keys_to_del)
             
-            # Clean _telegram_region_notified (keep only last 10 min)
-            old_size = len(_telegram_region_notified)
-            keys_to_del = [k for k, v in _telegram_region_notified.items() if now - v > 600]
+            # Clean _telegram_region_notified (keep only last 5 min)
+            keys_to_del = [k for k, v in list(_telegram_region_notified.items()) if now - v > 300]
             for k in keys_to_del:
-                del _telegram_region_notified[k]
-            if keys_to_del:
-                print(f"[MEMORY] Cleaned {len(keys_to_del)} old region notifications")
+                _telegram_region_notified.pop(k, None)
+            total_cleaned += len(keys_to_del)
                 
-            # Clean ACTIVE_VISITORS (remove stale visitors)
+            # Clean ACTIVE_VISITORS (remove stale visitors - aggressive)
             with ACTIVE_LOCK:
                 old_size = len(ACTIVE_VISITORS)
-                stale_keys = [k for k, v in ACTIVE_VISITORS.items() if now - v.get('ts', 0) > ACTIVE_TTL * 2]
+                stale_keys = [k for k, v in ACTIVE_VISITORS.items() if now - v.get('ts', 0) > ACTIVE_TTL]
                 for k in stale_keys:
-                    del ACTIVE_VISITORS[k]
-                if stale_keys:
-                    print(f"[MEMORY] Cleaned {len(stale_keys)} stale visitors")
+                    ACTIVE_VISITORS.pop(k, None)
+                # Hard limit on active visitors
+                if len(ACTIVE_VISITORS) > 500:
+                    # Remove oldest visitors
+                    sorted_keys = sorted(ACTIVE_VISITORS.keys(), key=lambda k: ACTIVE_VISITORS[k].get('ts', 0))
+                    for k in sorted_keys[:len(ACTIVE_VISITORS) - 300]:
+                        ACTIVE_VISITORS.pop(k, None)
+                total_cleaned += old_size - len(ACTIVE_VISITORS)
             
             # Clean _mapstransler_geocode_cache if over limit
             if len(_mapstransler_geocode_cache) > _mapstransler_cache_max_size:
                 old_size = len(_mapstransler_geocode_cache)
-                # Remove half of the entries (oldest would require tracking timestamps)
                 keys_to_remove = list(_mapstransler_geocode_cache.keys())[:old_size // 2]
                 for k in keys_to_remove:
-                    del _mapstransler_geocode_cache[k]
-                print(f"[MEMORY] Cleaned mapstransler cache: {old_size} -> {len(_mapstransler_geocode_cache)}")
+                    _mapstransler_geocode_cache.pop(k, None)
+                total_cleaned += old_size - len(_mapstransler_geocode_cache)
             
-            # Force garbage collection periodically
-            import gc
+            # Clean _RF_GEOCODE_CACHE
+            if len(_RF_GEOCODE_CACHE) > _RF_GEOCODE_CACHE_MAX:
+                sorted_keys = sorted(_RF_GEOCODE_CACHE.keys(), key=lambda k: _RF_GEOCODE_CACHE[k][1] if _RF_GEOCODE_CACHE[k] else 0)
+                for k in sorted_keys[:len(_RF_GEOCODE_CACHE) // 2]:
+                    _RF_GEOCODE_CACHE.pop(k, None)
+            
+            # Clean _REGION_IDS_CACHE
+            if len(_REGION_IDS_CACHE) > _REGION_IDS_CACHE_MAX:
+                sorted_keys = sorted(_REGION_IDS_CACHE.keys(), key=lambda k: _REGION_IDS_CACHE[k].get('ts', 0))
+                for k in sorted_keys[:len(_REGION_IDS_CACHE) // 2]:
+                    _REGION_IDS_CACHE.pop(k, None)
+            
+            # Clean _OBLAST_ID_CACHE (limit to 100 entries)
+            if len(_OBLAST_ID_CACHE) > 100:
+                keys_to_remove = list(_OBLAST_ID_CACHE.keys())[:len(_OBLAST_ID_CACHE) - 50]
+                for k in keys_to_remove:
+                    _OBLAST_ID_CACHE.pop(k, None)
+            
+            # Clean SENT_NOTIFICATIONS_CACHE
+            global SENT_NOTIFICATIONS_CACHE
+            SENT_NOTIFICATIONS_CACHE = {
+                h: t for h, t in SENT_NOTIFICATIONS_CACHE.items()
+                if now - t < NOTIFICATION_CACHE_TTL
+            }
+            
+            # Force garbage collection every cleanup
             gc.collect()
+            
+            # Log memory status every 5 cleanups (10 min)
+            if cleanup_counter % 5 == 0 and total_cleaned > 0:
+                try:
+                    import psutil
+                    process = psutil.Process()
+                    mem_mb = process.memory_info().rss / 1024 / 1024
+                    print(f"[MEMORY] Cleanup #{cleanup_counter}: cleaned {total_cleaned} items, using {mem_mb:.1f}MB")
+                except:
+                    print(f"[MEMORY] Cleanup #{cleanup_counter}: cleaned {total_cleaned} items")
                     
         except Exception as e:
             print(f"[MEMORY] Cleanup worker error: {e}")
@@ -20333,15 +20425,15 @@ def send_fcm_notification(message_data: dict):
 
 
 # ============== ANONYMOUS CHAT API ==============
-MAX_SYSTEM_MESSAGES = 200  # Limit for system/service messages
-CHAT_RETENTION_DAYS = 7    # Keep user messages for 7 days
+MAX_SYSTEM_MESSAGES = 100  # Limit for system/service messages (reduced from 200)
+CHAT_RETENTION_DAYS = 3    # Keep user messages for 3 days (reduced from 7)
 _chat_initialized = False
 
 # SSE subscribers for real-time chat
 CHAT_SUBSCRIBERS = set()  # queues for chat SSE clients
 CHAT_TYPING_USERS = {}  # {deviceId: {'nickname': str, 'timestamp': float}}
 CHAT_TYPING_TTL = 5  # seconds before typing indicator expires
-MAX_SSE_SUBSCRIBERS = 500  # MEMORY PROTECTION: Limit SSE connections to prevent OOM
+MAX_SSE_SUBSCRIBERS = 200  # MEMORY PROTECTION: Limit SSE connections to prevent OOM (reduced from 500)
 
 # ============== CHAT RATE LIMITING ==============
 # Configurable rate limits (sliding window approach)
