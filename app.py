@@ -17642,17 +17642,11 @@ def presence():
             'first': first_seen,
             'platform': platform_label,
         }
-        # Cleanup stale visitors (by TTL only)
+        # Cleanup stale visitors (by TTL only - no artificial limit)
         for key, meta in list(ACTIVE_VISITORS.items()):
             ts = meta if isinstance(meta, (int, float)) else meta.get('ts', 0)
             if now - ts > ACTIVE_TTL:
                 del ACTIVE_VISITORS[key]
-        
-        # Only trim if way over limit (to prevent memory explosion)
-        if len(ACTIVE_VISITORS) > 1000:
-            sorted_keys = sorted(ACTIVE_VISITORS.keys(), key=lambda k: ACTIVE_VISITORS[k].get('ts', 0))
-            for k in sorted_keys[:len(ACTIVE_VISITORS) - 800]:
-                del ACTIVE_VISITORS[k]
 
         platform_counts = {}
         for meta in ACTIVE_VISITORS.values():
