@@ -40,35 +40,6 @@ OBLAST_KEYS = {
     'крим': ['крим', 'автономна республіка крим', 'севастополь'],
 }
 
-# Fallback: oblast centers for cases when city is not found
-OBLAST_CENTERS = {
-    'київ': (50.4501, 30.5234),
-    'харків': (49.9935, 36.2304),
-    'одес': (46.4825, 30.7233),
-    'дніпр': (48.4647, 35.0462),
-    'запоріж': (47.8388, 35.1396),
-    'львів': (49.8397, 24.0297),
-    'миколаїв': (46.9750, 31.9946),
-    'херсон': (46.6354, 32.6169),
-    'полтав': (49.5883, 34.5514),
-    'сум': (50.9077, 34.7981),
-    'чернігів': (51.4982, 31.2893),
-    'вінниц': (49.2331, 28.4682),
-    'житомир': (50.2547, 28.6587),
-    'черкас': (49.4444, 32.0598),
-    'кропивниц': (48.5079, 32.2623),
-    'донец': (48.0159, 37.8028),
-    'луганськ': (48.5740, 39.3078),
-    'хмельниц': (49.4229, 26.9871),
-    'рівн': (50.6199, 26.2516),
-    'волин': (50.7472, 25.3254),
-    'тернопіл': (49.5535, 25.5948),
-    'івано-франків': (48.9226, 24.7111),
-    'закарпат': (48.6208, 22.2879),
-    'чернівц': (48.2921, 25.9358),
-    'крим': (44.9521, 34.1024),
-}
-
 # Use /data for persistent storage on Render
 def _get_cache_path(filename):
     persistent_dir = os.environ.get('PERSISTENT_DATA_DIR', '/data')
@@ -217,14 +188,35 @@ def visicom_geocode(city: str, region: str = None) -> tuple:
     
     city_lower = city.lower().strip()
     
-    # Special locations (sea, etc.) - not in API
-    if 'чорн' in city_lower and 'мор' in city_lower:
-        # Чорне море / Чорному морі - coordinates in Black Sea near Odesa
+    # Skip garbage words (verbs, directions, etc.) - these are not locations
+    SKIP_WORDS = {
+        'летить', 'летит', 'летять', 'летят', 'летів', 'летіла',
+        'рухається', 'рухаються', 'рух', 'курс',
+        'напрямок', 'напрямку', 'напрям',
+        'північ', 'південь', 'схід', 'захід',
+        'швидкість', 'висота',
+    }
+    if city_lower in SKIP_WORDS:
+        print(f"[VISICOM] Skipping garbage word: '{city}'", flush=True)
+        return None
+    
+    # Special locations (sea, coasts, etc.) - not in regular API
+    # Тендрівська коса - sandbar in Black Sea (Kherson region)
+    if 'тендр' in city_lower and ('кос' in city_lower or 'коси' in city_lower):
+        print(f"[VISICOM] Special: Тендрівська коса at (46.3, 31.5)", flush=True)
+        return (46.3, 31.5)
+    
+    # Кінбурнська коса
+    if 'кінбурн' in city_lower:
+        print(f"[VISICOM] Special: Кінбурнська коса at (46.5, 31.5)", flush=True)
+        return (46.5, 31.5)
+    
+    # Must be exact "чорне море" or "чорному морі", not "чорноморськ"
+    if ('чорне мор' in city_lower or 'чорному мор' in city_lower or 'чорним мор' in city_lower):
         print(f"[VISICOM] Special: Чорне море at (44.5, 31.5)", flush=True)
         return (44.5, 31.5)  # Black Sea coordinates
     
-    if 'азов' in city_lower and 'мор' in city_lower:
-        # Азовське море / Азовському морі
+    if ('азовське мор' in city_lower or 'азовському мор' in city_lower or 'азовським мор' in city_lower):
         print(f"[VISICOM] Special: Азовське море at (46.0, 36.5)", flush=True)
         return (46.0, 36.5)  # Azov Sea coordinates
     
@@ -280,13 +272,16 @@ def visicom_geocode(city: str, region: str = None) -> tuple:
                 data = response.json()
                 features = data.get('features', [])
                 
-                # Filter only settlement features
+                # Prefer settlements, but accept any feature with coordinates
                 settlement_features = [
                     f for f in features 
                     if f.get('properties', {}).get('categories') == 'adm_settlement'
                 ]
                 
-                if settlement_features:
+                # If no settlements, use all features (districts, POIs, etc.)
+                features_to_check = settlement_features if settlement_features else features
+                
+                if features_to_check:
                     best_match = None
                     
                     # If we have region, try to find matching feature
@@ -328,14 +323,7 @@ def visicom_geocode(city: str, region: str = None) -> tuple:
             elif response.status_code != 200:
                 print(f"[VISICOM] API error: {response.status_code}", flush=True)
         
-        # Not found after all queries - use oblast center as fallback
-        if target_region_key and target_region_key in OBLAST_CENTERS:
-            fallback = OBLAST_CENTERS[target_region_key]
-            print(f"[VISICOM] City '{city}' not found, using {target_region_key} oblast center: {fallback}", flush=True)
-            _cache[key] = fallback
-            _save_cache()
-            return fallback
-        
+        # Not found - don't show marker
         print(f"[VISICOM] No results for '{city}' in {region or 'any region'}", flush=True)
         _negative_cache.add(key)
         _save_negative_cache()
