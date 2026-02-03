@@ -11,6 +11,58 @@ import threading
 
 VISICOM_API_KEY = os.environ.get('VISICOM_API_KEY', '')
 
+# Oblast centers - fallback when city name is actually oblast name
+OBLAST_CENTERS = {
+    'київ': (50.4501, 30.5234),
+    'київська': (50.4501, 30.5234),
+    'харків': (50.0047, 36.2314),
+    'харківська': (50.0047, 36.2314),
+    'одеса': (46.4825, 30.7233),
+    'одеська': (46.4825, 30.7233),
+    'дніпро': (48.4647, 35.0462),
+    'дніпропетровська': (48.4647, 35.0462),
+    'запоріжжя': (47.8388, 35.1396),
+    'запорізька': (47.8388, 35.1396),
+    'львів': (49.8397, 24.0297),
+    'львівська': (49.8397, 24.0297),
+    'миколаїв': (46.9750, 31.9946),
+    'миколаївська': (46.9750, 31.9946),
+    'херсон': (46.6354, 32.6169),
+    'херсонська': (46.6354, 32.6169),
+    'полтава': (49.5883, 34.5514),
+    'полтавська': (49.5883, 34.5514),
+    'суми': (50.9077, 34.7981),
+    'сумська': (50.9077, 34.7981),
+    'чернігів': (51.4982, 31.2893),
+    'чернігівська': (51.4982, 31.2893),
+    'вінниця': (49.2331, 28.4682),
+    'вінницька': (49.2331, 28.4682),
+    'житомир': (50.2547, 28.6587),
+    'житомирська': (50.2547, 28.6587),
+    'черкаси': (49.4444, 32.0598),
+    'черкаська': (49.4444, 32.0598),
+    'кропивницький': (48.5079, 32.2623),
+    'кіровоградська': (48.5079, 32.2623),
+    'донецьк': (48.0159, 37.8028),
+    'донецька': (48.0159, 37.8028),
+    'луганськ': (48.5740, 39.3078),
+    'луганська': (48.5740, 39.3078),
+    'хмельницький': (49.4230, 26.9871),
+    'хмельницька': (49.4230, 26.9871),
+    'рівне': (50.6199, 26.2516),
+    'рівненська': (50.6199, 26.2516),
+    'волинь': (50.7593, 25.3424),
+    'волинська': (50.7593, 25.3424),
+    'тернопіль': (49.5535, 25.5948),
+    'тернопільська': (49.5535, 25.5948),
+    'івано-франківськ': (48.9226, 24.7111),
+    'івано-франківська': (48.9226, 24.7111),
+    'закарпаття': (48.6208, 22.2879),
+    'закарпатська': (48.6208, 22.2879),
+    'чернівці': (48.2920, 25.9358),
+    'чернівецька': (48.2920, 25.9358),
+}
+
 # Hardcoded coordinates for critical/ambiguous cities
 HARDCODED_COORDS = {
     # === MAJOR CITIES ===
@@ -303,6 +355,24 @@ def visicom_geocode(city: str, region: str = None) -> tuple:
     
     if not city:
         return None
+    
+    city_lower = city.lower().strip()
+    
+    # 0. Check if "city" is actually an oblast name (e.g., "Миколаївська область")
+    # This happens when Telegram message doesn't specify exact city
+    if 'область' in city_lower or 'обл.' in city_lower:
+        # Extract oblast name
+        oblast_name = city_lower.replace(' область', '').replace(' обл.', '').replace(' обл', '').strip()
+        if oblast_name in OBLAST_CENTERS:
+            print(f"[VISICOM] '{city}' is oblast name, returning center: {OBLAST_CENTERS[oblast_name]}", flush=True)
+            _stats['hits'] += 1
+            return OBLAST_CENTERS[oblast_name]
+    
+    # Also check if city name matches oblast name directly
+    if city_lower in OBLAST_CENTERS:
+        print(f"[VISICOM] '{city}' matches oblast, returning center: {OBLAST_CENTERS[city_lower]}", flush=True)
+        _stats['hits'] += 1
+        return OBLAST_CENTERS[city_lower]
     
     # 1. Check hardcoded first
     hardcoded = _check_hardcoded(city, region)
