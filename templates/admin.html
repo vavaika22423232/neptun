@@ -1023,11 +1023,15 @@ textarea.input {
 <div style="margin-top:var(--space-lg);padding:var(--space-md);background:var(--bg-tertiary);border-radius:var(--radius-md);border:1px solid var(--border-subtle)">
 <div style="display:flex;align-items:center;gap:var(--space-md);flex-wrap:wrap">
 <div style="flex:1;min-width:200px">
-<div style="font-size:12px;font-weight:600;color:var(--text-primary);margin-bottom:4px">TTL System Status</div>
+<div style="font-size:12px;font-weight:600;color:var(--text-primary);margin-bottom:4px">TTL System Control</div>
 <div style="font-size:11px;color:var(--text-secondary)">Markers auto-expire based on threat type</div>
 </div>
 <div style="display:flex;gap:var(--space-sm);align-items:center">
-<span class="badge success" style="font-size:11px">✓ Active</span>
+<label class="toggle-switch" style="margin-right:8px">
+<input type="checkbox" id="ttlToggle" checked onchange="toggleTTLSystem(this.checked)">
+<span class="toggle-slider"></span>
+</label>
+<span id="ttlStatusBadge" class="badge success" style="font-size:11px">✓ Active</span>
 <span class="badge info" style="font-size:10px">Max: 30 min</span>
 <span class="badge warning" style="font-size:10px">Rockets: 5 min</span>
 </div>
@@ -1623,6 +1627,41 @@ const markerVectors=new Map();
 let markerAnimation=null;
 function notif(m,t='info'){const n=document.createElement('div');n.className='notification notification-'+t;n.textContent=m;document.body.appendChild(n);setTimeout(()=>{n.style.opacity='0';n.style.transform='translateX(100px)';setTimeout(()=>n.remove(),300)},4000)}
 async function api(e,o={}){try{const u=e.includes('?')?`${e}&secret=${encodeURIComponent(S)}`:`${e}?secret=${encodeURIComponent(S)}`;const r=await fetch(u,o);if(!r.ok)throw new Error(`HTTP ${r.status}`);return await r.json()}catch(err){notif(`Error: ${err.message}`,'error');throw err}}
+
+// TTL System Control
+async function toggleTTLSystem(enabled){
+    try{
+        const resp=await api('/admin/toggle_ttl',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled})});
+        const badge=document.getElementById('ttlStatusBadge');
+        const toggle=document.getElementById('ttlToggle');
+        if(resp.ttl_enabled){
+            badge.className='badge success';badge.textContent='✓ Active';
+            if(toggle)toggle.checked=true;
+        }else{
+            badge.className='badge danger';badge.textContent='✗ Disabled';
+            if(toggle)toggle.checked=false;
+        }
+        notif(`TTL System ${resp.ttl_enabled?'enabled':'disabled'}`,'success');
+    }catch(e){console.error('TTL toggle error:',e);}
+}
+async function loadTTLStatus(){
+    try{
+        const resp=await fetch(`/admin/ttl_status?secret=${encodeURIComponent(S)}`);
+        const data=await resp.json();
+        const badge=document.getElementById('ttlStatusBadge');
+        const toggle=document.getElementById('ttlToggle');
+        if(data.ttl_enabled){
+            badge.className='badge success';badge.textContent='✓ Active';
+            if(toggle)toggle.checked=true;
+        }else{
+            badge.className='badge danger';badge.textContent='✗ Disabled';
+            if(toggle)toggle.checked=false;
+        }
+    }catch(e){console.error('TTL status error:',e);}
+}
+// Load TTL status on page load
+document.addEventListener('DOMContentLoaded',loadTTLStatus);
+
 function initMap(){if(map)return;try{map=L.map('adminMap',{attributionControl:false,zoomControl:true}).setView([49,31.3],6);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18}).addTo(map);vectorLayer=L.layerGroup().addTo(map);layer=L.layerGroup().addTo(map);map.on('click',onMapClick);console.log('✅ Map initialized');reloadMarkers()}catch(e){console.error('❌ Map failed:',e);notif('Map initialization failed','error')}}
 
 function buildMarkerIcon(iconUrl,rotation=0){const iconSize=34;const angle=rotation||0;return L.divIcon({html:`<div class="rotatable-marker" style="transform:rotate(${angle}deg);width:${iconSize}px;height:${iconSize}px"><img src="${iconUrl}" style="width:100%;height:100%;display:block"/></div>`,className:'',iconSize:[iconSize,iconSize],iconAnchor:[iconSize/2,iconSize/2]});}

@@ -3552,6 +3552,7 @@ BLOCKED_FILE = 'blocked_ids.json'
 VISIT_STATS = None  # lazy-loaded dict: {id: first_seen_epoch}
 _visit_stats_lock = threading.RLock()  # Prevent concurrent modification errors
 _recent_visits_lock = threading.RLock()  # Prevent concurrent modification of recent visits
+TTL_SYSTEM_ENABLED = True  # Global flag to enable/disable TTL filtering for markers
 FORCE_RELOAD_TIMESTAMP = 0  # Timestamp when force reload was triggered
 FORCE_RELOAD_DURATION = 120  # Duration in seconds to keep force reload active (2 minutes)
 FORCE_RELOAD_LOCK = threading.Lock()
@@ -15982,38 +15983,39 @@ def data():
         if m.get('source_match','').startswith('region') and not any(k in low_txt for k in ['бпла','дрон','шахед','shahed','geran','ракета','ракети','missile','iskander','s-300','s300','каб','артил','града','смерч','ураган','mlrs','avia','авіа','авиа','бомба']):
             continue
         
-        # === TTL FILTERING: Apply per-threat-type TTL limits ===
-        threat_type = m.get('threat_type', '').lower()
-        marker_icon = m.get('marker_icon', '').lower()
-        
-        # If threat_type is empty, try to infer from marker_icon or text
-        if not threat_type:
-            if 'raketa' in marker_icon or 'rocket' in marker_icon or 'missile' in marker_icon:
-                threat_type = 'rocket'
-            elif 'kab' in marker_icon or 'bomb' in marker_icon:
-                threat_type = 'kab'
-            elif 'cruise' in marker_icon or 'kalibr' in marker_icon or 'x101' in marker_icon:
-                threat_type = 'cruise'
-            elif 'ballistic' in marker_icon or 'iskander' in marker_icon:
-                threat_type = 'ballistic'
-            elif 'kinzhal' in marker_icon:
-                threat_type = 'kinzhal'
-            # Also check text for rocket/kab keywords
-            elif any(kw in low_txt for kw in ['ракета', 'ракети', 'балістик', 'крилат', 'калібр', 'х-101', 'х-22', 'іскандер', 'кінжал', 'missile', 'rocket']):
-                threat_type = 'rocket'
-            elif any(kw in low_txt for kw in ['каб', 'kab', 'керован', 'бомб']):
-                threat_type = 'kab'
-        
-        # Determine TTL for this marker type
-        marker_ttl = THREAT_MAX_TTL.get(threat_type, 30)  # Default 30 min if unknown
-        # For rockets/missiles/KAB, use strict 5 min TTL
-        if threat_type in ['kab', 'rocket', 'cruise', 'ballistic', 'kinzhal', 'iskander', 'kalibr', 'x101', 'x22', 'raketa']:
-            marker_ttl = 5
-        # Check if marker is expired based on its TTL
-        marker_age_minutes = (now - dt).total_seconds() / 60
-        if marker_age_minutes > marker_ttl and not manual_marker:
-            debug_counts['ttl_expired'] = debug_counts.get('ttl_expired', 0) + 1
-            continue
+        # === TTL FILTERING: Apply per-threat-type TTL limits (if enabled) ===
+        if TTL_SYSTEM_ENABLED:
+            threat_type = m.get('threat_type', '').lower()
+            marker_icon = m.get('marker_icon', '').lower()
+            
+            # If threat_type is empty, try to infer from marker_icon or text
+            if not threat_type:
+                if 'raketa' in marker_icon or 'rocket' in marker_icon or 'missile' in marker_icon:
+                    threat_type = 'rocket'
+                elif 'kab' in marker_icon or 'bomb' in marker_icon:
+                    threat_type = 'kab'
+                elif 'cruise' in marker_icon or 'kalibr' in marker_icon or 'x101' in marker_icon:
+                    threat_type = 'cruise'
+                elif 'ballistic' in marker_icon or 'iskander' in marker_icon:
+                    threat_type = 'ballistic'
+                elif 'kinzhal' in marker_icon:
+                    threat_type = 'kinzhal'
+                # Also check text for rocket/kab keywords
+                elif any(kw in low_txt for kw in ['ракета', 'ракети', 'балістик', 'крилат', 'калібр', 'х-101', 'х-22', 'іскандер', 'кінжал', 'missile', 'rocket']):
+                    threat_type = 'rocket'
+                elif any(kw in low_txt for kw in ['каб', 'kab', 'керован', 'бомб']):
+                    threat_type = 'kab'
+            
+            # Determine TTL for this marker type
+            marker_ttl = THREAT_MAX_TTL.get(threat_type, 30)  # Default 30 min if unknown
+            # For rockets/missiles/KAB, use strict 5 min TTL
+            if threat_type in ['kab', 'rocket', 'cruise', 'ballistic', 'kinzhal', 'iskander', 'kalibr', 'x101', 'x22', 'raketa']:
+                marker_ttl = 5
+            # Check if marker is expired based on its TTL
+            marker_age_minutes = (now - dt).total_seconds() / 60
+            if marker_age_minutes > marker_ttl and not manual_marker:
+                debug_counts['ttl_expired'] = debug_counts.get('ttl_expired', 0) + 1
+                continue
         
         out.append(m)
 
@@ -18044,6 +18046,31 @@ def set_monitor_period():
         return jsonify({'status':'ok','monitor_period':MONITOR_PERIOD_MINUTES})
     except Exception as e:
         return jsonify({'status':'error','error':str(e)}), 400
+
+@app.route('/admin/toggle_ttl', methods=['POST'])
+def toggle_ttl_system():
+    """Enable/disable TTL system for marker expiration"""
+    if not _require_secret(request):
+        return jsonify({'status': 'forbidden'}), 403
+    global TTL_SYSTEM_ENABLED
+    payload = request.get_json(silent=True) or request.form
+    if payload and 'enabled' in payload:
+        TTL_SYSTEM_ENABLED = str(payload.get('enabled')).lower() in ('true', '1', 'yes', 'on')
+    else:
+        TTL_SYSTEM_ENABLED = not TTL_SYSTEM_ENABLED  # Toggle if no value specified
+    log.info(f"[TTL] System {'ENABLED' if TTL_SYSTEM_ENABLED else 'DISABLED'}")
+    return jsonify({'status': 'ok', 'ttl_enabled': TTL_SYSTEM_ENABLED})
+
+@app.route('/admin/ttl_status', methods=['GET'])
+def get_ttl_status():
+    """Get current TTL system status"""
+    return jsonify({
+        'ttl_enabled': TTL_SYSTEM_ENABLED,
+        'max_ttl': 30,
+        'rocket_ttl': 5,
+        'shahed_ttl': 20,
+        'ballistic_ttl': 4
+    })
 
 @app.route('/admin/threat_tracker', methods=['GET'])
 def admin_threat_tracker():
