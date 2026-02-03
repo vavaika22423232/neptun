@@ -19130,7 +19130,48 @@ def _memory_cleanup_worker():
             # Force garbage collection every cleanup
             gc.collect()
             
-            # Log memory status every 5 cleanups (10 min)
+            # CRITICAL: Check memory and force aggressive cleanup if near limit
+            try:
+                import psutil
+                process = psutil.Process()
+                mem_mb = process.memory_info().rss / 1024 / 1024
+                
+                # If over 1.5GB, emergency cleanup
+                if mem_mb > 1500:
+                    print(f"[MEMORY] EMERGENCY: {mem_mb:.0f}MB - forcing aggressive cleanup")
+                    
+                    # Clear all non-essential caches
+                    RESPONSE_CACHE._cache.clear()
+                    _mapstransler_geocode_cache.clear()
+                    _RF_GEOCODE_CACHE.clear()
+                    _REGION_IDS_CACHE.clear()
+                    _OBLAST_ID_CACHE.clear()
+                    _active_alarms_cache.clear()
+                    
+                    # Trim visitors to 200
+                    with ACTIVE_LOCK:
+                        if len(ACTIVE_VISITORS) > 200:
+                            sorted_keys = sorted(ACTIVE_VISITORS.keys(), key=lambda k: ACTIVE_VISITORS[k].get('ts', 0))
+                            for k in sorted_keys[:len(ACTIVE_VISITORS) - 200]:
+                                ACTIVE_VISITORS.pop(k, None)
+                    
+                    # Trim visit_stats to 1000
+                    if VISIT_STATS and len(VISIT_STATS) > 1000:
+                        sorted_items = sorted(VISIT_STATS.items(), key=lambda x: float(x[1]) if isinstance(x[1], (int, float, str)) else 0, reverse=True)
+                        VISIT_STATS.clear()
+                        VISIT_STATS.update(dict(sorted_items[:1000]))
+                        _save_visit_stats()
+                    
+                    gc.collect()
+                    gc.collect()  # Double collect
+                    
+                    new_mem = process.memory_info().rss / 1024 / 1024
+                    print(f"[MEMORY] After emergency cleanup: {new_mem:.0f}MB (freed {mem_mb - new_mem:.0f}MB)")
+                    
+            except ImportError:
+                pass
+            
+            # Log memory status every 5 cleanups (5 min)
             if cleanup_counter % 5 == 0 and total_cleaned > 0:
                 try:
                     import psutil
