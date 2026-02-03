@@ -40,6 +40,35 @@ OBLAST_KEYS = {
     'крим': ['крим', 'автономна республіка крим', 'севастополь'],
 }
 
+# Fallback: oblast centers for cases when city is not found
+OBLAST_CENTERS = {
+    'київ': (50.4501, 30.5234),
+    'харків': (49.9935, 36.2304),
+    'одес': (46.4825, 30.7233),
+    'дніпр': (48.4647, 35.0462),
+    'запоріж': (47.8388, 35.1396),
+    'львів': (49.8397, 24.0297),
+    'миколаїв': (46.9750, 31.9946),
+    'херсон': (46.6354, 32.6169),
+    'полтав': (49.5883, 34.5514),
+    'сум': (50.9077, 34.7981),
+    'чернігів': (51.4982, 31.2893),
+    'вінниц': (49.2331, 28.4682),
+    'житомир': (50.2547, 28.6587),
+    'черкас': (49.4444, 32.0598),
+    'кропивниц': (48.5079, 32.2623),
+    'донец': (48.0159, 37.8028),
+    'луганськ': (48.5740, 39.3078),
+    'хмельниц': (49.4229, 26.9871),
+    'рівн': (50.6199, 26.2516),
+    'волин': (50.7472, 25.3254),
+    'тернопіл': (49.5535, 25.5948),
+    'івано-франків': (48.9226, 24.7111),
+    'закарпат': (48.6208, 22.2879),
+    'чернівц': (48.2921, 25.9358),
+    'крим': (44.9521, 34.1024),
+}
+
 # Use /data for persistent storage on Render
 def _get_cache_path(filename):
     persistent_dir = os.environ.get('PERSISTENT_DATA_DIR', '/data')
@@ -299,7 +328,14 @@ def visicom_geocode(city: str, region: str = None) -> tuple:
             elif response.status_code != 200:
                 print(f"[VISICOM] API error: {response.status_code}", flush=True)
         
-        # Not found after all queries
+        # Not found after all queries - use oblast center as fallback
+        if target_region_key and target_region_key in OBLAST_CENTERS:
+            fallback = OBLAST_CENTERS[target_region_key]
+            print(f"[VISICOM] City '{city}' not found, using {target_region_key} oblast center: {fallback}", flush=True)
+            _cache[key] = fallback
+            _save_cache()
+            return fallback
+        
         print(f"[VISICOM] No results for '{city}' in {region or 'any region'}", flush=True)
         _negative_cache.add(key)
         _save_negative_cache()
