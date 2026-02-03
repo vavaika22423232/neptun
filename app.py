@@ -18707,6 +18707,76 @@ def admin_stats():
     except Exception as e:
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
+# ==================== DDOS MONITORING ====================
+@app.route('/admin/ddos_status', methods=['GET'])
+def admin_ddos_status():
+    """Get DDoS protection statistics."""
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    
+    now = time.time()
+    
+    # Top IPs by request count
+    top_ips = sorted(
+        [(ip, len(ts)) for ip, ts in _ddos_ip_counts.items()],
+        key=lambda x: x[1],
+        reverse=True
+    )[:20]
+    
+    # Active blocks
+    active_blocks = [
+        {'ip': ip, 'until': _ddos_block_time.get(ip, 0), 'seconds_left': int(_ddos_block_time.get(ip, 0) - now)}
+        for ip in _ddos_blocked_ips
+        if _ddos_block_time.get(ip, 0) > now
+    ]
+    
+    return jsonify({
+        'enabled': DDOS_ENABLED,
+        'rate_limit': DDOS_RATE_LIMIT,
+        'block_duration': DDOS_BLOCK_DURATION,
+        'tracked_ips': len(_ddos_ip_counts),
+        'blocked_ips': len(_ddos_blocked_ips),
+        'active_blocks': active_blocks,
+        'top_ips': [{'ip': ip, 'requests_10s': count} for ip, count in top_ips]
+    })
+
+@app.route('/admin/ddos_block', methods=['POST'])
+def admin_ddos_block():
+    """Manually block an IP."""
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    
+    payload = request.get_json(silent=True) or {}
+    ip = payload.get('ip')
+    duration = int(payload.get('duration', 3600))  # Default 1 hour
+    
+    if not ip:
+        return jsonify({'status': 'error', 'error': 'ip required'}), 400
+    
+    _ddos_blocked_ips.add(ip)
+    _ddos_block_time[ip] = time.time() + duration
+    print(f"[DDOS] MANUAL BLOCK: {ip} for {duration}s")
+    
+    return jsonify({'status': 'ok', 'blocked': ip, 'duration': duration})
+
+@app.route('/admin/ddos_unblock', methods=['POST'])
+def admin_ddos_unblock():
+    """Manually unblock an IP."""
+    if not _require_secret(request):
+        return jsonify({'status':'forbidden'}), 403
+    
+    payload = request.get_json(silent=True) or {}
+    ip = payload.get('ip')
+    
+    if not ip:
+        return jsonify({'status': 'error', 'error': 'ip required'}), 400
+    
+    _ddos_blocked_ips.discard(ip)
+    _ddos_block_time.pop(ip, None)
+    print(f"[DDOS] MANUAL UNBLOCK: {ip}")
+    
+    return jsonify({'status': 'ok', 'unblocked': ip})
+
 # ==================== API PROTECTION MONITORING ====================
 @app.route('/admin/protection_status', methods=['GET'])
 def admin_protection_status():
@@ -19303,6 +19373,73 @@ def _init_background():
         print("INFO: Memory cleanup worker started")
     except Exception as e:
         log.error(f'Failed to start memory cleanup worker: {e}')
+
+# ===========================================================================
+# EMERGENCY DDOS PROTECTION - Global rate limiter
+# ===========================================================================
+_ddos_ip_counts = {}  # {ip: [timestamps]}
+_ddos_blocked_ips = set()  # Temporarily blocked IPs
+_ddos_block_time = {}  # {ip: block_until_timestamp}
+DDOS_RATE_LIMIT = 30  # Max requests per IP per 10 seconds
+DDOS_BLOCK_DURATION = 60  # Block IP for 60 seconds if exceeds limit
+DDOS_ENABLED = True  # Kill switch
+
+@app.before_request
+def _ddos_protection():
+    """Emergency DDoS protection - block abusive IPs."""
+    if not DDOS_ENABLED:
+        return None
+    
+    # Skip for health checks and presence (live count)
+    if request.path in ['/healthz', '/health', '/startup_diag', '/presence']:
+        return None
+    
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    if client_ip:
+        client_ip = client_ip.split(',')[0].strip()
+    
+    now = time.time()
+    
+    # Check if IP is blocked
+    if client_ip in _ddos_blocked_ips:
+        block_until = _ddos_block_time.get(client_ip, 0)
+        if now < block_until:
+            return Response(
+                '{"error":"rate_limited","blocked":true}',
+                status=429,
+                mimetype='application/json'
+            )
+        else:
+            # Unblock
+            _ddos_blocked_ips.discard(client_ip)
+            _ddos_block_time.pop(client_ip, None)
+    
+    # Count requests
+    if client_ip not in _ddos_ip_counts:
+        _ddos_ip_counts[client_ip] = []
+    
+    # Remove old timestamps (older than 10 seconds)
+    _ddos_ip_counts[client_ip] = [t for t in _ddos_ip_counts[client_ip] if now - t < 10]
+    _ddos_ip_counts[client_ip].append(now)
+    
+    # Check if exceeds limit
+    if len(_ddos_ip_counts[client_ip]) > DDOS_RATE_LIMIT:
+        _ddos_blocked_ips.add(client_ip)
+        _ddos_block_time[client_ip] = now + DDOS_BLOCK_DURATION
+        print(f"[DDOS] BLOCKED IP {client_ip} - {len(_ddos_ip_counts[client_ip])} requests in 10s")
+        return Response(
+            '{"error":"rate_limited","blocked":true}',
+            status=429,
+            mimetype='application/json'
+        )
+    
+    # Cleanup old IPs periodically (every 100 requests approximately)
+    if len(_ddos_ip_counts) > 1000:
+        cutoff = now - 60
+        _ddos_ip_counts.clear()
+    
+    return None
+
 @app.before_request
 def _maybe_init_background():
     # CPU OPTIMIZATION: Skip quickly if already initialized
