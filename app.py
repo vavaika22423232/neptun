@@ -3562,7 +3562,7 @@ AUTH_SECRET = os.getenv('AUTH_SECRET')  # simple shared secret to protect /auth 
 FETCH_THREAD_STARTED = False
 AUTH_STATUS = {'authorized': False, 'reason': 'init'}
 SUBSCRIBERS = set()  # queues for SSE clients
-MAX_STREAM_SUBSCRIBERS = 100  # MEMORY PROTECTION: Limit main SSE connections
+MAX_STREAM_SUBSCRIBERS = 500  # MEMORY PROTECTION: Limit main SSE connections
 INIT_ONCE = False  # guard to ensure background startup once
 # Persistent dynamic channels file
 CHANNELS_FILE = 'channels_dynamic.json'
@@ -20268,7 +20268,7 @@ _chat_initialized = False
 CHAT_SUBSCRIBERS = set()  # queues for chat SSE clients
 CHAT_TYPING_USERS = {}  # {deviceId: {'nickname': str, 'timestamp': float}}
 CHAT_TYPING_TTL = 5  # seconds before typing indicator expires
-MAX_SSE_SUBSCRIBERS = 100  # MEMORY PROTECTION: Limit SSE connections to prevent OOM
+MAX_SSE_SUBSCRIBERS = 500  # MEMORY PROTECTION: Limit SSE connections to prevent OOM
 
 # ============== CHAT RATE LIMITING ==============
 # Configurable rate limits (sliding window approach)
