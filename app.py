@@ -2164,9 +2164,11 @@ DISTRICT_TO_OBLAST = {
 
 # Cache for alarm API responses
 _alarm_cache = {'data': None, 'time': 0}
-_alarm_all_cache = {'data': None, 'time': 0}  # Separate cache for /all endpoint
-ALARM_CACHE_TTL = 30  # seconds
-ALARM_CACHE_STALE_TTL = 300  # 5 minutes - serve stale data if API fails
+_alarm_all_cache = {'data': None, 'time': 0, 'etag': None}  # Separate cache for /all endpoint
+ALARM_CACHE_TTL = 30  # seconds - serve fresh data
+ALARM_CACHE_STALE_TTL = 600  # 10 minutes - serve stale data if API fails (increased from 5 min)
+_alarm_api_failing = False  # Track if API is failing to reduce retries
+_alarm_api_fail_time = 0  # When API started failing
 
 @app.route('/api/alarms/proxy')
 def alarm_proxy():
@@ -2241,6 +2243,7 @@ def alarm_all():
     import hashlib
     import time as _time
     now = _time.time()
+    global _alarm_api_failing, _alarm_api_fail_time
 
     # Return fresh cached data if available
     if _alarm_all_cache['data'] and (now - _alarm_all_cache['time']) < ALARM_CACHE_TTL:
@@ -2256,15 +2259,24 @@ def alarm_all():
             resp.headers['ETag'] = cache_etag
         return resp
 
-    # Try to fetch with retries
-    for attempt in range(3):
+    # If API is failing, serve stale data immediately without retrying (for 60 seconds)
+    if _alarm_api_failing and (now - _alarm_api_fail_time) < 60:
+        if _alarm_all_cache['data'] and (now - _alarm_all_cache['time']) < ALARM_CACHE_STALE_TTL:
+            resp = jsonify(_alarm_all_cache['data'])
+            resp.headers['Cache-Control'] = 'public, max-age=30'
+            resp.headers['X-Stale'] = 'true'
+            return resp
+
+    # Try to fetch with retries (reduced from 3 to 2, timeout from 8 to 5)
+    for attempt in range(2):
         try:
             response = http_requests.get(
                 f'{ALARM_API_BASE}/alerts',
                 headers={'Authorization': ALARM_API_KEY},
-                timeout=8
+                timeout=5
             )
             if response.ok:
+                _alarm_api_failing = False  # API recovered
                 data = response.json()
                 # Return all active alerts with regionId for SVG matching
                 result = []
@@ -2297,14 +2309,19 @@ def alarm_all():
                 return resp
         except Exception as e:
             print(f"Alarm all attempt {attempt+1} failed: {e}")
-            if attempt < 2:
-                _time.sleep(0.5)  # Wait before retry
+            if attempt < 1:
+                _time.sleep(0.3)  # Reduced wait before retry
 
-    # All retries failed - return stale cached data if available (within 5 min)
+    # All retries failed - mark API as failing to skip retries for 60s
+    _alarm_api_failing = True
+    _alarm_api_fail_time = now
+    
+    # Return stale cached data if available (within 10 min)
     if _alarm_all_cache['data'] and (now - _alarm_all_cache['time']) < ALARM_CACHE_STALE_TTL:
         print(f"Returning stale alarm data ({int(now - _alarm_all_cache['time'])}s old) after API failures")
         resp = jsonify(_alarm_all_cache['data'])
         resp.headers['Cache-Control'] = 'public, max-age=30'
+        resp.headers['X-Stale'] = 'true'
         return resp
 
     # No cache available - return empty with error flag
