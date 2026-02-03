@@ -18447,11 +18447,24 @@ def admin_memory():
         'reparse_cache': (len(FALLBACK_REPARSE_CACHE), get_size(FALLBACK_REPARSE_CACHE)),
     }
     
+    # Add Visicom cache stats if available
+    try:
+        from visicom_geocoder import _cache as visicom_cache, _negative_cache as visicom_neg_cache, get_stats as visicom_stats
+        caches['visicom_cache'] = (len(visicom_cache), get_size(visicom_cache))
+        caches['visicom_negative_cache'] = (len(visicom_neg_cache), get_size(visicom_neg_cache))
+        result_visicom_stats = visicom_stats()
+    except:
+        result_visicom_stats = None
+    
     total = sum(v[1] for v in caches.values())
     
     result = {'caches': {}, 'total': fmt(total)}
     for name, (count, size) in caches.items():
         result['caches'][name] = {'items': count, 'size': fmt(size)}
+    
+    # Add Visicom stats
+    if result_visicom_stats:
+        result['visicom'] = result_visicom_stats
     
     # Process memory if psutil available
     try:
