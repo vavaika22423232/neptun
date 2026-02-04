@@ -424,6 +424,9 @@ def visicom_geocode(city: str, region: str = None) -> tuple:
     if not city:
         return None
     
+    # Normalize apostrophes: ʼ (U+02BC), ʻ (U+02BB), ` (backtick), ' (curly) -> ' (standard)
+    city = city.replace('\u02bc', "'").replace('\u02bb', "'").replace('`', "'").replace(''', "'").replace(''', "'")
+    
     city_lower = city.lower().strip()
     
     # Skip garbage words (verbs, directions, etc.) - these are not locations
