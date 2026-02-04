@@ -40,6 +40,244 @@ OBLAST_KEYS = {
     'крим': ['крим', 'автономна республіка крим', 'севастополь'],
 }
 
+
+def _normalize_single_word(word: str) -> list:
+    """Normalize a single Ukrainian word to nominative form."""
+    variants = [word]
+    
+    # Feminine adjectives: -ої -> -а (Білої -> Біла)
+    if word.endswith('ої'):
+        variants.append(word[:-2] + 'а')
+    if word.endswith('ої'):
+        variants.append(word[:-2] + 'ий')  # masculine
+    
+    # Feminine nouns: -и -> -а (Церкви -> Церква)
+    if word.endswith('и'):
+        variants.append(word[:-1] + 'а')
+        variants.append(word[:-1] + 'я')
+    if word.endswith('і'):
+        variants.append(word[:-1] + 'а')
+        variants.append(word[:-1] + 'я')
+        variants.append(word[:-1] + 'ь')
+    
+    # Masculine: -а/-я ending (genitive)
+    if word.endswith('а') and len(word) > 2:
+        variants.append(word[:-1])
+    if word.endswith('я') and len(word) > 2:
+        variants.append(word[:-1] + 'ь')
+        variants.append(word[:-1])
+    
+    # -ого/-ому -> -е/-ий (adjectives)
+    if word.endswith('ого'):
+        variants.append(word[:-3] + 'е')
+        variants.append(word[:-3] + 'ий')
+    if word.endswith('ому'):
+        variants.append(word[:-3] + 'е')
+        variants.append(word[:-3] + 'ий')
+    
+    return variants
+
+
+def _normalize_ukrainian_name(name: str) -> list:
+    """
+    Normalize Ukrainian place name from any grammatical case to nominative.
+    Returns list of possible nominative forms to try.
+    
+    Ukrainian cases:
+    - Називний (Nominative): Затока, Харків, Покровське
+    - Родовий (Genitive): Затоки, Харкова, Покровського  
+    - Давальний (Dative): Затоці, Харкову, Покровському
+    - Знахідний (Accusative): Затоку, Харків, Покровське
+    - Орудний (Instrumental): Затокою, Харковом, Покровським
+    - Місцевий (Locative): Затоці, Харкові, Покровському/Покровськім
+    """
+    if not name:
+        return [name]
+    
+    original = name.strip()
+    variants = [original]
+    
+    # Feminine nouns ending in -а/-я (Затока, Одеса, Березанка)
+    # Genitive: -и/-і (Затоки, Одеси)
+    if original.endswith('и'):
+        variants.append(original[:-1] + 'а')  # Затоки -> Затока
+        variants.append(original[:-1] + 'я')  # Чернігови -> Чернігов'я (rare)
+    if original.endswith('і'):
+        variants.append(original[:-1] + 'а')  # Березанкі -> Березанка
+        variants.append(original[:-1] + 'я')  # Одесі -> Одеся (wrong but try)
+    
+    # Dative/Locative: -і/-ці (Затоці, Одесі)
+    if original.endswith('ці'):
+        variants.append(original[:-2] + 'ка')  # Затоці -> Затока
+        variants.append(original[:-2] + 'ця')  # Вінниці -> Вінниця
+    if original.endswith('сі'):
+        variants.append(original[:-2] + 'са')  # Одесі -> Одеса
+    if original.endswith('зі'):
+        variants.append(original[:-2] + 'за')  # Березі -> Береза
+        variants.append(original[:-2] + 'га')  # soft g
+    
+    # Accusative: -у/-ю (Затоку, Одесу)
+    if original.endswith('у') and len(original) > 3:
+        variants.append(original[:-1] + 'а')  # Затоку -> Затока
+        variants.append(original[:-1] + 'о')  # Дніпру -> Дніпро
+    if original.endswith('ю'):
+        variants.append(original[:-1] + 'я')  # Вінницю -> Вінниця
+        variants.append(original[:-1] + 'а')
+    
+    # Instrumental: -ою/-ею/-єю (Затокою, Одесою)
+    if original.endswith('ою'):
+        variants.append(original[:-2] + 'а')  # Затокою -> Затока
+    if original.endswith('ею') or original.endswith('єю'):
+        variants.append(original[:-2] + 'я')  # Вінницею -> Вінниця
+        variants.append(original[:-2] + 'е')  # Рівнею -> Рівне
+    
+    # Masculine nouns (Харків, Київ, Львів)
+    # Genitive: -а/-я (Харкова, Києва)
+    if original.endswith('ова'):
+        variants.append(original[:-3] + 'ів')  # Харкова -> Харків
+        variants.append(original[:-3] + 'ов')  # Харкова -> Харков
+    if original.endswith('ева') or original.endswith('єва'):
+        variants.append(original[:-3] + 'ів')  # Києва -> Київ
+        variants.append(original[:-3] + 'їв')
+    if original.endswith('ська'):
+        variants.append(original[:-1])  # keep as adjective
+    
+    # Dative: -у/-ові/-еві (Харкову, Києву, Харкові)
+    if original.endswith('ові'):
+        variants.append(original[:-3] + 'ів')  # Харкові -> Харків
+        variants.append(original[:-3])  # Львові -> Львов (try)
+    if original.endswith('еві'):
+        variants.append(original[:-3] + 'ів')  # Києві -> Київ
+    
+    # Instrumental: -ом/-ем (Харковом, Києвом)
+    if original.endswith('ом') and len(original) > 4:
+        variants.append(original[:-2] + 'ів')  # Харковом -> Харків
+        variants.append(original[:-2])  # Миколаєвом -> Миколаєв
+    if original.endswith('ем'):
+        variants.append(original[:-2] + 'ів')
+        variants.append(original[:-2] + 'е')  # Рівнем -> Рівне
+    
+    # Locative: -і/-ові (Харкові, Києві)  
+    if original.endswith('ві') and len(original) > 3:
+        variants.append(original[:-2] + 'в')  # Києві -> Київ
+        variants.append(original[:-2] + 'ів')  # alternative
+    
+    # Neuter nouns ending in -е/-о (Покровське, Дніпро)
+    # Genitive: -ого/-ього (Покровського)
+    if original.endswith('ого'):
+        variants.append(original[:-3] + 'е')  # Покровського -> Покровське
+        variants.append(original[:-3] + 'ий')  # adjective form
+    if original.endswith('ього'):
+        variants.append(original[:-4] + 'е')
+        variants.append(original[:-4] + 'є')
+    
+    # Dative/Locative: -ому/-ьому (Покровському)
+    if original.endswith('ому'):
+        variants.append(original[:-3] + 'е')  # Покровському -> Покровське
+        variants.append(original[:-3] + 'о')  # Дніпрому -> Дніпро
+        variants.append(original[:-3] + 'ий')
+    if original.endswith('ьому'):
+        variants.append(original[:-4] + 'е')
+        variants.append(original[:-4] + 'є')
+    
+    # Instrumental: -им/-ім (Покровським)
+    if original.endswith('им'):
+        variants.append(original[:-2] + 'е')  # Покровським -> Покровське
+        variants.append(original[:-2] + 'ий')
+    if original.endswith('ім'):
+        variants.append(original[:-2] + 'е')
+        variants.append(original[:-2] + 'ій')
+    
+    # Plural forms (Суми, Черкаси, Чернівці)
+    # Genitive plural: (Сум, Черкас, Чернівців)
+    if original.endswith('ів'):
+        variants.append(original[:-2] + 'і')  # Чернівців -> Чернівці
+        variants.append(original[:-2] + 'и')  # alternative
+    if original.endswith('ей'):
+        variants.append(original[:-2] + 'і')
+        variants.append(original[:-2] + 'ї')
+    
+    # Dative plural: -ам/-ям (Сумам, Черкасам)
+    if original.endswith('ам'):
+        variants.append(original[:-2] + 'и')  # Сумам -> Суми
+        variants.append(original[:-2] + 'і')  # Черкасам -> Черкаси
+    if original.endswith('ям'):
+        variants.append(original[:-2] + 'і')
+        variants.append(original[:-2] + 'ї')
+    
+    # Instrumental plural: -ами/-ями (Сумами, Черкасами)
+    if original.endswith('ами'):
+        variants.append(original[:-3] + 'и')  # Сумами -> Суми
+        variants.append(original[:-3] + 'і')
+    if original.endswith('ями'):
+        variants.append(original[:-3] + 'і')
+        variants.append(original[:-3] + 'ї')
+    
+    # Locative plural: -ах/-ях (Сумах, Черкасах)
+    if original.endswith('ах'):
+        variants.append(original[:-2] + 'и')  # Сумах -> Суми
+        variants.append(original[:-2] + 'і')  # Черкасах -> Черкаси
+    if original.endswith('ях'):
+        variants.append(original[:-2] + 'і')
+        variants.append(original[:-2] + 'ї')
+    
+    # Adjective-like endings (Тендрівської, Кінбурнської)
+    if original.endswith('ої'):
+        variants.append(original[:-2] + 'а')  # Тендрівської -> Тендрівська
+        variants.append(original[:-2] + 'ий')  # masculine
+    if original.endswith('ій'):
+        variants.append(original[:-2] + 'а')
+        variants.append(original[:-2] + 'ий')
+    
+    # Special case: words ending in soft sign
+    if original.endswith('і') and len(original) > 2:
+        base = original[:-1]
+        variants.append(base + 'ь')  # Харкові -> Харків (try soft sign)
+    
+    # Masculine genitive: -а/-я (Кременчука -> Кременчук, Ірпеня -> Ірпінь)
+    if original.endswith('а') and len(original) > 3 and not original.endswith('ова'):
+        variants.append(original[:-1])  # Кременчука -> Кременчук
+        variants.append(original[:-1] + 'ь')  # Маріупола -> Маріуполь (rare)
+    if original.endswith('я') and len(original) > 3:
+        variants.append(original[:-1] + 'ь')  # Ірпеня -> Ірпінь
+        variants.append(original[:-1])  # Маріуполя -> Маріупол
+        # Special: ня -> нь (Ірпеня -> Ірпінь with vowel change)
+        if original.endswith('еня'):
+            variants.append(original[:-3] + 'інь')  # Ірпеня -> Ірпінь
+        if original.endswith('оля'):
+            variants.append(original[:-1] + 'ь')  # Маріуполя -> Маріуполь
+            variants.append(original[:-2] + 'ль')  # Нікополя -> Нікополь
+    
+    # Instrumental: -ям (Запоріжжям -> Запоріжжя)
+    if original.endswith('ям'):
+        variants.append(original[:-1])  # Запоріжжям -> Запоріжжя
+        variants.append(original[:-2] + 'я')  # Запоріжжям -> Запоріжжя
+        variants.append(original[:-2] + 'е')  # try -е ending
+    
+    # Compound names: normalize each word (Білої Церкви -> Біла Церква)
+    if ' ' in original:
+        words = original.split()
+        if len(words) >= 2:
+            # Try normalizing each word separately
+            first_variants = _normalize_single_word(words[0])
+            second_variants = _normalize_single_word(words[1])
+            for fv in first_variants[:3]:  # limit combinations
+                for sv in second_variants[:3]:
+                    compound = f"{fv} {sv}"
+                    if compound != original:
+                        variants.append(compound)
+    
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_variants = []
+    for v in variants:
+        if v.lower() not in seen:
+            seen.add(v.lower())
+            unique_variants.append(v)
+    
+    return unique_variants
+
+
 # Use /data for persistent storage on Render
 def _get_cache_path(filename):
     persistent_dir = os.environ.get('PERSISTENT_DATA_DIR', '/data')
@@ -247,11 +485,22 @@ def visicom_geocode(city: str, region: str = None) -> tuple:
     
     target_region_key = _get_oblast_key(region)
     
-    # Build query - try first with city only for more consistent results
-    queries_to_try = [city]  # Start with just city name
+    # Get all possible name variations (nominative case forms)
+    name_variants = _normalize_ukrainian_name(city)
+    
+    # Build query list - try all normalized variants
+    queries_to_try = []
+    for variant in name_variants:
+        queries_to_try.append(variant)
+    
+    # Also add variants with region
     if region:
         region_clean = region.replace(' обл.', '').replace(' область', '').strip()
-        queries_to_try.append(f"{city}, {region_clean}")  # Then try with region
+        for variant in name_variants[:3]:  # Top 3 variants with region
+            queries_to_try.append(f"{variant}, {region_clean}")
+    
+    # Remove duplicates
+    queries_to_try = list(dict.fromkeys(queries_to_try))
     
     try:
         url = "https://api.visicom.ua/data-api/5.0/uk/geocode.json"
