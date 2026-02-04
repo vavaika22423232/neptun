@@ -7052,7 +7052,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 )
 
                 # Also check for bracket city pattern like "Вилково (Одещина)"
-                bracket_matches = re.finditer(r'([А-ЯІЇЄЁа-яіїєё\'\-\s]{3,30})\s*\(([А-ЯІЇЄЁа-яіїєё\'\-\s]+щина|[А-ЯІЇЄЁа-яіїєё\'\-\s]+обл\.?)\)', line_stripped, re.IGNORECASE)
+                bracket_matches = re.finditer(r'([А-ЯІЇЄЁа-яіїєё\'ʼʻ`\-\s]{3,30})\s*\(([А-ЯІЇЄЁа-яіїєё\'ʼʻ`\-\s]+щина|[А-ЯІЇЄЁа-яіїєё\'ʼʻ`\-\s]+обл\.?)\)', line_stripped, re.IGNORECASE)
                 for bmatch in bracket_matches:
                     city_clean = bmatch.group(1).strip()
                     region_info = bmatch.group(2).strip()
@@ -7673,7 +7673,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         head = text.split('\n', 1)[0][:160] if text else ""
 
         # Handle general emoji + city + oblast format with any UAV threat (more flexible pattern)
-        general_emoji_pattern = r'^[^\w\s]*\s*([А-ЯІЇЄЁа-яіїєё\'\-\s]+)\s*\(([^)]*обл[^)]*)\)'
+        # NOTE: ʼ (U+02BC), ʻ (U+02BB), ` are Ukrainian apostrophe variants
+        general_emoji_pattern = r'^[^\w\s]*\s*([А-ЯІЇЄЁа-яіїєё\'ʼʻ`\-\s]+)\s*\(([^)]*обл[^)]*)\)'
         general_emoji_match = re.search(general_emoji_pattern, head, re.IGNORECASE)
         add_debug_log(f"PRIORITY: Testing general emoji pattern on head: {repr(head)}", "emoji_debug")
         add_debug_log(f"PRIORITY: General emoji match result: {general_emoji_match}", "emoji_debug")
@@ -8156,13 +8157,14 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         #   "БПЛА Вільхівку⚠ (Харківська обл.)" - emoji after city name
         # Note: [^(]* allows any chars (including emoji) between city name and (
         # THREAT_TYPES: БПЛА, КАБ, Ракета, Шахед, Дрон
+        # NOTE: ʼ is U+02BC (modifier letter apostrophe), ʻ is U+02BB - both used in Ukrainian
         threat_type_pattern = r'(?:БПЛА|КАБ|Ракета|Ракети|Шахед|Дрон|Дрони)'
-        mapstransler_pattern = rf'^[^\w]*(\d+)[xх×]?\s*{threat_type_pattern}\s+([А-ЯІЇЄЁа-яіїєё\'\'\-\s/]+)[^(]*\(([^)]+обл[^)]*)\)'
+        mapstransler_pattern = rf'^[^\w]*(\d+)[xх×]?\s*{threat_type_pattern}\s+([А-ЯІЇЄЁа-яіїєё\'\'\ʼʻ`\-\s/]+)[^(]*\(([^)]+обл[^)]*)\)'
         mapstransler_match = re.search(mapstransler_pattern, head, re.IGNORECASE)
 
         # Also try without count prefix
         if not mapstransler_match:
-            mapstransler_pattern2 = rf'^[^\w]*{threat_type_pattern}\s+([А-ЯІЇЄЁа-яіїєё\'\'\-\s/]+)[^(]*\(([^)]+обл[^)]*)\)'
+            mapstransler_pattern2 = rf'^[^\w]*{threat_type_pattern}\s+([А-ЯІЇЄЁа-яіїєё\'\'\ʼʻ`\-\s/]+)[^(]*\(([^)]+обл[^)]*)\)'
             mapstransler_match2 = re.search(mapstransler_pattern2, head, re.IGNORECASE)
             if mapstransler_match2:
                 city_raw = mapstransler_match2.group(1).strip()
@@ -8185,7 +8187,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
 
         # Also try format without БПЛА prefix: "Димер (Київська обл.) Загроза..."
         if not city_raw:
-            no_bpla_pattern = r'^[^\w]*([А-ЯІЇЄЁа-яіїєё][А-ЯІЇЄЁа-яіїєё\'\'\-\s/]+)[^(]*\(([^)]+обл[^)]*)\)\s*загроза'
+            no_bpla_pattern = r'^[^\w]*([А-ЯІЇЄЁа-яіїєё][А-ЯІЇЄЁа-яіїєё\'\'\ʼʻ`\-\s/]+)[^(]*\(([^)]+обл[^)]*)\)\s*загроза'
             no_bpla_match = re.search(no_bpla_pattern, head, re.IGNORECASE)
             if no_bpla_match:
                 city_raw = no_bpla_match.group(1).strip()
@@ -8398,7 +8400,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 add_debug_log(f'Mapstransler parser: No coords for {city_norm} ({oblast_raw})', "mapstransler")
 
         # NEW: Handle emoji-prefixed threat messages like "🛸 Звягель (Житомирська обл.) Загроза застосування БПЛА"
-        emoji_threat_pattern = r'^[^\w\s]*\s*([А-ЯІЇЄЁа-яіїєё\'\-\s]+)\s*\([^)]*обл[^)]*\)\s*загроза\s+застосування\s+бпла'
+        # NOTE: ʼ (U+02BC), ʻ (U+02BB), ` are Ukrainian apostrophe variants
+        emoji_threat_pattern = r'^[^\w\s]*\s*([А-ЯІЇЄЁа-яіїєё\'ʼʻ`\-\s]+)\s*\([^)]*обл[^)]*\)\s*загроза\s+застосування\s+бпла'
         emoji_match = re.search(emoji_threat_pattern, head, re.IGNORECASE)
         if emoji_match:
             city_from_emoji = emoji_match.group(1).strip()
@@ -8431,7 +8434,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     return [track]  # Early return
 
         # NEW: Handle general emoji + city + oblast format with any UAV threat (more flexible pattern)
-        general_emoji_pattern = r'^[^\w\s]*\s*([А-ЯІЇЄЁа-яіїєё\'\-\s]+)\s*\([^)]*обл[^)]*\)'
+        # NOTE: ʼ (U+02BC), ʻ (U+02BB), ` are Ukrainian apostrophe variants
+        general_emoji_pattern = r'^[^\w\s]*\s*([А-ЯІЇЄЁа-яіїєё\'ʼʻ`\-\s]+)\s*\([^)]*обл[^)]*\)'
         general_emoji_match = re.search(general_emoji_pattern, head, re.IGNORECASE)
         add_debug_log(f"Testing general emoji pattern on head: {repr(head)}", "emoji_debug")
         add_debug_log(f"General emoji match result: {general_emoji_match}", "emoji_debug")
@@ -9046,7 +9050,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 if threats:
                     # ALSO: Extract cities from emoji structure in the same text
                     # Pattern for "| 🛸 Город (Область)"
-                    emoji_pattern = r'\|\s*🛸\s*([А-ЯІЇЄЁа-яіїєё\'\-\s]+?)\s*\([^)]*обл[^)]*\)'
+                    emoji_pattern = r'\|\s*🛸\s*([А-ЯІЇЄЁа-яіїєё\'ʼʻ`\-\s]+?)\s*\([^)]*обл[^)]*\)'
                     emoji_matches = re.finditer(emoji_pattern, text, re.IGNORECASE)
 
                     for match in emoji_matches:
