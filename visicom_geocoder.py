@@ -568,16 +568,19 @@ def visicom_geocode(city: str, region: str = None) -> tuple:
                 if features_to_check:
                     best_match = None
                     
-                    # If we have region, try to find matching feature
+                    # If we have region, ONLY accept features from that region
                     if target_region_key:
                         for feature in features_to_check:
                             if _feature_matches_region(feature, target_region_key):
                                 best_match = feature
                                 break
-                    
-                    # Fallback to first settlement if no region match found
-                    if not best_match:
-                        # Prefer settlements over other features
+                        
+                        # If region specified but no match found - DON'T use wrong region, try next query
+                        if not best_match:
+                            print(f"[VISICOM] No match for '{query}' in region '{target_region_key}', trying next...", flush=True)
+                            continue
+                    else:
+                        # No region filter - take first settlement
                         if settlement_features:
                             best_match = settlement_features[0]
                         elif features_to_check:
