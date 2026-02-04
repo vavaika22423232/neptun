@@ -40,6 +40,45 @@ OBLAST_KEYS = {
     'крим': ['крим', 'автономна республіка крим', 'севастополь'],
 }
 
+# Approximate bounding boxes for oblasts: (min_lat, max_lat, min_lng, max_lng)
+# Used to validate that geocoded coordinates are in the correct region
+OBLAST_BBOX = {
+    'київ': (49.0, 52.0, 29.0, 32.5),
+    'харків': (48.5, 50.5, 35.0, 38.5),
+    'одес': (45.0, 48.5, 28.5, 34.0),
+    'дніпр': (47.5, 49.5, 33.5, 36.5),
+    'запоріж': (46.5, 48.5, 34.0, 37.0),
+    'львів': (48.5, 50.5, 22.5, 25.5),
+    'миколаїв': (46.0, 48.5, 30.5, 33.5),
+    'херсон': (45.5, 47.5, 32.0, 35.5),
+    'полтав': (48.5, 50.5, 32.5, 35.5),
+    'сум': (50.0, 52.5, 32.0, 36.0),
+    'чернігів': (50.5, 52.5, 30.0, 33.5),
+    'вінниц': (48.0, 50.0, 27.0, 30.0),
+    'житомир': (49.5, 51.5, 27.0, 30.5),
+    'черкас': (48.5, 50.0, 30.5, 33.0),
+    'кропивниц': (47.5, 49.5, 31.0, 34.0),
+    'донец': (47.0, 49.5, 36.5, 39.0),
+    'луганськ': (47.5, 50.0, 38.0, 40.5),
+    'хмельниц': (48.5, 50.5, 25.5, 28.5),
+    'рівн': (50.0, 52.0, 25.0, 27.5),
+    'волин': (50.5, 52.5, 23.5, 26.0),
+    'тернопіл': (48.5, 50.5, 24.5, 26.5),
+    'івано-франків': (47.5, 49.5, 23.5, 25.5),
+    'закарпат': (47.5, 49.5, 22.0, 24.5),
+    'чернівц': (47.5, 49.0, 24.5, 27.0),
+    'крим': (44.0, 46.5, 32.5, 36.5),
+}
+
+
+def _coords_in_oblast(lat: float, lng: float, region_key: str) -> bool:
+    """Check if coordinates are within the bounding box of specified oblast"""
+    if not region_key or region_key not in OBLAST_BBOX:
+        return True  # No validation if region unknown
+    
+    min_lat, max_lat, min_lng, max_lng = OBLAST_BBOX[region_key]
+    return min_lat <= lat <= max_lat and min_lng <= lng <= max_lng
+
 
 def _normalize_single_word(word: str) -> list:
     """Normalize a single Ukrainian word to nominative form."""
@@ -80,11 +119,40 @@ def _normalize_single_word(word: str) -> list:
 
 # Special name mappings that can't be handled by generic rules
 # Format: 'incorrect_form': 'correct_form'
+# These help when API returns wrong city due to similar names in different oblasts
 SPECIAL_NAME_MAPPINGS = {
     # Genitive singular to plural nominative
     "близнюка": "Близнюки",
     "п'ятихатка": "П'ятихатки",
-    "глухи": "Глухів",  # Might be Глухів in Sumy oblast
+    "глухи": "Глухів",  # село Глухи (Волинь) vs місто Глухів (Суми) - регіон визначає
+    
+    # Cities with -и ending that are actually -ів (genitive forms)
+    "зіньки": "Зіньків",      # Зіньків (Полтавська область)
+    "іванки": "Іванків",      # Іванків (Київська область)
+    "броварки": "Бровари",    # Бровари (Київська)
+    
+    # Genitive forms (ending in -я from -ь)
+    "гостомеля": "Гостомель", # Гостомель (Київська)
+    
+    # Common accusative/dative forms (for message parsing)
+    "улянівку": "Улянівка",
+    "широке": "Широке",
+    "андріївку": "Андріївка",
+    "шахтарське": "Шахтарське",
+    "гуляйполе": "Гуляйполе",
+    
+    # Cities with apostrophe variations
+    "п'ятихатки": "П'ятихатки",
+    "пятихатки": "П'ятихатки",
+    "слов'янськ": "Слов'янськ",
+    "словянськ": "Слов'янськ",
+    "ком'янське": "Кам'янське",
+    "камянське": "Кам'янське",
+    
+    # Common misspellings
+    "дніпропетровськ": "Дніпро",
+    "кіровоград": "Кропивницький",
+    
     # Genitive forms
     "поблизу світлогірське": "Світлогірське",
     "поблизу": "",  # Remove prefix
@@ -109,6 +177,16 @@ def _normalize_ukrainian_name(name: str) -> list:
     
     original = name.strip()
     
+    # CLEANUP: Remove directional suffixes like "з півночі", "з півдня", etc.
+    # These come from messages like "БПЛА Гостомеля З Півночі (Київська обл.)"
+    import re
+    direction_pattern = r'\s+[зЗ]\s+(півноч[іи]|півдн[яю]|сход[у|ів]|захід|заход[уі]|північн|південн|східн|західн)\s*$'
+    original = re.sub(direction_pattern, '', original, flags=re.IGNORECASE).strip()
+    
+    # Also clean up "напрямку X", "курсом на X"
+    course_pattern = r'\s+(напрямку?|курсом?|на?)\s+.+$'
+    original = re.sub(course_pattern, '', original, flags=re.IGNORECASE).strip()
+    
     # Check special mappings first
     name_lower = original.lower()
     if name_lower in SPECIAL_NAME_MAPPINGS:
@@ -124,6 +202,18 @@ def _normalize_ukrainian_name(name: str) -> list:
         return _normalize_ukrainian_name(cleaned)
     
     variants = [original]
+    
+    # Special: -ьки ending -> -ьків (genitive plural of cities ending in -ьків)
+    # Зіньки -> Зіньків, Іванки -> Іванків
+    if original.endswith('ьки') or original.endswith('нки'):
+        variants.append(original[:-2] + 'ків')  # Зіньки -> Зіньків
+    if original.endswith('нки'):
+        variants.append(original[:-2] + 'ків')  # Іванки -> Іванків
+    
+    # Special: -я ending from -ь (genitive)
+    # Гостомеля -> Гостомель
+    if original.endswith('ля') or original.endswith('мля'):
+        variants.append(original[:-1] + 'ь')  # Гостомеля -> Гостомель
     
     # Special: singular -а ending that should be plural -и (П'ятихатка -> П'ятихатки)
     if original.endswith('ка') and len(original) > 4:
@@ -493,16 +583,14 @@ def visicom_geocode(city: str, region: str = None) -> tuple:
         print(f"[VISICOM] Special: Азовське море at (46.0, 36.5)", flush=True)
         return (46.0, 36.5)  # Azov Sea coordinates
     
-    # 1. Check cache first
+    # 1. Check cache first (ALWAYS with region key for disambiguation)
     key = _normalize_key(city, region)
     if key in _cache:
         _stats['hits'] += 1
         return _cache[key]
     
-    # Also check city-only cache
-    if city_lower in _cache:
-        _stats['hits'] += 1
-        return _cache[city_lower]
+    # NOTE: Removed city-only cache fallback - it caused wrong region matches!
+    # Cities like "Глухи" exist in multiple oblasts, so we MUST check region.
     
     # 2. Check negative cache
     if key in _negative_cache:
@@ -598,6 +686,11 @@ def visicom_geocode(city: str, region: str = None) -> tuple:
                                 
                                 name = props.get('name', city)
                                 level1 = props.get('level1', '')
+                                
+                                # VALIDATION: Check if coordinates are within expected oblast
+                                if target_region_key and not _coords_in_oblast(lat, lng, target_region_key):
+                                    print(f"[VISICOM] WARNING: {name} at ({lat}, {lng}) is OUTSIDE {target_region_key} bbox, trying next...", flush=True)
+                                    continue  # Try next query
                                 
                                 print(f"[VISICOM] Found: {name} ({level1}) at ({lat}, {lng})", flush=True)
                                 
