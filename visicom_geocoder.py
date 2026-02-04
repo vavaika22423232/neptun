@@ -78,6 +78,19 @@ def _normalize_single_word(word: str) -> list:
     return variants
 
 
+# Special name mappings that can't be handled by generic rules
+# Format: 'incorrect_form': 'correct_form'
+SPECIAL_NAME_MAPPINGS = {
+    # Genitive singular to plural nominative
+    "близнюка": "Близнюки",
+    "п'ятихатка": "П'ятихатки",
+    "глухи": "Глухів",  # Might be Глухів in Sumy oblast
+    # Genitive forms
+    "поблизу світлогірське": "Світлогірське",
+    "поблизу": "",  # Remove prefix
+}
+
+
 def _normalize_ukrainian_name(name: str) -> list:
     """
     Normalize Ukrainian place name from any grammatical case to nominative.
@@ -95,7 +108,26 @@ def _normalize_ukrainian_name(name: str) -> list:
         return [name]
     
     original = name.strip()
+    
+    # Check special mappings first
+    name_lower = original.lower()
+    if name_lower in SPECIAL_NAME_MAPPINGS:
+        mapped = SPECIAL_NAME_MAPPINGS[name_lower]
+        if mapped:
+            return [mapped, original]  # Try mapped first, then original
+        else:
+            return [original]
+    
+    # Handle "Поблизу X" pattern
+    if name_lower.startswith('поблизу '):
+        cleaned = original[8:].strip()
+        return _normalize_ukrainian_name(cleaned)
+    
     variants = [original]
+    
+    # Special: singular -а ending that should be plural -и (П'ятихатка -> П'ятихатки)
+    if original.endswith('ка') and len(original) > 4:
+        variants.append(original[:-1] + 'и')  # П'ятихатка -> П'ятихатки
     
     # Feminine nouns ending in -а/-я (Затока, Одеса, Березанка)
     # Genitive: -и/-і (Затоки, Одеси)
@@ -538,14 +570,18 @@ def visicom_geocode(city: str, region: str = None) -> tuple:
                     
                     # If we have region, try to find matching feature
                     if target_region_key:
-                        for feature in settlement_features:
+                        for feature in features_to_check:
                             if _feature_matches_region(feature, target_region_key):
                                 best_match = feature
                                 break
                     
-                    # Fallback to first settlement if no region match
-                    if not best_match and not target_region_key:
-                        best_match = settlement_features[0]
+                    # Fallback to first settlement if no region match found
+                    if not best_match:
+                        # Prefer settlements over other features
+                        if settlement_features:
+                            best_match = settlement_features[0]
+                        elif features_to_check:
+                            best_match = features_to_check[0]
                     
                     if best_match:
                         # Extract coordinates
