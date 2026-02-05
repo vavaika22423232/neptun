@@ -3819,6 +3819,9 @@ if API_ID and API_HASH:
     else:
         log.info('Initializing Telegram client with local session file (may not persist on Render).')
         client = TelegramClient('anon', API_ID, API_HASH)
+else:
+    AUTH_STATUS.update({'authorized': False, 'reason': 'missing_api_credentials'})
+    log.warning('Telegram API credentials missing (TELEGRAM_API_ID/TELEGRAM_API_HASH).')
 
 # Use persistent disk on Render for data that should survive deploys
 PERSISTENT_DATA_DIR = os.getenv('PERSISTENT_DATA_DIR', '/data')
@@ -7889,6 +7892,13 @@ DIRECTION_FROM_KEYWORDS = parser_service.DIRECTION_FROM_KEYWORDS
 DIRECTION_COURSE_KEYWORDS = parser_service.DIRECTION_COURSE_KEYWORDS
 admin_routes.bind_dependencies(globals())
 admin_routes.register_admin_routes(app)
+
+# Ensure Telegram fetch loop starts in WSGI mode
+if client and not FETCH_THREAD_STARTED:
+    try:
+        start_fetch_thread()
+    except Exception as e:
+        log.error(f'Auto start_fetch_thread failed: {e}')
 
 if __name__ == '__main__':
     # Local / container direct run (not needed if a WSGI server like gunicorn is used)
