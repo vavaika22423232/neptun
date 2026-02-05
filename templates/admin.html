@@ -69,6 +69,77 @@
   --radius-xl: 20px;
 }
 
+:root {
+  --bg-primary: #0c0c0e;
+  --bg-secondary: #141416;
+  --bg-tertiary: #1c1c1f;
+  --bg-elevated: #232326;
+  --border-subtle: rgba(255,255,255,0.06);
+  --border-default: rgba(255,255,255,0.08);
+  --border-hover: rgba(255,255,255,0.12);
+  --accent: #3b82f6;
+  --accent-muted: rgba(59,130,246,0.15);
+  --accent-subtle: rgba(59,130,246,0.08);
+  --success: #22c55e;
+  --success-muted: rgba(34,197,94,0.12);
+  --danger: #ef4444;
+  --danger-muted: rgba(239,68,68,0.12);
+  --warning: #f59e0b;
+  --warning-muted: rgba(245,158,11,0.12);
+  --text-primary: #fafafa;
+  --text-secondary: rgba(250,250,250,0.64);
+  --text-tertiary: rgba(250,250,250,0.4);
+  --muted: rgba(250,250,250,0.48);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-fast: 150ms;
+  --duration-normal: 200ms;
+  --duration-slow: 300ms;
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+}
+
+html[data-theme="light"] {
+  --bg-primary: #f7f8fb;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f1f4f8;
+  --bg-elevated: #ffffff;
+  --border-subtle: rgba(13,18,28,0.06);
+  --border-default: rgba(13,18,28,0.12);
+  --border-hover: rgba(13,18,28,0.2);
+  --text-primary: #0f172a;
+  --text-secondary: rgba(15,23,42,0.68);
+  --text-tertiary: rgba(15,23,42,0.5);
+  --muted: rgba(15,23,42,0.55);
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  html:not([data-theme]) {
+    --bg-primary: #f7f8fb;
+    --bg-secondary: #ffffff;
+    --bg-tertiary: #f1f4f8;
+    --bg-elevated: #ffffff;
+    --border-subtle: rgba(13,18,28,0.06);
+    --border-default: rgba(13,18,28,0.12);
+    --border-hover: rgba(13,18,28,0.2);
+    --text-primary: #0f172a;
+    --text-secondary: rgba(15,23,42,0.68);
+    --text-tertiary: rgba(15,23,42,0.5);
+    --muted: rgba(15,23,42,0.55);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -94,6 +165,180 @@ body {
   max-width: 1440px;
   margin: 0 auto;
   padding: var(--space-xl);
+}
+
+.app {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  min-height: 100vh;
+  background: var(--bg-primary);
+}
+
+.sidebar {
+  border-right: 1px solid var(--border-subtle);
+  padding: var(--space-xl) var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  background: var(--bg-secondary);
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.brand-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent);
+}
+
+.brand-title {
+  font-weight: 600;
+  font-size: 16px;
+  letter-spacing: -0.02em;
+}
+
+.brand-subtitle {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.nav-item {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.nav-item:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.nav-item.active {
+  background: var(--accent-subtle);
+  border-color: var(--accent-muted);
+  color: var(--accent);
+}
+
+.nav-item span {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.topbar {
+  padding: var(--space-lg) var(--space-xl);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  background: var(--bg-secondary);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.topbar-title {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.topbar-subtitle {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.topbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.content {
+  padding: var(--space-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+}
+
+.view {
+  display: none;
+}
+
+.view.active {
+  display: block;
+}
+
+.status-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.status-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.secret-form {
+  display: flex;
+  gap: 8px;
+}
+
+@media (max-width: 1024px) {
+  .app {
+    grid-template-columns: 1fr;
+  }
+  .sidebar {
+    position: relative;
+    height: auto;
+  }
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -902,84 +1147,73 @@ textarea.input {
 </style>
 </head>
 <body>
-<div class="container">
-<!-- ═══════════════════════════════════════════════════════════════
-     Header — Clean & Minimal
-     ═══════════════════════════════════════════════════════════════ -->
-<header class="header">
-<div class="header-content">
-<div class="header-title"><h1>Neptun Admin</h1></div>
-<div class="status-badges">
-{% if secret %}
-<span class="badge success"><span class="status-dot online"></span>Online</span>
-{% else %}
-<span class="badge danger"><span class="status-dot offline"></span>Not Authorized</span>
-{% endif %}
-<span class="badge">Today {{ daily_unique }}</span>
-<span class="badge">Week {{ week_unique }}</span>
-</div>
-<form method="get" action="/admin" style="display:flex;gap:8px;align-items:center">
-<input type="text" name="secret" placeholder="Secret key" value="{{ secret }}" class="input" style="width:160px">
-<button type="submit" class="btn btn-primary btn-sm">Login</button>
-</form>
-</div>
-</header>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-dot"></div>
+      <div>
+        <div class="brand-title">Neptun Admin</div>
+        <div class="brand-subtitle">Operations Console</div>
+      </div>
+    </div>
 
-<!-- ═══════════════════════════════════════════════════════════════
-     Main Menu — Apple Grid Style
-     ═══════════════════════════════════════════════════════════════ -->
-<div id="mainMenu" style="display:block">
-<div class="card">
-<div class="card-header">
-<h2 class="card-title">Navigation</h2>
-</div>
-<div class="card-body">
-<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:var(--space-md)">
-<div class="menu-section" onclick="showSection('overview')">
-<div class="menu-icon">📊</div>
-<div class="menu-title">Overview</div>
-<div class="menu-desc">System statistics & metrics</div>
-</div>
-<div class="menu-section" onclick="showSection('map')">
-<div class="menu-icon">🗺️</div>
-<div class="menu-title">Live Map</div>
-<div class="menu-desc">Markers & trajectories</div>
-</div>
-<div class="menu-section" onclick="showSection('subscriptions')">
-<div class="menu-icon">💳</div>
-<div class="menu-title">Subscriptions</div>
-<div class="menu-desc">Payments & approvals</div>
-</div>
-<div class="menu-section" onclick="showSection('nicknames')">
-<div class="menu-icon">🆔</div>
-<div class="menu-title">User IDs</div>
-<div class="menu-desc">Registered identifiers</div>
-</div>
-<div class="menu-section" onclick="showSection('users')">
-<div class="menu-icon">👥</div>
-<div class="menu-title">Users</div>
-<div class="menu-desc">Visitors & blocking</div>
-</div>
-<div class="menu-section" onclick="showSection('messages')">
-<div class="menu-icon">📨</div>
-<div class="menu-title">Messages</div>
-<div class="menu-desc">Pending geocoding</div>
-</div>
-<div class="menu-section" onclick="showSection('debug')">
-<div class="menu-icon">🔧</div>
-<div class="menu-title">Debug</div>
-<div class="menu-desc">Logs & diagnostics</div>
-</div>
-</div>
-</div>
-</div>
-</div>
+    <div class="sidebar-section status-stack">
+      <div class="status-line">
+        {% if secret %}
+        <span class="badge success"><span class="status-dot online"></span>Authorized</span>
+        {% else %}
+        <span class="badge danger"><span class="status-dot offline"></span>Locked</span>
+        {% endif %}
+      </div>
+      <div class="status-line">
+        <span class="badge" id="badgeDaily">Today {{ daily_unique }}</span>
+        <span class="badge" id="badgeWeekly">Week {{ week_unique }}</span>
+      </div>
+    </div>
+
+    <form method="get" action="/admin" class="secret-form">
+      <input type="text" name="secret" placeholder="Secret key" value="{{ secret }}" class="input">
+      <button type="submit" class="btn btn-primary btn-sm">Login</button>
+    </form>
+
+    <div class="sidebar-section">
+      <div class="card-title" style="font-size:12px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.08em">Navigation</div>
+      <nav class="nav">
+        <button class="nav-item active" data-view="overview">📊 Overview <span id="navOverviewMeta"></span></button>
+        <button class="nav-item" data-view="map">🗺️ Live Map</button>
+        <button class="nav-item" data-view="subscriptions">💳 Subscriptions</button>
+        <button class="nav-item" data-view="nicknames">🆔 User IDs</button>
+        <button class="nav-item" data-view="users">👥 Users</button>
+        <button class="nav-item" data-view="messages">📨 Messages <span id="navMessagesMeta"></span></button>
+        <button class="nav-item" data-view="debug">🔧 Debug</button>
+      </nav>
+    </div>
+
+    <div class="sidebar-footer">
+      <button class="btn btn-secondary btn-sm" id="themeToggle">Theme: System</button>
+      <button class="btn btn-secondary btn-sm" onclick="refreshAll()">Refresh Data</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div>
+        <div class="topbar-title" id="viewTitle">Overview</div>
+        <div class="topbar-subtitle" id="viewSubtitle">System status, metrics and controls</div>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn btn-secondary btn-sm" onclick="toggleAuto()" id="autoBtnTop">Auto: ON</button>
+        <button class="btn btn-secondary btn-sm" onclick="forceReload()">Force Reload</button>
+        <button class="btn btn-danger btn-sm" onclick="clearLogs()">Clear Logs</button>
+      </div>
+    </header>
+
+    <div class="content">
 
 <!-- ═══════════════════════════════════════════════════════════════
      Section: Overview
      ═══════════════════════════════════════════════════════════════ -->
-<div id="section-overview" class="admin-section" style="display:none">
-<button class="btn btn-secondary btn-sm" onclick="showMainMenu()" style="margin-bottom:var(--space-lg)">← Back</button>
+<section id="view-overview" class="view active">
 
 <div class="stats-grid">
 <div class="stat-card">
@@ -1044,12 +1278,12 @@ textarea.input {
 </div>
 </div>
 </div>
+</section>
 
 <!-- ═══════════════════════════════════════════════════════════════
      Section: Map — Hero Element
      ═══════════════════════════════════════════════════════════════ -->
-<div id="section-map" class="admin-section" style="display:none">
-<button class="btn btn-secondary btn-sm" onclick="showMainMenu()" style="margin-bottom:var(--space-lg)">← Back</button>
+<section id="view-map" class="view">
 
 <div class="card">
 <div class="card-header">
@@ -1157,12 +1391,12 @@ textarea.input {
 </div>
 </div>
 </div>
+</section>
 
 <!-- ═══════════════════════════════════════════════════════════════
      Section: Subscriptions
      ═══════════════════════════════════════════════════════════════ -->
-<div id="section-subscriptions" class="admin-section" style="display:none">
-<button class="btn btn-secondary btn-sm" onclick="showMainMenu()" style="margin-bottom:var(--space-lg)">← Back</button>
+<section id="view-subscriptions" class="view">
 
 <div class="card">
 <div class="card-header">
@@ -1203,7 +1437,7 @@ textarea.input {
 </thead>
 <tbody>
 {% for sub in subscriptions %}
-<tr>
+<tr data-sub-id="{{ sub.id }}">
 <td><strong>{{ sub.name }}</strong></td>
 <td>
 {% if sub.telegram %}
@@ -1239,12 +1473,12 @@ textarea.input {
 </div>
 </div>
 </div>
+</section>
 
 <!-- ═══════════════════════════════════════════════════════════════
      Section: User Nicknames
      ═══════════════════════════════════════════════════════════════ -->
-<div id="section-nicknames" class="admin-section" style="display:none">
-<button class="btn btn-secondary btn-sm" onclick="showMainMenu()" style="margin-bottom:var(--space-lg)">← Back</button>
+<section id="view-nicknames" class="view">
 
 <div class="card">
 <div class="card-header">
@@ -1283,12 +1517,12 @@ Loading...
 </div>
 </div>
 </div>
+</section>
 
 <!-- ═══════════════════════════════════════════════════════════════
      Section: Users
      ═══════════════════════════════════════════════════════════════ -->
-<div id="section-users" class="admin-section" style="display:none">
-<button class="btn btn-secondary btn-sm" onclick="showMainMenu()" style="margin-bottom:var(--space-lg)">← Back</button>
+<section id="view-users" class="view">
 
 <div class="card">
 <div class="card-header">
@@ -1360,7 +1594,7 @@ Loading...
 </thead>
 <tbody>
 {% for v in visitors %}
-<tr>
+<tr data-user-id="{{ v.id }}">
 <td class="truncate" style="max-width:120px" title="{{ v.id }}">{{ v.id[:12] }}...</td>
 <td>
 {% if v.nickname %}
@@ -1402,7 +1636,7 @@ Loading...
 </thead>
 <tbody>
 {% for b in blocked %}
-<tr>
+<tr data-block-id="{{ b }}">
 <td class="truncate" style="max-width:300px" title="{{ b }}">{{ b[:24] }}...</td>
 <td><button class="btn btn-success btn-sm" onclick="unblockUser('{{ b }}')">Unblock</button></td>
 </tr>
@@ -1419,12 +1653,12 @@ Loading...
 </div>
 </div>
 </div>
+</section>
 
 <!-- ═══════════════════════════════════════════════════════════════
      Section: Messages
      ═══════════════════════════════════════════════════════════════ -->
-<div id="section-messages" class="admin-section" style="display:none">
-<button class="btn btn-secondary btn-sm" onclick="showMainMenu()" style="margin-bottom:var(--space-lg)">← Back</button>
+<section id="view-messages" class="view">
 
 <div class="card">
 <div class="card-header">
@@ -1551,12 +1785,12 @@ Loading...
 </div>
 </div>
 </div>
+</section>
 
 <!-- ═══════════════════════════════════════════════════════════════
      Section: Debug
      ═══════════════════════════════════════════════════════════════ -->
-<div id="section-debug" class="admin-section" style="display:none">
-<button class="btn btn-secondary btn-sm" onclick="showMainMenu()" style="margin-bottom:var(--space-lg)">← Back</button>
+<section id="view-debug" class="view">
 
 <div class="card">
 <div class="card-header">
@@ -1613,20 +1847,126 @@ Loading...
 </div>
 
 </div>
+</section>
+
+    </div>
+  </main>
+</div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 const S=new URLSearchParams(location.search).get('secret')||'';
+const state={
+  view:'overview',
+  auto:true,
+  intervals:{},
+  stats:null,
+  ttl:null
+};
 let map=null,layer=null,vectorLayer=null,auto=true;
 let addMode=false,selectedMarker=null,clipboard=null,editingMarker=null;
-let markerRotations=new Map(); // Store rotation for each marker
+let markerRotations=new Map();
 let autoMarkerWarningAt=0;
 let tempNewMarker=null;
 let vectorMode=false;
 const markerVectors=new Map();
 let markerAnimation=null;
-function notif(m,t='info'){const n=document.createElement('div');n.className='notification notification-'+t;n.textContent=m;document.body.appendChild(n);setTimeout(()=>{n.style.opacity='0';n.style.transform='translateX(100px)';setTimeout(()=>n.remove(),300)},4000)}
-async function api(e,o={}){try{const u=e.includes('?')?`${e}&secret=${encodeURIComponent(S)}`:`${e}?secret=${encodeURIComponent(S)}`;const r=await fetch(u,o);if(!r.ok)throw new Error(`HTTP ${r.status}`);return await r.json()}catch(err){notif(`Error: ${err.message}`,'error');throw err}}
+
+function notif(m,t='info'){
+  const n=document.createElement('div');
+  n.className='notification notification-'+t;
+  n.textContent=m;
+  document.body.appendChild(n);
+  setTimeout(()=>{n.style.opacity='0';n.style.transform='translateX(100px)';setTimeout(()=>n.remove(),300)},4000)
+}
+
+function withSecret(path){
+  return path.includes('?')?`${path}&secret=${encodeURIComponent(S)}`:`${path}?secret=${encodeURIComponent(S)}`;
+}
+
+async function api(path,opts={},meta={}){
+  const timeout=meta.timeout||12000;
+  const retries=meta.retries||1;
+  const url=withSecret(path);
+  for(let attempt=0;attempt<=retries;attempt++){
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),timeout);
+    try{
+      const res=await fetch(url,{...opts,signal:controller.signal});
+      if(!res.ok)throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    }catch(err){
+      if(attempt>=retries){
+        notif(`Error: ${err.message}`,'error');
+        throw err;
+      }
+    }finally{
+      clearTimeout(timer);
+    }
+  }
+}
+
+const viewMeta={
+  overview:{title:'Overview',subtitle:'System status, metrics and controls'},
+  map:{title:'Live Map',subtitle:'Markers, trajectories and manual edits'},
+  subscriptions:{title:'Subscriptions',subtitle:'Payments and approvals'},
+  nicknames:{title:'User IDs',subtitle:'Session identifiers and nicknames'},
+  users:{title:'Users',subtitle:'Active visitors and blocked list'},
+  messages:{title:'Messages',subtitle:'Pending geocoding and raw feed'},
+  debug:{title:'Debug',subtitle:'Logs, caches and diagnostics'}
+};
+
+function setView(name){
+  const target=document.getElementById(`view-${name}`);
+  if(!target){notif(`Section not found: ${name}`,'error');return;}
+  state.view=name;
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  target.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(btn=>{
+    btn.classList.toggle('active',btn.dataset.view===name);
+  });
+  const meta=viewMeta[name]||{};
+  const title=document.getElementById('viewTitle');
+  const subtitle=document.getElementById('viewSubtitle');
+  if(title)title.textContent=meta.title||'Overview';
+  if(subtitle)subtitle.textContent=meta.subtitle||'';
+  if(name==='map'&&!map){setTimeout(()=>initMap(),100)}
+  if(name==='nicknames'){loadNicknamesFromSessions()}
+  location.hash=name;
+}
+
+function refreshAll(){
+  updateStats();
+  updateRaw();
+  loadHiddenMarkers();
+  loadTTLStatus();
+  if(state.view==='map'&&map){reloadMarkers()}
+  notif('Refresh requested','info');
+}
+
+function applyTheme(mode){
+  if(mode==='system'){
+    document.documentElement.removeAttribute('data-theme');
+  }else{
+    document.documentElement.setAttribute('data-theme',mode);
+  }
+  localStorage.setItem('admin_theme',mode);
+  const btn=document.getElementById('themeToggle');
+  if(btn){btn.textContent=`Theme: ${mode.charAt(0).toUpperCase()+mode.slice(1)}`;}
+}
+
+function toggleTheme(){
+  const current=localStorage.getItem('admin_theme')||'system';
+  const next=current==='system'?'light':current==='light'?'dark':'system';
+  applyTheme(next);
+}
+
+function initTheme(){
+  const stored=localStorage.getItem('admin_theme')||'system';
+  applyTheme(stored);
+  const btn=document.getElementById('themeToggle');
+  if(btn){btn.addEventListener('click',toggleTheme);}
+}
 
 // TTL System Control
 async function toggleTTLSystem(enabled){
@@ -1646,8 +1986,7 @@ async function toggleTTLSystem(enabled){
 }
 async function loadTTLStatus(){
     try{
-        const resp=await fetch(`/admin/ttl_status?secret=${encodeURIComponent(S)}`);
-        const data=await resp.json();
+        const data=await api('/admin/ttl_status');
         const badge=document.getElementById('ttlStatusBadge');
         const toggle=document.getElementById('ttlToggle');
         if(data.ttl_enabled){
@@ -1660,7 +1999,7 @@ async function loadTTLStatus(){
     }catch(e){console.error('TTL status error:',e);}
 }
 // Load TTL status on page load
-document.addEventListener('DOMContentLoaded',loadTTLStatus);
+
 
 function initMap(){if(map)return;try{map=L.map('adminMap',{attributionControl:false,zoomControl:true}).setView([49,31.3],6);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18}).addTo(map);vectorLayer=L.layerGroup().addTo(map);layer=L.layerGroup().addTo(map);map.on('click',onMapClick);console.log('✅ Map initialized');reloadMarkers()}catch(e){console.error('❌ Map failed:',e);notif('Map initialization failed','error')}}
 
@@ -1764,7 +2103,27 @@ document.addEventListener('keydown',function(e){const active=document.activeElem
 
 async function deleteSelected(){if(!selectedMarker){notif('Select a marker first','warning');return}if(selectedMarker._isNew){closeMarkerEditor();notif('Новая метка отменена','info');return}if(!confirm('Delete this marker?'))return;const data=selectedMarker._markerData||{};try{await fetch('/hide_marker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat:data.lat,lng:data.lng,text:data.text,source:data.channel||'admin'})});notif('Marker deleted','success');closeMarkerEditor();reloadMarkers()}catch(e){notif('Failed to delete marker','error')}}
 
-async function approveSubscription(subscriptionId){if(!confirm('Approve this subscription payment?'))return;try{const response=await fetch(`/admin/subscription/${subscriptionId}/approve`,{method:'POST'});if(!response.ok)throw new Error('Server error');notif('✅ Subscription approved! Email sent.','success');setTimeout(()=>location.reload(),1500)}catch(e){console.error('Approve error:',e);notif('❌ Failed to approve subscription','error')}}
+function removeRowByAttr(attr,value){
+  if(!value)return;
+  const row=document.querySelector(`tr[${attr}="${CSS.escape(value)}"]`);
+  if(row)row.remove();
+}
+
+async function approveSubscription(subscriptionId){
+  if(!confirm('Approve this subscription payment?'))return;
+  try{
+    const response=await fetch(`/admin/subscription/${subscriptionId}/approve`,{method:'POST'});
+    if(!response.ok)throw new Error('Server error');
+    const row=document.querySelector(`tr[data-sub-id="${CSS.escape(subscriptionId)}"]`);
+    if(row){
+      const statusCell=row.querySelector('td:nth-child(5)');
+      const actionCell=row.querySelector('td:last-child');
+      if(statusCell)statusCell.innerHTML='<span class="badge success">Paid</span>';
+      if(actionCell)actionCell.textContent='—';
+    }
+    notif('✅ Subscription approved! Email sent.','success');
+  }catch(e){console.error('Approve error:',e);notif('❌ Failed to approve subscription','error')}
+}
 
 async function saveMarkerEdit(){
 	if(!selectedMarker){notif('No marker selected','warning');return}
@@ -1818,30 +2177,171 @@ async function saveMarkerEdit(){
 	}
 }
 async function deleteMarkerFromMap(lat,lng,text,source){try{await fetch('/hide_marker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,text,source})});notif('Marker deleted','success');reloadMarkers()}catch(e){notif('Failed to delete marker','error')}}
-function toggleAuto(){auto=!auto;const b=document.getElementById('autoBtn');b.textContent=`Auto: ${auto?'ON':'OFF'}`;b.className=auto?'btn btn-success btn-sm':'btn btn-secondary btn-sm'}
-async function blockUser(id){try{await api('/block',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});notif('User blocked successfully','success');setTimeout(()=>location.reload(),1000)}catch(e){}}
-async function unblockUser(id){try{await api('/unblock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});notif('User unblocked successfully','success');setTimeout(()=>location.reload(),1000)}catch(e){}}
+function toggleAuto(){
+  auto=!auto;
+  state.auto=auto;
+  const b=document.getElementById('autoBtn');
+  const bTop=document.getElementById('autoBtnTop');
+  const label=`Auto: ${auto?'ON':'OFF'}`;
+  const klass=auto?'btn btn-success btn-sm':'btn btn-secondary btn-sm';
+  if(b){b.textContent=label;b.className=klass;}
+  if(bTop){bTop.textContent=label;bTop.className=klass;}
+}
+async function blockUser(id){
+  try{
+    await api('/block',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+    removeRowByAttr('data-user-id',id);
+    notif('User blocked successfully','success');
+    updateStats();
+  }catch(e){}
+}
+async function unblockUser(id){
+  try{
+    await api('/unblock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+    removeRowByAttr('data-block-id',id);
+    notif('User unblocked successfully','success');
+    updateStats();
+  }catch(e){}
+}
 async function saveMonPeriod(){const v=document.getElementById('monPeriod').value;const s=document.getElementById('monStatus');s.style.display='inline-flex';s.textContent='Saving...';try{await api('/admin/set_monitor_period',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:parseInt(v)})});s.textContent='✅ Saved';notif('Monitor period updated','success')}catch(e){s.textContent='❌ Error'}}
 
-document.getElementById('markerForm').addEventListener('submit',async(e)=>{e.preventDefault();const lat=document.getElementById('mmLat').value;const lng=document.getElementById('mmLng').value;const place=document.getElementById('mmPlace').value;const threat_type=document.getElementById('mmType').value;const text=document.getElementById('mmText').value;const s=document.getElementById('mmStatus');s.style.display='inline-flex';s.textContent='Creating...';try{await api('/admin/add_manual_marker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,place,threat_type,text})});s.textContent='✅ Created';notif('Marker created successfully','success');setTimeout(()=>location.reload(),1000)}catch(err){s.textContent=`❌ ${err.message||'Error'}`}});
-async function hideMarker(lat,lng,text,source){try{await fetch('/hide_marker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,text,source})});notif('Marker hidden','success');setTimeout(()=>location.reload(),1000)}catch(e){}}
+document.getElementById('markerForm').addEventListener('submit',async(e)=>{
+  e.preventDefault();
+  const lat=document.getElementById('mmLat').value;
+  const lng=document.getElementById('mmLng').value;
+  const place=document.getElementById('mmPlace').value;
+  const threat_type=document.getElementById('mmType').value;
+  const text=document.getElementById('mmText').value;
+  const s=document.getElementById('mmStatus');
+  s.style.display='inline-flex';
+  s.textContent='Creating...';
+  try{
+    await api('/admin/add_manual_marker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,place,threat_type,text})});
+    s.textContent='✅ Created';
+    notif('Marker created successfully','success');
+    document.getElementById('mmText').value='';
+    if(map)reloadMarkers();
+    updateStats();
+  }catch(err){s.textContent=`❌ ${err.message||'Error'}`}
+});
+async function hideMarker(lat,lng,text,source){
+  try{
+    await fetch('/hide_marker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,text,source})});
+    notif('Marker hidden','success');
+    loadHiddenMarkers();
+    updateStats();
+  }catch(e){}
+}
 async function loadHiddenMarkers(){try{const d=await api('/admin/hidden_markers');const h=d.hidden||[];document.getElementById('hiddenCount').textContent=h.length;const c=document.getElementById('hiddenMarkersContainer');if(h.length===0){c.innerHTML='<div class="empty-state"><div class="empty-state-icon">👁️</div><p>No hidden markers</p></div>';return}let html='<div style="max-height:400px;overflow-y:auto"><table class="table"><thead><tr><th>Location</th><th>Text</th><th>Hidden Date</th><th>Action</th></tr></thead><tbody>';h.forEach(m=>{html+=`<tr><td>${m.lat.toFixed(4)}, ${m.lng.toFixed(4)}</td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">${(m.text||'').substring(0,100)}</td><td>${m.hidden_date||''}</td><td><button class="btn btn-success btn-sm" onclick="unhideMarker(${m.lat},${m.lng},'${(m.text||'').replace(/'/g,"\\'")}','${m.source||''}')">↩️ Restore</button></td></tr>`});html+='</tbody></table></div>';c.innerHTML=html}catch(e){console.error('Failed to load hidden markers:',e);notif('Failed to load hidden markers','error')}}
 async function unhideMarker(lat,lng,text,source){try{await api('/admin/unhide_marker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat,lng,text,source})});notif('Marker restored','success');loadHiddenMarkers();reloadMarkers()}catch(e){notif('Failed to restore marker','error')}}
-async function clearCache(){if(!confirm('Clear all negative geocode cache? This cannot be undone.'))return;try{await api('/admin/neg_geocode_clear',{method:'POST'});notif('Cache cleared successfully','success');setTimeout(()=>location.reload(),1000)}catch(e){}}
-async function delCache(name){try{await api('/admin/neg_geocode_delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});notif('Cache entry deleted','success');setTimeout(()=>location.reload(),1000)}catch(e){}}
-async function clearLogs(){if(!confirm('Clear all debug logs? This cannot be undone.'))return;try{await api('/admin/clear_debug_logs',{method:'POST'});notif('Debug logs cleared','success');setTimeout(()=>location.reload(),1000)}catch(e){}}
-async function loadStats(){const s=document.getElementById('advStatus');s.style.display='block';try{const d=await api('/admin/stats');const t=d.stats;let h='';h+=`<div class="debug-entry"><span class="debug-category">MESSAGES</span><span class="debug-message">Total: ${t.messages.total}, Geo: ${t.messages.with_coordinates}, Pending: ${t.messages.pending_geo}, Recent 24h: ${t.messages.recent_24h}</span></div>`;h+=`<div class="debug-entry"><span class="debug-category">SYSTEM</span><span class="debug-message">Active Users: ${t.system.active_users}, Blocked: ${t.system.blocked_users}, Hidden Markers: ${t.system.hidden_markers}, Cache Size: ${t.system.neg_cache_size}</span></div>`;s.innerHTML=h}catch(e){s.innerHTML=`<div class="debug-entry"><span class="debug-message">Error: ${e.message}</span></div>`}}
-async function cleanup(){const d=document.getElementById('cleanDays').value;if(!confirm(`Clean up data older than ${d} days? This cannot be undone.`))return;const s=document.getElementById('advStatus');s.style.display='block';s.innerHTML='<div class="debug-entry"><span class="debug-message">Cleaning up old data...</span></div>';try{const r=await api('/admin/cleanup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({days:parseInt(d)})});s.innerHTML=`<div class="debug-entry"><span class="debug-category">CLEANED</span><span class="debug-message">Messages: ${r.cleaned.messages}, Debug Logs: ${r.cleaned.debug_logs}, Visitor Records: ${r.cleaned.visitor_records}</span></div>`;s.innerHTML+=`<div class="debug-entry"><span class="debug-category">REMAINING</span><span class="debug-message">Messages: ${r.remaining.messages}, Debug Logs: ${r.remaining.debug_logs}</span></div>`;notif('Cleanup completed successfully','success');setTimeout(()=>location.reload(),2000)}catch(e){s.innerHTML=`<div class="debug-entry"><span class="debug-message">Error: ${e.message}</span></div>`}}
+async function clearCache(){
+  if(!confirm('Clear all negative geocode cache? This cannot be undone.'))return;
+  try{
+    await api('/admin/neg_geocode_clear',{method:'POST'});
+    notif('Cache cleared successfully','success');
+    updateStats();
+  }catch(e){}
+}
+async function delCache(name){
+  try{
+    await api('/admin/neg_geocode_delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+    notif('Cache entry deleted','success');
+    updateStats();
+  }catch(e){}
+}
+async function clearLogs(){
+  if(!confirm('Clear all debug logs? This cannot be undone.'))return;
+  try{
+    await api('/admin/clear_debug_logs',{method:'POST'});
+    const consoleEl=document.querySelector('.debug-console');
+    if(consoleEl)consoleEl.innerHTML='<div class="debug-entry"><span class="debug-message">No logs</span></div>';
+    notif('Debug logs cleared','success');
+    updateStats();
+  }catch(e){}
+}
+async function loadStats(){const s=document.getElementById('advStatus');s.style.display='block';try{const d=await api('/admin/stats');const t=d.stats;let h='';h+=`<div class="debug-entry"><span class="debug-category">MESSAGES</span><span class="debug-message">Total: ${t.messages.total}, Geo: ${t.messages.with_coordinates}, Pending: ${t.messages.pending_geo}, Recent 24h: ${t.messages.recent_24h}</span></div>`;h+=`<div class="debug-entry"><span class="debug-category">SYSTEM</span><span class="debug-message">Active Users: ${t.system.active_users}, Blocked: ${t.system.blocked_users}, Hidden Markers: ${t.system.hidden_markers}, Cache Size: ${t.system.neg_cache_size}, Daily: ${t.system.daily_unique}, Week: ${t.system.week_unique}</span></div>`;s.innerHTML=h}catch(e){s.innerHTML=`<div class="debug-entry"><span class="debug-message">Error: ${e.message}</span></div>`}}
+async function cleanup(){
+  const d=document.getElementById('cleanDays').value;
+  if(!confirm(`Clean up data older than ${d} days? This cannot be undone.`))return;
+  const s=document.getElementById('advStatus');
+  s.style.display='block';
+  s.innerHTML='<div class="debug-entry"><span class="debug-message">Cleaning up old data...</span></div>';
+  try{
+    const r=await api('/admin/cleanup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({days:parseInt(d)})});
+    s.innerHTML=`<div class="debug-entry"><span class="debug-category">CLEANED</span><span class="debug-message">Messages: ${r.cleaned.messages}, Debug Logs: ${r.cleaned.debug_logs}, Visitor Records: ${r.cleaned.visitor_records}</span></div>`;
+    s.innerHTML+=`<div class="debug-entry"><span class="debug-category">REMAINING</span><span class="debug-message">Messages: ${r.remaining.messages}, Debug Logs: ${r.remaining.debug_logs}</span></div>`;
+    notif('Cleanup completed successfully','success');
+    updateStats();
+  }catch(e){s.innerHTML=`<div class="debug-entry"><span class="debug-message">Error: ${e.message}</span></div>`}
+}
 async function exportData(type){try{const d=await api(`/admin/export?type=${type}`);const b=new Blob([JSON.stringify(d.data,null,2)],{type:'application/json'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=`neptun_${type}_${new Date().toISOString().split('T')[0]}.json`;a.click();URL.revokeObjectURL(u);notif(`Exported ${type} data successfully`,'success')}catch(e){}}
 async function forceReload(){if(!confirm('⚠️ WARNING: This will force reload the page for ALL active users!\n\nContinue?'))return;try{await api('/admin/trigger-force-reload',{method:'POST'});notif('Force reload activated for all users','success')}catch(e){}}
-async function updateRaw(){try{const d=await api('/admin/raw_msgs');document.getElementById('rawCount').textContent=d.raw_count;const t=document.getElementById('rawTable');if(t&&d.raw_msgs.length>0){t.innerHTML=d.raw_msgs.map(r=>`<tr><td style="white-space:nowrap;font-size:0.8rem">${r.date}</td><td><span class="badge info">${r.channel}</span></td><td class="truncate" style="max-width:500px" title="${r.text}">${r.text}</td></tr>`).join('')}}catch(e){console.warn('Raw messages update failed:',e)}}
-async function updateStats(){try{const d=await api('/admin/stats');const s=d.stats;document.getElementById('statActive').textContent=s.system.active_users;document.getElementById('statBlocked').textContent=s.system.blocked_users;document.getElementById('statPending').textContent=s.messages.pending_geo;document.getElementById('statMarkers').textContent=s.messages.with_coordinates;document.getElementById('statDebug').textContent=s.system.debug_logs}catch(e){console.warn('Stats update failed:',e)}}
-setInterval(()=>{if(auto&&map)reloadMarkers()},30000);
-setInterval(updateRaw,15000);
-setInterval(updateStats,20000);
+async function updateRaw(){
+  try{
+    const d=await api('/admin/raw_msgs',{}, {timeout:12000,retries:1});
+    const rawCount=document.getElementById('rawCount');
+    if(rawCount)rawCount.textContent=d.raw_count;
+    const navMeta=document.getElementById('navMessagesMeta');
+    if(navMeta)navMeta.textContent=d.raw_count?`• ${d.raw_count}`:'';
+    const t=document.getElementById('rawTable');
+    if(t){
+      if(d.raw_msgs.length>0){
+        t.innerHTML=d.raw_msgs.map(r=>`<tr><td style="white-space:nowrap;font-size:0.8rem">${r.date}</td><td><span class="badge info">${r.channel}</span></td><td class="truncate" style="max-width:500px" title="${r.text}">${r.text}</td></tr>`).join('');
+      }else{
+        t.innerHTML=`<tr><td colspan="3" style="padding:1.5rem;text-align:center;color:var(--text-tertiary)">No raw messages</td></tr>`;
+      }
+    }
+  }catch(e){console.warn('Raw messages update failed:',e)}
+}
 
-function showMainMenu(){document.querySelectorAll('.admin-section').forEach(s=>s.style.display='none');document.getElementById('mainMenu').style.display='block'}
-function showSection(name){document.querySelectorAll('.admin-section').forEach(s=>s.style.display='none');document.getElementById('mainMenu').style.display='none';const section=document.getElementById('section-'+name);if(section){section.style.display='block';if(name==='map'&&!map){setTimeout(()=>initMap(),100)}else if(name==='nicknames'){loadNicknamesFromSessions()}}else{notif('Section not found: '+name,'error')}}
+async function updateStats(){
+  try{
+    const d=await api('/admin/stats',{}, {timeout:12000,retries:1});
+    const s=d.stats;
+    if(!s)return;
+    document.getElementById('statActive').textContent=s.system.active_users;
+    document.getElementById('statBlocked').textContent=s.system.blocked_users;
+    document.getElementById('statPending').textContent=s.messages.pending_geo;
+    document.getElementById('statMarkers').textContent=s.messages.with_coordinates;
+    document.getElementById('statDebug').textContent=s.system.debug_logs;
+    const overviewMeta=document.getElementById('navOverviewMeta');
+    if(overviewMeta){overviewMeta.textContent=`• ${s.messages.recent_24h || 0} last 24h`;}
+    const daily=document.getElementById('badgeDaily');
+    const weekly=document.getElementById('badgeWeekly');
+    if(daily&&s.system.daily_unique!==undefined){daily.textContent=`Today ${s.system.daily_unique}`;}
+    if(weekly&&s.system.week_unique!==undefined){weekly.textContent=`Week ${s.system.week_unique}`;}
+  }catch(e){console.warn('Stats update failed:',e)}
+}
+
+function stopAutoRefresh(){
+  Object.values(state.intervals).forEach(i=>clearInterval(i));
+  state.intervals={};
+}
+
+function startAutoRefresh(){
+  stopAutoRefresh();
+  state.intervals.stats=setInterval(()=>{if(state.view!=='map')updateStats()},25000);
+  state.intervals.raw=setInterval(()=>{if(state.view==='messages')updateRaw()},20000);
+  state.intervals.map=setInterval(()=>{if(auto&&map&&state.view==='map')reloadMarkers()},30000);
+}
+
+function bindNavigation(){
+  document.querySelectorAll('.nav-item').forEach(btn=>{
+    btn.addEventListener('click',()=>setView(btn.dataset.view));
+  });
+  const hash=window.location.hash.substring(1);
+  if(hash&&document.getElementById(`view-${hash}`)){
+    setView(hash);
+  }else{
+    setView('overview');
+  }
+  window.addEventListener('hashchange',()=>{
+    const next=window.location.hash.substring(1);
+    if(next&&document.getElementById(`view-${next}`)){
+      setView(next);
+    }
+  });
+}
 
 // Nicknames management
 let allNicknames = [];
@@ -1913,7 +2413,25 @@ function filterNicknames() {
       `).join('');
 }
 
-document.addEventListener('DOMContentLoaded',()=>{console.log('🌊 Neptun Admin Dashboard initialized');if(typeof L==='undefined'){notif('Leaflet library failed to load','error');return}const hash=window.location.hash.substring(1);if(hash&&document.getElementById('section-'+hash)){showSection(hash)}updateStats();updateRaw();loadHiddenMarkers();const typeSelect=document.getElementById('editType');if(typeSelect){updateMarkerIcon(typeSelect.value||'shahed');}});
+document.addEventListener('DOMContentLoaded',()=>{
+  console.log('🌊 Neptun Admin Dashboard initialized');
+  if(typeof L==='undefined'){notif('Leaflet library failed to load','error');return}
+  initTheme();
+  bindNavigation();
+  loadTTLStatus();
+  updateStats();
+  updateRaw();
+  loadHiddenMarkers();
+  startAutoRefresh();
+  document.addEventListener('visibilitychange',()=>{
+    if(document.hidden){stopAutoRefresh();}
+    else{startAutoRefresh();}
+  });
+  const typeSelect=document.getElementById('editType');
+  if(typeSelect){updateMarkerIcon(typeSelect.value||'shahed');}
+  const autoBtnTop=document.getElementById('autoBtnTop');
+  if(autoBtnTop){autoBtnTop.textContent=`Auto: ${auto?'ON':'OFF'}`;}
+});
 </script>
 </body>
 </html>

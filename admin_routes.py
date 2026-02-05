@@ -823,6 +823,29 @@ def register_admin_routes(app):
             neg_cache_size = len(_load_neg_geocode_cache())
             debug_logs_count = len(DEBUG_LOGS)
 
+            # Visit stats (daily/weekly)
+            daily_unique, week_unique = sql_unique_counts()
+            if daily_unique is None:
+                daily_unique, week_unique = _recent_counts()
+            if daily_unique is None:
+                stats = _load_visit_stats()
+                tz = pytz.timezone('Europe/Kyiv')
+                now_dt = datetime.now(tz)
+                today_str = now_dt.strftime('%Y-%m-%d')
+                week_cut = now_dt - timedelta(days=7)
+                daily_unique = 0
+                week_unique = 0
+                for _, ts in stats.items():
+                    try:
+                        tsf = float(ts)
+                    except Exception:
+                        continue
+                    dt = datetime.fromtimestamp(tsf, tz)
+                    if dt.strftime('%Y-%m-%d') == today_str:
+                        daily_unique += 1
+                    if dt >= week_cut:
+                        week_unique += 1
+
             return jsonify({
                 'status': 'ok',
                 'stats': {
@@ -839,7 +862,9 @@ def register_admin_routes(app):
                         'hidden_markers': hidden_markers,
                         'neg_cache_size': neg_cache_size,
                         'debug_logs': debug_logs_count,
-                        'monitor_period': MONITOR_PERIOD_MINUTES
+                        'monitor_period': MONITOR_PERIOD_MINUTES,
+                        'daily_unique': daily_unique,
+                        'week_unique': week_unique
                     },
                     'timestamp': now
                 }
