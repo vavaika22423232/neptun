@@ -3275,6 +3275,8 @@ session_str = os.getenv('TELEGRAM_SESSION')  # Telethon string session (recommen
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')  # optional bot token fallback
 AUTH_SECRET = os.getenv('AUTH_SECRET')  # simple shared secret to protect /auth endpoints
 FETCH_THREAD_STARTED = False
+FETCH_THREAD_STARTED_AT = 0
+FETCH_THREAD = None
 AUTH_STATUS = {'authorized': False, 'reason': 'init'}
 SUBSCRIBERS = set()  # queues for SSE clients
 MAX_STREAM_SUBSCRIBERS = 100  # MEMORY PROTECTION: Limit main SSE connections (reduced from 200)
@@ -4989,7 +4991,7 @@ def _msg_timestamp(msg):
     return 0
 
 def start_fetch_thread():
-    global FETCH_THREAD_STARTED
+    global FETCH_THREAD_STARTED, FETCH_THREAD_STARTED_AT, FETCH_THREAD
     log.info('start_fetch_thread() called')
     if not client:
         log.warning('start_fetch_thread: client is None')
@@ -4999,30 +5001,36 @@ def start_fetch_thread():
         return
     log.info('start_fetch_thread: starting new thread')
     FETCH_THREAD_STARTED = True
+    FETCH_THREAD_STARTED_AT = time.time()
     AUTH_STATUS.update({'authorized': False, 'reason': 'starting_fetch'})
     loop = asyncio.new_event_loop()
     def runner():
-        log.info('fetch_thread runner started')
-        if FETCH_START_DELAY > 0:
-            log.info(f'Delaying Telegram fetch start for {FETCH_START_DELAY}s (FETCH_START_DELAY).')
-            time.sleep(FETCH_START_DELAY)
-        asyncio.set_event_loop(loop)
-        while True:
-            try:
-                log.info('About to call fetch_loop()')
-                loop.run_until_complete(fetch_loop())
-                log.warning('fetch_loop() exited; restarting in 30s')
-                time.sleep(30)
-            except AuthKeyDuplicatedError:
-                AUTH_STATUS.update({'authorized': False, 'reason': 'authkey_duplicated_runner'})
-                log.error('Fetch loop stopped: duplicated auth key.')
-                break
-            except Exception as e:
-                AUTH_STATUS.update({'authorized': False, 'reason': f'crash:{e.__class__.__name__}'})
-                log.error(f'Fetch loop crashed: {e}')
-                time.sleep(30)
+        try:
+            log.info('fetch_thread runner started')
+            if FETCH_START_DELAY > 0:
+                log.info(f'Delaying Telegram fetch start for {FETCH_START_DELAY}s (FETCH_START_DELAY).')
+                time.sleep(FETCH_START_DELAY)
+            asyncio.set_event_loop(loop)
+            while True:
+                try:
+                    log.info('About to call fetch_loop()')
+                    loop.run_until_complete(fetch_loop())
+                    log.warning('fetch_loop() exited; restarting in 30s')
+                    time.sleep(30)
+                except AuthKeyDuplicatedError:
+                    AUTH_STATUS.update({'authorized': False, 'reason': 'authkey_duplicated_runner'})
+                    log.error('Fetch loop stopped: duplicated auth key.')
+                    break
+                except Exception as e:
+                    AUTH_STATUS.update({'authorized': False, 'reason': f'crash:{e.__class__.__name__}'})
+                    log.error(f'Fetch loop crashed: {e}')
+                    time.sleep(30)
+        except Exception as e:
+            AUTH_STATUS.update({'authorized': False, 'reason': f'runner_crash:{e.__class__.__name__}'})
+            log.error(f'fetch_thread runner crashed before loop: {e}')
         log.info('fetch_thread runner finished')
-    threading.Thread(target=runner, daemon=True).start()
+    FETCH_THREAD = threading.Thread(target=runner, daemon=True)
+    FETCH_THREAD.start()
     log.info('start_fetch_thread: thread started successfully')
 
 def replace_client(new_session: str):
@@ -7456,6 +7464,9 @@ if 'health' not in app.view_functions:
             'telegram_fetch_phase': getattr(parser_service, 'TELEGRAM_FETCH_PHASE', 'unknown'),
             'telegram_last_error': getattr(parser_service, 'TELEGRAM_LAST_ERROR', ''),
             'fetch_thread_started': FETCH_THREAD_STARTED,
+            'fetch_thread_alive': bool(FETCH_THREAD and FETCH_THREAD.is_alive()),
+            'fetch_thread_started_at': int(FETCH_THREAD_STARTED_AT) if FETCH_THREAD_STARTED_AT else 0,
+            'fetch_start_delay': FETCH_START_DELAY,
             'memory': memory_metrics
         })
         resp.headers['Cache-Control'] = 'no-store'
