@@ -9839,5 +9839,5 @@ async def fetch_loop():
                 except Exception as e:
                     log.debug(f'SSE broadcast failed: {e}')
         # Note: removed periodic save_messages when no new tracks to avoid overwriting /data updates
-        await asyncio.sleep(45)  # Check every 45 seconds (CPU optimized)
+        await asyncio.sleep(10)  # Check every 10 seconds (low latency)
 
