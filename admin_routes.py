@@ -19,8 +19,16 @@ DDOS_ENABLED = True  # Kill switch
 DDOS_MAX_TRACKED_IPS = 300  # Max IPs to track before forced cleanup
 DDOS_WHITELIST = set(os.environ.get('DDOS_WHITELIST', '').split(',')) - {''}
 
+_INIT_BACKGROUND_DONE = False
+INIT_ONCE = False
+
+_FORCE_OVERRIDE = {'INIT_ONCE', '_INIT_BACKGROUND_DONE'}
+
 def bind_dependencies(source_globals: dict):
     for name, value in source_globals.items():
+        if name in _FORCE_OVERRIDE:
+            globals()[name] = value
+            continue
         if name not in globals():
             globals()[name] = value
 
