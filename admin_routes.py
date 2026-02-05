@@ -1479,26 +1479,30 @@ def register_admin_routes(app):
 
     def _init_background():
         global _INIT_BACKGROUND_DONE, INIT_ONCE
-        if _INIT_BACKGROUND_DONE:
-            return
-        _INIT_BACKGROUND_DONE = True
-        INIT_ONCE = True
-        _startup_diagnostics()
-        # Start background workers
         try:
-            start_fetch_thread()
+            if _INIT_BACKGROUND_DONE:
+                return
+            _INIT_BACKGROUND_DONE = True
+            INIT_ONCE = True
+            _startup_diagnostics()
+            # Start background workers
+            try:
+                start_fetch_thread()
+            except Exception as e:
+                log.error(f'Failed to start fetch thread: {e}\n{traceback.format_exc()}')
+            try:
+                start_session_watcher()
+            except Exception as e:
+                log.error(f'Failed to start session watcher: {e}\n{traceback.format_exc()}')
+            # MEMORY PROTECTION: Start memory cleanup worker
+            try:
+                threading.Thread(target=_memory_cleanup_worker, daemon=True, name='memory_cleanup').start()
+                print("INFO: Memory cleanup worker started")
+            except Exception as e:
+                log.error(f'Failed to start memory cleanup worker: {e}')
         except Exception as e:
-            log.error(f'Failed to start fetch thread: {e}\n{traceback.format_exc()}')
-        try:
-            start_session_watcher()
-        except Exception as e:
-            log.error(f'Failed to start session watcher: {e}\n{traceback.format_exc()}')
-        # MEMORY PROTECTION: Start memory cleanup worker
-        try:
-            threading.Thread(target=_memory_cleanup_worker, daemon=True, name='memory_cleanup').start()
-            print("INFO: Memory cleanup worker started")
-        except Exception as e:
-            log.error(f'Failed to start memory cleanup worker: {e}')
+            log.error(f'_init_background failed: {e}\n{traceback.format_exc()}')
+            _INIT_BACKGROUND_DONE = True
 
     @app.before_request
     def _ddos_protection():
@@ -1580,12 +1584,14 @@ def register_admin_routes(app):
     @app.before_request
     def _maybe_init_background():
         try:
+            global _INIT_BACKGROUND_DONE
             # CPU OPTIMIZATION: Skip quickly if already initialized
             if _INIT_BACKGROUND_DONE:
                 return
             _init_background()
         except Exception as e:
             log.error(f"_maybe_init_background failed: {e}")
+            _INIT_BACKGROUND_DONE = True
             return None
 
     @app.route('/startup_diag')
