@@ -7442,6 +7442,7 @@ if 'health' not in app.view_functions:
         resp = jsonify({
             'status':'ok',
             'server_time': int(now),
+            'pid': os.getpid(),
             'messages':len(load_messages()),
             'auth': AUTH_STATUS,
             'visitors': visitors,
