@@ -4096,6 +4096,18 @@
       const mapContainer = document.getElementById('map-container');
       if (!mapContainer || mapLoaded) return;
       
+      function queueMapLoad() {
+        if (typeof window.loadMapsLeaflet === 'function') {
+          window.loadMapsLeaflet();
+          return;
+        }
+        if (typeof window.loadMaps === 'function' && window.loadMaps !== loadMaps) {
+          window.loadMaps();
+          return;
+        }
+        setTimeout(queueMapLoad, 200);
+      }
+      
       // Use IntersectionObserver for optimal lazy loading
       if ('IntersectionObserver' in window) {
         const observer = new IntersectionObserver((entries) => {
@@ -4103,11 +4115,7 @@
             if (entry.isIntersecting && !mapLoaded) {
               mapLoaded = true;
               observer.disconnect();
-              if (typeof window.loadMaps === 'function') {
-                window.loadMaps();
-              } else if (typeof loadMaps === 'function') {
-                loadMaps();
-              }
+              queueMapLoad();
             }
           });
         }, {
@@ -4118,11 +4126,7 @@
         observer.observe(mapContainer);
       } else {
         // Fallback for older browsers
-        if (typeof window.loadMaps === 'function') {
-          window.loadMaps();
-        } else if (typeof loadMaps === 'function') {
-          loadMaps();
-        }
+        queueMapLoad();
       }
     }
     
@@ -4132,6 +4136,17 @@
       
       mapLoadPromise = (async () => {
         try {
+          const statesLayer = document.getElementById('states-layer');
+          if (!statesLayer) {
+            if (typeof window.loadMapsLeaflet === 'function') {
+              return window.loadMapsLeaflet();
+            }
+            if (typeof window.initLeafletMainMap === 'function') {
+              await window.initLeafletMainMap();
+            }
+            return;
+          }
+
           // Performance mark for debugging
           if (window.performance && performance.mark) {
             performance.mark('map-load-start');
@@ -6488,11 +6503,8 @@
     const SVG_FADE_START_ZOOM = 7;   // Start fading SVG at this zoom
     const SVG_FADE_END_ZOOM = 8;     // SVG completely gone at this zoom
     
-    // Ukraine bounds for SVG overlay
-    const UKRAINE_BOUNDS = L.latLngBounds(
-      [window.MAP_BOUNDS.minLat, window.MAP_BOUNDS.minLng],  // Southwest
-      [window.MAP_BOUNDS.maxLat, window.MAP_BOUNDS.maxLng]   // Northeast
-    );
+    // Ukraine bounds for SVG overlay (initialized after Leaflet loads)
+    let UKRAINE_BOUNDS = null;
     
     // Initialize Leaflet map as THE main map
     async function initLeafletMainMap() {
@@ -6502,6 +6514,14 @@
         console.warn('Leaflet not ready yet, retrying init...');
         setTimeout(initLeafletMainMap, 200);
         return;
+      }
+
+      if (!UKRAINE_BOUNDS) {
+        UKRAINE_BOUNDS = L.latLngBounds(
+          [window.MAP_BOUNDS.minLat, window.MAP_BOUNDS.minLng],  // Southwest
+          [window.MAP_BOUNDS.maxLat, window.MAP_BOUNDS.maxLng]   // Northeast
+        );
+        window.UKRAINE_BOUNDS = UKRAINE_BOUNDS;
       }
       
       console.log('Initializing Leaflet as MAIN map controller...');
@@ -6603,10 +6623,11 @@
       updateSvgOpacity();
       
       // Fit to Ukraine bounds initially
-      leafletMap.fitBounds(UKRAINE_BOUNDS, { animate: false });
+      leafletMap.fitBounds(window.UKRAINE_BOUNDS, { animate: false });
       
       console.log('Leaflet main map initialized successfully');
     }
+    window.initLeafletMainMap = initLeafletMainMap;
     
     // Load SVG maps as Leaflet SVG overlays
     async function loadSvgOverlays() {
@@ -6643,7 +6664,7 @@
         
         // Create SVG overlay with Ukraine bounds
         // Using L.svgOverlay for proper geographic positioning
-        const svgBounds = UKRAINE_BOUNDS;
+      const svgBounds = window.UKRAINE_BOUNDS;
         
         // Create states overlay
         window.statesOverlay = L.svgOverlay(statesSvg, svgBounds, {
@@ -6931,7 +6952,10 @@
     
     window.resetZoom = function() {
       if (leafletMap) {
-        leafletMap.fitBounds(UKRAINE_BOUNDS, { animate: true });
+        const bounds = window.UKRAINE_BOUNDS;
+        if (bounds) {
+          leafletMap.fitBounds(bounds, { animate: true });
+        }
       }
     };
     
@@ -6965,7 +6989,7 @@
     
     // Override loadMaps to init Leaflet first
     const originalLoadMaps = window.loadMaps;
-    window.loadMaps = async function() {
+    window.loadMapsLeaflet = async function() {
       // Initialize Leaflet main map first
       await initLeafletMainMap();
       
@@ -7032,6 +7056,7 @@
         console.error('Error loading maps:', error);
       }
     };
+    window.loadMaps = window.loadMapsLeaflet;
     
     console.log('Leaflet-controlled map mode enabled');
   </script>
