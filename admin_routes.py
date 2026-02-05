@@ -1308,7 +1308,6 @@ def register_admin_routes(app):
 
     # ----------------------- Deferred initialization hooks -----------------------
     # CPU OPTIMIZATION: Use before_first_request pattern manually
-    _INIT_BACKGROUND_DONE = False
 
     def _memory_cleanup_worker():
         """Background worker to periodically clean up caches and prevent memory leaks."""
@@ -1580,10 +1579,14 @@ def register_admin_routes(app):
 
     @app.before_request
     def _maybe_init_background():
-        # CPU OPTIMIZATION: Skip quickly if already initialized
-        if _INIT_BACKGROUND_DONE:
-            return
-        _init_background()
+        try:
+            # CPU OPTIMIZATION: Skip quickly if already initialized
+            if _INIT_BACKGROUND_DONE:
+                return
+            _init_background()
+        except Exception as e:
+            log.error(f"_maybe_init_background failed: {e}")
+            return None
 
     @app.route('/startup_diag')
     def startup_diag():
