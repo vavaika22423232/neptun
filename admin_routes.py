@@ -22,8 +22,18 @@ DDOS_WHITELIST = set(os.environ.get('DDOS_WHITELIST', '').split(',')) - {''}
 _INIT_BACKGROUND_DONE = False
 INIT_ONCE = False
 _chat_initialized = False
+_groq_cache = {}
+_groq_cache_ttl = 300
+_groq_cache_max_size = 200
 
-_FORCE_OVERRIDE = {'INIT_ONCE', '_INIT_BACKGROUND_DONE', '_chat_initialized'}
+_FORCE_OVERRIDE = {
+    'INIT_ONCE',
+    '_INIT_BACKGROUND_DONE',
+    '_chat_initialized',
+    '_groq_cache',
+    '_groq_cache_ttl',
+    '_groq_cache_max_size',
+}
 
 def bind_dependencies(source_globals: dict):
     for name, value in source_globals.items():
@@ -2917,6 +2927,8 @@ def register_admin_routes(app):
     def load_chat_messages():
         """Load chat messages from file. On first call, try git pull to restore from repo."""
         global _chat_initialized
+        if '_chat_initialized' not in globals():
+            _chat_initialized = False
         try:
             # On first load, try to pull latest from git
             if not _chat_initialized:
