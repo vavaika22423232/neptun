@@ -1,9 +1,23 @@
 import json
+import os
 import time
 import platform
 from datetime import datetime
 
 from flask import Response, jsonify, request
+
+# ===========================================================================
+# EMERGENCY DDOS PROTECTION - Global rate limiter (module-level state)
+# ===========================================================================
+_ddos_ip_counts = {}  # {ip: [timestamps]}
+_ddos_blocked_ips = set()  # Temporarily blocked IPs
+_ddos_block_time = {}  # {ip: block_until_timestamp}
+_ddos_last_cleanup = 0  # Last cleanup timestamp
+DDOS_RATE_LIMIT = 50  # Max requests per IP per 10 seconds (raised - Cloudflare handles DDoS now)
+DDOS_BLOCK_DURATION = 60  # Block IP for 60 seconds
+DDOS_ENABLED = True  # Kill switch
+DDOS_MAX_TRACKED_IPS = 300  # Max IPs to track before forced cleanup
+DDOS_WHITELIST = set(os.environ.get('DDOS_WHITELIST', '').split(',')) - {''}
 
 def bind_dependencies(source_globals: dict):
     for name, value in source_globals.items():
@@ -1478,20 +1492,6 @@ def register_admin_routes(app):
             print("INFO: Memory cleanup worker started")
         except Exception as e:
             log.error(f'Failed to start memory cleanup worker: {e}')
-
-    # ===========================================================================
-    # EMERGENCY DDOS PROTECTION - Global rate limiter
-    # ===========================================================================
-    _ddos_ip_counts = {}  # {ip: [timestamps]}
-    _ddos_blocked_ips = set()  # Temporarily blocked IPs
-    _ddos_block_time = {}  # {ip: block_until_timestamp}
-    _ddos_last_cleanup = 0  # Last cleanup timestamp
-    DDOS_RATE_LIMIT = 50  # Max requests per IP per 10 seconds (raised - Cloudflare handles DDoS now)
-    DDOS_BLOCK_DURATION = 60  # Block IP for 60 seconds
-    DDOS_ENABLED = True  # Kill switch
-    DDOS_MAX_TRACKED_IPS = 300  # Max IPs to track before forced cleanup
-    # Admin IPs that bypass DDoS protection (add your IP here)
-    DDOS_WHITELIST = set(os.environ.get('DDOS_WHITELIST', '').split(',')) - {''}
 
     @app.before_request
     def _ddos_protection():
