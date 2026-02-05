@@ -43,12 +43,20 @@
   <link rel="dns-prefetch" href="//tiles.openfreemap.org">
   <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://www.googletagmanager.com" crossorigin>
+  <link rel="preconnect" href="https://unpkg.com" crossorigin>
+  <link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin>
   
   <!-- Leaflet CSS for hybrid map mode -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   
   <!-- MapLibre GL for OpenFreeMap vector tiles -->
   <link href="https://unpkg.com/maplibre-gl/dist/maplibre-gl.css" rel="stylesheet">
+  
+  <!-- Preload map scripts (loaded later with defer) -->
+  <link rel="preload" as="script" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin>
+  <link rel="preload" as="script" href="https://unpkg.com/maplibre-gl/dist/maplibre-gl.js" crossorigin>
+  <link rel="preload" as="script" href="https://unpkg.com/@maplibre/maplibre-gl-leaflet/leaflet-maplibre-gl.js" crossorigin>
   
   <!-- Preload critical SVG maps -->
   <link rel="preload" href="/static/ukraine_states.svg" as="image">
@@ -378,11 +386,15 @@
     /* Prevent FOUC - only navbar needs initial fade */
     .navbar { opacity: 0; animation: fadeIn 0.3s ease-in-out forwards; animation-delay: 0.1s; }
     @keyframes fadeIn { to { opacity: 1; } }
+    @media (prefers-reduced-motion: reduce) {
+      * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+      html { scroll-behavior: auto; }
+    }
   </style>
   
   <!-- FONTS - Optimized loading with font-display: swap -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all';this.onload=null;">
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&display=swap" rel="stylesheet" media="print" onload="this.media='all';this.onload=null;">
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons&display=block" rel="stylesheet" media="print" onload="this.media='all';this.onload=null;">
   <noscript>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -3097,6 +3109,32 @@
     document.head.appendChild(style);
   </script>
 
+  <script>
+    // Network helpers for consistent timeouts + visibility checks
+    function isPageVisible() {
+      return !document.hidden;
+    }
+
+    async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+      const controller = new AbortController();
+      const timerId = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetch(url, { ...options, signal: controller.signal });
+        return response;
+      } finally {
+        clearTimeout(timerId);
+      }
+    }
+
+    // Refresh data when tab becomes visible again
+    document.addEventListener('visibilitychange', () => {
+      if (!isPageVisible()) return;
+      if (typeof fetchAlarms === 'function') fetchAlarms();
+      if (typeof fetchThreatMarkers === 'function') fetchThreatMarkers();
+      if (typeof fetchFusionTrajectories === 'function') fetchFusionTrajectories();
+    });
+  </script>
+
   <!-- SEO CONTENT - Visible to search engines -->
   <article id="seo-content" style="position:absolute;left:0;top:60px;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;">
     <h2>Карта тривог та шахедів України онлайн — повітряна тривога в реальному часі</h2>
@@ -4017,6 +4055,10 @@
     
     // Cache buster version - change this to force reload SVG files
     const CACHE_VERSION = 'v6';
+    let alarmsFetchInFlight = false;
+    let markersFetchInFlight = false;
+    let fusionFetchInFlight = false;
+    let presenceFetchInFlight = false;
     
     // =====================================================
     // LAZY LOADING MAP - Core Web Vitals Optimization (2025)
@@ -4067,18 +4109,18 @@
           }
           
           // Load states (oblasts) SVG - Critical, load first
-          const statesResponse = await fetch(`/static/ukraine_states.svg?${CACHE_VERSION}`);
-          const statesText = await statesResponse.text();
+          const [statesResponse, districtsResponse, namesResponse] = await Promise.all([
+            fetchWithTimeout(`/static/ukraine_states.svg?${CACHE_VERSION}`, { cache: 'force-cache' }, 8000),
+            fetchWithTimeout(`/static/ukraine_districts_detailed.svg?${CACHE_VERSION}`, { cache: 'force-cache' }, 8000),
+            fetchWithTimeout(`/static/ukraine_names.svg?${CACHE_VERSION}`, { cache: 'force-cache' }, 8000),
+          ]);
+          const [statesText, districtsText, namesText] = await Promise.all([
+            statesResponse.text(),
+            districtsResponse.text(),
+            namesResponse.text(),
+          ]);
           document.getElementById('states-layer').innerHTML = statesText;
-          
-          // Load districts SVG - Can be deferred slightly
-          const districtsResponse = await fetch(`/static/ukraine_districts_detailed.svg?${CACHE_VERSION}`);
-          const districtsText = await districtsResponse.text();
           document.getElementById('districts-layer').innerHTML = districtsText;
-          
-          // Load names SVG (with neptun.in.ua branding)
-          const namesResponse = await fetch(`/static/ukraine_names.svg?${CACHE_VERSION}`);
-          const namesText = await namesResponse.text();
           document.getElementById('names-layer').innerHTML = namesText;
           
           // Hide all icons initially
@@ -4161,8 +4203,13 @@
     // Fetch alarms from ukrainealarm API via proxy with retry
     async function fetchAlarms(retryCount = 0) {
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        if (document.hidden) {
+          return;
+        }
+        if (alarmsFetchInFlight) {
+          return;
+        }
+        alarmsFetchInFlight = true;
         
         // BANDWIDTH OPTIMIZATION: Use ETag caching
         const headers = {};
@@ -4170,11 +4217,9 @@
           headers['If-None-Match'] = lastAlarmsETag;
         }
         
-        const response = await fetch('/api/alarms/all', {
-          signal: controller.signal,
+        const response = await fetchWithTimeout('/api/alarms/all', {
           headers
-        });
-        clearTimeout(timeoutId);
+        }, 8000);
         
         // 304 Not Modified - alarms unchanged
         if (response.status === 304) {
@@ -4354,6 +4399,8 @@
           // Show maintenance overlay if no data at all
           showMaintenanceOverlay();
         }
+      } finally {
+        alarmsFetchInFlight = false;
       }
     }
     
@@ -4472,13 +4519,20 @@
     // PROGRESSIVE LOADING: Markers appear one by one, newest first
     async function fetchThreatMarkers() {
       try {
+        if (document.hidden) {
+          return;
+        }
+        if (markersFetchInFlight) {
+          return;
+        }
+        markersFetchInFlight = true;
         // BANDWIDTH OPTIMIZATION: Use ETag to avoid re-downloading unchanged data
         const headers = {};
         if (lastDataETag) {
           headers['If-None-Match'] = lastDataETag;
         }
         
-        const response = await fetch('/data', { headers });
+        const response = await fetchWithTimeout('/data', { headers }, 8000);
         
         // 304 Not Modified - data unchanged, skip update
         if (response.status === 304) {
@@ -4530,6 +4584,8 @@
         if (cached) {
           renderMarkersFromData(cached);
         }
+      } finally {
+        markersFetchInFlight = false;
       }
     }
     
@@ -4565,10 +4621,18 @@
         
         const addMarkerBatch = (startIndex) => {
           const endIndex = Math.min(startIndex + BATCH_SIZE, markers.length);
+          const fragment = document.createDocumentFragment();
           
           for (let i = startIndex; i < endIndex; i++) {
             const marker = markers[i];
-            addSingleMarker(marker, markersLayer, markerCounts);
+            const markerEl = addSingleMarker(marker, markerCounts);
+            if (markerEl) {
+              fragment.appendChild(markerEl);
+            }
+          }
+          
+          if (fragment.childNodes.length) {
+            markersLayer.appendChild(fragment);
           }
           
           // Continue with next batch
@@ -4592,19 +4656,19 @@
     }
     
     // Helper: Add a single marker to the map
-    function addSingleMarker(marker, markersLayer, markerCounts) {
+    function addSingleMarker(marker, markerCounts) {
           const lat = parseFloat(marker.lat);
           const lng = parseFloat(marker.lng);
           
           // Skip markers without valid coordinates
-          if (isNaN(lat) || isNaN(lng)) return;
+          if (isNaN(lat) || isNaN(lng)) return null;
           
           // Get threat type and icon
           const threatType = marker.threat_type || 'default';
           
           // Skip if outside Ukraine bounds
           if (lat < MAP_BOUNDS.minLat || lat > MAP_BOUNDS.maxLat ||
-              lng < MAP_BOUNDS.minLng || lng > MAP_BOUNDS.maxLng) return;
+              lng < MAP_BOUNDS.minLng || lng > MAP_BOUNDS.maxLng) return null;
           
           const iconFile = marker.marker_icon || THREAT_ICONS[threatType] || 'default.png';
           
@@ -4627,6 +4691,8 @@
           const img = document.createElement('img');
           img.src = `/static/${iconFile}?${CACHE_VERSION}`;
           img.alt = threatType;
+          img.loading = 'lazy';
+          img.decoding = 'async';
           img.onerror = function() {
             this.src = `/static/default.png?${CACHE_VERSION}`;
           };
@@ -4722,7 +4788,7 @@
           // PROGRESSIVE: Add fade-in animation
           markerEl.style.opacity = '0';
           markerEl.style.transform = 'translate(-50%, -50%) scale(0.5)';
-          markersLayer.appendChild(markerEl);
+          // Caller appends to DOM (batched)
           
           // Trigger animation after append
           requestAnimationFrame(() => {
@@ -4730,12 +4796,21 @@
             markerEl.style.opacity = '1';
             markerEl.style.transform = 'translate(-50%, -50%) scale(1)';
           });
+          
+          return markerEl;
     }
     
     // Fetch and render fusion trajectories (multi-channel combined data)
     async function fetchFusionTrajectories() {
       try {
-        const response = await fetch('/api/fusion/trajectories');
+        if (document.hidden) {
+          return;
+        }
+        if (fusionFetchInFlight) {
+          return;
+        }
+        fusionFetchInFlight = true;
+        const response = await fetchWithTimeout('/api/fusion/trajectories', {}, 8000);
         if (!response.ok) return;
         
         const data = await response.json();
@@ -4749,6 +4824,8 @@
         
       } catch (error) {
         console.error('Error fetching fusion trajectories:', error);
+      } finally {
+        fusionFetchInFlight = false;
       }
     }
     
@@ -5390,8 +5467,15 @@
     
     async function pingPresence() {
       try {
+        if (document.hidden) {
+          return;
+        }
+        if (presenceFetchInFlight) {
+          return;
+        }
+        presenceFetchInFlight = true;
         const userId = localStorage.getItem('user_id') || '';
-        const response = await fetch('/presence', {
+        const response = await fetchWithTimeout('/presence', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -5399,7 +5483,7 @@
             platform: 'web',
             nickname: userId
           })
-        });
+        }, 6000);
         
         if (response.ok) {
           const data = await response.json();
@@ -5414,6 +5498,8 @@
         }
       } catch (e) {
         console.log('Presence error:', e);
+      } finally {
+        presenceFetchInFlight = false;
       }
     }
     
@@ -5611,11 +5697,11 @@
         messageDiv.style.display = 'none';
         
         // Create WayForPay invoice via API
-        const response = await fetch('/api/wayforpay/create-invoice', {
+        const response = await fetchWithTimeout('/api/wayforpay/create-invoice', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(formData)
-        });
+        }, 10000);
         
         const result = await response.json();
         
@@ -6347,11 +6433,11 @@
   </div>
   
   <!-- Leaflet JS for hybrid map mode -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   
   <!-- MapLibre GL + Leaflet binding for OpenFreeMap -->
-  <script src="https://unpkg.com/maplibre-gl/dist/maplibre-gl.js"></script>
-  <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet/leaflet-maplibre-gl.js"></script>
+  <script defer src="https://unpkg.com/maplibre-gl/dist/maplibre-gl.js"></script>
+  <script defer src="https://unpkg.com/@maplibre/maplibre-gl-leaflet/leaflet-maplibre-gl.js"></script>
   
   <script>
     // ============================================
@@ -6419,7 +6505,7 @@
       
       // Load OpenFreeMap dark style with Ukrainian labels
       try {
-        const response = await fetch('https://tiles.openfreemap.org/styles/dark');
+        const response = await fetchWithTimeout('https://tiles.openfreemap.org/styles/dark', {}, 10000);
         const style = await response.json();
         
         // Modify all text-field properties to show Ukrainian names
@@ -6486,16 +6572,16 @@
       
       try {
         // Load states (oblasts) SVG
-        const statesResponse = await fetch(`/static/ukraine_states.svg?${CACHE_VERSION}`);
-        const statesText = await statesResponse.text();
-        
-        // Load districts SVG
-        const districtsResponse = await fetch(`/static/ukraine_districts_detailed.svg?${CACHE_VERSION}`);
-        const districtsText = await districtsResponse.text();
-        
-        // Load names SVG (region labels)
-        const namesResponse = await fetch(`/static/ukraine_names.svg?${CACHE_VERSION}`);
-        const namesText = await namesResponse.text();
+        const [statesResponse, districtsResponse, namesResponse] = await Promise.all([
+          fetchWithTimeout(`/static/ukraine_states.svg?${CACHE_VERSION}`, { cache: 'force-cache' }, 8000),
+          fetchWithTimeout(`/static/ukraine_districts_detailed.svg?${CACHE_VERSION}`, { cache: 'force-cache' }, 8000),
+          fetchWithTimeout(`/static/ukraine_names.svg?${CACHE_VERSION}`, { cache: 'force-cache' }, 8000),
+        ]);
+        const [statesText, districtsText, namesText] = await Promise.all([
+          statesResponse.text(),
+          districtsResponse.text(),
+          namesResponse.text(),
+        ]);
         
         // Parse SVG content
         const parser = new DOMParser();
@@ -6634,7 +6720,7 @@
       // Create HTML for the marker
       let markerHtml = `
         <div class="threat-marker" data-type="${threatType}" style="width:${size}px;height:${size}px;">
-          <img src="/static/${iconFile}?${CACHE_VERSION}" alt="${threatType}" 
+          <img src="/static/${iconFile}?${CACHE_VERSION}" alt="${threatType}" loading="lazy" decoding="async"
                style="transform: rotate(${rotationAngle}deg); width:100%; height:100%;"
                onerror="this.src='/static/default.png?${CACHE_VERSION}'">
       `;

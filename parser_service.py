@@ -14,6 +14,12 @@ from constants import LAUNCH_SITES, OBLAST_CENTERS
 
 log = logging.getLogger(__name__)
 
+try:
+    from visicom_geocoder import OBLAST_BBOX as _VISICOM_OBLAST_BBOX, OBLAST_KEYS as _VISICOM_OBLAST_KEYS
+except Exception:
+    _VISICOM_OBLAST_BBOX = None
+    _VISICOM_OBLAST_KEYS = None
+
 # Dependency placeholders (bound from app.py)
 ensure_city_coords_with_message_context = None
 opencage_geocode = None
@@ -312,6 +318,30 @@ DIRECTION_COURSE_KEYWORDS = [
     'курс північний', 'курс південний', 'курс східний', 'курс західний',
     'курсом на північ', 'курсом на південь', 'курсом на схід', 'курсом на захід',
 ]
+
+def _normalize_region_key(region: str) -> str | None:
+    if not region:
+        return None
+    region_lower = region.lower().strip()
+    region_lower = region_lower.replace(' область', '').replace(' обл.', '').replace(' обл', '').strip()
+    if _VISICOM_OBLAST_KEYS:
+        for key, variants in _VISICOM_OBLAST_KEYS.items():
+            for variant in variants:
+                if variant in region_lower or region_lower in variant:
+                    return key
+    return region_lower[:6] if region_lower else None
+
+def _coords_in_region(lat: float, lng: float, region: str) -> bool:
+    if not region or not _VISICOM_OBLAST_BBOX:
+        return True
+    key = _normalize_region_key(region)
+    if not key:
+        return True
+    bounds = _VISICOM_OBLAST_BBOX.get(key)
+    if not bounds:
+        return True
+    min_lat, max_lat, min_lng, max_lng = bounds
+    return min_lat <= lat <= max_lat and min_lng <= lng <= max_lng
 
 def calculate_bearing(lat1, lon1, lat2, lon2):
     """
@@ -3508,6 +3538,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     target_state = state
                     break
 
+            # If mapping failed, still try to derive region from brackets
+            region_fallback = _extract_oblast_from_text(f"({oblast_raw})") if oblast_raw else None
+            region_for_geocode = target_state or region_fallback or None
+            if not target_state and region_for_geocode:
+                target_state = region_for_geocode
+
             add_debug_log(f"Mapstransler pattern: city='{city_raw}' -> norm='{city_norm}', oblast='{oblast_raw}' -> state='{target_state}', count={uav_count}", "mapstransler")
 
             coords = None
@@ -3530,18 +3566,25 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 else:
                     add_debug_log(f"Cache HIT (negative): {city_norm} not found previously", "mapstransler")
 
+            if coords and region_for_geocode:
+                if not _coords_in_region(coords[0], coords[1], region_for_geocode):
+                    add_debug_log(f"Cache coords outside region: {city_norm} -> {coords} not in {region_for_geocode}", "mapstransler")
+                    coords = None
+                    _mapstransler_geocode_cache[cache_key] = None
+
             # ONLY OpenCage API - no local dictionaries!
             if not coords and cache_key not in _mapstransler_geocode_cache and GEOCODER_AVAILABLE:
                 try:
                     # Use target_state directly (with "область") for better disambiguation
                     # OpenCage understands "Дніпропетровська область" better than just "Дніпропетровська"
-                    region_for_geocode = target_state if target_state else None
-                    
                     opencage_coords = opencage_geocode(city_norm, region=region_for_geocode)
                     if opencage_coords:
-                        coords = opencage_coords
-                        _mapstransler_geocode_cache[cache_key] = coords
-                        add_debug_log(f"OpenCage: '{city_norm}' with region '{region_for_geocode}' -> {coords}", "mapstransler")
+                        if not region_for_geocode or _coords_in_region(opencage_coords[0], opencage_coords[1], region_for_geocode):
+                            coords = opencage_coords
+                            _mapstransler_geocode_cache[cache_key] = coords
+                            add_debug_log(f"OpenCage: '{city_norm}' with region '{region_for_geocode}' -> {coords}", "mapstransler")
+                        else:
+                            add_debug_log(f"OpenCage coords outside region: '{city_norm}' -> {opencage_coords} not in {region_for_geocode}", "mapstransler")
                 except Exception as e:
                     add_debug_log(f"OpenCage error: {e}", "mapstransler")
 
@@ -3635,6 +3678,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         coords = opencage_geocode(norm, region=region_for_geocode)
                     except Exception as e:
                         pass
+                if coords and region_for_geocode:
+                    if not _coords_in_region(coords[0], coords[1], region_for_geocode):
+                        coords = None
                 if coords:
                     lat, lon = coords[:2]
                     threat_type, icon = classify(text)
@@ -3671,6 +3717,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             add_debug_log(f"Found city from general emoji: {repr(city_from_general)}", "emoji_debug")
 
             if city_from_general and 2 <= len(city_from_general) <= 40:
+                region_for_geocode = None
                 base = city_from_general.lower().replace('\u02bc',"'").replace('ʼ',"'").replace("'","'").replace('`',"'")
                 base = re.sub(r'\s+',' ', base)
                 norm = UA_CITY_NORMALIZE.get(base, base)
@@ -3689,7 +3736,11 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         coords = opencage_geocode(norm, region=region_for_geocode)
                     except Exception as e:
                         pass
-                
+
+                if coords and region_for_geocode:
+                    if not _coords_in_region(coords[0], coords[1], region_for_geocode):
+                        coords = None
+
                 if coords:
                     lat, lon = coords[:2]
                     threat_type, icon = classify(text)

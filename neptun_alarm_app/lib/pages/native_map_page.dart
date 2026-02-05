@@ -2,167 +2,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:ui' as ui;
-import 'dart:convert';
 import 'dart:async';
 import 'dart:math' as math;
-import 'package:http/http.dart' as http;
-import 'package:jovial_svg/jovial_svg.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' hide Path;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../data/ukraine_region_paths.dart';
 import '../data/ukraine_district_paths.dart';
+import '../models/map_models.dart';
+import '../services/map_data_service.dart';
 import '../utils/svg_path_parser.dart';
 import '../services/ballistic_alert_service.dart';
 import '../services/widget_service.dart';
-
-// ===== МЕНЕДЖЕР ІКОНОК ЗАГРОЗ =====
-class ThreatIconManager {
-  static final ThreatIconManager _instance = ThreatIconManager._internal();
-  factory ThreatIconManager() => _instance;
-  ThreatIconManager._internal();
-  
-  final Map<String, ui.Image?> _icons = {};
-  bool _isLoading = false;
-  bool _isLoaded = false;
-  
-  static const Map<String, String> iconAssets = {
-    'shahed': 'assets/icons/shahed3.png',
-    'raketa': 'assets/icons/icon_balistic.svg',
-    'avia': 'assets/icons/avia.png',
-    'artillery': 'assets/icons/artillery.png',
-    'obstril': 'assets/icons/icon_obstril.svg',
-    'fpv': 'assets/icons/fpv.png',
-    'pusk': 'assets/icons/icon_balistic.svg',
-    'kab': 'assets/icons/icon_missile.svg',
-    'rszv': 'assets/icons/rszv.png',
-    'rozved': 'assets/icons/rozvedka2.png',
-    'vibuh': 'assets/icons/icon_vibuh.svg',
-    'trivoga': 'assets/icons/trivoga.png',
-    'vidboi': 'assets/icons/vidboi.png',
-    'default': 'assets/icons/default.png',
-  };
-  
-  bool get isLoaded => _isLoaded;
-  
-  // Render at higher resolution for better quality
-  static const int iconSize = 64;
-  
-  Future<void> loadIcons() async {
-    if (_isLoading || _isLoaded) return;
-    _isLoading = true;
-    
-    for (final entry in iconAssets.entries) {
-      try {
-        final path = entry.value;
-        if (path.endsWith('.svg')) {
-          // Load SVG and render to ui.Image using jovial_svg
-          final svgString = await rootBundle.loadString(path);
-          final si = ScalableImage.fromSvgString(svgString);
-          
-          // Render at 2x resolution for crisp icons
-          final double targetSize = iconSize.toDouble();
-          final recorder = ui.PictureRecorder();
-          final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, targetSize, targetSize));
-          
-          // Calculate uniform scale to fit in square, maintaining aspect ratio
-          final svgWidth = si.viewport.width;
-          final svgHeight = si.viewport.height;
-          final scale = targetSize / (svgWidth > svgHeight ? svgWidth : svgHeight);
-          
-          // Center the SVG in the square
-          final scaledWidth = svgWidth * scale;
-          final scaledHeight = svgHeight * scale;
-          final offsetX = (targetSize - scaledWidth) / 2;
-          final offsetY = (targetSize - scaledHeight) / 2;
-          
-          canvas.translate(offsetX, offsetY);
-          canvas.scale(scale, scale);
-          si.paint(canvas);
-          
-          final picture = recorder.endRecording();
-          final image = await picture.toImage(iconSize, iconSize);
-          _icons[entry.key] = image;
-        } else {
-          // Load PNG at higher resolution
-          final data = await rootBundle.load(path);
-          final codec = await ui.instantiateImageCodec(
-            data.buffer.asUint8List(),
-            targetWidth: iconSize,
-            targetHeight: iconSize,
-          );
-          final frame = await codec.getNextFrame();
-          _icons[entry.key] = frame.image;
-        }
-      } catch (e) {
-        debugPrint('Failed to load icon ${entry.key}: $e');
-        _icons[entry.key] = null;
-      }
-    }
-    
-    _isLoaded = true;
-    _isLoading = false;
-  }
-  
-  ui.Image? getIcon(String threatType) {
-    return _icons[threatType] ?? _icons['default'];
-  }
-}
-
-// ===== КОЛЬОРИ КАРТИ =====
-// Кольори карти з підтримкою світлої та темної теми
-class MapColors {
-  final bool isDark;
-  
-  MapColors({required this.isDark});
-  
-  // Фон
-  Color get bgMain => isDark ? const Color(0xFF141414) : const Color(0xFFFAF9F7);
-  Color get bgGradientMid => isDark ? const Color(0xFF1F1F1F) : const Color(0xFFF5F3F0);
-  Color get bgGradientEnd => isDark ? const Color(0xFF1F1F1F) : const Color(0xFFFCFBF9);
-  
-  // Області - нормальний стан
-  Color get normalFill => isDark ? const Color(0xFF262626) : const Color(0xFFF0EBE3);
-  Color get normalStroke => isDark ? const Color(0xFF525252) : const Color(0xFFD4C9BC);
-  
-  // Області - тривога
-  Color get alarmFillState => isDark ? const Color(0xFF991B1B) : const Color(0xFFFECACA);
-  Color get alarmStrokeState => isDark ? const Color(0xFFB45555) : const Color(0xFFF87171);
-  
-  // Райони - нормальний стан
-  Color get districtNormalFill => Colors.transparent;
-  Color get districtNormalStroke => isDark 
-      ? const Color(0x263B82F6) 
-      : const Color(0x40A89880);
-  
-  // Райони - тривога
-  Color get districtAlarmFill => isDark ? const Color(0xFFDC2626) : const Color(0xFFEF4444);
-  Color get districtAlarmStroke => isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626);
-  
-  // Активна тривога (для пульсації)
-  Color get alarmActive => const Color(0xFFDC2626);
-  
-  // Границі
-  Color get borderDark => isDark ? const Color(0xFF454545) : const Color(0xFFDDD5CA);
-  
-  // Текст
-  Color get textPrimary => isDark ? Colors.white : const Color(0xFF3D3529);
-  Color get textSecondary => isDark ? const Color(0xFFA3A3A3) : const Color(0xFF78716C);
-  Color get textAccent => isDark ? const Color(0xFF3B82F6) : const Color(0xFF9A7B4F);
-  
-  // Панелі
-  Color get panelBg => isDark 
-      ? const Color(0xFF1F1F1F).withOpacity(0.95) 
-      : const Color(0xFFFFFEFC).withOpacity(0.95);
-  Color get panelBorder => isDark ? const Color(0xFF454545) : const Color(0xFFE8E2D9);
-  
-  // Підписи областей
-  Color get labelColor => isDark 
-      ? Colors.white.withOpacity(0.85) 
-      : const Color(0xFF3D3529).withOpacity(0.9);
-  Color get labelShadow => isDark 
-      ? Colors.black.withOpacity(0.8) 
-      : const Color(0xFFFFFEFC).withOpacity(0.9);
-}
+import '../services/threat_icon_manager.dart';
+import '../theme/map_colors.dart';
 
 // Для сумісності залишаємо старий клас
 class NeptunColors {
@@ -184,225 +37,6 @@ class NeptunColors {
   static const Color textCyan = Color(0xFF3B82F6);
 }
 
-// ===== ТИПИ ЗАГРОЗ (маркери) =====
-class ThreatType {
-  static const String shahed = 'shahed';
-  static const String raketa = 'raketa';
-  static const String avia = 'avia';
-  static const String artillery = 'artillery';
-  static const String obstril = 'obstril';
-  static const String fpv = 'fpv';
-  static const String pusk = 'pusk';
-  static const String kab = 'kab';
-  static const String rszv = 'rszv';
-  static const String rozved = 'rozved';
-  static const String vibuh = 'vibuh';
-  static const String alarm = 'alarm';
-  static const String alarmCancel = 'alarm_cancel';
-  
-  static const Map<String, String> names = {
-    shahed: '🛩️ Шахеди/БПЛА',
-    raketa: '🚀 Ракети',
-    avia: '✈️ Авіація',
-    artillery: '💥 Артилерія',
-    obstril: '💥 Обстріл',
-    fpv: '🎯 FPV дрони',
-    pusk: '🚀 Пуски',
-    kab: '💣 КАБи',
-    rszv: '💣 РСЗВ',
-    rozved: '🔍 Розвідники',
-    vibuh: '💥 Вибухи',
-    alarm: '🚨 Тривога',
-    alarmCancel: '✅ Відбій',
-  };
-  
-  static const Map<String, IconData> icons = {
-    shahed: Icons.flight,
-    raketa: Icons.rocket_launch,
-    avia: Icons.airplanemode_active,
-    artillery: Icons.local_fire_department,
-    obstril: Icons.local_fire_department,
-    fpv: Icons.sports_esports,
-    pusk: Icons.rocket,
-    kab: Icons.dangerous,
-    rszv: Icons.whatshot,
-    rozved: Icons.visibility,
-    vibuh: Icons.warning,
-    alarm: Icons.notifications_active,
-    alarmCancel: Icons.check_circle,
-  };
-  
-  static Color getColor(String type) {
-    switch (type) {
-      case shahed:
-      case fpv:
-      case rozved:
-        return Colors.orange;
-      case raketa:
-      case pusk:
-      case kab:
-      case rszv:
-        return Colors.red;
-      case avia:
-        return Colors.purple;
-      case artillery:
-      case obstril:
-      case vibuh:
-        return Colors.amber;
-      case alarm:
-        return Colors.red;
-      case alarmCancel:
-        return Colors.green;
-      default:
-        return Colors.white;
-    }
-  }
-}
-
-// ===== ТОЧКА ТРАЄКТОРІЇ =====
-class TrajectoryPoint {
-  final double lat;
-  final double lng;
-  final double etaMinutes;
-  final double fraction;
-  
-  TrajectoryPoint({
-    required this.lat,
-    required this.lng,
-    required this.etaMinutes,
-    required this.fraction,
-  });
-  
-  factory TrajectoryPoint.fromJson(Map<String, dynamic> json) {
-    return TrajectoryPoint(
-      lat: double.tryParse(json['lat']?.toString() ?? '0') ?? 0,
-      lng: double.tryParse(json['lng']?.toString() ?? '0') ?? 0,
-      etaMinutes: double.tryParse(json['eta_minutes']?.toString() ?? '0') ?? 0,
-      fraction: double.tryParse(json['fraction']?.toString() ?? '0') ?? 0,
-    );
-  }
-}
-
-// ===== AI TRAJECTORY (новий формат з сервера) =====
-class AITrajectory {
-  final double startLat;
-  final double startLng;
-  final double endLat;
-  final double endLng;
-  final String sourceName;
-  final String targetName;
-  final bool predicted;
-
-  AITrajectory({
-    required this.startLat,
-    required this.startLng,
-    required this.endLat,
-    required this.endLng,
-    required this.sourceName,
-    required this.targetName,
-    this.predicted = false,
-  });
-
-  factory AITrajectory.fromJson(Map<String, dynamic> json) {
-    final start = json['start'] as List?;
-    final end = json['end'] as List?;
-    return AITrajectory(
-      startLat: (start?[0] as num?)?.toDouble() ?? 0,
-      startLng: (start?[1] as num?)?.toDouble() ?? 0,
-      endLat: (end?[0] as num?)?.toDouble() ?? 0,
-      endLng: (end?[1] as num?)?.toDouble() ?? 0,
-      sourceName: json['source_name'] ?? '',
-      targetName: json['target_name'] ?? '',
-      predicted: json['predicted'] == true,
-    );
-  }
-
-  bool get isValid {
-    // Trajectory is valid if start and end are different (at least 0.01 degree apart)
-    return (startLat - endLat).abs() > 0.01 || (startLng - endLng).abs() > 0.01;
-  }
-}
-
-// ===== МАРКЕР ЗАГРОЗИ =====
-class ThreatMarker {
-  final double lat;
-  final double lng;
-  final String threatType;
-  final String place;
-  final String text;
-  final String date;
-  final List<TrajectoryPoint>? projectedPath; // Для старих траєкторій
-  final AITrajectory? trajectory; // Для AI траєкторій
-  final double? etaMinutes;
-  final double? distanceKm;
-  
-  ThreatMarker({
-    required this.lat,
-    required this.lng,
-    required this.threatType,
-    this.place = '',
-    this.text = '',
-    this.date = '',
-    this.projectedPath,
-    this.trajectory,
-    this.etaMinutes,
-    this.distanceKm,
-  });
-  
-  factory ThreatMarker.fromJson(Map<String, dynamic> json) {
-    // Парсимо стару траєкторію якщо є
-    List<TrajectoryPoint>? path;
-    if (json['projected_path'] != null && json['projected_path'] is List) {
-      path = (json['projected_path'] as List)
-          .map((p) => TrajectoryPoint.fromJson(p))
-          .toList();
-    }
-    
-    // Парсимо нову AI траєкторію якщо є
-    AITrajectory? aiTrajectory;
-    if (json['trajectory'] != null && json['trajectory'] is Map) {
-      aiTrajectory = AITrajectory.fromJson(json['trajectory']);
-    }
-    
-    return ThreatMarker(
-      lat: double.tryParse(json['lat']?.toString() ?? '0') ?? 0,
-      lng: double.tryParse(json['lng']?.toString() ?? '0') ?? 0,
-      threatType: json['threat_type'] ?? 'default',
-      place: json['place'] ?? '',
-      text: json['text'] ?? '',
-      date: json['date'] ?? '',
-      projectedPath: path,
-      trajectory: aiTrajectory,
-      etaMinutes: double.tryParse(json['eta_minutes']?.toString() ?? ''),
-      distanceKm: double.tryParse(json['distance_km']?.toString() ?? ''),
-    );
-  }
-  
-  bool get hasTrajectory => 
-      (projectedPath != null && projectedPath!.length > 1) ||
-      (trajectory != null && trajectory!.isValid);
-      
-  bool get hasAITrajectory => trajectory != null && trajectory!.isValid;
-}
-
-// ===== MAP BOUNDS (Україна) =====
-class MapBounds {
-  static const double minLat = 44.2;
-  static const double maxLat = 52.4;
-  static const double minLng = 22.0;
-  static const double maxLng = 40.2;
-  
-  static Offset latLngToPercent(double lat, double lng) {
-    final x = (lng - minLng) / (maxLng - minLng);
-    final y = (maxLat - lat) / (maxLat - minLat);
-    return Offset(x.clamp(0.0, 1.0), y.clamp(0.0, 1.0));
-  }
-  
-  static bool isInBounds(double lat, double lng) {
-    return lat >= minLat && lat <= maxLat && lng >= minLng && lng <= maxLng;
-  }
-}
-
 // ===== ГОЛОВНА СТОРІНКА КАРТИ =====
 class NativeMapPage extends StatefulWidget {
   const NativeMapPage({super.key});
@@ -411,7 +45,7 @@ class NativeMapPage extends StatefulWidget {
   State<NativeMapPage> createState() => _NativeMapPageState();
 }
 
-class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateMixin {
+class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateMixin, WidgetsBindingObserver {
   // Стан тривог
   Map<String, bool> stateAlarms = {}; // Області (oblasts)
   Map<String, bool> districtAlarms = {}; // Райони
@@ -438,11 +72,22 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
   // Таймери оновлення
   Timer? _alarmTimer;
   Timer? _markerTimer;
+  bool _alarmsFetching = false;
+  bool _markersFetching = false;
+  final MapDataService _mapDataService = MapDataService();
   
   // Інтервали оновлення (зменшено для швидшого оновлення)
   static const int alarmUpdateInterval = 5; // секунд
   static const int markerUpdateInterval = 5; // секунд
   static const int timeRange = 15; // хвилин для маркерів
+
+  // Threat history (for tracker)
+  final List<ThreatHistoryEntry> _threatHistory = [];
+  DateTime? _lastHistoryEntryAt;
+  static const Duration _historyMinInterval = Duration(minutes: 1);
+
+  // Operator mode (advanced controls)
+  bool _operatorModeEnabled = false;
   
   // Parsed paths cache
   final Map<String, List<Path>> _statePathsCache = {};
@@ -480,6 +125,7 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     
     // Завантаження іконок загроз
     ThreatIconManager().loadIcons().then((_) {
@@ -518,6 +164,7 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
     );
     
     _parseAllPaths();
+    _loadOperatorMode();
     _fetchAlarms();
     _fetchThreatMarkers();
     
@@ -530,6 +177,25 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
       Duration(seconds: markerUpdateInterval),
       (_) => _fetchThreatMarkers(),
     );
+  }
+
+  Future<void> _loadOperatorMode() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final enabled = prefs.getBool('operator_mode_enabled') ?? false;
+      if (mounted) {
+        setState(() => _operatorModeEnabled = enabled);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _toggleOperatorMode() async {
+    final newValue = !_operatorModeEnabled;
+    setState(() => _operatorModeEnabled = newValue);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('operator_mode_enabled', newValue);
+    } catch (_) {}
   }
   
   void _handleGlobalBallisticThreat(String? region) {
@@ -554,8 +220,32 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
     // Відписуємося від глобального сервісу
     BallisticAlertService().removeCallback(_handleGlobalBallisticThreat);
     BallisticAlertService().removeCallback(_handleGlobalBallisticAllClear);
+    WidgetsBinding.instance.removeObserver(this);
     
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      _alarmTimer?.cancel();
+      _markerTimer?.cancel();
+      return;
+    }
+    if (state == AppLifecycleState.resumed) {
+      _alarmTimer?.cancel();
+      _markerTimer?.cancel();
+      _alarmTimer = Timer.periodic(
+        Duration(seconds: alarmUpdateInterval),
+        (_) => _fetchAlarms(),
+      );
+      _markerTimer = Timer.periodic(
+        Duration(seconds: markerUpdateInterval),
+        (_) => _fetchThreatMarkers(),
+      );
+      _fetchAlarms();
+      _fetchThreatMarkers();
+    }
   }
   
   // ===== BALLISTIC THREAT ALERT SYSTEM =====
@@ -669,175 +359,68 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
   
   // ===== FETCH ALARMS (як fetchAlarms в index_map.html) =====
   Future<void> _fetchAlarms() async {
+    if (_alarmsFetching) return;
+    _alarmsFetching = true;
     try {
-      final response = await http.get(
-        Uri.parse('https://neptun.in.ua/api/alarms/all'),
-      ).timeout(const Duration(seconds: 8));
-      
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        
-        final Map<String, bool> newStateAlarms = {};
-        final Map<String, bool> newDistrictAlarms = {};
-        final Map<String, String> newStateThreatTypes = {};
-        final Set<String> currentBallisticRegions = {};
-        int stateCount = 0;
-        int districtCount = 0;
-        
-        // Назви областей для повідомлень
-        const regionNames = <String, String>{
-          '1': 'Вінницька область',
-          '2': 'Волинська область',
-          '3': 'Дніпропетровська область',
-          '4': 'Донецька область',
-          '5': 'Житомирська область',
-          '6': 'Закарпатська область',
-          '7': 'Запорізька область',
-          '8': 'Івано-Франківська область',
-          '9': 'Київська область',
-          '10': 'Кіровоградська область',
-          '11': 'Луганська область',
-          '12': 'Львівська область',
-          '13': 'Миколаївська область',
-          '14': 'Одеська область',
-          '15': 'Полтавська область',
-          '16': 'Рівненська область',
-          '17': 'Сумська область',
-          '18': 'Тернопільська область',
-          '19': 'Харківська область',
-          '20': 'Херсонська область',
-          '21': 'Хмельницька область',
-          '22': 'Черкаська область',
-          '23': 'Чернівецька область',
-          '24': 'Чернігівська область',
-          '25': 'м. Київ',
-          '26': 'АР Крим',
-          '27': 'м. Севастополь',
-        };
-        
-        if (data is List) {
-          // Формат: [{regionId: X, regionType: "State"/"District", activeAlerts: [...]}]
-          for (final region in data) {
-            final regionId = region['regionId']?.toString();
-            final regionType = region['regionType'] ?? '';
-            final activeAlerts = region['activeAlerts'] as List? ?? [];
-            final regionName = region['regionName']?.toString() ?? regionNames[regionId] ?? '';
-            
-            if (regionId == null) continue;
-            
-            final hasAlarm = activeAlerts.isNotEmpty;
-            
-            if (regionType == 'State') {
-              newStateAlarms[regionId] = hasAlarm;
-              if (hasAlarm) {
-                stateCount++;
-                // Зберігаємо тип загрози для іконки
-                for (final alert in activeAlerts) {
-                  final alertType = alert['type']?.toString() ?? '';
-                  debugPrint('🔔 Alert type: "$alertType" for region: $regionName ($regionId)');
-                  if (alertType == 'DRONES' || alertType.contains('DRONE')) {
-                    newStateThreatTypes[regionId] = ThreatType.shahed;
-                  } else if (alertType == 'BALLISTIC' || alertType == 'MISSILE' || alertType.contains('BALLISTIC')) {
-                    newStateThreatTypes[regionId] = ThreatType.raketa;
-                    // Відстежуємо балістичну загрозу
-                    currentBallisticRegions.add(regionName.isNotEmpty ? regionName : regionId);
-                    debugPrint('🚀🚀🚀 BALLISTIC DETECTED: $regionName');
-                  } else if (alertType == 'AIR') {
-                    newStateThreatTypes[regionId] = ThreatType.avia;
-                  }
-                }
-              }
-            } else if (regionType == 'District') {
-              newDistrictAlarms[regionId] = hasAlarm;
-              if (hasAlarm) {
-                districtCount++;
-                // Перевіряємо балістику і для районів
-                for (final alert in activeAlerts) {
-                  final alertType = alert['type']?.toString() ?? '';
-                  if (alertType == 'BALLISTIC' || alertType == 'MISSILE' || alertType.contains('BALLISTIC')) {
-                    currentBallisticRegions.add(regionName.isNotEmpty ? regionName : regionId);
-                    debugPrint('🚀🚀🚀 BALLISTIC DETECTED (district): $regionName');
-                  }
-                }
-              }
-            }
-          }
-        } else if (data is Map) {
-          // Альтернативний формат: {"3": true, "4": false}
-          data.forEach((key, value) {
-            final regionId = key.toString();
-            bool hasAlarm = false;
-            
-            if (value is bool) {
-              hasAlarm = value;
-            } else if (value is Map && value.containsKey('alarm')) {
-              hasAlarm = value['alarm'] == true;
-            }
-            
-            // За замовчуванням вважаємо як область
-            newStateAlarms[regionId] = hasAlarm;
-            if (hasAlarm) stateCount++;
-          });
-        }
-        
-        // Перевіряємо чи дані змінились
-        bool alarmsChanged = newStateAlarms.length != stateAlarms.length ||
-                              newDistrictAlarms.length != districtAlarms.length ||
-                              stateCount != stateAlarmCount ||
-                              districtCount != districtAlarmCount;
-        
-        if (!alarmsChanged) {
-          // Перевіряємо значення
-          for (final key in newStateAlarms.keys) {
-            if (stateAlarms[key] != newStateAlarms[key]) {
-              alarmsChanged = true;
-              break;
-            }
+      final alarmData = await _mapDataService.fetchAlarms();
+
+      // Перевіряємо чи дані змінились
+      bool alarmsChanged =
+          alarmData.stateAlarms.length != stateAlarms.length ||
+              alarmData.districtAlarms.length != districtAlarms.length ||
+              alarmData.stateCount != stateAlarmCount ||
+              alarmData.districtCount != districtAlarmCount;
+
+      if (!alarmsChanged) {
+        for (final key in alarmData.stateAlarms.keys) {
+          if (stateAlarms[key] != alarmData.stateAlarms[key]) {
+            alarmsChanged = true;
+            break;
           }
         }
-        
-        if (alarmsChanged || isLoading) {
-          // Перевіряємо балістичні загрози
-          final newBallisticRegions = currentBallisticRegions.difference(_previousBallisticRegions);
-          final clearedBallisticRegions = _previousBallisticRegions.difference(currentBallisticRegions);
-          
-          // Показуємо ефект для нових балістичних загроз
-          if (newBallisticRegions.isNotEmpty && !isLoading) {
-            final regionsText = newBallisticRegions.join(', ');
-            showBallisticThreat(region: regionsText);
-          }
-          
-          // Показуємо відбій для зняких балістичних загроз
-          if (clearedBallisticRegions.isNotEmpty && currentBallisticRegions.isEmpty && !isLoading) {
-            final regionsText = clearedBallisticRegions.join(', ');
-            showBallisticAllClear(region: regionsText);
-          }
-          
-          // Оновлюємо стан
-          _previousBallisticRegions = currentBallisticRegions;
-          
+      }
+
+      if (alarmsChanged || isLoading) {
+        final newBallisticRegions =
+            alarmData.ballisticRegions.difference(_previousBallisticRegions);
+        final clearedBallisticRegions =
+            _previousBallisticRegions.difference(alarmData.ballisticRegions);
+
+        if (newBallisticRegions.isNotEmpty && !isLoading) {
+          final regionsText = newBallisticRegions.join(', ');
+          showBallisticThreat(region: regionsText);
+        }
+
+        if (clearedBallisticRegions.isNotEmpty &&
+            alarmData.ballisticRegions.isEmpty &&
+            !isLoading) {
+          final regionsText = clearedBallisticRegions.join(', ');
+          showBallisticAllClear(region: regionsText);
+        }
+
+        _previousBallisticRegions = alarmData.ballisticRegions;
+
+        if (mounted) {
           setState(() {
-            stateAlarms = newStateAlarms;
-            districtAlarms = newDistrictAlarms;
-            stateThreatTypes = newStateThreatTypes;
-            stateAlarmCount = stateCount;
-            districtAlarmCount = districtCount;
+            stateAlarms = alarmData.stateAlarms;
+            districtAlarms = alarmData.districtAlarms;
+            stateThreatTypes = alarmData.stateThreatTypes;
+            stateAlarmCount = alarmData.stateCount;
+            districtAlarmCount = alarmData.districtCount;
             lastUpdate = DateTime.now();
             isLoading = false;
             error = null;
           });
-          debugPrint('Alarms updated: $stateCount oblasts, $districtCount districts');
-          if (currentBallisticRegions.isNotEmpty) {
-            debugPrint('🚀 Ballistic threats active in: $currentBallisticRegions');
-          }
-          
-          // Оновлюємо віджет на робочому столі
-          _updateHomeWidget(stateCount > 0, stateCount);
-        } else {
-          debugPrint('Alarms unchanged, skipping setState');
         }
+        debugPrint(
+            'Alarms updated: ${alarmData.stateCount} oblasts, ${alarmData.districtCount} districts');
+        if (alarmData.ballisticRegions.isNotEmpty) {
+          debugPrint('🚀 Ballistic threats active in: ${alarmData.ballisticRegions}');
+        }
+
+        _updateHomeWidget(alarmData.stateCount > 0, alarmData.stateCount);
       } else {
-        throw Exception('HTTP ${response.statusCode}');
+        debugPrint('Alarms unchanged, skipping setState');
       }
     } catch (e) {
       debugPrint('Error fetching alarms: $e');
@@ -847,6 +430,8 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
           isLoading = false;
         });
       }
+    } finally {
+      _alarmsFetching = false;
     }
   }
   
@@ -871,89 +456,87 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
   
   // ===== FETCH THREAT MARKERS (як fetchThreatMarkers в index_map.html) =====
   Future<void> _fetchThreatMarkers() async {
+    if (_markersFetching) return;
+    _markersFetching = true;
     try {
-      final response = await http.get(
-        Uri.parse('https://neptun.in.ua/data?timeRange=$timeRange'),
-      ).timeout(const Duration(seconds: 8));
-      
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        
-        final List<ThreatMarker> newMarkers = [];
-        final Map<String, int> newCounts = {};
-        
-        // === CHECK BALLISTIC THREAT FROM API ===
-        if (data is Map && data['ballistic_threat'] != null) {
-          final ballisticThreat = data['ballistic_threat'];
-          final isActive = ballisticThreat['active'] == true;
-          final region = ballisticThreat['region'] as String?;
-          
-          debugPrint('🚀 Ballistic threat from API: active=$isActive, region=$region');
-          
-          if (isActive && !BallisticAlertService().isBallisticThreatActive) {
-            BallisticAlertService().triggerBallisticThreat(region: region);
-          } else if (!isActive && BallisticAlertService().isBallisticThreatActive) {
-            BallisticAlertService().triggerBallisticAllClear(region: region);
+      final markerData =
+          await _mapDataService.fetchThreatMarkers(timeRange: timeRange);
+
+      if (markerData.ballisticActive != null) {
+        debugPrint(
+            '🚀 Ballistic threat from API: active=${markerData.ballisticActive}, region=${markerData.ballisticRegion}');
+        if (markerData.ballisticActive == true &&
+            !BallisticAlertService().isBallisticThreatActive) {
+          BallisticAlertService()
+              .triggerBallisticThreat(region: markerData.ballisticRegion);
+        } else if (markerData.ballisticActive == false &&
+            BallisticAlertService().isBallisticThreatActive) {
+          BallisticAlertService()
+              .triggerBallisticAllClear(region: markerData.ballisticRegion);
+        }
+      }
+
+      debugPrint('📊 Received ${markerData.markers.length} markers from API:');
+      for (final marker in markerData.markers) {
+        String trajInfo = '';
+        if (marker.hasAITrajectory) {
+          final t = marker.trajectory!;
+          trajInfo =
+              ' [AI TRAJ: ${t.sourceName} → ${t.targetName}${t.predicted ? " (прогноз)" : ""}]';
+        }
+        debugPrint('  📍 type="${marker.threatType}", place="${marker.place}"$trajInfo');
+      }
+
+      final trajCount =
+          markerData.markers.where((m) => m.hasAITrajectory).length;
+      if (trajCount > 0) {
+        debugPrint('🎯 $trajCount markers have AI trajectories');
+      }
+
+      bool markersChanged = markerData.markers.length != threatMarkers.length ||
+          markerData.counts.length != markerCounts.length;
+
+      if (!markersChanged) {
+        for (final entry in markerData.counts.entries) {
+          if (markerCounts[entry.key] != entry.value) {
+            markersChanged = true;
+            break;
           }
         }
-        
-        // Підтримка різних форматів
-        List? markersData;
-        if (data is Map) {
-          markersData = data['tracks'] ?? data['items'] ?? [];
-        } else if (data is List) {
-          markersData = data;
-        }
-        
-        if (markersData != null) {
-          debugPrint('📊 Received ${markersData.length} markers from API:');
-          for (final item in markersData) {
-            if (item is! Map) continue;
-            
-            final lat = double.tryParse(item['lat']?.toString() ?? '');
-            final lng = double.tryParse(item['lng']?.toString() ?? '');
-            
-            if (lat == null || lng == null) continue;
-            if (!MapBounds.isInBounds(lat, lng)) continue;
-            
-            final itemMap = Map<String, dynamic>.from(item);
-            final marker = ThreatMarker.fromJson(itemMap);
-            newMarkers.add(marker);
-            
-            // Логуємо кожен маркер та траєкторію
-            String trajInfo = '';
-            if (marker.hasAITrajectory) {
-              final t = marker.trajectory!;
-              trajInfo = ' [AI TRAJ: ${t.sourceName} → ${t.targetName}${t.predicted ? " (прогноз)" : ""}]';
-            }
-            debugPrint('  📍 type="${marker.threatType}", place="${marker.place}"$trajInfo');
-            
-            newCounts[marker.threatType] = (newCounts[marker.threatType] ?? 0) + 1;
-          }
-          
-          // Логуємо кількість траєкторій
-          final trajCount = newMarkers.where((m) => m.hasAITrajectory).length;
-          if (trajCount > 0) {
-            debugPrint('🎯 $trajCount markers have AI trajectories');
-          }
-        }
-        
-        // Перевіряємо чи маркери змінились
-        bool markersChanged = newMarkers.length != threatMarkers.length ||
-                               newCounts.length != markerCounts.length;
-        
-        if (markersChanged) {
+      }
+
+      if (markersChanged) {
+        if (mounted) {
           setState(() {
-            threatMarkers = newMarkers;
-            markerCounts = newCounts;
+            threatMarkers = markerData.markers;
+            markerCounts = markerData.counts;
           });
-          debugPrint('Markers updated: ${newMarkers.length} threat markers');
-        } else {
-          debugPrint('Markers unchanged, skipping setState');
         }
+        _addThreatHistoryEntry(markerData.counts);
+        debugPrint('Markers updated: ${markerData.markers.length} threat markers');
+      } else {
+        debugPrint('Markers unchanged, skipping setState');
       }
     } catch (e) {
       debugPrint('Error fetching threat markers: $e');
+    } finally {
+      _markersFetching = false;
+    }
+  }
+
+  void _addThreatHistoryEntry(Map<String, int> counts) {
+    final now = DateTime.now();
+    if (_lastHistoryEntryAt != null &&
+        now.difference(_lastHistoryEntryAt!) < _historyMinInterval) {
+      return;
+    }
+    _lastHistoryEntryAt = now;
+    _threatHistory.add(ThreatHistoryEntry(
+      timestamp: now,
+      counts: Map<String, int>.from(counts),
+    ));
+    if (_threatHistory.length > 12) {
+      _threatHistory.removeAt(0);
     }
   }
 
@@ -1040,6 +623,105 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
               ),
             ),
 
+          // ===== OPERATOR MODE TOGGLE + PANEL =====
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 8,
+            left: 12,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildOperatorToggle(colors),
+                if (_operatorModeEnabled) ...[
+                  const SizedBox(height: 8),
+                  _buildOperatorPanel(colors),
+                ],
+              ],
+            ),
+          ),
+
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOperatorToggle(MapColors colors) {
+    return GestureDetector(
+      onTap: _toggleOperatorMode,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: colors.panelBg,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: colors.panelBorder),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.settings,
+              size: 16,
+              color: _operatorModeEnabled ? colors.textAccent : colors.textSecondary,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              _operatorModeEnabled ? 'OP' : 'OP',
+              style: TextStyle(
+                color: _operatorModeEnabled ? colors.textAccent : colors.textSecondary,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOperatorPanel(MapColors colors) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: colors.panelBg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: colors.panelBorder),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: Icon(Icons.refresh, size: 18, color: colors.textAccent),
+            onPressed: () {
+              _fetchAlarms();
+              _fetchThreatMarkers();
+            },
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: Icon(Icons.my_location, size: 18, color: colors.textAccent),
+            onPressed: () {
+              _mapController.move(const LatLng(48.5, 31.5), 6.0);
+            },
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: Icon(Icons.history, size: 18, color: colors.textAccent),
+            onPressed: () => _showThreatStatsDialog(colors),
+          ),
         ],
       ),
     );
@@ -1510,6 +1192,56 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
                 ),
               );
             }),
+            if (_threatHistory.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Text(
+                'Історія (останні інтервали)',
+                style: TextStyle(
+                  color: colors.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ..._threatHistory.reversed.take(6).map((entry) {
+                final time =
+                    '${entry.timestamp.hour.toString().padLeft(2, '0')}:${entry.timestamp.minute.toString().padLeft(2, '0')}';
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    children: [
+                      Text(
+                        time,
+                        style: TextStyle(
+                          color: colors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: LinearProgressIndicator(
+                          value: (entry.total / (total == 0 ? 1 : total))
+                              .clamp(0.0, 1.0),
+                          minHeight: 6,
+                          backgroundColor: colors.panelBorder,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            colors.textAccent.withOpacity(0.6),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${entry.total}',
+                        style: TextStyle(
+                          color: colors.textPrimary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
           ],
         ),
         actions: [
@@ -2166,78 +1898,10 @@ class UkraineMapPainter extends CustomPainter {
     }
 
     // === LAYER 6: МАРКЕРИ ЗАГРОЗ ===
-    final iconManager = ThreatIconManager();
-    
-    for (final marker in threatMarkers) {
-      final pos = MapBounds.latLngToPercent(marker.lat, marker.lng);
-      final x = pos.dx * viewBoxWidth;
-      final y = pos.dy * viewBoxHeight;
-      
-      final color = ThreatType.getColor(marker.threatType);
-      final icon = iconManager.getIcon(marker.threatType);
-      
-      // Обчислюємо кут повороту для маркера на основі траєкторії
-      // ВАЖЛИВО: Іконка дрона за замовчуванням дивиться ВПРАВО (на схід)
-      // Тому потрібно відняти π/2 (90°) від розрахованого кута
-      double rotationAngle = 0.0;
-      if (marker.hasAITrajectory) {
-        final traj = marker.trajectory!;
-        // dx = зміна долготи (схід +, захід -)
-        // dy = зміна широти (північ +, південь -)
-        final dx = traj.endLng - traj.startLng;
-        final dy = traj.endLat - traj.startLat;
-        // atan2(dx, dy) дає кут від півночі за годинниковою стрілкою
-        // Віднімаємо π/2 бо іконка дивиться на схід, а не на північ
-        rotationAngle = math.atan2(dx, dy) - math.pi / 2;
-      } else if (marker.hasTrajectory && marker.projectedPath != null && marker.projectedPath!.length >= 2) {
-        // Старий формат траєкторії
-        final path = marker.projectedPath!;
-        final lastIdx = path.length - 1;
-        final dx = path[lastIdx].lng - path[lastIdx - 1].lng;
-        final dy = path[lastIdx].lat - path[lastIdx - 1].lat;
-        rotationAngle = math.atan2(dx, dy) - math.pi / 2;
-      }
-      
-      if (icon != null && iconManager.isLoaded) {
-        // Малюємо іконку з поворотом
-        // Shahed icons are larger for better visibility
-        final displaySize = marker.threatType == 'shahed' ? 10.0 : 7.0;
-        
-        canvas.save();
-        canvas.translate(x, y);
-        
-        // Застосовуємо поворот якщо є траєкторія
-        if (rotationAngle != 0.0) {
-          canvas.rotate(rotationAngle);
-        }
-        
-        final srcRect = Rect.fromLTWH(0, 0, icon.width.toDouble(), icon.height.toDouble());
-        final dstRect = Rect.fromCenter(
-          center: Offset.zero,
-          width: displaySize,
-          height: displaySize,
-        );
-        
-        // Use filterQuality for smooth scaling
-        final paint = Paint()..filterQuality = FilterQuality.high;
-        canvas.drawImageRect(icon, srcRect, dstRect, paint);
-        
-        canvas.restore();
-      } else {
-        // Fallback: малюємо коло якщо іконка не завантажена
-        final markerPaint = Paint()
-          ..color = color.withOpacity(0.8)
-          ..style = PaintingStyle.fill;
-        canvas.drawCircle(Offset(x, y), 3.0, markerPaint);
-        
-        // Обводка
-        final markerStroke = Paint()
-          ..color = Colors.white.withOpacity(0.5)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 0.3;
-        canvas.drawCircle(Offset(x, y), 3.0, markerStroke);
-      }
-    }
+    // NOTE: Marker rendering has been consolidated to _LabelsMarkersPainter 
+    // to avoid duplicate rendering and coordinate system conflicts.
+    // _LabelsMarkersPainter uses screen coordinates which are more reliable
+    // for interactive elements and proper zoom handling.
     
     canvas.restore();
   }
@@ -2684,38 +2348,66 @@ class _LabelsMarkersPainter extends CustomPainter {
       }
     }
     
-    // === THREAT MARKERS ===
+    // === THREAT MARKERS (consolidated rendering - removed from UkraineMapPainter to avoid duplication) ===
     final markerSize = (24.0 * strokeScale).clamp(20.0, 48.0);
+    final iconManager = ThreatIconManager();
     
     for (final marker in threatMarkers) {
       final screenPos = camera.latLngToScreenOffset(
         LatLng(marker.lat, marker.lng),
       );
       
-      // Skip if outside visible area
-      if (screenPos.dx < -50 || screenPos.dx > size.width + 50 ||
-          screenPos.dy < -50 || screenPos.dy > size.height + 50) {
+      // Skip if outside visible area (with margin for rotated icons)
+      if (screenPos.dx < -markerSize || screenPos.dx > size.width + markerSize ||
+          screenPos.dy < -markerSize || screenPos.dy > size.height + markerSize) {
         continue;
       }
       
       final color = ThreatType.getColor(marker.threatType);
       
-      // Draw icon from cache
-      final icon = ThreatIconManager()._icons[marker.threatType] ?? 
-                   ThreatIconManager()._icons['default'];
+      // Draw icon from cache with rotation
+      final icon = iconManager.icons[marker.threatType] ?? 
+                   iconManager.icons['default'];
       
-      if (icon != null) {
+      // Calculate rotation angle based on trajectory (icon points east by default)
+      double rotationAngle = 0.0;
+      if (marker.hasAITrajectory) {
+        final traj = marker.trajectory!;
+        final dx = traj.endLng - traj.startLng;
+        final dy = traj.endLat - traj.startLat;
+        // atan2(dx, dy) gives angle from north clockwise
+        // Subtract π/2 because icon points east, not north
+        rotationAngle = math.atan2(dx, dy) - math.pi / 2;
+      } else if (marker.hasTrajectory && marker.projectedPath != null && marker.projectedPath!.length >= 2) {
+        final path = marker.projectedPath!;
+        final lastIdx = path.length - 1;
+        final dx = path[lastIdx].lng - path[lastIdx - 1].lng;
+        final dy = path[lastIdx].lat - path[lastIdx - 1].lat;
+        rotationAngle = math.atan2(dx, dy) - math.pi / 2;
+      }
+      
+      if (icon != null && iconManager.isLoaded) {
+        canvas.save();
+        canvas.translate(screenPos.dx, screenPos.dy);
+        
+        // Apply rotation if trajectory exists
+        if (rotationAngle != 0.0) {
+          canvas.rotate(rotationAngle);
+        }
+        
         final srcRect = Rect.fromLTWH(0, 0, icon.width.toDouble(), icon.height.toDouble());
-        final dstRect = Rect.fromCenter(center: screenPos, width: markerSize, height: markerSize);
-        canvas.drawImageRect(icon, srcRect, dstRect, Paint());
+        final dstRect = Rect.fromCenter(center: Offset.zero, width: markerSize, height: markerSize);
+        final paint = Paint()..filterQuality = FilterQuality.high;
+        canvas.drawImageRect(icon, srcRect, dstRect, paint);
+        
+        canvas.restore();
       } else {
-        // Fallback circle - larger
+        // Fallback circle when icon not loaded
         final markerPaint = Paint()
           ..color = color.withOpacity(0.9)
           ..style = PaintingStyle.fill;
         canvas.drawCircle(screenPos, markerSize / 2, markerPaint);
         
-        // Add border
         final borderPaint = Paint()
           ..color = Colors.white.withOpacity(0.8)
           ..style = PaintingStyle.stroke
@@ -2733,6 +2425,7 @@ class _LabelsMarkersPainter extends CustomPainter {
           LatLng(traj.endLat, traj.endLng),
         );
         
+        // Dashed line for predicted trajectory
         final trajPaint = Paint()
           ..color = traj.predicted ? const Color(0xFFfbbf24) : Colors.white.withOpacity(0.6)
           ..style = PaintingStyle.stroke

@@ -21,6 +21,120 @@ import 'region_database.dart';
 String _lastNotificationKey = '';
 int _lastNotificationTime = 0;
 
+// Counter for unique notification IDs (prevents collision when multiple notifications arrive in same second)
+int _notificationIdCounter = 0;
+
+/// Generates a unique notification ID that won't collide
+int _generateNotificationId() {
+  // Combine timestamp with counter to ensure uniqueness
+  // Use milliseconds and counter to handle multiple notifications per second
+  final baseId = DateTime.now().millisecondsSinceEpoch % 2147483647; // Keep within int32 range
+  _notificationIdCounter = (_notificationIdCounter + 1) % 1000;
+  return (baseId + _notificationIdCounter) % 2147483647;
+}
+
+class _DedupStore {
+  static const String _notifKey = 'dedup_last_notification_key';
+  static const String _notifTime = 'dedup_last_notification_time';
+  static const String _ttsKey = 'dedup_last_tts_key';
+  static const String _ttsTime = 'dedup_last_tts_time';
+
+  static Future<bool> shouldSkipNotification(
+    SharedPreferences prefs,
+    String key, {
+    int ttlMs = 30000,
+  }) async {
+    final lastKey = prefs.getString(_notifKey) ?? '';
+    final lastTime = prefs.getInt(_notifTime) ?? 0;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (key == lastKey && (now - lastTime) < ttlMs) {
+      return true;
+    }
+    await prefs.setString(_notifKey, key);
+    await prefs.setInt(_notifTime, now);
+    return false;
+  }
+
+  static Future<bool> shouldSkipTts(
+    SharedPreferences prefs,
+    String key, {
+    int ttlMs = 60000,
+  }) async {
+    final lastKey = prefs.getString(_ttsKey) ?? '';
+    final lastTime = prefs.getInt(_ttsTime) ?? 0;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (key == lastKey && (now - lastTime) < ttlMs) {
+      return true;
+    }
+    await prefs.setString(_ttsKey, key);
+    await prefs.setInt(_ttsTime, now);
+    return false;
+  }
+}
+
+class _NotificationMetrics {
+  static const String _totalReceivedKey = 'notif_metrics_total_received';
+  static const String _totalShownKey = 'notif_metrics_total_shown';
+  static const String _totalSkippedKey = 'notif_metrics_total_skipped';
+  static const String _lastReceivedAtKey = 'notif_metrics_last_received_at';
+
+  static Future<void> trackReceived(SharedPreferences prefs) async {
+    final current = prefs.getInt(_totalReceivedKey) ?? 0;
+    await prefs.setInt(_totalReceivedKey, current + 1);
+    await prefs.setInt(
+        _lastReceivedAtKey, DateTime.now().millisecondsSinceEpoch);
+  }
+
+  static Future<void> trackShown(SharedPreferences prefs) async {
+    final current = prefs.getInt(_totalShownKey) ?? 0;
+    await prefs.setInt(_totalShownKey, current + 1);
+  }
+
+  static Future<void> trackSkipped(SharedPreferences prefs) async {
+    final current = prefs.getInt(_totalSkippedKey) ?? 0;
+    await prefs.setInt(_totalSkippedKey, current + 1);
+  }
+}
+
+TimeOfDay _parseTimeOfDay(String value, TimeOfDay fallback) {
+  final parts = value.split(':');
+  if (parts.length != 2) return fallback;
+  final hour = int.tryParse(parts[0]);
+  final minute = int.tryParse(parts[1]);
+  if (hour == null || minute == null) return fallback;
+  return TimeOfDay(hour: hour.clamp(0, 23), minute: minute.clamp(0, 59));
+}
+
+bool _isWithinQuietHours(TimeOfDay now, TimeOfDay start, TimeOfDay end) {
+  final nowMinutes = now.hour * 60 + now.minute;
+  final startMinutes = start.hour * 60 + start.minute;
+  final endMinutes = end.hour * 60 + end.minute;
+  // If start == end, quiet hours are disabled (never quiet)
+  if (startMinutes == endMinutes) return false;
+  // Normal case: start < end (e.g., 08:00-18:00)
+  if (startMinutes < endMinutes) {
+    return nowMinutes >= startMinutes && nowMinutes < endMinutes;
+  }
+  // Overnight case: start > end (e.g., 22:00-07:00)
+  return nowMinutes >= startMinutes || nowMinutes < endMinutes;
+}
+
+Future<bool> _shouldAllowByQuietHours(
+  SharedPreferences prefs, {
+  required bool isCritical,
+}) async {
+  final enabled = prefs.getBool('quiet_hours_enabled') ?? false;
+  if (!enabled) return true;
+  final allowCritical = prefs.getBool('quiet_hours_allow_critical') ?? true;
+  if (isCritical && allowCritical) return true;
+  final startRaw = prefs.getString('quiet_hours_start') ?? '22:00';
+  final endRaw = prefs.getString('quiet_hours_end') ?? '07:00';
+  final start = _parseTimeOfDay(startRaw, const TimeOfDay(hour: 22, minute: 0));
+  final end = _parseTimeOfDay(endRaw, const TimeOfDay(hour: 7, minute: 0));
+  final now = TimeOfDay.fromDateTime(DateTime.now());
+  return !_isWithinQuietHours(now, start, end);
+}
+
 /// All Ukraine oblasts for auto-subscription on first launch
 const List<String> _allUkraineOblasts = [
   'Харківська область',
@@ -201,6 +315,23 @@ String _detectThreatType(String body, String threatType) {
   return ''; // Загальна тривога - без конкретики
 }
 
+String _resolveThreatKey(String body, String threatType) {
+  final text = '$body $threatType'.toLowerCase();
+  if (text.contains('балістик') || text.contains('балистик')) return 'ballistic';
+  if (text.contains('каб')) return 'kab';
+  if (text.contains('ракет') || text.contains('крилат')) return 'rocket';
+  if (text.contains('бпла') || text.contains('дрон') || text.contains('шахед')) return 'drones';
+  if (text.contains('артилер') || text.contains('обстріл')) return 'artillery';
+  if (text.contains('вибух')) return 'explosion';
+  return 'air';
+}
+
+bool _isThreatTypeAllowed(SharedPreferences prefs, String threatKey) {
+  final allowed = prefs.getStringList('notify_threat_types') ?? [];
+  if (allowed.isEmpty) return true;
+  return allowed.contains(threatKey);
+}
+
 /// Очищає назву регіону для кращого озвучування
 String _cleanRegionName(String region) {
   if (region.isEmpty) return '';
@@ -231,6 +362,8 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     debugPrint('🔕 Notifications disabled - skipping background notification');
     return;
   }
+
+  await _NotificationMetrics.trackReceived(prefs);
   
   final data = message.data;
   final title = data['title'] ?? message.notification?.title ?? 'Тривога';
@@ -274,7 +407,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   }
   // === END BALLISTIC DETECTION ===
   
-  // === ID-BASED REGION FILTER (v2.0) ===
+  // === REGION FILTER (v2.1) ===
   // Перевіряємо чи FCM містить region IDs
   final oblastId = data['oblast_id'] as String?;
   final raionId = data['raion_id'] as String?;
@@ -282,22 +415,47 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   
   debugPrint('🔍 FCM region IDs: oblast=$oblastId, raion=$raionId, settlement=$settlementId');
   
-  if (oblastId == null || oblastId.isEmpty) {
-    debugPrint('🚫 ID-based filter: missing oblast_id in FCM payload');
-    return;
-  }
-  
   final userSelection = await _loadUserRegionSelection(prefs);
   
-  final event = NotificationEvent.fromFcmData(data);
-  final filterService = NotificationFilterService();
-  
-  if (!filterService.shouldShowNotification(event, userSelection)) {
-    debugPrint('🚫 ID-based filter: event oblast=$oblastId raion=$raionId NOT in user selection');
-    return;
+  // If we have ID-based data, use precise filtering
+  if (oblastId != null && oblastId.isNotEmpty) {
+    final event = NotificationEvent.fromFcmData(data);
+    final filterService = NotificationFilterService();
+    
+    if (!filterService.shouldShowNotification(event, userSelection)) {
+      debugPrint('🚫 ID-based filter: event oblast=$oblastId raion=$raionId NOT in user selection');
+      return;
+    }
+    debugPrint('✅ ID-based filter passed for oblast=$oblastId raion=$raionId');
+  } else {
+    // Fallback to legacy name-based filtering when oblast_id is missing
+    debugPrint('⚠️ No oblast_id in FCM, using legacy name-based filter');
+    final selectedRegions = prefs.getStringList('selected_regions') ?? [];
+    
+    if (selectedRegions.isNotEmpty) {
+      // Check if message region matches any selected region
+      bool regionMatch = false;
+      for (final selectedRegion in selectedRegions) {
+        final normalizedSelected = selectedRegion.toLowerCase().trim();
+        final normalizedRegion = region.toLowerCase().trim();
+        final normalizedLocation = location.toLowerCase().trim();
+        
+        if (normalizedRegion.contains(normalizedSelected) ||
+            normalizedSelected.contains(normalizedRegion) ||
+            normalizedLocation.contains(normalizedSelected)) {
+          regionMatch = true;
+          break;
+        }
+      }
+      
+      if (!regionMatch) {
+        debugPrint('🚫 Legacy filter: region "$region" not in user selection');
+        return;
+      }
+      debugPrint('✅ Legacy filter passed for region: $region');
+    }
   }
-  debugPrint('✅ ID-based filter passed for oblast=$oblastId raion=$raionId');
-  // === END ID-BASED REGION FILTER ===
+  // === END REGION FILTER ===
   
   // === SLEEP MODE CHECK ===
   // Перевіряємо режим сну (статичний метод для background)
@@ -307,20 +465,43 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     return;
   }
   // === END SLEEP MODE ===
-  
-  // === DEDUPLICATION (using SharedPreferences for background isolate) ===
-  final notificationKey = '$region|$location|$threatType|$alarmState';
-  final lastNotificationKey = prefs.getString('last_notification_key') ?? '';
-  final lastNotificationTime = prefs.getInt('last_notification_time') ?? 0;
-  
-  if (notificationKey == lastNotificationKey && (currentTime - lastNotificationTime) < 30000) {
-    debugPrint('🔇 Skipping duplicate notification (same message within 30s)');
+
+  // === THREAT TYPE FILTER ===
+  final threatKey = _resolveThreatKey(body, threatType);
+  if (!_isThreatTypeAllowed(prefs, threatKey)) {
+    debugPrint('🔕 Threat type $threatKey disabled by user settings');
+    await _NotificationMetrics.trackSkipped(prefs);
+    return;
+  }
+  // === END THREAT TYPE FILTER ===
+
+  final criticalByType =
+      isCritical ||
+      threatKey == 'rocket' ||
+      threatKey == 'ballistic' ||
+      threatKey == 'kab';
+  final allowByQuietHours =
+      await _shouldAllowByQuietHours(prefs, isCritical: criticalByType);
+  if (!allowByQuietHours) {
+    debugPrint('🌙 Quiet hours active - skipping notification');
+    await _NotificationMetrics.trackSkipped(prefs);
     return;
   }
   
-  // Зберігаємо для майбутньої перевірки
-  await prefs.setString('last_notification_key', notificationKey);
-  await prefs.setInt('last_notification_time', currentTime);
+  // === DEDUPLICATION (using SharedPreferences for background isolate) ===
+  // Use consistent key format without platform prefix to sync foreground/background
+  final messageKey = messageId.isNotEmpty ? messageId : '$region|$location|$threatType|$alarmState';
+  final notificationKey = 'notif|$messageKey';
+  final shouldSkip = await _DedupStore.shouldSkipNotification(
+    prefs,
+    notificationKey,
+    ttlMs: 30000,
+  );
+  if (shouldSkip) {
+    debugPrint('🔇 Skipping duplicate notification (same message within 30s)');
+    await _NotificationMetrics.trackSkipped(prefs);
+    return;
+  }
   // === END DEDUPLICATION ===
   
   // Show local notification
@@ -340,7 +521,12 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     // Determine notification styling based on threat type
     final bool isAllClear = alarmState == 'ended' || body.toLowerCase().contains('відбій');
     final bool isRocket = threatType.toLowerCase().contains('ракет') || body.toLowerCase().contains('ракет');
-    final bool isDrone = threatType.toLowerCase().contains('бпла') || body.toLowerCase().contains('бпла');
+    final bool isDrone = threatType.toLowerCase().contains('бпла') ||
+        body.toLowerCase().contains('бпла') ||
+        threatType.toLowerCase().contains('дрон') ||
+        body.toLowerCase().contains('дрон') ||
+        threatType.toLowerCase().contains('шахед') ||
+        body.toLowerCase().contains('шахед');
     final bool isKab = threatType.toLowerCase().contains('каб') || body.toLowerCase().contains('каб');
     
     // Choose emoji and color
@@ -424,11 +610,12 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     final details = NotificationDetails(android: androidDetails, iOS: iosDetails);
     
     await flutterLocalNotificationsPlugin.show(
-      DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      _generateNotificationId(),
       formattedTitle,
       body,
       details,
     );
+    await _NotificationMetrics.trackShown(prefs);
     debugPrint('📱 Local notification shown (vibration: $vibrationEnabled)');
   } catch (e) {
     debugPrint('Local notification error: $e');
@@ -444,16 +631,12 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     if (ttsEnabled && notificationsEnabled && Platform.isAndroid) {
       // === TTS DEDUPLICATION ===
       // Перевіряємо чи це повідомлення вже озвучувалось
+      // Use consistent key format without platform prefix to sync with foreground
       final ttsKey = '$region|$location|$threatType|$alarmState'.toLowerCase();
-      final lastTtsKey = prefs.getString('last_tts_key') ?? '';
-      final lastTtsTime = prefs.getInt('last_tts_time') ?? 0;
-      
-      if (ttsKey == lastTtsKey && (currentTime - lastTtsTime) < 60000) {
+      final shouldSkip = await _DedupStore.shouldSkipTts(prefs, ttsKey, ttlMs: 60000);
+      if (shouldSkip) {
         debugPrint('🔇 Skipping duplicate TTS (same message within 60s)');
       } else {
-        // Зберігаємо для майбутньої перевірки
-        await prefs.setString('last_tts_key', ttsKey);
-        await prefs.setInt('last_tts_time', currentTime);
         // === END TTS DEDUPLICATION ===
         
         final tts = FlutterTts();
@@ -863,45 +1046,102 @@ class NotificationService {
         debugPrint('🔕 Notifications disabled - skipping foreground notification');
         return;
       }
+      await _NotificationMetrics.trackReceived(prefs);
       
       final data = message.data;
       final region = data['region'] ?? '';
       final location = data['location'] ?? '';
       final threatType = data['threat_type'] ?? '';
       final alarmState = data['alarm_state'] ?? '';
+      final rawBody = data['body'] ?? message.notification?.body ?? '';
+      final threatKey = _resolveThreatKey(rawBody, threatType);
+      if (!_isThreatTypeAllowed(prefs, threatKey)) {
+        debugPrint('🔕 Threat type $threatKey disabled by user settings');
+        await _NotificationMetrics.trackSkipped(prefs);
+        return;
+      }
+
+      final isCritical =
+          data['is_critical'] == 'true' ||
+          threatKey == 'rocket' ||
+          threatKey == 'ballistic' ||
+          threatKey == 'kab';
+      final allowByQuietHours =
+          await _shouldAllowByQuietHours(prefs, isCritical: isCritical);
+      if (!allowByQuietHours) {
+        debugPrint('🌙 Quiet hours active - skipping notification');
+        await _NotificationMetrics.trackSkipped(prefs);
+        return;
+      }
       
       // === DEDUPLICATION FOR FOREGROUND ===
-      final notificationKey = '$region|$location|$threatType|$alarmState';
+      // Use consistent key format with background (notif| prefix instead of fg|)
+      final notificationKey = 'notif|$region|$location|$threatType|$alarmState';
       if (_isDuplicateForegroundNotification(notificationKey)) {
         debugPrint('🔇 Skipping duplicate foreground notification (same message within 30s)');
+        await _NotificationMetrics.trackSkipped(prefs);
+        return;
+      }
+      final shouldSkip = await _DedupStore.shouldSkipNotification(
+        prefs,
+        notificationKey,
+        ttlMs: 30000,
+      );
+      if (shouldSkip) {
+        debugPrint('🔇 Skipping duplicate foreground notification (SharedPrefs - already shown in background)');
+        await _NotificationMetrics.trackSkipped(prefs);
         return;
       }
       _markForegroundNotification(notificationKey);
       // === END DEDUPLICATION ===
       
-      // === ID-BASED REGION FILTER (v2.0) ===
+      // === REGION FILTER (v2.1) ===
       final oblastId = data['oblast_id'] as String?;
       final raionId = data['raion_id'] as String?;
       final settlementId = data['settlement_id'] as String?;
       
       debugPrint('🔍 FCM region IDs: oblast=$oblastId, raion=$raionId, settlement=$settlementId');
       
-      if (oblastId == null || oblastId.isEmpty) {
-        debugPrint('🚫 ID-based filter: missing oblast_id in FCM payload');
-        return;
-      }
-      
       final userSelection = await _loadUserRegionSelection(prefs);
       
-      final event = NotificationEvent.fromFcmData(data);
-      final filterService = NotificationFilterService();
-      
-      if (!filterService.shouldShowNotification(event, userSelection)) {
-        debugPrint('🚫 ID-based filter: event oblast=$oblastId raion=$raionId NOT in user selection');
-        return;
+      // If we have ID-based data, use precise filtering
+      if (oblastId != null && oblastId.isNotEmpty) {
+        final event = NotificationEvent.fromFcmData(data);
+        final filterService = NotificationFilterService();
+        
+        if (!filterService.shouldShowNotification(event, userSelection)) {
+          debugPrint('🚫 ID-based filter: event oblast=$oblastId raion=$raionId NOT in user selection');
+          return;
+        }
+        debugPrint('✅ ID-based filter passed for oblast=$oblastId raion=$raionId');
+      } else {
+        // Fallback to legacy name-based filtering when oblast_id is missing
+        debugPrint('⚠️ No oblast_id in FCM, using legacy name-based filter');
+        final selectedRegions = prefs.getStringList('selected_regions') ?? [];
+        
+        if (selectedRegions.isNotEmpty) {
+          bool regionMatch = false;
+          for (final selectedRegion in selectedRegions) {
+            final normalizedSelected = selectedRegion.toLowerCase().trim();
+            final normalizedRegion = region.toLowerCase().trim();
+            final normalizedLocation = location.toLowerCase().trim();
+            
+            if (normalizedRegion.contains(normalizedSelected) ||
+                normalizedSelected.contains(normalizedRegion) ||
+                normalizedLocation.contains(normalizedSelected)) {
+              regionMatch = true;
+              break;
+            }
+          }
+          
+          if (!regionMatch) {
+            debugPrint('🚫 Legacy filter: region "$region" not in user selection');
+            return;
+          }
+          debugPrint('✅ Legacy filter passed for region: $region');
+        }
       }
-      debugPrint('✅ ID-based filter passed for oblast=$oblastId raion=$raionId');
-      // === END ID-BASED REGION FILTER ===
+      // === END REGION FILTER ===
       
       // Показуємо локальне сповіщення
       _showLocalNotification(message, vibrationEnabled: vibrationEnabled);
@@ -1041,7 +1281,7 @@ class NotificationService {
         // Use 'location' field for specific place (city), fallback to body
         final location = data['location'] ?? body;
         debugPrint('🔊 TTS: Speaking alert - location: $location, region: $region, threat: $threatType');
-        _speakAlert(region, location, threatType, alarmState);
+        _speakAlert(region, location, threatType, alarmState, body);
       } else {
         debugPrint('🔇 TTS disabled in settings - skipping voice notification');
       }
@@ -1120,7 +1360,13 @@ class NotificationService {
     }
   }
 
-  Future<void> _speakAlert(String region, String location, String threatType, String alarmState) async {
+  Future<void> _speakAlert(
+    String region,
+    String location,
+    String threatType,
+    String alarmState,
+    String body,
+  ) async {
     try {
       final now = DateTime.now().millisecondsSinceEpoch;
       final ttsKey = '$region|$location|$threatType|$alarmState'.toLowerCase();
@@ -1128,9 +1374,6 @@ class NotificationService {
       // === SHARED DEDUPLICATION with background handler ===
       // Використовуємо SharedPreferences для синхронізації з background
       final prefs = await SharedPreferences.getInstance();
-      final lastTtsKey = prefs.getString('last_tts_key') ?? '';
-      final lastTtsTime = prefs.getInt('last_tts_time') ?? 0;
-      
       // Також перевіряємо in-memory кеш для foreground
       if (ttsKey == _lastNotificationKey && (now - _lastNotificationTime) < 60000) {
         debugPrint('🔇 Skipping duplicate foreground TTS (in-memory)');
@@ -1138,16 +1381,15 @@ class NotificationService {
       }
       
       // Перевіряємо SharedPreferences кеш (синхронізовано з background)
-      if (ttsKey == lastTtsKey && (now - lastTtsTime) < 60000) {
+      final shouldSkip = await _DedupStore.shouldSkipTts(prefs, ttsKey, ttlMs: 60000);
+      if (shouldSkip) {
         debugPrint('🔇 Skipping duplicate foreground TTS (SharedPrefs - already spoken by background)');
         return;
       }
       
-      // Оновлюємо обидва кеші
+      // Оновлюємо in-memory кеш
       _lastNotificationKey = ttsKey;
       _lastNotificationTime = now;
-      await prefs.setString('last_tts_key', ttsKey);
-      await prefs.setInt('last_tts_time', now);
       // === END SHARED DEDUPLICATION ===
       
       // Use singleton TtsService 
@@ -1159,7 +1401,7 @@ class NotificationService {
         location: location,
         threatType: threatType,
         alarmState: alarmState,
-        body: threatType, // В foreground body = threatType
+        body: body,
       );
       
       debugPrint('🔊 TTS foreground: $message');
@@ -1218,7 +1460,12 @@ class NotificationService {
     // Determine notification type and styling
     final bool isAllClear = alarmState == 'ended' || rawBody.toLowerCase().contains('відбій');
     final bool isRocket = threatType.toLowerCase().contains('ракет') || rawBody.toLowerCase().contains('ракет');
-    final bool isDrone = threatType.toLowerCase().contains('бпла') || rawBody.toLowerCase().contains('бпла') || rawBody.toLowerCase().contains('дрон');
+    final bool isDrone = threatType.toLowerCase().contains('бпла') ||
+        rawBody.toLowerCase().contains('бпла') ||
+        rawBody.toLowerCase().contains('дрон') ||
+        threatType.toLowerCase().contains('дрон') ||
+        rawBody.toLowerCase().contains('шахед') ||
+        threatType.toLowerCase().contains('шахед');
     final bool isKab = threatType.toLowerCase().contains('каб') || rawBody.toLowerCase().contains('каб');
     
     // Choose emoji and color based on threat type
@@ -1317,12 +1564,16 @@ class NotificationService {
     );
 
     await flutterLocalNotificationsPlugin.show(
-      DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      _generateNotificationId(),
       title,
       body,
       details,
       payload: jsonEncode(data),
     );
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await _NotificationMetrics.trackShown(prefs);
+    } catch (_) {}
     debugPrint('📱 Foreground notification (vibration: $vibrationEnabled)');
   }
 
