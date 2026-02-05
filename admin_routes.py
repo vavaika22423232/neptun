@@ -1342,17 +1342,20 @@ def register_admin_routes(app):
                 total_cleaned += cleaned
             
                 # Clean _groq_cache - remove old entries and enforce size limit
-                if _groq_cache:
-                    old_size = len(_groq_cache)
-                    expired_keys = [k for k, (_, ts) in _groq_cache.items() if now - ts > _groq_cache_ttl]
+                groq_cache = globals().get('_groq_cache') or {}
+                groq_cache_ttl = globals().get('_groq_cache_ttl', 300)
+                groq_cache_max_size = globals().get('_groq_cache_max_size', 200)
+                if groq_cache:
+                    old_size = len(groq_cache)
+                    expired_keys = [k for k, (_, ts) in groq_cache.items() if now - ts > groq_cache_ttl]
                     for k in expired_keys:
-                        _groq_cache.pop(k, None)
+                        groq_cache.pop(k, None)
                     # If still over limit, remove oldest entries
-                    if len(_groq_cache) > _groq_cache_max_size:
-                        sorted_keys = sorted(_groq_cache.keys(), key=lambda k: _groq_cache[k][1])
-                        for k in sorted_keys[:len(_groq_cache) - _groq_cache_max_size // 2]:
-                            _groq_cache.pop(k, None)
-                    total_cleaned += old_size - len(_groq_cache)
+                    if len(groq_cache) > groq_cache_max_size:
+                        sorted_keys = sorted(groq_cache.keys(), key=lambda k: groq_cache[k][1])
+                        for k in sorted_keys[:len(groq_cache) - groq_cache_max_size // 2]:
+                            groq_cache.pop(k, None)
+                    total_cleaned += old_size - len(groq_cache)
             
                 # Clean _telegram_alert_sent (keep only last 3 min)
                 with _telegram_alert_lock:
@@ -2931,12 +2934,15 @@ def register_admin_routes(app):
             _chat_initialized = False
         try:
             # On first load, try to pull latest from git
-            if not _chat_initialized:
+            try:
+                if not _chat_initialized:
+                    _chat_initialized = True
+                    try:
+                        git_pull_on_startup()
+                    except Exception as e:
+                        log.warning(f"Git pull on chat init failed: {e}")
+            except NameError:
                 _chat_initialized = True
-                try:
-                    git_pull_on_startup()
-                except Exception as e:
-                    log.warning(f"Git pull on chat init failed: {e}")
 
             if os.path.exists(CHAT_MESSAGES_FILE):
                 with open(CHAT_MESSAGES_FILE, encoding='utf-8') as f:
