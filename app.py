@@ -3277,6 +3277,7 @@ AUTH_SECRET = os.getenv('AUTH_SECRET')  # simple shared secret to protect /auth 
 FETCH_THREAD_STARTED = False
 FETCH_THREAD_STARTED_AT = 0
 FETCH_THREAD = None
+FETCH_START_DELAY = int(os.getenv('FETCH_START_DELAY', '0'))
 AUTH_STATUS = {'authorized': False, 'reason': 'init'}
 SUBSCRIBERS = set()  # queues for SSE clients
 MAX_STREAM_SUBSCRIBERS = 100  # MEMORY PROTECTION: Limit main SSE connections (reduced from 200)
