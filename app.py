@@ -7876,6 +7876,7 @@ parser_service.bind_dependencies(globals())
 process_message = parser_service.process_message
 parse_trajectory_from_message = parser_service.parse_trajectory_from_message
 extract_shahed_course_info = parser_service.extract_shahed_course_info
+fetch_loop = parser_service.fetch_loop
 UA_CITIES = parser_service.UA_CITIES
 UA_CITY_NORMALIZE = parser_service.UA_CITY_NORMALIZE
 NAME_REGION_MAP = parser_service.NAME_REGION_MAP
