@@ -5007,6 +5007,11 @@ def start_fetch_thread():
     def runner():
         try:
             log.info('fetch_thread runner started')
+            fetch_loop_fn = globals().get('fetch_loop') or getattr(parser_service, 'fetch_loop', None)
+            if fetch_loop_fn is None:
+                AUTH_STATUS.update({'authorized': False, 'reason': 'missing_fetch_loop'})
+                log.error('fetch_thread runner: fetch_loop is not available')
+                return
             if FETCH_START_DELAY > 0:
                 log.info(f'Delaying Telegram fetch start for {FETCH_START_DELAY}s (FETCH_START_DELAY).')
                 time.sleep(FETCH_START_DELAY)
@@ -5014,7 +5019,7 @@ def start_fetch_thread():
             while True:
                 try:
                     log.info('About to call fetch_loop()')
-                    loop.run_until_complete(fetch_loop())
+                    loop.run_until_complete(fetch_loop_fn())
                     log.warning('fetch_loop() exited; restarting in 30s')
                     time.sleep(30)
                 except AuthKeyDuplicatedError:
