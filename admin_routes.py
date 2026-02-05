@@ -1496,75 +1496,79 @@ def register_admin_routes(app):
     @app.before_request
     def _ddos_protection():
         """Emergency DDoS protection - block abusive IPs."""
-        if not DDOS_ENABLED:
-            return None
-    
-        # Skip for health checks, presence, and static files
-        if request.path in ['/healthz', '/health', '/startup_diag', '/presence']:
-            return None
-        if request.path.startswith('/static/'):
-            return None
-    
-        # Use Cloudflare-aware IP detection
-        client_ip = get_real_ip()
-    
-        # Skip whitelisted IPs (admins)
-        if client_ip in DDOS_WHITELIST:
-            return None
-    
-        now = time.time()
-    
-        # Check if IP is blocked
-        if client_ip in _ddos_blocked_ips:
-            block_until = _ddos_block_time.get(client_ip, 0)
-            if now < block_until:
+        global _ddos_last_cleanup
+        try:
+            if not DDOS_ENABLED:
+                return None
+
+            # Skip for health checks, presence, and static files
+            if request.path in ['/healthz', '/health', '/startup_diag', '/presence']:
+                return None
+            if request.path.startswith('/static/'):
+                return None
+
+            # Use Cloudflare-aware IP detection
+            client_ip = get_real_ip()
+
+            # Skip whitelisted IPs (admins)
+            if client_ip in DDOS_WHITELIST:
+                return None
+
+            now = time.time()
+
+            # Check if IP is blocked
+            if client_ip in _ddos_blocked_ips:
+                block_until = _ddos_block_time.get(client_ip, 0)
+                if now < block_until:
+                    return Response(
+                        '{"error":"rate_limited","blocked":true}',
+                        status=429,
+                        mimetype='application/json'
+                    )
+                else:
+                    # Unblock
+                    _ddos_blocked_ips.discard(client_ip)
+                    _ddos_block_time.pop(client_ip, None)
+
+            # Count requests
+            if client_ip not in _ddos_ip_counts:
+                _ddos_ip_counts[client_ip] = []
+
+            # Remove old timestamps (older than 10 seconds)
+            _ddos_ip_counts[client_ip] = [t for t in _ddos_ip_counts[client_ip] if now - t < 10]
+            _ddos_ip_counts[client_ip].append(now)
+
+            # Check if exceeds limit
+            if len(_ddos_ip_counts[client_ip]) > DDOS_RATE_LIMIT:
+                _ddos_blocked_ips.add(client_ip)
+                _ddos_block_time[client_ip] = now + DDOS_BLOCK_DURATION
+                print(f"[DDOS] BLOCKED IP {client_ip} - {len(_ddos_ip_counts[client_ip])} requests in 10s")
                 return Response(
                     '{"error":"rate_limited","blocked":true}',
                     status=429,
                     mimetype='application/json'
                 )
-            else:
-                # Unblock
-                _ddos_blocked_ips.discard(client_ip)
-                _ddos_block_time.pop(client_ip, None)
-    
-        # Count requests
-        if client_ip not in _ddos_ip_counts:
-            _ddos_ip_counts[client_ip] = []
-    
-        # Remove old timestamps (older than 10 seconds)
-        _ddos_ip_counts[client_ip] = [t for t in _ddos_ip_counts[client_ip] if now - t < 10]
-        _ddos_ip_counts[client_ip].append(now)
-    
-        # Check if exceeds limit
-        if len(_ddos_ip_counts[client_ip]) > DDOS_RATE_LIMIT:
-            _ddos_blocked_ips.add(client_ip)
-            _ddos_block_time[client_ip] = now + DDOS_BLOCK_DURATION
-            print(f"[DDOS] BLOCKED IP {client_ip} - {len(_ddos_ip_counts[client_ip])} requests in 10s")
-            return Response(
-                '{"error":"rate_limited","blocked":true}',
-                status=429,
-                mimetype='application/json'
-            )
-    
-        # Aggressive cleanup to prevent memory leak
-        global _ddos_last_cleanup
-        if now - _ddos_last_cleanup > 30 or len(_ddos_ip_counts) > DDOS_MAX_TRACKED_IPS:
-            _ddos_last_cleanup = now
-            # Remove old entries
-            for ip in list(_ddos_ip_counts.keys()):
-                _ddos_ip_counts[ip] = [t for t in _ddos_ip_counts[ip] if now - t < 10]
-                if not _ddos_ip_counts[ip]:
-                    del _ddos_ip_counts[ip]
-            # Remove expired blocks
-            for ip in list(_ddos_block_time.keys()):
-                if now > _ddos_block_time[ip]:
-                    _ddos_blocked_ips.discard(ip)
-                    del _ddos_block_time[ip]
-            # Also cleanup request_counts
-            _cleanup_request_counts()
-    
-        return None
+
+            # Aggressive cleanup to prevent memory leak
+            if now - _ddos_last_cleanup > 30 or len(_ddos_ip_counts) > DDOS_MAX_TRACKED_IPS:
+                _ddos_last_cleanup = now
+                # Remove old entries
+                for ip in list(_ddos_ip_counts.keys()):
+                    _ddos_ip_counts[ip] = [t for t in _ddos_ip_counts[ip] if now - t < 10]
+                    if not _ddos_ip_counts[ip]:
+                        del _ddos_ip_counts[ip]
+                # Remove expired blocks
+                for ip in list(_ddos_block_time.keys()):
+                    if now > _ddos_block_time[ip]:
+                        _ddos_blocked_ips.discard(ip)
+                        del _ddos_block_time[ip]
+                # Also cleanup request_counts
+                _cleanup_request_counts()
+
+            return None
+        except Exception as e:
+            print(f"[DDOS] protection error: {e}")
+            return None
 
     @app.before_request
     def _maybe_init_background():
