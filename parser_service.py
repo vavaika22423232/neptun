@@ -1312,7 +1312,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
         #         icon = 'icon_rocket.svg'
 
         # Place name shows direction: Source → Target
-        place_name = f"{trajectory_data.get('source_name', 'Джерело')} → {trajectory_data.get('target_name', 'Ціль')}"
+        # Use 'or' to handle None values (not just missing keys)
+        source_name = trajectory_data.get('source_name') or 'Джерело'
+        target_name = trajectory_data.get('target_name') or ''
+        place_name = f"{source_name} → {target_name}" if target_name else source_name
 
         # ETA in place name - DISABLED
         # eta_info = trajectory_data.get('eta', {})
