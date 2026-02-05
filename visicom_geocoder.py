@@ -71,6 +71,13 @@ OBLAST_BBOX = {
 }
 
 
+RE_STRIP_PARENS = re.compile(r'\([^)]*\)')
+RE_PREFIX_PLACE = re.compile(r'^(м\.|смт\.|смт|с\.|н\.п\.|н\.\s*п\.|місто|селище)\s+', re.IGNORECASE)
+RE_EXTRA_SPACES = re.compile(r'\s+')
+RE_LEADING_GARBAGE = re.compile(r'^[\W_]+', re.UNICODE)
+RE_TRAILING_GARBAGE = re.compile(r'[\W_]+$', re.UNICODE)
+
+
 def _coords_in_oblast(lat: float, lng: float, region_key: str) -> bool:
     """Check if coordinates are within the bounding box of specified oblast"""
     if not region_key or region_key not in OBLAST_BBOX:
@@ -147,6 +154,7 @@ SPECIAL_NAME_MAPPINGS = {
     "слов'янськ": "Слов'янськ",
     "словянськ": "Слов'янськ",
     "ком'янське": "Кам'янське",
+    "комянське": "Кам'янське",
     "камянське": "Кам'янське",
     
     # Common misspellings
@@ -176,10 +184,30 @@ def _normalize_ukrainian_name(name: str) -> list:
         return [name]
     
     original = name.strip()
+    # Strip parentheses and common prefix markers (м., смт, с., н.п.)
+    original = RE_STRIP_PARENS.sub(' ', original)
+    original = RE_PREFIX_PLACE.sub('', original)
+    # Remove leading/trailing non-word noise (bullets, emojis, punctuation)
+    original = RE_LEADING_GARBAGE.sub('', original)
+    original = RE_TRAILING_GARBAGE.sub('', original)
+    # Normalize quotes and whitespace
+    original = original.replace('«', '').replace('»', '').replace('"', '').replace('“', '').replace('”', '')
+    original = RE_EXTRA_SPACES.sub(' ', original).strip()
+    # Drop leading threat words or labels
+    original = re.sub(r'^(бпла|дрон|шахед|ракета|ціль|курс)\s+', '', original, flags=re.IGNORECASE).strip()
+    # If string contains directional separators, keep last segment
+    if re.search(r'\s(?:→|->|=>|—|–|:)\s', original):
+        parts = re.split(r'\s(?:→|->|=>|—|–|:)\s', original)
+        tail = parts[-1].strip() if parts else original
+        if tail:
+            original = tail
+    # Cleanup again after stripping prefixes/separators
+    original = RE_LEADING_GARBAGE.sub('', original)
+    original = RE_TRAILING_GARBAGE.sub('', original)
+    original = RE_EXTRA_SPACES.sub(' ', original).strip()
     
     # CLEANUP: Remove directional suffixes like "з півночі", "з півдня", etc.
     # These come from messages like "БПЛА Гостомеля З Півночі (Київська обл.)"
-    import re
     direction_pattern = r'\s+[зЗ]\s+(півноч[іи]|півдн[яю]|сход[у|ів]|захід|заход[уі]|північн|південн|східн|західн)\s*$'
     original = re.sub(direction_pattern, '', original, flags=re.IGNORECASE).strip()
     
