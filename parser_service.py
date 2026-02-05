@@ -69,6 +69,63 @@ RE_OBLAST_SUFFIX_REMOVE = re.compile(r"( область| обл\.?| обл)\b", 
 RE_RAION_SUFFIX_REMOVE = re.compile(r"( район| р-н)\b", re.IGNORECASE)
 RE_REGION_IN_TEXT = re.compile(r"([\w\-]+(?:ська|ький|ка)\s*(?:область|район))", re.IGNORECASE)
 
+def _extract_oblast_from_text(text: str) -> str | None:
+    """
+    Extract oblast name from text with improved accuracy.
+    Handles formats: "Місто (Область обл.)", "в Області", "Область область"
+    """
+    if not text:
+        return None
+
+    # Priority 1: Extract from parentheses - most reliable
+    paren_match = RE_OBLAST_PARENS_NAME.search(text)
+    if paren_match:
+        candidate = paren_match.group(1).strip()
+        if re.search(r'невідом|неизвест|unknown', candidate, re.IGNORECASE):
+            return None
+        # Normalize: "Харківська обл." -> "Харківська область"
+        candidate = candidate.replace(' обл.', ' область').replace(' обл', ' область')
+        if 'область' not in candidate.lower():
+            candidate = f"{candidate} область"
+        return candidate
+
+    # Priority 2: Find oblast mentioned anywhere in text
+    match = RE_OBLAST_ANYWHERE.search(text)
+    if match:
+        candidate = match.group(1).strip()
+        if re.search(r'невідом|неизвест|unknown', candidate, re.IGNORECASE):
+            return None
+        # Normalize
+        candidate = candidate.replace(' обл.', ' область').replace(' обл', ' область')
+        if 'область' not in candidate.lower():
+            candidate = f"{candidate} область"
+        return candidate
+
+    # Priority 3: Try to match major oblast names even without word "область"
+    text_lower = text.lower()
+    major_oblasts = [
+        'харківськ', 'донецьк', 'луганськ', 'запорізьк', 'херсонськ',
+        'дніпропетровськ', 'київськ', 'одеськ', 'львівськ', 'полтавськ',
+        'сумськ', 'чернігівськ', 'миколаївськ', 'черкаськ', 'кіровоградськ'
+    ]
+    for oblast_stem in major_oblasts:
+        if oblast_stem in text_lower:
+            # Find full word
+            pattern = rf'\b({oblast_stem}\w*)\b'
+            word_match = re.search(pattern, text_lower)
+            if word_match:
+                oblast_word = word_match.group(1)
+                # Capitalize properly
+                if oblast_word.endswith('ська') or oblast_word.endswith('ське'):
+                    oblast_name = oblast_word.capitalize() + ' область'
+                elif oblast_word.endswith('ський'):
+                    oblast_name = oblast_word.capitalize() + ' область'
+                else:
+                    oblast_name = oblast_word.capitalize() + 'а область'
+                return oblast_name
+
+    return None
+
 UA_CITIES = [
     'київ','харків','одеса','одесса','дніпро','дніпропетровськ','львів','запоріжжя','запорожье','вінниця','миколаїв','николаев',
     'маріуполь','полтава','чернігів','чернигов','черкаси','житомир','суми','хмельницький','чернівці','рівне','івано-франківськ',
@@ -255,6 +312,192 @@ DIRECTION_COURSE_KEYWORDS = [
     'курс північний', 'курс південний', 'курс східний', 'курс західний',
     'курсом на північ', 'курсом на південь', 'курсом на схід', 'курсом на захід',
 ]
+
+def calculate_bearing(lat1, lon1, lat2, lon2):
+    """
+    Calculate bearing from point 1 to point 2 in degrees (0-360).
+    """
+    lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+
+    dlon = lon2 - lon1
+    y = math.sin(dlon) * math.cos(lat2)
+    x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
+
+    bearing = math.atan2(y, x)
+    bearing = math.degrees(bearing)
+    return (bearing + 360) % 360
+
+def get_kyiv_directional_coordinates(threat_text, original_city="київ"):
+    """
+    For Kyiv threats, calculate directional coordinates based on threat patterns.
+    Returns modified coordinates showing approach direction instead of city center.
+    """
+    kyiv_lat, kyiv_lng = 50.4501, 30.5234
+    threat_lower = threat_text.lower()
+
+    # Try to extract source city/direction from course patterns
+    course_patterns = [
+        r'бпла.*?курс.*?на.*?київ.*?з\s+([а-яіїєё\s\-\']+?)(?:\s|$|[,\.\!])',
+        r'бпла.*?курс.*?на.*?київ.*?від\s+([а-яіїєё\s\-\']+?)(?:\s|$|[,\.\!])',
+        r'([а-яіїєё\s\-\']+?).*?курс.*?на.*?київ',
+        r'z\s+([а-яіїєё\s\-\']+?).*?курс.*?на.*?київ'
+    ]
+
+    source_city = None
+    for pattern in course_patterns:
+        matches = re.findall(pattern, threat_lower)
+        if matches:
+            potential_city = matches[0].strip()
+            if potential_city and len(potential_city) > 2:
+                # Clean up common noise words
+                noise_words = {'бпла', 'курсом', 'курс', 'на', 'над', 'області', 'область', 'обл', 'район'}
+                clean_city = ' '.join([word for word in potential_city.split() if word not in noise_words])
+                if clean_city:
+                    source_city = clean_city
+                    break
+
+    if source_city:
+        # Try to find coordinates for source city (we'll need to implement a simple lookup)
+        # For now, use some common approach directions
+        approach_directions = {
+            'чернігів': (51.4982, 31.2893, "↘ Київ"),
+            'суми': (50.9077, 34.7981, "↙ Київ"),
+            'харків': (49.9935, 36.2304, "← Київ"),
+            'полтава': (49.5883, 34.5514, "↖ Київ"),
+            'черкаси': (49.4444, 32.0598, "↑ Київ"),
+            'житомир': (50.2547, 28.6587, "→ Київ"),
+            'біла церква': (49.7939, 30.1014, "↗ Київ")
+        }
+
+        if source_city in approach_directions:
+            source_lat, source_lng, direction_label = approach_directions[source_city]
+
+            # Calculate bearing from source to Kyiv
+            bearing = calculate_bearing(source_lat, source_lng, kyiv_lat, kyiv_lng)
+
+            # Place marker on approach path (70% of the way from source to Kyiv)
+            progress = 0.7  # 70% towards Kyiv
+            approach_lat = source_lat + (kyiv_lat - source_lat) * progress
+            approach_lng = source_lng + (kyiv_lng - source_lng) * progress
+
+            return approach_lat, approach_lng, f"{direction_label} ({int(bearing)}°)", source_city
+
+    # Fallback: use directional keywords to offset from center
+    direction_offsets = {
+        'півдн': (-0.08, 0, "↑ Київ (Пд)"),      # south
+        'півден': (-0.08, 0, "↑ Київ (Пд)"),
+        'пн': (0.08, 0, "↓ Київ (Пн)"),          # north
+        'північ': (0.08, 0, "↓ Київ (Пн)"),
+        'сх': (0, 0.08, "← Київ (Сх)"),          # east
+        'схід': (0, 0.08, "← Київ (Сх)"),
+        'зх': (0, -0.08, "→ Київ (Зх)"),         # west
+        'захід': (0, -0.08, "→ Київ (Зх)"),
+        'пд-сх': (-0.06, 0.06, "↖ Київ (ПдСх)"), # southeast
+        'пн-зх': (0.06, -0.06, "↘ Київ (ПнЗх)"), # northwest
+    }
+
+    for direction, (lat_offset, lng_offset, label) in direction_offsets.items():
+        if direction in threat_lower:
+            return (kyiv_lat + lat_offset, kyiv_lng + lng_offset,
+                   label, direction)
+
+    # Default: return regular Kyiv coordinates
+    return kyiv_lat, kyiv_lng, "Київ", None
+
+def extract_shahed_course_info(threat_text):
+    """
+    Extract course information from Shahed/UAV threat messages.
+    Returns: (source_city, target_city, direction, bearing, course_type)
+    """
+    text_lower = threat_text.lower()
+
+    # Common course patterns for Shahed/UAV
+    course_patterns = [
+        # "БпЛА курсом з [source] на [target]"
+        r'бпла\s+.*?курс(?:ом)?\s+з\s+([а-яіїєё\s\-\']+?)\s+на\s+([а-яіїєё\s\-\']+?)(?:\s|$|[,\.\!])',
+        # "БпЛА курсом на [target] з [source]"
+        r'бпла\s+.*?курс(?:ом)?\s+на\s+([а-яіїєё\s\-\']+?)\s+з\s+([а-яіїєё\s\-\']+?)(?:\s|$|[,\.\!])',
+        # "БпЛА з [source] курсом на [target]"
+        r'бпла\s+з\s+([а-яіїєё\s\-\']+?)\s+курс(?:ом)?\s+на\s+([а-яіїєё\s\-\']+?)(?:\s|$|[,\.\!])',
+        # "БпЛА з [source] у напрямку [target]"
+        r'бпла\s+з\s+([а-яіїєё\s\-\']+?)\s+у\s+напрямк[уи]\s+([а-яіїєё\s\-\']+?)(?:\s|$|[,\.\!])',
+        # "БпЛА курсом на [target]" (target only)
+        r'бпла\s+.*?курс(?:ом)?\s+на\s+([а-яіїєё\s\-\']+?)(?=\s*(?:\n|$|[,\.\!\?;]))',
+        # "[count]х БпЛА курс [source]-[target]"
+        r'\d*х?\s*бпла\s+курс\s+([а-яіїєё\s\-\']+?)\s*[-–—]\s*([а-яіїєё\s\-\']+?)(?:\s|$|[,\.\!])',
+    ]
+
+    # Try to extract course information
+    for pattern_idx, pattern in enumerate(course_patterns):
+        matches = re.findall(pattern, text_lower)
+        if matches:
+            match = matches[0]
+
+            if pattern_idx == 0:  # з source на target
+                source = match[0].strip()
+                target = match[1].strip()
+            elif pattern_idx == 1:  # на target з source
+                target = match[0].strip()
+                source = match[1].strip()
+            elif pattern_idx == 2:  # з source курсом на target
+                source = match[0].strip()
+                target = match[1].strip()
+            elif pattern_idx == 3:  # з source у напрямку target
+                source = match[0].strip()
+                target = match[1].strip()
+            elif pattern_idx == 4:  # курсом на target (no source)
+                source = None
+                target = match.strip() if isinstance(match, str) else match[0].strip()
+            elif pattern_idx == 5:  # курс source-target
+                source = match[0].strip()
+                target = match[1].strip()
+
+            # Clean up noise words
+            noise_words = {'область', 'обл', 'район', 'р-н', 'на', 'з', 'від', 'до'}
+            if source:
+                source = ' '.join([word for word in source.split() if word not in noise_words]).strip()
+            if target:
+                target = ' '.join([word for word in target.split() if word not in noise_words]).strip()
+
+            # Determine course type
+            if source and target:
+                course_type = "full_course"  # Full trajectory
+            elif target:
+                course_type = "target_only"  # Only destination
+            else:
+                course_type = "unknown"
+
+            return {
+                'source_city': source,
+                'target_city': target,
+                'course_direction': f"на {target}" if target else None,
+                'raw_direction': None,
+                'course_type': course_type
+            }
+
+    # Try to extract directional information
+    direction_patterns = {
+        'північ': 'N', 'північний': 'N', 'пн': 'N',
+        'південь': 'S', 'південний': 'S', 'пд': 'S',
+        'схід': 'E', 'східний': 'E', 'сх': 'E',
+        'захід': 'W', 'західний': 'W', 'зх': 'W',
+        'північно-східний': 'NE', 'пн-сх': 'NE',
+        'північно-західний': 'NW', 'пн-зх': 'NW',
+        'південно-східний': 'SE', 'пд-сх': 'SE',
+        'південно-західний': 'SW', 'пд-зх': 'SW'
+    }
+
+    for direction_ukr, direction_eng in direction_patterns.items():
+        if direction_ukr in text_lower:
+            return {
+                'source_city': None,
+                'target_city': None,
+                'course_direction': direction_eng,
+                'raw_direction': direction_ukr,
+                'course_type': "directional"
+            }
+
+    return None
 
 def _get_direction_vector(direction_text):
     """Get lat/lng offset vector for a direction text"""

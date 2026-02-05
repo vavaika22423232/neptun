@@ -238,6 +238,274 @@ def register_admin_routes(app):
             subscriptions=subscriptions
         )
 
+    @app.route('/add_channel', methods=['POST'])
+    def add_channel():
+        """Add a channel username or numeric ID at runtime.
+        Body JSON: {"id": "-1001234567890", "secret": "..."}
+        Requires AUTH_SECRET match if set.
+        Persists into channels_dynamic.json and updates global list.
+        """
+        if AUTH_SECRET and request.json.get('secret') != AUTH_SECRET:
+            return jsonify({'status':'error','error':'unauthorized'}), 403
+        cid = str(request.json.get('id','')).strip()
+        if not cid:
+            return jsonify({'status':'error','error':'empty_id'}), 400
+        global CHANNELS
+        # Normalize removing leading @ or https link wrappers
+        cid = cid.replace('https://t.me/','').replace('t.me/','')
+        # Remove joinchat pattern if present (cannot directly fetch by invite hash)
+        if cid.startswith('+'):
+            # Cannot use invite hash directly; require numeric ID user already joined from session
+            return jsonify({'status':'error','error':'invite_link_not_supported_use_numeric_id'}), 400
+        if cid not in CHANNELS:
+            CHANNELS.append(cid)
+            # Persist dynamic list excluding originals from env for clarity
+            orig_env = os.getenv('TELEGRAM_CHANNELS', '').split(',') if os.getenv('TELEGRAM_CHANNELS') else []
+            dynamic_part = [c for c in CHANNELS if c.strip() and c.strip() not in orig_env]
+            save_dynamic_channels(dynamic_part)
+            log.info(f'Added channel {cid}. Total now {len(CHANNELS)}')
+            return jsonify({'status':'ok','added':cid,'total':len(CHANNELS)})
+        return jsonify({'status':'ok','added':False,'message':'exists','total':len(CHANNELS)})
+
+    # ---------------- Manual marker management -----------------
+
+    def _normalize_admin_trajectory(raw_traj):
+        """Sanitize trajectory payload coming from admin UI."""
+        if not isinstance(raw_traj, dict):
+            return None
+
+        def _pt(val):
+            if not isinstance(val, (list, tuple)) or len(val) != 2:
+                return None
+            try:
+                lat = float(val[0])
+                lng = float(val[1])
+                return [round(lat, 6), round(lng, 6)]
+            except (TypeError, ValueError):
+                return None
+
+        start = _pt(raw_traj.get('start'))
+        end = _pt(raw_traj.get('end'))
+        if not (start and end):
+            return None
+
+        traj = {'start': start, 'end': end}
+        for key in ('source', 'target', 'kind'):
+            value = raw_traj.get(key)
+            if isinstance(value, str):
+                value = value.strip()
+                if value:
+                    traj[key] = value[:160]
+        return traj
+
+    @app.route('/admin/add_manual_marker', methods=['POST'])
+    def admin_add_manual_marker():
+        """Add a manual marker via admin panel.
+        JSON body: {"lat":..., "lng":..., "text":"...", "place":"...", "threat_type":"shahed", "icon":"optional.png", "rotation":0}
+        Requires secret if configured.
+        """
+        if not _require_secret(request):
+            return jsonify({'status':'forbidden'}), 403
+        payload = request.get_json(silent=True) or {}
+        try:
+            lat = safe_float(payload.get('lat'))
+            lng = safe_float(payload.get('lng'))
+            if lat is None or lng is None:
+                raise ValueError('invalid_coordinates')
+            if not (43 <= lat <= 53.8 and 21 <= lng <= 41.5):
+                raise ValueError('out_of_bounds')
+            text = (payload.get('text') or '').strip()
+            if not text:
+                raise ValueError('empty_text')
+            place = (payload.get('place') or '').strip()
+            threat_type = (payload.get('threat_type') or '').strip().lower() or 'manual'
+            allowed_types = {'shahed','raketa','avia','pvo','vibuh','alarm','alarm_cancel','mlrs','artillery','obstril','fpv','pusk','manual'}
+            if threat_type not in allowed_types:
+                threat_type = 'manual'
+            icon = (payload.get('icon') or '').strip()
+            rotation = payload.get('rotation', 0)
+            try:
+                rotation = float(rotation)
+            except:
+                rotation = 0
+            trajectory = _normalize_admin_trajectory(payload.get('trajectory'))
+            course_direction = (payload.get('course_direction') or '').strip() or None
+            course_target = (payload.get('course_target') or '').strip() or None
+            course_source = (payload.get('course_source') or '').strip() or (place or None)
+            course_type = (payload.get('course_type') or '').strip() or None
+
+            tz = pytz.timezone('Europe/Kyiv')
+            now_dt = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
+            mid = 'manual-' + uuid.uuid4().hex[:12]
+            messages = load_messages()
+            # Build message dict similar to parsed messages
+            msg = {
+                'id': mid,
+                'date': now_dt,
+                'text': text,
+                'place': place,
+                'lat': round(lat, 6),
+                'lng': round(lng, 6),
+                'threat_type': threat_type,
+                'marker_icon': icon or None,
+                'rotation': rotation,
+                'manual': True,
+                'channel': 'manual',
+                'source': 'manual'
+            }
+            if trajectory:
+                msg['trajectory'] = trajectory
+            if course_direction:
+                msg['course_direction'] = course_direction
+            if course_target:
+                msg['course_target'] = course_target
+            if course_source:
+                msg['course_source'] = course_source
+            if course_type:
+                msg['course_type'] = course_type
+            messages.append(msg)
+            save_messages(messages)
+            return jsonify({'status':'ok','id':mid})
+        except Exception as e:
+            return jsonify({'status':'error','error':str(e)}), 400
+
+    @app.route('/admin/update_manual_marker', methods=['POST'])
+    def admin_update_manual_marker():
+        """Update existing manual marker coordinates/text/type."""
+        if not _require_secret(request):
+            return jsonify({'status': 'forbidden'}), 403
+
+        payload = request.get_json(silent=True) or {}
+        marker_id = (payload.get('id') or '').strip()
+        if not marker_id:
+            return jsonify({'status': 'error', 'error': 'missing_id'}), 400
+
+        try:
+            lat = safe_float(payload.get('lat'))
+            lng = safe_float(payload.get('lng'))
+            if lat is None or lng is None:
+                raise ValueError('invalid_coordinates')
+            if not (43 <= lat <= 53.8 and 21 <= lng <= 41.5):
+                raise ValueError('out_of_bounds')
+            place = (payload.get('place') or '').strip()
+            text = (payload.get('text') or '').strip()
+            if not text:
+                raise ValueError('empty_text')
+            threat_type = (payload.get('threat_type') or '').strip().lower() or 'manual'
+            allowed_types = {'shahed','raketa','avia','pvo','vibuh','alarm','alarm_cancel','mlrs','artillery','obstril','fpv','pusk','manual'}
+            if threat_type not in allowed_types:
+                threat_type = 'manual'
+            rotation = payload.get('rotation', 0)
+            try:
+                rotation = safe_float(rotation) or 0
+            except Exception:
+                rotation = 0
+
+            trajectory = _normalize_admin_trajectory(payload.get('trajectory'))
+            course_direction = (payload.get('course_direction') or '').strip()
+            course_target = (payload.get('course_target') or '').strip()
+            course_source = (payload.get('course_source') or '').strip()
+            course_type = (payload.get('course_type') or '').strip()
+
+            messages = load_messages()
+            updated = False
+            for msg in messages:
+                if msg.get('id') != marker_id:
+                    continue
+                msg['lat'] = round(lat, 6)
+                msg['lng'] = round(lng, 6)
+                msg['place'] = place
+                msg['text'] = text
+                msg['threat_type'] = threat_type
+                msg['rotation'] = rotation
+                msg['manual'] = msg.get('manual', True)
+
+                if 'trajectory' in payload:
+                    if trajectory:
+                        msg['trajectory'] = trajectory
+                    else:
+                        msg.pop('trajectory', None)
+                if 'course_direction' in payload:
+                    if course_direction:
+                        msg['course_direction'] = course_direction
+                    else:
+                        msg.pop('course_direction', None)
+                if 'course_target' in payload:
+                    if course_target:
+                        msg['course_target'] = course_target
+                    else:
+                        msg.pop('course_target', None)
+                if 'course_source' in payload:
+                    if course_source:
+                        msg['course_source'] = course_source
+                    else:
+                        msg.pop('course_source', None)
+                if 'course_type' in payload:
+                    if course_type:
+                        msg['course_type'] = course_type
+                    else:
+                        msg.pop('course_type', None)
+                updated = True
+                break
+
+            if not updated:
+                return jsonify({'status': 'error', 'error': 'not_found'}), 404
+
+            save_messages(messages)
+            return jsonify({'status': 'ok', 'id': marker_id})
+        except Exception as e:
+            return jsonify({'status': 'error', 'error': str(e)}), 400
+
+    @app.route('/admin/markers')
+    def admin_markers():
+        """API endpoint to get recent markers for admin map"""
+        if not _require_secret(request):
+            return jsonify({'status':'forbidden'}), 403
+
+        all_msgs = load_messages()
+        # Get recent markers (exclude pending geo)
+        recent_markers = [m for m in reversed(all_msgs) if m.get('lat') and m.get('lng') and not m.get('pending_geo')][:120]
+
+        return jsonify({
+            'status': 'ok',
+            'markers': recent_markers,
+            'count': len(recent_markers)
+        })
+
+    @app.route('/admin/raw_msgs')
+    def admin_raw_msgs():
+        """API endpoint to get raw messages (pending geo) for admin panel"""
+        if not _require_secret(request):
+            return jsonify({'status':'forbidden'}), 403
+
+        all_msgs = load_messages()
+        raw_msgs = [m for m in reversed(all_msgs) if m.get('pending_geo')][:100]  # latest 100
+        raw_count = len([m for m in all_msgs if m.get('pending_geo')])
+
+        return jsonify({
+            'status': 'ok',
+            'raw_msgs': raw_msgs,
+            'raw_count': raw_count
+        })
+
+    @app.route('/admin/delete_manual_marker', methods=['POST'])
+    def admin_delete_manual_marker():
+        if not _require_secret(request):
+            return jsonify({'status':'forbidden'}), 403
+        payload = request.get_json(silent=True) or {}
+        mid = (payload.get('id') or '').strip()
+        if not mid:
+            return jsonify({'status':'error','error':'missing id'}), 400
+        try:
+            messages = load_messages()
+            new_list = [m for m in messages if not (m.get('manual') and m.get('id') == mid)]
+            if len(new_list) == len(messages):
+                return jsonify({'status':'ok','deleted':False})
+            save_messages(new_list)
+            return jsonify({'status':'ok','deleted':True})
+        except Exception as e:
+            return jsonify({'status':'error','error':str(e)}), 500
+
     @app.route('/admin/clear_debug_logs', methods=['POST'])
     def clear_debug_logs():
         if not _require_secret(request):
