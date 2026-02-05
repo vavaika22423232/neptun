@@ -14,7 +14,7 @@
     <priority>1.0</priority>
     <image:image>
       <image:loc>https://neptun.in.ua/static/og-image.png</image:loc>
-      <image:title>Карта тривог України онлайн - NEPTUN</image:title>
+      <image:title>Карта шахедів і тривог України онлайн - NEPTUN</image:title>
       <image:caption>Карта повітряних тривог України в реальному часі. Відстеження шахедів, дронів, ракет. Оновлення кожні 5 секунд.</image:caption>
     </image:image>
     <xhtml:link rel="alternate" hreflang="uk" href="https://neptun.in.ua/"/>
@@ -24,6 +24,26 @@
   <!-- ======================================== -->
   <!-- ОСНОВНІ ФУНКЦІОНАЛЬНІ СТОРІНКИ -->
   <!-- ======================================== -->
+  
+  <!-- Карта шахедів / радар шахедів -->
+  <url>
+    <loc>https://neptun.in.ua/shahed-map</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.95</priority>
+  </url>
+  <url>
+    <loc>https://neptun.in.ua/radar-shahediv</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.94</priority>
+  </url>
+  <url>
+    <loc>https://neptun.in.ua/karta-shahediv</loc>
+    <lastmod>2026-01-09</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.94</priority>
+  </url>
   
   <!-- Карта відключень світла ДТЕК -->
   <url>

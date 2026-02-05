@@ -96,6 +96,28 @@ class _NotificationMetrics {
   }
 }
 
+class _NotificationContent {
+  final String title;
+  final String body;
+  final String? subText;
+  final bool isAllClear;
+  final bool isRocket;
+  final bool isDrone;
+  final bool isKab;
+  final bool isCritical;
+
+  _NotificationContent({
+    required this.title,
+    required this.body,
+    required this.subText,
+    required this.isAllClear,
+    required this.isRocket,
+    required this.isDrone,
+    required this.isKab,
+    required this.isCritical,
+  });
+}
+
 TimeOfDay _parseTimeOfDay(String value, TimeOfDay fallback) {
   final parts = value.split(':');
   if (parts.length != 2) return fallback;
@@ -1446,6 +1468,95 @@ class NotificationService {
     }
   }
 
+  _NotificationContent _buildNotificationContent({
+    required String rawTitle,
+    required String rawBody,
+    required String region,
+    required String threatType,
+    required String alarmState,
+    required Map<String, dynamic> data,
+  }) {
+    final lowerBody = rawBody.toLowerCase();
+    final lowerType = threatType.toLowerCase();
+
+    final isAllClear = alarmState == 'ended' || lowerBody.contains('відбій');
+    final isRocket = lowerType.contains('ракет') || lowerBody.contains('ракет');
+    final isDrone = lowerType.contains('бпла') ||
+        lowerBody.contains('бпла') ||
+        lowerBody.contains('дрон') ||
+        lowerType.contains('дрон') ||
+        lowerBody.contains('шахед') ||
+        lowerType.contains('шахед');
+    final isKab = lowerType.contains('каб') || lowerBody.contains('каб');
+    final isCritical = data['is_critical'] == 'true' || data['type'] == 'rocket' || isRocket || isKab;
+
+    final source = data['source']?.toString() ?? '';
+    final time = data['time']?.toString() ?? data['timestamp']?.toString() ?? '';
+    final normalizedThreat = _normalizeThreatLabel(threatType, rawBody);
+
+    String title = rawTitle;
+    if (title.trim().isEmpty) {
+      title = isAllClear ? 'Відбій тривоги' : normalizedThreat;
+    }
+
+    String body = rawBody;
+    if (body.trim().isEmpty) {
+      if (region.isNotEmpty) {
+        body = '$normalizedThreat · $region';
+      } else {
+        body = normalizedThreat;
+      }
+    }
+
+    if (time.isNotEmpty) {
+      body = '$body · $time';
+    }
+
+    String? subText;
+    if (region.isNotEmpty) {
+      subText = region;
+    } else if (source.isNotEmpty) {
+      subText = source;
+    }
+
+    if (source.isNotEmpty && !body.toLowerCase().contains(source.toLowerCase())) {
+      body = '$body · $source';
+    }
+
+    return _NotificationContent(
+      title: title,
+      body: body,
+      subText: subText,
+      isAllClear: isAllClear,
+      isRocket: isRocket,
+      isDrone: isDrone,
+      isKab: isKab,
+      isCritical: isCritical,
+    );
+  }
+
+  String _normalizeThreatLabel(String threatType, String rawBody) {
+    final lowerType = threatType.toLowerCase();
+    final lowerBody = rawBody.toLowerCase();
+
+    if (lowerType.contains('каб') || lowerBody.contains('каб')) {
+      return 'КАБ';
+    }
+    if (lowerType.contains('ракет') || lowerBody.contains('ракет')) {
+      return 'Ракети';
+    }
+    if (lowerType.contains('дрон') || lowerType.contains('бпла') || lowerBody.contains('шахед')) {
+      return 'БПЛА';
+    }
+    if (lowerType.contains('авіа') || lowerBody.contains('авіа')) {
+      return 'Авіація';
+    }
+    if (lowerType.contains('арт') || lowerBody.contains('арт')) {
+      return 'Артилерія';
+    }
+    return threatType.isNotEmpty ? threatType : 'Тривога';
+  }
+
   Future<void> _showLocalNotification(RemoteMessage message, {bool vibrationEnabled = true}) async {
     final data = message.data;
     
@@ -1455,18 +1566,14 @@ class NotificationService {
     final region = data['region'] ?? '';
     final threatType = data['threat_type'] ?? '';
     final alarmState = data['alarm_state'] ?? '';
-    final isCritical = data['is_critical'] == 'true' || data['type'] == 'rocket';
-    
-    // Determine notification type and styling
-    final bool isAllClear = alarmState == 'ended' || rawBody.toLowerCase().contains('відбій');
-    final bool isRocket = threatType.toLowerCase().contains('ракет') || rawBody.toLowerCase().contains('ракет');
-    final bool isDrone = threatType.toLowerCase().contains('бпла') ||
-        rawBody.toLowerCase().contains('бпла') ||
-        rawBody.toLowerCase().contains('дрон') ||
-        threatType.toLowerCase().contains('дрон') ||
-        rawBody.toLowerCase().contains('шахед') ||
-        threatType.toLowerCase().contains('шахед');
-    final bool isKab = threatType.toLowerCase().contains('каб') || rawBody.toLowerCase().contains('каб');
+    final content = _buildNotificationContent(
+      rawTitle: rawTitle,
+      rawBody: rawBody,
+      region: region,
+      threatType: threatType,
+      alarmState: alarmState,
+      data: data,
+    );
     
     // Choose emoji and color based on threat type
     String emoji;
@@ -1477,22 +1584,22 @@ class NotificationService {
     // Використовуємо різні канали для режимів з/без вібрації
     final vibSuffix = vibrationEnabled ? '' : '_silent';
     
-    if (isAllClear) {
+    if (content.isAllClear) {
       emoji = '✅';
       notificationColor = const Color(0xFF30D158);  // Green
       channelId = 'all_clear_alerts$vibSuffix';
       channelName = vibrationEnabled ? 'Відбій тривоги' : 'Відбій тривоги (без вібро)';
-    } else if (isRocket) {
+    } else if (content.isRocket) {
       emoji = '🚀';
       notificationColor = const Color(0xFFE63946);  // Red
       channelId = 'critical_alerts$vibSuffix';
       channelName = vibrationEnabled ? 'Критичні тривоги' : 'Критичні тривоги (без вібро)';
-    } else if (isKab) {
+    } else if (content.isKab) {
       emoji = '💣';
       notificationColor = const Color(0xFFE63946);  // Red
       channelId = 'critical_alerts$vibSuffix';
       channelName = vibrationEnabled ? 'Критичні тривоги' : 'Критичні тривоги (без вібро)';
-    } else if (isDrone) {
+    } else if (content.isDrone) {
       emoji = '🛩️';
       notificationColor = const Color(0xFFFF9500);  // Orange
       channelId = 'normal_alerts$vibSuffix';
@@ -1505,16 +1612,11 @@ class NotificationService {
     }
     
     // Format title with emoji
-    final title = rawTitle.startsWith(emoji) ? rawTitle : '$emoji $rawTitle';
+    final title = content.title.startsWith(emoji) ? content.title : '$emoji ${content.title}';
     
     // Format body - clean and informative
-    String body = rawBody;
-    String? subText;
-    
-    // Add subtext with region info if available
-    if (region.isNotEmpty && !body.contains(region)) {
-      subText = region;
-    }
+    String body = content.body;
+    String? subText = content.subText;
 
     // Визначаємо налаштування вібрації
     final shouldVibrate = vibrationEnabled;
@@ -1531,11 +1633,11 @@ class NotificationService {
     final androidDetails = AndroidNotificationDetails(
       channelId,
       channelName,
-      channelDescription: isCritical
+      channelDescription: content.isCritical
           ? 'Сповіщення про ракети та критичні загрози'
           : 'Сповіщення про повітряну тривогу',
-      importance: isCritical ? Importance.max : Importance.high,
-      priority: isCritical ? Priority.max : Priority.high,
+      importance: content.isCritical ? Importance.max : Importance.high,
+      priority: content.isCritical ? Priority.max : Priority.high,
       icon: '@mipmap/ic_launcher',
       color: notificationColor,
       colorized: true,  // Use color for notification background
@@ -1545,7 +1647,7 @@ class NotificationService {
       styleInformation: bigTextStyle,
       subText: subText,
       ticker: title,  // Text shown in status bar
-      category: isCritical ? AndroidNotificationCategory.alarm : AndroidNotificationCategory.message,
+      category: content.isCritical ? AndroidNotificationCategory.alarm : AndroidNotificationCategory.message,
       visibility: NotificationVisibility.public,  // Show on lock screen
     );
 
@@ -1555,7 +1657,7 @@ class NotificationService {
       presentSound: true,
       subtitle: subText,
       threadIdentifier: region.isNotEmpty ? region : 'alerts',  // Group by region
-      interruptionLevel: isCritical ? InterruptionLevel.timeSensitive : InterruptionLevel.active,
+      interruptionLevel: content.isCritical ? InterruptionLevel.timeSensitive : InterruptionLevel.active,
     );
 
     final details = NotificationDetails(

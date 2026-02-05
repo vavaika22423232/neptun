@@ -10,7 +10,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../data/ukraine_region_paths.dart';
 import '../data/ukraine_district_paths.dart';
 import '../models/map_models.dart';
+import '../models/threat_event.dart';
 import '../services/map_data_service.dart';
+import '../services/threat_feed_service.dart';
 import '../utils/svg_path_parser.dart';
 import '../services/ballistic_alert_service.dart';
 import '../services/widget_service.dart';
@@ -75,6 +77,7 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
   bool _alarmsFetching = false;
   bool _markersFetching = false;
   final MapDataService _mapDataService = MapDataService();
+  final ThreatFeedService _threatFeedService = ThreatFeedService();
   
   // Інтервали оновлення (зменшено для швидшого оновлення)
   static const int alarmUpdateInterval = 5; // секунд
@@ -86,8 +89,31 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
   DateTime? _lastHistoryEntryAt;
   static const Duration _historyMinInterval = Duration(minutes: 1);
 
+  // Threat feed (monitoring)
+  List<ThreatEvent> _recentEvents = [];
+  final Set<String> _filterableThreatTypes = {
+    ThreatType.shahed,
+    ThreatType.raketa,
+    ThreatType.kab,
+    ThreatType.fpv,
+    ThreatType.rszv,
+    ThreatType.avia,
+    ThreatType.artillery,
+    ThreatType.obstril,
+  };
+  final Set<String> _visibleThreatTypes = {
+    ThreatType.shahed,
+    ThreatType.raketa,
+    ThreatType.kab,
+    ThreatType.fpv,
+    ThreatType.rszv,
+    ThreatType.avia,
+  };
+
   // Operator mode (advanced controls)
   bool _operatorModeEnabled = false;
+  bool _showSvgLayer = true;
+  bool _showMarkersLayer = true;
   
   // Parsed paths cache
   final Map<String, List<Path>> _statePathsCache = {};
@@ -510,6 +536,8 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
           setState(() {
             threatMarkers = markerData.markers;
             markerCounts = markerData.counts;
+            _syncFilterTypes(markerData.markers);
+            _recentEvents = _threatFeedService.buildEvents(markerData.markers);
           });
         }
         _addThreatHistoryEntry(markerData.counts);
@@ -540,10 +568,32 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
     }
   }
 
+  void _syncFilterTypes(List<ThreatMarker> markers) {
+    for (final marker in markers) {
+      _filterableThreatTypes.add(marker.threatType);
+    }
+  }
+
+  List<ThreatMarker> _applyThreatFilter(List<ThreatMarker> markers) {
+    if (_visibleThreatTypes.isEmpty) return markers;
+    return markers
+        .where((marker) => _visibleThreatTypes.contains(marker.threatType))
+        .toList();
+  }
+
+  Map<String, int> _countVisibleMarkers(List<ThreatMarker> markers) {
+    final counts = <String, int>{};
+    for (final marker in markers) {
+      counts[marker.threatType] = (counts[marker.threatType] ?? 0) + 1;
+    }
+    return counts;
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final colors = MapColors(isDark: isDark);
+    final visibleMarkers = _applyThreatFilter(threatMarkers);
     
     return Scaffold(
       backgroundColor: colors.bgMain,
@@ -584,7 +634,7 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
                         )
                       : error != null && lastUpdate == null
                           ? _buildError(colors)
-                          : _buildMap(colors),
+                          : _buildMap(colors, visibleMarkers),
                 ),
               ],
             ),
@@ -611,7 +661,7 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
           
           // ===== THREAT STATS WIDGET =====
           // Опускаємо нижче якщо активний банер балістики або відбою
-          if (markerCounts.isNotEmpty)
+          if (visibleMarkers.isNotEmpty)
             Positioned(
               top: MediaQuery.of(context).padding.top + 
                    ((_ballisticThreatActive || _allClearController.value > 0) ? 80 : 8),
@@ -619,9 +669,16 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 300),
                 curve: Curves.easeOut,
-                child: _buildThreatStats(colors),
+                child: _buildThreatStats(colors, visibleMarkers),
               ),
             ),
+
+          // ===== THREAT FEED =====
+          Positioned(
+            left: 12,
+            bottom: 88,
+            child: _buildThreatFeed(colors, visibleMarkers),
+          ),
 
           // ===== OPERATOR MODE TOGGLE + PANEL =====
           Positioned(
@@ -720,7 +777,25 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
           IconButton(
             visualDensity: VisualDensity.compact,
             icon: Icon(Icons.history, size: 18, color: colors.textAccent),
-            onPressed: () => _showThreatStatsDialog(colors),
+            onPressed: () => _showThreatStatsDialog(colors, _applyThreatFilter(threatMarkers)),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: Icon(
+              _showSvgLayer ? Icons.layers : Icons.layers_clear,
+              size: 18,
+              color: _showSvgLayer ? colors.textAccent : colors.textSecondary,
+            ),
+            onPressed: () => setState(() => _showSvgLayer = !_showSvgLayer),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: Icon(
+              _showMarkersLayer ? Icons.place : Icons.place_outlined,
+              size: 18,
+              color: _showMarkersLayer ? colors.textAccent : colors.textSecondary,
+            ),
+            onPressed: () => setState(() => _showMarkersLayer = !_showMarkersLayer),
           ),
         ],
       ),
@@ -911,11 +986,12 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
   }
   
   // ===== THREAT STATS PANEL =====
-  Widget _buildThreatStats(MapColors colors) {
+  Widget _buildThreatStats(MapColors colors, List<ThreatMarker> visibleMarkers) {
+    final visibleCounts = _countVisibleMarkers(visibleMarkers);
     // Групуємо типи загроз для кращого відображення
     final groupedCounts = <String, int>{};
     
-    for (final entry in markerCounts.entries) {
+    for (final entry in visibleCounts.entries) {
       final type = entry.key;
       final count = entry.value;
       
@@ -944,7 +1020,7 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
     final total = sortedEntries.fold<int>(0, (sum, e) => sum + e.value);
     
     return GestureDetector(
-      onTap: () => _showThreatStatsDialog(colors),
+      onTap: () => _showThreatStatsDialog(colors, visibleMarkers),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
@@ -1065,158 +1141,192 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
     }
   }
   
-  void _showThreatStatsDialog(MapColors colors) {
-    final total = markerCounts.values.fold<int>(0, (sum, v) => sum + v);
+  void _showThreatStatsDialog(MapColors colors, List<ThreatMarker> visibleMarkers) {
+    final visibleCounts = _countVisibleMarkers(visibleMarkers);
+    final total = visibleCounts.values.fold<int>(0, (sum, v) => sum + v);
     
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: colors.panelBg,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            const Text('🎯', style: TextStyle(fontSize: 24)),
-            const SizedBox(width: 8),
-            Text(
-              'Статистика загроз',
-              style: TextStyle(
-                color: colors.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: colors.panelBg,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              const Text('🎯', style: TextStyle(fontSize: 24)),
+              const SizedBox(width: 8),
+              Text(
+                'Статистика загроз',
+                style: TextStyle(
+                  color: colors.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: colors.isDark 
-                    ? Colors.orange.withOpacity(0.1)
-                    : Colors.orange.withOpacity(0.05),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.orange.withOpacity(0.3)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.info_outline, color: Colors.orange, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Орієнтовно за останні $timeRange хв',
-                      style: TextStyle(
-                        color: colors.textSecondary,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            // Загальна кількість
-            Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      Colors.red.withOpacity(0.2),
-                      Colors.orange.withOpacity(0.2),
-                    ],
-                  ),
+                  color: colors.isDark 
+                      ? Colors.orange.withOpacity(0.1)
+                      : Colors.orange.withOpacity(0.05),
                   borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.orange.withOpacity(0.3)),
                 ),
-                child: Column(
-                  children: [
-                    Text(
-                      '$total',
-                      style: TextStyle(
-                        color: colors.textPrimary,
-                        fontSize: 36,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      'об\'єктів у повітрі',
-                      style: TextStyle(
-                        color: colors.textSecondary,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            // Деталізація
-            ...markerCounts.entries.map((entry) {
-              final icon = _getThreatEmoji(entry.key);
-              final name = ThreatType.names[entry.key] ?? entry.key;
-              final color = _getThreatColor(entry.key);
-              
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(
                   children: [
-                    Text(icon, style: const TextStyle(fontSize: 18)),
+                    const Icon(Icons.info_outline, color: Colors.orange, size: 18),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        name,
-                        style: TextStyle(
-                          color: colors.textPrimary,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: color.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        '${entry.value}',
-                        style: TextStyle(
-                          color: color,
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }),
-            if (_threatHistory.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              Text(
-                'Історія (останні інтервали)',
-                style: TextStyle(
-                  color: colors.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 8),
-              ..._threatHistory.reversed.take(6).map((entry) {
-                final time =
-                    '${entry.timestamp.hour.toString().padLeft(2, '0')}:${entry.timestamp.minute.toString().padLeft(2, '0')}';
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Row(
-                    children: [
-                      Text(
-                        time,
+                        'Орієнтовно за останні $timeRange хв',
                         style: TextStyle(
                           color: colors.textSecondary,
                           fontSize: 12,
                         ),
                       ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: _filterableThreatTypes.map((type) {
+                  final selected = _visibleThreatTypes.contains(type);
+                  final label = ThreatType.names[type] ?? type;
+                  return FilterChip(
+                    label: Text(label, style: const TextStyle(fontSize: 11)),
+                    selected: selected,
+                    onSelected: (value) {
+                      setState(() {
+                        if (value) {
+                          _visibleThreatTypes.add(type);
+                        } else {
+                          _visibleThreatTypes.remove(type);
+                        }
+                      });
+                      setDialogState(() {});
+                    },
+                    selectedColor: colors.isDark
+                        ? colors.textAccent.withOpacity(0.2)
+                        : colors.textAccent.withOpacity(0.15),
+                    checkmarkColor: colors.textAccent,
+                    backgroundColor: colors.isDark ? colors.panelBg : Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      side: BorderSide(color: colors.panelBorder),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 16),
+              // Загальна кількість
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.red.withOpacity(0.2),
+                        Colors.orange.withOpacity(0.2),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        '$total',
+                        style: TextStyle(
+                          color: colors.textPrimary,
+                          fontSize: 36,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        'об\'єктів у повітрі',
+                        style: TextStyle(
+                          color: colors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Деталізація
+              ...visibleCounts.entries.map((entry) {
+                final icon = _getThreatEmoji(entry.key);
+                final name = ThreatType.names[entry.key] ?? entry.key;
+                final color = _getThreatColor(entry.key);
+                
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      Text(icon, style: const TextStyle(fontSize: 18)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          name,
+                          style: TextStyle(
+                            color: colors.textPrimary,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: color.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '${entry.value}',
+                          style: TextStyle(
+                            color: color,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+              if (_threatHistory.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text(
+                  'Історія (останні інтервали)',
+                  style: TextStyle(
+                    color: colors.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ..._threatHistory.reversed.take(6).map((entry) {
+                  final time =
+                      '${entry.timestamp.hour.toString().padLeft(2, '0')}:${entry.timestamp.minute.toString().padLeft(2, '0')}';
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      children: [
+                        Text(
+                          time,
+                          style: TextStyle(
+                            color: colors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: LinearProgressIndicator(
@@ -1252,6 +1362,87 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
               style: TextStyle(color: colors.textAccent),
             ),
           ),
+        ],
+      ),
+    ),
+    );
+  }
+
+  Widget _buildThreatFeed(MapColors colors, List<ThreatMarker> visibleMarkers) {
+    final filteredEvents = _recentEvents
+        .where((event) =>
+            _visibleThreatTypes.isEmpty ||
+            _visibleThreatTypes.contains(event.threatType))
+        .take(5)
+        .toList();
+
+    if (filteredEvents.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      width: 220,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: colors.panelBg,
+        border: Border.all(color: colors.panelBorder),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.12),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Лента',
+            style: TextStyle(
+              color: colors.textPrimary,
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 6),
+          ...filteredEvents.map((event) {
+            final time = event.timestamp != null
+                ? '${event.timestamp!.hour.toString().padLeft(2, '0')}:${event.timestamp!.minute.toString().padLeft(2, '0')}'
+                : '--:--';
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(_getThreatEmoji(event.threatType),
+                      style: const TextStyle(fontSize: 12)),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          event.title,
+                          style: TextStyle(
+                            color: colors.textPrimary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          '${event.location} · $time',
+                          style: TextStyle(
+                            color: colors.textSecondary,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
         ],
       ),
     );
@@ -1313,7 +1504,7 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
     }
   }
   
-  Widget _buildMap(MapColors colors) {
+  Widget _buildMap(MapColors colors, List<ThreatMarker> visibleMarkers) {
     final isDark = colors.isDark;
     
     return FlutterMap(
@@ -1361,25 +1552,26 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
           maxZoom: 18,
         ),
         // Custom SVG overlay using MobileLayerTransformer
-        if (_svgOpacity > 0)
+        if (_svgOpacity > 0 && _showSvgLayer)
           _SvgMapLayer(
             statePathsCache: _statePathsCache,
             districtPathsCache: _districtPathsCache,
             stateAlarms: stateAlarms,
             districtAlarms: districtAlarms,
             stateThreatTypes: stateThreatTypes,
-            threatMarkers: threatMarkers,
+            threatMarkers: visibleMarkers,
             pulseValue: _pulseAnimation.value,
             mapColors: colors,
             opacity: _svgOpacity,
             onMarkerTap: _showMarkerInfo,
           ),
         // Labels and markers layer - always visible regardless of SVG opacity
-        _LabelsMarkersLayer(
-          threatMarkers: threatMarkers,
-          mapColors: colors,
-          onMarkerTap: _showMarkerInfo,
-        ),
+        if (_showMarkersLayer)
+          _LabelsMarkersLayer(
+            threatMarkers: visibleMarkers,
+            mapColors: colors,
+            onMarkerTap: _showMarkerInfo,
+          ),
       ],
     );
   }

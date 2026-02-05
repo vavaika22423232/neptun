@@ -4847,9 +4847,16 @@ def index_old():
 @app.route('/shahed-map')
 @app.route('/shahed')
 @app.route('/drones')
+@app.route('/radar-shahed')
+@app.route('/radar-shahediv')
+@app.route('/karta-shahediv')
+@app.route('/shahed-radar')
 def shahed_map():
     """Shahed map landing page"""
-    return render_template('shahed_map.html')
+    response = render_template('shahed_map.html')
+    resp = app.response_class(response)
+    resp.headers['Cache-Control'] = 'public, max-age=300'
+    return resp
 
 # --- Consolidated static asset redirects (table-driven) ---
 STATIC_REDIRECTS = {

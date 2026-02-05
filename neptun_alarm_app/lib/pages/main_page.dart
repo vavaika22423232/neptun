@@ -16,7 +16,7 @@ import '../services/notification_service.dart';
 import '../main.dart';
 import 'native_map_page.dart';
 import 'messages_page.dart';
-import 'chat_page.dart';
+import 'chat_home_page.dart';
 import 'safety_page.dart';
 import 'aviation_page.dart';
 import 'premium_page.dart';
@@ -43,8 +43,6 @@ class MainPageState extends State<MainPage> with WidgetsBindingObserver {
   int _onlineUsers = 0;
   Timer? _onlineTimer;
 
-  // GlobalKey for ChatPage to call onPageVisible
-  final GlobalKey<ChatPageState> _chatPageKey = GlobalKey<ChatPageState>();
 
   // 5 основних сторінок в табах (4 + WebView)
   late final List<Widget> _mainPages;
@@ -58,7 +56,7 @@ class MainPageState extends State<MainPage> with WidgetsBindingObserver {
     _mainPages = [
       const NativeMapPage(),
       const MessagesPage(),
-      ChatPage(key: _chatPageKey),
+      const ChatHomePage(),
       const AviationPage(),
       const SafetyPage(),
     ];
@@ -258,10 +256,6 @@ class MainPageState extends State<MainPage> with WidgetsBindingObserver {
       setState(() => _selectedIndex = index);
       HapticFeedback.lightImpact();
       
-      // Notify ChatPage when it becomes visible (index 2 = Chat tab)
-      if (index == 2) {
-        _chatPageKey.currentState?.onPageVisible();
-      }
     }
   }
 
@@ -423,32 +417,21 @@ class MainPageState extends State<MainPage> with WidgetsBindingObserver {
         }
       },
       child: Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: isDark
-                ? [const Color(0xFF000000), const Color(0xFF0A0A0A)]
-                : [AppColors.kyivBlue, AppColors.kyivBlueLight],
-          ),
-        ),
-        child: SafeArea(
-          bottom: false,
-          child: Column(
-            children: [
-              // 🔝 HEADER - Київ Цифровий стиль
-              _buildKyivHeader(isDark, isPremium),
-              
-              // 📱 MAIN CONTENT
-              Expanded(
-                child: IndexedStack(
-                  index: _selectedIndex,
-                  children: _mainPages,
-                ),
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            // 🔝 HEADER - мінімалістичний стиль
+            _buildKyivHeader(isDark, isPremium),
+            
+            // 📱 MAIN CONTENT
+            Expanded(
+              child: IndexedStack(
+                index: _selectedIndex,
+                children: _mainPages,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
       // 📊 BOTTOM NAV + AD BANNER
@@ -461,12 +444,12 @@ class MainPageState extends State<MainPage> with WidgetsBindingObserver {
   Widget _buildKyivHeader(bool isDark, bool isPremium) {
     // Для світлої теми використовуємо більш контрастні кольори
     final containerBg = isDark 
-        ? Colors.white.withValues(alpha: 0.15)
-        : Colors.white.withValues(alpha: 0.25);
+        ? AppColors.darkSurface
+        : AppColors.surface;
     final dividerColor = isDark
-        ? Colors.white.withValues(alpha: 0.2)
-        : Colors.white.withValues(alpha: 0.4);
-    final iconColor = Colors.white;
+        ? AppColors.darkDivider
+        : AppColors.divider;
+    final iconColor = isDark ? Colors.white : AppColors.textPrimary;
     
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -478,8 +461,8 @@ class MainPageState extends State<MainPage> with WidgetsBindingObserver {
             decoration: BoxDecoration(
               color: containerBg,
               borderRadius: BorderRadius.circular(12),
-              border: isDark ? null : Border.all(
-                color: Colors.white.withValues(alpha: 0.3),
+              border: Border.all(
+                color: dividerColor,
                 width: 1,
               ),
             ),
@@ -491,7 +474,7 @@ class MainPageState extends State<MainPage> with WidgetsBindingObserver {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: isDark ? 0.1 : 0.2),
+                    color: isDark ? AppColors.darkCard : AppColors.kyivGray,
                     borderRadius: const BorderRadius.horizontal(left: Radius.circular(11)),
                   ),
                   child: Row(
@@ -518,8 +501,8 @@ class MainPageState extends State<MainPage> with WidgetsBindingObserver {
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
                           color: _onlineUsers > 0 
-                              ? (isDark ? AppColors.kyivGreen : Colors.white)
-                              : Colors.white70,
+                              ? AppColors.kyivGreen
+                              : (isDark ? Colors.white70 : AppColors.textSecondary),
                         ),
                       ),
                     ],
@@ -559,8 +542,8 @@ class MainPageState extends State<MainPage> with WidgetsBindingObserver {
             decoration: BoxDecoration(
               color: containerBg,
               borderRadius: BorderRadius.circular(12),
-              border: isDark ? null : Border.all(
-                color: Colors.white.withValues(alpha: 0.3),
+              border: Border.all(
+                color: dividerColor,
                 width: 1,
               ),
             ),
@@ -578,12 +561,7 @@ class MainPageState extends State<MainPage> with WidgetsBindingObserver {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Colors.amber.withValues(alpha: 0.35),
-                            Colors.orange.withValues(alpha: 0.25),
-                          ],
-                        ),
+                        color: isDark ? AppColors.darkCard : AppColors.kyivGray,
                         borderRadius: const BorderRadius.horizontal(left: Radius.circular(11)),
                       ),
                       child: Row(
@@ -617,7 +595,9 @@ class MainPageState extends State<MainPage> with WidgetsBindingObserver {
                   child: Container(
                     width: 42,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF0088CC).withValues(alpha: isDark ? 0.2 : 0.3),
+                      color: isDark
+                          ? const Color(0xFF0088CC).withValues(alpha: 0.2)
+                          : const Color(0xFF0088CC).withValues(alpha: 0.12),
                       borderRadius: isPremium 
                           ? const BorderRadius.horizontal(left: Radius.circular(11))
                           : BorderRadius.zero,
@@ -625,7 +605,7 @@ class MainPageState extends State<MainPage> with WidgetsBindingObserver {
                     child: Center(
                       child: Icon(
                         Icons.telegram, 
-                        color: isDark ? const Color(0xFF0088CC) : Colors.white,
+                        color: isDark ? const Color(0xFF0088CC) : AppColors.textPrimary,
                         size: 20,
                       ),
                     ),
@@ -659,7 +639,7 @@ class MainPageState extends State<MainPage> with WidgetsBindingObserver {
 
   /// Київ Цифровий Bottom Navigation
   Widget _buildKyivBottomNav(bool isDark) {
-    final bgColor = isDark ? const Color(0xFF121212) : Colors.white;
+    final bgColor = isDark ? AppColors.darkSurface : AppColors.surface;
     final shadowColor = isDark ? Colors.black : Colors.grey;
     
     return Container(
@@ -671,9 +651,9 @@ class MainPageState extends State<MainPage> with WidgetsBindingObserver {
         ),
         boxShadow: [
           BoxShadow(
-            color: shadowColor.withValues(alpha: 0.15),
-            blurRadius: 20,
-            offset: const Offset(0, -4),
+            color: shadowColor.withValues(alpha: 0.08),
+            blurRadius: 16,
+            offset: const Offset(0, -2),
           ),
         ],
       ),
@@ -766,9 +746,6 @@ class MainPageState extends State<MainPage> with WidgetsBindingObserver {
           if (!isSelected) {
             HapticFeedback.lightImpact();
             setState(() => _selectedIndex = index);
-            if (index == 2) {
-              _chatPageKey.currentState?.onPageVisible();
-            }
           }
         },
         behavior: HitTestBehavior.opaque,

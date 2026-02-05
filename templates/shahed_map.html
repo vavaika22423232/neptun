@@ -4,191 +4,151 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0a0e17">
+  <link rel="canonical" href="https://neptun.in.ua{{ request.path }}">
   
-  <title>Карта шахедів онлайн — відстеження дронів в реальному часі</title>
-  <meta name="description" content="Карта шахедів України в реальному часі. Відстежуйте траєкторію польоту дронів, шахедів та БпЛА онлайн 24/7. Миттєві сповіщення.">
-  <meta name="keywords" content="карта шахедів, радар шахедів, відстеження дронів, шахеди онлайн, траєкторія шахедів">
+  <title>Карта шахедів і радар шахедів онлайн — NEPTUN</title>
+  <meta name="description" content="Карта шахедів України в реальному часі. Радар шахедів, траєкторії БПЛА, ракети та КАБ. Повітряні тривоги та рух дронів онлайн 24/7.">
+  <meta name="keywords" content="карта шахедів, радар шахедів, шахеди онлайн, карта дронів, тривоги онлайн">
   <meta name="robots" content="index, follow">
   
-  <meta property="og:title" content="Карта шахедів — радар дронів онлайн">
+  <meta property="og:title" content="Карта шахедів — радар дронів онлайн | NEPTUN">
   <meta property="og:description" content="Відстежуйте шахеди та дрони в реальному часі на інтерактивній карті">
   <meta property="og:type" content="website">
+  <meta property="og:url" content="https://neptun.in.ua{{ request.path }}">
   
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: linear-gradient(135deg, #0a0e17 0%, #1a1a2e 50%, #0f0f23 100%);
+      background: #0a0e17;
       color: #e2e8f0;
       min-height: 100vh;
+    }
+    .page {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 24px 16px 40px;
+    }
+    header {
       display: flex;
       flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      padding: 20px;
+      gap: 10px;
+      margin-bottom: 18px;
     }
-    
-    .container {
-      max-width: 500px;
-    }
-    
-    .icon {
-      font-size: 80px;
-      margin-bottom: 20px;
-      animation: pulse 2s infinite;
-    }
-    
-    @keyframes pulse {
-      0%, 100% { transform: scale(1); opacity: 1; }
-      50% { transform: scale(1.1); opacity: 0.8; }
-    }
-    
     h1 {
       font-size: 2rem;
       font-weight: 700;
-      margin-bottom: 15px;
-      background: linear-gradient(135deg, #f87171, #fbbf24);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
+      color: #f8fafc;
     }
-    
     .subtitle {
       color: #94a3b8;
-      font-size: 1.1rem;
-      margin-bottom: 30px;
+      font-size: 1rem;
       line-height: 1.6;
     }
-    
-    .features {
+    .chips {
       display: flex;
       flex-wrap: wrap;
-      gap: 10px;
-      justify-content: center;
-      margin-bottom: 30px;
+      gap: 8px;
+      margin-top: 6px;
     }
-    
-    .feature {
-      background: rgba(248, 113, 113, 0.1);
-      border: 1px solid rgba(248, 113, 113, 0.2);
-      border-radius: 20px;
-      padding: 8px 16px;
+    .chip {
+      background: rgba(248, 113, 113, 0.12);
+      border: 1px solid rgba(248, 113, 113, 0.24);
+      border-radius: 999px;
+      padding: 6px 12px;
       font-size: 0.85rem;
       color: #fca5a5;
     }
-    
-    .btn {
+    .map-wrap {
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      box-shadow: 0 20px 40px rgba(0,0,0,0.35);
+    }
+    .map-frame {
+      width: 100%;
+      height: 70vh;
+      min-height: 520px;
+      border: 0;
+      display: block;
+      background: #0a0e17;
+    }
+    .content {
+      margin-top: 24px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    .card {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      border-radius: 14px;
+      padding: 16px;
+    }
+    .card h2 {
+      font-size: 1.1rem;
+      margin-bottom: 8px;
+      color: #f1f5f9;
+    }
+    .card p, .card li {
+      color: #cbd5f5;
+      font-size: 0.95rem;
+      line-height: 1.6;
+    }
+    .card ul { padding-left: 18px; margin-top: 6px; }
+    .cta {
+      margin-top: 16px;
       display: inline-flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       background: linear-gradient(135deg, #ef4444, #f97316);
-      color: white;
+      color: #fff;
       text-decoration: none;
-      padding: 18px 40px;
-      border-radius: 50px;
-      font-weight: 700;
-      font-size: 1.2rem;
-      transition: all 0.3s ease;
-      box-shadow: 0 10px 40px rgba(239, 68, 68, 0.3);
+      padding: 12px 22px;
+      border-radius: 999px;
+      font-weight: 600;
     }
-    
-    .btn:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 15px 50px rgba(239, 68, 68, 0.4);
-    }
-    
-    .loader {
-      margin-top: 30px;
-      color: #64748b;
-      font-size: 0.9rem;
-    }
-    
-    .loader span {
-      display: inline-block;
-      animation: blink 1.4s infinite;
-    }
-    
-    .loader span:nth-child(2) { animation-delay: 0.2s; }
-    .loader span:nth-child(3) { animation-delay: 0.4s; }
-    
-    @keyframes blink {
-      0%, 100% { opacity: 0.3; }
-      50% { opacity: 1; }
-    }
-    
-    .stats {
-      margin-top: 40px;
-      display: flex;
-      gap: 30px;
-      justify-content: center;
-    }
-    
-    .stat {
-      text-align: center;
-    }
-    
-    .stat-value {
-      font-size: 1.5rem;
-      font-weight: 700;
-      color: #f87171;
-    }
-    
-    .stat-label {
-      font-size: 0.75rem;
-      color: #64748b;
-      text-transform: uppercase;
+    @media (max-width: 860px) {
+      .content { grid-template-columns: 1fr; }
+      .map-frame { height: 62vh; min-height: 420px; }
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="icon">🛩️</div>
+  <div class="page">
+    <header>
+      <h1>Карта шахедів і радар шахедів онлайн</h1>
+      <p class="subtitle">
+        Одна мапа для тривог і БПЛА: шахеди, дрони, ракети, КАБ. Оновлення в реальному часі.
+      </p>
+      <div class="chips">
+        <span class="chip">🛩️ карта шахедів</span>
+        <span class="chip">📡 радар шахедів</span>
+        <span class="chip">🚨 карта тривог</span>
+        <span class="chip">🧭 траєкторії</span>
+      </div>
+    </header>
     
-    <h1>Карта шахедів онлайн</h1>
-    
-    <p class="subtitle">
-      Відстежуйте траєкторію польоту шахедів, дронів та ракет в реальному часі. 
-      Миттєві сповіщення про загрози у вашому регіоні.
-    </p>
-    
-    <div class="features">
-      <span class="feature">🎯 Траєкторія польоту</span>
-      <span class="feature">⚡ Оновлення 5 сек</span>
-      <span class="feature">🔔 Push-сповіщення</span>
-      <span class="feature">📍 Всі області</span>
+    <div class="map-wrap">
+      <iframe class="map-frame" src="/map-only" title="Карта шахедів та тривог NEPTUN"></iframe>
     </div>
     
-    <a href="https://t.me/+nwvntK75xyI5NTdi" class="btn" id="openBtn">
-      🗺️ Відкрити карту
-    </a>
-    
-    <div class="loader">
-      Завантаження даних<span>.</span><span>.</span><span>.</span>
-    </div>
-    
-    <div class="stats">
-      <div class="stat">
-        <div class="stat-value">24/7</div>
-        <div class="stat-label">Моніторинг</div>
+    <div class="content">
+      <div class="card">
+        <h2>Що показує карта шахедів</h2>
+        <p>На карті відображаються повідомлення про рух БПЛА та шахедів, а також активні повітряні тривоги. Це поєднує «радар шахедів» та «карту тривог» в одному екрані.</p>
+        <ul>
+          <li>Локація та напрямок руху</li>
+          <li>Час події і регіон</li>
+          <li>Тип загрози: шахед, ракета, КАБ</li>
+        </ul>
       </div>
-      <div class="stat">
-        <div class="stat-value">5 сек</div>
-        <div class="stat-label">Оновлення</div>
-      </div>
-      <div class="stat">
-        <div class="stat-value">25</div>
-        <div class="stat-label">Областей</div>
+      <div class="card">
+        <h2>Навіщо потрібен радар шахедів</h2>
+        <p>Радар шахедів допомагає швидко зрозуміти, де саме знаходяться БПЛА і куди вони прямують. Це критично важливо для швидкої реакції.</p>
+        <a class="cta" href="/">Відкрити головну карту</a>
       </div>
     </div>
   </div>
-  
-  <script>
-    // Auto-redirect after 3 seconds
-    setTimeout(() => {
-      window.location.href = 'https://t.me/+nwvntK75xyI5NTdi';
-    }, 3000);
-  </script>
 </body>
 </html>
