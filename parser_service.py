@@ -28,6 +28,7 @@ CITY_COORDS = None
 SETTLEMENTS_INDEX = None
 GROQ_ENABLED = False
 SPACY_AVAILABLE = False
+TELEGRAM_LAST_FETCH_TS = 0
 
 _FORCE_OVERRIDE = {
     'add_debug_log',
@@ -9566,6 +9567,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     return None
 
 async def fetch_loop():
+    global TELEGRAM_LAST_FETCH_TS
     log.info('fetch_loop() started')
     if not client:
         log.warning('Telegram client not configured; skipping fetch loop.')
@@ -9696,6 +9698,7 @@ async def fetch_loop():
             log.info(f'Backfill saved: {total_backfilled} raw messages (geocoding deferred to /data)')
         log.info('Backfill completed.')
     while True:
+        TELEGRAM_LAST_FETCH_TS = time.time()
         new_tracks = []
         for ch in CHANNELS:
             ch = ch.strip()

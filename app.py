@@ -4999,6 +4999,7 @@ def start_fetch_thread():
         return
     log.info('start_fetch_thread: starting new thread')
     FETCH_THREAD_STARTED = True
+    AUTH_STATUS.update({'authorized': False, 'reason': 'starting_fetch'})
     loop = asyncio.new_event_loop()
     def runner():
         log.info('fetch_thread runner started')
@@ -7438,8 +7439,9 @@ if 'health' not in app.view_functions:
             }
         }
 
-        return jsonify({
+        resp = jsonify({
             'status':'ok',
+            'server_time': int(now),
             'messages':len(load_messages()),
             'auth': AUTH_STATUS,
             'visitors': visitors,
@@ -7449,8 +7451,11 @@ if 'health' not in app.view_functions:
             'groq_model': GROQ_MODEL if GROQ_ENABLED else None,
             'groq_available': groq_available,
             'groq_cooldown_seconds': groq_cooldown_remaining,
+            'telegram_last_fetch_ts': getattr(parser_service, 'TELEGRAM_LAST_FETCH_TS', 0),
             'memory': memory_metrics
         })
+        resp.headers['Cache-Control'] = 'no-store'
+        return resp
 
 @app.route('/ads.txt')
 def ads_txt():
