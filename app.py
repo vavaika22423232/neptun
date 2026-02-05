@@ -3282,6 +3282,12 @@ INIT_ONCE = False  # guard to ensure background startup once
 # Persistent dynamic channels file
 CHANNELS_FILE = 'channels_dynamic.json'
 
+def _require_secret(req):
+    if not AUTH_SECRET:
+        return True
+    supplied = req.args.get('secret') or req.headers.get('X-Auth-Secret') or req.form.get('secret')
+    return supplied and supplied == AUTH_SECRET
+
 # Backfill progress tracking
 BACKFILL_STATUS = {
     'in_progress': False,

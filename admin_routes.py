@@ -21,8 +21,9 @@ DDOS_WHITELIST = set(os.environ.get('DDOS_WHITELIST', '').split(',')) - {''}
 
 _INIT_BACKGROUND_DONE = False
 INIT_ONCE = False
+_chat_initialized = False
 
-_FORCE_OVERRIDE = {'INIT_ONCE', '_INIT_BACKGROUND_DONE'}
+_FORCE_OVERRIDE = {'INIT_ONCE', '_INIT_BACKGROUND_DONE', '_chat_initialized'}
 
 def bind_dependencies(source_globals: dict):
     for name, value in source_globals.items():
@@ -2802,8 +2803,6 @@ def register_admin_routes(app):
     # ============== ANONYMOUS CHAT API ==============
     MAX_SYSTEM_MESSAGES = 100  # Limit for system/service messages (reduced from 200)
     CHAT_RETENTION_DAYS = 3    # Keep user messages for 3 days (reduced from 7)
-    _chat_initialized = False
-
     # SSE subscribers for real-time chat
     CHAT_SUBSCRIBERS = set()  # queues for chat SSE clients
     CHAT_TYPING_USERS = {}  # {deviceId: {'nickname': str, 'timestamp': float}}
