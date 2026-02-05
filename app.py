@@ -5003,17 +5003,21 @@ def start_fetch_thread():
             log.info(f'Delaying Telegram fetch start for {FETCH_START_DELAY}s (FETCH_START_DELAY).')
             time.sleep(FETCH_START_DELAY)
         asyncio.set_event_loop(loop)
-        try:
-            log.info('About to call fetch_loop()')
-            loop.run_until_complete(fetch_loop())
-        except AuthKeyDuplicatedError:
-            AUTH_STATUS.update({'authorized': False, 'reason': 'authkey_duplicated_runner'})
-            log.error('Fetch loop stopped: duplicated auth key.')
-        except Exception as e:
-            AUTH_STATUS.update({'authorized': False, 'reason': f'crash:{e.__class__.__name__}'})
-            log.error(f'Fetch loop crashed: {e}')
-        finally:
-            log.info('fetch_thread runner finished')
+        while True:
+            try:
+                log.info('About to call fetch_loop()')
+                loop.run_until_complete(fetch_loop())
+                log.warning('fetch_loop() exited; restarting in 30s')
+                time.sleep(30)
+            except AuthKeyDuplicatedError:
+                AUTH_STATUS.update({'authorized': False, 'reason': 'authkey_duplicated_runner'})
+                log.error('Fetch loop stopped: duplicated auth key.')
+                break
+            except Exception as e:
+                AUTH_STATUS.update({'authorized': False, 'reason': f'crash:{e.__class__.__name__}'})
+                log.error(f'Fetch loop crashed: {e}')
+                time.sleep(30)
+        log.info('fetch_thread runner finished')
     threading.Thread(target=runner, daemon=True).start()
     log.info('start_fetch_thread: thread started successfully')
 
