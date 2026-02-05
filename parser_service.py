@@ -29,6 +29,8 @@ SETTLEMENTS_INDEX = None
 GROQ_ENABLED = False
 SPACY_AVAILABLE = False
 TELEGRAM_LAST_FETCH_TS = 0
+TELEGRAM_FETCH_PHASE = 'init'
+TELEGRAM_LAST_ERROR = ''
 
 _FORCE_OVERRIDE = {
     'add_debug_log',
@@ -9567,57 +9569,76 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     return None
 
 async def fetch_loop():
-    global TELEGRAM_LAST_FETCH_TS
+    global TELEGRAM_LAST_FETCH_TS, TELEGRAM_FETCH_PHASE, TELEGRAM_LAST_ERROR
     log.info('fetch_loop() started')
+    TELEGRAM_FETCH_PHASE = 'starting'
     if not client:
         log.warning('Telegram client not configured; skipping fetch loop.')
+        TELEGRAM_FETCH_PHASE = 'no_client'
         return
     log.info('fetch_loop: client exists, proceeding')
     async def ensure_connected():
         log.info('ensure_connected() called')
+        TELEGRAM_FETCH_PHASE = 'ensure_connected'
         if client.is_connected():
             log.info('Client already connected')
             auth_status = await client.is_user_authorized()
             log.info(f'Authorization status: {auth_status}')
+            TELEGRAM_FETCH_PHASE = 'connected_authorized' if auth_status else 'connected_not_authorized'
             return auth_status
         try:
             log.info('Connecting client...')
+            TELEGRAM_FETCH_PHASE = 'connecting'
             await client.connect()
             log.info('Client connected successfully')
             # If bot token provided and not authorized yet, try bot login
             if BOT_TOKEN and not await client.is_user_authorized():
                 try:
                     log.info('Trying bot token login...')
+                    TELEGRAM_FETCH_PHASE = 'bot_start'
                     await client.start(bot_token=BOT_TOKEN)
                 except Exception as be:
+                    TELEGRAM_LAST_ERROR = f'bot_start:{be.__class__.__name__}'
                     log.error(f'Bot start failed: {be}')
             auth_status = await client.is_user_authorized()
             log.info(f'Final authorization status: {auth_status}')
             if not auth_status:
                 log.error('Not authorized. Use /auth/start & /auth/complete to login or set TELEGRAM_SESSION.')
+                TELEGRAM_FETCH_PHASE = 'not_authorized'
                 return False
+            TELEGRAM_FETCH_PHASE = 'authorized'
             return True
         except AuthKeyDuplicatedError:
             log.error('AuthKeyDuplicatedError: duplicate session. Provide new TELEGRAM_SESSION or re-auth.')
+            TELEGRAM_LAST_ERROR = 'authkey_duplicated'
+            TELEGRAM_FETCH_PHASE = 'error_authkey_duplicated'
             return False
         except AuthKeyUnregisteredError:
             log.error('AuthKeyUnregisteredError: Session invalid/expired. Re-auth needed.')
+            TELEGRAM_LAST_ERROR = 'authkey_unregistered'
+            TELEGRAM_FETCH_PHASE = 'error_authkey_unregistered'
             return False
         except FloodWaitError as fe:
             wait = int(getattr(fe, 'seconds', 60))
             log.warning(f'FloodWait: sleeping {wait}s before reconnect.')
+            TELEGRAM_LAST_ERROR = f'floodwait:{wait}'
+            TELEGRAM_FETCH_PHASE = 'error_floodwait'
             await asyncio.sleep(wait)
             return False
         except Exception as e:
             log.warning(f'ensure_connected error: {e}')
+            TELEGRAM_LAST_ERROR = f'ensure_connected:{e.__class__.__name__}'
+            TELEGRAM_FETCH_PHASE = 'error_ensure_connected'
             return False
 
     if not await ensure_connected():
         AUTH_STATUS.update({'authorized': False, 'reason': 'not_authorized_initial'})
+        TELEGRAM_FETCH_PHASE = 'sleeping_before_retry'
         await asyncio.sleep(180)
         return
     else:
         AUTH_STATUS.update({'authorized': True, 'reason': 'ok'})
+        TELEGRAM_FETCH_PHASE = 'authorized'
     tz = pytz.timezone('Europe/Kyiv')
     # Load existing messages and create ID set (convert to strings for comparison)
     all_data = load_messages()
@@ -9697,6 +9718,7 @@ async def fetch_loop():
             save_messages(all_data)
             log.info(f'Backfill saved: {total_backfilled} raw messages (geocoding deferred to /data)')
         log.info('Backfill completed.')
+    TELEGRAM_FETCH_PHASE = 'running'
     while True:
         TELEGRAM_LAST_FETCH_TS = time.time()
         new_tracks = []

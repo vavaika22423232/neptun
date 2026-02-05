@@ -7452,6 +7452,9 @@ if 'health' not in app.view_functions:
             'groq_available': groq_available,
             'groq_cooldown_seconds': groq_cooldown_remaining,
             'telegram_last_fetch_ts': getattr(parser_service, 'TELEGRAM_LAST_FETCH_TS', 0),
+            'telegram_fetch_phase': getattr(parser_service, 'TELEGRAM_FETCH_PHASE', 'unknown'),
+            'telegram_last_error': getattr(parser_service, 'TELEGRAM_LAST_ERROR', ''),
+            'fetch_thread_started': FETCH_THREAD_STARTED,
             'memory': memory_metrics
         })
         resp.headers['Cache-Control'] = 'no-store'
