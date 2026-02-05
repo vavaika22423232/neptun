@@ -7466,7 +7466,7 @@ if 'health' not in app.view_functions:
             'fetch_thread_started': FETCH_THREAD_STARTED,
             'fetch_thread_alive': bool(FETCH_THREAD and FETCH_THREAD.is_alive()),
             'fetch_thread_started_at': int(FETCH_THREAD_STARTED_AT) if FETCH_THREAD_STARTED_AT else 0,
-            'fetch_start_delay': FETCH_START_DELAY,
+            'fetch_start_delay': globals().get('FETCH_START_DELAY', 0),
             'memory': memory_metrics
         })
         resp.headers['Cache-Control'] = 'no-store'
