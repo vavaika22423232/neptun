@@ -468,17 +468,11 @@ except ImportError as e:
 GEOCODER_AVAILABLE = _visicom_available or _opencage_available
 
 def opencage_geocode(city, region=None):
-    """Unified geocoder: tries Visicom first, falls back to OpenCage."""
+    """Unified geocoder: Visicom only (no OpenCage). Used for UAV/threat markers."""
     if not city:
         return None
-    # 1. Try Visicom first (better for Ukrainian names)
     if _visicom_available:
         result = _visicom_geocode(city, region)
-        if result:
-            return result
-    # 2. Fallback to OpenCage
-    if _opencage_available:
-        result = _opencage_geocode(city, region)
         if result:
             return result
     return None

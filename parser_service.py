@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
@@ -223,6 +225,11 @@ UA_CITY_NORMALIZE['словянськ'] = "слов'янськ"
 # Donetsk front city normalization (latin/ukr vowel variants)
 UA_CITY_NORMALIZE['лиман'] = 'ліман'
 
+# -щина/-ьки settlement names (align with Visicom SPECIAL_NAME_MAPPINGS for correct region lookup)
+UA_CITY_NORMALIZE['зіньки'] = 'зіньків'   # Зіньків (Полтавська обл.)
+UA_CITY_NORMALIZE['іванки'] = 'іванків'   # Іванків (Київська обл.)
+UA_CITY_NORMALIZE['броварки'] = 'бровари'
+
 # ---------------- Dynamic settlement name → region map (from city_ukraine.json, no coords there) ---------------
 NAME_REGION_MAP = {}
 
@@ -318,6 +325,41 @@ DIRECTION_COURSE_KEYWORDS = [
     'курс північний', 'курс південний', 'курс східний', 'курс західний',
     'курсом на північ', 'курсом на південь', 'курсом на схід', 'курсом на захід',
 ]
+
+# Convert -щина/-ччина header to full "Xська область" for Visicom/geocoder
+OBLAST_HDR_TO_FULL_REGION = {
+    'сумщина': 'Сумська область',
+    'чернігівщина': 'Чернігівська область',
+    'київщина': 'Київська область',
+    'полтавщина': 'Полтавська область',
+    'дніпропетровщина': 'Дніпропетровська область',
+    'харківщина': 'Харківська область',
+    'миколаївщина': 'Миколаївська область',
+    'одещина': 'Одеська область',
+    'запорожжя': 'Запорізька область',
+    'запоріжжя': 'Запорізька область',
+    'херсонщина': 'Херсонська область',
+    'черкащина': 'Черкаська область',
+    'вінниччина': 'Вінницька область',
+    'житомирщина': 'Житомирська область',
+    'рівненщина': 'Рівненська область',
+    'волинь': 'Волинська область',
+    'волинщина': 'Волинська область',
+    'львівщина': 'Львівська область',
+    'донеччина': 'Донецька область',
+    'луганщина': 'Луганська область',
+    'тернопільщина': 'Тернопільська область',
+    'хмельниччина': 'Хмельницька область',
+    'івано-франківщина': 'Івано-Франківська область',
+    'кіровоградщина': 'Кіровоградська область',
+}
+
+def _region_for_geocode(oblast_hdr):
+    """Convert oblast header (e.g. сумщина, полтавщина) to full region name for Visicom."""
+    if not oblast_hdr:
+        return None
+    key = str(oblast_hdr).strip().lower()
+    return OBLAST_HDR_TO_FULL_REGION.get(key, oblast_hdr)
 
 def _normalize_region_key(region: str) -> str | None:
     if not region:
@@ -2983,18 +3025,39 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         add_debug_log(f'PRIORITY CANCELLATION: {city_from_general} -> list_only=True (no marker)', "emoji_debug")
                         return [track]  # Early return - cancellation handled
 
-                    # Regular threat - create map marker
-                    threat_type, icon = classify(text, city_from_general)
-                    track = {
-                        'id': f"{mid}_priority_emoji_{city_from_general.replace(' ','_')}",
-                        'place': city_from_general.title(),
-                        'lat': lat, 'lng': lon,
-                        'threat_type': threat_type,
-                        'text': clean_text(text)[:500], 'date': date_str, 'channel': channel,
-                        'marker_icon': icon, 'source_match': 'priority_emoji_threat'
-                    }
-                    add_debug_log(f'PRIORITY EARLY RETURN: {city_from_general} -> {coords} -> {icon}', "emoji_debug")
-                    return [track]  # Early return - highest priority
+                    # If multiline with several "БПЛА/КАБ Місто (Обл.)" lines, do not return here — let per-line block handle
+                    if '\n' in text:
+                        _lines = [ln.strip()[:160] for ln in text.split('\n') if ln.strip()]
+                        _bpla_obl = re.compile(
+                            rf'^[^\w]*{r"(?:БПЛА|КАБ|Ракета|Ракети|Шахед|Дрон|Дрони)"}\s+([А-ЯІЇЄЁа-яіїєё\'\ʼʻ`\-\s/]+)[^(]*\(([^)]+обл[^)]*)\)',
+                            re.IGNORECASE
+                        )
+                        if sum(1 for _ln in _lines if _bpla_obl.search(_ln)) >= 2:
+                            add_debug_log(f'PRIORITY: Skipping single-track return for multiline БПЛА Місто (Обл.)', "emoji_debug")
+                        else:
+                            threat_type, icon = classify(text, city_from_general)
+                            track = {
+                                'id': f"{mid}_priority_emoji_{city_from_general.replace(' ','_')}",
+                                'place': city_from_general.title(),
+                                'lat': lat, 'lng': lon,
+                                'threat_type': threat_type,
+                                'text': clean_text(text)[:500], 'date': date_str, 'channel': channel,
+                                'marker_icon': icon, 'source_match': 'priority_emoji_threat'
+                            }
+                            add_debug_log(f'PRIORITY EARLY RETURN: {city_from_general} -> {coords} -> {icon}', "emoji_debug")
+                            return [track]  # Early return - highest priority
+                    else:
+                        threat_type, icon = classify(text, city_from_general)
+                        track = {
+                            'id': f"{mid}_priority_emoji_{city_from_general.replace(' ','_')}",
+                            'place': city_from_general.title(),
+                            'lat': lat, 'lng': lon,
+                            'threat_type': threat_type,
+                            'text': clean_text(text)[:500], 'date': date_str, 'channel': channel,
+                            'marker_icon': icon, 'source_match': 'priority_emoji_threat'
+                        }
+                        add_debug_log(f'PRIORITY EARLY RETURN: {city_from_general} -> {coords} -> {icon}', "emoji_debug")
+                        return [track]  # Early return - highest priority
                 else:
                     # NO COORDS FOUND - create list_only entry for push notifications but no map marker
                     threat_type, icon = classify(text, city_from_general)
@@ -3390,12 +3453,99 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
     # Early single-city (bold/emoji tolerant) parser
     try:
         orig = text
-        head = orig.split('\n',1)[0][:160]
-        
+        text_lines = orig.split('\n')
+        head = text_lines[0][:160] if text_lines else ''
+
+        # Per-line: handle "БПЛА/КАБ/... Місто (Обл.)" on every line so multi-line messages get correct region per line
+        threat_type_pattern = r'(?:БПЛА|КАБ|Ракета|Ракети|Шахед|Дрон|Дрони)'
+        line_bpla_obl_pattern = re.compile(
+            rf'^[^\w]*(\d+)[xх×]?\s*{threat_type_pattern}\s+([А-ЯІЇЄЁа-яіїєё\'\ʼʻ`\-\s/]+)[^(]*\(([^)]+обл[^)]*)\)',
+            re.IGNORECASE
+        )
+        line_bpla_obl_no_count = re.compile(
+            rf'^[^\w]*{threat_type_pattern}\s+([А-ЯІЇЄЁа-яіїєё\'\ʼʻ`\-\s/]+)[^(]*\(([^)]+обл[^)]*)\)',
+            re.IGNORECASE
+        )
+        oblast_to_state_map = {
+            'дніпропетровська': 'Дніпропетровська область', 'харківська': 'Харківська область',
+            'київська': 'Київська область', 'чернігівська': 'Чернігівська область', 'сумська': 'Сумська область',
+            'полтавська': 'Полтавська область', 'миколаївська': 'Миколаївська область', 'одеська': 'Одеська область',
+            'херсонська': 'Херсонська область', 'запорізька': 'Запорізька область', 'донецька': 'Донецька область',
+            'луганська': 'Луганська область', 'черкаська': 'Черкаська область', 'вінницька': 'Вінницька область',
+            'житомирська': 'Житомирська область', 'рівненська': 'Рівненська область', 'волинська': 'Волинська область',
+            'львівська': 'Львівська область', 'тернопільська': 'Тернопільська область', 'хмельницька': 'Хмельницька область',
+            'івано-франківська': 'Івано-Франківська область', 'закарпатська': 'Закарпатська область',
+            'чернівецька': 'Чернівецька область', 'кіровоградська': 'Кіровоградська область',
+        }
+        multi_line_tracks = []
+        seen_line_key = set()
+        for line in text_lines:
+            line_stripped = line.strip()[:160]
+            if not line_stripped:
+                continue
+            m_line = line_bpla_obl_pattern.search(line_stripped) or line_bpla_obl_no_count.search(line_stripped)
+            if not m_line:
+                continue
+            uav_count_line = int(m_line.group(1)) if m_line.lastindex >= 3 and m_line.group(1).isdigit() else 1
+            city_raw_line = (m_line.group(2) if m_line.lastindex >= 3 else m_line.group(1)).strip()
+            oblast_raw_line = (m_line.group(3) if m_line.lastindex >= 3 else m_line.group(2)).strip()
+            if '/' in city_raw_line:
+                city_raw_line = city_raw_line.split('/')[0].strip()
+            city_raw_line = re.sub(r'\s+(курсом|курс|напрям(?:ком)?|в\s+напрямку|у\s+напрямку)\s+.+$', '', city_raw_line, flags=re.IGNORECASE).strip()
+            city_norm_line = city_raw_line.lower().replace('\u02bc', "'").replace('ʼ', "'").replace("'", "'").replace('`', "'")
+            city_norm_line = re.sub(r'\s+', ' ', city_norm_line).strip()
+            for suf, rep in [('ку', 'ка'), ('ну', 'на'), ('у', 'а'), ('ю', 'я')]:
+                if len(city_norm_line) > 4 and city_norm_line.endswith(suf):
+                    city_norm_line = city_norm_line[:-len(suf)] + rep
+                    break
+            city_norm_line = UA_CITY_NORMALIZE.get(city_norm_line, city_norm_line)
+            oblast_lower_line = oblast_raw_line.lower()
+            target_state_line = None
+            for k, state in oblast_to_state_map.items():
+                if k in oblast_lower_line:
+                    target_state_line = state
+                    break
+            region_for_geocode_line = target_state_line or _extract_oblast_from_text(f"({oblast_raw_line})")
+            if not region_for_geocode_line:
+                continue
+            line_key = (city_norm_line, target_state_line or region_for_geocode_line)
+            if line_key in seen_line_key:
+                continue
+            seen_line_key.add(line_key)
+            cache_key_line = f"{city_norm_line}|{target_state_line or region_for_geocode_line}"
+            coords_line = _mapstransler_geocode_cache.get(cache_key_line) if cache_key_line in _mapstransler_geocode_cache else None
+            if coords_line and region_for_geocode_line and not _coords_in_region(coords_line[0], coords_line[1], region_for_geocode_line):
+                coords_line = None
+                _mapstransler_geocode_cache[cache_key_line] = None
+            if not coords_line and GEOCODER_AVAILABLE:
+                try:
+                    c = opencage_geocode(city_norm_line, region=region_for_geocode_line)
+                    if c and (not region_for_geocode_line or _coords_in_region(c[0], c[1], region_for_geocode_line)):
+                        coords_line = c
+                        _mapstransler_geocode_cache[cache_key_line] = c
+                    elif c:
+                        _mapstransler_geocode_cache[cache_key_line] = None
+                except Exception:
+                    pass
+            if coords_line:
+                lat_line, lon_line = coords_line[0], coords_line[1]
+                threat_type_line, icon_line = classify(text)
+                for _ in range(max(1, uav_count_line)):
+                    multi_line_tracks.append({
+                        'id': f"{mid}_mapstransler_line_{len(multi_line_tracks)}",
+                        'place': city_raw_line.title(),
+                        'lat': lat_line, 'lng': lon_line,
+                        'threat_type': threat_type_line, 'text': clean_text(orig)[:500], 'date': date_str, 'channel': channel,
+                        'marker_icon': icon_line, 'source_match': 'mapstransler_per_line', 'count': 1
+                    })
+        if multi_line_tracks:
+            add_debug_log(f"Mapstransler per-line: {len(multi_line_tracks)} tracks", "mapstransler")
+            return multi_line_tracks
+
         # DEBUG: Log incoming message for mapstransler parsing
         print(f"[PARSER_DEBUG] Processing message: {repr(head[:80])}...")
 
-        # PRIORITY: Handle mapstransler_bot format: "[count]х БПЛА/КАБ/Ракета Місто (Область обл.)"
+        # PRIORITY: Handle mapstransler_bot format: "[count]х БПЛА/КАБ/Ракета Місто (Область обл.)" (first line only)
         # Examples:
         #   "2х БПЛА Барвінкове (Харківська обл.) Загроза застосування БПЛА."
         #   "БПЛА Єланець (Миколаївська обл.) Загроза застосування БПЛА."
@@ -3569,27 +3719,27 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                 else:
                     add_debug_log(f"Cache HIT (negative): {city_norm} not found previously", "mapstransler")
 
+            # Invalidate cache if cached coords are outside stated region (do not reuse wrong result)
             if coords and region_for_geocode:
                 if not _coords_in_region(coords[0], coords[1], region_for_geocode):
                     add_debug_log(f"Cache coords outside region: {city_norm} -> {coords} not in {region_for_geocode}", "mapstransler")
                     coords = None
                     _mapstransler_geocode_cache[cache_key] = None
 
-            # ONLY OpenCage API - no local dictionaries!
+            # Visicom only (no other geocoder)
             if not coords and cache_key not in _mapstransler_geocode_cache and GEOCODER_AVAILABLE:
                 try:
-                    # Use target_state directly (with "область") for better disambiguation
-                    # OpenCage understands "Дніпропетровська область" better than just "Дніпропетровська"
                     opencage_coords = opencage_geocode(city_norm, region=region_for_geocode)
                     if opencage_coords:
                         if not region_for_geocode or _coords_in_region(opencage_coords[0], opencage_coords[1], region_for_geocode):
                             coords = opencage_coords
                             _mapstransler_geocode_cache[cache_key] = coords
-                            add_debug_log(f"OpenCage: '{city_norm}' with region '{region_for_geocode}' -> {coords}", "mapstransler")
+                            add_debug_log(f"Visicom: '{city_norm}' with region '{region_for_geocode}' -> {coords}", "mapstransler")
                         else:
-                            add_debug_log(f"OpenCage coords outside region: '{city_norm}' -> {opencage_coords} not in {region_for_geocode}", "mapstransler")
+                            add_debug_log(f"Visicom coords outside region: '{city_norm}' -> {opencage_coords} not in {region_for_geocode}", "mapstransler")
+                            _mapstransler_geocode_cache[cache_key] = None  # Do not save wrong coords; negative cache to avoid retry
                 except Exception as e:
-                    add_debug_log(f"OpenCage error: {e}", "mapstransler")
+                    add_debug_log(f"Visicom error: {e}", "mapstransler")
 
             # Save to cache (both positive and negative results)
             if coords:
@@ -6116,8 +6266,9 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             if base == 'троєщину':
                 base = 'троєщина'
 
-            # Use OpenCage geocoder with region context
-            coords = ensure_city_coords(base, region=oblast_hdr, context=text)
+            # Use Visicom geocoder with region context (full region name for cache/bounds)
+            region_for_lookup = _region_for_geocode(oblast_hdr) or oblast_hdr
+            coords = ensure_city_coords(base, region=region_for_lookup, context=text)
 
             print(f"DEBUG: Enhanced lookup for '{base}'" + (f" in {oblast_hdr}" if oblast_hdr else "") + f": {coords}")
 
@@ -6132,7 +6283,7 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             if not coords:
                 print(f"DEBUG: Calling ensure_city_coords_with_message_context for '{base}' with oblast context '{oblast_hdr}'")
                 # Try with full message context first to get oblast-specific coordinates
-                context_message = f"{oblast_hdr} {original_text if 'original_text' in locals() else text}"
+                context_message = f"{region_for_lookup or oblast_hdr} {original_text if 'original_text' in locals() else text}"
                 coords = ensure_city_coords_with_message_context(base, context_message)
                 if not coords:
                     print(f"DEBUG: Context-based lookup failed, trying standard ensure_city_coords for '{base}'")
@@ -8144,10 +8295,11 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             coords = region_enhanced_coords(base, region_hint_override=region_hdr)
                         except Exception:
                             coords = None
-                    # Try OpenCage API if still no coordinates
+                    # Try Visicom API if still no coordinates
                     if not coords and GEOCODER_AVAILABLE:
                         try:
-                            coords = opencage_geocode(base, region=region_hdr)
+                            region_lookup = _region_for_geocode(region_hdr) or region_hdr
+                            coords = opencage_geocode(base, region=region_lookup)
                         except Exception:
                             pass
                     if coords:
@@ -8194,7 +8346,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             coords = None
                     if not coords and GEOCODER_AVAILABLE:
                         try:
-                            coords = opencage_geocode(base, region=region_hdr)
+                            region_lookup = _region_for_geocode(region_hdr) or region_hdr
+                            coords = opencage_geocode(base, region=region_lookup)
                         except Exception:
                             pass
                     if coords:
@@ -8241,7 +8394,8 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                             coords = None
                     if not coords and GEOCODER_AVAILABLE:
                         try:
-                            coords = opencage_geocode(base, region=region_hdr)
+                            region_lookup = _region_for_geocode(region_hdr) or region_hdr
+                            coords = opencage_geocode(base, region=region_lookup)
                         except Exception:
                             pass
                     if coords:
@@ -8342,10 +8496,11 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     coords = region_enhanced_coords(base, region_hint_override=region_hdr)
                 except Exception:
                     coords = None
-            # Try OpenCage API if still no coordinates
+            # Try Visicom API if still no coordinates
             if not coords and GEOCODER_AVAILABLE:
                 try:
-                    coords = opencage_geocode(base, region=region_hdr)
+                    region_lookup = _region_for_geocode(region_hdr) or region_hdr
+                    coords = opencage_geocode(base, region=region_lookup)
                 except Exception:
                     pass
             if not coords:

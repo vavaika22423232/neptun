@@ -1,7 +1,6 @@
 // ignore_for_file: deprecated_member_use
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'dart:ui' as ui;
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter_map/flutter_map.dart';
@@ -10,9 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../data/ukraine_region_paths.dart';
 import '../data/ukraine_district_paths.dart';
 import '../models/map_models.dart';
-import '../models/threat_event.dart';
 import '../services/map_data_service.dart';
-import '../services/threat_feed_service.dart';
 import '../utils/svg_path_parser.dart';
 import '../services/ballistic_alert_service.dart';
 import '../services/widget_service.dart';
@@ -47,38 +44,39 @@ class NativeMapPage extends StatefulWidget {
   State<NativeMapPage> createState() => _NativeMapPageState();
 }
 
-class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateMixin, WidgetsBindingObserver {
+class _NativeMapPageState extends State<NativeMapPage>
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   // Стан тривог
   Map<String, bool> stateAlarms = {}; // Області (oblasts)
   Map<String, bool> districtAlarms = {}; // Райони
-  Map<String, String> stateThreatTypes = {}; // Тип загрози по області (для іконок)
-  
+  Map<String, String> stateThreatTypes =
+      {}; // Тип загрози по області (для іконок)
+
   // Маркери загроз
   List<ThreatMarker> threatMarkers = [];
   Map<String, int> markerCounts = {};
-  
+
   // Стан UI
   bool isLoading = true;
   String? error;
   DateTime? lastUpdate;
   int stateAlarmCount = 0;
   int districtAlarmCount = 0;
-  
+
   // Балістична загроза
   bool _ballisticThreatActive = false;
   bool _ballisticAllClear = false;
   String _ballisticMessage = '';
   Timer? _ballisticTimer;
   Set<String> _previousBallisticRegions = {}; // Для відстеження нових загроз
-  
+
   // Таймери оновлення
   Timer? _alarmTimer;
   Timer? _markerTimer;
   bool _alarmsFetching = false;
   bool _markersFetching = false;
   final MapDataService _mapDataService = MapDataService();
-  final ThreatFeedService _threatFeedService = ThreatFeedService();
-  
+
   // Інтервали оновлення (зменшено для швидшого оновлення)
   static const int alarmUpdateInterval = 5; // секунд
   static const int markerUpdateInterval = 5; // секунд
@@ -89,8 +87,6 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
   DateTime? _lastHistoryEntryAt;
   static const Duration _historyMinInterval = Duration(minutes: 1);
 
-  // Threat feed (monitoring)
-  List<ThreatEvent> _recentEvents = [];
   final Set<String> _filterableThreatTypes = {
     ThreatType.shahed,
     ThreatType.raketa,
@@ -114,86 +110,90 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
   bool _operatorModeEnabled = false;
   bool _showSvgLayer = true;
   bool _showMarkersLayer = true;
-  
+
   // Parsed paths cache
   final Map<String, List<Path>> _statePathsCache = {};
   final Map<String, List<Path>> _districtPathsCache = {};
-  
+
   // Zoom/pan - now using flutter_map
   final MapController _mapController = MapController();
   double _currentZoom = 6.0;
-  
+
   // Hybrid map: SVG fades at high zoom, tiles appear
   static const double _svgFadeStartZoom = 8.0;
   static const double _svgFadeEndZoom = 10.0;
-  
+
   // Legacy transform controller (for compatibility)
-  final TransformationController _transformController = TransformationController();
-  
+  final TransformationController _transformController =
+      TransformationController();
+
   // Анімація пульсації тривоги
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
-  
+
   // Анімація балістичної загрози (для автозакриття)
   late AnimationController _ballisticController;
-  
+
   // Анімація відбою балістики
   late AnimationController _allClearController;
   late Animation<double> _allClearAnimation;
-  
+
   // SVG opacity based on zoom
   double get _svgOpacity {
     if (_currentZoom < _svgFadeStartZoom) return 1.0;
     if (_currentZoom >= _svgFadeEndZoom) return 0.0;
-    return 1.0 - ((_currentZoom - _svgFadeStartZoom) / (_svgFadeEndZoom - _svgFadeStartZoom));
+    return 1.0 -
+        ((_currentZoom - _svgFadeStartZoom) /
+            (_svgFadeEndZoom - _svgFadeStartZoom));
   }
-  
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    
+
     // Завантаження іконок загроз
     ThreatIconManager().loadIcons().then((_) {
       debugPrint('✅ Icons loaded: ${ThreatIconManager().isLoaded}');
       if (mounted) setState(() {});
     });
-    
+
     // Підписуємося на глобальний сервіс балістичних тривог
     BallisticAlertService().onBallisticThreat(_handleGlobalBallisticThreat);
     BallisticAlertService().onBallisticAllClear(_handleGlobalBallisticAllClear);
-    
+
     // Анімація пульсації (уповільнена для продуктивності)
     _pulseController = AnimationController(
       duration: const Duration(milliseconds: 2000), // було 1500
       vsync: this,
     )..repeat(reverse: true);
-    
-    _pulseAnimation = Tween<double>(begin: 0.92, end: 1.0).animate( // зменшено амплітуду
+
+    _pulseAnimation = Tween<double>(begin: 0.92, end: 1.0).animate(
+      // зменшено амплітуду
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
-    
+
     // Анімація балістичної загрози (мінімальна)
     _ballisticController = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
     );
-    
+
     // Анімація відбою
     _allClearController = AnimationController(
       duration: const Duration(milliseconds: 1500),
       vsync: this,
     );
-    
+
     _allClearAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _allClearController, curve: Curves.easeOut),
     );
-    
+
     _parseAllPaths();
     _loadOperatorMode();
     _fetchAlarms();
     _fetchThreatMarkers();
-    
+
     // Періодичне оновлення
     _alarmTimer = Timer.periodic(
       Duration(seconds: alarmUpdateInterval),
@@ -223,15 +223,15 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
       await prefs.setBool('operator_mode_enabled', newValue);
     } catch (_) {}
   }
-  
+
   void _handleGlobalBallisticThreat(String? region) {
     showBallisticThreat(region: region);
   }
-  
+
   void _handleGlobalBallisticAllClear(String? region) {
     showBallisticAllClear(region: region);
   }
-  
+
   @override
   void dispose() {
     _alarmTimer?.cancel();
@@ -242,18 +242,19 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
     _allClearController.dispose();
     _transformController.dispose();
     _mapController.dispose();
-    
+
     // Відписуємося від глобального сервісу
     BallisticAlertService().removeCallback(_handleGlobalBallisticThreat);
     BallisticAlertService().removeCallback(_handleGlobalBallisticAllClear);
     WidgetsBinding.instance.removeObserver(this);
-    
+
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
       _alarmTimer?.cancel();
       _markerTimer?.cancel();
       return;
@@ -273,57 +274,59 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
       _fetchThreatMarkers();
     }
   }
-  
+
   // ===== BALLISTIC THREAT ALERT SYSTEM =====
   void showBallisticThreat({String? region}) {
     if (!mounted) return;
-    
+
     debugPrint('🚀 showBallisticThreat called with region: $region');
-    
+
     setState(() {
       _ballisticThreatActive = true;
       _ballisticAllClear = false;
-      _ballisticMessage = region != null 
-          ? 'Загроза балістики!\n$region' 
+      _ballisticMessage = region != null
+          ? 'Загроза балістики!\n$region'
           : 'Загроза балістики!';
     });
-    
+
     // Запускаємо анімацію з реверсом для пульсації
     _ballisticController.repeat(reverse: true);
-    
-    debugPrint('🚀 Animation started, _ballisticThreatActive = $_ballisticThreatActive');
-    
+
+    debugPrint(
+      '🚀 Animation started, _ballisticThreatActive = $_ballisticThreatActive',
+    );
+
     // Вібрація (якщо доступна)
     HapticFeedback.heavyImpact();
-    
+
     // НЕ приховуємо автоматично - тільки при "Відбій загрози балістики!"
     _ballisticTimer?.cancel();
   }
-  
+
   void showBallisticAllClear({String? region}) {
     if (!mounted) return;
-    
+
     debugPrint('✅ showBallisticAllClear called with region: $region');
-    
+
     // Зупиняємо загрозу якщо активна
     _ballisticController.stop();
     _ballisticController.reset();
     _ballisticTimer?.cancel();
-    
+
     setState(() {
       _ballisticThreatActive = false;
       _ballisticAllClear = true;
-      _ballisticMessage = region != null 
-          ? 'Відбій загрози балістики!\n$region' 
+      _ballisticMessage = region != null
+          ? 'Відбій загрози балістики!\n$region'
           : 'Відбій загрози балістики!';
     });
-    
+
     // Запускаємо анімацію відбою
     _allClearController.forward(from: 0.0);
-    
+
     // М'яка вібрація
     HapticFeedback.mediumImpact();
-    
+
     // Автоматично приховуємо через 5 секунд
     _ballisticTimer = Timer(const Duration(seconds: 5), () {
       if (mounted) {
@@ -332,24 +335,24 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
       }
     });
   }
-  
+
   // Публічний метод для тестування (можна викликати з зовні)
   void triggerBallisticDemo() {
     showBallisticThreat(region: 'Київська область');
-    
+
     // Показуємо відбій через 5 секунд
     Timer(const Duration(seconds: 5), () {
       showBallisticAllClear(region: 'Київська область');
     });
   }
-  
+
   void _parseAllPaths() {
     // Parse state (oblast) paths
     for (final entry in UkraineRegionPaths.regionPaths.entries) {
       final regionId = entry.key;
       final pathStrings = entry.value;
       final paths = <Path>[];
-      
+
       for (final pathData in pathStrings) {
         try {
           final path = SvgPathParser.parsePath(pathData);
@@ -358,17 +361,17 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
           debugPrint('Error parsing state path for region $regionId: $e');
         }
       }
-      
+
       _statePathsCache[regionId] = paths;
     }
     debugPrint('Parsed ${_statePathsCache.length} state regions');
-    
+
     // Parse district paths
     for (final entry in UkraineDistrictPaths.districtPaths.entries) {
       final districtId = entry.key;
       final pathStrings = entry.value;
       final paths = <Path>[];
-      
+
       for (final pathData in pathStrings) {
         try {
           final path = SvgPathParser.parsePath(pathData);
@@ -377,12 +380,12 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
           debugPrint('Error parsing district path for $districtId: $e');
         }
       }
-      
+
       _districtPathsCache[districtId] = paths;
     }
     debugPrint('Parsed ${_districtPathsCache.length} district regions');
   }
-  
+
   // ===== FETCH ALARMS (як fetchAlarms в index_map.html) =====
   Future<void> _fetchAlarms() async {
     if (_alarmsFetching) return;
@@ -393,9 +396,9 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
       // Перевіряємо чи дані змінились
       bool alarmsChanged =
           alarmData.stateAlarms.length != stateAlarms.length ||
-              alarmData.districtAlarms.length != districtAlarms.length ||
-              alarmData.stateCount != stateAlarmCount ||
-              alarmData.districtCount != districtAlarmCount;
+          alarmData.districtAlarms.length != districtAlarms.length ||
+          alarmData.stateCount != stateAlarmCount ||
+          alarmData.districtCount != districtAlarmCount;
 
       if (!alarmsChanged) {
         for (final key in alarmData.stateAlarms.keys) {
@@ -407,10 +410,12 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
       }
 
       if (alarmsChanged || isLoading) {
-        final newBallisticRegions =
-            alarmData.ballisticRegions.difference(_previousBallisticRegions);
-        final clearedBallisticRegions =
-            _previousBallisticRegions.difference(alarmData.ballisticRegions);
+        final newBallisticRegions = alarmData.ballisticRegions.difference(
+          _previousBallisticRegions,
+        );
+        final clearedBallisticRegions = _previousBallisticRegions.difference(
+          alarmData.ballisticRegions,
+        );
 
         if (newBallisticRegions.isNotEmpty && !isLoading) {
           final regionsText = newBallisticRegions.join(', ');
@@ -439,9 +444,12 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
           });
         }
         debugPrint(
-            'Alarms updated: ${alarmData.stateCount} oblasts, ${alarmData.districtCount} districts');
+          'Alarms updated: ${alarmData.stateCount} oblasts, ${alarmData.districtCount} districts',
+        );
         if (alarmData.ballisticRegions.isNotEmpty) {
-          debugPrint('🚀 Ballistic threats active in: ${alarmData.ballisticRegions}');
+          debugPrint(
+            '🚀 Ballistic threats active in: ${alarmData.ballisticRegions}',
+          );
         }
 
         _updateHomeWidget(alarmData.stateCount > 0, alarmData.stateCount);
@@ -460,14 +468,14 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
       _alarmsFetching = false;
     }
   }
-  
+
   /// Оновлення віджета на робочому столі
   void _updateHomeWidget(bool hasAlarm, int alarmsCount) {
     try {
       // Отримуємо збережений регіон користувача
       WidgetService().getUserRegion().then((userRegion) {
         final region = userRegion ?? 'Україна';
-        
+
         WidgetService().updateWidget(
           region: region,
           isAlarm: hasAlarm,
@@ -479,26 +487,30 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
       debugPrint('Widget update error: $e');
     }
   }
-  
+
   // ===== FETCH THREAT MARKERS (як fetchThreatMarkers в index_map.html) =====
   Future<void> _fetchThreatMarkers() async {
     if (_markersFetching) return;
     _markersFetching = true;
     try {
-      final markerData =
-          await _mapDataService.fetchThreatMarkers(timeRange: timeRange);
+      final markerData = await _mapDataService.fetchThreatMarkers(
+        timeRange: timeRange,
+      );
 
       if (markerData.ballisticActive != null) {
         debugPrint(
-            '🚀 Ballistic threat from API: active=${markerData.ballisticActive}, region=${markerData.ballisticRegion}');
+          '🚀 Ballistic threat from API: active=${markerData.ballisticActive}, region=${markerData.ballisticRegion}',
+        );
         if (markerData.ballisticActive == true &&
             !BallisticAlertService().isBallisticThreatActive) {
-          BallisticAlertService()
-              .triggerBallisticThreat(region: markerData.ballisticRegion);
+          BallisticAlertService().triggerBallisticThreat(
+            region: markerData.ballisticRegion,
+          );
         } else if (markerData.ballisticActive == false &&
             BallisticAlertService().isBallisticThreatActive) {
-          BallisticAlertService()
-              .triggerBallisticAllClear(region: markerData.ballisticRegion);
+          BallisticAlertService().triggerBallisticAllClear(
+            region: markerData.ballisticRegion,
+          );
         }
       }
 
@@ -510,16 +522,20 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
           trajInfo =
               ' [AI TRAJ: ${t.sourceName} → ${t.targetName}${t.predicted ? " (прогноз)" : ""}]';
         }
-        debugPrint('  📍 type="${marker.threatType}", place="${marker.place}"$trajInfo');
+        debugPrint(
+          '  📍 type="${marker.threatType}", place="${marker.place}"$trajInfo',
+        );
       }
 
-      final trajCount =
-          markerData.markers.where((m) => m.hasAITrajectory).length;
+      final trajCount = markerData.markers
+          .where((m) => m.hasAITrajectory)
+          .length;
       if (trajCount > 0) {
         debugPrint('🎯 $trajCount markers have AI trajectories');
       }
 
-      bool markersChanged = markerData.markers.length != threatMarkers.length ||
+      bool markersChanged =
+          markerData.markers.length != threatMarkers.length ||
           markerData.counts.length != markerCounts.length;
 
       if (!markersChanged) {
@@ -537,11 +553,12 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
             threatMarkers = markerData.markers;
             markerCounts = markerData.counts;
             _syncFilterTypes(markerData.markers);
-            _recentEvents = _threatFeedService.buildEvents(markerData.markers);
           });
         }
         _addThreatHistoryEntry(markerData.counts);
-        debugPrint('Markers updated: ${markerData.markers.length} threat markers');
+        debugPrint(
+          'Markers updated: ${markerData.markers.length} threat markers',
+        );
       } else {
         debugPrint('Markers unchanged, skipping setState');
       }
@@ -559,10 +576,9 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
       return;
     }
     _lastHistoryEntryAt = now;
-    _threatHistory.add(ThreatHistoryEntry(
-      timestamp: now,
-      counts: Map<String, int>.from(counts),
-    ));
+    _threatHistory.add(
+      ThreatHistoryEntry(timestamp: now, counts: Map<String, int>.from(counts)),
+    );
     if (_threatHistory.length > 12) {
       _threatHistory.removeAt(0);
     }
@@ -594,7 +610,7 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final colors = MapColors(isDark: isDark);
     final visibleMarkers = _applyThreatFilter(threatMarkers);
-    
+
     return Scaffold(
       backgroundColor: colors.bgMain,
       body: Stack(
@@ -613,7 +629,7 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
               ),
             ),
           ),
-          
+
           // Карта
           SafeArea(
             child: Column(
@@ -625,32 +641,35 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              CircularProgressIndicator(color: colors.textAccent),
+                              CircularProgressIndicator(
+                                color: colors.textAccent,
+                              ),
                               const SizedBox(height: 16),
-                              Text('Завантаження карти...',
-                                  style: TextStyle(color: colors.textSecondary)),
+                              Text(
+                                'Завантаження карти...',
+                                style: TextStyle(color: colors.textSecondary),
+                              ),
                             ],
                           ),
                         )
                       : error != null && lastUpdate == null
-                          ? _buildError(colors)
-                          : _buildMap(colors, visibleMarkers),
+                      ? _buildError(colors)
+                      : _buildMap(colors, visibleMarkers),
                 ),
               ],
             ),
           ),
-          
+
           // ===== BALLISTIC THREAT OVERLAY =====
-          if (_ballisticThreatActive)
-            _buildBallisticThreatOverlay(colors),
-          
+          if (_ballisticThreatActive) _buildBallisticThreatOverlay(colors),
+
           // ===== ALL CLEAR OVERLAY =====
           if (_ballisticAllClear)
             AnimatedBuilder(
               animation: _allClearController,
               builder: (context, child) => _buildAllClearOverlay(colors),
             ),
-          
+
           // Legend (внизу по центру)
           Positioned(
             bottom: 24,
@@ -658,13 +677,16 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
             right: 0,
             child: _buildLegend(colors),
           ),
-          
+
           // ===== THREAT STATS WIDGET =====
           // Опускаємо нижче якщо активний банер балістики або відбою
           if (visibleMarkers.isNotEmpty)
             Positioned(
-              top: MediaQuery.of(context).padding.top + 
-                   ((_ballisticThreatActive || _allClearController.value > 0) ? 80 : 8),
+              top:
+                  MediaQuery.of(context).padding.top +
+                  ((_ballisticThreatActive || _allClearController.value > 0)
+                      ? 80
+                      : 8),
               right: 12,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 300),
@@ -672,13 +694,6 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
                 child: _buildThreatStats(colors, visibleMarkers),
               ),
             ),
-
-          // ===== THREAT FEED =====
-          Positioned(
-            left: 12,
-            bottom: 88,
-            child: _buildThreatFeed(colors, visibleMarkers),
-          ),
 
           // ===== OPERATOR MODE TOGGLE + PANEL =====
           Positioned(
@@ -695,7 +710,6 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
               ],
             ),
           ),
-
         ],
       ),
     );
@@ -724,13 +738,17 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
             Icon(
               Icons.settings,
               size: 16,
-              color: _operatorModeEnabled ? colors.textAccent : colors.textSecondary,
+              color: _operatorModeEnabled
+                  ? colors.textAccent
+                  : colors.textSecondary,
             ),
             const SizedBox(width: 6),
             Text(
               _operatorModeEnabled ? 'OP' : 'OP',
               style: TextStyle(
-                color: _operatorModeEnabled ? colors.textAccent : colors.textSecondary,
+                color: _operatorModeEnabled
+                    ? colors.textAccent
+                    : colors.textSecondary,
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
               ),
@@ -777,7 +795,10 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
           IconButton(
             visualDensity: VisualDensity.compact,
             icon: Icon(Icons.history, size: 18, color: colors.textAccent),
-            onPressed: () => _showThreatStatsDialog(colors, _applyThreatFilter(threatMarkers)),
+            onPressed: () => _showThreatStatsDialog(
+              colors,
+              _applyThreatFilter(threatMarkers),
+            ),
           ),
           IconButton(
             visualDensity: VisualDensity.compact,
@@ -793,15 +814,18 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
             icon: Icon(
               _showMarkersLayer ? Icons.place : Icons.place_outlined,
               size: 18,
-              color: _showMarkersLayer ? colors.textAccent : colors.textSecondary,
+              color: _showMarkersLayer
+                  ? colors.textAccent
+                  : colors.textSecondary,
             ),
-            onPressed: () => setState(() => _showMarkersLayer = !_showMarkersLayer),
+            onPressed: () =>
+                setState(() => _showMarkersLayer = !_showMarkersLayer),
           ),
         ],
       ),
     );
   }
-  
+
   // ===== BALLISTIC THREAT VISUAL EFFECT =====
   Widget _buildBallisticThreatOverlay(MapColors colors) {
     return Stack(
@@ -882,11 +906,11 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
       ],
     );
   }
-  
+
   // ===== ALL CLEAR VISUAL EFFECT =====
   Widget _buildAllClearOverlay(MapColors colors) {
     final progress = _allClearAnimation.value;
-    
+
     return Stack(
       children: [
         // Мінімалістичне повідомлення зверху
@@ -899,7 +923,10 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
               opacity: progress < 0.7 ? 1.0 : (1.0 - (progress - 0.7) * 3.3),
               duration: const Duration(milliseconds: 200),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 14,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFF16A34A),
                   borderRadius: BorderRadius.circular(14),
@@ -956,7 +983,7 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
       ],
     );
   }
-  
+
   Widget _buildLegend(MapColors colors) {
     return Center(
       child: Container(
@@ -984,17 +1011,20 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
       ),
     );
   }
-  
+
   // ===== THREAT STATS PANEL =====
-  Widget _buildThreatStats(MapColors colors, List<ThreatMarker> visibleMarkers) {
+  Widget _buildThreatStats(
+    MapColors colors,
+    List<ThreatMarker> visibleMarkers,
+  ) {
     final visibleCounts = _countVisibleMarkers(visibleMarkers);
     // Групуємо типи загроз для кращого відображення
     final groupedCounts = <String, int>{};
-    
+
     for (final entry in visibleCounts.entries) {
       final type = entry.key;
       final count = entry.value;
-      
+
       // Групуємо схожі типи
       if (type == 'shahed' || type == 'fpv') {
         groupedCounts['shahed'] = (groupedCounts['shahed'] ?? 0) + count;
@@ -1008,17 +1038,17 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
         groupedCounts['avia'] = (groupedCounts['avia'] ?? 0) + count;
       }
     }
-    
+
     // Сортуємо за кількістю (найбільше спочатку)
     final sortedEntries = groupedCounts.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
-    
+
     // Якщо немає загроз
     if (sortedEntries.isEmpty) return const SizedBox.shrink();
-    
+
     // Загальна кількість
     final total = sortedEntries.fold<int>(0, (sum, e) => sum + e.value);
-    
+
     return GestureDetector(
       onTap: () => _showThreatStatsDialog(colors, visibleMarkers),
       child: Container(
@@ -1043,11 +1073,7 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  Icons.flight_rounded,
-                  size: 14,
-                  color: Colors.orange,
-                ),
+                Icon(Icons.flight_rounded, size: 14, color: Colors.orange),
                 const SizedBox(width: 4),
                 Text(
                   'Загрози ($total)',
@@ -1061,31 +1087,29 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
             ),
             const SizedBox(height: 6),
             // Список загроз (максимум 4)
-            ...sortedEntries.take(4).map((entry) => _buildThreatStatItem(
-              entry.key,
-              entry.value,
-              colors,
-            )),
+            ...sortedEntries
+                .take(4)
+                .map(
+                  (entry) =>
+                      _buildThreatStatItem(entry.key, entry.value, colors),
+                ),
           ],
         ),
       ),
     );
   }
-  
+
   Widget _buildThreatStatItem(String type, int count, MapColors colors) {
     final icon = _getThreatEmoji(type);
     final label = _getThreatLabel(type);
     final color = _getThreatColor(type);
-    
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            icon,
-            style: const TextStyle(fontSize: 12),
-          ),
+          Text(icon, style: const TextStyle(fontSize: 12)),
           const SizedBox(width: 4),
           Text(
             '$count',
@@ -1098,59 +1122,79 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
           const SizedBox(width: 4),
           Text(
             label,
-            style: TextStyle(
-              color: colors.textSecondary,
-              fontSize: 10,
-            ),
+            style: TextStyle(color: colors.textSecondary, fontSize: 10),
           ),
         ],
       ),
     );
   }
-  
+
   String _getThreatEmoji(String type) {
     switch (type) {
-      case 'shahed': return '🛩️';
-      case 'raketa': return '🚀';
-      case 'kab': return '💣';
-      case 'rozved': return '🔍';
-      case 'avia': return '✈️';
-      default: return '⚠️';
+      case 'shahed':
+        return '🛩️';
+      case 'raketa':
+        return '🚀';
+      case 'kab':
+        return '💣';
+      case 'rozved':
+        return '🔍';
+      case 'avia':
+        return '✈️';
+      default:
+        return '⚠️';
     }
   }
-  
+
   String _getThreatLabel(String type) {
     switch (type) {
-      case 'shahed': return 'БПЛА';
-      case 'raketa': return 'Ракети';
-      case 'kab': return 'КАБи';
-      case 'rozved': return 'Розвідники';
-      case 'avia': return 'Авіація';
-      default: return 'Інше';
+      case 'shahed':
+        return 'БПЛА';
+      case 'raketa':
+        return 'Ракети';
+      case 'kab':
+        return 'КАБи';
+      case 'rozved':
+        return 'Розвідники';
+      case 'avia':
+        return 'Авіація';
+      default:
+        return 'Інше';
     }
   }
-  
+
   Color _getThreatColor(String type) {
     switch (type) {
-      case 'shahed': return Colors.orange;
-      case 'raketa': return Colors.red;
-      case 'kab': return Colors.redAccent;
-      case 'rozved': return Colors.amber;
-      case 'avia': return Colors.purple;
-      default: return Colors.white;
+      case 'shahed':
+        return Colors.orange;
+      case 'raketa':
+        return Colors.red;
+      case 'kab':
+        return Colors.redAccent;
+      case 'rozved':
+        return Colors.amber;
+      case 'avia':
+        return Colors.purple;
+      default:
+        return Colors.white;
     }
   }
-  
-  void _showThreatStatsDialog(MapColors colors, List<ThreatMarker> visibleMarkers) {
+
+  void _showThreatStatsDialog(
+    MapColors colors,
+    List<ThreatMarker> visibleMarkers,
+  ) {
     final visibleCounts = _countVisibleMarkers(visibleMarkers);
     final total = visibleCounts.values.fold<int>(0, (sum, v) => sum + v);
-    
+
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           backgroundColor: colors.panelBg,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: Row(
             children: [
               const Text('🎯', style: TextStyle(fontSize: 24)),
@@ -1172,7 +1216,7 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: colors.isDark 
+                  color: colors.isDark
                       ? Colors.orange.withOpacity(0.1)
                       : Colors.orange.withOpacity(0.05),
                   borderRadius: BorderRadius.circular(12),
@@ -1180,7 +1224,11 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.info_outline, color: Colors.orange, size: 18),
+                    const Icon(
+                      Icons.info_outline,
+                      color: Colors.orange,
+                      size: 18,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -1218,7 +1266,9 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
                         ? colors.textAccent.withOpacity(0.2)
                         : colors.textAccent.withOpacity(0.15),
                     checkmarkColor: colors.textAccent,
-                    backgroundColor: colors.isDark ? colors.panelBg : Colors.white,
+                    backgroundColor: colors.isDark
+                        ? colors.panelBg
+                        : Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                       side: BorderSide(color: colors.panelBorder),
@@ -1230,7 +1280,10 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
               // Загальна кількість
               Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 12,
+                  ),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
@@ -1267,7 +1320,7 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
                 final icon = _getThreatEmoji(entry.key);
                 final name = ThreatType.names[entry.key] ?? entry.key;
                 final color = _getThreatColor(entry.key);
-                
+
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   child: Row(
@@ -1284,7 +1337,10 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: color.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(8),
@@ -1327,127 +1383,47 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
                             fontSize: 12,
                           ),
                         ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: LinearProgressIndicator(
-                          value: (entry.total / (total == 0 ? 1 : total))
-                              .clamp(0.0, 1.0),
-                          minHeight: 6,
-                          backgroundColor: colors.panelBorder,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            colors.textAccent.withOpacity(0.6),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: LinearProgressIndicator(
+                            value: (entry.total / (total == 0 ? 1 : total))
+                                .clamp(0.0, 1.0),
+                            minHeight: 6,
+                            backgroundColor: colors.panelBorder,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              colors.textAccent.withOpacity(0.6),
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '${entry.total}',
-                        style: TextStyle(
-                          color: colors.textPrimary,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-            ],
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(
-              'Закрити',
-              style: TextStyle(color: colors.textAccent),
-            ),
-          ),
-        ],
-      ),
-    ),
-    );
-  }
-
-  Widget _buildThreatFeed(MapColors colors, List<ThreatMarker> visibleMarkers) {
-    final filteredEvents = _recentEvents
-        .where((event) =>
-            _visibleThreatTypes.isEmpty ||
-            _visibleThreatTypes.contains(event.threatType))
-        .take(5)
-        .toList();
-
-    if (filteredEvents.isEmpty) return const SizedBox.shrink();
-
-    return Container(
-      width: 220,
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: colors.panelBg,
-        border: Border.all(color: colors.panelBorder),
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.12),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Лента',
-            style: TextStyle(
-              color: colors.textPrimary,
-              fontWeight: FontWeight.w600,
-              fontSize: 12,
-            ),
-          ),
-          const SizedBox(height: 6),
-          ...filteredEvents.map((event) {
-            final time = event.timestamp != null
-                ? '${event.timestamp!.hour.toString().padLeft(2, '0')}:${event.timestamp!.minute.toString().padLeft(2, '0')}'
-                : '--:--';
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(_getThreatEmoji(event.threatType),
-                      style: const TextStyle(fontSize: 12)),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
+                        const SizedBox(width: 8),
                         Text(
-                          event.title,
+                          '${entry.total}',
                           style: TextStyle(
                             color: colors.textPrimary,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        Text(
-                          '${event.location} · $time',
-                          style: TextStyle(
-                            color: colors.textSecondary,
-                            fontSize: 10,
+                            fontSize: 12,
                           ),
                         ),
                       ],
                     ),
-                  ),
-                ],
+                  );
+                }),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(
+                'Закрити',
+                style: TextStyle(color: colors.textAccent),
               ),
-            );
-          }),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
-  
+
   Widget _legendItem(Color color, String label, MapColors colors) {
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -1462,11 +1438,14 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
           ),
         ),
         const SizedBox(width: 8),
-        Text(label, style: TextStyle(color: colors.textSecondary, fontSize: 12)),
+        Text(
+          label,
+          style: TextStyle(color: colors.textSecondary, fontSize: 12),
+        ),
       ],
     );
   }
-  
+
   Widget _buildError(MapColors colors) {
     return Center(
       child: Column(
@@ -1482,16 +1461,14 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
               _fetchAlarms();
               _fetchThreatMarkers();
             },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: colors.textAccent,
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: colors.textAccent),
             child: const Text('Спробувати знову'),
           ),
         ],
       ),
     );
   }
-  
+
   /// Get tile URL for the current theme
   /// Using free tile providers
   String _getTileUrl(bool isDark) {
@@ -1503,10 +1480,10 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
       return 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/rastertiles/voyager/{z}/{x}/{y}.png';
     }
   }
-  
+
   Widget _buildMap(MapColors colors, List<ThreatMarker> visibleMarkers) {
     final isDark = colors.isDark;
-    
+
     return FlutterMap(
       mapController: _mapController,
       options: MapOptions(
@@ -1517,16 +1494,20 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
         maxZoom: 18.0,
         backgroundColor: colors.bgMain,
         interactionOptions: InteractionOptions(
-          flags: InteractiveFlag.drag | InteractiveFlag.pinchZoom | InteractiveFlag.doubleTapZoom,
+          flags:
+              InteractiveFlag.drag |
+              InteractiveFlag.pinchZoom |
+              InteractiveFlag.doubleTapZoom,
           enableMultiFingerGestureRace: false,
           rotationThreshold: 999999.0, // Effectively disable rotation
-          cursorKeyboardRotationOptions: CursorKeyboardRotationOptions.disabled(),
+          cursorKeyboardRotationOptions:
+              CursorKeyboardRotationOptions.disabled(),
         ),
         // Use containCenter instead of contain to avoid assertion errors
         cameraConstraint: CameraConstraint.containCenter(
           bounds: LatLngBounds(
-            const LatLng(44.0, 20.0),  // SW
-            const LatLng(53.0, 42.0),  // NE
+            const LatLng(44.0, 20.0), // SW
+            const LatLng(53.0, 42.0), // NE
           ),
         ),
         onPositionChanged: (position, hasGesture) {
@@ -1538,7 +1519,9 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
         },
         onMapEvent: (event) {
           // Immediately reset rotation on any rotation event
-          if (event is MapEventRotate || event is MapEventRotateStart || event is MapEventRotateEnd) {
+          if (event is MapEventRotate ||
+              event is MapEventRotateStart ||
+              event is MapEventRotateEnd) {
             _mapController.rotate(0);
           }
         },
@@ -1575,12 +1558,12 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
       ],
     );
   }
-  
+
   void _showMarkerInfo(ThreatMarker marker) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final color = ThreatType.getColor(marker.threatType);
     final threatName = ThreatType.names[marker.threatType] ?? marker.threatType;
-    
+
     showModalBottomSheet(
       context: context,
       backgroundColor: isDark ? const Color(0xFF1E1E1E) : Colors.white,
@@ -1628,7 +1611,9 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
                             marker.date,
                             style: TextStyle(
                               fontSize: 14,
-                              color: isDark ? Colors.grey[400] : Colors.grey[600],
+                              color: isDark
+                                  ? Colors.grey[400]
+                                  : Colors.grey[600],
                             ),
                           ),
                       ],
@@ -1636,9 +1621,9 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
                   ),
                 ],
               ),
-              
+
               const SizedBox(height: 16),
-              
+
               // Location
               if (marker.place.isNotEmpty) ...[
                 Container(
@@ -1650,11 +1635,7 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
                   ),
                   child: Row(
                     children: [
-                      Icon(
-                        Icons.location_on_rounded,
-                        color: color,
-                        size: 22,
-                      ),
+                      Icon(Icons.location_on_rounded, color: color, size: 22),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
@@ -1671,7 +1652,7 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
                 ),
                 const SizedBox(height: 12),
               ],
-              
+
               const SizedBox(height: 8),
             ],
           ),
@@ -1679,7 +1660,7 @@ class _NativeMapPageState extends State<NativeMapPage> with TickerProviderStateM
       ),
     );
   }
-  
+
   IconData _getThreatIcon(String threatType) {
     switch (threatType) {
       case 'shahed':
@@ -1718,7 +1699,7 @@ class UkraineMapPainter extends CustomPainter {
   final List<ThreatMarker> threatMarkers;
   final double pulseValue;
   final MapColors mapColors;
-  
+
   UkraineMapPainter({
     required this.statePathsCache,
     required this.districtPathsCache,
@@ -1729,36 +1710,36 @@ class UkraineMapPainter extends CustomPainter {
     required this.pulseValue,
     required this.mapColors,
   });
-  
+
   @override
   void paint(Canvas canvas, Size size) {
     // ViewBox: 0 0 260 175
     const viewBoxWidth = 260.0;
     const viewBoxHeight = 175.0;
-    
+
     final scaleX = size.width / viewBoxWidth;
     final scaleY = size.height / viewBoxHeight;
     final scale = scaleX < scaleY ? scaleX : scaleY;
-    
+
     // Center the map
     final offsetX = (size.width - viewBoxWidth * scale) / 2;
     final offsetY = (size.height - viewBoxHeight * scale) / 2;
-    
+
     canvas.save();
     canvas.translate(offsetX, offsetY);
     canvas.scale(scale);
-    
+
     // === LAYER 1: ОБЛАСТІ (States) ===
     final normalStatePaint = Paint()
       ..color = mapColors.normalFill
       ..style = PaintingStyle.fill;
-    
+
     // Для light theme - м'якіший червоний, для dark - темніший
     final alarmBaseLight = const Color(0xFFDC2626);
     final alarmBaseDark = const Color(0xFF7f1d1d);
     final alarmHighLight = const Color(0xFFF87171);
     final alarmHighDark = const Color(0xFF991b1b);
-    
+
     final alarmStatePaint = Paint()
       ..color = Color.lerp(
         mapColors.isDark ? alarmBaseDark : alarmBaseLight.withOpacity(0.7),
@@ -1766,70 +1747,74 @@ class UkraineMapPainter extends CustomPainter {
         pulseValue,
       )!
       ..style = PaintingStyle.fill;
-      
+
     final normalStrokePaint = Paint()
       ..color = mapColors.normalStroke.withOpacity(0.3)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.4;
-      
+
     final alarmStrokePaint = Paint()
       ..color = mapColors.alarmStrokeState.withOpacity(0.35)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.4;
-    
+
     // Малюємо області
     for (final entry in statePathsCache.entries) {
       final regionId = entry.key;
       final paths = entry.value;
       final hasAlarm = stateAlarms[regionId] ?? false;
-      
+
       final fillPaint = hasAlarm ? alarmStatePaint : normalStatePaint;
       final strokePaint = hasAlarm ? alarmStrokePaint : normalStrokePaint;
-      
+
       for (final path in paths) {
         canvas.drawPath(path, fillPaint);
         canvas.drawPath(path, strokePaint);
       }
     }
-    
+
     // === LAYER 2: РАЙОНИ (Districts) ===
     // Малюємо тільки райони з тривогою (поверх областей)
     final districtAlarmLight = const Color(0xFFEF4444);
     final districtAlarmDark = const Color(0xFFB91C1C);
     final districtAlarmHighLight = const Color(0xFFF87171);
     final districtAlarmHighDark = const Color(0xFFDC2626);
-    
+
     final districtAlarmColor = Color.lerp(
-      mapColors.isDark ? districtAlarmDark : districtAlarmLight.withOpacity(0.5),
-      mapColors.isDark ? districtAlarmHighDark : districtAlarmHighLight.withOpacity(0.7),
+      mapColors.isDark
+          ? districtAlarmDark
+          : districtAlarmLight.withOpacity(0.5),
+      mapColors.isDark
+          ? districtAlarmHighDark
+          : districtAlarmHighLight.withOpacity(0.7),
       pulseValue,
     )!.withOpacity(0.6);
-    
+
     final districtAlarmPaint = Paint()
       ..color = districtAlarmColor
       ..style = PaintingStyle.fill;
-      
+
     // Stroke same color as fill to avoid gaps
     final districtAlarmStrokePaint = Paint()
       ..color = districtAlarmColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.3;
-    
+
     // Красивий контур районів (в UkraineMapPainter без zoom, показуємо завжди)
     final showDistrictBorders = true;
     final districtBorderPaint = Paint()
-      ..color = mapColors.isDark 
-        ? Colors.white.withOpacity(0.15)
-        : Colors.black.withOpacity(0.1)
+      ..color = mapColors.isDark
+          ? Colors.white.withOpacity(0.15)
+          : Colors.black.withOpacity(0.1)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.2;
-    
+
     // Спочатку малюємо всі заливки районів з тривогою
     for (final entry in districtPathsCache.entries) {
       final districtId = entry.key;
       final paths = entry.value;
       final hasAlarm = districtAlarms[districtId] ?? false;
-      
+
       if (hasAlarm) {
         for (final path in paths) {
           canvas.drawPath(path, districtAlarmPaint);
@@ -1837,7 +1822,7 @@ class UkraineMapPainter extends CustomPainter {
         }
       }
     }
-    
+
     // Потім малюємо границі районів поверх (тільки при зумі)
     if (showDistrictBorders) {
       for (final entry in districtPathsCache.entries) {
@@ -1847,7 +1832,7 @@ class UkraineMapPainter extends CustomPainter {
         }
       }
     }
-    
+
     // === LAYER 3: НАЗВИ ОБЛАСТЕЙ ===
     // Координати з ukraine_names.svg (точні позиції)
     const regionLabels = <String, Map<String, dynamic>>{
@@ -1903,7 +1888,7 @@ class UkraineMapPainter extends CustomPainter {
       final name = data['name'] as String;
       final x = data['x'] as double;
       final y = data['y'] as double;
-      
+
       final textSpan = TextSpan(text: name, style: labelStyle);
       final textPainter = TextPainter(
         text: textSpan,
@@ -1911,11 +1896,11 @@ class UkraineMapPainter extends CustomPainter {
         textAlign: TextAlign.center,
       );
       textPainter.layout();
-      
+
       // Центруємо текст
       final offsetX = x - textPainter.width / 2;
       final offsetY = y - textPainter.height / 2;
-      
+
       textPainter.paint(canvas, Offset(offsetX, offsetY));
     }
 
@@ -1924,60 +1909,71 @@ class UkraineMapPainter extends CustomPainter {
       // === AI TRAJECTORY (новий формат) ===
       if (marker.hasAITrajectory) {
         final traj = marker.trajectory!;
-        
+
         // Конвертуємо координати в позиції на карті
-        final startPos = MapBounds.latLngToPercent(traj.startLat, traj.startLng);
+        final startPos = MapBounds.latLngToPercent(
+          traj.startLat,
+          traj.startLng,
+        );
         final endPos = MapBounds.latLngToPercent(traj.endLat, traj.endLng);
-        
-        final startPoint = Offset(startPos.dx * viewBoxWidth, startPos.dy * viewBoxHeight);
-        final endPoint = Offset(endPos.dx * viewBoxWidth, endPos.dy * viewBoxHeight);
-        
+
+        final startPoint = Offset(
+          startPos.dx * viewBoxWidth,
+          startPos.dy * viewBoxHeight,
+        );
+        final endPoint = Offset(
+          endPos.dx * viewBoxWidth,
+          endPos.dy * viewBoxHeight,
+        );
+
         // Колір: жовтий для AI прогнозу, білий для підтвердженого
-        final lineColor = traj.predicted 
+        final lineColor = traj.predicted
             ? const Color(0xFFfbbf24) // Жовтий для AI predictions
             : Colors.white.withOpacity(0.7);
-        
+
         // Тонка пунктирна лінія траєкторії (без світіння)
         final trajectoryPaint = Paint()
           ..color = lineColor
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.2
           ..strokeCap = StrokeCap.round;
-        
+
         // Малюємо пунктирну лінію
         final totalDistance = (endPoint - startPoint).distance;
         const dashLength = 6.0;
         const gapLength = 4.0;
         final direction = (endPoint - startPoint) / totalDistance;
-        
+
         double currentDistance = 0;
         while (currentDistance < totalDistance) {
           final dashStart = startPoint + direction * currentDistance;
-          final dashEnd = startPoint + direction * math.min(currentDistance + dashLength, totalDistance);
+          final dashEnd =
+              startPoint +
+              direction * math.min(currentDistance + dashLength, totalDistance);
           canvas.drawLine(dashStart, dashEnd, trajectoryPaint);
           currentDistance += dashLength + gapLength;
         }
-        
+
         // Маленька стрілка на 70% траєкторії
         final arrowPos = Offset(
           startPoint.dx + (endPoint.dx - startPoint.dx) * 0.7,
           startPoint.dy + (endPoint.dy - startPoint.dy) * 0.7,
         );
-        
+
         // Обчислюємо напрямок стрілки
         final dx = endPoint.dx - startPoint.dx;
         final dy = endPoint.dy - startPoint.dy;
         final angle = math.atan2(dy, dx);
-        
+
         const arrowSize = 5.0;
         const arrowAngle = 0.5;
-        
+
         final arrowPaint = Paint()
           ..color = lineColor
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.2
           ..strokeCap = StrokeCap.round;
-        
+
         // Малюємо тільки дві лінії стрілки (V-форма)
         canvas.drawLine(
           arrowPos,
@@ -1995,41 +1991,46 @@ class UkraineMapPainter extends CustomPainter {
           ),
           arrowPaint,
         );
-        
+
         continue; // Пропускаємо старий формат для цього маркера
       }
-      
+
       // === СТАРИЙ ФОРМАТ (projected_path) ===
       if (!marker.hasTrajectory) continue;
-      
+
       final path = marker.projectedPath;
       if (path == null || path.length < 2) continue;
-      
+
       // Конвертуємо точки траєкторії в координати карти
       final points = path.map((p) {
         final pos = MapBounds.latLngToPercent(p.lat, p.lng);
         return Offset(pos.dx * viewBoxWidth, pos.dy * viewBoxHeight);
       }).toList();
-      
+
       // Фільтруємо точки за межами карти
-      final visiblePoints = points.where((p) => 
-        p.dx > -10 && p.dx < viewBoxWidth + 10 && 
-        p.dy > -10 && p.dy < viewBoxHeight + 10
-      ).toList();
-      
+      final visiblePoints = points
+          .where(
+            (p) =>
+                p.dx > -10 &&
+                p.dx < viewBoxWidth + 10 &&
+                p.dy > -10 &&
+                p.dy < viewBoxHeight + 10,
+          )
+          .toList();
+
       if (visiblePoints.length < 2) continue;
-      
+
       // Градієнтна лінія траєкторії (від джерела до цілі)
       final trajectoryPaint = Paint()
         ..color = Colors.orange.withOpacity(0.6)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5
         ..strokeCap = StrokeCap.round;
-      
+
       // Малюємо пунктирну лінію
       final trajectoryPath = Path();
       trajectoryPath.moveTo(visiblePoints.first.dx, visiblePoints.first.dy);
-      
+
       for (int i = 1; i < visiblePoints.length; i++) {
         // Пунктирна лінія через точки
         if (i % 2 == 1) {
@@ -2038,7 +2039,7 @@ class UkraineMapPainter extends CustomPainter {
           trajectoryPath.moveTo(visiblePoints[i].dx, visiblePoints[i].dy);
         }
       }
-      
+
       // Світіння траєкторії
       final glowPaint = Paint()
         ..color = Colors.orange.withOpacity(0.2)
@@ -2047,24 +2048,24 @@ class UkraineMapPainter extends CustomPainter {
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
       canvas.drawPath(trajectoryPath, glowPaint);
       canvas.drawPath(trajectoryPath, trajectoryPaint);
-      
+
       // Стрілка на кінці траєкторії
       if (visiblePoints.length >= 2) {
         final lastPoint = visiblePoints.last;
         final secondLast = visiblePoints[visiblePoints.length - 2];
-        
+
         // Обчислюємо напрямок стрілки
         final dx = lastPoint.dx - secondLast.dx;
         final dy = lastPoint.dy - secondLast.dy;
         final angle = math.atan2(dy, dx);
-        
+
         final arrowSize = 3.0;
         final arrowAngle = 0.5; // радіани
-        
+
         final arrowPaint = Paint()
           ..color = Colors.orange.withOpacity(0.8)
           ..style = PaintingStyle.fill;
-        
+
         final arrowPath = Path();
         arrowPath.moveTo(lastPoint.dx, lastPoint.dy);
         arrowPath.lineTo(
@@ -2078,7 +2079,7 @@ class UkraineMapPainter extends CustomPainter {
         arrowPath.close();
         canvas.drawPath(arrowPath, arrowPaint);
       }
-      
+
       // Проміжні точки траєкторії (маленькі кола)
       for (int i = 1; i < visiblePoints.length - 1; i++) {
         final point = visiblePoints[i];
@@ -2090,14 +2091,14 @@ class UkraineMapPainter extends CustomPainter {
     }
 
     // === LAYER 6: МАРКЕРИ ЗАГРОЗ ===
-    // NOTE: Marker rendering has been consolidated to _LabelsMarkersPainter 
+    // NOTE: Marker rendering has been consolidated to _LabelsMarkersPainter
     // to avoid duplicate rendering and coordinate system conflicts.
     // _LabelsMarkersPainter uses screen coordinates which are more reliable
     // for interactive elements and proper zoom handling.
-    
+
     canvas.restore();
   }
-  
+
   @override
   bool shouldRepaint(UkraineMapPainter oldDelegate) {
     // Тільки перемальовувати якщо є реальні зміни
@@ -2105,12 +2106,14 @@ class UkraineMapPainter extends CustomPainter {
     if (oldDelegate.stateAlarms.length != stateAlarms.length) return true;
     if (oldDelegate.districtAlarms.length != districtAlarms.length) return true;
     if (oldDelegate.threatMarkers.length != threatMarkers.length) return true;
-    
+
     // Перевіряємо пульсацію тільки якщо є тривоги (збільшено поріг для меншої кількості перемалювань)
-    if (stateAlarms.values.any((v) => v) || districtAlarms.values.any((v) => v)) {
-      if ((oldDelegate.pulseValue - pulseValue).abs() > 0.1) return true; // було 0.05
+    if (stateAlarms.values.any((v) => v) ||
+        districtAlarms.values.any((v) => v)) {
+      if ((oldDelegate.pulseValue - pulseValue).abs() > 0.1)
+        return true; // було 0.05
     }
-    
+
     return false;
   }
 }
@@ -2128,11 +2131,11 @@ class _SvgMapLayer extends StatelessWidget {
   final MapColors mapColors;
   final double opacity;
   final void Function(ThreatMarker) onMarkerTap;
-  
+
   // SVG viewBox dimensions
   static const double svgWidth = 260.0;
   static const double svgHeight = 175.0;
-  
+
   // Geographic bounds that SVG covers (must match MapBounds)
   static const double geoMinLat = 44.2;
   static const double geoMaxLat = 52.4;
@@ -2151,7 +2154,7 @@ class _SvgMapLayer extends StatelessWidget {
     required this.opacity,
     required this.onMarkerTap,
   });
-  
+
   /// Convert SVG coordinates to LatLng
   static LatLng svgToLatLng(double svgX, double svgY) {
     // SVG (0,0) = top-left = (geoMinLng, geoMaxLat)
@@ -2164,7 +2167,7 @@ class _SvgMapLayer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final camera = MapCamera.of(context);
-    
+
     return Opacity(
       opacity: opacity,
       child: GestureDetector(
@@ -2186,28 +2189,32 @@ class _SvgMapLayer extends StatelessWidget {
       ),
     );
   }
-  
-  void _handleTap(BuildContext context, TapUpDetails details, MapCamera camera) {
+
+  void _handleTap(
+    BuildContext context,
+    TapUpDetails details,
+    MapCamera camera,
+  ) {
     const tapTolerancePixels = 30.0;
-    
+
     ThreatMarker? tappedMarker;
     double minDistance = double.infinity;
-    
+
     for (final marker in threatMarkers) {
       final markerOffset = camera.latLngToScreenOffset(
         LatLng(marker.lat, marker.lng),
       );
-      
+
       final dx = details.localPosition.dx - markerOffset.dx;
       final dy = details.localPosition.dy - markerOffset.dy;
       final distance = math.sqrt(dx * dx + dy * dy);
-      
+
       if (distance < tapTolerancePixels && distance < minDistance) {
         minDistance = distance;
         tappedMarker = marker;
       }
     }
-    
+
     if (tappedMarker != null) {
       onMarkerTap(tappedMarker);
     }
@@ -2224,7 +2231,7 @@ class _SvgMapPainter extends CustomPainter {
   final List<ThreatMarker> threatMarkers;
   final double pulseValue;
   final MapColors mapColors;
-  
+
   _SvgMapPainter({
     required this.camera,
     required this.statePathsCache,
@@ -2235,13 +2242,13 @@ class _SvgMapPainter extends CustomPainter {
     required this.pulseValue,
     required this.mapColors,
   });
-  
+
   /// Convert SVG coordinates to screen offset using camera
   Offset svgToScreen(double svgX, double svgY) {
     final latLng = _SvgMapLayer.svgToLatLng(svgX, svgY);
     return camera.latLngToScreenOffset(latLng);
   }
-  
+
   /// Get canvas transformation to map SVG coordinates to screen
   /// This transforms the entire canvas so paths can be drawn directly
   void applyCanvasTransform(Canvas canvas) {
@@ -2249,17 +2256,17 @@ class _SvgMapPainter extends CustomPainter {
     final topLeft = svgToScreen(0, 0);
     final topRight = svgToScreen(_SvgMapLayer.svgWidth, 0);
     final bottomLeft = svgToScreen(0, _SvgMapLayer.svgHeight);
-    
+
     // Calculate scale factors
     final scaleX = (topRight.dx - topLeft.dx) / _SvgMapLayer.svgWidth;
     final scaleY = (bottomLeft.dy - topLeft.dy) / _SvgMapLayer.svgHeight;
-    
+
     // If camera has rotation, we need to counter-rotate
     // But since we disabled rotation, just apply translate + scale
     canvas.translate(topLeft.dx, topLeft.dy);
     canvas.scale(scaleX, scaleY);
   }
-  
+
   @override
   void paint(Canvas canvas, Size size) {
     // === LAYER 0: BACKGROUND (hide tiles at low zoom) ===
@@ -2268,86 +2275,90 @@ class _SvgMapPainter extends CustomPainter {
       ..color = mapColors.bgMain
       ..style = PaintingStyle.fill;
     canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), bgPaint);
-    
+
     // Save canvas state before transformation
     canvas.save();
-    
+
     // Apply SVG to screen transformation
     applyCanvasTransform(canvas);
-    
+
     // Calculate stroke scale based on zoom (strokes need to be adjusted for canvas scale)
     final topLeft = svgToScreen(0, 0);
     final topRight = svgToScreen(_SvgMapLayer.svgWidth, 0);
     final canvasScale = (topRight.dx - topLeft.dx) / _SvgMapLayer.svgWidth;
     final strokeScale = (1.0 / canvasScale).clamp(0.3, 2.0);
-    
+
     // === LAYER 1: STATES ===
     final normalStatePaint = Paint()
       ..color = mapColors.normalFill
       ..style = PaintingStyle.fill;
-    
+
     final alarmBaseLight = const Color(0xFFDC2626);
     final alarmBaseDark = const Color(0xFF7f1d1d);
     final alarmHighLight = const Color(0xFFF87171);
     final alarmHighDark = const Color(0xFF991b1b);
-    
+
     final alarmColor = Color.lerp(
       mapColors.isDark ? alarmBaseDark : alarmBaseLight.withOpacity(0.7),
       mapColors.isDark ? alarmHighDark : alarmHighLight.withOpacity(0.85),
       pulseValue,
     )!;
-    
+
     final alarmStatePaint = Paint()
       ..color = alarmColor
       ..style = PaintingStyle.fill;
-    
+
     final normalStrokePaint = Paint()
       ..color = mapColors.normalStroke.withOpacity(0.5)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0 * strokeScale
       ..strokeJoin = StrokeJoin.round;
-      
+
     // Alarm stroke uses same color as fill to eliminate gaps between alarm regions
     final alarmStrokePaint = Paint()
       ..color = alarmColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.2 * strokeScale
       ..strokeJoin = StrokeJoin.round;
-    
+
     // Draw states (paths are in SVG coordinates, canvas is transformed)
     for (final entry in statePathsCache.entries) {
       final regionId = entry.key;
       final paths = entry.value;
       final hasAlarm = stateAlarms[regionId] ?? false;
-      
+
       final fillPaint = hasAlarm ? alarmStatePaint : normalStatePaint;
       final strokePaint = hasAlarm ? alarmStrokePaint : normalStrokePaint;
-      
+
       for (final svgPath in paths) {
         canvas.drawPath(svgPath, fillPaint);
         canvas.drawPath(svgPath, strokePaint);
       }
     }
-    
+
     // === LAYER 2: DISTRICTS ===
     final districtAlarmPaint = Paint()
       ..color = Color.lerp(
-        mapColors.isDark ? const Color(0xFFB91C1C) : const Color(0xFFEF4444).withOpacity(0.5),
-        mapColors.isDark ? const Color(0xFFDC2626) : const Color(0xFFF87171).withOpacity(0.7),
+        mapColors.isDark
+            ? const Color(0xFFB91C1C)
+            : const Color(0xFFEF4444).withOpacity(0.5),
+        mapColors.isDark
+            ? const Color(0xFFDC2626)
+            : const Color(0xFFF87171).withOpacity(0.7),
         pulseValue,
       )!.withOpacity(0.6)
       ..style = PaintingStyle.fill;
-      
+
     final districtBorderPaint = Paint()
       ..color = mapColors.normalStroke.withOpacity(0.08)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.3 * strokeScale;
-    
+
     for (final entry in districtPathsCache.entries) {
       final districtId = entry.key;
       final paths = entry.value;
       final hasAlarm = districtAlarms[districtId] ?? false;
-      
+
       for (final svgPath in paths) {
         // Only draw district border at high zoom
         if (camera.zoom > 8) {
@@ -2358,24 +2369,24 @@ class _SvgMapPainter extends CustomPainter {
         }
       }
     }
-    
+
     // Restore canvas before drawing markers (they use screen coordinates)
     canvas.restore();
-    
+
     // === LAYER 3: REGION LABELS ===
     // Region labels are now drawn in _LabelsMarkersLayer for better stability
-    
+
     // === LAYER 4: THREAT MARKERS ===
     // Markers are now drawn in _LabelsMarkersLayer for proper layering
   }
-  
+
   @override
   bool shouldRepaint(_SvgMapPainter oldDelegate) {
     // Only repaint when data actually changes
     return camera != oldDelegate.camera ||
-           pulseValue != oldDelegate.pulseValue ||
-           stateAlarms != oldDelegate.stateAlarms ||
-           districtAlarms != oldDelegate.districtAlarms;
+        pulseValue != oldDelegate.pulseValue ||
+        stateAlarms != oldDelegate.stateAlarms ||
+        districtAlarms != oldDelegate.districtAlarms;
   }
 }
 
@@ -2394,7 +2405,7 @@ class _LabelsMarkersLayer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final camera = MapCamera.of(context);
-    
+
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTapUp: (details) => _handleTap(details, camera),
@@ -2408,28 +2419,28 @@ class _LabelsMarkersLayer extends StatelessWidget {
       ),
     );
   }
-  
+
   void _handleTap(TapUpDetails details, MapCamera camera) {
     const tapTolerancePixels = 30.0;
-    
+
     ThreatMarker? tappedMarker;
     double minDistance = double.infinity;
-    
+
     for (final marker in threatMarkers) {
       final markerOffset = camera.latLngToScreenOffset(
         LatLng(marker.lat, marker.lng),
       );
-      
+
       final dx = details.localPosition.dx - markerOffset.dx;
       final dy = details.localPosition.dy - markerOffset.dy;
       final distance = math.sqrt(dx * dx + dy * dy);
-      
+
       if (distance < tapTolerancePixels && distance < minDistance) {
         minDistance = distance;
         tappedMarker = marker;
       }
     }
-    
+
     if (tappedMarker != null) {
       onMarkerTap(tappedMarker);
     }
@@ -2440,7 +2451,7 @@ class _LabelsMarkersPainter extends CustomPainter {
   final MapCamera camera;
   final List<ThreatMarker> threatMarkers;
   final MapColors mapColors;
-  
+
   // Region labels with SVG coordinates
   static const regionLabels = <String, Map<String, dynamic>>{
     'UA-68': {'name': 'Хмельницька', 'x': 68.5, 'y': 63.0},
@@ -2470,13 +2481,13 @@ class _LabelsMarkersPainter extends CustomPainter {
     'UA-46': {'name': 'Львівська', 'x': 29.0, 'y': 61.0},
     'UA-43': {'name': 'А. Р. Крим', 'x': 172.0, 'y': 152.7},
   };
-  
+
   _LabelsMarkersPainter({
     required this.camera,
     required this.threatMarkers,
     required this.mapColors,
   });
-  
+
   /// Convert SVG coordinates to screen offset using camera
   Offset svgToScreen(double svgX, double svgY) {
     final latLng = _SvgMapLayer.svgToLatLng(svgX, svgY);
@@ -2486,7 +2497,7 @@ class _LabelsMarkersPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final strokeScale = (camera.zoom / 6.0).clamp(0.5, 3.0);
-    
+
     // === REGION LABELS ===
     // Показуємо назви тільки при зумі > 4.5
     if (camera.zoom > 4.5) {
@@ -2514,16 +2525,18 @@ class _LabelsMarkersPainter extends CustomPainter {
         final name = data['name'] as String;
         final svgX = data['x'] as double;
         final svgY = data['y'] as double;
-        
+
         // Convert SVG coordinates to screen position
         final screenPos = svgToScreen(svgX, svgY);
-        
+
         // Skip if outside visible area
-        if (screenPos.dx < -100 || screenPos.dx > size.width + 100 ||
-            screenPos.dy < -50 || screenPos.dy > size.height + 50) {
+        if (screenPos.dx < -100 ||
+            screenPos.dx > size.width + 100 ||
+            screenPos.dy < -50 ||
+            screenPos.dy > size.height + 50) {
           continue;
         }
-        
+
         final textSpan = TextSpan(text: name, style: labelStyle);
         final textPainter = TextPainter(
           text: textSpan,
@@ -2531,36 +2544,38 @@ class _LabelsMarkersPainter extends CustomPainter {
           textAlign: TextAlign.center,
         );
         textPainter.layout();
-        
+
         // Center text at position
         final offsetX = screenPos.dx - textPainter.width / 2;
         final offsetY = screenPos.dy - textPainter.height / 2;
-        
+
         textPainter.paint(canvas, Offset(offsetX, offsetY));
       }
     }
-    
+
     // === THREAT MARKERS (consolidated rendering - removed from UkraineMapPainter to avoid duplication) ===
     final markerSize = (24.0 * strokeScale).clamp(20.0, 48.0);
     final iconManager = ThreatIconManager();
-    
+
     for (final marker in threatMarkers) {
       final screenPos = camera.latLngToScreenOffset(
         LatLng(marker.lat, marker.lng),
       );
-      
+
       // Skip if outside visible area (with margin for rotated icons)
-      if (screenPos.dx < -markerSize || screenPos.dx > size.width + markerSize ||
-          screenPos.dy < -markerSize || screenPos.dy > size.height + markerSize) {
+      if (screenPos.dx < -markerSize ||
+          screenPos.dx > size.width + markerSize ||
+          screenPos.dy < -markerSize ||
+          screenPos.dy > size.height + markerSize) {
         continue;
       }
-      
+
       final color = ThreatType.getColor(marker.threatType);
-      
+
       // Draw icon from cache with rotation
-      final icon = iconManager.icons[marker.threatType] ?? 
-                   iconManager.icons['default'];
-      
+      final icon =
+          iconManager.icons[marker.threatType] ?? iconManager.icons['default'];
+
       // Calculate rotation angle based on trajectory (icon points east by default)
       double rotationAngle = 0.0;
       if (marker.hasAITrajectory) {
@@ -2570,28 +2585,39 @@ class _LabelsMarkersPainter extends CustomPainter {
         // atan2(dx, dy) gives angle from north clockwise
         // Subtract π/2 because icon points east, not north
         rotationAngle = math.atan2(dx, dy) - math.pi / 2;
-      } else if (marker.hasTrajectory && marker.projectedPath != null && marker.projectedPath!.length >= 2) {
+      } else if (marker.hasTrajectory &&
+          marker.projectedPath != null &&
+          marker.projectedPath!.length >= 2) {
         final path = marker.projectedPath!;
         final lastIdx = path.length - 1;
         final dx = path[lastIdx].lng - path[lastIdx - 1].lng;
         final dy = path[lastIdx].lat - path[lastIdx - 1].lat;
         rotationAngle = math.atan2(dx, dy) - math.pi / 2;
       }
-      
+
       if (icon != null && iconManager.isLoaded) {
         canvas.save();
         canvas.translate(screenPos.dx, screenPos.dy);
-        
+
         // Apply rotation if trajectory exists
         if (rotationAngle != 0.0) {
           canvas.rotate(rotationAngle);
         }
-        
-        final srcRect = Rect.fromLTWH(0, 0, icon.width.toDouble(), icon.height.toDouble());
-        final dstRect = Rect.fromCenter(center: Offset.zero, width: markerSize, height: markerSize);
+
+        final srcRect = Rect.fromLTWH(
+          0,
+          0,
+          icon.width.toDouble(),
+          icon.height.toDouble(),
+        );
+        final dstRect = Rect.fromCenter(
+          center: Offset.zero,
+          width: markerSize,
+          height: markerSize,
+        );
         final paint = Paint()..filterQuality = FilterQuality.high;
         canvas.drawImageRect(icon, srcRect, dstRect, paint);
-        
+
         canvas.restore();
       } else {
         // Fallback circle when icon not loaded
@@ -2599,14 +2625,14 @@ class _LabelsMarkersPainter extends CustomPainter {
           ..color = color.withOpacity(0.9)
           ..style = PaintingStyle.fill;
         canvas.drawCircle(screenPos, markerSize / 2, markerPaint);
-        
+
         final borderPaint = Paint()
           ..color = Colors.white.withOpacity(0.8)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2.0;
         canvas.drawCircle(screenPos, markerSize / 2, borderPaint);
       }
-      
+
       // Draw trajectory line if available
       if (marker.trajectory != null) {
         final traj = marker.trajectory!;
@@ -2616,21 +2642,23 @@ class _LabelsMarkersPainter extends CustomPainter {
         final endScreen = camera.latLngToScreenOffset(
           LatLng(traj.endLat, traj.endLng),
         );
-        
+
         // Dashed line for predicted trajectory
         final trajPaint = Paint()
-          ..color = traj.predicted ? const Color(0xFFfbbf24) : Colors.white.withOpacity(0.6)
+          ..color = traj.predicted
+              ? const Color(0xFFfbbf24)
+              : Colors.white.withOpacity(0.6)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2.0 * strokeScale;
-        
+
         canvas.drawLine(startScreen, endScreen, trajPaint);
       }
     }
   }
-  
+
   @override
   bool shouldRepaint(_LabelsMarkersPainter oldDelegate) {
     return camera != oldDelegate.camera ||
-           threatMarkers.length != oldDelegate.threatMarkers.length;
+        threatMarkers.length != oldDelegate.threatMarkers.length;
   }
 }
