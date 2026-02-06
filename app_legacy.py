@@ -1427,6 +1427,8 @@ def compress_response(response):
 # - Alarm state tracking and history
 
 import requests as http_requests
+import requests
+import traceback
 
 # --- Alarm API Configuration ---
 ALARM_API_KEY = os.getenv('ALARM_API_KEY') or os.getenv('ALARMS_API_KEY') or '57fe8a39:7698ad50f0f15d502b280a83019bab25'
@@ -1598,7 +1600,7 @@ def _fetch_alarms_from_api():
     for attempt in range(5):
         try:
             timeout = 5 + attempt * 2  # 5, 7, 9, 11, 13 seconds
-            response = http_requests.get(
+            response = requests.get(
                 f'{ALARM_API_BASE}/alerts',
                 headers={'Authorization': ALARM_API_KEY},
                 timeout=timeout
@@ -1618,6 +1620,9 @@ def _fetch_alarms_from_api():
             elif response.status_code == 401:
                 print(f"[ALARM] API returned 401 - key may be expired")
                 return None
+        except RecursionError:
+            print(f"Alarm all attempt {attempt+1} failed: maximum recursion depth exceeded")
+            traceback.print_exc()
         except Exception as e:
             print(f"[ALARM] Attempt {attempt+1}/5 failed: {e}")
             if attempt < 4:
@@ -1722,6 +1727,9 @@ def alarm_proxy():
                 _alarm_cache['time'] = now
 
                 return jsonify(result)
+        except RecursionError:
+            print(f"Alarm proxy attempt {attempt+1} failed: maximum recursion depth exceeded")
+            traceback.print_exc()
         except Exception as e:
             print(f"Alarm proxy attempt {attempt+1} failed: {e}")
             if attempt < 2:

@@ -524,8 +524,12 @@ def register_admin_routes(app):
             if not (1 <= val <= 360):
                 raise ValueError('out of range')
             MONITOR_PERIOD_MINUTES = val
+            # Also update app_legacy module global so /data endpoint sees the new value
+            import sys
+            if 'app_legacy' in sys.modules:
+                sys.modules['app_legacy'].MONITOR_PERIOD_MINUTES = val
             save_config()
-            print(f"[DEBUG] MONITOR_PERIOD_MINUTES updated to {MONITOR_PERIOD_MINUTES} minutes")
+            print(f"[DEBUG] MONITOR_PERIOD_MINUTES updated to {MONITOR_PERIOD_MINUTES} minutes (synced to app_legacy)")
             return jsonify({'status':'ok','monitor_period':MONITOR_PERIOD_MINUTES})
         except Exception as e:
             return jsonify({'status':'error','error':str(e)}), 400

@@ -22,8 +22,8 @@ services:
       pip install --upgrade pip
       pip install --no-cache-dir -r requirements.txt
     
-    # Start command - supervisor that launches gunicorn + worker
-    startCommand: python app.py
+    # Start command - monolith (no Redis required)
+    startCommand: gunicorn app_legacy:app --workers 2 --worker-class gevent --worker-connections 2000 --timeout 120 --keep-alive 5 --bind 0.0.0.0:$PORT
     
     # Health check
     healthCheckPath: /health
