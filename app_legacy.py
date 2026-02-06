@@ -3183,7 +3183,10 @@ def get_fused_trajectories():
     seen = set()
     cutoff = datetime.now(pytz.timezone('Europe/Kyiv')).replace(tzinfo=None) - timedelta(minutes=_FUSION_WINDOW_MIN)
 
-    for m in load_messages()[-800:]:
+    import gevent as _gevent
+    for _fi, m in enumerate(load_messages()[-800:]):
+        if _fi % 100 == 0:
+            _gevent.sleep(0)  # yield to gevent hub to prevent starvation
         if not isinstance(m, dict):
             continue
         try:
@@ -5548,14 +5551,17 @@ def data():
     print(f"[DEBUG] Loaded {len(messages)} total messages")
     
     # DEDUPLICATE messages by text+date to avoid showing same message multiple times
+    import gevent as _gevent
     seen_keys = set()
     unique_messages = []
-    for m in messages:
+    for _di, m in enumerate(messages):
         # Create key from text + date (messages with same text at same time are duplicates)
         msg_key = f"{m.get('text', '')[:100]}|{m.get('date', '')}"
         if msg_key not in seen_keys:
             seen_keys.add(msg_key)
             unique_messages.append(m)
+        if _di % 200 == 0:
+            _gevent.sleep(0)  # yield to gevent hub to prevent starvation
     if len(unique_messages) < len(messages):
         print(f"[DEDUP] Removed {len(messages) - len(unique_messages)} duplicate messages")
     messages = unique_messages
@@ -5585,7 +5591,9 @@ def data():
         sample_date = messages[0].get('date', '')
         print(f"[DEBUG_TIME] now={now}, min_time={min_time}, sample_msg_date='{sample_date}'")
 
-    for m in messages:
+    for _mi, m in enumerate(messages):
+        if _mi % 200 == 0:
+            _gevent.sleep(0)  # yield to gevent hub to prevent starvation
         try:
             dt = datetime.strptime(m.get('date',''), '%Y-%m-%d %H:%M:%S')
         except Exception:
@@ -7229,7 +7237,8 @@ def stream():
         return jsonify({'error': 'Server busy, please poll /api/data'}), 503
     
     def gen():
-        q = queue.Queue()
+        from gevent.queue import Queue as _GeventQueue, Empty as _GeventEmpty
+        q = _GeventQueue()
         SUBSCRIBERS.add(q)
         last_ping = time.time()
         try:
@@ -7237,7 +7246,7 @@ def stream():
                 try:
                     item = q.get(timeout=5)
                     yield f'data: {item}\n\n'
-                except Exception:
+                except (_GeventEmpty, Exception):
                     pass
                 now_t = time.time()
                 if now_t - last_ping > 25:

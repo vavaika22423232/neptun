@@ -619,7 +619,10 @@ def register_admin_routes(app):
         
             seen_texts = set()  # Avoid counting duplicates
         
-            for msg in messages[-200:]:  # Check last 200 messages
+            import gevent as _gevent
+            for _ti, msg in enumerate(messages[-200:]):  # Check last 200 messages
+                if _ti % 50 == 0:
+                    _gevent.sleep(0)  # yield to gevent hub to prevent starvation
                 if not isinstance(msg, dict):
                     continue
             
@@ -3333,7 +3336,8 @@ def register_admin_routes(app):
             return jsonify({'error': 'Server busy, please use polling'}), 503
     
         def gen():
-            q = queue.Queue()
+            from gevent.queue import Queue as _GeventQueue, Empty as _GeventEmpty
+            q = _GeventQueue()
             CHAT_SUBSCRIBERS.add(q)
             last_ping = time.time()
             log.info(f"[CHAT_SSE] Client connected. Total subscribers: {len(CHAT_SUBSCRIBERS)}")
@@ -3342,7 +3346,7 @@ def register_admin_routes(app):
                     try:
                         item = q.get(timeout=5)
                         yield f'data: {item}\n\n'
-                    except Exception:
+                    except (_GeventEmpty, Exception):
                         pass
                     now_t = time.time()
                     if now_t - last_ping > 25:
