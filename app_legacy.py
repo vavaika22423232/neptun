@@ -1552,18 +1552,17 @@ DISTRICT_TO_OBLAST = {
 _alarm_cache = {'data': None, 'time': 0}
 _alarm_all_cache = {'data': None, 'time': 0, 'etag': None}  # Separate cache for /all endpoint
 ALARM_CACHE_TTL = 30  # seconds - serve fresh data
-ALARM_CACHE_STALE_TTL = 1800  # 30 minutes - serve stale data if API fails
+ALARM_CACHE_STALE_TTL = 7200  # 2 hours - serve stale data if API fails
 _alarm_api_failing = False  # Track if API is failing to reduce retries
 _alarm_api_fail_time = 0  # When API started failing
 _alarm_bg_thread_started = False  # Background alarm fetcher
 
 def _fetch_alarms_from_api():
-    """Shared helper: fetch alarms from ukrainealarm API with aggressive retries.
+    """Fetch alarms from ukrainealarm API. Used ONLY by background fetcher, never in request path.
     Returns list of active alerts or None on failure."""
-    import hashlib
-    for attempt in range(5):
+    for attempt in range(3):
         try:
-            timeout = 5 + attempt * 2  # 5, 7, 9, 11, 13 seconds
+            timeout = 5 + attempt * 2  # 5, 7, 9 seconds
             response = requests.get(
                 f'{ALARM_API_BASE}/alerts',
                 headers={'Authorization': ALARM_API_KEY},
@@ -1588,42 +1587,74 @@ def _fetch_alarms_from_api():
             print(f"Alarm all attempt {attempt+1} failed: maximum recursion depth exceeded")
             traceback.print_exc()
         except Exception as e:
-            print(f"[ALARM] Attempt {attempt+1}/5 failed: {e}")
-            if attempt < 4:
+            print(f"[ALARM] Attempt {attempt+1}/3 failed: {e}")
+            if attempt < 2:
                 import time as _t
-                _t.sleep(0.5 * (attempt + 1))  # 0.5, 1.0, 1.5, 2.0s
+                _t.sleep(0.5 * (attempt + 1))  # 0.5, 1.0s
     return None
 
+def _build_proxy_format(result):
+    """Build {states, districts, totalAlerts} proxy format from raw alarm list."""
+    states = []
+    districts = []
+    for item in result:
+        region_type = item.get('regionType', '')
+        alert_info = {
+            'regionName': item.get('regionName', ''),
+            'regionType': region_type,
+            'activeAlerts': item.get('activeAlerts', [])
+        }
+        if region_type == 'State':
+            states.append(alert_info)
+        elif region_type == 'District':
+            alert_info['oblast'] = DISTRICT_TO_OBLAST.get(item.get('regionName', ''), '')
+            districts.append(alert_info)
+    return {'states': states, 'districts': districts, 'totalAlerts': len(states) + len(districts)}
+
+def _update_alarm_caches(result):
+    """Update both alarm caches (all + proxy) from a fresh API result."""
+    import hashlib as _hl
+    now = time.time()
+    content_hash = _hl.md5(json.dumps(result, sort_keys=True).encode()).hexdigest()[:16]
+    etag = f'"{content_hash}"'
+    _alarm_all_cache['data'] = result
+    _alarm_all_cache['time'] = now
+    _alarm_all_cache['etag'] = etag
+    # Also update proxy-format cache for /api/alarms/proxy
+    _alarm_cache['data'] = _build_proxy_format(result)
+    _alarm_cache['time'] = now
+
 def _start_alarm_background_fetcher():
-    """Background thread that keeps alarm cache warm by polling API every 25s."""
+    """Background thread that keeps alarm cache warm by polling API every 15s."""
     global _alarm_bg_thread_started
     if _alarm_bg_thread_started:
         return
     _alarm_bg_thread_started = True
 
-    import hashlib
+    # Seed cache synchronously at startup (OK to block here, before requests arrive)
+    try:
+        result = _fetch_alarms_from_api()
+        if result is not None:
+            _update_alarm_caches(result)
+            print(f"[ALARM] Cache seeded at startup: {len(result)} active alerts")
+        else:
+            print("[ALARM] Startup seed returned None (API may be down, will retry in bg loop)")
+    except Exception as e:
+        print(f"[ALARM] Startup seed failed (non-fatal): {e}")
 
     def _bg_loop():
         global _alarm_api_failing, _alarm_api_fail_time
         while True:
             try:
                 import time as _t
-                _t.sleep(25)  # Poll every 25 seconds
+                _t.sleep(15)  # Poll every 15 seconds (cache TTL is 30s, so always warm)
                 result = _fetch_alarms_from_api()
-                now = _t.time()
                 if result is not None:
                     _alarm_api_failing = False
-                    content_hash = hashlib.md5(json.dumps(result, sort_keys=True).encode()).hexdigest()[:16]
-                    etag = f'"{content_hash}"'
-                    _alarm_all_cache['data'] = result
-                    _alarm_all_cache['time'] = now
-                    _alarm_all_cache['etag'] = etag
-                    # Also update legacy cache
-                    _alarm_cache['data'] = result
-                    _alarm_cache['time'] = now
+                    _update_alarm_caches(result)
                 else:
                     _alarm_api_failing = True
-                    _alarm_api_fail_time = now
+                    _alarm_api_fail_time = _t.time()
             except Exception as e:
                 print(f"[ALARM BG] Error: {e}")
                 import time as _t
@@ -1632,93 +1663,51 @@ def _start_alarm_background_fetcher():
     import threading
     t = threading.Thread(target=_bg_loop, daemon=True, name='alarm-bg-fetcher')
     t.start()
-    print("[ALARM] Background fetcher started (polls every 25s)")
+    print("[ALARM] Background fetcher started (polls every 15s)")
 
 # Start background fetcher at module load
 _start_alarm_background_fetcher()
 
 @app.route('/api/alarms/proxy')
 def alarm_proxy():
-    """Proxy for ukrainealarm.com API - returns ALL active alerts with type info"""
-    import time as _time
-    now = _time.time()
-
-    # Return cached data if fresh
-    if _alarm_cache['data'] and (now - _alarm_cache['time']) < ALARM_CACHE_TTL:
-        return jsonify(_alarm_cache['data'])
-
-    # Try to fetch fresh data with retries
-    for attempt in range(3):
-        try:
-            response = http_requests.get(
-                f'{ALARM_API_BASE}/alerts',
-                headers={'Authorization': ALARM_API_KEY},
-                timeout=8
-            )
-            if response.ok:
-                data = response.json()
-                # Separate State (oblast) and District alerts
-                states = []
-                districts = []
-
-                for region in data:
-                    if region.get('activeAlerts') and len(region['activeAlerts']) > 0:
-                        region_type = region.get('regionType', '')
-                        region_name = region.get('regionName', '')
-
-                        alert_info = {
-                            'regionName': region_name,
-                            'regionType': region_type,
-                            'activeAlerts': region.get('activeAlerts')
-                        }
-
-                        if region_type == 'State':
-                            states.append(alert_info)
-                        elif region_type == 'District':
-                            # For districts, also include parent oblast
-                            oblast = DISTRICT_TO_OBLAST.get(region_name, '')
-                            alert_info['oblast'] = oblast
-                            districts.append(alert_info)
-
-                result = {
-                    'states': states,
-                    'districts': districts,
-                    'totalAlerts': len(states) + len(districts)
-                }
-
-                # Update cache
-                _alarm_cache['data'] = result
-                _alarm_cache['time'] = now
-
-                return jsonify(result)
-        except RecursionError:
-            print(f"Alarm proxy attempt {attempt+1} failed: maximum recursion depth exceeded")
-            traceback.print_exc()
-        except Exception as e:
-            print(f"Alarm proxy attempt {attempt+1} failed: {e}")
-            if attempt < 2:
-                _time.sleep(1)  # Wait before retry
-
-    # All retries failed - return cached data if available
+    """Proxy for ukrainealarm.com API - serves from background-fetched cache.
+    Never makes inline external API calls (prevents 502 under load)."""
     if _alarm_cache['data']:
-        print("Returning cached alarm data after failures")
         return jsonify(_alarm_cache['data'])
 
-    return jsonify({'states': [], 'districts': [], 'totalAlerts': 0, 'error': 'API unavailable'})
+    # Fallback: build proxy format from _alarm_all_cache if available
+    if _alarm_all_cache['data']:
+        states = []
+        districts = []
+        for item in _alarm_all_cache['data']:
+            region_type = item.get('regionType', '')
+            alert_info = {
+                'regionName': item.get('regionName', ''),
+                'regionType': region_type,
+                'activeAlerts': item.get('activeAlerts', [])
+            }
+            if region_type == 'State':
+                states.append(alert_info)
+            elif region_type == 'District':
+                alert_info['oblast'] = DISTRICT_TO_OBLAST.get(item.get('regionName', ''), '')
+                districts.append(alert_info)
+
+        result = {'states': states, 'districts': districts, 'totalAlerts': len(states) + len(districts)}
+        _alarm_cache['data'] = result
+        _alarm_cache['time'] = time.time()
+        return jsonify(result)
+
+    return jsonify({'states': [], 'districts': [], 'totalAlerts': 0, 'error': 'warming_up'})
 
 @app.route('/api/alarms/all')
 @app.route('/api/alarms')  # Alias for compatibility
 @app.route('/api/alarms/full')  # Legacy alias for mobile clients
 def alarm_all():
-    """Returns ALL alerts (State, District, Community) for detailed view with caching"""
-    import hashlib
-    import time as _time
-    now = _time.time()
-    global _alarm_api_failing, _alarm_api_fail_time
+    """Returns ALL alerts - serves exclusively from background-fetched cache.
+    Never makes inline external API calls (prevents 502 under load)."""
 
-    # Return fresh cached data if available (background fetcher keeps this warm)
-    if _alarm_all_cache['data'] and (now - _alarm_all_cache['time']) < ALARM_CACHE_TTL:
-        # BANDWIDTH OPTIMIZATION: Support ETag for 304 responses
+    # Always serve from cache (background fetcher keeps it warm)
+    if _alarm_all_cache['data'] is not None:
         cache_etag = _alarm_all_cache.get('etag')
         client_etag = request.headers.get('If-None-Match')
         if cache_etag and client_etag == cache_etag:
@@ -1728,53 +1717,16 @@ def alarm_all():
         resp.headers['Cache-Control'] = 'public, max-age=30'
         if cache_etag:
             resp.headers['ETag'] = cache_etag
-        return resp
 
-    # If API is failing, serve stale data immediately (for 15 seconds cooldown)
-    if _alarm_api_failing and (now - _alarm_api_fail_time) < 15:
-        if _alarm_all_cache['data'] and (now - _alarm_all_cache['time']) < ALARM_CACHE_STALE_TTL:
-            resp = jsonify(_alarm_all_cache['data'])
-            resp.headers['Cache-Control'] = 'public, max-age=30'
+        age = int(time.time() - _alarm_all_cache['time'])
+        if age > ALARM_CACHE_TTL:
             resp.headers['X-Stale'] = 'true'
-            return resp
-
-    # Try to fetch with aggressive retries
-    result = _fetch_alarms_from_api()
-    
-    if result is not None:
-        _alarm_api_failing = False
-        content_hash = hashlib.md5(json.dumps(result, sort_keys=True).encode()).hexdigest()[:16]
-        etag = f'"{content_hash}"'
-
-        _alarm_all_cache['data'] = result
-        _alarm_all_cache['time'] = now
-        _alarm_all_cache['etag'] = etag
-
-        client_etag = request.headers.get('If-None-Match')
-        if client_etag == etag:
-            return Response(status=304, headers={'ETag': etag})
-
-        resp = jsonify(result)
-        resp.headers['Cache-Control'] = 'public, max-age=30'
-        resp.headers['ETag'] = etag
+            resp.headers['X-Stale-Age'] = str(age)
         return resp
 
-    # All retries failed - mark API as failing
-    _alarm_api_failing = True
-    _alarm_api_fail_time = now
-    
-    # Return stale cached data if available (within 30 min)
-    if _alarm_all_cache['data'] and (now - _alarm_all_cache['time']) < ALARM_CACHE_STALE_TTL:
-        print(f"[ALARM] Returning stale data ({int(now - _alarm_all_cache['time'])}s old)")
-        resp = jsonify(_alarm_all_cache['data'])
-        resp.headers['Cache-Control'] = 'public, max-age=30'
-        resp.headers['X-Stale'] = 'true'
-        return resp
-
-    # No cache available - return empty
-    print("[ALARM] API failed and no cache available")
+    # Cache empty (server just started, fetcher hasn't run yet)
     resp = jsonify([])
-    resp.headers['Cache-Control'] = 'public, max-age=10'
+    resp.headers['Cache-Control'] = 'public, max-age=5'
     return resp
 
 
