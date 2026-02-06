@@ -3748,13 +3748,13 @@
 
   <script>
     // ===== CONFIG =====
-    const ALARM_UPDATE_INTERVAL = 30000; // 30 seconds (was 5s - reduced to save bandwidth)
-    const MARKERS_UPDATE_INTERVAL = 30000; // 30 seconds (was 10s - reduced to save bandwidth)
+    const ALARM_UPDATE_INTERVAL = 30000; // 30 seconds
+    const MARKERS_UPDATE_INTERVAL = 60000; // 60 seconds (reduced server load)
     const MAX_RETRIES = 3;
     
     // BANDWIDTH OPTIMIZATION: Throttle polling when tab is hidden
     let activePollingInterval = MARKERS_UPDATE_INTERVAL;
-    let hiddenPollingInterval = 120000; // 2 minutes when tab hidden
+    let hiddenPollingInterval = 300000; // 5 minutes when tab hidden (was 2 min)
     
     // Cache for ETag-based 304 responses
     let lastDataETag = null;

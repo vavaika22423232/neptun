@@ -222,7 +222,7 @@ RESPONSE_CACHE = ResponseCache(default_ttl=30, max_items=20)  # MEMORY: Reduced 
 
 # Cached messages - avoid repeated file reads
 _MESSAGES_CACHE = {'data': None, 'expires': 0}
-_MESSAGES_CACHE_TTL = 5  # 5 second cache for messages
+_MESSAGES_CACHE_TTL = 30  # 30 second cache for messages (was 5s - too frequent disk I/O under load)
 
 def load_messages_cached():
     """Load messages with caching to reduce disk I/O."""
@@ -4935,7 +4935,7 @@ def index_dev():
 
 # BANDWIDTH PROTECTION: Cache rendered HTML in memory
 _INDEX_HTML_CACHE = {'html': None, 'ts': 0, 'etag': ''}
-_INDEX_CACHE_TTL = 60  # Cache for 60 seconds
+_INDEX_CACHE_TTL = 300  # Cache for 5 minutes (HTML rarely changes, saves CPU under load)
 
 @app.route('/')
 def index():
@@ -4966,14 +4966,14 @@ def index():
     client_etag = request.headers.get('If-None-Match')
     if client_etag and client_etag == cache_etag:
         return Response(status=304, headers={
-            'Cache-Control': 'public, max-age=60',
+            'Cache-Control': 'public, max-age=300',
             'ETag': cache_etag
         })
     
     # BANDWIDTH OPTIMIZATION: Serve cached HTML
     response = _get_cached_index()
     resp = app.response_class(response)
-    resp.headers['Cache-Control'] = 'public, max-age=60'  # 1 minute cache
+    resp.headers['Cache-Control'] = 'public, max-age=300'  # 5 min cache - HTML is static
     resp.headers['ETag'] = cache_etag
     resp.headers['X-Robots-Tag'] = 'index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1'
     resp.headers['Link'] = '<https://neptun.in.ua/>; rel="canonical"'
@@ -5551,10 +5551,10 @@ def data():
             # Still check ETag for 304
             client_etag = request.headers.get('If-None-Match')
             if client_etag and cached.get('etag') == client_etag:
-                return Response(status=304, headers={'Cache-Control': 'public, max-age=5'})
+                return Response(status=304, headers={'Cache-Control': 'public, max-age=30'})
 
             response = jsonify(cached['data'])
-            response.headers['Cache-Control'] = 'public, max-age=5'
+            response.headers['Cache-Control'] = 'public, max-age=30'
             response.headers['X-Cache'] = 'HIT'
             if cached.get('etag'):
                 response.headers['ETag'] = cached['etag']
@@ -5581,8 +5581,8 @@ def data():
 
     # BANDWIDTH OPTIMIZATION: Add aggressive caching headers
     response_headers = {
-        'Cache-Control': 'public, max-age=5',  # Reduced to match memory cache
-        'ETag': f'data-{int(time.time() // 5)}',  # Cache for 5 seconds
+        'Cache-Control': 'public, max-age=30',  # 30 sec client cache
+        'ETag': f'data-{int(time.time() // 30)}',  # ETag changes every 30 sec
         'Vary': 'Accept-Encoding'
     }
 
@@ -5953,11 +5953,11 @@ def data():
         response_data['_meta']['emergency_truncated'] = True
         response_json = json.dumps(response_data, separators=(',', ':'))
 
-    # HIGH-LOAD: Cache the response for 5 seconds (in-memory)
+    # HIGH-LOAD: Cache the response for 30 seconds (in-memory) to survive traffic spikes
     RESPONSE_CACHE.set(cache_key, {
         'data': response_data,
         'etag': response_headers.get('ETag')
-    }, ttl=5)
+    }, ttl=30)
 
     resp = Response(response_json, mimetype='application/json')
     # Add aggressive caching headers to reduce bandwidth
