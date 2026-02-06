@@ -1555,7 +1555,7 @@ ALARM_CACHE_TTL = 30  # seconds - serve fresh data
 ALARM_CACHE_STALE_TTL = 7200  # 2 hours - serve stale data if API fails
 _alarm_api_failing = False  # Track if API is failing to reduce retries
 _alarm_api_fail_time = 0  # When API started failing
-_alarm_bg_thread_started = False  # Background alarm fetcher
+_alarm_bg_thread = None  # Thread reference (replaces boolean; survives --preload fork detection via .is_alive())
 
 def _fetch_alarms_from_api():
     """Fetch alarms from ukrainealarm API. Used ONLY by background fetcher, never in request path.
@@ -1625,29 +1625,21 @@ def _update_alarm_caches(result):
     _alarm_cache['time'] = now
 
 def _start_alarm_background_fetcher():
-    """Background thread that keeps alarm cache warm by polling API every 15s."""
-    global _alarm_bg_thread_started
-    if _alarm_bg_thread_started:
+    """Start or restart alarm background fetcher if not running.
+    Uses .is_alive() check so it auto-restarts after Gunicorn --preload fork."""
+    global _alarm_bg_thread
+    if _alarm_bg_thread is not None and _alarm_bg_thread.is_alive():
         return
-    _alarm_bg_thread_started = True
-
-    # Seed cache synchronously at startup (OK to block here, before requests arrive)
-    try:
-        result = _fetch_alarms_from_api()
-        if result is not None:
-            _update_alarm_caches(result)
-            print(f"[ALARM] Cache seeded at startup: {len(result)} active alerts")
-        else:
-            print("[ALARM] Startup seed returned None (API may be down, will retry in bg loop)")
-    except Exception as e:
-        print(f"[ALARM] Startup seed failed (non-fatal): {e}")
 
     def _bg_loop():
         global _alarm_api_failing, _alarm_api_fail_time
+        first_run = True
         while True:
             try:
                 import time as _t
-                _t.sleep(15)  # Poll every 15 seconds (cache TTL is 30s, so always warm)
+                if not first_run:
+                    _t.sleep(15)  # Poll every 15 seconds (cache TTL is 30s, so always warm)
+                first_run = False
                 result = _fetch_alarms_from_api()
                 if result is not None:
                     _alarm_api_failing = False
@@ -1661,12 +1653,17 @@ def _start_alarm_background_fetcher():
                 _t.sleep(10)
 
     import threading
-    t = threading.Thread(target=_bg_loop, daemon=True, name='alarm-bg-fetcher')
-    t.start()
-    print("[ALARM] Background fetcher started (polls every 15s)")
+    _alarm_bg_thread = threading.Thread(target=_bg_loop, daemon=True, name='alarm-bg-fetcher')
+    _alarm_bg_thread.start()
+    print(f"[ALARM] Background fetcher started in pid {os.getpid()} (polls every 15s)")
 
-# Start background fetcher at module load
+# Start background fetcher at module load (will auto-restart in worker after fork)
 _start_alarm_background_fetcher()
+
+@app.before_request
+def _ensure_alarm_fetcher():
+    """Ensure alarm background fetcher is running (handles Gunicorn --preload fork)."""
+    _start_alarm_background_fetcher()
 
 @app.route('/api/alarms/proxy')
 def alarm_proxy():
