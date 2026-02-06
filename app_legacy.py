@@ -5465,7 +5465,9 @@ def data():
     # ===========================================================================
     
     # AGGRESSIVE RATE LIMIT: 1 request per 5 seconds per IP
-    if _check_data_rate_limit():
+    # Skip rate limit for admin requests (they pass secret)
+    is_admin_request = bool(request.args.get('secret') or request.headers.get('X-Auth-Secret'))
+    if not is_admin_request and _check_data_rate_limit():
         return Response(
             '{"error":"rate_limited","retry_after":5}',
             status=429,
@@ -5479,20 +5481,22 @@ def data():
         FALLBACK_REPARSE_CACHE.clear()
 
     # HIGH-LOAD: Check memory cache first (5 second TTL)
+    # Admin requests bypass cache to always get fresh data
     cache_key = f'data_{MONITOR_PERIOD_MINUTES}'
-    cached = RESPONSE_CACHE.get(cache_key)
-    if cached:
-        # Still check ETag for 304
-        client_etag = request.headers.get('If-None-Match')
-        if client_etag and cached.get('etag') == client_etag:
-            return Response(status=304, headers={'Cache-Control': 'public, max-age=5'})
+    if not is_admin_request:
+        cached = RESPONSE_CACHE.get(cache_key)
+        if cached:
+            # Still check ETag for 304
+            client_etag = request.headers.get('If-None-Match')
+            if client_etag and cached.get('etag') == client_etag:
+                return Response(status=304, headers={'Cache-Control': 'public, max-age=5'})
 
-        response = jsonify(cached['data'])
-        response.headers['Cache-Control'] = 'public, max-age=5'
-        response.headers['X-Cache'] = 'HIT'
-        if cached.get('etag'):
-            response.headers['ETag'] = cached['etag']
-        return response
+            response = jsonify(cached['data'])
+            response.headers['Cache-Control'] = 'public, max-age=5'
+            response.headers['X-Cache'] = 'HIT'
+            if cached.get('etag'):
+                response.headers['ETag'] = cached['etag']
+            return response
 
     # PROTECTION: Hard limits to prevent memory/bandwidth exhaustion
     MAX_TRACKS = 50        # HARD LIMIT: max tracks per response (reduced from 100)
@@ -5831,7 +5835,8 @@ def data():
         # Remove heavy fields that frontend doesn't need
         track.pop('raw_text', None)
         track.pop('full_text', None)
-        track.pop('trajectory', None)  # Remove trajectory - saves a lot of bandwidth
+        if not is_admin_request:
+            track.pop('trajectory', None)  # Remove trajectory - saves bandwidth (keep for admin)
         track.pop('_raw', None)
         track.pop('source_text', None)
         
