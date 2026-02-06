@@ -22,17 +22,10 @@ DDOS_WHITELIST = set(os.environ.get('DDOS_WHITELIST', '').split(',')) - {''}
 _INIT_BACKGROUND_DONE = False
 INIT_ONCE = False
 _chat_initialized = False
-_groq_cache = {}
-_groq_cache_ttl = 300
-_groq_cache_max_size = 200
-
 _FORCE_OVERRIDE = {
     'INIT_ONCE',
     '_INIT_BACKGROUND_DONE',
     '_chat_initialized',
-    '_groq_cache',
-    '_groq_cache_ttl',
-    '_groq_cache_max_size',
 }
 
 def bind_dependencies(source_globals: dict):
@@ -853,14 +846,12 @@ def register_admin_routes(app):
             return jsonify({
                 'status': 'ok',
                 'fusion_enabled': True,
-                'ai_enabled': GROQ_ENABLED,
-                'ai_model': GROQ_MODEL if GROQ_ENABLED else None,
+                'ai_route': 'regex',
                 'ai_analyzed_events': ai_analyzed_count,
                 'total_events': total_events,
                 'total_messages_processed': total_messages,
                 'by_channel': channel_counts,
                 'channel_priorities': CHANNEL_FUSION.CHANNEL_PRIORITY,
-                'mode': 'AI-FIRST' if GROQ_ENABLED else 'REGEX-FALLBACK',
             })
         except Exception as e:
             return jsonify({
@@ -1633,22 +1624,6 @@ def register_admin_routes(app):
                 # Clean ResponseCache expired entries
                 cleaned = RESPONSE_CACHE.clear_expired()
                 total_cleaned += cleaned
-            
-                # Clean _groq_cache - remove old entries and enforce size limit
-                groq_cache = globals().get('_groq_cache') or {}
-                groq_cache_ttl = globals().get('_groq_cache_ttl', 300)
-                groq_cache_max_size = globals().get('_groq_cache_max_size', 200)
-                if groq_cache:
-                    old_size = len(groq_cache)
-                    expired_keys = [k for k, (_, ts) in groq_cache.items() if now - ts > groq_cache_ttl]
-                    for k in expired_keys:
-                        groq_cache.pop(k, None)
-                    # If still over limit, remove oldest entries
-                    if len(groq_cache) > groq_cache_max_size:
-                        sorted_keys = sorted(groq_cache.keys(), key=lambda k: groq_cache[k][1])
-                        for k in sorted_keys[:len(groq_cache) - groq_cache_max_size // 2]:
-                            groq_cache.pop(k, None)
-                    total_cleaned += old_size - len(groq_cache)
             
                 # Clean _telegram_alert_sent (keep only last 3 min)
                 with _telegram_alert_lock:

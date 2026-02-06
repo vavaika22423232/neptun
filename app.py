@@ -521,17 +521,12 @@ def ensure_city_coords_with_message_context(city_name, message_text=None):
         region = _extract_oblast_from_text(message_text)
     return opencage_geocode(city_name, region)
 
-# AI DISABLED - using simple geocoding only
+# GROQ removed - route/trajectory via regex only
 GROQ_ENABLED = False
 GROQ_API_KEY = ''
 groq_client = None
-print("INFO: AI features DISABLED to save memory")
 
-# Stub functions for compatibility
-def _ai_geocode_hint(*args, **kwargs):
-    return None
-def classify_threat_with_ai(*args, **kwargs):
-    return None
+# Stubs for parser_service dependency injection (no longer used)
 def extract_trajectory_with_ai(*args, **kwargs):
     return None
 def predict_route_with_ai(*args, **kwargs):
@@ -2372,54 +2367,26 @@ def send_telegram_threat_notification(message_text: str, location: str, message_
         msg_lower = message_text.lower()
         print(f"[TELEGRAM_PUSH] 📝 Processing: '{message_text[:50]}...'", flush=True)
 
-        # Try AI classification first with caching
-        ai_result = None
-        if GROQ_ENABLED:
-            try:
-                ai_result = _classify_threat_cached(message_text)
-                if ai_result:
-                    print(f"[TELEGRAM_PUSH] 🤖 AI result (cached): {ai_result}", flush=True)
-            except Exception as ai_err:
-                print(f"[TELEGRAM_PUSH] ⚠️ AI classification failed: {ai_err}", flush=True)
-
-        if ai_result and ai_result.get('threat_type') not in ['unknown', None]:
-            # Use AI classification
-            threat_map = {
-                'shahed': ('шахеди', '🛵'),
-                'ballistic': ('балістика', '🚀'),
-                'cruise': ('крилаті ракети', '🎯'),
-                'kab': ('КАБи', '💣'),
-                'drone': ('дрони', '🔭'),
-                'explosion': ('вибухи', '💥'),
-                'artillery': ('артилерія', '💨'),
-            }
-            threat_type, emoji = threat_map.get(ai_result['threat_type'], ('загроза', '⚠️'))
-            if ai_result.get('emoji'):
-                emoji = ai_result['emoji']
-            is_critical = ai_result.get('priority', 3) >= 3
-
-            print(f"AI threat classification: {threat_type} {emoji} (priority {ai_result.get('priority')})")
+        # Regex-based classification (GROQ removed)
+        if 'каб' in msg_lower:
+            threat_type = 'каби'
+            emoji = '💣'
+            is_critical = True
+        elif 'ракет' in msg_lower or 'балістичн' in msg_lower:
+            threat_type = 'ракети'
+            emoji = '🚀'
+            is_critical = True
+        elif 'бпла' in msg_lower or 'дрон' in msg_lower or 'шахед' in msg_lower:
+            threat_type = 'дрони'
+            emoji = '🛩️'
+            is_critical = True
+        elif 'вибух' in msg_lower:
+            threat_type = 'вибухи'
+            emoji = '💥'
+            is_critical = True
         else:
-            # Fallback to regex-based classification
-            if 'каб' in msg_lower:
-                threat_type = 'каби'
-                emoji = '💣'
-                is_critical = True
-            elif 'ракет' in msg_lower or 'балістичн' in msg_lower:
-                threat_type = 'ракети'
-                emoji = '🚀'
-                is_critical = True
-            elif 'бпла' in msg_lower or 'дрон' in msg_lower or 'шахед' in msg_lower:
-                threat_type = 'дрони'
-                emoji = '🛩️'
-                is_critical = True
-            elif 'вибух' in msg_lower:
-                threat_type = 'вибухи'
-                emoji = '💥'
-                is_critical = True
-            else:
-                # Not a threat message, skip
-                return
+            # Not a threat message, skip
+            return
 
         # Extract region from location (e.g., "Харків (Харківська обл.)" -> "Харківська область")
         region_name = location
@@ -6900,13 +6867,6 @@ if 'health' not in app.view_functions:
                     del ACTIVE_VISITORS[vid]
             visitors = len(ACTIVE_VISITORS)
 
-        # Calculate Groq cooldown status
-        groq_cooldown_remaining = 0
-        groq_available = _groq_is_available() if GROQ_ENABLED else False
-        if GROQ_ENABLED and _groq_daily_cooldown_until > 0:
-            import time as time_module
-            groq_cooldown_remaining = max(0, int(_groq_daily_cooldown_until - time_module.time()))
-
         # Add memory manager metrics
         memory_metrics = {
             'cleanups_total': _memory_manager.metrics['cleanups'],
@@ -6929,10 +6889,7 @@ if 'health' not in app.view_functions:
             'visitors': visitors,
             'firebase_initialized': firebase_initialized,
             'devices_count': len(device_store._load()) if device_store else 0,
-            'groq_enabled': GROQ_ENABLED,
-            'groq_model': GROQ_MODEL if GROQ_ENABLED else None,
-            'groq_available': groq_available,
-            'groq_cooldown_seconds': groq_cooldown_remaining,
+            'ai_route': 'regex',
             'telegram_last_fetch_ts': getattr(parser_service, 'TELEGRAM_LAST_FETCH_TS', 0),
             'telegram_fetch_phase': getattr(parser_service, 'TELEGRAM_FETCH_PHASE', 'unknown'),
             'telegram_last_error': getattr(parser_service, 'TELEGRAM_LAST_ERROR', ''),

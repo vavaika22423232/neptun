@@ -229,6 +229,10 @@ UA_CITY_NORMALIZE['лиман'] = 'ліман'
 UA_CITY_NORMALIZE['зіньки'] = 'зіньків'   # Зіньків (Полтавська обл.)
 UA_CITY_NORMALIZE['іванки'] = 'іванків'   # Іванків (Київська обл.)
 UA_CITY_NORMALIZE['броварки'] = 'бровари'
+# Case forms for small settlements (БПЛА Білика/Ріпка/Межів — correct oblast, not Kyiv)
+UA_CITY_NORMALIZE['білика'] = 'білики'    # Білики (Полтавська обл.)
+UA_CITY_NORMALIZE['ріпка'] = 'ріпки'     # Ріпки (Чернігівська обл.)
+UA_CITY_NORMALIZE['межів'] = 'межова'    # Межова (Дніпропетровська обл.)
 
 # ---------------- Dynamic settlement name → region map (from city_ukraine.json, no coords there) ---------------
 NAME_REGION_MAP = {}
@@ -352,6 +356,34 @@ OBLAST_HDR_TO_FULL_REGION = {
     'хмельниччина': 'Хмельницька область',
     'івано-франківщина': 'Івано-Франківська область',
     'кіровоградщина': 'Кіровоградська область',
+}
+
+# Full oblast name -> (lat, lng) for fallback when city not found; never use Kyiv for other regions
+OBLAST_FULLNAME_CENTERS = {
+    'Дніпропетровська область': (48.4647, 35.0462),
+    'Харківська область': (50.0047, 36.2314),
+    'Київська область': (50.4501, 30.5234),
+    'Чернігівська область': (51.4982, 31.2893),
+    'Сумська область': (50.9077, 34.7981),
+    'Полтавська область': (49.5883, 34.5514),
+    'Миколаївська область': (46.9750, 31.9946),
+    'Одеська область': (46.4825, 30.7233),
+    'Херсонська область': (46.6354, 32.6169),
+    'Запорізька область': (47.8388, 35.1396),
+    'Донецька область': (48.0159, 37.8029),
+    'Луганська область': (48.5740, 39.3078),
+    'Черкаська область': (49.4444, 32.0598),
+    'Вінницька область': (49.2331, 28.4682),
+    'Житомирська область': (50.2547, 28.6587),
+    'Рівненська область': (50.6199, 26.2516),
+    'Волинська область': (50.7472, 25.3254),
+    'Львівська область': (49.8397, 24.0297),
+    'Тернопільська область': (49.5535, 25.5948),
+    'Хмельницька область': (49.4229, 26.9871),
+    'Івано-Франківська область': (48.9226, 24.7111),
+    'Закарпатська область': (48.6208, 22.2879),
+    'Чернівецька область': (48.2921, 25.9358),
+    'Кіровоградська область': (48.5079, 32.2623),
 }
 
 def _region_for_geocode(oblast_hdr):
@@ -629,7 +661,53 @@ def _get_city_coords(city_name, context=None):
         return None
     return ensure_city_coords_with_message_context(city_name, context)
 
-def _ai_trajectory_to_coords(ai_result):
+
+def _predict_route_regex(text):
+    """Extract predicted target from message text using regex (replaces GROQ route prediction).
+    Returns {'confidence': 0.6, 'predicted_targets': [name]} or None."""
+    if not text:
+        return None
+    import re
+    t = text.lower().strip()
+    # "курсом на [місто/регіон]"
+    m = re.search(r'курсом\s+на\s+([а-яіїєґ\'\-]+(?:\s+[а-яіїєґ\'\-]+)?)', t)
+    if m:
+        target = m.group(1).strip()
+        if len(target) > 2 and target not in ('на', 'північ', 'південь', 'схід', 'захід'):
+            return {'confidence': 0.65, 'predicted_targets': [target]}
+    # "на [місто]"
+    m = re.search(r'(?:бпла|шахед|дрон)\s+на\s+([а-яіїєґ\'\-]+(?:\s+[а-яіїєґ\'\-]+)?)(?:\s|$|[,\.])', t)
+    if m:
+        target = m.group(1).strip()
+        if len(target) > 2:
+            return {'confidence': 0.6, 'predicted_targets': [target]}
+    return None
+
+
+def _extract_trajectory_regex(text):
+    """Extract trajectory (source/target) from message using regex only. Returns dict compatible with _ai_trajectory_to_coords or None."""
+    if not text:
+        return None
+    import re
+    t = text.lower().strip()
+    # "з [регіон] на [регіон]"
+    m = re.search(r'(?:бпла|шахед|дрон)\s+з\s+([а-яіїєґ]+(?:щин|ччин)[ауиію]*)\s+на\s+([а-яіїєґ]+(?:щин|ччин)[ауиію]*)', t)
+    if m:
+        return {
+            'source_type': 'region', 'source_name': m.group(1).strip(),
+            'target_type': 'region', 'target_name': m.group(2).strip(),
+            'confidence': 0.8
+        }
+    # "курсом на [місто]" or "на [місто]" — target only
+    m = re.search(r'курсом\s+на\s+([а-яіїєґ\'\-]+(?:\s+[а-яіїєґ\'\-]+)?)', t)
+    if m:
+        target = m.group(1).strip()
+        if len(target) > 2:
+            return {'source_type': 'direction', 'source_name': '', 'target_type': 'city', 'target_name': target, 'confidence': 0.7}
+    return None
+
+
+def _ai_trajectory_to_coords(ai_result, text=None):
     """Convert AI trajectory result to coordinates.
 
     Takes AI result with source_type, source_name, target_type, target_name
@@ -680,38 +758,29 @@ def _ai_trajectory_to_coords(ai_result):
             end_coords = (start_coords[0] + dir_vec[0] * 0.5, start_coords[1] + dir_vec[1] * 0.5)
 
     # =========================================================================
-    # AI ROUTE PREDICTION: If we have source but no target, use AI to predict
+    # ROUTE PREDICTION: If we have source but no target, use regex on text
     # MAX DISTANCE: 300 km (only neighboring regions) - prevents Kharkiv->Lutsk errors
     # =========================================================================
     MAX_PREDICTION_DISTANCE_KM = 300  # ~neighboring oblast
 
-    if start_coords and not end_coords and GROQ_ENABLED:
-        try:
-            prediction = predict_route_with_ai(source_name or '')
-            if prediction and prediction.get('confidence', 0) >= 0.6:
-                predicted_targets = prediction.get('predicted_targets', [])
-                if predicted_targets:
-                    # Try each predicted target, use first within distance limit
-                    for target in predicted_targets:
-                        predicted_coords = _get_region_center(target) or _get_city_coords(target)
-                        if predicted_coords:
-                            # Calculate distance between start and predicted end
-                            from math import atan2, cos, radians, sin, sqrt
-                            lat1, lon1 = radians(start_coords[0]), radians(start_coords[1])
-                            lat2, lon2 = radians(predicted_coords[0]), radians(predicted_coords[1])
-                            dlat, dlon = lat2 - lat1, lon2 - lon1
-                            a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-                            distance_km = 6371 * 2 * atan2(sqrt(a), sqrt(1-a))
-
-                            if distance_km <= MAX_PREDICTION_DISTANCE_KM:
-                                end_coords = predicted_coords
-                                target_name = target + ' (прогноз)'
-                                print(f"DEBUG AI Route Prediction used: {source_name} -> {target} ({distance_km:.0f}km, conf={prediction.get('confidence')})")
-                                break
-                            else:
-                                print(f"DEBUG AI Route Prediction REJECTED (too far): {source_name} -> {target} ({distance_km:.0f}km > {MAX_PREDICTION_DISTANCE_KM}km)")
-        except Exception as e:
-            print(f"DEBUG: AI route prediction failed: {e}")
+    if start_coords and not end_coords and text:
+        prediction = _predict_route_regex(text)
+        if prediction and prediction.get('confidence', 0) >= 0.6:
+            predicted_targets = prediction.get('predicted_targets', [])
+            if predicted_targets:
+                for target in predicted_targets:
+                    predicted_coords = _get_region_center(target) or _get_city_coords(target)
+                    if predicted_coords:
+                        from math import atan2, cos, radians, sin, sqrt
+                        lat1, lon1 = radians(start_coords[0]), radians(start_coords[1])
+                        lat2, lon2 = radians(predicted_coords[0]), radians(predicted_coords[1])
+                        dlat, dlon = lat2 - lat1, lon2 - lon1
+                        a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+                        distance_km = 6371 * 2 * atan2(sqrt(a), sqrt(1-a))
+                        if distance_km <= MAX_PREDICTION_DISTANCE_KM:
+                            end_coords = predicted_coords
+                            target_name = target + ' (прогноз)'
+                            break
 
     # Need both start and end to create trajectory
     if not start_coords or not end_coords:
@@ -745,21 +814,16 @@ def parse_trajectory_from_message(text):
         return None
 
     # ==========================================================================
-    # TRY AI FIRST (if enabled) - much smarter than regex
+    # TRY REGEX TRAJECTORY EXTRACTION (replaces GROQ)
     # ==========================================================================
-    if GROQ_ENABLED:
-        try:
-            ai_result = extract_trajectory_with_ai(text)
-            if ai_result and ai_result.get('confidence', 0) >= 0.7:
-                trajectory = _ai_trajectory_to_coords(ai_result)
-                if trajectory:
-                    print(f"DEBUG: AI trajectory parsed successfully: {trajectory.get('kind')}")
-                    return trajectory
-        except Exception as e:
-            print(f"DEBUG: AI trajectory failed, falling back to regex: {e}")
+    regex_result = _extract_trajectory_regex(text)
+    if regex_result and regex_result.get('confidence', 0) >= 0.65:
+        trajectory = _ai_trajectory_to_coords(regex_result, text=text)
+        if trajectory:
+            return trajectory
 
     # ==========================================================================
-    # FALLBACK TO REGEX PATTERNS
+    # REGEX PATTERNS (direction/region/city)
     # ==========================================================================
     text_lower = text.lower()
     # Remove emoji prefixes for pattern matching
@@ -4090,9 +4154,12 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                         break
 
                 if region_in_location:
-                    # Get region center and apply directional offset
-                    region_coords = OBLAST_CENTERS.get(region_in_location, (50.0, 30.0))
+                    # Get region center only from known oblasts; never default to Kyiv (50,30)
+                    region_coords = OBLAST_CENTERS.get(region_in_location)
+                    if not region_coords:
+                        region_in_location = None  # skip marker creation
 
+                if region_in_location and region_coords:
                     # Apply directional offset based on specified part of region
                     offset_lat, offset_lon = 0, 0
                     if 'північно-західн' in current_location:
@@ -6269,17 +6336,17 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
             # Use Visicom geocoder with region context (full region name for cache/bounds)
             region_for_lookup = _region_for_geocode(oblast_hdr) or oblast_hdr
             coords = ensure_city_coords(base, region=region_for_lookup, context=text)
+            # Reject coords outside specified region (never place in Kyiv when another oblast is given)
+            if coords and region_for_lookup and len(coords) >= 2 and not _coords_in_region(coords[0], coords[1], region_for_lookup):
+                coords = None
 
             print(f"DEBUG: Enhanced lookup for '{base}'" + (f" in {oblast_hdr}" if oblast_hdr else "") + f": {coords}")
 
-            if not coords and oblast_hdr:
-                # Legacy combo lookup as fallback
-                combo = f"{base} {oblast_hdr}"
-                print(f"DEBUG: Trying legacy combo lookup for '{combo}'")
-                coords = CITY_COORDS.get(combo)
-                if not coords and SETTLEMENTS_INDEX:
-                    coords = SETTLEMENTS_INDEX.get(combo)
-                print(f"DEBUG: Combo lookup result: {coords}")
+            if not coords and region_for_lookup:
+                # Fallback to oblast center only (never city-only lookup that could return Kyiv)
+                coords = OBLAST_FULLNAME_CENTERS.get(region_for_lookup)
+                if coords:
+                    print(f"DEBUG: Fallback to oblast center for '{base}' ({region_for_lookup}): {coords}")
             if not coords:
                 print(f"DEBUG: Calling ensure_city_coords_with_message_context for '{base}' with oblast context '{oblast_hdr}'")
                 # Try with full message context first to get oblast-specific coordinates
@@ -6289,6 +6356,10 @@ def process_message(text, mid, date_str, channel, _disable_multiline=False):  # 
                     print(f"DEBUG: Context-based lookup failed, trying standard ensure_city_coords for '{base}'")
                     coords = ensure_city_coords(base, context=text)
                 print(f"DEBUG: ensure_city_coords result: {coords}")
+                if coords and region_for_lookup and len(coords) >= 2 and not _coords_in_region(coords[0], coords[1], region_for_lookup):
+                    coords = None
+                if not coords and region_for_lookup:
+                    coords = OBLAST_FULLNAME_CENTERS.get(region_for_lookup)
             if coords:
                 print(f"DEBUG: Found coords {coords} for city '{base}', creating track")
                 # Handle both 2-tuple (lat, lng) and 3-tuple (lat, lng, approx_flag) returns

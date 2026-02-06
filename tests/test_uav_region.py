@@ -98,6 +98,18 @@ class TestUACityNormalize(unittest.TestCase):
         self.assertEqual(UA_CITY_NORMALIZE.get("зіньки"), "зіньків")
         self.assertEqual(UA_CITY_NORMALIZE.get("іванки"), "іванків")
         self.assertEqual(UA_CITY_NORMALIZE.get("броварки"), "бровари")
+        self.assertEqual(UA_CITY_NORMALIZE.get("білика"), "білики")
+        self.assertEqual(UA_CITY_NORMALIZE.get("ріпка"), "ріпки")
+        self.assertEqual(UA_CITY_NORMALIZE.get("межів"), "межова")
+
+    def test_no_kyiv_for_other_oblasts(self):
+        """Координати Києва не приймаються для Полтавської/Чернігівської/Дніпропетровської."""
+        from parser_service import _coords_in_region
+
+        kyiv_lat, kyiv_lng = 50.4501, 30.5234
+        self.assertFalse(_coords_in_region(kyiv_lat, kyiv_lng, "Полтавська область"))
+        self.assertFalse(_coords_in_region(kyiv_lat, kyiv_lng, "Чернігівська область"))
+        self.assertFalse(_coords_in_region(kyiv_lat, kyiv_lng, "Дніпропетровська область"))
 
 
 # --- 5. App: opencage_geocode тільки Visicom (без OpenCage) ---
