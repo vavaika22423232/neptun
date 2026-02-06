@@ -3,6 +3,11 @@
 # type: ignore
 # pylint: disable=all
 # fmt: off
+
+# CRITICAL: Monkey-patch stdlib BEFORE any imports when using gunicorn --preload + gevent
+# Without this, threading.Lock/RLock are real OS locks that block greenlets instead of yielding
+from gevent import monkey as _monkey
+_monkey.patch_all()
 """
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                              NEPTUN API v2.0                                 ║
@@ -1372,51 +1377,10 @@ PRESENCE_RATE_LIMIT = 3    # max requests per window per IP
 # BANDWIDTH OPTIMIZATION: Rate limiting to prevent abuse
     # Rate limiting отключен: все пользователи имеют свободный доступ
 
-# BANDWIDTH OPTIMIZATION: Enable gzip compression globally
-import gzip
-import io
-
-# MEMORY PROTECTION: Max response size to compress (10MB)
-MAX_COMPRESS_SIZE = 10 * 1024 * 1024
-
-# Add global response compression
-@app.after_request
-def compress_response(response):
-    """Apply gzip compression to reduce bandwidth usage."""
-    # MEMORY PROTECTION: Skip compression for very large responses to avoid OOM
-    if (
-        response.status_code == 200 and
-        'gzip' in request.headers.get('Accept-Encoding', '').lower() and
-        response.content_length and response.content_length > 500 and
-        response.content_length < MAX_COMPRESS_SIZE and  # Don't compress huge responses
-        response.content_type.startswith(('application/json', 'text/html', 'text/css', 'application/javascript'))
-    ):
-        try:
-            # Compress the response data
-            data = response.get_data()
-            # Double-check size to prevent memory issues
-            if len(data) > MAX_COMPRESS_SIZE:
-                return response
-                
-            buffer = io.BytesIO()
-            with gzip.GzipFile(fileobj=buffer, mode='wb') as f:
-                f.write(data)
-
-            compressed = buffer.getvalue()
-            # Only use compressed version if it's actually smaller
-            if len(compressed) < len(data):
-                response.set_data(compressed)
-                response.headers['Content-Encoding'] = 'gzip'
-                response.headers['Content-Length'] = len(compressed)
-                response.headers['Vary'] = 'Accept-Encoding'
-        except Exception:
-            pass  # If compression fails, return original response
-
-    # Add cache headers for static content
-    if request.endpoint == 'static':
-        response.headers['Cache-Control'] = 'public, max-age=86400'  # 24 hours
-
-    return response
+# BANDWIDTH OPTIMIZATION: gzip compression handled by flask_compress (Compress() above)
+# REMOVED manual compress_response — flask_compress already gzips all responses.
+# Having both caused DOUBLE compression: flask_compress gzips, then this handler tried
+# to gzip again, wasting ~30% CPU on every response.
 
 # ══════════════════════════════════════════════════════════════════════════════
 # [SECTION 9] SERVICES: Alarms & Notifications
@@ -4094,11 +4058,22 @@ def get_redirect_stats():
     return {}
 
 
+# ── Cached load_hidden / load_blocked (avoid disk I/O on every /data request) ──
+_hidden_cache = {'data': None, 'ts': 0}
+_blocked_cache = {'data': None, 'ts': 0}
+_HIDDEN_BLOCKED_CACHE_TTL = 30  # seconds
+
 def load_hidden():
+    now = time.time()
+    if _hidden_cache['data'] is not None and now - _hidden_cache['ts'] < _HIDDEN_BLOCKED_CACHE_TTL:
+        return _hidden_cache['data']
     if os.path.exists(HIDDEN_FILE):
         try:
             with open(HIDDEN_FILE, encoding='utf-8') as f:
-                return json.load(f)
+                result = json.load(f)
+            _hidden_cache['data'] = result
+            _hidden_cache['ts'] = now
+            return result
         except Exception:
             return []
     return []
@@ -4106,12 +4081,20 @@ def load_hidden():
 def save_hidden(data):
     with open(HIDDEN_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+    _hidden_cache['data'] = data
+    _hidden_cache['ts'] = time.time()
 
 def load_blocked():
+    now = time.time()
+    if _blocked_cache['data'] is not None and now - _blocked_cache['ts'] < _HIDDEN_BLOCKED_CACHE_TTL:
+        return _blocked_cache['data']
     if os.path.exists(BLOCKED_FILE):
         try:
             with open(BLOCKED_FILE, encoding='utf-8') as f:
-                return json.load(f)
+                result = json.load(f)
+            _blocked_cache['data'] = result
+            _blocked_cache['ts'] = now
+            return result
         except Exception:
             return []
     return []
@@ -4120,6 +4103,8 @@ def save_blocked(blocked):
     try:
         with open(BLOCKED_FILE, 'w', encoding='utf-8') as f:
             json.dump(blocked, f, ensure_ascii=False, indent=2)
+        _blocked_cache['data'] = blocked
+        _blocked_cache['ts'] = time.time()
     except Exception as e:
         log.warning(f'Failed saving {BLOCKED_FILE}: {e}')
 
@@ -4936,6 +4921,7 @@ def index_dev():
 # BANDWIDTH PROTECTION: Cache rendered HTML in memory
 _INDEX_HTML_CACHE = {'html': None, 'ts': 0, 'etag': ''}
 _INDEX_CACHE_TTL = 300  # Cache for 5 minutes (HTML rarely changes, saves CPU under load)
+_index_cache_lock = threading.Lock()  # Prevent thundering herd on cache expiry
 
 @app.route('/')
 def index():
@@ -4980,12 +4966,23 @@ def index():
     return resp
 
 def _get_cached_index():
-    """Get cached index.html content."""
+    """Get cached index.html content with thundering-herd protection."""
     global _INDEX_HTML_CACHE
     now = time.time()
-    if _INDEX_HTML_CACHE['html'] is None or now - _INDEX_HTML_CACHE['ts'] > _INDEX_CACHE_TTL:
-        _INDEX_HTML_CACHE['html'] = render_template('index.html')
-        _INDEX_HTML_CACHE['ts'] = now
+    # Fast path: cache is valid
+    if _INDEX_HTML_CACHE['html'] is not None and now - _INDEX_HTML_CACHE['ts'] <= _INDEX_CACHE_TTL:
+        return _INDEX_HTML_CACHE['html']
+    # Slow path: only one greenlet renders, others get stale cache
+    if _index_cache_lock.acquire(blocking=False):
+        try:
+            # Re-check after acquiring lock (another greenlet may have refreshed)
+            now = time.time()
+            if _INDEX_HTML_CACHE['html'] is None or now - _INDEX_HTML_CACHE['ts'] > _INDEX_CACHE_TTL:
+                _INDEX_HTML_CACHE['html'] = render_template('index.html')
+                _INDEX_HTML_CACHE['ts'] = now
+        finally:
+            _index_cache_lock.release()
+    # Return whatever is cached (possibly stale by a few ms — perfectly fine)
     return _INDEX_HTML_CACHE['html']
 
 # SEO: Regional pages for each oblast
@@ -5668,95 +5665,17 @@ def data():
             continue
 
         # === MARKER PROCESSING ===
-        # Fallback reparse: if message lacks geo but contains course pattern, try to derive markers now
-        (m.get('text') or '').lower()
         msg_id = m.get('id')
 
-        # Skip multi-regional UAV messages - they're already handled by immediate processing
-        text_full = m.get('text') or ''
-        text_lines = text_full.split('\n')
-        region_count = sum(1 for line in text_lines if any(region in line.lower() for region in ['щина:', 'щина]', 'область:', 'край:']) or (
-            'щина' in line.lower() and line.lower().strip().endswith(':')
-        ))
-        uav_count = sum(1 for line in text_lines if 'бпла' in line.lower() and ('курс' in line.lower() or 'на ' in line.lower()))
-
-        # Process ALL messages without coordinates through process_message()
+        # PERF FIX: Never geocode inside /data — process_message() calls Visicom/Nominatim
+        # HTTP APIs (500ms-10s per call), which blocks the greenlet and causes cascading 502s.
+        # Messages without coordinates are geocoded by the background Telegram fetch thread.
         if (not m.get('lat')) and (not m.get('lng')):
             debug_counts['pending_geo_processing'] = debug_counts.get('pending_geo_processing', 0) + 1
-            
-            # Skip if this is a multi-regional UAV message (already processed immediately)
-            if region_count >= 2 and uav_count >= 3:
-                add_debug_log(f"Skipping fallback reparse for multi-regional UAV message ID {msg_id}", "reparse")
-                continue
-
-            # Check if we've already reparsed this message to avoid duplicate processing
-            if msg_id in FALLBACK_REPARSE_CACHE:
-                debug_counts['already_cached'] = debug_counts.get('already_cached', 0) + 1
-                continue
-
-            try:
-                # Add to cache to prevent future reprocessing
-                FALLBACK_REPARSE_CACHE.add(msg_id)
-                # Limit cache size to prevent memory growth
-                if len(FALLBACK_REPARSE_CACHE) > MAX_REPARSE_CACHE_SIZE:
-                    # Remove oldest half of the cache (approximate LRU)
-                    cache_list = list(FALLBACK_REPARSE_CACHE)
-                    FALLBACK_REPARSE_CACHE = set(cache_list[len(cache_list)//2:])
-
-                msg_text = m.get('text') or ''
-                print(f"[REPARSE] Processing pending_geo message {msg_id}: {repr(msg_text[:60])}...")
-                add_debug_log(f"Fallback reparse for message ID {msg_id} - first time processing", "reparse")
-                reparsed = process_message(msg_text, m.get('id'), m.get('date'), m.get('channel') or m.get('source') or '')
-                print(f"[REPARSE] Result for {msg_id}: {len(reparsed) if reparsed else 0} tracks, coords: {reparsed[0].get('lat') if reparsed else 'none'}")
-                if isinstance(reparsed, list) and reparsed:
-                    debug_counts['reparse_success'] = debug_counts.get('reparse_success', 0) + 1
-                    reparsed_any = False
-                    for t in reparsed:
-                        if t.get('list_only'):
-                            if not t.get('suppress'):
-                                events.append(t)
-                                reparsed_any = True
-                            continue
-                        try:
-                            lat_r = round(float(t.get('lat')), 3)
-                            lng_r = round(float(t.get('lng')), 3)
-                        except Exception:
-                            debug_counts['reparse_no_coords'] = debug_counts.get('reparse_no_coords', 0) + 1
-                            continue
-                        text_r = (t.get('text') or '')
-                        source_r = t.get('channel') or t.get('source') or ''
-                        marker_key_r = f"{lat_r},{lng_r}|{text_r}|{source_r}"
-                        if marker_key_r in hidden:
-                            continue
-                        out.append(t)
-                        reparsed_any = True
-                        
-                        # IMPORTANT: Atomically update this message in storage
-                        # This avoids race conditions with fetch thread
-                        updates = {
-                            'lat': lat_r,
-                            'lng': lng_r,
-                            'place': t.get('place'),
-                            'threat_type': t.get('threat_type'),
-                            'marker_icon': t.get('marker_icon'),
-                            'pending_geo': False  # Mark as resolved
-                        }
-                        try:
-                            if MESSAGE_STORE.update_message(str(msg_id), updates):
-                                print(f"[REPARSE] Atomically updated message {msg_id} with coords ({lat_r}, {lng_r})")
-                            else:
-                                print(f"[REPARSE] Message {msg_id} not found in store")
-                        except Exception as se:
-                            print(f"[REPARSE] Failed to update: {se}")
-                        
-                    # Skip adding original as event if we produced tracks or list-only entries
-                    if reparsed_any:
-                        debug_counts['reparse_produced_tracks'] = debug_counts.get('reparse_produced_tracks', 0) + 1
-                        continue
-                else:
-                    debug_counts['reparse_empty'] = debug_counts.get('reparse_empty', 0) + 1
-            except Exception as e:
-                debug_counts['reparse_error'] = debug_counts.get('reparse_error', 0) + 1
+            # Show as list-only event if it has meaningful text
+            if m.get('text') and not m.get('suppress'):
+                events.append(m)
+            continue
         # list-only (no coordinates) -> push into events list if not suppressed
         if m.get('list_only'):
             if not m.get('suppress'):
@@ -5886,29 +5805,46 @@ def data():
     print(f"[DEBUG] Message categories: {debug_counts}")
     print(f"[DEBUG] Returning {len(out)} tracks and {len(events)} events (limits: {MAX_TRACKS}/{MAX_EVENTS})")
 
-    # Replace old shahed.png with new shahed3.webp for backward compatibility
-    # OPTIMIZATION: Trim large text fields to reduce response size (223KB -> ~50KB target)
+    # PERF FIX: Build NEW dicts for response instead of mutating cached originals.
+    # Previously we did track.pop('raw_text') etc. directly on MessageStore objects,
+    # which permanently destroyed data in the shared cache after the first request.
+    trimmed_out = []
     for track in out:
-        if track.get('marker_icon') == 'shahed.png':
-            track['marker_icon'] = 'shahed3.webp'
-        # Trim text to 100 chars to save bandwidth (was 200)
-        if track.get('text') and len(track.get('text', '')) > 100:
-            track['text'] = track['text'][:100] + '...'
-        # Remove heavy fields that frontend doesn't need
-        track.pop('raw_text', None)
-        track.pop('full_text', None)
-        if not is_admin_request:
-            track.pop('trajectory', None)  # Remove trajectory - saves bandwidth (keep for admin)
-        track.pop('_raw', None)
-        track.pop('source_text', None)
-        
-    # Same trimming for events
+        t = {
+            'id': track.get('id'),
+            'lat': track.get('lat'),
+            'lng': track.get('lng'),
+            'text': (track.get('text') or '')[:100] + ('...' if len(track.get('text') or '') > 100 else ''),
+            'date': track.get('date'),
+            'source': track.get('source') or track.get('channel') or '',
+            'channel': track.get('channel') or track.get('source') or '',
+            'threat_type': track.get('threat_type'),
+            'marker_icon': 'shahed3.webp' if track.get('marker_icon') == 'shahed.png' else track.get('marker_icon'),
+            'place': track.get('place'),
+            'manual': track.get('manual'),
+            'course': track.get('course'),
+            'speed': track.get('speed'),
+            'altitude': track.get('altitude'),
+        }
+        if is_admin_request and track.get('trajectory'):
+            t['trajectory'] = track['trajectory']
+        trimmed_out.append(t)
+    out = trimmed_out
+
+    trimmed_events = []
     for event in events:
-        if event.get('text') and len(event.get('text', '')) > 100:
-            event['text'] = event['text'][:100] + '...'
-        event.pop('raw_text', None)
-        event.pop('full_text', None)
-        event.pop('_raw', None)
+        e = {
+            'id': event.get('id'),
+            'text': (event.get('text') or '')[:100] + ('...' if len(event.get('text') or '') > 100 else ''),
+            'date': event.get('date'),
+            'source': event.get('source') or event.get('channel') or '',
+            'channel': event.get('channel') or event.get('source') or '',
+            'threat_type': event.get('threat_type'),
+            'list_only': event.get('list_only'),
+            'suppress': event.get('suppress'),
+        }
+        trimmed_events.append(e)
+    events = trimmed_events
 
     # DEBUG: Count tracks with trajectories
     traj_count = sum(1 for t in out if t.get('trajectory'))

@@ -16,15 +16,15 @@ def main():
     web_cmd = [
         "gunicorn", "app_legacy:app",
         "--bind", f"0.0.0.0:{port}",
-        "--workers", "4",              # 2x CPU cores
-        "--worker-class", "gevent",
-        "--worker-connections", "5000",  # Each worker handles 5000 concurrent connections
+        "--workers", "1",              # 1 worker — gevent handles concurrency via greenlets, not forks
+        "--worker-class", "gevent",      # Multiple workers = multiple separate caches = more cache misses
+        "--worker-connections", "10000", # Single worker handles ALL connections (gevent is cooperative)
         "--timeout", "120",
         "--graceful-timeout", "30",
         "--keep-alive", "5",
-        "--max-requests", "2000",        # Recycle workers every 2000 requests (prevents memory leaks)
-        "--max-requests-jitter", "200",  # Stagger recycling so not all workers restart at once
-        "--preload",                     # Preload app before forking — saves ~500MB RAM
+        "--max-requests", "50000",       # Recycle rarely — at 1200 users, 2000 req = every 2 min (killed all caches)
+        "--max-requests-jitter", "5000", # Stagger recycling
+        "--preload",                     # Preload app before forking — monkey.patch_all() is at top of app_legacy.py
         "--access-logfile", "-"
     ]
     log(f"🔌 Launching: {' '.join(web_cmd)}")

@@ -22,8 +22,9 @@ services:
       pip install --upgrade pip
       pip install --no-cache-dir -r requirements.txt
     
-    # Start command - monolith optimized for Pro (2 CPU, 4GB RAM)
-    startCommand: gunicorn app_legacy:app --workers 4 --worker-class gevent --worker-connections 5000 --timeout 120 --graceful-timeout 30 --keep-alive 5 --max-requests 2000 --max-requests-jitter 200 --preload --bind 0.0.0.0:$PORT
+    # Start command - single gevent worker handles all concurrency via greenlets
+    # 1 worker avoids per-worker cache fragmentation that caused 4x cache misses
+    startCommand: gunicorn app_legacy:app --workers 1 --worker-class gevent --worker-connections 10000 --timeout 120 --graceful-timeout 30 --keep-alive 5 --max-requests 50000 --max-requests-jitter 5000 --preload --bind 0.0.0.0:$PORT
     
     # Health check
     healthCheckPath: /health

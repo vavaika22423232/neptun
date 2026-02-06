@@ -33,7 +33,7 @@ class MessageStore:
     def load(self) -> list[Message]:
         with self._lock:
             data = self._ensure_cache()
-            return copy.deepcopy(data)
+            return list(data)  # shallow copy — callers must not mutate items
 
     def save(self, data: list[Message]) -> list[Message]:
         with self._lock:
