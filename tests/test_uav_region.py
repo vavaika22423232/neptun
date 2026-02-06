@@ -101,6 +101,7 @@ class TestUACityNormalize(unittest.TestCase):
         self.assertEqual(UA_CITY_NORMALIZE.get("білика"), "білики")
         self.assertEqual(UA_CITY_NORMALIZE.get("ріпка"), "ріпки")
         self.assertEqual(UA_CITY_NORMALIZE.get("межів"), "межова")
+        self.assertEqual(UA_CITY_NORMALIZE.get("лозів"), "лозова")
 
     def test_no_kyiv_for_other_oblasts(self):
         """Координати Києва не приймаються для Полтавської/Чернігівської/Дніпропетровської."""
@@ -186,6 +187,12 @@ class TestProcessMessageUavRegion(unittest.TestCase):
                 return (49.67, 34.0)
             if "заводське" in city and "полтав" in region:
                 return (49.5, 34.2)
+            if "вишенька" in city and "київ" in region:
+                # Return wrong oblast on purpose to test fallback
+                return (49.2331, 28.4682)  # Vinnytsia coords
+            if ("лозова" in city or "лозів" in city) and "харків" in region:
+                # Return wrong oblast on purpose to test fallback
+                return (48.5740, 39.3078)  # Luhansk coords
             return None
 
         def mock_extract_oblast(text):
@@ -196,6 +203,10 @@ class TestProcessMessageUavRegion(unittest.TestCase):
                 return "Сумська область"
             if "Полтавська" in text or "полтавська" in text:
                 return "Полтавська область"
+            if "Київська" in text or "київська" in text:
+                return "Київська область"
+            if "Харківська" in text or "харківська" in text:
+                return "Харківська область"
             return None
 
         bind_dependencies({
@@ -236,6 +247,32 @@ class TestProcessMessageUavRegion(unittest.TestCase):
         t = tracks[0]
         self.assertTrue(_coords_in_region(t["lat"], t["lng"], "Полтавська область"),
                         f"Зіньків should be in Poltava: got ({t['lat']}, {t['lng']})")
+
+    def test_вишенька_київська(self):
+        from parser_service import _coords_in_region, process_message
+
+        tracks = process_message(
+            "БПЛА Вишенька (Київська обл.)",
+            "test_3", "2025-02-06 12:00:00", "test",
+            _disable_multiline=True,
+        )
+        self.assertTrue(tracks, "Should return at least one track")
+        t = tracks[0]
+        self.assertTrue(_coords_in_region(t["lat"], t["lng"], "Київська область"),
+                        f"Вишенька should be in Kyiv: got ({t['lat']}, {t['lng']})")
+
+    def test_лозів_харківська(self):
+        from parser_service import _coords_in_region, process_message
+
+        tracks = process_message(
+            "БПЛА Лозів (Харківська обл.)",
+            "test_4", "2025-02-06 12:00:00", "test",
+            _disable_multiline=True,
+        )
+        self.assertTrue(tracks, "Should return at least one track")
+        t = tracks[0]
+        self.assertTrue(_coords_in_region(t["lat"], t["lng"], "Харківська область"),
+                        f"Лозів should be in Kharkiv: got ({t['lat']}, {t['lng']})")
 
 
 # --- 8. Per-line: кілька рядків БПЛА Місто (Обл.) ---

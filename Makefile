@@ -13,7 +13,7 @@ help:
 	@echo "  make lint       - Перевірка коду"
 	@echo "  make format     - Форматування коду"
 	@echo "  make clean      - Очистити кеш"
-	@echo "  make run        - Запуск app_new.py"
+	@echo "  make run        - Запуск app.py"
 	@echo "  make dev        - Запуск в dev режимі"
 	@echo ""
 
@@ -22,9 +22,9 @@ install:
 	pip install -r requirements.txt
 	pip install pytest pytest-cov black isort flake8
 
-# Запустити тести (UAV/region)
+# Запустити тести
 test:
-	PYTHONPATH=. python3 tests/test_uav_region.py
+	PYTHONPATH=. python3 -m pytest tests/ -v
 
 # Тести з coverage (потрібен pytest та pytest-cov)
 test-cov:
@@ -59,22 +59,22 @@ clean:
 
 # Запуск продакшн
 run:
-	python3 app_new.py
+	python3 app.py
 
 # Запуск dev режим
 dev:
-	FLASK_ENV=development FLASK_DEBUG=1 python3 app_new.py
+	FLASK_ENV=development FLASK_DEBUG=1 python3 app.py
 
 # Перевірка типів (якщо є mypy)
 typecheck:
-	mypy services/ api/ utils/ domain/ --ignore-missing-imports || true
+	mypy app.py --ignore-missing-imports || true
 
 # Показати статистику коду
 stats:
 	@echo "=== Рядків коду ==="
 	@find . -path ./static -prune -o -path ./.git -prune -o -name "*.py" -print | xargs cat 2>/dev/null | wc -l
 	@echo "=== Тестів ==="
-	@PYTHONPATH=. python3 tests/test_uav_region.py 2>&1 | grep -E '^(Ran|OK)' || true
+	@PYTHONPATH=. python3 -m pytest tests/ -q 2>/dev/null || true
 
 # Docker build
 docker-build:

@@ -1,4 +1,5 @@
 // ignore_for_file: deprecated_member_use
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
@@ -108,12 +109,14 @@ class _NativeMapPageState extends State<NativeMapPage>
 
   // Operator mode (advanced controls)
   bool _operatorModeEnabled = false;
-  bool _showSvgLayer = true;
-  bool _showMarkersLayer = true;
+  final bool _showSvgLayer = true;
+  final bool _showMarkersLayer = true;
 
   // Parsed paths cache
   final Map<String, List<Path>> _statePathsCache = {};
   final Map<String, List<Path>> _districtPathsCache = {};
+  static final Map<String, List<Path>> _sharedStatePathsCache = {};
+  static final Map<String, List<Path>> _sharedDistrictPathsCache = {};
 
   // Zoom/pan - now using flutter_map
   final MapController _mapController = MapController();
@@ -189,7 +192,14 @@ class _NativeMapPageState extends State<NativeMapPage>
       CurvedAnimation(parent: _allClearController, curve: Curves.easeOut),
     );
 
-    _parseAllPaths();
+    // Defer heavy path parsing to after first frame so UI appears immediately
+    _statePathsCache.addAll(_sharedStatePathsCache);
+    _districtPathsCache.addAll(_sharedDistrictPathsCache);
+    if (_statePathsCache.isEmpty || _districtPathsCache.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _parseAllPathsDeferred();
+      });
+    }
     _loadOperatorMode();
     _fetchAlarms();
     _fetchThreatMarkers();
@@ -242,6 +252,7 @@ class _NativeMapPageState extends State<NativeMapPage>
     _allClearController.dispose();
     _transformController.dispose();
     _mapController.dispose();
+    _mapDataService.dispose();
 
     // Відписуємося від глобального сервісу
     BallisticAlertService().removeCallback(_handleGlobalBallisticThreat);
@@ -346,8 +357,19 @@ class _NativeMapPageState extends State<NativeMapPage>
     });
   }
 
-  void _parseAllPaths() {
+  /// Parsing runs after first frame; yields every N regions so UI doesn't freeze.
+  Future<void> _parseAllPathsDeferred() async {
+    const yieldEvery = 8;
+    if (_sharedStatePathsCache.isNotEmpty &&
+        _sharedDistrictPathsCache.isNotEmpty) {
+      _statePathsCache.addAll(_sharedStatePathsCache);
+      _districtPathsCache.addAll(_sharedDistrictPathsCache);
+      if (mounted) setState(() {});
+      return;
+    }
+
     // Parse state (oblast) paths
+    int i = 0;
     for (final entry in UkraineRegionPaths.regionPaths.entries) {
       final regionId = entry.key;
       final pathStrings = entry.value;
@@ -363,10 +385,18 @@ class _NativeMapPageState extends State<NativeMapPage>
       }
 
       _statePathsCache[regionId] = paths;
+      if (++i % yieldEvery == 0) await Future.delayed(Duration.zero);
     }
-    debugPrint('Parsed ${_statePathsCache.length} state regions');
+    _sharedStatePathsCache
+      ..clear()
+      ..addAll(_statePathsCache);
+    if (kDebugMode) {
+      debugPrint('Parsed ${_statePathsCache.length} state regions');
+    }
+    if (mounted) setState(() {});
 
-    // Parse district paths
+    // Parse district paths (yield so UI stays responsive)
+    i = 0;
     for (final entry in UkraineDistrictPaths.districtPaths.entries) {
       final districtId = entry.key;
       final pathStrings = entry.value;
@@ -382,8 +412,15 @@ class _NativeMapPageState extends State<NativeMapPage>
       }
 
       _districtPathsCache[districtId] = paths;
+      if (++i % yieldEvery == 0) await Future.delayed(Duration.zero);
     }
-    debugPrint('Parsed ${_districtPathsCache.length} district regions');
+    _sharedDistrictPathsCache
+      ..clear()
+      ..addAll(_districtPathsCache);
+    if (kDebugMode) {
+      debugPrint('Parsed ${_districtPathsCache.length} district regions');
+    }
+    if (mounted) setState(() {});
   }
 
   // ===== FETCH ALARMS (як fetchAlarms в index_map.html) =====
@@ -443,17 +480,19 @@ class _NativeMapPageState extends State<NativeMapPage>
             error = null;
           });
         }
-        debugPrint(
-          'Alarms updated: ${alarmData.stateCount} oblasts, ${alarmData.districtCount} districts',
-        );
-        if (alarmData.ballisticRegions.isNotEmpty) {
+        if (kDebugMode) {
           debugPrint(
-            '🚀 Ballistic threats active in: ${alarmData.ballisticRegions}',
+            'Alarms updated: ${alarmData.stateCount} oblasts, ${alarmData.districtCount} districts',
           );
+          if (alarmData.ballisticRegions.isNotEmpty) {
+            debugPrint(
+              '🚀 Ballistic threats active in: ${alarmData.ballisticRegions}',
+            );
+          }
         }
 
         _updateHomeWidget(alarmData.stateCount > 0, alarmData.stateCount);
-      } else {
+      } else if (kDebugMode) {
         debugPrint('Alarms unchanged, skipping setState');
       }
     } catch (e) {
@@ -498,9 +537,11 @@ class _NativeMapPageState extends State<NativeMapPage>
       );
 
       if (markerData.ballisticActive != null) {
-        debugPrint(
-          '🚀 Ballistic threat from API: active=${markerData.ballisticActive}, region=${markerData.ballisticRegion}',
-        );
+        if (kDebugMode) {
+          debugPrint(
+            '🚀 Ballistic threat from API: active=${markerData.ballisticActive}, region=${markerData.ballisticRegion}',
+          );
+        }
         if (markerData.ballisticActive == true &&
             !BallisticAlertService().isBallisticThreatActive) {
           BallisticAlertService().triggerBallisticThreat(
@@ -514,24 +555,28 @@ class _NativeMapPageState extends State<NativeMapPage>
         }
       }
 
-      debugPrint('📊 Received ${markerData.markers.length} markers from API:');
-      for (final marker in markerData.markers) {
-        String trajInfo = '';
-        if (marker.hasAITrajectory) {
-          final t = marker.trajectory!;
-          trajInfo =
-              ' [AI TRAJ: ${t.sourceName} → ${t.targetName}${t.predicted ? " (прогноз)" : ""}]';
-        }
+      if (kDebugMode) {
         debugPrint(
-          '  📍 type="${marker.threatType}", place="${marker.place}"$trajInfo',
+          '📊 Received ${markerData.markers.length} markers from API:',
         );
-      }
+        for (final marker in markerData.markers) {
+          String trajInfo = '';
+          if (marker.hasAITrajectory) {
+            final t = marker.trajectory!;
+            trajInfo =
+                ' [AI TRAJ: ${t.sourceName} → ${t.targetName}${t.predicted ? " (прогноз)" : ""}]';
+          }
+          debugPrint(
+            '  📍 type="${marker.threatType}", place="${marker.place}"$trajInfo',
+          );
+        }
 
-      final trajCount = markerData.markers
-          .where((m) => m.hasAITrajectory)
-          .length;
-      if (trajCount > 0) {
-        debugPrint('🎯 $trajCount markers have AI trajectories');
+        final trajCount = markerData.markers
+            .where((m) => m.hasAITrajectory)
+            .length;
+        if (trajCount > 0) {
+          debugPrint('🎯 $trajCount markers have AI trajectories');
+        }
       }
 
       bool markersChanged =
@@ -611,91 +656,68 @@ class _NativeMapPageState extends State<NativeMapPage>
     final colors = MapColors(isDark: isDark);
     final visibleMarkers = _applyThreatFilter(threatMarkers);
 
-    return Scaffold(
-      backgroundColor: colors.bgMain,
-      body: Stack(
-        children: [
-          // Фон з градієнтом
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  colors.bgMain,
-                  colors.bgGradientMid,
-                  colors.bgGradientEnd,
-                ],
+    return Stack(
+      children: [
+        // Карта
+        SafeArea(
+          child: Column(
+            children: [
+              // Карта з zoom/pan
+              Expanded(
+                child: isLoading
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircularProgressIndicator(color: colors.textAccent),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Завантаження карти...',
+                              style: TextStyle(color: colors.textSecondary),
+                            ),
+                          ],
+                        ),
+                      )
+                    : error != null && lastUpdate == null
+                    ? _buildError(colors)
+                    : _buildMap(colors, visibleMarkers),
               ),
-            ),
+            ],
+          ),
+        ),
+
+        // ===== BALLISTIC THREAT OVERLAY =====
+        if (_ballisticThreatActive) _buildBallisticThreatOverlay(colors),
+
+        // ===== ALL CLEAR OVERLAY =====
+        if (_ballisticAllClear)
+          AnimatedBuilder(
+            animation: _allClearController,
+            builder: (context, child) => _buildAllClearOverlay(colors),
           ),
 
-          // Карта
-          SafeArea(
-            child: Column(
-              children: [
-                // Карта з zoom/pan
-                Expanded(
-                  child: isLoading
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              CircularProgressIndicator(
-                                color: colors.textAccent,
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                'Завантаження карти...',
-                                style: TextStyle(color: colors.textSecondary),
-                              ),
-                            ],
-                          ),
-                        )
-                      : error != null && lastUpdate == null
-                      ? _buildError(colors)
-                      : _buildMap(colors, visibleMarkers),
-                ),
-              ],
-            ),
-          ),
+        // Legend (внизу по центру)
+        Positioned(bottom: 24, left: 0, right: 0, child: _buildLegend(colors)),
 
-          // ===== BALLISTIC THREAT OVERLAY =====
-          if (_ballisticThreatActive) _buildBallisticThreatOverlay(colors),
-
-          // ===== ALL CLEAR OVERLAY =====
-          if (_ballisticAllClear)
-            AnimatedBuilder(
-              animation: _allClearController,
-              builder: (context, child) => _buildAllClearOverlay(colors),
-            ),
-
-          // Legend (внизу по центру)
+        // ===== THREAT STATS WIDGET =====
+        // Опускаємо нижче якщо активний банер балістики або відбою
+        if (visibleMarkers.isNotEmpty)
           Positioned(
-            bottom: 24,
-            left: 0,
-            right: 0,
-            child: _buildLegend(colors),
+            top:
+                MediaQuery.of(context).padding.top +
+                ((_ballisticThreatActive || _allClearController.value > 0)
+                    ? 80
+                    : 8),
+            right: 12,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
+              child: _buildThreatStats(colors, visibleMarkers),
+            ),
           ),
 
-          // ===== THREAT STATS WIDGET =====
-          // Опускаємо нижче якщо активний банер балістики або відбою
-          if (visibleMarkers.isNotEmpty)
-            Positioned(
-              top:
-                  MediaQuery.of(context).padding.top +
-                  ((_ballisticThreatActive || _allClearController.value > 0)
-                      ? 80
-                      : 8),
-              right: 12,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeOut,
-                child: _buildThreatStats(colors, visibleMarkers),
-              ),
-            ),
-
-          // ===== OPERATOR MODE TOGGLE + PANEL =====
+        // ===== OPERATOR MODE TOGGLE (Hidden in minimalist mode) =====
+        if (kDebugMode)
           Positioned(
             top: MediaQuery.of(context).padding.top + 8,
             left: 12,
@@ -710,11 +732,11 @@ class _NativeMapPageState extends State<NativeMapPage>
               ],
             ),
           ),
-        ],
-      ),
+      ],
     );
   }
 
+  // Simplified Toggle for Debug only
   Widget _buildOperatorToggle(MapColors colors) {
     return GestureDetector(
       onTap: _toggleOperatorMode,
@@ -724,55 +746,19 @@ class _NativeMapPageState extends State<NativeMapPage>
           color: colors.panelBg,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: colors.panelBorder),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.settings,
-              size: 16,
-              color: _operatorModeEnabled
-                  ? colors.textAccent
-                  : colors.textSecondary,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              _operatorModeEnabled ? 'OP' : 'OP',
-              style: TextStyle(
-                color: _operatorModeEnabled
-                    ? colors.textAccent
-                    : colors.textSecondary,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
+        child: Text('OP', style: TextStyle(color: colors.textAccent)),
       ),
     );
   }
 
   Widget _buildOperatorPanel(MapColors colors) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
         color: colors.panelBg,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: colors.panelBorder),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -784,42 +770,6 @@ class _NativeMapPageState extends State<NativeMapPage>
               _fetchAlarms();
               _fetchThreatMarkers();
             },
-          ),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            icon: Icon(Icons.my_location, size: 18, color: colors.textAccent),
-            onPressed: () {
-              _mapController.move(const LatLng(48.5, 31.5), 6.0);
-            },
-          ),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            icon: Icon(Icons.history, size: 18, color: colors.textAccent),
-            onPressed: () => _showThreatStatsDialog(
-              colors,
-              _applyThreatFilter(threatMarkers),
-            ),
-          ),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            icon: Icon(
-              _showSvgLayer ? Icons.layers : Icons.layers_clear,
-              size: 18,
-              color: _showSvgLayer ? colors.textAccent : colors.textSecondary,
-            ),
-            onPressed: () => setState(() => _showSvgLayer = !_showSvgLayer),
-          ),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            icon: Icon(
-              _showMarkersLayer ? Icons.place : Icons.place_outlined,
-              size: 18,
-              color: _showMarkersLayer
-                  ? colors.textAccent
-                  : colors.textSecondary,
-            ),
-            onPressed: () =>
-                setState(() => _showMarkersLayer = !_showMarkersLayer),
           ),
         ],
       ),
@@ -989,16 +939,9 @@ class _NativeMapPageState extends State<NativeMapPage>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
-          color: colors.panelBg,
-          border: Border.all(color: colors.panelBorder),
+          color: colors.panelBg.withValues(alpha: 0.9),
           borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
+          border: Border.all(color: colors.panelBorder),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -1054,16 +997,9 @@ class _NativeMapPageState extends State<NativeMapPage>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: colors.panelBg,
-          border: Border.all(color: colors.panelBorder),
+          color: colors.panelBg.withValues(alpha: 0.9), // Darker background
           borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.15),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
+          border: Border.all(color: colors.panelBorder),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1448,23 +1384,39 @@ class _NativeMapPageState extends State<NativeMapPage>
 
   Widget _buildError(MapColors colors) {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.error_outline, color: Colors.red, size: 48),
-          const SizedBox(height: 16),
-          Text(error!, style: TextStyle(color: colors.textSecondary)),
-          const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: () {
-              setState(() => isLoading = true);
-              _fetchAlarms();
-              _fetchThreatMarkers();
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: colors.textAccent),
-            child: const Text('Спробувати знову'),
-          ),
-        ],
+      child: Container(
+        margin: const EdgeInsets.all(32),
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: colors.panelBg.withValues(alpha: 0.9),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: colors.panelBorder),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, color: Colors.red, size: 48),
+            const SizedBox(height: 16),
+            Text(
+              error!,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: colors.textSecondary),
+            ),
+            const SizedBox(height: 24),
+            TextButton(
+              onPressed: () {
+                setState(() => isLoading = true);
+                _fetchAlarms();
+                _fetchThreatMarkers();
+              },
+              child: Text(
+                'Спробувати ще раз',
+                style: TextStyle(color: colors.textAccent),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1534,8 +1486,8 @@ class _NativeMapPageState extends State<NativeMapPage>
           userAgentPackageName: 'com.neptun.alarm',
           maxZoom: 18,
         ),
-        // Custom SVG overlay using MobileLayerTransformer
-        if (_svgOpacity > 0 && _showSvgLayer)
+        // Custom SVG overlay — only after state paths are parsed to avoid first-frame freeze
+        if (_svgOpacity > 0 && _showSvgLayer && _statePathsCache.isNotEmpty)
           _SvgMapLayer(
             statePathsCache: _statePathsCache,
             districtPathsCache: _districtPathsCache,
@@ -1783,12 +1735,12 @@ class UkraineMapPainter extends CustomPainter {
     final districtAlarmColor = Color.lerp(
       mapColors.isDark
           ? districtAlarmDark
-          : districtAlarmLight.withOpacity(0.5),
+          : districtAlarmLight.withOpacity(0.6),
       mapColors.isDark
           ? districtAlarmHighDark
-          : districtAlarmHighLight.withOpacity(0.7),
+          : districtAlarmHighLight.withOpacity(0.8),
       pulseValue,
-    )!.withOpacity(0.6);
+    )!.withOpacity(0.7);
 
     final districtAlarmPaint = Paint()
       ..color = districtAlarmColor
@@ -2110,8 +2062,9 @@ class UkraineMapPainter extends CustomPainter {
     // Перевіряємо пульсацію тільки якщо є тривоги (збільшено поріг для меншої кількості перемалювань)
     if (stateAlarms.values.any((v) => v) ||
         districtAlarms.values.any((v) => v)) {
-      if ((oldDelegate.pulseValue - pulseValue).abs() > 0.1)
+      if ((oldDelegate.pulseValue - pulseValue).abs() > 0.1) {
         return true; // було 0.05
+      }
     }
 
     return false;
@@ -2337,35 +2290,58 @@ class _SvgMapPainter extends CustomPainter {
     }
 
     // === LAYER 2: DISTRICTS ===
+    // District ALARMS are always visible (red fill for alarmed districts)
+    // District BORDERS are only shown at higher zoom to avoid clutter
     final districtAlarmPaint = Paint()
       ..color = Color.lerp(
         mapColors.isDark
             ? const Color(0xFFB91C1C)
-            : const Color(0xFFEF4444).withOpacity(0.5),
+            : const Color(0xFFEF4444).withOpacity(0.6),
         mapColors.isDark
             ? const Color(0xFFDC2626)
-            : const Color(0xFFF87171).withOpacity(0.7),
+            : const Color(0xFFF87171).withOpacity(0.8),
         pulseValue,
-      )!.withOpacity(0.6)
+      )!.withOpacity(0.7)
       ..style = PaintingStyle.fill;
 
-    final districtBorderPaint = Paint()
-      ..color = mapColors.normalStroke.withOpacity(0.08)
+    final districtAlarmStrokePaint = Paint()
+      ..color = Color.lerp(
+        mapColors.isDark
+            ? const Color(0xFFB91C1C)
+            : const Color(0xFFEF4444).withOpacity(0.6),
+        mapColors.isDark
+            ? const Color(0xFFDC2626)
+            : const Color(0xFFF87171).withOpacity(0.8),
+        pulseValue,
+      )!.withOpacity(0.7)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.3 * strokeScale;
 
+    // Draw district alarm fills at ALL zoom levels
     for (final entry in districtPathsCache.entries) {
       final districtId = entry.key;
       final paths = entry.value;
       final hasAlarm = districtAlarms[districtId] ?? false;
 
-      for (final svgPath in paths) {
-        // Only draw district border at high zoom
-        if (camera.zoom > 8) {
-          canvas.drawPath(svgPath, districtBorderPaint);
-        }
-        if (hasAlarm) {
+      if (hasAlarm) {
+        for (final svgPath in paths) {
           canvas.drawPath(svgPath, districtAlarmPaint);
+          canvas.drawPath(svgPath, districtAlarmStrokePaint);
+        }
+      }
+    }
+
+    // Draw district borders only at higher zoom (cosmetic detail)
+    if (camera.zoom >= 7.5) {
+      final districtBorderPaint = Paint()
+        ..color = mapColors.normalStroke.withOpacity(0.08)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.3 * strokeScale;
+
+      for (final entry in districtPathsCache.entries) {
+        final paths = entry.value;
+        for (final svgPath in paths) {
+          canvas.drawPath(svgPath, districtBorderPaint);
         }
       }
     }

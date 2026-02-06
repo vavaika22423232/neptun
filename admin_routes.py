@@ -69,30 +69,36 @@ def register_admin_routes(app):
 
     @app.route('/clear_geocache')
     def clear_geocache():
-        """Clear all geocoding caches (in-memory, file, and negative) to force re-geocoding"""
+        """Clear all geocoding caches (mapstransler, Visicom, OpenCage) to force re-geocoding."""
         global _mapstransler_geocode_cache
-    
-        # Clear in-memory cache
-        old_count = len(_mapstransler_geocode_cache)
+
+        parts = []
+        old_map = len(_mapstransler_geocode_cache)
         _mapstransler_geocode_cache = {}
-    
-        # Clear OpenCage caches (both in-memory and file)
+        parts.append(f"mapstransler: {old_map}")
+
+        # Visicom (primary geocoder) — clear both positive and negative cache
+        try:
+            from visicom_geocoder import clear_all_cache
+            clear_all_cache()
+            parts.append("visicom: all (positive + negative)")
+        except Exception as e:
+            parts.append(f"visicom: error {e}")
+
+        # OpenCage (legacy/fallback)
         try:
             import opencage_geocoder
             pos_count = len(opencage_geocoder._cache)
             neg_count = len(opencage_geocoder._negative_cache)
-        
-            # Clear in-memory
             opencage_geocoder._cache = {}
             opencage_geocoder._negative_cache = set()
-        
-            # Clear files
             opencage_geocoder._save_cache()
             opencage_geocoder._save_negative_cache()
-        
-            return f"Cleared {old_count} mapstransler + {pos_count} positive + {neg_count} negative cache entries. All cities will be re-geocoded."
+            parts.append(f"opencage: {pos_count} + {neg_count} negative")
         except Exception as e:
-            return f"Cleared {old_count} mapstransler entries. OpenCage error: {e}"
+            parts.append(f"opencage: error {e}")
+
+        return "Cleared: " + ", ".join(parts) + ". All cities will be re-geocoded."
 
     @app.route('/view_geocache')
     def view_geocache():
@@ -3387,6 +3393,7 @@ def register_admin_routes(app):
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/chat/react', methods=['POST'])
+    @app.route('/api/chat/like', methods=['POST'])
     def chat_react():
         """Add or remove reaction to a message."""
         try:
@@ -3747,56 +3754,77 @@ def register_admin_routes(app):
         moderators = load_chat_moderators()
         return device_id in moderators
 
+    def _delete_chat_message_by_id(message_id, device_id):
+        """Delete a chat message by ID (moderator or owner only)."""
+        messages = load_chat_messages()
+
+        # Find the message
+        message_to_delete = next((m for m in messages if m.get('id') == message_id), None)
+
+        if not message_to_delete:
+            return jsonify({'error': 'Повідомлення не знайдено'}), 404
+
+        # SERVER-SIDE moderator check - don't trust client isModerator flag!
+        is_actual_moderator = is_chat_moderator(device_id)
+
+        # Check permissions - either moderator or message owner
+        if is_actual_moderator:
+            # Moderators can delete any message
+            pass
+        elif device_id:
+            # Regular users can only delete their own messages
+            nicknames = load_chat_nicknames()
+            message_user = message_to_delete.get('userId')
+            user_device = nicknames.get(message_user)
+            if user_device != device_id:
+                return jsonify({'error': 'Немає прав для видалення'}), 403
+        else:
+            return jsonify({'error': 'Немає прав для видалення'}), 403
+
+        # Remove the message
+        messages = [m for m in messages if m.get('id') != message_id]
+        save_chat_messages(messages)
+
+        # Broadcast message deletion via SSE
+        broadcast_chat_event('delete_message', {'messageId': message_id})
+
+        log.info(
+            f"Chat message {message_id} deleted by "
+            f"{'moderator' if is_actual_moderator else device_id[:20]}"
+        )
+
+        return jsonify({
+            'success': True,
+            'message': 'Повідомлення видалено'
+        })
+
     @app.route('/api/chat/message/<message_id>', methods=['DELETE'])
     def delete_chat_message(message_id):
         """Delete a chat message (moderator or owner only)."""
         try:
             data = request.get_json() or {}
             device_id = data.get('deviceId', '')
-
-            messages = load_chat_messages()
-
-            # Find the message
-            message_to_delete = next((m for m in messages if m.get('id') == message_id), None)
-
-            if not message_to_delete:
-                return jsonify({'error': 'Повідомлення не знайдено'}), 404
-
-            # SERVER-SIDE moderator check - don't trust client isModerator flag!
-            is_actual_moderator = is_chat_moderator(device_id)
-        
-            # Check permissions - either moderator or message owner
-            if is_actual_moderator:
-                # Moderators can delete any message
-                pass
-            elif device_id:
-                # Regular users can only delete their own messages
-                nicknames = load_chat_nicknames()
-                message_user = message_to_delete.get('userId')
-                user_device = nicknames.get(message_user)
-                if user_device != device_id:
-                    return jsonify({'error': 'Немає прав для видалення'}), 403
-            else:
-                return jsonify({'error': 'Немає прав для видалення'}), 403
-
-            # Remove the message
-            messages = [m for m in messages if m.get('id') != message_id]
-            save_chat_messages(messages)
-        
-            # Broadcast message deletion via SSE
-            broadcast_chat_event('delete_message', {'messageId': message_id})
-
-            log.info(f"Chat message {message_id} deleted by {'moderator' if is_actual_moderator else device_id[:20]}")
-
-            return jsonify({
-                'success': True,
-                'message': 'Повідомлення видалено'
-            })
+            return _delete_chat_message_by_id(message_id, device_id)
         except Exception as e:
             log.error(f"Error deleting chat message: {e}")
             return jsonify({'error': str(e)}), 500
 
+    @app.route('/api/chat/delete', methods=['POST', 'DELETE'])
+    def delete_chat_message_legacy():
+        """Legacy delete endpoint that accepts messageId in the body."""
+        try:
+            data = request.get_json() or {}
+            message_id = data.get('messageId') or request.args.get('messageId') or ''
+            device_id = data.get('deviceId', '')
+            if not message_id:
+                return jsonify({'error': 'messageId required'}), 400
+            return _delete_chat_message_by_id(message_id, device_id)
+        except Exception as e:
+            log.error(f"Error deleting chat message (legacy): {e}")
+            return jsonify({'error': str(e)}), 500
+
     @app.route('/api/chat/ban-user', methods=['POST'])
+    @app.route('/api/chat/ban', methods=['POST'])
     def ban_chat_user():
         """Ban a user from chat (moderator only)."""
         try:
@@ -3844,6 +3872,7 @@ def register_admin_routes(app):
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/chat/unban-user', methods=['POST'])
+    @app.route('/api/chat/unban', methods=['POST'])
     def unban_chat_user():
         """Unban a user from chat (moderator only)."""
         try:
@@ -3917,6 +3946,7 @@ def register_admin_routes(app):
             return jsonify({'banned': False})
 
     @app.route('/api/chat/banned-users', methods=['GET'])
+    @app.route('/api/chat/ban-list', methods=['GET'])
     def get_banned_users():
         """Get list of banned users (moderator only)."""
         try:

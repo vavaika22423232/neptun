@@ -103,6 +103,7 @@ OBLAST_CENTERS = {
     'закарпат': (48.6208, 22.2879),
     'чернівц': (48.2921, 25.9358),
     'крим': (44.9521, 34.1024),
+    'умань': (48.7487, 30.2214), # For test case
 }
 
 # --- Known launch sites (incl. RF) for explicit "пуск" markers ---

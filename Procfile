@@ -1,7 +1,6 @@
-# Procfile для Render - MODULAR ARCHITECTURE
-# Використовує app_new.py з модульною архітектурою
+# Procfile for Modular Architecture (v2.0)
+# API Service (Reads from Redis)
+web: gunicorn api:app --workers 2 --worker-class gthread --threads 4 --timeout 60 --access-logfile - --bind 0.0.0.0:$PORT
 
-web: gunicorn app:app --workers 1 --worker-class gevent --worker-connections 2000 --timeout 120 --keep-alive 5 --bind 0.0.0.0:$PORT --access-logfile /dev/null
-
-# Channel Forwarder Bot (опціонально, якщо потрібен окремий worker)
-# worker: python channel_forwarder_render.py
+# Worker Service (Telethon + Parser logic)
+worker: python worker.py

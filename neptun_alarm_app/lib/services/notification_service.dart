@@ -989,43 +989,51 @@ class NotificationService {
             AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(channelSOS);
 
-    // Get FCM token
-    _fcmToken = await messaging.getToken();
-    debugPrint('🔑 FCM Token: $_fcmToken');
-    
-    // iOS-specific: Wait for APNs token before proceeding
-    // Topic subscriptions on iOS require APNs token to be available
-    // CRITICAL: Without APNs token, push notifications WON'T work on iOS!
+    // iOS: getToken() requires APNs token first (Firebase throws apns-token-not-set otherwise)
+    bool canRequestFcmToken = true;
     if (Platform.isIOS) {
-      debugPrint('🍎 iOS: Waiting for APNs token (critical for push)...');
+      debugPrint('🍎 iOS: Waiting for APNs token before FCM getToken()...');
       String? apnsToken;
-      
-      // Try to get APNs token with more retries and longer delays
-      // Production APNs can take longer to respond than sandbox
       for (int i = 0; i < 30; i++) {
         apnsToken = await messaging.getAPNSToken();
         if (apnsToken != null) {
-          debugPrint('🍎✅ iOS APNs Token received on attempt ${i + 1}: ${apnsToken.length} characters');
+          debugPrint('🍎✅ iOS APNs Token received on attempt ${i + 1}');
           break;
         }
-        debugPrint('🍎⏳ iOS APNs Token attempt ${i + 1}/30: not yet available, waiting...');
+        if (i < 5 || i % 5 == 4) {
+          debugPrint('🍎⏳ iOS APNs attempt ${i + 1}/30...');
+        }
         await Future.delayed(const Duration(milliseconds: 500));
       }
-      
       if (apnsToken != null) {
-        debugPrint('🍎 APNs Token: $apnsToken');
-        debugPrint('✅ iOS APNs token ready - topic subscriptions will work');
-        // Save APNs token for diagnostics
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('apns_token', apnsToken);
       } else {
-        debugPrint('🍎❌ CRITICAL: iOS APNs Token is NULL after 30 attempts!');
-        debugPrint('🍎❌ Push notifications will NOT work!');
-        debugPrint('🍎❌ Possible causes:');
-        debugPrint('🍎❌ 1) Push Notifications capability not enabled in Xcode');
-        debugPrint('🍎❌ 2) Invalid provisioning profile');
-        debugPrint('🍎❌ 3) App ID not configured for push on Apple Developer Portal');
-        debugPrint('🍎❌ 4) Running on simulator (APNs only works on physical devices)');
+        debugPrint('🍎❌ APNs not available (simulator?) - skipping FCM getToken to avoid apns-token-not-set');
+        canRequestFcmToken = false;
+      }
+    }
+
+    // Get FCM token (on iOS only after APNs is set)
+    if (canRequestFcmToken) {
+      try {
+        _fcmToken = await messaging.getToken().timeout(
+          const Duration(seconds: 15),
+          onTimeout: () {
+            debugPrint('🔑 FCM getToken timeout (15s)');
+            return null;
+          },
+        );
+        debugPrint('🔑 FCM Token: $_fcmToken');
+      } catch (e) {
+        // Expected on iOS simulator: APNs never available, Firebase throws apns-token-not-set
+        final msg = e.toString();
+        if (msg.contains('apns-token-not-set')) {
+          debugPrint('🔑 FCM getToken skipped (APNs not set, normal on simulator)');
+        } else {
+          debugPrint('🔑 FCM getToken error: $e');
+        }
+        _fcmToken = null;
       }
     }
     

@@ -1658,6 +1658,7 @@ def alarm_proxy():
 
 @app.route('/api/alarms/all')
 @app.route('/api/alarms')  # Alias for compatibility
+@app.route('/api/alarms/full')  # Legacy alias for mobile clients
 def alarm_all():
     """Returns ALL alerts (State, District, Community) for detailed view with caching"""
     import hashlib
