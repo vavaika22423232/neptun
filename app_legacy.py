@@ -226,25 +226,78 @@ class ResponseCache:
 RESPONSE_CACHE = ResponseCache(default_ttl=30, max_items=20)  # MEMORY: Reduced to 20
 
 # Cached messages - avoid repeated file reads
+# Cached messages - avoid repeated file reads
 _MESSAGES_CACHE = {'data': None, 'expires': 0}
-_MESSAGES_CACHE_TTL = 30  # 30 second cache for messages (was 5s - too frequent disk I/O under load)
+_PROCESSED_CACHE = {'data': None, 'expires': 0}  # Pre-parsed dates + dedup
+_MESSAGES_CACHE_TTL = 30  # 30 second cache
 
 def load_messages_cached():
-    """Load messages with caching to reduce disk I/O."""
+    """Load messages with caching. Returns raw messages (for compatibility)."""
+    # Just delegate to processed cache and strip extras if needed, 
+    # but for now we keep the original simplified logic for other consumers
+    # to avoid breaking changes, while /data will use load_messages_processed()
     global _MESSAGES_CACHE
     now = time.time()
     if _MESSAGES_CACHE['data'] is not None and now < _MESSAGES_CACHE['expires']:
         return _MESSAGES_CACHE['data']
-    # Load fresh
     data = MESSAGE_STORE.load()
-    log.info(f"[MESSAGES] Loaded {len(data)} messages from {MESSAGE_STORE.path}")
     _MESSAGES_CACHE = {'data': data, 'expires': now + _MESSAGES_CACHE_TTL}
     return data
 
+def load_messages_processed():
+    """Load messages with pre-parsed dates and deduplication.
+    Returns list of dicts where each dict has '_dt' (datetime) and '_key' (dedup key).
+    """
+    global _PROCESSED_CACHE
+    now = time.time()
+    if _PROCESSED_CACHE['data'] is not None and now < _PROCESSED_CACHE['expires']:
+        return _PROCESSED_CACHE['data']
+    
+    # heavy lifting done once
+    raw = MESSAGE_STORE.load()
+    processed = []
+    seen = set()
+    
+    # Pre-calculate common dates (optimization)
+    tz = pytz.timezone('Europe/Kyiv')
+    
+    for m in raw:
+        # 1. Dedup
+        text = m.get('text', '')
+        date_str = m.get('date', '')
+        # Fast dedup key
+        key = f"{len(text)}_{date_str}" 
+        # Full dedup key if collision
+        if key in seen:
+             # simple collision check - if we really need it string match
+             # for now just trust the key or make it robust
+             key = f"{text[:50]}|{date_str}"
+        
+        if key in seen:
+            continue
+        seen.add(key)
+        
+        # 2. Parse Date
+        try:
+            dt = datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
+        except:
+            continue
+            
+        # Create a light copy to avoid modifying store
+        # We only need specific fields for /data usually, but let's keep it safe
+        # shallow copy is enough as we only add _dt
+        pm = m.copy()
+        pm['_dt'] = dt
+        processed.append(pm)
+        
+    _PROCESSED_CACHE = {'data': processed, 'expires': now + _MESSAGES_CACHE_TTL}
+    return processed
+
 def invalidate_messages_cache():
     """Call this after saving new messages."""
-    global _MESSAGES_CACHE
+    global _MESSAGES_CACHE, _PROCESSED_CACHE
     _MESSAGES_CACHE = {'data': None, 'expires': 0}
+    _PROCESSED_CACHE = {'data': None, 'expires': 0}
 
 # ============================================================================
 # API PROTECTION - Production-grade hardening (prevents 23GB+ traffic spikes)
@@ -1395,7 +1448,10 @@ import requests
 import traceback
 
 # --- Alarm API Configuration ---
-ALARM_API_KEY = os.getenv('ALARM_API_KEY') or os.getenv('ALARMS_API_KEY') or '57fe8a39:7698ad50f0f15d502b280a83019bab25'
+ALARM_API_KEY = os.getenv('ALARM_API_KEY') or os.getenv('ALARMS_API_KEY')
+if not ALARM_API_KEY:
+    print("WARNING: ALARM_API_KEY not found in env, using hardcoded fallback (likely expired)")
+    ALARM_API_KEY = '57fe8a39:7698ad50f0f15d502b280a83019bab25'
 ALARM_API_BASE = os.getenv('ALARM_API_BASE', 'https://api.ukrainealarm.com/api/v3')
 
 # Mapping district names to oblast names (for oblast-level coloring)
@@ -1646,6 +1702,7 @@ def _start_alarm_background_fetcher():
         def _bg_loop():
             global _alarm_api_failing, _alarm_api_fail_time
             import time as _t
+            print(f"[ALARM BG] Thread started in pid {os.getpid()}")
             first_run = True
             consecutive_failures = 0
             while True:
@@ -1663,18 +1720,28 @@ def _start_alarm_background_fetcher():
                         consecutive_failures = 0
                         _alarm_api_failing = False
                         _update_alarm_caches(result)
+                        
+                        # BACKGROUND THREAT LOGIC (Decoupled from request path)
+                        try:
+                            # Update threats based on new alarm data
+                            check_alarms_and_update_threats()
+                            # Cleanup old threats
+                            THREAT_TRACKER.cleanup_old_threats(max_age_hours=4)
+                        except Exception as e:
+                           print(f"[ALARM BG] Threat logic error: {e}")
                     else:
                         consecutive_failures += 1
                         _alarm_api_failing = True
                         _alarm_api_fail_time = _t.time()
-                except Exception as e:
+                except BaseException as e:
                     consecutive_failures += 1
-                    print(f"[ALARM BG] Error: {e}")
+                    print(f"[ALARM BG] CRITICAL ERROR: {e}")
+                    traceback.print_exc()
                     _t.sleep(10)
 
         _alarm_bg_thread = _threading.Thread(target=_bg_loop, daemon=True, name='alarm-bg-fetcher')
         _alarm_bg_thread.start()
-        print(f"[ALARM] Background fetcher started in pid {os.getpid()}")
+        print(f"[ALARM] Background fetcher initialized in pid {os.getpid()}")
     finally:
         _alarm_bg_lock.release()
 
@@ -5497,13 +5564,10 @@ def data():
     global FALLBACK_REPARSE_CACHE, MAX_REPARSE_CACHE_SIZE
 
     # ===========================================================================
-    # HARDENED /data ENDPOINT - Prevents 23GB+ traffic spikes
-    # HIGH-LOAD OPTIMIZED: Added in-memory + persistent caching
-    # DEPLOY-SAFE: Persistent cache survives server restarts (30 min TTL)
+    # HARDENED /data ENDPOINT - High Load Optimized
     # ===========================================================================
     
     # AGGRESSIVE RATE LIMIT: 1 request per 5 seconds per IP
-    # Skip rate limit for admin requests (they pass secret)
     is_admin_request = bool(request.args.get('secret') or request.headers.get('X-Auth-Secret'))
     if not is_admin_request and _check_data_rate_limit():
         return Response(
@@ -5513,231 +5577,172 @@ def data():
             headers={'Retry-After': '5', 'Cache-Control': 'no-store'}
         )
     
-    # Allow forced reparse by clearing cache (admin use)
-    if request.args.get('force_reparse') == 'true':
-        print(f"[DATA] Force reparse requested, clearing FALLBACK_REPARSE_CACHE ({len(FALLBACK_REPARSE_CACHE)} items)")
-        FALLBACK_REPARSE_CACHE.clear()
+    # Use global configured MONITOR_PERIOD_MINUTES from admin panel
+    time_range = MONITOR_PERIOD_MINUTES
+    time_range = max(1, min(time_range, 360))
+    cache_key = f'data_v2_{time_range}'
 
-    # HIGH-LOAD: Check memory cache first (5 second TTL)
-    # Admin requests bypass cache to always get fresh data
-    cache_key = f'data_{MONITOR_PERIOD_MINUTES}'
+    # HIGH-LOAD: Check memory cache first (serialized bytes)
     if not is_admin_request:
         cached = RESPONSE_CACHE.get(cache_key)
         if cached:
-            # Still check ETag for 304
+            # Check ETag
             client_etag = request.headers.get('If-None-Match')
             if client_etag and cached.get('etag') == client_etag:
                 return Response(status=304, headers={'Cache-Control': 'public, max-age=30'})
 
-            response = jsonify(cached['data'])
-            response.headers['Cache-Control'] = 'public, max-age=30'
-            response.headers['X-Cache'] = 'HIT'
-            if cached.get('etag'):
-                response.headers['ETag'] = cached['etag']
-            return response
+            # Return PRE-SERIALIZED bytes
+            return Response(
+                cached['data'],  # bytes
+                mimetype='application/json',
+                headers={
+                    'Cache-Control': 'public, max-age=30',
+                    'X-Cache': 'HIT',
+                    'ETag': cached['etag']
+                }
+            )
 
-    # PROTECTION: Hard limits to prevent memory/bandwidth exhaustion
-    MAX_TRACKS = 50        # HARD LIMIT: max tracks per response (reduced from 100)
-    MAX_EVENTS = 25        # HARD LIMIT: max events per response (reduced from 50)
-    MAX_RESPONSE_MB = 0.5  # HARD LIMIT: max response size in MB (reduced from 1)
-    
-    # MEMORY CHECK: Log memory usage periodically
-    import random
-    if random.random() < 0.05:  # 5% of requests
-        try:
-            import psutil
-            mem_mb = psutil.Process().memory_info().rss / 1024 / 1024
-            print(f"[MEMORY] /data request: {mem_mb:.1f}MB used")
-            if mem_mb > 1500:  # Warn if over 1.5GB
-                print(f"[MEMORY] WARNING: High memory usage! {mem_mb:.1f}MB")
-                import gc
-                gc.collect()
-        except:
-            pass
+    # If allowed, clear reparse cache
+    if request.args.get('force_reparse') == 'true':
+        FALLBACK_REPARSE_CACHE.clear()
 
-    # BANDWIDTH OPTIMIZATION: Add aggressive caching headers
-    response_headers = {
-        'Cache-Control': 'public, max-age=30',  # 30 sec client cache
-        'ETag': f'data-{int(time.time() // 30)}',  # ETag changes every 30 sec
-        'Vary': 'Accept-Encoding'
-    }
-
-    # Check if client has cached version (saves bandwidth)
-    client_etag = request.headers.get('If-None-Match')
-    if client_etag == response_headers['ETag']:
-        return Response(status=304, headers=response_headers)
-
-    # Use global configured MONITOR_PERIOD_MINUTES from admin panel
-    # URL parameter timeRange is ignored - only admin can control this
-    time_range = MONITOR_PERIOD_MINUTES
-    # Validate range (should be 1-360 as set by admin, but apply safety limits)
-    time_range = max(1, min(time_range, 360))
-
-    print(f"[DEBUG] /data endpoint called with timeRange={request.args.get('timeRange')}, MONITOR_PERIOD_MINUTES={MONITOR_PERIOD_MINUTES}, using time_range={time_range}")
-    messages = load_messages()
-    print(f"[DEBUG] Loaded {len(messages)} total messages")
-    
-    # DEDUPLICATE messages by text+date to avoid showing same message multiple times
-    import gevent as _gevent
-    seen_keys = set()
-    unique_messages = []
-    for _di, m in enumerate(messages):
-        # Create key from text + date (messages with same text at same time are duplicates)
-        msg_key = f"{m.get('text', '')[:100]}|{m.get('date', '')}"
-        if msg_key not in seen_keys:
-            seen_keys.add(msg_key)
-            unique_messages.append(m)
-        if _di % 200 == 0:
-            _gevent.sleep(0)  # yield to gevent hub to prevent starvation
-    if len(unique_messages) < len(messages):
-        print(f"[DEDUP] Removed {len(messages) - len(unique_messages)} duplicate messages")
-    messages = unique_messages
+    # Load PRE-PROCESSED messages (dates parsed, deduplicated)
+    messages = load_messages_processed()
     
     tz = pytz.timezone('Europe/Kyiv')
     now = datetime.now(tz).replace(tzinfo=None)
 
-    # Check each message individually
-    # Pre-filter to avoid checking very old messages
-    max_possible_ttl = 30  # 30 minutes - max possible TTL for any threat type (was 240)
-    min_time_prefilter = now - timedelta(minutes=max_possible_ttl)
-
-    # Use fixed time window
+    # Pre-filter times
+    manual_cutoff = now - timedelta(minutes=manual_marker_window_minutes_val := max(time_range, MANUAL_MARKER_WINDOW_MINUTES))
+    # We want to show everything in time_range, OR manual markers within manual_cutoff
+    
     min_time = now - timedelta(minutes=time_range)
-    manual_cutoff = now - timedelta(minutes=max(time_range, MANUAL_MARKER_WINDOW_MINUTES))
-
-    print(f"[DEBUG] Filtering messages since {min_time} (last {time_range} minutes)")
+    
     hidden = set(load_hidden())
-    out = []  # geo tracks
-    events = []  # list-only (alarms, cancellations, other non-geo informational)
+    out = []
+    events = []
     
-    # DEBUG: Count messages by category
-    debug_counts = {'too_old': 0, 'no_date': 0, 'pending_geo': 0, 'has_coords': 0, 'recent': 0}
-    
-    # DEBUG: Log first message time vs current time
-    if messages:
-        sample_date = messages[0].get('date', '')
-        print(f"[DEBUG_TIME] now={now}, min_time={min_time}, sample_msg_date='{sample_date}'")
+    # === THREAT TRACKER UPDATE ===
+    # Logic moved to background thread [SECTION 15]
+    try:
+        active_threats = THREAT_TRACKER.get_all_active_threats()
+    except Exception:
+        active_threats = []
 
-    for _mi, m in enumerate(messages):
-        if _mi % 200 == 0:
-            _gevent.sleep(0)  # yield to gevent hub to prevent starvation
-        try:
-            dt = datetime.strptime(m.get('date',''), '%Y-%m-%d %H:%M:%S')
-        except Exception:
-            debug_counts['no_date'] += 1
-            continue
+    # Filter loop - optimized
+    # debug_counts = {'too_old': 0, 'no_date': 0, 'recent': 0}
+
+    for m in messages:
+        dt = m['_dt']
+        is_manual = bool(m.get('manual'))
         
-        # DEBUG: Track message categories
-        has_coords = bool(m.get('lat') and m.get('lng'))
-        is_pending = bool(m.get('pending_geo'))
-        is_recent = dt >= min_time
-        
-        if has_coords:
-            debug_counts['has_coords'] += 1
-        if is_pending:
-            debug_counts['pending_geo'] += 1
-        if is_recent:
-            debug_counts['recent'] += 1
-        if not is_recent:
-            debug_counts['too_old'] += 1
+        # Time filter
+        if is_manual:
+            if dt < manual_cutoff: continue
+        else:
+            if dt < min_time: continue
 
-        manual_marker = bool(m.get('manual'))
-
-        # === TIME FILTERING ===
-        # Use fixed time window
-        if not (dt >= min_time or (manual_marker and dt >= manual_cutoff)):
-            continue
-
-        # === MARKER PROCESSING ===
-        msg_id = m.get('id')
-
-        # PERF FIX: Never geocode inside /data — process_message() calls Visicom/Nominatim
-        # HTTP APIs (500ms-10s per call), which blocks the greenlet and causes cascading 502s.
-        # Messages without coordinates are geocoded by the background Telegram fetch thread.
-        if (not m.get('lat')) and (not m.get('lng')):
-            debug_counts['pending_geo_processing'] = debug_counts.get('pending_geo_processing', 0) + 1
-            # Show as list-only event if it has meaningful text
+        # Marker processing
+        # Note: messages without lat/lng are list-only events or pending
+        if not (m.get('lat') and m.get('lng')):
+            # List only or pending
             if m.get('text') and not m.get('suppress'):
                 events.append(m)
             continue
-        # list-only (no coordinates) -> push into events list if not suppressed
+            
         if m.get('list_only'):
             if not m.get('suppress'):
                 events.append(m)
-            continue  # skip trying to interpret as marker
-        # build marker key similar to frontend hide logic (rounded lat/lng + text + source/channel)
+            continue
+
+        # Check hidden
+        # Optimization: construct key once
         try:
-            lat = round(float(m.get('lat')), 3)
-            lng = round(float(m.get('lng')), 3)
-        except Exception:
-            continue  # not a proper geo marker
-        text = (m.get('text') or '')
-        source = m.get('source') or m.get('channel') or ''
-        marker_key = f"{lat},{lng}|{text}|{source}"
-        if marker_key in hidden:
+           lat_r = round(float(m['lat']), 3)
+           lng_r = round(float(m['lng']), 3)
+           text = m.get('text', '')
+           source = m.get('source') or m.get('channel') or ''
+           key = f"{lat_r},{lng_r}|{text}|{source}"
+        except:
             continue
-        # Backward compatibility: allow prefix match (text truncated when stored) for same lat,lng,source
-        base_prefix = f"{lat},{lng}|"
-        if not any(h.startswith(base_prefix) for h in hidden if '|' in h):
-            pass
-        else:
-            # iterate candidates with same coords and source, compare text prefix
-            skip = False
-            for h in hidden:
-                if not h.startswith(base_prefix):
-                    continue
-                try:
-                    _, htext, hsource = h.split('|',2)
-                except ValueError:
-                    continue
-                if hsource == source and text.startswith(htext):
-                    skip = True
-                    break
-            if skip:
-                continue
-        # Фильтр: удаляем региональные метки без явных слов угроз (могли сохраниться старыми версиями логики)
+            
+        if key in hidden:
+            continue
+            
+        # Region filter (legacy logic)
         low_txt = text.lower()
-        if m.get('source_match','').startswith('region') and not any(k in low_txt for k in ['бпла','дрон','шахед','shahed','geran','ракета','ракети','missile','iskander','s-300','s300','каб','артил','града','смерч','ураган','mlrs','avia','авіа','авиа','бомба']):
-            continue
-        
-        # === TTL FILTERING: Apply per-threat-type TTL limits (if enabled) ===
-        if TTL_SYSTEM_ENABLED:
-            threat_type = m.get('threat_type', '').lower()
-            marker_icon = m.get('marker_icon', '').lower()
-            
-            # If threat_type is empty, try to infer from marker_icon or text
-            if not threat_type:
-                if 'raketa' in marker_icon or 'rocket' in marker_icon or 'missile' in marker_icon:
-                    threat_type = 'rocket'
-                elif 'kab' in marker_icon or 'bomb' in marker_icon:
-                    threat_type = 'kab'
-                elif 'cruise' in marker_icon or 'kalibr' in marker_icon or 'x101' in marker_icon:
-                    threat_type = 'cruise'
-                elif 'ballistic' in marker_icon or 'iskander' in marker_icon:
-                    threat_type = 'ballistic'
-                elif 'kinzhal' in marker_icon:
-                    threat_type = 'kinzhal'
-                # Also check text for rocket/kab keywords
-                elif any(kw in low_txt for kw in ['ракета', 'ракети', 'балістик', 'крилат', 'калібр', 'х-101', 'х-22', 'іскандер', 'кінжал', 'missile', 'rocket']):
-                    threat_type = 'rocket'
-                elif any(kw in low_txt for kw in ['каб', 'kab', 'керован', 'бомб']):
-                    threat_type = 'kab'
-            
-            # Determine TTL for this marker type
-            marker_ttl = THREAT_MAX_TTL.get(threat_type, 30)  # Default 30 min if unknown
-            # For rockets/missiles/KAB, use strict 5 min TTL
-            if threat_type in ['kab', 'rocket', 'cruise', 'ballistic', 'kinzhal', 'iskander', 'kalibr', 'x101', 'x22', 'raketa']:
-                marker_ttl = 5
-            # Check if marker is expired based on its TTL
-            marker_age_minutes = (now - dt).total_seconds() / 60
-            if marker_age_minutes > marker_ttl and not manual_marker:
-                debug_counts['ttl_expired'] = debug_counts.get('ttl_expired', 0) + 1
-                continue
-        
+        if m.get('source_match','').startswith('region') and not any(k in low_txt for k in ['бпла','дрон','шахед','shahed','geran','ракета','missile','kab','каб']):
+             continue
+
+        # TTL Filter
+        if TTL_SYSTEM_ENABLED and not is_manual:
+             threat_type = m.get('threat_type', '')
+             if not threat_type:
+                  if 'raketa' in m.get('marker_icon','') or any(x in low_txt for x in ['ракета','missile','ballistic']):
+                      threat_type = 'rocket'
+             
+             ttl = 30
+             if threat_type in ['rocket','kab','ballistic','kinzhal']:
+                 ttl = 5
+             
+             if (now - dt).total_seconds() > (ttl * 60):
+                 continue
+
         out.append(m)
 
+    # Sort events
+    events.sort(key=lambda x: x.get('date',''), reverse=True)
 
+    # Truncate
+    MAX_TRACKS = 50
+    MAX_EVENTS = 25
+    if len(out) > MAX_TRACKS: out = out[-MAX_TRACKS:]
+    if len(events) > MAX_EVENTS: events = events[:MAX_EVENTS]
 
+    # Clean up output - remove internal fields like _dt before serialization
+    clean_out = []
+    for x in out:
+        c = x.copy()
+        c.pop('_dt', None)
+        clean_out.append(c)
+        
+    clean_events = []
+    for x in events:
+         c = x.copy()
+         c.pop('_dt', None)
+         clean_events.append(c)
+
+    # Build response
+    resp_data = {
+        'tracks': clean_out,
+        'events': clean_events,
+        'threats': {
+             'count': len(active_threats),
+             'by_type': {}, # Populate if needed
+             'by_region': {}
+        },
+        'server_time': now.isoformat()
+    }
+    
+    # Serialize ONCE
+    json_bytes = json.dumps(resp_data, ensure_ascii=False).encode('utf-8')
+    
+    # Cache it
+    etag = f'data-{hashlib.md5(json_bytes).hexdigest()[:8]}'
+    RESPONSE_CACHE.set(cache_key, {
+        'data': json_bytes, # bytes
+        'etag': etag
+    }, ttl=5) # 5 sec internal TTL
+
+    return Response(
+        json_bytes,
+        mimetype='application/json',
+        headers={
+            'Cache-Control': 'public, max-age=30',
+            'ETag': etag,
+            'X-Cache': 'MISS'
+        }
+    )
 
     # === THREAT TRACKER: Update from alarms and get active threats ===
     try:
