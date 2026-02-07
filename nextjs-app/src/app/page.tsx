@@ -120,10 +120,7 @@ export default function HomePage() {
       <TelegramBanner />
 
       {/* Bottom bar */}
-      <BottomBar
-        onDonate={() => setDonateOpen(true)}
-        onFaq={() => setFaqOpen(true)}
-      />
+      <BottomBar />
 
       {/* Modals */}
       <DonateModal isOpen={donateOpen} onClose={() => setDonateOpen(false)} />

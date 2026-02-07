@@ -246,9 +246,9 @@ export default function AdminPage() {
         </button>
       </header>
 
-      <div className="flex">
+      <div className="flex h-[calc(100vh-52px)]">
         {/* Sidebar */}
-        <nav className="w-56 min-h-[calc(100vh-52px)] bg-[#0e1420] border-r border-white/5 p-3 flex flex-col gap-1 max-md:hidden">
+        <nav className="w-56 bg-[#0e1420] border-r border-white/5 p-3 flex flex-col gap-1 max-md:hidden overflow-y-auto shrink-0">
           {tabs.map(t => (
             <button
               key={t.id}
@@ -276,7 +276,7 @@ export default function AdminPage() {
         </div>
 
         {/* Content */}
-        <main className="flex-1 p-4 md:p-6 max-md:pb-20 overflow-y-auto min-h-[calc(100vh-52px)]">
+        <main className="flex-1 p-4 md:p-6 max-md:pb-20 overflow-y-auto">
 
           {/* ── OVERVIEW ── */}
           {tab === 'overview' && (
