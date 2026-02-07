@@ -3101,7 +3101,7 @@ def register_admin_routes(app):
     CHAT_SUBSCRIBERS = set()  # queues for chat SSE clients
     CHAT_TYPING_USERS = {}  # {deviceId: {'nickname': str, 'timestamp': float}}
     CHAT_TYPING_TTL = 5  # seconds before typing indicator expires
-    MAX_SSE_SUBSCRIBERS = 100  # MEMORY PROTECTION: Limit SSE connections to prevent OOM (reduced from 200)
+    MAX_SSE_SUBSCRIBERS = 50  # MEMORY PROTECTION: Limit per-worker SSE (50 x 2 workers = 100 effective)
 
     # ============== CHAT RATE LIMITING ==============
     # Configurable rate limits (sliding window approach)
@@ -3340,6 +3340,7 @@ def register_admin_routes(app):
             q = _GeventQueue()
             CHAT_SUBSCRIBERS.add(q)
             last_ping = time.time()
+            start_time = last_ping  # Max lifetime: 120s to prevent zombie greenlets
             log.info(f"[CHAT_SSE] Client connected. Total subscribers: {len(CHAT_SUBSCRIBERS)}")
             try:
                 while True:
@@ -3349,6 +3350,8 @@ def register_admin_routes(app):
                     except (_GeventEmpty, Exception):
                         pass
                     now_t = time.time()
+                    if now_t - start_time > 120:
+                        break  # Force-close after 120s; client EventSource auto-reconnects
                     if now_t - last_ping > 25:
                         last_ping = now_t
                         yield ': ping\n\n'

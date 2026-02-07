@@ -3050,7 +3050,7 @@ FETCH_THREAD = None
 FETCH_START_DELAY = int(os.getenv('FETCH_START_DELAY', '0'))
 AUTH_STATUS = {'authorized': False, 'reason': 'init'}
 SUBSCRIBERS = set()  # queues for SSE clients
-MAX_STREAM_SUBSCRIBERS = 100  # MEMORY PROTECTION: Limit main SSE connections (reduced from 200)
+MAX_STREAM_SUBSCRIBERS = 50  # MEMORY PROTECTION: Limit per-worker SSE (50 x 2 workers = 100 effective)
 INIT_ONCE = False  # guard to ensure background startup once
 # Persistent dynamic channels file
 CHANNELS_FILE = 'channels_dynamic.json'
@@ -7341,6 +7341,7 @@ def stream():
         q = _GeventQueue()
         SUBSCRIBERS.add(q)
         last_ping = time.time()
+        start_time = last_ping  # Max lifetime: 120s to prevent zombie greenlets
         try:
             while True:
                 try:
@@ -7349,6 +7350,8 @@ def stream():
                 except (_GeventEmpty, Exception):
                     pass
                 now_t = time.time()
+                if now_t - start_time > 120:
+                    break  # Force-close after 120s; client EventSource auto-reconnects
                 if now_t - last_ping > 25:
                     last_ping = now_t
                     yield ': ping\n\n'
