@@ -241,8 +241,8 @@ async def process_new_message(event):
         try:
             current = message_store.load()
             current.append(data)
-            message_store.save(current)
-            log.info(f"Saved to messages.json: {threat_id} ({len(current)+1} total)")
+            saved = message_store.save(current)
+            log.info(f"Saved to messages.json: {threat_id} ({len(saved)} total)")
         except Exception as e:
             log.error(f"Failed to save to messages.json: {e}", exc_info=True)
 
