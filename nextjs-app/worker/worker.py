@@ -122,7 +122,22 @@ async def main():
 
 
 from core.parser_v2 import extract_entities
+from constants import OBLAST_CENTERS
 import uuid
+
+
+def _fallback_coords_for_oblast(oblast: str):
+    """Get approximate center coords for an oblast name.
+    
+    Returns (lat, lng) or None if oblast not recognized.
+    """
+    if not oblast:
+        return None
+    oblast_lower = oblast.lower().replace(' область', '').replace(' обл', '').strip()
+    for key, coords in OBLAST_CENTERS.items():
+        if oblast_lower.startswith(key) or key.startswith(oblast_lower[:4]):
+            return coords
+    return None
 
 
 async def process_new_message(event):
@@ -184,6 +199,17 @@ async def process_new_message(event):
         resolve_status = 'rejected' if resolved else 'no_resolver'
         candidates_json = []
 
+    # Fallback: if no exact coords, use oblast center
+    used_fallback = False
+    if not coords and region:
+        fallback = _fallback_coords_for_oblast(region)
+        if fallback:
+            coords = fallback
+            used_fallback = True
+            confidence = max(confidence, 0.1)  # at least minimal confidence
+            resolve_status = 'oblast_fallback'
+            log.info(f"Using oblast center fallback for {region}: {coords}")
+
     log.info(
         f"MATCH: {entities.event_type} @ {location} ({region}) "
         f"conf={confidence:.2f} status={resolve_status}"
@@ -224,7 +250,8 @@ async def process_new_message(event):
         ttl = int(ttl * 1.5)
 
     # Confidence-based degradation: don't show very low confidence on map
-    if confidence < 0.3 and resolve_status in ('low_confidence', 'rejected'):
+    # But always show oblast_fallback markers (they're the best we have)
+    if confidence < 0.3 and resolve_status in ('low_confidence', 'rejected') and not used_fallback:
         data['hidden'] = True  # frontend won't show it, but it's logged
 
     db.save_threat(threat_id, data, ttl=ttl)
@@ -234,11 +261,11 @@ async def process_new_message(event):
     # Worker and web service have separate disks on Render,
     # so we POST data to /api/ingest instead of writing to a local file.
     if not INGEST_URL:
-        log.debug(f"Skipping ingest: INGEST_URL not configured")
+        log.warning(f"Skipping ingest: INGEST_URL not configured")
     elif not coords:
-        log.debug(f"Skipping ingest for {threat_id}: no coordinates")
+        log.warning(f"Skipping ingest for {threat_id}: no coordinates even after fallback")
     elif data.get('hidden'):
-        log.debug(f"Skipping ingest for {threat_id}: marker is hidden (low confidence)")
+        log.info(f"Skipping ingest for {threat_id}: marker is hidden (low confidence)")
     else:
         try:
             resp = http_requests.post(
