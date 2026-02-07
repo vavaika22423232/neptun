@@ -33,7 +33,10 @@ INGEST_SECRET = os.getenv('AUTH_SECRET', '')       # shared secret with web serv
 if INGEST_URL:
     log.info(f"Ingest endpoint configured: {INGEST_URL}")
 else:
-    log.warning("INGEST_URL not set — markers will NOT be sent to the web frontend")
+    log.warning("INGEST_URL not set — markers will NOT appear on the web frontend!")
+
+if not INGEST_SECRET:
+    log.warning("AUTH_SECRET not set — ingest requests will be rejected by the web service!")
 
 
 # ── Recent events buffer (for proximity scoring) ─────────────────────────────
@@ -65,7 +68,18 @@ async def _learning_loop():
 async def main():
     """Main worker loop."""
     log.info(f"Worker starting... Channels: {len(CHANNELS)}")
-    
+
+    # ── Pre-flight checks ─────────────────────────────────────────────────
+    log.info(f"  INGEST_URL  = {'SET (' + INGEST_URL + ')' if INGEST_URL else 'NOT SET'}")
+    log.info(f"  AUTH_SECRET = {'SET (len={})'.format(len(INGEST_SECRET)) if INGEST_SECRET else 'NOT SET'}")
+    log.info(f"  Redis       = {'connected' if db.is_connected() else 'DISCONNECTED'}")
+
+    if not INGEST_URL or not INGEST_SECRET:
+        log.warning(
+            "*** Markers will NOT reach the frontend! "
+            "Set INGEST_URL and AUTH_SECRET in Render environment variables. ***"
+        )
+
     # Ensure Redis connection
     if not db.is_connected():
         log.error("Redis not connected! Exiting.")
@@ -202,7 +216,13 @@ async def process_new_message(event):
     # 5. Push marker to Next.js web service (for frontend)
     # Worker and web service have separate disks on Render,
     # so we POST data to /api/ingest instead of writing to a local file.
-    if coords and not data.get('hidden') and INGEST_URL:
+    if not INGEST_URL:
+        log.debug(f"Skipping ingest: INGEST_URL not configured")
+    elif not coords:
+        log.debug(f"Skipping ingest for {threat_id}: no coordinates")
+    elif data.get('hidden'):
+        log.debug(f"Skipping ingest for {threat_id}: marker is hidden (low confidence)")
+    else:
         try:
             resp = http_requests.post(
                 INGEST_URL,
@@ -214,7 +234,14 @@ async def process_new_message(event):
                 body = resp.json()
                 log.info(f"Ingested to web: {threat_id} ({body.get('total', '?')} total)")
             else:
-                log.error(f"Ingest failed [{resp.status_code}]: {resp.text[:200]}")
+                log.error(
+                    f"Ingest failed [{resp.status_code}]: {resp.text[:300]} "
+                    f"(URL={INGEST_URL}, secret={'set' if INGEST_SECRET else 'EMPTY'})"
+                )
+        except http_requests.exceptions.ConnectionError as e:
+            log.error(f"Ingest connection failed (is web service running?): {e}")
+        except http_requests.exceptions.Timeout:
+            log.error(f"Ingest timed out after 10s: {INGEST_URL}")
         except Exception as e:
             log.error(f"Failed to POST to ingest: {e}", exc_info=True)
 

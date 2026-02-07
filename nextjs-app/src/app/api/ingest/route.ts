@@ -72,6 +72,7 @@ export async function POST(request: Request) {
 
   const authHeader = request.headers.get('X-Auth-Secret');
   if (authHeader !== AUTH_SECRET) {
+    console.warn(`[INGEST] 401 Unauthorized (header ${authHeader ? 'present but wrong' : 'missing'})`);
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -94,7 +95,11 @@ export async function POST(request: Request) {
   const pruned = pruneMessages(messages);
   saveMessages(pruned);
 
-  console.log(`[INGEST] Saved marker ${marker.id} (${pruned.length} total)`);
+  const removed = messages.length - pruned.length;
+  console.log(
+    `[INGEST] Saved marker ${marker.id} — ${pruned.length} total` +
+    (removed > 0 ? `, pruned ${removed} old` : '')
+  );
 
   return NextResponse.json({ ok: true, total: pruned.length });
 }
