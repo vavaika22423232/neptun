@@ -120,19 +120,19 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const w = window as any;
 
-    w.__adminDeleteMarker = async (id: string) => {
-      if (!id) return;
+    w.__adminDeleteMarker = async (id: string, lat: number, lng: number, text: string) => {
       try {
         const res = await fetch('/api/admin/markers/delete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id }),
+          body: JSON.stringify({ id: id || undefined, lat, lng, text }),
         });
         if (res.ok) {
           mapRef.current?.closePopup();
           onMarkerAction?.();
         } else {
-          alert('Помилка видалення');
+          const err = await res.json().catch(() => ({}));
+          alert('Помилка видалення: ' + (err.error || res.status));
         }
       } catch { alert('Помилка мережі'); }
     };
@@ -502,18 +502,18 @@ function hideTooltip() {
 
 function buildAdminPopup(marker: Marker, threatType: string): string {
   const typeName = THREAT_NAMES[threatType] || threatType;
-  const markerId = marker.id || '';
+  const markerId = (marker.id || '').replace(/'/g, "\\'");
   const markerLat = marker.lat;
   const markerLng = marker.lng;
-  const markerText = (marker.text || '').replace(/'/g, "\\'").substring(0, 80);
+  const markerText = (marker.text || '').replace(/'/g, "\\'").replace(/\n/g, ' ').substring(0, 80);
 
   return `
     <div style="font-family:-apple-system,sans-serif;color:#fff;min-width:200px;">
       <div style="font-size:13px;font-weight:600;margin-bottom:6px;">${typeName}</div>
-      <div style="font-size:11px;color:rgba(255,255,255,0.7);margin-bottom:2px;">${marker.place || 'Невідомо'}</div>
+      <div style="font-size:11px;color:rgba(255,255,255,0.7);margin-bottom:2px;">${(marker.place || 'Невідомо').replace(/</g, '&lt;')}</div>
       ${marker.date ? `<div style="font-size:10px;color:rgba(255,255,255,0.4);margin-bottom:8px;">${marker.date}</div>` : ''}
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
-        <button onclick="window.__adminDeleteMarker('${markerId}')"
+        <button onclick="window.__adminDeleteMarker('${markerId}',${markerLat},${markerLng},'${markerText}')"
           style="background:rgba(255,82,82,0.2);color:#ff5252;border:1px solid rgba(255,82,82,0.3);border-radius:8px;padding:5px 12px;font-size:11px;cursor:pointer;display:flex;align-items:center;gap:4px;">
           <span class="material-icons" style="font-size:14px;">delete</span>Видалити
         </button>
