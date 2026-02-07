@@ -13,9 +13,11 @@ interface MapContainerProps {
   markers: Marker[];
   alarms: Alarm[];
   fusionTrajectories: FusionTrajectory[];
+  isAdmin?: boolean;
+  onMarkerAction?: () => void;
 }
 
-export default function MapContainer({ markers, alarms, fusionTrajectories }: MapContainerProps) {
+export default function MapContainer({ markers, alarms, fusionTrajectories, isAdmin, onMarkerAction }: MapContainerProps) {
   const mapRef = useRef<L.Map | null>(null);
   const mapElRef = useRef<HTMLDivElement>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
@@ -112,6 +114,51 @@ export default function MapContainer({ markers, alarms, fusionTrajectories }: Ma
     };
   }, []);
 
+  // Register admin action handlers on window (for popup button onclick)
+  useEffect(() => {
+    if (!isAdmin) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+
+    w.__adminDeleteMarker = async (id: string) => {
+      if (!id) return;
+      try {
+        const res = await fetch('/api/admin/markers/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id }),
+        });
+        if (res.ok) {
+          mapRef.current?.closePopup();
+          onMarkerAction?.();
+        } else {
+          alert('Помилка видалення');
+        }
+      } catch { alert('Помилка мережі'); }
+    };
+
+    w.__adminHideMarker = async (lat: number, lng: number, text: string) => {
+      try {
+        const res = await fetch('/api/admin/hidden/hide', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lat, lng, text, source: 'auto' }),
+        });
+        if (res.ok) {
+          mapRef.current?.closePopup();
+          onMarkerAction?.();
+        } else {
+          alert('Помилка приховування');
+        }
+      } catch { alert('Помилка мережі'); }
+    };
+
+    return () => {
+      delete w.__adminDeleteMarker;
+      delete w.__adminHideMarker;
+    };
+  }, [isAdmin, onMarkerAction]);
+
   // Update markers when data changes
   useEffect(() => {
     if (!isLoaded || !markersLayerRef.current || !trajLayerRef.current) return;
@@ -191,6 +238,20 @@ export default function MapContainer({ markers, alarms, fusionTrajectories }: Ma
         showTooltip(e.originalEvent, marker, threatType);
       });
       leafletMarker.on('mouseout', hideTooltip);
+
+      // Admin mode: click opens action popup
+      if (isAdmin) {
+        leafletMarker.on('click', () => {
+          hideTooltip();
+          const popupHtml = buildAdminPopup(marker, threatType);
+          leafletMarker.bindPopup(popupHtml, {
+            className: 'admin-marker-popup',
+            maxWidth: 260,
+            closeButton: true,
+          }).openPopup();
+        });
+      }
+
       group.addLayer(leafletMarker);
 
       // Render trajectory
@@ -221,7 +282,8 @@ export default function MapContainer({ markers, alarms, fusionTrajectories }: Ma
         }
       }
     });
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin]);
 
   // Render alarms on SVG overlays
   const renderAlarms = useCallback((alarmsData: Alarm[]) => {
@@ -436,4 +498,30 @@ function showTooltip(event: MouseEvent, marker: Marker, threatType: string) {
 
 function hideTooltip() {
   document.getElementById('active-tooltip')?.remove();
+}
+
+function buildAdminPopup(marker: Marker, threatType: string): string {
+  const typeName = THREAT_NAMES[threatType] || threatType;
+  const markerId = marker.id || '';
+  const markerLat = marker.lat;
+  const markerLng = marker.lng;
+  const markerText = (marker.text || '').replace(/'/g, "\\'").substring(0, 80);
+
+  return `
+    <div style="font-family:-apple-system,sans-serif;color:#fff;min-width:200px;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:6px;">${typeName}</div>
+      <div style="font-size:11px;color:rgba(255,255,255,0.7);margin-bottom:2px;">${marker.place || 'Невідомо'}</div>
+      ${marker.date ? `<div style="font-size:10px;color:rgba(255,255,255,0.4);margin-bottom:8px;">${marker.date}</div>` : ''}
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+        <button onclick="window.__adminDeleteMarker('${markerId}')"
+          style="background:rgba(255,82,82,0.2);color:#ff5252;border:1px solid rgba(255,82,82,0.3);border-radius:8px;padding:5px 12px;font-size:11px;cursor:pointer;display:flex;align-items:center;gap:4px;">
+          <span class="material-icons" style="font-size:14px;">delete</span>Видалити
+        </button>
+        <button onclick="window.__adminHideMarker(${markerLat},${markerLng},'${markerText}')"
+          style="background:rgba(255,171,64,0.2);color:#ffab40;border:1px solid rgba(255,171,64,0.3);border-radius:8px;padding:5px 12px;font-size:11px;cursor:pointer;display:flex;align-items:center;gap:4px;">
+          <span class="material-icons" style="font-size:14px;">visibility_off</span>Сховати
+        </button>
+      </div>
+    </div>
+  `;
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useAlarms } from '@/hooks/useAlarms';
 import { useMarkers } from '@/hooks/useMarkers';
@@ -27,12 +27,20 @@ const MapContainer = dynamic(() => import('@/components/Map/MapContainer'), {
 
 export default function HomePage() {
   const { alarms } = useAlarms();
-  const { markers, ballisticThreat } = useMarkers();
+  const { markers, ballisticThreat, fetchMarkers } = useMarkers();
   const { trajectories } = useFusionTrajectories();
   const presence = usePresence();
 
   const [donateOpen, setDonateOpen] = useState(false);
   const [faqOpen, setFaqOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // Check if current user is admin (silent, won't show anything if not)
+  useEffect(() => {
+    fetch('/api/admin/auth/check').then(r => r.json())
+      .then(d => { if (d.authenticated) setIsAdmin(true); })
+      .catch(() => {});
+  }, []);
 
   // Map zoom controls - access Leaflet map at runtime (not at import time)
   const getLeafletMap = useCallback(() => {
@@ -96,6 +104,8 @@ export default function HomePage() {
           markers={markers}
           alarms={alarms}
           fusionTrajectories={trajectories}
+          isAdmin={isAdmin}
+          onMarkerAction={isAdmin ? fetchMarkers : undefined}
         />
       </div>
 
