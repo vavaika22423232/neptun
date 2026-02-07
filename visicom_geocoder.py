@@ -8,8 +8,29 @@ import os
 import requests
 import re
 import threading
+import time
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
 
 VISICOM_API_KEY = os.environ.get('VISICOM_API_KEY', '')
+
+# CONNECTION AWARENESS: Use session for connection pooling
+def _create_session():
+    s = requests.Session()
+    retry = Retry(
+        total=2,
+        backoff_factor=0.3,
+        status_forcelist=[500, 502, 503, 504],
+        allowed_methods=["GET"]
+    )
+    adapter = HTTPAdapter(max_retries=retry, pool_connections=10, pool_maxsize=10)
+    s.mount("http://", adapter)
+    s.mount("https://", adapter)
+    return s
+
+_session = _create_session()
+
 
 # Oblast name mappings for region filtering (short key -> full variations)
 # Include -щина/-ччина forms so parser region headers (e.g. сумщина, полтавщина) map correctly
@@ -668,10 +689,22 @@ def visicom_geocode(city: str, region: str = None) -> tuple:
     # Remove duplicates
     queries_to_try = list(dict.fromkeys(queries_to_try))
     
+    # Limit variations to prevent long processing times
+    MAX_QUERIES = 4
+    queries_to_try = queries_to_try[:MAX_QUERIES]
+    
+    start_time = time.time()
+    MAX_TOTAL_DURATION = 5.0  # Seconds max total processing time
+    
     try:
         url = "https://api.visicom.ua/data-api/5.0/uk/geocode.json"
         
         for query in queries_to_try:
+            # TIME LIMIT CHECK
+            if time.time() - start_time > MAX_TOTAL_DURATION:
+                print(f"[VISICOM] Time limit exceeded ({MAX_TOTAL_DURATION}s), stopping", flush=True)
+                break
+
             params = {
                 'text': query,
                 'country': 'ua',
@@ -681,7 +714,8 @@ def visicom_geocode(city: str, region: str = None) -> tuple:
             
             print(f"[VISICOM] API: '{query}' (region_key: {target_region_key})", flush=True)
             
-            response = requests.get(url, params=params, timeout=10)
+            response = _session.get(url, params=params, timeout=3.0)  # TIMEOUT REDUCED to 3s
+            
             
             if response.status_code == 200:
                 data = response.json()
