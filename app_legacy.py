@@ -4964,9 +4964,10 @@ def index_dev():
     """Development/experimental version of the map"""
     return render_template('index_dev.html')
 
-# BANDWIDTH PROTECTION: Cache rendered HTML in memory
-_INDEX_HTML_CACHE = {'html': None, 'ts': 0, 'etag': ''}
-_INDEX_CACHE_TTL = 300  # Cache for 5 minutes (HTML rarely changes, saves CPU under load)
+# BANDWIDTH PROTECTION: Cache rendered + pre-gzipped HTML in memory
+import gzip as _gzip
+_INDEX_HTML_CACHE = {'html': None, 'gz': None, 'ts': 0}
+_INDEX_CACHE_TTL = 600  # Cache for 10 minutes (HTML has zero template variables - fully static)
 _index_cache_lock = threading.Lock()  # Prevent thundering herd on cache expiry
 
 @app.route('/')
@@ -4983,8 +4984,8 @@ def index():
     
     # SEO: Detect crawlers and serve optimized response
     if is_seo_bot(user_agent):
-        response = _get_cached_index()
-        resp = app.response_class(response)
+        cached = _get_cached_index()
+        resp = Response(cached['html'], content_type='text/html; charset=utf-8')
         resp.headers['Cache-Control'] = 'public, max-age=3600'  # 1 hour for bots
         resp.headers['X-Robots-Tag'] = 'index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1'
         resp.headers['Link'] = '<https://neptun.in.ua/>; rel="canonical"'
@@ -4998,38 +4999,44 @@ def index():
     client_etag = request.headers.get('If-None-Match')
     if client_etag and client_etag == cache_etag:
         return Response(status=304, headers={
-            'Cache-Control': 'public, max-age=300',
+            'Cache-Control': 'public, max-age=600',
             'ETag': cache_etag
         })
     
-    # BANDWIDTH OPTIMIZATION: Serve cached HTML
-    response = _get_cached_index()
-    resp = app.response_class(response)
-    resp.headers['Cache-Control'] = 'public, max-age=300'  # 5 min cache - HTML is static
+    # BANDWIDTH OPTIMIZATION: Serve pre-compressed HTML (~30KB instead of 223KB)
+    cached = _get_cached_index()
+    if 'gzip' in request.headers.get('Accept-Encoding', ''):
+        resp = Response(cached['gz'], content_type='text/html; charset=utf-8')
+        resp.headers['Content-Encoding'] = 'gzip'
+        resp.headers['Vary'] = 'Accept-Encoding'
+    else:
+        resp = Response(cached['html'], content_type='text/html; charset=utf-8')
+    resp.headers['Cache-Control'] = 'public, max-age=600'  # 10 min - HTML is fully static
     resp.headers['ETag'] = cache_etag
     resp.headers['X-Robots-Tag'] = 'index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1'
     resp.headers['Link'] = '<https://neptun.in.ua/>; rel="canonical"'
     return resp
 
 def _get_cached_index():
-    """Get cached index.html content with thundering-herd protection."""
+    """Get cached + pre-gzipped index.html with thundering-herd protection.
+    Returns dict with 'html' (str) and 'gz' (bytes) keys."""
     global _INDEX_HTML_CACHE
     now = time.time()
     # Fast path: cache is valid
     if _INDEX_HTML_CACHE['html'] is not None and now - _INDEX_HTML_CACHE['ts'] <= _INDEX_CACHE_TTL:
-        return _INDEX_HTML_CACHE['html']
+        return _INDEX_HTML_CACHE
     # Slow path: only one greenlet renders, others get stale cache
     if _index_cache_lock.acquire(blocking=False):
         try:
-            # Re-check after acquiring lock (another greenlet may have refreshed)
             now = time.time()
             if _INDEX_HTML_CACHE['html'] is None or now - _INDEX_HTML_CACHE['ts'] > _INDEX_CACHE_TTL:
-                _INDEX_HTML_CACHE['html'] = render_template('index.html')
-                _INDEX_HTML_CACHE['ts'] = now
+                html = render_template('index.html')
+                gz = _gzip.compress(html.encode('utf-8'), compresslevel=6)
+                _INDEX_HTML_CACHE = {'html': html, 'gz': gz, 'ts': now}
+                log.info(f"[INDEX] Cached: {len(html)} bytes raw, {len(gz)} bytes gzip")
         finally:
             _index_cache_lock.release()
-    # Return whatever is cached (possibly stale by a few ms — perfectly fine)
-    return _INDEX_HTML_CACHE['html']
+    return _INDEX_HTML_CACHE
 
 # SEO: Regional pages for each oblast
 REGIONS_SEO = {
@@ -7328,55 +7335,15 @@ def raion_alarms():
         })
     return jsonify({'alarms': out, 'count': len(out)})
 
-# SSE stream endpoint
+# SSE stream endpoint — DISABLED to eliminate zombie greenlets causing 502s.
+# Web client uses polling only. Dart mobile app should use polling /data endpoint.
 @app.route('/stream')
 def stream():
-    # MEMORY PROTECTION: Reject if too many subscribers
-    if len(SUBSCRIBERS) >= MAX_STREAM_SUBSCRIBERS:
-        log.warning(f"[SSE] Rejected /stream connection - limit reached ({MAX_STREAM_SUBSCRIBERS})")
-        return jsonify({'error': 'Server busy, please poll /api/data'}), 503
-    
-    def gen():
-        from gevent.queue import Queue as _GeventQueue, Empty as _GeventEmpty
-        q = _GeventQueue()
-        SUBSCRIBERS.add(q)
-        last_ping = time.time()
-        start_time = last_ping  # Max lifetime: 120s to prevent zombie greenlets
-        try:
-            while True:
-                try:
-                    item = q.get(timeout=5)
-                    yield f'data: {item}\n\n'
-                except (_GeventEmpty, Exception):
-                    pass
-                now_t = time.time()
-                if now_t - start_time > 120:
-                    break  # Force-close after 120s; client EventSource auto-reconnects
-                if now_t - last_ping > 25:
-                    last_ping = now_t
-                    yield ': ping\n\n'
-        except GeneratorExit:
-            pass
-        finally:
-            SUBSCRIBERS.discard(q)
-    headers = {
-        'Cache-Control': 'no-store',
-        'Connection': 'keep-alive',
-        'X-Accel-Buffering': 'no'
-    }
-    return Response(gen(), mimetype='text/event-stream', headers=headers)
+    return jsonify({'error': 'SSE disabled, use polling /data'}), 410
 
 def broadcast_new(tracks):
-    """Send new geo tracks to all connected SSE subscribers."""
-    if not tracks:
-        return
-    payload = json.dumps({'tracks': tracks}, ensure_ascii=False)
-    dead = []
-    for q in list(SUBSCRIBERS):
-        try:
-            q.put_nowait(payload)
-        except Exception:
-            dead.append(q)
+    """SSE disabled — no-op. Clients use polling /data instead."""
+    return
     for d in dead:
         SUBSCRIBERS.discard(d)
 def broadcast_control(event:dict):

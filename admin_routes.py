@@ -3327,46 +3327,11 @@ def register_admin_routes(app):
         for d in dead:
             CHAT_SUBSCRIBERS.discard(d)
 
+    # SSE chat stream — DISABLED to eliminate zombie greenlets causing 502s.
+    # Dart mobile app should poll /api/chat/messages instead.
     @app.route('/api/chat/stream')
     def chat_stream():
-        """SSE endpoint for real-time chat updates."""
-        # MEMORY PROTECTION: Reject if too many subscribers
-        if len(CHAT_SUBSCRIBERS) >= MAX_SSE_SUBSCRIBERS:
-            log.warning(f"[CHAT_SSE] Rejected connection - limit reached ({MAX_SSE_SUBSCRIBERS})")
-            return jsonify({'error': 'Server busy, please use polling'}), 503
-    
-        def gen():
-            from gevent.queue import Queue as _GeventQueue, Empty as _GeventEmpty
-            q = _GeventQueue()
-            CHAT_SUBSCRIBERS.add(q)
-            last_ping = time.time()
-            start_time = last_ping  # Max lifetime: 120s to prevent zombie greenlets
-            log.info(f"[CHAT_SSE] Client connected. Total subscribers: {len(CHAT_SUBSCRIBERS)}")
-            try:
-                while True:
-                    try:
-                        item = q.get(timeout=5)
-                        yield f'data: {item}\n\n'
-                    except (_GeventEmpty, Exception):
-                        pass
-                    now_t = time.time()
-                    if now_t - start_time > 120:
-                        break  # Force-close after 120s; client EventSource auto-reconnects
-                    if now_t - last_ping > 25:
-                        last_ping = now_t
-                        yield ': ping\n\n'
-            except GeneratorExit:
-                pass
-            finally:
-                CHAT_SUBSCRIBERS.discard(q)
-                log.info(f"[CHAT_SSE] Client disconnected. Total subscribers: {len(CHAT_SUBSCRIBERS)}")
-    
-        headers = {
-            'Cache-Control': 'no-store',
-            'Connection': 'keep-alive',
-            'X-Accel-Buffering': 'no'
-        }
-        return Response(gen(), mimetype='text/event-stream', headers=headers)
+        return jsonify({'error': 'SSE disabled, use polling /api/chat/messages'}), 410
 
     @app.route('/api/chat/typing', methods=['POST'])
     def chat_typing():
