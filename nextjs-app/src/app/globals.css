@@ -1,0 +1,256 @@
+@import "tailwindcss";
+
+/* ============================================
+   NEPTUN Global Styles - Dark Theme
+   ============================================ */
+
+:root {
+  --bg-primary: #0a0e17;
+  --bg-card: #2c2c2e;
+  --border-subtle: rgba(255, 255, 255, 0.1);
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.7);
+  --text-muted: rgba(255, 255, 255, 0.5);
+  --accent-cyan: #00d4ff;
+  --accent-red: #ef4444;
+  --alarm-bg: #7f1d1d;
+  --alarm-border: #ff4444;
+}
+
+/* Disable all selection and tap highlight globally */
+* {
+  -webkit-tap-highlight-color: transparent !important;
+  -webkit-touch-callout: none !important;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+/* ============================================
+   Leaflet Map Overrides
+   ============================================ */
+#leaflet-map {
+  --bg-opacity: 1;
+  --map-opacity: 0;
+}
+
+#leaflet-map::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: var(--bg-primary);
+  z-index: -1;
+  pointer-events: none;
+  opacity: var(--bg-opacity, 1);
+}
+
+#leaflet-map .maplibregl-map {
+  opacity: var(--map-opacity, 0);
+}
+
+.leaflet-control-attribution,
+.leaflet-control-zoom {
+  display: none !important;
+}
+
+.leaflet-marker-icon.threat-marker-icon {
+  background: none !important;
+  border: none !important;
+}
+
+/* SVG overlay inside Leaflet */
+.leaflet-svg-overlay {
+  pointer-events: none;
+}
+
+.leaflet-svg-overlay .stateObject,
+.leaflet-svg-overlay .dist {
+  pointer-events: all;
+}
+
+.leaflet-svg-pane { z-index: 200; }
+.leaflet-trajectory-pane { z-index: 400; }
+.leaflet-marker-pane { z-index: 600; }
+
+/* ============================================
+   SVG Map Overlay Styles
+   ============================================ */
+.svg-states-layer,
+.svg-districts-layer {
+  opacity: 0.6;
+  transition: opacity 0.4s ease;
+}
+
+.leaflet-container.high-zoom .svg-states-layer,
+.leaflet-container.high-zoom .svg-districts-layer {
+  opacity: 0.15;
+}
+
+.svg-names-layer {
+  pointer-events: none;
+}
+
+.svg-names-layer text {
+  fill: rgba(255, 255, 255, 0.9);
+  font-family: 'Inter', sans-serif;
+  font-weight: 400;
+  text-shadow: 0 0 10px rgba(0, 212, 255, 0.5), 0 2px 4px rgba(0, 0, 0, 0.8);
+}
+
+.svg-names-layer .reasonIcon {
+  display: none;
+}
+
+/* Oblast regions */
+.stateObject {
+  fill: #162236;
+  stroke: var(--accent-cyan);
+  stroke-width: 0.4;
+  stroke-opacity: 0.3;
+  transition: fill 0.4s ease, stroke 0.4s ease;
+}
+
+.stateObject:hover {
+  fill: #1e3050;
+  stroke-opacity: 0.6;
+}
+
+.stateObject.alarm {
+  fill: var(--alarm-bg);
+  stroke: var(--alarm-border);
+  stroke-opacity: 0.8;
+}
+
+/* District regions */
+.dist {
+  fill: transparent;
+  stroke: rgba(0, 212, 255, 0.15);
+  stroke-width: 0.1;
+  transition: fill 0.4s ease, stroke 0.4s ease;
+  pointer-events: all;
+}
+
+.dist:hover {
+  fill: rgba(0, 212, 255, 0.1);
+  stroke: rgba(0, 212, 255, 0.4);
+  cursor: pointer;
+}
+
+.dist.alarm {
+  fill: #dc2626;
+  stroke: #ff6b6b;
+  stroke-width: 0.2;
+}
+
+/* ============================================
+   Threat Marker Styles
+   ============================================ */
+.threat-marker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.threat-marker img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+}
+
+.marker-count-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: var(--accent-red);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 8px;
+  line-height: 1.2;
+  min-width: 16px;
+  text-align: center;
+}
+
+/* ============================================
+   Trajectory Arrow Styles
+   ============================================ */
+.trajectory-arrow-icon {
+  background: none !important;
+  border: none !important;
+}
+
+.trajectory-target-arrow {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 18px;
+  font-weight: 400;
+  pointer-events: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* ============================================
+   Tooltip
+   ============================================ */
+.marker-tooltip {
+  position: fixed;
+  z-index: 10000;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 10px 14px;
+  color: white;
+  font-size: 12px;
+  pointer-events: none;
+  backdrop-filter: blur(10px);
+  max-width: 250px;
+}
+
+.tooltip-type {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.tooltip-place {
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+
+.tooltip-time {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* ============================================
+   Animations
+   ============================================ */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes alarmPulse {
+  0%, 100% { fill: #7f1d1d; }
+  50% { fill: #991b1b; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

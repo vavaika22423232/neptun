@@ -1,0 +1,49 @@
+services:
+  # Next.js Web Application
+  - type: web
+    name: neptun-nextjs
+    runtime: node
+    plan: pro
+    region: frankfurt
+    buildCommand: npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: ALARM_API_KEY
+        sync: false
+      - key: AUTH_SECRET
+        sync: false
+      - key: DATA_DIR
+        value: /data
+    disk:
+      name: neptun-data
+      mountPath: /data
+      sizeGB: 1
+
+  # Python Worker (Telegram + Parser)
+  - type: worker
+    name: neptun-worker
+    runtime: python
+    plan: starter
+    region: frankfurt
+    buildCommand: pip install -r worker/requirements.txt
+    startCommand: python worker/worker.py
+    envVars:
+      - key: TELEGRAM_API_ID
+        sync: false
+      - key: TELEGRAM_API_HASH
+        sync: false
+      - key: TELEGRAM_SESSION
+        sync: false
+      - key: OPENCAGE_API_KEY
+        sync: false
+      - key: DATA_DIR
+        value: /data
+    disk:
+      name: neptun-data
+      mountPath: /data
+      sizeGB: 1

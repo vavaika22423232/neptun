@@ -1,35 +1,29 @@
 # ===========================================
-# Render.com Configuration - Modular Architecture
+# Render.com Configuration - Next.js + Python Worker
 # ===========================================
-# 
-# Цей файл для нової модульної архітектури.
-# Щоб перейти на нову архітектуру:
-# 1. Перейменуйте render.yaml -> render.old.yaml
-# 2. Перейменуйте render.new.yaml -> render.yaml
-# 3. git push
 #
-# Або для тестування створіть новий сервіс на Render
+# Нова архітектура: Next.js (frontend + API) + Python worker (Telegram)
+# Flask видалено повністю.
 
 services:
+  # ===== Next.js Web Application =====
   - type: web
     name: neptun-alerts
-    runtime: python
+    runtime: node
     plan: pro
-    region: frankfurt  # Близько до України
+    region: frankfurt
+    rootDir: nextjs-app
     
     # Build
-    buildCommand: |
-      pip install --upgrade pip
-      pip install --no-cache-dir -r requirements.txt
+    buildCommand: npm install && npm run build
     
-    # Start command - 2 gevent workers to use both CPU cores on Pro plan
-    # Each worker handles concurrency via greenlets; SSE connections split between workers
-    startCommand: gunicorn app_legacy:app --workers 2 --worker-class gevent --worker-connections 10000 --timeout 120 --graceful-timeout 30 --keep-alive 5 --max-requests 50000 --max-requests-jitter 5000 --preload --bind 0.0.0.0:$PORT
+    # Start - use standalone server
+    startCommand: node .next/standalone/server.js
     
     # Health check
-    healthCheckPath: /health
+    healthCheckPath: /api/health
     
-    # Persistent disk для сесій та кешу
+    # Persistent disk for shared data with worker
     disk:
       name: data
       mountPath: /data
@@ -37,57 +31,69 @@ services:
     
     # Environment variables
     envVars:
-      # Telegram
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "10000"
+      - key: HOSTNAME
+        value: "0.0.0.0"
+      
+      # Alarms API
+      - key: ALARM_API_KEY
+        sync: false
+      - key: ALARMS_API_KEY
+        sync: false
+      
+      # Admin
+      - key: AUTH_SECRET
+        sync: false
+      
+      # Firebase (optional)
+      - key: FIREBASE_CREDENTIALS
+        sync: false
+      
+      # Data directory (shared with worker via disk)
+      - key: DATA_DIR
+        value: /data
+
+    autoDeploy: true
+
+  # ===== Python Worker (Telegram + Parser) =====
+  - type: worker
+    name: neptun-worker
+    runtime: python
+    plan: starter
+    region: frankfurt
+    rootDir: nextjs-app/worker
+    
+    # Build
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    
+    # Start
+    startCommand: python worker.py
+    
+    # Persistent disk (same as web - shared data)
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
+    
+    envVars:
       - key: TELEGRAM_API_ID
         sync: false
       - key: TELEGRAM_API_HASH
         sync: false
+      - key: TELEGRAM_SESSION
+        sync: false
       - key: TELEGRAM_CHANNELS
         value: mapstransler
-      
-      # Security
-      - key: ADMIN_SECRET
-        generateValue: true
-      - key: SECRET_KEY
-        generateValue: true
-      
-      # Geocoding (optional)
       - key: OPENCAGE_API_KEY
         sync: false
-      
-      # Alarms API
-      - key: ALARMS_API_KEY
-        sync: false
-      
-      # Firebase (FCM push notifications)
-      - key: FIREBASE_CREDENTIALS
-        sync: false
-      
-      # Storage paths
-      - key: PERSISTENT_DATA_DIR
+      - key: DATA_DIR
         value: /data
       - key: MESSAGES_FILE
         value: /data/messages.json
-      - key: CACHE_FILE
-        value: /data/geocode_cache.json
-      
-      # Performance
-      - key: FLASK_ENV
-        value: production
-      - key: MAX_TRACKS
-        value: "10000"
-      - key: TRACK_TTL_HOURS
-        value: "24"
-      - key: MEMORY_OPTIMIZED
-        value: "true"
-      
-      # Python optimization
       - key: PYTHONUNBUFFERED
         value: "1"
-      - key: PYTHONDONTWRITEBYTECODE
-        value: "1"
-      - key: PYTHONOPTIMIZE
-        value: "2"
 
-    # Auto-deploy on push
     autoDeploy: true

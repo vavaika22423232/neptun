@@ -1,0 +1,5 @@
+# Python worker dependencies (Telegram fetcher + parser)
+telethon>=1.35.0
+requests>=2.32.0
+beautifulsoup4>=4.12.0
+geopy>=2.4.0
