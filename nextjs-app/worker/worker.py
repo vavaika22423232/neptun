@@ -217,6 +217,16 @@ async def process_new_message(event):
             resolve_status = 'oblast_fallback'
             log.info(f"Using oblast center fallback for {region}: {coords}")
 
+    # Map parser event_type to legacy icon names for compatibility
+    # with already-published mobile app versions
+    LEGACY_TYPE_MAP = {
+        'uav': 'shahed',
+        'missile': 'raketa',
+        'explosion': 'vibuh',
+        'launch': 'pusk',
+    }
+    legacy_type = LEGACY_TYPE_MAP.get(entities.event_type, entities.event_type)
+
     log.info(
         f"MATCH: {entities.event_type} @ {location} ({region}) "
         f"conf={confidence:.2f} status={resolve_status}"
@@ -224,8 +234,8 @@ async def process_new_message(event):
 
     data = {
         'id': threat_id,
-        'type': entities.event_type,
-        'threat_type': entities.event_type,  # frontend compatibility
+        'type': legacy_type,
+        'threat_type': legacy_type,  # frontend + mobile app compatibility
         'location': location,
         'place': location,                   # frontend compatibility
         'region': region,
@@ -247,7 +257,7 @@ async def process_new_message(event):
 
     # 4. Save to Redis
     # TTL based on type and confidence
-    if entities.event_type in ['launch', 'explosion']:
+    if entities.event_type in ['launch', 'explosion', 'pusk', 'vibuh']:
         ttl = 1800  # 30min
     else:
         ttl = 7200  # 2h
