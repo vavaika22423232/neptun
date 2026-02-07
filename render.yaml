@@ -14,8 +14,8 @@ services:
     region: frankfurt
     rootDir: nextjs-app
     
-    # Build
-    buildCommand: npm install && npm run build
+    # Build — must copy public + static into standalone dir (Next.js requirement)
+    buildCommand: npm install && npm run build && cp -r public .next/standalone/public && cp -r .next/static .next/standalone/.next/static
     
     # Start - use standalone server
     startCommand: node .next/standalone/server.js
