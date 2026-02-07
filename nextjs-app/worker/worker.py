@@ -72,7 +72,10 @@ async def main():
     # ── Pre-flight checks ─────────────────────────────────────────────────
     log.info(f"  INGEST_URL  = {'SET (' + INGEST_URL + ')' if INGEST_URL else 'NOT SET'}")
     log.info(f"  AUTH_SECRET = {'SET (len={})'.format(len(INGEST_SECRET)) if INGEST_SECRET else 'NOT SET'}")
-    log.info(f"  Redis       = {'connected' if db.is_connected() else 'DISCONNECTED'}")
+    log.info(f"  DB type     = {type(db).__name__}")
+    log.info(f"  API_ID      = {'SET' if API_ID else 'NOT SET'}")
+    log.info(f"  API_HASH    = {'SET (len={})'.format(len(API_HASH)) if API_HASH else 'NOT SET'}")
+    log.info(f"  Channels    = {CHANNELS}")
 
     if not INGEST_URL or not INGEST_SECRET:
         log.warning(
@@ -80,9 +83,13 @@ async def main():
             "Set INGEST_URL and AUTH_SECRET in Render environment variables. ***"
         )
 
-    # Ensure Redis connection
+    if not API_ID or not API_HASH:
+        log.error("TELEGRAM_API_ID and TELEGRAM_API_HASH must be set! Exiting.")
+        return
+
+    # Ensure DB connection (in-memory DB is always "connected")
     if not db.is_connected():
-        log.error("Redis not connected! Exiting.")
+        log.error("DB not connected! Exiting.")
         return
 
     # Start Telegram Client

@@ -59,9 +59,14 @@ function loadMessagesFromFile(): Marker[] {
             // Must have coordinates
             if (!m.lat || !m.lng) return false;
 
+            // Skip TTL check for manual markers
+            if (m.manual) return true;
+
             // Filter by TTL/monitorPeriod
             if (ttlEnabled && cutoffMs > 0) {
               const msgTime = parseMessageTime(m);
+              // msgTime === -1 means unparseable → treat as expired
+              if (msgTime < 0) return false;
               if (msgTime > 0 && msgTime < cutoffMs) return false;
             }
 
@@ -126,11 +131,22 @@ function pruneOldMessagesOnDisk(): void {
     const messages: Record<string, unknown>[] = Array.isArray(data) ? data : [];
     if (messages.length === 0) return;
 
-    const cutoff = new Date(now - RETENTION_HOURS * 60 * 60 * 1000).toISOString();
+    // Use admin monitorPeriod for aggressive cleanup, but floor at 1h to avoid wiping
+    // recent data that the user might want. Also apply the RETENTION_HOURS as absolute max.
+    let monitorMinutes = 30;
+    try {
+      const settings = loadSettings();
+      monitorMinutes = settings.monitorPeriod || 30;
+    } catch { /* defaults */ }
+    const aggressiveCutoff = new Date(now - Math.max(monitorMinutes * 2, 60) * 60 * 1000).toISOString();
+    const absoluteCutoff = new Date(now - RETENTION_HOURS * 60 * 60 * 1000).toISOString();
+    // Use whichever is more recent (tighter)
+    const cutoff = aggressiveCutoff > absoluteCutoff ? aggressiveCutoff : absoluteCutoff;
     let result = messages.filter((m) => {
       if (m.manual) return true;
       const ts = (m.ts || m.timestamp || m.date || '') as string;
-      if (ts && ts < cutoff) return false;
+      if (!ts) return false; // No timestamp = remove from disk
+      if (ts < cutoff) return false;
       return true;
     });
 
@@ -162,7 +178,9 @@ function parseMessageTime(m: Record<string, unknown>): number {
   // Try ISO string (ts field from worker)
   const ts = (m.ts || m.timestamp || m.date || '') as string;
   if (ts) {
-    const parsed = new Date(ts).getTime();
+    // Handle both "2026-02-07T10:00:00" and "2026-02-07 10:00:00" formats
+    const normalized = ts.includes('T') ? ts : ts.replace(' ', 'T');
+    const parsed = new Date(normalized).getTime();
     if (!isNaN(parsed) && parsed > 0) return parsed;
   }
   // Try unix timestamp
@@ -170,7 +188,9 @@ function parseMessageTime(m: Record<string, unknown>): number {
   if (typeof unix === 'number' && unix > 1000000000) {
     return unix > 10000000000 ? unix : unix * 1000; // seconds vs ms
   }
-  return 0; // unknown = don't filter
+  // Unknown timestamp — treat as expired (filter out) rather than immortal.
+  // Manual markers are handled separately before this function is called.
+  return -1;
 }
 
 export async function GET(request: Request) {
