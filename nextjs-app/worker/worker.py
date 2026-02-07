@@ -21,18 +21,47 @@ log = logging.getLogger(__name__)
 # Initialize Client
 client = TelegramClient('anon_worker', API_ID, API_HASH)
 
+# ── Recent events buffer (for proximity scoring) ─────────────────────────────
+
+_recent_events: list[dict] = []
+MAX_RECENT = 50
+
+
+def _add_recent(data: dict):
+    _recent_events.append(data)
+    if len(_recent_events) > MAX_RECENT:
+        _recent_events.pop(0)
+
+
+# ── Learning loop ────────────────────────────────────────────────────────────
+
+async def _learning_loop():
+    """Run feedback learning every 6 hours."""
+    while True:
+        await asyncio.sleep(6 * 3600)  # 6 hours
+        try:
+            from geo.feedback import learn_from_corrections
+            stats = learn_from_corrections()
+            log.info(f"Learning completed: {stats}")
+        except Exception as e:
+            log.error(f"Learning loop error: {e}", exc_info=True)
+
+
 async def main():
     """Main worker loop."""
-    log.info(f"🚀 Worker starting... Channels: {len(CHANNELS)}")
+    log.info(f"Worker starting... Channels: {len(CHANNELS)}")
     
     # Ensure Redis connection
     if not db.is_connected():
-        log.error("❌ Redis not connected! Exiting.")
+        log.error("Redis not connected! Exiting.")
         return
 
     # Start Telegram Client
     await client.start()
-    log.info("✅ Telegram Client Connected")
+    log.info("Telegram Client Connected")
+
+    # Start learning loop in background
+    asyncio.create_task(_learning_loop())
 
     # Register event handlers
     @client.on(events.NewMessage(chats=CHANNELS))
@@ -45,17 +74,19 @@ async def main():
     # Keep running
     await client.run_until_disconnected()
 
-from core.parser_v2 import parse_message
+
+from core.parser_v2 import extract_entities
 import uuid
 import json
+
 
 async def process_new_message(event):
     """
     Core processing pipeline:
     1. Deduplication
-    2. Normalization
-    3. Parsing (Deterministic)
-    4. State Update
+    2. Entity extraction (parser_v2)
+    3. Geo resolution (geo/resolver)
+    4. State update (Redis)
     """
     msg_text = event.message.message
     if not msg_text:
@@ -64,41 +95,98 @@ async def process_new_message(event):
     channel_id = event.chat_id
     msg_id = event.message.id
     
-    # 1. Deduplication (Skip if already processed)
+    # 1. Deduplication
     if db.is_message_processed(channel_id, msg_id):
         return
     db.mark_message_processed(channel_id, msg_id)
 
-    # 2. Parse
-    threat_event = parse_message(msg_text)
-    
-    # If type is unknown or no location found, we might skip or log
-    # For now, we only save if we have a valid event type
-    if threat_event.type == 'unknown':
+    # 2. Extract entities (no geocoding yet)
+    entities = extract_entities(msg_text)
+
+    if entities.is_negation or entities.event_type == 'unknown':
         return
 
-    log.info(f"🚨 MATCH: {threat_event.type} @ {threat_event.location} ({threat_event.region})")
-    
-    # 3. Enrich & Save
+    # 3. Resolve location via GeoResolver pipeline
+    resolved = None
+    try:
+        from geo.resolver import resolve
+        resolved = resolve(
+            entities.to_entities_dict(),
+            channel=str(channel_id),
+            prev_events=_recent_events[-10:],
+        )
+    except ImportError:
+        log.warning("geo.resolver not available")
+    except Exception as e:
+        log.error(f"Resolver error: {e}", exc_info=True)
+
+    # Build output data
     threat_id = f"evt_{int(datetime.now().timestamp())}_{str(uuid.uuid4())[:4]}"
-    data = threat_event.to_dict()
-    data['id'] = threat_id
-    data['channel_id'] = channel_id
-    data['msg_id'] = msg_id
-    data['ts'] = datetime.now().isoformat()
-    
-    # Save to Redis
-    # Calculate TTL based on type (Launch = 30m, UAV = 2h)
-    ttl = 1800 if threat_event.type in ['launch', 'explosion'] else 7200
+
+    if resolved and resolved.status != 'rejected':
+        location = resolved.place_name
+        region = resolved.oblast
+        coords = (resolved.lat, resolved.lng) if resolved.lat != 0 else None
+        confidence = resolved.confidence
+        resolve_status = resolved.status
+        candidates_json = [c.to_dict() for c in resolved.chosen_from[:3]]
+    else:
+        location = entities.place_name or 'Unknown'
+        region = entities.oblast
+        coords = None
+        confidence = 0.0
+        resolve_status = 'rejected' if resolved else 'no_resolver'
+        candidates_json = []
+
+    log.info(
+        f"MATCH: {entities.event_type} @ {location} ({region}) "
+        f"conf={confidence:.2f} status={resolve_status}"
+    )
+
+    data = {
+        'id': threat_id,
+        'type': entities.event_type,
+        'location': location,
+        'region': region,
+        'text': msg_text,
+        'lat': coords[0] if coords else None,
+        'lng': coords[1] if coords else None,
+        'channel_id': channel_id,
+        'msg_id': msg_id,
+        'ts': datetime.now().isoformat(),
+        'confidence': round(confidence, 3),
+        'resolve_status': resolve_status,
+        'candidates': candidates_json,
+        'resolver_version': 'v2',
+    }
+
+    # Add to recent events buffer
+    _add_recent(data)
+
+    # 4. Save to Redis
+    # TTL based on type and confidence
+    if entities.event_type in ['launch', 'explosion']:
+        ttl = 1800  # 30min
+    else:
+        ttl = 7200  # 2h
+
+    # Extend TTL for high-confidence results
+    if confidence >= 0.8:
+        ttl = int(ttl * 1.5)
+
+    # Confidence-based degradation: don't show very low confidence on map
+    if confidence < 0.3 and resolve_status in ('low_confidence', 'rejected'):
+        data['hidden'] = True  # frontend won't show it, but it's logged
+
     db.save_threat(threat_id, data, ttl=ttl)
-    
-    # Publish Real-time Update
     db.publish_update('new_threat', data)
 
+
 def shutdown_handler(sig, frame):
-    log.info("🛑 Shutting down worker...")
+    log.info("Shutting down worker...")
     asyncio.create_task(client.disconnect())
     sys.exit(0)
+
 
 if __name__ == '__main__':
     signal.signal(signal.SIGINT, shutdown_handler)

@@ -112,5 +112,8 @@ export const GA_ID = 'G-MW867VP8WK';
 // Google Play link
 export const GOOGLE_PLAY_URL = 'https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app';
 
+// App Store link
+export const APP_STORE_URL = 'https://apps.apple.com/ua/app/%D0%BA%D0%B0%D1%80%D1%82%D0%B0-%D1%82%D1%80%D0%B8%D0%B2%D0%BE%D0%B3-dron-alerts/id6758108122?l=uk';
+
 // Telegram links
 export const TELEGRAM_CHANNEL_URL = 'https://t.me/+aBR79kExNQM1ZjZi';

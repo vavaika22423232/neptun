@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { TELEGRAM_CHANNEL_URL, GOOGLE_PLAY_URL } from '@/lib/constants';
+import { TELEGRAM_CHANNEL_URL, GOOGLE_PLAY_URL, APP_STORE_URL } from '@/lib/constants';
 
 interface BottomBarProps {
   onDonate: () => void;
@@ -31,15 +31,28 @@ export default function BottomBar({ onDonate, onFaq }: BottomBarProps) {
           <span className="text-[9px] sm:text-[10px]">Telegram</span>
         </a>
 
-        {/* App */}
+        {/* Android */}
         <a
           href={GOOGLE_PLAY_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex flex-col items-center gap-0.5 px-3 sm:px-4 py-1.5 rounded-2xl text-[#c2c6d0] hover:bg-[#69f0ae]/8 active:bg-[#69f0ae]/12 hover:text-[#69f0ae] transition-all no-underline min-h-[48px] justify-center"
+          className="flex flex-col items-center gap-0.5 px-2.5 sm:px-3 py-1.5 rounded-2xl text-[#c2c6d0] hover:bg-[#69f0ae]/8 active:bg-[#69f0ae]/12 hover:text-[#69f0ae] transition-all no-underline min-h-[48px] justify-center"
+          aria-label="Завантажити з Google Play"
         >
-          <span className="material-icons text-[20px]">get_app</span>
-          <span className="text-[9px] sm:text-[10px]">Додаток</span>
+          <span className="material-icons text-[20px]">android</span>
+          <span className="text-[9px] sm:text-[10px]">Android</span>
+        </a>
+
+        {/* iOS */}
+        <a
+          href={APP_STORE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex flex-col items-center gap-0.5 px-2.5 sm:px-3 py-1.5 rounded-2xl text-[#c2c6d0] hover:bg-[#80d8ff]/8 active:bg-[#80d8ff]/12 hover:text-white transition-all no-underline min-h-[48px] justify-center"
+          aria-label="Завантажити з App Store"
+        >
+          <span className="material-icons text-[20px]">phone_iphone</span>
+          <span className="text-[9px] sm:text-[10px]">iOS</span>
         </a>
 
         {/* FAQ */}
@@ -136,13 +149,23 @@ export default function BottomBar({ onDonate, onFaq }: BottomBarProps) {
               <li>Натисніть на іконку для детальної інформації</li>
             </ol>
 
-            <h3 className="text-[#e2e2e6] text-[13px] sm:text-sm font-medium mt-3 mb-1.5">Мобільний додаток карти тривог</h3>
-            <p className="mb-2 text-[#8c9099]">Завантажте безкоштовний <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" className="text-[#69f0ae] hover:underline" rel="noopener">додаток NEPTUN з Google Play</a> та отримуйте:</p>
+            <h3 className="text-[#e2e2e6] text-[13px] sm:text-sm font-medium mt-3 mb-1.5">Мобільні додатки карти тривог</h3>
+            <p className="mb-2 text-[#8c9099]">Завантажте безкоштовний додаток NEPTUN:</p>
+            <div className="flex flex-wrap gap-2 mb-2">
+              <a href={GOOGLE_PLAY_URL} className="inline-flex items-center gap-1.5 bg-[#69f0ae]/10 text-[#69f0ae] text-[12px] px-3 py-1.5 rounded-full hover:bg-[#69f0ae]/20 transition-colors no-underline" rel="noopener" target="_blank">
+                <span className="material-icons text-[14px]">android</span>
+                Google Play
+              </a>
+              <a href={APP_STORE_URL} className="inline-flex items-center gap-1.5 bg-[#80d8ff]/10 text-[#80d8ff] text-[12px] px-3 py-1.5 rounded-full hover:bg-[#80d8ff]/20 transition-colors no-underline" rel="noopener" target="_blank">
+                <span className="material-icons text-[14px]">phone_iphone</span>
+                App Store
+              </a>
+            </div>
             <ul className="list-disc pl-5 space-y-1 mb-3 text-[#8c9099]">
               <li>Push-сповіщення про тривоги у вашому регіоні</li>
               <li>Голосове оповіщення про загрози</li>
-              <li>Віджет на робочий стіл</li>
-              <li>Оповіщення для рідних (SOS функція)</li>
+              <li>Віджет на головний екран</li>
+              <li>Працює у фоновому режимі</li>
             </ul>
 
             <h3 className="text-[#e2e2e6] text-[13px] sm:text-sm font-medium mt-3 mb-1.5">Часті питання про карту тривог</h3>

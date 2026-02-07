@@ -131,7 +131,7 @@ export default function HomePage() {
           <li>Карта тривог в реальному часі — миттєве оновлення даних</li>
           <li>Мапа тривог з радаром шахедів та ракет</li>
           <li>Push-сповіщення про тривоги у вашому регіоні</li>
-          <li>Мобільний додаток карти тривог для Android</li>
+          <li>Мобільний додаток карти тривог для Android та iOS</li>
           <li>Історія тривог та аналітика по регіонах</li>
         </ul>
 
@@ -168,7 +168,7 @@ export default function HomePage() {
         </nav>
 
         <h3>Додаток карти тривог NEPTUN</h3>
-        <p>Завантажте мобільний додаток карти тривог NEPTUN з Google Play. Отримуйте миттєві push-сповіщення про повітряні тривоги у вашому регіоні.</p>
+        <p>Завантажте мобільний додаток карти тривог NEPTUN з <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app">Google Play</a> або <a href="https://apps.apple.com/ua/app/%D0%BA%D0%B0%D1%80%D1%82%D0%B0-%D1%82%D1%80%D0%B8%D0%B2%D0%BE%D0%B3-dron-alerts/id6758108122?l=uk">App Store</a>. Отримуйте миттєві push-сповіщення про повітряні тривоги у вашому регіоні.</p>
 
         <h3>Як працює карта тривог?</h3>
         <p>Карта тривог NEPTUN збирає інформацію з офіційних джерел та відображає її на інтерактивній мапі. Ви можете бачити активні повітряні тривоги, напрямок руху шахедів та ракет, а також історію попередніх атак.</p>
@@ -196,7 +196,7 @@ export default function HomePage() {
           <ul style={{ margin: '12px 0', paddingLeft: 24 }}>
             <li style={{ margin: '8px 0' }}>Оновлення кожні 5 секунд</li>
             <li style={{ margin: '8px 0' }}>Дані з офіційних джерел (Telegram канали ОВА)</li>
-            <li style={{ margin: '8px 0' }}>Безкоштовний Android додаток з push-сповіщеннями</li>
+            <li style={{ margin: '8px 0' }}>Безкоштовний додаток для Android та iOS з push-сповіщеннями</li>
             <li style={{ margin: '8px 0' }}>Траєкторія польоту шахедів та ракет</li>
           </ul>
 
@@ -204,7 +204,11 @@ export default function HomePage() {
           <p>Карта тривог охоплює всі області: Київська, Харківська, Одеська, Дніпропетровська, Львівська, Запорізька, Миколаївська, Полтавська, Вінницька, Житомирська, Черкаська, Сумська, Чернігівська, Хмельницька, Волинська, Рівненська, Тернопільська, Івано-Франківська, Закарпатська, Чернівецька, Кіровоградська, Херсонська область та місто Київ.</p>
 
           <h2 style={{ color: '#fff', fontSize: 28, marginBottom: 16 }}>Завантажити додаток</h2>
-          <p>Скачайте безкоштовний додаток <a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" style={{ color: '#4ade80' }}>NEPTUN з Google Play</a> та отримуйте миттєві сповіщення про тривоги у вашому регіоні.</p>
+          <p>Скачайте безкоштовний додаток NEPTUN та отримуйте миттєві сповіщення про тривоги у вашому регіоні:</p>
+          <ul style={{ margin: '12px 0', paddingLeft: 24 }}>
+            <li style={{ margin: '8px 0' }}><a href="https://play.google.com/store/apps/details?id=com.neptunalarm.neptun_alarm_app" style={{ color: '#4ade80' }}>Завантажити з Google Play (Android)</a></li>
+            <li style={{ margin: '8px 0' }}><a href="https://apps.apple.com/ua/app/%D0%BA%D0%B0%D1%80%D1%82%D0%B0-%D1%82%D1%80%D0%B8%D0%B2%D0%BE%D0%B3-dron-alerts/id6758108122?l=uk" style={{ color: '#4ade80' }}>Завантажити з App Store (iPhone/iPad)</a></li>
+          </ul>
 
           <p><em>Для перегляду інтерактивної карти тривог увімкніть JavaScript у вашому браузері.</em></p>
         </div>
