@@ -95,16 +95,20 @@ export const MAP_BOUNDS = {
 export const THREAT_ICONS: Record<string, string> = {
   shahed: 'shahed3.webp',
   drone: 'shahed3.webp',
+  uav: 'shahed3.webp',          // parser alias
   raketa: 'icon_balistic.svg',
+  missile: 'icon_balistic.svg', // parser alias
   avia: 'avia.png',
   artillery: 'artillery.png',
   obstril: 'icon_obstril.svg',
   fpv: 'fpv.png',
   pusk: 'pusk.png',
+  launch: 'pusk.png',           // parser alias
   kab: 'icon_missile.svg',
   rszv: 'icon_missile.svg',
   rozved: 'rozvedka2.png',
   vibuh: 'icon_vibuh.svg',
+  explosion: 'icon_vibuh.svg',  // parser alias
   alarm: 'trivoga.png',
   alarm_cancel: 'vidboi.png',
   default: 'shahed3.webp',
@@ -114,16 +118,20 @@ export const THREAT_ICONS: Record<string, string> = {
 export const THREAT_NAMES: Record<string, string> = {
   shahed: '🛩️ Шахеди/БПЛА',
   drone: '🛩️ Шахеди/БПЛА',
+  uav: '🛩️ Шахеди/БПЛА',
   raketa: '🚀 Ракети',
+  missile: '🚀 Ракети',
   avia: '✈️ Авіація',
   artillery: '💥 Артилерія',
   obstril: '💥 Обстріл',
   fpv: '🎯 FPV дрони',
   pusk: '🚀 Пуски',
+  launch: '🚀 Пуски',
   kab: '💣 КАБи',
   rszv: '💣 РСЗВ',
   rozved: '🔍 Розвідники',
   vibuh: '💥 Вибухи',
+  explosion: '💥 Вибухи',
   alarm: '🚨 Тривога',
   alarm_cancel: '✅ Відбій',
   default: 'Загроза',
