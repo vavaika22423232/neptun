@@ -23,7 +23,7 @@ services:
     # Health check
     healthCheckPath: /api/health
     
-    # Persistent disk for shared data with worker
+    # Persistent disk for messages.json (worker pushes data here via /api/ingest)
     disk:
       name: data
       mountPath: /data
@@ -52,13 +52,15 @@ services:
       - key: FIREBASE_CREDENTIALS
         sync: false
       
-      # Data directory (shared with worker via disk)
+      # Data directory (local disk, worker sends data via HTTP)
       - key: DATA_DIR
         value: /data
 
     autoDeploy: true
 
   # ===== Python Worker (Telegram + Parser) =====
+  # NOTE: Worker has NO disk — it POSTs markers to the web service via /api/ingest.
+  # Render disks are per-service and cannot be shared between web and worker.
   - type: worker
     name: neptun-worker
     runtime: python
@@ -72,12 +74,6 @@ services:
     # Start
     startCommand: python worker.py
     
-    # Persistent disk (same as web - shared data)
-    disk:
-      name: data
-      mountPath: /data
-      sizeGB: 1
-    
     envVars:
       - key: TELEGRAM_API_ID
         sync: false
@@ -89,10 +85,12 @@ services:
         value: mapstransler
       - key: OPENCAGE_API_KEY
         sync: false
-      - key: DATA_DIR
-        value: /data
-      - key: MESSAGES_FILE
-        value: /data/messages.json
+      # URL of the web service's ingest endpoint
+      - key: INGEST_URL
+        value: https://neptun-alerts.onrender.com/api/ingest
+      # Shared secret (must match AUTH_SECRET on the web service)
+      - key: AUTH_SECRET
+        sync: false
       - key: PYTHONUNBUFFERED
         value: "1"
 

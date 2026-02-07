@@ -5,12 +5,12 @@ import signal
 import sys
 from datetime import datetime, timedelta
 
+import requests as http_requests
 from telethon import TelegramClient, events
 
 # Configuration
 from constants import API_ID, API_HASH, CHANNELS
 from db import db
-from core.message_store import MessageStore
 
 # Logging setup
 logging.basicConfig(
@@ -22,53 +22,18 @@ log = logging.getLogger(__name__)
 # Initialize Client
 client = TelegramClient('anon_worker', API_ID, API_HASH)
 
-# ── Messages file storage (shared with Next.js frontend via /data) ────────────
+# ── Ingest: push markers to Next.js web service ──────────────────────────────
+# On Render, the worker and web service have SEPARATE disks.
+# The worker cannot write to the web service's /data/messages.json directly.
+# Instead, it POSTs marker data to /api/ingest on the web service.
 
-MESSAGES_FILE = os.getenv('MESSAGES_FILE', '/data/messages.json')
-# Fallback: if /data doesn't exist (local dev), use local file
-if not os.path.isdir(os.path.dirname(MESSAGES_FILE)):
-    MESSAGES_FILE = 'messages.json'
+INGEST_URL = os.getenv('INGEST_URL', '')          # e.g. https://neptun-alerts.onrender.com/api/ingest
+INGEST_SECRET = os.getenv('AUTH_SECRET', '')       # shared secret with web service
 
-MAX_MESSAGES = 500
-RETENTION_HOURS = 3
-
-
-def _prune_old_messages(messages: list[dict]) -> list[dict]:
-    """Remove messages older than RETENTION_HOURS, keep manual markers, cap at MAX_MESSAGES."""
-    cutoff = datetime.now() - timedelta(hours=RETENTION_HOURS)
-    cutoff_iso = cutoff.isoformat()
-
-    result = []
-    for m in messages:
-        # Always keep manual markers (added by admin)
-        if m.get('manual'):
-            result.append(m)
-            continue
-
-        # Check timestamp
-        ts = m.get('ts') or m.get('timestamp') or m.get('date') or ''
-        if ts and ts < cutoff_iso:
-            continue  # too old, drop
-
-        result.append(m)
-
-    # Cap at MAX_MESSAGES (keep newest)
-    if len(result) > MAX_MESSAGES:
-        # Sort by ts descending, keep newest
-        result.sort(key=lambda x: x.get('ts') or x.get('timestamp') or x.get('date') or '', reverse=True)
-        result = result[:MAX_MESSAGES]
-
-    return result
-
-
-message_store = MessageStore(
-    path=MESSAGES_FILE,
-    prune_fn=_prune_old_messages,
-    preserve_manual=True,
-    backup_count=2,
-)
-
-log.info(f"MessageStore initialized: {MESSAGES_FILE}")
+if INGEST_URL:
+    log.info(f"Ingest endpoint configured: {INGEST_URL}")
+else:
+    log.warning("INGEST_URL not set — markers will NOT be sent to the web frontend")
 
 
 # ── Recent events buffer (for proximity scoring) ─────────────────────────────
@@ -127,7 +92,6 @@ async def main():
 
 from core.parser_v2 import extract_entities
 import uuid
-import json
 
 
 async def process_new_message(event):
@@ -136,7 +100,7 @@ async def process_new_message(event):
     1. Deduplication
     2. Entity extraction (parser_v2)
     3. Geo resolution (geo/resolver)
-    4. State update (Redis + messages.json)
+    4. State update (Redis + POST to web service)
     """
     msg_text = event.message.message
     if not msg_text:
@@ -235,16 +199,24 @@ async def process_new_message(event):
     db.save_threat(threat_id, data, ttl=ttl)
     db.publish_update('new_threat', data)
 
-    # 5. Save to messages.json (for Next.js frontend)
-    # Only save markers that have coordinates and are not hidden
-    if coords and not data.get('hidden'):
+    # 5. Push marker to Next.js web service (for frontend)
+    # Worker and web service have separate disks on Render,
+    # so we POST data to /api/ingest instead of writing to a local file.
+    if coords and not data.get('hidden') and INGEST_URL:
         try:
-            current = message_store.load()
-            current.append(data)
-            saved = message_store.save(current)
-            log.info(f"Saved to messages.json: {threat_id} ({len(saved)} total)")
+            resp = http_requests.post(
+                INGEST_URL,
+                json={'marker': data},
+                headers={'X-Auth-Secret': INGEST_SECRET},
+                timeout=10,
+            )
+            if resp.ok:
+                body = resp.json()
+                log.info(f"Ingested to web: {threat_id} ({body.get('total', '?')} total)")
+            else:
+                log.error(f"Ingest failed [{resp.status_code}]: {resp.text[:200]}")
         except Exception as e:
-            log.error(f"Failed to save to messages.json: {e}", exc_info=True)
+            log.error(f"Failed to POST to ingest: {e}", exc_info=True)
 
 
 def shutdown_handler(sig, frame):
