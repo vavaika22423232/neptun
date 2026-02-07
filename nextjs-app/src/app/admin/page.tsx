@@ -8,6 +8,18 @@ const MapEditor = dynamic(() => import('@/components/admin/MapEditor'), { ssr: f
 
 type Tab = 'overview' | 'markers' | 'messages' | 'users' | 'settings' | 'corrections';
 
+function formatKyivTime(iso: string): string {
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleString('uk-UA', {
+      timeZone: 'Europe/Kyiv',
+      hour: '2-digit', minute: '2-digit',
+      day: '2-digit', month: '2-digit', year: 'numeric',
+    });
+  } catch { return iso; }
+}
+
 interface Stats {
   totalMessages: number;
   markersCount: number;
@@ -355,7 +367,7 @@ export default function AdminPage() {
                     <tbody>
                       {markers.slice(0, 50).map(m => (
                         <tr key={m.id} className="border-b border-white/3 hover:bg-white/3 transition-colors">
-                          <td className="px-4 py-2.5 text-xs text-white/40 whitespace-nowrap">{m.date}</td>
+                          <td className="px-4 py-2.5 text-xs text-white/40 whitespace-nowrap">{formatKyivTime(m.date)}</td>
                           <td className="px-4 py-2.5">
                             <span className={`text-xs px-2 py-0.5 rounded-lg ${m.threat_type === 'shahed' ? 'bg-[#80d8ff]/10 text-[#80d8ff]' : m.threat_type === 'raketa' ? 'bg-red-400/10 text-red-400' : 'bg-[#ffab40]/10 text-[#ffab40]'}`}>
                               {m.threat_type}{m.manual ? ' (ручна)' : ''}
@@ -451,7 +463,7 @@ export default function AdminPage() {
                       )}
                       {rawMsgs.map((m, i) => (
                         <tr key={i} className="border-b border-white/3 hover:bg-white/3 transition-colors">
-                          <td className="px-4 py-2.5 text-xs text-white/40 whitespace-nowrap">{m.date}</td>
+                          <td className="px-4 py-2.5 text-xs text-white/40 whitespace-nowrap">{formatKyivTime(m.date)}</td>
                           <td className="px-4 py-2.5 text-xs text-[#80d8ff]/60">{m.channel || m.source}</td>
                           <td className="px-4 py-2.5 text-white/60 text-xs">{(m.text || '').slice(0, 120)}{(m.text || '').length > 120 ? '...' : ''}</td>
                         </tr>

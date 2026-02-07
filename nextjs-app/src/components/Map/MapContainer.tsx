@@ -473,6 +473,24 @@ function updateSvgOpacity(map: L.Map) {
   });
 }
 
+/** Format ISO timestamp to Kyiv time (HH:MM DD.MM.YYYY) */
+function formatKyivTime(isoStr: string): string {
+  try {
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return isoStr;
+    return d.toLocaleString('uk-UA', {
+      timeZone: 'Europe/Kyiv',
+      hour: '2-digit',
+      minute: '2-digit',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  } catch {
+    return isoStr;
+  }
+}
+
 function showTooltip(event: MouseEvent, marker: Marker, threatType: string) {
   hideTooltip();
   const tooltip = document.createElement('div');
@@ -483,7 +501,7 @@ function showTooltip(event: MouseEvent, marker: Marker, threatType: string) {
   tooltip.innerHTML = `
     <div class="tooltip-type">${typeName}</div>
     <div class="tooltip-place">${marker.place || 'Невідомо'}</div>
-    ${marker.date ? `<div class="tooltip-time">${marker.date}</div>` : ''}
+    ${marker.date ? `<div class="tooltip-time">${formatKyivTime(marker.date)}</div>` : ''}
   `;
 
   document.body.appendChild(tooltip);
@@ -511,7 +529,7 @@ function buildAdminPopup(marker: Marker, threatType: string): string {
     <div style="font-family:-apple-system,sans-serif;color:#fff;min-width:200px;">
       <div style="font-size:13px;font-weight:600;margin-bottom:6px;">${typeName}</div>
       <div style="font-size:11px;color:rgba(255,255,255,0.7);margin-bottom:2px;">${(marker.place || 'Невідомо').replace(/</g, '&lt;')}</div>
-      ${marker.date ? `<div style="font-size:10px;color:rgba(255,255,255,0.4);margin-bottom:8px;">${marker.date}</div>` : ''}
+      ${marker.date ? `<div style="font-size:10px;color:rgba(255,255,255,0.4);margin-bottom:8px;">${formatKyivTime(marker.date)}</div>` : ''}
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
         <button onclick="window.__adminDeleteMarker('${markerId}',${markerLat},${markerLng},'${markerText}')"
           style="background:rgba(255,82,82,0.2);color:#ff5252;border:1px solid rgba(255,82,82,0.3);border-radius:8px;padding:5px 12px;font-size:11px;cursor:pointer;display:flex;align-items:center;gap:4px;">

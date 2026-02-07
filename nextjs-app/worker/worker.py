@@ -3,7 +3,13 @@ import logging
 import os
 import signal
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    from backports.zoneinfo import ZoneInfo
+
+KYIV_TZ = ZoneInfo('Europe/Kyiv')
 
 import requests as http_requests
 from telethon import TelegramClient, events
@@ -180,9 +186,10 @@ async def process_new_message(event):
     except Exception as e:
         log.error(f"Resolver error: {e}", exc_info=True)
 
-    # Build output data
-    threat_id = f"evt_{int(datetime.now().timestamp())}_{str(uuid.uuid4())[:4]}"
-    now_iso = datetime.now().isoformat()
+    # Build output data (Kyiv timezone)
+    now_kyiv = datetime.now(KYIV_TZ)
+    threat_id = f"evt_{int(now_kyiv.timestamp())}_{str(uuid.uuid4())[:4]}"
+    now_iso = now_kyiv.isoformat()
 
     if resolved and resolved.status != 'rejected':
         location = resolved.place_name
