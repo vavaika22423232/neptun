@@ -5613,7 +5613,8 @@ def data():
     now = datetime.now(tz).replace(tzinfo=None)
 
     # Pre-filter times
-    manual_cutoff = now - timedelta(minutes=manual_marker_window_minutes_val := max(time_range, MANUAL_MARKER_WINDOW_MINUTES))
+    manual_marker_window_minutes_val = max(time_range, MANUAL_MARKER_WINDOW_MINUTES)
+    manual_cutoff = now - timedelta(minutes=manual_marker_window_minutes_val)
     # We want to show everything in time_range, OR manual markers within manual_cutoff
     
     min_time = now - timedelta(minutes=time_range)
