@@ -5955,10 +5955,8 @@ def start_data_updater():
             _bg_data_thread.start()
             print("INFO: Background data updater started")
 
-# Hook to start on first request
-@app.before_first_request
-def init_bg_tasks():
-    start_data_updater()
+# Start background updater at module load (before_first_request removed in Flask 2.3+)
+start_data_updater()
 
     # which permanently destroyed data in the shared cache after the first request.
     trimmed_out = []
