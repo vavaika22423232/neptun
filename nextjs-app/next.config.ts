@@ -57,6 +57,7 @@ const nextConfig: NextConfig = {
   // Redirects
   async redirects() {
     return [
+      // Telegram channel aliases
       { source: '/community', destination: 'https://t.me/+aBR79kExNQM1ZjZi', permanent: false },
       { source: '/telegram', destination: 'https://t.me/+aBR79kExNQM1ZjZi', permanent: false },
       { source: '/join', destination: 'https://t.me/+aBR79kExNQM1ZjZi', permanent: false },
@@ -66,6 +67,21 @@ const nextConfig: NextConfig = {
       // SSE disabled - return info about polling
       { source: '/stream', destination: '/api/data', permanent: false },
       { source: '/api/chat/stream', destination: '/api/chat/messages', permanent: false },
+      // SEO landing pages from sitemap — redirect to main map
+      { source: '/shahed-map', destination: '/', permanent: true },
+      { source: '/radar-shahediv', destination: '/', permanent: true },
+      { source: '/karta-shahediv', destination: '/', permanent: true },
+      { source: '/blackouts', destination: '/', permanent: true },
+      { source: '/map', destination: '/', permanent: true },
+      // Flask shahed route aliases
+      { source: '/shahed', destination: '/', permanent: true },
+      { source: '/drones', destination: '/', permanent: true },
+      { source: '/radar-shahed', destination: '/', permanent: true },
+      { source: '/shahed-radar', destination: '/', permanent: true },
+      // Legacy Flask HTML pages
+      { source: '/map_only.html', destination: '/', permanent: true },
+      { source: '/region.html', destination: '/region/kyiv', permanent: true },
+      { source: '/privacy.html', destination: '/privacy', permanent: true },
     ];
   },
 

@@ -25,9 +25,12 @@ export default function MapContainer({ markers, alarms, fusionTrajectories }: Ma
   const districtsSvgRef = useRef<SVGElement | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Initialize map
+  // Initialize map (must match original init order: tiles -> layers -> SVG -> events -> fitBounds)
   useEffect(() => {
     if (!mapElRef.current || mapRef.current) return;
+
+    // Abort flag for React StrictMode (effect runs twice in dev)
+    let aborted = false;
 
     const ukraineCenter: L.LatLngExpression = [48.5, 31.5];
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -51,35 +54,59 @@ export default function MapContainer({ markers, alarms, fusionTrajectories }: Ma
 
     mapRef.current = map;
 
-    // Create layer groups
-    const trajGroup = L.layerGroup().addTo(map);
-    const fusionGroup = L.layerGroup().addTo(map);
-    const markersGroup = L.layerGroup().addTo(map);
-    trajLayerRef.current = trajGroup;
-    fusionLayerRef.current = fusionGroup;
-    markersLayerRef.current = markersGroup;
+    // Sequential init matching the original: tiles first, then layers, then SVG overlays
+    (async () => {
+      try {
+        // 1. Load base map tiles (await like original)
+        await loadMapTiles(map, isMobile);
+      } catch (e) {
+        console.warn('Map tiles load error:', e);
+      }
 
-    // Load OpenFreeMap
-    loadMapTiles(map, isMobile);
+      // Bail out if the effect was cleaned up during async loading
+      if (aborted) return;
 
-    // Load SVG overlays
-    loadSvgOverlays(map);
+      // 2. Create layer groups AFTER tiles (matching original order)
+      const trajGroup = L.layerGroup().addTo(map);
+      const fusionGroup = L.layerGroup().addTo(map);
+      const markersGroup = L.layerGroup().addTo(map);
+      trajLayerRef.current = trajGroup;
+      fusionLayerRef.current = fusionGroup;
+      markersLayerRef.current = markersGroup;
 
-    // Handle zoom changes - fade SVG at high zoom
-    map.on('zoomend', () => updateSvgOpacity(map));
-    map.on('zoom', () => updateSvgOpacity(map));
+      // 3. Load SVG overlays (await like original)
+      try {
+        const svgRefs = await loadSvgOverlays(map);
+        if (aborted) return;
+        if (svgRefs) {
+          statesSvgRef.current = svgRefs.statesSvg;
+          districtsSvgRef.current = svgRefs.districtsSvg;
+        }
+      } catch (e) {
+        console.warn('SVG overlay load error:', e);
+      }
 
-    // Fit to Ukraine
-    const bounds = L.latLngBounds(
-      [MAP_BOUNDS.minLat, MAP_BOUNDS.minLng],
-      [MAP_BOUNDS.maxLat, MAP_BOUNDS.maxLng]
-    );
-    map.fitBounds(bounds, { animate: false });
-    updateSvgOpacity(map);
+      if (aborted) return;
 
-    setIsLoaded(true);
+      // 4. Handle zoom changes - fade SVG at high zoom
+      map.on('zoomend', () => updateSvgOpacity(map));
+      map.on('zoom', () => updateSvgOpacity(map));
+
+      // 5. Initial opacity update
+      updateSvgOpacity(map);
+
+      // 6. Fit to Ukraine bounds
+      const bounds = L.latLngBounds(
+        [MAP_BOUNDS.minLat, MAP_BOUNDS.minLng],
+        [MAP_BOUNDS.maxLat, MAP_BOUNDS.maxLng]
+      );
+      map.fitBounds(bounds, { animate: false });
+
+      setIsLoaded(true);
+    })();
 
     return () => {
+      aborted = true;
       map.remove();
       mapRef.current = null;
     };
@@ -124,7 +151,7 @@ export default function MapContainer({ markers, alarms, fusionTrajectories }: Ma
           lng < MAP_BOUNDS.minLng || lng > MAP_BOUNDS.maxLng) return;
 
       const threatType = marker.threat_type || 'default';
-      const iconFile = marker.marker_icon || THREAT_ICONS[threatType] || 'icon_missile.svg';
+      const iconFile = marker.marker_icon || THREAT_ICONS[threatType] || 'shahed3.webp';
       const isShahed = threatType === 'shahed' || threatType === 'drone';
       const size = isShahed ? 44 : 32;
 
@@ -146,7 +173,7 @@ export default function MapContainer({ markers, alarms, fusionTrajectories }: Ma
       let html = `<div class="threat-marker" data-type="${threatType}" style="width:${size}px;height:${size}px;">
         <img src="/${iconFile}?${CACHE_VERSION}" alt="${threatType}" loading="lazy" decoding="async"
              style="transform:rotate(${rotationAngle}deg);width:100%;height:100%;"
-             onerror="this.src='/icon_missile.svg'">`;
+             onerror="this.src='/shahed3.webp'">`;
       if (isShahed && marker.count && marker.count > 1) {
         html += `<div class="marker-count-badge">${marker.count}x</div>`;
       }
@@ -315,7 +342,7 @@ function loadScript(src: string): Promise<void> {
   });
 }
 
-async function loadSvgOverlays(map: L.Map) {
+async function loadSvgOverlays(map: L.Map): Promise<{ statesSvg: SVGElement; districtsSvg: SVGElement } | null> {
   try {
     const bounds = L.latLngBounds(
       [MAP_BOUNDS.minLat, MAP_BOUNDS.minLng],
@@ -335,25 +362,24 @@ async function loadSvgOverlays(map: L.Map) {
     ]);
 
     const parser = new DOMParser();
-    const statesSvg = parser.parseFromString(statesText, 'image/svg+xml').documentElement;
-    const districtsSvg = parser.parseFromString(districtsText, 'image/svg+xml').documentElement;
-    const namesSvg = parser.parseFromString(namesText, 'image/svg+xml').documentElement;
+    const statesSvg = parser.parseFromString(statesText, 'image/svg+xml').documentElement as unknown as SVGElement;
+    const districtsSvg = parser.parseFromString(districtsText, 'image/svg+xml').documentElement as unknown as SVGElement;
+    const namesSvg = parser.parseFromString(namesText, 'image/svg+xml').documentElement as unknown as SVGElement;
 
     statesSvg.classList.add('svg-states-layer');
     districtsSvg.classList.add('svg-districts-layer');
     namesSvg.classList.add('svg-names-layer');
 
-    L.svgOverlay(statesSvg as unknown as SVGElement, bounds, { interactive: true, zIndex: 100 }).addTo(map);
-    L.svgOverlay(districtsSvg as unknown as SVGElement, bounds, { interactive: true, zIndex: 101 }).addTo(map);
-    L.svgOverlay(namesSvg as unknown as SVGElement, bounds, { interactive: false, zIndex: 102 }).addTo(map);
+    // Add overlays to map in correct order (states -> districts -> names)
+    L.svgOverlay(statesSvg, bounds, { interactive: true, zIndex: 100 }).addTo(map);
+    L.svgOverlay(districtsSvg, bounds, { interactive: true, zIndex: 101 }).addTo(map);
+    L.svgOverlay(namesSvg, bounds, { interactive: false, zIndex: 102 }).addTo(map);
 
-    // Store references for alarm updates on the window object
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window as any).__statesSvg = statesSvg;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window as any).__districtsSvg = districtsSvg;
+    console.log('SVG overlays loaded and positioned');
+    return { statesSvg, districtsSvg };
   } catch (error) {
     console.error('Error loading SVG overlays:', error);
+    return null;
   }
 }
 

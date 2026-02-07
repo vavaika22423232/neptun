@@ -8,34 +8,28 @@ export default function TelegramBanner() {
       href={TELEGRAM_CHANNEL_URL}
       target="_blank"
       rel="noopener noreferrer"
-      className="fixed bottom-5 left-5 z-[1100] flex items-center gap-3 bg-[#2c2c2e] border border-white/10 rounded-2xl px-4 py-3 text-white no-underline hover:bg-[#3a3a3c] transition-colors max-w-[320px] max-md:bottom-[70px] max-md:left-3 max-md:right-3 max-md:max-w-none"
+      className="fixed top-[52px] sm:top-[58px] left-0 right-0 z-[1000] flex items-center justify-center gap-3 sm:gap-4 bg-gradient-to-r from-[#0088cc] via-[#0099dd] to-[#00aaee] px-4 py-2.5 sm:py-2 text-white no-underline hover:brightness-110 active:brightness-90 transition-all shadow-[0_2px_12px_rgba(0,136,204,0.4)]"
     >
-      {/* Telegram icon */}
-      <div className="w-9 h-9 rounded-full bg-[#2AABEE] flex items-center justify-center shrink-0">
-        <svg viewBox="0 0 24 24" fill="white" className="w-5 h-5">
-          <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
-        </svg>
-      </div>
+      {/* Pulse dot */}
+      <span className="relative flex h-2.5 w-2.5 shrink-0">
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white/60" />
+        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-white" />
+      </span>
 
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5 text-white/60 text-[11px] mb-0.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-          Щоб не перевіряти сайт
-        </div>
-        <span className="text-white/90 text-[13px] font-medium block">
-          Хлопці <strong>пишуть в Telegram</strong>
-        </span>
-        <span className="text-white/40 text-[11px] block">
-          Тривоги та рух дронів — максимально швидко
-        </span>
-      </div>
+      {/* Text */}
+      <span className="text-[11px] sm:text-[13px] leading-tight text-center sm:text-left">
+        <span className="opacity-75 text-[10px] sm:text-[11px] block sm:inline">Щоб не перевіряти сайт </span>
+        <strong className="font-bold">Хлопці пишуть в Telegram</strong>
+        <span className="opacity-60 text-[10px] sm:text-[11px] hidden sm:inline"> — тривоги та рух дронів максимально швидко</span>
+      </span>
 
-      <div className="shrink-0 bg-white/10 rounded-full px-3 py-1.5 text-white/80 text-[12px] font-medium flex items-center gap-1">
-        <span>Отримувати</span>
+      {/* CTA pill */}
+      <span className="shrink-0 bg-white/20 backdrop-blur-sm rounded-full px-3 py-1 text-[11px] sm:text-[12px] font-bold flex items-center gap-1 border border-white/20 hover:bg-white/30 transition-colors">
+        Підписатися
         <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
           <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z" />
         </svg>
-      </div>
+      </span>
     </a>
   );
 }

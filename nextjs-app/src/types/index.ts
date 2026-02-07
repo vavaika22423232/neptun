@@ -91,26 +91,40 @@ export const MAP_BOUNDS = {
   maxLng: 40.2,
 } as const;
 
-// Threat type icon mapping
+// Threat type icon mapping (must match original index.html exactly)
 export const THREAT_ICONS: Record<string, string> = {
   shahed: 'shahed3.webp',
   drone: 'shahed3.webp',
-  rocket: 'icon_missile.svg',
-  missile: 'icon_missile.svg',
-  ballistic: 'icon_balistic.svg',
-  artillery: 'icon_obstril.svg',
-  kabm: 'icon_vibuh.svg',
-  default: 'icon_missile.svg',
+  raketa: 'icon_balistic.svg',
+  avia: 'avia.png',
+  artillery: 'artillery.png',
+  obstril: 'icon_obstril.svg',
+  fpv: 'fpv.png',
+  pusk: 'pusk.png',
+  kab: 'icon_missile.svg',
+  rszv: 'icon_missile.svg',
+  rozved: 'rozvedka2.png',
+  vibuh: 'icon_vibuh.svg',
+  alarm: 'trivoga.png',
+  alarm_cancel: 'vidboi.png',
+  default: 'shahed3.webp',
 };
 
-// Threat type display names (Ukrainian)
+// Threat type display names (Ukrainian, must match original)
 export const THREAT_NAMES: Record<string, string> = {
-  shahed: 'Шахед',
-  drone: 'БПЛА',
-  rocket: 'Ракета',
-  missile: 'Крилата ракета',
-  ballistic: 'Балістика',
-  artillery: 'Обстріл',
-  kabm: 'КАБ',
+  shahed: '🛩️ Шахеди/БПЛА',
+  drone: '🛩️ Шахеди/БПЛА',
+  raketa: '🚀 Ракети',
+  avia: '✈️ Авіація',
+  artillery: '💥 Артилерія',
+  obstril: '💥 Обстріл',
+  fpv: '🎯 FPV дрони',
+  pusk: '🚀 Пуски',
+  kab: '💣 КАБи',
+  rszv: '💣 РСЗВ',
+  rozved: '🔍 Розвідники',
+  vibuh: '💥 Вибухи',
+  alarm: '🚨 Тривога',
+  alarm_cancel: '✅ Відбій',
   default: 'Загроза',
 };

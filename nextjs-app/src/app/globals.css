@@ -1,26 +1,51 @@
 @import "tailwindcss";
 
 /* ============================================
-   NEPTUN Global Styles - Dark Theme
+   NEPTUN — Material You Dark Theme
    ============================================ */
 
 :root {
-  --bg-primary: #0a0e17;
-  --bg-card: #2c2c2e;
-  --border-subtle: rgba(255, 255, 255, 0.1);
-  --text-primary: #ffffff;
-  --text-secondary: rgba(255, 255, 255, 0.7);
-  --text-muted: rgba(255, 255, 255, 0.5);
-  --accent-cyan: #00d4ff;
-  --accent-red: #ef4444;
-  --alarm-bg: #7f1d1d;
-  --alarm-border: #ff4444;
+  /* Primary palette — cyan/teal accent */
+  --primary: #80d8ff;
+  --primary-container: #004c6d;
+  --on-primary: #003549;
+  --on-primary-container: #c4e7ff;
+
+  /* Secondary — warm accent */
+  --secondary: #ffb74d;
+  --secondary-container: #6d3a00;
+  --on-secondary-container: #ffddb3;
+
+  /* Tertiary — vibrant pink for alerts */
+  --tertiary: #ff7eb3;
+  --tertiary-container: #7d0036;
+  --on-tertiary-container: #ffd9e6;
+
+  /* Error/Alarm */
+  --error: #ffb4ab;
+  --error-container: #93000a;
+  --on-error-container: #ffdad6;
+
+  /* Surfaces — Material You tonal surfaces */
+  --surface: #0e1218;
+  --surface-dim: #0a0e14;
+  --surface-container-lowest: #060a10;
+  --surface-container-low: #141a24;
+  --surface-container: #1a2030;
+  --surface-container-high: #222a3a;
+  --surface-container-highest: #2c3444;
+
+  --on-surface: #e2e2e6;
+  --on-surface-variant: #c2c6d0;
+  --outline: #8c9099;
+  --outline-variant: #42474e;
 }
 
 /* Disable all selection and tap highlight globally */
 * {
   -webkit-tap-highlight-color: transparent !important;
   -webkit-touch-callout: none !important;
+  box-sizing: border-box;
 }
 
 html, body {
@@ -28,8 +53,18 @@ html, body {
   padding: 0;
   width: 100%;
   height: 100%;
+  height: 100dvh;
   overflow: hidden;
-  background: var(--bg-primary);
+  background: var(--surface-dim);
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+@supports (padding: max(0px)) {
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
 }
 
 /* ============================================
@@ -40,19 +75,18 @@ html, body {
   --map-opacity: 0;
 }
 
-#leaflet-map::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  background: var(--bg-primary);
-  z-index: -1;
-  pointer-events: none;
-  opacity: var(--bg-opacity, 1);
+.leaflet-container {
+  background: var(--surface-dim) !important;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
-#leaflet-map .maplibregl-map {
+/* Hide tile pane (MapLibre + fallback OSM) at low zoom when SVG overlay is shown.
+   --map-opacity is controlled by updateSvgOpacity() in MapContainer.tsx */
+#leaflet-map .leaflet-tile-pane {
   opacity: var(--map-opacity, 0);
+  transition: opacity 0.3s ease;
 }
 
 .leaflet-control-attribution,
@@ -80,7 +114,7 @@ html, body {
 .leaflet-marker-pane { z-index: 600; }
 
 /* ============================================
-   SVG Map Overlay Styles
+   SVG Map Overlay Styles — Material You colors
    ============================================ */
 .svg-states-layer,
 .svg-districts-layer {
@@ -98,48 +132,49 @@ html, body {
 }
 
 .svg-names-layer text {
-  fill: rgba(255, 255, 255, 0.9);
+  fill: rgba(194, 231, 255, 0.85);
   font-family: 'Inter', sans-serif;
   font-weight: 400;
-  text-shadow: 0 0 10px rgba(0, 212, 255, 0.5), 0 2px 4px rgba(0, 0, 0, 0.8);
+  text-shadow: 0 0 12px rgba(128, 216, 255, 0.4), 0 2px 6px rgba(0, 0, 0, 0.9);
 }
 
 .svg-names-layer .reasonIcon {
   display: none;
 }
 
-/* Oblast regions */
+/* Oblast regions — tonal surface with cyan border */
 .stateObject {
-  fill: #162236;
-  stroke: var(--accent-cyan);
+  fill: #0d1a2a;
+  stroke: var(--primary);
   stroke-width: 0.4;
-  stroke-opacity: 0.3;
+  stroke-opacity: 0.2;
   transition: fill 0.4s ease, stroke 0.4s ease;
 }
 
 .stateObject:hover {
-  fill: #1e3050;
-  stroke-opacity: 0.6;
+  fill: #142238;
+  stroke-opacity: 0.5;
 }
 
 .stateObject.alarm {
-  fill: var(--alarm-bg);
-  stroke: var(--alarm-border);
+  fill: var(--error-container);
+  stroke: var(--error);
   stroke-opacity: 0.8;
+  animation: alarmPulse 2s ease-in-out infinite;
 }
 
 /* District regions */
 .dist {
   fill: transparent;
-  stroke: rgba(0, 212, 255, 0.15);
+  stroke: rgba(128, 216, 255, 0.1);
   stroke-width: 0.1;
   transition: fill 0.4s ease, stroke 0.4s ease;
   pointer-events: all;
 }
 
 .dist:hover {
-  fill: rgba(0, 212, 255, 0.1);
-  stroke: rgba(0, 212, 255, 0.4);
+  fill: rgba(128, 216, 255, 0.08);
+  stroke: rgba(128, 216, 255, 0.35);
   cursor: pointer;
 }
 
@@ -163,22 +198,23 @@ html, body {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6));
 }
 
 .marker-count-badge {
   position: absolute;
   top: -6px;
   right: -6px;
-  background: var(--accent-red);
-  color: white;
+  background: var(--tertiary);
+  color: #1a0010;
   font-size: 10px;
   font-weight: 700;
-  padding: 1px 4px;
-  border-radius: 8px;
-  line-height: 1.2;
+  padding: 1px 5px;
+  border-radius: 10px;
+  line-height: 1.3;
   min-width: 16px;
   text-align: center;
+  box-shadow: 0 2px 6px rgba(255, 126, 179, 0.4);
 }
 
 /* ============================================
@@ -198,35 +234,37 @@ html, body {
 }
 
 /* ============================================
-   Tooltip
+   Tooltip — Material You surface
    ============================================ */
 .marker-tooltip {
   position: fixed;
   z-index: 10000;
-  background: rgba(15, 23, 42, 0.95);
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  padding: 10px 14px;
-  color: white;
+  background: var(--surface-container-high);
+  border: 1px solid var(--outline-variant);
+  border-radius: 16px;
+  padding: 12px 16px;
+  color: var(--on-surface);
   font-size: 12px;
   pointer-events: none;
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(16px);
   max-width: 250px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
 .tooltip-type {
   font-weight: 600;
   font-size: 13px;
   margin-bottom: 4px;
+  color: var(--primary);
 }
 
 .tooltip-place {
-  color: var(--text-secondary);
+  color: var(--on-surface-variant);
   margin-bottom: 2px;
 }
 
 .tooltip-time {
-  color: var(--text-muted);
+  color: var(--outline);
   font-size: 11px;
 }
 
@@ -234,13 +272,13 @@ html, body {
    Animations
    ============================================ */
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes alarmPulse {
-  0%, 100% { fill: #7f1d1d; }
-  50% { fill: #991b1b; }
+  0%, 100% { fill: var(--error-container); }
+  50% { fill: #6d0012; }
 }
 
 @keyframes spin {
@@ -252,5 +290,59 @@ html, body {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* ============================================
+   Mobile Optimizations
+   ============================================ */
+@media screen and (max-width: 640px) {
+  .marker-tooltip {
+    font-size: 11px;
+    padding: 10px 12px;
+    max-width: 200px;
+    border-radius: 12px;
+  }
+
+  .threat-marker img {
+    filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
+  }
+
+  .stateObject:hover {
+    fill: #0d1a2a;
+    stroke-opacity: 0.2;
+  }
+
+  .dist:hover {
+    fill: transparent;
+    stroke: rgba(128, 216, 255, 0.1);
+    cursor: default;
+  }
+}
+
+@media screen and (max-width: 380px) {
+  .marker-tooltip {
+    font-size: 10px;
+    padding: 8px 10px;
+    max-width: 160px;
+  }
+}
+
+/* Safe area insets */
+@supports (padding: max(0px)) {
+  .navbar-safe {
+    padding-top: max(0.5rem, env(safe-area-inset-top));
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+  }
+  .bottom-safe {
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  }
+}
+
+@media screen and (max-height: 500px) and (orientation: landscape) {
+  .marker-tooltip {
+    font-size: 10px;
+    max-width: 180px;
   }
 }
