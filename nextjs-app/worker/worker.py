@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 
 import requests as http_requests
 from telethon import TelegramClient, events
+from telethon.sessions import StringSession
 
 # Configuration
 from constants import API_ID, API_HASH, CHANNELS
@@ -20,7 +21,16 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # Initialize Client
-client = TelegramClient('anon_worker', API_ID, API_HASH)
+# On Render, the worker has NO persistent disk, so file-based sessions are lost
+# on every deploy. Use StringSession from TELEGRAM_SESSION env var instead.
+# To generate a session string, run: python -c "from telethon.sync import TelegramClient; from telethon.sessions import StringSession; c = TelegramClient(StringSession(), API_ID, API_HASH); c.start(); print(c.session.save())"
+_session_string = os.getenv('TELEGRAM_SESSION', '')
+if _session_string:
+    log.info("Using StringSession from TELEGRAM_SESSION env var")
+    client = TelegramClient(StringSession(_session_string), API_ID, API_HASH)
+else:
+    log.warning("TELEGRAM_SESSION not set — using file session (will NOT survive Render deploys!)")
+    client = TelegramClient('anon_worker', API_ID, API_HASH)
 
 # ── Ingest: push markers to Next.js web service ──────────────────────────────
 # On Render, the worker and web service have SEPARATE disks.
