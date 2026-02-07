@@ -83,11 +83,11 @@ services:
         sync: false
       - key: TELEGRAM_CHANNELS
         value: mapstransler
-      - key: OPENCAGE_API_KEY
+      - key: VISICOM_API_KEY
         sync: false
       # URL of the web service's ingest endpoint
       - key: INGEST_URL
-        value: https://neptun-alerts.onrender.com/api/ingest
+        value: https://neptun.in.ua/api/ingest
       # Shared secret (must match AUTH_SECRET on the web service)
       - key: AUTH_SECRET
         sync: false
