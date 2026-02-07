@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
-import { cache } from '@/lib/cache';
 import fs from 'fs';
 import path from 'path';
-import type { ChatMessage } from '@/types';
+import { broadcastSSE } from '../../stream/route';
 
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const CHAT_FILE = path.join(DATA_DIR, 'chat_messages.json');
@@ -22,7 +21,8 @@ export async function DELETE(
     const deviceId = (body as Record<string, string>).deviceId || '';
 
     const filePath = fs.existsSync(path.dirname(CHAT_FILE)) ? CHAT_FILE : FALLBACK_CHAT_FILE;
-    let messages: ChatMessage[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let messages: any[] = [];
 
     try {
       if (fs.existsSync(filePath)) {
@@ -39,15 +39,29 @@ export async function DELETE(
       return NextResponse.json({ error: 'Message not found' }, { status: 404 });
     }
 
-    // Allow deletion by author or moderator (for now, allow all — add moderator check later)
+    // Check moderator status
+    const modFile = path.join(DATA_DIR, 'chat_moderators.json');
+    let isMod = false;
+    try {
+      if (fs.existsSync(modFile)) {
+        const mods = JSON.parse(fs.readFileSync(modFile, 'utf-8'));
+        if (Array.isArray(mods) && mods.includes(deviceId)) {
+          isMod = true;
+        }
+      }
+    } catch { /* ignore */ }
+
     const msg = messages[msgIdx];
-    if (deviceId && msg.device_id !== deviceId) {
-      // Not the author — could be moderator, allow for now
+    const isAuthor = msg.deviceId === deviceId || msg.device_id === deviceId;
+    if (!isAuthor && !isMod) {
+      return NextResponse.json({ error: 'Недостатньо прав' }, { status: 403 });
     }
 
     messages.splice(msgIdx, 1);
     fs.writeFileSync(filePath, JSON.stringify(messages, null, 2), 'utf-8');
-    cache.delete('chat_messages');
+
+    // Broadcast via SSE
+    broadcastSSE({ type: 'delete_message', data: { messageId } });
 
     return NextResponse.json({ status: 'ok' });
   } catch (err) {

@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 try:
     from zoneinfo import ZoneInfo
 except ImportError:
-    from backports.zoneinfo import ZoneInfo
+    from backports.zoneinfo import ZoneInfo  # type: ignore[import-not-found]
 
 KYIV_TZ = ZoneInfo('Europe/Kyiv')
 

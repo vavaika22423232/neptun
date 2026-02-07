@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 /**
  * POST /api/test-notification
  * Send a test push notification to verify FCM setup.
- * TODO: Integrate with Firebase Admin SDK when FIREBASE_CREDENTIALS is set.
+ * Firebase Admin SDK is loaded dynamically at runtime only if installed.
  */
 export async function POST(request: Request) {
   try {
@@ -14,12 +14,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing FCM token' }, { status: 400 });
     }
 
-    // Try to send via Firebase Admin SDK if configured
     const firebaseCreds = process.env.FIREBASE_CREDENTIALS;
     if (firebaseCreds) {
       try {
-        // Dynamic import to avoid startup crash if firebase-admin not installed
-        const admin = await import('firebase-admin');
+        // Use dynamic require to avoid build-time module resolution
+        // firebase-admin is an optional dependency installed only in production
+        const adminModule = await (Function('return import("firebase-admin")')() as Promise<Record<string, unknown>>);
+        const admin = adminModule as {
+          apps: unknown[];
+          initializeApp: (opts: Record<string, unknown>) => void;
+          credential: { cert: (creds: Record<string, unknown>) => unknown };
+          messaging: () => { send: (msg: Record<string, unknown>) => Promise<void> };
+        };
         if (!admin.apps.length) {
           const creds = JSON.parse(Buffer.from(firebaseCreds, 'base64').toString('utf-8'));
           admin.initializeApp({ credential: admin.credential.cert(creds) });
@@ -39,7 +45,6 @@ export async function POST(request: Request) {
       }
     }
 
-    // Firebase not configured — still return OK so app doesn't error
     console.log('[FCM] Test notification requested but Firebase not configured');
     return NextResponse.json({ status: 'ok', sent: false, reason: 'firebase_not_configured' });
   } catch (err) {

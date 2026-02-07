@@ -347,12 +347,16 @@ String _detectThreatType(String body, String threatType) {
 
 String _resolveThreatKey(String body, String threatType) {
   final text = '$body $threatType'.toLowerCase();
-  if (text.contains('балістик') || text.contains('балистик'))
+  if (text.contains('балістик') || text.contains('балистик')) {
     return 'ballistic';
+  }
   if (text.contains('каб')) return 'kab';
   if (text.contains('ракет') || text.contains('крилат')) return 'rocket';
-  if (text.contains('бпла') || text.contains('дрон') || text.contains('шахед'))
+  if (text.contains('бпла') ||
+      text.contains('дрон') ||
+      text.contains('шахед')) {
     return 'drones';
+  }
   if (text.contains('артилер') || text.contains('обстріл')) return 'artillery';
   if (text.contains('вибух')) return 'explosion';
   return 'air';

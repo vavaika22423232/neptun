@@ -67,14 +67,31 @@ export interface PresenceData {
   total?: number;
 }
 
+export interface ReactionInfo {
+  deviceId: string;
+  nickname: string;
+  timestamp: number;
+}
+
+export interface ReplyInfo {
+  id: string;
+  userId: string;
+  message: string;
+}
+
 export interface ChatMessage {
   id: string;
-  device_id: string;
-  nickname: string;
-  text: string;
-  timestamp: string;
-  reactions?: Record<string, number>;
-  my_reaction?: string;
+  userId: string;
+  deviceId?: string;
+  message: string;
+  timestamp: number; // epoch seconds
+  replyTo?: ReplyInfo | null;
+  isModerator?: boolean;
+  isSystem?: boolean;
+  systemType?: string;
+  threatType?: string;
+  region?: string;
+  reactions?: Record<string, ReactionInfo[]>;
 }
 
 export interface FusionResponse {

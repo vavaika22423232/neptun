@@ -2,15 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/window_manager.dart';
 
-import '../widgets/glass_navigation_bar.dart'; // MD3NavigationBar
 import 'native_map_page.dart';
+import '../widgets/dashboard_sheet.dart';
+import '../widgets/status_pill.dart';
+import '../widgets/profile_button.dart';
 
-// Panels
-import '../panels/radar_panel.dart';
+// Panels (Legacy support for non-radar panels)
 import '../panels/comms_panel.dart';
 import '../panels/shelter_panel.dart';
 import '../panels/menu_panel.dart';
-
 import 'safety_page.dart';
 
 class MainPage extends StatefulWidget {
@@ -48,14 +48,35 @@ class _MainPageState extends State<MainPage> {
       backgroundColor: colorScheme.surface,
       body: Stack(
         children: [
-          // LAYER 1: Map
+          // LAYER 0: Map (Base)
           const NativeMapPage(),
 
-          // LAYER 2: Panel Overlay
-          if (_windowManager.isPanelOpen) _buildActiveWindowOverlay(),
+          // LAYER 1: The Intelligent Sheet (Radar Dashboard)
+          // Always present, draggable
+          // We hide it if a full-screen panel (Safety/Settings) is open
+          if (_windowManager.activePanel != PanelType.settings &&
+              _windowManager.activePanel != PanelType.safety)
+            const DashboardSheet(),
 
-          // LAYER 3: Bottom Navigation
-          Positioned(left: 0, right: 0, bottom: 0, child: MD3NavigationBar()),
+          // LAYER 2: Legacy Panel Overlay (Settings, Safety, etc.)
+          if (_windowManager.isPanelOpen &&
+              _windowManager.activePanel != PanelType.radar)
+            _buildActiveWindowOverlay(),
+
+          // LAYER 3: HUD Controls (Floating)
+          // These should sit on top of the map and sheet (when collapsed)
+          // But maybe below full screen panels?
+          // If settings is open, we probably want to hide these or have settings cover them.
+          if (_windowManager.activePanel != PanelType.settings &&
+              _windowManager.activePanel != PanelType.safety)
+            const SafeArea(
+              child: Stack(
+                children: [
+                  Positioned(top: 16, left: 16, child: StatusPill()),
+                  Positioned(top: 16, right: 16, child: ProfileButton()),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -66,8 +87,7 @@ class _MainPageState extends State<MainPage> {
 
     switch (_windowManager.activePanel) {
       case PanelType.radar:
-        child = const RadarPanel();
-        break;
+        return const SizedBox.shrink(); // Handled by Sheet
       case PanelType.comms:
         child = const CommsPanel();
         break;
@@ -87,10 +107,10 @@ class _MainPageState extends State<MainPage> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Container(
-      color: colorScheme.surface, // Solid background, no transparency
+      color: colorScheme.surface, // Solid background for full screen panels
       child: Stack(
         children: [
-          // Tap to close
+          // Tap to close (if not full screen, but these are full screen mostly)
           GestureDetector(
             onTap: () {
               HapticFeedback.lightImpact();
@@ -105,10 +125,29 @@ class _MainPageState extends State<MainPage> {
           // Panel content
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.only(bottom: 80),
+              padding: const EdgeInsets.only(bottom: 0),
               child: child,
             ),
           ),
+
+          // Close button for panels (except settings which has its own back button usually)
+          // But MenuPanel might need a close button if it's a panel.
+          if (_windowManager.activePanel != PanelType.settings)
+            Positioned(
+              top: 40,
+              left: 16,
+              child: GestureDetector(
+                onTap: () => _windowManager.closePanel(),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surface.withValues(alpha: 0.5),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.close_rounded),
+                ),
+              ),
+            ),
         ],
       ),
     );
