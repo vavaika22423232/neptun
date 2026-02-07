@@ -5741,7 +5741,6 @@ def data():
         headers={
             'Cache-Control': 'public, max-age=30',
             'ETag': etag,
-            'X-Cache': 'MISS'
         }
     )
 
@@ -5795,8 +5794,172 @@ def data():
     print(f"[DEBUG] Message categories: {debug_counts}")
     print(f"[DEBUG] Returning {len(out)} tracks and {len(events)} events (limits: {MAX_TRACKS}/{MAX_EVENTS})")
 
-    # PERF FIX: Build NEW dicts for response instead of mutating cached originals.
     # Previously we did track.pop('raw_text') etc. directly on MessageStore objects,
+    # which modified the in-memory cache and broke subsequent requests.
+    return Response(
+        json_bytes,
+        mimetype='application/json',
+        headers={
+            'Cache-Control': 'public, max-age=30',
+            'ETag': etag,
+            'X-Cache': 'MISS'
+        }
+    )
+
+# ===========================================================================
+# BACKGROUND DATA UPDATER - Prevents Thundering Herd APIs checks
+# ===========================================================================
+
+@app.route('/data')
+def get_data():
+    # 1. Try to get from cache (FAST)
+    # The cache key depends on the monitoring period
+    time_range = MONITOR_PERIOD_MINUTES  # Global config
+    time_range = max(1, min(time_range, 360))
+    cache_key = f'data_v2_{time_range}'
+    
+    cached = RESPONSE_CACHE.get(cache_key)
+    if cached:
+        # Check ETag
+        if request.headers.get('If-None-Match') == cached['etag']:
+            return Response(status=304)
+            
+        return Response(
+            cached['data'],
+            mimetype='application/json',
+            headers={
+                'Cache-Control': 'public, max-age=5', # Short cache on client
+                'ETag': cached['etag'],
+                'X-Cache': 'HIT',
+                'Access-Control-Allow-Origin': '*'
+            }
+        )
+        
+    # 2. Cache Miss (Startup Only) - synchronous fallback
+    # This should only happen for the very first request after restart
+    if update_data_cache_internal():
+        return get_data() # Retry cache fetch
+        
+    return jsonify({'error': 'initializing'}), 503
+
+_bg_data_lock = threading.Lock()
+_bg_data_thread = None
+
+def update_data_cache_internal():
+    """Heavy lifting of /data logic moved here."""
+    try:
+        # 1. Load messages (fast memory access if cached)
+        messages = load_messages_processed()
+
+        
+        # 2. Get active threats (fast memory access)
+        try:
+            active_threats = THREAT_TRACKER.get_all_active_threats()
+        except:
+            active_threats = []
+            
+        time_range = MONITOR_PERIOD_MINUTES  # Global config
+        time_range = max(1, min(time_range, 360))
+        cache_key = f'data_v2_{time_range}'
+        
+        tz = pytz.timezone('Europe/Kyiv')
+        now = datetime.now(tz).replace(tzinfo=None)
+        
+        # Filters logic (same as original)
+        manual_cutoff = now - timedelta(minutes=max(time_range, MANUAL_MARKER_WINDOW_MINUTES))
+        min_time = now - timedelta(minutes=time_range)
+        hidden = set(load_hidden())
+        
+        out = []
+        events = []
+        
+        for m in messages:
+            dt = m['_dt']
+            is_manual = bool(m.get('manual'))
+            if is_manual:
+                if dt < manual_cutoff: continue
+            else:
+                if dt < min_time: continue
+                
+            # Filter logic...
+            if not (m.get('lat') and m.get('lng')):
+                if m.get('text') and not m.get('suppress'): events.append(m)
+                continue
+            if m.get('list_only'):
+                if not m.get('suppress'): events.append(m)
+                continue
+                
+            try:
+                lat_r = round(float(m['lat']), 3)
+                lng_r = round(float(m['lng']), 3)
+                text = m.get('text', '')
+                source = m.get('source') or m.get('channel') or ''
+                key = f"{lat_r},{lng_r}|{text}|{source}"
+                if key in hidden: continue
+            except: continue
+            
+            # Region filter
+            low_txt = text.lower()
+            if m.get('source_match','').startswith('region') and not any(k in low_txt for k in ['бпла','дрон','шахед','shahed','geran','ракета','missile','kab','каб']):
+                continue
+                
+            # TTL Filter
+            if TTL_SYSTEM_ENABLED and not is_manual:
+                 threat_type = m.get('threat_type', '')
+                 if not threat_type:
+                      if 'raketa' in m.get('marker_icon','') or any(x in low_txt for x in ['ракета','missile','ballistic']):
+                          threat_type = 'rocket'
+                 ttl = 30
+                 if threat_type in ['rocket','kab','ballistic','kinzhal']: ttl = 5
+                 if (now - dt).total_seconds() > (ttl * 60): continue
+            
+            out.append(m)
+
+        # Limits
+        MAX_TRACKS = 50
+        MAX_EVENTS = 25
+        if len(out) > MAX_TRACKS: out = out[-MAX_TRACKS:]
+        if len(events) > MAX_EVENTS: events = events[:MAX_EVENTS]
+        
+        # Clean output
+        clean_out = [{k:v for k,v in x.items() if k != '_dt'} for x in out]
+        clean_events = [{k:v for k,v in x.items() if k != '_dt'} for x in events]
+        
+        resp_data = {
+            'tracks': clean_out,
+            'events': clean_events,
+            'threats': {'count': len(active_threats), 'by_type': {}, 'by_region': {}},
+            'server_time': now.isoformat()
+        }
+        
+        json_bytes = json.dumps(resp_data, ensure_ascii=False).encode('utf-8')
+        etag = f'data-{hashlib.md5(json_bytes).hexdigest()[:8]}'
+        
+        # Update Cache
+        RESPONSE_CACHE.set(cache_key, {'data': json_bytes, 'etag': etag}, ttl=10)
+        return True
+    except Exception as e:
+        print(f"Background update failed: {e}")
+        return False
+
+def _bg_data_loop():
+    while True:
+        update_data_cache_internal()
+        time.sleep(2.0)  # Update every 2 seconds
+
+def start_data_updater():
+    global _bg_data_thread
+    with _bg_data_lock:
+        if not _bg_data_thread or not _bg_data_thread.is_alive():
+            _bg_data_thread = threading.Thread(target=_bg_data_loop, daemon=True)
+            _bg_data_thread.start()
+            print("INFO: Background data updater started")
+
+# Hook to start on first request
+@app.before_first_request
+def init_bg_tasks():
+    start_data_updater()
+
     # which permanently destroyed data in the shared cache after the first request.
     trimmed_out = []
     for track in out:
