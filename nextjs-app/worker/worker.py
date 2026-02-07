@@ -3,13 +3,14 @@ import logging
 import os
 import signal
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from telethon import TelegramClient, events
 
 # Configuration
 from constants import API_ID, API_HASH, CHANNELS
 from db import db
+from core.message_store import MessageStore
 
 # Logging setup
 logging.basicConfig(
@@ -20,6 +21,55 @@ log = logging.getLogger(__name__)
 
 # Initialize Client
 client = TelegramClient('anon_worker', API_ID, API_HASH)
+
+# ── Messages file storage (shared with Next.js frontend via /data) ────────────
+
+MESSAGES_FILE = os.getenv('MESSAGES_FILE', '/data/messages.json')
+# Fallback: if /data doesn't exist (local dev), use local file
+if not os.path.isdir(os.path.dirname(MESSAGES_FILE)):
+    MESSAGES_FILE = 'messages.json'
+
+MAX_MESSAGES = 500
+RETENTION_HOURS = 3
+
+
+def _prune_old_messages(messages: list[dict]) -> list[dict]:
+    """Remove messages older than RETENTION_HOURS, keep manual markers, cap at MAX_MESSAGES."""
+    cutoff = datetime.now() - timedelta(hours=RETENTION_HOURS)
+    cutoff_iso = cutoff.isoformat()
+
+    result = []
+    for m in messages:
+        # Always keep manual markers (added by admin)
+        if m.get('manual'):
+            result.append(m)
+            continue
+
+        # Check timestamp
+        ts = m.get('ts') or m.get('timestamp') or m.get('date') or ''
+        if ts and ts < cutoff_iso:
+            continue  # too old, drop
+
+        result.append(m)
+
+    # Cap at MAX_MESSAGES (keep newest)
+    if len(result) > MAX_MESSAGES:
+        # Sort by ts descending, keep newest
+        result.sort(key=lambda x: x.get('ts') or x.get('timestamp') or x.get('date') or '', reverse=True)
+        result = result[:MAX_MESSAGES]
+
+    return result
+
+
+message_store = MessageStore(
+    path=MESSAGES_FILE,
+    prune_fn=_prune_old_messages,
+    preserve_manual=True,
+    backup_count=2,
+)
+
+log.info(f"MessageStore initialized: {MESSAGES_FILE}")
+
 
 # ── Recent events buffer (for proximity scoring) ─────────────────────────────
 
@@ -86,7 +136,7 @@ async def process_new_message(event):
     1. Deduplication
     2. Entity extraction (parser_v2)
     3. Geo resolution (geo/resolver)
-    4. State update (Redis)
+    4. State update (Redis + messages.json)
     """
     msg_text = event.message.message
     if not msg_text:
@@ -122,6 +172,7 @@ async def process_new_message(event):
 
     # Build output data
     threat_id = f"evt_{int(datetime.now().timestamp())}_{str(uuid.uuid4())[:4]}"
+    now_iso = datetime.now().isoformat()
 
     if resolved and resolved.status != 'rejected':
         location = resolved.place_name
@@ -146,14 +197,17 @@ async def process_new_message(event):
     data = {
         'id': threat_id,
         'type': entities.event_type,
+        'threat_type': entities.event_type,  # frontend compatibility
         'location': location,
+        'place': location,                   # frontend compatibility
         'region': region,
         'text': msg_text,
         'lat': coords[0] if coords else None,
         'lng': coords[1] if coords else None,
         'channel_id': channel_id,
         'msg_id': msg_id,
-        'ts': datetime.now().isoformat(),
+        'ts': now_iso,
+        'date': now_iso,                     # frontend compatibility
         'confidence': round(confidence, 3),
         'resolve_status': resolve_status,
         'candidates': candidates_json,
@@ -180,6 +234,17 @@ async def process_new_message(event):
 
     db.save_threat(threat_id, data, ttl=ttl)
     db.publish_update('new_threat', data)
+
+    # 5. Save to messages.json (for Next.js frontend)
+    # Only save markers that have coordinates and are not hidden
+    if coords and not data.get('hidden'):
+        try:
+            current = message_store.load()
+            current.append(data)
+            message_store.save(current)
+            log.info(f"Saved to messages.json: {threat_id} ({len(current)+1} total)")
+        except Exception as e:
+            log.error(f"Failed to save to messages.json: {e}", exc_info=True)
 
 
 def shutdown_handler(sig, frame):
