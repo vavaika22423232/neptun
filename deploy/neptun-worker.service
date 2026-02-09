@@ -1,0 +1,28 @@
+[Unit]
+Description=Neptun Telegram Worker (Python)
+After=network.target neptun-web.service
+
+[Service]
+Type=simple
+User=neptun
+Group=neptun
+WorkingDirectory=/home/neptun/app/nextjs-app/worker
+EnvironmentFile=/home/neptun/app/deploy/.env
+ExecStart=/home/neptun/app/nextjs-app/worker/venv/bin/python worker.py
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=neptun-worker
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Memory limit
+MemoryMax=500M
+
+[Install]
+WantedBy=multi-user.target

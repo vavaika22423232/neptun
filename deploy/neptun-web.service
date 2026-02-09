@@ -1,0 +1,28 @@
+[Unit]
+Description=Neptun Next.js Web Service
+After=network.target
+
+[Service]
+Type=simple
+User=neptun
+Group=neptun
+WorkingDirectory=/home/neptun/app/nextjs-app
+EnvironmentFile=/home/neptun/app/deploy/.env
+ExecStart=/usr/bin/node .next/standalone/server.js
+Restart=always
+RestartSec=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=neptun-web
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Memory limit (leave headroom for worker)
+MemoryMax=1200M
+
+[Install]
+WantedBy=multi-user.target
