@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { publishMarkerDerivedCacheInvalidate } from '@/lib/redis';
 
 // ============================================
 // In-memory TTL cache for API routes
@@ -6,6 +7,7 @@ import crypto from 'crypto';
 
 interface CacheEntry<T> {
   data: T;
+  json: string;   // pre-serialized JSON (avoids double-stringify)
   etag: string;
   timestamp: number;
   ttl: number;
@@ -18,7 +20,6 @@ class MemoryCache {
     const entry = this.store.get(key) as CacheEntry<T> | undefined;
     if (!entry) return null;
 
-    // Check if expired
     if (Date.now() - entry.timestamp > entry.ttl) {
       this.store.delete(key);
       return null;
@@ -28,11 +29,13 @@ class MemoryCache {
   }
 
   set<T>(key: string, data: T, ttlMs: number): CacheEntry<T> {
+    // Serialize once — reused for ETag hash and response body
     const json = JSON.stringify(data);
     const etag = `"${crypto.createHash('md5').update(json).digest('hex').slice(0, 16)}"`;
 
     const entry: CacheEntry<T> = {
       data,
+      json,
       etag,
       timestamp: Date.now(),
       ttl: ttlMs,
@@ -44,7 +47,6 @@ class MemoryCache {
 
   /**
    * Get data if still fresh, otherwise return stale data if within stale TTL.
-   * Useful for serving stale data while refreshing.
    */
   getWithStale<T>(key: string, staleTtlMs: number): { entry: CacheEntry<T> | null; isStale: boolean } {
     const entry = this.store.get(key) as CacheEntry<T> | undefined;
@@ -74,6 +76,35 @@ class MemoryCache {
 // Singleton cache instance
 export const cache = new MemoryCache();
 
+/** API response caches built from markers-store (must stay in sync across PM2 workers). */
+export const MARKER_DERIVED_CACHE_KEYS = [
+  'data_markers',
+  'data_markers_extended',
+  'threats_data',
+  'threats_data_extended',
+  'messages_mobile',
+  'fusion_trajectories',
+] as const;
+
+/** Drop marker-derived HTTP cache entries on this Node process only (no Redis publish). */
+export function clearMarkerDerivedApiCachesLocal(): void {
+  for (const key of MARKER_DERIVED_CACHE_KEYS) {
+    cache.delete(key);
+  }
+}
+
+/**
+ * Bust marker-derived API caches locally and on all PM2 workers (Redis pub/sub).
+ * Use after writes to markers / admin settings that affect API shape.
+ * On poll-only sync, prefer `clearMarkerDerivedApiCachesLocal()` to avoid redundant publishes.
+ */
+export function invalidateMarkerDerivedCaches(): void {
+  clearMarkerDerivedApiCachesLocal();
+  publishMarkerDerivedCacheInvalidate().catch(() => {
+    /* Redis optional */
+  });
+}
+
 /**
  * Generate ETag from data
  */
@@ -83,14 +114,16 @@ export function generateETag(data: unknown): string {
 }
 
 /**
- * Helper to create a NextResponse with ETag support.
+ * Helper to create a Response with ETag support.
  * Returns 304 if client has matching ETag.
+ * Uses pre-serialized JSON from cache entry when available.
  */
 export function withETag(
   data: unknown,
   etag: string,
   clientETag: string | null,
-  headers?: Record<string, string>
+  headers?: Record<string, string>,
+  preSerializedJson?: string,
 ): Response {
   if (clientETag && clientETag === etag) {
     return new Response(null, { status: 304 });
@@ -103,7 +136,10 @@ export function withETag(
     ...headers,
   };
 
-  return new Response(JSON.stringify(data), {
+  // Use pre-serialized JSON if available (avoids second JSON.stringify)
+  const body = preSerializedJson ?? JSON.stringify(data);
+
+  return new Response(body, {
     status: 200,
     headers: responseHeaders,
   });

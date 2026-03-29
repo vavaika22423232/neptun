@@ -1,0 +1,22 @@
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <g transform="translate(24,24) rotate(-90)">
+        <!-- Fuselage — elongated -->
+        <path d="M0,-23 L2.5,-18 L3,-8 L3,6 L2.5,14 L1.5,18 L0,22 L-1.5,18 L-2.5,14 L-3,6 L-3,-8 L-2.5,-18 Z" fill="#ffffff" stroke="#222222" stroke-width="1" stroke-linejoin="round"/>
+        <!-- Nose -->
+        <path d="M0,-23 L1.8,-18 L0,-16 L-1.8,-18 Z" fill="#eeeeee" stroke="#222222" stroke-width="0.8"/>
+        <!-- Main wings -->
+        <path d="M3,-1 L20,2 L21,5 L3.5,9 Z" fill="#ffffff" stroke="#222222" stroke-width="1" stroke-linejoin="round"/>
+        <path d="M-3,-1 L-20,2 L-21,5 L-3.5,9 Z" fill="#ffffff" stroke="#222222" stroke-width="1" stroke-linejoin="round"/>
+        <!-- Tail fins -->
+        <path d="M2.5,14 L9,19 L8,22 L1.5,18 Z" fill="#ffffff" stroke="#222222" stroke-width="1" stroke-linejoin="round"/>
+        <path d="M-2.5,14 L-9,19 L-8,22 L-1.5,18 Z" fill="#ffffff" stroke="#222222" stroke-width="1" stroke-linejoin="round"/>
+        <!-- Vertical stabilizer -->
+        <path d="M0,16 L1.2,21 L0,23 L-1.2,21 Z" fill="#f0f0f0" stroke="#222222" stroke-width="0.8"/>
+        <!-- Cockpit -->
+        <ellipse cx="0" cy="-12" rx="1.6" ry="3.5" fill="#d0d0d0" stroke="#333333" stroke-width="0.6"/>
+        <ellipse cx="0" cy="-12.5" rx="0.9" ry="2.5" fill="#bbbbbb" opacity="0.7"/>
+        <!-- Exhaust -->
+        <ellipse cx="0" cy="22.5" rx="1.5" ry="1" fill="#FF6600" opacity="0.85"/>
+        <ellipse cx="0" cy="22.5" rx="0.7" ry="0.6" fill="#FFCC00" opacity="0.9"/>
+    </g>
+</svg>

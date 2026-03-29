@@ -1,105 +1,148 @@
 import { NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
-
-// ── Config ───────────────────────────────────────────────────────────────────
-const AUTH_SECRET = process.env.AUTH_SECRET || '';
-const DATA_DIR = process.env.DATA_DIR || '/data';
-const MESSAGES_FILE = path.join(DATA_DIR, 'messages.json');
-
-const MAX_MESSAGES = 500;
-const RETENTION_HOURS = 3;
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function loadMessages(): Record<string, unknown>[] {
-  try {
-    if (fs.existsSync(MESSAGES_FILE)) {
-      const raw = fs.readFileSync(MESSAGES_FILE, 'utf-8');
-      const data = JSON.parse(raw);
-      return Array.isArray(data) ? data : [];
-    }
-  } catch (err) {
-    console.warn('[INGEST] Failed to load messages.json:', err);
-  }
-  return [];
-}
-
-function pruneMessages(messages: Record<string, unknown>[]): Record<string, unknown>[] {
-  const cutoff = new Date(Date.now() - RETENTION_HOURS * 60 * 60 * 1000).toISOString();
-
-  let result = messages.filter((m) => {
-    // Always keep manual markers
-    if (m.manual) return true;
-
-    // Check timestamp — drop if older than cutoff
-    const ts = (m.ts || m.timestamp || m.date || '') as string;
-    if (ts && ts < cutoff) return false;
-
-    return true;
-  });
-
-  // Cap at MAX_MESSAGES (keep newest)
-  if (result.length > MAX_MESSAGES) {
-    result.sort((a, b) => {
-      const aTs = (a.ts || a.timestamp || a.date || '') as string;
-      const bTs = (b.ts || b.timestamp || b.date || '') as string;
-      return bTs.localeCompare(aTs);
-    });
-    result = result.slice(0, MAX_MESSAGES);
-  }
-
-  return result;
-}
-
-function saveMessages(messages: Record<string, unknown>[]): void {
-  const dir = path.dirname(MESSAGES_FILE);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  const tmpFile = MESSAGES_FILE + '.tmp';
-  fs.writeFileSync(tmpFile, JSON.stringify(messages, null, 2), 'utf-8');
-  fs.renameSync(tmpFile, MESSAGES_FILE);
-}
+import { broadcastSSE } from '@/app/api/chat/stream/route';
+import { addMarker, patchMarker, upsertByTrackId, initStore } from '@/lib/markers-store';
+import { loadSettings } from '@/lib/admin/data';
+import { ingestBodyTooLargeResponse } from '@/lib/ingest-body-limit';
+import { validateIngestMarker, validateIngestPatchUpdates } from '@/lib/ingest-validate';
+import { verifyIngestOrRespond } from '@/lib/ingest-auth-guard';
+import { IngestMarkerSchema, IngestPatchSchema } from '@/lib/api-schemas';
 
 // ── POST handler ─────────────────────────────────────────────────────────────
 
 export async function POST(request: Request) {
-  // Auth check
-  if (!AUTH_SECRET) {
-    return NextResponse.json({ error: 'AUTH_SECRET not configured' }, { status: 500 });
-  }
+  const denied = await verifyIngestOrRespond(request);
+  if (denied) return denied;
 
-  const authHeader = request.headers.get('X-Auth-Secret');
-  if (authHeader !== AUTH_SECRET) {
-    console.warn(`[INGEST] 401 Unauthorized (header ${authHeader ? 'present but wrong' : 'missing'})`);
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const tooLarge = ingestBodyTooLargeResponse(request);
+  if (tooLarge) return tooLarge;
 
-  // Parse body
-  let body: { marker?: Record<string, unknown> };
+  await initStore();
+
+  let rawBody: unknown;
   try {
-    body = await request.json();
+    rawBody = await request.json();
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const marker = body.marker;
-  if (!marker || !marker.lat || !marker.lng) {
-    return NextResponse.json({ error: 'Missing marker or coordinates' }, { status: 400 });
+  const parsed = IngestMarkerSchema.safeParse(rawBody);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.issues[0]?.message || 'Invalid payload' }, { status: 400 });
   }
 
-  // Load → append → prune → save
-  const messages = loadMessages();
-  messages.push(marker);
-  const pruned = pruneMessages(messages);
-  saveMessages(pruned);
+  const marker = parsed.data.marker as Record<string, unknown>;
 
-  const removed = messages.length - pruned.length;
+  const coordCheck = validateIngestMarker(marker);
+  if (!coordCheck.ok) {
+    console.warn(`[INGEST] Rejected marker coords: ${coordCheck.error}`, marker.id ?? marker.track_id);
+    return NextResponse.json({ error: coordCheck.error }, { status: 400 });
+  }
+
+  // Track-aware upsert: if marker has track_id, use upsert logic
+  if (marker.track_id && typeof marker.track_id === 'string') {
+    const result = await upsertByTrackId(marker.track_id, marker);
+
+    const minConf = loadSettings().minConfidence ?? 0.3;
+    const shouldBroadcast = marker.manual
+      || typeof marker.confidence !== 'number'
+      || marker.confidence >= minConf;
+
+    // Broadcast track update — strip positions[] to save bandwidth (skip if below confidence threshold)
+    // For 'updated' mode, client appends lat/lng locally; for 'created', client uses initial position
+    // Full positions[] is fetched via /api/data polling
+    if (shouldBroadcast) {
+      const broadcastMarker: Record<string, unknown> = { ...marker, id: result.id };
+      if (result.mode === 'updated') {
+        delete broadcastMarker.positions; // client builds locally from lat/lng
+      } else if (Array.isArray(broadcastMarker.positions) && (broadcastMarker.positions as unknown[]).length > 3) {
+        broadcastMarker.positions = (broadcastMarker.positions as unknown[]).slice(-3);
+      }
+      broadcastSSE({
+        type: 'track_update',
+        data: {
+          track_id: marker.track_id,
+          mode: result.mode,
+          marker: broadcastMarker,
+        },
+      });
+    }
+
+    console.log(
+      `[INGEST] Track ${result.mode}: ${marker.track_id} (id=${result.id}) — ${result.total} total`
+    );
+
+    return NextResponse.json({ ok: true, total: result.total, mode: result.mode, id: result.id });
+  }
+
+  // Legacy: no track_id — add as standalone marker
+  const result = await addMarker(marker);
+
+  const minConf = loadSettings().minConfidence ?? 0.3;
+  const shouldBroadcast = marker.manual
+    || typeof marker.confidence !== 'number'
+    || marker.confidence >= minConf;
+
+  // Broadcast new marker to all SSE clients (real-time push) — skip if below confidence threshold
+  if (shouldBroadcast) {
+    broadcastSSE({ type: 'marker_new', data: marker });
+  }
+
   console.log(
-    `[INGEST] Saved marker ${marker.id} — ${pruned.length} total` +
-    (removed > 0 ? `, pruned ${removed} old` : '')
+    `[INGEST] Saved marker ${marker.id} — ${result.total} total` +
+    (result.removed > 0 ? `, pruned ${result.removed} old` : '')
   );
 
-  return NextResponse.json({ ok: true, total: pruned.length });
+  return NextResponse.json({
+    ok: true,
+    total: result.total,
+    id: result.id ?? marker.id,
+  });
+}
+
+// ── PATCH handler — update existing marker fields ────────────────────────────
+
+export async function PATCH(request: Request) {
+  const denied = await verifyIngestOrRespond(request);
+  if (denied) return denied;
+
+  const tooLargePatch = ingestBodyTooLargeResponse(request);
+  if (tooLargePatch) return tooLargePatch;
+
+  await initStore();
+
+  let rawBody: unknown;
+  try {
+    rawBody = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
+
+  const parsedPatch = IngestPatchSchema.safeParse(rawBody);
+  if (!parsedPatch.success) {
+    return NextResponse.json({ error: parsedPatch.error.issues[0]?.message || 'Invalid payload' }, { status: 400 });
+  }
+
+  const { id, updates } = parsedPatch.data;
+
+  const patchCoords = validateIngestPatchUpdates(updates);
+  if (!patchCoords.ok) {
+    console.warn(`[INGEST] PATCH rejected: ${patchCoords.error}`);
+    return NextResponse.json({ error: patchCoords.error }, { status: 400 });
+  }
+
+  const ok = await patchMarker(id, updates);
+  if (!ok) {
+    return NextResponse.json({ error: 'Marker not found' }, { status: 404 });
+  }
+
+  // Broadcast as track_update if track_id is present, otherwise legacy marker_update
+  const trackId = updates.track_id as string | undefined;
+  if (trackId) {
+    broadcastSSE({ type: 'track_update', data: { track_id: trackId, mode: 'updated', marker: { id, ...updates } } });
+  } else {
+    broadcastSSE({ type: 'marker_update', data: { id, ...updates } });
+  }
+
+  console.log(`[INGEST] PATCH marker ${id}: ${Object.keys(updates).join(', ')}`);
+  return NextResponse.json({ ok: true, updated: id });
 }

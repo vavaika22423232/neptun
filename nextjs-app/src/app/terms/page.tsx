@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import Footer from '@/components/Footer';
 
 export const metadata: Metadata = {
   title: 'Умови використання — NEPTUN',
@@ -8,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function TermsPage() {
   return (
-    <div className="min-h-screen bg-[#0a0e17] text-white/80 p-6 max-w-3xl mx-auto overflow-y-auto">
+    <div className="min-h-screen bg-[var(--surface-dim)] text-white/80 p-6 max-w-3xl mx-auto overflow-y-auto">
       <Link href="/" className="text-blue-400 hover:text-blue-300 text-sm mb-6 inline-block">
         &larr; Повернутися на карту
       </Link>
@@ -42,6 +43,7 @@ export default function TermsPage() {
           </a>.
         </p>
       </div>
+      <Footer />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 """
 Lightweight in-memory database for the worker.
 
-The worker runs on Render as a separate service WITHOUT Redis.
+The worker runs on the VPS as a separate service WITHOUT Redis.
 It only needs deduplication (to avoid processing the same Telegram message twice).
 Actual marker persistence goes through POST /api/ingest on the web service.
 

@@ -1,34 +1,23 @@
 import { NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
-
-const DATA_DIR = process.env.DATA_DIR || '/data';
-const BANS_FILE = path.join(DATA_DIR, 'chat_bans.json');
-
-interface BanEntry {
-  device_id: string;
-  nickname: string;
-  reason: string;
-  banned_at: string;
-  banned_by?: string;
-}
-
-function loadBans(): BanEntry[] {
-  try {
-    if (fs.existsSync(BANS_FILE)) {
-      return JSON.parse(fs.readFileSync(BANS_FILE, 'utf-8'));
-    }
-  } catch { /* empty */ }
-  return [];
-}
+import { loadChatBans, isModeratorDevice } from '@/lib/admin/data';
 
 /**
- * GET /api/chat/ban-list
- * Get list of banned nicknames (moderator action).
+ * GET /api/chat/ban-list?deviceId=xxx
+ * Get list of banned users with details (moderator action).
+ * Requires moderator deviceId as query param.
  */
-export async function GET() {
-  const bans = loadBans();
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const deviceId = searchParams.get('deviceId') || '';
+
+  // Auth: only moderators can view ban list
+  if (!deviceId || !isModeratorDevice(deviceId)) {
+    return NextResponse.json({ error: 'Доступ заборонено' }, { status: 403 });
+  }
+
+  const bans = loadChatBans();
   return NextResponse.json({
     banned: bans.map((b) => b.nickname),
+    details: bans,
   });
 }

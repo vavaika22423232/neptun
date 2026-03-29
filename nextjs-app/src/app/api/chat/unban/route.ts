@@ -1,51 +1,30 @@
 import { NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
-
-const DATA_DIR = process.env.DATA_DIR || '/data';
-const BANS_FILE = path.join(DATA_DIR, 'chat_bans.json');
-
-interface BanEntry {
-  device_id: string;
-  nickname: string;
-  reason: string;
-  banned_at: string;
-  banned_by?: string;
-}
-
-function loadBans(): BanEntry[] {
-  try {
-    if (fs.existsSync(BANS_FILE)) {
-      return JSON.parse(fs.readFileSync(BANS_FILE, 'utf-8'));
-    }
-  } catch { /* empty */ }
-  return [];
-}
-
-function saveBans(bans: BanEntry[]) {
-  const dir = path.dirname(BANS_FILE);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(BANS_FILE, JSON.stringify(bans, null, 2), 'utf-8');
-}
+import { loadChatBans, saveChatBans, isModeratorDevice } from '@/lib/admin/data';
 
 /**
  * POST /api/chat/unban
  * Unban a user from chat (moderator action).
+ * Requires moderator deviceId in body.
  */
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { nickname } = body;
+    const { nickname, deviceId } = body;
+
+    // Auth: only moderators can unban
+    if (!deviceId || !isModeratorDevice(deviceId)) {
+      return NextResponse.json({ error: 'Доступ заборонено' }, { status: 403 });
+    }
 
     if (!nickname) {
       return NextResponse.json({ error: 'Missing nickname' }, { status: 400 });
     }
 
-    const bans = loadBans();
+    const bans = loadChatBans();
     const filtered = bans.filter((b) => b.nickname.toLowerCase() !== nickname.toLowerCase());
-    saveBans(filtered);
+    saveChatBans(filtered);
 
-    console.log(`[CHAT] Unbanned: ${nickname}`);
+    console.log(`[CHAT] Unbanned: ${nickname} by ${deviceId}`);
     return NextResponse.json({ status: 'ok' });
   } catch (err) {
     console.error('[CHAT] Unban error:', err);

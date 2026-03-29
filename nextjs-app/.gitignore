@@ -39,3 +39,14 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Python (venv may exist on server in same directory)
+venv/
+__pycache__/
+*.pyc
+
+# Worker (Python code, separate from Next.js)
+worker/
+
+# Deploy scripts
+deploy/

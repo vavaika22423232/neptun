@@ -14,7 +14,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // Allow login page without auth
   // For other admin pages, validate session server-side
   const isLoginPage = false; // layout wraps all /admin/* pages
-  if (!isLoginPage && !validateSession(token)) {
+  if (!isLoginPage && !(await validateSession(token))) {
     // Check if this is the login page by examining children
     // We can't easily check path in layout, so middleware handles redirect
     // This is a fallback check

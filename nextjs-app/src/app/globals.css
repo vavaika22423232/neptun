@@ -1,44 +1,110 @@
 @import "tailwindcss";
 
+/* TailAdmin: vendored copy of designpack/src/styles/tailadmin.css (npm run designpack:sync-css) */
+@import "../styles/tailadmin.css";
+
+/* next/font Inter — designpack defaults to Outfit on body; we override below */
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  .dark *,
+  .dark ::after,
+  .dark ::before,
+  .dark ::backdrop,
+  .dark ::file-selector-button {
+    border-color: var(--color-gray-800);
+  }
+}
+
 /* ============================================
-   NEPTUN — Material You Dark Theme
+   NEPTUN semantics → bridge to designpack @theme
    ============================================ */
-
 :root {
-  /* Primary palette — cyan/teal accent */
-  --primary: #80d8ff;
-  --primary-container: #004c6d;
-  --on-primary: #003549;
-  --on-primary-container: #c4e7ff;
+  --primary: var(--color-brand-400);
+  --primary-container: var(--color-brand-900);
+  --on-primary: #ffffff;
+  --on-primary-container: var(--color-brand-50);
 
-  /* Secondary — warm accent */
-  --secondary: #ffb74d;
-  --secondary-container: #6d3a00;
-  --on-secondary-container: #ffddb3;
+  --secondary: var(--color-orange-400);
+  --secondary-container: var(--color-orange-900);
+  --on-secondary-container: var(--color-orange-100);
 
-  /* Tertiary — vibrant pink for alerts */
-  --tertiary: #ff7eb3;
+  --tertiary: var(--color-theme-pink-500);
   --tertiary-container: #7d0036;
   --on-tertiary-container: #ffd9e6;
 
-  /* Error/Alarm */
-  --error: #ffb4ab;
-  --error-container: #93000a;
-  --on-error-container: #ffdad6;
+  --error: var(--color-error-300);
+  --error-container: var(--color-error-800);
+  --on-error-container: var(--color-error-100);
 
-  /* Surfaces — Material You tonal surfaces */
-  --surface: #0e1218;
-  --surface-dim: #0a0e14;
-  --surface-container-lowest: #060a10;
-  --surface-container-low: #141a24;
-  --surface-container: #1a2030;
-  --surface-container-high: #222a3a;
-  --surface-container-highest: #2c3444;
+  --surface: #141416;
+  --surface-dim: #0a0a0b;
+  --surface-container-lowest: #060606;
+  --surface-container-low: #111113;
+  --surface-container: #18181b;
+  --surface-container-high: #1f1f23;
+  --surface-container-highest: #27272a;
 
-  --on-surface: #e2e2e6;
-  --on-surface-variant: #c2c6d0;
-  --outline: #8c9099;
-  --outline-variant: #42474e;
+  --on-surface: #f4f4f5;
+  --on-surface-variant: #a1a1aa;
+  --outline: #71717a;
+  --outline-variant: #3f3f46;
+  --chrome-border: rgba(255, 255, 255, 0.08);
+
+  --map-label: rgba(228, 228, 231, 0.9);
+  --map-fill-quiet: #161618;
+  --map-fill-hover: #1f1f22;
+  --map-stroke-soft: rgba(117, 146, 255, 0.16);
+  --map-stroke-mid: rgba(117, 146, 255, 0.4);
+}
+
+:root.theme-light {
+  --primary: #00668a;
+  --primary-container: #b8e5ff;
+  --on-primary: #ffffff;
+  --on-primary-container: #003548;
+
+  --secondary: #8b5a00;
+  --secondary-container: #ffddb3;
+  --on-secondary-container: #2b1700;
+
+  --tertiary: #9e0042;
+  --tertiary-container: #ffd9e6;
+  --on-tertiary-container: #3d0019;
+
+  --error: #ba1a1a;
+  --error-container: #ffdad6;
+  --on-error-container: #410002;
+
+  --surface: #f5f7fa;
+  --surface-dim: #e8ecf0;
+  --surface-container-lowest: #ffffff;
+  --surface-container-low: #f0f3f8;
+  --surface-container: #e8ecf2;
+  --surface-container-high: #e0e5ec;
+  --surface-container-highest: #d8dee6;
+
+  --on-surface: #1a1d24;
+  --on-surface-variant: #4a4e58;
+  --outline: #6c7079;
+  --outline-variant: #a8acb4;
+  --chrome-border: rgba(0, 0, 0, 0.08);
+
+  --map-label: rgba(10, 10, 11, 0.9);
+  --map-fill-quiet: #e8ecf0;
+  --map-fill-hover: #d8dee6;
+  --map-stroke-soft: rgba(0, 50, 150, 0.16);
+  --map-stroke-mid: rgba(0, 50, 150, 0.4);
+}
+
+@utility scrollbar-none {
+  &::-webkit-scrollbar {
+    display: none;
+  }
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 /* Disable all selection and tap highlight globally */
@@ -48,7 +114,8 @@
   box-sizing: border-box;
 }
 
-html, body {
+html,
+body {
   margin: 0;
   padding: 0;
   width: 100%;
@@ -60,11 +127,31 @@ html, body {
   -webkit-overflow-scrolling: touch;
 }
 
+@layer base {
+  body {
+    @apply relative z-1 font-normal font-sans;
+    background-color: transparent;
+  }
+}
+
 @supports (padding: max(0px)) {
   body {
     padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
   }
+}
+
+/* Top chrome portaled to body — avoids fixed-position jumps when panning Leaflet / MapLibre */
+#neptun-fixed-chrome {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  pointer-events: none;
+  isolation: isolate;
+}
+
+#neptun-fixed-chrome > * {
+  pointer-events: auto;
 }
 
 /* ============================================
@@ -76,7 +163,7 @@ html, body {
 }
 
 .leaflet-container {
-  background: var(--surface-dim) !important;
+  background: transparent !important;
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
@@ -86,7 +173,8 @@ html, body {
    --map-opacity is controlled by updateSvgOpacity() in MapContainer.tsx */
 #leaflet-map .leaflet-tile-pane {
   opacity: var(--map-opacity, 0);
-  transition: opacity 0.3s ease;
+  transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, opacity;
 }
 
 .leaflet-control-attribution,
@@ -97,6 +185,7 @@ html, body {
 .leaflet-marker-icon.threat-marker-icon {
   background: none !important;
   border: none !important;
+  will-change: transform;
 }
 
 /* SVG overlay inside Leaflet */
@@ -109,22 +198,33 @@ html, body {
   pointer-events: all;
 }
 
-.leaflet-svg-pane { z-index: 200; }
-.leaflet-trajectory-pane { z-index: 400; }
-.leaflet-marker-pane { z-index: 600; }
+.leaflet-svg-pane {
+  z-index: 200;
+  will-change: transform, opacity;
+}
+.leaflet-trajectory-pane {
+  z-index: 400;
+  will-change: transform, opacity;
+}
+.leaflet-marker-pane {
+  z-index: 600;
+  will-change: transform;
+}
 
 /* ============================================
-   SVG Map Overlay Styles — Material You colors
+   SVG Map Overlay Styles — Apple Glassmorphism
    ============================================ */
 .svg-states-layer,
 .svg-districts-layer {
-  opacity: 0.6;
-  transition: opacity 0.4s ease;
+  opacity: 1;
+  transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity;
 }
 
 .leaflet-container.high-zoom .svg-states-layer,
 .leaflet-container.high-zoom .svg-districts-layer {
-  opacity: 0.15;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .svg-names-layer {
@@ -132,56 +232,87 @@ html, body {
 }
 
 .svg-names-layer text {
-  fill: rgba(194, 231, 255, 0.85);
-  font-family: 'Inter', sans-serif;
-  font-weight: 400;
-  text-shadow: 0 0 12px rgba(128, 216, 255, 0.4), 0 2px 6px rgba(0, 0, 0, 0.9);
+  fill: rgba(255, 255, 255, 0.45);
+  font-family: var(--font-inter), sans-serif;
+  font-weight: 500;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  letter-spacing: 0.02em;
+}
+.theme-light .svg-names-layer text {
+  fill: rgba(0, 0, 0, 0.55);
+  text-shadow: 0 1px 4px rgba(255, 255, 255, 0.8);
 }
 
 .svg-names-layer .reasonIcon {
   display: none;
 }
 
-/* Oblast regions — tonal surface with cyan border */
 .stateObject {
-  fill: #0d1a2a;
-  stroke: var(--primary);
+  fill: rgba(255, 255, 255, 0.03);
+  stroke: rgba(255, 255, 255, 0.08);
   stroke-width: 0.4;
-  stroke-opacity: 0.2;
-  transition: fill 0.4s ease, stroke 0.4s ease;
+  transition:
+    fill 0.4s cubic-bezier(0.2, 0, 0, 1),
+    stroke 0.4s cubic-bezier(0.2, 0, 0, 1);
+}
+.theme-light .stateObject {
+  fill: rgba(0, 0, 0, 0.02);
+  stroke: rgba(0, 0, 0, 0.06);
 }
 
 .stateObject:hover {
-  fill: #142238;
-  stroke-opacity: 0.5;
+  fill: rgba(255, 255, 255, 0.07);
+  stroke: rgba(255, 255, 255, 0.15);
+}
+.theme-light .stateObject:hover {
+  fill: rgba(0, 0, 0, 0.06);
+  stroke: rgba(0, 0, 0, 0.12);
 }
 
 .stateObject.alarm {
-  fill: var(--error-container);
-  stroke: var(--error);
-  stroke-opacity: 0.8;
-  animation: alarmPulse 2s ease-in-out infinite;
+  fill: rgba(255, 59, 48, 0.15); /* Apple Red translucent */
+  stroke: rgba(255, 59, 48, 0.4);
+  animation: alarmGlassPulse 3s ease-in-out infinite;
+}
+.theme-light .stateObject.alarm {
+  fill: rgba(255, 59, 48, 0.1);
+  stroke: rgba(255, 59, 48, 0.3);
+}
+
+@keyframes alarmGlassPulse {
+  0% { fill: rgba(255, 59, 48, 0.12); stroke: rgba(255, 59, 48, 0.25); }
+  50% { fill: rgba(255, 59, 48, 0.22); stroke: rgba(255, 59, 48, 0.45); }
+  100% { fill: rgba(255, 59, 48, 0.12); stroke: rgba(255, 59, 48, 0.25); }
 }
 
 /* District regions */
 .dist {
   fill: transparent;
-  stroke: rgba(128, 216, 255, 0.1);
-  stroke-width: 0.1;
-  transition: fill 0.4s ease, stroke 0.4s ease;
+  stroke: rgba(255, 255, 255, 0.03);
+  stroke-width: 0.2;
+  transition:
+    fill 0.4s ease,
+    stroke 0.4s ease;
   pointer-events: all;
+}
+.theme-light .dist {
+  stroke: rgba(0, 0, 0, 0.04);
 }
 
 .dist:hover {
-  fill: rgba(128, 216, 255, 0.08);
-  stroke: rgba(128, 216, 255, 0.35);
+  fill: rgba(255, 255, 255, 0.05);
+  stroke: rgba(255, 255, 255, 0.1);
   cursor: pointer;
+}
+.theme-light .dist:hover {
+  fill: rgba(0, 0, 0, 0.04);
+  stroke: rgba(0, 0, 0, 0.1);
 }
 
 .dist.alarm {
-  fill: #dc2626;
-  stroke: #ff6b6b;
-  stroke-width: 0.2;
+  fill: rgba(255, 59, 48, 0.1);
+  stroke: rgba(255, 59, 48, 0.3);
+  stroke-width: 0.3;
 }
 
 /* ============================================
@@ -237,18 +368,21 @@ html, body {
    Tooltip — Material You surface
    ============================================ */
 .marker-tooltip {
-  position: fixed;
+  position: absolute;
   z-index: 10000;
-  background: var(--surface-container-high);
-  border: 1px solid var(--outline-variant);
-  border-radius: 16px;
-  padding: 12px 16px;
-  color: var(--on-surface);
-  font-size: 12px;
+  background: transparent;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
   pointer-events: none;
-  backdrop-filter: blur(16px);
-  max-width: 250px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  text-shadow: 0 2px 8px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,1);
+  white-space: nowrap;
+}
+.theme-light .marker-tooltip {
+  color: #1a1d24;
+  text-shadow: 0 2px 8px rgba(255,255,255,0.8), 0 0 2px rgba(255,255,255,1);
 }
 
 .tooltip-type {
@@ -271,18 +405,30 @@ html, body {
 /* ============================================
    Animations
    ============================================ */
+/* Opacity only — transform here overwrites Tailwind translate / visual-viewport fix on the navbar */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes alarmPulse {
-  0%, 100% { fill: var(--error-container); }
-  50% { fill: #6d0012; }
+  0%,
+  100% {
+    fill: var(--error-container);
+  }
+  50% {
+    fill: #6d0012;
+  }
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -309,13 +455,13 @@ html, body {
   }
 
   .stateObject:hover {
-    fill: #0d1a2a;
+    fill: var(--map-fill-quiet);
     stroke-opacity: 0.2;
   }
 
   .dist:hover {
     fill: transparent;
-    stroke: rgba(128, 216, 255, 0.1);
+    stroke: var(--map-stroke-soft);
     cursor: default;
   }
 }
@@ -351,19 +497,18 @@ html, body {
    Admin marker popup
    ============================================ */
 .admin-marker-popup .leaflet-popup-content-wrapper {
-  background: rgba(26, 32, 48, 0.95) !important;
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(128, 216, 255, 0.1);
-  border-radius: 16px !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  background: #0a0a0b !important;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px !important;
+  box-shadow: 0 32px 64px rgba(0, 0, 0, 0.9);
   color: #fff;
 }
 .admin-marker-popup .leaflet-popup-content {
   margin: 12px 14px !important;
 }
 .admin-marker-popup .leaflet-popup-tip {
-  background: rgba(26, 32, 48, 0.95) !important;
-  border: 1px solid rgba(128, 216, 255, 0.1);
+  background: rgba(10, 10, 11, 0.6) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 .admin-marker-popup .leaflet-popup-close-button {
   color: rgba(255, 255, 255, 0.5) !important;
@@ -373,4 +518,44 @@ html, body {
 }
 .admin-marker-popup .leaflet-popup-close-button:hover {
   color: #ff5252 !important;
+}
+
+/* ============================================
+   V3 Radar Map Override
+   ============================================ */
+.leaflet-container {
+  background: transparent !important;
+  font-family: var(--font-inter), sans-serif !important;
+}
+
+.dark-satellite-layer {
+  filter: grayscale(100%) contrast(1.5) brightness(0.4);
+  opacity: 1 !important;
+  transition: filter 0.4s ease-in-out, opacity 0.4s ease-in-out;
+}
+.theme-light .dark-satellite-layer {
+  filter: none;
+  opacity: 1 !important;
+}
+
+.light-streets-layer {
+  opacity: 0 !important;
+  transition: opacity 0.4s ease-in-out;
+}
+.theme-light .light-streets-layer {
+  opacity: 0 !important;
+}
+
+.leaflet-marker-pane img {
+  filter: drop-shadow(0 0 16px rgba(255, 42, 95, 0.4));
+}
+
+/* Neon Vectors */
+.neon-trajectory {
+  filter: drop-shadow(0 0 8px currentColor);
+  animation: pulse-line 2s infinite alternate ease-in-out;
+}
+@keyframes pulse-line {
+  0% { opacity: 0.6; filter: drop-shadow(0 0 4px currentColor); }
+  100% { opacity: 1; filter: drop-shadow(0 0 12px currentColor); }
 }

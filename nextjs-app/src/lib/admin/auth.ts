@@ -1,37 +1,72 @@
 import crypto from 'crypto';
+import bcrypt from 'bcrypt';
+import { getRedis } from '../redis';
 
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '99446626';
+const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD;
 const SESSION_COOKIE_NAME = 'neptun_admin_session';
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-// In-memory session store (survives across requests in the same process)
-const sessions = new Map<string, { createdAt: number }>();
+const SESSION_TTL_S = Math.floor(SESSION_TTL_MS / 1000); // 24 hours in seconds
+const SESSION_PREFIX = 'admin:session:';
 
 export { SESSION_COOKIE_NAME };
 
-export function verifyPassword(password: string): boolean {
-  return password === ADMIN_PASSWORD;
+export async function verifyPassword(password: string): Promise<boolean> {
+  if (!ADMIN_PASSWORD_HASH || !password) return false;
+  // Support both bcrypt hashes ($2b$...) and legacy plain-text passwords
+  if (ADMIN_PASSWORD_HASH.startsWith('$2b$') || ADMIN_PASSWORD_HASH.startsWith('$2a$')) {
+    return bcrypt.compare(password, ADMIN_PASSWORD_HASH);
+  }
+  // Legacy plain-text fallback with timing-safe compare
+  const a = Buffer.from(password, 'utf8');
+  const b = Buffer.from(ADMIN_PASSWORD_HASH, 'utf8');
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
 }
 
-export function createSessionToken(): string {
+/** Returns null if the session could not be persisted (Redis down / misconfigured). */
+export async function createSessionToken(): Promise<string | null> {
   const token = crypto.randomBytes(32).toString('hex');
-  sessions.set(token, { createdAt: Date.now() });
+  try {
+    const ok = await getRedis().set(
+      `${SESSION_PREFIX}${token}`,
+      JSON.stringify({ createdAt: Date.now() }),
+      'EX',
+      SESSION_TTL_S,
+    );
+    if (ok !== 'OK') {
+      console.warn('[AUTH] Redis SET session unexpected reply:', ok);
+      return null;
+    }
+  } catch (err) {
+    console.warn('[AUTH] Failed to save session to Redis:', err);
+    return null;
+  }
   return token;
 }
 
-export function validateSession(token: string | undefined): boolean {
+export async function validateSession(token: string | undefined): Promise<boolean> {
   if (!token) return false;
-  const session = sessions.get(token);
-  if (!session) return false;
-  if (Date.now() - session.createdAt > SESSION_TTL_MS) {
-    sessions.delete(token);
+  try {
+    const raw = await getRedis().get(`${SESSION_PREFIX}${token}`);
+    if (!raw) return false;
+    const session = JSON.parse(raw) as { createdAt: number };
+    if (Date.now() - session.createdAt > SESSION_TTL_MS) {
+      await getRedis().del(`${SESSION_PREFIX}${token}`);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('[AUTH] Failed to validate session in Redis:', err);
     return false;
   }
-  return true;
 }
 
-export function destroySession(token: string): void {
-  sessions.delete(token);
+export async function destroySession(token: string): Promise<void> {
+  try {
+    await getRedis().del(`${SESSION_PREFIX}${token}`);
+  } catch (err) {
+    console.warn('[AUTH] Failed to destroy session in Redis:', err);
+  }
 }
 
 /** Cookie options for the admin session */
@@ -40,5 +75,5 @@ export const sessionCookieOptions = {
   secure: process.env.NODE_ENV === 'production',
   sameSite: 'lax' as const,
   path: '/',
-  maxAge: SESSION_TTL_MS / 1000, // seconds
+  maxAge: SESSION_TTL_S,
 };

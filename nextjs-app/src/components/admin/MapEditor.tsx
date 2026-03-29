@@ -22,20 +22,20 @@ interface MapEditorProps {
 }
 
 const THREAT_COLORS: Record<string, string> = {
-  shahed: '#80d8ff',
+  shahed: '#36e4ff',
   raketa: '#ff5252',
   avia: '#ffab40',
-  pvo: '#69f0ae',
+  pvo: '#5ef5c4',
   vibuh: '#ff5252',
   alarm: '#ff5252',
-  alarm_cancel: '#69f0ae',
+  alarm_cancel: '#5ef5c4',
   obstril: '#ff5252',
   fpv: '#b388ff',
   pusk: '#ff5252',
   kab: '#ffab40',
   rszv: '#ff5252',
   rozved: '#b388ff',
-  manual: '#80d8ff',
+  manual: '#36e4ff',
   default: '#8c9099',
 };
 
@@ -137,12 +137,12 @@ export default function MapEditor({ markers, onAddMarker, onMoveMarker, onSelect
     <div className="bg-[#1a2030] rounded-2xl border border-white/5 overflow-hidden">
       <div className="px-4 py-2.5 border-b border-white/5 flex items-center justify-between">
         <h3 className="text-sm font-medium text-white/70">
-          <span className="material-icons text-[16px] mr-1.5 align-middle text-[#80d8ff]">map</span>
+          <span className="material-icons text-[16px] mr-1.5 align-middle text-[#36e4ff]">map</span>
           Карта міток
         </h3>
         <span className="text-[11px] text-white/30">Клік на карті — додати мітку · Перетягування — перемістити</span>
       </div>
-      <div ref={containerRef} className="h-[400px] w-full" style={{ background: '#0a0e17' }} />
+      <div ref={containerRef} className="h-[400px] w-full" style={{ background: 'var(--surface-dim)' }} />
     </div>
   );
 }

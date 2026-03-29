@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import copy
 import json
 import logging
@@ -165,7 +167,7 @@ class MessageStore:
 
 
 def _get_persistent_path(filename: str) -> str:
-    """Get the path for persistent storage, using /data on Render if available."""
+    """Get the path for persistent storage, using /data on VPS if available."""
     persistent_dir = os.getenv('PERSISTENT_DATA_DIR', '/data')
     if persistent_dir and os.path.isdir(persistent_dir):
         persistent_path = os.path.join(persistent_dir, filename)

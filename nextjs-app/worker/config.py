@@ -93,7 +93,7 @@ class TelegramConfig:
 
     # Channels to monitor
     channels: list[str] = field(
-        default_factory=lambda: _env_list('TELEGRAM_CHANNELS', ['mapstransler'])
+        default_factory=lambda: _env_list('TELEGRAM_CHANNELS', ['povitryanatrivogaaa'])
     )
 
     @property
@@ -159,7 +159,7 @@ class GeocodingConfig:
 @dataclass(frozen=True)
 class StorageConfig:
     """Storage paths configuration."""
-    # Persistent data directory (e.g., /data on Render)
+    # Persistent data directory (e.g., /data on VPS)
     persistent_dir: str = field(
         default_factory=lambda: os.getenv('PERSISTENT_DATA_DIR', '/data')
     )
@@ -227,7 +227,7 @@ class MessageConfig:
 class AlarmConfig:
     """Alarm API configuration."""
     api_key: Optional[str] = field(
-        default_factory=lambda: os.getenv('ALARM_API_KEY') or os.getenv('UKRAINEALARM_API_KEY') or '57fe8a39:7698ad50f0f15d502b280a83019bab25'
+        default_factory=lambda: os.getenv('ALARM_API_KEY') or os.getenv('UKRAINEALARM_API_KEY') or ''
     )
     api_url: str = field(
         default_factory=lambda: os.getenv('ALARM_API_URL', 'https://api.ukrainealarm.com/api/v3')

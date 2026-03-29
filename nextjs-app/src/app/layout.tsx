@@ -15,7 +15,7 @@ export const metadata: Metadata = {
   description:
     'Карта шахедів і повітряних тривог України онлайн. Мапа тривог у реальному часі: шахеди, ракети, БПЛА, КАБ. Радар шахедів з траєкторіями, тривоги по областях 24/7. Безкоштовний додаток.',
   keywords:
-    'карта шахедів, радар шахедів, карта тривог, мапа тривог, карта повітряних тривог, повітряна тривога, повітряна тривога онлайн, карта тривог україни, мапа тривог онлайн, тривога зараз, нептун карта, NEPTUN',
+    'карта шахедів, карта шахедов, радар шахедів, карта тривог, мапа тривог, карта повітряних тривог, повітряна тривога, повітряна тривога онлайн, повітряна тривога онлайн карта що летить, карта тривог україни, мапа тривог онлайн, тривога зараз, нептун, нептун карта, NEPTUN',
   authors: [{ name: 'NEPTUN' }],
   robots: 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1',
   alternates: {
@@ -59,7 +59,7 @@ export const metadata: Metadata = {
     'color-scheme': 'dark',
     'apple-mobile-web-app-title': 'Карта тривог',
     'application-name': 'Карта тривог NEPTUN',
-    'msapplication-TileColor': '#0a0e17',
+    'msapplication-TileColor': '#0c0b0a',
     'msapplication-TileImage': '/static/icons/icon-144.png',
   },
   manifest: '/manifest.json',
@@ -75,7 +75,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#0a0e17',
+  themeColor: '#0a0a0b',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 5,
@@ -90,7 +90,15 @@ const jsonLdSchemas = [
     '@context': 'https://schema.org',
     '@type': 'WebSite',
     name: 'Карта шахедів і тривог України',
-    alternateName: ['Карта тривог', 'Карта шахедів', 'NEPTUN', 'Мапа тривог', 'Радар шахедів'],
+    alternateName: [
+      'Карта тривог',
+      'Мапа тривог',
+      'Карта шахедів',
+      'Нептун карта',
+      'NEPTUN',
+      'Радар шахедів',
+      'Повітряна тривога онлайн',
+    ],
     url: 'https://neptun.in.ua',
     potentialAction: {
       '@type': 'SearchAction',
@@ -122,7 +130,8 @@ const jsonLdSchemas = [
     author: { '@type': 'Organization', name: 'NEPTUN', url: 'https://neptun.in.ua' },
     inLanguage: 'uk',
     isAccessibleForFree: true,
-    keywords: 'карта тривог, карта тривог україни, повітряна тривога онлайн, мапа тривог',
+    keywords:
+      'карта тривог, мапа тривог, карта тривог україни, повітряна тривога онлайн, повітряна тривога онлайн карта що летить, карта шахедів, нептун карта',
   },
   // 4. WebPage
   {
@@ -202,6 +211,22 @@ const jsonLdSchemas = [
           text: 'Так, карта оптимізована для мобільних пристроїв і працює у браузері. Також доступний безкоштовний Android-додаток з push-сповіщеннями.',
         },
       },
+      {
+        '@type': 'Question',
+        name: 'Де подивитися повітряну тривогу онлайн: карта, що летить?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: 'На neptun.in.ua є інтерактивна карта повітряних тривог і загроз у реальному часі: видно, де оголошено тривогу, а також маркери шахедів, ракет і БПЛА з напрямком руху. Відкрийте головну сторінку або розділ «Повітряна тривога онлайн».',
+        },
+      },
+      {
+        '@type': 'Question',
+        name: 'Що таке NEPTUN (нептун карта)?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: 'NEPTUN (часто шукають як «нептун карта») — безкоштовна карта тривог і шахедів для України: повітряна тривога по областях, відстеження БПЛА та ракет, push у додатку.',
+        },
+      },
     ],
   },
   // 6. BreadcrumbList
@@ -279,8 +304,22 @@ const jsonLdSchemas = [
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="uk" className="dark">
+    <html lang="uk" className={inter.variable} suppressHydrationWarning>
       <head>
+        {/* Global theme detection — MUST run synchronously before any React script to prevent FOUC */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var c=document.documentElement.classList;var q=new URLSearchParams(window.location.search);var t=q.get('theme')||localStorage.getItem('theme');var p=window.location.pathname;var isApp=q.get('embed')==='1'||p.includes('export')||p.includes('map_only')||navigator.userAgent.includes('wv')||navigator.userAgent.includes('WebView');if(p.includes('export-light'))t='light';else if(p.includes('export')||p.includes('map_only'))t='dark';if(!t){if(isApp&&window.matchMedia('(prefers-color-scheme: light)').matches)t='light';else t='dark';}function applyT(theme){if(theme==='light'){c.remove('dark');c.add('theme-light');}else{c.remove('theme-light');c.add('dark');}window.dispatchEvent(new Event('theme-change'));}applyT(t);if(isApp){window.matchMedia('(prefers-color-scheme: light)').addEventListener('change',function(e){applyT(e.matches?'light':'dark');});}if(isApp||q.get('embed')==='1')c.add('embed-mode');window.setNeptunTheme=function(theme){applyT(theme);};window.setTheme=window.setNeptunTheme;}catch(e){}})();`,
+          }}
+        />
+
+        {/* Aggressively kill ALL legacy Service Workers (Old Flask mapping App cache) */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(rs){for(var r of rs){r.unregister()}})}`,
+          }}
+        />
+
         {/* hreflang x-default (not supported by Next.js metadata API) */}
         <link rel="alternate" hrefLang="x-default" href="https://neptun.in.ua/" />
 
@@ -288,6 +327,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="preconnect" href="https://fonts.googleapis.com" crossOrigin="anonymous" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link rel="preconnect" href="https://tiles.openfreemap.org" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://a.basemaps.cartocdn.com" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="//b.basemaps.cartocdn.com" />
         <link rel="preconnect" href="https://unpkg.com" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="//fonts.googleapis.com" />
         <link rel="dns-prefetch" href="//fonts.gstatic.com" />
@@ -319,7 +360,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           />
         ))}
       </head>
-      <body className={`${inter.variable} font-sans bg-[#0e1218] text-[#e2e2e6] antialiased`}>
+      <body className="font-mono bg-[#f5f7fa] text-gray-900 dark:bg-[#050505] dark:text-white/80 antialiased selection:bg-[#ff2a5f]/30 relative transition-colors duration-300">
+        {/* Ambient Mesh Background */}
+        <div className="fixed inset-0 z-[-100] overflow-hidden pointer-events-none bg-[#f5f7fa] dark:bg-[#050505] transition-colors duration-300">
+          <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] rounded-full bg-indigo-200/50 dark:bg-indigo-950/80 blur-[140px] opacity-80" />
+          <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-rose-200/40 dark:bg-rose-950/40 blur-[160px] opacity-60" />
+          <div className="absolute top-[30%] left-[20%] w-[40%] h-[40%] rounded-full bg-blue-200/50 dark:bg-blue-900/20 blur-[120px] opacity-50" />
+        </div>
         {children}
 
         {/* Google Analytics - deferred */}

@@ -1,0 +1,269 @@
+'use client';
+
+import { useEffect, useRef, useCallback } from 'react';
+import type { Alarm } from '@/types';
+
+type AlarmCallback = (alarms: Alarm[]) => void;
+type MarkerCallback = (marker: Record<string, unknown>) => void;
+type MarkerDeleteCallback = (id: string) => void;
+type TrackUpdateCallback = (data: { track_id: string; mode: string; marker: Record<string, unknown> }) => void;
+type ChatEventCallback = (type: string, data: Record<string, unknown>) => void;
+type AdminFeedCallback = (data: Record<string, unknown>) => void;
+
+// Global SSE connection shared across all hooks (singleton)
+let globalES: EventSource | null = null;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+const alarmListeners = new Set<AlarmCallback>();
+const markerListeners = new Set<MarkerCallback>();
+const markerDeleteListeners = new Set<MarkerDeleteCallback>();
+const trackUpdateListeners = new Set<TrackUpdateCallback>();
+const chatListeners = new Set<ChatEventCallback>();
+const adminFeedListeners = new Set<AdminFeedCallback>();
+let refCount = 0;
+let retryDelay = 3000; // exponential backoff: 3s → 6s → 12s → 30s max
+const MAX_RETRY_DELAY = 30_000;
+
+function connectGlobalSSE() {
+  if (globalES && globalES.readyState !== EventSource.CLOSED) return;
+
+  const es = new EventSource('/api/chat/stream');
+  globalES = es;
+
+  es.onmessage = (event) => {
+    try {
+      const parsed = JSON.parse(event.data);
+      const { type, data } = parsed;
+
+      if (type === 'alarm_update' && Array.isArray(data)) {
+        alarmListeners.forEach((cb) => {
+          try { cb(data); } catch { /* ignore */ }
+        });
+      } else if (type === 'marker_new' && data) {
+        markerListeners.forEach((cb) => {
+          try { cb(data); } catch { /* ignore */ }
+        });
+      } else if (type === 'markers_refresh' && data) {
+        // Bulk ingest / queue replay — same debounced /api/data fetch as marker_new
+        markerListeners.forEach((cb) => {
+          try { cb(data); } catch { /* ignore */ }
+        });
+      } else if (type === 'marker_update' && data) {
+        // Follow-up position update — treat same as marker_new (triggers refetch)
+        markerListeners.forEach((cb) => {
+          try { cb(data); } catch { /* ignore */ }
+        });
+      } else if (type === 'marker_delete' && data?.id) {
+        markerDeleteListeners.forEach((cb) => {
+          try { cb(String(data.id)); } catch { /* ignore */ }
+        });
+      } else if (type === 'track_update' && data) {
+        // Track-based position update — apply delta directly (no refetch trigger)
+        // Regular 60s polling serves as consistency safety net
+        trackUpdateListeners.forEach((cb) => {
+          try { cb(data as { track_id: string; mode: string; marker: Record<string, unknown> }); } catch { /* ignore */ }
+        });
+      } else if (type === 'admin_feed' && data) {
+        adminFeedListeners.forEach((cb) => {
+          try { cb(data as Record<string, unknown>); } catch { /* ignore */ }
+        });
+      } else if (['connected', 'online', 'new_message', 'delete_message', 'reaction', 'typing'].includes(type)) {
+        chatListeners.forEach((cb) => {
+          try { cb(type, data); } catch { /* ignore */ }
+        });
+      }
+    } catch { /* ignore */ }
+  };
+
+  es.onopen = () => {
+    // Reset backoff on successful connection
+    retryDelay = 3000;
+  };
+
+  es.onerror = () => {
+    es.close();
+    globalES = null;
+    if (refCount > 0) {
+      retryTimer = setTimeout(connectGlobalSSE, retryDelay);
+      // Exponential backoff with jitter
+      retryDelay = Math.min(retryDelay * 2, MAX_RETRY_DELAY);
+    }
+  };
+}
+
+function disconnectGlobalSSE() {
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
+  if (globalES) {
+    globalES.close();
+    globalES = null;
+  }
+}
+
+/**
+ * Hook to receive real-time alarm updates via SSE.
+ */
+export function useAlarmSSE(callback: AlarmCallback) {
+  const cbRef = useRef(callback);
+  cbRef.current = callback;
+
+  const stableCallback = useCallback<AlarmCallback>((data) => {
+    cbRef.current(data);
+  }, []);
+
+  useEffect(() => {
+    alarmListeners.add(stableCallback);
+    refCount++;
+    connectGlobalSSE();
+
+    return () => {
+      alarmListeners.delete(stableCallback);
+      refCount--;
+      if (refCount <= 0) {
+        refCount = 0;
+        disconnectGlobalSSE();
+      }
+    };
+  }, [stableCallback]);
+}
+
+/**
+ * Hook to receive real-time new marker events via SSE.
+ */
+export function useMarkerSSE(callback: MarkerCallback) {
+  const cbRef = useRef(callback);
+  cbRef.current = callback;
+
+  const stableCallback = useCallback<MarkerCallback>((data) => {
+    cbRef.current(data);
+  }, []);
+
+  useEffect(() => {
+    markerListeners.add(stableCallback);
+    refCount++;
+    connectGlobalSSE();
+
+    return () => {
+      markerListeners.delete(stableCallback);
+      refCount--;
+      if (refCount <= 0) {
+        refCount = 0;
+        disconnectGlobalSSE();
+      }
+    };
+  }, [stableCallback]);
+}
+
+/**
+ * Hook to receive real-time marker delete events via SSE.
+ * Immediately removes marker from local state when admin deletes it.
+ */
+export function useMarkerDeleteSSE(callback: MarkerDeleteCallback) {
+  const cbRef = useRef(callback);
+  cbRef.current = callback;
+
+  const stableCallback = useCallback<MarkerDeleteCallback>((id) => {
+    cbRef.current(id);
+  }, []);
+
+  useEffect(() => {
+    markerDeleteListeners.add(stableCallback);
+    refCount++;
+    connectGlobalSSE();
+
+    return () => {
+      markerDeleteListeners.delete(stableCallback);
+      refCount--;
+      if (refCount <= 0) {
+        refCount = 0;
+        disconnectGlobalSSE();
+      }
+    };
+  }, [stableCallback]);
+}
+
+/**
+ * Hook to receive real-time track update events via SSE.
+ * Track updates contain delta position data for an existing track.
+ */
+export function useTrackUpdateSSE(callback: TrackUpdateCallback) {
+  const cbRef = useRef(callback);
+  cbRef.current = callback;
+
+  const stableCallback = useCallback<TrackUpdateCallback>((data) => {
+    cbRef.current(data);
+  }, []);
+
+  useEffect(() => {
+    trackUpdateListeners.add(stableCallback);
+    refCount++;
+    connectGlobalSSE();
+
+    return () => {
+      trackUpdateListeners.delete(stableCallback);
+      refCount--;
+      if (refCount <= 0) {
+        refCount = 0;
+        disconnectGlobalSSE();
+      }
+    };
+  }, [stableCallback]);
+}
+
+/**
+ * Hook to receive chat-related SSE events via the global connection.
+ * Callback receives (type, data) for: connected, online, new_message,
+ * delete_message, reaction, typing.
+ */
+export function useChatSSE(callback: ChatEventCallback) {
+  const cbRef = useRef(callback);
+  cbRef.current = callback;
+
+  const stableCallback = useCallback<ChatEventCallback>((type, data) => {
+    cbRef.current(type, data);
+  }, []);
+
+  useEffect(() => {
+    chatListeners.add(stableCallback);
+    refCount++;
+    connectGlobalSSE();
+
+    return () => {
+      chatListeners.delete(stableCallback);
+      refCount--;
+      if (refCount <= 0) {
+        refCount = 0;
+        disconnectGlobalSSE();
+      }
+    };
+  }, [stableCallback]);
+}
+
+/**
+ * Hook to receive real-time admin feed events via SSE.
+ * Each event is a pipeline status update from the worker.
+ */
+export function useAdminFeedSSE(callback: AdminFeedCallback) {
+  const cbRef = useRef(callback);
+  cbRef.current = callback;
+
+  const stableCallback = useCallback<AdminFeedCallback>((data) => {
+    cbRef.current(data);
+  }, []);
+
+  useEffect(() => {
+    adminFeedListeners.add(stableCallback);
+    refCount++;
+    connectGlobalSSE();
+
+    return () => {
+      adminFeedListeners.delete(stableCallback);
+      refCount--;
+      if (refCount <= 0) {
+        refCount = 0;
+        disconnectGlobalSSE();
+      }
+    };
+  }, [stableCallback]);
+}

@@ -180,6 +180,16 @@ def find_candidates(
         for r in oblast_rows:
             _add(r, 'gazetteer_oblast_search')
 
+    # Підказка області: однойменні НП в різних областях — спочатку ті, що в hint
+    if oblast_hint and len(candidates) > 1:
+        oh = oblast_hint.strip()
+
+        def _oblast_sort_key(c: LocationCandidate) -> tuple:
+            in_hint = 0 if (c.oblast or '').strip() == oh else 1
+            return (in_hint, -(c.population or 0))
+
+        candidates.sort(key=_oblast_sort_key)
+
     return candidates[:limit]
 
 
@@ -207,3 +217,96 @@ def is_blacklisted(name: str, oblast: Optional[str] = None) -> bool:
             (name.lower(),)
         ).fetchone()
     return row is not None
+
+
+# ── Self-learning: auto-insert from external geocoders ───────────────────────
+
+_learned_names: set[str] = set()  # Prevent duplicate inserts per session
+
+
+def learn_from_external(
+    name: str,
+    lat: float,
+    lng: float,
+    oblast: Optional[str] = None,
+    source_tag: str = 'nominatim',
+) -> bool:
+    """
+    Auto-add a place to the gazetteer when an external geocoder resolves it.
+    Returns True if inserted, False if already known.
+    
+    This creates a feedback loop: Nominatim resolves once → gazetteer hits instantly next time.
+    """
+    if not name or len(name) < 2:
+        return False
+
+    name_lower = name.lower().strip()
+
+    # Skip if already learned this session
+    if name_lower in _learned_names:
+        return False
+
+    conn = _get_conn()
+
+    # Check if already exists in gazetteer
+    existing = conn.execute(
+        "SELECT id FROM places WHERE name_lower = ? AND ABS(lat - ?) < 0.1 AND ABS(lng - ?) < 0.1 LIMIT 1",
+        (name_lower, lat, lng)
+    ).fetchone()
+    if existing:
+        _learned_names.add(name_lower)
+        return False
+
+    # Insert new place
+    try:
+        conn.execute(
+            """INSERT INTO places (name, name_lower, oblast, raion, lat, lng, place_type, population)
+               VALUES (?, ?, ?, NULL, ?, ?, ?, 0)""",
+            (name, name_lower, oblast or '', lat, lng, f'learned_{source_tag}')
+        )
+        conn.commit()
+        _learned_names.add(name_lower)
+        log.info(f"[GAZETTEER] Learned new place: {name} ({lat:.4f}, {lng:.4f}) oblast={oblast} from {source_tag}")
+        return True
+    except Exception as e:
+        log.warning(f"[GAZETTEER] Failed to learn {name}: {e}")
+        return False
+
+
+def learn_alias(alias: str, canonical_name: str) -> bool:
+    """
+    Add an alias for an existing place (e.g. accusative form → nominative).
+    """
+    if not alias or not canonical_name:
+        return False
+
+    alias_lower = alias.lower().strip()
+    conn = _get_conn()
+
+    # Find the canonical place
+    place = conn.execute(
+        "SELECT id FROM places WHERE name_lower = ? LIMIT 1",
+        (canonical_name.lower().strip(),)
+    ).fetchone()
+    if not place:
+        return False
+
+    # Check if alias already exists
+    existing = conn.execute(
+        "SELECT id FROM aliases WHERE alias = ? AND canonical_id = ? LIMIT 1",
+        (alias_lower, place['id'])
+    ).fetchone()
+    if existing:
+        return False
+
+    try:
+        conn.execute(
+            "INSERT INTO aliases (alias, canonical_id, priority) VALUES (?, ?, 5)",
+            (alias_lower, place['id'])
+        )
+        conn.commit()
+        log.info(f"[GAZETTEER] Learned alias: '{alias}' -> '{canonical_name}' (id={place['id']})")
+        return True
+    except Exception as e:
+        log.warning(f"[GAZETTEER] Failed to add alias {alias}: {e}")
+        return False

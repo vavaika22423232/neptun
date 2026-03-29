@@ -7,11 +7,17 @@ export async function POST(request: Request) {
     const body = await request.json();
     const password = (body.password || '').trim();
 
-    if (!verifyPassword(password)) {
+    if (!(await verifyPassword(password))) {
       return NextResponse.json({ status: 'error', error: 'Invalid password' }, { status: 401 });
     }
 
-    const token = createSessionToken();
+    const token = await createSessionToken();
+    if (!token) {
+      return NextResponse.json(
+        { status: 'error', error: 'Session storage unavailable' },
+        { status: 503 },
+      );
+    }
     const cookieStore = await cookies();
     cookieStore.set(SESSION_COOKIE_NAME, token, sessionCookieOptions);
 

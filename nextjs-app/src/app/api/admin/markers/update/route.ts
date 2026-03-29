@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 import { requireAdminAuth } from '@/lib/admin/apiAuth';
-import { loadMessages, saveMessages } from '@/lib/admin/data';
+import { adminPatchMarker, initStore } from '@/lib/markers-store';
 
 export async function POST(request: Request) {
   const denied = await requireAdminAuth();
   if (denied) return denied;
 
   try {
+    await initStore();
     const body = await request.json();
     const { id, ...updates } = body;
 
@@ -19,17 +20,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid lng' }, { status: 400 });
     }
 
-    const messages = loadMessages();
-    const idx = messages.findIndex(m => m.id === id);
-    if (idx === -1) return NextResponse.json({ error: 'Marker not found' }, { status: 404 });
+    const ok = await adminPatchMarker(String(id), updates);
+    if (!ok) return NextResponse.json({ error: 'Marker not found' }, { status: 404 });
 
-    // Apply updates
-    for (const [key, value] of Object.entries(updates)) {
-      messages[idx][key] = value;
-    }
-
-    saveMessages(messages);
-    return NextResponse.json({ status: 'ok', marker: messages[idx] });
+    return NextResponse.json({ status: 'ok' });
   } catch (err) {
     console.error('[ADMIN UPDATE MARKER]', err);
     return NextResponse.json({ error: 'Failed to update marker' }, { status: 500 });

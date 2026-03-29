@@ -26,6 +26,7 @@ export async function GET() {
       settings: {
         monitorPeriod: settings.monitorPeriod,
         ttlEnabled: settings.ttlEnabled,
+        minConfidence: settings.minConfidence,
       },
     });
   } catch (err) {

@@ -19,42 +19,50 @@ function getUserId(): string {
 }
 
 export function usePresence() {
-  const [presence, setPresence] = useState<PresenceData>({ web: 0, apps: 0, total: 0 });
+  const [presence, setPresence] = useState<PresenceData>({ web: 0, apps: 0, total: -1 });
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const failCountRef = useRef(0);
 
   const pingPresence = useCallback(async () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+
     try {
       const userId = getUserId();
       if (!userId) return;
 
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+
       const response = await fetch('/api/presence', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: userId,
-          platform: 'web',
-          nickname: '',
-        }),
+        body: JSON.stringify({ id: userId, platform: 'web', nickname: '' }),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
 
       if (response.ok) {
         const data = await response.json();
+        failCountRef.current = 0;
         setPresence({
           web: data.web || 0,
           apps: data.apps || data.android || 0,
           total: data.total || data.count || 0,
         });
+      } else {
+        failCountRef.current++;
       }
     } catch {
-      // Silently fail
+      failCountRef.current++;
+    }
+
+    if (failCountRef.current >= 3) {
+      setPresence(prev => ({ ...prev, total: -1 }));
     }
   }, []);
 
   useEffect(() => {
-    // Initial ping
     pingPresence();
-
-    // Set up interval
     intervalRef.current = setInterval(pingPresence, PRESENCE_INTERVAL);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);

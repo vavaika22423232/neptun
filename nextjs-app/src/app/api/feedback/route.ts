@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
-
-const DATA_DIR = process.env.DATA_DIR || '/data';
-const FEEDBACK_FILE = path.join(DATA_DIR, 'feedback.json');
+import {
+  insertFeedback,
+  listFeedback,
+  getResponses,
+  type FeedbackTicket,
+} from '@/lib/feedback-db';
+import { requireAdminAuth } from '@/lib/admin/apiAuth';
 
 /**
  * POST /api/feedback
@@ -18,38 +20,81 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing message' }, { status: 400 });
     }
 
-    const entry = {
-      id: `fb_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      message,
+    if (typeof message !== 'string' || message.trim().length < 5) {
+      return NextResponse.json({ error: 'Message too short' }, { status: 400 });
+    }
+
+    const id = `fb_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const now = new Date().toISOString();
+
+    const ticket: FeedbackTicket = {
+      id,
+      message: message.trim().slice(0, 2000),
       type: type || 'general',
       device_id: device_id || '',
       device: device || '',
       app_version: app_version || '',
-      regions: regions || [],
-      created_at: new Date().toISOString(),
+      regions: JSON.stringify(regions || []),
+      status: 'open',
+      created_at: now,
+      updated_at: now,
+      last_read_at: '',
     };
 
-    // Append to feedback file
-    let feedback: unknown[] = [];
-    try {
-      if (fs.existsSync(FEEDBACK_FILE)) {
-        feedback = JSON.parse(fs.readFileSync(FEEDBACK_FILE, 'utf-8'));
-      }
-    } catch { /* empty */ }
+    await insertFeedback(ticket);
 
-    feedback.push(entry);
-
-    // Keep last 500 entries
-    if (feedback.length > 500) feedback = feedback.slice(-500);
-
-    const dir = path.dirname(FEEDBACK_FILE);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(FEEDBACK_FILE, JSON.stringify(feedback, null, 2), 'utf-8');
-
-    console.log(`[FEEDBACK] ${type || 'general'} from ${device_id || 'anon'}: ${message.slice(0, 80)}`);
-    return NextResponse.json({ status: 'ok' });
+    console.log(`[FEEDBACK] ${type || 'general'} from ${device_id || 'anon'} (${device || '?'}): ${message.slice(0, 80)}`);
+    return NextResponse.json({ status: 'ok', id });
   } catch (err) {
     console.error('[FEEDBACK] Error:', err);
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
+  }
+}
+
+/**
+ * GET /api/feedback
+ * Read feedback entries. Supports:
+ * - Admin (x-auth-secret header): returns all tickets, optionally filtered
+ * - User (?device_id=xxx): returns only that user's tickets
+ * - ?status=open|in_progress|resolved|closed — filter by status
+ * - ?limit=50 — limit results
+ */
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const deviceId = searchParams.get('device_id');
+    const adminResult = await requireAdminAuth();
+    const isAdmin = adminResult === null;
+
+    const status = searchParams.get('status') || undefined;
+    const limit = parseInt(searchParams.get('limit') || '50', 10);
+
+    const { tickets: rows, total } = await listFeedback({
+      device_id: (isAdmin || !deviceId) ? undefined : deviceId,
+      status,
+      limit,
+    });
+
+    const tickets = await Promise.all(
+      rows.map(async (row) => {
+        const responses = await getResponses(row.id);
+        return {
+          ...row,
+          regions: typeof row.regions === 'string' ? JSON.parse(row.regions) : [],
+          responses,
+          has_unread_response: responses.some(
+            (r) =>
+              r.author === 'admin' &&
+              (!row.last_read_at ||
+                new Date(r.created_at) > new Date(row.last_read_at))
+          ),
+        };
+      })
+    );
+
+    return NextResponse.json({ feedback: tickets, total });
+  } catch (err) {
+    console.error('[FEEDBACK] Read error:', err);
+    return NextResponse.json({ error: 'Read failed' }, { status: 500 });
   }
 }

@@ -1,11 +1,16 @@
 import { NextResponse } from 'next/server';
+import { requireAdminAuth } from '@/lib/admin/apiAuth';
 
 /**
  * POST /api/test-notification
  * Send a test push notification to verify FCM setup.
  * Firebase Admin SDK is loaded dynamically at runtime only if installed.
+ * Requires admin session or X-Auth-Secret (same as other admin APIs).
  */
 export async function POST(request: Request) {
+  const denied = await requireAdminAuth();
+  if (denied) return denied;
+
   try {
     const body = await request.json();
     const { token } = body;

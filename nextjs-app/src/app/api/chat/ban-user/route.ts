@@ -1,63 +1,73 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { loadChatBans, saveChatBans, isModeratorDevice, type BanEntry } from '@/lib/admin/data';
 
 const DATA_DIR = process.env.DATA_DIR || '/data';
-const BANS_FILE = path.join(DATA_DIR, 'chat_bans.json');
+const NICKNAMES_FILE = path.join(DATA_DIR, 'chat_nicknames.json');
 
-interface BanEntry {
-  device_id: string;
+interface NicknameEntry {
   nickname: string;
-  reason: string;
-  banned_at: string;
-  banned_by?: string;
+  device_id: string;
+  registered_at: string;
 }
 
-function loadBans(): BanEntry[] {
+function loadNicknames(): NicknameEntry[] {
   try {
-    if (fs.existsSync(BANS_FILE)) {
-      return JSON.parse(fs.readFileSync(BANS_FILE, 'utf-8'));
+    if (fs.existsSync(NICKNAMES_FILE)) {
+      return JSON.parse(fs.readFileSync(NICKNAMES_FILE, 'utf-8'));
     }
   } catch { /* empty */ }
   return [];
 }
 
-function saveBans(bans: BanEntry[]) {
-  const dir = path.dirname(BANS_FILE);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(BANS_FILE, JSON.stringify(bans, null, 2), 'utf-8');
-}
-
 /**
  * POST /api/chat/ban-user
  * Ban a user from chat (moderator action).
+ * Requires moderator deviceId in body.
  */
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { nickname, deviceId, reason } = body;
 
+    // Auth: only moderators can ban
+    if (!deviceId || !isModeratorDevice(deviceId)) {
+      return NextResponse.json({ error: 'Доступ заборонено' }, { status: 403 });
+    }
+
     if (!nickname) {
       return NextResponse.json({ error: 'Відсутній нікнейм' }, { status: 400 });
     }
 
-    const bans = loadBans();
+    const bans = loadChatBans();
 
-    // Check if already banned
+    // Check if already banned by nickname
     if (bans.some((b) => b.nickname.toLowerCase() === nickname.toLowerCase())) {
       return NextResponse.json({ status: 'ok', message: 'Already banned' });
     }
 
-    bans.push({
-      device_id: '', // We may not know target device_id
+    // Lookup device_id from registered nicknames
+    const nicknames = loadNicknames();
+    const target = nicknames.find((n) => n.nickname.toLowerCase() === nickname.toLowerCase());
+    const targetDeviceId = target?.device_id || '';
+
+    // Also check if already banned by device_id to prevent duplicates
+    if (targetDeviceId && bans.some((b) => b.device_id === targetDeviceId)) {
+      return NextResponse.json({ status: 'ok', message: 'Already banned (by device)' });
+    }
+
+    const entry: BanEntry = {
+      device_id: targetDeviceId,
       nickname,
       reason: reason || 'Порушення правил',
       banned_at: new Date().toISOString(),
-      banned_by: deviceId || 'moderator',
-    });
+      banned_by: deviceId,
+    };
 
-    saveBans(bans);
-    console.log(`[CHAT] Banned: ${nickname} by ${deviceId || 'moderator'}`);
+    bans.push(entry);
+    saveChatBans(bans);
+    console.log(`[CHAT] Banned: ${nickname} (device: ${targetDeviceId}) by ${deviceId}`);
     return NextResponse.json({ status: 'ok' });
   } catch (err) {
     console.error('[CHAT] Ban error:', err);

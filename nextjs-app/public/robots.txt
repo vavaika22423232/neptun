@@ -1,127 +1,26 @@
-# robots.txt для NEPTUN - Карта тривог України онлайн
-# Карта тривог, карта повітряних тривог, тривога зараз
-# Карта шахедів, радар шахедів, відстеження дронів
-# Повітряна тривога онлайн 24/7
-
 User-agent: *
 Allow: /
-Allow: /map
-Allow: /static/
-Allow: /blackouts
+Allow: /region/
 Allow: /about
 Allow: /faq
+Allow: /contact
 Allow: /privacy
 Allow: /terms
-
-# Регіональні сторінки - пріоритет для SEO
-Allow: /region/
-Allow: /region/kyiv
-Allow: /region/kyivska
-Allow: /region/kharkivska
-Allow: /region/odeska
-Allow: /region/dnipropetrovska
-Allow: /region/lvivska
-Allow: /region/zaporizka
-Allow: /region/mykolaivska
-Allow: /region/poltavska
-Allow: /region/vinnytska
-Allow: /region/zhytomyrska
-Allow: /region/cherkaska
-Allow: /region/sumska
-Allow: /region/chernihivska
-Allow: /region/khmelnytska
-Allow: /region/volynska
-Allow: /region/rivnenska
-Allow: /region/ternopilska
-Allow: /region/ivano-frankivska
-Allow: /region/zakarpatska
-Allow: /region/chernivetska
-Allow: /region/kirovohradska
-Allow: /region/khersonska
-Allow: /region/donetska
-Allow: /region/luhanska
-
-# Закриваємо від індексації
 Disallow: /admin
 Disallow: /auth/
-
-# Технічні файли - закриваємо від індексації
 Disallow: /api/
-Disallow: /*.json$
 Disallow: /data
-Disallow: /ws
-Disallow: /socket
-Disallow: /health
-Disallow: /metrics
+Disallow: /dashboard
 
-# Sitemap для Google та інших пошукових систем
-Sitemap: https://neptun.in.ua/sitemap.xml
-
-# ===========================================
-# GOOGLEBOT - МАКСИМАЛЬНИЙ ПРІОРИТЕТ
-# ===========================================
 User-agent: Googlebot
 Allow: /
-Allow: /static/
 Allow: /region/
-Allow: /map
-Allow: /blackouts
-Crawl-delay: 0
 
 User-agent: Googlebot-Image
 Allow: /static/
-Allow: /*.png$
-Allow: /*.jpg$
-Allow: /*.svg$
+Allow: /icons/
 
 User-agent: Googlebot-Video
 Disallow: /
 
-User-agent: Googlebot-News
-Allow: /
-
-# ===========================================
-# ІНШІ БОТИ
-# ===========================================
-User-agent: Bingbot
-Allow: /
-Crawl-delay: 1
-
-User-agent: Yandex
-Allow: /
-Crawl-delay: 2
-
-User-agent: DuckDuckBot
-Allow: /
-
-User-agent: Slurp
-Allow: /
-
-User-agent: Baiduspider
-Allow: /
-Crawl-delay: 3
-
-User-agent: facebookexternalhit
-Allow: /
-
-User-agent: Twitterbot
-Allow: /
-
-User-agent: LinkedInBot
-Allow: /
-
-User-agent: TelegramBot
-Allow: /
-
-# Default для всіх інших
-User-agent: *
-Allow: /
-Crawl-delay: 1
-
-# ===========================================
-# SEO KEYWORDS (для пошукових систем)
-# neptun.in.ua - карта тривог україни
-# карта повітряних тривог, мапа тривог
-# шахеди онлайн, карта шахедів
-# дрони україна карта, air raid map ukraine
-# ==========================================
+Sitemap: https://neptun.in.ua/sitemap.xml

@@ -8,6 +8,8 @@ import time
 import json
 import os
 
+from geo.place_normalize import strip_settlement_prefix
+
 # Cache file
 NOMINATIM_CACHE_FILE = 'nominatim_cache.json'
 NOMINATIM_CACHE_TTL = 60 * 60 * 24 * 30  # 30 days
@@ -63,9 +65,10 @@ def get_coordinates_nominatim(city_name: str, region: str = None):
     if not city_name:
         return None
     
-    city_name = city_name.strip()
-    if not city_name:
+    raw_city = city_name.strip()
+    if not raw_city:
         return None
+    city_name = strip_settlement_prefix(raw_city) or raw_city
     
     # Build cache key
     cache_key = f"{city_name.lower()}|{(region or '').lower()}"

@@ -1,22 +1,23 @@
+import { getAdminHeaderSecret, safeCompare } from '@/lib/server-secrets';
+
 // ============================================
 // Admin authentication middleware
 // ============================================
 
-const AUTH_SECRET = process.env.AUTH_SECRET || '';
-
 /**
- * Check if the request has a valid admin secret.
+ * Check if the request has a valid admin API secret (not ingest-only).
  * Looks in query param, header, or body.
  */
 export function requireSecret(request: Request): boolean {
-  if (!AUTH_SECRET) return false;
+  const secret = getAdminHeaderSecret();
+  if (!secret) return false;
 
-  // Check query param
   const url = new URL(request.url);
-  if (url.searchParams.get('secret') === AUTH_SECRET) return true;
+  const q = url.searchParams.get('secret');
+  if (q && safeCompare(q, secret)) return true;
 
-  // Check header
-  if (request.headers.get('X-Auth-Secret') === AUTH_SECRET) return true;
+  const h = request.headers.get('X-Auth-Secret') || '';
+  if (h && safeCompare(h, secret)) return true;
 
   return false;
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { containsForbiddenText } from '@/lib/chat-forbidden';
 
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const NICKNAMES_FILE = path.join(DATA_DIR, 'chat_nicknames.json');
@@ -35,6 +36,11 @@ export async function POST(request: Request) {
 
     if (nickname.length > 20) {
       return NextResponse.json({ available: false, error: 'Нікнейм занадто довгий' });
+    }
+
+    // Forbidden word check
+    if (containsForbiddenText(nickname)) {
+      return NextResponse.json({ available: false, error: 'Неприпустимий нікнейм' });
     }
 
     const nicknames = loadNicknames();

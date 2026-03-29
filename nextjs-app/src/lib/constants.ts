@@ -93,10 +93,10 @@ export const OBLAST_CENTERS: Record<string, [number, number]> = {
 };
 
 // Polling intervals
-export const ACTIVE_POLLING_INTERVAL = 60_000; // 60s when tab is active
+export const ACTIVE_POLLING_INTERVAL = 180_000; // 3min when tab is active (SSE triggers real-time)
 export const HIDDEN_POLLING_INTERVAL_DESKTOP = 300_000; // 5min when tab is hidden (desktop)
 export const HIDDEN_POLLING_INTERVAL_MOBILE = 180_000; // 3min when tab is hidden (mobile)
-export const PRESENCE_INTERVAL = 30_000; // 30s presence ping
+export const PRESENCE_INTERVAL = 300_000; // 5min presence ping (reduced server load)
 export const MARKERS_CACHE_TTL = 30 * 60 * 1000; // 30 minutes localStorage cache
 
 // SVG fade thresholds (Leaflet zoom levels)
@@ -104,7 +104,7 @@ export const SVG_FADE_START_ZOOM = 7;
 export const SVG_FADE_END_ZOOM = 8;
 
 // Cache version for static assets
-export const CACHE_VERSION = 'v7';
+export const CACHE_VERSION = 'v8';
 
 // Google Analytics ID
 export const GA_ID = 'G-MW867VP8WK';
@@ -116,4 +116,4 @@ export const GOOGLE_PLAY_URL = 'https://play.google.com/store/apps/details?id=co
 export const APP_STORE_URL = 'https://apps.apple.com/ua/app/%D0%BA%D0%B0%D1%80%D1%82%D0%B0-%D1%82%D1%80%D0%B8%D0%B2%D0%BE%D0%B3-dron-alerts/id6758108122?l=uk';
 
 // Telegram links
-export const TELEGRAM_CHANNEL_URL = 'https://t.me/+aBR79kExNQM1ZjZi';
+export const TELEGRAM_CHANNEL_URL = 'https://t.me/+31BgekBXodw1ZGEy';

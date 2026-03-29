@@ -9,6 +9,162 @@ import { CACHE_VERSION, SVG_FADE_START_ZOOM, SVG_FADE_END_ZOOM } from '@/lib/con
 // Re-export MAP_BOUNDS locally to avoid circular deps
 const MAP_BOUNDS = { minLat: 44.2, maxLat: 52.4, minLng: 22.0, maxLng: 40.2 } as const;
 
+/** Smooth glide between server positions (SSE / poll), not instant jumps */
+const MOVE_ANIM_MS = 5000;
+const MOVE_MIN_DIST_KM = 0.004;
+
+function stableMarkerKey(m: Marker): string {
+  const tid = m.track_id != null && String(m.track_id).trim().length > 0 ? String(m.track_id).trim() : '';
+  if (tid) return `t:${tid}`;
+  const id = m.id != null && String(m.id).trim().length > 0 ? String(m.id).trim() : '';
+  if (id) return `i:${id}`;
+  const lat = Number(m.lat);
+  const lng = Number(m.lng);
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    return `p:${lat.toFixed(3)}_${lng.toFixed(3)}_${m.threat_type || 'x'}`;
+  }
+  return `u:${Math.random().toString(36).slice(2)}`;
+}
+
+function easeOutCubic(t: number): number {
+  return 1 - (1 - t) ** 3;
+}
+
+function quickDistKm(aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const R = 6371;
+  const dLat = ((bLat - aLat) * Math.PI) / 180;
+  const dLng = ((bLng - aLng) * Math.PI) / 180;
+  const x = dLat * R;
+  const y = dLng * R * Math.cos((aLat * Math.PI) / 180);
+  return Math.sqrt(x * x + y * y);
+}
+
+/** Compute marker opacity based on age: 1.0 (fresh) → 0.3 (20+ min old) */
+function computeMarkerOpacity(marker: Marker): number {
+  let epochMs = 0;
+  if (marker.last_update_epoch) {
+    epochMs = marker.last_update_epoch > 10000000000 ? marker.last_update_epoch : marker.last_update_epoch * 1000;
+  } else if (marker.created_at_epoch) {
+    epochMs = marker.created_at_epoch > 10000000000 ? marker.created_at_epoch : marker.created_at_epoch * 1000;
+  } else if (marker.date) {
+    epochMs = new Date(marker.date).getTime();
+  }
+  if (!epochMs) return 1;
+  const ageMs = Date.now() - epochMs;
+  if (ageMs <= 0) return 1;
+  const MAX_AGE_MS = 20 * 60 * 1000; // 20 minutes
+  const MIN_OPACITY = 0.3;
+  const t = Math.min(ageMs / MAX_AGE_MS, 1);
+  return 1 - t * (1 - MIN_OPACITY); // 1.0 → 0.3
+}
+
+function mapHashCode(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (Math.imul(hash, 31) + str.charCodeAt(i)) | 0;
+  }
+  return hash;
+}
+
+function jitterCoords(lat: number, lng: number, index: number, seedStr: string, radiusKm = 12): [number, number] {
+  if (index === 0) return [lat, lng];
+  let seed = mapHashCode(`${seedStr}_${index}`);
+  const rand = () => {
+    seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+
+  const angle = rand() * 2 * Math.PI;
+  const r = Math.sqrt(rand()) * radiusKm;
+  const KM_TO_DEG_LAT = 1 / 111.32;
+  const dLat = Math.cos(angle) * r * KM_TO_DEG_LAT;
+  const dLng = Math.sin(angle) * r * (KM_TO_DEG_LAT / Math.cos(lat * Math.PI / 180));
+  return [lat + dLat, lng + dLng];
+}
+
+function computeRotationDeg(marker: Marker): number {
+  const traj = marker.trajectory;
+  let rotationAngle = 0;
+  if (traj?.start && traj?.end) {
+    const dLng = traj.end[1] - traj.start[1];
+    const dLat = traj.end[0] - traj.start[0];
+    if (Math.abs(dLat) > 0.001 || Math.abs(dLng) > 0.001) {
+      rotationAngle = Math.atan2(dLng, dLat) * (180 / Math.PI) + 180;
+    }
+  } else if (marker.course_bearing != null) {
+    rotationAngle = marker.course_bearing + 180;
+  }
+  return rotationAngle;
+}
+
+function rotationVisualKey(marker: Marker): string {
+  const r = Math.round(computeRotationDeg(marker) * 2) / 2;
+  const tt = marker.threat_type || 'default';
+  const icon = marker.marker_icon || THREAT_ICONS[tt] || 'shahed3.webp';
+  const c = marker.count ?? 1;
+  return `${r}|${icon}|${tt}|${c}`;
+}
+
+function buildThreatDivIcon(marker: Marker): L.DivIcon {
+  const threatType = marker.threat_type || 'default';
+  const iconFile = marker.marker_icon || THREAT_ICONS[threatType] || 'shahed3.webp';
+  const isShahed = threatType === 'shahed' || threatType === 'drone';
+  const size = isShahed ? 44 : 32;
+  const rotationAngle = computeRotationDeg(marker);
+  const count = Number(marker.count) || 1;
+
+  let badge = '';
+  if (count > 1) {
+    badge = `<span style="position:absolute;top:-6px;right:-6px;background:#ff2a5f;color:#fff;font-size:11px;font-weight:700;min-width:18px;height:18px;line-height:18px;text-align:center;border-radius:9px;padding:0 4px;pointer-events:none;box-shadow:0 0 6px rgba(255,42,95,0.6);">${count}</span>`;
+  }
+
+  const html = `<div class="threat-marker" data-type="${threatType}" style="position:relative;width:${size}px;height:${size}px;">
+    <img src="/${iconFile}?${CACHE_VERSION}" alt="${threatType}" loading="lazy" decoding="async"
+         style="transform:rotate(${rotationAngle}deg);width:100%;height:100%;"
+         onerror="this.src='/shahed3.webp'">${badge}</div>`;
+
+  return L.divIcon({
+    className: 'threat-marker-icon',
+    html,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
+type MapMarkerEntry = {
+  leafletMarker: L.Marker;
+  polyline: L.Polyline | null;
+  arrowMarker: L.Marker | null;
+  fromLat: number;
+  fromLng: number;
+  toLat: number;
+  toLng: number;
+  animStart: number;
+  animating: boolean;
+  lastData: Marker;
+  lastRotationKey: string;
+};
+
+function updateEntryTrajectory(
+  entry: MapMarkerEntry,
+  startLat: number,
+  startLng: number,
+  trajGroup: L.LayerGroup,
+) {
+  // COMPLETELY DISABLED: Remove any existing lines/arrows and return
+  if (entry.polyline) {
+    trajGroup.removeLayer(entry.polyline);
+    entry.polyline = null;
+  }
+  if (entry.arrowMarker) {
+    trajGroup.removeLayer(entry.arrowMarker);
+    entry.arrowMarker = null;
+  }
+  return;
+}
+
 interface MapContainerProps {
   markers: Marker[];
   alarms: Alarm[];
@@ -25,6 +181,8 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
   const fusionLayerRef = useRef<L.LayerGroup | null>(null);
   const statesSvgRef = useRef<SVGElement | null>(null);
   const districtsSvgRef = useRef<SVGElement | null>(null);
+  const markerRegistryRef = useRef<Map<string, MapMarkerEntry>>(new Map());
+  const animRafRef = useRef<number | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
 
   // Initialize map (must match original init order: tiles -> layers -> SVG -> events -> fitBounds)
@@ -48,11 +206,23 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
       scrollWheelZoom: true,
       doubleClickZoom: true,
       touchZoom: true,
-      zoomAnimation: !isMobile,
-      fadeAnimation: !isMobile,
+      zoomAnimation: true,
+      fadeAnimation: true,
+      markerZoomAnimation: true,
+      transform3DLimit: 2, // Helps with some Android rendering issues
+      zoomSnap: 0.1, // Small snap for better trackpad feel
+      zoomDelta: 2,
+      wheelPxPerZoomLevel: 10, // Ultra-sensitive for Mac trackpad/pinch
+      wheelDebounceTime: 40,
+      inertia: true,
+      inertiaDuration: 1.5,
+      inertiaMaxSpeed: 3000,
+      easeLinearity: 0.1,
+      keepBuffer: 3,
+      tap: false, // Performance & double-tap fix for Android/mobile
       maxBounds: [[40, 18], [56, 44]],
       maxBoundsViscosity: 0.8,
-    });
+    } as any);
 
     mapRef.current = map;
 
@@ -109,6 +279,11 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
 
     return () => {
       aborted = true;
+      if (animRafRef.current != null) {
+        cancelAnimationFrame(animRafRef.current);
+        animRafRef.current = null;
+      }
+      markerRegistryRef.current.clear();
       map.remove();
       mapRef.current = null;
     };
@@ -159,131 +334,177 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
     };
   }, [isAdmin, onMarkerAction]);
 
-  // Update markers when data changes
+  const scheduleAnimFrame = useCallback(() => {
+    if (animRafRef.current != null) return;
+    const step = () => {
+      animRafRef.current = null;
+      const registry = markerRegistryRef.current;
+      const trajGroup = trajLayerRef.current;
+      if (!trajGroup) return;
+
+      const now = performance.now();
+      let needsNext = false;
+
+      for (const entry of registry.values()) {
+        if (!entry.animating) continue;
+
+        const elapsed = now - entry.animStart;
+        const t = Math.min(1, elapsed / MOVE_ANIM_MS);
+
+        if (t >= 1) {
+          entry.leafletMarker.setLatLng([entry.toLat, entry.toLng]);
+          entry.fromLat = entry.toLat;
+          entry.fromLng = entry.toLng;
+          entry.animating = false;
+          updateEntryTrajectory(entry, entry.toLat, entry.toLng, trajGroup);
+        } else {
+          const e = easeOutCubic(t);
+          const lat = entry.fromLat + (entry.toLat - entry.fromLat) * e;
+          const lng = entry.fromLng + (entry.toLng - entry.fromLng) * e;
+          entry.leafletMarker.setLatLng([lat, lng]);
+          updateEntryTrajectory(entry, lat, lng, trajGroup);
+          needsNext = true;
+        }
+      }
+
+      if (needsNext) {
+        animRafRef.current = requestAnimationFrame(step);
+      }
+    };
+    animRafRef.current = requestAnimationFrame(step);
+  }, []);
+
+  const syncMarkers = useCallback(
+    (markersData: Marker[], requestAnim: () => void) => {
+      const group = markersLayerRef.current;
+      const trajGroup = trajLayerRef.current;
+      if (!group || !trajGroup) return;
+
+      const registry = markerRegistryRef.current;
+
+      // Use markers as-is — count badge handles groups visually
+      const explodedData = markersData;
+
+      const sorted = [...explodedData].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      const seen = new Set<string>();
+
+      for (const marker of sorted) {
+        const lat = parseFloat(String(marker.lat));
+        const lng = parseFloat(String(marker.lng));
+        if (isNaN(lat) || isNaN(lng)) continue;
+        if (
+          lat < MAP_BOUNDS.minLat ||
+          lat > MAP_BOUNDS.maxLat ||
+          lng < MAP_BOUNDS.minLng ||
+          lng > MAP_BOUNDS.maxLng
+        ) {
+          continue;
+        }
+
+        const key = stableMarkerKey(marker);
+        seen.add(key);
+        const rotKey = rotationVisualKey(marker);
+
+        let entry = registry.get(key);
+        if (!entry) {
+          const icon = buildThreatDivIcon(marker);
+          const leafletMarker = L.marker([lat, lng], { icon });
+          const mapEntry: MapMarkerEntry = {
+            leafletMarker,
+            polyline: null,
+            arrowMarker: null,
+            fromLat: lat,
+            fromLng: lng,
+            toLat: lat,
+            toLng: lng,
+            animStart: 0,
+            animating: false,
+            lastData: marker,
+            lastRotationKey: rotKey,
+          };
+
+          leafletMarker.on('mouseover', (e: L.LeafletMouseEvent) => {
+            showTooltip(e.originalEvent, mapEntry.lastData, mapEntry.lastData.threat_type || 'default');
+          });
+          leafletMarker.on('mouseout', hideTooltip);
+
+          if (isAdmin) {
+            leafletMarker.on('click', () => {
+              hideTooltip();
+              const m = mapEntry.lastData;
+              const tt = m.threat_type || 'default';
+              const popupHtml = buildAdminPopup(m, tt);
+              leafletMarker.bindPopup(popupHtml, {
+                className: 'admin-marker-popup',
+                maxWidth: 260,
+                closeButton: true,
+              }).openPopup();
+            });
+          }
+
+          group.addLayer(leafletMarker);
+          registry.set(key, mapEntry);
+          entry = mapEntry;
+          updateEntryTrajectory(entry, lat, lng, trajGroup);
+
+          // Apply age-based opacity (use event since DOM may not be ready yet)
+          const opacity = computeMarkerOpacity(marker);
+          leafletMarker.once('add', () => {
+            const el = leafletMarker.getElement();
+            if (el) (el as HTMLElement).style.opacity = String(opacity);
+          });
+          // If already added, apply directly
+          const el = leafletMarker.getElement();
+          if (el) (el as HTMLElement).style.opacity = String(opacity);
+        } else {
+          entry.lastData = marker;
+          if (rotKey !== entry.lastRotationKey) {
+            entry.lastRotationKey = rotKey;
+            entry.leafletMarker.setIcon(buildThreatDivIcon(marker));
+          }
+
+          const cur = entry.leafletMarker.getLatLng();
+          const dist = quickDistKm(cur.lat, cur.lng, lat, lng);
+
+          if (dist < MOVE_MIN_DIST_KM) {
+            entry.leafletMarker.setLatLng([lat, lng]);
+            entry.fromLat = lat;
+            entry.fromLng = lng;
+            entry.toLat = lat;
+            entry.toLng = lng;
+            entry.animating = false;
+            updateEntryTrajectory(entry, lat, lng, trajGroup);
+          } else {
+            entry.fromLat = cur.lat;
+            entry.fromLng = cur.lng;
+            entry.toLat = lat;
+            entry.toLng = lng;
+            entry.animStart = performance.now();
+            entry.animating = true;
+            requestAnim();
+          }
+
+          // Update age-based opacity
+          const el = entry.leafletMarker.getElement();
+          if (el) (el as HTMLElement).style.opacity = String(computeMarkerOpacity(marker));
+        }
+      }
+
+      for (const [key, entry] of registry) {
+        if (seen.has(key)) continue;
+        group.removeLayer(entry.leafletMarker);
+        if (entry.polyline) trajGroup.removeLayer(entry.polyline);
+        if (entry.arrowMarker) trajGroup.removeLayer(entry.arrowMarker);
+        registry.delete(key);
+      }
+    },
+    [isAdmin],
+  );
+
   useEffect(() => {
     if (!isLoaded || !markersLayerRef.current || !trajLayerRef.current) return;
-    renderMarkers(markers);
-  }, [markers, isLoaded]);
-
-  // Update alarms when data changes
-  useEffect(() => {
-    if (!isLoaded) return;
-    renderAlarms(alarms);
-  }, [alarms, isLoaded]);
-
-  // Update fusion trajectories
-  useEffect(() => {
-    if (!isLoaded || !fusionLayerRef.current) return;
-    renderFusionTrajectories(fusionTrajectories);
-  }, [fusionTrajectories, isLoaded]);
-
-  // Render markers on the map
-  const renderMarkers = useCallback((markersData: Marker[]) => {
-    const group = markersLayerRef.current;
-    const trajGroup = trajLayerRef.current;
-    if (!group || !trajGroup) return;
-
-    group.clearLayers();
-    trajGroup.clearLayers();
-
-    const sorted = [...markersData].sort((a, b) => {
-      return (b.date || '').localeCompare(a.date || '');
-    });
-
-    sorted.forEach((marker) => {
-      const lat = parseFloat(String(marker.lat));
-      const lng = parseFloat(String(marker.lng));
-      if (isNaN(lat) || isNaN(lng)) return;
-      if (lat < MAP_BOUNDS.minLat || lat > MAP_BOUNDS.maxLat ||
-          lng < MAP_BOUNDS.minLng || lng > MAP_BOUNDS.maxLng) return;
-
-      const threatType = marker.threat_type || 'default';
-      const iconFile = marker.marker_icon || THREAT_ICONS[threatType] || 'shahed3.webp';
-      const isShahed = threatType === 'shahed' || threatType === 'drone';
-      const size = isShahed ? 44 : 32;
-
-      // Calculate rotation
-      let rotationAngle = 0;
-      const traj = marker.trajectory;
-      if (traj?.start && traj?.end) {
-        const dLng = traj.end[1] - traj.start[1];
-        const dLat = traj.end[0] - traj.start[0];
-        if (Math.abs(dLat) > 0.001 || Math.abs(dLng) > 0.001) {
-          rotationAngle = Math.atan2(dLng, dLat) * (180 / Math.PI) - 90;
-        }
-      } else if (marker.course_bearing != null) {
-        rotationAngle = marker.course_bearing - 90;
-      }
-      if (isShahed) rotationAngle -= 90;
-
-      // Build HTML
-      let html = `<div class="threat-marker" data-type="${threatType}" style="width:${size}px;height:${size}px;">
-        <img src="/${iconFile}?${CACHE_VERSION}" alt="${threatType}" loading="lazy" decoding="async"
-             style="transform:rotate(${rotationAngle}deg);width:100%;height:100%;"
-             onerror="this.src='/shahed3.webp'">`;
-      if (isShahed && marker.count && marker.count > 1) {
-        html += `<div class="marker-count-badge">${marker.count}x</div>`;
-      }
-      html += '</div>';
-
-      const icon = L.divIcon({
-        className: 'threat-marker-icon',
-        html,
-        iconSize: [size, size],
-        iconAnchor: [size / 2, size / 2],
-      });
-
-      const leafletMarker = L.marker([lat, lng], { icon });
-      leafletMarker.on('mouseover', (e: L.LeafletMouseEvent) => {
-        showTooltip(e.originalEvent, marker, threatType);
-      });
-      leafletMarker.on('mouseout', hideTooltip);
-
-      // Admin mode: click opens action popup
-      if (isAdmin) {
-        leafletMarker.on('click', () => {
-          hideTooltip();
-          const popupHtml = buildAdminPopup(marker, threatType);
-          leafletMarker.bindPopup(popupHtml, {
-            className: 'admin-marker-popup',
-            maxWidth: 260,
-            closeButton: true,
-          }).openPopup();
-        });
-      }
-
-      group.addLayer(leafletMarker);
-
-      // Render trajectory
-      if (traj?.end) {
-        const endLat = traj.end[0];
-        const endLng = traj.end[1];
-        if (!isNaN(endLat) && !isNaN(endLng) &&
-            (Math.abs(lat - endLat) >= 0.01 || Math.abs(lng - endLng) >= 0.01)) {
-          const lineColor = traj.predicted ? 'rgba(251,191,36,0.85)' : 'rgba(255,255,255,0.8)';
-          const polyline = L.polyline([[lat, lng], [endLat, endLng]], {
-            color: lineColor,
-            weight: 2,
-            dashArray: '6,4',
-            lineCap: 'round',
-            opacity: 0.85,
-          });
-          trajGroup.addLayer(polyline);
-
-          // Arrow at target
-          const angle = Math.atan2(endLng - lng, endLat - lat) * (180 / Math.PI);
-          const arrowIcon = L.divIcon({
-            className: 'trajectory-arrow-icon',
-            html: `<div class="trajectory-target-arrow" style="color:${lineColor};transform:rotate(${angle + 90}deg);">&#8744;</div>`,
-            iconSize: [18, 18],
-            iconAnchor: [9, 9],
-          });
-          trajGroup.addLayer(L.marker([endLat, endLng], { icon: arrowIcon, interactive: false }));
-        }
-      }
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin]);
+    syncMarkers(markers, scheduleAnimFrame);
+  }, [markers, isLoaded, scheduleAnimFrame, syncMarkers]);
 
   // Render alarms on SVG overlays
   const renderAlarms = useCallback((alarmsData: Alarm[]) => {
@@ -310,33 +531,18 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
     const group = fusionLayerRef.current;
     if (!group) return;
     group.clearLayers();
-
-    trajs.forEach((traj) => {
-      if (!traj.actual_path || traj.actual_path.length < 2) return;
-
-      const latLngs: L.LatLngExpression[] = traj.actual_path.map(([lat, lng]) => [lat, lng]);
-      const polyline = L.polyline(latLngs, {
-        color: '#ff6600',
-        weight: 3,
-        lineCap: 'round',
-        lineJoin: 'round',
-        opacity: 0.8,
-      });
-      group.addLayer(polyline);
-
-      // Predicted path
-      if (traj.predicted_path && traj.predicted_path.length >= 2) {
-        const predLatLngs: L.LatLngExpression[] = traj.predicted_path.map(([lat, lng]) => [lat, lng]);
-        const predLine = L.polyline(predLatLngs, {
-          color: '#ff6600',
-          weight: 2,
-          dashArray: '10,6',
-          opacity: 0.5,
-        });
-        group.addLayer(predLine);
-      }
-    });
+    // DISABLED: Lines removed as requested
   }, []);
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    renderAlarms(alarms);
+  }, [alarms, isLoaded, renderAlarms]);
+
+  useEffect(() => {
+    if (!isLoaded || !fusionLayerRef.current) return;
+    renderFusionTrajectories(fusionTrajectories);
+  }, [fusionTrajectories, isLoaded, renderFusionTrajectories]);
 
   return (
     <div className="w-full h-full relative">
@@ -350,58 +556,20 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
 // ============================================
 
 async function loadMapTiles(map: L.Map, isMobile: boolean) {
-  try {
-    // Load MapLibre GL JS and Leaflet plugin from CDN
-    await loadScript('https://unpkg.com/maplibre-gl/dist/maplibre-gl.js');
-    await loadScript('https://unpkg.com/@maplibre/maplibre-gl-leaflet/leaflet-maplibre-gl.js');
+  // Base Satellite + Labels (Google Maps Hybrid, Ukrainian Language)
+  L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&hl=uk', {
+    attribution: '',
+    maxZoom: 19,
+    className: 'dark-satellite-layer',
+  }).addTo(map);
 
-    // Add MapLibre CSS
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = 'https://unpkg.com/maplibre-gl/dist/maplibre-gl.css';
-    document.head.appendChild(link);
-
-    const response = await fetch('https://tiles.openfreemap.org/styles/dark');
-    const style = await response.json();
-
-    // Modify text fields to show Ukrainian names
-    style.layers.forEach((layer: Record<string, unknown>) => {
-      const layout = layer.layout as Record<string, unknown> | undefined;
-      if (layout?.['text-field']) {
-        layout['text-field'] = ['coalesce', ['get', 'name:uk'], ['get', 'name']];
-      }
-      if (isMobile && layout?.['symbol-spacing']) {
-        layout['symbol-spacing'] = ((layout['symbol-spacing'] as number) || 250) * 1.5;
-      }
-    });
-
-    // Use the globally-available L.maplibreGL from the CDN scripts
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const LWithPlugin = L as any;
-    if (LWithPlugin.maplibreGL) {
-      LWithPlugin.maplibreGL({ style, attribution: '' }).addTo(map);
-    } else {
-      throw new Error('maplibreGL plugin not available after loading');
-    }
-  } catch (e) {
-    console.warn('Failed to load MapLibre, falling back to OSM tiles:', e);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '',
-      maxZoom: 19,
-    }).addTo(map);
-  }
-}
-
-function loadScript(src: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const existing = document.querySelector(`script[src="${src}"]`);
-    if (existing) { resolve(); return; }
-    const script = document.createElement('script');
-    script.src = src;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error(`Failed to load ${src}`));
-    document.head.appendChild(script);
-  });
+  // Clean Light Map (CartoDB Positron without labels, since we have our SVG labels)
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
+    attribution: '',
+    subdomains: 'abcd',
+    maxZoom: 19,
+    className: 'light-streets-layer',
+  }).addTo(map);
 }
 
 async function loadSvgOverlays(map: L.Map): Promise<{ statesSvg: SVGElement; districtsSvg: SVGElement } | null> {
@@ -450,12 +618,14 @@ function updateSvgOpacity(map: L.Map) {
   const container = document.getElementById('leaflet-map');
 
   let fadeOpacity: number;
+
   if (zoom < SVG_FADE_START_ZOOM) {
     fadeOpacity = 1;
   } else if (zoom >= SVG_FADE_END_ZOOM) {
     fadeOpacity = 0;
   } else {
-    fadeOpacity = 1 - (zoom - SVG_FADE_START_ZOOM) / (SVG_FADE_END_ZOOM - SVG_FADE_START_ZOOM);
+    const progress = (zoom - SVG_FADE_START_ZOOM) / (SVG_FADE_END_ZOOM - SVG_FADE_START_ZOOM);
+    fadeOpacity = 1 - progress;
   }
 
   if (container) {

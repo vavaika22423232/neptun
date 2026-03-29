@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { getAdminHeaderSecret, safeCompare } from '@/lib/server-secrets';
 
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const MODERATORS_FILE = path.join(DATA_DIR, 'chat_moderators.json');
-const MODERATOR_SECRET = process.env.AUTH_SECRET || '';
 
 function loadModerators(): string[] {
   try {
@@ -34,7 +34,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
     }
 
-    if (secret !== MODERATOR_SECRET) {
+    const modSecret = getAdminHeaderSecret();
+    if (!modSecret || !safeCompare(secret, modSecret)) {
       return NextResponse.json({ error: 'Невірний пароль' }, { status: 403 });
     }
 

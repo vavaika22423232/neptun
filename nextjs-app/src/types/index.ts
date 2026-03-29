@@ -2,12 +2,22 @@
 // Core domain types for NEPTUN
 // ============================================
 
+export interface TrackPosition {
+  lat: number;
+  lng: number;
+  ts: number;       // Unix ms timestamp
+  source?: string;  // channel name or 'chain_update'
+  bearing?: number; // computed bearing at this point
+}
+
 export interface Marker {
   id?: string;
+  track_id?: string;            // Track identifier: "trk_{type}_{group_id}" — groups updates for same threat
   lat: number;
   lng: number;
   threat_type: string;
   place?: string;
+  region?: string;
   text?: string;
   date?: string;
   count?: number;
@@ -17,15 +27,31 @@ export interface Marker {
   arrow_direction?: string;
   distance_km?: number;
   speed_kmh?: number;
+  computed_speed_kmh?: number;   // Speed computed from real track positions (not estimated)
   prediction_confidence?: number;
   confidence_level?: string;
+  trajectory_source?: 'direction' | 'cardinal' | 'correlation' | 'ai' | 'ai_analyzer' | 'heuristic' | string;
   trajectory?: Trajectory | null;
+  created_at_epoch?: number;     // Unix ms — server timestamp when marker was created
+  last_update_epoch?: number;    // Unix ms — last time this marker was updated (observation or ticker)
+  origin?: string;               // Launch origin (e.g. "Крим", "Чорне море")
+  flight_phase?: 'launch' | 'cruise' | 'approach' | 'circling';
+  ticker_bearing?: number | null; // Bearing computed from trajectory (for server ticker movement)
+  positions?: TrackPosition[];   // Full trail: observations + ticker projections (for display)
+  observations?: TrackPosition[]; // Pristine channel observations only (for speed computation)
+  observation_count?: number;    // Number of messages/observations for this track
+  is_estimated?: boolean;        // True for DIMAP-offset markers (rendered at 0.5 opacity)
 }
 
 export interface Trajectory {
   start?: [number, number];
   end?: [number, number];
   predicted?: boolean;
+  source?: 'direction' | 'cardinal' | 'correlation' | 'ai' | 'ai_analyzer' | 'heuristic';
+  prediction_confidence?: number;
+  waypoints?: [number, number][];   // intermediate points for sea/complex routes
+  flight_phase?: 'launch' | 'cruise' | 'approach' | 'circling';
+  origin_coords?: [number, number]; // original point where threat was first detected (e.g. Sumy)
 }
 
 export interface FusionTrajectory {
@@ -59,6 +85,7 @@ export interface MarkersResponse {
 export interface BallisticThreat {
   active: boolean;
   region?: string;
+  target?: string;
 }
 
 export interface PresenceData {
@@ -87,6 +114,7 @@ export interface ChatMessage {
   timestamp: number; // epoch seconds
   replyTo?: ReplyInfo | null;
   isModerator?: boolean;
+  isPro?: boolean;
   isSystem?: boolean;
   systemType?: string;
   threatType?: string;
@@ -115,12 +143,13 @@ export const THREAT_ICONS: Record<string, string> = {
   uav: 'shahed3.webp',          // parser alias
   raketa: 'icon_balistic.svg',
   missile: 'icon_balistic.svg', // parser alias
-  avia: 'avia.png',
+  avia: 'icon_avia.svg',
   artillery: 'artillery.png',
   obstril: 'icon_obstril.svg',
   fpv: 'fpv.png',
-  pusk: 'pusk.png',
-  launch: 'pusk.png',           // parser alias
+  pusk: 'icon_balistic.svg',
+  launch: 'icon_balistic.svg',   // parser alias
+  ballistic: 'icon_balistic.svg', // distinct ballistic missile icon
   kab: 'icon_missile.svg',
   rszv: 'icon_missile.svg',
   rozved: 'rozvedka2.png',
@@ -144,6 +173,7 @@ export const THREAT_NAMES: Record<string, string> = {
   fpv: '🎯 FPV дрони',
   pusk: '🚀 Пуски',
   launch: '🚀 Пуски',
+  ballistic: '☄️ Балістика',
   kab: '💣 КАБи',
   rszv: '💣 РСЗВ',
   rozved: '🔍 Розвідники',
