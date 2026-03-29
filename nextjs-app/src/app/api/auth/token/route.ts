@@ -1,33 +1,70 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
+import { getJwtSecret } from '@/lib/server-secrets';
+import { redisFixedWindowAllow } from '@/lib/redis-rate-limit';
+import { getClientIp, ipRedisTag } from '@/lib/client-ip';
+import { AuthTokenSchema } from '@/lib/api-schemas';
 
-const JWT_SECRET = process.env.AUTH_SECRET || 'default-secret';
 const ACCESS_TTL = 3600;  // 1 hour
 const REFRESH_TTL = 86400 * 30; // 30 days
+const TOKEN_RATE_LIMIT = 10; // max requests per window
+const TOKEN_RATE_WINDOW = 60; // 60 second window
 
-function createToken(payload: Record<string, unknown>, expiresIn: number): string {
+function createToken(secret: string, payload: Record<string, unknown>, expiresIn: number): string {
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
   const now = Math.floor(Date.now() / 1000);
   const body = Buffer.from(JSON.stringify({ ...payload, iat: now, exp: now + expiresIn })).toString('base64url');
-  const signature = crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
+  const signature = crypto.createHmac('sha256', secret).update(`${header}.${body}`).digest('base64url');
   return `${header}.${body}.${signature}`;
 }
 
-/**
- * POST /api/auth/token
- * Issue JWT access + refresh tokens for a device.
- */
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { deviceId, nickname } = body;
-
-    if (!deviceId) {
-      return NextResponse.json({ error: 'Missing deviceId' }, { status: 400 });
+    const ip = getClientIp(request);
+    const rateLimitKey = `rl:auth:token:${ipRedisTag(ip)}`;
+    const allowed = await redisFixedWindowAllow(rateLimitKey, TOKEN_RATE_LIMIT, TOKEN_RATE_WINDOW, false);
+    if (!allowed) {
+      return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
     }
 
-    const accessToken = createToken({ deviceId, nickname: nickname || null, type: 'access' }, ACCESS_TTL);
-    const refreshToken = createToken({ deviceId, type: 'refresh' }, REFRESH_TTL);
+    const secret = getJwtSecret();
+    if (!secret) {
+      console.error('[AUTH] JWT_SECRET / AUTH_SECRET not configured');
+      return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 });
+    }
+
+    const body = await request.json();
+    const parsed = AuthTokenSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0]?.message || 'Invalid input' }, { status: 400 });
+    }
+    const { deviceId } = parsed.data;
+    
+    // STRICT DEVICE ID VALIDATION
+    if (!deviceId || deviceId === 'null' || deviceId === 'undefined' || deviceId.length < 8) {
+      return NextResponse.json({ error: 'Invalid Device ID' }, { status: 400 });
+    }
+
+    let nickname = (parsed.data.nickname || 'Анонім').trim();
+    if (!nickname || nickname === 'null' || nickname === 'undefined') {
+      nickname = 'Анонім';
+    }
+
+    // SENSITIVE NICKNAME PROTECTION
+    const sensitive = ['admin', 'moderator', 'system', 'neptun', 'модератор', 'адмін'];
+    const isSensitive = sensitive.some(s => nickname.toLowerCase().includes(s));
+    
+    if (isSensitive) {
+      const adminSecret = process.env.ADMIN_SECRET || process.env.AUTH_SECRET;
+      const providedSecret = request.headers.get('X-Admin-Secret') || '';
+      if (!adminSecret || providedSecret !== adminSecret) {
+        // Force generic name if attempt to spoof admin/mod
+        nickname = 'Анонім';
+      }
+    }
+
+    const accessToken = createToken(secret, { deviceId, nickname, type: 'access' }, ACCESS_TTL);
+    const refreshToken = createToken(secret, { deviceId, type: 'refresh' }, REFRESH_TTL);
 
     return NextResponse.json({
       access_token: accessToken,
