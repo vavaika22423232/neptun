@@ -1,22 +1,33 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'dart:math' as math;
 import 'package:flutter_tts/flutter_tts.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 import 'tts_service.dart';
 import 'ballistic_alert_service.dart';
+import 'live_activity_service.dart';
 import 'widget_service.dart';
 import 'sleep_mode_service.dart';
 import '../models/notification_event.dart';
 import '../models/user_region_selection.dart';
 import 'notification_filter_service.dart';
 import 'region_database.dart';
+import 'alarm_tracking_service.dart';
+import 'briefing_service.dart';
+import 'package:go_router/go_router.dart';
 import 'package:neptun_alarm_app/config/api_config.dart';
+import 'package:neptun_alarm_app/config/prefs_keys.dart';
+import 'package:neptun_alarm_app/core/di/service_locator.dart';
+import 'package:neptun_alarm_app/core/pro/pro_features.dart';
 
 // Track last notification to prevent duplicates (for foreground only)
 String _lastNotificationKey = '';
@@ -380,6 +391,14 @@ String _cleanRegionName(String region) {
 // Background message handler - MUST be top-level function
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // Ensure Firebase is initialized in the background isolate
+  // (on iOS, the bg handler may run in a separate isolate where Firebase is not yet init'd)
+  try {
+    await Firebase.initializeApp();
+  } catch (_) {
+    // Already initialized — safe to ignore
+  }
+
   // === ДЕТАЛЬНЕ ЛОГУВАННЯ ВСІХ FCM ПОВІДОМЛЕНЬ (BACKGROUND) ===
   debugPrint('📩📩📩 FCM MESSAGE RECEIVED (BACKGROUND) 📩📩📩');
   debugPrint('📩 messageId: ${message.messageId}');
@@ -403,8 +422,9 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
   final data = message.data;
   final title = data['title'] ?? message.notification?.title ?? 'Тривога';
-  // FCM sends location in data['location'], body in notification.body
-  final location = data['location'] ?? ''; // Specific place (city)
+  // FCM sends location in data['location'] or data['city'], body in data['body'] or notification.body
+  final location =
+      data['location'] ?? data['city'] ?? ''; // Specific place (city)
   final body =
       data['body'] ??
       message.notification?.body ??
@@ -419,6 +439,51 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   debugPrint(
     '📦 FCM data: title=$title, location=$location, region=$region, threatType=$threatType, state=$alarmState, msgId=$messageId',
   );
+
+  // === FEEDBACK PUSH NOTIFICATION (background) ===
+  final fcmType = data['type'] ?? 'threat';
+  if (fcmType == 'feedback_reply' || fcmType == 'feedback_status') {
+    debugPrint('📋 Feedback push received in background: $fcmType');
+    try {
+      final flnp = FlutterLocalNotificationsPlugin();
+      const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+      const iosInit = DarwinInitializationSettings();
+      await flnp.initialize(
+        const InitializationSettings(android: androidInit, iOS: iosInit),
+      );
+
+      final androidDetails = AndroidNotificationDetails(
+        'feedback_alerts',
+        'Зворотний зв\'язок',
+        channelDescription: 'Відповіді на ваші звернення',
+        importance: Importance.high,
+        priority: Priority.high,
+        icon: '@mipmap/ic_launcher',
+        color: const Color(0xFF5B7FFF),
+        playSound: true,
+        enableVibration: prefs.getBool('vibration_enabled') ?? true,
+      );
+      const iosDetails = DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+        threadIdentifier: 'feedback',
+        interruptionLevel: InterruptionLevel.active,
+      );
+
+      await flnp.show(
+        _generateNotificationId(),
+        title,
+        body,
+        NotificationDetails(android: androidDetails, iOS: iosDetails),
+      );
+      await _NotificationMetrics.trackShown(prefs);
+    } catch (e) {
+      debugPrint('Feedback notification error: $e');
+    }
+    return; // Skip all threat/alarm logic
+  }
+  // === END FEEDBACK PUSH ===
 
   // Отримуємо поточний час для дедуплікації та ballistic alerts
   final currentTime = DateTime.now().millisecondsSinceEpoch;
@@ -479,9 +544,22 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     // Fallback to legacy name-based filtering when oblast_id is missing
     debugPrint('⚠️ No oblast_id in FCM, using legacy name-based filter');
     final selectedRegions = prefs.getStringList('selected_regions') ?? [];
+    final selectedRaionIds = prefs.getStringList('selected_raion_ids') ?? [];
 
-    if (selectedRegions.isNotEmpty) {
-      // Check if message region matches any selected region
+    if (selectedRegions.isNotEmpty || selectedRaionIds.isNotEmpty) {
+      // Слобожанське → Чугуївський р-н (НЕ Ізюмський!). Strict match для цих місць.
+      const placeToRaion = {'Слобожанське': 'Чугуївський район'};
+      final placeRaion = placeToRaion[location.trim()] ?? placeToRaion[region.trim()];
+      if (placeRaion != null) {
+        // Показувати тільки якщо обрано саме цей район
+        final hasRaion = selectedRegions.contains(placeRaion) ||
+            (selectedRaionIds.contains('UA-63-04') && placeRaion == 'Чугуївський район');
+        if (!hasRaion) {
+          debugPrint('🚫 Слобожанське в Чугуївському р-ні — не в обраному Ізюмському');
+          return;
+        }
+      }
+
       bool regionMatch = false;
       for (final selectedRegion in selectedRegions) {
         final normalizedSelected = selectedRegion.toLowerCase().trim();
@@ -516,9 +594,13 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   }
   // === END SLEEP MODE ===
 
+  // Detect alarm-type FCM (air raid alert from alarm_monitor)
+  final isAlarmFcm = fcmType == 'alarm';
+
   // === THREAT TYPE FILTER ===
   final threatKey = _resolveThreatKey(body, threatType);
-  if (!_isThreatTypeAllowed(prefs, threatKey)) {
+  // Skip threat-type filter for alarm FCMs (alarms always go through)
+  if (!isAlarmFcm && !_isThreatTypeAllowed(prefs, threatKey)) {
     debugPrint('🔕 Threat type $threatKey disabled by user settings');
     await _NotificationMetrics.trackSkipped(prefs);
     return;
@@ -527,6 +609,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
   final criticalByType =
       isCritical ||
+      isAlarmFcm ||
       threatKey == 'rocket' ||
       threatKey == 'ballistic' ||
       threatKey == 'kab';
@@ -604,38 +687,45 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     // Це потрібно бо Android кешує налаштування каналу при створенні
     final vibSuffix = shouldVibrate ? '' : '_silent';
 
+    // PRO: custom alarm sound (different channel per sound on Android 8+)
+    final alarmSoundId = prefs.getString(PrefsKeys.alarmSoundId) ?? 'default';
+    final useCustomSound = Platform.isAndroid &&
+        ProGate.isUnlocked(ProFeature.customAlarmSounds) &&
+        (alarmSoundId == 'sharp' || alarmSoundId == 'siren');
+    final soundSuffix = useCustomSound ? '_$alarmSoundId' : '';
+
     if (isAllClear) {
       emoji = '✅';
       notificationColor = const Color(0xFF30D158);
-      channelId = 'all_clear_alerts$vibSuffix';
+      channelId = 'all_clear_alerts$vibSuffix$soundSuffix';
       channelName = shouldVibrate
           ? 'Відбій тривоги'
           : 'Відбій тривоги (без вібро)';
     } else if (isRocket) {
       emoji = '🚀';
       notificationColor = const Color(0xFFE63946);
-      channelId = 'critical_alerts$vibSuffix';
+      channelId = 'critical_alerts$vibSuffix$soundSuffix';
       channelName = shouldVibrate
           ? 'Критичні тривоги'
           : 'Критичні тривоги (без вібро)';
     } else if (isKab) {
       emoji = '💣';
       notificationColor = const Color(0xFFE63946);
-      channelId = 'critical_alerts$vibSuffix';
+      channelId = 'critical_alerts$vibSuffix$soundSuffix';
       channelName = shouldVibrate
           ? 'Критичні тривоги'
           : 'Критичні тривоги (без вібро)';
     } else if (isDrone) {
       emoji = '🛩️';
       notificationColor = const Color(0xFFFF9500);
-      channelId = 'normal_alerts$vibSuffix';
+      channelId = 'normal_alerts$vibSuffix$soundSuffix';
       channelName = shouldVibrate
           ? 'Звичайні тривоги'
           : 'Звичайні тривоги (без вібро)';
     } else {
       emoji = '🚨';
       notificationColor = const Color(0xFFFF9500);
-      channelId = 'normal_alerts$vibSuffix';
+      channelId = 'normal_alerts$vibSuffix$soundSuffix';
       channelName = shouldVibrate
           ? 'Звичайні тривоги'
           : 'Звичайні тривоги (без вібро)';
@@ -654,6 +744,11 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       summaryText: subText,
     );
 
+    AndroidNotificationSound? notificationSound;
+    if (useCustomSound && alarmSoundId != 'default') {
+      notificationSound = RawResourceAndroidNotificationSound('alarm_$alarmSoundId');
+    }
+
     final androidDetails = AndroidNotificationDetails(
       channelId,
       channelName,
@@ -663,7 +758,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       color: notificationColor,
       colorized: true,
       playSound: true,
-      // Використовуємо системний звук - custom звуки потребують файлів в res/raw
+      sound: notificationSound,
       enableVibration: shouldVibrate,
       silent: false,
       styleInformation: bigTextStyle,
@@ -691,28 +786,77 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       iOS: iosDetails,
     );
 
-    await flutterLocalNotificationsPlugin.show(
-      _generateNotificationId(),
-      formattedTitle,
-      body,
-      details,
-    );
+    try {
+      await flutterLocalNotificationsPlugin.show(
+        _generateNotificationId(),
+        formattedTitle,
+        body,
+        details,
+      );
+    } catch (e) {
+      // Fallback: custom sound resource might not exist (alarm_sharp.ogg, alarm_siren.ogg)
+      if (useCustomSound) {
+        debugPrint('📱 Custom sound failed, retrying with default: $e');
+        final fallbackDetails = NotificationDetails(
+          android: AndroidNotificationDetails(
+            channelId.replaceAll('_$alarmSoundId', ''),
+            channelName,
+            channelDescription: 'Сповіщення про тривоги',
+            importance: isCritical ? Importance.max : Importance.high,
+            priority: isCritical ? Priority.max : Priority.high,
+            color: notificationColor,
+            colorized: true,
+            playSound: true,
+            enableVibration: shouldVibrate,
+            silent: false,
+            styleInformation: bigTextStyle,
+            subText: subText,
+            ticker: formattedTitle,
+            category: isCritical
+                ? AndroidNotificationCategory.alarm
+                : AndroidNotificationCategory.message,
+            visibility: NotificationVisibility.public,
+          ),
+          iOS: iosDetails,
+        );
+        await flutterLocalNotificationsPlugin.show(
+          _generateNotificationId(),
+          formattedTitle,
+          body,
+          fallbackDetails,
+        );
+      } else {
+        rethrow;
+      }
+    }
     await _NotificationMetrics.trackShown(prefs);
     debugPrint('📱 Local notification shown (vibration: $vibrationEnabled)');
+
+    // Оновлюємо віджет при FCM у фоні/закритому додатку — інакше віджет показує застарілий стан
+    try {
+      final isAlarm =
+          alarmState != 'ended' && !body.toLowerCase().contains('відбій');
+      await WidgetService().updateAlarmStatus(
+        isAlarm: isAlarm,
+        region: region.isNotEmpty ? region : null,
+      );
+    } catch (we) {
+      debugPrint('Widget update in background: $we');
+    }
   } catch (e) {
     debugPrint('Local notification error: $e');
   }
 
-  // TTS in background (Android only)
+  // TTS in background (Android and iOS)
   try {
     final ttsEnabled = prefs.getBool('tts_enabled') ?? false;
 
     debugPrint(
-      '🔊 TTS enabled: $ttsEnabled, Notifications: $notificationsEnabled, Platform: ${Platform.isAndroid ? "Android" : "Other"}',
+      '🔊 TTS enabled: $ttsEnabled, Notifications: $notificationsEnabled, Platform: ${Platform.isAndroid ? "Android" : "iOS"}',
     );
 
     // Озвучуємо тільки якщо TTS увімкнено і сповіщення увімкнені
-    if (ttsEnabled && notificationsEnabled && Platform.isAndroid) {
+    if (ttsEnabled && notificationsEnabled) {
       // === TTS DEDUPLICATION ===
       // Перевіряємо чи це повідомлення вже озвучувалось
       // Use consistent key format without platform prefix to sync with foreground
@@ -728,6 +872,20 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
         // === END TTS DEDUPLICATION ===
 
         final tts = FlutterTts();
+
+        // Platform-specific TTS configuration FIRST (before language/voice)
+        if (Platform.isAndroid) {
+          await tts.setQueueMode(1); // QUEUE_ADD
+        } else if (Platform.isIOS) {
+          // iOS: configure audio session for background playback BEFORE speaking
+          await tts.setSharedInstance(true);
+          await tts.setIosAudioCategory(IosTextToSpeechAudioCategory.playback, [
+            IosTextToSpeechAudioCategoryOptions.allowBluetooth,
+            IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
+            IosTextToSpeechAudioCategoryOptions.mixWithOthers,
+            IosTextToSpeechAudioCategoryOptions.duckOthers,
+          ]);
+        }
 
         // Load volume setting from preferences
         final ttsVolume = prefs.getDouble('tts_volume') ?? 1.0;
@@ -766,9 +924,6 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
         await tts.awaitSpeakCompletion(true);
 
-        // Request audio focus for background playback
-        await tts.setQueueMode(1); // QUEUE_ADD
-
         // Використовуємо уніфіковану функцію форматування
         final speechMessage = _formatTtsMessage(
           region: region,
@@ -782,11 +937,13 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
         // Speak and wait for completion
         final result = await tts.speak(speechMessage);
-        debugPrint('🔊 TTS speak result: $result');
+        if (kDebugMode) debugPrint('🔊 TTS speak result: $result');
 
         // Wait for speech to complete
         await Future.delayed(const Duration(seconds: 6));
-        debugPrint('🔊 Background TTS completed');
+
+        // Cleanup TTS instance
+        await tts.stop();
       }
     }
   } catch (e) {
@@ -818,6 +975,184 @@ class NotificationService {
   }
 
   bool get isFirebaseAvailable => _firebaseMessaging != null;
+
+  /// Cached APNS readiness flag — once true stays true for session
+  bool _apnsReady = false;
+
+  /// Tracks if we have pending topic subscriptions due to APNS not being ready
+  bool _hasPendingSubscriptions = false;
+
+  /// Timer for retrying FCM token fetch
+  Timer? _apnsRetryTimer;
+
+  /// Schedule a background retry to obtain FCM token and subscribe to topics.
+  /// On iOS, APNS token must be available before FCM getToken / subscribeToTopic.
+  /// This timer polls getAPNSToken() and acts when it becomes available.
+  void _scheduleDeferredApnsRetry() {
+    if (_apnsRetryTimer?.isActive ?? false) return;
+    _hasPendingSubscriptions = true;
+    int retryCount = 0;
+    _apnsRetryTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
+      retryCount++;
+      // Already have everything we need
+      if (_fcmToken != null && _apnsReady) {
+        timer.cancel();
+        return;
+      }
+      final m = firebaseMessaging;
+      if (m == null) {
+        timer.cancel();
+        return;
+      }
+      // Give up after 5 minutes (60 retries × 5s)
+      if (retryCount > 60) {
+        timer.cancel();
+        debugPrint('🍎❌ APNS/FCM never obtained after 5 minutes — giving up');
+        return;
+      }
+      try {
+        // Step 1: Check if APNS token arrived
+        if (!_apnsReady) {
+          final apns = await m.getAPNSToken();
+          if (apns != null) {
+            _apnsReady = true;
+            debugPrint('🍎✅ APNS token available (retry #$retryCount)');
+          } else {
+            // APNS still not ready — can't do anything yet
+            if (retryCount % 6 == 0) {
+              debugPrint('🍎⏳ APNS still not ready (attempt #$retryCount)');
+            }
+            return;
+          }
+        }
+
+        // Step 2: APNS is ready — get FCM token
+        if (_fcmToken == null) {
+          try {
+            final token = await m.getToken().timeout(
+              const Duration(seconds: 10),
+              onTimeout: () => null,
+            );
+            if (token != null) {
+              _fcmToken = token;
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setString('fcm_token', token);
+              if (kDebugMode) {
+                debugPrint(
+                  '🍎✅ FCM Token obtained (retry #$retryCount): ${token.substring(0, math.min(20, token.length))}...',
+                );
+              }
+              await _registerDevice();
+            } else {
+              debugPrint('🍎⏳ getToken returned null (attempt #$retryCount)');
+              return;
+            }
+          } catch (e) {
+            debugPrint('🍎⚠️ getToken error (attempt #$retryCount): $e');
+            return;
+          }
+        }
+
+        // Step 3: Subscribe to saved topics
+        await _resubscribeFromSavedTopics();
+        timer.cancel();
+        debugPrint('🍎✅ Deferred initialization complete');
+      } catch (e) {
+        debugPrint('🍎⚠️ Deferred retry error: $e');
+      }
+    });
+  }
+
+  /// Resubscribe to all topics saved in SharedPreferences
+  Future<void> _resubscribeFromSavedTopics() async {
+    if (!_hasPendingSubscriptions) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedTopics = prefs.getStringList('subscribed_topics') ?? [];
+      if (savedTopics.isEmpty) {
+        debugPrint('🍎 No saved topics to resubscribe to');
+        _hasPendingSubscriptions = false;
+        return;
+      }
+      debugPrint('🍎🔄 Resubscribing to ${savedTopics.length} saved topics...');
+      for (final topic in savedTopics) {
+        try {
+          await firebaseMessaging?.subscribeToTopic(topic);
+          debugPrint('🍎✅ Resubscribed to $topic');
+        } catch (e) {
+          debugPrint('🍎❌ Failed to resubscribe to $topic: $e');
+        }
+      }
+      _subscribedTopics = savedTopics.toSet();
+      _hasPendingSubscriptions = false;
+      debugPrint(
+        '🍎✅ Deferred resubscription complete: ${savedTopics.length} topics',
+      );
+    } catch (e) {
+      debugPrint('🍎❌ Deferred resubscription error: $e');
+    }
+  }
+
+  /// Check if APNS token is available (quick, non-blocking)
+  Future<bool> _checkApnsReady() async {
+    if (!Platform.isIOS) return true;
+    if (_apnsReady) return true;
+    try {
+      final apns = await firebaseMessaging?.getAPNSToken();
+      if (apns != null) {
+        _apnsReady = true;
+        debugPrint('🍎✅ APNS token is available');
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  /// Safe FCM getToken — checks APNS first on iOS to avoid exception
+  Future<String?> _safeGetToken() async {
+    try {
+      if (Platform.isIOS && !await _checkApnsReady()) {
+        debugPrint(
+          '🍎 APNS not ready — skipping getToken (will get via onTokenRefresh)',
+        );
+        return null;
+      }
+      return await firebaseMessaging?.getToken().timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => null,
+      );
+    } catch (e) {
+      debugPrint('🔑 safeGetToken error: $e');
+      return null;
+    }
+  }
+
+  /// Safe subscribe — checks APNS first on iOS to avoid apns-token-not-set exception
+  Future<bool> _safeSubscribe(String topic) async {
+    if (Platform.isIOS && !_apnsReady) {
+      // Don't even try — will be retried via _resubscribeFromSavedTopics
+      return false;
+    }
+    try {
+      await firebaseMessaging?.subscribeToTopic(topic);
+      debugPrint('✅ Subscribed to $topic');
+      return true;
+    } catch (e) {
+      debugPrint('❌ Subscribe $topic error: $e');
+      return false;
+    }
+  }
+
+  /// Safe unsubscribe — checks APNS first on iOS
+  Future<void> _safeUnsubscribe(String topic) async {
+    if (Platform.isIOS && !_apnsReady) return; // Skip silently
+    try {
+      await firebaseMessaging?.unsubscribeFromTopic(topic);
+      debugPrint('📴 Unsubscribed from $topic');
+    } catch (e) {
+      debugPrint('⚠️ Unsubscribe $topic error: $e');
+    }
+  }
 
   String? _fcmToken;
   String? get fcmToken => _fcmToken;
@@ -892,7 +1227,30 @@ class NotificationService {
       await _unsubscribeFromAllTopics();
     } else {
       // Якщо увімкнули - підписуємось на збережені регіони
-      final savedRegions = prefs.getStringList('selected_regions') ?? [];
+      var savedRegions = prefs.getStringList('selected_regions') ?? [];
+      if (savedRegions.isEmpty) {
+        final oblastIds = prefs.getStringList('selected_oblast_ids') ?? [];
+        final raionIds = prefs.getStringList('selected_raion_ids') ?? [];
+        if (oblastIds.isNotEmpty || raionIds.isNotEmpty) {
+          final regionDb = RegionDatabase()..initialize();
+          final names = <String>[];
+          for (final id in oblastIds) {
+            final name = regionDb.getOblastById(id)?.nameUk;
+            if (name != null) names.add(name);
+          }
+          for (final raionId in raionIds) {
+            final oblastId = regionDb.getOblastIdForRaion(raionId);
+            if (oblastId != null) {
+              final name = regionDb.getOblastById(oblastId)?.nameUk;
+              if (name != null && !names.contains(name)) names.add(name);
+            }
+          }
+          if (names.isNotEmpty) {
+            savedRegions = names;
+            await prefs.setStringList('selected_regions', names);
+          }
+        }
+      }
       if (savedRegions.isNotEmpty) {
         await updateRegions(savedRegions);
       }
@@ -918,25 +1276,19 @@ class NotificationService {
 
   /// Unsubscribe from all FCM topics
   Future<void> _unsubscribeFromAllTopics() async {
-    try {
-      final messaging = firebaseMessaging;
-      if (messaging == null) return;
+    final messaging = firebaseMessaging;
+    if (messaging == null) return;
 
-      // Unsubscribe from ALL possible region topics to avoid stale subscriptions
-      for (final region in _allUkraineOblasts) {
-        final topic = _regionToTopic(region);
-        await messaging.unsubscribeFromTopic(topic);
-        debugPrint('📴 Unsubscribed from topic: $topic');
-      }
-
-      // Also unsubscribe from all_regions topic explicitly
-      await messaging.unsubscribeFromTopic('all_regions');
-      debugPrint('📴 Unsubscribed from topic: all_regions');
-
-      _subscribedTopics.clear();
-    } catch (e) {
-      debugPrint('Error unsubscribing from topics: $e');
+    // Unsubscribe from ALL possible region topics to avoid stale subscriptions
+    for (final region in _allUkraineOblasts) {
+      final topic = _regionToTopic(region);
+      await _safeUnsubscribe(topic);
     }
+
+    // Also unsubscribe from all_regions topic explicitly
+    await _safeUnsubscribe('all_regions');
+
+    _subscribedTopics.clear();
   }
 
   Future<void> initialize() async {
@@ -982,6 +1334,7 @@ class NotificationService {
       initializationSettings,
       onDidReceiveNotificationResponse: (NotificationResponse response) {
         debugPrint('Notification clicked: ${response.payload}');
+        _navigateToMapFromNotification();
       },
     );
 
@@ -1002,13 +1355,19 @@ class NotificationService {
       criticalAlert: false, // Requires Apple approval, disabled for now
     );
 
+    debugPrint(
+      '🔔 Notification permission status: ${settings.authorizationStatus}',
+    );
     if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-      debugPrint('User granted notification permission');
+      debugPrint('✅ User granted notification permission');
     } else if (settings.authorizationStatus ==
         AuthorizationStatus.provisional) {
-      debugPrint('User granted provisional permission');
+      debugPrint(
+        '⚠️ User granted provisional permission (quiet notifications)',
+      );
     } else {
-      debugPrint('User denied notification permission');
+      debugPrint('❌ User DENIED notification permission — push will NOT work!');
+      debugPrint('❌ User must enable notifications in iOS Settings → Neptun');
     }
 
     // Create notification channels for Android
@@ -1072,57 +1431,9 @@ class NotificationService {
         >()
         ?.createNotificationChannel(channelSOS);
 
-    // iOS: getToken() requires APNs token first (Firebase throws apns-token-not-set otherwise)
-    bool canRequestFcmToken = true;
-    if (Platform.isIOS) {
-      debugPrint('🍎 iOS: Waiting for APNs token before FCM getToken()...');
-      String? apnsToken;
-      for (int i = 0; i < 30; i++) {
-        apnsToken = await messaging.getAPNSToken();
-        if (apnsToken != null) {
-          debugPrint('🍎✅ iOS APNs Token received on attempt ${i + 1}');
-          break;
-        }
-        if (i < 5 || i % 5 == 4) {
-          debugPrint('🍎⏳ iOS APNs attempt ${i + 1}/30...');
-        }
-        await Future.delayed(const Duration(milliseconds: 500));
-      }
-      if (apnsToken != null) {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('apns_token', apnsToken);
-      } else {
-        debugPrint(
-          '🍎❌ APNs not available (simulator?) - skipping FCM getToken to avoid apns-token-not-set',
-        );
-        canRequestFcmToken = false;
-      }
-    }
-
-    // Get FCM token (on iOS only after APNs is set)
-    if (canRequestFcmToken) {
-      try {
-        _fcmToken = await messaging.getToken().timeout(
-          const Duration(seconds: 15),
-          onTimeout: () {
-            debugPrint('🔑 FCM getToken timeout (15s)');
-            return null;
-          },
-        );
-        debugPrint('🔑 FCM Token: $_fcmToken');
-      } catch (e) {
-        // Expected on iOS simulator: APNs never available, Firebase throws apns-token-not-set
-        final msg = e.toString();
-        if (msg.contains('apns-token-not-set')) {
-          debugPrint(
-            '🔑 FCM getToken skipped (APNs not set, normal on simulator)',
-          );
-        } else {
-          debugPrint('🔑 FCM getToken error: $e');
-        }
-        _fcmToken = null;
-      }
-    }
+    // Get FCM token using safe helper (handles APNS wait on iOS)
+    _fcmToken = await _safeGetToken();
+    debugPrint('🔑 FCM Token: $_fcmToken');
 
     // Save FCM token to SharedPreferences for family SOS feature
     if (_fcmToken != null) {
@@ -1130,16 +1441,37 @@ class NotificationService {
       await prefs.setString('fcm_token', _fcmToken!);
       debugPrint('💾 FCM Token saved to SharedPreferences');
     } else {
-      debugPrint('⚠️ FCM Token is NULL - cannot receive push notifications!');
+      debugPrint('⚠️ FCM Token is NULL - will get it when APNS becomes ready');
+      // On iOS, start deferred retry to get FCM token once APNS arrives
+      if (Platform.isIOS) {
+        _scheduleDeferredApnsRetry();
+      }
     }
 
-    // Listen to token refresh
+    // Listen to token refresh — also triggers resubscription on iOS
     messaging.onTokenRefresh.listen((newToken) async {
       _fcmToken = newToken;
       // Save updated token
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('fcm_token', newToken);
+      if (kDebugMode) {
+        debugPrint(
+          '🔑 FCM Token refreshed: ${newToken.substring(0, math.min(20, newToken.length))}...',
+        );
+      }
       _registerDevice();
+      // On iOS, token refresh means APNS is now ready
+      if (Platform.isIOS) {
+        final wasReady = _apnsReady;
+        _apnsReady = true;
+        _apnsRetryTimer?.cancel();
+        debugPrint('🍎✅ APNS ready via token refresh');
+        if (!wasReady) {
+          // First time APNS became ready — need to subscribe to all topics
+          _hasPendingSubscriptions = true;
+        }
+        await _resubscribeFromSavedTopics();
+      }
     });
 
     // Handle foreground messages
@@ -1170,19 +1502,71 @@ class NotificationService {
 
       final data = message.data;
       final region = data['region'] ?? '';
-      final location = data['location'] ?? '';
+      final location = data['location'] ?? data['city'] ?? '';
       final threatType = data['threat_type'] ?? '';
       final alarmState = data['alarm_state'] ?? '';
       final rawBody = data['body'] ?? message.notification?.body ?? '';
-      final threatKey = _resolveThreatKey(rawBody, threatType);
-      if (!_isThreatTypeAllowed(prefs, threatKey)) {
-        debugPrint('🔕 Threat type $threatKey disabled by user settings');
-        await _NotificationMetrics.trackSkipped(prefs);
-        return;
+      final fcmType = data['type'] ?? 'threat';
+      final isAlarmFcm = fcmType == 'alarm';
+
+      // === FEEDBACK PUSH NOTIFICATION (foreground) ===
+      if (fcmType == 'feedback_reply' || fcmType == 'feedback_status') {
+        debugPrint('📋 Feedback push received in foreground: $fcmType');
+        final feedbackTitle =
+            data['title'] ??
+            message.notification?.title ??
+            'Зворотний зв\'язок';
+        final feedbackBody = data['body'] ?? message.notification?.body ?? '';
+
+        final androidDetails = AndroidNotificationDetails(
+          'feedback_alerts',
+          'Зворотний зв\'язок',
+          channelDescription: 'Відповіді на ваші звернення',
+          importance: Importance.high,
+          priority: Priority.high,
+          icon: '@mipmap/ic_launcher',
+          color: const Color(0xFF5B7FFF),
+          playSound: true,
+          enableVibration: vibrationEnabled,
+        );
+        const iosDetails = DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+          threadIdentifier: 'feedback',
+          interruptionLevel: InterruptionLevel.active,
+        );
+
+        await flutterLocalNotificationsPlugin.show(
+          _generateNotificationId(),
+          feedbackTitle,
+          feedbackBody,
+          NotificationDetails(android: androidDetails, iOS: iosDetails),
+        );
+        await _NotificationMetrics.trackShown(prefs);
+
+        // Vibrate for feedback
+        if (vibrationEnabled) {
+          HapticFeedback.mediumImpact();
+        }
+        return; // Skip all threat/alarm logic
+      }
+      // === END FEEDBACK PUSH ===
+
+      // Skip threat-type filter for alarm FCMs (alarms always go through)
+      if (!isAlarmFcm) {
+        final threatKey = _resolveThreatKey(rawBody, threatType);
+        if (!_isThreatTypeAllowed(prefs, threatKey)) {
+          debugPrint('🔕 Threat type $threatKey disabled by user settings');
+          await _NotificationMetrics.trackSkipped(prefs);
+          return;
+        }
       }
 
+      final threatKey = _resolveThreatKey(rawBody, threatType);
       final isCritical =
           data['is_critical'] == 'true' ||
+          isAlarmFcm ||
           threatKey == 'rocket' ||
           threatKey == 'ballistic' ||
           threatKey == 'kab';
@@ -1250,8 +1634,20 @@ class NotificationService {
         // Fallback to legacy name-based filtering when oblast_id is missing
         debugPrint('⚠️ No oblast_id in FCM, using legacy name-based filter');
         final selectedRegions = prefs.getStringList('selected_regions') ?? [];
+        final selectedRaionIds = prefs.getStringList('selected_raion_ids') ?? [];
 
-        if (selectedRegions.isNotEmpty) {
+        if (selectedRegions.isNotEmpty || selectedRaionIds.isNotEmpty) {
+          const placeToRaion = {'Слобожанське': 'Чугуївський район'};
+          final placeRaion = placeToRaion[location.trim()] ?? placeToRaion[region.trim()];
+          if (placeRaion != null) {
+            final hasRaion = selectedRegions.contains(placeRaion) ||
+                (selectedRaionIds.contains('UA-63-04') && placeRaion == 'Чугуївський район');
+            if (!hasRaion) {
+              debugPrint('🚫 Слобожанське в Чугуївському р-ні — не в обраному Ізюмському');
+              return;
+            }
+          }
+
           bool regionMatch = false;
           for (final selectedRegion in selectedRegions) {
             final normalizedSelected = selectedRegion.toLowerCase().trim();
@@ -1277,6 +1673,16 @@ class NotificationService {
       }
       // === END REGION FILTER ===
 
+      // For alarm FCMs: mark in AlarmTrackingService dedup cache to prevent
+      // duplicate local notification when SSE alarm_update arrives shortly after
+      if (isAlarmFcm && region.isNotEmpty) {
+        final isAlarmStart = alarmState != 'end';
+        AlarmTrackingService().markAlarmNotifiedByFcm(
+          region,
+          isStart: isAlarmStart,
+        );
+      }
+
       // Показуємо локальне сповіщення
       _showLocalNotification(message, vibrationEnabled: vibrationEnabled);
 
@@ -1284,13 +1690,21 @@ class NotificationService {
       _triggerAlertServices(message);
     });
 
-    // Handle background messages
-    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    // NOTE: onBackgroundMessage is registered in main() before runApp()
+    // to ensure it works even when the app is terminated.
 
-    // Handle notification taps when app is in background
+    // Handle notification taps when app is in background — open to Map
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
       debugPrint('Message clicked: ${message.notification?.title}');
+      _navigateToMapFromNotification();
     });
+
+    // App opened from terminated state by tapping notification
+    final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
+    if (initialMessage != null) {
+      debugPrint('App opened from notification tap: ${initialMessage.notification?.title}');
+      Future.delayed(const Duration(milliseconds: 600), _navigateToMapFromNotification);
+    }
 
     // Load saved topic subscriptions
     await _loadSavedSubscriptions();
@@ -1324,18 +1738,39 @@ class NotificationService {
     // This also handles unsubscribing from all_regions for users with specific regions
     var savedRegions = prefs.getStringList('selected_regions') ?? [];
 
-    // AUTO-SUBSCRIBE: If no regions selected (first launch), subscribe to ALL regions
-    // This ensures users get notifications by default until they configure
+    // Якщо selected_regions порожній, але є ID — відновлюємо назви з RegionDatabase
+    // (наприклад після міграції, перевстановлення, або іншого потоку вибору регіонів)
     if (savedRegions.isEmpty) {
-      debugPrint(
-        '📍 No regions selected - auto-subscribing to all regions (first launch)',
-      );
-      savedRegions = _allUkraineOblasts;
-      await prefs.setStringList('selected_regions', savedRegions);
-      debugPrint('📍 Auto-saved ${savedRegions.length} regions');
+      final oblastIds = prefs.getStringList('selected_oblast_ids') ?? [];
+      final raionIds = prefs.getStringList('selected_raion_ids') ?? [];
+      if (oblastIds.isNotEmpty || raionIds.isNotEmpty) {
+        final regionDb = RegionDatabase()..initialize();
+        final names = <String>[];
+        for (final id in oblastIds) {
+          final name = regionDb.getOblastById(id)?.nameUk;
+          if (name != null) names.add(name);
+        }
+        for (final raionId in raionIds) {
+          final oblastId = regionDb.getOblastIdForRaion(raionId);
+          if (oblastId != null) {
+            final name = regionDb.getOblastById(oblastId)?.nameUk;
+            if (name != null && !names.contains(name)) names.add(name);
+          }
+        }
+        if (names.isNotEmpty) {
+          savedRegions = names;
+          await prefs.setStringList('selected_regions', names);
+          debugPrint('📍 Restored selected_regions from IDs: ${names.length} regions');
+        }
+      }
     }
 
-    await updateRegions(savedRegions);
+    if (savedRegions.isEmpty) {
+      debugPrint('📍 No regions selected — skipping FCM topic subscription');
+      await _unsubscribeFromAllTopics();
+    } else {
+      await updateRegions(savedRegions);
+    }
 
     // Register device with backend
     await _registerDevice();
@@ -1345,6 +1780,16 @@ class NotificationService {
     Future.delayed(const Duration(milliseconds: 500), () {
       checkPendingBallisticAlert();
     });
+  }
+
+  void _navigateToMapFromNotification() {
+    try {
+      if (sl.isRegistered<GoRouter>()) {
+        sl<GoRouter>().go('/');
+      }
+    } catch (e) {
+      debugPrint('Notification tap navigate error: $e');
+    }
   }
 
   /// Trigger TTS and vibration for alert
@@ -1453,13 +1898,34 @@ class NotificationService {
       }
 
       // Update home screen widget
+      final isAlarm =
+          alarmState != 'ended' && !body.toLowerCase().contains('відбій');
       if (Platform.isAndroid) {
-        final isAlarm =
-            alarmState != 'ended' && !body.toLowerCase().contains('відбій');
         WidgetService().updateAlarmStatus(
           isAlarm: isAlarm,
           region: region.isNotEmpty ? region : null,
         );
+      }
+      // iOS Live Activity (Dynamic Island + Lock Screen)
+      if (Platform.isIOS) {
+        final lowerType = threatType.toLowerCase();
+        final liveThreatType = lowerType.contains('баліст') ||
+                lowerType.contains('ballistic') ||
+                lowerType.contains('ракет')
+            ? 'ballistic'
+            : lowerType.contains('бпла') ||
+                    lowerType.contains('drone') ||
+                    lowerType.contains('shahed')
+                ? 'drones'
+                : 'air';
+        if (isAlarm && region.isNotEmpty) {
+          unawaited(LiveActivityService().start(
+            region: region,
+            threatType: liveThreatType,
+          ));
+        } else {
+          unawaited(LiveActivityService().end());
+        }
       }
     } catch (e) {
       debugPrint('Error triggering alert services: $e');
@@ -1856,6 +2322,21 @@ class NotificationService {
     debugPrint('📱 Foreground notification (vibration: $vibrationEnabled)');
   }
 
+  static const int _registerRetries = 3;
+  static const Duration _registerTimeout = Duration(seconds: 15);
+  static const Duration _deferredRetryDelay = Duration(minutes: 5);
+  static DateTime? _lastRegisterSuccessAt;
+  Timer? _deferredRegisterTimer;
+
+  /// Call when app resumes from background — re-registers to refresh token (rate-limited to once per 30min).
+  Future<void> reRegisterOnResume() async {
+    if (_lastRegisterSuccessAt != null &&
+        DateTime.now().difference(_lastRegisterSuccessAt!) < const Duration(minutes: 30)) {
+      return; // Already registered recently
+    }
+    await _registerDevice();
+  }
+
   Future<void> _registerDevice() async {
     if (_fcmToken == null || _deviceId == null) return;
 
@@ -1870,37 +2351,66 @@ class NotificationService {
       return;
     }
 
-    try {
-      final platform = Platform.isIOS
-          ? 'ios'
-          : (Platform.isAndroid ? 'android' : 'other');
+    final platform = Platform.isIOS
+        ? 'ios'
+        : (Platform.isAndroid ? 'android' : 'other');
+    if (kDebugMode) {
       debugPrint(
-        '📱 Registering device: platform=$platform, token=${_fcmToken!.substring(0, 30)}...',
+        '📱 Registering device: platform=$platform, token=${_fcmToken!.substring(0, math.min(30, _fcmToken!.length))}...',
       );
-
-      final response = await http.post(
-        Uri.parse(ApiConfig.register),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'token': _fcmToken,
-          'regions': selectedRegions,
-          'oblast_ids': selectedOblastIds,
-          'raion_ids': selectedRaionIds,
-          'device_id': _deviceId,
-          'platform': platform,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        debugPrint(
-          '✅ Device registered successfully with ID: $_deviceId, platform: $platform',
-        );
-      } else {
-        debugPrint('❌ Failed to register device: ${response.statusCode}');
-      }
-    } catch (e) {
-      debugPrint('❌ Error registering device: $e');
     }
+
+    final payload = {
+      'token': _fcmToken,
+      'regions': selectedRegions,
+      'oblast_ids': selectedOblastIds,
+      'raion_ids': selectedRaionIds,
+      'device_id': _deviceId,
+      'platform': platform,
+    };
+
+    var lastError = '';
+    for (var attempt = 1; attempt <= _registerRetries; attempt++) {
+      try {
+        final response = await http
+            .post(
+              Uri.parse(ApiConfig.register),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode(payload),
+            )
+            .timeout(_registerTimeout);
+
+        if (response.statusCode == 200) {
+          _lastRegisterSuccessAt = DateTime.now();
+          _deferredRegisterTimer?.cancel();
+          _deferredRegisterTimer = null;
+          debugPrint(
+            '✅ Device registered successfully with ID: $_deviceId, platform: $platform',
+          );
+          return;
+        }
+        lastError = 'HTTP ${response.statusCode}';
+      } catch (e) {
+        lastError = e.toString();
+      }
+      if (attempt < _registerRetries) {
+        final delay = Duration(seconds: 2 * attempt);
+        debugPrint('⏳ Register attempt $attempt failed ($lastError), retry in ${delay.inSeconds}s');
+        await Future.delayed(delay);
+      }
+    }
+
+    debugPrint('❌ Device registration failed after $_registerRetries attempts: $lastError');
+    _scheduleDeferredRetry();
+  }
+
+  void _scheduleDeferredRetry() {
+    _deferredRegisterTimer?.cancel();
+    _deferredRegisterTimer = Timer(_deferredRetryDelay, () {
+      _deferredRegisterTimer = null;
+      _registerDevice();
+    });
+    debugPrint('⏳ Scheduled retry in ${_deferredRetryDelay.inMinutes} min');
   }
 
   Future<void> _unregisterDevice() async {
@@ -2046,6 +2556,18 @@ class NotificationService {
       return;
     }
 
+    // Guard: якщо передано порожній список — перевіряємо prefs (race при init)
+    if (selectedRegions.isEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getStringList('selected_regions') ?? [];
+      if (saved.isNotEmpty) {
+        debugPrint('📍 updateRegions([]) ignored — using ${saved.length} saved regions from prefs');
+        await updateRegions(saved);
+        return;
+      }
+      // Справді порожній вибір — відписуємось
+    }
+
     debugPrint(
       '📍 Updating region subscriptions: ${selectedRegions.length} regions',
     );
@@ -2056,35 +2578,6 @@ class NotificationService {
     final prefs = await SharedPreferences.getInstance();
     final regionDb = RegionDatabase()..initialize();
     await _migrateSelectionToIdsIfNeeded(prefs, selectedRegions, regionDb);
-
-    // iOS: Verify APNs token is available before subscribing
-    // Topic subscriptions on iOS REQUIRE APNs token
-    if (Platform.isIOS) {
-      String? apnsToken = await messaging.getAPNSToken();
-      if (apnsToken == null) {
-        debugPrint('🍎⚠️ iOS APNs token not available! Waiting...');
-        // Wait and retry
-        for (int i = 0; i < 15; i++) {
-          await Future.delayed(const Duration(milliseconds: 500));
-          apnsToken = await messaging.getAPNSToken();
-          if (apnsToken != null) {
-            debugPrint('🍎✅ APNs token received on retry ${i + 1}');
-            break;
-          }
-          debugPrint('🍎⏳ APNs token retry ${i + 1}/15...');
-        }
-        if (apnsToken == null) {
-          debugPrint('🍎❌ CRITICAL: APNs token still NULL after 15 retries!');
-          debugPrint('🍎❌ Topic subscriptions will NOT work on this device!');
-          debugPrint(
-            '🍎❌ Check: Push Notifications capability, Provisioning Profile, Physical device',
-          );
-          // Continue anyway - the subscribeToTopic calls will fail but at least we tried
-        }
-      } else {
-        debugPrint('🍎✅ APNs token available (${apnsToken.length} chars)');
-      }
-    }
 
     // Визначаємо на які ОБЛАСТІ треба підписатись (ID-based)
     final userOblastIds =
@@ -2114,95 +2607,52 @@ class NotificationService {
     // Convert oblast names to valid topic names
     final newTopics = oblastsToSubscribe.map(_regionToTopic).toSet();
 
-    // FORCE unsubscribe from ALL topics first to avoid stale subscriptions
-    // This prevents receiving notifications from regions user unselected
-    debugPrint(
-      '🔄 Force unsubscribing from ALL topics before resubscription...',
-    );
-    await _unsubscribeFromAllTopics();
-    debugPrint('✅ Cleared all topic subscriptions');
+    // НЕ робимо cross-subscribe Kyiv city ↔ oblast — м. Київ ≠ Київська обл.
+    // Користувач отримує сповіщення тільки за обраними регіонами.
 
-    // Unsubscribe from topics that are no longer selected
-    for (final topic in _subscribedTopics) {
-      if (!newTopics.contains(topic)) {
-        try {
-          await messaging.unsubscribeFromTopic(topic);
-          debugPrint('📤 Unsubscribed from topic: $topic');
-        } catch (e) {
-          debugPrint('Error unsubscribing from $topic: $e');
-        }
-      }
-    }
-
-    // Subscribe to new topics
-    for (final topic in newTopics) {
-      if (!_subscribedTopics.contains(topic)) {
-        try {
-          debugPrint('🔔 Attempting to subscribe to topic: $topic');
-          await messaging.subscribeToTopic(topic);
-          debugPrint('✅ Successfully subscribed to topic: $topic');
-          if (Platform.isIOS) {
-            debugPrint('🍎 iOS topic subscription SUCCESS: $topic');
-          }
-        } catch (e) {
-          debugPrint('❌ Error subscribing to $topic: $e');
-          if (Platform.isIOS) {
-            debugPrint(
-              '🍎 iOS subscription FAILED for $topic - possible APNs configuration issue',
-            );
-            debugPrint('🍎 Error details: $e');
-          }
-        }
-      } else {
-        debugPrint('ℹ️ Already subscribed to topic: $topic');
-      }
-    }
-
-    // Subscribe to 'all_regions' topic ONLY if user selected ALL regions
-    // This prevents users who selected specific regions from receiving all alerts
-    // Count unique oblasts (24 oblasts + Kyiv = 25 regions with Firebase topics)
+    // Add all_regions topic if all regions selected
     const int totalRegions = 25;
     if (selectedRegions.length >= totalRegions) {
-      try {
-        await messaging.subscribeToTopic('all_regions');
-        debugPrint(
-          '📥 Subscribed to all_regions topic (user selected all regions)',
-        );
-      } catch (e) {
-        debugPrint('Error subscribing to all_regions: $e');
-      }
-    } else {
-      // Unsubscribe from all_regions if user didn't select all regions
-      try {
-        await messaging.unsubscribeFromTopic('all_regions');
-        debugPrint(
-          '📤 Unsubscribed from all_regions topic (user has specific regions)',
-        );
-      } catch (e) {
-        debugPrint('Error unsubscribing from all_regions: $e');
-      }
+      newTopics.add('all_regions');
+    }
+
+    // Save topics BEFORE subscribing so deferred retry can resubscribe
+    // if initial subscribe fails due to APNS not ready
+    try {
+      await prefs.setStringList('selected_regions', selectedRegions);
+      await prefs.setStringList('subscribed_topics', newTopics.toList());
+      BriefingService().invalidateCache();
+      debugPrint(
+        '💾 Saved ${newTopics.length} topics to SharedPreferences (before subscribe)',
+      );
+    } catch (e) {
+      debugPrint('Error saving topics before subscribe: $e');
+    }
+
+    // Subscribe to all target topics
+    // On iOS, if APNS not ready yet, _safeSubscribe will return false
+    // and we'll schedule deferred retry
+    int successCount = 0;
+    for (final topic in newTopics) {
+      final ok = await _safeSubscribe(topic);
+      if (ok) successCount++;
     }
 
     // Update tracked subscriptions
     _subscribedTopics = newTopics;
 
-    // Save selected regions and subscribed topics to SharedPreferences
-    try {
-      await prefs.setStringList('selected_regions', selectedRegions);
-      await prefs.setStringList(
-        'subscribed_topics',
-        _subscribedTopics.toList(),
-      );
+    if (Platform.isIOS && successCount == 0 && newTopics.isNotEmpty) {
       debugPrint(
-        '✅ Region subscriptions updated: ${_subscribedTopics.length} topics',
+        '🍎⚠️ APNS not ready — 0/${newTopics.length} subscriptions succeeded, scheduling retry',
       );
-      debugPrint('📋 Final subscribed topics: $_subscribedTopics');
-      if (Platform.isIOS) {
-        debugPrint('🍎 iOS FINAL SUBSCRIPTIONS: $_subscribedTopics');
-      }
-    } catch (e) {
-      debugPrint('Error saving subscribed topics: $e');
+      _hasPendingSubscriptions = true;
+      _scheduleDeferredApnsRetry();
+    } else {
+      debugPrint(
+        '✅ Region subscriptions: $successCount/${newTopics.length} succeeded',
+      );
     }
+    debugPrint('📋 Saved topics: $_subscribedTopics');
 
     // Also register/unregister with backend server
     if (selectedRegions.isEmpty) {
@@ -2245,6 +2695,7 @@ class NotificationService {
       'Київ': 'kyiv_city',
       'АР Крим': 'crimea',
       'Севастополь': 'sevastopol',
+      'м. Севастополь': 'sevastopol',
     };
 
     // Return mapped topic name or sanitize the region name
@@ -2390,8 +2841,6 @@ class NotificationService {
     required String group,
   }) async {
     try {
-      if (!Platform.isAndroid) return;
-
       final tts = TtsService();
       await tts.initialize();
 

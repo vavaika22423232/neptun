@@ -3,19 +3,30 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter_map/flutter_map.dart';
+import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart' hide Path;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../config/api_config.dart';
+import '../core/pro/pro_features.dart';
 import '../data/ukraine_region_paths.dart';
 import '../data/ukraine_district_paths.dart';
 import '../models/map_models.dart';
 import '../services/map_data_service.dart';
+import '../services/map_offline_cache.dart';
 import '../utils/svg_path_parser.dart';
 import '../services/ballistic_alert_service.dart';
 import '../services/widget_service.dart';
 import '../services/threat_icon_manager.dart';
+import '../services/data_stream_service.dart';
+import '../services/moderator_service.dart';
+import '../services/map_ready_notifier.dart';
 import '../theme/map_colors.dart';
+import '../features/map/presentation/widgets/map_layers.dart';
+import '../features/map/presentation/widgets/map_overlays.dart';
+import '../features/map/presentation/widgets/marker_info_sheet.dart';
 
 // Для сумісності залишаємо старий клас
 class NeptunColors {
@@ -38,8 +49,12 @@ class NeptunColors {
 }
 
 // ===== ГОЛОВНА СТОРІНКА КАРТИ =====
+/// [appBarOverlayHeight] — висота шапки поверх body (для табу з extendBodyBehindAppBar).
+/// Передай 52, якщо карта рендериться під AppBar.
 class NativeMapPage extends StatefulWidget {
-  const NativeMapPage({super.key});
+  const NativeMapPage({super.key, this.appBarOverlayHeight = 0});
+
+  final double appBarOverlayHeight;
 
   @override
   State<NativeMapPage> createState() => _NativeMapPageState();
@@ -56,11 +71,13 @@ class _NativeMapPageState extends State<NativeMapPage>
   // Маркери загроз
   List<ThreatMarker> threatMarkers = [];
   Map<String, int> markerCounts = {};
+  List<ThreatMarker> _currentVisibleMarkers = [];
 
   // Стан UI
   bool isLoading = true;
   String? error;
   DateTime? lastUpdate;
+  bool _fromCache = false; // true = показуємо кеш (офлайн або мережа недоступна)
   int stateAlarmCount = 0;
   int districtAlarmCount = 0;
 
@@ -78,10 +95,17 @@ class _NativeMapPageState extends State<NativeMapPage>
   bool _markersFetching = false;
   final MapDataService _mapDataService = MapDataService();
 
-  // Інтервали оновлення (зменшено для швидшого оновлення)
-  static const int alarmUpdateInterval = 5; // секунд
-  static const int markerUpdateInterval = 5; // секунд
-  static const int timeRange = 15; // хвилин для маркерів
+  // SSE push subscriptions (primary data source)
+  StreamSubscription? _alarmSSESub;
+  StreamSubscription? _markerSSESub;
+  StreamSubscription? _trackUpdateSSESub;
+  StreamSubscription? _markerUpdateSSESub;
+  StreamSubscription? _markerDeleteSSESub;
+
+  // Інтервали оновлення (fallback — основні дані приходять через SSE push)
+  static const int alarmUpdateInterval = 30; // секунд (fallback)
+  static const int markerUpdateInterval = 30; // секунд (fallback)
+  int get _timeRange => ProGate.isPro ? 180 : 60; // PRO: 3 год, FREE: 1 год історії
 
   // Threat history (for tracker)
   final List<ThreatHistoryEntry> _threatHistory = [];
@@ -126,6 +150,10 @@ class _NativeMapPageState extends State<NativeMapPage>
   static const double _svgFadeStartZoom = 8.0;
   static const double _svgFadeEndZoom = 10.0;
 
+  // Debounce rebuild during active pinch-zoom (prevents jank)
+  Timer? _zoomDebounceTimer;
+  bool _pulseInTransitionZone = false;
+
   // Legacy transform controller (for compatibility)
   final TransformationController _transformController =
       TransformationController();
@@ -169,7 +197,8 @@ class _NativeMapPageState extends State<NativeMapPage>
     _pulseController = AnimationController(
       duration: const Duration(milliseconds: 2000), // було 1500
       vsync: this,
-    )..repeat(reverse: true);
+    );
+    // DON'T start immediately — only when alarms appear (_updatePulseAnimation)
 
     _pulseAnimation = Tween<double>(begin: 0.92, end: 1.0).animate(
       // зменшено амплітуду
@@ -201,10 +230,43 @@ class _NativeMapPageState extends State<NativeMapPage>
       });
     }
     _loadOperatorMode();
-    _fetchAlarms();
-    _fetchThreatMarkers();
+    _loadFromCacheFirst();
 
-    // Періодичне оновлення
+    // Signal splash screen that map is ready after first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      MapReadyNotifier.instance.markReady();
+    });
+
+    // SSE push subscriptions (primary data source — instant updates)
+    final dataStream = DataStreamService.instance;
+    dataStream.connect();
+
+    _alarmSSESub = dataStream.alarmStream.listen((alarmData) {
+      if (!mounted) return;
+      _handlePushedAlarms(alarmData);
+    });
+
+    _markerSSESub = dataStream.markerNewStream.listen((markerData) {
+      if (!mounted) return;
+      // New marker arrived — fetch fresh data to get full list with filtering
+      _fetchThreatMarkers();
+    });
+
+    // Incremental updates — no full refetch, apply in-place
+    _trackUpdateSSESub = dataStream.trackUpdateStream.listen((data) {
+      if (!mounted) return;
+      _applyTrackUpdate(data);
+    });
+    _markerUpdateSSESub = dataStream.markerUpdateStream.listen((data) {
+      if (!mounted) return;
+      _applyMarkerUpdate(data);
+    });
+    _markerDeleteSSESub = dataStream.markerDeleteStream.listen((id) {
+      if (!mounted) return;
+      _applyMarkerDelete(id);
+    });
+
+    // Fallback polling timers (30s — only fires if SSE is down)
     _alarmTimer = Timer.periodic(
       Duration(seconds: alarmUpdateInterval),
       (_) => _fetchAlarms(),
@@ -213,6 +275,103 @@ class _NativeMapPageState extends State<NativeMapPage>
       Duration(seconds: markerUpdateInterval),
       (_) => _fetchThreatMarkers(),
     );
+  }
+
+  /// Apply track_update SSE — update marker position in-place (no refetch).
+  void _applyTrackUpdate(Map<String, dynamic> data) {
+    final markerData = data['marker'] as Map<String, dynamic>?;
+    if (markerData == null) return;
+    final id = markerData['id']?.toString();
+    final trackId = data['track_id']?.toString();
+    if (id == null && trackId == null) return;
+
+    final idx = threatMarkers.indexWhere((m) =>
+        (id != null && m.id == id) || (trackId != null && m.trackId == trackId));
+    if (idx < 0) return;
+
+    final updated = threatMarkers[idx].applyPartialUpdate(markerData);
+    if (mounted) {
+      setState(() {
+        threatMarkers = List.from(threatMarkers)..[idx] = updated;
+        _cachedFilteredMarkers = null;
+        _lastSourceMarkers = null;
+      });
+    }
+  }
+
+  /// Apply marker_update SSE — partial field update.
+  void _applyMarkerUpdate(Map<String, dynamic> data) {
+    final id = data['id']?.toString();
+    if (id == null) return;
+
+    final idx = threatMarkers.indexWhere((m) => m.id == id);
+    if (idx < 0) return;
+
+    final updates = Map<String, dynamic>.from(data)..remove('id');
+    final updated = threatMarkers[idx].applyPartialUpdate(updates);
+    if (mounted) {
+      setState(() {
+        threatMarkers = List.from(threatMarkers)..[idx] = updated;
+        _cachedFilteredMarkers = null;
+        _lastSourceMarkers = null;
+      });
+    }
+  }
+
+  /// Apply marker_delete SSE — remove marker immediately.
+  void _applyMarkerDelete(String id) {
+    if (id.isEmpty || !mounted) return;
+    setState(() {
+      final before = threatMarkers.length;
+      threatMarkers = threatMarkers.where((m) => m.id != id).toList();
+      if (threatMarkers.length < before) {
+        _recomputeMarkerCounts();
+        _cachedFilteredMarkers = null;
+        _lastSourceMarkers = null;
+      }
+    });
+  }
+
+  void _recomputeMarkerCounts() {
+    markerCounts.clear();
+    for (final m in threatMarkers) {
+      markerCounts[m.threatType] = (markerCounts[m.threatType] ?? 0) + 1;
+    }
+  }
+
+  /// Offline-first: завантажити кеш одразу, показати карту без затримки, потім оновити з мережі.
+  Future<void> _loadFromCacheFirst() async {
+    try {
+      final cachedAlarms = await MapOfflineCache.instance.loadAlarms();
+      final cachedMarkers = await MapOfflineCache.instance.loadMarkers();
+      final alarmsTs = await MapOfflineCache.instance.lastAlarmsUpdate();
+
+      if (mounted && (cachedAlarms != null || cachedMarkers != null)) {
+        setState(() {
+          if (cachedAlarms != null) {
+            stateAlarms = cachedAlarms.stateAlarms;
+            districtAlarms = cachedAlarms.districtAlarms;
+            stateThreatTypes = cachedAlarms.stateThreatTypes;
+            stateAlarmCount = cachedAlarms.stateCount;
+            districtAlarmCount = cachedAlarms.districtCount;
+          }
+          if (alarmsTs != null) lastUpdate = alarmsTs;
+          if (cachedMarkers != null) {
+            threatMarkers = cachedMarkers.markers;
+            markerCounts = Map<String, int>.from(cachedMarkers.counts);
+            _syncFilterTypes(cachedMarkers.markers);
+          }
+          isLoading = false;
+          _fromCache = true;
+          error = null;
+        });
+        _updatePulseAnimation();
+      }
+    } catch (e) {
+      debugPrint('Map cache load: $e');
+    }
+    _fetchAlarms();
+    _fetchThreatMarkers();
   }
 
   Future<void> _loadOperatorMode() async {
@@ -247,6 +406,12 @@ class _NativeMapPageState extends State<NativeMapPage>
     _alarmTimer?.cancel();
     _markerTimer?.cancel();
     _ballisticTimer?.cancel();
+    _zoomDebounceTimer?.cancel();
+    _alarmSSESub?.cancel();
+    _markerSSESub?.cancel();
+    _trackUpdateSSESub?.cancel();
+    _markerUpdateSSESub?.cancel();
+    _markerDeleteSSESub?.cancel();
     _pulseController.dispose();
     _ballisticController.dispose();
     _allClearController.dispose();
@@ -393,7 +558,7 @@ class _NativeMapPageState extends State<NativeMapPage>
     if (kDebugMode) {
       debugPrint('Parsed ${_statePathsCache.length} state regions');
     }
-    if (mounted) setState(() {});
+    // Don't setState here — wait until districts are also parsed
 
     // Parse district paths (yield so UI stays responsive)
     i = 0;
@@ -420,7 +585,153 @@ class _NativeMapPageState extends State<NativeMapPage>
     if (kDebugMode) {
       debugPrint('Parsed ${_districtPathsCache.length} district regions');
     }
+    // Single setState after ALL paths are parsed (was 3 separate setState calls)
     if (mounted) setState(() {});
+  }
+
+  // ===== HANDLE PUSHED ALARMS (from SSE — instant, no HTTP request) =====
+  void _handlePushedAlarms(List<dynamic> rawData) {
+    try {
+      // Parse the raw alarm data using the same MapDataService logic
+      // but synchronously since we already have the decoded JSON
+      final alarmData = _parseAlarmData(rawData);
+
+      bool alarmsChanged =
+          alarmData.stateAlarms.length != stateAlarms.length ||
+          alarmData.districtAlarms.length != districtAlarms.length ||
+          alarmData.stateCount != stateAlarmCount ||
+          alarmData.districtCount != districtAlarmCount;
+
+      if (!alarmsChanged) {
+        for (final key in alarmData.stateAlarms.keys) {
+          if (stateAlarms[key] != alarmData.stateAlarms[key]) {
+            alarmsChanged = true;
+            break;
+          }
+        }
+      }
+
+      if (!alarmsChanged) return;
+
+      final newBallisticRegions = alarmData.ballisticRegions.difference(
+        _previousBallisticRegions,
+      );
+      final clearedBallisticRegions = _previousBallisticRegions.difference(
+        alarmData.ballisticRegions,
+      );
+
+      if (newBallisticRegions.isNotEmpty) {
+        showBallisticThreat(region: newBallisticRegions.join(', '));
+      }
+      if (clearedBallisticRegions.isNotEmpty &&
+          alarmData.ballisticRegions.isEmpty) {
+        showBallisticAllClear(region: clearedBallisticRegions.join(', '));
+      }
+
+      _previousBallisticRegions = alarmData.ballisticRegions;
+
+      if (mounted) {
+        setState(() {
+          stateAlarms = alarmData.stateAlarms;
+          districtAlarms = alarmData.districtAlarms;
+          stateThreatTypes = alarmData.stateThreatTypes;
+          stateAlarmCount = alarmData.stateCount;
+          districtAlarmCount = alarmData.districtCount;
+          lastUpdate = DateTime.now();
+          isLoading = false;
+          error = null;
+          _fromCache = false;
+        });
+        _updatePulseAnimation();
+      }
+
+      _updateHomeWidget(alarmData.stateCount > 0, alarmData.stateCount);
+      debugPrint('📡 Alarms pushed via SSE: ${alarmData.stateCount} oblasts');
+    } catch (e) {
+      debugPrint('📡 Error handling pushed alarms: $e');
+    }
+  }
+
+  /// Parse raw alarm JSON into MapAlarmData (shared logic for both fetch and push)
+  MapAlarmData _parseAlarmData(List<dynamic> data) {
+    final Map<String, bool> newStateAlarms = {};
+    final Map<String, bool> newDistrictAlarms = {};
+    final Map<String, String> newStateThreatTypes = {};
+    final Set<String> currentBallisticRegions = {};
+    int stateCount = 0;
+    int districtCount = 0;
+
+    for (final region in data) {
+      if (region is! Map) continue;
+      final regionId = region['regionId']?.toString();
+      final regionType = region['regionType'] ?? '';
+      final activeAlerts = region['activeAlerts'] as List? ?? [];
+      final regionName = region['regionName']?.toString() ?? '';
+
+      if (regionId == null) continue;
+      final hasAlarm = activeAlerts.isNotEmpty;
+
+      if (regionType == 'State') {
+        newStateAlarms[regionId] = hasAlarm;
+        if (hasAlarm) {
+          stateCount++;
+          for (final alert in activeAlerts) {
+            final alertType = alert['type']?.toString() ?? '';
+            if (alertType == 'DRONES' || alertType.contains('DRONE')) {
+              newStateThreatTypes[regionId] = ThreatType.shahed;
+            } else if (alertType == 'BALLISTIC' ||
+                alertType == 'MISSILE' ||
+                alertType.contains('BALLISTIC')) {
+              newStateThreatTypes[regionId] = ThreatType.raketa;
+              currentBallisticRegions.add(
+                regionName.isNotEmpty ? regionName : regionId,
+              );
+            } else if (alertType == 'AIR') {
+              newStateThreatTypes[regionId] = ThreatType.avia;
+            }
+          }
+        }
+      } else if (regionType == 'District') {
+        newDistrictAlarms[regionId] = hasAlarm;
+        if (hasAlarm) {
+          districtCount++;
+          for (final alert in activeAlerts) {
+            final alertType = alert['type']?.toString() ?? '';
+            if (alertType == 'BALLISTIC' ||
+                alertType == 'MISSILE' ||
+                alertType.contains('BALLISTIC')) {
+              currentBallisticRegions.add(
+                regionName.isNotEmpty ? regionName : regionId,
+              );
+            }
+          }
+        }
+      }
+    }
+
+    return MapAlarmData(
+      stateAlarms: newStateAlarms,
+      districtAlarms: newDistrictAlarms,
+      stateThreatTypes: newStateThreatTypes,
+      stateCount: stateCount,
+      districtCount: districtCount,
+      ballisticRegions: currentBallisticRegions,
+    );
+  }
+
+  /// Start/stop pulse animation based on whether any alarms are active.
+  /// Also pauses pulse in the SVG→tile transition zone (zoom 7–11) to avoid
+  /// competing paint work while tiles are being decoded.
+  void _updatePulseAnimation() {
+    final hasAlarms =
+        stateAlarms.values.any((v) => v) || districtAlarms.values.any((v) => v);
+    if (hasAlarms && !_pulseInTransitionZone && !_pulseController.isAnimating) {
+      _pulseController.repeat(reverse: true);
+    } else if ((!hasAlarms || _pulseInTransitionZone) &&
+        _pulseController.isAnimating) {
+      _pulseController.stop();
+      _pulseController.reset();
+    }
   }
 
   // ===== FETCH ALARMS (як fetchAlarms в index_map.html) =====
@@ -478,7 +789,9 @@ class _NativeMapPageState extends State<NativeMapPage>
             lastUpdate = DateTime.now();
             isLoading = false;
             error = null;
+            _fromCache = false;
           });
+          _updatePulseAnimation();
         }
         if (kDebugMode) {
           debugPrint(
@@ -533,7 +846,7 @@ class _NativeMapPageState extends State<NativeMapPage>
     _markersFetching = true;
     try {
       final markerData = await _mapDataService.fetchThreatMarkers(
-        timeRange: timeRange,
+        timeRange: _timeRange,
       );
 
       if (markerData.ballisticActive != null) {
@@ -598,6 +911,7 @@ class _NativeMapPageState extends State<NativeMapPage>
             threatMarkers = markerData.markers;
             markerCounts = markerData.counts;
             _syncFilterTypes(markerData.markers);
+            _fromCache = false;
           });
         }
         _addThreatHistoryEntry(markerData.counts);
@@ -642,19 +956,30 @@ class _NativeMapPageState extends State<NativeMapPage>
         .toList();
   }
 
-  Map<String, int> _countVisibleMarkers(List<ThreatMarker> markers) {
-    final counts = <String, int>{};
-    for (final marker in markers) {
-      counts[marker.threatType] = (counts[marker.threatType] ?? 0) + 1;
+  // Cached filtered marker list — so identical() check in _buildMarkerTapTargets works
+  List<ThreatMarker>? _cachedFilteredMarkers;
+  List<ThreatMarker>? _lastSourceMarkers;
+  int _lastVisibleTypesHash = 0;
+
+  List<ThreatMarker> _getVisibleMarkers() {
+    final typesHash = _visibleThreatTypes.length;
+    if (_cachedFilteredMarkers != null &&
+        identical(_lastSourceMarkers, threatMarkers) &&
+        _lastVisibleTypesHash == typesHash) {
+      return _cachedFilteredMarkers!;
     }
-    return counts;
+    _lastSourceMarkers = threatMarkers;
+    _lastVisibleTypesHash = typesHash;
+    _cachedFilteredMarkers = _applyThreatFilter(threatMarkers);
+    return _cachedFilteredMarkers!;
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final colors = MapColors(isDark: isDark);
-    final visibleMarkers = _applyThreatFilter(threatMarkers);
+    final visibleMarkers = _getVisibleMarkers();
+    _currentVisibleMarkers = visibleMarkers;
 
     return Stack(
       children: [
@@ -687,23 +1012,43 @@ class _NativeMapPageState extends State<NativeMapPage>
         ),
 
         // ===== BALLISTIC THREAT OVERLAY =====
-        if (_ballisticThreatActive) _buildBallisticThreatOverlay(colors),
+        if (_ballisticThreatActive)
+          BallisticThreatOverlay(
+            onDismiss: () {
+              _ballisticController.stop();
+              _ballisticController.reset();
+              _ballisticTimer?.cancel();
+              setState(() => _ballisticThreatActive = false);
+            },
+          ),
 
         // ===== ALL CLEAR OVERLAY =====
         if (_ballisticAllClear)
           AnimatedBuilder(
             animation: _allClearController,
-            builder: (context, child) => _buildAllClearOverlay(colors),
+            builder: (context, child) => AllClearOverlay(
+              progress: _allClearAnimation.value,
+              message: _ballisticMessage,
+            ),
           ),
 
-        // Legend (внизу по центру)
-        Positioned(bottom: 24, left: 0, right: 0, child: _buildLegend(colors)),
+        // Legend (внизу по центру) + індикатор джерела даних
+        Positioned(
+          bottom: 24,
+          left: 0,
+          right: 0,
+          child: MapLegend(
+            colors: colors,
+            fromCache: _fromCache,
+            lastUpdate: lastUpdate,
+          ),
+        ),
 
         // ===== THREAT STATS WIDGET =====
-        // Опускаємо нижче якщо активний банер балістики або відбою
         if (visibleMarkers.isNotEmpty)
           Positioned(
             top:
+                widget.appBarOverlayHeight +
                 MediaQuery.of(context).padding.top +
                 ((_ballisticThreatActive || _allClearController.value > 0)
                     ? 80
@@ -712,673 +1057,64 @@ class _NativeMapPageState extends State<NativeMapPage>
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 300),
               curve: Curves.easeOut,
-              child: _buildThreatStats(colors, visibleMarkers),
+              child: ThreatStatsPanel(
+                colors: colors,
+                visibleMarkers: visibleMarkers,
+                onTap: () => _showThreatStatsDialog(colors, visibleMarkers),
+              ),
             ),
           ),
 
-        // ===== OPERATOR MODE TOGGLE (Hidden in minimalist mode) =====
+        // ===== OPERATOR MODE TOGGLE (Debug only) =====
         if (kDebugMode)
           Positioned(
-            top: MediaQuery.of(context).padding.top + 8,
+            top: widget.appBarOverlayHeight + MediaQuery.of(context).padding.top + 8,
             left: 12,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildOperatorToggle(colors),
+                MapOperatorToggle(
+                  colors: colors,
+                  onToggle: _toggleOperatorMode,
+                ),
                 if (_operatorModeEnabled) ...[
                   const SizedBox(height: 8),
-                  _buildOperatorPanel(colors),
-                ],
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-
-  // Simplified Toggle for Debug only
-  Widget _buildOperatorToggle(MapColors colors) {
-    return GestureDetector(
-      onTap: _toggleOperatorMode,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: colors.panelBg,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: colors.panelBorder),
-        ),
-        child: Text('OP', style: TextStyle(color: colors.textAccent)),
-      ),
-    );
-  }
-
-  Widget _buildOperatorPanel(MapColors colors) {
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: colors.panelBg,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: colors.panelBorder),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            icon: Icon(Icons.refresh, size: 18, color: colors.textAccent),
-            onPressed: () {
-              _fetchAlarms();
-              _fetchThreatMarkers();
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ===== BALLISTIC THREAT VISUAL EFFECT =====
-  Widget _buildBallisticThreatOverlay(MapColors colors) {
-    return Stack(
-      children: [
-        // Мінімалістичне повідомлення зверху
-        Positioned(
-          top: MediaQuery.of(context).padding.top + 12,
-          left: 16,
-          right: 16,
-          child: Center(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFDC2626),
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.15),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.rocket_launch_rounded,
-                    color: Colors.white,
-                    size: 22,
-                  ),
-                  const SizedBox(width: 12),
-                  Flexible(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Загроза балістики',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const Padding(
-                          padding: EdgeInsets.only(top: 2),
-                          child: Text(
-                            'де зараз повітряна тривога',
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  GestureDetector(
-                    onTap: () {
-                      _ballisticController.stop();
-                      _ballisticController.reset();
-                      _ballisticTimer?.cancel();
-                      setState(() => _ballisticThreatActive = false);
+                  MapOperatorPanel(
+                    colors: colors,
+                    onRefresh: () {
+                      _fetchAlarms();
+                      _fetchThreatMarkers();
                     },
-                    child: Icon(
-                      Icons.close_rounded,
-                      color: Colors.white.withOpacity(0.8),
-                      size: 20,
-                    ),
                   ),
                 ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ===== ALL CLEAR VISUAL EFFECT =====
-  Widget _buildAllClearOverlay(MapColors colors) {
-    final progress = _allClearAnimation.value;
-
-    return Stack(
-      children: [
-        // Мінімалістичне повідомлення зверху
-        Positioned(
-          top: MediaQuery.of(context).padding.top + 12,
-          left: 16,
-          right: 16,
-          child: Center(
-            child: AnimatedOpacity(
-              opacity: progress < 0.7 ? 1.0 : (1.0 - (progress - 0.7) * 3.3),
-              duration: const Duration(milliseconds: 200),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 14,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF16A34A),
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.15),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.check_circle_rounded,
-                      color: Colors.white,
-                      size: 22,
-                    ),
-                    const SizedBox(width: 12),
-                    Flexible(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Відбій балістики',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          if (_ballisticMessage.contains('\n'))
-                            Padding(
-                              padding: const EdgeInsets.only(top: 2),
-                              child: Text(
-                                _ballisticMessage.split('\n').last,
-                                style: TextStyle(
-                                  color: Colors.white.withOpacity(0.85),
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLegend(MapColors colors) {
-    return Center(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: colors.panelBg.withValues(alpha: 0.9),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: colors.panelBorder),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _legendItem(colors.normalFill, 'Немає тривоги', colors),
-            const SizedBox(width: 24),
-            _legendItem(colors.alarmFillState, 'Тривога', colors),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ===== THREAT STATS PANEL =====
-  Widget _buildThreatStats(
-    MapColors colors,
-    List<ThreatMarker> visibleMarkers,
-  ) {
-    final visibleCounts = _countVisibleMarkers(visibleMarkers);
-    // Групуємо типи загроз для кращого відображення
-    final groupedCounts = <String, int>{};
-
-    for (final entry in visibleCounts.entries) {
-      final type = entry.key;
-      final count = entry.value;
-
-      // Групуємо схожі типи
-      if (type == 'shahed' || type == 'fpv') {
-        groupedCounts['shahed'] = (groupedCounts['shahed'] ?? 0) + count;
-      } else if (type == 'raketa' || type == 'pusk') {
-        groupedCounts['raketa'] = (groupedCounts['raketa'] ?? 0) + count;
-      } else if (type == 'kab' || type == 'rszv') {
-        groupedCounts['kab'] = (groupedCounts['kab'] ?? 0) + count;
-      } else if (type == 'rozved') {
-        groupedCounts['rozved'] = (groupedCounts['rozved'] ?? 0) + count;
-      } else if (type == 'avia') {
-        groupedCounts['avia'] = (groupedCounts['avia'] ?? 0) + count;
-      }
-    }
-
-    // Сортуємо за кількістю (найбільше спочатку)
-    final sortedEntries = groupedCounts.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-
-    // Якщо немає загроз
-    if (sortedEntries.isEmpty) return const SizedBox.shrink();
-
-    // Загальна кількість
-    final total = sortedEntries.fold<int>(0, (sum, e) => sum + e.value);
-
-    return GestureDetector(
-      onTap: () => _showThreatStatsDialog(colors, visibleMarkers),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: colors.panelBg.withValues(alpha: 0.9), // Darker background
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: colors.panelBorder),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Заголовок
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.flight_rounded, size: 14, color: Colors.orange),
-                const SizedBox(width: 4),
-                Text(
-                  'Загрози ($total)',
-                  style: TextStyle(
-                    color: colors.textPrimary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
               ],
             ),
-            const SizedBox(height: 6),
-            // Список загроз (максимум 4)
-            ...sortedEntries
-                .take(4)
-                .map(
-                  (entry) =>
-                      _buildThreatStatItem(entry.key, entry.value, colors),
-                ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildThreatStatItem(String type, int count, MapColors colors) {
-    final icon = _getThreatEmoji(type);
-    final label = _getThreatLabel(type);
-    final color = _getThreatColor(type);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(icon, style: const TextStyle(fontSize: 12)),
-          const SizedBox(width: 4),
-          Text(
-            '$count',
-            style: TextStyle(
-              color: color,
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-            ),
           ),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(color: colors.textSecondary, fontSize: 10),
-          ),
-        ],
-      ),
+      ],
     );
-  }
-
-  String _getThreatEmoji(String type) {
-    switch (type) {
-      case 'shahed':
-        return '🛩️';
-      case 'raketa':
-        return '🚀';
-      case 'kab':
-        return '💣';
-      case 'rozved':
-        return '🔍';
-      case 'avia':
-        return '✈️';
-      default:
-        return '⚠️';
-    }
-  }
-
-  String _getThreatLabel(String type) {
-    switch (type) {
-      case 'shahed':
-        return 'БПЛА';
-      case 'raketa':
-        return 'Ракети';
-      case 'kab':
-        return 'КАБи';
-      case 'rozved':
-        return 'Розвідники';
-      case 'avia':
-        return 'Авіація';
-      default:
-        return 'Інше';
-    }
-  }
-
-  Color _getThreatColor(String type) {
-    switch (type) {
-      case 'shahed':
-        return Colors.orange;
-      case 'raketa':
-        return Colors.red;
-      case 'kab':
-        return Colors.redAccent;
-      case 'rozved':
-        return Colors.amber;
-      case 'avia':
-        return Colors.purple;
-      default:
-        return Colors.white;
-    }
   }
 
   void _showThreatStatsDialog(
     MapColors colors,
     List<ThreatMarker> visibleMarkers,
   ) {
-    final visibleCounts = _countVisibleMarkers(visibleMarkers);
-    final total = visibleCounts.values.fold<int>(0, (sum, v) => sum + v);
-
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          backgroundColor: colors.panelBg,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Row(
-            children: [
-              const Text('🎯', style: TextStyle(fontSize: 24)),
-              const SizedBox(width: 8),
-              Text(
-                'Статистика загроз',
-                style: TextStyle(
-                  color: colors.textPrimary,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: colors.isDark
-                      ? Colors.orange.withOpacity(0.1)
-                      : Colors.orange.withOpacity(0.05),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.orange.withOpacity(0.3)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.info_outline,
-                      color: Colors.orange,
-                      size: 18,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Орієнтовно за останні $timeRange хв',
-                        style: TextStyle(
-                          color: colors.textSecondary,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: _filterableThreatTypes.map((type) {
-                  final selected = _visibleThreatTypes.contains(type);
-                  final label = ThreatType.names[type] ?? type;
-                  return FilterChip(
-                    label: Text(label, style: const TextStyle(fontSize: 11)),
-                    selected: selected,
-                    onSelected: (value) {
-                      setState(() {
-                        if (value) {
-                          _visibleThreatTypes.add(type);
-                        } else {
-                          _visibleThreatTypes.remove(type);
-                        }
-                      });
-                      setDialogState(() {});
-                    },
-                    selectedColor: colors.isDark
-                        ? colors.textAccent.withOpacity(0.2)
-                        : colors.textAccent.withOpacity(0.15),
-                    checkmarkColor: colors.textAccent,
-                    backgroundColor: colors.isDark
-                        ? colors.panelBg
-                        : Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      side: BorderSide(color: colors.panelBorder),
-                    ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 16),
-              // Загальна кількість
-              Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.red.withOpacity(0.2),
-                        Colors.orange.withOpacity(0.2),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    children: [
-                      Text(
-                        '$total',
-                        style: TextStyle(
-                          color: colors.textPrimary,
-                          fontSize: 36,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        'об\'єктів у повітрі',
-                        style: TextStyle(
-                          color: colors.textSecondary,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              // Деталізація
-              ...visibleCounts.entries.map((entry) {
-                final icon = _getThreatEmoji(entry.key);
-                final name = ThreatType.names[entry.key] ?? entry.key;
-                final color = _getThreatColor(entry.key);
-
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Row(
-                    children: [
-                      Text(icon, style: const TextStyle(fontSize: 18)),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          name,
-                          style: TextStyle(
-                            color: colors.textPrimary,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: color.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          '${entry.value}',
-                          style: TextStyle(
-                            color: color,
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-              if (_threatHistory.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Text(
-                  'Історія (останні інтервали)',
-                  style: TextStyle(
-                    color: colors.textPrimary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                ..._threatHistory.reversed.take(6).map((entry) {
-                  final time =
-                      '${entry.timestamp.hour.toString().padLeft(2, '0')}:${entry.timestamp.minute.toString().padLeft(2, '0')}';
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Row(
-                      children: [
-                        Text(
-                          time,
-                          style: TextStyle(
-                            color: colors.textSecondary,
-                            fontSize: 12,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: LinearProgressIndicator(
-                            value: (entry.total / (total == 0 ? 1 : total))
-                                .clamp(0.0, 1.0),
-                            minHeight: 6,
-                            backgroundColor: colors.panelBorder,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              colors.textAccent.withOpacity(0.6),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${entry.total}',
-                          style: TextStyle(
-                            color: colors.textPrimary,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }),
-              ],
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(
-                'Закрити',
-                style: TextStyle(color: colors.textAccent),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _legendItem(Color color, String label, MapColors colors) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 16,
-          height: 16,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(4),
-            border: Border.all(color: colors.panelBorder),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          label,
-          style: TextStyle(color: colors.textSecondary, fontSize: 12),
-        ),
-      ],
+    showThreatStatsDialog(
+      context,
+      colors: colors,
+      threatMarkers: threatMarkers,
+      filterableThreatTypes: _filterableThreatTypes,
+      visibleThreatTypes: _visibleThreatTypes,
+      onFilterToggled: (type, selected) {
+        setState(() {
+          if (selected) {
+            _visibleThreatTypes.add(type);
+          } else {
+            _visibleThreatTypes.remove(type);
+          }
+        });
+      },
+      threatHistory: _threatHistory,
+      timeRangeMinutes: _timeRange,
     );
   }
 
@@ -1421,15 +1157,12 @@ class _NativeMapPageState extends State<NativeMapPage>
     );
   }
 
-  /// Get tile URL for the current theme
-  /// Using free tile providers
+  /// Get tile URL for the current theme (CARTO CDN with retina + local-language labels)
   String _getTileUrl(bool isDark) {
     if (isDark) {
-      // CartoDB Dark Matter - dark theme (free, no API key)
-      return 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png';
+      return 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png';
     } else {
-      // CartoDB Voyager - light theme with local labels (free, no API key)
-      return 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/rastertiles/voyager/{z}/{x}/{y}.png';
+      return 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png';
     }
   }
 
@@ -1463,1178 +1196,259 @@ class _NativeMapPageState extends State<NativeMapPage>
           ),
         ),
         onPositionChanged: (position, hasGesture) {
-          if ((position.zoom - _currentZoom).abs() > 0.1) {
-            setState(() {
-              _currentZoom = position.zoom;
-            });
+          final oldZoom = _currentZoom;
+          final newZoom = position.zoom;
+          _currentZoom =
+              newZoom; // Always update immediately (used by _svgOpacity getter)
+
+          // Pause/resume pulse in transition zone to free raster thread
+          final inTransition =
+              newZoom >= _svgFadeStartZoom - 1.0 &&
+              newZoom <= _svgFadeEndZoom + 1.0;
+          if (inTransition != _pulseInTransitionZone) {
+            _pulseInTransitionZone = inTransition;
+            _updatePulseAnimation();
+          }
+
+          // Debounce rebuilds during active gesture to batch zoom changes
+          final needsRebuild =
+              (newZoom - oldZoom).abs() > 0.5 ||
+              (oldZoom < _svgFadeStartZoom) != (newZoom < _svgFadeStartZoom) ||
+              (oldZoom >= _svgFadeEndZoom) != (newZoom >= _svgFadeEndZoom);
+          if (needsRebuild) {
+            if (hasGesture) {
+              // During active pinch: debounce to avoid rapid rebuilds
+              _zoomDebounceTimer?.cancel();
+              _zoomDebounceTimer = Timer(const Duration(milliseconds: 80), () {
+                if (mounted) setState(() {});
+              });
+            } else {
+              // Programmatic zoom: update immediately
+              _zoomDebounceTimer?.cancel();
+              setState(() {});
+            }
           }
         },
-        onMapEvent: (event) {
-          // Immediately reset rotation on any rotation event
-          if (event is MapEventRotate ||
-              event is MapEventRotateStart ||
-              event is MapEventRotateEnd) {
-            _mapController.rotate(0);
-          }
-        },
+        // Rotation is already disabled via rotationThreshold: 999999.0
+        // No onMapEvent handler needed — avoids unnecessary event cycle
+        onTap: (tapPosition, latLng) => _onMapTap(tapPosition, latLng),
       ),
       children: [
         // Map tiles (CartoDB - free, no API key needed)
         TileLayer(
           urlTemplate: _getTileUrl(isDark),
           subdomains: const ['a', 'b', 'c', 'd'],
-          userAgentPackageName: 'com.neptun.alarm',
+          userAgentPackageName: 'com.neptunalarm.neptun_alarm_app',
           maxZoom: 18,
         ),
-        // Custom SVG overlay — only after state paths are parsed to avoid first-frame freeze
-        if (_svgOpacity > 0 && _showSvgLayer && _statePathsCache.isNotEmpty)
-          _SvgMapLayer(
-            statePathsCache: _statePathsCache,
-            districtPathsCache: _districtPathsCache,
-            stateAlarms: stateAlarms,
-            districtAlarms: districtAlarms,
-            stateThreatTypes: stateThreatTypes,
-            threatMarkers: visibleMarkers,
-            pulseValue: _pulseAnimation.value,
-            mapColors: colors,
-            opacity: _svgOpacity,
-            onMarkerTap: _showMarkerInfo,
+        // SVG overlay — opacity passed directly to painter (avoids GPU saveLayer)
+        if (_showSvgLayer && _statePathsCache.isNotEmpty)
+          RepaintBoundary(
+            child: SvgMapLayer(
+              statePathsCache: _statePathsCache,
+              districtPathsCache: _districtPathsCache,
+              stateAlarms: stateAlarms,
+              districtAlarms: districtAlarms,
+              stateThreatTypes: stateThreatTypes,
+              threatMarkers: visibleMarkers,
+              mapColors: colors,
+              opacity: _svgOpacity.clamp(0.0, 1.0),
+              onMarkerTap: _showMarkerInfo,
+            ),
+          ),
+        // Pulse layer — opacity passed directly to painter
+        if (_showSvgLayer && _statePathsCache.isNotEmpty)
+          RepaintBoundary(
+            child: PulseAlarmLayer(
+              statePathsCache: _statePathsCache,
+              districtPathsCache: _districtPathsCache,
+              stateAlarms: stateAlarms,
+              districtAlarms: districtAlarms,
+              pulseAnimation: _pulseAnimation,
+              mapColors: colors,
+              opacity: _svgOpacity.clamp(0.0, 1.0),
+            ),
           ),
         // Labels and markers layer - always visible regardless of SVG opacity
         if (_showMarkersLayer)
-          _LabelsMarkersLayer(
-            threatMarkers: visibleMarkers,
-            mapColors: colors,
-            onMarkerTap: _showMarkerInfo,
+          RepaintBoundary(
+            child: LabelsMarkersLayer(
+              threatMarkers: visibleMarkers,
+              mapColors: colors,
+              onMarkerTap: _showMarkerInfo,
+            ),
           ),
+        // Invisible tap targets for marker taps (reliable hit testing)
+        MarkerLayer(markers: _buildMarkerTapTargets(visibleMarkers)),
       ],
     );
+  }
+
+  // Cached marker tap targets to avoid rebuilding on every frame
+  List<ThreatMarker>? _lastTapTargetMarkers;
+  List<Marker>? _cachedTapTargets;
+
+  List<Marker> _buildMarkerTapTargets(List<ThreatMarker> markers) {
+    if (identical(markers, _lastTapTargetMarkers) &&
+        _cachedTapTargets != null) {
+      return _cachedTapTargets!;
+    }
+    _lastTapTargetMarkers = markers;
+    _cachedTapTargets = markers
+        .map(
+          (m) => Marker(
+            point: LatLng(m.lat, m.lng),
+            width: 44,
+            height: 44,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _showMarkerInfo(m),
+              child: const SizedBox.expand(),
+            ),
+          ),
+        )
+        .toList();
+    return _cachedTapTargets!;
+  }
+
+  void _onMapTap(TapPosition tapPosition, LatLng latLng) {
+    const tapToleranceKm = 50.0;
+    final zoomFactor = math.pow(2, _currentZoom - 6).toDouble();
+    final tolerance = tapToleranceKm / zoomFactor;
+
+    ThreatMarker? tappedMarker;
+    double minDist = double.infinity;
+
+    for (final marker in _currentVisibleMarkers) {
+      final dLat = marker.lat - latLng.latitude;
+      final dLng = marker.lng - latLng.longitude;
+      final dist = math.sqrt(dLat * dLat + dLng * dLng) * 111.0;
+      if (dist < tolerance && dist < minDist) {
+        minDist = dist;
+        tappedMarker = marker;
+      }
+    }
+
+    if (tappedMarker != null) {
+      _showMarkerInfo(tappedMarker);
+    }
   }
 
   void _showMarkerInfo(ThreatMarker marker) {
+    showMarkerInfoSheet(
+      context,
+      marker,
+      isModerator: ModeratorService.instance.isModerator,
+      onDelete: _confirmDeleteMarker,
+    );
+  }
+
+  void _confirmDeleteMarker(ThreatMarker marker) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final color = ThreatType.getColor(marker.threatType);
-    final threatName = ThreatType.names[marker.threatType] ?? marker.threatType;
-
-    showModalBottomSheet(
+    showDialog(
       context: context,
-      backgroundColor: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header with threat type
-              Row(
-                children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: color.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      _getThreatIcon(marker.threatType),
-                      color: color,
-                      size: 28,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          threatName,
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: isDark ? Colors.white : Colors.black87,
-                          ),
-                        ),
-                        if (marker.date.isNotEmpty)
-                          Text(
-                            marker.date,
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: isDark
-                                  ? Colors.grey[400]
-                                  : Colors.grey[600],
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
+      builder: (ctx) => AlertDialog(
+        backgroundColor: isDark ? const Color(0xFF2A2A2A) : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Видалити мітку?',
+          style: TextStyle(color: isDark ? Colors.white : Colors.black87),
+        ),
+        content: Text(
+          'Ця мітка буде видалена з карти для всіх користувачів.',
+          style: TextStyle(color: isDark ? Colors.grey[300] : Colors.grey[700]),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(
+              'Скасувати',
+              style: TextStyle(
+                color: isDark ? Colors.grey[400] : Colors.grey[600],
               ),
-
-              const SizedBox(height: 16),
-
-              // Location
-              if (marker.place.isNotEmpty) ...[
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: isDark ? Colors.grey[850] : Colors.grey[100],
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.location_on_rounded, color: color, size: 22),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          marker.place,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
-                            color: isDark ? Colors.white : Colors.black87,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-              ],
-
-              const SizedBox(height: 8),
-            ],
+            ),
           ),
-        ),
-      ),
-    );
-  }
-
-  IconData _getThreatIcon(String threatType) {
-    switch (threatType) {
-      case 'shahed':
-        return Icons.air_rounded;
-      case 'raketa':
-        return Icons.rocket_launch_rounded;
-      case 'avia':
-        return Icons.flight_rounded;
-      case 'artillery':
-        return Icons.gps_fixed_rounded;
-      case 'obstril':
-        return Icons.crisis_alert_rounded;
-      case 'pusk':
-        return Icons.rocket_rounded;
-      case 'rszv':
-        return Icons.multiple_stop_rounded;
-      case 'rozved':
-        return Icons.radar_rounded;
-      case 'vibuh':
-        return Icons.local_fire_department_rounded;
-      case 'fpv':
-        return Icons.videocam_rounded;
-      default:
-        return Icons.warning_rounded;
-    }
-  }
-}
-
-// ===== MAP PAINTER =====
-class UkraineMapPainter extends CustomPainter {
-  final Map<String, List<Path>> statePathsCache;
-  final Map<String, List<Path>> districtPathsCache;
-  final Map<String, bool> stateAlarms;
-  final Map<String, bool> districtAlarms;
-  final Map<String, String> stateThreatTypes;
-  final List<ThreatMarker> threatMarkers;
-  final double pulseValue;
-  final MapColors mapColors;
-
-  UkraineMapPainter({
-    required this.statePathsCache,
-    required this.districtPathsCache,
-    required this.stateAlarms,
-    required this.districtAlarms,
-    required this.stateThreatTypes,
-    required this.threatMarkers,
-    required this.pulseValue,
-    required this.mapColors,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // ViewBox: 0 0 260 175
-    const viewBoxWidth = 260.0;
-    const viewBoxHeight = 175.0;
-
-    final scaleX = size.width / viewBoxWidth;
-    final scaleY = size.height / viewBoxHeight;
-    final scale = scaleX < scaleY ? scaleX : scaleY;
-
-    // Center the map
-    final offsetX = (size.width - viewBoxWidth * scale) / 2;
-    final offsetY = (size.height - viewBoxHeight * scale) / 2;
-
-    canvas.save();
-    canvas.translate(offsetX, offsetY);
-    canvas.scale(scale);
-
-    // === LAYER 1: ОБЛАСТІ (States) ===
-    final normalStatePaint = Paint()
-      ..color = mapColors.normalFill
-      ..style = PaintingStyle.fill;
-
-    // Для light theme - м'якіший червоний, для dark - темніший
-    final alarmBaseLight = const Color(0xFFDC2626);
-    final alarmBaseDark = const Color(0xFF7f1d1d);
-    final alarmHighLight = const Color(0xFFF87171);
-    final alarmHighDark = const Color(0xFF991b1b);
-
-    final alarmStatePaint = Paint()
-      ..color = Color.lerp(
-        mapColors.isDark ? alarmBaseDark : alarmBaseLight.withOpacity(0.7),
-        mapColors.isDark ? alarmHighDark : alarmHighLight.withOpacity(0.85),
-        pulseValue,
-      )!
-      ..style = PaintingStyle.fill;
-
-    final normalStrokePaint = Paint()
-      ..color = mapColors.normalStroke.withOpacity(0.3)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.4;
-
-    final alarmStrokePaint = Paint()
-      ..color = mapColors.alarmStrokeState.withOpacity(0.35)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.4;
-
-    // Малюємо області
-    for (final entry in statePathsCache.entries) {
-      final regionId = entry.key;
-      final paths = entry.value;
-      final hasAlarm = stateAlarms[regionId] ?? false;
-
-      final fillPaint = hasAlarm ? alarmStatePaint : normalStatePaint;
-      final strokePaint = hasAlarm ? alarmStrokePaint : normalStrokePaint;
-
-      for (final path in paths) {
-        canvas.drawPath(path, fillPaint);
-        canvas.drawPath(path, strokePaint);
-      }
-    }
-
-    // === LAYER 2: РАЙОНИ (Districts) ===
-    // Малюємо тільки райони з тривогою (поверх областей)
-    final districtAlarmLight = const Color(0xFFEF4444);
-    final districtAlarmDark = const Color(0xFFB91C1C);
-    final districtAlarmHighLight = const Color(0xFFF87171);
-    final districtAlarmHighDark = const Color(0xFFDC2626);
-
-    final districtAlarmColor = Color.lerp(
-      mapColors.isDark
-          ? districtAlarmDark
-          : districtAlarmLight.withOpacity(0.6),
-      mapColors.isDark
-          ? districtAlarmHighDark
-          : districtAlarmHighLight.withOpacity(0.8),
-      pulseValue,
-    )!.withOpacity(0.7);
-
-    final districtAlarmPaint = Paint()
-      ..color = districtAlarmColor
-      ..style = PaintingStyle.fill;
-
-    // Stroke same color as fill to avoid gaps
-    final districtAlarmStrokePaint = Paint()
-      ..color = districtAlarmColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.3;
-
-    // Красивий контур районів (в UkraineMapPainter без zoom, показуємо завжди)
-    final showDistrictBorders = true;
-    final districtBorderPaint = Paint()
-      ..color = mapColors.isDark
-          ? Colors.white.withOpacity(0.15)
-          : Colors.black.withOpacity(0.1)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.2;
-
-    // Спочатку малюємо всі заливки районів з тривогою
-    for (final entry in districtPathsCache.entries) {
-      final districtId = entry.key;
-      final paths = entry.value;
-      final hasAlarm = districtAlarms[districtId] ?? false;
-
-      if (hasAlarm) {
-        for (final path in paths) {
-          canvas.drawPath(path, districtAlarmPaint);
-          canvas.drawPath(path, districtAlarmStrokePaint);
-        }
-      }
-    }
-
-    // Потім малюємо границі районів поверх (тільки при зумі)
-    if (showDistrictBorders) {
-      for (final entry in districtPathsCache.entries) {
-        final paths = entry.value;
-        for (final path in paths) {
-          canvas.drawPath(path, districtBorderPaint);
-        }
-      }
-    }
-
-    // === LAYER 3: НАЗВИ ОБЛАСТЕЙ ===
-    // Координати з ukraine_names.svg (точні позиції)
-    const regionLabels = <String, Map<String, dynamic>>{
-      'UA-68': {'name': 'Хмельницька', 'x': 68.5, 'y': 63.0},
-      'UA-07': {'name': 'Волинська', 'x': 40.0, 'y': 28.2},
-      'UA-56': {'name': 'Рівненська', 'x': 65.0, 'y': 30.0},
-      'UA-18': {'name': 'Житомирська', 'x': 88.0, 'y': 42.3},
-      'UA-32': {'name': 'Київська', 'x': 122.0, 'y': 56.0},
-      'UA-30': {'name': 'м. Київ', 'x': 120.0, 'y': 41.5},
-      'UA-74': {'name': 'Чернігівська', 'x': 139.0, 'y': 25.5},
-      'UA-59': {'name': 'Сумська', 'x': 171.0, 'y': 33.0},
-      'UA-63': {'name': 'Харківська', 'x': 203.5, 'y': 62.8},
-      'UA-09': {'name': 'Луганська', 'x': 239.0, 'y': 79.0},
-      'UA-14': {'name': 'Донецька', 'x': 221.0, 'y': 97.0},
-      'UA-23': {'name': 'Запорізька', 'x': 195.0, 'y': 115.0},
-      'UA-12': {'name': 'Дніпропетровська', 'x': 178.0, 'y': 89.0},
-      'UA-48': {'name': 'Миколаївська', 'x': 139.0, 'y': 113.0},
-      'UA-65': {'name': 'Херсонська', 'x': 163.0, 'y': 126.0},
-      'UA-51': {'name': 'Одеська', 'x': 110.0, 'y': 138.0},
-      'UA-35': {'name': 'Кіровоградська', 'x': 140.0, 'y': 88.4},
-      'UA-53': {'name': 'Полтавська', 'x': 162.7, 'y': 58.0},
-      'UA-71': {'name': 'Черкаська', 'x': 132.0, 'y': 73.0},
-      'UA-05': {'name': 'Вінницька', 'x': 95.0, 'y': 80.0},
-      'UA-61': {'name': 'Тернопільська', 'x': 47.0, 'y': 67.0},
-      'UA-77': {'name': 'Чернівецька', 'x': 53.0, 'y': 94.0},
-      'UA-26': {'name': 'Івано-Франківська', 'x': 32.0, 'y': 83.0},
-      'UA-21': {'name': 'Закарпатська', 'x': 15.0, 'y': 91.0},
-      'UA-46': {'name': 'Львівська', 'x': 29.0, 'y': 61.0},
-      'UA-43': {'name': 'А. Р. Крим', 'x': 172.0, 'y': 152.7},
-    };
-
-    final labelStyle = TextStyle(
-      color: mapColors.labelColor,
-      fontSize: 3.5,
-      fontWeight: FontWeight.w500,
-      letterSpacing: 0.15,
-      shadows: [
-        Shadow(
-          color: mapColors.labelShadow,
-          blurRadius: 3,
-          offset: const Offset(0.4, 0.4),
-        ),
-        Shadow(
-          color: mapColors.labelShadow,
-          blurRadius: 1,
-          offset: const Offset(-0.2, -0.2),
-        ),
-      ],
-    );
-
-    for (final entry in regionLabels.entries) {
-      final data = entry.value;
-      final name = data['name'] as String;
-      final x = data['x'] as double;
-      final y = data['y'] as double;
-
-      final textSpan = TextSpan(text: name, style: labelStyle);
-      final textPainter = TextPainter(
-        text: textSpan,
-        textDirection: TextDirection.ltr,
-        textAlign: TextAlign.center,
-      );
-      textPainter.layout();
-
-      // Центруємо текст
-      final offsetX = x - textPainter.width / 2;
-      final offsetY = y - textPainter.height / 2;
-
-      textPainter.paint(canvas, Offset(offsetX, offsetY));
-    }
-
-    // === LAYER 4: ТРАЄКТОРІЇ (стрілки шляху) ===
-    for (final marker in threatMarkers) {
-      // === AI TRAJECTORY (новий формат) ===
-      if (marker.hasAITrajectory) {
-        final traj = marker.trajectory!;
-
-        // Конвертуємо координати в позиції на карті
-        final startPos = MapBounds.latLngToPercent(
-          traj.startLat,
-          traj.startLng,
-        );
-        final endPos = MapBounds.latLngToPercent(traj.endLat, traj.endLng);
-
-        final startPoint = Offset(
-          startPos.dx * viewBoxWidth,
-          startPos.dy * viewBoxHeight,
-        );
-        final endPoint = Offset(
-          endPos.dx * viewBoxWidth,
-          endPos.dy * viewBoxHeight,
-        );
-
-        // Колір: жовтий для AI прогнозу, білий для підтвердженого
-        final lineColor = traj.predicted
-            ? const Color(0xFFfbbf24) // Жовтий для AI predictions
-            : Colors.white.withOpacity(0.7);
-
-        // Тонка пунктирна лінія траєкторії (без світіння)
-        final trajectoryPaint = Paint()
-          ..color = lineColor
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.2
-          ..strokeCap = StrokeCap.round;
-
-        // Малюємо пунктирну лінію
-        final totalDistance = (endPoint - startPoint).distance;
-        const dashLength = 6.0;
-        const gapLength = 4.0;
-        final direction = (endPoint - startPoint) / totalDistance;
-
-        double currentDistance = 0;
-        while (currentDistance < totalDistance) {
-          final dashStart = startPoint + direction * currentDistance;
-          final dashEnd =
-              startPoint +
-              direction * math.min(currentDistance + dashLength, totalDistance);
-          canvas.drawLine(dashStart, dashEnd, trajectoryPaint);
-          currentDistance += dashLength + gapLength;
-        }
-
-        // Маленька стрілка на 70% траєкторії
-        final arrowPos = Offset(
-          startPoint.dx + (endPoint.dx - startPoint.dx) * 0.7,
-          startPoint.dy + (endPoint.dy - startPoint.dy) * 0.7,
-        );
-
-        // Обчислюємо напрямок стрілки
-        final dx = endPoint.dx - startPoint.dx;
-        final dy = endPoint.dy - startPoint.dy;
-        final angle = math.atan2(dy, dx);
-
-        const arrowSize = 5.0;
-        const arrowAngle = 0.5;
-
-        final arrowPaint = Paint()
-          ..color = lineColor
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.2
-          ..strokeCap = StrokeCap.round;
-
-        // Малюємо тільки дві лінії стрілки (V-форма)
-        canvas.drawLine(
-          arrowPos,
-          Offset(
-            arrowPos.dx - arrowSize * math.cos(angle - arrowAngle),
-            arrowPos.dy - arrowSize * math.sin(angle - arrowAngle),
-          ),
-          arrowPaint,
-        );
-        canvas.drawLine(
-          arrowPos,
-          Offset(
-            arrowPos.dx - arrowSize * math.cos(angle + arrowAngle),
-            arrowPos.dy - arrowSize * math.sin(angle + arrowAngle),
-          ),
-          arrowPaint,
-        );
-
-        continue; // Пропускаємо старий формат для цього маркера
-      }
-
-      // === СТАРИЙ ФОРМАТ (projected_path) ===
-      if (!marker.hasTrajectory) continue;
-
-      final path = marker.projectedPath;
-      if (path == null || path.length < 2) continue;
-
-      // Конвертуємо точки траєкторії в координати карти
-      final points = path.map((p) {
-        final pos = MapBounds.latLngToPercent(p.lat, p.lng);
-        return Offset(pos.dx * viewBoxWidth, pos.dy * viewBoxHeight);
-      }).toList();
-
-      // Фільтруємо точки за межами карти
-      final visiblePoints = points
-          .where(
-            (p) =>
-                p.dx > -10 &&
-                p.dx < viewBoxWidth + 10 &&
-                p.dy > -10 &&
-                p.dy < viewBoxHeight + 10,
-          )
-          .toList();
-
-      if (visiblePoints.length < 2) continue;
-
-      // Градієнтна лінія траєкторії (від джерела до цілі)
-      final trajectoryPaint = Paint()
-        ..color = Colors.orange.withOpacity(0.6)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5
-        ..strokeCap = StrokeCap.round;
-
-      // Малюємо пунктирну лінію
-      final trajectoryPath = Path();
-      trajectoryPath.moveTo(visiblePoints.first.dx, visiblePoints.first.dy);
-
-      for (int i = 1; i < visiblePoints.length; i++) {
-        // Пунктирна лінія через точки
-        if (i % 2 == 1) {
-          trajectoryPath.lineTo(visiblePoints[i].dx, visiblePoints[i].dy);
-        } else {
-          trajectoryPath.moveTo(visiblePoints[i].dx, visiblePoints[i].dy);
-        }
-      }
-
-      // Світіння траєкторії
-      final glowPaint = Paint()
-        ..color = Colors.orange.withOpacity(0.2)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 4.0
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
-      canvas.drawPath(trajectoryPath, glowPaint);
-      canvas.drawPath(trajectoryPath, trajectoryPaint);
-
-      // Стрілка на кінці траєкторії
-      if (visiblePoints.length >= 2) {
-        final lastPoint = visiblePoints.last;
-        final secondLast = visiblePoints[visiblePoints.length - 2];
-
-        // Обчислюємо напрямок стрілки
-        final dx = lastPoint.dx - secondLast.dx;
-        final dy = lastPoint.dy - secondLast.dy;
-        final angle = math.atan2(dy, dx);
-
-        final arrowSize = 3.0;
-        final arrowAngle = 0.5; // радіани
-
-        final arrowPaint = Paint()
-          ..color = Colors.orange.withOpacity(0.8)
-          ..style = PaintingStyle.fill;
-
-        final arrowPath = Path();
-        arrowPath.moveTo(lastPoint.dx, lastPoint.dy);
-        arrowPath.lineTo(
-          lastPoint.dx - arrowSize * math.cos(angle - arrowAngle),
-          lastPoint.dy - arrowSize * math.sin(angle - arrowAngle),
-        );
-        arrowPath.lineTo(
-          lastPoint.dx - arrowSize * math.cos(angle + arrowAngle),
-          lastPoint.dy - arrowSize * math.sin(angle + arrowAngle),
-        );
-        arrowPath.close();
-        canvas.drawPath(arrowPath, arrowPaint);
-      }
-
-      // Проміжні точки траєкторії (маленькі кола)
-      for (int i = 1; i < visiblePoints.length - 1; i++) {
-        final point = visiblePoints[i];
-        final dotPaint = Paint()
-          ..color = Colors.orange.withOpacity(0.4)
-          ..style = PaintingStyle.fill;
-        canvas.drawCircle(point, 1.5, dotPaint);
-      }
-    }
-
-    // === LAYER 6: МАРКЕРИ ЗАГРОЗ ===
-    // NOTE: Marker rendering has been consolidated to _LabelsMarkersPainter
-    // to avoid duplicate rendering and coordinate system conflicts.
-    // _LabelsMarkersPainter uses screen coordinates which are more reliable
-    // for interactive elements and proper zoom handling.
-
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(UkraineMapPainter oldDelegate) {
-    // Тільки перемальовувати якщо є реальні зміни
-    if (oldDelegate.mapColors.isDark != mapColors.isDark) return true;
-    if (oldDelegate.stateAlarms.length != stateAlarms.length) return true;
-    if (oldDelegate.districtAlarms.length != districtAlarms.length) return true;
-    if (oldDelegate.threatMarkers.length != threatMarkers.length) return true;
-
-    // Перевіряємо пульсацію тільки якщо є тривоги (збільшено поріг для меншої кількості перемалювань)
-    if (stateAlarms.values.any((v) => v) ||
-        districtAlarms.values.any((v) => v)) {
-      if ((oldDelegate.pulseValue - pulseValue).abs() > 0.1) {
-        return true; // було 0.05
-      }
-    }
-
-    return false;
-  }
-}
-
-// ===== SVG MAP LAYER (for hybrid mode) =====
-// This is a proper flutter_map layer that transforms with the map camera
-class _SvgMapLayer extends StatelessWidget {
-  final Map<String, List<Path>> statePathsCache;
-  final Map<String, List<Path>> districtPathsCache;
-  final Map<String, bool> stateAlarms;
-  final Map<String, bool> districtAlarms;
-  final Map<String, String> stateThreatTypes;
-  final List<ThreatMarker> threatMarkers;
-  final double pulseValue;
-  final MapColors mapColors;
-  final double opacity;
-  final void Function(ThreatMarker) onMarkerTap;
-
-  // SVG viewBox dimensions
-  static const double svgWidth = 260.0;
-  static const double svgHeight = 175.0;
-
-  // Geographic bounds that SVG covers (must match MapBounds)
-  static const double geoMinLat = 44.2;
-  static const double geoMaxLat = 52.4;
-  static const double geoMinLng = 22.0;
-  static const double geoMaxLng = 40.2;
-
-  const _SvgMapLayer({
-    required this.statePathsCache,
-    required this.districtPathsCache,
-    required this.stateAlarms,
-    required this.districtAlarms,
-    required this.stateThreatTypes,
-    required this.threatMarkers,
-    required this.pulseValue,
-    required this.mapColors,
-    required this.opacity,
-    required this.onMarkerTap,
-  });
-
-  /// Convert SVG coordinates to LatLng
-  static LatLng svgToLatLng(double svgX, double svgY) {
-    // SVG (0,0) = top-left = (geoMinLng, geoMaxLat)
-    // SVG (svgWidth, svgHeight) = bottom-right = (geoMaxLng, geoMinLat)
-    final lng = geoMinLng + (svgX / svgWidth) * (geoMaxLng - geoMinLng);
-    final lat = geoMaxLat - (svgY / svgHeight) * (geoMaxLat - geoMinLat);
-    return LatLng(lat, lng);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final camera = MapCamera.of(context);
-
-    return Opacity(
-      opacity: opacity,
-      child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onTapUp: (details) => _handleTap(context, details, camera),
-        child: CustomPaint(
-          size: Size.infinite,
-          painter: _SvgMapPainter(
-            camera: camera,
-            statePathsCache: statePathsCache,
-            districtPathsCache: districtPathsCache,
-            stateAlarms: stateAlarms,
-            districtAlarms: districtAlarms,
-            threatMarkers: threatMarkers,
-            pulseValue: pulseValue,
-            mapColors: mapColors,
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _handleTap(
-    BuildContext context,
-    TapUpDetails details,
-    MapCamera camera,
-  ) {
-    const tapTolerancePixels = 30.0;
-
-    ThreatMarker? tappedMarker;
-    double minDistance = double.infinity;
-
-    for (final marker in threatMarkers) {
-      final markerOffset = camera.latLngToScreenOffset(
-        LatLng(marker.lat, marker.lng),
-      );
-
-      final dx = details.localPosition.dx - markerOffset.dx;
-      final dy = details.localPosition.dy - markerOffset.dy;
-      final distance = math.sqrt(dx * dx + dy * dy);
-
-      if (distance < tapTolerancePixels && distance < minDistance) {
-        minDistance = distance;
-        tappedMarker = marker;
-      }
-    }
-
-    if (tappedMarker != null) {
-      onMarkerTap(tappedMarker);
-    }
-  }
-}
-
-// ===== SVG MAP PAINTER =====
-class _SvgMapPainter extends CustomPainter {
-  final MapCamera camera;
-  final Map<String, List<Path>> statePathsCache;
-  final Map<String, List<Path>> districtPathsCache;
-  final Map<String, bool> stateAlarms;
-  final Map<String, bool> districtAlarms;
-  final List<ThreatMarker> threatMarkers;
-  final double pulseValue;
-  final MapColors mapColors;
-
-  _SvgMapPainter({
-    required this.camera,
-    required this.statePathsCache,
-    required this.districtPathsCache,
-    required this.stateAlarms,
-    required this.districtAlarms,
-    required this.threatMarkers,
-    required this.pulseValue,
-    required this.mapColors,
-  });
-
-  /// Convert SVG coordinates to screen offset using camera
-  Offset svgToScreen(double svgX, double svgY) {
-    final latLng = _SvgMapLayer.svgToLatLng(svgX, svgY);
-    return camera.latLngToScreenOffset(latLng);
-  }
-
-  /// Get canvas transformation to map SVG coordinates to screen
-  /// This transforms the entire canvas so paths can be drawn directly
-  void applyCanvasTransform(Canvas canvas) {
-    // Get screen positions of SVG corners (ignoring any camera rotation)
-    final topLeft = svgToScreen(0, 0);
-    final topRight = svgToScreen(_SvgMapLayer.svgWidth, 0);
-    final bottomLeft = svgToScreen(0, _SvgMapLayer.svgHeight);
-
-    // Calculate scale factors
-    final scaleX = (topRight.dx - topLeft.dx) / _SvgMapLayer.svgWidth;
-    final scaleY = (bottomLeft.dy - topLeft.dy) / _SvgMapLayer.svgHeight;
-
-    // If camera has rotation, we need to counter-rotate
-    // But since we disabled rotation, just apply translate + scale
-    canvas.translate(topLeft.dx, topLeft.dy);
-    canvas.scale(scaleX, scaleY);
-  }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // === LAYER 0: BACKGROUND (hide tiles at low zoom) ===
-    // Fill the entire canvas with background color first
-    final bgPaint = Paint()
-      ..color = mapColors.bgMain
-      ..style = PaintingStyle.fill;
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), bgPaint);
-
-    // Save canvas state before transformation
-    canvas.save();
-
-    // Apply SVG to screen transformation
-    applyCanvasTransform(canvas);
-
-    // Calculate stroke scale based on zoom (strokes need to be adjusted for canvas scale)
-    final topLeft = svgToScreen(0, 0);
-    final topRight = svgToScreen(_SvgMapLayer.svgWidth, 0);
-    final canvasScale = (topRight.dx - topLeft.dx) / _SvgMapLayer.svgWidth;
-    final strokeScale = (1.0 / canvasScale).clamp(0.3, 2.0);
-
-    // === LAYER 1: STATES ===
-    final normalStatePaint = Paint()
-      ..color = mapColors.normalFill
-      ..style = PaintingStyle.fill;
-
-    final alarmBaseLight = const Color(0xFFDC2626);
-    final alarmBaseDark = const Color(0xFF7f1d1d);
-    final alarmHighLight = const Color(0xFFF87171);
-    final alarmHighDark = const Color(0xFF991b1b);
-
-    final alarmColor = Color.lerp(
-      mapColors.isDark ? alarmBaseDark : alarmBaseLight.withOpacity(0.7),
-      mapColors.isDark ? alarmHighDark : alarmHighLight.withOpacity(0.85),
-      pulseValue,
-    )!;
-
-    final alarmStatePaint = Paint()
-      ..color = alarmColor
-      ..style = PaintingStyle.fill;
-
-    final normalStrokePaint = Paint()
-      ..color = mapColors.normalStroke.withOpacity(0.5)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0 * strokeScale
-      ..strokeJoin = StrokeJoin.round;
-
-    // Alarm stroke uses same color as fill to eliminate gaps between alarm regions
-    final alarmStrokePaint = Paint()
-      ..color = alarmColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2 * strokeScale
-      ..strokeJoin = StrokeJoin.round;
-
-    // Draw states (paths are in SVG coordinates, canvas is transformed)
-    for (final entry in statePathsCache.entries) {
-      final regionId = entry.key;
-      final paths = entry.value;
-      final hasAlarm = stateAlarms[regionId] ?? false;
-
-      final fillPaint = hasAlarm ? alarmStatePaint : normalStatePaint;
-      final strokePaint = hasAlarm ? alarmStrokePaint : normalStrokePaint;
-
-      for (final svgPath in paths) {
-        canvas.drawPath(svgPath, fillPaint);
-        canvas.drawPath(svgPath, strokePaint);
-      }
-    }
-
-    // === LAYER 2: DISTRICTS ===
-    // District ALARMS are always visible (red fill for alarmed districts)
-    // District BORDERS are only shown at higher zoom to avoid clutter
-    final districtAlarmPaint = Paint()
-      ..color = Color.lerp(
-        mapColors.isDark
-            ? const Color(0xFFB91C1C)
-            : const Color(0xFFEF4444).withOpacity(0.6),
-        mapColors.isDark
-            ? const Color(0xFFDC2626)
-            : const Color(0xFFF87171).withOpacity(0.8),
-        pulseValue,
-      )!.withOpacity(0.7)
-      ..style = PaintingStyle.fill;
-
-    final districtAlarmStrokePaint = Paint()
-      ..color = Color.lerp(
-        mapColors.isDark
-            ? const Color(0xFFB91C1C)
-            : const Color(0xFFEF4444).withOpacity(0.6),
-        mapColors.isDark
-            ? const Color(0xFFDC2626)
-            : const Color(0xFFF87171).withOpacity(0.8),
-        pulseValue,
-      )!.withOpacity(0.7)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.3 * strokeScale;
-
-    // Draw district alarm fills at ALL zoom levels
-    for (final entry in districtPathsCache.entries) {
-      final districtId = entry.key;
-      final paths = entry.value;
-      final hasAlarm = districtAlarms[districtId] ?? false;
-
-      if (hasAlarm) {
-        for (final svgPath in paths) {
-          canvas.drawPath(svgPath, districtAlarmPaint);
-          canvas.drawPath(svgPath, districtAlarmStrokePaint);
-        }
-      }
-    }
-
-    // Draw district borders only at higher zoom (cosmetic detail)
-    if (camera.zoom >= 7.5) {
-      final districtBorderPaint = Paint()
-        ..color = mapColors.normalStroke.withOpacity(0.08)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 0.3 * strokeScale;
-
-      for (final entry in districtPathsCache.entries) {
-        final paths = entry.value;
-        for (final svgPath in paths) {
-          canvas.drawPath(svgPath, districtBorderPaint);
-        }
-      }
-    }
-
-    // Restore canvas before drawing markers (they use screen coordinates)
-    canvas.restore();
-
-    // === LAYER 3: REGION LABELS ===
-    // Region labels are now drawn in _LabelsMarkersLayer for better stability
-
-    // === LAYER 4: THREAT MARKERS ===
-    // Markers are now drawn in _LabelsMarkersLayer for proper layering
-  }
-
-  @override
-  bool shouldRepaint(_SvgMapPainter oldDelegate) {
-    // Only repaint when data actually changes
-    return camera != oldDelegate.camera ||
-        pulseValue != oldDelegate.pulseValue ||
-        stateAlarms != oldDelegate.stateAlarms ||
-        districtAlarms != oldDelegate.districtAlarms;
-  }
-}
-
-/// Labels and markers layer - always visible regardless of SVG opacity
-class _LabelsMarkersLayer extends StatelessWidget {
-  final List<ThreatMarker> threatMarkers;
-  final MapColors mapColors;
-  final void Function(ThreatMarker) onMarkerTap;
-
-  const _LabelsMarkersLayer({
-    required this.threatMarkers,
-    required this.mapColors,
-    required this.onMarkerTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final camera = MapCamera.of(context);
-
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onTapUp: (details) => _handleTap(details, camera),
-      child: CustomPaint(
-        size: Size.infinite,
-        painter: _LabelsMarkersPainter(
-          camera: camera,
-          threatMarkers: threatMarkers,
-          mapColors: mapColors,
-        ),
-      ),
-    );
-  }
-
-  void _handleTap(TapUpDetails details, MapCamera camera) {
-    const tapTolerancePixels = 30.0;
-
-    ThreatMarker? tappedMarker;
-    double minDistance = double.infinity;
-
-    for (final marker in threatMarkers) {
-      final markerOffset = camera.latLngToScreenOffset(
-        LatLng(marker.lat, marker.lng),
-      );
-
-      final dx = details.localPosition.dx - markerOffset.dx;
-      final dy = details.localPosition.dy - markerOffset.dy;
-      final distance = math.sqrt(dx * dx + dy * dy);
-
-      if (distance < tapTolerancePixels && distance < minDistance) {
-        minDistance = distance;
-        tappedMarker = marker;
-      }
-    }
-
-    if (tappedMarker != null) {
-      onMarkerTap(tappedMarker);
-    }
-  }
-}
-
-class _LabelsMarkersPainter extends CustomPainter {
-  final MapCamera camera;
-  final List<ThreatMarker> threatMarkers;
-  final MapColors mapColors;
-
-  // Region labels with SVG coordinates
-  static const regionLabels = <String, Map<String, dynamic>>{
-    'UA-68': {'name': 'Хмельницька', 'x': 68.5, 'y': 63.0},
-    'UA-07': {'name': 'Волинська', 'x': 40.0, 'y': 28.2},
-    'UA-56': {'name': 'Рівненська', 'x': 65.0, 'y': 30.0},
-    'UA-18': {'name': 'Житомирська', 'x': 88.0, 'y': 42.3},
-    'UA-32': {'name': 'Київська', 'x': 122.0, 'y': 56.0},
-    'UA-30': {'name': 'м. Київ', 'x': 120.0, 'y': 41.5},
-    'UA-74': {'name': 'Чернігівська', 'x': 139.0, 'y': 25.5},
-    'UA-59': {'name': 'Сумська', 'x': 171.0, 'y': 33.0},
-    'UA-63': {'name': 'Харківська', 'x': 203.5, 'y': 62.8},
-    'UA-09': {'name': 'Луганська', 'x': 239.0, 'y': 79.0},
-    'UA-14': {'name': 'Донецька', 'x': 221.0, 'y': 97.0},
-    'UA-23': {'name': 'Запорізька', 'x': 195.0, 'y': 115.0},
-    'UA-12': {'name': 'Дніпропетровська', 'x': 178.0, 'y': 89.0},
-    'UA-48': {'name': 'Миколаївська', 'x': 139.0, 'y': 113.0},
-    'UA-65': {'name': 'Херсонська', 'x': 163.0, 'y': 126.0},
-    'UA-51': {'name': 'Одеська', 'x': 110.0, 'y': 138.0},
-    'UA-35': {'name': 'Кіровоградська', 'x': 140.0, 'y': 88.4},
-    'UA-53': {'name': 'Полтавська', 'x': 162.7, 'y': 58.0},
-    'UA-71': {'name': 'Черкаська', 'x': 132.0, 'y': 73.0},
-    'UA-05': {'name': 'Вінницька', 'x': 95.0, 'y': 80.0},
-    'UA-61': {'name': 'Тернопільська', 'x': 47.0, 'y': 67.0},
-    'UA-77': {'name': 'Чернівецька', 'x': 53.0, 'y': 94.0},
-    'UA-26': {'name': 'Івано-Франківська', 'x': 32.0, 'y': 83.0},
-    'UA-21': {'name': 'Закарпатська', 'x': 15.0, 'y': 91.0},
-    'UA-46': {'name': 'Львівська', 'x': 29.0, 'y': 61.0},
-    'UA-43': {'name': 'А. Р. Крим', 'x': 172.0, 'y': 152.7},
-  };
-
-  _LabelsMarkersPainter({
-    required this.camera,
-    required this.threatMarkers,
-    required this.mapColors,
-  });
-
-  /// Convert SVG coordinates to screen offset using camera
-  Offset svgToScreen(double svgX, double svgY) {
-    final latLng = _SvgMapLayer.svgToLatLng(svgX, svgY);
-    return camera.latLngToScreenOffset(latLng);
-  }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final strokeScale = (camera.zoom / 6.0).clamp(0.5, 3.0);
-
-    // === REGION LABELS ===
-    // Показуємо назви тільки при зумі > 4.5
-    if (camera.zoom > 4.5) {
-      final labelSize = (11.0 * strokeScale).clamp(9.0, 16.0);
-      final labelStyle = TextStyle(
-        color: mapColors.labelColor,
-        fontSize: labelSize,
-        fontWeight: FontWeight.w600,
-        shadows: [
-          Shadow(
-            color: mapColors.labelShadow,
-            blurRadius: 2,
-            offset: const Offset(0.5, 0.5),
-          ),
-          Shadow(
-            color: mapColors.labelShadow,
-            blurRadius: 1,
-            offset: const Offset(-0.3, -0.3),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx); // close dialog
+              Navigator.pop(context); // close bottom sheet
+              _deleteMarker(marker);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade700,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: const Text('Видалити'),
           ),
         ],
-      );
+      ),
+    );
+  }
 
-      for (final entry in regionLabels.entries) {
-        final data = entry.value;
-        final name = data['name'] as String;
-        final svgX = data['x'] as double;
-        final svgY = data['y'] as double;
-
-        // Convert SVG coordinates to screen position
-        final screenPos = svgToScreen(svgX, svgY);
-
-        // Skip if outside visible area
-        if (screenPos.dx < -100 ||
-            screenPos.dx > size.width + 100 ||
-            screenPos.dy < -50 ||
-            screenPos.dy > size.height + 50) {
-          continue;
-        }
-
-        final textSpan = TextSpan(text: name, style: labelStyle);
-        final textPainter = TextPainter(
-          text: textSpan,
-          textDirection: TextDirection.ltr,
-          textAlign: TextAlign.center,
+  Future<void> _deleteMarker(ThreatMarker marker) async {
+    try {
+      final secret = await ModeratorService.instance.getSecret();
+      if (secret == null || secret.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Помилка: секрет модератора не знайдено'),
+          ),
         );
-        textPainter.layout();
-
-        // Center text at position
-        final offsetX = screenPos.dx - textPainter.width / 2;
-        final offsetY = screenPos.dy - textPainter.height / 2;
-
-        textPainter.paint(canvas, Offset(offsetX, offsetY));
-      }
-    }
-
-    // === THREAT MARKERS (consolidated rendering - removed from UkraineMapPainter to avoid duplication) ===
-    final markerSize = (24.0 * strokeScale).clamp(20.0, 48.0);
-    final iconManager = ThreatIconManager();
-
-    for (final marker in threatMarkers) {
-      final screenPos = camera.latLngToScreenOffset(
-        LatLng(marker.lat, marker.lng),
-      );
-
-      // Skip if outside visible area (with margin for rotated icons)
-      if (screenPos.dx < -markerSize ||
-          screenPos.dx > size.width + markerSize ||
-          screenPos.dy < -markerSize ||
-          screenPos.dy > size.height + markerSize) {
-        continue;
+        return;
       }
 
-      final color = ThreatType.getColor(marker.threatType);
+      final body = <String, dynamic>{
+        'lat': marker.lat,
+        'lng': marker.lng,
+        'text': marker.text,
+      };
+      if (marker.id != null) body['id'] = marker.id;
 
-      // Draw icon from cache with rotation
-      final icon =
-          iconManager.icons[marker.threatType] ?? iconManager.icons['default'];
+      final response = await http
+          .post(
+            Uri.parse(ApiConfig.adminMarkersDelete),
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Auth-Secret': secret,
+            },
+            body: json.encode(body),
+          )
+          .timeout(const Duration(seconds: 10));
 
-      // Calculate rotation angle based on trajectory (icon points east by default)
-      double rotationAngle = 0.0;
-      if (marker.hasAITrajectory) {
-        final traj = marker.trajectory!;
-        final dx = traj.endLng - traj.startLng;
-        final dy = traj.endLat - traj.startLat;
-        // atan2(dx, dy) gives angle from north clockwise
-        // Subtract π/2 because icon points east, not north
-        rotationAngle = math.atan2(dx, dy) - math.pi / 2;
-      } else if (marker.hasTrajectory &&
-          marker.projectedPath != null &&
-          marker.projectedPath!.length >= 2) {
-        final path = marker.projectedPath!;
-        final lastIdx = path.length - 1;
-        final dx = path[lastIdx].lng - path[lastIdx - 1].lng;
-        final dy = path[lastIdx].lat - path[lastIdx - 1].lat;
-        rotationAngle = math.atan2(dx, dy) - math.pi / 2;
-      }
+      if (!mounted) return;
 
-      if (icon != null && iconManager.isLoaded) {
-        canvas.save();
-        canvas.translate(screenPos.dx, screenPos.dy);
-
-        // Apply rotation if trajectory exists
-        if (rotationAngle != 0.0) {
-          canvas.rotate(rotationAngle);
-        }
-
-        final srcRect = Rect.fromLTWH(
-          0,
-          0,
-          icon.width.toDouble(),
-          icon.height.toDouble(),
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Мітку видалено'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
         );
-        final dstRect = Rect.fromCenter(
-          center: Offset.zero,
-          width: markerSize,
-          height: markerSize,
-        );
-        final paint = Paint()..filterQuality = FilterQuality.high;
-        canvas.drawImageRect(icon, srcRect, dstRect, paint);
-
-        canvas.restore();
+        _fetchThreatMarkers();
       } else {
-        // Fallback circle when icon not loaded
-        final markerPaint = Paint()
-          ..color = color.withOpacity(0.9)
-          ..style = PaintingStyle.fill;
-        canvas.drawCircle(screenPos, markerSize / 2, markerPaint);
-
-        final borderPaint = Paint()
-          ..color = Colors.white.withOpacity(0.8)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.0;
-        canvas.drawCircle(screenPos, markerSize / 2, borderPaint);
-      }
-
-      // Draw trajectory line if available
-      if (marker.trajectory != null) {
-        final traj = marker.trajectory!;
-        final startScreen = camera.latLngToScreenOffset(
-          LatLng(traj.startLat, traj.startLng),
+        final data = json.decode(utf8.decode(response.bodyBytes));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Помилка: ${data['error'] ?? 'Невідома помилка'}'),
+            backgroundColor: Colors.red,
+          ),
         );
-        final endScreen = camera.latLngToScreenOffset(
-          LatLng(traj.endLat, traj.endLng),
-        );
-
-        // Dashed line for predicted trajectory
-        final trajPaint = Paint()
-          ..color = traj.predicted
-              ? const Color(0xFFfbbf24)
-              : Colors.white.withOpacity(0.6)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.0 * strokeScale;
-
-        canvas.drawLine(startScreen, endScreen, trajPaint);
       }
+    } catch (e) {
+      debugPrint('❌ deleteMarker error: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Помилка з\'єднання'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
-  @override
-  bool shouldRepaint(_LabelsMarkersPainter oldDelegate) {
-    return camera != oldDelegate.camera ||
-        threatMarkers.length != oldDelegate.threatMarkers.length;
-  }
 }

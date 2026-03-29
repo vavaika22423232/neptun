@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Карта Тривог</string>
+    <string name="widget_description">Статус тривоги в реальному часі</string>
+</resources>

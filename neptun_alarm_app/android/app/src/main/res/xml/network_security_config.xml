@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Production: HTTPS only (cleartext disabled) -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system"/>
+        </trust-anchors>
+    </base-config>
+    
+    <!-- Trusted domains -->
+    <domain-config cleartextTrafficPermitted="false">
+        <!-- Main API -->
+        <domain includeSubdomains="true">neptun.in.ua</domain>
+        <domain includeSubdomains="true">api.ukrainealarm.com</domain>
+        <domain includeSubdomains="true">api.yasno.com.ua</domain>
+        <!-- Legacy / fallback -->
+        <domain includeSubdomains="true">api.neptunalarm.com</domain>
+        <domain includeSubdomains="true">alerts.com.ua</domain>
+        <domain includeSubdomains="true">vadimklimenko.com</domain>
+        
+        <!-- Firebase -->
+        <domain includeSubdomains="true">firebase.google.com</domain>
+        <domain includeSubdomains="true">firebaseio.com</domain>
+        <domain includeSubdomains="true">fcm.googleapis.com</domain>
+        
+        <!-- Google services -->
+        <domain includeSubdomains="true">google.com</domain>
+        <domain includeSubdomains="true">googleapis.com</domain>
+        <domain includeSubdomains="true">googlesyndication.com</domain>
+        <domain includeSubdomains="true">doubleclick.net</domain>
+        <domain includeSubdomains="true">googleadservices.com</domain>
+        
+        <trust-anchors>
+            <certificates src="system"/>
+        </trust-anchors>
+    </domain-config>
+    
+    <!-- Debug config for development -->
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="user"/>
+            <certificates src="system"/>
+        </trust-anchors>
+    </debug-overrides>
+</network-security-config>

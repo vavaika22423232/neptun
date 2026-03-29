@@ -51,14 +51,15 @@ mkdir -p /data
 chown neptun:neptun /data
 echo "  /data directory ready"
 
-# ── 6. Clone repository ──────────────────────────────────────
-echo "[6/8] Cloning repository..."
+# ── 6. Sync code (should be uploaded via scp) ────────────────
+echo "[6/8] Checking code directory..."
 APP_DIR="/home/neptun/app"
 if [ ! -d "$APP_DIR" ]; then
-  sudo -u neptun git clone https://github.com/vavaika22423232/neptun.git "$APP_DIR"
+  mkdir -p "$APP_DIR"
+  chown neptun:neptun "$APP_DIR"
+  echo "  Directory created. Upload code via: scp -r ./ root@173.242.55.166:/home/neptun/app/"
 else
-  echo "  Repository already cloned, pulling latest..."
-  cd "$APP_DIR" && sudo -u neptun git pull origin main
+  echo "  App directory exists"
 fi
 
 # ── 7. Build Next.js app ─────────────────────────────────────
@@ -88,6 +89,19 @@ ufw allow http
 ufw allow https
 ufw --force enable
 echo "  Firewall configured (SSH + HTTP + HTTPS)"
+
+# ── 9b. Persist Cloudflare-only iptables rules ──────────────
+echo "Setting up Cloudflare-only firewall..."
+apt install -y -qq iptables-persistent
+CLOUDFLARE_FW="$APP_DIR/deploy/cloudflare-firewall.sh"
+if [ -f "$CLOUDFLARE_FW" ]; then
+  bash "$CLOUDFLARE_FW"
+  iptables-save > /etc/iptables/rules.v4
+  ip6tables-save > /etc/iptables/rules.v6
+  echo "  ✓ Cloudflare firewall rules applied and persisted"
+else
+  echo "  ⚠ cloudflare-firewall.sh not found — skipping"
+fi
 
 # ── 10. Install systemd services ─────────────────────────────
 echo "Installing systemd services..."

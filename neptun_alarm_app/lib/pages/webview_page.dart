@@ -5,17 +5,14 @@ class WebViewPage extends StatefulWidget {
   final String url;
   final String title;
 
-  const WebViewPage({
-    super.key,
-    required this.url,
-    required this.title,
-  });
+  const WebViewPage({super.key, required this.url, required this.title});
 
   @override
   State<WebViewPage> createState() => _WebViewPageState();
 }
 
-class _WebViewPageState extends State<WebViewPage> with AutomaticKeepAliveClientMixin {
+class _WebViewPageState extends State<WebViewPage>
+    with AutomaticKeepAliveClientMixin {
   WebViewController? _controller;
   bool _isLoading = true;
   bool _isInitialized = false;
@@ -32,7 +29,7 @@ class _WebViewPageState extends State<WebViewPage> with AutomaticKeepAliveClient
   void _initController() {
     if (_isInitialized) return;
     _isInitialized = true;
-    
+
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(
@@ -51,6 +48,9 @@ class _WebViewPageState extends State<WebViewPage> with AutomaticKeepAliveClient
               });
             }
           },
+          onSslAuthError: (error) {
+            error.cancel();
+          },
         ),
       )
       ..loadRequest(Uri.parse(widget.url));
@@ -59,15 +59,11 @@ class _WebViewPageState extends State<WebViewPage> with AutomaticKeepAliveClient
   @override
   Widget build(BuildContext context) {
     super.build(context); // Required for AutomaticKeepAliveClientMixin
-    
+
     return Stack(
       children: [
-        if (_controller != null)
-          WebViewWidget(controller: _controller!),
-        if (_isLoading)
-          const Center(
-            child: CircularProgressIndicator(),
-          ),
+        if (_controller != null) WebViewWidget(controller: _controller!),
+        if (_isLoading) const Center(child: CircularProgressIndicator()),
       ],
     );
   }

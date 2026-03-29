@@ -1,16 +1,37 @@
 [Unit]
-Description=Neptun Next.js Web Service
-After=network.target
+Description=Neptun Next.js Web Service (PM2 Cluster)
+After=network.target redis-server.service
+# Дать больше попыток при кратковременных падениях (иначе systemd перестаёт рестартить)
+StartLimitBurst=15
+StartLimitIntervalSec=120
 
 [Service]
-Type=simple
+Type=forking
 User=neptun
 Group=neptun
-WorkingDirectory=/home/neptun/app/nextjs-app
-EnvironmentFile=/home/neptun/app/deploy/.env
-ExecStart=/usr/bin/node .next/standalone/server.js
+WorkingDirectory=/home/neptun/app
+EnvironmentFile=/home/neptun/app/.env
+Environment=PM2_HOME=/home/neptun/.pm2
+Environment=GOOGLE_APPLICATION_CREDENTIALS=/home/neptun/keys/play-purchase-verifier.json
+Environment=GOOGLE_PLAY_PACKAGE_NAME=com.neptunalarm.neptun_alarm_app
+
+# Don't start without .env
+ExecStartPre=/usr/bin/test -f /home/neptun/app/.env
+
+# PM2 cluster — порты см. ecosystem.config.cjs (сейчас 3000–3002 при INSTANCES=3)
+LimitNOFILE=65535
+ExecStart=/usr/bin/pm2 start /home/neptun/app/ecosystem.config.cjs --env production
+ExecReload=/usr/bin/pm2 reload neptun --update-env
+ExecStop=/usr/bin/pm2 stop neptun
+
+# Поднимать сервис после любого выхода (OOM/ kill даёт не всегда «failure»)
 Restart=always
 RestartSec=5
+
+# Graceful shutdown — give PM2 time to drain connections
+TimeoutStopSec=30
+KillMode=mixed
+KillSignal=SIGTERM
 
 # Logging
 StandardOutput=journal
@@ -21,8 +42,8 @@ SyslogIdentifier=neptun-web
 NoNewPrivileges=true
 PrivateTmp=true
 
-# Memory limit (leave headroom for worker)
-MemoryMax=1200M
+# Cgroup-лимит на весь юнит: 3 воркера × до 1.5G (max_memory_restart) + PM2 + запас
+MemoryMax=5120M
 
 [Install]
 WantedBy=multi-user.target

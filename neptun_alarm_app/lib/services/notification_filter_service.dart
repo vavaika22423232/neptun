@@ -6,21 +6,25 @@ import 'region_database.dart';
 /// Сервіс фільтрації сповіщень за регіонами
 /// Використовує ТІЛЬКИ ID, ніяких string matching
 class NotificationFilterService {
-  static final NotificationFilterService _instance = NotificationFilterService._internal();
+  static final NotificationFilterService _instance =
+      NotificationFilterService._internal();
   factory NotificationFilterService() => _instance;
   NotificationFilterService._internal();
 
   final RegionDatabase _db = RegionDatabase();
 
   /// Перевіряє чи потрібно показувати сповіщення користувачу
-  /// 
+  ///
   /// Алгоритм:
   /// 1. Якщо користувач обрав населений пункт → exact match по settlementId
   /// 2. Якщо користувач обрав райони → exact match по raionId
   /// 3. Якщо користувач обрав області → exact match по oblastId
-  /// 
+  ///
   /// Якщо подія не має валідного oblastId → НЕ показувати
-  bool shouldShowNotification(NotificationEvent event, UserRegionSelection user) {
+  bool shouldShowNotification(
+    NotificationEvent event,
+    UserRegionSelection user,
+  ) {
     // Якщо немає вибору користувача - не показувати
     if (user.isEmpty) {
       debugPrint('🚫 Filter: user has no selection');
@@ -29,29 +33,46 @@ class NotificationFilterService {
 
     // Якщо подія не має валідної геолокації - не показувати
     if (!event.hasValidLocation) {
-      debugPrint('🚫 Filter: event has no valid location (oblastId=${event.oblastId})');
+      debugPrint(
+        '🚫 Filter: event has no valid location (oblastId=${event.oblastId})',
+      );
       return false;
     }
 
     // 1. Перевірка по населеному пункту (найточніша)
     if (user.settlementId != null) {
       final match = event.settlementId == user.settlementId;
-      debugPrint('🔍 Filter: settlement match ${user.settlementId} == ${event.settlementId} → $match');
+      debugPrint(
+        '🔍 Filter: settlement match ${user.settlementId} == ${event.settlementId} → $match',
+      );
       return match;
     }
 
     // 2. Перевірка по районах
     if (user.raionIds.isNotEmpty) {
-      // Якщо подія має raionId - перевіряємо exact match
+      // Подія з raionId — exact match
       if (event.raionId != null && event.raionId!.isNotEmpty) {
         final match = user.raionIds.contains(event.raionId);
-        debugPrint('🔍 Filter: raion exact match ${event.raionId} in ${user.raionIds} → $match');
+        debugPrint(
+          '🔍 Filter: raion exact match ${event.raionId} in ${user.raionIds} → $match',
+        );
         return match;
       }
-      
-      // Якщо подія не має raionId (тільки oblast) - НЕ показуємо
-      // Користувач вибрав конкретні райони, йому не потрібні загальні повідомлення про область
-      debugPrint('🚫 Filter: user selected raions but event has no raionId (oblast=${event.oblastId})');
+      // Подія oblast-рівня (без raionId): показуємо якщо event.oblastId —
+      // батьківська область для будь-якого з обраних районів користувача
+      _db.initialize();
+      for (final raionId in user.raionIds) {
+        final parentOblast = _db.getOblastIdForRaion(raionId);
+        if (parentOblast == event.oblastId) {
+          debugPrint(
+            '🔍 Filter: oblast-level event ${event.oblastId} covers user raion $raionId → show',
+          );
+          return true;
+        }
+      }
+      debugPrint(
+        '🚫 Filter: oblast-level event ${event.oblastId} does not cover any selected raion',
+      );
       return false;
     }
 
@@ -59,7 +80,9 @@ class NotificationFilterService {
     if (user.oblastIds.isNotEmpty) {
       // Перевіряємо чи подія належить до однієї з обраних областей
       final match = user.oblastIds.contains(event.oblastId);
-      debugPrint('🔍 Filter: oblast match ${event.oblastId} in ${user.oblastIds} → $match');
+      debugPrint(
+        '🔍 Filter: oblast match ${event.oblastId} in ${user.oblastIds} → $match',
+      );
       return match;
     }
 
@@ -72,13 +95,13 @@ class NotificationFilterService {
     if (event.oblastId == null) {
       return false;
     }
-    
+
     // Перевіряємо чи oblast існує в базі
     if (_db.getOblastById(event.oblastId!) == null) {
       debugPrint('⚠️ Unknown oblastId: ${event.oblastId}');
       return false;
     }
-    
+
     // Якщо є raionId - перевіряємо його
     if (event.raionId != null) {
       final raion = _db.getRaionById(event.raionId!);
@@ -86,14 +109,16 @@ class NotificationFilterService {
         debugPrint('⚠️ Unknown raionId: ${event.raionId}');
         return false;
       }
-      
+
       // Перевіряємо чи raion належить до вказаної області
       if (raion.parentId != event.oblastId) {
-        debugPrint('⚠️ Raion ${event.raionId} does not belong to oblast ${event.oblastId}');
+        debugPrint(
+          '⚠️ Raion ${event.raionId} does not belong to oblast ${event.oblastId}',
+        );
         return false;
       }
     }
-    
+
     return true;
   }
 

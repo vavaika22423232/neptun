@@ -1,38 +1,53 @@
-__pycache__/
-*.pyc
-*.log
-# Secrets / env (do NOT commit real credentials)
+# ===== Secrets =====
 .env
 .env.*
+!.env.example
+!**/.env.example
 firebase-credentials.json
 dron-alerts-firebase-adminsdk-*.json
-
-# Telegram session artifacts
-new_session.txt
-*session*
-dtek_session.session
+dron-alerts-*-*.json
+*play*verifier*.json
 *.session
 
-# Caches (keep messages.json tracked intentionally)
-opencage_cache.json
-hidden_markers.json
-# Allow committing visits_recent.json per user request
-
-# Virtual environments
+# ===== Python =====
+__pycache__/
+*.pyc
+*.pyo
 venv/
 .venv/
 
-# OS junk
-Thumbs.db
+# ===== Node.js =====
+node_modules/
+.next/
+tsconfig.tsbuildinfo
+
+# ===== Flutter =====
+neptun_alarm_app/build/
+neptun_alarm_app/.dart_tool/
+neptun_alarm_app/.idea/
+neptun_alarm_app/.flutter-plugins-dependencies
+neptun_alarm_app/*.iml
+neptun_alarm_app/android/.gradle/
+neptun_alarm_app/android/.kotlin/
+neptun_alarm_app/android/build/
+neptun_alarm_app/android/local.properties
+neptun_alarm_app/android/*.iml
+neptun_alarm_app/android/app/dron-alerts-firebase-adminsdk-*.json
+neptun_alarm_app/ios/build/
+neptun_alarm_app/ios/Pods/
+
+# ===== Caches & Data =====
+nominatim_cache.json
+geocode_cache*.json
+visicom_cache*.json
+*.db
+*.db-shm
+*.db-wal
+
+# ===== OS =====
 .DS_Store
+Thumbs.db
 
-# Mobile apps - Android & iOS
-android-app/
-app-ios/
-ios-app/
-NeptunAlarmMapiOS/
-
-templates/admin_old.html.backup
-neptun_alarm_app/android/app/dron-alerts-firebase-adminsdk-fbsvc-05de5d3230.json
-neptun_alarm_app/
-backup/
+# ===== IDE =====
+.vscode/
+.cursor/

@@ -1,0 +1,154 @@
+# Uncomment this line to define a global platform for your project
+platform :ios, '13.0'
+
+# CocoaPods analytics sends network stats synchronously affecting flutter build latency.
+ENV['COCOAPODS_DISABLE_STATS'] = 'true'
+
+# Ensure Generated.xcconfig exists before pod install (Xcode needs it for Release/Debug.xcconfig)
+# Fix in_app_review: podspec uses **/* which adds PrivacyInfo.xcprivacy to compile sources
+pre_install do |installer|
+  gen_dir = File.join(File.dirname(__FILE__), 'Flutter')
+  gen_file = File.join(gen_dir, 'Generated.xcconfig')
+  unless File.exist?(gen_file)
+    first = Dir.glob(File.join(gen_dir, 'Generated *.xcconfig')).sort_by { |f| File.mtime(f) }.last
+    FileUtils.cp(first, gen_file) if first
+  end
+
+  # Patch in_app_review podspec: **/* includes .xcprivacy in compile → change to *.swift
+  spec_paths = [
+    File.join(File.dirname(__FILE__), '..', '.pub-cache', 'hosted', 'pub.dev', 'in_app_review-2.0.11', 'ios', 'in_app_review.podspec'),
+    File.join(Dir.home, '.pub-cache', 'hosted', 'pub.dev', 'in_app_review-2.0.11', 'ios', 'in_app_review.podspec'),
+  ]
+  spec_paths.each do |path|
+    if File.exist?(path)
+      spec = File.read(path)
+      if spec.include?("source_files = 'in_app_review/Sources/in_app_review/**/*'")
+        spec.gsub!("source_files = 'in_app_review/Sources/in_app_review/**/*'",
+          "source_files = 'in_app_review/Sources/in_app_review/*.swift'")
+        File.write(path, spec)
+      end
+      break
+    end
+  end
+end
+
+project 'Runner', {
+  'Debug' => :debug,
+  'Profile' => :release,
+  'Release' => :release,
+}
+
+def flutter_root
+  generated_xcode_build_settings_path = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__)
+  generated_alt = File.expand_path(File.join('..', 'Flutter', 'Generated 2.xcconfig'), __FILE__)
+  path = File.exist?(generated_xcode_build_settings_path) ? generated_xcode_build_settings_path : generated_alt
+  unless File.exist?(path)
+    raise "Generated.xcconfig or Generated 2.xcconfig must exist. Run 'flutter pub get' first"
+  end
+
+  File.foreach(path) do |line|
+    matches = line.match(/FLUTTER_ROOT\=(.*)/)
+    return matches[1].strip if matches
+  end
+  raise "FLUTTER_ROOT not found in #{path}. Run 'flutter pub get' first"
+end
+
+require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), flutter_root)
+
+flutter_ios_podfile_setup
+
+target 'Runner' do
+  use_frameworks!
+  use_modular_headers!
+
+  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+  target 'RunnerTests' do
+    inherit! :search_paths
+  end
+end
+
+post_install do |installer|
+  # Fix in_app_review: remove PrivacyInfo.xcprivacy from compile sources (causes "no rule to process" error)
+  installer.pods_project.targets.each do |target|
+    next unless target.respond_to?(:source_build_phase) && target.source_build_phase
+    to_remove = target.source_build_phase.files.select do |f|
+      path = (f.file_ref&.path || f.file_ref&.name || '').to_s
+      path.include?('PrivacyInfo') || path.end_with?('.xcprivacy')
+    end
+    to_remove.each { |f| target.source_build_phase.files.delete(f) }
+  end
+  installer.pods_project.save
+
+  # Fix for Xcode 15+ DT_TOOLCHAIN_DIR issue with older CocoaPods
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      xcconfig_path = config.base_configuration_reference.real_path
+      xcconfig = File.read(xcconfig_path)
+      xcconfig_mod = xcconfig.gsub(/DT_TOOLCHAIN_DIR/, "TOOLCHAIN_DIR")
+      File.open(xcconfig_path, "w") { |file| file << xcconfig_mod }
+    end
+  end
+  
+  installer.pods_project.targets.each do |target|
+    flutter_additional_ios_build_settings(target)
+    
+    target.build_configurations.each do |config|
+      # iOS Deployment Target
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+      
+      # Disable bitcode (not needed for iOS 14+, reduces build size)
+      config.build_settings['ENABLE_BITCODE'] = 'NO'
+      
+      # Optimize for size in Release
+      if config.name == 'Release'
+        config.build_settings['SWIFT_OPTIMIZATION_LEVEL'] = '-Osize'
+        config.build_settings['GCC_OPTIMIZATION_LEVEL'] = 's'
+        config.build_settings['DEAD_CODE_STRIPPING'] = 'YES'
+        config.build_settings['STRIP_INSTALLED_PRODUCT'] = 'YES'
+      end
+      
+      # Enable ARC
+      config.build_settings['CLANG_ENABLE_OBJC_ARC'] = 'YES'
+      
+      # Metal Performance Shaders
+      config.build_settings['MTL_ENABLE_DEBUG_INFO'] = 'NO'
+      
+      # Suppress warnings for CocoaPods
+      config.build_settings['GCC_WARN_INHIBIT_ALL_WARNINGS'] = 'YES'
+      config.build_settings['SWIFT_SUPPRESS_WARNINGS'] = 'YES'
+      
+      # Fix Xcode 14+ signing issues - completely disable for simulator
+      config.build_settings['CODE_SIGN_IDENTITY'] = ''
+      config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
+      config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
+      
+      # Excluded architectures for simulator (M1 Mac compatibility)
+      # Build only for arm64 on simulators to avoid x86_64 module issues
+      config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'i386'
+      
+      # Disable Explicit Modules (fix for Xcode 16 build issues with some pods)
+      config.build_settings['CLANG_ENABLE_MODULES'] = 'YES'
+      config.build_settings['CLANG_ENABLE_EXPLICIT_MODULES'] = 'NO'
+      config.build_settings['SWIFT_ENABLE_EXPLICIT_MODULES'] = 'NO'
+      config.build_settings['OTHER_SWIFT_FLAGS'] ||= ['$(inherited)']
+      
+      # Fix Firebase/nanopb "Regenerate this file" and module errors (Xcode 16+)
+      # Allow non-modular includes in framework modules (nanopb headers)
+      config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+      # Disable user-defined validation that triggers nanopb regeneration warning
+      config.build_settings['OTHER_CFLAGS'] ||= ['$(inherited)']
+      config.build_settings['OTHER_CFLAGS'] << '-Wno-error=user-defined-warnings'
+    end
+  end
+  
+  # Fix for Firebase compatibility (project-level)
+  installer.pods_project.build_configurations.each do |config|
+    config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+  end
+  
+  # Disable Explicit Precompiled Modules for Pods project (Xcode 16 fix)
+  installer.pods_project.build_configurations.each do |config|
+    config.build_settings['CLANG_ENABLE_EXPLICIT_MODULES'] = 'NO'
+    config.build_settings['SWIFT_ENABLE_EXPLICIT_MODULES'] = 'NO'
+  end
+end

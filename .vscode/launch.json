@@ -5,18 +5,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "neptun_alarm_app (iPhone 17 Pro)",
-            "cwd": "neptun_alarm_app",
-            "request": "launch",
-            "type": "dart",
-            "deviceId": "6A008473-80E6-40B9-ACEA-67C9AF31C2A6"
-        },
-        {
             "name": "neptun_alarm_app",
             "cwd": "neptun_alarm_app",
             "request": "launch",
-            "type": "dart",
-            "deviceId": "6A008473-80E6-40B9-ACEA-67C9AF31C2A6"
+            "type": "dart"
         },
         {
             "name": "neptun_alarm_app (profile mode)",

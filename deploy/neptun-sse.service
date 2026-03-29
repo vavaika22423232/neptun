@@ -1,0 +1,25 @@
+[Unit]
+Description=Neptun SSE Gateway (Go)
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=neptun
+Group=neptun
+WorkingDirectory=/home/neptun/app/sse-gateway
+ExecStart=/home/neptun/app/sse-gateway/sse-gateway
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+# Environment
+Environment=SSE_PORT=4000
+Environment=REDIS_URL=redis://127.0.0.1:6379/0
+
+# Resource limits
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
