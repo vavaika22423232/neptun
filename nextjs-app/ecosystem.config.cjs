@@ -17,12 +17,11 @@
  */
 
 const BASE_PORT = 3000;
-// Число воркеров: задайте PM2_INSTANCES в /home/neptun/app/.env (1–8). По умолчанию 4.
-// Должно совпадать с количеством строк server в deploy/nginx-upstream-nextjs.conf
-// (см. deploy/print-nginx-upstream.sh).
+// Число воркеров: PM2_INSTANCES в .env (1–12). systemd MemoryMax для neptun-web має витримати N × heap.
+// nginx upstream: deploy/print-nginx-upstream.sh
 const _n = parseInt(process.env.PM2_INSTANCES ?? '', 10);
 const INSTANCES =
-  Number.isFinite(_n) && _n >= 1 && _n <= 8 ? _n : 4;
+  Number.isFinite(_n) && _n >= 1 && _n <= 12 ? _n : 4;
 
 module.exports = {
   apps: [{
