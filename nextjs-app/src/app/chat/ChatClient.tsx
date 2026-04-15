@@ -200,6 +200,7 @@ function ChatInner({
     deleteMessage,
     toggleReaction,
     sendTyping,
+    voteMute: requestVoteMute,
   } = useChat({ deviceId });
 
   const [text, setText] = useState('');
@@ -277,15 +278,7 @@ function ChatInner({
   const voteMute = useCallback(
     async (msg: ChatMessage) => {
       try {
-        const res = await fetch('/api/chat/vote-mute', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            messageId: msg.id,
-            voterDeviceId: deviceId,
-            voterNickname: nickname,
-          }),
-        });
+        const res = await requestVoteMute(msg.id);
         const data = await res.json().catch(() => ({}));
         if (res.ok && data.muted) {
           setError('Користувача замьючено на 30 хвилин');
@@ -293,12 +286,15 @@ function ChatInner({
         } else if (res.ok && data.votesLeft !== undefined) {
           setError(`Проголосовано. Ще ${data.votesLeft} голосів для муту`);
           setTimeout(() => setError(null), 3000);
+        } else if (res.status === 401) {
+          setError('Увійдіть знову (токен прострочено)');
+          setTimeout(() => setError(null), 4000);
         }
       } catch {
         /* ignore */
       }
     },
-    [deviceId, nickname, setError]
+    [requestVoteMute, setError],
   );
 
   // Typing indicator

@@ -50,6 +50,10 @@ interface FeedEntry {
   parser?: string;
   place?: string;
   region?: string;
+  /** Oblast / launch context when `region` was cleared for maritime rows (see feed ingest). */
+  context_region?: string;
+  /** KAB impact / target label when `place` is the synthetic airfield (phantom avia feed rows). */
+  impact_place?: string;
   lat?: number;
   lng?: number;
   speed_kmh?: number;
@@ -73,14 +77,43 @@ function formatKyivTime(iso: string): string {
   } catch { return iso; }
 }
 
+interface AdminSettingsState {
+  monitorPeriod: number;
+  ttlEnabled: boolean;
+  minConfidence: number;
+  spatialCorrelatorEnabled: boolean;
+  dualSourceMapGate: boolean;
+  corroborationMinObservations: number;
+  corroborationWindowMinutes: number;
+  corroborationMaxRadiusKm: number;
+  corroborationMinDistinctSources: number;
+  regionUncertaintyKm: number;
+  corroboratedUncertaintyKm: number;
+}
+
 interface Stats {
   totalMessages: number;
   markersCount: number;
   hiddenCount: number;
   blockedCount: number;
   pendingGeoCount: number;
-  settings: { monitorPeriod: number; ttlEnabled: boolean; minConfidence: number };
+  displayClassCounts?: Record<string, number>;
+  settings: AdminSettingsState;
 }
+
+const DEFAULT_ADMIN_SETTINGS: AdminSettingsState = {
+  monitorPeriod: 30,
+  ttlEnabled: true,
+  minConfidence: 0.65,
+  spatialCorrelatorEnabled: true,
+  dualSourceMapGate: true,
+  corroborationMinObservations: 2,
+  corroborationWindowMinutes: 30,
+  corroborationMaxRadiusKm: 45,
+  corroborationMinDistinctSources: 0,
+  regionUncertaintyKm: 38,
+  corroboratedUncertaintyKm: 9,
+};
 
 interface MarkerRecord {
   id: string;
@@ -112,7 +145,7 @@ export default function AdminPage() {
   const [hidden, setHidden] = useState<HiddenMarker[]>([]);
   const [rawMsgs, setRawMsgs] = useState<MarkerRecord[]>([]);
   const [blocked, setBlocked] = useState<string[]>([]);
-  const [settings, setSettings] = useState<{ monitorPeriod: number; ttlEnabled: boolean; minConfidence: number }>({ monitorPeriod: 30, ttlEnabled: true, minConfidence: 0.3 });
+  const [settings, setSettings] = useState<AdminSettingsState>(DEFAULT_ADMIN_SETTINGS);
   const [corrections, setCorrections] = useState<Array<Record<string, unknown>>>([]);
   const [corrForm, setCorrForm] = useState({ event_id: '', place_name: '', correct_lat: '', correct_lng: '', correct_oblast: '', reason: '' });
   const [feedbackTickets, setFeedbackTickets] = useState<FeedbackTicket[]>([]);
@@ -150,7 +183,7 @@ export default function AdminPage() {
     try {
       const data = await api<Stats>('/api/admin/stats');
       setStats(data);
-      setSettings(data.settings);
+      setSettings({ ...DEFAULT_ADMIN_SETTINGS, ...data.settings });
     } catch (e) { if ((e as Error).message === 'UNAUTHORIZED') handleAuthError(); }
   }, [handleAuthError]);
 
@@ -349,6 +382,27 @@ export default function AdminPage() {
     } catch { notify('Помилка', 'error'); }
   };
 
+  const saveTrustMapSettings = async () => {
+    try {
+      await api('/api/admin/settings/trust-display', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spatialCorrelatorEnabled: settings.spatialCorrelatorEnabled,
+          dualSourceMapGate: settings.dualSourceMapGate,
+          corroborationMinObservations: settings.corroborationMinObservations,
+          corroborationWindowMinutes: settings.corroborationWindowMinutes,
+          corroborationMaxRadiusKm: settings.corroborationMaxRadiusKm,
+          corroborationMinDistinctSources: settings.corroborationMinDistinctSources,
+          regionUncertaintyKm: settings.regionUncertaintyKm,
+          corroboratedUncertaintyKm: settings.corroboratedUncertaintyKm,
+        }),
+      });
+      notify('Налаштування карти / довіри збережено');
+      loadStats();
+    } catch { notify('Помилка', 'error'); }
+  };
+
   // ── Add Marker Form state ──
   const [addForm, setAddForm] = useState({ lat: '', lng: '', text: '', place: '', threat_type: 'shahed' });
 
@@ -445,25 +499,41 @@ export default function AdminPage() {
             <div className="space-y-6">
               <h2 className="text-xl font-semibold text-white/90">Огляд системи</h2>
               {stats ? (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {[
-                    { label: 'Повідомлень', value: stats.totalMessages, icon: 'message', color: '#ff2a5f' },
-                    { label: 'Міток на карті', value: stats.markersCount, icon: 'place', color: '#5ef5c4' },
-                    { label: 'Приховано', value: stats.hiddenCount, icon: 'visibility_off', color: '#ffab40' },
-                    { label: 'Заблоковано', value: stats.blockedCount, icon: 'block', color: '#ff5252' },
-                    { label: 'Pending Geo', value: stats.pendingGeoCount, icon: 'pending', color: '#b388ff' },
-                    { label: 'Монітор (хв)', value: stats.settings.monitorPeriod, icon: 'timer', color: '#ff2a5f' },
-                    { label: 'TTL Система', value: stats.settings.ttlEnabled ? 'Увімк.' : 'Вимк.', icon: 'schedule', color: stats.settings.ttlEnabled ? '#5ef5c4' : '#ff5252' },
-                  ].map((s, i) => (
-                    <div key={i} className="bg-[#0a0a0b] backdrop-blur-3xl rounded-2xl p-4 border border-white/5">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="material-icons text-[18px]" style={{ color: s.color }}>{s.icon}</span>
-                        <span className="text-xs text-white/40">{s.label}</span>
+                <>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {[
+                      { label: 'Повідомлень', value: stats.totalMessages, icon: 'message', color: '#ff2a5f' },
+                      { label: 'Міток на карті', value: stats.markersCount, icon: 'place', color: '#5ef5c4' },
+                      { label: 'Приховано', value: stats.hiddenCount, icon: 'visibility_off', color: '#ffab40' },
+                      { label: 'Заблоковано', value: stats.blockedCount, icon: 'block', color: '#ff5252' },
+                      { label: 'Pending Geo', value: stats.pendingGeoCount, icon: 'pending', color: '#b388ff' },
+                      { label: 'Монітор (хв)', value: stats.settings.monitorPeriod, icon: 'timer', color: '#ff2a5f' },
+                      { label: 'TTL Система', value: stats.settings.ttlEnabled ? 'Увімк.' : 'Вимк.', icon: 'schedule', color: stats.settings.ttlEnabled ? '#5ef5c4' : '#ff5252' },
+                    ].map((s, i) => (
+                      <div key={i} className="bg-[#0a0a0b] backdrop-blur-3xl rounded-2xl p-4 border border-white/5">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="material-icons text-[18px]" style={{ color: s.color }}>{s.icon}</span>
+                          <span className="text-xs text-white/40">{s.label}</span>
+                        </div>
+                        <div className="text-2xl font-semibold text-white/90">{s.value}</div>
                       </div>
-                      <div className="text-2xl font-semibold text-white/90">{s.value}</div>
+                    ))}
+                  </div>
+                  {stats.displayClassCounts && Object.keys(stats.displayClassCounts).length > 0 && (
+                    <div className="bg-[#0a0a0b] backdrop-blur-3xl rounded-2xl p-4 border border-white/5">
+                      <h3 className="text-sm font-medium text-white/70 mb-3">Публічна карта: display_class</h3>
+                      <p className="text-[11px] text-white/35 mb-3">Поточний розподіл міток після фільтрів (як на /api/data).</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                        {Object.entries(stats.displayClassCounts).map(([k, v]) => (
+                          <div key={k} className="bg-[#050505] rounded-xl px-3 py-2 border border-white/5">
+                            <div className="text-white/45 font-mono text-[10px] truncate" title={k}>{k}</div>
+                            <div className="text-xl font-semibold text-white/90">{v}</div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  ))}
-                </div>
+                  )}
+                </>
               ) : (
                 <div className="text-white/30 animate-pulse">Завантаження...</div>
               )}
@@ -884,6 +954,81 @@ export default function AdminPage() {
         </button>
       </div>
 
+      {/* Public map trust / corroboration */}
+      <div className="bg-[#0a0a0b] backdrop-blur-3xl rounded-2xl p-4 border border-white/5 space-y-4">
+        <div>
+          <h3 className="text-sm font-medium text-white/90">Карта: довіра до позиції</h3>
+          <p className="text-[11px] text-white/40 mt-1">
+            Корелятор простору, правила K/T/R для «узгодженої точки», радіуси кілець невизначеності на публічній карті.
+          </p>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-white/70 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={settings.spatialCorrelatorEnabled}
+            onChange={e => setSettings(s => ({ ...s, spatialCorrelatorEnabled: e.target.checked }))}
+            className="rounded border-white/20"
+          />
+          Просторовий корелятор (findSpatialMatch) — вимкніть, щоб лишалось злиття лише за track_id
+        </label>
+        <label className="flex items-center gap-2 text-sm text-white/70 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={settings.dualSourceMapGate}
+            onChange={e => setSettings(s => ({ ...s, dualSourceMapGate: e.target.checked }))}
+            className="rounded border-white/20"
+          />
+          Бар’єр «2 канали» на публічній карті — ховати маркер, доки у спостереженнях не буде двох різних channel_name (виняток: channel_priority ≤ 1)
+        </label>
+        <p className="text-[11px] text-white/45 leading-snug">
+          Лента в адмінці показує всі події воркера (включно з одним каналом) — це журнал пайплайна, не фільтр публічної карти. Синтетичні «phantom avia» для KAB завжди потребують того ж підтвердження двома джерелами, навіть якщо цей перемикач вимкнено.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-[11px] text-white/45 block mb-1">K — мін. спостережень</label>
+            <input type="number" min={1} max={20} value={settings.corroborationMinObservations}
+              onChange={e => setSettings(s => ({ ...s, corroborationMinObservations: parseInt(e.target.value, 10) || 2 }))}
+              className="w-full bg-[#050505] border border-white/10 rounded-xl px-3 py-2 text-sm text-white" />
+          </div>
+          <div>
+            <label className="text-[11px] text-white/45 block mb-1">T — вікно (хв)</label>
+            <input type="number" min={1} max={180} value={settings.corroborationWindowMinutes}
+              onChange={e => setSettings(s => ({ ...s, corroborationWindowMinutes: parseInt(e.target.value, 10) || 30 }))}
+              className="w-full bg-[#050505] border border-white/10 rounded-xl px-3 py-2 text-sm text-white" />
+          </div>
+          <div>
+            <label className="text-[11px] text-white/45 block mb-1">R — макс. розкид (км)</label>
+            <input type="number" min={1} max={200} step={1} value={settings.corroborationMaxRadiusKm}
+              onChange={e => setSettings(s => ({ ...s, corroborationMaxRadiusKm: parseFloat(e.target.value) || 45 }))}
+              className="w-full bg-[#050505] border border-white/10 rounded-xl px-3 py-2 text-sm text-white" />
+          </div>
+          <div>
+            <label className="text-[11px] text-white/45 block mb-1">Мін. унікальних джерел (0 = вимк.)</label>
+            <input type="number" min={0} max={10} value={settings.corroborationMinDistinctSources}
+              onChange={e => setSettings(s => ({ ...s, corroborationMinDistinctSources: parseInt(e.target.value, 10) || 0 }))}
+              className="w-full bg-[#050505] border border-white/10 rounded-xl px-3 py-2 text-sm text-white" />
+          </div>
+          <div>
+            <label className="text-[11px] text-white/45 block mb-1">Кільце регіону (км)</label>
+            <input type="number" min={5} max={150} step={1} value={settings.regionUncertaintyKm}
+              onChange={e => setSettings(s => ({ ...s, regionUncertaintyKm: parseFloat(e.target.value) || 38 }))}
+              className="w-full bg-[#050505] border border-white/10 rounded-xl px-3 py-2 text-sm text-white" />
+          </div>
+          <div>
+            <label className="text-[11px] text-white/45 block mb-1">Кільце узгодженої точки (км)</label>
+            <input type="number" min={1} max={80} step={1} value={settings.corroboratedUncertaintyKm}
+              onChange={e => setSettings(s => ({ ...s, corroboratedUncertaintyKm: parseFloat(e.target.value) || 9 }))}
+              className="w-full bg-[#050505] border border-white/10 rounded-xl px-3 py-2 text-sm text-white" />
+          </div>
+        </div>
+        <p className="text-[10px] text-white/35">
+          Якщо задано resolved_oblast_hasc, усі точки кластера мають лежати в полігоні цієї області (сервер).
+        </p>
+        <button type="button" onClick={saveTrustMapSettings} className="bg-[#5ef5c4]/15 hover:bg-[#5ef5c4]/25 text-[#5ef5c4] text-sm px-4 py-2 rounded-xl border border-[#5ef5c4]/20">
+          Зберегти налаштування довіри
+        </button>
+      </div>
+
       {/* Cache clear */}
       <div className="bg-[#0a0a0b] backdrop-blur-3xl rounded-2xl p-4 border border-white/5 space-y-3">
         <h3 className="text-sm font-medium text-white/70">Кеш</h3>
@@ -1141,9 +1286,14 @@ export default function AdminPage() {
                   <span className="text-xs text-white/60 flex-1 truncate">
                     {entry.place || entry.reason || entry.msg_text?.slice(0, 60) || '—'}
                   </span>
-                  {/* Region pill */}
-                  {entry.region && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-white/40 shrink-0 hidden sm:inline">{entry.region}</span>
+                  {/* Region pill — maritime rows use context_region only in compact view */}
+                  {(entry.context_region || entry.region) && (
+                    <span
+                      className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-white/40 shrink-0 hidden sm:inline max-w-[140px] truncate"
+                      title={entry.context_region ? `Контекст: ${entry.context_region}` : undefined}
+                    >
+                      {entry.context_region || entry.region}
+                    </span>
                   )}
                   {/* Confidence */}
                   {entry.confidence != null && entry.confidence > 0 && (
@@ -1171,7 +1321,24 @@ export default function AdminPage() {
                       {entry.parser && <div><span className="text-white/30">Парсер:</span> <span className="text-white/60">{entry.parser}</span></div>}
                       {entry.entities_count != null && <div><span className="text-white/30">Сутностей:</span> <span className="text-white/60">{entry.entities_count}</span></div>}
                       {entry.place && <div><span className="text-white/30">Місце:</span> <span className="text-white/60">{entry.place}</span></div>}
-                      {entry.region && <div><span className="text-white/30">Область:</span> <span className="text-white/60">{entry.region}</span></div>}
+                      {entry.impact_place && (
+                        <div>
+                          <span className="text-white/30">Зона KAB (вплив):</span>{' '}
+                          <span className="text-white/60">{entry.impact_place}</span>
+                        </div>
+                      )}
+                      {entry.region && (
+                        <div>
+                          <span className="text-white/30">Область:</span>{' '}
+                          <span className="text-white/60">{entry.region}</span>
+                        </div>
+                      )}
+                      {entry.context_region && (
+                        <div>
+                          <span className="text-white/30">Контекст (обл.):</span>{' '}
+                          <span className="text-white/60">{entry.context_region}</span>
+                        </div>
+                      )}
                       {entry.lat != null && <div><span className="text-white/30">Coords:</span> <span className="text-white/60 font-mono">{entry.lat.toFixed(3)}, {entry.lng?.toFixed(3)}</span></div>}
                       {entry.speed_kmh != null && <div><span className="text-white/30">Швидкість:</span> <span className="text-white/60">{entry.speed_kmh} км/г</span></div>}
                       {entry.course_bearing != null && <div><span className="text-white/30">Курс:</span> <span className="text-white/60">{entry.course_bearing}°</span></div>}

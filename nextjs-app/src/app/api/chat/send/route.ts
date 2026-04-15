@@ -3,14 +3,13 @@ import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
-import { broadcastSSE } from '../stream/route';
+import { broadcastSSE } from '@/lib/chat-sse-stream';
 import { invalidateChatCache } from '../messages/route';
 import { isBanned, isModeratorDevice } from '@/lib/admin/data';
 import { containsForbiddenText } from '@/lib/chat-forbidden';
 import { isNewUser } from '@/lib/chat-nicknames';
 import { redisFixedWindowAllow } from '@/lib/redis-rate-limit';
 import { ChatSendSchema } from '@/lib/api-schemas';
-import { getJwtSecret } from '@/lib/server-secrets';
 
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const CHAT_FILE = path.join(DATA_DIR, 'chat_messages.json');
@@ -23,7 +22,7 @@ const MAX_MESSAGES = 1000;
 const rateLimiter = new Map<string, number>();
 const RATE_LIMIT_MS = 3000;
 const NEW_USER_RATE_LIMIT_MS = 60_000; // 1 msg/min for first 24h
-const RATE_LIMIT_CLEANUP_INTERVAL = 60_000; // clean every 60s
+const RATE_LIMIT_CLEANUP_INTERVAL = 120_000; // clean every 2min (fewer timer wakeups)
 
 setInterval(() => {
   const cutoff = Date.now() - RATE_LIMIT_MS * 2;
@@ -54,22 +53,13 @@ function escapeHtml(text: string): string {
     .replace(/'/g, '&#039;');
 }
 
-import { verifyChatToken } from '@/lib/chat-auth';
+import { requireChatAuth } from '@/lib/chat-auth';
 
 export async function POST(request: Request) {
   try {
-    const authHeader = request.headers.get('Authorization') || '';
-    const token = authHeader.split(' ')[1];
-    const jwtSecret = getJwtSecret();
-
-    if (!token || !jwtSecret) {
-      return NextResponse.json({ error: 'Потрібна авторизація (Token missing)' }, { status: 401 });
-    }
-
-    const payload = verifyChatToken(token, jwtSecret);
-    if (!payload || payload.type !== 'access') {
-      return NextResponse.json({ error: 'Сесія недійсна. Будь ласка, перезавантажте чат.' }, { status: 401 });
-    }
+    const authResult = requireChatAuth(request);
+    if (authResult instanceof Response) return authResult;
+    const identity = authResult;
 
     const rawBody = await request.json();
     const parsed = ChatSendSchema.safeParse(rawBody);
@@ -78,9 +68,8 @@ export async function POST(request: Request) {
     }
     const body = parsed.data;
 
-    // IDENTITY: Exclusively from JWT!
-    const deviceId = payload.deviceId;
-    const nickname = payload.nickname || 'Анонім';
+    const deviceId = identity.deviceId;
+    const nickname = identity.nickname || 'Анонім';
     const userId = nickname;
 
     const hardwareId = body.hardwareId || body.hardware_id;
@@ -94,7 +83,18 @@ export async function POST(request: Request) {
     const replyToId = body.replyTo;
     const isPro = body.isPro === true;
 
-    // Cluster-wide ceiling (PM2): in-memory limiter below is per-process only.
+    const clientIP = request.headers.get('X-Real-IP')
+      || request.headers.get('X-Forwarded-For')?.split(',')[0]?.trim()
+      || 'unknown';
+
+    const ipOk = await redisFixedWindowAllow(`rl:chat:send:ip:${clientIP}`, 20, 60, false);
+    if (!ipOk) {
+      return NextResponse.json(
+        { error: 'Забагато повідомлень з цієї IP. Зачекайте хвилину.' },
+        { status: 429 },
+      );
+    }
+
     const rlId = crypto.createHash('sha256').update(String(deviceId)).digest('hex').slice(0, 40);
     const rlBucket = Math.floor(Date.now() / 60_000);
     const rlOk = await redisFixedWindowAllow(`rl:chat:send:${rlId}:${rlBucket}`, 30, 60);
@@ -184,7 +184,7 @@ export async function POST(request: Request) {
     // Invalidate chat messages cache so next GET sees the new message
     invalidateChatCache();
 
-    // Broadcast via SSE
+    // Include deviceId so clients align outgoing bubbles with the sender (see messages GET).
     broadcastSSE({ type: 'new_message', data: message });
 
     return NextResponse.json({ status: 'ok', message });

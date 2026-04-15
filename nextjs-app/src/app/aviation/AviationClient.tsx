@@ -65,7 +65,7 @@ export default function AviationClient() {
     // Skip fetch when tab is hidden — saves server requests during background tabs
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
     try {
-      const res = await fetch('/api/threats');
+      const res = await fetch('/api/threats?timeRange=60');
       if (!res.ok) throw new Error('HTTP error');
       const json = await res.json();
       setData({

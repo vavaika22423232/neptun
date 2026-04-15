@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { broadcastSSE } from '@/app/api/chat/stream/route';
+import { broadcastSSE } from '@/lib/chat-sse-stream';
 import {
   addMarker,
   upsertByTrackId,

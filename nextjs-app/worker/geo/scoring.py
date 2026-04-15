@@ -165,12 +165,19 @@ def score_candidate(
             score += 2.0
             reasons.append("+2 near-reference text match")
 
-    # ── 7c. Parser oblast string matches gazetteer oblast (disambiguation on borders)
+    # ── 7c. Oblast disambiguation (CRITICAL for homonyms like Золочів, Покровське) ──
+    # This is the single strongest signal: if the parser / channel says "Харківська область",
+    # and we have two candidates (Золочів-Харків vs Золочів-Львів), this must decisively
+    # pick the correct one.  +6 match / -4 mismatch = 10-point swing.
     hint_oblast = (entities.get('oblast') or '').strip()
     cand_oblast = (candidate.oblast or '').strip()
-    if hint_oblast and cand_oblast and hint_oblast.lower() == cand_oblast.lower():
-        score += 1.5
-        reasons.append("+1.5 parser oblast matches candidate oblast")
+    if hint_oblast and cand_oblast:
+        if hint_oblast.lower() == cand_oblast.lower():
+            score += 6.0
+            reasons.append("+6 parser oblast matches candidate oblast")
+        else:
+            score -= 4.0
+            reasons.append(f"-4 oblast mismatch (want {hint_oblast}, got {cand_oblast})")
 
     # ── 8. Proximity to previous events ──
     ent_family = threat_family(entities.get('threat_type'))

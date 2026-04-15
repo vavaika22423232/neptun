@@ -32,24 +32,71 @@ export default function HomePageInner({ isEmbed = false }: { isEmbed?: boolean }
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    if (isEmbed) {
-      const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
-      const secret = params.get('admin_secret');
-      if (secret) {
-        fetch('/api/admin/auth/check', {
-          headers: { 'X-Auth-Secret': secret },
-        })
-          .then(r => r.json())
-          .then(d => {
-            if (d.authenticated) setIsAdmin(true);
+    if (!isEmbed) {
+      let cancelled = false;
+      const run = () => {
+        if (cancelled) return;
+        fetch('/api/admin/auth/check')
+          .then((r) => r.json())
+          .then((d) => {
+            if (!cancelled && d.authenticated) setIsAdmin(true);
           })
           .catch(() => {});
-      }
-      return;
+      };
+      const idleId =
+        typeof requestIdleCallback !== 'undefined'
+          ? requestIdleCallback(() => run(), { timeout: 3000 })
+          : null;
+      const timeoutId =
+        idleId == null ? window.setTimeout(run, 1) : null;
+      return () => {
+        cancelled = true;
+        if (idleId != null && typeof cancelIdleCallback !== 'undefined') {
+          cancelIdleCallback(idleId);
+        }
+        if (timeoutId != null) window.clearTimeout(timeoutId);
+      };
     }
-    fetch('/api/admin/auth/check').then(r => r.json())
-      .then(d => { if (d.authenticated) setIsAdmin(true); })
-      .catch(() => {});
+
+    // Embed: session cookies often missing in app WebView. URL ?admin_secret= is one path;
+    // Flutter MapTab injects window.__ADMIN_SECRET on page load — poll until it appears.
+    let cancelled = false;
+    const trySecret = (secret: string | null | undefined) => {
+      if (!secret || cancelled) return;
+      fetch('/api/admin/auth/check', {
+        headers: { 'X-Auth-Secret': secret },
+      })
+        .then(r => r.json())
+        .then(d => {
+          if (!cancelled && d.authenticated) setIsAdmin(true);
+        })
+        .catch(() => {});
+    };
+
+    const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+    trySecret(params.get('admin_secret'));
+    trySecret(
+      typeof window !== 'undefined'
+        ? (window as unknown as { __ADMIN_SECRET?: string }).__ADMIN_SECRET
+        : undefined,
+    );
+
+    let attempts = 0;
+    const intervalId = window.setInterval(() => {
+      attempts += 1;
+      const injected = (window as unknown as { __ADMIN_SECRET?: string }).__ADMIN_SECRET;
+      if (injected) {
+        trySecret(injected);
+        window.clearInterval(intervalId);
+      } else if (attempts >= 60) {
+        window.clearInterval(intervalId);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
   }, [isEmbed]);
 
   const mapProps = {

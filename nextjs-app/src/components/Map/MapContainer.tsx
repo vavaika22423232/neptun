@@ -1,16 +1,19 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useDeferredValue, type MutableRefObject } from 'react';
 import L from 'leaflet';
 import type { Marker, Alarm, FusionTrajectory } from '@/types';
 import { THREAT_ICONS, THREAT_NAMES } from '@/types';
 import { CACHE_VERSION, SVG_FADE_START_ZOOM, SVG_FADE_END_ZOOM } from '@/lib/constants';
+import { bearingToWebIconRotationCssDeg, resolveThreatBearingDeg } from '@/lib/threat-bearing';
 
 // Re-export MAP_BOUNDS locally to avoid circular deps
 const MAP_BOUNDS = { minLat: 44.2, maxLat: 52.4, minLng: 22.0, maxLng: 40.2 } as const;
 
-/** Smooth glide between server positions (SSE / poll), not instant jumps */
-const MOVE_ANIM_MS = 5000;
+// Global state for Phase 2 optimizations (persists across Navigations)
+const SVG_DOM_CACHE: Record<string, SVGElement> = {};
+let TOOLTIP_SINGLETON: HTMLDivElement | null = null;
+
 const MOVE_MIN_DIST_KM = 0.004;
 
 function stableMarkerKey(m: Marker): string {
@@ -26,9 +29,7 @@ function stableMarkerKey(m: Marker): string {
   return `u:${Math.random().toString(36).slice(2)}`;
 }
 
-function easeOutCubic(t: number): number {
-  return 1 - (1 - t) ** 3;
-}
+
 
 function quickDistKm(aLat: number, aLng: number, bLat: number, bLng: number): number {
   const R = 6371;
@@ -58,6 +59,125 @@ function computeMarkerOpacity(marker: Marker): number {
   return 1 - t * (1 - MIN_OPACITY); // 1.0 → 0.3
 }
 
+/**
+ * Dim approximate / predictive placements and low-confidence marks (aligned with Flutter `mapVisualOpacity`).
+ */
+function computeMapVisualOpacity(marker: Marker): number {
+  const dc = marker.display_class;
+  let base = 1;
+  if (dc === 'region_signal') {
+    base = 0.62;
+  } else if (dc === 'corridor_or_bearing') {
+    base = 0.52;
+  } else if (!dc) {
+    const pm = (marker.placement_mode || '').toLowerCase();
+    if (pm === 'approximate') base = 0.62;
+    else if (pm === 'predictive') base = 0.5;
+  }
+
+  const c100 = marker.confidence_0_100;
+  if (c100 != null && Number.isFinite(c100)) {
+    const c = Math.max(0, Math.min(100, c100)) / 100;
+    if (c < 0.78) base *= 0.55 + 0.45 * c;
+  } else if (marker.confidence != null && Number.isFinite(marker.confidence) && marker.confidence < 0.78) {
+    const c = Math.max(0, Math.min(1, marker.confidence));
+    base *= 0.55 + 0.45 * c;
+  }
+  return Math.max(0.32, Math.min(1, base));
+}
+
+function combinedMarkerOpacity(marker: Marker): number {
+  return Math.max(0.12, Math.min(1, computeMarkerOpacity(marker) * computeMapVisualOpacity(marker)));
+}
+
+/** Stale / cached API payloads without display policy — default to legacy precise pin. */
+function normalizeMarkerDisplay(marker: Marker): Marker {
+  if (
+    marker.display_class &&
+    typeof marker.show_precise_pin === 'boolean' &&
+    typeof marker.display_uncertainty_km === 'number'
+  ) {
+    return marker;
+  }
+  return {
+    ...marker,
+    display_class: 'corroborated_point',
+    show_precise_pin: true,
+    display_uncertainty_km: 0,
+    display_trust_hint_uk: marker.display_trust_hint_uk ?? '',
+  };
+}
+
+function destinationLatLng(lat: number, lng: number, bearingDeg: number, distKm: number): [number, number] {
+  const R = 6371;
+  const brng = (bearingDeg * Math.PI) / 180;
+  const lat1 = (lat * Math.PI) / 180;
+  const lng1 = (lng * Math.PI) / 180;
+  const lat2 = Math.asin(
+    Math.sin(lat1) * Math.cos(distKm / R) + Math.cos(lat1) * Math.sin(distKm / R) * Math.cos(brng),
+  );
+  const lng2 =
+    lng1 +
+    Math.atan2(
+      Math.sin(brng) * Math.sin(distKm / R) * Math.cos(lat1),
+      Math.cos(distKm / R) - Math.sin(lat1) * Math.sin(lat2),
+    );
+  return [(lat2 * 180) / Math.PI, (lng2 * 180) / Math.PI];
+}
+
+function corridorPolylineLatLngs(marker: Marker): L.LatLngExpression[] | null {
+  if (marker.display_class !== 'corridor_or_bearing') return null;
+  const t = marker.trajectory;
+  if (t?.start && t?.end) return [t.start, t.end];
+  if (t?.waypoints && t.waypoints.length >= 2) return t.waypoints;
+  const brg = resolveThreatBearingDeg(marker);
+  if (brg == null) return null;
+  const end = destinationLatLng(marker.lat, marker.lng, brg, 32);
+  return [[marker.lat, marker.lng], end];
+}
+
+function displayLayersSyncKey(marker: Marker, lat: number, lng: number): string {
+  const pts = corridorPolylineLatLngs(marker);
+  const pSig = pts ? JSON.stringify(pts) : '';
+  return `${marker.display_class ?? ''}|${pSig}|${lat.toFixed(4)}_${lng.toFixed(4)}`;
+}
+
+function syncDisplayUncertaintyLayers(
+  entry: MapMarkerEntry,
+  marker: Marker,
+  lat: number,
+  lng: number,
+  group: L.LayerGroup,
+  trajGroup: L.LayerGroup,
+) {
+  const key = displayLayersSyncKey(marker, lat, lng);
+  if (entry.lastDisplaySyncKey === key) return;
+  entry.lastDisplaySyncKey = key;
+
+  if (entry.uncertaintyCircle) {
+    group.removeLayer(entry.uncertaintyCircle);
+    entry.uncertaintyCircle = null;
+  }
+  if (entry.corridorLine) {
+    trajGroup.removeLayer(entry.corridorLine);
+    entry.corridorLine = null;
+  }
+
+  if (marker.display_class === 'corridor_or_bearing') {
+    const pts = corridorPolylineLatLngs(marker);
+    if (pts && pts.length >= 2) {
+      entry.corridorLine = L.polyline(pts, {
+        color: '#ffab40',
+        weight: 2,
+        opacity: 0.88,
+        dashArray: '8 6',
+      }).addTo(trajGroup);
+    }
+  }
+
+  // Uncertainty rings (L.circle) intentionally not drawn — pins only; trust hints remain in popup/tooltip.
+}
+
 function mapHashCode(str: string): number {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -84,59 +204,99 @@ function jitterCoords(lat: number, lng: number, index: number, seedStr: string, 
   return [lat + dLat, lng + dLng];
 }
 
-function computeRotationDeg(marker: Marker): number {
-  const traj = marker.trajectory;
-  let rotationAngle = 0;
-  if (traj?.start && traj?.end) {
-    const dLng = traj.end[1] - traj.start[1];
-    const dLat = traj.end[0] - traj.start[0];
-    if (Math.abs(dLat) > 0.001 || Math.abs(dLng) > 0.001) {
-      rotationAngle = Math.atan2(dLng, dLat) * (180 / Math.PI) + 180;
-    }
-  } else if (marker.course_bearing != null) {
-    rotationAngle = marker.course_bearing + 180;
-  }
-  return rotationAngle;
+/** CSS rotation for threat raster/SVG icons (see bearingToWebIconRotationCssDeg). */
+function computeIconRotationCssDeg(marker: Marker): number {
+  const brg = resolveThreatBearingDeg(marker);
+  if (brg == null) return 0;
+  return bearingToWebIconRotationCssDeg(brg);
 }
 
-function rotationVisualKey(marker: Marker): string {
-  const r = Math.round(computeRotationDeg(marker) * 2) / 2;
+/** Icon DOM (file, type, count badge) — full `setIcon` when this changes. */
+function threatIconLayoutKey(marker: Marker): string {
   const tt = marker.threat_type || 'default';
   const icon = marker.marker_icon || THREAT_ICONS[tt] || 'shahed3.webp';
-  const c = marker.count ?? 1;
-  return `${r}|${icon}|${tt}|${c}`;
+  const c = Number(marker.count) || 1;
+  return `${icon}|${tt}|${c}`;
 }
+
+/** Rounded bearing — cheap `img.style.transform` updates only. */
+function threatIconBearingKey(marker: Marker): string {
+  const brg = resolveThreatBearingDeg(marker);
+  const r = brg != null ? Math.round(brg * 2) / 2 : 0;
+  return String(r);
+}
+
+/** LRU cache for DivIcon instances — avoids recreating identical DOM trees */
+const _iconCache = new Map<string, L.DivIcon>();
+const ICON_CACHE_MAX = 120;
 
 function buildThreatDivIcon(marker: Marker): L.DivIcon {
   const threatType = marker.threat_type || 'default';
   const iconFile = marker.marker_icon || THREAT_ICONS[threatType] || 'shahed3.webp';
-  const isShahed = threatType === 'shahed' || threatType === 'drone';
-  const size = isShahed ? 44 : 32;
-  const rotationAngle = computeRotationDeg(marker);
+  const isShahed =
+    threatType === 'shahed' ||
+    threatType === 'drone' ||
+    threatType === 'uav' ||
+    threatType === 'default';
+  let size = isShahed ? 44 : 32;
+  if (/fpvdrone/i.test(iconFile)) size = Math.round(size / 2);
+  if (iconFile === 'shahed3.webp' || iconFile === 'icon_missile.svg') {
+    size = Math.max(16, Math.round(size / 1.5));
+    size = Math.round(size * 1.2);
+  }
+  const rotationAngle = computeIconRotationCssDeg(marker);
   const count = Number(marker.count) || 1;
-
   let badge = '';
   if (count > 1) {
-    badge = `<span style="position:absolute;top:-6px;right:-6px;background:#ff2a5f;color:#fff;font-size:11px;font-weight:700;min-width:18px;height:18px;line-height:18px;text-align:center;border-radius:9px;padding:0 4px;pointer-events:none;box-shadow:0 0 6px rgba(255,42,95,0.6);">${count}</span>`;
+    badge = `<span class="marker-count-badge">${count}</span>`;
   }
 
-  const html = `<div class="threat-marker" data-type="${threatType}" style="position:relative;width:${size}px;height:${size}px;">
-    <img src="/${iconFile}?${CACHE_VERSION}" alt="${threatType}" loading="lazy" decoding="async"
-         style="transform:rotate(${rotationAngle}deg);width:100%;height:100%;"
-         onerror="this.src='/shahed3.webp'">${badge}</div>`;
+  // Cache key based solely on visual appearance
+  const cacheKey = `${threatType}|${iconFile}|${size}|${Math.round(rotationAngle)}|${count}`;
+  const cached = _iconCache.get(cacheKey);
+  if (cached) return cached;
 
-  return L.divIcon({
+  const fetchPriority =
+    threatType === 'shahed' ||
+    threatType === 'drone' ||
+    threatType === 'uav' ||
+    threatType === 'default'
+      ? 'high'
+      : 'low';
+  const shahedTheme =
+    iconFile === 'shahed3.webp' &&
+    (threatType === 'shahed' || threatType === 'drone' || threatType === 'uav' || threatType === 'default');
+  const shahedRasterAttr = shahedTheme ? ' data-icon="shahed3"' : '';
+  const html = `<div class="threat-marker" data-type="${threatType}"${shahedRasterAttr} style="position:relative;width:${size}px;height:${size}px;">
+    <img src="/${iconFile}?${CACHE_VERSION}" alt="${threatType}" decoding="async" fetchpriority="${fetchPriority}"
+         style="transform:rotate(${rotationAngle}deg);width:100%;height:100%;"
+         onerror="this.src='/shahed3.webp?${CACHE_VERSION}'">${badge}</div>`;
+
+  const icon = L.divIcon({
     className: 'threat-marker-icon',
     html,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
   });
+
+  // Evict oldest when cache is full
+  if (_iconCache.size >= ICON_CACHE_MAX) {
+    const first = _iconCache.keys().next().value;
+    if (first !== undefined) _iconCache.delete(first);
+  }
+  _iconCache.set(cacheKey, icon);
+  return icon;
 }
 
 type MapMarkerEntry = {
   leafletMarker: L.Marker;
   polyline: L.Polyline | null;
-  arrowMarker: L.Marker | null;
+  /** Tip dot at stem end (CircleMarker); kept as Layer for removeLayer. */
+  arrowMarker: L.Layer | null;
+  /** Public-map uncertainty ring (region_signal / corroborated_point). */
+  uncertaintyCircle: L.Circle | null;
+  corridorLine: L.Polyline | null;
+  lastDisplaySyncKey?: string;
   fromLat: number;
   fromLng: number;
   toLat: number;
@@ -144,16 +304,67 @@ type MapMarkerEntry = {
   animStart: number;
   animating: boolean;
   lastData: Marker;
-  lastRotationKey: string;
+  lastIconLayoutKey: string;
+  lastIconBearingKey: string;
 };
 
+/** Re-bind touchend after Leaflet replaces the icon DOM (setIcon / rotation update). */
+const markerTouchPopupRebind = new WeakMap<L.Marker, () => void>();
+
+/**
+ * WebView / mobile browsers often do not fire a synthetic `click` on divIcon markers.
+ * Leaflet's map `click` also does not fire when the target is a marker. We listen for
+ * `touchend` on the icon DOM and use preventDefault to suppress the duplicate click.
+ */
+function attachThreatMarkerPopupHandlers(
+  leafletMarker: L.Marker,
+  mapEntry: MapMarkerEntry,
+  isAdminRef: MutableRefObject<boolean | undefined>,
+) {
+  let lastOpenAt = 0;
+  const openPopup = () => {
+    const now = Date.now();
+    if (now - lastOpenAt < 320) return;
+    lastOpenAt = now;
+    hideTooltip();
+    const m = mapEntry.lastData;
+    const tt = m.threat_type || 'default';
+    const popupHtml = buildMarkerPopup(m, tt, !!isAdminRef.current);
+    leafletMarker.bindPopup(popupHtml, {
+      className: 'admin-marker-popup',
+      maxWidth: 260,
+      closeButton: true,
+    }).openPopup();
+  };
+
+  leafletMarker.on('click', openPopup);
+
+  const touchHandler = (ev: Event) => {
+    const te = ev as TouchEvent;
+    if (te.touches?.length) return;
+    if (!te.changedTouches || te.changedTouches.length !== 1) return;
+    L.DomEvent.preventDefault(ev);
+    openPopup();
+  };
+
+  const bindTouchToIcon = () => {
+    const el = leafletMarker.getElement();
+    if (!el) return;
+    L.DomEvent.off(el, 'touchend', touchHandler);
+    L.DomEvent.on(el, 'touchend', touchHandler);
+  };
+
+  markerTouchPopupRebind.set(leafletMarker, bindTouchToIcon);
+  leafletMarker.on('add', bindTouchToIcon);
+}
+
+/** Clear any legacy trajectory layers (direction stems disabled). */
 function updateEntryTrajectory(
   entry: MapMarkerEntry,
-  startLat: number,
-  startLng: number,
+  _currentLat: number,
+  _currentLng: number,
   trajGroup: L.LayerGroup,
 ) {
-  // COMPLETELY DISABLED: Remove any existing lines/arrows and return
   if (entry.polyline) {
     trajGroup.removeLayer(entry.polyline);
     entry.polyline = null;
@@ -162,7 +373,6 @@ function updateEntryTrajectory(
     trajGroup.removeLayer(entry.arrowMarker);
     entry.arrowMarker = null;
   }
-  return;
 }
 
 interface MapContainerProps {
@@ -174,6 +384,9 @@ interface MapContainerProps {
 }
 
 export default function MapContainer({ markers, alarms, fusionTrajectories, isAdmin, onMarkerAction }: MapContainerProps) {
+  const deferredMarkers = useDeferredValue(markers);
+  const deferredAlarms = useDeferredValue(alarms);
+
   const mapRef = useRef<L.Map | null>(null);
   const mapElRef = useRef<HTMLDivElement>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
@@ -184,6 +397,9 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
   const markerRegistryRef = useRef<Map<string, MapMarkerEntry>>(new Map());
   const animRafRef = useRef<number | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
+  const isAdminRef = useRef(isAdmin);
+  isAdminRef.current = isAdmin;
+  const isInteractingRef = useRef(false);
 
   // Initialize map (must match original init order: tiles -> layers -> SVG -> events -> fitBounds)
   useEffect(() => {
@@ -199,27 +415,27 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
       center: ukraineCenter,
       zoom: 6,
       minZoom: 5,
-      maxZoom: 18,
+      maxZoom: 19,
       zoomControl: false,
       attributionControl: false,
       dragging: true,
       scrollWheelZoom: true,
       doubleClickZoom: true,
       touchZoom: true,
+      preferCanvas: true, // Use Canvas for vectors (Fusion tracks)
       zoomAnimation: true,
       fadeAnimation: true,
       markerZoomAnimation: true,
-      transform3DLimit: 2, // Helps with some Android rendering issues
-      zoomSnap: 0.1, // Small snap for better trackpad feel
-      zoomDelta: 2,
-      wheelPxPerZoomLevel: 10, // Ultra-sensitive for Mac trackpad/pinch
-      wheelDebounceTime: 40,
+      transform3DLimit: 2,
+      zoomSnap: 0.5,
+      zoomDelta: 1,
+      wheelPxPerZoomLevel: 60,
+      wheelDebounceTime: 60,
       inertia: true,
       inertiaDuration: 1.5,
       inertiaMaxSpeed: 3000,
       easeLinearity: 0.1,
-      keepBuffer: 3,
-      tap: false, // Performance & double-tap fix for Android/mobile
+      keepBuffer: 2,
       maxBounds: [[40, 18], [56, 44]],
       maxBoundsViscosity: 0.8,
     } as any);
@@ -260,9 +476,31 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
 
       if (aborted) return;
 
-      // 4. Handle zoom changes - fade SVG at high zoom
-      map.on('zoomend', () => updateSvgOpacity(map));
-      map.on('zoom', () => updateSvgOpacity(map));
+      // 4. Handle zoom changes - fade SVG at high zoom (rAF-throttle: `zoom` fires very often; INP)
+      let opacityRaf: number | null = null;
+      const scheduleOpacityUpdate = () => {
+        if (opacityRaf != null) return;
+        opacityRaf = requestAnimationFrame(() => {
+          opacityRaf = null;
+          updateSvgOpacity(map);
+        });
+      };
+
+      map.on('movestart', () => { isInteractingRef.current = true; });
+      map.on('moveend', () => { 
+        // Delay resetting slightly to allow Leaflet's internal states to settle
+        setTimeout(() => { isInteractingRef.current = false; }, 100);
+      });
+      map.on('zoomstart', () => { isInteractingRef.current = true; });
+      map.on('zoomend', () => {
+        setTimeout(() => { isInteractingRef.current = false; }, 100);
+        if (opacityRaf != null) {
+          cancelAnimationFrame(opacityRaf);
+          opacityRaf = null;
+        }
+        updateSvgOpacity(map);
+      });
+      map.on('zoom', scheduleOpacityUpdate);
 
       // 5. Initial opacity update
       updateSvgOpacity(map);
@@ -295,11 +533,18 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const w = window as any;
 
+    const adminJsonHeaders = (): Record<string, string> => {
+      const h: Record<string, string> = { 'Content-Type': 'application/json' };
+      const secret = w.__ADMIN_SECRET;
+      if (secret) h['X-Auth-Secret'] = String(secret);
+      return h;
+    };
+
     w.__adminDeleteMarker = async (id: string, lat: number, lng: number, text: string) => {
       try {
         const res = await fetch('/api/admin/markers/delete', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: adminJsonHeaders(),
           body: JSON.stringify({ id: id || undefined, lat, lng, text }),
         });
         if (res.ok) {
@@ -316,7 +561,7 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
       try {
         const res = await fetch('/api/admin/hidden/hide', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: adminJsonHeaders(),
           body: JSON.stringify({ lat, lng, text, source: 'auto' }),
         });
         if (res.ok) {
@@ -335,60 +580,24 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
   }, [isAdmin, onMarkerAction]);
 
   const scheduleAnimFrame = useCallback(() => {
-    if (animRafRef.current != null) return;
-    const step = () => {
-      animRafRef.current = null;
-      const registry = markerRegistryRef.current;
-      const trajGroup = trajLayerRef.current;
-      if (!trajGroup) return;
-
-      const now = performance.now();
-      let needsNext = false;
-
-      for (const entry of registry.values()) {
-        if (!entry.animating) continue;
-
-        const elapsed = now - entry.animStart;
-        const t = Math.min(1, elapsed / MOVE_ANIM_MS);
-
-        if (t >= 1) {
-          entry.leafletMarker.setLatLng([entry.toLat, entry.toLng]);
-          entry.fromLat = entry.toLat;
-          entry.fromLng = entry.toLng;
-          entry.animating = false;
-          updateEntryTrajectory(entry, entry.toLat, entry.toLng, trajGroup);
-        } else {
-          const e = easeOutCubic(t);
-          const lat = entry.fromLat + (entry.toLat - entry.fromLat) * e;
-          const lng = entry.fromLng + (entry.toLng - entry.fromLng) * e;
-          entry.leafletMarker.setLatLng([lat, lng]);
-          updateEntryTrajectory(entry, lat, lng, trajGroup);
-          needsNext = true;
-        }
-      }
-
-      if (needsNext) {
-        animRafRef.current = requestAnimationFrame(step);
-      }
-    };
-    animRafRef.current = requestAnimationFrame(step);
+    // Phase 2: JS loop for markers removed. Movement is now 100% CSS-driven.
+    // If we need custom layers that don't support CSS transitions (like Canvas lines),
+    // we would add them here.
   }, []);
 
   const syncMarkers = useCallback(
-    (markersData: Marker[], requestAnim: () => void) => {
+    (markersData: Marker[]) => {
       const group = markersLayerRef.current;
       const trajGroup = trajLayerRef.current;
       if (!group || !trajGroup) return;
 
       const registry = markerRegistryRef.current;
 
-      // Use markers as-is — count badge handles groups visually
-      const explodedData = markersData;
-
-      const sorted = [...explodedData].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      // Iterate markers directly — avoid expensive sort on each update
       const seen = new Set<string>();
 
-      for (const marker of sorted) {
+      for (const raw of markersData) {
+        const marker = normalizeMarkerDisplay(raw);
         const lat = parseFloat(String(marker.lat));
         const lng = parseFloat(String(marker.lng));
         if (isNaN(lat) || isNaN(lng)) continue;
@@ -403,7 +612,8 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
 
         const key = stableMarkerKey(marker);
         seen.add(key);
-        const rotKey = rotationVisualKey(marker);
+        const layoutKey = threatIconLayoutKey(marker);
+        const bearingKey = threatIconBearingKey(marker);
 
         let entry = registry.get(key);
         if (!entry) {
@@ -413,6 +623,8 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
             leafletMarker,
             polyline: null,
             arrowMarker: null,
+            uncertaintyCircle: null,
+            corridorLine: null,
             fromLat: lat,
             fromLng: lng,
             toLat: lat,
@@ -420,7 +632,8 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
             animStart: 0,
             animating: false,
             lastData: marker,
-            lastRotationKey: rotKey,
+            lastIconLayoutKey: layoutKey,
+            lastIconBearingKey: bearingKey,
           };
 
           leafletMarker.on('mouseover', (e: L.LeafletMouseEvent) => {
@@ -428,27 +641,16 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
           });
           leafletMarker.on('mouseout', hideTooltip);
 
-          if (isAdmin) {
-            leafletMarker.on('click', () => {
-              hideTooltip();
-              const m = mapEntry.lastData;
-              const tt = m.threat_type || 'default';
-              const popupHtml = buildAdminPopup(m, tt);
-              leafletMarker.bindPopup(popupHtml, {
-                className: 'admin-marker-popup',
-                maxWidth: 260,
-                closeButton: true,
-              }).openPopup();
-            });
-          }
+          // Tap/click + touchend (WebView): show popup for everyone.
+          attachThreatMarkerPopupHandlers(leafletMarker, mapEntry, isAdminRef);
 
           group.addLayer(leafletMarker);
           registry.set(key, mapEntry);
           entry = mapEntry;
           updateEntryTrajectory(entry, lat, lng, trajGroup);
 
-          // Apply age-based opacity (use event since DOM may not be ready yet)
-          const opacity = computeMarkerOpacity(marker);
+          // Age × placement/confidence (use event since DOM may not be ready yet)
+          const opacity = combinedMarkerOpacity(marker);
           leafletMarker.once('add', () => {
             const el = leafletMarker.getElement();
             if (el) (el as HTMLElement).style.opacity = String(opacity);
@@ -456,74 +658,136 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
           // If already added, apply directly
           const el = leafletMarker.getElement();
           if (el) (el as HTMLElement).style.opacity = String(opacity);
+          syncDisplayUncertaintyLayers(mapEntry, marker, lat, lng, group, trajGroup);
         } else {
           entry.lastData = marker;
-          if (rotKey !== entry.lastRotationKey) {
-            entry.lastRotationKey = rotKey;
+          const layout = threatIconLayoutKey(marker);
+          const bearing = threatIconBearingKey(marker);
+          const rot = computeIconRotationCssDeg(marker);
+          if (layout !== entry.lastIconLayoutKey) {
+            entry.lastIconLayoutKey = layout;
+            entry.lastIconBearingKey = bearing;
             entry.leafletMarker.setIcon(buildThreatDivIcon(marker));
+            markerTouchPopupRebind.get(entry.leafletMarker)?.();
+          } else if (bearing !== entry.lastIconBearingKey) {
+            entry.lastIconBearingKey = bearing;
+            const markerEl = entry.leafletMarker.getElement();
+            const img = markerEl?.querySelector('img') as HTMLElement;
+            if (img) {
+              img.style.transform = `rotate(${rot}deg)`;
+            } else {
+              entry.leafletMarker.setIcon(buildThreatDivIcon(marker));
+              markerTouchPopupRebind.get(entry.leafletMarker)?.();
+            }
           }
 
           const cur = entry.leafletMarker.getLatLng();
           const dist = quickDistKm(cur.lat, cur.lng, lat, lng);
 
-          if (dist < MOVE_MIN_DIST_KM) {
-            entry.leafletMarker.setLatLng([lat, lng]);
+          if (dist >= MOVE_MIN_DIST_KM) {
+            const map = mapRef.current;
+            const el = entry.leafletMarker.getElement();
+            const inner = el?.querySelector('.threat-marker') as HTMLElement;
+
+            // Skip visual glide if map is busy zooming or being dragged to prevent coordinate conflicts
+            const isMapStatic = !isInteractingRef.current;
+
+            if (map && isMapStatic && inner) {
+              // Relative Offset Glide Strategy (Prevents jitter during map pan)
+              const oldPoint = map.latLngToLayerPoint(cur);
+              const newPoint = map.latLngToLayerPoint([lat, lng]);
+              const dx = oldPoint.x - newPoint.x;
+              const dy = oldPoint.y - newPoint.y;
+
+              const rot = computeIconRotationCssDeg(marker);
+              
+              // 1. Immediately move container to new coordinate
+              entry.leafletMarker.setLatLng([lat, lng]);
+
+              // 2. Shift inner element back to visually match old coordinate
+              inner.classList.remove('gliding');
+              inner.style.transform = `translate3d(${dx}px, ${dy}px, 0) rotate(${rot}deg)`;
+              
+              // 3. Glide inner element to center (0,0) relative to its container
+              requestAnimationFrame(() => {
+                inner.classList.add('gliding');
+                inner.style.transform = `translate3d(0,0,0) rotate(${rot}deg)`;
+              });
+
+              // Clean up gliding class after it completes to save engine resources
+              setTimeout(() => inner.classList.remove('gliding'), 1300);
+            } else {
+              entry.leafletMarker.setLatLng([lat, lng]);
+            }
+
             entry.fromLat = lat;
             entry.fromLng = lng;
             entry.toLat = lat;
             entry.toLng = lng;
-            entry.animating = false;
-            updateEntryTrajectory(entry, lat, lng, trajGroup);
-          } else {
-            entry.fromLat = cur.lat;
-            entry.fromLng = cur.lng;
-            entry.toLat = lat;
-            entry.toLng = lng;
-            entry.animStart = performance.now();
-            entry.animating = true;
-            requestAnim();
           }
 
-          // Update age-based opacity
+          // Update age × placement/confidence
           const el = entry.leafletMarker.getElement();
-          if (el) (el as HTMLElement).style.opacity = String(computeMarkerOpacity(marker));
+          if (el) (el as HTMLElement).style.opacity = String(combinedMarkerOpacity(marker));
+          syncDisplayUncertaintyLayers(entry, marker, lat, lng, group, trajGroup);
         }
       }
 
       for (const [key, entry] of registry) {
         if (seen.has(key)) continue;
         group.removeLayer(entry.leafletMarker);
+        if (entry.uncertaintyCircle) group.removeLayer(entry.uncertaintyCircle);
+        if (entry.corridorLine) trajGroup.removeLayer(entry.corridorLine);
         if (entry.polyline) trajGroup.removeLayer(entry.polyline);
         if (entry.arrowMarker) trajGroup.removeLayer(entry.arrowMarker);
         registry.delete(key);
       }
     },
-    [isAdmin],
+    [],
   );
 
   useEffect(() => {
     if (!isLoaded || !markersLayerRef.current || !trajLayerRef.current) return;
-    syncMarkers(markers, scheduleAnimFrame);
-  }, [markers, isLoaded, scheduleAnimFrame, syncMarkers]);
+    syncMarkers(deferredMarkers);
+  }, [deferredMarkers, isLoaded, syncMarkers]);
 
   // Render alarms on SVG overlays
+  // Track active alarm IDs to avoid unnecessary DOM churn
+  const activeAlarmIdsRef = useRef<Set<string>>(new Set());
+
   const renderAlarms = useCallback((alarmsData: Alarm[]) => {
     const statesSvg = statesSvgRef.current;
     const districtsSvg = districtsSvgRef.current;
 
-    // Clear all existing alarms
-    if (statesSvg) statesSvg.querySelectorAll('.alarm').forEach((el) => el.classList.remove('alarm'));
-    if (districtsSvg) districtsSvg.querySelectorAll('.alarm').forEach((el) => el.classList.remove('alarm'));
-
-    alarmsData.forEach((region) => {
-      if (!region.activeAlerts?.length) return;
-
-      if (region.regionType === 'State' && statesSvg) {
-        statesSvg.querySelectorAll(`[id="${region.regionId}"]`).forEach((el) => el.classList.add('alarm'));
-      } else if (region.regionType === 'District' && districtsSvg) {
-        districtsSvg.querySelectorAll(`[id="${region.regionId}"]`).forEach((el) => el.classList.add('alarm'));
+    // Build new alarm set
+    const newAlarmIds = new Set<string>();
+    for (const region of alarmsData) {
+      if (region.activeAlerts?.length) {
+        newAlarmIds.add(`${region.regionType}:${region.regionId}`);
       }
-    });
+    }
+
+    const prevAlarmIds = activeAlarmIdsRef.current;
+
+    // Remove alarms that are no longer active (diff-based, not clear-all)
+    for (const key of prevAlarmIds) {
+      if (!newAlarmIds.has(key)) {
+        const [type, id] = key.split(':');
+        const svg = type === 'State' ? statesSvg : districtsSvg;
+        if (svg) svg.querySelectorAll(`[id="${id}"]`).forEach((el) => el.classList.remove('alarm'));
+      }
+    }
+
+    // Add new alarms
+    for (const key of newAlarmIds) {
+      if (!prevAlarmIds.has(key)) {
+        const [type, id] = key.split(':');
+        const svg = type === 'State' ? statesSvg : districtsSvg;
+        if (svg) svg.querySelectorAll(`[id="${id}"]`).forEach((el) => el.classList.add('alarm'));
+      }
+    }
+
+    activeAlarmIdsRef.current = newAlarmIds;
   }, []);
 
   // Render fusion trajectories
@@ -536,8 +800,8 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
 
   useEffect(() => {
     if (!isLoaded) return;
-    renderAlarms(alarms);
-  }, [alarms, isLoaded, renderAlarms]);
+    renderAlarms(deferredAlarms);
+  }, [deferredAlarms, isLoaded, renderAlarms]);
 
   useEffect(() => {
     if (!isLoaded || !fusionLayerRef.current) return;
@@ -556,20 +820,20 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
 // ============================================
 
 async function loadMapTiles(map: L.Map, isMobile: boolean) {
-  // Base Satellite + Labels (Google Maps Hybrid, Ukrainian Language)
+  // Base Satellite + Labels (Google Maps Hybrid, Ukrainian Language).
+  // maxZoom aligned with map (19): SVG overlays fade out by zoom 8 (constants), so extra zoom
+  // only enlarges baked-in hybrid labels. For adjustable label fonts see map-basemap-vector-roadmap.ts.
   L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&hl=uk', {
     attribution: '',
     maxZoom: 19,
     className: 'dark-satellite-layer',
-  }).addTo(map);
+    updateWhenIdle: isMobile, // On mobile, only load tiles after pan/zoom ends
+    updateWhenZooming: false, // Don't load tiles during zoom animation
+    keepBuffer: 2, // Less offscreen tile memory
+    detectRetina: !isMobile, // Halve tile requests on mobile retina screens
+  } as L.TileLayerOptions).addTo(map);
 
-  // Clean Light Map (CartoDB Positron without labels, since we have our SVG labels)
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
-    attribution: '',
-    subdomains: 'abcd',
-    maxZoom: 19,
-    className: 'light-streets-layer',
-  }).addTo(map);
+  // CartoDB light layer removed — was always opacity: 0 in both themes
 }
 
 async function loadSvgOverlays(map: L.Map): Promise<{ statesSvg: SVGElement; districtsSvg: SVGElement } | null> {
@@ -579,22 +843,28 @@ async function loadSvgOverlays(map: L.Map): Promise<{ statesSvg: SVGElement; dis
       [MAP_BOUNDS.maxLat, MAP_BOUNDS.maxLng]
     );
 
-    const [statesRes, districtsRes, namesRes] = await Promise.all([
-      fetch(`/ukraine_states.svg?${CACHE_VERSION}`, { cache: 'force-cache' }),
-      fetch(`/ukraine_districts_detailed.svg?${CACHE_VERSION}`, { cache: 'force-cache' }),
-      fetch(`/ukraine_names.svg?${CACHE_VERSION}`, { cache: 'force-cache' }),
-    ]);
+    const svgUrls = [
+      `/ukraine_states.svg?${CACHE_VERSION}`,
+      `/ukraine_districts_detailed.svg?${CACHE_VERSION}`,
+      `/ukraine_names.svg?${CACHE_VERSION}`,
+    ];
 
-    const [statesText, districtsText, namesText] = await Promise.all([
-      statesRes.text(),
-      districtsRes.text(),
-      namesRes.text(),
-    ]);
-
+    const results: SVGElement[] = [];
     const parser = new DOMParser();
-    const statesSvg = parser.parseFromString(statesText, 'image/svg+xml').documentElement as unknown as SVGElement;
-    const districtsSvg = parser.parseFromString(districtsText, 'image/svg+xml').documentElement as unknown as SVGElement;
-    const namesSvg = parser.parseFromString(namesText, 'image/svg+xml').documentElement as unknown as SVGElement;
+
+    for (const url of svgUrls) {
+      if (SVG_DOM_CACHE[url]) {
+        results.push(SVG_DOM_CACHE[url].cloneNode(true) as SVGElement);
+        continue;
+      }
+      const res = await fetch(url, { cache: 'force-cache' });
+      const text = await res.text();
+      const svg = parser.parseFromString(text, 'image/svg+xml').documentElement as unknown as SVGElement;
+      SVG_DOM_CACHE[url] = svg; // Cache the original template
+      results.push(svg.cloneNode(true) as SVGElement);
+    }
+
+    const [statesSvg, districtsSvg, namesSvg] = results;
 
     statesSvg.classList.add('svg-states-layer');
     districtsSvg.classList.add('svg-districts-layer');
@@ -605,7 +875,6 @@ async function loadSvgOverlays(map: L.Map): Promise<{ statesSvg: SVGElement; dis
     L.svgOverlay(districtsSvg, bounds, { interactive: true, zIndex: 101 }).addTo(map);
     L.svgOverlay(namesSvg, bounds, { interactive: false, zIndex: 102 }).addTo(map);
 
-    console.log('SVG overlays loaded and positioned');
     return { statesSvg, districtsSvg };
   } catch (error) {
     console.error('Error loading SVG overlays:', error);
@@ -634,7 +903,7 @@ function updateSvgOpacity(map: L.Map) {
   }
 
   // Apply to SVG overlays
-  const svgOpacity = fadeOpacity * 0.7;
+  const svgOpacity = fadeOpacity * 0.82;
   document.querySelectorAll('.svg-states-layer, .svg-districts-layer').forEach((el) => {
     (el as HTMLElement).style.opacity = String(svgOpacity);
   });
@@ -662,44 +931,69 @@ function formatKyivTime(isoStr: string): string {
 }
 
 function showTooltip(event: MouseEvent, marker: Marker, threatType: string) {
-  hideTooltip();
-  const tooltip = document.createElement('div');
-  tooltip.className = 'marker-tooltip';
-  tooltip.id = 'active-tooltip';
+  if (!TOOLTIP_SINGLETON) {
+    TOOLTIP_SINGLETON = document.createElement('div');
+    TOOLTIP_SINGLETON.className = 'marker-tooltip';
+    TOOLTIP_SINGLETON.id = 'active-tooltip';
+    document.body.appendChild(TOOLTIP_SINGLETON);
+  }
 
-  const typeName = THREAT_NAMES[threatType] || threatType;
+  const tooltip = TOOLTIP_SINGLETON;
+   const typeName = THREAT_NAMES[threatType] || threatType;
+  const trustRaw = (marker.display_trust_hint_uk || '').replace(/</g, '&lt;');
+  const trustLine = trustRaw
+    ? `<div class="tooltip-trust" style="font-size:11px;color:rgba(255,171,64,0.95);margin-bottom:6px;line-height:1.35;">${trustRaw}</div>`
+    : '';
+  const tipBrg = resolveThreatBearingDeg(marker);
+  const tipCourse =
+    tipBrg != null ? `<div class="tooltip-course">Курс ~${Math.round(tipBrg)}°</div>` : '';
+  
   tooltip.innerHTML = `
-    <div class="tooltip-type">${typeName}</div>
-    <div class="tooltip-place">${marker.place || 'Невідомо'}</div>
-    ${marker.date ? `<div class="tooltip-time">${formatKyivTime(marker.date)}</div>` : ''}
+    ${trustLine}
+    <div class="tooltip-type" style="font-weight:600;font-size:13px;margin-bottom:4px;color:#ff2a5f;">${typeName}</div>
+    <div class="tooltip-place" style="color:rgba(255,255,255,0.7);margin-bottom:2px;">${marker.place || 'Невідомо'}</div>
+    ${tipCourse}
+    ${marker.date ? `<div class="tooltip-time" style="color:rgba(255,255,255,0.4);font-size:11px;">${formatKyivTime(marker.date)}</div>` : ''}
   `;
 
-  document.body.appendChild(tooltip);
+  tooltip.style.opacity = '1';
   const rect = tooltip.getBoundingClientRect();
   let x = event.clientX + 15;
   let y = event.clientY + 15;
   if (x + rect.width > window.innerWidth) x = event.clientX - rect.width - 15;
   if (y + rect.height > window.innerHeight) y = event.clientY - rect.height - 15;
-  tooltip.style.left = `${x}px`;
-  tooltip.style.top = `${y}px`;
+  tooltip.style.transform = `translate3d(${x}px, ${y}px, 0)`;
 }
 
 function hideTooltip() {
-  document.getElementById('active-tooltip')?.remove();
+  if (TOOLTIP_SINGLETON) {
+    TOOLTIP_SINGLETON.style.opacity = '0';
+  }
 }
 
-function buildAdminPopup(marker: Marker, threatType: string): string {
+function buildMarkerPopup(marker: Marker, threatType: string, isAdminUser: boolean): string {
   const typeName = THREAT_NAMES[threatType] || threatType;
-  const markerId = (marker.id || '').replace(/'/g, "\\'");
-  const markerLat = marker.lat;
-  const markerLng = marker.lng;
-  const markerText = (marker.text || '').replace(/'/g, "\\'").replace(/\n/g, ' ').substring(0, 80);
+  const trustEsc = (marker.display_trust_hint_uk || '').replace(/</g, '&lt;');
+  const trustBlock = trustEsc
+    ? `<div style="font-size:10px;color:rgba(255,171,64,0.95);margin-bottom:8px;line-height:1.35;">${trustEsc}</div>`
+    : '';
+  const placeEsc = (marker.place || 'Невідомо').replace(/</g, '&lt;');
+  const brg = resolveThreatBearingDeg(marker);
+  const courseBlock =
+    brg != null
+      ? `<div style="font-size:10px;color:rgba(255,171,64,0.95);margin-top:4px;">Курс ~${Math.round(brg)}° (за даними карти)</div>`
+      : '';
+  const dateBlock = marker.date
+    ? `<div style="font-size:10px;color:rgba(255,255,255,0.4);margin-bottom:${isAdminUser ? '8px' : '0'};">${formatKyivTime(marker.date)}</div>`
+    : '';
 
-  return `
-    <div style="font-family:-apple-system,sans-serif;color:#fff;min-width:200px;">
-      <div style="font-size:13px;font-weight:600;margin-bottom:6px;">${typeName}</div>
-      <div style="font-size:11px;color:rgba(255,255,255,0.7);margin-bottom:2px;">${(marker.place || 'Невідомо').replace(/</g, '&lt;')}</div>
-      ${marker.date ? `<div style="font-size:10px;color:rgba(255,255,255,0.4);margin-bottom:8px;">${formatKyivTime(marker.date)}</div>` : ''}
+  let actions = '';
+  if (isAdminUser) {
+    const markerId = (marker.id || '').replace(/'/g, "\\'");
+    const markerLat = marker.lat;
+    const markerLng = marker.lng;
+    const markerText = (marker.text || '').replace(/'/g, "\\'").replace(/\n/g, ' ').substring(0, 80);
+    actions = `
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
         <button onclick="window.__adminDeleteMarker('${markerId}',${markerLat},${markerLng},'${markerText}')"
           style="background:rgba(255,82,82,0.2);color:#ff5252;border:1px solid rgba(255,82,82,0.3);border-radius:8px;padding:5px 12px;font-size:11px;cursor:pointer;display:flex;align-items:center;gap:4px;">
@@ -709,7 +1003,17 @@ function buildAdminPopup(marker: Marker, threatType: string): string {
           style="background:rgba(255,171,64,0.2);color:#ffab40;border:1px solid rgba(255,171,64,0.3);border-radius:8px;padding:5px 12px;font-size:11px;cursor:pointer;display:flex;align-items:center;gap:4px;">
           <span class="material-icons" style="font-size:14px;">visibility_off</span>Сховати
         </button>
-      </div>
+      </div>`;
+  }
+
+  return `
+    <div style="font-family:-apple-system,sans-serif;color:#fff;min-width:200px;">
+      ${trustBlock}
+      <div style="font-size:13px;font-weight:600;margin-bottom:6px;">${typeName}</div>
+      <div style="font-size:11px;color:rgba(255,255,255,0.7);margin-bottom:2px;">${placeEsc}</div>
+      ${courseBlock}
+      ${dateBlock}
+      ${actions}
     </div>
   `;
 }

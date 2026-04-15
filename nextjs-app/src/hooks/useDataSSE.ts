@@ -20,13 +20,91 @@ const trackUpdateListeners = new Set<TrackUpdateCallback>();
 const chatListeners = new Set<ChatEventCallback>();
 const adminFeedListeners = new Set<AdminFeedCallback>();
 let refCount = 0;
-let retryDelay = 3000; // exponential backoff: 3s → 6s → 12s → 30s max
+let retryDelay = 3000;
 const MAX_RETRY_DELAY = 30_000;
 
-function connectGlobalSSE() {
+let _sseToken: string | null = null;
+/** When false, token came from anonymous map bootstrap — drop on ES error so we re-POST /api/auth/token. */
+let _sseTokenFromChat = false;
+
+/** Shared with usePresence — same key and shape (U + 7 chars, length8). */
+function getOrCreateSseDeviceId(): string {
+  if (typeof window === 'undefined') return '';
+  let userId = localStorage.getItem('neptun_uid');
+  if (!userId) {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    userId = 'U';
+    for (let i = 0; i < 7; i++) {
+      userId += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    localStorage.setItem('neptun_uid', userId);
+  }
+  return userId;
+}
+
+let anonymousTokenInFlight: Promise<void> | null = null;
+
+async function ensureAnonymousSseToken(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  if (_sseToken) return;
+  if (!anonymousTokenInFlight) {
+    anonymousTokenInFlight = (async () => {
+      try {
+        const deviceId = getOrCreateSseDeviceId();
+        if (!deviceId || deviceId.length < 8) return;
+        const res = await fetch('/api/auth/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deviceId, nickname: 'Анонім' }),
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as { access_token?: string };
+        if (data.access_token) {
+          _sseToken = data.access_token;
+          _sseTokenFromChat = false;
+        }
+      } catch {
+        /* network / parse — retry on next connect */
+      }
+    })().finally(() => {
+      anonymousTokenInFlight = null;
+    });
+  }
+  await anonymousTokenInFlight;
+}
+
+export function setSSEToken(token: string) {
+  if (token === _sseToken) return;
+  _sseToken = token;
+  _sseTokenFromChat = true;
+  if (globalES) {
+    globalES.close();
+    globalES = null;
+  }
+  void connectGlobalSSE();
+}
+
+async function connectGlobalSSE() {
   if (globalES && globalES.readyState !== EventSource.CLOSED) return;
 
-  const es = new EventSource('/api/chat/stream');
+  await ensureAnonymousSseToken();
+
+  if (globalES && globalES.readyState !== EventSource.CLOSED) return;
+
+  if (!_sseToken) {
+    if (refCount > 0) {
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        void connectGlobalSSE();
+      }, retryDelay);
+      retryDelay = Math.min(retryDelay * 2, MAX_RETRY_DELAY);
+    }
+    return;
+  }
+
+  const url = `/api/chat/stream?token=${encodeURIComponent(_sseToken)}`;
+  const es = new EventSource(url);
   globalES = es;
 
   es.onmessage = (event) => {
@@ -57,11 +135,16 @@ function connectGlobalSSE() {
           try { cb(String(data.id)); } catch { /* ignore */ }
         });
       } else if (type === 'track_update' && data) {
-        // Track-based position update — apply delta directly (no refetch trigger)
-        // Regular 60s polling serves as consistency safety net
         trackUpdateListeners.forEach((cb) => {
           try { cb(data as { track_id: string; mode: string; marker: Record<string, unknown> }); } catch { /* ignore */ }
         });
+      } else if (type === 'track_batch' && data?.updates) {
+        const updates = data.updates as { track_id: string; mode: string; marker: Record<string, unknown> }[];
+        for (const u of updates) {
+          trackUpdateListeners.forEach((cb) => {
+            try { cb(u); } catch { /* ignore */ }
+          });
+        }
       } else if (type === 'admin_feed' && data) {
         adminFeedListeners.forEach((cb) => {
           try { cb(data as Record<string, unknown>); } catch { /* ignore */ }
@@ -82,9 +165,13 @@ function connectGlobalSSE() {
   es.onerror = () => {
     es.close();
     globalES = null;
+    if (!_sseTokenFromChat) _sseToken = null;
     if (refCount > 0) {
-      retryTimer = setTimeout(connectGlobalSSE, retryDelay);
-      // Exponential backoff with jitter
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        void connectGlobalSSE();
+      }, retryDelay);
       retryDelay = Math.min(retryDelay * 2, MAX_RETRY_DELAY);
     }
   };
@@ -115,7 +202,7 @@ export function useAlarmSSE(callback: AlarmCallback) {
   useEffect(() => {
     alarmListeners.add(stableCallback);
     refCount++;
-    connectGlobalSSE();
+    void connectGlobalSSE();
 
     return () => {
       alarmListeners.delete(stableCallback);
@@ -142,7 +229,7 @@ export function useMarkerSSE(callback: MarkerCallback) {
   useEffect(() => {
     markerListeners.add(stableCallback);
     refCount++;
-    connectGlobalSSE();
+    void connectGlobalSSE();
 
     return () => {
       markerListeners.delete(stableCallback);
@@ -170,7 +257,7 @@ export function useMarkerDeleteSSE(callback: MarkerDeleteCallback) {
   useEffect(() => {
     markerDeleteListeners.add(stableCallback);
     refCount++;
-    connectGlobalSSE();
+    void connectGlobalSSE();
 
     return () => {
       markerDeleteListeners.delete(stableCallback);
@@ -198,7 +285,7 @@ export function useTrackUpdateSSE(callback: TrackUpdateCallback) {
   useEffect(() => {
     trackUpdateListeners.add(stableCallback);
     refCount++;
-    connectGlobalSSE();
+    void connectGlobalSSE();
 
     return () => {
       trackUpdateListeners.delete(stableCallback);
@@ -227,7 +314,7 @@ export function useChatSSE(callback: ChatEventCallback) {
   useEffect(() => {
     chatListeners.add(stableCallback);
     refCount++;
-    connectGlobalSSE();
+    void connectGlobalSSE();
 
     return () => {
       chatListeners.delete(stableCallback);
@@ -255,7 +342,7 @@ export function useAdminFeedSSE(callback: AdminFeedCallback) {
   useEffect(() => {
     adminFeedListeners.add(stableCallback);
     refCount++;
-    connectGlobalSSE();
+    void connectGlobalSSE();
 
     return () => {
       adminFeedListeners.delete(stableCallback);

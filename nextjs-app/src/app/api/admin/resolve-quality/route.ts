@@ -35,14 +35,9 @@ export async function GET() {
       }
     }
 
-    const dimapLike = Object.entries(byStatus).filter(([k]) => k.startsWith('dimap_'));
-    const dimapTotal = dimapLike.reduce((s, [, v]) => s + v, 0);
-
     return NextResponse.json({
       sampleSize: messages.length,
       byResolveStatus: byStatus,
-      dimapLikeTotal: dimapTotal,
-      dimapLikeBreakdown: Object.fromEntries(dimapLike),
       confidenceBuckets: {
         '0.0–0.2': buckets.b0,
         '0.2–0.4': buckets.b02,

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { requireAdminAuth } from '@/lib/admin/apiAuth';
-import { broadcastSSE } from '../../stream/route';
+import { broadcastSSE } from '@/lib/chat-sse-stream';
 import { invalidateChatCache } from '../../messages/route';
 import { containsForbiddenText } from '@/lib/chat-forbidden';
 import { isModeratorDevice } from '@/lib/admin/data';
@@ -17,36 +17,30 @@ function resolveChatFile(): string {
   return fs.existsSync(path.dirname(CHAT_FILE)) ? CHAT_FILE : FALLBACK_CHAT_FILE;
 }
 
-import { getJwtSecret } from '@/lib/server-secrets';
-import { verifyChatToken } from '@/lib/chat-auth';
+import { requireChatAuth } from '@/lib/chat-auth';
 
-/**
- * PATCH /api/chat/message/[messageId]
- * Edit a chat message (author only, within 15 minutes, text only).
- */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ messageId: string }> }
 ) {
   try {
-    const authHeader = request.headers.get('Authorization') || '';
-    const token = authHeader.split(' ')[1];
-    const jwtSecret = getJwtSecret();
+    const authResult = requireChatAuth(request);
+    if (authResult instanceof Response) return authResult;
+    const identity = authResult;
 
-    if (!token || !jwtSecret) {
-      return NextResponse.json({ error: 'Потрібна авторизація' }, { status: 401 });
-    }
-
-    const payload = verifyChatToken(token, jwtSecret);
-    if (!payload || payload.type !== 'access') {
-      return NextResponse.json({ error: 'Сесія недійсна' }, { status: 401 });
-    }
+    const body = await request.json().catch(() => ({}));
 
     const { messageId } = await params;
-    const body = await request.json().catch(() => ({}));
-    
-    // IDENTITY: Exclusively from JWT!
-    const deviceId = payload.deviceId;
+    const deviceId = identity.deviceId;
     const newMessage = (body as Record<string, string>).message?.trim() || '';
 
     if (!deviceId || !newMessage) {
@@ -102,11 +96,12 @@ export async function PATCH(
       );
     }
 
-    msg.message = newMessage;
+    msg.message = escapeHtml(newMessage);
     msg.editedAt = Date.now() / 1000;
 
     fs.writeFileSync(filePath, JSON.stringify(messages, null, 2), 'utf-8');
     invalidateChatCache();
+
     broadcastSSE({ type: 'edit_message', data: msg });
 
     return NextResponse.json({ status: 'ok', message: msg });
@@ -125,21 +120,16 @@ export async function DELETE(
   { params }: { params: Promise<{ messageId: string }> }
 ) {
   try {
-    const authHeader = request.headers.get('Authorization') || '';
-    const token = authHeader.split(' ')[1];
-    const jwtSecret = getJwtSecret();
+    const adminDenied = await requireAdminAuth();
 
-    let jwtPayload: any = null;
-    if (token && jwtSecret) {
-      jwtPayload = verifyChatToken(token, jwtSecret);
+    let deviceId = '';
+    if (adminDenied) {
+      const authResult = requireChatAuth(request);
+      if (authResult instanceof Response) return authResult;
+      deviceId = authResult.deviceId;
     }
 
     const { messageId } = await params;
-    const body = await request.json().catch(() => ({}));
-    
-    // Fallback to body.deviceId ONLY if no valid JWT (Legacy/Moderator tool support)
-    // But for common users, the JWT is the primary identity.
-    const deviceId = jwtPayload?.deviceId || (body as Record<string, string>).deviceId || '';
 
     const filePath = fs.existsSync(path.dirname(CHAT_FILE)) ? CHAT_FILE : FALLBACK_CHAT_FILE;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -160,10 +150,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Message not found' }, { status: 404 });
     }
 
-    // Allow admin auth (X-Auth-Secret or session) to delete any message
-    const adminDenied = await requireAdminAuth();
     if (adminDenied) {
-      // Not admin — check moderator status by deviceId
       const modFile = path.join(DATA_DIR, 'chat_moderators.json');
       let isMod = false;
       try {

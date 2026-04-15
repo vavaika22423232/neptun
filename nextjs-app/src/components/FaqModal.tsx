@@ -31,7 +31,7 @@ export default function FaqModal({ isOpen, onClose }: FaqModalProps) {
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-[480px] bg-[#0a0a0b]/80 backdrop-blur-[64px] border border-white/[0.08] shadow-[0_32px_64px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.06)] rounded-[32px] p-8 overflow-hidden"
+        className="relative w-full max-w-[480px] bg-[#0a0a0b]/80 backdrop-blur-xl border border-white/[0.08] shadow-[0_32px_64px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.06)] rounded-[32px] p-8 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <button

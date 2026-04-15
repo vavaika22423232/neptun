@@ -4,6 +4,7 @@ import { getJwtSecret } from '@/lib/server-secrets';
 import { redisFixedWindowAllow } from '@/lib/redis-rate-limit';
 import { getClientIp, ipRedisTag } from '@/lib/client-ip';
 import { AuthTokenSchema } from '@/lib/api-schemas';
+import { getNicknameForDevice } from '@/lib/chat-nicknames';
 
 const ACCESS_TTL = 3600;  // 1 hour
 const REFRESH_TTL = 86400 * 30; // 30 days
@@ -45,8 +46,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid Device ID' }, { status: 400 });
     }
 
-    let nickname = (parsed.data.nickname || 'Анонім').trim();
+    // Prefer server registry: client may omit nick or still send "Анонім" while user is registered.
+    let nickname = (parsed.data.nickname || '').trim();
     if (!nickname || nickname === 'null' || nickname === 'undefined') {
+      nickname = '';
+    }
+    const registered = getNicknameForDevice(deviceId);
+    if (registered && registered.length > 0) {
+      nickname = registered;
+    } else if (!nickname) {
       nickname = 'Анонім';
     }
 
@@ -64,7 +72,9 @@ export async function POST(request: Request) {
     }
 
     const accessToken = createToken(secret, { deviceId, nickname, type: 'access' }, ACCESS_TTL);
-    const refreshToken = createToken(secret, { deviceId, type: 'refresh' }, REFRESH_TTL);
+    // Refresh token must carry nickname too; otherwise /api/auth/refresh issues access JWT without nick
+    // and every chat send becomes "Анонім" after the first hour.
+    const refreshToken = createToken(secret, { deviceId, nickname, type: 'refresh' }, REFRESH_TTL);
 
     return NextResponse.json({
       access_token: accessToken,

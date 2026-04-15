@@ -7,12 +7,12 @@
  */
 
 import { redisSet, redisGet, getRedis } from './redis';
-import { broadcastSSE } from '@/app/api/chat/stream/route';
+import { broadcastSSE } from '@/lib/chat-sse-stream';
 import crypto from 'crypto';
 
 const ALARM_API_BASE = 'https://api.ukrainealarm.com/api/v3';
 const ALARM_API_KEY = process.env.ALARM_API_KEY || process.env.ALARMS_API_KEY || '';
-const FETCH_INTERVAL = 10_000; // 10 seconds
+const FETCH_INTERVAL = 20_000; // 20s — Ukraine Alarm API (less CPU / fewer external calls)
 const REDIS_KEY = 'alarms:all';
 const REDIS_TTL = 1800; // 30 minutes — extended fallback during API 401 streaks
 const REDIS_META_KEY = 'alarms:last_updated';
@@ -20,7 +20,7 @@ const RETRY_ATTEMPTS = 3; // retries per 10s tick
 const RETRY_DELAYS = [1000, 2000, 3000]; // backoff between retries
 /** Only one Node process hits Ukraine Alarm API per tick (PM2 cluster / multiple workers). */
 const FETCH_LOCK_KEY = 'alarms:bg_fetch_lock';
-const FETCH_LOCK_TTL_SEC = 25;
+const FETCH_LOCK_TTL_SEC = 35;
 
 let intervalId: ReturnType<typeof setInterval> | null = null;
 let lastETag: string | null = null;

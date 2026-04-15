@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { ChatMessage } from '@/types';
-import { useChatSSE } from './useDataSSE';
+import { useChatSSE, setSSEToken } from './useDataSSE';
 
 const API = '/api/chat';
 
@@ -21,6 +21,7 @@ interface UseChatReturn {
   sendTyping: (nickname: string, isTyping: boolean) => void;
   registerNickname: (nickname: string) => Promise<{ success: boolean; error?: string }>;
   checkNickname: (nickname: string) => Promise<{ available: boolean; error?: string }>;
+  voteMute: (messageId: string) => Promise<Response>;
 }
 
 export function useChat({ deviceId }: UseChatOptions): UseChatReturn {
@@ -45,6 +46,7 @@ export function useChat({ deviceId }: UseChatOptions): UseChatReturn {
       if (res.ok) {
         const data = await res.json();
         setToken(data.access_token);
+        setSSEToken(data.access_token);
         return data.access_token;
       }
     } catch (err) {
@@ -53,10 +55,12 @@ export function useChat({ deviceId }: UseChatOptions): UseChatReturn {
     return null;
   }, [deviceId]);
 
-  // Load initial messages
-  const loadMessages = useCallback(async () => {
+  const loadMessages = useCallback(async (authToken?: string) => {
     try {
-      const res = await fetch(`${API}/messages`);
+      const t = authToken || token;
+      const res = await fetch(`${API}/messages`, {
+        headers: t ? { 'Authorization': `Bearer ${t}` } : {},
+      });
       if (!res.ok) throw new Error('Failed to load');
       const data = await res.json();
       setMessages(data.messages || []);
@@ -67,7 +71,7 @@ export function useChat({ deviceId }: UseChatOptions): UseChatReturn {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [token]);
 
   // Subscribe to global SSE for chat events
   useChatSSE(useCallback((type: string, data: Record<string, unknown>) => {
@@ -105,52 +109,68 @@ export function useChat({ deviceId }: UseChatOptions): UseChatReturn {
   }, []));
 
   useEffect(() => {
-    loadMessages();
-    fetchToken(); // Initial token fetch
+    fetchToken().then((t) => {
+      if (t) loadMessages(t);
+      else loadMessages();
+    });
 
     return () => {
       if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     };
-  }, [loadMessages, fetchToken]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const ensureToken = useCallback(
+    async (nick: string) => {
+      let t = token;
+      if (!t) {
+        t = await fetchToken(nick);
+        if (t) setToken(t);
+      }
+      return t;
+    },
+    [token, fetchToken],
+  );
 
   // Send message
   const sendMessage = useCallback(
     async (text: string, nickname: string, replyTo?: string): Promise<boolean> => {
       try {
-        let currentToken = token;
-        if (!currentToken) {
-          currentToken = await fetchToken(nickname);
+        let authTok = await ensureToken(nickname);
+        if (!authTok) {
+          setError('Потрібна авторизація');
+          return false;
         }
 
-        const res = await fetch(`${API}/send`, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${currentToken}`
-          },
-          body: JSON.stringify({
-            deviceId,
-            userId: nickname,
-            nickname,
-            message: text,
-            replyTo: replyTo || undefined,
-          }),
-        });
+        const post = (t: string) =>
+          fetch(`${API}/send`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${t}`,
+            },
+            body: JSON.stringify({
+              message: text,
+              replyTo: replyTo || undefined,
+            }),
+          });
+
+        let res = await post(authTok);
+        if (res.status === 401) {
+          const fresh = await fetchToken(nickname);
+          if (fresh) {
+            setToken(fresh);
+            res = await post(fresh);
+          }
+        }
 
         if (!res.ok) {
-          if (res.status === 401 && !token) {
-            // Retry once with a fresh token if 401
-            const fresh = await fetchToken(nickname);
-            if (fresh) {
-               return sendMessage(text, nickname, replyTo);
-            }
-          }
           const body = await res.json().catch(() => ({}));
           if (res.status === 429) {
             setError('Зачекайте 3 секунди');
             setTimeout(() => setError(null), 3000);
           } else {
-            setError(body.error || 'Помилка відправки');
+            setError((body as { error?: string }).error || 'Помилка відправки');
           }
           return false;
         }
@@ -159,58 +179,119 @@ export function useChat({ deviceId }: UseChatOptions): UseChatReturn {
         return false;
       }
     },
-    [deviceId, token, fetchToken, setError]
+    [ensureToken, fetchToken, setError],
   );
 
   // Delete message
   const deleteMessage = useCallback(
     async (messageId: string): Promise<boolean> => {
       try {
-        const res = await fetch(`${API}/message/${messageId}`, {
-          method: 'DELETE',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({ deviceId }),
-        });
+        const nick = localStorage.getItem('neptun_nickname') || 'Анонім';
+        let t = await ensureToken(nick);
+        if (!t) return false;
+        const del = (auth: string) =>
+          fetch(`${API}/message/${messageId}`, {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${auth}`,
+            },
+            body: JSON.stringify({ deviceId }),
+          });
+        let res = await del(t);
+        if (res.status === 401) {
+          const fresh = await fetchToken(nick);
+          if (fresh) {
+            setToken(fresh);
+            res = await del(fresh);
+          }
+        }
         return res.ok;
       } catch {
         return false;
       }
     },
-    [deviceId, token]
+    [deviceId, ensureToken, fetchToken],
   );
 
   // Toggle reaction
   const toggleReaction = useCallback(
     async (messageId: string, emoji: string, nickname: string) => {
       try {
-        await fetch(`${API}/react`, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({ messageId, emoji, deviceId, nickname }),
-        });
+        let t = await ensureToken(nickname);
+        if (!t) return;
+        const react = (auth: string) =>
+          fetch(`${API}/react`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${auth}`,
+            },
+            body: JSON.stringify({ messageId, emoji }),
+          });
+        let res = await react(t);
+        if (res.status === 401) {
+          const fresh = await fetchToken(nickname);
+          if (fresh) {
+            setToken(fresh);
+            await react(fresh);
+          }
+        }
       } catch {
         /* ignore */
       }
     },
-    [deviceId, token]
+    [ensureToken, fetchToken],
   );
 
-  // Typing indicator
   const sendTyping = useCallback(
     (nickname: string, isTyping: boolean) => {
-      fetch(`${API}/typing`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceId, nickname, isTyping }),
-      }).catch(() => {});
+      void (async () => {
+        const t = await ensureToken(nickname);
+        if (!t) return;
+        fetch(`${API}/typing`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${t}`,
+          },
+          body: JSON.stringify({ isTyping }),
+        }).catch(() => {});
+      })();
     },
-    [deviceId]
+    [ensureToken],
+  );
+
+  const voteMute = useCallback(
+    async (messageId: string) => {
+      const nick = localStorage.getItem('neptun_nickname') || 'Анонім';
+      let t = await ensureToken(nick);
+      if (!t) {
+        return new Response(JSON.stringify({ error: 'Потрібна авторизація' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      const post = (auth: string) =>
+        fetch(`${API}/vote-mute`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${auth}`,
+          },
+          body: JSON.stringify({ messageId }),
+        });
+      let res = await post(t);
+      if (res.status === 401) {
+        const fresh = await fetchToken(nick);
+        if (fresh) {
+          setToken(fresh);
+          res = await post(fresh);
+        }
+      }
+      return res;
+    },
+    [ensureToken, fetchToken],
   );
 
   // Register nickname
@@ -224,7 +305,8 @@ export function useChat({ deviceId }: UseChatOptions): UseChatReturn {
         });
         const data = await res.json();
         if (data.success) {
-          fetchToken(nickname); // Refresh token with new nickname
+          const t = await fetchToken(nickname);
+          if (t) setToken(t);
         }
         return data;
       } catch {
@@ -264,5 +346,6 @@ export function useChat({ deviceId }: UseChatOptions): UseChatReturn {
     sendTyping,
     registerNickname,
     checkNickname,
+    voteMute,
   };
 }

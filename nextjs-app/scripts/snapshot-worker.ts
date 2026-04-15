@@ -12,7 +12,7 @@
 import fs from 'fs';
 import path from 'path';
 
-const API_URL = 'http://127.0.0.1:3000/api/data';
+const API_URL = 'http://127.0.0.1:3000/api/data?timeRange=60';
 const SNAPSHOT_DIR = path.resolve(process.cwd(), 'public', 'api-static');
 const SNAPSHOT_PATH = path.join(SNAPSHOT_DIR, 'data.json');
 const INTERVAL_MS = 2000;

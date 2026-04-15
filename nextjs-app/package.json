@@ -10,7 +10,10 @@
     "build": "next build",
     "postbuild": "cp -r .next/static .next/standalone/.next/static && cp -r public .next/standalone/public",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "ingest:checklist": "tsx scripts/run-ingest-smoke.ts --checklist",
+    "ingest:smoke": "tsx scripts/run-ingest-smoke.ts",
+    "ingest:smoke:pair": "tsx scripts/run-ingest-smoke.ts --pair"
   },
   "dependencies": {
     "@googleapis/androidpublisher": "^35.3.0",
@@ -38,6 +41,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }

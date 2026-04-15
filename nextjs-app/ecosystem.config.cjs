@@ -17,7 +17,12 @@
  */
 
 const BASE_PORT = 3000;
-const INSTANCES = 5;
+// Число воркеров: задайте PM2_INSTANCES в /home/neptun/app/.env (1–8). По умолчанию 4.
+// Должно совпадать с количеством строк server в deploy/nginx-upstream-nextjs.conf
+// (см. deploy/print-nginx-upstream.sh).
+const _n = parseInt(process.env.PM2_INSTANCES ?? '', 10);
+const INSTANCES =
+  Number.isFinite(_n) && _n >= 1 && _n <= 8 ? _n : 4;
 
 module.exports = {
   apps: [{
@@ -55,7 +60,7 @@ module.exports = {
     restart_delay: 2000,
     exp_backoff_restart_delay: 3000,
 
-    // Memory limit per worker (5 workers × 1.3G = 6.5G total; systemd MemoryMax=7680M)
+    // Memory limit per worker (например 3 × 1.3G ≈ 4G + запас в systemd MemoryMax)
     max_memory_restart: '1300M',
 
     // Logs
@@ -70,17 +75,5 @@ module.exports = {
 
     // Don't watch files (we use manual reload)
     watch: false,
-  }, {
-    name: 'neptun-snapshot-worker',
-    script: 'npx',
-    args: 'tsx scripts/snapshot-worker.ts',
-    cwd: '/home/neptun/app',
-    instances: 1,
-    autorestart: true,
-    watch: false,
-    max_memory_restart: '200M',
-    env: {
-      NODE_ENV: 'production',
-    },
   }],
 };

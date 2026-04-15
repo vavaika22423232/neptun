@@ -3,6 +3,7 @@ import {
   insertFeedback,
   listFeedback,
   getResponses,
+  parseFeedbackRegions,
   type FeedbackTicket,
 } from '@/lib/feedback-db';
 import { requireAdminAuth } from '@/lib/admin/apiAuth';
@@ -80,7 +81,9 @@ export async function GET(request: Request) {
         const responses = await getResponses(row.id);
         return {
           ...row,
-          regions: typeof row.regions === 'string' ? JSON.parse(row.regions) : [],
+          regions: parseFeedbackRegions(
+            typeof row.regions === 'string' ? row.regions : undefined,
+          ),
           responses,
           has_unread_response: responses.some(
             (r) =>

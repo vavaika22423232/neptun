@@ -6,6 +6,12 @@
 export async function register() {
   // Only run on the server
   if (process.env.NEXT_RUNTIME === 'nodejs') {
+    // Static generation workers: no Redis, no background timers, no external alarm API.
+    if (process.env.NEXT_PHASE === 'phase-production-build') {
+      console.log('[INIT] Skipping background services during Next.js production build');
+      return;
+    }
+
     const { startAlarmFetcher } = await import('@/lib/alarm-fetcher');
     const { initStore, startMarkerSync } = await import('@/lib/markers-store');
 

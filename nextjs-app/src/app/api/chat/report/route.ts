@@ -11,29 +11,37 @@ const FALLBACK_REPORTS_FILE = path.resolve(process.cwd(), '..', 'chat_reports.js
 const MAX_REPORTS = 500;
 
 function resolveReportsFile(): string {
-    if (!fs.existsSync(DATA_DIR)) {
+    for (const dir of [DATA_DIR, path.dirname(FALLBACK_REPORTS_FILE)]) {
         try {
-            fs.mkdirSync(DATA_DIR, { recursive: true });
-        } catch { }
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+            fs.accessSync(dir, fs.constants.W_OK);
+            return dir === DATA_DIR ? REPORTS_FILE : FALLBACK_REPORTS_FILE;
+        } catch { /* try next */ }
     }
-    return fs.existsSync(DATA_DIR) ? REPORTS_FILE : FALLBACK_REPORTS_FILE;
+    return FALLBACK_REPORTS_FILE;
 }
+
+import { requireChatAuth } from '@/lib/chat-auth';
 
 export async function POST(request: Request) {
     try {
+        const authResult = requireChatAuth(request);
+        if (authResult instanceof Response) return authResult;
+
         const body = await request.json();
 
         const {
             messageId,
             reason,
-            reporterDeviceId,
-            reporterNickname,
             originalText,
             reportedDeviceId,
             reportedNickname,
         } = body;
 
-        if (!messageId || !reason || !reporterDeviceId) {
+        const reporterDeviceId = authResult.deviceId;
+        const reporterNickname = authResult.nickname;
+
+        if (!messageId || !reason) {
             return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
         }
 

@@ -1,32 +1,32 @@
 <svg id="regionNames" viewBox="0 0 260 175" width="260" height="175" xmlns="http://www.w3.org/2000/svg" style="pointer-events: none; font-family: e-Ukraine;">
 
  <g> 
-  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="2.8" id="svg_1" y="63" x="60.5" stroke-width="0" stroke="#000" textId="3">Хмельницька</text>
-  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="2.8" id="svg_3" y="28.23308" x="33" stroke-width="0" stroke="#000" textId="8">Волинська</text>
-  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="2.8" id="svg_4" y="30" x="58" stroke-width="0" stroke="#000" textId="5">Рівненська</text>
-  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="2.8" id="svg_5" y="42.26074" x="80" stroke-width="0" stroke="#000" textId="10">Житомирська</text>
-  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="2.8" id="svg_6" y="56" x="114" stroke-width="0" stroke="#000" textId="14">Київська</text>
-  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="2.8" id="svg_7" y="41.5" x="113" stroke-width="0" stroke="#000" textId="31">м. Київ</text>
-  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="2.8" id="svg_9" y="25.5" x="131" stroke-width="0" stroke="#000" textId="25">Чернігівська</text>
-  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="2.8" id="svg_10" y="33" x="163" stroke-width="0" stroke="#000" textId="20">Сумська</text>
-  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="2.8" id="svg_11" y="62.84523" x="195.5" stroke-width="0" stroke="#000" textId="22">Харківська</text>
-  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="2.8" id="svg_12" y="79" x="231" stroke-width="0" stroke="#000" textId="16">Луганська</text>
-  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="2.8" id="svg_13" y="97" x="213" stroke-width="0" stroke="#000" textId="28">Донецька</text>
-  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="2.8" id="svg_14" y="115" x="187" stroke-width="0" stroke="#000" textId="12">Запорізька</text>
-  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="2.8" id="svg_15" y="89.05219" x="170" stroke-width="0" stroke="#000" textId="9">Дніпропетровська</text>
-  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="2.8" id="svg_16" y="113" x="131" stroke-width="0" stroke="#000" textId="17">Миколаївська</text>
-  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="2.8" id="svg_17" y="125.94884" x="155" stroke-width="0" stroke="#000" textId="23">Херсонська</text>
-  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="2.8" id="svg_18" y="138" x="102" stroke-width="0" stroke="#000" textId="18">Одеська</text>
-  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="2.8" id="svg_19" y="88.36253" x="132" stroke-width="0" stroke="#000" textId="15">Кіровоградська</text>
-  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="2.8" id="svg_20" y="58" x="154.72488" stroke-width="0" stroke="#000" textId="19">Полтавська</text>
-  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="2.8" id="svg_21" y="73" x="124" stroke-width="0" stroke="#000" textId="24">Черкаська</text>
-  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="2.8" id="svg_22" y="80" x="87" stroke-width="0" stroke="#000" textId="4">Вінницька</text>
-  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="2.4" id="svg_23" y="67" x="39" stroke-width="0" stroke="#000" textId="21">Тернопільська</text>
-  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="2.5" id="svg_24" y="94" x="45.05556" stroke-width="0" stroke="#000" textId="26">Чернівецька</text>
-  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="2.5" id="svg_25" y="83" x="24" stroke-width="0" stroke="#000" textId="13">Івано-Франківська</text>
-  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="2.8" id="svg_28" y="91" x="7" stroke-width="0" stroke="#000" textId="11">Закарпатська</text>
-  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="2.8" id="svg_29" y="61" x="21" stroke-width="0" stroke="#000" textId="27">Львівська</text>
-  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="2.8" id="svg_30" y="152.68148" x="164" stroke-width="0" stroke="#000" textId="9999">А. Р. Крим</text>
+  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="3.65" id="svg_1" y="63" x="60.5" stroke-width="0" stroke="#000" textId="3">Хмельницька</text>
+  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="3.65" id="svg_3" y="28.23308" x="33" stroke-width="0" stroke="#000" textId="8">Волинська</text>
+  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="3.65" id="svg_4" y="30" x="58" stroke-width="0" stroke="#000" textId="5">Рівненська</text>
+  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="3.65" id="svg_5" y="42.26074" x="80" stroke-width="0" stroke="#000" textId="10">Житомирська</text>
+  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="3.65" id="svg_6" y="56" x="114" stroke-width="0" stroke="#000" textId="14">Київська</text>
+  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="3.65" id="svg_7" y="41.5" x="113" stroke-width="0" stroke="#000" textId="31">м. Київ</text>
+  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="3.65" id="svg_9" y="25.5" x="131" stroke-width="0" stroke="#000" textId="25">Чернігівська</text>
+  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="3.65" id="svg_10" y="33" x="163" stroke-width="0" stroke="#000" textId="20">Сумська</text>
+  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="3.65" id="svg_11" y="62.84523" x="195.5" stroke-width="0" stroke="#000" textId="22">Харківська</text>
+  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="3.65" id="svg_12" y="79" x="231" stroke-width="0" stroke="#000" textId="16">Луганська</text>
+  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="3.65" id="svg_13" y="97" x="213" stroke-width="0" stroke="#000" textId="28">Донецька</text>
+  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="3.65" id="svg_14" y="115" x="187" stroke-width="0" stroke="#000" textId="12">Запорізька</text>
+  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="3.65" id="svg_15" y="89.05219" x="170" stroke-width="0" stroke="#000" textId="9">Дніпропетровська</text>
+  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="3.65" id="svg_16" y="113" x="131" stroke-width="0" stroke="#000" textId="17">Миколаївська</text>
+  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="3.65" id="svg_17" y="125.94884" x="155" stroke-width="0" stroke="#000" textId="23">Херсонська</text>
+  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="3.65" id="svg_18" y="138" x="102" stroke-width="0" stroke="#000" textId="18">Одеська</text>
+  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="3.65" id="svg_19" y="88.36253" x="132" stroke-width="0" stroke="#000" textId="15">Кіровоградська</text>
+  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="3.65" id="svg_20" y="58" x="154.72488" stroke-width="0" stroke="#000" textId="19">Полтавська</text>
+  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="3.65" id="svg_21" y="73" x="124" stroke-width="0" stroke="#000" textId="24">Черкаська</text>
+  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="3.65" id="svg_22" y="80" x="87" stroke-width="0" stroke="#000" textId="4">Вінницька</text>
+  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="3.12" id="svg_23" y="67" x="39" stroke-width="0" stroke="#000" textId="21">Тернопільська</text>
+  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="3.25" id="svg_24" y="94" x="45.05556" stroke-width="0" stroke="#000" textId="26">Чернівецька</text>
+  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="3.25" id="svg_25" y="83" x="24" stroke-width="0" stroke="#000" textId="13">Івано-Франківська</text>
+  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="3.65" id="svg_28" y="91" x="7" stroke-width="0" stroke="#000" textId="11">Закарпатська</text>
+  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="3.65" id="svg_29" y="61" x="21" stroke-width="0" stroke="#000" textId="27">Львівська</text>
+  <text font-weight="300" xml:space="preserve" text-anchor="start" font-size="3.65" id="svg_30" y="152.68148" x="164" stroke-width="0" stroke="#000" textId="9999">А. Р. Крим</text>
  </g>  
 
  <g id="dronesIcons">

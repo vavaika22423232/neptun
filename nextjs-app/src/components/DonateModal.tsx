@@ -35,7 +35,7 @@ export default function DonateModal({ isOpen, onClose }: DonateModalProps) {
         onClick={onClose}
       >
         <div
-          className="relative w-full max-w-[440px] bg-[#0a0a0b]/80 backdrop-blur-[64px] border border-white/[0.08] shadow-[0_32px_64px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.06)] rounded-[32px] p-8 overflow-hidden"
+          className="relative w-full max-w-[440px] bg-[#0a0a0b]/80 backdrop-blur-xl border border-white/[0.08] shadow-[0_32px_64px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.06)] rounded-[32px] p-8 overflow-hidden"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="pointer-events-none absolute -top-24 -right-24 w-48 h-48 bg-[#ff2a5f]/20 blur-[64px] rounded-full" />

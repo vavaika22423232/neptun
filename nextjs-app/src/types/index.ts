@@ -2,6 +2,13 @@
 // Core domain types for NEPTUN
 // ============================================
 
+/** Public map position semantics (computed in build-markers, not raw worker placement_mode). */
+export type MarkerDisplayClass =
+  | 'region_signal'
+  | 'corridor_or_bearing'
+  | 'corroborated_point'
+  | 'manual_override';
+
 export interface TrackPosition {
   lat: number;
   lng: number;
@@ -18,9 +25,12 @@ export interface Marker {
   threat_type: string;
   place?: string;
   region?: string;
+  /** Oblast label from ingest (often overlaps with `region`). */
+  oblast?: string;
   text?: string;
   date?: string;
   count?: number;
+  /** Filename under `/public` (e.g. `fpvdrone.png` from ingest); overrides `THREAT_ICONS[threat_type]` in MapContainer. */
   marker_icon?: string;
   course_bearing?: number | null;
   course_direction?: string;
@@ -40,7 +50,44 @@ export interface Marker {
   positions?: TrackPosition[];   // Full trail: observations + ticker projections (for display)
   observations?: TrackPosition[]; // Pristine channel observations only (for speed computation)
   observation_count?: number;    // Number of messages/observations for this track
-  is_estimated?: boolean;        // True for DIMAP-offset markers (rendered at 0.5 opacity)
+  is_estimated?: boolean;
+  /** 0–100 mirror of worker `confidence` for UI thresholds */
+  confidence_0_100?: number;
+  /** Worker map policy: point | approximate | predictive | suppressed_* */
+  placement_mode?: string;
+  confidence?: number;
+  /**
+   * Pipeline resolution status. Server may set `region_mismatch` when stated `region`/`oblast` /
+   * `resolved_oblast_hasc` disagrees with geocode — coords were snapped to oblast centroid.
+   */
+  resolve_status?: string;
+  /**
+   * Stable key for the administrative area the worker intended (e.g. `kv`, `kharkiv_obl`), used by
+   * the spatial correlator to avoid merging markers across different regions.
+   */
+  region_key?: string;
+  /**
+   * GADM HASC_1 code (e.g. `UA.KK`) from the worker’s NLP — preferred for region↔coord checks.
+   */
+  resolved_oblast_hasc?: string;
+  /** Numeric oblast id if the worker uses internal ids — correlator gate when present. */
+  oblast_id?: string | number;
+  /** Alternative geocode candidates for debugging / future re-ranking (worker). */
+  candidates?: unknown;
+  /** Worker / ingest: multi | point | … — informs display policy when corroboration missing. */
+  geocode_tier?: string;
+  /** Optional explicit candidate count when `candidates` is not an array on the wire. */
+  candidates_count?: number;
+  /** Ingest manual flag — operator-placed. */
+  manual?: boolean;
+  /** Server-computed: how much to trust a single point on the public map. */
+  display_class?: MarkerDisplayClass;
+  /** If false, client draws uncertainty circle (still uses threat-type icon). */
+  show_precise_pin?: boolean;
+  /** Radius in km for Leaflet circle (meters = km * 1000). */
+  display_uncertainty_km?: number;
+  /** First line for popup/tooltip (Ukrainian). */
+  display_trust_hint_uk?: string;
 }
 
 export interface Trajectory {
@@ -136,7 +183,8 @@ export const MAP_BOUNDS = {
   maxLng: 40.2,
 } as const;
 
-// Threat type icon mapping (must match original index.html exactly)
+// Threat type icon mapping (must match original index.html exactly).
+// Custom per-marker icons use `marker_icon` on the marker (not listed here), e.g. `fpvdrone.png` for @kherson_non_drone.
 export const THREAT_ICONS: Record<string, string> = {
   shahed: 'shahed3.webp',
   drone: 'shahed3.webp',

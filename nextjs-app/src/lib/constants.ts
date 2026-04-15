@@ -2,6 +2,9 @@
 // Constants migrated from constants.py
 // ============================================
 
+/** Append to `/api/data` for the public-map time window (`timeRange >= 60`); retention still follows admin `monitorPeriod`. */
+export const API_DATA_PUBLIC_QUERY = 'timeRange=60';
+
 // Firebase Topic Mapping
 export const REGION_TOPIC_MAP: Record<string, string> = {
   'Київ': 'region_kyiv_city',
@@ -104,7 +107,7 @@ export const SVG_FADE_START_ZOOM = 7;
 export const SVG_FADE_END_ZOOM = 8;
 
 // Cache version for static assets
-export const CACHE_VERSION = 'v8';
+export const CACHE_VERSION = 'v14';
 
 // Google Analytics ID
 export const GA_ID = 'G-MW867VP8WK';
@@ -116,4 +119,4 @@ export const GOOGLE_PLAY_URL = 'https://play.google.com/store/apps/details?id=co
 export const APP_STORE_URL = 'https://apps.apple.com/ua/app/%D0%BA%D0%B0%D1%80%D1%82%D0%B0-%D1%82%D1%80%D0%B8%D0%B2%D0%BE%D0%B3-dron-alerts/id6758108122?l=uk';
 
 // Telegram links
-export const TELEGRAM_CHANNEL_URL = 'https://t.me/+31BgekBXodw1ZGEy';
+export const TELEGRAM_CHANNEL_URL = 'https://t.me/+aBR79kExNQM1ZjZi';

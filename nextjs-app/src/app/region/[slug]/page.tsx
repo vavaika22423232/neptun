@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import Footer from '@/components/Footer';
-import { redisGet } from '@/lib/redis';
+import { redisGetWithTimeout } from '@/lib/redis';
 import type { Alarm } from '@/types';
 
 // ISR: revalidate every 60 seconds for fresh alarm data
@@ -57,8 +57,8 @@ async function getRegionAlarmStatus(regionName: string): Promise<{
 } | null> {
   try {
     const [alarms, lastUpdated] = await Promise.all([
-      redisGet<Alarm[]>('alarms:all'),
-      redisGet<string>('alarms:last_updated'),
+      redisGetWithTimeout<Alarm[]>('alarms:all'),
+      redisGetWithTimeout<string>('alarms:last_updated'),
     ]);
     if (!alarms || !Array.isArray(alarms)) return null;
     const match = alarms.find(

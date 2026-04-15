@@ -1,11 +1,11 @@
 import { cache, withETag } from '@/lib/cache';
 import type { Marker } from '@/types';
-import { buildMarkers } from '@/lib/build-markers';
+import { buildMarkers, buildMarkerOptionsForApi } from '@/lib/build-markers';
 import { maybePrune, getLastIngestTime, getMarkersVersion, initStore } from '@/lib/markers-store';
 
 const CACHE_KEY = 'data_markers';
 const CACHE_KEY_EXTENDED = 'data_markers_extended';
-const CACHE_TTL = 2_000; // 2 seconds — keep low for cross-worker consistency
+const CACHE_TTL = 5_000; // 5 seconds — version check invalidates on real changes
 const STALE_TTL = 300_000; // 5 minutes
 
 export async function GET(request: Request) {
@@ -13,7 +13,7 @@ export async function GET(request: Request) {
 
   await initStore();
 
-  // timeRange>=60 — extended retention 180 min (3 год історії для шахедів/пусків)
+  // timeRange>=60 — same as public map (`API_DATA_PUBLIC_QUERY`); retention = admin monitorPeriod
   let extendedRange = false;
   try {
     const url = new URL(request.url);
@@ -47,10 +47,7 @@ export async function GET(request: Request) {
   }
 
   // Build from in-memory store (zero file I/O)
-  const markers = buildMarkers({
-    extendedRange,
-    retentionMinutes: extendedRange ? 180 : undefined, // 3 год історії
-  });
+  const markers = buildMarkers(buildMarkerOptionsForApi(extendedRange));
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ballisticMarker = markers.find((m: any) =>

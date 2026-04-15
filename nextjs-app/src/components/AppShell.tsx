@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import type { Marker, Alarm, BallisticThreat, PresenceData } from '@/types';
 import ThreatFeed from './ThreatFeed';
 import { TELEGRAM_CHANNEL_URL, APP_STORE_URL, GOOGLE_PLAY_URL } from '@/lib/constants';
@@ -18,8 +18,8 @@ interface AppShellProps {
 
 export default function AppShell({ markers, alarms, presence, ballisticThreat, onDonate, onFaq, children }: AppShellProps) {
   const [expanded, setExpanded] = useState(false);
-  const activeAlarms = alarms.filter(a => a.activeAlerts?.length > 0).length;
-  const hasThreats = markers.length > 0 || alarms.some(a => a.activeAlerts?.length > 0);
+  const activeAlarms = useMemo(() => alarms.filter(a => a.activeAlerts?.length > 0).length, [alarms]);
+  const hasThreats = markers.length > 0 || activeAlarms > 0;
 
   return (
     <div className="relative h-[100dvh] w-full overflow-hidden text-gray-900 dark:text-white font-sans selection:bg-[#ff2a5f]/30 transition-colors duration-300">
@@ -40,7 +40,7 @@ export default function AppShell({ markers, alarms, presence, ballisticThreat, o
             className={`pointer-events-auto flex flex-col overflow-hidden transition-all duration-500 will-change-transform ease-[cubic-bezier(0.16,1,0.3,1)]
               bg-white/90 border border-gray-200/50 shadow-[0_12px_48px_rgba(0,0,0,0.1),inset_0_1px_0_rgba(255,255,255,0.5)] 
               dark:bg-[#0a0a0b]/80 dark:border-white/[0.08] dark:shadow-[0_24px_64px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.06)] 
-              backdrop-blur-[64px]
+              backdrop-blur-xl
               ${expanded ? 'rounded-[32px] h-[580px] md:h-[640px]' : 'rounded-[28px] h-[110px]'}
             `}
           >
@@ -93,7 +93,7 @@ export default function AppShell({ markers, alarms, presence, ballisticThreat, o
         </div>
 
         {/* Bottom Spatial Dock */}
-        <div className="pointer-events-auto flex items-center gap-2 p-2 bg-white/60 dark:bg-[#0a0a0b]/40 backdrop-blur-[64px] border border-gray-200/60 dark:border-white/[0.08] shadow-[0_8px_24px_rgba(0,0,0,0.1)] dark:shadow-[0_16px_32px_rgba(0,0,0,0.5)] rounded-full mb-[env(safe-area-inset-bottom,1.5rem)] md:mb-0 transition-colors duration-300">
+        <div className="pointer-events-auto flex items-center gap-2 p-2 bg-white/60 dark:bg-[#0a0a0b]/40 backdrop-blur-xl border border-gray-200/60 dark:border-white/[0.08] shadow-[0_8px_24px_rgba(0,0,0,0.1)] dark:shadow-[0_16px_32px_rgba(0,0,0,0.5)] rounded-full mb-[env(safe-area-inset-bottom,1.5rem)] md:mb-0 transition-colors duration-300">
           <button onClick={() => window.dispatchEvent(new CustomEvent('toggle-system-log'))} title="Системний Лог" className="h-10 px-4 flex items-center gap-2 rounded-full border border-[#ff2a5f]/30 bg-red-50 dark:bg-[#050505]/90 text-[11px] text-[#ff2a5f] dark:text-[#ff2a5f] transition-all hover:bg-red-100 dark:hover:bg-[#ff2a5f]/10 uppercase tracking-[1px] font-bold">
             <div className="w-1.5 h-1.5 rounded-full bg-[#ff2a5f] animate-pulse" />
             <span className="hidden sm:inline">СИС. ЛОГ</span>

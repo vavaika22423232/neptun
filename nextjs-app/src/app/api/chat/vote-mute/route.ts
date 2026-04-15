@@ -4,6 +4,7 @@ import fsp from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
 import { loadChatBans, saveChatBans } from '@/lib/admin/data';
+import { requireChatAuth } from '@/lib/chat-auth';
 
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const CHAT_FILE = path.join(DATA_DIR, 'chat_messages.json');
@@ -64,15 +65,19 @@ async function saveVotes(votes: MuteVote[]): Promise<void> {
 /**
  * POST /api/chat/vote-mute
  * Crowd-sourced mute: 3 votes → 30-min mute.
- * Body: { messageId, voterDeviceId, voterNickname }
+ * Body: { messageId } — voter identity from JWT (no spoofing voterDeviceId).
  */
 export async function POST(request: Request) {
   try {
+    const authResult = requireChatAuth(request);
+    if (authResult instanceof Response) return authResult;
+    const voterDeviceId = authResult.deviceId;
+
     const body = await request.json();
-    const { messageId, voterDeviceId, voterNickname } = body;
+    const { messageId } = body;
 
     if (!messageId || !voterDeviceId) {
-      return NextResponse.json({ error: 'Missing messageId or voterDeviceId' }, { status: 400 });
+      return NextResponse.json({ error: 'Missing messageId' }, { status: 400 });
     }
 
     const messages = await loadMessages();

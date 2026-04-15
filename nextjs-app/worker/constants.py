@@ -436,3 +436,15 @@ CARDINAL_AIRFIELDS: dict[str, tuple[str, float, float]] = {
     'southwest': ('Саки (Крим)', 45.0909, 33.5934),
     'west': ('Брянськ', 53.2521, 34.3717),
 }
+
+
+def is_gpt_parser_enabled() -> bool:
+    """When DISABLE_GPT_PARSER is unset, GPT/OpenAI parsers stay off (regex-primary)."""
+    v = (os.getenv('DISABLE_GPT_PARSER') or '1').strip().lower()
+    return v in ('0', 'false', 'no', 'off')
+
+
+# Used by test_kherson_non_drone.py and for discoverability alongside channel_profiles/*.
+CHANNEL_PROFILES = {
+    'kherson_non_drone': {'telegram': '@kherson_non_drone'},
+}

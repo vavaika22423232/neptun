@@ -54,7 +54,12 @@ async function fetchRealOnlineCount(): Promise<number> {
   return -1;
 }
 
+import { requireChatAuth } from '@/lib/chat-auth';
+
 export async function GET(request: Request) {
+  const authResult = requireChatAuth(request);
+  if (authResult instanceof Response) return authResult;
+
   const messages = await loadChatMessages();
   const { searchParams } = new URL(request.url);
   const beforeParam = searchParams.get('before');
@@ -87,8 +92,38 @@ export async function GET(request: Request) {
   const fallbackOnline = Math.max(recentUsers.size, 1);
   const online = realOnline >= 0 ? realOnline : fallbackOnline;
 
+  // Keep message.deviceId so clients can mark "my" bubbles (Flutter: deviceId == myDeviceId).
+  // Stripping it broke isMine when userId was "Анонім" or differed from local prefs.
+  const sanitized = (recent as Record<string, unknown>[]).map((m) => {
+    const safe = { ...m } as Record<string, unknown>;
+    if (safe.device_id && !safe.deviceId) {
+      safe.deviceId = safe.device_id;
+    }
+    delete safe.device_id;
+    if (safe.replyTo && typeof safe.replyTo === 'object') {
+      const { deviceId: _, device_id: __, ...safeReply } = safe.replyTo as Record<string, unknown>;
+      safe.replyTo = safeReply;
+    }
+    if (safe.reactions && typeof safe.reactions === 'object') {
+      const cleanReactions: Record<string, unknown> = {};
+      for (const [emoji, list] of Object.entries(safe.reactions as Record<string, unknown[]>)) {
+        if (Array.isArray(list)) {
+          cleanReactions[emoji] = list.map((r: unknown) => {
+            if (r && typeof r === 'object') {
+              const { deviceId: _d, ...safeR } = r as Record<string, unknown>;
+              return safeR;
+            }
+            return r;
+          });
+        }
+      }
+      safe.reactions = cleanReactions;
+    }
+    return safe;
+  });
+
   return NextResponse.json({
-    messages: recent,
+    messages: sanitized,
     online: Math.max(online, 1),
   });
 }

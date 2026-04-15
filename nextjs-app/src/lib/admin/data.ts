@@ -139,14 +139,39 @@ export interface AdminSettings {
   monitorPeriod: number;
   ttlEnabled: boolean;
   minConfidence: number;
+  /** When false, spatial correlator (`findSpatialMatch`) is skipped — only `track_id` merges. */
+  spatialCorrelatorEnabled?: boolean;
+  corroborationMinObservations?: number;
+  corroborationWindowMinutes?: number;
+  corroborationMaxRadiusKm?: number;
+  /** 0 = off; >=2 requires that many distinct `source` values among recent track points. */
+  corroborationMinDistinctSources?: number;
+  /**
+   * When true, public map / ingest hides markers until two distinct channel_name values
+   * appear in observations (except channel_priority <= 1). Default on (new installs).
+   */
+  dualSourceMapGate?: boolean;
+  regionUncertaintyKm?: number;
+  corroboratedUncertaintyKm?: number;
 }
 
+const ADMIN_SETTINGS_DEFAULTS: AdminSettings = {
+  monitorPeriod: 30,
+  ttlEnabled: true,
+  minConfidence: 0.65,
+  spatialCorrelatorEnabled: true,
+  corroborationMinObservations: 2,
+  corroborationWindowMinutes: 30,
+  corroborationMaxRadiusKm: 45,
+  corroborationMinDistinctSources: 0,
+  dualSourceMapGate: true,
+  regionUncertaintyKm: 38,
+  corroboratedUncertaintyKm: 9,
+};
+
 export function loadSettings(): AdminSettings {
-  return readJson<AdminSettings>(SETTINGS_FILE, 'admin_settings.json', {
-    monitorPeriod: 30,
-    ttlEnabled: true,
-    minConfidence: 0.3,
-  });
+  const fromDisk = readJson<Partial<AdminSettings>>(SETTINGS_FILE, 'admin_settings.json', {});
+  return { ...ADMIN_SETTINGS_DEFAULTS, ...fromDisk };
 }
 
 export function saveSettings(settings: AdminSettings): void {

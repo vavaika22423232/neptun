@@ -17,7 +17,12 @@ import re
 from typing import Optional
 
 from geo.gazetteer import LocationCandidate, ResolvedLocation, find_candidates, learn_from_external, learn_alias
-from geo.place_normalize import place_variants, primary_place_token, strip_settlement_prefix
+from geo.place_normalize import (
+    disambiguate_homonym_place,
+    place_variants,
+    primary_place_token,
+    strip_settlement_prefix,
+)
 from geo import scoring
 from geo import rules
 from geo import feedback
@@ -120,46 +125,47 @@ def _compute_confidence(candidates: list[LocationCandidate]) -> tuple[float, str
         return 0.25, "low_confidence"
 
 
-# ── External geocoder cascade ────────────────────────────────────────────────
+# ── External geocoder cascade (Local Photon → Visicom API) ───────────────────
 
 def _try_external_geocoders(
     place_name: str,
     oblast_hint: Optional[str] = None,
+    city_hint: Optional[str] = None,
 ) -> Optional[tuple[float, float, str]]:
     """
-    Try external geocoders: Visicom → Nominatim → OpenCage.
-    Returns (lat, lng, source) or None.
-    Requires VISICOM_API_KEY env for Visicom (best UA coverage).
+    Query external geocoders as fallback when local gazetteer has no results.
+    Cascade: Photon (local) → Visicom (API, authoritative for Ukraine).
+    city_hint: optional city anchor for Photon (e.g. «Херсон» for microdistricts).
     """
-    # Visicom — best Ukrainian coverage (needs VISICOM_API_KEY)
+    # 1. Try local Photon first (free, no API cost)
     try:
+        import sys
+        import os
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+        from photon_geocoder import get_coordinates_photon
+        
+        result = get_coordinates_photon(place_name, oblast_hint, city_hint)
+        if result:
+            log.info(f"[GEOCODE] Photon: {place_name} -> {result}")
+            return (result[0], result[1], 'photon')
+    except Exception as e:
+        log.debug(f"Photon geocoder failed: {e}")
+
+    # 2. Fallback to Visicom API (authoritative Ukrainian geocoder, 28k+ settlements)
+    try:
+        import sys
+        import os
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
         from visicom_geocoder import visicom_geocode
+
         result = visicom_geocode(place_name, oblast_hint)
-        if result:
-            log.info(f"[GEOCODE] Visicom: {place_name} -> {result}")
-            return (result[0], result[1], 'visicom')
+        if result and len(result) == 2:
+            lat, lng = result
+            if lat and lng:
+                log.info(f"[GEOCODE] Visicom: {place_name} -> ({lat}, {lng})")
+                return (lat, lng, 'visicom')
     except Exception as e:
-        log.debug(f"Visicom: {e}")
-
-    # Nominatim — free, no key
-    try:
-        from nominatim_geocoder import get_coordinates_nominatim
-        result = get_coordinates_nominatim(place_name, oblast_hint)
-        if result:
-            log.info(f"[GEOCODE] Nominatim: {place_name} -> {result}")
-            return (result[0], result[1], 'nominatim')
-    except Exception as e:
-        log.debug(f"Nominatim: {e}")
-
-    # OpenCage — needs OPENCAGE_API_KEY
-    try:
-        from opencage_geocoder import geocode_city
-        result = geocode_city(place_name, oblast_hint)
-        if result:
-            log.info(f"[GEOCODE] OpenCage: {place_name} -> {result}")
-            return (result[0], result[1], 'opencage')
-    except Exception as e:
-        log.debug(f"OpenCage: {e}")
+        log.debug(f"Visicom geocoder failed: {e}")
 
     return None
 
@@ -195,6 +201,9 @@ def resolve(
     """
     place_name = entities.get('place_name') or entities.get('target_city') or ''
     oblast_hint = entities.get('oblast')
+    city_hint = entities.get('geo_city_hint') or None
+    if isinstance(city_hint, str):
+        city_hint = city_hint.strip() or None
 
     if not place_name:
         return ResolvedLocation(
@@ -207,6 +216,11 @@ def resolve(
     place_name = normalize_place_case(place_name)
     if place_name != original_name:
         log.debug(f"[RESOLVE] Normalized: '{original_name}' -> '{place_name}'")
+
+    _hom_fix = disambiguate_homonym_place(place_name, oblast_hint)
+    if _hom_fix != place_name:
+        log.info(f"[RESOLVE] Homonym disambiguation: '{place_name}' → '{_hom_fix}' (oblast={oblast_hint})")
+        place_name = _hom_fix
 
     def _is_black_sea_toponym(t: str) -> bool:
         x = (t or '').lower().strip()
@@ -300,7 +314,7 @@ def resolve(
         ext_result = None
         ext_used = place_name
         for v in variant_list:
-            ext_result = _try_external_geocoders(v, oblast_hint)
+            ext_result = _try_external_geocoders(v, oblast_hint, city_hint)
             if ext_result:
                 ext_used = v
                 break
@@ -340,7 +354,7 @@ def resolve(
             ext_near = None
             ext_used_near = near_place
             for nv in place_variants(near_place):
-                ext_near = _try_external_geocoders(nv, oblast_hint)
+                ext_near = _try_external_geocoders(nv, oblast_hint, city_hint)
                 if ext_near:
                     ext_used_near = nv
                     break
@@ -381,7 +395,7 @@ def resolve(
                     ext_dir = None
                     ext_used_dir = dir_tok
                     for dv in place_variants(dir_tok):
-                        ext_dir = _try_external_geocoders(dv, oblast_hint)
+                        ext_dir = _try_external_geocoders(dv, oblast_hint, city_hint)
                         if ext_dir:
                             ext_used_dir = dv
                             break
@@ -539,18 +553,35 @@ def point_along_great_circle(
     lat2: float,
     lng2: float,
     fraction: float,
+    apply_jitter: bool = True,
+    jitter_seed: str = '',
 ) -> tuple[float, float]:
     """
     Interpolate a point along the great circle between two WGS84 coordinates.
     fraction=0 → (lat1,lng1), fraction=1 → (lat2,lng2).
-    Used for trajectory-aware placement (origin → target) instead of snapping to city center.
+    Used for trajectory-aware placement (origin → target).
+    Includes optional *deterministic* jitter to prevent markers stacking.
+    jitter_seed should be a stable string (e.g. threat_id or marker_id)
+    so the offset doesn't change between refreshes.
     """
     import math
+
+    def _seeded_rand(seed_val: int) -> float:
+        """Mulberry32-style seeded PRNG — returns 0..1."""
+        seed_val = (seed_val + 0x6D2B79F5) & 0xFFFFFFFF
+        t = ((seed_val ^ (seed_val >> 15)) * (1 | seed_val)) & 0xFFFFFFFF
+        t = ((t + ((t ^ (t >> 7)) * (61 | t))) ^ t) & 0xFFFFFFFF
+        return ((t ^ (t >> 14)) & 0xFFFFFFFF) / 4294967296.0
 
     fraction = max(0.0, min(1.0, fraction))
     if fraction <= 0:
         return lat1, lng1
     if fraction >= 1:
+        if apply_jitter:
+            s = hash(f"{lat2:.4f}_{lng2:.4f}_{jitter_seed}") & 0xFFFFFFFF
+            angle = _seeded_rand(s) * 2 * math.pi
+            r = math.sqrt(_seeded_rand(s + 1)) * 0.015  # ~1.5 km
+            return lat2 + math.cos(angle) * r, lng2 + math.sin(angle) * r
         return lat2, lng2
     φ1 = math.radians(lat1)
     λ1 = math.radians(lng1)
@@ -571,4 +602,13 @@ def point_along_great_circle(
     x, y, z = x / h, y / h, z / h
     lat = math.degrees(math.asin(max(-1.0, min(1.0, z))))
     lng = math.degrees(math.atan2(y, x))
+
+    if apply_jitter:
+        s = hash(f"{lat1:.4f}_{lng1:.4f}_{fraction:.3f}_{jitter_seed}") & 0xFFFFFFFF
+        jitter_amount = 0.012 * fraction  # ~1.3 km max
+        angle = _seeded_rand(s) * 2 * math.pi
+        r = math.sqrt(_seeded_rand(s + 1)) * jitter_amount
+        lat += math.cos(angle) * r
+        lng += math.sin(angle) * r
+
     return lat, lng

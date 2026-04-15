@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
-import { broadcastSSE } from '@/app/api/chat/stream/route';
-import { addMarker, patchMarker, upsertByTrackId, initStore } from '@/lib/markers-store';
+import { broadcastSSE } from '@/lib/chat-sse-stream';
+import { addMarker, patchMarker, upsertByTrackId, initStore, getRawMessages } from '@/lib/markers-store';
+import { attachDisplayPolicyToPayload } from '@/lib/marker-broadcast-enrich';
 import { loadSettings } from '@/lib/admin/data';
 import { ingestBodyTooLargeResponse } from '@/lib/ingest-body-limit';
 import { validateIngestMarker, validateIngestPatchUpdates } from '@/lib/ingest-validate';
 import { verifyIngestOrRespond } from '@/lib/ingest-auth-guard';
 import { IngestMarkerSchema, IngestPatchSchema } from '@/lib/api-schemas';
+import { ingestShouldBroadcastMarker } from '@/lib/ingest-confidence-gate';
 
 // ── POST handler ─────────────────────────────────────────────────────────────
 
@@ -42,10 +44,17 @@ export async function POST(request: Request) {
   if (marker.track_id && typeof marker.track_id === 'string') {
     const result = await upsertByTrackId(marker.track_id, marker);
 
-    const minConf = loadSettings().minConfidence ?? 0.3;
-    const shouldBroadcast = marker.manual
-      || typeof marker.confidence !== 'number'
-      || marker.confidence >= minConf;
+    const minConf = loadSettings().minConfidence ?? 0.65;
+    const rowsAfter = getRawMessages();
+    const fullRowForBroadcast =
+      rowsAfter.find(
+        (r) => String(r.track_id) === String(marker.track_id) && String(r.id) === String(result.id),
+      ) ??
+      rowsAfter.find((r) => String(r.track_id) === String(marker.track_id));
+    const shouldBroadcast = ingestShouldBroadcastMarker(
+      (fullRowForBroadcast ?? marker) as Record<string, unknown>,
+      minConf,
+    );
 
     // Broadcast track update — strip positions[] to save bandwidth (skip if below confidence threshold)
     // For 'updated' mode, client appends lat/lng locally; for 'created', client uses initial position
@@ -56,6 +65,13 @@ export async function POST(request: Request) {
         delete broadcastMarker.positions; // client builds locally from lat/lng
       } else if (Array.isArray(broadcastMarker.positions) && (broadcastMarker.positions as unknown[]).length > 3) {
         broadcastMarker.positions = (broadcastMarker.positions as unknown[]).slice(-3);
+      }
+      const tid = String(marker.track_id);
+      const fullRow =
+        rowsAfter.find((r) => String(r.track_id) === tid && String(r.id) === String(result.id)) ??
+        rowsAfter.find((r) => String(r.track_id) === tid);
+      if (fullRow && typeof fullRow === 'object') {
+        attachDisplayPolicyToPayload(fullRow as Record<string, unknown>, broadcastMarker);
       }
       broadcastSSE({
         type: 'track_update',
@@ -77,14 +93,22 @@ export async function POST(request: Request) {
   // Legacy: no track_id — add as standalone marker
   const result = await addMarker(marker);
 
-  const minConf = loadSettings().minConfidence ?? 0.3;
-  const shouldBroadcast = marker.manual
-    || typeof marker.confidence !== 'number'
-    || marker.confidence >= minConf;
+  const minConf = loadSettings().minConfidence ?? 0.65;
+  const resolvedId = result.id ?? marker.id;
+  const fullRowLegacy = getRawMessages().find((r) => String(r.id) === String(resolvedId));
+  const shouldBroadcast = ingestShouldBroadcastMarker(
+    (fullRowLegacy ?? marker) as Record<string, unknown>,
+    minConf,
+  );
 
   // Broadcast new marker to all SSE clients (real-time push) — skip if below confidence threshold
   if (shouldBroadcast) {
-    broadcastSSE({ type: 'marker_new', data: marker });
+    const payload: Record<string, unknown> = { ...marker };
+    const fullRow = fullRowLegacy;
+    if (fullRow && typeof fullRow === 'object') {
+      attachDisplayPolicyToPayload(fullRow as Record<string, unknown>, payload);
+    }
+    broadcastSSE({ type: 'marker_new', data: payload });
   }
 
   console.log(
@@ -135,12 +159,26 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: 'Marker not found' }, { status: 404 });
   }
 
-  // Broadcast as track_update if track_id is present, otherwise legacy marker_update
   const trackId = updates.track_id as string | undefined;
-  if (trackId) {
-    broadcastSSE({ type: 'track_update', data: { track_id: trackId, mode: 'updated', marker: { id, ...updates } } });
-  } else {
-    broadcastSSE({ type: 'marker_update', data: { id, ...updates } });
+  const fullRowAfterPatch =
+    getRawMessages().find((r) => String(r.id) === id) ??
+    (trackId ? getRawMessages().find((r) => String(r.track_id) === trackId) : undefined);
+  const minConfPatch = loadSettings().minConfidence ?? 0.65;
+  const shouldPatchBroadcast =
+    fullRowAfterPatch &&
+    ingestShouldBroadcastMarker(fullRowAfterPatch as Record<string, unknown>, minConfPatch);
+
+  if (shouldPatchBroadcast) {
+    if (trackId) {
+      const broadcastMarker: Record<string, unknown> = { id, ...updates };
+      attachDisplayPolicyToPayload(fullRowAfterPatch as Record<string, unknown>, broadcastMarker);
+      broadcastSSE({
+        type: 'track_update',
+        data: { track_id: trackId, mode: 'updated', marker: broadcastMarker },
+      });
+    } else {
+      broadcastSSE({ type: 'marker_update', data: { id, ...updates } });
+    }
   }
 
   console.log(`[INGEST] PATCH marker ${id}: ${Object.keys(updates).join(', ')}`);

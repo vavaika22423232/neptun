@@ -171,6 +171,35 @@ def find_candidates(
             for r in stem_rows:
                 _add(r, 'gazetteer_stem')
 
+    # 3b. Multi-word declension: stem each word and try LIKE match
+    #     "Руську Лозову" → stems ["руськ", "лозов"] → LIKE 'руськ%лозов%'
+    if len(candidates) < 3 and ' ' in name_lower:
+        words = name_lower.split()
+        stems = [_stem(w) for w in words if len(w) > 2]
+        if len(stems) >= 2 and all(len(s) >= 3 for s in stems):
+            pattern = '%'.join(s + '%' for s in stems)
+            multi_rows = conn.execute(
+                "SELECT * FROM places WHERE name_lower LIKE ? LIMIT ?",
+                (pattern, limit)
+            ).fetchall()
+            for r in multi_rows:
+                _add(r, 'gazetteer_stem_multi')
+
+    # 3c. Stem-based alias search (handles declined forms registered as aliases)
+    if len(candidates) < 3:
+        stem = _stem(name_lower)
+        if len(stem) >= 3:
+            alias_stem_rows = conn.execute(
+                """SELECT p.* FROM aliases a
+                   JOIN places p ON a.canonical_id = p.id
+                   WHERE a.alias LIKE ?
+                   ORDER BY a.priority DESC
+                   LIMIT ?""",
+                (stem + '%', limit)
+            ).fetchall()
+            for r in alias_stem_rows:
+                _add(r, 'gazetteer_alias_stem')
+
     # 4. If oblast_hint, also search within that oblast (broader)
     if oblast_hint and len(candidates) < 3:
         oblast_rows = conn.execute(

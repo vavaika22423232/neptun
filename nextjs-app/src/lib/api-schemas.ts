@@ -1,5 +1,19 @@
 import { z } from 'zod';
 
+/**
+ * Ingest body for `/api/ingest`. The `marker` object is `.passthrough()` so the Python worker
+ * can send extra fields the UI and correlator rely on, including:
+ * - `resolved_oblast_hasc` — GADM HASC_1 (e.g. `UA.KK`) for region↔coord validation on the server
+ * - `region_key` — stable string for spatial correlator (avoid merging different oblasts)
+ * - `region`, `oblast` — free-text; used with `resolved_oblast_hasc` to snap bad geocodes
+ * - `candidates` — optional alternate geocode hits for debugging / future reranking
+ * - `geocode_tier` — e.g. point | multi | ambiguous (public `display_class` uses this when corroboration is missing)
+ * - `candidates_count` — when `candidates` is omitted or not an array, still declare how many Nominatim/geo hits existed
+ * - `geocode_source` — worker label (nominatim, internal, radar, …) for audits; not required for Zod (passthrough)
+ * - `source_tier` — optional trust tier for the message channel vs geocoder (passthrough)
+ * Do not treat missing ingest meta as “100% sure point”; server falls back to conservative `region_signal` + `minConfidence` edge for missing `confidence`.
+ * Prefer two-stage geocoding in the worker (resolve oblast first, then search within bbox).
+ */
 export const IngestMarkerSchema = z.object({
   marker: z.object({
     id: z.string().max(128).optional(),
@@ -36,6 +50,8 @@ export const ChatSendSchema = z.object({
   isPro: z.boolean().optional(),
   hardwareId: z.string().max(128).optional(),
   hardware_id: z.string().max(128).optional(),
+  deviceId: z.string().max(128).optional(),
+  nickname: z.string().max(64).optional(),
 }).refine(
   (data) => data.message || data.text,
   { message: 'message is required' },

@@ -3,10 +3,21 @@ import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
-import { broadcastSSE } from '../stream/route';
+import { broadcastSSE } from '@/lib/chat-sse-stream';
 import { invalidateChatCache } from '../messages/route';
-import { isBanned, loadChatModerators } from '@/lib/admin/data';
+import { isBanned, isModeratorDevice } from '@/lib/admin/data';
 import { validateImageMagicBytes } from '@/lib/api-schemas';
+import { requireChatAuth } from '@/lib/chat-auth';
+import { containsForbiddenText } from '@/lib/chat-forbidden';
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
 
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const IMAGES_DIR = path.join(DATA_DIR, 'images');
@@ -39,17 +50,34 @@ function resolveChatFile(): string {
  */
 export async function POST(request: Request) {
   try {
+    const authResult = requireChatAuth(request);
+    if (authResult instanceof Response) return authResult;
+    const identity = authResult;
+
     const formData = await request.formData();
 
-    const deviceId = formData.get('deviceId')?.toString();
-    const nickname = formData.get('nickname')?.toString() || 'Анонім';
+    const formDeviceId = formData.get('deviceId')?.toString();
+    if (!formDeviceId || formDeviceId !== identity.deviceId) {
+      return NextResponse.json({ error: 'Невідповідність пристрою' }, { status: 403 });
+    }
+    const deviceId = identity.deviceId;
+    const nickname = identity.nickname;
     const hardwareId = formData.get('hardwareId')?.toString() || formData.get('hardware_id')?.toString();
-    const caption = (formData.get('message') || formData.get('caption'))?.toString()?.trim() || '';
+    const rawCaption = (formData.get('message') || formData.get('caption'))?.toString()?.trim() || '';
+    const caption = escapeHtml(rawCaption).trim();
     const isPro = formData.get('isPro')?.toString() === 'true';
     const imageFile = formData.get('image') as File | null;
 
-    if (!deviceId || !imageFile) {
+    if (!imageFile) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    }
+
+    const isModerator = isModeratorDevice(deviceId);
+    if (!isModerator && caption && containsForbiddenText(caption)) {
+      return NextResponse.json(
+        { error: 'Підпис містить неприйнятну лексику' },
+        { status: 400 },
+      );
     }
 
     if (imageFile.size > MAX_IMAGE_SIZE) {
@@ -88,9 +116,6 @@ export async function POST(request: Request) {
 
     const imageUrl = `/data/images/${fileName}`;
 
-    const mods = loadChatModerators();
-    const isModerator = mods.includes(deviceId);
-
     const now = Date.now() / 1000;
     const nowDate = new Date();
 
@@ -98,7 +123,7 @@ export async function POST(request: Request) {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       userId: nickname,
       deviceId,
-      message: caption || '🖼 Фото',
+      message: caption.length > 0 ? caption : '🖼 Фото',
       messageType: 'image',
       imageUrl,
       timestamp: now,

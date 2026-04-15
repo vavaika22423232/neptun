@@ -36,12 +36,23 @@ from telethon.tl.functions.channels import JoinChannelRequest
 from dotenv import load_dotenv
 
 # Configuration
-from constants import API_ID, API_HASH, CHANNELS, CHANNEL_META, THREAT_SPEEDS, LAUNCH_SITES, KAB_AIRFIELDS, CARDINAL_AIRFIELDS, CHANNEL_DEFAULT_OBLAST, REGION_TOPIC_MAP, RAION_NAME_TO_ID, REGION_TO_OBLAST_ID
+from constants import API_ID, API_HASH, CHANNELS, CHANNEL_META, THREAT_SPEEDS, LAUNCH_SITES, KAB_AIRFIELDS, CARDINAL_AIRFIELDS, CHANNEL_DEFAULT_OBLAST, REGION_TOPIC_MAP, RAION_NAME_TO_ID, REGION_TO_OBLAST_ID, is_gpt_parser_enabled
+from channel_profiles.kherson_non_drone import (
+    CHANNEL_USERNAME as KHERSON_NON_DRONE_CH,
+    GEO_CITY_HINT as KHERSON_GEO_CITY_HINT,
+    MARKER_ICON_FILENAME as KHERSON_MARKER_ICON,
+    extract_kherson_non_drone_place_hint,
+    is_kherson_non_drone_raion_allowed,
+    normalize_kherson_non_drone_message,
+)
 from db import db
 from fcm_sender import send_threat_push
 from alarm_monitor import alarm_monitor_loop
 from ingest_queue import IngestQueue
 from geo_bounds import is_plausible_threat_coord
+from geo.maritime_region import normalize_maritime_marker_fields
+from geo.place_guardrails import validate_place_candidate
+from geo.rules import oblast_uk_name_to_hasc
 from core.chain_tracker import MessageChainTracker
 
 # [NEW] Import Track Manager (legacy — kept for fallback reference)
@@ -74,6 +85,11 @@ if INGEST_URL:
     log.info(f"Ingest endpoint: {INGEST_URL}")
 else:
     log.warning("INGEST_URL not set — markers will NOT appear on the web frontend!")
+
+if is_gpt_parser_enabled():
+    log.info('GPT parser + AI analyzer enabled (DISABLE_GPT_PARSER=0)')
+else:
+    log.info('GPT parser + AI analyzer disabled (default) — regex-primary; set DISABLE_GPT_PARSER=0 to enable OpenAI')
 
 if not INGEST_SECRET:
     log.warning("INGEST_SECRET / AUTH_SECRET not set — ingest requests will be rejected!")
@@ -139,6 +155,68 @@ def _should_ingest_by_alarm(region: str | None, event_type: str, raion: str | No
         return True
 
 
+def _distinct_toponym_signals(entities_list: list) -> int:
+    """Rough count of unique geo strings across entities (multi-threat / ambiguous text)."""
+    keys: set[str] = set()
+    for e in entities_list:
+        if getattr(e, 'is_negation', False) or getattr(e, 'is_allclear', False):
+            continue
+        for raw in (
+            getattr(e, 'place_name', None),
+            getattr(e, 'target_city', None),
+            getattr(e, 'near', None),
+            getattr(e, 'direction', None),
+        ):
+            if not raw or not str(raw).strip():
+                continue
+            token = str(raw).strip().lower()
+            if len(token) < 3:
+                continue
+            keys.add(token[:96])
+    return len(keys)
+
+
+def _message_multi_place_risk(entities_list: list, msg_text: str) -> bool:
+    """True when message likely mixes several places — point pin is often wrong."""
+    if len(entities_list) >= 3:
+        return True
+    if _distinct_toponym_signals(entities_list) >= 3:
+        return True
+    lines = [ln.strip() for ln in (msg_text or '').split('\n') if ln.strip()]
+    numbered = sum(1 for ln in lines if re.match(r'^\d+[\).\s]', ln))
+    if numbered >= 3:
+        return True
+    return False
+
+
+def _sea_context_inland_mismatch(msg_text: str, lat: float, lng: float) -> bool:
+    """Sea / aquatory mentioned but coords land deep inland — typical bad geocode."""
+    ml = (msg_text or '').lower()
+    sea_kw = (
+        'море', 'акватор', 'над мор', 'чорним мор', 'чорного мор',
+        'флотил', 'морськ', 'над водою',
+    )
+    if not any(k in ml for k in sea_kw):
+        return False
+    if not (44.0 < lat < 53.0 and 22.0 < lng < 41.0):
+        return False
+    # Crude inland boxes (Kyiv–Chernihiv–north Zhytomyr) — not coast
+    if 50.15 <= lat <= 51.75 and 29.8 <= lng <= 32.2:
+        return True
+    if 49.8 <= lat <= 51.2 and 28.5 <= lng <= 30.0:
+        return True
+    return False
+
+
+_COARSE_PLACEMENT_STATUSES = frozenset({
+    'oblast_fallback',
+    'oblast_direction_only',
+    'estimated_oblast_center',
+    'estimated_offset_coastal',
+    'ambiguous_no_point',
+})
+
+
 _http_session: aiohttp.ClientSession | None = None
 
 
@@ -170,15 +248,22 @@ def get_http_session() -> aiohttp.ClientSession:
         _http_session = aiohttp.ClientSession()
     return _http_session
 
-async def _clear_region_markers(oblast: str, threat_types: list[str] | None = None) -> int:
-    """Remove all markers in an oblast from the Next.js store.
-    Called on allclear / дорозвідка. Returns removed count."""
+async def _clear_region_markers(
+    oblast: str,
+    threat_types: list[str] | None = None,
+    place_contains: str | None = None,
+) -> int:
+    """Remove markers in an oblast from the Next.js store, optionally only those whose place/location matches.
+    Called on allclear / дорозвідка. Returns removed count.
+    Immediate server-side delete (not TTL); see nextjs-app/docs/ALLCLEAR_AND_PUBLIC_MAP.md."""
     if not CLEAR_REGION_URL or not oblast:
         return 0
     try:
         payload: dict = {'region': oblast}
         if threat_types:
             payload['threat_types'] = threat_types
+        if place_contains and str(place_contains).strip():
+            payload['place_contains'] = str(place_contains).strip()
         
         session = get_http_session()
         async with session.post(
@@ -240,6 +325,7 @@ async def _publish_feed_event(
     resolve_status: str = '',
     marker_id: str = '',
     origin: str = '',
+    impact_place: str = '',
 ):
     """Push a pipeline event to the admin feed. Non-blocking."""
     if not FEED_URL:
@@ -267,7 +353,9 @@ async def _publish_feed_event(
         'resolve_status': resolve_status,
         'marker_id': marker_id,
         'origin': origin,
+        'impact_place': impact_place,
     }
+    normalize_maritime_marker_fields(event)
     # Remove None/empty values to save bandwidth
     _STRIP_ZERO_KEYS = {'channel_id', 'msg_id', 'entities_count'}
     event = {
@@ -328,7 +416,35 @@ async def _intelligence_save_loop():
 
 # ── Global Settings Sync ─────────────────────────────────────────────────────
 
-MIN_CONFIDENCE_THRESHOLD = 0.3
+MIN_CONFIDENCE_THRESHOLD = 0.65
+
+
+def _min_trusted_resolver_conf() -> float:
+    """Trust resolver lat/lng only if confidence clears admin map bar + margin."""
+    raw = os.getenv('NEPTUN_MIN_RESOLVED_POINT_CONF', '').strip()
+    if raw:
+        try:
+            v = float(raw)
+            if 0.2 <= v <= 0.95:
+                return v
+        except ValueError:
+            pass
+    return max(0.32, float(MIN_CONFIDENCE_THRESHOLD) + 0.02)
+
+
+def _cap_confidence_coarse_placements(confidence: float, resolve_status: str) -> float:
+    """Centroid / heuristic sectors are not pin-accurate — stay below map threshold so UI filters them."""
+    coarse = frozenset({
+        'oblast_fallback',
+        'oblast_direction_only',
+        'estimated_oblast_center',
+        'estimated_offset_coastal',
+    })
+    if resolve_status not in coarse:
+        return confidence
+    ceiling = max(0.06, MIN_CONFIDENCE_THRESHOLD - 0.02)
+    return min(float(confidence), ceiling)
+
 
 async def _sync_settings_loop():
     """Background task to fetch global threshold settings periodically."""
@@ -340,10 +456,12 @@ async def _sync_settings_loop():
     _base = INGEST_URL.rsplit('/api/ingest', 1)[0]
     settings_url = f"{_base}/api/settings"
 
+    settings_headers = {'X-Auth-Secret': INGEST_SECRET} if INGEST_SECRET else {}
+
     # Immediate first fetch so worker respects admin threshold from startup
     try:
         session = get_http_session()
-        async with session.get(settings_url, timeout=5) as resp:
+        async with session.get(settings_url, timeout=5, headers=settings_headers) as resp:
             if resp.status == 200:
                 data = await resp.json()
                 new_min = data.get('minConfidence')
@@ -357,7 +475,7 @@ async def _sync_settings_loop():
     while True:
         try:
             session = get_http_session()
-            async with session.get(settings_url, timeout=5) as resp:
+            async with session.get(settings_url, timeout=5, headers=settings_headers) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     new_min = data.get('minConfidence')
@@ -365,7 +483,6 @@ async def _sync_settings_loop():
                         if MIN_CONFIDENCE_THRESHOLD != new_min:
                             log.info(f"Admin Config Update: Changed MIN_CONFIDENCE_THRESHOLD from {MIN_CONFIDENCE_THRESHOLD} to {new_min}")
                             MIN_CONFIDENCE_THRESHOLD = new_min
-                # Read the body fully to return socket
                 await resp.read()
         except Exception as e:
             log.debug(f"Failed to fetch global settings: {e}")
@@ -495,7 +612,12 @@ async def main():
 
 # ── Imports for processing ───────────────────────────────────────────────────
 
-from core.parser_v2 import extract_all_entities, CARDINAL_DIRECTIONS, OBLAST_NORMALIZATION
+from core.parser_v2 import (
+    extract_all_entities,
+    CARDINAL_DIRECTIONS,
+    OBLAST_NORMALIZATION,
+    regional_oblast_nickname_covers_place,
+)
 from core.message_filter import is_skip_message, extract_header_oblast, detect_allclear_keywords
 from constants import OBLAST_CENTERS
 from ai_trajectory import predict_trajectory as ai_predict_trajectory
@@ -588,13 +710,16 @@ def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
 
 _JITTER_RADIUS_KM = 10  # scatter radius for individual drone markers
 _KM_TO_DEG_LAT = 1 / 111.32  # approximate km → degree latitude
-# Default OFF: one aggregated marker per entity; set NEPTUN_COORD_JITTER=1 to enable spread
-_COORD_JITTER_ENABLED = os.getenv('NEPTUN_COORD_JITTER', '').lower() in ('1', 'true', 'yes')
+# Default ON: deterministic jitter prevents markers stacking; set NEPTUN_COORD_JITTER=0 to disable
+_COORD_JITTER_ENABLED = os.getenv('NEPTUN_COORD_JITTER', '1').lower() not in ('0', 'false', 'no', 'off')
 
 # Geo quality (see QUALITY.md): recent-events bearing is a weak heuristic — off by default
 _RECENT_EVENTS_BEARING = os.getenv('NEPTUN_RECENT_EVENTS_BEARING', '').lower() in ('1', 'true', 'yes')
-# When False (default), dimap "no bearing" path uses target city coords instead of oblast centroid (less arbitrary)
-_DIMAP_USE_OBLAST_CENTER = os.getenv('NEPTUN_DIMAP_USE_OBLAST_CENTER', '').lower() in ('1', 'true', 'yes')
+_USE_OBLAST_CENTER = os.getenv('NEPTUN_USE_OBLAST_CENTER', '').lower() in ('1', 'true', 'yes')
+# Default ON: drop pin when resolver has multiple tied candidates (reduces wrong-city pins).
+_OMIT_AMBIGUOUS_COORDS = os.getenv('NEPTUN_OMIT_COORDS_ON_AMBIGUOUS', '1').lower() not in (
+    '0', 'false', 'no', 'off',
+)
 
 
 def _jitter_coords(lat: float, lng: float, unit_idx: int, seed_str: str, radius_km: float = _JITTER_RADIUS_KM) -> tuple[float, float]:
@@ -1071,6 +1196,9 @@ async def process_new_message(event):
     channel_name = await _resolve_channel_name(event)
     channel_meta = CHANNEL_META.get(channel_name, {'priority': 3, 'format': 'semi', 'name': channel_name})
 
+    if channel_name == KHERSON_NON_DRONE_CH:
+        msg_text = normalize_kherson_non_drone_message(msg_text)
+
     is_edit = getattr(event.message, 'edit_date', None) is not None
     log.info(f"MSG [{channel_name}]{' [EDIT]' if is_edit else ''}: {msg_text[:100]}")
 
@@ -1222,7 +1350,14 @@ async def process_new_message(event):
                 _clear_types = None
                 if threat_types:
                     _clear_types = [LEGACY_TYPE_MAP.get(t, t) for t in threat_types]
-                await _clear_region_markers(oblast, _clear_types)
+                _place_filter: str | None = None
+                if channel_name == KHERSON_NON_DRONE_CH:
+                    _place_filter = extract_kherson_non_drone_place_hint(msg_text) or (
+                        (entities.place_name or "").strip() or None
+                    )
+                    if _place_filter and len(_place_filter.strip()) < 3:
+                        _place_filter = None
+                await _clear_region_markers(oblast, _clear_types, place_contains=_place_filter)
             else:
                 log.info(f"ALL-CLEAR from {channel_name} (no oblast): {entities.raw_text[:80]}")
             await _publish_feed_event(
@@ -1260,6 +1395,16 @@ async def process_new_message(event):
                 log.info(f"PLACE_CLEAN [{channel_name}]: '{entities.place_name}' → '{_cleaned}'")
                 entities.place_name = _cleaned
 
+        # ── NLP Augmentation ─────────────────────────────────────────
+        try:
+            from core.parser_nlp import augment_parsed_entities_with_nlp
+            _nlp_place = augment_parsed_entities_with_nlp(entities.raw_text or msg_text, entities.place_name)
+            if _nlp_place != entities.place_name:
+                log.info(f"PLACE_NLP_AUGMENT [{channel_name}]: '{entities.place_name}' → '{_nlp_place}'")
+                entities.place_name = _nlp_place
+        except ImportError:
+            pass
+
         # ── Reject generic non-place words from GPT ──────────────────
         _GENERIC_NON_PLACES = {
             'місто', 'міста', 'містом', 'містах', 'містечко',
@@ -1274,6 +1419,23 @@ async def process_new_message(event):
         if entities.place_name and entities.place_name.lower().strip() in _GENERIC_NON_PLACES:
             log.info(f"PLACE_REJECT [{channel_name}]: '{entities.place_name}' is a generic word, not a place name")
             entities.place_name = None
+
+        if entities.place_name:
+            _guarded, _ok = validate_place_candidate(entities.place_name, gazetteer_hit=False)
+            if not _ok:
+                log.info(
+                    f"PLACE_GUARD [{channel_name}]: reject non-toponym token {entities.place_name!r}"
+                )
+                entities.place_name = None
+            else:
+                entities.place_name = _guarded
+
+        if channel_name == KHERSON_NON_DRONE_CH:
+            _kh_hint = extract_kherson_non_drone_place_hint(msg_text)
+            _pn = (entities.place_name or "").strip()
+            if _kh_hint and (len(_pn) < 3 or _pn.lower() in _GENERIC_NON_PLACES):
+                log.info(f"KHERSON_PLACE_HINT [{channel_name}]: '{_pn or '(empty)'}' → '{_kh_hint}'")
+                entities.place_name = _kh_hint
 
         # Recon/дорозвідка suppresses UAV groups
         # Oblast-level "дорозвідка" (keyword present, no place_name) = allclear for UAVs
@@ -1318,6 +1480,8 @@ async def process_new_message(event):
         # Channel-default oblast boosts geocoding but must NOT alone trigger the hard oblast bbox gate
         # (wrong lock-in if the channel default is generic). Gate uses parser oblast or "(… область)" in text.
         _ent_dict = entities.to_entities_dict()
+        if channel_name == KHERSON_NON_DRONE_CH:
+            _ent_dict['geo_city_hint'] = KHERSON_GEO_CITY_HINT
         _oblast_from_explicit_paren = False
         # Явна область у дужках у тексті — завжди сильніша за GPT (раніше ігнорувалась, якщо GPT вже підставив область).
         # Дужки + скорочення «обл.»; підтримка дефіса (Івано-Франківська)
@@ -1439,8 +1603,7 @@ async def process_new_message(event):
             _used_launch_site = True
             log.info(f"LAUNCH_SITE override: {location} → {coords}")
 
-        if not _used_launch_site and resolved and resolved.lat != 0 and resolved.confidence >= 0.15:
-            # Good enough coords — use them even if status is 'ambiguous'
+        if not _used_launch_site and resolved and resolved.lat != 0 and resolved.confidence >= _min_trusted_resolver_conf():
             location = resolved.place_name
             region = resolved.oblast
             coords = (resolved.lat, resolved.lng)
@@ -1448,22 +1611,60 @@ async def process_new_message(event):
             resolve_status = resolved.status
             candidates_json = [c.to_dict() for c in resolved.chosen_from[:3]]
             raion_name = resolved.raion
-        elif not _used_launch_site and resolved and resolved.status not in ('rejected',) and resolved.lat != 0:
-            # Low-confidence but real coords — still better than oblast fallback
-            location = resolved.place_name
-            region = resolved.oblast
-            coords = (resolved.lat, resolved.lng)
-            confidence = max(resolved.confidence, 0.1)
-            # Boost: gazetteer major cities (50k+) — trusted source, "Шахед на Кременчук" must show
-            if resolved.chosen_from and confidence < MIN_CONFIDENCE_THRESHOLD:
+            # Major gazetteer hit: slight boost so borderline resolver scores still map
+            if resolved.chosen_from and confidence < MIN_CONFIDENCE_THRESHOLD + 0.05:
                 best = resolved.chosen_from[0]
                 if (getattr(best, 'source', '') or '').startswith('gazetteer') and getattr(best, 'population', 0) >= 50000:
-                    confidence = max(confidence, 0.5)
+                    confidence = max(confidence, min(0.55, MIN_CONFIDENCE_THRESHOLD + 0.12))
                     log.info(f"Gazetteer major city boost: {location} (pop={best.population}) → conf={confidence:.2f}")
-            resolve_status = 'low_confidence'
-            candidates_json = [c.to_dict() for c in resolved.chosen_from[:3]]
-            raion_name = resolved.raion
-            log.info(f"Using low-confidence coords for {location}: conf={confidence:.2f}")
+
+            # «на Житомирщині» + place Житомир = область, не центр міста (GPT/газетиєр люблять обласний центр)
+            _pn_check = (getattr(entities, 'place_name', None) or '') or (resolved.place_name or '')
+            try:
+                from geo.oblast_coherence import is_moving_air_threat
+
+                _leg_ty = LEGACY_TYPE_MAP.get(entities.event_type, entities.event_type)
+                if (
+                    regional_oblast_nickname_covers_place(msg_text, _pn_check)
+                    and is_moving_air_threat(entities.event_type, _leg_ty)
+                ):
+                    _ob_ctx = (_ent_dict.get('oblast') or region or '').strip()
+                    _alt_gc = None
+                    _alt_label = None
+                    for cand in filter(None, [getattr(entities, 'direction', None), getattr(entities, 'near', None)]):
+                        cs = str(cand).strip()
+                        if len(cs) < 3:
+                            continue
+                        if cs.lower() in CARDINAL_DIRECTIONS:
+                            continue
+                        _g = _geocode_direction_target(cs, _ob_ctx or None, min_confidence=0.32)
+                        if _g:
+                            _alt_gc = _g
+                            _alt_label = cs
+                            break
+                    if _alt_gc:
+                        coords = _alt_gc
+                        location = _alt_label or location
+                        confidence = min(float(confidence), 0.72)
+                        resolve_status = 'regional_oblast_direction_target'
+                        log.info(
+                            f"REGIONAL-NOT-CITY [{channel_name}]: -щин(а) у тексті, "
+                            f"було «{entities.place_name!r}» як місто → ціль напрямку "
+                            f"{location!r} ({coords[0]:.3f},{coords[1]:.3f})"
+                        )
+                    elif _ob_ctx:
+                        fb = _fallback_coords_for_oblast(_ob_ctx)
+                        if fb:
+                            coords = fb
+                            location = _ob_ctx
+                            confidence = min(float(confidence), 0.48)
+                            resolve_status = 'regional_oblast_centroid'
+                            log.info(
+                                f"REGIONAL-NOT-CITY [{channel_name}]: -щин(а), без геокоду напрямку → "
+                                f"центроїд {_ob_ctx}"
+                            )
+            except Exception as e:
+                log.debug(f"regional_oblast_nickname override skipped: {e}")
         else:
             location = entities.place_name or 'Unknown'
             # Після CHANNEL_HOME_OBLAST у _ent_dict уже правильніша область, ніж у entities.oblast
@@ -1473,9 +1674,9 @@ async def process_new_message(event):
             resolve_status = 'rejected' if resolved else 'no_resolver'
             candidates_json = []
 
-        # Optional: drop resolver point when status is ambiguous (two+ candidates) — less false precision
+        # Drop resolver point when status is ambiguous (two+ candidates) — less false precision
         if (
-            os.getenv('NEPTUN_OMIT_COORDS_ON_AMBIGUOUS', '').lower() in ('1', 'true', 'yes')
+            _OMIT_AMBIGUOUS_COORDS
             and not _used_launch_site
             and resolved
             and getattr(resolved, 'status', None) == 'ambiguous'
@@ -1496,7 +1697,7 @@ async def process_new_message(event):
             region = CHANNEL_DEFAULT_OBLAST[channel_name]
             log.debug(f"Using channel-default oblast: {region} for {channel_name}")
 
-        # ── DIMAP-offset: shift marker from target to estimated current position ──
+        # ── Estimated-offset: shift marker from target to estimated current position ──
         # Must run BEFORE oblast fallback so target_city offset takes priority
         _target_coords = None
         _target_city = getattr(entities, 'target_city', None)
@@ -1559,7 +1760,8 @@ async def process_new_message(event):
                         resolve_status = 'oblast_direction_only'
                         log.info(
                             f"OBLAST-DIRECTION [{channel_name}]: '{entities.direction}' = oblast, "
-                            f"placing at {region} ({coords[0]:.3f},{coords[1]:.3f})"
+                            f"placing at {region} ({coords[0]:.3f},{coords[1]:.3f}) "
+                            f"(coarse centroid — may be hidden on map by confidence cap)"
                         )
         if _origin_raw:
             _orig_lower = _origin_raw.lower().strip()
@@ -1570,7 +1772,7 @@ async def process_new_message(event):
 
         # Auto-promote: if origin is set + place_name resolved + no target_city,
         # the "place" is likely the TARGET (e.g. "→Полтава з Харківщини").
-        # Promote place_name → target_city so DIMAP-offset fires.
+        # Promote place_name → target_city so estimated-offset fires.
         if _origin_raw and not _target_city and entities.place_name and coords:
             _has_arrow = any(c in msg_text for c in '→➡►▶')
             _has_from_pattern = bool(re.search(
@@ -1580,7 +1782,7 @@ async def process_new_message(event):
             if _has_arrow or _has_from_pattern:
                 _target_city = entities.place_name
                 entities.target_city = _target_city
-                coords = None  # clear resolved coords — let DIMAP-offset place it correctly
+                coords = None  # clear resolved coords — let estimated-offset place it correctly
                 log.info(
                     f"AUTO-PROMOTE [{channel_name}]: place_name '{entities.place_name}' → "
                     f"target_city (origin='{_origin_raw}', arrow={_has_arrow})"
@@ -1605,7 +1807,7 @@ async def process_new_message(event):
                                 _oc[0], _oc[1], _tc[0], _tc[1]
                             )
                             log.info(
-                                f"DIMAP: origin '{_origin_raw}' ({_oc[0]:.2f},{_oc[1]:.2f}) "
+                                f"EST: origin '{_origin_raw}' ({_oc[0]:.2f},{_oc[1]:.2f}) "
                                 f"→ target bearing {bearing_to_target:.1f}°"
                             )
 
@@ -1627,7 +1829,7 @@ async def process_new_message(event):
                                     evt_lat, evt_lng, _tc[0], _tc[1]
                                 )
                                 log.info(
-                                    f"DIMAP: recent event ({evt_lat:.2f},{evt_lng:.2f}) "
+                                    f"EST: recent event ({evt_lat:.2f},{evt_lng:.2f}) "
                                     f"→ target bearing {bearing_to_target:.1f}° (dist={dist_km:.0f}km)"
                                 )
                                 break
@@ -1640,7 +1842,7 @@ async def process_new_message(event):
                     if _origin_raw:
                         _oc = _geocode_origin(_origin_raw, allow_resolver_fallback=True)
                         if _oc:
-                            # Place along great-circle origin→target (dimap-style), not only at origin centroid
+                            # Place along great-circle origin→target, not only at origin centroid
                             try:
                                 from geo.resolver import point_along_great_circle
                                 _traj_frac = float(os.getenv('NEPTUN_TRAJECTORY_FRACTION', '0.10'))
@@ -1652,19 +1854,19 @@ async def process_new_message(event):
                                     _oc[0], _oc[1], _tc[0], _tc[1], _traj_frac
                                 )
                                 coords = (_plat, _plng)
-                                resolve_status = 'dimap_trajectory'
+                                resolve_status = 'estimated_trajectory'
                                 confidence = max(confidence, 0.6)
                                 log.info(
-                                    f"DIMAP-TRAJECTORY: origin '{_origin_raw}' → target {_target_city} "
+                                    f"EST-TRAJECTORY: origin '{_origin_raw}' → target {_target_city} "
                                     f"t={_traj_frac:.2f} seg={_seg_km:.0f}km ({coords[0]:.3f},{coords[1]:.3f}) "
                                     f"bearing={bearing_to_target:.1f}°"
                                 )
                             else:
                                 coords = _oc
-                                resolve_status = 'dimap_offset'
+                                resolve_status = 'estimated_offset'
                                 confidence = max(confidence, 0.6)
                                 log.info(
-                                    f"DIMAP-OFFSET: origin '{_origin_raw}' ({_oc[0]:.3f},{_oc[1]:.3f}) "
+                                    f"EST-OFFSET: origin '{_origin_raw}' ({_oc[0]:.3f},{_oc[1]:.3f}) "
                                     f"→ target {_target_city} ({_tc[0]:.3f},{_tc[1]:.3f}) bearing={bearing_to_target:.1f}°"
                                 )
                         else:
@@ -1675,10 +1877,10 @@ async def process_new_message(event):
                                 _tc[0], _tc[1], reverse_bearing, _offset_km
                             )
                             coords = (offset_lat, offset_lng)
-                            resolve_status = 'dimap_offset'
+                            resolve_status = 'estimated_offset'
                             confidence = max(confidence, 0.6)
                             log.info(
-                                f"DIMAP-OFFSET (no origin): target={_target_city} "
+                                f"EST-OFFSET (no origin): target={_target_city} "
                                 f"→ {_offset_km:.0f}km offset ({offset_lat:.3f},{offset_lng:.3f})"
                             )
                     else:
@@ -1688,10 +1890,10 @@ async def process_new_message(event):
                             _tc[0], _tc[1], reverse_bearing, _offset_km
                         )
                         coords = (offset_lat, offset_lng)
-                        resolve_status = 'dimap_offset'
+                        resolve_status = 'estimated_offset'
                         confidence = max(confidence, 0.6)
                         log.info(
-                            f"DIMAP-OFFSET: target={_target_city} ({_tc[0]:.3f},{_tc[1]:.3f}) "
+                            f"EST-OFFSET: target={_target_city} ({_tc[0]:.3f},{_tc[1]:.3f}) "
                             f"bearing={bearing_to_target:.1f}° → {_offset_km:.0f}km offset ({offset_lat:.3f},{offset_lng:.3f})"
                         )
                 else:
@@ -1702,7 +1904,7 @@ async def process_new_message(event):
                             coords = _oc
                             resolve_status = 'origin_coords'
                             confidence = max(confidence, 0.5)
-                            log.info(f"DIMAP: no bearing, using origin '{_origin_raw}' coords: {_oc}")
+                            log.info(f"EST: no bearing, using origin '{_origin_raw}' coords: {_oc}")
                     if not coords:
                         coastal_regions = ['Одеська область', 'Миколаївська область', 'Херсонська область', 'Запорізька область', 'АР Крим']
                         if region in coastal_regions:
@@ -1712,33 +1914,32 @@ async def process_new_message(event):
                                 _tc[0], _tc[1], 180.0, _offset_km
                             )
                             coords = (offset_lat, offset_lng)
-                            resolve_status = 'dimap_offset_est'
+                            resolve_status = 'estimated_offset_coastal'
                             # Higher confidence when target_city is geocoded and region is known (0.3 passes default minConf)
                             confidence = max(confidence, 0.30 if (_target_city and region) else 0.15)
                             log.info(
-                                f"DIMAP-OFFSET (coastal fallback): target={_target_city} → "
+                                f"EST-OFFSET (coastal fallback): target={_target_city} → "
                                 f"{_offset_km:.0f}km south ({offset_lat:.3f},{offset_lng:.3f})"
                             )
                         else:
-                            # Last resort: oblast centroid (very arbitrary) — opt-in via NEPTUN_DIMAP_USE_OBLAST_CENTER
                             _oblast_center = (
-                                _fallback_coords_for_oblast(region) if region and _DIMAP_USE_OBLAST_CENTER else None
+                                _fallback_coords_for_oblast(region) if region and _USE_OBLAST_CENTER else None
                             )
                             if _oblast_center:
                                 coords = _oblast_center
-                                resolve_status = 'dimap_oblast_center'
+                                resolve_status = 'estimated_oblast_center'
                                 confidence = max(confidence, 0.2)
                                 log.info(
-                                    f"DIMAP-FALLBACK: no bearing for {_target_city}, "
+                                    f"EST-FALLBACK: no bearing for {_target_city}, "
                                     f"using oblast center of {region}: ({coords[0]:.3f},{coords[1]:.3f})"
                                 )
                             else:
                                 # Default: place at geocoded target city (predictable) instead of oblast centroid
                                 coords = _tc
-                                resolve_status = 'dimap_fallback_target'
+                                resolve_status = 'estimated_fallback_target'
                                 confidence = max(confidence, 0.25)
                                 log.info(
-                                    f"DIMAP-OFFSET (no bearing, no oblast): placing directly at target={_target_city} -> {_tc}"
+                                    f"EST-OFFSET (no bearing, no oblast): placing directly at target={_target_city} -> {_tc}"
                                 )
 
         elif _target_city and coords:
@@ -1746,12 +1947,12 @@ async def process_new_message(event):
             _tc = _geocode_direction_target(_target_city, region)
             if _tc:
                 _target_coords = _tc
-                log.info(f"DIMAP: place resolved, target_city={_target_city} → trajectory only")
+                log.info(f"EST: place resolved, target_city={_target_city} → trajectory only")
 
-        # DIMAP produced coords but location is still Unknown — use target_city as place
+        # Estimated-offset produced coords but location is still Unknown — use target_city as place
         if _target_city and coords and location == 'Unknown':
             location = _target_city
-            log.info(f"PLACE-FROM-TARGET: '{_target_city}' (place was Unknown, DIMAP gave coords)")
+            log.info(f"PLACE-FROM-TARGET: '{_target_city}' (place was Unknown, estimated-offset gave coords)")
 
         # Fallback: try geocoding place_name/direction before oblast center
         used_fallback = False
@@ -1809,6 +2010,11 @@ async def process_new_message(event):
                 pass
 
         legacy_type = LEGACY_TYPE_MAP.get(entities.event_type, entities.event_type)
+
+        if coords:
+            confidence = _cap_confidence_coarse_placements(
+                float(confidence), str(resolve_status or '')
+            )
 
         # ── AI deep analysis (on every message) ─────────────────────
         ai_analysis = None
@@ -1914,8 +2120,32 @@ async def process_new_message(event):
             f"@ {location} ({region}) conf={confidence:.2f} status={resolve_status}"
         )
 
+        # === Offshore placement when coastal oblast has no air alarm (shahed/uav) ===
+        if coords:
+            try:
+                from geo.offshore_policy import apply_offshore_uav_when_no_alarm
+
+                _prior_coords = (float(coords[0]), float(coords[1]))
+                coords, resolve_status, confidence = apply_offshore_uav_when_no_alarm(
+                    _prior_coords,
+                    region,
+                    entities.event_type,
+                    resolve_status,
+                    float(confidence),
+                )
+                if (float(coords[0]), float(coords[1])) != _prior_coords:
+                    log.info(
+                        f"OFFSHORE-NO-ALARM [{channel_name}]: {region} {entities.event_type} "
+                        f"{_prior_coords[0]:.4f},{_prior_coords[1]:.4f} → "
+                        f"{float(coords[0]):.4f},{float(coords[1]):.4f} "
+                        f"status={resolve_status}"
+                    )
+            except Exception as _off_e:
+                log.debug(f"offshore policy skipped: {_off_e}")
+
         # === Target Aggregator (cross-channel dedup + trajectory) ===
         _target = None
+        _aggregator_merged = False
         _bearing_hint = None
         if ticker_bearing is not None and isinstance(ticker_bearing, (int, float)) and math.isfinite(
             float(ticker_bearing)
@@ -1923,7 +2153,7 @@ async def process_new_message(event):
             _bearing_hint = float(ticker_bearing) % 360.0
 
         if coords:
-            _is_estimated = bool(resolve_status and resolve_status.startswith('dimap_'))
+            _is_estimated = bool(resolve_status and resolve_status.startswith('estimated_'))
             agg_obs = AggObs(
                 lat=coords[0],
                 lng=coords[1],
@@ -1935,8 +2165,9 @@ async def process_new_message(event):
                 place_name=location or '',
                 msg_text=msg_text[:200],
                 is_estimated=_is_estimated,
+                count=entities.count,
             )
-            _target = target_aggregator.ingest(agg_obs)
+            _target, _aggregator_merged = target_aggregator.ingest(agg_obs)
 
             if _target and _target.observation_count > 1:
                 speed_kmh = _target.speed_kmh
@@ -1971,7 +2202,7 @@ async def process_new_message(event):
             'channel_name': channel_name,
             'channel_priority': channel_meta.get('priority', 3),
             'msg_id': msg_id,
-            'count': entities.count,
+            'count': _target.count if (_target and getattr(_target, 'count', None)) else entities.count,
             'ts': now_iso,
             'date': now_iso,
             'created_at_epoch': int(now_kyiv.timestamp() * 1000),
@@ -1992,8 +2223,22 @@ async def process_new_message(event):
             'positions': _target.to_positions_list(30) if _target else None,
             'observation_count': _target.observation_count if _target else 1,
             'flight_phase': (ai_analysis or {}).get('flight_phase', 'cruise') if trajectory_data else None,
-            'is_estimated': resolve_status.startswith('dimap_') if resolve_status else False,
+            'is_estimated': resolve_status.startswith('estimated_') if resolve_status else False,
+            'confidence_0_100': int(max(0, min(100, round(float(confidence) * 100)))),
+            'placement_mode': 'point',
         }
+
+        normalize_maritime_marker_fields(data)
+        _r = data.get('region')
+        region = str(_r).strip() if _r is not None and str(_r).strip() else None
+
+        _hasc = oblast_uk_name_to_hasc(region)
+        if _hasc:
+            data['resolved_oblast_hasc'] = _hasc
+            data['region_key'] = _hasc
+
+        if channel_name == KHERSON_NON_DRONE_CH:
+            data['marker_icon'] = KHERSON_MARKER_ICON
 
         log.info(
             f"COORD_TRACE [{channel_name}] resolve_status={resolve_status} "
@@ -2021,6 +2266,32 @@ async def process_new_message(event):
         # after association misses, causing duplicate markers for one threat.
         if parent and getattr(parent, 'track_id', None):
             data['track_id'] = parent.track_id
+
+        try:
+            _multi_max = float(os.getenv('NEPTUN_MULTI_REF_MAX_CONF', '0.82'))
+        except ValueError:
+            _multi_max = 0.82
+        _multi_risk = _message_multi_place_risk(all_entities, msg_text)
+        if coords and _sea_context_inland_mismatch(msg_text, coords[0], coords[1]):
+            data['placement_mode'] = 'sea_context_mismatch'
+            data['hidden'] = True
+            log.info(
+                f"PLACEMENT [{channel_name}]: sea_context_mismatch — suppress pin "
+                f"({coords[0]:.3f},{coords[1]:.3f})"
+            )
+        elif _multi_risk and float(confidence) < _multi_max:
+            data['placement_mode'] = 'multi_reference_suppressed'
+            data['hidden'] = True
+            log.info(
+                f"PLACEMENT [{channel_name}]: multi_reference_suppressed "
+                f"(entities={len(all_entities)} conf={confidence:.2f} < {_multi_max})"
+            )
+        else:
+            _rs = str(resolve_status or '')
+            if _rs in _COARSE_PLACEMENT_STATUSES:
+                data['placement_mode'] = 'approximate'
+            elif _rs.startswith('estimated_'):
+                data['placement_mode'] = 'predictive'
 
         if parent and coords and INGEST_URL:
             # Follow-up message — send as track update via POST (upsert by track_id)
@@ -2200,9 +2471,12 @@ async def process_new_message(event):
                                     channel_id=channel_id, msg_id=msg_id,
                                     threat_type='avia',
                                     reason='phantom avia for KAB',
-                                    place=location, region=region,
+                                    place=avia_data.get('place') or avia_data.get('location') or '',
+                                    impact_place=location or '',
+                                    region=region,
                                     lat=avia_data.get('lat'), lng=avia_data.get('lng'),
                                     marker_id=avia_data['id'],
+                                    resolve_status='phantom_avia',
                                 )
                             else:
                                 log.error(f"Phantom avia ingest failed: {resp.status} {txt[:200]}")
@@ -2228,9 +2502,50 @@ async def process_new_message(event):
         if confidence >= 0.8:
             ttl = int(ttl * 1.5)
 
-        # Confidence-based hiding leveraging the Global Admin Threshold Setting
         if confidence < MIN_CONFIDENCE_THRESHOLD:
             data['hidden'] = True
+            if data.get('placement_mode') in ('point', 'approximate', 'predictive'):
+                data['placement_mode'] = 'low_map_confidence'
+
+        try:
+            from geo.geo_audit_log import append_record as _geo_audit_append
+
+            _geo_audit_append(
+                {
+                    'ts': now_iso,
+                    'channel': channel_name,
+                    'channel_id': channel_id,
+                    'msg_id': msg_id,
+                    'reply_to_msg_id': reply_to_msg_id,
+                    'text_excerpt': (msg_text or '')[:800],
+                    'entities': {
+                        'place_name': getattr(entities, 'place_name', None),
+                        'oblast': getattr(entities, 'oblast', None),
+                        'direction': getattr(entities, 'direction', None),
+                        'target_city': getattr(entities, 'target_city', None),
+                        'near': getattr(entities, 'near', None),
+                        'origin': getattr(entities, 'origin', None),
+                        'event_type': entities.event_type,
+                        'count': entities.count,
+                    },
+                    'outcome': {
+                        'marker_id': threat_id,
+                        'track_id': data.get('track_id'),
+                        'aggregator_merged': bool(_aggregator_merged),
+                        'lat': data.get('lat'),
+                        'lng': data.get('lng'),
+                        'confidence': data.get('confidence'),
+                        'confidence_0_100': data.get('confidence_0_100'),
+                        'placement_mode': data.get('placement_mode'),
+                        'hidden': bool(data.get('hidden')),
+                        'resolve_status': resolve_status,
+                        'trajectory_source': data.get('trajectory_source'),
+                        'is_estimated': data.get('is_estimated'),
+                    },
+                }
+            )
+        except Exception:
+            pass
 
         db.save_threat(threat_id, data, ttl=ttl)
         db.publish_update('new_threat', data)
@@ -2273,6 +2588,18 @@ async def process_new_message(event):
                 channel_id=channel_id, msg_id=msg_id,
                 threat_type=legacy_type,
                 reason='implausible coordinates',
+                place=location, region=region,
+            )
+        elif channel_name == KHERSON_NON_DRONE_CH and not is_kherson_non_drone_raion_allowed(raion_name):
+            log.info(
+                f"Skipping ingest for {threat_id}: kherson_non_drone outside Херсонський район UA-65-01 "
+                f"(raion={raion_name!r})"
+            )
+            await _publish_feed_event(
+                status='dropped', channel_name=channel_name, msg_text=msg_text,
+                channel_id=channel_id, msg_id=msg_id,
+                threat_type=legacy_type,
+                reason='outside_kherson_raion',
                 place=location, region=region,
             )
         elif not _should_ingest_by_alarm(region, entities.event_type, raion=raion_name):

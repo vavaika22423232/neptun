@@ -3,9 +3,10 @@ import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
-import { broadcastSSE } from '../stream/route';
+import { broadcastSSE } from '@/lib/chat-sse-stream';
 import { invalidateChatCache } from '../messages/route';
-import { isBanned, loadChatModerators } from '@/lib/admin/data';
+import { isBanned, isModeratorDevice } from '@/lib/admin/data';
+import { requireChatAuth } from '@/lib/chat-auth';
 
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const AUDIO_DIR = path.join(DATA_DIR, 'audio');
@@ -41,16 +42,24 @@ function resolveChatFile(): string {
  */
 export async function POST(request: Request) {
   try {
+    const authResult = requireChatAuth(request);
+    if (authResult instanceof Response) return authResult;
+    const identity = authResult;
+
     const formData = await request.formData();
 
-    const deviceId = formData.get('deviceId')?.toString();
-    const nickname = formData.get('nickname')?.toString() || 'Анонім';
+    const formDeviceId = formData.get('deviceId')?.toString();
+    if (!formDeviceId || formDeviceId !== identity.deviceId) {
+      return NextResponse.json({ error: 'Невідповідність пристрою' }, { status: 403 });
+    }
+    const deviceId = identity.deviceId;
+    const nickname = identity.nickname;
     const hardwareId = formData.get('hardwareId')?.toString() || formData.get('hardware_id')?.toString();
     const duration = parseInt(formData.get('duration')?.toString() || '0', 10);
     const isPro = formData.get('isPro')?.toString() === 'true';
     const audioFile = formData.get('audio') as File | null;
 
-    if (!deviceId || !audioFile) {
+    if (!audioFile) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
@@ -88,9 +97,7 @@ export async function POST(request: Request) {
     // Build audio URL
     const audioUrl = `/data/audio/${fileName}`;
 
-    // Check moderator status
-    const mods = loadChatModerators();
-    const isModerator = mods.includes(deviceId);
+    const isModerator = isModeratorDevice(deviceId);
 
     const now = Date.now() / 1000;
     const nowDate = new Date();

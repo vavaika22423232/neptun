@@ -310,3 +310,58 @@ def validate_candidate(
             penalties.append((-3.0, f"-3 candidate oblast {candidate.oblast} != expected {oblast_hint}"))
 
     return penalties
+
+
+# ── GADM HASC_1 codes (must match nextjs-app/public/ukraine_oblasts.geojson) ──
+# Used by Next.js ingest (`resolved_oblast_hasc`, spatial correlator).
+OBLAST_UKR_NAME_TO_HASC: dict[str, str] = {
+    'Київська область': 'UA.KV',
+    'Харківська область': 'UA.KK',
+    'Одеська область': 'UA.OD',
+    'Дніпропетровська область': 'UA.DP',
+    'Запорізька область': 'UA.ZP',
+    'Львівська область': 'UA.LV',
+    'Миколаївська область': 'UA.MY',
+    'Херсонська область': 'UA.KS',
+    'Полтавська область': 'UA.PL',
+    'Сумська область': 'UA.SM',
+    'Чернігівська область': 'UA.CH',
+    'Вінницька область': 'UA.VI',
+    'Житомирська область': 'UA.ZT',
+    'Черкаська область': 'UA.CK',
+    'Кіровоградська область': 'UA.KH',
+    'Донецька область': 'UA.DT',
+    'Луганська область': 'UA.LH',
+    'Хмельницька область': 'UA.KM',
+    'Рівненська область': 'UA.RV',
+    'Волинська область': 'UA.VO',
+    'Тернопільська область': 'UA.TP',
+    'Івано-Франківська область': 'UA.IF',
+    'Закарпатська область': 'UA.ZK',
+    'Чернівецька область': 'UA.CV',
+    'АР Крим': 'UA.KR',
+}
+
+# Colloquial "-щина" / short forms when resolve_oblast_bbox_key misses (Telegram style).
+_SPOKEN_OBLAST_TO_CANONICAL: dict[str, str] = {
+    'харківщина': 'Харківська область',
+    'київщина': 'Київська область',
+    'чернігівщина': 'Чернігівська область',
+    'одесщина': 'Одеська область',
+    'одещина': 'Одеська область',
+    'дніпропетровщина': 'Дніпропетровська область',
+    'полтавщина': 'Полтавська область',
+    'волинь': 'Волинська область',
+    'буковина': 'Чернівецька область',
+}
+
+
+def oblast_uk_name_to_hasc(oblast_hint: Optional[str]) -> Optional[str]:
+    """Map a Ukrainian oblast label (as in OBLAST_BBOX keys) to GADM HASC_1, e.g. UA.KK."""
+    key = resolve_oblast_bbox_key(oblast_hint)
+    if not key and oblast_hint:
+        low = oblast_hint.strip().lower().replace('́', '').replace('̀', '')
+        key = _SPOKEN_OBLAST_TO_CANONICAL.get(low)
+    if not key:
+        return None
+    return OBLAST_UKR_NAME_TO_HASC.get(key)

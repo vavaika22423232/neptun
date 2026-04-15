@@ -223,6 +223,47 @@ OBLAST_DIRECTION_KEYS = frozenset(
     or k in ('закарпаття', 'волині', 'волинь')
 )
 
+
+def regional_oblast_nickname_covers_place(msg_text: str, place_name: Optional[str]) -> bool:
+    """
+    Текст каже «на Житомирщині» / «Полтавщині» тощо, а place_name збігся з адмінцентром
+    цієї ж розмовної області (Житомир, Полтава, …). Це область, не місто — не ставити
+    точку в центрі обласного центру.
+    """
+    if not msg_text or not place_name:
+        return False
+    msg_lower = msg_text.lower()
+    pl = place_name.strip().lower()
+    if not pl:
+        return False
+    for key, canon in ORIGIN_NORMALIZATION.items():
+        if key not in OBLAST_DIRECTION_KEYS:
+            continue
+        if canon.lower() != pl:
+            continue
+        if key.startswith('закарпат') or key == 'закарпаття':
+            if 'закарпат' in msg_lower:
+                return True
+            continue
+        if key in ('волині', 'волинь'):
+            if 'волин' in msg_lower:
+                return True
+            continue
+        pos = key.find('щин')
+        if pos >= 0:
+            # «житомирщині» / «полтавщину» — спільний стем довжиною до кінця «щин» (3 літери)
+            base = key[: pos + 3]
+            if len(base) >= 6 and base in msg_lower:
+                return True
+            continue
+        pos = key.find('ччин')
+        if pos >= 0:
+            base = key[: pos + 4]
+            if len(base) >= 7 and base in msg_lower:
+                return True
+    return False
+
+
 # Cardinal directions (захід, північ, схід, південь) → synthetic target
 CARDINAL_DIRECTIONS = {
     'захід': 'west', 'заходу': 'west', 'західного': 'west', 'західн': 'west',
@@ -507,6 +548,7 @@ ALLCLEAR_KEYWORDS = [
     'інформаційна тиша',  # КОРАБЕЛІ: radio silence = allclear
     'не до нас',  # КОРАБЕЛІ: not heading to us
     'не існує його',  # КОРАБЕЛІ: UAV lost/gone
+    'ціль припинила існування',  # @kherson_non_drone: target no longer active
 ]
 
 # Keywords that need word-boundary matching (plain substring is too aggressive)
@@ -1113,6 +1155,7 @@ def _extract_place_names(text: str, oblast: Optional[str]) -> list[str]:
         'висоті', 'висота', 'висотою', 'ешелоні',
         # Declined threat-type words (sentence-start capitalisation)
         'шахедів', 'шахеда', 'шахеди', 'шахедом', 'шахедами',
+        'шахедов',  # RU genitive plural («15 шахедов»)
         'шаболда', 'шаболди',
         'каби', 'кабі',
         'невстановлений', 'невстановлена', 'невстановлені', 'невстановлених',
@@ -1166,6 +1209,11 @@ def _extract_place_names(text: str, oblast: Optional[str]) -> list[str]:
         # RU/UK pronouns — «если к нам», не населений пункт
         'нам', 'нас', 'вам', 'вас', 'мне', 'тебе', 'ему', 'ей', 'им', 'них',
         'сюда', 'туда', 'здесь',
+        # RU/UK "first wave" ordinals — not toponyms («Первые вылетают…», «Перші з моря…»)
+        'первые', 'первый', 'первая', 'первое', 'первую', 'первой', 'первом', 'первых',
+        'перві', 'перший', 'перша', 'перше', 'перші', 'першу', 'першим', 'перших',
+        # Preposition often mis-parsed as a place name alone
+        'перед',
     }
     # Merge into single fast-lookup set
     _stop = _threat_words | _non_place_words
@@ -1248,7 +1296,7 @@ def _extract_place_names(text: str, oblast: Optional[str]) -> list[str]:
     prep_matches = re.finditer(
         r'(?:'
         r'(?<![А-ЯІЇЄҐа-яіїєґ])(?:в|у|з|к)\s+'
-        r'|(?:по|на|до|під|над|із|зі|від|для|через|біля|повз)\s+'
+        r'|(?:по|на|до|під|над|із|зі|від|для|через|біля|повз|перед)\s+'
         r')'
         r'(?:бік\s+|сторону\s+|напрямку\s+)?'
         r'([А-ЯІЇЄҐа-яіїєґ][' + _CYR_NAME + r']{2,}(?:[\s\-][А-ЯІЇЄҐа-яіїєґ][' + _CYR_NAME + r']+)?)',
@@ -1266,7 +1314,7 @@ def _extract_place_names(text: str, oblast: Optional[str]) -> list[str]:
 
     _PREP_FIRST = {'повз', 'біля', 'на', 'над', 'у', 'в', 'з', 'із', 'зі',
                     'до', 'від', 'під', 'за', 'через', 'по', 'без', 'між',
-                    'про', 'для', 'при', 'к', 'та', 'і', 'й', 'або'}
+                    'про', 'для', 'при', 'к', 'та', 'і', 'й', 'або', 'перед'}
     _trailing_noise = _stop | _PREP_FIRST
 
     def _strip_trailing_noise(name: str) -> str:
@@ -2036,6 +2084,10 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
     entries = _split_multi_entry(text)
     results: list[ParsedEntities] = []
     msg_oblast = extract_oblast_authority(text)
+    # Multi-line bullets without a shared regional header (e.g. monitor1654:
+    # «▪️1 на Ізюм / ▪️1 на Дніпропетровщину»): a -щину/-щини hit in one bullet
+    # must not stamp msg_oblast on every entry — that mislabels Харків as Дніпропетровська.
+    _suppress_msg_oblast = len(entries) > 1 and all(h is None for h, _ in entries)
 
     for header_oblast, entry_text in entries:
         event_type = classify_event(entry_text)
@@ -2052,7 +2104,10 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
 
         # Fallback: short "City" or "City/р-н" messages (e.g. "Вознесенськ/р-н") — treat as uav
         if event_type == 'unknown' and len(entry_text.strip()) < 50:
-            _short_places = _extract_place_names(entry_text, header_oblast or msg_oblast)
+            _place_oblast_hint = header_oblast or (
+                None if _suppress_msg_oblast else msg_oblast
+            )
+            _short_places = _extract_place_names(entry_text, _place_oblast_hint)
             if _short_places:
                 event_type = 'uav'
 
@@ -2067,7 +2122,9 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
                 cleared_threat_type = _extract_cleared_threat_type(text)
             event_type = 'allclear'
 
-        oblast = header_oblast or extract_oblast_authority(entry_text) or msg_oblast
+        oblast = header_oblast or extract_oblast_authority(entry_text)
+        if not _suppress_msg_oblast:
+            oblast = oblast or msg_oblast
         place_names = [normalize_place_case(pn) for pn in _extract_place_names(entry_text, oblast)]
         direction = _extract_direction(entry_text)
         near = _extract_near(entry_text)

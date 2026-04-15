@@ -3,17 +3,36 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { usePolling } from './useVisibility';
 import { useMarkerSSE, useMarkerDeleteSSE, useTrackUpdateSSE } from './useDataSSE';
-import { HIDDEN_POLLING_INTERVAL_DESKTOP, MARKERS_CACHE_TTL } from '@/lib/constants';
+import { API_DATA_PUBLIC_QUERY, HIDDEN_POLLING_INTERVAL_DESKTOP, MARKERS_CACHE_TTL } from '@/lib/constants';
 import type { Marker, BallisticThreat, TrackPosition } from '@/types';
+import { computeMarkerDisplayPolicy, DEFAULT_MARKER_DISPLAY_POLICY } from '@/lib/marker-display-policy';
 
-// Fallback polling — 180s when active (SSE triggers debounced refresh), 5min hidden
-const FALLBACK_POLLING_INTERVAL = 180_000;
+// Fallback polling — 90s when active (SSE triggers debounced refresh), 5min hidden
+const FALLBACK_POLLING_INTERVAL = 90_000;
 
 // Debounce SSE-triggered fetches: wait 3s after last marker_new before fetching
 // Prevents thundering herd: 2500 clients all fetching /api/data simultaneously
 const SSE_FETCH_DEBOUNCE = 3_000;
 
 const CACHE_KEY = 'neptun_markers_cache';
+
+/** Prefer server display_* from SSE (matches /api/data); else local policy with defaults. */
+function applyDisplayPolicyFromSsePayload(target: Marker, markerData: Record<string, unknown>): void {
+  const dc = markerData.display_class;
+  const sp = markerData.show_precise_pin;
+  if (typeof dc === 'string' && typeof sp === 'boolean') {
+    target.display_class = dc as NonNullable<Marker['display_class']>;
+    target.show_precise_pin = sp;
+    if (typeof markerData.display_uncertainty_km === 'number' && Number.isFinite(markerData.display_uncertainty_km)) {
+      target.display_uncertainty_km = markerData.display_uncertainty_km;
+    }
+    if (typeof markerData.display_trust_hint_uk === 'string') {
+      target.display_trust_hint_uk = markerData.display_trust_hint_uk;
+    }
+    return;
+  }
+  Object.assign(target, computeMarkerDisplayPolicy(target, DEFAULT_MARKER_DISPLAY_POLICY));
+}
 
 function getCachedMarkers(): Marker[] | null {
   try {
@@ -73,7 +92,10 @@ export function useMarkers() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-      const response = await fetch('/api/data', { headers, signal: controller.signal });
+      const response = await fetch(`/api/data?${API_DATA_PUBLIC_QUERY}`, {
+        headers,
+        signal: controller.signal,
+      });
       clearTimeout(timeoutId);
 
       if (response.status === 304) {
@@ -217,6 +239,35 @@ export function useMarkers() {
         if (markerData.ticker_bearing != null) {
           existing.ticker_bearing = markerData.ticker_bearing as number | null;
         }
+        if (typeof markerData.placement_mode === 'string') {
+          existing.placement_mode = markerData.placement_mode;
+        }
+        if (typeof markerData.resolve_status === 'string') {
+          existing.resolve_status = markerData.resolve_status;
+        }
+        if (typeof markerData.geocode_tier === 'string') {
+          existing.geocode_tier = markerData.geocode_tier;
+        }
+        if (typeof markerData.candidates_count === 'number') {
+          existing.candidates_count = markerData.candidates_count;
+        }
+        if (markerData.manual === true) existing.manual = true;
+        if (markerData.manual === false) existing.manual = false;
+        if (typeof markerData.confidence === 'number') existing.confidence = markerData.confidence;
+        if (typeof markerData.confidence_0_100 === 'number') {
+          existing.confidence_0_100 = markerData.confidence_0_100;
+        }
+        if (Array.isArray(markerData.observations)) {
+          existing.observations = (markerData.observations as Array<Record<string, unknown>>).map((p) => {
+            const ts = Number(p.ts) || Date.now();
+            return {
+              lat: Number(p.lat),
+              lng: Number(p.lng),
+              ts: ts > 10_000_000_000 ? ts : ts * 1000,
+              source: (p.source as string) || 'sse',
+            };
+          });
+        }
 
         const positions: TrackPosition[] = existing.positions ? [...existing.positions] : [];
         if (latN != null && lngN != null) {
@@ -233,6 +284,7 @@ export function useMarkers() {
         existing.positions = positions;
 
         existing.date = new Date().toISOString();
+        applyDisplayPolicyFromSsePayload(existing, markerData);
         updated[idx] = existing;
         return updated;
       }
@@ -253,6 +305,10 @@ export function useMarkers() {
               ts: (markerData.created_at_epoch as number) || Date.now(),
               source: (markerData.channel_name as string) || 'unknown',
             }];
+        const obsTs = (p: Record<string, unknown>) => {
+          const t = Number(p.ts) || Date.now();
+          return t > 10_000_000_000 ? t : t * 1000;
+        };
         const newMarker: Marker = {
           id: markerData.id as string,
           track_id: track_id,
@@ -276,8 +332,25 @@ export function useMarkers() {
           observation_count: (markerData.observation_count as number) || 1,
           computed_speed_kmh: markerData.computed_speed_kmh as number | undefined,
           positions: broadcastPositions,
+          placement_mode: typeof markerData.placement_mode === 'string' ? markerData.placement_mode : undefined,
+          resolve_status: typeof markerData.resolve_status === 'string' ? markerData.resolve_status : undefined,
+          geocode_tier: typeof markerData.geocode_tier === 'string' ? markerData.geocode_tier : undefined,
+          candidates_count: typeof markerData.candidates_count === 'number' ? markerData.candidates_count : undefined,
+          manual: markerData.manual === true,
+          confidence: typeof markerData.confidence === 'number' ? markerData.confidence : undefined,
+          confidence_0_100: typeof markerData.confidence_0_100 === 'number' ? markerData.confidence_0_100 : undefined,
+          observations: Array.isArray(markerData.observations)
+            ? (markerData.observations as Array<Record<string, unknown>>).map((p) => ({
+                lat: Number(p.lat),
+                lng: Number(p.lng),
+                ts: obsTs(p),
+                source: (p.source as string) || 'sse',
+              }))
+            : undefined,
         };
-        return [...prev, newMarker];
+        const created: Marker = { ...newMarker };
+        applyDisplayPolicyFromSsePayload(created, markerData);
+        return [...prev, created];
       }
 
       return prev;
@@ -305,7 +378,7 @@ export function useMarkers() {
     };
   }, [markers]);
 
-  // Fallback polling: 60s active, 5min hidden (SSE triggers debounced refresh)
+  // Fallback polling: 90s active, 5min hidden (SSE triggers debounced refresh)
   usePolling(fetchMarkers, FALLBACK_POLLING_INTERVAL, HIDDEN_POLLING_INTERVAL_DESKTOP);
 
   // Force refresh — clears ETag, waits for nginx cache to expire, then fetches

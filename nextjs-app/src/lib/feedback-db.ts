@@ -42,6 +42,17 @@ function ticketKey(id: string) { return `feedback:${id}`; }
 function responsesKey(id: string) { return `feedback:responses:${id}`; }
 const INDEX_KEY = 'feedback:ids';
 
+/** `regions` is stored as JSON string; tolerate empty/invalid so GET /api/feedback never 500s. */
+export function parseFeedbackRegions(raw: string | undefined): unknown[] {
+  if (raw == null || raw === '') return [];
+  try {
+    const v = JSON.parse(raw) as unknown;
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
+
 // ── Public API ───────────────────────────────────────────────────────────────
 
 /** Insert a new feedback ticket */
@@ -74,7 +85,15 @@ export async function updateFeedback(id: string, fields: Partial<FeedbackTicket>
 /** Get responses for a ticket */
 export async function getResponses(feedbackId: string): Promise<FeedbackResponse[]> {
   const raw = await getRedis().lrange(responsesKey(feedbackId), 0, -1);
-  return raw.map(r => JSON.parse(r) as FeedbackResponse);
+  const out: FeedbackResponse[] = [];
+  for (const r of raw) {
+    try {
+      out.push(JSON.parse(r) as FeedbackResponse);
+    } catch {
+      /* skip corrupted list entry */
+    }
+  }
+  return out;
 }
 
 /** Add a response to a ticket */
@@ -104,10 +123,17 @@ export async function listFeedback(opts: {
   if (!results) return { tickets: [], total: 0 };
 
   let tickets: FeedbackTicket[] = [];
-  for (const [err, raw] of results) {
+  for (let i = 0; i < results.length; i++) {
+    const tuple = results[i] as [Error | null, unknown] | [Error];
+    const err = tuple[0];
+    const raw = tuple.length > 1 ? tuple[1] : undefined;
     if (err || !raw || typeof raw !== 'object') continue;
     const t = raw as unknown as FeedbackTicket;
-    if (!t.id) continue;
+    if (!t.id) {
+      const orphanId = allIds[i];
+      if (orphanId) redis.zrem(INDEX_KEY, orphanId).catch(() => {});
+      continue;
+    }
     // Apply filters
     if (opts.device_id && t.device_id !== opts.device_id) continue;
     if (opts.status && t.status !== opts.status) continue;

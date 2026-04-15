@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getJwtSecret } from '@/lib/server-secrets';
+import { resolveChatDisplayNickname } from '@/lib/chat-nicknames';
 
 const ACCESS_TTL = 3600;
 
@@ -49,9 +50,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid refresh token' }, { status: 401 });
     }
 
+    const deviceId = String(payload.deviceId);
+    const fromJwt =
+      typeof payload.nickname === 'string' ? payload.nickname.trim() : '';
+    const nickname = resolveChatDisplayNickname(deviceId, fromJwt);
+
     const accessToken = createToken(
       secret,
-      { deviceId: payload.deviceId, nickname: payload.nickname || null, type: 'access' },
+      { deviceId, nickname, type: 'access' },
       ACCESS_TTL
     );
 

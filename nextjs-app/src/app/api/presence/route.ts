@@ -9,7 +9,8 @@ import { getRedis } from '@/lib/redis';
  * Users with score older than VISITOR_TIMEOUT are expired via ZREMRANGEBYSCORE.
  */
 
-const VISITOR_TIMEOUT = 180_000; // 180 seconds (must be > PRESENCE_INTERVAL 120s)
+// Must exceed client PRESENCE_INTERVAL (5min in constants) so users are not dropped between pings.
+const VISITOR_TIMEOUT = 420_000; // 7 minutes
 const KEY_WEB = 'presence:web';
 const KEY_APP = 'presence:app';
 

@@ -1,6 +1,6 @@
 import { cache, withETag } from '@/lib/cache';
 import type { Marker } from '@/types';
-import { buildMarkers } from '@/lib/build-markers';
+import { buildMarkers, buildMarkerOptionsForApi } from '@/lib/build-markers';
 import { getMarkersVersion, initStore } from '@/lib/markers-store';
 
 const THREATS_CACHE_KEY = 'threats_data';
@@ -92,7 +92,7 @@ function buildThreats(options?: { extendedRange?: boolean; retentionMinutes?: nu
 export async function GET(request: Request) {
   const clientETag = request.headers.get('If-None-Match');
 
-  // timeRange>=60 — extended retention 180 min
+  // timeRange>=60 — same retention policy as /api/data (admin monitorPeriod)
   let extendedRange = false;
   try {
     const url = new URL(request.url);
@@ -116,10 +116,7 @@ export async function GET(request: Request) {
   }
 
   // Rebuild (reads from in-memory markers cache)
-  const data = buildThreats({
-    extendedRange,
-    retentionMinutes: extendedRange ? 180 : undefined,
-  });
+  const data = buildThreats(buildMarkerOptionsForApi(extendedRange));
   const newEntry = cache.set(cacheKey, data, CACHE_TTL);
   return withETag(newEntry.data, newEntry.etag, clientETag, undefined, newEntry.json);
 }

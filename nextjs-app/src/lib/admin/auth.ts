@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import { getRedis } from '../redis';
+import { getAdminHeaderSecret, safeCompare } from '@/lib/server-secrets';
 
 const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD;
 const SESSION_COOKIE_NAME = 'neptun_admin_session';
@@ -11,16 +12,27 @@ const SESSION_PREFIX = 'admin:session:';
 export { SESSION_COOKIE_NAME };
 
 export async function verifyPassword(password: string): Promise<boolean> {
-  if (!ADMIN_PASSWORD_HASH || !password) return false;
-  // Support both bcrypt hashes ($2b$...) and legacy plain-text passwords
-  if (ADMIN_PASSWORD_HASH.startsWith('$2b$') || ADMIN_PASSWORD_HASH.startsWith('$2a$')) {
-    return bcrypt.compare(password, ADMIN_PASSWORD_HASH);
+  if (!password) return false;
+  // 1) ADMIN_PASSWORD (bcrypt or plain)
+  if (ADMIN_PASSWORD_HASH) {
+    if (ADMIN_PASSWORD_HASH.startsWith('$2b$') || ADMIN_PASSWORD_HASH.startsWith('$2a$')) {
+      if (await bcrypt.compare(password, ADMIN_PASSWORD_HASH)) return true;
+    } else {
+      const a = Buffer.from(password, 'utf8');
+      const b = Buffer.from(ADMIN_PASSWORD_HASH, 'utf8');
+      if (a.length === b.length) {
+        try {
+          if (crypto.timingSafeEqual(a, b)) return true;
+        } catch {
+          /* length mismatch in edge cases */
+        }
+      }
+    }
   }
-  // Legacy plain-text fallback with timing-safe compare
-  const a = Buffer.from(password, 'utf8');
-  const b = Buffer.from(ADMIN_PASSWORD_HASH, 'utf8');
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
+  // 2) Same secret as mobile moderator / X-Auth-Secret (ADMIN_API_SECRET || AUTH_SECRET)
+  const apiSecret = getAdminHeaderSecret();
+  if (apiSecret && safeCompare(password, apiSecret)) return true;
+  return false;
 }
 
 /** Returns null if the session could not be persisted (Redis down / misconfigured). */
@@ -72,7 +84,7 @@ export async function destroySession(token: string): Promise<void> {
 /** Cookie options for the admin session */
 export const sessionCookieOptions = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
+  secure: false,
   sameSite: 'lax' as const,
   path: '/',
   maxAge: SESSION_TTL_S,

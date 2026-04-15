@@ -22,9 +22,14 @@ export function middleware(request: NextRequest) {
     }
   }
 
-  return NextResponse.next();
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set('x-neptun-pathname', pathname);
+
+  return NextResponse.next({ request: { headers: requestHeaders } });
 }
 
 export const config = {
-  matcher: ['/admin/:path*', '/api/:path*'],
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|icons/|manifest\\.json|robots\\.txt|sitemap\\.xml).*)',
+  ],
 };

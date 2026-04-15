@@ -1,8 +1,15 @@
 import { isPlausibleThreatCoordinate } from '@/lib/geo-bounds';
+import { normalizeIngestMarkerRegionCoords } from '@/lib/ukraine-oblast-validate';
 
 /**
  * Reject garbage coordinates before they hit Redis / spatial correlator.
  * Worker should apply the same rules (`worker/geo_bounds.py`).
+ *
+ * After bbox validation, `normalizeIngestMarkerRegionCoords` may adjust `lat`/`lng` when
+ * `region` / `oblast` / `resolved_oblast_hasc` imply a different oblast than the geocoded point
+ * (see `ukraine-oblast-validate.ts`). For corridor messages (“from A to B”), the worker should
+ * emit a single representative point (mid-segment or target oblast centroid) and
+ * `placement_mode: 'approximate'` rather than resolving a homonym city.
  */
 export function validateIngestMarker(marker: Record<string, unknown>): { ok: true } | { ok: false; error: string } {
   const lat = Number(marker.lat);
@@ -14,6 +21,7 @@ export function validateIngestMarker(marker: Record<string, unknown>): { ok: tru
   if (!isPlausibleThreatCoordinate(lat, lng, { allowOutsideThreatRegion: manual })) {
     return { ok: false, error: 'Coordinates outside allowed region' };
   }
+  normalizeIngestMarkerRegionCoords(marker);
   return { ok: true };
 }
 

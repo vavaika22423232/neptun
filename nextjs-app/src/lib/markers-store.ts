@@ -18,10 +18,13 @@ import fsp from 'fs/promises';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { getRedis, redisGet } from './redis';
+import { getRedis, redisGet, isRedisDisabledInThisProcess } from './redis';
 import { clearMarkerDerivedApiCachesLocal, invalidateMarkerDerivedCaches } from './cache';
 import { loadSettings } from './admin/data';
-import { broadcastSSE } from '@/app/api/chat/stream/route';
+import { broadcastSSE } from '@/lib/chat-sse-stream';
+import { attachDisplayPolicyToPayload } from '@/lib/marker-broadcast-enrich';
+import { ingestShouldBroadcastMarker } from '@/lib/ingest-confidence-gate';
+import { recordHasPhantomAvia } from '@/lib/corroboration-public-gate';
 
 // ── Config ───────────────────────────────────────────────────────────────────
 const DATA_DIR = process.env.DATA_DIR || '/data';
@@ -34,7 +37,7 @@ const MY_PID = process.pid;
 const REDIS_MARKERS_KEY = 'markers:all';
 const REDIS_VERSION_KEY = 'markers:version'; // incremented on every write
 const REDIS_MARKERS_TTL = 7200; // 2 hours — refreshed on every write
-const POLL_INTERVAL = 2000; // 2 seconds — poll Redis for updates from other workers
+const POLL_INTERVAL = 12_000; // 12s — poll Redis for cross-worker marker sync (less CPU than 5s × N workers)
 
 /** When >0, ingest mutations skip Redis/disk until `endMarkerIngestBatch()` (single flush). */
 let _markerPersistDeferDepth = 0;
@@ -125,7 +128,7 @@ async function _doInit(): Promise<void> {
       console.log(`[STORE] Loaded ${s.messages.length} markers from ${filePath} (pid=${MY_PID})`);
 
       // Seed Redis with disk data so other workers can read it
-      if (s.messages.length > 0) {
+      if (s.messages.length > 0 && !isRedisDisabledInThisProcess()) {
         await writeToRedis();
       }
     } catch {
@@ -165,6 +168,10 @@ export async function initStore(): Promise<void> {
 export function startMarkerSync(): void {
   const s = getState();
   if (s.pollTimer) return;
+  if (isRedisDisabledInThisProcess()) {
+    console.log('[STORE] Marker Redis sync skipped (build or SKIP_REDIS=1)');
+    return;
+  }
 
   s.pollTimer = setInterval(async () => {
     try {
@@ -250,17 +257,23 @@ export async function addMarker(
       resolvedId = existing.id as string | undefined;
       // Broadcast as track_update so client moves the marker
       if (doBroadcast) {
-        broadcastSSE({
-          type: 'track_update',
-          data: {
-            track_id: existing.track_id || existing.id,
-            mode: 'updated',
-            marker: existing,
-          },
-        });
+        const minConfSp = loadSettings().minConfidence ?? 0.65;
+        if (ingestShouldBroadcastMarker(existing as Record<string, unknown>, minConfSp)) {
+          const wireMarker: Record<string, unknown> = { ...existing };
+          attachDisplayPolicyToPayload(existing as Record<string, unknown>, wireMarker);
+          broadcastSSE({
+            type: 'track_update',
+            data: {
+              track_id: existing.track_id || existing.id,
+              mode: 'updated',
+              marker: wireMarker,
+            },
+          });
+        }
       }
     } else {
       s.messages.push(marker);
+      applyDualChannelCorroborationGate(marker, marker);
       resolvedId = marker.id as string | undefined;
     }
 
@@ -303,6 +316,8 @@ export async function patchMarker(id: string, updates: Record<string, unknown>):
 
     s.messages[idx].ts = new Date().toISOString();
     s.messages[idx].date = s.messages[idx].ts;
+
+    applyDualChannelCorroborationGate(s.messages[idx], updates);
 
     await Promise.all([writeToRedis(), persistToDisk()]);
     invalidateDerivedCachesIfDeferred();
@@ -354,11 +369,13 @@ export async function upsertByTrackId(
         lng: marker.lng,
         ts: marker.created_at_epoch || now,
         source: marker.channel_name || 'unknown',
+        channel_priority: coerceChannelPriority(marker.channel_priority),
       };
       marker.track_id = trackId;
       marker.observations = [entry];
       marker.positions = [entry];
       marker.observation_count = 1;
+      applyDualChannelCorroborationGate(marker, marker);
 
       s.messages.push(marker);
       s.lastIngestTime = now;
@@ -446,6 +463,7 @@ export async function upsertByTrackId(
         lng: newLng,
         ts: newObsTs,
         source: marker.channel_name || 'unknown',
+        channel_priority: coerceChannelPriority(marker.channel_priority),
       };
       observations.push(obsEntry);
       if (observations.length > 30) {
@@ -494,7 +512,8 @@ export async function upsertByTrackId(
         'trajectory', 'trajectory_source', 'prediction_confidence',
         'course_bearing', 'course_direction', 'speed_kmh', 'distance_km',
         'flight_phase', 'origin', 'count', 'ticker_bearing', 'is_estimated',
-        'confidence', 'resolve_status', 'candidates', 'marker_icon',
+        'confidence', 'confidence_0_100', 'placement_mode', 'resolve_status',
+        'candidates', 'marker_icon',
       ];
       for (const key of UPDATE_FIELDS) {
         if (key in marker && marker[key] != null) {
@@ -524,10 +543,13 @@ export async function upsertByTrackId(
         const prevC = Number(existing.count);
         existing.count = Math.max(Number.isNaN(prevC) ? 1 : prevC, newCount);
       }
+      appendCorroborationObservationOnly(existing, prevLat, prevLng, newObsTs, marker);
       if (weakGeoHold || staleObsReplay) {
         const LIGHT = [
           'course_bearing', 'course_direction', 'ticker_bearing',
           'flight_phase', 'place', 'region', 'resolve_status', 'marker_icon',
+          'placement_mode', 'confidence_0_100', 'confidence', 'trajectory',
+          'trajectory_source', 'prediction_confidence',
         ] as const;
         for (const key of LIGHT) {
           if (key in marker && marker[key] != null) {
@@ -543,14 +565,15 @@ export async function upsertByTrackId(
       existing.created_at_epoch = marker.created_at_epoch;
     }
 
-    // Track the last position-update time so /api/data TTL keeps active
-    // tracks visible. Without this, long-running tracks (shaheds flying 1-2h)
-    // vanish after monitorPeriod even though they're still being updated.
+    // Last ingest / ticker touch (sorting, prune fallback). Map TTL uses last
+    // `observations[].ts` when present (see `parseMessageTime` in build-markers).
     existing.last_update_epoch = now;
 
     existing.ts = new Date().toISOString();
     existing.date = existing.ts;
     s.lastIngestTime = now;
+
+    applyDualChannelCorroborationGate(existing, marker);
 
     await Promise.all([writeToRedis(), persistToDisk()]);
     invalidateDerivedCachesIfDeferred();
@@ -570,12 +593,105 @@ function normalizeObsEpochMs(ts: number, fallbackMs: number): number {
   return ts > 10_000_000_000 ? Math.round(ts) : Math.round(ts * 1000);
 }
 
+function coerceChannelPriority(v: unknown): number {
+  const n = typeof v === 'number' ? v : Number(v);
+  if (Number.isFinite(n)) return n;
+  return 99;
+}
+
+/**
+ * Public map / SSE: require corroboration from a second distinct channel_name in observations,
+ * unless any observation used channel_priority <= 1 (official sources). See worker channel_priority.
+ * Phantom avia (`resolve_status` phantom_avia) always uses this gate, even when dualSourceMapGate is off.
+ */
+function applyDualChannelCorroborationGate(
+  record: Record<string, unknown>,
+  marker?: Record<string, unknown>,
+): void {
+  if (record.manual === true) {
+    record.corroboration_pending = false;
+    return;
+  }
+  if (marker && typeof marker.hidden === 'boolean') {
+    record.hidden_reason_worker = marker.hidden;
+  }
+
+  let dualGate = false;
+  try {
+    dualGate = loadSettings().dualSourceMapGate === true;
+  } catch {
+    dualGate = false;
+  }
+  const requireCorroboration = dualGate || recordHasPhantomAvia(record, marker);
+  if (!requireCorroboration) {
+    record.corroboration_pending = false;
+    record.hidden = record.hidden_reason_worker === true;
+    return;
+  }
+
+  const obsRaw = record.observations as Array<Record<string, unknown>> | undefined;
+  let obs: Array<Record<string, unknown>>;
+  if (obsRaw && obsRaw.length > 0) {
+    obs = obsRaw;
+  } else {
+    const ch = record.channel_name;
+    if (typeof ch === 'string' && ch.trim()) {
+      obs = [{ source: ch, channel_priority: record.channel_priority }];
+    } else {
+      obs = [];
+    }
+  }
+
+  const hasPriority1 = obs.some((o) => coerceChannelPriority(o.channel_priority) <= 1);
+  const distinctSources = new Set(
+    obs.map((o) => (typeof o.source === 'string' ? o.source.trim() : '')).filter(Boolean),
+  );
+  const pending = !hasPriority1 && distinctSources.size < 2;
+  record.corroboration_pending = pending;
+  const workerH = record.hidden_reason_worker === true;
+  record.hidden = workerH || pending;
+}
+
+/** When position merge is skipped, still record the reporting channel for corroboration counting. */
+function appendCorroborationObservationOnly(
+  existing: Record<string, unknown>,
+  lat: number,
+  lng: number,
+  ts: number,
+  marker: Record<string, unknown>,
+): void {
+  const src = ((marker.channel_name as string) || '').trim() || 'unknown';
+  const observations = (existing.observations as Array<Record<string, unknown>>) || [];
+  if (observations.length > 0) {
+    const lastSrc = String((observations[observations.length - 1].source as string) || '').trim();
+    if (lastSrc === src) return;
+  }
+  const obsEntry: Record<string, unknown> = {
+    lat,
+    lng,
+    ts,
+    source: src,
+    channel_priority: coerceChannelPriority(marker.channel_priority),
+  };
+  observations.push(obsEntry);
+  if (observations.length > 30) observations.splice(0, observations.length - 30);
+  existing.observations = observations;
+  existing.observation_count = ((existing.observation_count as number) || 1) + 1;
+}
+
 function extractCorrelatorBearing(m: Record<string, unknown>): number | null {
   const cb = m.course_bearing as number | undefined;
   if (typeof cb === 'number' && Number.isFinite(cb)) return cb;
   const tb = m.ticker_bearing as number | undefined;
   if (typeof tb === 'number' && Number.isFinite(tb)) return tb;
   return null;
+}
+
+/** Normalize place/location for same-settlement dedupe (spatial correlator). */
+function correlatorPlaceFingerprint(marker: Record<string, unknown>): string | null {
+  const raw = (marker.place || marker.location || marker.city || '').toString().trim().toLowerCase();
+  if (raw.length < 2) return null;
+  return raw.replace(/\s+/g, ' ');
 }
 
 /** Map individual threat types to correlation groups */
@@ -595,6 +711,35 @@ const SPATIAL_MATCH_RADIUS_KM_NO_BEARING_UAV = 18;
 /** Max bearing difference (degrees) for spatial correlation. Ignored if either marker has no bearing. */
 const SPATIAL_MATCH_BEARING_TOLERANCE = 60;
 
+/** Same-text dedup must never merge events hundreds of km apart (templates / reposts). */
+const SPATIAL_SAME_TEXT_MAX_KM = 32;
+/** Same-channel short-window merge — still bounded so east/west events do not fuse. */
+const SPATIAL_SAME_CHANNEL_MAX_KM = 30;
+const SPATIAL_TIME_WINDOW_UAV_KM = 24;
+const SPATIAL_TIME_WINDOW_UAV_BEARING_KM = 38;
+const SPATIAL_TIME_WINDOW_FAST_KM = 42;
+const SPATIAL_TIME_WINDOW_FAST_BEARING_KM = 88;
+
+/**
+ * When both markers carry a stable regional key from the worker (`resolved_oblast_hasc`,
+ * `region_key`, or `oblast_id`), refuse cross-oblast spatial merges — different regions
+ * are different events even if timing/text look related.
+ */
+function extractCorrelationRegionKey(marker: Record<string, unknown>): string | null {
+  const h = marker.resolved_oblast_hasc;
+  if (typeof h === 'string' && h.trim()) {
+    return `hasc:${h.trim().toUpperCase()}`;
+  }
+  const rk = marker.region_key;
+  if (typeof rk === 'string' && rk.trim()) {
+    return `rk:${rk.trim().toLowerCase()}`;
+  }
+  const oid = marker.oblast_id;
+  if (typeof oid === 'string' && oid.trim()) return `id:${oid.trim().toLowerCase()}`;
+  if (typeof oid === 'number' && Number.isFinite(oid)) return `id:${oid}`;
+  return null;
+}
+
 /**
  * Find the nearest existing marker of the same threat-type group within
  * SPATIAL_MATCH_RADIUS_KM and with compatible bearing (±60°).
@@ -604,6 +749,12 @@ function findSpatialMatch(
   messages: Record<string, unknown>[],
   newMarker: Record<string, unknown>,
 ): number {
+  try {
+    if (loadSettings().spatialCorrelatorEnabled === false) return -1;
+  } catch {
+    /* keep correlator on */
+  }
+
   const newLat = newMarker.lat as number;
   const newLng = newMarker.lng as number;
   if (newLat == null || newLng == null) return -1;
@@ -623,6 +774,12 @@ function findSpatialMatch(
     const mType = (m.threat_type as string) || '';
     const mGroup = CORRELATION_GROUP[mType];
     if (mGroup !== newGroup) continue;
+
+    const rkNew = extractCorrelationRegionKey(newMarker);
+    const rkExist = extractCorrelationRegionKey(m);
+    if (rkNew !== null && rkExist !== null && rkNew !== rkExist) {
+      continue;
+    }
 
     // Check age: must have been updated recently
     const updateEpoch = m.last_update_epoch as number | undefined;
@@ -644,9 +801,14 @@ function findSpatialMatch(
     const mBearing = extractCorrelatorBearing(m);
     const bothLackBearing = newBearing == null && mBearing == null;
 
-    // --- Dynamic Spatial Expansion (Cluster Overhaul) ---
-    // If reports happen within 4 minutes of each other, massively expand the radius 
-    // to fuse different Telegram channel locations into a single Swarm/Threat marker.
+    let bearingsCompatible = false;
+    if (newBearing != null && mBearing != null) {
+      let diff = Math.abs(newBearing - mBearing) % 360;
+      if (diff > 180) diff = 360 - diff;
+      bearingsCompatible = diff <= SPATIAL_MATCH_BEARING_TOLERANCE;
+    }
+
+    // --- Dynamic Spatial Expansion (bounded; wide merges caused east/west false joins) ---
     const timeDiffMins = mTs > 0 ? Math.abs(now - mTs) / 60000 : Infinity;
     let maxDist = SPATIAL_MATCH_RADIUS_KM;
 
@@ -655,22 +817,38 @@ function findSpatialMatch(
     const mChannel = m.channel_name as string || '';
     const newChannel = newMarker.channel_name as string || '';
 
-    // Aggressive deduplication for Telegram bot spam/edits
     if (mText && newText && mText === newText) {
-      maxDist = 500; // Exact same text -> definitely same event, force merge regardless of minor geocode differences
+      maxDist = bearingsCompatible ? 40 : SPATIAL_SAME_TEXT_MAX_KM;
     } else if (mChannel && newChannel && mChannel === newChannel && timeDiffMins <= 3) {
-      maxDist = 100; // Same channel within 3 mins -> probably an edited or followed-up message. Force merge.
+      maxDist = bearingsCompatible ? 42 : SPATIAL_SAME_CHANNEL_MAX_KM;
     } else if (timeDiffMins <= 4) {
       if (newGroup === 'uav') {
-        maxDist = 45; // e.g. "Чорне море" vs "Одеса" (~30km apart) will cleanly merge!
+        maxDist = bearingsCompatible
+          ? SPATIAL_TIME_WINDOW_UAV_BEARING_KM
+          : SPATIAL_TIME_WINDOW_UAV_KM;
       } else if (newGroup === 'missile' || newGroup === 'avia' || newGroup === 'guided') {
-        maxDist = 120; // Fast moving targets cover huge areas instantly
+        maxDist = bearingsCompatible
+          ? SPATIAL_TIME_WINDOW_FAST_BEARING_KM
+          : SPATIAL_TIME_WINDOW_FAST_KM;
       }
     } else {
-      // Standard fallback for older tracks drifting around
       if (newGroup === 'uav' && bothLackBearing) {
         maxDist = SPATIAL_MATCH_RADIUS_KM_NO_BEARING_UAV;
       }
+    }
+
+    // Same settlement label + same regional key → allow slightly wider merge (multi-channel duplicates).
+    const fpNew = correlatorPlaceFingerprint(newMarker);
+    const fpM = correlatorPlaceFingerprint(m);
+    if (
+      fpNew &&
+      fpM &&
+      fpNew === fpM &&
+      rkNew !== null &&
+      rkExist !== null &&
+      rkNew === rkExist
+    ) {
+      maxDist = Math.max(maxDist, Math.min(26, maxDist + 10));
     }
 
     if (dist > maxDist) continue;
@@ -771,13 +949,16 @@ function mergeIntoExisting(
     const MERGE_STALE_LIGHT = [
       'course_bearing', 'course_direction', 'ticker_bearing',
       'speed_kmh', 'distance_km', 'flight_phase', 'place', 'region',
-      'resolve_status', 'marker_icon',
+      'resolve_status', 'marker_icon', 'placement_mode', 'confidence_0_100',
+      'trajectory', 'trajectory_source', 'prediction_confidence',
     ] as const;
     for (const key of MERGE_STALE_LIGHT) {
       if (key in newMarker && newMarker[key] != null) {
         existing[key] = newMarker[key];
       }
     }
+    appendCorroborationObservationOnly(existing, oldLat, oldLng, newTsMerge, newMarker);
+    applyDualChannelCorroborationGate(existing, newMarker);
     return;
   }
 
@@ -800,13 +981,16 @@ function mergeIntoExisting(
     const MERGE_FIELDS_LIGHT = [
       'course_bearing', 'course_direction', 'ticker_bearing',
       'speed_kmh', 'distance_km', 'flight_phase', 'place', 'region',
-      'resolve_status', 'marker_icon',
+      'resolve_status', 'marker_icon', 'placement_mode', 'confidence_0_100',
+      'trajectory', 'trajectory_source', 'prediction_confidence',
     ] as const;
     for (const key of MERGE_FIELDS_LIGHT) {
       if (key in newMarker && newMarker[key] != null) {
         existing[key] = newMarker[key];
       }
     }
+    appendCorroborationObservationOnly(existing, oldLat, oldLng, newTsMerge, newMarker);
+    applyDualChannelCorroborationGate(existing, newMarker);
     return;
   }
 
@@ -820,6 +1004,7 @@ function mergeIntoExisting(
     lng: newLng,
     ts: newTsMerge,
     source: (newMarker.channel_name as string) || 'spatial_match',
+    channel_priority: coerceChannelPriority(newMarker.channel_priority),
   };
   const observations = (existing.observations as Array<Record<string, unknown>>) || [];
   observations.push(obsEntry);
@@ -848,12 +1033,20 @@ function mergeIntoExisting(
     }
   }
 
+  const newC100 = newMarker.confidence_0_100;
+  if (typeof newC100 === 'number' && Number.isFinite(newC100)) {
+    const prev100 = existing.confidence_0_100 as number | undefined;
+    if (typeof prev100 !== 'number' || newC100 > prev100) {
+      existing.confidence_0_100 = newC100;
+    }
+  }
+
   // Update fields from the new marker (if present)
   const MERGE_FIELDS = [
     'course_bearing', 'course_direction', 'trajectory', 'trajectory_source',
     'prediction_confidence', 'speed_kmh', 'distance_km', 'flight_phase',
     'place', 'region', 'ticker_bearing', 'is_estimated',
-    'resolve_status', 'candidates', 'marker_icon',
+    'resolve_status', 'candidates', 'marker_icon', 'placement_mode',
   ];
   for (const key of MERGE_FIELDS) {
     if (key in newMarker && newMarker[key] != null) {
@@ -877,6 +1070,8 @@ function mergeIntoExisting(
     `← new ${newMarker.threat_type} at (${newLat.toFixed(2)},${newLng.toFixed(2)}) ` +
     `from ${newMarker.channel_name || 'unknown'}`
   );
+
+  applyDualChannelCorroborationGate(existing, newMarker);
 }
 
 // ── Geo helpers ──────────────────────────────────────────────────────────────
@@ -919,10 +1114,10 @@ function destinationPoint(lat: number, lng: number, bearingDeg: number, distKm: 
 // This ensures markers move on the server even when no browser is open.
 // IMPORTANT: Ticker writes ONLY to positions[] — observations[] is pristine.
 
-const TICK_INTERVAL_MS = 10_000; // 10 seconds
+const TICK_INTERVAL_MS = 15_000; // 15s — moving markers tick (less CPU; slight delay vs 10s)
 const TICKER_GLOBAL_KEY = '__neptun_position_ticker__';
 const REDIS_TICKER_LOCK_KEY = 'ticker:lock'; // Redis lock — only one PM2 worker ticks at a time
-const REDIS_TICKER_LOCK_TTL = 15; // seconds — must be > TICK_INTERVAL_MS
+const REDIS_TICKER_LOCK_TTL = 22; // seconds — must be > TICK_INTERVAL_MS / 1000
 
 // Batch persist: write to Redis+disk every 30s (every 3rd tick), not every tick
 const TICKER_PERSIST_INTERVAL = 30_000;
@@ -973,32 +1168,26 @@ function doTickPositions(): void {
 
   const now = Date.now();
   let dirty = false;
+  const batchUpdates: { track_id: string; mode: string; marker: Record<string, unknown> }[] = [];
 
   for (const m of s.messages) {
-    // Skip static / non-moving markers
     const threatType = (m.threat_type as string) || '';
     if (STATIC_THREAT_TYPES.has(threatType)) continue;
     if (m.manual) continue;
 
-    // Discontinue ticking if the marker hasn't received a real observation in > 10 minutes (Stale)
     const obs = m.observations as Array<{ts: number}> | undefined;
     const lastRealTs = obs && obs.length > 0 ? obs[obs.length - 1].ts : m.created_at_epoch as number;
     if (lastRealTs && (now - lastRealTs > 10 * 60 * 1000)) {
-      continue; // marker is stale, stop predicting movement
+      continue;
     }
 
     const speed = (m.speed_kmh as number) || (m.computed_speed_kmh as number) || 0;
     let bearing = m.course_bearing as number | null | undefined;
 
-    // If course_bearing is null (unreliable trajectory source), use fallbacks
-    // so the marker still moves on the server ticker.
-    // This does NOT affect icon rotation (frontend computeRotation handles that separately).
     if (bearing == null) {
-      // Fallback 0: ticker_bearing from worker (computed from ANY trajectory)
       bearing = (m as Record<string, unknown>).ticker_bearing as number | null | undefined;
     }
     if (bearing == null) {
-      // Fallback 1: compute from trajectory start→end (with cos(lat) correction)
       const trajFb = m.trajectory as { start?: number[]; end?: number[] } | undefined;
       if (trajFb?.start && trajFb?.end) {
         const dLat = trajFb.end[0] - trajFb.start[0];
@@ -1009,7 +1198,6 @@ function doTickPositions(): void {
           bearing = (Math.atan2(dLng, dLat) * (180 / Math.PI) + 360) % 360;
         }
       }
-      // Fallback 2: bearing from last two observations (prefer) or positions
       if (bearing == null) {
         const obsFb = (m.observations as Array<{ lat: number; lng: number }>) ||
                        (m.positions as Array<{ lat: number; lng: number }>);
@@ -1032,7 +1220,6 @@ function doTickPositions(): void {
     const curLng = Number(m.lng);
     if (!Number.isFinite(curLat) || !Number.isFinite(curLng)) continue;
 
-    // Bootstrap positions[] when missing (old disk/Redis rows had no trail — ticker used to skip them)
     let positions = m.positions as Array<Record<string, unknown>> | undefined;
     if (!positions || positions.length === 0) {
       const obs = m.observations as Array<{ lat: number; lng: number; ts?: number }> | undefined;
@@ -1054,76 +1241,71 @@ function doTickPositions(): void {
       m.positions = positions;
     }
 
-    // Check if marker has reached its trajectory endpoint
     const traj = m.trajectory as { end?: [number, number] } | undefined;
     if (traj?.end) {
       const distToEnd = haversineKm(curLat, curLng, traj.end[0], traj.end[1]);
-      if (distToEnd < 5) continue; // within 5km of target — stop moving
+      if (distToEnd < 5) continue;
     }
 
-    // Compute how far the marker moves in TICK_INTERVAL_MS
     const dtHours = TICK_INTERVAL_MS / 3_600_000;
     const distKm = speed * dtHours;
 
-    // Move the marker
     const [newLat, newLng] = destinationPoint(curLat, curLng, bearing, distKm);
 
-    // Update marker position
     m.lat = newLat;
     m.lng = newLng;
 
-    // Append to positions[] only (observations[] stays pristine)
     positions.push({
       lat: newLat,
       lng: newLng,
       ts: now,
       source: 'ticker',
     });
-    // Cap at 50 positions
     if (positions.length > 50) {
       positions.splice(0, positions.length - 50);
     }
     m.positions = positions;
 
-    // Refresh timestamp
     m.ts = new Date(now).toISOString();
     m.date = m.ts;
     m.last_update_epoch = now;
 
     dirty = true;
 
-    // Broadcast SSE — track_id must match client /api/data rows (fallback to id)
     const tid = (m.track_id != null && String(m.track_id).length > 0)
       ? String(m.track_id)
       : String(m.id ?? '');
     if (!tid) continue;
 
-    broadcastSSE({
-      type: 'track_update',
-      data: {
-        track_id: tid,
-        mode: 'updated',
-        marker: {
-          id: m.id,
-          lat: newLat,
-          lng: newLng,
-          speed_kmh: speed,
-          course_bearing: bearing,
-          created_at_epoch: m.created_at_epoch,
-          ts: now,
-        },
+    batchUpdates.push({
+      track_id: tid,
+      mode: 'updated',
+      marker: {
+        id: m.id,
+        lat: newLat,
+        lng: newLng,
+        speed_kmh: speed,
+        course_bearing: bearing,
+        created_at_epoch: m.created_at_epoch,
+        ts: now,
       },
     });
   }
 
-  // Batch persist: only write to Redis+disk every 30s (every 3rd tick)
-  // SSE already broadcasts positions in real-time, so persistence can lag slightly.
+  // Single batched SSE broadcast instead of per-marker (N broadcasts → 1).
+  // Minimal deltas only — no display_* here (hot path); clients keep prior policy or refetch /api/data.
+  if (batchUpdates.length > 0) {
+    broadcastSSE({
+      type: 'track_batch',
+      data: { updates: batchUpdates },
+    });
+  }
+
   if (dirty) {
     s.lastIngestTime = now;
     if (now - _lastTickerPersistTime >= TICKER_PERSIST_INTERVAL) {
       _lastTickerPersistTime = now;
       withWriteLock(async () => {
-        // Bypass ingest-batch defer — ticker must always persist when it runs
         await Promise.all([writeToRedisCore(), persistToDiskCore()]);
       }).catch((err) => console.warn('[TICKER] persist error:', err));
     }
@@ -1170,18 +1352,28 @@ export async function deleteMarker(id: string): Promise<boolean> {
 }
 
 /** Delete all markers matching a region (oblast).
- *  Optionally filter by threat_type(s). Returns count of removed markers. */
+ *  Optionally filter by threat_type(s). If placeContains is set, only markers whose
+ *  place/location text includes that substring (case-insensitive) are removed. */
 export async function deleteByRegion(
   region: string,
   threatTypes?: string[],
+  placeContains?: string,
 ): Promise<number> {
   return withWriteLock(async () => {
     const s = getState();
     const before = s.messages.length;
     const regionLower = region.toLowerCase();
+    const placeNeedle =
+      placeContains && placeContains.trim().length >= 2
+        ? placeContains.trim().toLowerCase()
+        : '';
     s.messages = s.messages.filter((m) => {
       const r = ((m.region || m.place_region || '') as string).toLowerCase();
       if (!r.includes(regionLower) && regionLower !== r) return true; // not this region — keep
+      if (placeNeedle) {
+        const loc = `${(m.place as string) || ''} ${(m.location as string) || ''}`.toLowerCase();
+        if (!loc.includes(placeNeedle)) return true; // wrong place — keep
+      }
       if (threatTypes && threatTypes.length > 0) {
         const tt = ((m.threat_type || m.type || '') as string).toLowerCase();
         return !threatTypes.some((t) => t.toLowerCase() === tt);
@@ -1205,8 +1397,8 @@ function getRetentionMs(): number {
   try {
     const settings = loadSettings();
     const monitorMinutes = settings.monitorPeriod || 30;
-    // Storage retention = max(admin + 10, 190) — мін 3 год для історії шахедів
-    const retentionMinutes = Math.max(monitorMinutes + 10, 190);
+    // Slightly longer than display TTL so slow workers / refetch do not drop tracks early.
+    const retentionMinutes = Math.min(300, monitorMinutes + 15);
     return retentionMinutes * 60 * 1000;
   } catch {
     return RETENTION_HOURS_FALLBACK * 60 * 60 * 1000;
@@ -1217,13 +1409,12 @@ function pruneMessages(messages: Record<string, unknown>[]): Record<string, unkn
   const cutoffMs = Date.now() - getRetentionMs();
   const now = Date.now();
 
-  // Active moving threats: мін 180 хв (3 год) — щоб можна було переглянути пуски/шахеди
-  let activeThreatTtlMs = 180 * 60 * 1000;
+  let activeThreatTtlMs = 35 * 60 * 1000;
   try {
     const settings = loadSettings();
-    const monitorMinutes = Math.max(settings.monitorPeriod || 30, 180);
-    activeThreatTtlMs = monitorMinutes * 60 * 1000;
-  } catch { /* 180 хв */ }
+    const monitorMinutes = settings.monitorPeriod || 30;
+    activeThreatTtlMs = (monitorMinutes + 5) * 60 * 1000;
+  } catch { /* fallback above */ }
   const ACTIVE_THREAT_TYPES = new Set([
     'shahed', 'drone', 'uav', 'fpv', 'rozved',
     'raketa', 'missile', 'pusk', 'launch', 'ballistic',
@@ -1243,7 +1434,13 @@ function pruneMessages(messages: Record<string, unknown>[]): Record<string, unkn
         : createdEpoch && createdEpoch > 1000000000 ? createdEpoch : 0;
       if (refEpoch > 0) {
         const refMs = refEpoch > 10000000000 ? refEpoch : refEpoch * 1000;
-        return (now - refMs) < activeThreatTtlMs;
+        let ttlMs = activeThreatTtlMs;
+        const pm = (m.placement_mode as string | undefined) || '';
+        // Approximate pins: cap at 60m if stale (predictive uses full activeThreatTtlMs so map/API can show them as long as point tracks)
+        if (pm === 'approximate') {
+          ttlMs = Math.min(ttlMs, 60 * 60 * 1000);
+        }
+        return (now - refMs) < ttlMs;
       }
       // No epoch — fall through to legacy ts check
     }
@@ -1322,6 +1519,7 @@ export function maybePrune(): void {
 
 // ── Redis write ──────────────────────────────────────────────────────────────
 async function writeToRedisCore(): Promise<void> {
+  if (isRedisDisabledInThisProcess()) return;
   try {
     const s = getState();
     const redis = getRedis();

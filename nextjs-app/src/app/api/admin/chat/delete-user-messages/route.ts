@@ -4,7 +4,7 @@ import fsp from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
 import { requireAdminAuth } from '@/lib/admin/apiAuth';
-import { broadcastSSE } from '@/app/api/chat/stream/route';
+import { broadcastSSE } from '@/lib/chat-sse-stream';
 import { invalidateChatCache } from '@/app/api/chat/messages/route';
 
 const DATA_DIR = process.env.DATA_DIR || '/data';

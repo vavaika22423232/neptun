@@ -46,6 +46,26 @@ export function getHardwareIdForDevice(deviceId: string): string | undefined {
   return entry?.hardware_id;
 }
 
+/** Registered chat nickname for this device (from chat_nicknames.json). */
+export function getNicknameForDevice(deviceId: string): string | null {
+  const nicknames = loadNicknames();
+  const entry = nicknames.find((n) => n.device_id === deviceId);
+  const raw = entry?.nickname?.trim();
+  return raw && raw.length > 0 ? raw : null;
+}
+
+/**
+ * Prefer server registry over JWT so chat shows the right name even when the client
+ * still sends "Анонім" in the token (old app, refresh without nick, first login).
+ */
+export function resolveChatDisplayNickname(deviceId: string, jwtNickname: string): string {
+  const reg = getNicknameForDevice(deviceId);
+  if (reg && reg.length > 0) return reg;
+  const j = (jwtNickname || '').trim();
+  if (j.length > 0) return j;
+  return 'Анонім';
+}
+
 /** Get hardware_id for a nickname from nicknames. */
 export function getHardwareIdForNickname(nickname: string): string | undefined {
   const nicknames = loadNicknames();

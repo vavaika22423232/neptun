@@ -3,8 +3,9 @@ import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
-import { broadcastSSE } from '../stream/route';
+import { broadcastSSE } from '@/lib/chat-sse-stream';
 import { isBanned } from '@/lib/admin/data';
+import { invalidateChatCache } from '../messages/route';
 
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const CHAT_FILE = path.join(DATA_DIR, 'chat_messages.json');
@@ -25,32 +26,21 @@ interface ReactionInfo {
   timestamp: number;
 }
 
-import { getJwtSecret } from '@/lib/server-secrets';
-import { verifyChatToken } from '@/lib/chat-auth';
+import { requireChatAuth } from '@/lib/chat-auth';
 
 export async function POST(request: Request) {
   try {
-    const authHeader = request.headers.get('Authorization') || '';
-    const token = authHeader.split(' ')[1];
-    const jwtSecret = getJwtSecret();
-
-    if (!token || !jwtSecret) {
-      return NextResponse.json({ error: 'Потрібна авторизація' }, { status: 401 });
-    }
-
-    const payload = verifyChatToken(token, jwtSecret);
-    if (!payload || payload.type !== 'access') {
-      return NextResponse.json({ error: 'Сесія недійсна' }, { status: 401 });
-    }
+    const authResult = requireChatAuth(request);
+    if (authResult instanceof Response) return authResult;
+    const identity = authResult;
 
     const body = await request.json();
 
     const messageId = body.messageId || body.message_id;
     const emoji = body.emoji || body.reaction;
     
-    // IDENTITY: Exclusively from JWT!
-    const deviceId = payload.deviceId;
-    const nickname = payload.nickname || 'Анонім';
+    const deviceId = identity.deviceId;
+    const nickname = identity.nickname.slice(0, 30);
     const hardwareId = body.hardwareId || body.hardware_id;
 
     // Block banned users from reacting
@@ -100,6 +90,7 @@ export async function POST(request: Request) {
       const tmp = filePath + '.tmp.' + crypto.randomBytes(4).toString('hex');
       await fsp.writeFile(tmp, JSON.stringify(messages, null, 2), 'utf-8');
       await fsp.rename(tmp, filePath);
+      invalidateChatCache();
 
       return { ok: true as const, reactions: msg.reactions };
     });
@@ -108,12 +99,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: result.error }, { status: 404 });
     }
 
+    const cleanReactions: Record<string, unknown> = {};
+    for (const [emoji, list] of Object.entries(result.reactions as Record<string, unknown[]>)) {
+      if (Array.isArray(list)) {
+        cleanReactions[emoji] = list.map((r: unknown) => {
+          if (r && typeof r === 'object') {
+            const { deviceId: _d, ...safe } = r as Record<string, unknown>;
+            return safe;
+          }
+          return r;
+        });
+      }
+    }
+
     broadcastSSE({
       type: 'reaction',
-      data: { messageId, reactions: result.reactions },
+      data: { messageId, reactions: cleanReactions },
     });
 
-    return NextResponse.json({ status: 'ok', reactions: result.reactions });
+    return NextResponse.json({ status: 'ok', reactions: cleanReactions });
   } catch (err) {
     console.error('[CHAT] React error:', err);
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });

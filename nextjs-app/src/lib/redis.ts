@@ -14,10 +14,26 @@ import Redis from 'ioredis';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
 
+/**
+ * Skip all Redis I/O: Next.js static build workers, or explicit opt-out (e.g. `docker build` without Redis).
+ * Avoids connection storms and log spam when `REDIS_URL` is unreachable.
+ */
+export function isRedisDisabledInThisProcess(): boolean {
+  return (
+    process.env.NEXT_PHASE === 'phase-production-build' ||
+    process.env.SKIP_REDIS === '1'
+  );
+}
+
 // Lazy singleton — created on first use
 let _redis: Redis | null = null;
 
 export function getRedis(): Redis {
+  if (isRedisDisabledInThisProcess()) {
+    throw new Error(
+      '[REDIS] getRedis() is disabled during Next.js build (NEXT_PHASE=phase-production-build) or when SKIP_REDIS=1',
+    );
+  }
   if (!_redis) {
     _redis = new Redis(REDIS_URL, {
       maxRetriesPerRequest: null,
@@ -49,6 +65,7 @@ export function getRedis(): Redis {
  * Get JSON data from Redis. Returns null if key doesn't exist or expired.
  */
 export async function redisGet<T>(key: string): Promise<T | null> {
+  if (isRedisDisabledInThisProcess()) return null;
   try {
     const raw = await getRedis().get(key);
     if (!raw) return null;
@@ -59,10 +76,20 @@ export async function redisGet<T>(key: string): Promise<T | null> {
   }
 }
 
+/** Same as redisGet but resolves after timeout — use in SSG pages so builds do not hang when Redis is offline. */
+export async function redisGetWithTimeout<T>(key: string, timeoutMs = 2500): Promise<T | null> {
+  if (isRedisDisabledInThisProcess()) return null;
+  const deadline = new Promise<T | null>((resolve) => {
+    setTimeout(() => resolve(null), timeoutMs);
+  });
+  return (await Promise.race([redisGet<T>(key), deadline])) ?? null;
+}
+
 /**
  * Set JSON data in Redis with TTL (seconds).
  */
 export async function redisSet<T>(key: string, data: T, ttlSeconds: number): Promise<void> {
+  if (isRedisDisabledInThisProcess()) return;
   try {
     const json = JSON.stringify(data);
     await getRedis().set(key, json, 'EX', ttlSeconds);
@@ -81,6 +108,9 @@ export async function redisGetWithMeta<T>(key: string, maxTtl: number): Promise<
   age: number;       // seconds since last write
   raw: string | null;
 }> {
+  if (isRedisDisabledInThisProcess()) {
+    return { data: null, ttl: 0, age: maxTtl, raw: null };
+  }
   try {
     const redis = getRedis();
     const [raw, ttl] = await Promise.all([
@@ -109,6 +139,7 @@ export async function redisGetWithMeta<T>(key: string, maxTtl: number): Promise<
  * Creates key at 0 if missing, then increments to 1.
  */
 export async function redisIncr(key: string): Promise<number> {
+  if (isRedisDisabledInThisProcess()) return 0;
   try {
     return await getRedis().incr(key);
   } catch (err) {
@@ -122,6 +153,7 @@ export async function redisIncr(key: string): Promise<number> {
  * Clamps to 0 if key would go negative (e.g. worker crash without DECR).
  */
 export async function redisDecr(key: string): Promise<number> {
+  if (isRedisDisabledInThisProcess()) return 0;
   try {
     const val = await getRedis().decr(key);
     if (val < 0) {
@@ -139,6 +171,7 @@ export async function redisDecr(key: string): Promise<number> {
  * Get numeric value of a key. Returns 0 if missing or invalid.
  */
 export async function redisGetCount(key: string): Promise<number> {
+  if (isRedisDisabledInThisProcess()) return 0;
   try {
     const val = await getRedis().get(key);
     if (val == null) return 0;
@@ -154,6 +187,7 @@ export async function redisGetCount(key: string): Promise<number> {
  * Check if Redis is healthy.
  */
 export async function redisHealthy(): Promise<boolean> {
+  if (isRedisDisabledInThisProcess()) return false;
   try {
     const pong = await getRedis().ping();
     return pong === 'PONG';
@@ -168,6 +202,11 @@ export async function redisHealthy(): Promise<boolean> {
 let _redisSub: Redis | null = null;
 
 function getSubscriber(): Redis {
+  if (isRedisDisabledInThisProcess()) {
+    throw new Error(
+      '[REDIS-SUB] Subscriber disabled during Next.js build or when SKIP_REDIS=1',
+    );
+  }
   if (!_redisSub) {
     _redisSub = new Redis(REDIS_URL, {
       maxRetriesPerRequest: null, // subscriber must never time out
@@ -245,6 +284,7 @@ function ensurePubSubChannelsSubscribed(): void {
  * Publish an SSE event to all Node.js workers via Redis Pub/Sub.
  */
 export async function publishSSE(event: { type: string; data: unknown }): Promise<void> {
+  if (isRedisDisabledInThisProcess()) return;
   try {
     await getRedis().publish(SSE_CHANNEL, JSON.stringify(event));
   } catch (err) {
@@ -254,6 +294,7 @@ export async function publishSSE(event: { type: string; data: unknown }): Promis
 
 /** Notify all Node workers to drop in-memory chat message cache (PM2 cluster). */
 export async function publishChatCacheInvalidate(): Promise<void> {
+  if (isRedisDisabledInThisProcess()) return;
   try {
     await getRedis().publish(CHAT_CACHE_INV_CHANNEL, '1');
   } catch (err) {
@@ -263,6 +304,7 @@ export async function publishChatCacheInvalidate(): Promise<void> {
 
 /** Notify all Node workers to drop /api/data-style memory caches (PM2 cluster). */
 export async function publishMarkerDerivedCacheInvalidate(): Promise<void> {
+  if (isRedisDisabledInThisProcess()) return;
   try {
     await getRedis().publish(MARKER_DERIVED_INV_CHANNEL, '1');
   } catch (err) {
@@ -278,6 +320,7 @@ export async function publishMarkerDerivedCacheInvalidate(): Promise<void> {
 export function subscribeSSE(
   callback: (event: { type: string; data: unknown }) => void
 ): void {
+  if (isRedisDisabledInThisProcess()) return;
   wireSubscriberMessageRouter();
   sseSubscribers.add(callback);
   ensurePubSubChannelsSubscribed();
@@ -288,6 +331,7 @@ export function subscribeSSE(
  * Call once per process from instrumentation.
  */
 export function subscribeChatCacheInvalidation(onInvalidate: () => void): void {
+  if (isRedisDisabledInThisProcess()) return;
   wireSubscriberMessageRouter();
   chatCacheInvSubscribers.add(onInvalidate);
   ensurePubSubChannelsSubscribed();
@@ -295,6 +339,7 @@ export function subscribeChatCacheInvalidation(onInvalidate: () => void): void {
 
 /** Clear local marker-derived API caches when another worker ingests (see cache.ts). */
 export function subscribeMarkerDerivedCacheInvalidation(onInvalidate: () => void): void {
+  if (isRedisDisabledInThisProcess()) return;
   wireSubscriberMessageRouter();
   markerDerivedInvSubscribers.add(onInvalidate);
   ensurePubSubChannelsSubscribed();

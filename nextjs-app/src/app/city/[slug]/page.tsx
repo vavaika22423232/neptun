@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import Footer from '@/components/Footer';
-import { redisGet } from '@/lib/redis';
+import { redisGetWithTimeout } from '@/lib/redis';
 import type { Alarm } from '@/types';
 
 export const revalidate = 60;
@@ -132,7 +132,7 @@ async function getRegionAlarmStatus(regionName: string): Promise<{
   since: string | null;
 } | null> {
   try {
-    const alarms = await redisGet<Alarm[]>('alarms:all');
+    const alarms = await redisGetWithTimeout<Alarm[]>('alarms:all');
     if (!alarms || !Array.isArray(alarms)) return null;
     const match = alarms.find(
       (a) => a.regionName === regionName || a.regionId === regionName,

@@ -160,6 +160,7 @@ body {
 #leaflet-map {
   --bg-opacity: 1;
   --map-opacity: 0;
+  contain: layout style;
 }
 
 .leaflet-container {
@@ -174,7 +175,6 @@ body {
 #leaflet-map .leaflet-tile-pane {
   opacity: var(--map-opacity, 0);
   transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1);
-  will-change: transform, opacity;
 }
 
 .leaflet-control-attribution,
@@ -185,12 +185,23 @@ body {
 .leaflet-marker-icon.threat-marker-icon {
   background: none !important;
   border: none !important;
+  /* Phase 2.1: No transition on the Leaflet container to prevent jitter during map pan */
+}
+
+/* Inner marker content that we can safely animate relative to its coordinate */
+.threat-marker {
   will-change: transform;
+  transform-origin: center center;
+}
+
+.threat-marker.gliding {
+  transition: transform 1.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* SVG overlay inside Leaflet */
 .leaflet-svg-overlay {
   pointer-events: none;
+  contain: layout style;
 }
 
 .leaflet-svg-overlay .stateObject,
@@ -200,15 +211,20 @@ body {
 
 .leaflet-svg-pane {
   z-index: 200;
-  will-change: transform, opacity;
 }
 .leaflet-trajectory-pane {
   z-index: 400;
-  will-change: transform, opacity;
 }
 .leaflet-marker-pane {
   z-index: 600;
-  will-change: transform;
+}
+
+/* App WebView / embed: keep threat markers above SVG region hit areas */
+html.embed-mode .leaflet-marker-pane {
+  z-index: 650;
+}
+html.embed-mode .leaflet-popup-pane {
+  z-index: 800;
 }
 
 /* ============================================
@@ -218,7 +234,7 @@ body {
 .svg-districts-layer {
   opacity: 1;
   transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1);
-  will-change: opacity;
+  contain: layout style;
 }
 
 .leaflet-container.high-zoom .svg-states-layer,
@@ -232,7 +248,7 @@ body {
 }
 
 .svg-names-layer text {
-  fill: rgba(255, 255, 255, 0.45);
+  fill: rgba(255, 255, 255, 0.55);
   font-family: var(--font-inter), sans-serif;
   font-weight: 500;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
@@ -248,29 +264,30 @@ body {
 }
 
 .stateObject {
-  fill: rgba(255, 255, 255, 0.03);
-  stroke: rgba(255, 255, 255, 0.08);
+  fill: rgba(255, 255, 255, 0.05);
+  stroke: rgba(255, 255, 255, 0.12);
   stroke-width: 0.4;
-  transition:
-    fill 0.4s cubic-bezier(0.2, 0, 0, 1),
-    stroke 0.4s cubic-bezier(0.2, 0, 0, 1);
+  transition: fill-opacity 0.4s cubic-bezier(0.2, 0, 0, 1);
 }
 .theme-light .stateObject {
   fill: rgba(0, 0, 0, 0.02);
   stroke: rgba(0, 0, 0, 0.06);
 }
 
-.stateObject:hover {
-  fill: rgba(255, 255, 255, 0.07);
-  stroke: rgba(255, 255, 255, 0.15);
-}
-.theme-light .stateObject:hover {
-  fill: rgba(0, 0, 0, 0.06);
-  stroke: rgba(0, 0, 0, 0.12);
+/* Hover only on devices with a pointer (no mobile) */
+@media (hover: hover) {
+  .stateObject:hover {
+    fill: rgba(255, 255, 255, 0.09);
+    stroke: rgba(255, 255, 255, 0.18);
+  }
+  .theme-light .stateObject:hover {
+    fill: rgba(0, 0, 0, 0.06);
+    stroke: rgba(0, 0, 0, 0.12);
+  }
 }
 
 .stateObject.alarm {
-  fill: rgba(255, 59, 48, 0.15); /* Apple Red translucent */
+  fill: rgba(255, 59, 48, 0.18);
   stroke: rgba(255, 59, 48, 0.4);
   animation: alarmGlassPulse 3s ease-in-out infinite;
 }
@@ -279,34 +296,35 @@ body {
   stroke: rgba(255, 59, 48, 0.3);
 }
 
+/* GPU-compositable: animate only opacity, not fill color */
 @keyframes alarmGlassPulse {
-  0% { fill: rgba(255, 59, 48, 0.12); stroke: rgba(255, 59, 48, 0.25); }
-  50% { fill: rgba(255, 59, 48, 0.22); stroke: rgba(255, 59, 48, 0.45); }
-  100% { fill: rgba(255, 59, 48, 0.12); stroke: rgba(255, 59, 48, 0.25); }
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
 }
 
 /* District regions */
 .dist {
   fill: transparent;
-  stroke: rgba(255, 255, 255, 0.03);
+  stroke: rgba(255, 255, 255, 0.055);
   stroke-width: 0.2;
-  transition:
-    fill 0.4s ease,
-    stroke 0.4s ease;
+  transition: fill-opacity 0.4s ease;
   pointer-events: all;
 }
 .theme-light .dist {
   stroke: rgba(0, 0, 0, 0.04);
 }
 
-.dist:hover {
-  fill: rgba(255, 255, 255, 0.05);
-  stroke: rgba(255, 255, 255, 0.1);
-  cursor: pointer;
-}
-.theme-light .dist:hover {
-  fill: rgba(0, 0, 0, 0.04);
-  stroke: rgba(0, 0, 0, 0.1);
+/* Hover only on devices with a pointer (no mobile) */
+@media (hover: hover) {
+  .dist:hover {
+    fill: rgba(255, 255, 255, 0.065);
+    stroke: rgba(255, 255, 255, 0.14);
+    cursor: pointer;
+  }
+  .theme-light .dist:hover {
+    fill: rgba(0, 0, 0, 0.04);
+    stroke: rgba(0, 0, 0, 0.1);
+  }
 }
 
 .dist.alarm {
@@ -329,7 +347,18 @@ body {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6));
+  /* No drop-shadow filter — use box-shadow on container instead (much cheaper for GPU) */
+  pointer-events: none;
+}
+
+/* Light map: shahed raster reads as dark silhouette on pale tiles */
+.theme-light .threat-marker[data-icon='shahed3'] img {
+  filter: brightness(0);
+}
+
+.threat-marker {
+  /* box-shadow is GPU-compositable, drop-shadow filter is not */
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
 }
 
 .marker-count-badge {
@@ -368,16 +397,20 @@ body {
    Tooltip — Material You surface
    ============================================ */
 .marker-tooltip {
-  position: absolute;
+  position: fixed;
   z-index: 10000;
-  background: transparent;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
   pointer-events: none;
-  text-shadow: 0 2px 8px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,1);
+  background: rgba(10, 10, 11, 0.9);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: white;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-family: var(--font-inter), sans-serif;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  font-size: 12px;
+  will-change: transform, opacity;
+  transition: opacity 0.15s ease;
   white-space: nowrap;
 }
 .theme-light .marker-tooltip {
@@ -450,19 +483,9 @@ body {
     border-radius: 12px;
   }
 
-  .threat-marker img {
-    filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
-  }
-
-  .stateObject:hover {
-    fill: var(--map-fill-quiet);
-    stroke-opacity: 0.2;
-  }
-
-  .dist:hover {
-    fill: transparent;
-    stroke: var(--map-stroke-soft);
-    cursor: default;
+  /* Lighter filter for mobile GPU */
+  .threat-marker {
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
   }
 }
 
@@ -529,33 +552,37 @@ body {
 }
 
 .dark-satellite-layer {
-  filter: grayscale(100%) contrast(1.5) brightness(0.4);
+  /* Hybrid labels are baked into tiles; slightly higher brightness + softer contrast
+     keeps white settlement text readable on darkened satellite (see map readability plan). */
+  filter: grayscale(100%) contrast(1.28) brightness(0.60);
   opacity: 1 !important;
-  transition: filter 0.4s ease-in-out, opacity 0.4s ease-in-out;
+  /* No transition on filter — expensive GPU repaint on theme switch, one-time is fine */
 }
 .theme-light .dark-satellite-layer {
   filter: none;
   opacity: 1 !important;
 }
 
-.light-streets-layer {
-  opacity: 0 !important;
-  transition: opacity 0.4s ease-in-out;
-}
-.theme-light .light-streets-layer {
-  opacity: 0 !important;
+/* Removed .light-streets-layer — CartoDB layer fully removed for performance */
+
+/* Marker glow — use a single lightweight drop-shadow, not per-img */
+.leaflet-marker-pane .threat-marker-icon {
+  filter: drop-shadow(0 0 8px rgba(255, 42, 95, 0.3));
 }
 
-.leaflet-marker-pane img {
-  filter: drop-shadow(0 0 16px rgba(255, 42, 95, 0.4));
-}
-
-/* Neon Vectors */
+/* Neon Vectors — GPU-compositable opacity-only animation */
 .neon-trajectory {
-  filter: drop-shadow(0 0 8px currentColor);
+  filter: drop-shadow(0 0 6px currentColor);
   animation: pulse-line 2s infinite alternate ease-in-out;
 }
 @keyframes pulse-line {
-  0% { opacity: 0.6; filter: drop-shadow(0 0 4px currentColor); }
-  100% { opacity: 1; filter: drop-shadow(0 0 12px currentColor); }
+  0% { opacity: 0.6; }
+  100% { opacity: 1; }
+}
+
+/* Off-screen content optimization */
+.seo-page-title,
+[data-content-visibility] {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 500px;
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getFeedback, updateFeedback, getResponses } from '@/lib/feedback-db';
+import { getFeedback, updateFeedback, getResponses, parseFeedbackRegions } from '@/lib/feedback-db';
 import { requireAdminAuth } from '@/lib/admin/apiAuth';
 import { sendPushToDevice } from '@/lib/fcm';
 
@@ -30,7 +30,9 @@ export async function GET(
 
     return NextResponse.json({
       ...ticket,
-      regions: typeof ticket.regions === 'string' ? JSON.parse(ticket.regions) : [],
+      regions: parseFeedbackRegions(
+        typeof ticket.regions === 'string' ? ticket.regions : undefined,
+      ),
       responses,
     });
   } catch (err) {

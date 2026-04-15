@@ -1,6 +1,9 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
-import Script from 'next/script';
+import { headers } from 'next/headers';
+import DeferredGoogleAnalytics from '@/components/DeferredGoogleAnalytics';
+import { pathnameAssetHints } from '@/lib/neptun-pathname-assets';
+import { CACHE_VERSION } from '@/lib/constants';
 import './globals.css';
 
 const inter = Inter({
@@ -302,7 +305,18 @@ const jsonLdSchemas = [
   },
 ];
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+/** WebSite + Organization only — smaller HTML on marketing/static routes */
+const jsonLdSchemasSlim = jsonLdSchemas.slice(0, 2);
+
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const h = await headers();
+  const pathname = h.get('x-neptun-pathname') ?? '';
+  // If middleware header is absent (some prerender edge cases), keep full assets so the map home never ships without Leaflet.
+  const { leaflet: includeLeaflet, material: includeMaterial, jsonLdFull } = pathname
+    ? pathnameAssetHints(pathname)
+    : { leaflet: true, material: true, jsonLdFull: true };
+  const schemasForPage = jsonLdFull ? jsonLdSchemas : jsonLdSchemasSlim;
+
   return (
     <html lang="uk" className={inter.variable} suppressHydrationWarning>
       <head>
@@ -323,36 +337,45 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* hreflang x-default (not supported by Next.js metadata API) */}
         <link rel="alternate" hrefLang="x-default" href="https://neptun.in.ua/" />
 
-        {/* Preconnect to external resources */}
-        <link rel="preconnect" href="https://fonts.googleapis.com" crossOrigin="anonymous" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link rel="preconnect" href="https://tiles.openfreemap.org" crossOrigin="anonymous" />
-        <link rel="preconnect" href="https://a.basemaps.cartocdn.com" crossOrigin="anonymous" />
-        <link rel="dns-prefetch" href="//b.basemaps.cartocdn.com" />
-        <link rel="preconnect" href="https://unpkg.com" crossOrigin="anonymous" />
-        <link rel="dns-prefetch" href="//fonts.googleapis.com" />
+        {/* Preconnect: gstatic for Material Icons font files (stylesheet loaded idle below). */}
+        {includeMaterial ? (
+          <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        ) : null}
+        {/* mt1: early TLS for satellite tiles — Lighthouse estimates ~300ms LCP help vs dns-prefetch alone */}
+        {includeLeaflet ? (
+          <>
+            <link rel="preconnect" href="https://mt1.google.com" crossOrigin="anonymous" />
+            <link rel="dns-prefetch" href="https://mt2.google.com" />
+          </>
+        ) : null}
         <link rel="dns-prefetch" href="//fonts.gstatic.com" />
         <link rel="dns-prefetch" href="//www.googletagmanager.com" />
 
-        {/* Preload critical assets */}
-        <link rel="prefetch" href="/api/alarms/all" as="fetch" crossOrigin="anonymous" />
+        {includeLeaflet ? (
+          <link rel="prefetch" href="/api/alarms/all" as="fetch" crossOrigin="anonymous" />
+        ) : null}
 
-        {/* Leaflet CSS */}
-        <link
-          rel="stylesheet"
-          href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-          crossOrigin=""
-        />
+        {includeLeaflet ? (
+          <link
+            rel="preload"
+            as="image"
+            href={`/shahed3.webp?${CACHE_VERSION}`}
+          />
+        ) : null}
 
-        {/* Material Icons */}
-        <link
-          href="https://fonts.googleapis.com/icon?family=Material+Icons&display=block"
-          rel="stylesheet"
-        />
+        {includeLeaflet ? (
+          <link rel="stylesheet" href="/vendor/leaflet/leaflet.css" />
+        ) : null}
 
-        {/* JSON-LD structured data — all 10 schemas */}
-        {jsonLdSchemas.map((schema, i) => (
+        {includeMaterial ? (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `(function(){var h='https://fonts.googleapis.com/icon?family=Material+Icons&display=swap';function a(){if(document.querySelector('link[data-neptun-mi]'))return;var l=document.createElement('link');l.setAttribute('data-neptun-mi','1');l.rel='stylesheet';l.href=h;document.head.appendChild(l);}if(typeof requestIdleCallback==='function')requestIdleCallback(a,{timeout:4000});else setTimeout(a,800);})();`,
+            }}
+          />
+        ) : null}
+
+        {schemasForPage.map((schema, i) => (
           <script
             key={i}
             type="application/ld+json"
@@ -361,27 +384,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         ))}
       </head>
       <body className="font-mono bg-[#f5f7fa] text-gray-900 dark:bg-[#050505] dark:text-white/80 antialiased selection:bg-[#ff2a5f]/30 relative transition-colors duration-300">
-        {/* Ambient Mesh Background */}
-        <div className="fixed inset-0 z-[-100] overflow-hidden pointer-events-none bg-[#f5f7fa] dark:bg-[#050505] transition-colors duration-300">
-          <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] rounded-full bg-indigo-200/50 dark:bg-indigo-950/80 blur-[140px] opacity-80" />
-          <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-rose-200/40 dark:bg-rose-950/40 blur-[160px] opacity-60" />
-          <div className="absolute top-[30%] left-[20%] w-[40%] h-[40%] rounded-full bg-blue-200/50 dark:bg-blue-900/20 blur-[120px] opacity-50" />
-        </div>
+        {/* Flat background — ambient mesh blur removed for GPU performance */}
         {children}
 
-        {/* Google Analytics - deferred */}
-        <Script
-          src="https://www.googletagmanager.com/gtag/js?id=G-MW867VP8WK"
-          strategy="afterInteractive"
-        />
-        <Script id="ga-config" strategy="afterInteractive">
-          {`
-            window.dataLayer = window.dataLayer || [];
-            function gtag(){dataLayer.push(arguments);}
-            gtag('js', new Date());
-            gtag('config', 'G-MW867VP8WK');
-          `}
-        </Script>
+        <DeferredGoogleAnalytics />
       </body>
     </html>
   );
