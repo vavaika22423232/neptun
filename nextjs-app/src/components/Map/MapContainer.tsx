@@ -211,12 +211,11 @@ function computeIconRotationCssDeg(marker: Marker): number {
   return bearingToWebIconRotationCssDeg(brg);
 }
 
-/** Icon DOM (file, type, count badge) — full `setIcon` when this changes. */
+/** Icon DOM (file, type) — full `setIcon` when this changes. */
 function threatIconLayoutKey(marker: Marker): string {
   const tt = marker.threat_type || 'default';
   const icon = marker.marker_icon || THREAT_ICONS[tt] || 'shahed3.webp';
-  const c = Number(marker.count) || 1;
-  return `${icon}|${tt}|${c}`;
+  return `${icon}|${tt}`;
 }
 
 /** Rounded bearing — cheap `img.style.transform` updates only. */
@@ -245,14 +244,9 @@ function buildThreatDivIcon(marker: Marker): L.DivIcon {
     size = Math.round(size * 1.2);
   }
   const rotationAngle = computeIconRotationCssDeg(marker);
-  const count = Number(marker.count) || 1;
-  let badge = '';
-  if (count > 1) {
-    badge = `<span class="marker-count-badge">${count}</span>`;
-  }
 
-  // Cache key based solely on visual appearance
-  const cacheKey = `${threatType}|${iconFile}|${size}|${Math.round(rotationAngle)}|${count}`;
+  // Cache key based solely on visual appearance (no per-count badge on map)
+  const cacheKey = `${threatType}|${iconFile}|${size}|${Math.round(rotationAngle)}`;
   const cached = _iconCache.get(cacheKey);
   if (cached) return cached;
 
@@ -270,7 +264,7 @@ function buildThreatDivIcon(marker: Marker): L.DivIcon {
   const html = `<div class="threat-marker" data-type="${threatType}"${shahedRasterAttr} style="position:relative;width:${size}px;height:${size}px;">
     <img src="/${iconFile}?${CACHE_VERSION}" alt="${threatType}" decoding="async" fetchpriority="${fetchPriority}"
          style="transform:rotate(${rotationAngle}deg);width:100%;height:100%;"
-         onerror="this.src='/shahed3.webp?${CACHE_VERSION}'">${badge}</div>`;
+         onerror="this.src='/shahed3.webp?${CACHE_VERSION}'"></div>`;
 
   const icon = L.divIcon({
     className: 'threat-marker-icon',
