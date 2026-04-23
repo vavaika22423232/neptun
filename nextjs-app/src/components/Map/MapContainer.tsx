@@ -6,6 +6,13 @@ import type { Marker, Alarm, FusionTrajectory } from '@/types';
 import { THREAT_ICONS, THREAT_NAMES } from '@/types';
 import { CACHE_VERSION, SVG_FADE_START_ZOOM, SVG_FADE_END_ZOOM } from '@/lib/constants';
 import { bearingToWebIconRotationCssDeg, resolveThreatBearingDeg } from '@/lib/threat-bearing';
+import {
+  getBasemapClassName,
+  getBasemapUrl,
+  isLowInteractionMode,
+  pickBasemapKind,
+  type MapBasemapKind,
+} from '@/lib/map-leaflet-performance';
 
 // Re-export MAP_BOUNDS locally to avoid circular deps
 const MAP_BOUNDS = { minLat: 44.2, maxLat: 52.4, minLng: 22.0, maxLng: 40.2 } as const;
@@ -170,7 +177,6 @@ function syncDisplayUncertaintyLayers(
         color: '#ffab40',
         weight: 2,
         opacity: 0.88,
-        dashArray: '8 6',
       }).addTo(trajGroup);
     }
   }
@@ -375,9 +381,11 @@ interface MapContainerProps {
   fusionTrajectories: FusionTrajectory[];
   isAdmin?: boolean;
   onMarkerAction?: () => void;
+  /** WebView in app (`?embed=1`) — same map + SVG as desktop */
+  isEmbed?: boolean;
 }
 
-export default function MapContainer({ markers, alarms, fusionTrajectories, isAdmin, onMarkerAction }: MapContainerProps) {
+export default function MapContainer({ markers, alarms, fusionTrajectories, isAdmin, onMarkerAction, isEmbed = false }: MapContainerProps) {
   const deferredMarkers = useDeferredValue(markers);
   const deferredAlarms = useDeferredValue(alarms);
 
@@ -394,6 +402,8 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
   const isAdminRef = useRef(isAdmin);
   isAdminRef.current = isAdmin;
   const isInteractingRef = useRef(false);
+  const lowInteractionRef = useRef(false);
+  lowInteractionRef.current = isLowInteractionMode(isEmbed, typeof navigator !== 'undefined' ? navigator.userAgent : undefined);
 
   // Initialize map (must match original init order: tiles -> layers -> SVG -> events -> fitBounds)
   useEffect(() => {
@@ -404,12 +414,20 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
 
     const ukraineCenter: L.LatLngExpression = [48.5, 31.5];
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const basemap = pickBasemapKind(isEmbed, typeof navigator !== 'undefined' ? navigator.userAgent : undefined);
+    const lowTileMode = basemap === 'rasterVectorDark';
+    const lowInteraction = isLowInteractionMode(
+      isEmbed,
+      typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
+    );
+    lowInteractionRef.current = lowInteraction;
 
     const map = L.map(mapElRef.current, {
       center: ukraineCenter,
       zoom: 6,
       minZoom: 5,
-      maxZoom: 19,
+      // Hybrid labels need high zoom; OpenFreeMap is cheaper — cap zoom on low mode = fewer tile fetches
+      maxZoom: lowTileMode ? 16 : 19,
       zoomControl: false,
       attributionControl: false,
       dragging: true,
@@ -417,19 +435,19 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
       doubleClickZoom: true,
       touchZoom: true,
       preferCanvas: true, // Use Canvas for vectors (Fusion tracks)
-      zoomAnimation: true,
-      fadeAnimation: true,
-      markerZoomAnimation: true,
-      transform3DLimit: 2,
-      zoomSnap: 0.5,
+      zoomAnimation: !lowInteraction,
+      fadeAnimation: !lowInteraction,
+      markerZoomAnimation: !lowInteraction,
+      transform3DLimit: lowInteraction ? 1 : 2,
+      zoomSnap: lowInteraction ? 1 : 0.5,
       zoomDelta: 1,
       wheelPxPerZoomLevel: 60,
       wheelDebounceTime: 60,
-      inertia: true,
-      inertiaDuration: 1.5,
-      inertiaMaxSpeed: 3000,
+      inertia: !lowInteraction,
+      inertiaDuration: lowInteraction ? 0.75 : 1.5,
+      inertiaMaxSpeed: lowInteraction ? 1500 : 3000,
       easeLinearity: 0.1,
-      keepBuffer: 2,
+      keepBuffer: lowTileMode ? 1 : 2,
       maxBounds: [[40, 18], [56, 44]],
       maxBoundsViscosity: 0.8,
     } as any);
@@ -440,7 +458,7 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
     (async () => {
       try {
         // 1. Load base map tiles (await like original)
-        await loadMapTiles(map, isMobile);
+        await loadMapTiles(map, { isMobile, basemap, lowTileMode });
       } catch (e) {
         console.warn('Map tiles load error:', e);
       }
@@ -458,7 +476,10 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
 
       // 3. Load SVG overlays (await like original)
       try {
-        const svgRefs = await loadSvgOverlays(map);
+        const svgRefs = await loadSvgOverlays(map, {
+          skipOblastNames: false,
+          skipDetailedDistricts: false,
+        });
         if (aborted) return;
         if (svgRefs) {
           statesSvgRef.current = svgRefs.statesSvg;
@@ -519,7 +540,7 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
       map.remove();
       mapRef.current = null;
     };
-  }, []);
+  }, [isEmbed]);
 
   // Register admin action handlers on window (for popup button onclick)
   useEffect(() => {
@@ -686,7 +707,7 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
             // Skip visual glide if map is busy zooming or being dragged to prevent coordinate conflicts
             const isMapStatic = !isInteractingRef.current;
 
-            if (map && isMapStatic && inner) {
+            if (map && isMapStatic && inner && !lowInteractionRef.current) {
               // Relative Offset Glide Strategy (Prevents jitter during map pan)
               const oldPoint = map.latLngToLayerPoint(cur);
               const newPoint = map.latLngToLayerPoint([lat, lng]);
@@ -813,35 +834,43 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
 // Helper functions
 // ============================================
 
-async function loadMapTiles(map: L.Map, isMobile: boolean) {
-  // Base Satellite + Labels (Google Maps Hybrid, Ukrainian Language).
-  // maxZoom aligned with map (19): SVG overlays fade out by zoom 8 (constants), so extra zoom
-  // only enlarges baked-in hybrid labels. For adjustable label fonts see map-basemap-vector-roadmap.ts.
-  L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&hl=uk', {
-    attribution: '',
-    maxZoom: 19,
-    className: 'dark-satellite-layer',
-    updateWhenIdle: isMobile, // On mobile, only load tiles after pan/zoom ends
-    updateWhenZooming: false, // Don't load tiles during zoom animation
-    keepBuffer: 2, // Less offscreen tile memory
-    detectRetina: !isMobile, // Halve tile requests on mobile retina screens
-  } as L.TileLayerOptions).addTo(map);
+type LoadTilesOpts = {
+  isMobile: boolean;
+  basemap: MapBasemapKind;
+  lowTileMode: boolean;
+};
 
-  // CartoDB light layer removed — was always opacity: 0 in both themes
+async function loadMapTiles(map: L.Map, opts: LoadTilesOpts) {
+  const { isMobile, basemap, lowTileMode } = opts;
+  const url = getBasemapUrl(basemap);
+  L.tileLayer(url, {
+    attribution: '',
+    maxZoom: lowTileMode ? 16 : 19,
+    className: getBasemapClassName(basemap),
+    updateWhenIdle: isMobile,
+    updateWhenZooming: false,
+    keepBuffer: lowTileMode ? 1 : 2,
+    detectRetina: !isMobile,
+  } as L.TileLayerOptions).addTo(map);
 }
 
-async function loadSvgOverlays(map: L.Map): Promise<{ statesSvg: SVGElement; districtsSvg: SVGElement } | null> {
+async function loadSvgOverlays(
+  map: L.Map,
+  opts: { skipOblastNames: boolean; skipDetailedDistricts: boolean },
+): Promise<{ statesSvg: SVGElement; districtsSvg: SVGElement | null } | null> {
   try {
     const bounds = L.latLngBounds(
       [MAP_BOUNDS.minLat, MAP_BOUNDS.minLng],
       [MAP_BOUNDS.maxLat, MAP_BOUNDS.maxLng]
     );
 
-    const svgUrls = [
-      `/ukraine_states.svg?${CACHE_VERSION}`,
-      `/ukraine_districts_detailed.svg?${CACHE_VERSION}`,
-      `/ukraine_names.svg?${CACHE_VERSION}`,
-    ];
+    const svgUrls: string[] = [`/ukraine_states.svg?${CACHE_VERSION}`];
+    if (!opts.skipDetailedDistricts) {
+      svgUrls.push(`/ukraine_districts_detailed.svg?${CACHE_VERSION}`);
+    }
+    if (!opts.skipOblastNames) {
+      svgUrls.push(`/ukraine_names.svg?${CACHE_VERSION}`);
+    }
 
     const results: SVGElement[] = [];
     const parser = new DOMParser();
@@ -858,16 +887,23 @@ async function loadSvgOverlays(map: L.Map): Promise<{ statesSvg: SVGElement; dis
       results.push(svg.cloneNode(true) as SVGElement);
     }
 
-    const [statesSvg, districtsSvg, namesSvg] = results;
-
+    let i = 0;
+    const statesSvg = results[i++] as SVGElement;
     statesSvg.classList.add('svg-states-layer');
-    districtsSvg.classList.add('svg-districts-layer');
-    namesSvg.classList.add('svg-names-layer');
-
-    // Add overlays to map in correct order (states -> districts -> names)
     L.svgOverlay(statesSvg, bounds, { interactive: true, zIndex: 100 }).addTo(map);
-    L.svgOverlay(districtsSvg, bounds, { interactive: true, zIndex: 101 }).addTo(map);
-    L.svgOverlay(namesSvg, bounds, { interactive: false, zIndex: 102 }).addTo(map);
+
+    let districtsSvg: SVGElement | null = null;
+    if (!opts.skipDetailedDistricts) {
+      districtsSvg = results[i++] as SVGElement;
+      districtsSvg.classList.add('svg-districts-layer');
+      L.svgOverlay(districtsSvg, bounds, { interactive: true, zIndex: 101 }).addTo(map);
+    }
+
+    if (!opts.skipOblastNames) {
+      const namesSvg = results[i] as SVGElement;
+      namesSvg.classList.add('svg-names-layer');
+      L.svgOverlay(namesSvg, bounds, { interactive: false, zIndex: 102 }).addTo(map);
+    }
 
     return { statesSvg, districtsSvg };
   } catch (error) {
