@@ -170,16 +170,7 @@ function syncDisplayUncertaintyLayers(
     entry.corridorLine = null;
   }
 
-  if (marker.display_class === 'corridor_or_bearing') {
-    const pts = corridorPolylineLatLngs(marker);
-    if (pts && pts.length >= 2) {
-      entry.corridorLine = L.polyline(pts, {
-        color: '#ffab40',
-        weight: 2,
-        opacity: 0.88,
-      }).addTo(trajGroup);
-    }
-  }
+  // Corridor / bearing polylines (amber) not drawn on the map — markers + popups only.
 
   // Uncertainty rings (L.circle) intentionally not drawn — pins only; trust hints remain in popup/tooltip.
 }

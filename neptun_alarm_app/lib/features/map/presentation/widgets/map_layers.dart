@@ -1,10 +1,9 @@
-import 'dart:math' as math;
-
 import 'package:flutter/foundation.dart' show mapEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' hide Path;
 
+import '../../../../map/threat_bearing.dart';
 import '../../../../models/map_models.dart';
 import '../../../../services/threat_icon_manager.dart';
 import '../../../../theme/map_colors.dart';
@@ -547,6 +546,18 @@ class LabelsMarkersPainter extends CustomPainter {
   // Cached paint for marker icons (avoid allocating on every draw)
   static final Paint _iconPaint = Paint()..filterQuality = FilterQuality.low;
 
+  static Paint _iconPaintWithOpacity(double opacity) {
+    if (opacity >= 0.999) return _iconPaint;
+    return Paint()
+      ..filterQuality = FilterQuality.low
+      ..colorFilter = ColorFilter.matrix([
+        1, 0, 0, 0, 0,
+        0, 1, 0, 0, 0,
+        0, 0, 1, 0, 0,
+        0, 0, 0, opacity, 0,
+      ]);
+  }
+
   // Cached TextPainters — avoid 26 TextPainter.layout() calls per frame
   static final Map<String, TextPainter> _labelPainterCache = {};
   static double _cachedLabelSize = 0;
@@ -627,35 +638,38 @@ class LabelsMarkersPainter extends CustomPainter {
       }
 
       final color = ThreatType.getColor(marker.threatType);
+      final visOp = marker.mapVisualOpacity;
 
-      // Draw icon from cache with rotation
-      final icon =
-          iconManager.icons[marker.threatType] ?? iconManager.icons['default'];
+      // Draw icon from cache with rotation (server marker_icon overrides threat type)
+      final icon = iconManager.getIconForThreatMarker(
+            threatType: marker.threatType,
+            markerIcon: marker.markerIcon,
+          ) ??
+          iconManager.icons['default'];
 
-      // Calculate rotation angle based on trajectory (icon points east by default)
-      double rotationAngle = 0.0;
-      if (marker.hasAITrajectory) {
-        final traj = marker.trajectory!;
-        final dx = traj.endLng - traj.startLng;
-        final dy = traj.endLat - traj.startLat;
-        // atan2(dx, dy) gives angle from north clockwise
-        // Subtract π/2 because icon points east, not north
-        rotationAngle = math.atan2(dx, dy) - math.pi / 2;
-      } else if (marker.hasTrajectory &&
+      double? bearingDeg = resolveThreatBearingDeg(marker);
+      if (bearingDeg == null &&
+          marker.hasTrajectory &&
           marker.projectedPath != null &&
           marker.projectedPath!.length >= 2) {
         final path = marker.projectedPath!;
         final lastIdx = path.length - 1;
-        final dx = path[lastIdx].lng - path[lastIdx - 1].lng;
-        final dy = path[lastIdx].lat - path[lastIdx - 1].lat;
-        rotationAngle = math.atan2(dx, dy) - math.pi / 2;
+        bearingDeg = initialBearingDeg(
+          path[lastIdx - 1].lat,
+          path[lastIdx - 1].lng,
+          path[lastIdx].lat,
+          path[lastIdx].lng,
+        );
       }
+
+      final rotationAngle = bearingDeg != null
+          ? canvasRotationRadMatchingWeb(bearingDeg)
+          : 0.0;
 
       if (icon != null && iconManager.isLoaded) {
         canvas.save();
         canvas.translate(screenPos.dx, screenPos.dy);
 
-        // Apply rotation if trajectory exists
         if (rotationAngle != 0.0) {
           canvas.rotate(rotationAngle);
         }
@@ -671,42 +685,21 @@ class LabelsMarkersPainter extends CustomPainter {
           width: markerSize,
           height: markerSize,
         );
-        canvas.drawImageRect(icon, srcRect, dstRect, _iconPaint);
+        canvas.drawImageRect(icon, srcRect, dstRect, _iconPaintWithOpacity(visOp));
 
         canvas.restore();
       } else {
         // Fallback circle when icon not loaded
         final markerPaint = Paint()
-          ..color = color.withValues(alpha: 0.9)
+          ..color = color.withValues(alpha: 0.9 * visOp)
           ..style = PaintingStyle.fill;
         canvas.drawCircle(screenPos, markerSize / 2, markerPaint);
 
         final borderPaint = Paint()
-          ..color = Colors.white.withValues(alpha: 0.8)
+          ..color = Colors.white.withValues(alpha: 0.8 * visOp)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2.0;
         canvas.drawCircle(screenPos, markerSize / 2, borderPaint);
-      }
-
-      // Draw trajectory line if available
-      if (marker.trajectory != null) {
-        final traj = marker.trajectory!;
-        final startScreen = camera.latLngToScreenOffset(
-          LatLng(traj.startLat, traj.startLng),
-        );
-        final endScreen = camera.latLngToScreenOffset(
-          LatLng(traj.endLat, traj.endLng),
-        );
-
-        // Dashed line for predicted trajectory
-        final trajPaint = Paint()
-          ..color = traj.predicted
-              ? const Color(0xFFfbbf24)
-              : Colors.white.withValues(alpha: 0.6)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.0 * strokeScale;
-
-        canvas.drawLine(startScreen, endScreen, trajPaint);
       }
     }
 
