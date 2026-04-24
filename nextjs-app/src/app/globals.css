@@ -248,14 +248,14 @@ html.embed-mode .leaflet-popup-pane {
 }
 
 .svg-names-layer text {
-  fill: rgba(255, 255, 255, 0.55);
+  fill: rgba(255, 255, 255, 0.88);
   font-family: var(--font-inter), sans-serif;
   font-weight: 500;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
   letter-spacing: 0.02em;
 }
 .theme-light .svg-names-layer text {
-  fill: rgba(0, 0, 0, 0.55);
+  fill: rgba(0, 0, 0, 0.82);
   text-shadow: 0 1px 4px rgba(255, 255, 255, 0.8);
 }
 
@@ -264,73 +264,78 @@ html.embed-mode .leaflet-popup-pane {
 }
 
 .stateObject {
-  fill: rgba(255, 255, 255, 0.05);
-  stroke: rgba(255, 255, 255, 0.12);
+  fill: rgba(28, 30, 36, 0.78);
+  stroke: rgba(255, 255, 255, 0.1);
   stroke-width: 0.4;
   transition: fill-opacity 0.4s cubic-bezier(0.2, 0, 0, 1);
 }
 .theme-light .stateObject {
-  fill: rgba(0, 0, 0, 0.02);
-  stroke: rgba(0, 0, 0, 0.06);
+  fill: rgba(72, 76, 86, 0.14);
+  stroke: rgba(0, 0, 0, 0.2);
 }
 
 /* Hover only on devices with a pointer (no mobile) */
 @media (hover: hover) {
   .stateObject:hover {
-    fill: rgba(255, 255, 255, 0.09);
-    stroke: rgba(255, 255, 255, 0.18);
+    fill: rgba(38, 40, 48, 0.88);
+    stroke: rgba(255, 255, 255, 0.16);
   }
   .theme-light .stateObject:hover {
-    fill: rgba(0, 0, 0, 0.06);
-    stroke: rgba(0, 0, 0, 0.12);
+    fill: rgba(58, 62, 72, 0.22);
+    stroke: rgba(0, 0, 0, 0.26);
   }
 }
 
 .stateObject.alarm {
-  fill: rgba(255, 59, 48, 0.18);
-  stroke: rgba(255, 59, 48, 0.4);
+  fill: rgba(255, 42, 95, 0.52);
+  stroke: rgba(255, 120, 140, 0.92);
   animation: alarmGlassPulse 3s ease-in-out infinite;
 }
 .theme-light .stateObject.alarm {
-  fill: rgba(255, 59, 48, 0.1);
-  stroke: rgba(255, 59, 48, 0.3);
+  fill: rgba(255, 42, 95, 0.38);
+  stroke: rgba(230, 30, 70, 0.88);
 }
 
 /* GPU-compositable: animate only opacity, not fill color */
 @keyframes alarmGlassPulse {
-  0%, 100% { opacity: 0.7; }
+  0%, 100% { opacity: 0.94; }
   50% { opacity: 1; }
 }
 
 /* District regions */
 .dist {
-  fill: transparent;
-  stroke: rgba(255, 255, 255, 0.055);
+  fill: rgba(22, 24, 30, 0.55);
+  stroke: rgba(255, 255, 255, 0.07);
   stroke-width: 0.2;
   transition: fill-opacity 0.4s ease;
   pointer-events: all;
 }
 .theme-light .dist {
-  stroke: rgba(0, 0, 0, 0.04);
+  fill: rgba(80, 84, 94, 0.1);
+  stroke: rgba(0, 0, 0, 0.14);
 }
 
 /* Hover only on devices with a pointer (no mobile) */
 @media (hover: hover) {
   .dist:hover {
-    fill: rgba(255, 255, 255, 0.065);
-    stroke: rgba(255, 255, 255, 0.14);
+    fill: rgba(34, 36, 44, 0.72);
+    stroke: rgba(255, 255, 255, 0.12);
     cursor: pointer;
   }
   .theme-light .dist:hover {
-    fill: rgba(0, 0, 0, 0.04);
-    stroke: rgba(0, 0, 0, 0.1);
+    fill: rgba(64, 68, 78, 0.16);
+    stroke: rgba(0, 0, 0, 0.2);
   }
 }
 
 .dist.alarm {
-  fill: rgba(255, 59, 48, 0.1);
-  stroke: rgba(255, 59, 48, 0.3);
-  stroke-width: 0.3;
+  fill: rgba(255, 42, 95, 0.42);
+  stroke: rgba(255, 100, 125, 0.88);
+  stroke-width: 0.35;
+}
+.theme-light .dist.alarm {
+  fill: rgba(255, 42, 95, 0.32);
+  stroke: rgba(220, 35, 75, 0.85);
 }
 
 /* ============================================

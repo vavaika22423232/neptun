@@ -923,10 +923,9 @@ function updateSvgOpacity(map: L.Map) {
     container.style.setProperty('--map-opacity', String(1 - fadeOpacity));
   }
 
-  // Apply to SVG overlays
-  const svgOpacity = fadeOpacity * 0.82;
+  // Apply to SVG overlays (без додаткового диммінгу — повна непрозорість шару при fadeOpacity === 1)
   document.querySelectorAll('.svg-states-layer, .svg-districts-layer').forEach((el) => {
-    (el as HTMLElement).style.opacity = String(svgOpacity);
+    (el as HTMLElement).style.opacity = String(fadeOpacity);
   });
   document.querySelectorAll('.svg-names-layer').forEach((el) => {
     (el as HTMLElement).style.opacity = String(fadeOpacity);

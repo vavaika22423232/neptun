@@ -384,7 +384,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         ))}
       </head>
       <body className="font-mono bg-[#f5f7fa] text-gray-900 dark:bg-[#050505] dark:text-white/80 antialiased selection:bg-[#ff2a5f]/30 relative transition-colors duration-300">
-        {/* Flat background — ambient mesh blur removed for GPU performance */}
+        {/* Body flat; атмосфера карти — MapAtmosphereOverlay у AppShell (без full-screen blur) */}
         {children}
 
         <DeferredGoogleAnalytics />
