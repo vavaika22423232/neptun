@@ -2550,13 +2550,6 @@ async def process_new_message(event):
         db.save_threat(threat_id, data, ttl=ttl)
         db.publish_update('new_threat', data)
 
-        try:
-            fcm_ok = send_threat_push(data, REGION_TOPIC_MAP)
-            if not fcm_ok:
-                log.warning(f"FCM push skipped for {threat_id}: region={region}, type={legacy_type}, hidden={data.get('hidden')}")
-        except Exception as e:
-            log.error(f"FCM push failed for {threat_id}: {e}")
-
         # Push marker to Next.js web service
         if not INGEST_URL:
             log.warning(f"Skipping ingest: INGEST_URL not configured")
@@ -2637,6 +2630,7 @@ async def process_new_message(event):
                             except Exception:
                                 body = {}
                             _ingest_marker_id = body.get('id', threat_id)
+                            _public_broadcast = body.get('public_broadcast') is True
                             _count_str = f" (count={entities.count})" if entities.count > 1 else ""
                             log.info(f"Ingested: {threat_id}{_count_str} ({body.get('total', '?')} total)")
                             _add_recent(data)
@@ -2670,6 +2664,24 @@ async def process_new_message(event):
                                 marker_id=_ingest_marker_id,
                                 origin=getattr(entities, 'origin', None),
                             )
+                            if _public_broadcast:
+                                try:
+                                    fcm_ok = send_threat_push(
+                                        data,
+                                        REGION_TOPIC_MAP,
+                                        min_confidence=float(MIN_CONFIDENCE_THRESHOLD),
+                                    )
+                                    if not fcm_ok:
+                                        log.info(
+                                            f"FCM push gated after public ingest for {threat_id}: "
+                                            f"region={region}, type={legacy_type}, hidden={data.get('hidden')}"
+                                        )
+                                except Exception as e:
+                                    log.error(f"FCM push failed for {threat_id}: {e}")
+                            else:
+                                log.info(
+                                    f"FCM push skipped for {threat_id}: ingest accepted but marker is not public"
+                                )
                             _posted = True
                             break
                         body_text = await resp.text()

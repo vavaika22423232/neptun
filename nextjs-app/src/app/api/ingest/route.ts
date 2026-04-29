@@ -7,7 +7,8 @@ import { ingestBodyTooLargeResponse } from '@/lib/ingest-body-limit';
 import { validateIngestMarker, validateIngestPatchUpdates } from '@/lib/ingest-validate';
 import { verifyIngestOrRespond } from '@/lib/ingest-auth-guard';
 import { IngestMarkerSchema, IngestPatchSchema } from '@/lib/api-schemas';
-import { ingestShouldBroadcastMarker } from '@/lib/ingest-confidence-gate';
+import { ingestShouldBroadcastMarker } from '@/lib/marker-publication';
+import { normalizeAirBalloonThreatType } from '@/lib/threat-type-air-balloon';
 
 // ── POST handler ─────────────────────────────────────────────────────────────
 
@@ -33,6 +34,7 @@ export async function POST(request: Request) {
   }
 
   const marker = parsed.data.marker as Record<string, unknown>;
+  normalizeAirBalloonThreatType(marker);
 
   const coordCheck = validateIngestMarker(marker);
   if (!coordCheck.ok) {
@@ -87,7 +89,13 @@ export async function POST(request: Request) {
       `[INGEST] Track ${result.mode}: ${marker.track_id} (id=${result.id}) — ${result.total} total`
     );
 
-    return NextResponse.json({ ok: true, total: result.total, mode: result.mode, id: result.id });
+    return NextResponse.json({
+      ok: true,
+      total: result.total,
+      mode: result.mode,
+      id: result.id,
+      public_broadcast: shouldBroadcast,
+    });
   }
 
   // Legacy: no track_id — add as standalone marker
@@ -120,6 +128,7 @@ export async function POST(request: Request) {
     ok: true,
     total: result.total,
     id: result.id ?? marker.id,
+    public_broadcast: shouldBroadcast,
   });
 }
 
