@@ -29,7 +29,7 @@ export async function verifyPassword(password: string): Promise<boolean> {
       }
     }
   }
-  // 2) Same secret as mobile moderator / X-Auth-Secret (ADMIN_API_SECRET || AUTH_SECRET)
+  // 2) Same secret as mobile moderator / X-Auth-Secret (ADMIN_API_SECRET || ADMIN_SECRET || AUTH_SECRET)
   const apiSecret = getAdminHeaderSecret();
   if (apiSecret && safeCompare(password, apiSecret)) return true;
   return false;
@@ -84,7 +84,7 @@ export async function destroySession(token: string): Promise<void> {
 /** Cookie options for the admin session */
 export const sessionCookieOptions = {
   httpOnly: true,
-  secure: false,
+  secure: process.env.NODE_ENV === 'production',
   sameSite: 'lax' as const,
   path: '/',
   maxAge: SESSION_TTL_S,

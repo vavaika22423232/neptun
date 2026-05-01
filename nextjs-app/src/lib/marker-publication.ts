@@ -48,9 +48,35 @@ export function markerBlockedByDualSourcePending(
   dualSourceMapGate: boolean,
 ): boolean {
   const phantomAvia = recordHasPhantomAvia(marker);
-  return (
-    (dualSourceMapGate === true || phantomAvia) && marker.corroboration_pending === true
+  if (dualSourceMapGate !== true && !phantomAvia) return false;
+  return marker.corroboration_pending === true || !markerHasDualSourceCorroboration(marker);
+}
+
+function coerceChannelPriority(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : 99;
+}
+
+/**
+ * True when a marker is allowed through the "2 channels" public gate.
+ * Priority-1 official observations bypass the gate; all other rows need two distinct sources.
+ */
+export function markerHasDualSourceCorroboration(marker: Record<string, unknown>): boolean {
+  const observations = marker.observations as Array<Record<string, unknown>> | undefined;
+  const evidence =
+    observations && observations.length > 0
+      ? observations
+      : [{ source: marker.channel_name, channel_priority: marker.channel_priority }];
+
+  const hasPriority1 = evidence.some((item) => coerceChannelPriority(item.channel_priority) <= 1);
+  if (hasPriority1) return true;
+
+  const sources = new Set(
+    evidence
+      .map((item) => (typeof item.source === 'string' ? item.source.trim() : ''))
+      .filter(Boolean),
   );
+  return sources.size >= 2;
 }
 
 /**

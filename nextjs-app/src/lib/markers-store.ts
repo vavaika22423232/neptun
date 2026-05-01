@@ -23,8 +23,12 @@ import { clearMarkerDerivedApiCachesLocal, invalidateMarkerDerivedCaches } from 
 import { loadSettings } from './admin/data';
 import { broadcastSSE } from '@/lib/chat-sse-stream';
 import { attachDisplayPolicyToPayload } from '@/lib/marker-broadcast-enrich';
-import { ingestShouldBroadcastMarker } from '@/lib/ingest-confidence-gate';
+import { ingestShouldBroadcastMarker } from '@/lib/marker-publication';
 import { recordHasPhantomAvia } from '@/lib/corroboration-public-gate';
+import {
+  smoothObservedSpeedKmh,
+} from '@/lib/marker-movement-policy';
+import { decideRealisticTickerStep, decideTrackObservationUpdate, estimateTrackState } from '@/lib/track-estimator';
 
 // ── Config ───────────────────────────────────────────────────────────────────
 const DATA_DIR = process.env.DATA_DIR || '/data';
@@ -272,6 +276,7 @@ export async function addMarker(
         }
       }
     } else {
+      annotateTrackEstimate(marker, Date.now());
       s.messages.push(marker);
       applyDualChannelCorroborationGate(marker, marker);
       resolvedId = marker.id as string | undefined;
@@ -375,11 +380,11 @@ export async function upsertByTrackId(
       marker.observations = [entry];
       marker.positions = [entry];
       marker.observation_count = 1;
+      annotateTrackEstimate(marker, now);
       applyDualChannelCorroborationGate(marker, marker);
 
       s.messages.push(marker);
       s.lastIngestTime = now;
-      const before = s.messages.length;
       s.messages = pruneMessages(s.messages);
 
       await Promise.all([writeToRedis(), persistToDisk()]);
@@ -395,43 +400,8 @@ export async function upsertByTrackId(
     const newLat = marker.lat as number;
     const newLng = marker.lng as number;
 
-    // ── Anti-teleport: dynamic threshold based on speed × time gap ──
-    // Use actual time since last observation to compute max plausible distance.
     const observations = (existing.observations as Array<Record<string, unknown>>) || [];
-    const rawLastTs = observations.length > 0
-      ? (observations[observations.length - 1].ts as number) || 0
-      : (existing.created_at_epoch as number) || 0;
     const now = Date.now();
-    const lastObsTs = normalizeObsEpochMs(rawLastTs, now);
-    /** Ingest / worker clock skew buffer — observation older than last point ⇒ replay / reorder; don't mutate trail. */
-    const newObsTs = normalizeObsEpochMs((marker.created_at_epoch as number) || 0, now);
-    const staleObsReplay = observations.length > 0 && newObsTs + 12_000 < lastObsTs;
-    if (staleObsReplay) {
-      console.warn(
-        `[STALE_OBS_SKIP] ${trackId} new ts ${newObsTs} << last ${lastObsTs} — merge text/light only`,
-      );
-    }
-    const hoursSinceLastObs = Math.max((now - lastObsTs) / 3_600_000, 0.01);
-    const currentSpeed = (existing.computed_speed_kmh as number) || (existing.speed_kmh as number) || 0;
-    const ttype = (existing.threat_type as string) || '';
-    const maxPlausibleSpeed = ['ballistic'].includes(ttype) ? 5000
-      : ['missile', 'krylata', 'raketa'].includes(ttype) ? 1200
-      : ['kab'].includes(ttype) ? 1000
-      : ['avia'].includes(ttype) ? 900
-      : 350; // UAV/drone/shahed/rozved
-    const speedForCalc = currentSpeed > 0 ? Math.min(currentSpeed * 1.5, maxPlausibleSpeed) : maxPlausibleSpeed;
-    const antiTeleportKm = Math.max(speedForCalc * hoursSinceLastObs * 1.5, 25);
-
-    const jumpDist = haversineKm(prevLat, prevLng, newLat, newLng);
-    const positionRejected = jumpDist > antiTeleportKm;
-    if (positionRejected) {
-      console.warn(
-        `[TELEPORT_BLOCKED] ${trackId} jumped ${jumpDist.toFixed(0)}km (threshold=${antiTeleportKm.toFixed(0)}km) ` +
-        `(${prevLat.toFixed(2)},${prevLng.toFixed(2)}) → (${newLat.toFixed(2)},${newLng.toFixed(2)}). ` +
-        `Keeping map position + trail; merging text/count only (likely bad geocode).`,
-      );
-    }
-
     const prevConfU =
       typeof existing.confidence === 'number' && Number.isFinite(existing.confidence)
         ? existing.confidence
@@ -440,21 +410,37 @@ export async function upsertByTrackId(
       typeof marker.confidence === 'number' && Number.isFinite(marker.confidence)
         ? marker.confidence
         : undefined;
-    /** Within physics window but likely wrong city / duplicate parse — don't drag the track. */
-    const weakGeoHold =
-      !positionRejected &&
-      jumpDist >= 3.5 &&
-      incConfU != null &&
-      prevConfU != null &&
-      incConfU < prevConfU - 0.15 &&
-      incConfU < 0.42;
-    if (weakGeoHold) {
+    const ttype = (existing.threat_type as string) || '';
+    const positionDecision = decideTrackObservationUpdate({ existing, incoming: marker, nowMs: now });
+    const newObsTs = positionDecision.newObservationMs;
+    const staleObsReplay = positionDecision.staleObservationReplay;
+    if (staleObsReplay) {
       console.warn(
-        `[WEAK_GEO_HOLD] ${trackId} jump=${jumpDist.toFixed(1)}km conf ${prevConfU.toFixed(2)}→${incConfU.toFixed(2)} — keeping position`,
+        `[STALE_OBS_SKIP] ${trackId} new ts ${newObsTs} << last ${positionDecision.lastObservationMs} — merge text/light only`,
+      );
+    }
+    const maxPlausibleSpeed = positionDecision.maxPlausibleSpeedKmh;
+    const jumpDist = positionDecision.jumpDistKm;
+    const positionRejected = positionDecision.action === 'split_candidate';
+    if (positionRejected) {
+      console.warn(
+        `[TELEPORT_BLOCKED] ${trackId} jumped ${jumpDist.toFixed(0)}km (threshold=${positionDecision.antiTeleportKm.toFixed(0)}km) ` +
+        `(${prevLat.toFixed(2)},${prevLng.toFixed(2)}) → (${newLat.toFixed(2)},${newLng.toFixed(2)}). ` +
+        `Keeping map position + trail; merging text/count only (likely bad geocode).`,
       );
     }
 
-    const skipPositionUpdate = positionRejected || weakGeoHold || staleObsReplay;
+    /** Within physics window but likely wrong city / duplicate parse — don't drag the track. */
+    const weakGeoHold = positionDecision.weakGeoHold;
+    if (weakGeoHold) {
+      const prevConfText = prevConfU != null ? prevConfU.toFixed(2) : 'n/a';
+      const incConfText = incConfU != null ? incConfU.toFixed(2) : 'n/a';
+      console.warn(
+        `[WEAK_GEO_HOLD] ${trackId} jump=${jumpDist.toFixed(1)}km conf ${prevConfText}→${incConfText} — keeping position`,
+      );
+    }
+
+    const skipPositionUpdate = positionDecision.action !== 'accept_position';
 
     if (!skipPositionUpdate) {
       // ── Append to observations[] (pristine channel data) ──
@@ -481,33 +467,24 @@ export async function upsertByTrackId(
       if (observations.length >= 2) {
         const prev = observations[observations.length - 2];
         const curr = observations[observations.length - 1];
-        const prevTs = normalizeObsEpochMs((prev.ts as number) || 0, now);
-        const currTs = normalizeObsEpochMs((curr.ts as number) || 0, now);
-        const dtHours = (currTs - prevTs) / 3_600_000;
-        if (dtHours > 0.001) {
-          const distKm = haversineKm(
-            prev.lat as number, prev.lng as number,
-            curr.lat as number, curr.lng as number,
-          );
-          if (distKm > 1) {
-            const rawSpeed = Math.round(distKm / dtHours);
-            const minSpeed = 50;
-            if (rawSpeed >= minSpeed && rawSpeed <= maxPlausibleSpeed) {
-              const prevComputed = existing.computed_speed_kmh as number | undefined;
-              if (prevComputed && prevComputed > 0) {
-                const alpha = 0.4;
-                existing.computed_speed_kmh = Math.round((alpha * rawSpeed) + ((1 - alpha) * prevComputed));
-              } else {
-                existing.computed_speed_kmh = rawSpeed;
-              }
-            }
-          }
+        const smoothedSpeed = smoothObservedSpeedKmh({
+          prev: { lat: prev.lat as number, lng: prev.lng as number },
+          curr: { lat: curr.lat as number, lng: curr.lng as number },
+          prevTs: (prev.ts as number) || 0,
+          currTs: (curr.ts as number) || 0,
+          threatType: ttype,
+          previousComputedSpeedKmh: existing.computed_speed_kmh as number | undefined,
+          nowMs: now,
+        });
+        if (smoothedSpeed != null && smoothedSpeed <= maxPlausibleSpeed) {
+          existing.computed_speed_kmh = smoothedSpeed;
         }
       }
 
       existing.observation_count = ((existing.observation_count as number) || 1) + 1;
 
       const UPDATE_FIELDS = [
+        'threat_type', 'type',
         'lat', 'lng', 'location', 'place', 'region', 'text',
         'trajectory', 'trajectory_source', 'prediction_confidence',
         'course_bearing', 'course_direction', 'speed_kmh', 'distance_km',
@@ -543,9 +520,10 @@ export async function upsertByTrackId(
         const prevC = Number(existing.count);
         existing.count = Math.max(Number.isNaN(prevC) ? 1 : prevC, newCount);
       }
-      appendCorroborationObservationOnly(existing, prevLat, prevLng, newObsTs, marker);
+      appendCorroborationObservationOnly(existing, newObsTs, marker, positionDecision.reason);
       if (weakGeoHold || staleObsReplay) {
         const LIGHT = [
+          'threat_type', 'type',
           'course_bearing', 'course_direction', 'ticker_bearing',
           'flight_phase', 'place', 'region', 'resolve_status', 'marker_icon',
           'placement_mode', 'confidence_0_100', 'confidence', 'trajectory',
@@ -567,6 +545,19 @@ export async function upsertByTrackId(
 
     // Last ingest / ticker touch (sorting, prune fallback). Map TTL uses last
     // `observations[].ts` when present (see `parseMessageTime` in build-markers).
+    annotateTrackEstimate(existing, now);
+    if (positionRejected) {
+      existing.track_state = 'split_candidate';
+      existing.motion_reason = positionDecision.reason;
+      existing.is_estimated = false;
+    } else if (weakGeoHold) {
+      existing.motion_reason = positionDecision.reason;
+      existing.is_estimated = false;
+    } else if (staleObsReplay) {
+      existing.motion_reason = positionDecision.reason;
+      existing.is_estimated = false;
+    }
+
     existing.last_update_epoch = now;
 
     existing.ts = new Date().toISOString();
@@ -586,12 +577,6 @@ export async function upsertByTrackId(
 // Before creating a new marker, check if a nearby marker of the same threat group
 // already exists. If so, update that marker instead of creating a duplicate.
 // This prevents 7 markers for 1 drone when multiple channels report the same target.
-
-/** Normalize observation epoch to ms (worker may send seconds). */
-function normalizeObsEpochMs(ts: number, fallbackMs: number): number {
-  if (!Number.isFinite(ts) || ts <= 0) return fallbackMs;
-  return ts > 10_000_000_000 ? Math.round(ts) : Math.round(ts * 1000);
-}
 
 function coerceChannelPriority(v: unknown): number {
   const n = typeof v === 'number' ? v : Number(v);
@@ -652,20 +637,48 @@ function applyDualChannelCorroborationGate(
   record.hidden = workerH || pending;
 }
 
-/** When position merge is skipped, still record the reporting channel for corroboration counting. */
+function appendRejectedObservationEvidence(
+  existing: Record<string, unknown>,
+  marker: Record<string, unknown>,
+  ts: number,
+  reason: string,
+): void {
+  const src = ((marker.channel_name as string) || '').trim() || 'unknown';
+  const rejected = (existing.rejected_observations as Array<Record<string, unknown>>) || [];
+  const lat = Number(marker.lat);
+  const lng = Number(marker.lng);
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    rejected.push({
+      lat,
+      lng,
+      ts,
+      source: src,
+      channel_priority: coerceChannelPriority(marker.channel_priority),
+      reason,
+      confidence: typeof marker.confidence === 'number' ? marker.confidence : undefined,
+    });
+    if (rejected.length > 30) rejected.splice(0, rejected.length - 30);
+    existing.rejected_observations = rejected;
+  }
+}
+
+/** When position merge is skipped, still count the source without polluting physical coordinates. */
 function appendCorroborationObservationOnly(
   existing: Record<string, unknown>,
-  lat: number,
-  lng: number,
   ts: number,
   marker: Record<string, unknown>,
+  reason: string,
 ): void {
+  appendRejectedObservationEvidence(existing, marker, ts, reason);
   const src = ((marker.channel_name as string) || '').trim() || 'unknown';
   const observations = (existing.observations as Array<Record<string, unknown>>) || [];
   if (observations.length > 0) {
     const lastSrc = String((observations[observations.length - 1].source as string) || '').trim();
     if (lastSrc === src) return;
   }
+  const lat = Number(existing.lat);
+  const lng = Number(existing.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
   const obsEntry: Record<string, unknown> = {
     lat,
     lng,
@@ -697,7 +710,7 @@ function correlatorPlaceFingerprint(marker: Record<string, unknown>): string | n
 /** Map individual threat types to correlation groups */
 const CORRELATION_GROUP: Record<string, string> = {
   shahed: 'uav', drone: 'uav', uav: 'uav', fpv: 'uav', rozved: 'uav',
-  raketa: 'missile', missile: 'missile', pusk: 'missile', launch: 'missile', ballistic: 'missile',
+  raketa: 'missile', missile: 'missile', pusk: 'missile', launch: 'missile', ballistic: 'ballistic',
   kab: 'guided', rszv: 'guided',
   avia: 'avia',
 };
@@ -720,6 +733,24 @@ const SPATIAL_TIME_WINDOW_UAV_BEARING_KM = 38;
 const SPATIAL_TIME_WINDOW_FAST_KM = 42;
 const SPATIAL_TIME_WINDOW_FAST_BEARING_KM = 88;
 
+type SpatialAssociationReason =
+  | 'type_mismatch'
+  | 'region_mismatch'
+  | 'stale_existing'
+  | 'distance_gate'
+  | 'speed_gate'
+  | 'bearing_gate'
+  | 'place_mismatch'
+  | 'score_low'
+  | 'score_accept';
+
+type SpatialAssociationDecision = {
+  accepted: boolean;
+  score: number;
+  distanceKm: number;
+  reason: SpatialAssociationReason;
+};
+
 /**
  * When both markers carry a stable regional key from the worker (`resolved_oblast_hasc`,
  * `region_key`, or `oblast_id`), refuse cross-oblast spatial merges — different regions
@@ -740,6 +771,120 @@ function extractCorrelationRegionKey(marker: Record<string, unknown>): string | 
   return null;
 }
 
+function markerActivityEpochMs(marker: Record<string, unknown>, nowMs: number): number {
+  const updateEpoch = marker.last_update_epoch as number | undefined;
+  const createdEpoch = marker.created_at_epoch as number | undefined;
+  const tsFallback = marker.ts ? new Date(marker.ts as string).getTime() : 0;
+  if (updateEpoch && updateEpoch > 1_000_000_000) {
+    return updateEpoch > 10_000_000_000 ? updateEpoch : updateEpoch * 1000;
+  }
+  if (createdEpoch && createdEpoch > 1_000_000_000) {
+    return createdEpoch > 10_000_000_000 ? createdEpoch : createdEpoch * 1000;
+  }
+  return tsFallback > 0 ? tsFallback : nowMs;
+}
+
+function scoreSpatialAssociation(
+  existing: Record<string, unknown>,
+  incoming: Record<string, unknown>,
+  nowMs: number,
+): SpatialAssociationDecision {
+  const existingType = (existing.threat_type as string) || '';
+  const incomingType = (incoming.threat_type as string) || '';
+  const existingGroup = CORRELATION_GROUP[existingType];
+  const incomingGroup = CORRELATION_GROUP[incomingType];
+  if (!existingGroup || existingGroup !== incomingGroup) {
+    return { accepted: false, score: -100, distanceKm: Infinity, reason: 'type_mismatch' };
+  }
+
+  const rkNew = extractCorrelationRegionKey(incoming);
+  const rkExist = extractCorrelationRegionKey(existing);
+  if (rkNew !== null && rkExist !== null && rkNew !== rkExist) {
+    return { accepted: false, score: -90, distanceKm: Infinity, reason: 'region_mismatch' };
+  }
+
+  const existingTs = markerActivityEpochMs(existing, nowMs);
+  const ageMs = Math.max(0, nowMs - existingTs);
+  if (ageMs > SPATIAL_MATCH_MAX_AGE_MS) {
+    return { accepted: false, score: -80, distanceKm: Infinity, reason: 'stale_existing' };
+  }
+
+  const newLat = Number(incoming.lat);
+  const newLng = Number(incoming.lng);
+  const mLat = Number(existing.lat);
+  const mLng = Number(existing.lng);
+  if (!Number.isFinite(newLat) || !Number.isFinite(newLng) || !Number.isFinite(mLat) || !Number.isFinite(mLng)) {
+    return { accepted: false, score: -80, distanceKm: Infinity, reason: 'distance_gate' };
+  }
+
+  const dist = haversineKm(newLat, newLng, mLat, mLng);
+  const newBearing = extractCorrelatorBearing(incoming);
+  const mBearing = extractCorrelatorBearing(existing);
+  const bothLackBearing = newBearing == null && mBearing == null;
+  let bearingDiff: number | null = null;
+  let bearingsCompatible = false;
+  if (newBearing != null && mBearing != null) {
+    bearingDiff = Math.abs(newBearing - mBearing) % 360;
+    if (bearingDiff > 180) bearingDiff = 360 - bearingDiff;
+    bearingsCompatible = bearingDiff <= SPATIAL_MATCH_BEARING_TOLERANCE;
+    if (!bearingsCompatible) {
+      return { accepted: false, score: -bearingDiff, distanceKm: dist, reason: 'bearing_gate' };
+    }
+  }
+
+  const timeDiffMins = existingTs > 0 ? Math.abs(nowMs - existingTs) / 60000 : Infinity;
+  let maxDist = SPATIAL_MATCH_RADIUS_KM;
+  const mText = (existing.text as string || '').toLowerCase().trim();
+  const newText = (incoming.text as string || '').toLowerCase().trim();
+  const mChannel = existing.channel_name as string || '';
+  const newChannel = incoming.channel_name as string || '';
+
+  if (mText && newText && mText === newText) {
+    maxDist = bearingsCompatible ? 34 : Math.min(SPATIAL_SAME_TEXT_MAX_KM, 24);
+  } else if (mChannel && newChannel && mChannel === newChannel && timeDiffMins <= 3) {
+    maxDist = bearingsCompatible ? 34 : Math.min(SPATIAL_SAME_CHANNEL_MAX_KM, 22);
+  } else if (timeDiffMins <= 4) {
+    if (incomingGroup === 'uav') {
+      maxDist = bearingsCompatible ? SPATIAL_TIME_WINDOW_UAV_BEARING_KM : SPATIAL_TIME_WINDOW_UAV_KM;
+    } else if (incomingGroup === 'missile' || incomingGroup === 'avia' || incomingGroup === 'guided') {
+      maxDist = bearingsCompatible ? SPATIAL_TIME_WINDOW_FAST_BEARING_KM : SPATIAL_TIME_WINDOW_FAST_KM;
+    }
+  } else if (incomingGroup === 'uav' && bothLackBearing) {
+    maxDist = SPATIAL_MATCH_RADIUS_KM_NO_BEARING_UAV;
+  }
+
+  const fpNew = correlatorPlaceFingerprint(incoming);
+  const fpM = correlatorPlaceFingerprint(existing);
+  const samePlace = Boolean(fpNew && fpM && fpNew === fpM);
+  if (samePlace && rkNew !== null && rkExist !== null && rkNew === rkExist) {
+    maxDist = Math.max(maxDist, Math.min(26, maxDist + 10));
+  } else if (fpNew && fpM && fpNew !== fpM && dist > 8 && newChannel !== mChannel) {
+    return { accepted: false, score: -70, distanceKm: dist, reason: 'place_mismatch' };
+  }
+
+  if (dist > maxDist) {
+    return { accepted: false, score: -dist, distanceKm: dist, reason: 'distance_gate' };
+  }
+
+  const dtHours = Math.max(timeDiffMins / 60, 1 / 3600);
+  const impliedSpeed = dist / dtHours;
+  const maxSpeed = Number(existing.speed_kmh) || Number(incoming.speed_kmh) || 180;
+  const speedGate = Math.max(320, Math.min(5500, maxSpeed * 3.2));
+  if (timeDiffMins > 0.6 && dist > 4 && impliedSpeed > speedGate) {
+    return { accepted: false, score: -impliedSpeed, distanceKm: dist, reason: 'speed_gate' };
+  }
+
+  let score = 100 - (dist / Math.max(maxDist, 1)) * 62;
+  if (samePlace) score += 14;
+  if (bearingsCompatible && bearingDiff != null) score += Math.max(0, 16 * (1 - bearingDiff / 90));
+  if (mChannel && newChannel && mChannel !== newChannel) score += 7;
+  if (mChannel && newChannel && mChannel === newChannel) score -= 5;
+  if (bothLackBearing && dist > 12) score -= 8;
+
+  const accepted = score >= 45;
+  return { accepted, score, distanceKm: dist, reason: accepted ? 'score_accept' : 'score_low' };
+}
+
 /**
  * Find the nearest existing marker of the same threat-type group within
  * SPATIAL_MATCH_RADIUS_KM and with compatible bearing (±60°).
@@ -755,114 +900,21 @@ function findSpatialMatch(
     /* keep correlator on */
   }
 
-  const newLat = newMarker.lat as number;
-  const newLng = newMarker.lng as number;
-  if (newLat == null || newLng == null) return -1;
-
-  const newType = (newMarker.threat_type as string) || '';
-  const newGroup = CORRELATION_GROUP[newType];
-  if (!newGroup) return -1; // static types (explosion, alarm, etc.) — don't merge
-
-  const newBearing = extractCorrelatorBearing(newMarker);
   const now = Date.now();
 
   let bestIdx = -1;
-  let bestDist = Infinity;
+  let bestDecision: SpatialAssociationDecision | null = null;
 
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
-    const mType = (m.threat_type as string) || '';
-    const mGroup = CORRELATION_GROUP[mType];
-    if (mGroup !== newGroup) continue;
-
-    const rkNew = extractCorrelationRegionKey(newMarker);
-    const rkExist = extractCorrelationRegionKey(m);
-    if (rkNew !== null && rkExist !== null && rkNew !== rkExist) {
-      continue;
-    }
-
-    // Check age: must have been updated recently
-    const updateEpoch = m.last_update_epoch as number | undefined;
-    const createdEpoch = m.created_at_epoch as number | undefined;
-    const mTsFallback = m.ts ? new Date(m.ts as string).getTime() : 0;
-    const mTs = updateEpoch && updateEpoch > 1000000000
-      ? (updateEpoch > 10000000000 ? updateEpoch : updateEpoch * 1000)
-      : createdEpoch && createdEpoch > 1000000000
-        ? (createdEpoch > 10000000000 ? createdEpoch : createdEpoch * 1000)
-        : mTsFallback > 0 ? mTsFallback : 0;
-        
-    if (mTs > 0 && (now - mTs) > SPATIAL_MATCH_MAX_AGE_MS) continue;
-
-    const mLat = m.lat as number;
-    const mLng = m.lng as number;
-    if (mLat == null || mLng == null) continue;
-
-    const dist = haversineKm(newLat, newLng, mLat, mLng);
-    const mBearing = extractCorrelatorBearing(m);
-    const bothLackBearing = newBearing == null && mBearing == null;
-
-    let bearingsCompatible = false;
-    if (newBearing != null && mBearing != null) {
-      let diff = Math.abs(newBearing - mBearing) % 360;
-      if (diff > 180) diff = 360 - diff;
-      bearingsCompatible = diff <= SPATIAL_MATCH_BEARING_TOLERANCE;
-    }
-
-    // --- Dynamic Spatial Expansion (bounded; wide merges caused east/west false joins) ---
-    const timeDiffMins = mTs > 0 ? Math.abs(now - mTs) / 60000 : Infinity;
-    let maxDist = SPATIAL_MATCH_RADIUS_KM;
-
-    const mText = (m.text as string || '').toLowerCase().trim();
-    const newText = (newMarker.text as string || '').toLowerCase().trim();
-    const mChannel = m.channel_name as string || '';
-    const newChannel = newMarker.channel_name as string || '';
-
-    if (mText && newText && mText === newText) {
-      maxDist = bearingsCompatible ? 40 : SPATIAL_SAME_TEXT_MAX_KM;
-    } else if (mChannel && newChannel && mChannel === newChannel && timeDiffMins <= 3) {
-      maxDist = bearingsCompatible ? 42 : SPATIAL_SAME_CHANNEL_MAX_KM;
-    } else if (timeDiffMins <= 4) {
-      if (newGroup === 'uav') {
-        maxDist = bearingsCompatible
-          ? SPATIAL_TIME_WINDOW_UAV_BEARING_KM
-          : SPATIAL_TIME_WINDOW_UAV_KM;
-      } else if (newGroup === 'missile' || newGroup === 'avia' || newGroup === 'guided') {
-        maxDist = bearingsCompatible
-          ? SPATIAL_TIME_WINDOW_FAST_BEARING_KM
-          : SPATIAL_TIME_WINDOW_FAST_KM;
-      }
-    } else {
-      if (newGroup === 'uav' && bothLackBearing) {
-        maxDist = SPATIAL_MATCH_RADIUS_KM_NO_BEARING_UAV;
-      }
-    }
-
-    // Same settlement label + same regional key → allow slightly wider merge (multi-channel duplicates).
-    const fpNew = correlatorPlaceFingerprint(newMarker);
-    const fpM = correlatorPlaceFingerprint(m);
+    const decision = scoreSpatialAssociation(m, newMarker, now);
+    if (!decision.accepted) continue;
     if (
-      fpNew &&
-      fpM &&
-      fpNew === fpM &&
-      rkNew !== null &&
-      rkExist !== null &&
-      rkNew === rkExist
+      !bestDecision ||
+      decision.score > bestDecision.score ||
+      (decision.score === bestDecision.score && decision.distanceKm < bestDecision.distanceKm)
     ) {
-      maxDist = Math.max(maxDist, Math.min(26, maxDist + 10));
-    }
-
-    if (dist > maxDist) continue;
-
-    // Bearing check: if both markers have bearing (course or ticker), they must be within ±60°
-    if (newBearing != null && mBearing != null) {
-      let diff = Math.abs(newBearing - mBearing) % 360;
-      if (diff > 180) diff = 360 - diff;
-      if (diff > SPATIAL_MATCH_BEARING_TOLERANCE) continue;
-    }
-
-    // Prefer closest match
-    if (dist < bestDist) {
-      bestDist = dist;
+      bestDecision = decision;
       bestIdx = i;
     }
   }
@@ -904,35 +956,19 @@ function mergeIntoExisting(
   const now = Date.now();
   const newLat = newMarker.lat as number;
   const newLng = newMarker.lng as number;
-  const oldLat = existing.lat as number;
-  const oldLng = existing.lng as number;
 
-  const jumpKm =
-    Number.isFinite(oldLat) && Number.isFinite(oldLng)
-      ? haversineKm(oldLat, oldLng, newLat, newLng)
-      : 0;
-  
   const prevConf = typeof existing.confidence === 'number' && Number.isFinite(existing.confidence)
       ? existing.confidence : 0;
   const incConf = typeof newMarker.confidence === 'number' && Number.isFinite(newMarker.confidence)
       ? newMarker.confidence : 0;
 
-  // --- SWARM / PINBALL PREVENTION ---
-  // If cross-channel reports have different coordinates for the same drone (dist >= 5km),
-  // we ONLY move the physical marker if the new report is STRICTLY MORE accurate (higher confidence).
-  // Otherwise, we keep the marker where it is and safely suck up the text/counts without "teleporting" the pin.
-  const rejectPositionOnly = jumpKm >= 5 && incConf <= prevConf;
-
-  const observationsPre = (existing.observations as Array<Record<string, unknown>>) || [];
-  const rawLastTsMerge = observationsPre.length > 0
-    ? (observationsPre[observationsPre.length - 1].ts as number) || 0
-    : (existing.created_at_epoch as number) || 0;
-  const lastObsTsMerge = normalizeObsEpochMs(rawLastTsMerge, now);
-  const newTsMerge = normalizeObsEpochMs((newMarker.created_at_epoch as number) || 0, now);
-  const staleSpatial = observationsPre.length > 0 && newTsMerge + 12_000 < lastObsTsMerge;
+  const positionDecision = decideTrackObservationUpdate({ existing, incoming: newMarker, nowMs: now });
+  const newTsMerge = positionDecision.newObservationMs;
+  const staleSpatial = positionDecision.action === 'observation_only';
+  const rejectPositionOnly = positionDecision.action === 'split_candidate' || positionDecision.action === 'hold_position';
   if (staleSpatial) {
     console.warn(
-      `[STALE_OBS_SKIP] spatial merge into ${existing.id}: ts ${newTsMerge} << last ${lastObsTsMerge} — text/light only`,
+      `[STALE_OBS_SKIP] spatial merge into ${existing.id}: ts ${newTsMerge} << last ${positionDecision.lastObservationMs} — text/light only`,
     );
     existing.last_update_epoch = now;
     const newCountSt = Number(newMarker.count);
@@ -957,14 +993,16 @@ function mergeIntoExisting(
         existing[key] = newMarker[key];
       }
     }
-    appendCorroborationObservationOnly(existing, oldLat, oldLng, newTsMerge, newMarker);
+    appendCorroborationObservationOnly(existing, newTsMerge, newMarker, positionDecision.reason);
     applyDualChannelCorroborationGate(existing, newMarker);
+    annotateTrackEstimate(existing, now);
+    existing.motion_reason = positionDecision.reason;
     return;
   }
 
   if (rejectPositionOnly) {
     console.warn(
-      `[SPATIAL_MERGE_TEXT_ONLY] jump=${jumpKm.toFixed(1)}km conf ${prevConf?.toFixed(2)}→${incConf?.toFixed(2)} — keeping position, merging text`,
+      `[SPATIAL_MERGE_TEXT_ONLY] jump=${positionDecision.jumpDistKm.toFixed(1)}km conf ${prevConf.toFixed(2)}→${incConf.toFixed(2)} — keeping position, merging text`,
     );
     existing.last_update_epoch = now;
     const newCount = Number(newMarker.count);
@@ -989,8 +1027,14 @@ function mergeIntoExisting(
         existing[key] = newMarker[key];
       }
     }
-    appendCorroborationObservationOnly(existing, oldLat, oldLng, newTsMerge, newMarker);
+    appendCorroborationObservationOnly(existing, newTsMerge, newMarker, positionDecision.reason);
     applyDualChannelCorroborationGate(existing, newMarker);
+    annotateTrackEstimate(existing, now);
+    if (positionDecision.action === 'split_candidate') {
+      existing.track_state = 'split_candidate';
+    }
+    existing.motion_reason = positionDecision.reason;
+    existing.is_estimated = false;
     return;
   }
 
@@ -1061,6 +1105,7 @@ function mergeIntoExisting(
     );
   }
 
+  annotateTrackEstimate(existing, now);
   existing.last_update_epoch = now;
   existing.ts = new Date(now).toISOString();
   existing.date = existing.ts;
@@ -1085,30 +1130,6 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-/**
- * Move a point along a given bearing by a given distance.
- * Returns new [lat, lng].
- */
-function destinationPoint(lat: number, lng: number, bearingDeg: number, distKm: number): [number, number] {
-  const R = 6371;
-  const toRad = Math.PI / 180;
-  const lat1 = lat * toRad;
-  const lng1 = lng * toRad;
-  const brg = bearingDeg * toRad;
-  const d = distKm / R; // angular distance
-
-  const lat2 = Math.asin(
-    Math.sin(lat1) * Math.cos(d) +
-    Math.cos(lat1) * Math.sin(d) * Math.cos(brg)
-  );
-  const lng2 = lng1 + Math.atan2(
-    Math.sin(brg) * Math.sin(d) * Math.cos(lat1),
-    Math.cos(d) - Math.sin(lat1) * Math.sin(lat2)
-  );
-
-  return [lat2 / toRad, lng2 / toRad];
-}
-
 // ── Position Ticker ──────────────────────────────────────────────────────────
 // Advances moving markers every TICK_INTERVAL_MS based on their speed + bearing.
 // This ensures markers move on the server even when no browser is open.
@@ -1122,6 +1143,15 @@ const REDIS_TICKER_LOCK_TTL = 22; // seconds — must be > TICK_INTERVAL_MS / 10
 // Batch persist: write to Redis+disk every 30s (every 3rd tick), not every tick
 const TICKER_PERSIST_INTERVAL = 30_000;
 let _lastTickerPersistTime = 0;
+
+function annotateTrackEstimate(marker: Record<string, unknown>, nowMs: number): void {
+  const estimate = estimateTrackState(marker, nowMs);
+  marker.track_state = estimate.state;
+  marker.track_confidence = Math.round(estimate.visualConfidence * 100) / 100;
+  marker.motion_reason = estimate.reason;
+  marker.is_estimated = estimate.isEstimated;
+  marker.last_observation_epoch = estimate.lastObservationMs;
+}
 
 /** Threat types that never move (static events). */
 const STATIC_THREAT_TYPES = new Set([
@@ -1175,50 +1205,17 @@ function doTickPositions(): void {
     if (STATIC_THREAT_TYPES.has(threatType)) continue;
     if (m.manual) continue;
 
-    const obs = m.observations as Array<{ts: number}> | undefined;
-    const lastRealTs = obs && obs.length > 0 ? obs[obs.length - 1].ts : m.created_at_epoch as number;
-    if (lastRealTs && (now - lastRealTs > 10 * 60 * 1000)) {
+    const tick = decideRealisticTickerStep({
+      marker: m,
+      nowMs: now,
+      tickIntervalMs: TICK_INTERVAL_MS,
+    });
+    if (!tick.shouldTick) {
+      const prevState = m.track_state;
+      annotateTrackEstimate(m, now);
+      if (prevState !== m.track_state) dirty = true;
       continue;
     }
-
-    const speed = (m.speed_kmh as number) || (m.computed_speed_kmh as number) || 0;
-    let bearing = m.course_bearing as number | null | undefined;
-
-    if (bearing == null) {
-      bearing = (m as Record<string, unknown>).ticker_bearing as number | null | undefined;
-    }
-    if (bearing == null) {
-      const trajFb = m.trajectory as { start?: number[]; end?: number[] } | undefined;
-      if (trajFb?.start && trajFb?.end) {
-        const dLat = trajFb.end[0] - trajFb.start[0];
-        const midLat = (trajFb.start[0] + trajFb.end[0]) / 2;
-        const cosLat = Math.cos(midLat * Math.PI / 180);
-        const dLng = (trajFb.end[1] - trajFb.start[1]) * cosLat;
-        if (Math.abs(dLat) > 0.001 || Math.abs(dLng) > 0.001) {
-          bearing = (Math.atan2(dLng, dLat) * (180 / Math.PI) + 360) % 360;
-        }
-      }
-      if (bearing == null) {
-        const obsFb = (m.observations as Array<{ lat: number; lng: number }>) ||
-                       (m.positions as Array<{ lat: number; lng: number }>);
-        if (obsFb && obsFb.length >= 2) {
-          const prev = obsFb[obsFb.length - 2];
-          const last = obsFb[obsFb.length - 1];
-          const dLat2 = last.lat - prev.lat;
-          const midLat2 = (prev.lat + last.lat) / 2;
-          const cosLat2 = Math.cos(midLat2 * Math.PI / 180);
-          const dLng2 = (last.lng - prev.lng) * cosLat2;
-          if (Math.abs(dLat2) > 0.0001 || Math.abs(dLng2) > 0.0001) {
-            bearing = (Math.atan2(dLng2, dLat2) * (180 / Math.PI) + 360) % 360;
-          }
-        }
-      }
-    }
-    if (speed <= 0 || bearing == null) continue;
-
-    const curLat = Number(m.lat);
-    const curLng = Number(m.lng);
-    if (!Number.isFinite(curLat) || !Number.isFinite(curLng)) continue;
 
     let positions = m.positions as Array<Record<string, unknown>> | undefined;
     if (!positions || positions.length === 0) {
@@ -1236,21 +1233,13 @@ function doTickPositions(): void {
           };
         });
       } else {
-        positions = [{ lat: curLat, lng: curLng, ts: now, source: 'ticker_bootstrap' }];
+        positions = [{ lat: Number(m.lat), lng: Number(m.lng), ts: now, source: 'ticker_bootstrap' }];
       }
       m.positions = positions;
     }
 
-    const traj = m.trajectory as { end?: [number, number] } | undefined;
-    if (traj?.end) {
-      const distToEnd = haversineKm(curLat, curLng, traj.end[0], traj.end[1]);
-      if (distToEnd < 5) continue;
-    }
-
-    const dtHours = TICK_INTERVAL_MS / 3_600_000;
-    const distKm = speed * dtHours;
-
-    const [newLat, newLng] = destinationPoint(curLat, curLng, bearing, distKm);
+    const newLat = tick.nextLat;
+    const newLng = tick.nextLng;
 
     m.lat = newLat;
     m.lng = newLng;
@@ -1269,6 +1258,11 @@ function doTickPositions(): void {
     m.ts = new Date(now).toISOString();
     m.date = m.ts;
     m.last_update_epoch = now;
+    m.track_state = 'extrapolated';
+    m.track_confidence = Math.round(tick.estimate.visualConfidence * 100) / 100;
+    m.motion_reason = tick.estimate.reason;
+    m.is_estimated = true;
+    m.last_observation_epoch = tick.estimate.lastObservationMs;
 
     dirty = true;
 
@@ -1284,8 +1278,13 @@ function doTickPositions(): void {
         id: m.id,
         lat: newLat,
         lng: newLng,
-        speed_kmh: speed,
-        course_bearing: bearing,
+        speed_kmh: tick.speedKmh,
+        ticker_bearing: tick.bearingDeg,
+        track_state: m.track_state,
+        track_confidence: m.track_confidence,
+        motion_reason: m.motion_reason,
+        is_estimated: true,
+        last_observation_epoch: m.last_observation_epoch,
         created_at_epoch: m.created_at_epoch,
         ts: now,
       },

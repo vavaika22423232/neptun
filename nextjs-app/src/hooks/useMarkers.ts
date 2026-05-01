@@ -5,7 +5,11 @@ import { usePolling } from './useVisibility';
 import { useMarkerSSE, useMarkerDeleteSSE, useTrackUpdateSSE } from './useDataSSE';
 import { API_DATA_PUBLIC_QUERY, HIDDEN_POLLING_INTERVAL_DESKTOP, MARKERS_CACHE_TTL } from '@/lib/constants';
 import type { Marker, BallisticThreat, TrackPosition } from '@/types';
-import { computeMarkerDisplayPolicy, DEFAULT_MARKER_DISPLAY_POLICY } from '@/lib/marker-display-policy';
+import {
+  computeMarkerDisplayPolicy,
+  DEFAULT_MARKER_DISPLAY_POLICY,
+  isOffshoreOrMaritimeResolve,
+} from '@/lib/marker-display-policy';
 
 // Fallback polling — 90s when active (SSE triggers debounced refresh), 5min hidden
 const FALLBACK_POLLING_INTERVAL = 90_000;
@@ -29,9 +33,60 @@ function applyDisplayPolicyFromSsePayload(target: Marker, markerData: Record<str
     if (typeof markerData.display_trust_hint_uk === 'string') {
       target.display_trust_hint_uk = markerData.display_trust_hint_uk;
     }
+    // `resolve_status` may be fresher than stale server `display_*` in SSE — re-apply policy for offshore/maritime.
+    if (isOffshoreOrMaritimeResolve(target)) {
+      Object.assign(target, computeMarkerDisplayPolicy(target, DEFAULT_MARKER_DISPLAY_POLICY));
+    }
+    return;
+  }
+  if (
+    target.display_class &&
+    typeof target.show_precise_pin === 'boolean' &&
+    typeof target.display_uncertainty_km === 'number'
+  ) {
     return;
   }
   Object.assign(target, computeMarkerDisplayPolicy(target, DEFAULT_MARKER_DISPLAY_POLICY));
+}
+
+function normalizeEpochMs(ts: unknown): number {
+  const n = typeof ts === 'number' ? ts : Number(ts);
+  if (!Number.isFinite(n) || n <= 0) return Date.now();
+  return n > 10_000_000_000 ? n : n * 1000;
+}
+
+function normalizeTrackPoints(points: Array<Record<string, unknown>>): TrackPosition[] {
+  return points.map((p) => {
+    const ts = Number(p.ts) || Date.now();
+    return {
+      lat: Number(p.lat),
+      lng: Number(p.lng),
+      ts: ts > 10_000_000_000 ? ts : ts * 1000,
+      source: (p.source as string) || 'sse',
+      ...(typeof p.reason === 'string' ? { reason: p.reason } : {}),
+      ...(typeof p.confidence === 'number' ? { confidence: p.confidence } : {}),
+    };
+  });
+}
+
+function applyTrackLifecycleFromPayload(target: Marker, markerData: Record<string, unknown>): void {
+  if (typeof markerData.track_state === 'string') {
+    target.track_state = markerData.track_state as Marker['track_state'];
+  }
+  if (typeof markerData.track_confidence === 'number' && Number.isFinite(markerData.track_confidence)) {
+    target.track_confidence = markerData.track_confidence;
+  }
+  if (typeof markerData.motion_reason === 'string') {
+    target.motion_reason = markerData.motion_reason;
+  }
+  if (typeof markerData.last_observation_epoch === 'number') {
+    target.last_observation_epoch = markerData.last_observation_epoch;
+  }
+  if (Array.isArray(markerData.rejected_observations)) {
+    target.rejected_observations = normalizeTrackPoints(
+      markerData.rejected_observations as Array<Record<string, unknown>>,
+    ) as Marker['rejected_observations'];
+  }
 }
 
 function getCachedMarkers(): Marker[] | null {
@@ -248,6 +303,12 @@ export function useMarkers() {
         if (typeof markerData.geocode_tier === 'string') {
           existing.geocode_tier = markerData.geocode_tier;
         }
+        if (typeof markerData.geo_decision_reason === 'string') {
+          existing.geo_decision_reason = markerData.geo_decision_reason;
+        }
+        if (typeof markerData.geocode_source === 'string') {
+          existing.geocode_source = markerData.geocode_source;
+        }
         if (typeof markerData.candidates_count === 'number') {
           existing.candidates_count = markerData.candidates_count;
         }
@@ -258,16 +319,9 @@ export function useMarkers() {
           existing.confidence_0_100 = markerData.confidence_0_100;
         }
         if (Array.isArray(markerData.observations)) {
-          existing.observations = (markerData.observations as Array<Record<string, unknown>>).map((p) => {
-            const ts = Number(p.ts) || Date.now();
-            return {
-              lat: Number(p.lat),
-              lng: Number(p.lng),
-              ts: ts > 10_000_000_000 ? ts : ts * 1000,
-              source: (p.source as string) || 'sse',
-            };
-          });
+          existing.observations = normalizeTrackPoints(markerData.observations as Array<Record<string, unknown>>);
         }
+        applyTrackLifecycleFromPayload(existing, markerData);
 
         const positions: TrackPosition[] = existing.positions ? [...existing.positions] : [];
         if (latN != null && lngN != null) {
@@ -275,7 +329,7 @@ export function useMarkers() {
           positions.push({
             lat: latN,
             lng: lngN,
-            ts: tsRaw,
+            ts: normalizeEpochMs(tsRaw),
             source: (markerData.channel_name as string) || 'sse',
           });
           // Keep max 50 locally too
@@ -296,19 +350,15 @@ export function useMarkers() {
           ? (markerData.positions as Array<Record<string, unknown>>).map((p) => ({
               lat: Number(p.lat),
               lng: Number(p.lng),
-              ts: Number(p.ts) || Date.now(),
+              ts: normalizeEpochMs(p.ts),
               source: (p.source as string) || 'unknown',
             }))
           : [{
               lat: markerData.lat as number,
               lng: markerData.lng as number,
-              ts: (markerData.created_at_epoch as number) || Date.now(),
+              ts: normalizeEpochMs(markerData.created_at_epoch),
               source: (markerData.channel_name as string) || 'unknown',
             }];
-        const obsTs = (p: Record<string, unknown>) => {
-          const t = Number(p.ts) || Date.now();
-          return t > 10_000_000_000 ? t : t * 1000;
-        };
         const newMarker: Marker = {
           id: markerData.id as string,
           track_id: track_id,
@@ -335,19 +385,17 @@ export function useMarkers() {
           placement_mode: typeof markerData.placement_mode === 'string' ? markerData.placement_mode : undefined,
           resolve_status: typeof markerData.resolve_status === 'string' ? markerData.resolve_status : undefined,
           geocode_tier: typeof markerData.geocode_tier === 'string' ? markerData.geocode_tier : undefined,
+          geo_decision_reason: typeof markerData.geo_decision_reason === 'string' ? markerData.geo_decision_reason : undefined,
+          geocode_source: typeof markerData.geocode_source === 'string' ? markerData.geocode_source : undefined,
           candidates_count: typeof markerData.candidates_count === 'number' ? markerData.candidates_count : undefined,
           manual: markerData.manual === true,
           confidence: typeof markerData.confidence === 'number' ? markerData.confidence : undefined,
           confidence_0_100: typeof markerData.confidence_0_100 === 'number' ? markerData.confidence_0_100 : undefined,
           observations: Array.isArray(markerData.observations)
-            ? (markerData.observations as Array<Record<string, unknown>>).map((p) => ({
-                lat: Number(p.lat),
-                lng: Number(p.lng),
-                ts: obsTs(p),
-                source: (p.source as string) || 'sse',
-              }))
+            ? normalizeTrackPoints(markerData.observations as Array<Record<string, unknown>>)
             : undefined,
         };
+        applyTrackLifecycleFromPayload(newMarker, markerData);
         const created: Marker = { ...newMarker };
         applyDisplayPolicyFromSsePayload(created, markerData);
         return [...prev, created];

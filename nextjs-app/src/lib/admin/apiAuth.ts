@@ -15,7 +15,7 @@ export async function requireAdminAuth(): Promise<NextResponse | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
   if (!(await validateSession(token))) {
-    return NextResponse.json({ status: 'forbidden', error: 'Not authenticated' }, { status: 401 });
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   return null;
 }

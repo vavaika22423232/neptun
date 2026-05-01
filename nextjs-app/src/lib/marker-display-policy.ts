@@ -35,7 +35,7 @@ export const DEFAULT_MARKER_DISPLAY_POLICY: MarkerDisplayPolicyConfig = {
   corroborationMinObservations: 2,
   corroborationWindowMinutes: 30,
   corroborationMaxRadiusKm: 45,
-  corroborationMinDistinctSources: 0,
+  corroborationMinDistinctSources: 2,
   regionUncertaintyKm: 38,
   corroboratedUncertaintyKm: 9,
 };
@@ -125,6 +125,19 @@ function isRegionMismatch(marker: Marker): boolean {
   return rs.includes('mismatch') || rs.includes('region_mismatch');
 }
 
+/**
+ * Resolver / legacy rows may have maritime or offshore-style `resolve_status` (e.g. water targets).
+ * Those coords can be in water; never imply a land pin.
+ * Mirrors keywords in `feed-maritime-normalize.ts` (`offshore` / maritime context).
+ * @param marker — current marker
+ * @returns true when public map must not show a precise placement for this status
+ */
+export function isOffshoreOrMaritimeResolve(marker: Marker): boolean {
+  const rs = (marker.resolve_status || '').toLowerCase().trim();
+  if (!rs) return false;
+  return /offshore|акватор|морськ|морська|морськ\w*|maritime|прибережн/.test(rs);
+}
+
 function candidateCount(marker: Marker): number {
   if (typeof marker.candidates_count === 'number' && Number.isFinite(marker.candidates_count)) {
     return Math.max(0, marker.candidates_count);
@@ -167,6 +180,16 @@ export function computeMarkerDisplayPolicy(
       show_precise_pin: true,
       display_uncertainty_km: Math.min(pointKm, 5),
       display_trust_hint_uk: 'Позиція з ручним підтвердженням.',
+    };
+  }
+
+  if (isOffshoreOrMaritimeResolve(marker)) {
+    return {
+      display_class: 'region_signal',
+      show_precise_pin: false,
+      display_uncertainty_km: Math.max(regionKm, 48),
+      display_trust_hint_uk:
+        'Оцінна позиція в акваторії чи на підході; пін — орієнтир, а не гарантовано над зазначеним НП у тексті.',
     };
   }
 

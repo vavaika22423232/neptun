@@ -67,6 +67,9 @@ def score_candidate(
     if candidate.source == 'gazetteer_exact':
         score += 2.0
         reasons.append("+2 exact gazetteer match")
+    elif candidate.source.startswith('manual_'):
+        score += 4.5
+        reasons.append("+4.5 curated regional-channel match")
     elif candidate.source == 'gazetteer_alias':
         score += 1.0
         reasons.append("+1 alias match")

@@ -7,6 +7,9 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       { protocol: 'https', hostname: 'neptun.in.ua' },
       { protocol: 'https', hostname: 'tiles.openfreemap.org' },
+      { protocol: 'https', hostname: '*.basemaps.cartocdn.com' },
+      { protocol: 'https', hostname: '*.tile.openstreetmap.org' },
+      { protocol: 'https', hostname: 'st1.deepstatemap.live' },
     ],
   },
 
@@ -32,8 +35,8 @@ const nextConfig: NextConfig = {
               "default-src 'self'",
               "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://unpkg.com https://cdn.jsdelivr.net",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com https://cdn.jsdelivr.net",
-              "img-src 'self' data: blob: https://*.google.com https://*.openfreemap.org https://tiles.openfreemap.org https://server.arcgisonline.com https://*.arcgisonline.com https://*.tile.openstreetmap.org https://mt1.google.com https://mt2.google.com https://mt3.google.com",
-              "connect-src 'self' https://neptun.in.ua wss://neptun.in.ua https://*.google.com https://*.google-analytics.com https://*.googleapis.com https://tiles.openfreemap.org https://*.openfreemap.org https://server.arcgisonline.com https://*.arcgisonline.com https://*.tile.openstreetmap.org https://mt1.google.com https://mt2.google.com https://mt3.google.com",
+              "img-src 'self' data: blob: https://s3.amazonaws.com https://*.google.com https://*.openfreemap.org https://tiles.openfreemap.org https://basemaps.cartocdn.com https://*.basemaps.cartocdn.com https://st1.deepstatemap.live https://server.arcgisonline.com https://*.arcgisonline.com https://*.tile.openstreetmap.org https://mt1.google.com https://mt2.google.com https://mt3.google.com",
+              "connect-src 'self' https://s3.amazonaws.com https://neptun.in.ua wss://neptun.in.ua https://*.google.com https://*.google-analytics.com https://*.googleapis.com https://tiles.openfreemap.org https://*.openfreemap.org https://basemaps.cartocdn.com https://*.basemaps.cartocdn.com https://st1.deepstatemap.live https://server.arcgisonline.com https://*.arcgisonline.com https://*.tile.openstreetmap.org https://mt1.google.com https://mt2.google.com https://mt3.google.com",
               "font-src 'self' https://fonts.gstatic.com",
               "worker-src 'self' blob:",
               "child-src 'self' blob:",

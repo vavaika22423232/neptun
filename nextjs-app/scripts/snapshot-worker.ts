@@ -49,8 +49,9 @@ async function updateSnapshot() {
     if (duration > 1000) {
       console.warn(`[SNAPSHOT-WORKER] Slow update: ${duration}ms`);
     }
-  } catch (error: any) {
-    console.error(`[SNAPSHOT-WORKER] Error: ${error.message}`);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[SNAPSHOT-WORKER] Error: ${message}`);
   }
 }
 

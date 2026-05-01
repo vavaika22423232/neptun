@@ -24,8 +24,8 @@ _firebase_app = None
 _initialized = False
 
 # ── Rate-limiting for threat pushes ──
-# Key: (region, threat_group) → timestamp of last sent push
-_push_cooldown_cache: dict[tuple[str, str], float] = {}
+# Key: scoped threat identity → timestamp of last sent push.
+_push_cooldown_cache: dict[tuple[str, ...], float] = {}
 
 _THREAT_GROUP = {
     'ballistic': 'critical', 'missile': 'critical', 'raketa': 'critical',
@@ -53,10 +53,34 @@ _BLOCKED_PLACEMENT_MODES = {
 _BLOCKED_TRACK_STATES = {'lost', 'stale', 'split_candidate'}
 
 
-def _is_push_rate_limited(region: str, threat_type: str) -> bool:
-    """Return True if a push for this region+threat_group was sent recently."""
+def _push_cooldown_key(data: dict, region: str, threat_type: str) -> tuple[str, ...]:
+    """Return the cooldown identity for a threat push.
+
+    Prefer track-level throttling so separate markers in the same oblast can
+    still notify users. Fall back to place/coordinate/region buckets only when
+    the marker has no stable track id.
+    """
     group = _THREAT_GROUP.get(threat_type, threat_type)
-    key = (region, group)
+    track_id = str(data.get('track_id') or '').strip()
+    if track_id:
+        return ('track', region, group, track_id)
+
+    place = str(data.get('city') or data.get('place') or data.get('location') or '').strip().lower()
+    if place:
+        return ('place', region, group, place)
+
+    lat = data.get('lat')
+    lng = data.get('lng')
+    if isinstance(lat, (int, float)) and isinstance(lng, (int, float)):
+        return ('coord', region, group, f"{float(lat):.2f}", f"{float(lng):.2f}")
+
+    return ('region', region, group)
+
+
+def _is_push_rate_limited(data: dict, region: str, threat_type: str) -> bool:
+    """Return True if a similar threat push was sent recently."""
+    group = _THREAT_GROUP.get(threat_type, threat_type)
+    key = _push_cooldown_key(data, region, threat_type)
     now = time.monotonic()
     last_sent = _push_cooldown_cache.get(key)
     cooldown = _GROUP_COOLDOWN_SEC.get(group, _DEFAULT_COOLDOWN)
@@ -65,10 +89,10 @@ def _is_push_rate_limited(region: str, threat_type: str) -> bool:
     return False
 
 
-def _record_push_sent(region: str, threat_type: str) -> None:
-    """Record that a push was just sent for this region+threat_group."""
+def _record_push_sent(data: dict, region: str, threat_type: str) -> None:
+    """Record that a similar threat push was just sent."""
     group = _THREAT_GROUP.get(threat_type, threat_type)
-    key = (region, group)
+    key = _push_cooldown_key(data, region, threat_type)
     _push_cooldown_cache[key] = time.monotonic()
     # Evict stale entries periodically (keep cache bounded)
     if len(_push_cooldown_cache) > 500:
@@ -203,8 +227,8 @@ def send_threat_push(data: dict, region_topic_map: dict, *, min_confidence: floa
 
     threat_type = data.get('threat_type', 'unknown')
 
-    # Rate-limit: skip if we already pushed this region+threat_group recently
-    if _is_push_rate_limited(region, threat_type):
+    # Rate-limit only genuinely similar events, not every marker in the oblast.
+    if _is_push_rate_limited(data, region, threat_type):
         log.debug(f"FCM rate-limited: {threat_type} in {region}")
         return False
 
@@ -345,7 +369,7 @@ def send_threat_push(data: dict, region_topic_map: dict, *, min_confidence: floa
         )
 
         result = messaging.send(message)
-        _record_push_sent(region, threat_type)
+        _record_push_sent(data, region, threat_type)
         log.info(f"FCM sent: {threat_name} in {region} → topic:{topic} (id:{result})")
 
         # Send to extra topics (e.g. Kyiv city ↔ Kyiv oblast)

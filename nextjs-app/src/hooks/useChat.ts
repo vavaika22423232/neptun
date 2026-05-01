@@ -136,7 +136,7 @@ export function useChat({ deviceId }: UseChatOptions): UseChatReturn {
   const sendMessage = useCallback(
     async (text: string, nickname: string, replyTo?: string): Promise<boolean> => {
       try {
-        let authTok = await ensureToken(nickname);
+        const authTok = await ensureToken(nickname);
         if (!authTok) {
           setError('Потрібна авторизація');
           return false;
@@ -187,7 +187,7 @@ export function useChat({ deviceId }: UseChatOptions): UseChatReturn {
     async (messageId: string): Promise<boolean> => {
       try {
         const nick = localStorage.getItem('neptun_nickname') || 'Анонім';
-        let t = await ensureToken(nick);
+        const t = await ensureToken(nick);
         if (!t) return false;
         const del = (auth: string) =>
           fetch(`${API}/message/${messageId}`, {
@@ -218,7 +218,7 @@ export function useChat({ deviceId }: UseChatOptions): UseChatReturn {
   const toggleReaction = useCallback(
     async (messageId: string, emoji: string, nickname: string) => {
       try {
-        let t = await ensureToken(nickname);
+        const t = await ensureToken(nickname);
         if (!t) return;
         const react = (auth: string) =>
           fetch(`${API}/react`, {
@@ -229,7 +229,7 @@ export function useChat({ deviceId }: UseChatOptions): UseChatReturn {
             },
             body: JSON.stringify({ messageId, emoji }),
           });
-        let res = await react(t);
+        const res = await react(t);
         if (res.status === 401) {
           const fresh = await fetchToken(nickname);
           if (fresh) {
@@ -265,7 +265,7 @@ export function useChat({ deviceId }: UseChatOptions): UseChatReturn {
   const voteMute = useCallback(
     async (messageId: string) => {
       const nick = localStorage.getItem('neptun_nickname') || 'Анонім';
-      let t = await ensureToken(nick);
+      const t = await ensureToken(nick);
       if (!t) {
         return new Response(JSON.stringify({ error: 'Потрібна авторизація' }), {
           status: 401,

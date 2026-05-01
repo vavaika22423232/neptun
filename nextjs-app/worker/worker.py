@@ -50,10 +50,18 @@ from fcm_sender import send_threat_push
 from alarm_monitor import alarm_monitor_loop
 from ingest_queue import IngestQueue
 from geo_bounds import is_plausible_threat_coord
-from geo.maritime_region import normalize_maritime_marker_fields
+from geo.maritime_region import (
+    has_maritime_current_context,
+    maritime_current_position,
+    normalize_maritime_marker_fields,
+)
 from geo.place_guardrails import validate_place_candidate
 from geo.rules import oblast_uk_name_to_hasc
+from geo.geo_decision import decide_resolved_location
 from core.chain_tracker import MessageChainTracker
+from core.placement_decision import decide_placement_mode
+from core.threat_kinematics import resolve_course_and_ticker_bearing
+from core.threat_taxonomy import PARSER_TO_PUBLIC_THREAT_TYPE
 
 # [NEW] Import Track Manager (legacy — kept for fallback reference)
 from core.tracker_engine import tracker, Observation as TrackerObs
@@ -208,15 +216,6 @@ def _sea_context_inland_mismatch(msg_text: str, lat: float, lng: float) -> bool:
     return False
 
 
-_COARSE_PLACEMENT_STATUSES = frozenset({
-    'oblast_fallback',
-    'oblast_direction_only',
-    'estimated_oblast_center',
-    'estimated_offset_coastal',
-    'ambiguous_no_point',
-})
-
-
 _http_session: aiohttp.ClientSession | None = None
 
 
@@ -326,6 +325,8 @@ async def _publish_feed_event(
     marker_id: str = '',
     origin: str = '',
     impact_place: str = '',
+    placement_mode: str = '',
+    public_broadcast: bool | None = None,
 ):
     """Push a pipeline event to the admin feed. Non-blocking."""
     if not FEED_URL:
@@ -354,6 +355,8 @@ async def _publish_feed_event(
         'marker_id': marker_id,
         'origin': origin,
         'impact_place': impact_place,
+        'placement_mode': placement_mode,
+        'public_broadcast': public_broadcast,
     }
     normalize_maritime_marker_fields(event)
     # Remove None/empty values to save bandwidth
@@ -771,7 +774,7 @@ def _geocode_direction_target(
             'raion': None,
             'threat_type': 'uav',
         }
-        resolved = resolve(entity_dict, channel=None, prev_events=[])
+        resolved = resolve(entity_dict, channel=None, prev_events=[], oblast_gate_hint=oblast)
         if resolved and resolved.lat != 0 and resolved.confidence >= min_confidence:
             return (resolved.lat, resolved.lng)
     except ImportError:
@@ -1059,18 +1062,7 @@ def _project_point(lat: float, lng: float, bearing_deg: float, distance_km: floa
 
 
 # Map parser event_type to frontend icon names (must match THREAT_ICONS keys)
-LEGACY_TYPE_MAP = {
-    'uav': 'shahed',
-    'recon': 'rozved',        # rozvedka2.png
-    'missile': 'raketa',
-    'ballistic': 'ballistic', # distinct icon for ballistic missiles
-    'explosion': 'vibuh',
-    'launch': 'pusk',
-    'kab': 'kab',
-    'avia': 'avia',            # phantom aviation marker (auto-generated)
-    'alert': 'alarm',          # not used as marker (skipped), but mapped correctly
-    'allclear': 'alarm_cancel',
-}
+LEGACY_TYPE_MAP = dict(PARSER_TO_PUBLIC_THREAT_TYPE)
 
 
 def _resolve_airfield(region: str | None, direction: str | None) -> tuple[str, float, float] | None:
@@ -1214,7 +1206,14 @@ async def process_new_message(event):
             channel_id=channel_id, msg_id=msg_id, reason='already processed (msg dedup)',
         )
         return
+    if db.is_message_content_processed(channel_id, msg_id, msg_text):
+        await _publish_feed_event(
+            status='skipped', channel_name=channel_name, msg_text=msg_text,
+            channel_id=channel_id, msg_id=msg_id, reason='already processed (same content)',
+        )
+        return
     db.mark_message_processed(channel_id, msg_id)
+    db.mark_message_content_processed(channel_id, msg_id, msg_text)
 
     # 2. GPT-primary pipeline with regex fallback
     # Step 2a: Fast pre-filter (spam, summaries, negations) — no API cost
@@ -1256,8 +1255,22 @@ async def process_new_message(event):
         gpt_entities, gpt_is_threat = gpt_result
         _gpt_raw_len = len(gpt_entities or [])
         all_entities = gpt_to_parsed_entities(gpt_entities, msg_text)
+        _regex_allclear = detect_allclear_keywords(msg_text)
+        if all_entities and any(e.is_allclear for e in all_entities) and not _regex_allclear:
+            _hard_allclear = re.search(
+                r'\b(?:побили|зняли\s+загроз|загрозу\s+зняли|збили|збит[а-яіїєґ]*)\b',
+                msg_text.lower(),
+            )
+            if not _hard_allclear:
+                before = len(all_entities)
+                all_entities = [e for e in all_entities if not e.is_allclear]
+                if before != len(all_entities):
+                    log.info(
+                        f"GPT_ALLCLEAR_REJECT [{channel_name}]: removed hallucinated allclear "
+                        f"without regex allclear signal"
+                    )
         # Safety cross-check: if regex allclear keywords detected but GPT missed allclear
-        if detect_allclear_keywords(msg_text):
+        if _regex_allclear:
             has_allclear = any(e.is_allclear for e in all_entities)
             if not has_allclear:
                 from core.parser_v2 import ParsedEntities, extract_oblast_authority
@@ -1603,12 +1616,18 @@ async def process_new_message(event):
             _used_launch_site = True
             log.info(f"LAUNCH_SITE override: {location} → {coords}")
 
-        if not _used_launch_site and resolved and resolved.lat != 0 and resolved.confidence >= _min_trusted_resolver_conf():
+        geo_decision = decide_resolved_location(
+            resolved,
+            min_point_confidence=_min_trusted_resolver_conf(),
+            omit_ambiguous=_OMIT_AMBIGUOUS_COORDS,
+        )
+
+        if not _used_launch_site and resolved and geo_decision.use_point:
             location = resolved.place_name
             region = resolved.oblast
             coords = (resolved.lat, resolved.lng)
-            confidence = resolved.confidence
-            resolve_status = resolved.status
+            confidence = geo_decision.confidence
+            resolve_status = geo_decision.status
             candidates_json = [c.to_dict() for c in resolved.chosen_from[:3]]
             raion_name = resolved.raion
             # Major gazetteer hit: slight boost so borderline resolver scores still map
@@ -1670,16 +1689,16 @@ async def process_new_message(event):
             # Після CHANNEL_HOME_OBLAST у _ent_dict уже правильніша область, ніж у entities.oblast
             region = (_ent_dict.get('oblast') or '').strip() or entities.oblast
             coords = None
-            confidence = 0.0
-            resolve_status = 'rejected' if resolved else 'no_resolver'
-            candidates_json = []
+            confidence = geo_decision.confidence
+            resolve_status = geo_decision.status
+            candidates_json = [c.to_dict() for c in resolved.chosen_from[:3]] if resolved else []
 
         # Drop resolver point when status is ambiguous (two+ candidates) — less false precision
         if (
             _OMIT_AMBIGUOUS_COORDS
             and not _used_launch_site
             and resolved
-            and getattr(resolved, 'status', None) == 'ambiguous'
+            and resolve_status == 'ambiguous'
             and getattr(resolved, 'chosen_from', None)
             and len(resolved.chosen_from) >= 2
             and coords
@@ -1707,6 +1726,9 @@ async def process_new_message(event):
                 from core.parser_v2 import normalize_place_case
                 _target_city = normalize_place_case(entities.direction)
         _origin_raw = getattr(entities, 'origin', None)
+        _maritime_current = has_maritime_current_context(msg_text, _origin_raw)
+        if _maritime_current and not _origin_raw:
+            _origin_raw = 'Чорне море'
 
         # Normalize target_city and origin via ORIGIN_NORMALIZATION so "Полтавщина"→"Полтава",
         # "Сумщина"→"Суми" — geocoders need city names, not oblique oblast forms
@@ -1769,6 +1791,32 @@ async def process_new_message(event):
                 if _orig_lower == _k or _orig_lower.startswith(_k):
                     _origin_raw = _canon
                     break
+
+        if _maritime_current and _target_city and not _used_launch_site:
+            _tc = _geocode_direction_target(_target_city, region)
+            if _tc:
+                _target_coords = _tc
+                _origin_coords = _geocode_origin(_origin_raw, allow_resolver_fallback=False) if _origin_raw else None
+                try:
+                    _maritime_frac = float(os.getenv('NEPTUN_MARITIME_APPROACH_FRACTION', '0.16'))
+                except ValueError:
+                    _maritime_frac = 0.16
+                _sea_label, _sea_coords = maritime_current_position(
+                    _tc,
+                    region,
+                    origin=_origin_coords,
+                    origin_label=_origin_raw,
+                    fraction=_maritime_frac,
+                )
+                coords = _sea_coords
+                location = _sea_label
+                confidence = max(confidence, 0.62)
+                resolve_status = 'maritime_approach'
+                log.info(
+                    f"MARITIME-APPROACH [{channel_name}]: current={_sea_label} "
+                    f"({coords[0]:.3f},{coords[1]:.3f}) → target {_target_city} "
+                    f"({_tc[0]:.3f},{_tc[1]:.3f})"
+                )
 
         # Auto-promote: if origin is set + place_name resolved + no target_city,
         # the "place" is likely the TARGET (e.g. "→Полтава з Харківщини").
@@ -2048,12 +2096,6 @@ async def process_new_message(event):
         course_bearing = None
         distance_km = None
 
-        # Sources whose trajectory endpoint is reliable enough to derive icon bearing from
-        _RELIABLE_BEARING_SOURCES = {
-            'target_city', 'consensus', 'direction', 'cardinal',
-            'group_bearing', 'wave_analysis', 'airfield', 'retarget',
-        }
-
         if coords and speed_kmh > 0:
             trajectory_data = _build_trajectory(
                 coords, entities, entities.event_type, region,
@@ -2066,35 +2108,21 @@ async def process_new_message(event):
                 distance_km = round(_haversine_km(
                     coords[0], coords[1], end[0], end[1]
                 ), 1)
-                # Only derive course_bearing from RELIABLE sources.
-                # 'learned', 'ai', 'ai_analyzer', 'heuristic' targets are guesses —
-                # using them for icon rotation causes ALL arrows to point at Mykolaiv/Odesa.
-                traj_source = trajectory_data.get('source', '')
-                if traj_source in _RELIABLE_BEARING_SOURCES:
-                    course_bearing = round(_compute_bearing(
-                        coords[0], coords[1], end[0], end[1]
-                    ), 1)
-                else:
-                    log.info(
-                        f"Trajectory source '{traj_source}' — skipping course_bearing "
-                        f"(not reliable enough for icon rotation)"
-                    )
 
-        # Fallback: use GPT bearing or cardinal direction even if no trajectory built
-        if course_bearing is None:
-            course_bearing_fallback = _direction_to_bearing(entities)
-            if course_bearing_fallback is not None:
-                course_bearing = round(course_bearing_fallback, 1)
-
-        # ticker_bearing: bearing for server-side motion (can use ANY trajectory source).
-        # Unlike course_bearing (for icon rotation, reliable sources only),
-        # this ensures markers keep moving even with learned/ai trajectories.
-        ticker_bearing = course_bearing
-        if ticker_bearing is None and trajectory_data:
-            end = trajectory_data['end']
-            ticker_bearing = round(_compute_bearing(
-                coords[0], coords[1], end[0], end[1]
-            ), 1)
+        explicit_bearing = _direction_to_bearing(entities)
+        trajectory_end = trajectory_data.get('end') if trajectory_data else None
+        if coords:
+            course_bearing, ticker_bearing = resolve_course_and_ticker_bearing(
+                start_lat=coords[0],
+                start_lng=coords[1],
+                end_lat=trajectory_end[0] if trajectory_end else None,
+                end_lng=trajectory_end[1] if trajectory_end else None,
+                trajectory_source=trajectory_data.get('source') if trajectory_data else None,
+                explicit_bearing=explicit_bearing,
+            )
+        elif explicit_bearing is not None:
+            course_bearing = round(float(explicit_bearing) % 360.0, 1)
+            ticker_bearing = course_bearing
 
         # Persist explicit directions / target cities for long-horizon trajectory hints
         if trajectory_data and region and entities.event_type:
@@ -2119,29 +2147,6 @@ async def process_new_message(event):
             f"MATCH [{channel_name}]: {entities.event_type}({entities.count}x) "
             f"@ {location} ({region}) conf={confidence:.2f} status={resolve_status}"
         )
-
-        # === Offshore placement when coastal oblast has no air alarm (shahed/uav) ===
-        if coords:
-            try:
-                from geo.offshore_policy import apply_offshore_uav_when_no_alarm
-
-                _prior_coords = (float(coords[0]), float(coords[1]))
-                coords, resolve_status, confidence = apply_offshore_uav_when_no_alarm(
-                    _prior_coords,
-                    region,
-                    entities.event_type,
-                    resolve_status,
-                    float(confidence),
-                )
-                if (float(coords[0]), float(coords[1])) != _prior_coords:
-                    log.info(
-                        f"OFFSHORE-NO-ALARM [{channel_name}]: {region} {entities.event_type} "
-                        f"{_prior_coords[0]:.4f},{_prior_coords[1]:.4f} → "
-                        f"{float(coords[0]):.4f},{float(coords[1]):.4f} "
-                        f"status={resolve_status}"
-                    )
-            except Exception as _off_e:
-                log.debug(f"offshore policy skipped: {_off_e}")
 
         # === Target Aggregator (cross-channel dedup + trajectory) ===
         _target = None
@@ -2208,6 +2213,12 @@ async def process_new_message(event):
             'created_at_epoch': int(now_kyiv.timestamp() * 1000),
             'confidence': round(confidence, 3),
             'resolve_status': resolve_status,
+            'geo_decision_reason': geo_decision.reason,
+            'geocode_source': (
+                getattr(resolved.chosen_from[0], 'source', None)
+                if resolved and getattr(resolved, 'chosen_from', None)
+                else None
+            ),
             'candidates': candidates_json,
             'resolver_version': 'v2',
             'trajectory': trajectory_data,
@@ -2272,26 +2283,29 @@ async def process_new_message(event):
         except ValueError:
             _multi_max = 0.82
         _multi_risk = _message_multi_place_risk(all_entities, msg_text)
-        if coords and _sea_context_inland_mismatch(msg_text, coords[0], coords[1]):
-            data['placement_mode'] = 'sea_context_mismatch'
+        _sea_mismatch = bool(coords and _sea_context_inland_mismatch(msg_text, coords[0], coords[1]))
+        _placement = decide_placement_mode(
+            resolve_status=resolve_status,
+            confidence=float(confidence),
+            min_confidence=float(MIN_CONFIDENCE_THRESHOLD),
+            sea_context_mismatch=_sea_mismatch,
+            multi_reference_risk=_multi_risk,
+            multi_reference_conf_ceiling=_multi_max,
+        )
+        data['placement_mode'] = _placement.mode
+        if _placement.hidden:
             data['hidden'] = True
+
+        if _placement.reason == 'sea_context_mismatch' and coords:
             log.info(
                 f"PLACEMENT [{channel_name}]: sea_context_mismatch — suppress pin "
                 f"({coords[0]:.3f},{coords[1]:.3f})"
             )
-        elif _multi_risk and float(confidence) < _multi_max:
-            data['placement_mode'] = 'multi_reference_suppressed'
-            data['hidden'] = True
+        elif _placement.reason == 'multi_reference_suppressed':
             log.info(
                 f"PLACEMENT [{channel_name}]: multi_reference_suppressed "
                 f"(entities={len(all_entities)} conf={confidence:.2f} < {_multi_max})"
             )
-        else:
-            _rs = str(resolve_status or '')
-            if _rs in _COARSE_PLACEMENT_STATUSES:
-                data['placement_mode'] = 'approximate'
-            elif _rs.startswith('estimated_'):
-                data['placement_mode'] = 'predictive'
 
         if parent and coords and INGEST_URL:
             # Follow-up message — send as track update via POST (upsert by track_id)
@@ -2502,11 +2516,6 @@ async def process_new_message(event):
         if confidence >= 0.8:
             ttl = int(ttl * 1.5)
 
-        if confidence < MIN_CONFIDENCE_THRESHOLD:
-            data['hidden'] = True
-            if data.get('placement_mode') in ('point', 'approximate', 'predictive'):
-                data['placement_mode'] = 'low_map_confidence'
-
         try:
             from geo.geo_audit_log import append_record as _geo_audit_append
 
@@ -2563,14 +2572,16 @@ async def process_new_message(event):
                 place=location, region=region,
             )
         elif data.get('hidden'):
-            log.info(f"Skipping ingest for {threat_id}: hidden (low confidence)")
+            _hidden_mode = str(data.get('placement_mode') or 'hidden')
+            log.info(f"Skipping ingest for {threat_id}: hidden ({_hidden_mode})")
             await _publish_feed_event(
                 status='dropped', channel_name=channel_name, msg_text=msg_text,
                 channel_id=channel_id, msg_id=msg_id,
                 threat_type=legacy_type,
-                reason='hidden (low confidence)',
+                reason=f'hidden ({_hidden_mode})',
                 place=location, region=region,
                 confidence=round(confidence, 3),
+                placement_mode=_hidden_mode,
             )
         elif not _ingest_coords_ok(data):
             log.warning(
@@ -2663,6 +2674,8 @@ async def process_new_message(event):
                                 resolve_status=resolve_status,
                                 marker_id=_ingest_marker_id,
                                 origin=getattr(entities, 'origin', None),
+                                placement_mode=str(data.get('placement_mode') or ''),
+                                public_broadcast=_public_broadcast,
                             )
                             if _public_broadcast:
                                 try:

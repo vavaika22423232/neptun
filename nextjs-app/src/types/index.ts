@@ -17,12 +17,19 @@ export interface TrackPosition {
   bearing?: number; // computed bearing at this point
 }
 
+export interface RejectedTrackObservation extends TrackPosition {
+  reason?: string;
+  confidence?: number;
+}
+
 export interface Marker {
   id?: string;
   track_id?: string;            // Track identifier: "trk_{type}_{group_id}" — groups updates for same threat
   lat: number;
   lng: number;
   threat_type: string;
+  /** Legacy/raw threat type alias emitted by older producers. Prefer `threat_type`. */
+  type?: string;
   place?: string;
   region?: string;
   /** Oblast label from ingest (often overlaps with `region`). */
@@ -49,8 +56,17 @@ export interface Marker {
   ticker_bearing?: number | null; // Bearing computed from trajectory (for server ticker movement)
   positions?: TrackPosition[];   // Full trail: observations + ticker projections (for display)
   observations?: TrackPosition[]; // Pristine channel observations only (for speed computation)
+  rejected_observations?: RejectedTrackObservation[]; // Held/rejected evidence; never used for speed.
   observation_count?: number;    // Number of messages/observations for this track
   is_estimated?: boolean;
+  /** Server track estimator state for motion realism and UI trust. */
+  track_state?: 'observed' | 'extrapolated' | 'stale' | 'lost' | 'static' | 'manual' | 'split_candidate';
+  /** 0..1 visual confidence after age/type-specific decay. */
+  track_confidence?: number;
+  /** Reason code from the server motion estimator. */
+  motion_reason?: string;
+  /** Last real observation timestamp in Unix ms; ticker updates must not move it forward. */
+  last_observation_epoch?: number;
   /** 0–100 mirror of worker `confidence` for UI thresholds */
   confidence_0_100?: number;
   /** Worker map policy: point | approximate | predictive | suppressed_* */
@@ -76,6 +92,8 @@ export interface Marker {
   candidates?: unknown;
   /** Worker / ingest: multi | point | … — informs display policy when corroboration missing. */
   geocode_tier?: string;
+  geo_decision_reason?: string;
+  geocode_source?: string;
   /** Optional explicit candidate count when `candidates` is not an array on the wire. */
   candidates_count?: number;
   /** Ingest manual flag — operator-placed. */
@@ -187,11 +205,16 @@ export const MAP_BOUNDS = {
 // Custom per-marker icons use `marker_icon` on the marker (not listed here), e.g. `fpvdrone.png` for @kherson_non_drone.
 export const THREAT_ICONS: Record<string, string> = {
   shahed: 'shahed3.webp',
+  air_balloon: 'icon_air_balloon.svg',
   drone: 'shahed3.webp',
   uav: 'shahed3.webp',          // parser alias
   raketa: 'icon_balistic.svg',
   missile: 'icon_balistic.svg', // parser alias
   avia: 'icon_avia.svg',
+  /** Ту-95 / стратегічна авіація (ingest: `threat_type: "tu95"` або `marker_icon: "icon_tu95.svg"`) */
+  tu95: 'icon_tu95.svg',
+  tu_95: 'icon_tu95.svg',
+  strategic_bomber: 'icon_tu95.svg',
   artillery: 'artillery.png',
   obstril: 'icon_obstril.svg',
   fpv: 'fpv.png',
@@ -211,11 +234,15 @@ export const THREAT_ICONS: Record<string, string> = {
 // Threat type display names (Ukrainian, must match original)
 export const THREAT_NAMES: Record<string, string> = {
   shahed: '🛩️ Шахеди/БПЛА',
+  air_balloon: '🎈 Повітряна куля',
   drone: '🛩️ Шахеди/БПЛА',
   uav: '🛩️ Шахеди/БПЛА',
   raketa: '🚀 Ракети',
   missile: '🚀 Ракети',
   avia: '✈️ Авіація',
+  tu95: '✈️ Ту-95 (стратегічна авіація)',
+  tu_95: '✈️ Ту-95 (стратегічна авіація)',
+  strategic_bomber: '✈️ Стратегічна авіація',
   artillery: '💥 Артилерія',
   obstril: '💥 Обстріл',
   fpv: '🎯 FPV дрони',

@@ -28,6 +28,21 @@ CHANNEL_META = {
     'odessa_knight':         {'priority': 3, 'format': 'informal',   'lang': 'ru', 'name': 'Odesa Knight'},
     'temporis_odesa':        {'priority': 3, 'format': 'informal',   'lang': 'uk', 'name': 'Temporis Odesa'},
     'rozvidkaneba':           {'priority': 2, 'format': 'semi',       'lang': 'uk', 'name': 'Розвідка неба'},
+    'my_safety_Chernigiv':    {'priority': 3, 'format': 'semi',       'lang': 'uk', 'name': 'SafetyChe'},
+    'RadarChernihiv':         {'priority': 3, 'format': 'informal',   'lang': 'uk', 'name': 'Чернігівський Моніторинг'},
+    'taktychna_rukavuchkaa':  {'priority': 3, 'format': 'semi',       'lang': 'uk', 'name': 'Тактична Рукавичка/Ніжин'},
+    'ShahedChernihiv':        {'priority': 3, 'format': 'informal',   'lang': 'uk', 'name': 'єШахед Чернігів'},
+    'odessa_inform':          {'priority': 3, 'format': 'informal',   'lang': 'ru', 'name': 'ОДЕССА ИНФО LIVE'},
+    'horizon_of_war_Official': {'priority': 3, 'format': 'semi',      'lang': 'uk', 'name': 'Горизонт Війни'},
+    'zahidnimonitoring':      {'priority': 3, 'format': 'semi',       'lang': 'uk', 'name': 'Західний Моніторинг'},
+    'sumygo':                 {'priority': 3, 'format': 'informal',   'lang': 'uk', 'name': 'SUMY GO'},
+    'svessainfo':             {'priority': 3, 'format': 'informal',   'lang': 'uk', 'name': 'Свеса INFO'},
+    'Northern_Sich_ukr':      {'priority': 3, 'format': 'informal',   'lang': 'uk', 'name': 'Північний Сич'},
+    'radar_top_ua':           {'priority': 2, 'format': 'structured', 'lang': 'uk', 'name': 'Куди летить? | Радар'},
+    'kremen_sv':              {'priority': 3, 'format': 'informal',   'lang': 'ru', 'name': 'Кременчуцький Миколай'},
+    'cherkasy_nebbo':         {'priority': 3, 'format': 'informal',   'lang': 'uk', 'name': 'Черкаське небо'},
+    'pivden_varta':           {'priority': 3, 'format': 'informal',   'lang': 'uk', 'name': 'Вартові Півдня'},
+    'krolevetsnews':          {'priority': 3, 'format': 'semi',       'lang': 'uk', 'name': 'Новини Кролевця та Сумської області'},
 }
 
 CHANNELS = list(CHANNEL_META.keys())
@@ -41,6 +56,17 @@ CHANNEL_DEFAULT_OBLAST: dict[str, str] = {
     'eyes_everywhere_ua': 'Запорізька область',
     'odessa_knight': 'Одеська область',
     'temporis_odesa': 'Одеська область',
+    'my_safety_Chernigiv': 'Чернігівська область',
+    'RadarChernihiv': 'Чернігівська область',
+    'taktychna_rukavuchkaa': 'Чернігівська область',
+    'ShahedChernihiv': 'Чернігівська область',
+    'odessa_inform': 'Одеська область',
+    'sumygo': 'Сумська область',
+    'svessainfo': 'Сумська область',
+    'Northern_Sich_ukr': 'Чернігівська область',
+    'kremen_sv': 'Полтавська область',
+    'cherkasy_nebbo': 'Черкаська область',
+    'krolevetsnews': 'Сумська область',
 }
 
 OPENCAGE_API_KEY = os.getenv('OPENCAGE_API_KEY', '')  # optional geocoding
@@ -296,17 +322,9 @@ OBLAST_CENTERS = {
 }
 
 # --- Typical threat speeds (km/h) for trajectory ETA estimation ---
-THREAT_SPEEDS = {
-    'uav':       180,   # Shahed-type strike UAVs
-    'recon':     120,   # Orlan / Zala recon drones
-    'missile':   900,   # Cruise missiles (Kalibr, Kh-101)
-    'ballistic': 2000,  # Iskander / S-300
-    'kab':       800,   # Guided bombs (UMPB, KAB)
-    'launch':    0,     # Launch events — no movement
-    'explosion': 0,     # Explosions — no movement
-    'alert':     0,     # Alerts — no movement
-    'allclear':  0,     # All-clear — no movement
-}
+from core.threat_kinematics import TYPICAL_THREAT_SPEEDS
+
+THREAT_SPEEDS = dict(TYPICAL_THREAT_SPEEDS)
 
 # --- Known launch sites (incl. RF) for explicit "пуск" markers ---
 # NOTE: These are approximate coordinates to place markers on launch locations.

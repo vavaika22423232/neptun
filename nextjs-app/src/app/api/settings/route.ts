@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import { loadSettings } from '@/lib/admin/data';
+import { getAdminHeaderSecret, safeCompare } from '@/lib/server-secrets';
 
 export async function GET(request: Request) {
     const secret = request.headers.get('X-Auth-Secret') || '';
-    const expected = process.env.ADMIN_SECRET || process.env.AUTH_SECRET || '';
-    if (!expected || secret !== expected) {
+    const expected = getAdminHeaderSecret();
+    if (!expected || !secret || !safeCompare(secret, expected)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

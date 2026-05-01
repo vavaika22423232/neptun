@@ -1,36 +1,31 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Neptun Web/API
 
-## Getting Started
+Next.js application for the public map, admin UI, JSON APIs, chat, and ingest endpoints. The
+Python Telegram worker lives in `worker/` inside this app directory because it posts directly to
+`/api/ingest`.
 
-First, run the development server:
+## Common Commands
 
 ```bash
+cd nextjs-app
+npm ci
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run lint
+npm run test:domain
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Worker tests:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+cd nextjs-app/worker
+python3 -m unittest discover -s tests -p 'test_*.py' -v
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Legacy parser and push smoke scripts are in `worker/manual_checks/` and are not part of CI.
 
-## Learn More
+## Pointers
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Root project overview: `../README.md`
+- Map and ingest flow: `../docs/NEPTUN_DATA_FLOW.md`
+- Deploy runbook: `../deploy/README.md`
+- Worker LLM/parser notes: `../AGENTS.md`

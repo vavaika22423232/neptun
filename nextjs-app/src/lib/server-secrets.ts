@@ -6,6 +6,7 @@
  * Recommended production:
  *   INGEST_SECRET   — worker → /api/ingest only (leak ≠ admin API)
  *   ADMIN_API_SECRET — X-Auth-Secret for admin JSON APIs + moderator tools (optional; falls back to AUTH_SECRET)
+ *   ADMIN_SECRET     — deprecated alias accepted for older deployments during migration
  *   AUTH_SECRET     — still used if the specific secret is unset (backward compatible)
  *   JWT_SECRET      — signing chat/device JWTs (optional; falls back to AUTH_SECRET)
  */
@@ -31,7 +32,7 @@ export function getIngestSecret(): string {
  * Does NOT fall back to INGEST_SECRET (so a leaked worker secret cannot open admin APIs).
  */
 export function getAdminHeaderSecret(): string {
-  return process.env.ADMIN_API_SECRET || process.env.AUTH_SECRET || '';
+  return process.env.ADMIN_API_SECRET || process.env.ADMIN_SECRET || process.env.AUTH_SECRET || '';
 }
 
 /** HS256 signing for /api/auth/token and refresh. */

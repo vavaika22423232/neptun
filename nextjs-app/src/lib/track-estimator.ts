@@ -1,0 +1,290 @@
+import {
+  destinationPoint,
+  haversineKm,
+  normalizeEpochMs,
+  resolveTickerBearing,
+} from '@/lib/marker-movement-policy';
+import { trackMotionProfile } from '@/lib/track-motion-profile';
+
+export type TrackEstimateState =
+  | 'observed'
+  | 'extrapolated'
+  | 'stale'
+  | 'lost'
+  | 'static'
+  | 'manual'
+  | 'split_candidate';
+
+export type TrackEstimate = {
+  state: TrackEstimateState;
+  lat: number;
+  lng: number;
+  confidence: number;
+  visualConfidence: number;
+  speedKmh: number;
+  bearingDeg: number | null;
+  lastObservationMs: number;
+  ageMs: number;
+  isEstimated: boolean;
+  reason: string;
+};
+
+export type RealisticTickDecision =
+  | {
+      shouldTick: true;
+      reason: 'estimate_tick';
+      nextLat: number;
+      nextLng: number;
+      speedKmh: number;
+      bearingDeg: number;
+      distKm: number;
+      estimate: TrackEstimate;
+    }
+  | {
+      shouldTick: false;
+      reason:
+        | 'static'
+        | 'manual'
+        | 'lost'
+        | 'stale'
+        | 'invalid_motion'
+        | 'invalid_coords'
+        | 'near_target';
+      estimate: TrackEstimate;
+    };
+
+export type TrackObservationAction =
+  | 'accept_position'
+  | 'hold_position'
+  | 'split_candidate'
+  | 'observation_only';
+
+export type TrackObservationReason =
+  | 'accepted'
+  | 'stale_observation'
+  | 'teleport_blocked_split_candidate'
+  | 'weak_geo_hold'
+  | 'invalid_coords';
+
+export type TrackObservationDecision = {
+  action: TrackObservationAction;
+  reason: TrackObservationReason;
+  jumpDistKm: number;
+  antiTeleportKm: number;
+  maxPlausibleSpeedKmh: number;
+  lastObservationMs: number;
+  newObservationMs: number;
+  staleObservationReplay: boolean;
+  weakGeoHold: boolean;
+};
+
+type LatLngTs = { lat: number; lng: number; ts?: number };
+
+const STATIC_THREAT_TYPES = new Set([
+  'explosion', 'vibuh', 'alert', 'allclear', 'chemical', 'nuclear',
+  'artillery', 'obstril', 'info',
+]);
+
+function clamp01(v: number): number {
+  if (!Number.isFinite(v)) return 0;
+  return Math.max(0, Math.min(1, v));
+}
+
+function numericConfidence(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+export { trackMotionProfile };
+
+function markerBaseConfidence(marker: Record<string, unknown>): number {
+  const c100 = Number(marker.confidence_0_100);
+  if (Number.isFinite(c100) && c100 > 0) return clamp01(c100 / 100);
+  const c = Number(marker.confidence);
+  if (Number.isFinite(c) && c > 0) return clamp01(c > 1 ? c / 100 : c);
+  return 0.68;
+}
+
+function lastObservation(marker: Record<string, unknown>): LatLngTs | null {
+  const obs = marker.observations as LatLngTs[] | undefined;
+  if (obs && obs.length > 0) return obs[obs.length - 1];
+  const lat = Number(marker.lat);
+  const lng = Number(marker.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng, ts: Number(marker.created_at_epoch) || undefined };
+}
+
+export function estimateTrackState(marker: Record<string, unknown>, nowMs: number): TrackEstimate {
+  const threatType = String(marker.threat_type || '');
+  const profile = trackMotionProfile(threatType);
+  const lat = Number(marker.lat);
+  const lng = Number(marker.lng);
+  const fallbackEstimate: TrackEstimate = {
+    state: 'lost',
+    lat: Number.isFinite(lat) ? lat : 0,
+    lng: Number.isFinite(lng) ? lng : 0,
+    confidence: 0,
+    visualConfidence: 0,
+    speedKmh: 0,
+    bearingDeg: null,
+    lastObservationMs: nowMs,
+    ageMs: 0,
+    isEstimated: false,
+    reason: 'invalid_coords',
+  };
+
+  if (STATIC_THREAT_TYPES.has(threatType)) return { ...fallbackEstimate, state: 'static', reason: 'static_type' };
+  if (marker.manual) return { ...fallbackEstimate, state: 'manual', reason: 'manual' };
+
+  const obs = lastObservation(marker);
+  if (!obs) return fallbackEstimate;
+  const lastObservationMs = normalizeEpochMs(Number(obs.ts) || 0, nowMs);
+  const ageMs = Math.max(0, nowMs - lastObservationMs);
+  const baseConfidence = markerBaseConfidence(marker);
+  const confidence = clamp01(baseConfidence * Math.pow(0.5, ageMs / profile.confidenceHalfLifeMs));
+  const bearingDeg = resolveTickerBearing(marker);
+  const rawSpeed = Number(marker.speed_kmh) || Number(marker.computed_speed_kmh) || profile.nominalSpeedKmh;
+  const speedKmh = Math.max(0, Math.min(rawSpeed, profile.maxSpeedKmh));
+
+  let state: TrackEstimateState = 'observed';
+  let reason = 'fresh_observation';
+  if (ageMs > profile.lostMs) {
+    state = 'lost';
+    reason = 'lost_ttl';
+  } else if (ageMs > profile.staleMs) {
+    state = 'stale';
+    reason = 'stale_ttl';
+  } else if (ageMs > profile.observedFreshMs) {
+    state = ageMs <= profile.extrapolateMs && bearingDeg != null && speedKmh > 0 ? 'extrapolated' : 'stale';
+    reason = state === 'extrapolated' ? 'motion_extrapolated' : 'no_motion_for_extrapolation';
+  }
+
+  let estimateLat = Number(obs.lat);
+  let estimateLng = Number(obs.lng);
+  const canMove = state === 'extrapolated' && bearingDeg != null && speedKmh > 0;
+  if (canMove) {
+    const dtHours = Math.min(ageMs, profile.extrapolateMs) / 3_600_000;
+    [estimateLat, estimateLng] = destinationPoint(estimateLat, estimateLng, bearingDeg, speedKmh * dtHours);
+  }
+
+  return {
+    state,
+    lat: estimateLat,
+    lng: estimateLng,
+    confidence,
+    visualConfidence: state === 'observed' ? confidence : state === 'extrapolated' ? confidence * 0.72 : confidence * 0.45,
+    speedKmh,
+    bearingDeg,
+    lastObservationMs,
+    ageMs,
+    isEstimated: state === 'extrapolated',
+    reason,
+  };
+}
+
+export function decideTrackObservationUpdate(input: {
+  existing: Record<string, unknown>;
+  incoming: Record<string, unknown>;
+  nowMs: number;
+}): TrackObservationDecision {
+  const existingLat = Number(input.existing.lat);
+  const existingLng = Number(input.existing.lng);
+  const newLat = Number(input.incoming.lat);
+  const newLng = Number(input.incoming.lng);
+  const threatType = String(input.existing.threat_type || input.incoming.threat_type || '');
+  const profile = trackMotionProfile(threatType);
+  const observations = input.existing.observations as Array<{ ts?: number }> | undefined;
+  const rawLastTs = observations && observations.length > 0
+    ? Number(observations[observations.length - 1].ts) || 0
+    : Number(input.existing.created_at_epoch) || 0;
+  const lastObservationMs = normalizeEpochMs(rawLastTs, input.nowMs);
+  const newObservationMs = normalizeEpochMs(Number(input.incoming.created_at_epoch) || 0, input.nowMs);
+  const staleObservationReplay = newObservationMs + 12_000 < lastObservationMs;
+  const prevConf = numericConfidence(input.existing.confidence);
+  const incConf = numericConfidence(input.incoming.confidence);
+  const invalidCoords =
+    !Number.isFinite(existingLat) ||
+    !Number.isFinite(existingLng) ||
+    !Number.isFinite(newLat) ||
+    !Number.isFinite(newLng);
+  const currentSpeed = Number(input.existing.computed_speed_kmh) || Number(input.existing.speed_kmh) || profile.nominalSpeedKmh;
+  const hoursSinceLastObs = Math.max((input.nowMs - lastObservationMs) / 3_600_000, 0.01);
+  const speedForCalc = currentSpeed > 0 ? Math.min(currentSpeed * 1.5, profile.maxSpeedKmh) : profile.maxSpeedKmh;
+  const antiTeleportKm = Math.max(speedForCalc * hoursSinceLastObs * 1.5, 25);
+  const jumpDistKm = invalidCoords ? 0 : haversineKm(existingLat, existingLng, newLat, newLng);
+  const weakGeoHold =
+    !staleObservationReplay &&
+    !invalidCoords &&
+    jumpDistKm >= 3.5 &&
+    incConf != null &&
+    prevConf != null &&
+    incConf < prevConf - 0.15 &&
+    incConf < 0.42;
+
+  let action: TrackObservationAction = 'accept_position';
+  let reason: TrackObservationReason = 'accepted';
+  if (invalidCoords) {
+    action = 'observation_only';
+    reason = 'invalid_coords';
+  } else if (staleObservationReplay) {
+    action = 'observation_only';
+    reason = 'stale_observation';
+  } else if (jumpDistKm > antiTeleportKm) {
+    action = 'split_candidate';
+    reason = 'teleport_blocked_split_candidate';
+  } else if (weakGeoHold) {
+    action = 'hold_position';
+    reason = 'weak_geo_hold';
+  }
+
+  return {
+    action,
+    reason,
+    jumpDistKm,
+    antiTeleportKm,
+    maxPlausibleSpeedKmh: profile.maxSpeedKmh,
+    lastObservationMs,
+    newObservationMs,
+    staleObservationReplay,
+    weakGeoHold,
+  };
+}
+
+export function decideRealisticTickerStep(input: {
+  marker: Record<string, unknown>;
+  nowMs: number;
+  tickIntervalMs: number;
+}): RealisticTickDecision {
+  const estimate = estimateTrackState(input.marker, input.nowMs);
+  if (estimate.state === 'static') return { shouldTick: false, reason: 'static', estimate };
+  if (estimate.state === 'manual') return { shouldTick: false, reason: 'manual', estimate };
+  if (estimate.state === 'lost') return { shouldTick: false, reason: 'lost', estimate };
+  if (estimate.state === 'stale') return { shouldTick: false, reason: 'stale', estimate };
+  if (estimate.bearingDeg == null || estimate.speedKmh <= 0) return { shouldTick: false, reason: 'invalid_motion', estimate };
+
+  const curLat = Number(input.marker.lat);
+  const curLng = Number(input.marker.lng);
+  if (!Number.isFinite(curLat) || !Number.isFinite(curLng)) return { shouldTick: false, reason: 'invalid_coords', estimate };
+
+  const profile = trackMotionProfile(String(input.marker.threat_type || ''));
+  const trajectory = input.marker.trajectory as { end?: [number, number] } | undefined;
+  const dtHours = input.tickIntervalMs / 3_600_000;
+  const distKm = estimate.speedKmh * dtHours;
+  if (trajectory?.end) {
+    const distToEnd = haversineKm(curLat, curLng, trajectory.end[0], trajectory.end[1]);
+    if (distToEnd <= Math.max(profile.targetStopKm, distKm * 1.2)) {
+      return { shouldTick: false, reason: 'near_target', estimate };
+    }
+  }
+
+  const [nextLat, nextLng] = destinationPoint(curLat, curLng, estimate.bearingDeg, distKm);
+  return {
+    shouldTick: true,
+    reason: 'estimate_tick',
+    nextLat,
+    nextLng,
+    speedKmh: estimate.speedKmh,
+    bearingDeg: estimate.bearingDeg,
+    distKm,
+    estimate,
+  };
+}

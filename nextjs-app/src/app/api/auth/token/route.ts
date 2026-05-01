@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { getJwtSecret } from '@/lib/server-secrets';
+import { getAdminHeaderSecret, getJwtSecret, safeCompare } from '@/lib/server-secrets';
 import { redisFixedWindowAllow } from '@/lib/redis-rate-limit';
 import { getClientIp, ipRedisTag } from '@/lib/client-ip';
 import { AuthTokenSchema } from '@/lib/api-schemas';
@@ -63,9 +63,9 @@ export async function POST(request: Request) {
     const isSensitive = sensitive.some(s => nickname.toLowerCase().includes(s));
     
     if (isSensitive) {
-      const adminSecret = process.env.ADMIN_SECRET || process.env.AUTH_SECRET;
+      const adminSecret = getAdminHeaderSecret();
       const providedSecret = request.headers.get('X-Admin-Secret') || '';
-      if (!adminSecret || providedSecret !== adminSecret) {
+      if (!adminSecret || !providedSecret || !safeCompare(providedSecret, adminSecret)) {
         // Force generic name if attempt to spoof admin/mod
         nickname = 'Анонім';
       }

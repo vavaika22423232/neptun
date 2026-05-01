@@ -1,5 +1,5 @@
-import { withETag } from '@/lib/cache';
-import { loadAlarms } from '@/lib/alarms-data';
+import { generateETag, withETag } from '@/lib/cache';
+import { loadAlarms, withDevAllDistrictAlarms } from '@/lib/alarms-data';
 
 /**
  * GET /api/alarms/all
@@ -15,13 +15,15 @@ export async function GET(request: Request) {
   const loaded = await loadAlarms();
 
   if (loaded) {
+    const data = withDevAllDistrictAlarms(loaded.data);
+    const etag = data === loaded.data ? loaded.etag : generateETag(data);
     const headers: Record<string, string> = {
       'X-Data-Age': String(loaded.ageSeconds),
     };
-    return withETag(loaded.data, loaded.etag, clientETag, headers, loaded.rawJson);
+    return withETag(data, etag, clientETag, headers);
   }
 
-  return new Response('[]', {
+  return new Response(JSON.stringify(withDevAllDistrictAlarms([])), {
     status: 200,
     headers: {
       'Content-Type': 'application/json',

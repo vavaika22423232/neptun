@@ -23,7 +23,10 @@ function getCached<T>(key: string): T | null {
   return e.data as T;
 }
 function setCached<T>(key: string, data: T): T { _rcache.set(key, { data, ts: Date.now() }); return data; }
-export function invalidateCache(key?: string) { key ? _rcache.delete(key) : _rcache.clear(); }
+export function invalidateCache(key?: string) {
+  if (key) _rcache.delete(key);
+  else _rcache.clear();
+}
 
 // ── File resolution ──────────────────────────────────────────────────────
 function resolveFile(primary: string, filename: string): string {
@@ -163,7 +166,7 @@ const ADMIN_SETTINGS_DEFAULTS: AdminSettings = {
   corroborationMinObservations: 2,
   corroborationWindowMinutes: 30,
   corroborationMaxRadiusKm: 45,
-  corroborationMinDistinctSources: 0,
+  corroborationMinDistinctSources: 2,
   dualSourceMapGate: true,
   regionUncertaintyKm: 38,
   corroboratedUncertaintyKm: 9,

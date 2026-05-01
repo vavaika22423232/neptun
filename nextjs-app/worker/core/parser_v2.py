@@ -22,6 +22,12 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from constants import OBLAST_CENTERS
+from core.threat_taxonomy import (
+    CLASSIFICATION_PRIORITY,
+    CLEARED_THREAT_PRIORITY,
+    MULTI_PLACE_EVENT_TYPES,
+    ORIGIN_EVENT_TYPES,
+)
 
 log = logging.getLogger(__name__)
 
@@ -40,6 +46,13 @@ CHANNEL_SIGNATURES: list[str] = [
     'повітряні сили зсу', 'повітряні сили',
     'моніторинг ппо', 'monitor 1654', 'monitor1654',
     'моніторинг', 'monitor', 'war_monitor',
+    'safetyche', 'чернігівський моніторинг', 'тактична рукавичка',
+    'єшахед чернігів', 'єшахед чернігів | чернігівська область',
+    'одесса инфо live', 'радар одеса', 'горизонт війни',
+    'західний моніторинг', 'sumy go', 'свесаinfo', 'свеса info',
+    'північний сич', 'куди летить', 'куди летить | радар',
+    'кременчуцький миколай', 'черкаське небо', 'вартові півдня',
+    'новини кролевця та сумської області',
 ]
 
 # Compiled regex for matching channel signatures as whole lines
@@ -100,6 +113,24 @@ RE_DIRECTION = re.compile(
 # "в напрямку X" — without intermediate preposition
 RE_DIRECTION_NAPRYAMKU = re.compile(
     r'(?:в|у)\s+напрямку\s+([' + _CYR_NAME + r']+(?:\s+[' + _CYR_NAME + r']+)?)',
+    re.IGNORECASE
+)
+
+# Terse tracker style: "Шахед курс Одеса", "2х БпЛА курсом Київ".
+RE_DIRECTION_BARE_COURSE = re.compile(
+    r'\b(?:курс(?:ом)?|вектор|напрям(?:ок|ку)?)\s+'
+    r'([' + _CYR_NAME + r']+(?:\s+[' + _CYR_NAME + r']+)?)',
+    re.IGNORECASE
+)
+
+RE_DIRECTION_SIDE = re.compile(
+    r'\b(?:у|в)\s+(?:бік|сторону)\s+'
+    r'([' + _CYR_NAME + r']+(?:\s+[' + _CYR_NAME + r']+)?)',
+    re.IGNORECASE
+)
+
+RE_ARROW_TARGET = re.compile(
+    r'[→➡]\s*([' + _CYR_NAME + r']+(?:\s+[' + _CYR_NAME + r']+)?)',
     re.IGNORECASE
 )
 
@@ -197,6 +228,8 @@ ORIGIN_NORMALIZATION: dict[str, str] = {
     'миколаївщини': 'Миколаїв', 'миколаївщину': 'Миколаїв', 'миколаївщина': 'Миколаїв',
     'херсонщини': 'Херсон', 'херсонщину': 'Херсон', 'херсонщина': 'Херсон',
     'одещини': 'Одеса', 'одещину': 'Одеса', 'одещина': 'Одеса',
+    'николаевскую': 'Миколаїв', 'николаевской': 'Миколаїв', 'николаевская': 'Миколаїв',
+    'миколаївську': 'Миколаїв', 'миколаївської': 'Миколаїв', 'миколаївська': 'Миколаїв',
     'вінниччини': 'Вінниця', 'вінниччину': 'Вінниця', 'вінниччина': 'Вінниця',
     'житомирщини': 'Житомир', 'житомирщину': 'Житомир', 'житомирщина': 'Житомир',
     'черкащини': 'Черкаси', 'черкащину': 'Черкаси', 'черкащина': 'Черкаси',
@@ -212,6 +245,8 @@ ORIGIN_NORMALIZATION: dict[str, str] = {
     'закарпаття': 'Ужгород', 'закарпатщини': 'Ужгород', 'закарпатщину': 'Ужгород',
     'хмельниччини': 'Хмельницький', 'хмельниччину': 'Хмельницький', 'хмельниччина': 'Хмельницький',
     'чернівеччини': 'Чернівці', 'чернівеччину': 'Чернівці', 'чернівеччина': 'Чернівці',
+    'тендрівської коси': 'Тендрівська коса',
+    'тендровской косы': 'Тендрівська коса',
 }
 
 # Oblast-only direction forms: "у напрямку Черкащини" = oblast, NOT city.
@@ -220,6 +255,8 @@ OBLAST_DIRECTION_KEYS = frozenset(
     k for k in ORIGIN_NORMALIZATION
     if 'щин' in k or 'щину' in k or 'щина' in k
     or 'ччин' in k or 'ччину' in k or 'ччина' in k
+    or 'ську' in k or 'ської' in k or 'ська' in k
+    or 'скую' in k or 'ской' in k or 'ская' in k
     or k in ('закарпаття', 'волині', 'волинь')
 )
 
@@ -274,6 +311,12 @@ CARDINAL_DIRECTIONS = {
     'північний схід': 'northeast', 'північного сходу': 'northeast',
     'південний захід': 'southwest', 'південного заходу': 'southwest',
     'південний схід': 'southeast', 'південного сходу': 'southeast',
+    'север': 'north', 'северный': 'north', 'юг': 'south', 'южный': 'south',
+    'восток': 'east', 'восточный': 'east', 'запад': 'west', 'западный': 'west',
+    'северо западный': 'northwest', 'северо-западный': 'northwest',
+    'северо восточный': 'northeast', 'северо-восточный': 'northeast',
+    'юго западный': 'southwest', 'юго-западный': 'southwest',
+    'юго восточный': 'southeast', 'юго-восточный': 'southeast',
 }
 
 RE_CARDINAL_DIRECTION = re.compile(
@@ -296,7 +339,7 @@ RE_CARDINAL_NAPRYAMKU = re.compile(
     re.IGNORECASE
 )
 RE_NEAR = re.compile(
-    r'(?:поблизу|біля|повз|район[іу]?|околиці?|поряд з|в районі'
+    r'(?:поблизу|біля|повз|навпроти|район[іу]?|околиці?|поряд з|в районі|р[\-\s]?н'
     r'|південніше|північніше|східніше|західніше|над)\s+'
     r'([' + _CYR_NAME + r']+(?:\s+[' + _CYR_NAME + r']+)?)',
     re.IGNORECASE
@@ -318,7 +361,7 @@ RE_TARGET_DIRECTION = re.compile(
 # Movement verbs + direction: "йдуть на X", "летять на X", "прямують на X"
 RE_MOVEMENT_DIRECTION = re.compile(
     r'(?:йдуть|йде|летять|летить|прямують|прямує|рухаються|рухається|'
-    r'направляються|направляється|єдуть|їде)\s+'
+    r'направляються|направляється|єдуть|їде|пролета(?:е|ю)т|проліта(?:є|ють))\s+'
     r'(?:на|до|в|у)\s+([А-ЯІЇЄҐа-яіїєґ][\w\s\'\ʼ\-]{2,})',
     re.IGNORECASE
 )
@@ -351,8 +394,11 @@ OBLAST_NORMALIZATION = {
     'херсонщ': 'Херсонська область',
     'миколаїв': 'Миколаївська область',
     'миколаївщ': 'Миколаївська область',
+    'николаев': 'Миколаївська область',
+    'николаїв': 'Миколаївська область',
     'одес': 'Одеська область',
     'одещ': 'Одеська область',
+    'одесс': 'Одеська область',
     'запорі': 'Запорізька область',
     'запоріз': 'Запорізька область',
     'вінниц': 'Вінницька область',
@@ -386,6 +432,25 @@ OBLAST_NORMALIZATION = {
     'волинь': 'Волинська область',
     'волин': 'Волинська область',
 }
+
+_OBLAST_ADJECTIVE_SUFFIX_RE = re.compile(
+    r'(?:щину|щини|щині|щина|ську|ської|ській|ська|зьку|зької|зькій|зька|'
+    r'цьку|цької|цькій|цька|скую|ской|ская|цкую|цкой|цкая|зкую|зкой|зкая)$',
+    re.IGNORECASE,
+)
+
+
+def _oblast_from_adjective_token(token: Optional[str]) -> Optional[str]:
+    """Return oblast for declined oblast adjective forms, not settlement names."""
+    if not token:
+        return None
+    low = token.lower().strip().replace('ё', 'е')
+    if not low or not _OBLAST_ADJECTIVE_SUFFIX_RE.search(low):
+        return None
+    for stem, official in OBLAST_NORMALIZATION.items():
+        if stem in low:
+            return official
+    return None
 
 # Short names that can serve as section headers (e.g. "Волинь:", "Суми:")
 KNOWN_HEADER_OBLASTS = {
@@ -427,7 +492,7 @@ STEM_PROPER_NAMES = {
 }
 
 NOISE_WORDS = [
-    'біля', 'повз', 'на', 'над', 'у напрямку', 'напрямок', 'курс', 'курсом',
+        'біля', 'повз', 'возле', 'на', 'над', 'у напрямку', 'напрямок', 'курс', 'курсом',
     'зі сходу', 'з півночі', 'з півдня', 'із заходу',
     'вектор', 'рух', 'летить', 'бачимо', 'чути', 'увага', 'тривога',
     'підписатися',
@@ -467,6 +532,11 @@ EVENT_TYPES = {
         'умпб', 'умпк',
         'су-34', 'су-35',
     ],
+    'air_balloon': [
+        'повітряна куля', 'повітряну кулю', 'повітряної кулі',
+        'аеростат', 'аэростат', 'метеозонд', 'аерозонд', 'зонд',
+        'air balloon', 'sounding balloon', 'воздушный шар',
+    ],
     'uav': [
         'бпла', 'дрон', 'дрони', 'дронів', 'дронами',
         'шахед', 'shahed', 'shahid', 'шахід', 'шахеди', 'шахез',
@@ -494,6 +564,7 @@ EVENT_TYPES = {
         'йдуть на', 'йде на', 'йдуть в',
         'летять на', 'летить на', 'летять в',
         'курс на', 'курсом на', 'курс в',
+        'пролета', 'проліта',
     ],
     'recon': [
         'розвід', 'розвіддрон', 'розвідник', 'дорозвідк',
@@ -531,6 +602,8 @@ EVENT_TYPES = {
 
 NEGATION_KEYWORDS = [
     'не підтверди', 'фейк', 'fake', 'спростуван', 'навчання', 'тренування',
+    'не підтверджено', 'не підтверджена', 'не підтверджений', 'не підтверджені',
+    'не подтверждено', 'не подтверждена', 'не подтвержденный', 'не подтверждены',
     'хибна тривога', 'ложна тривога', 'помилкова тривога', 'помилкове спрацювання',
     'технічна помилка', 'техническая ошибка', 'збій системи',
 ]
@@ -580,6 +653,7 @@ CITY_ALIASES = {
     'zhitomir': 'житомир', 'zhytomyr': 'житомир',
     'затоке': 'затока', 'затоку': 'затока',
     'сарни': 'сарни', 'луцьк': 'луцьк',
+    'кременчуг': 'кременчук', 'светловодск': 'світловодськ',
 }
 
 _CITY_ABBREV_PATTERNS: list[tuple[re.Pattern, str]] = [
@@ -589,6 +663,12 @@ _CITY_ABBREV_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r'\bН\.?\s*Каховк[аіуеоиїю]\b', re.IGNORECASE), 'Нова Каховка'),
     (re.compile(r'\bМ\.?\s*Виськ[аіуеоиїю]\b', re.IGNORECASE), 'Мала Виска'),
     (re.compile(r'\bВ\.?\s*Михайлівк[аіуеоиїю]\b', re.IGNORECASE), 'Велика Михайлівка'),
+    (re.compile(r'\bВ\.?\s*Писарівк[аіуеоиїю]\b', re.IGNORECASE), 'Велика Писарівка'),
+    (re.compile(r'\bВ\.?\s*Бурімк[аіуеоиїю]\b', re.IGNORECASE), 'Велика Бурімка'),
+    (re.compile(r'\bС\.?\s*Буд[аеиіу]\b', re.IGNORECASE), 'Середина-Буда'),
+    (re.compile(r'\bХ\.?\s*Михайлівськ\w*\b', re.IGNORECASE), 'Хутір-Михайлівський'),
+    (re.compile(r'\bЗноб[\-\.]?\s*Н\.?\b', re.IGNORECASE), 'Зноб-Новгородське'),
+    (re.compile(r'\bЗноб[\-\.]?\s*Новгородськ\w*\b', re.IGNORECASE), 'Зноб-Новгородське'),
     (re.compile(r'\bСт\.?\s*Костянтинів\b', re.IGNORECASE), 'Старокостянтинів'),
     (re.compile(r'\bКам[\.\'\-]?\s*Подільськ\w*\b', re.IGNORECASE), "Кам'янець-Подільський"),
     # Apostrophe truncation: parser splits on ' / ʼ leaving stubs
@@ -670,7 +750,7 @@ def _extract_cleared_threat_type(text: str) -> Optional[str]:
     Returns None if no specific threat type mentioned (= clear all).
     """
     t = text.lower()
-    for etype in ['ballistic', 'kab', 'missile', 'recon', 'uav']:
+    for etype in CLEARED_THREAT_PRIORITY:
         for kw in EVENT_TYPES[etype]:
             if len(kw) <= 2 and not kw.isascii():
                 continue
@@ -684,6 +764,7 @@ def _extract_cleared_threat_type(text: str) -> Optional[str]:
 # (Решетилівку → Решетилівка, Помічну → Помічна, Комишню → Комишня)
 
 ACCUSATIVE_TO_NOMINATIVE: dict[str, str] = {
+    'києва': 'Київ',
     # -ку → -ка (most common for feminine -ка cities)
     'решетилівку': 'Решетилівка', 'помічну': 'Помічна',
     'липову долину': 'Липова Долина', 'петропавлівку': 'Петропавлівка',
@@ -717,6 +798,7 @@ ACCUSATIVE_TO_NOMINATIVE: dict[str, str] = {
     'южноукраїнська': 'Южноукраїнськ', 'южноукраїнську': 'Южноукраїнськ',
     'південноукраїнська': 'Південноукраїнськ', 'південноукраїнську': 'Південноукраїнськ',
     'світловодська': 'Світловодськ', 'світловодську': 'Світловодськ',
+    'светловодск': 'Світловодськ', 'светловодска': 'Світловодськ',
     'лебедина': 'Лебедин', 'лебедину': 'Лебедин',
     'ізюма': 'Ізюм', 'ізюму': 'Ізюм',
     'покровська': 'Покровськ', 'покровську': 'Покровськ',
@@ -755,7 +837,13 @@ ACCUSATIVE_TO_NOMINATIVE: dict[str, str] = {
     # Common genitive-to-nominative
     'кролевця': 'Кролевець', 'путивля': 'Путивль',
     'вороніжа': 'Вороніж', 'глобиного': 'Глобине',
-    'глобине': 'Глобине', 'гайворону': 'Гайворон',
+    'глобине': 'Глобине', 'глобино': 'Глобине', 'гайворону': 'Гайворон',
+    'кременчуг': 'Кременчук', 'кременчуга': 'Кременчук',
+    'залізного порту': 'Залізний Порт',
+    'залізний порт': 'Залізний Порт',
+    'тендрівської коси': 'Тендрівська коса',
+    'морі': 'Чорне море',
+    'море': 'Чорне море',
     # Genitive/accusative forms found in live data
     'варву': 'Варва', 'варви': 'Варва',
     'недригайлова': 'Недригайлів', 'недригайлову': 'Недригайлів',
@@ -764,6 +852,7 @@ ACCUSATIVE_TO_NOMINATIVE: dict[str, str] = {
     'конотопа': 'Конотоп', 'конотопу': 'Конотоп',
     'шостки': 'Шостка', 'шосткі': 'Шостка',
     'олександрії': 'Олександрія',
+    'березу': 'Береза',
     'долинської': 'Долинська', 'долинську': 'Долинська',
     'печеніг': 'Печеніги', 'печенігів': 'Печеніги',
     'балаклії': 'Балаклія', 'балаклію': 'Балаклія',
@@ -773,6 +862,9 @@ ACCUSATIVE_TO_NOMINATIVE: dict[str, str] = {
     'пирятина': 'Пирятин', 'пирятину': 'Пирятин',
     'липової долини': 'Липова Долина',
     'куп\'янська': 'Куп\'янськ', 'куп\'янську': 'Куп\'янськ',
+    'білої церкви': 'Біла Церква', 'білу церкву': 'Біла Церква',
+    'одессой': 'Одеса', 'одесой': 'Одеса',
+    'черноморском': 'Чорноморськ', 'черноморск': 'Чорноморськ',
 }
 
 # Займенники / прийменникові конструкції — не топоніми («если к нам» → GPT дав place_name=нам)
@@ -781,6 +873,8 @@ INVALID_TOPONYM_TOKENS = frozenset({
     'мне', 'тебе', 'ему', 'ей', 'им', 'ними', 'нами', 'вами',
     'сюди', 'туди', 'звідси', 'звідти', 'тут', 'там',
     'сюда', 'туда', 'здесь',
+    'уходят', 'уходит', 'уйдут', 'ушли', 'все', 'всё',
+    'пролетает', 'пролетают', 'навпроти', 'поки', 'берега', 'берегу', 'строну',
     'куди', 'звідки', 'где', 'когда', 'коли', 'часу', 'час',
     'намъ',  # old orthography noise
     # Напрямкові прикметники (kpszsu: «на східному напрямку»)
@@ -812,6 +906,8 @@ def normalize_place_case(name: str) -> str:
     # Exact match (includes compound names like "малу виску")
     if lowered in ACCUSATIVE_TO_NOMINATIVE:
         return ACCUSATIVE_TO_NOMINATIVE[lowered]
+    if lowered in STEM_PROPER_NAMES:
+        return STEM_PROPER_NAMES[lowered]
     # Compound "Малу X" → "Мала X" (recursive normalization of second word)
     if lowered.startswith('малу '):
         return 'Мала ' + normalize_place_case(name[5:])
@@ -885,7 +981,7 @@ def _strip_emoji(text: str) -> str:
 def classify_event(text: str) -> str:
     """
     Determine event type from text.
-    Priority: allclear > keywords (ballistic > kab > missile > recon > launch > uav > explosion > alert) > leading emoji > any emoji
+    Priority: allclear > keywords (ballistic > kab > missile > air_balloon > recon > launch > uav > explosion > alert) > leading emoji > any emoji
     """
     t = text.lower()
 
@@ -909,8 +1005,8 @@ def classify_event(text: str) -> str:
     if re.search(r'ту[\s-]?95|ту[\s-]?160|ту[\s-]?22м', t):
         return 'alert'
 
-    # Keyword scan (priority: ballistic > kab > missile > recon > launch > uav > explosion > alert)
-    for etype in ['ballistic', 'kab', 'missile', 'recon', 'launch', 'uav', 'explosion', 'alert']:
+    # Keyword scan (priority: ballistic > kab > missile > air_balloon > recon > launch > uav > explosion > alert)
+    for etype in CLASSIFICATION_PRIORITY:
         for kw in EVENT_TYPES[etype]:
             # Skip single-char emoji keywords in text scan — handled below
             if len(kw) <= 2 and not kw.isascii():
@@ -963,6 +1059,8 @@ def extract_oblast_authority(text: str) -> Optional[str]:
 
 def extract_count(text: str) -> int:
     """Extract count of threats: '2х БпЛА', '~10х', '(2х)', 'мінімум 3', '+3 City'."""
+    # Aircraft designators like Су-34 / Су-35 are platform names, not counts.
+    text = re.sub(r'\b(?:су|su)\s*-\s*\d+\b', ' ', text, flags=re.IGNORECASE)
     # Strip emoji characters that can appear between numbers and words (e.g. "7⚠️ Шахедів")
     cleaned = re.sub(r'[^\w\s\(\)\.,-:;!?/\'\'\-~+]', ' ', text)
     m = RE_COUNT_PARENS.search(cleaned)
@@ -1009,7 +1107,11 @@ def clean_noise(text: str) -> str:
 def _extract_place_names(text: str, oblast: Optional[str]) -> list[str]:
     """Extract settlement names. Returns list of candidates (most specific first)."""
     text = _expand_city_abbreviations(text)
-    cleaned = clean_noise(text)
+    # Parentheses often carry context, not a second target: "Пересип (Одеса)".
+    # Keep original text for explicit "(м. X)" extraction, but scan generic
+    # toponyms without parenthetical context to avoid duplicate/wrong pins.
+    text_for_scan = re.sub(r'\([^)]*\)', '', text)
+    cleaned = clean_noise(text_for_scan)
     found: list[tuple[int, str]] = []
 
     _threat_words = set()
@@ -1032,6 +1134,7 @@ def _extract_place_names(text: str, oblast: Optional[str]) -> list[str]:
         'північному', 'північним', 'північній', 'північну', 'північної', 'північний',
         'південному', 'південним', 'південній', 'південну', 'південної', 'південний',
         'акваторії', 'чорного', 'моря', 'передмістя',
+        'море', 'берега', 'берегу', 'берегів',
         'укриття', 'укритт', 'уважн', 'дотримуйтесь',
         'без', 'угрозы', 'без угрозы',
         'підтримати', 'канал', 'підписатися',
@@ -1044,6 +1147,7 @@ def _extract_place_names(text: str, oblast: Optional[str]) -> list[str]:
         'заходять', 'останні', 'вилітають', 'працює',
         'розвернувся', 'крутиться', 'пройдуть', 'транзитом',
         'дорозвідка', 'дорозвідки', 'пуск', 'пусків',
+        'пускових', 'рубежів', 'рубежі', 'рубежу',
         'йдуть', 'йде', 'летять', 'летить', 'прямують',
         'повітряний', 'простір', 'україни',
         # kpszsu-style noise words
@@ -1083,6 +1187,9 @@ def _extract_place_names(text: str, oblast: Optional[str]) -> list[str]:
         'для',
         # Common sentence-start words that get capitalised
         'загроза', 'загрози', 'загрозу', 'загрозою',
+        'курсу', 'курс',
+        'летает', 'летає',
+        'бойова', 'бойову', 'готовність', 'готовності',
         'попередження', 'повідомлення', 'повідомляємо',
         'інформація', 'інформуємо', 'інформують',
         'очікується', 'підтверджено', 'зафіксовано',
@@ -1094,6 +1201,9 @@ def _extract_place_names(text: str, oblast: Optional[str]) -> list[str]:
         'залишається', 'залишаються', 'продовжується',
         'зберігається', 'діє', 'тривають', 'повторюється',
         'окупант', 'окупанти', 'ворог', 'противник',
+        'виліз', 'вилізли', 'лазить', 'лазять',
+        'апд', 'апдейт',
+        'брянській', 'брянська', 'брянської', 'брянщині',
         'зафіксований', 'зафіксована', 'зафіксовані',
         'територіальна', 'територіальної', 'територіальну',
         'громада', 'громади', 'громаду',
@@ -1112,6 +1222,9 @@ def _extract_place_names(text: str, oblast: Optional[str]) -> list[str]:
         # Allclear / status words
         'більше', 'поточна', 'ситуація', 'даний', 'момент',
         'кружляють', 'кружляє', 'кружляли',
+        'пролетает', 'пролетают', 'пролітає', 'пролітають',
+        'навпроти', 'строну', 'сторону', 'поки',
+        'нему', 'идет', 'идёт', 'работа',
         # UAV movement verbs (not places!)
         'продовжує', 'продовжують', 'змінив', 'змінила', 'змінили',
         'повернувся', 'повернулася', 'розвернувся', 'розвернулася',
@@ -1123,6 +1236,11 @@ def _extract_place_names(text: str, oblast: Optional[str]) -> list[str]:
         'протиповітряна', 'протиповітряної', 'протиповітряну',
         'оборона', 'оборони', 'обороні', 'оборону',
         'сили', 'силами', 'засоби', 'засобами',
+        'пілот', 'пілоти', 'пілотів', 'пілотами',
+        'підрозділ', 'підрозділу', 'підрозділи', 'підрозділів',
+        'бригада', 'бригади', 'бригаду', 'бригаді',
+        'військові', 'військовий', 'військових',
+        'бійці', 'бійців', 'боєць',
         # Phrases/words incorrectly parsed as place names (from log analysis)
         'ракет', 'ракети', 'ракету', 'ракетою', 'ракетам', 'ракетами',
         'напрямку', 'напрямок', 'напрямком', 'напрямки', 'напрямках',
@@ -1169,6 +1287,8 @@ def _extract_place_names(text: str, oblast: Optional[str]) -> list[str]:
         'лишилось', 'лишився', 'лишилася', 'лишилися',
         'борт', 'бортів', 'бортом',
         'здійснює', 'здійснюють', 'переліт', 'перельот',
+        'уходят', 'уходит', 'уйдут', 'ушли', 'все', 'всё',
+        'берега', 'берегу', 'берегів', 'навпроти', 'поки',
         'нові', 'новий', 'нова', 'нових',
         'довернув', 'довернула', 'довернули', 'доворот',
         'десяток', 'десятка', 'десятків',
@@ -1225,6 +1345,32 @@ def _extract_place_names(text: str, oblast: Optional[str]) -> list[str]:
             if len(c) >= 3 and len(e) >= 3 and (c.startswith(e[:3]) or e.startswith(c[:3])):
                 return True
         return False
+
+    # Curated tiny/local names observed in regional tracker channels. Generic
+    # capitalization rules often miss them because only part of the phrase is
+    # capitalized ("Залізного порту") or the channel uses an abbreviation.
+    _local_patterns = [
+        (r'\bЗалізн(?:ий|ого)\s+порт[ау]?\b', 'Залізний Порт'),
+        (r'\bТендрівськ(?:а|ої)\s+кос[аи]\b', 'Тендрівська коса'),
+        (r'\bСередина[\-\s]Буда\b', 'Середина-Буда'),
+        (r'\bВелика\s+Бурімк[аеиіу]\b', 'Велика Бурімка'),
+        (r'\bЕсман[ьи]\b', 'Есмань'),
+        (r'\bСанжійк[аеиіу]\b', 'Санжійка'),
+        (r'\bГрибівк[аеиіу]\b', 'Грибівка'),
+        (r'\bРибаківк[аеиіу]\b', 'Рибаківка'),
+        (r'\bМорське\b', 'Морське'),
+        (r'\bОбознівк[аеиіу]\b|\bОбозновк[аеиіу]\b', 'Обознівка'),
+        (r'\bПустовійтове\b|\bПустовойтовое\b', 'Пустовійтове'),
+        (r'\bПоток(?:и|ів)?\b', 'Потоки'),
+        (r'\bКияшк[иів]\b|\bКияшек\b', 'Кияшки'),
+        (r'\bЦаричанк[аеиіу]\b|\bЦаричанк[и]\b', 'Царичанка'),
+        (r'\bНовоселиц[яі]\b', 'Новоселиця'),
+        (r'\bЛящівк[аеиіу]\b', 'Лящівка'),
+    ]
+    for pat, canonical in _local_patterns:
+        for m in re.finditer(pat, text, re.IGNORECASE):
+            if not _stem_dup(found, canonical):
+                found.append((m.start(), canonical))
 
     # ОВА у дужках: "(м. Борова)", "(смт. Дачне)" — інакше губиться після strip(...)
     for m in re.finditer(
@@ -1296,11 +1442,11 @@ def _extract_place_names(text: str, oblast: Optional[str]) -> list[str]:
     prep_matches = re.finditer(
         r'(?:'
         r'(?<![А-ЯІЇЄҐа-яіїєґ])(?:в|у|з|к)\s+'
-        r'|(?:по|на|до|під|над|із|зі|від|для|через|біля|повз|перед)\s+'
+        r'|(?:по|на|до|під|над|із|зі|від|для|через|біля|повз|навпроти|перед|возле)\s+'
         r')'
         r'(?:бік\s+|сторону\s+|напрямку\s+)?'
         r'([А-ЯІЇЄҐа-яіїєґ][' + _CYR_NAME + r']{2,}(?:[\s\-][А-ЯІЇЄҐа-яіїєґ][' + _CYR_NAME + r']+)?)',
-        text, re.IGNORECASE
+        text_for_scan, re.IGNORECASE
     )
     # Helper: check if a candidate is a stem-duplicate of an already found city
     def _is_stem_dup(candidate: str) -> bool:
@@ -1312,7 +1458,8 @@ def _extract_place_names(text: str, oblast: Optional[str]) -> list[str]:
                 return True
         return False
 
-    _PREP_FIRST = {'повз', 'біля', 'на', 'над', 'у', 'в', 'з', 'із', 'зі',
+    _PREP_FIRST = {'повз', 'біля', 'навпроти', 'возле', 'р-н', 'рн',
+                    'на', 'над', 'у', 'в', 'з', 'із', 'зі',
                     'до', 'від', 'під', 'за', 'через', 'по', 'без', 'між',
                     'про', 'для', 'при', 'к', 'та', 'і', 'й', 'або', 'перед'}
     _trailing_noise = _stop | _PREP_FIRST
@@ -1363,7 +1510,7 @@ def _extract_place_names(text: str, oblast: Optional[str]) -> list[str]:
     # Clean text from parentheticals to prevent "City (District)" double-counting
     text_no_parens = re.sub(r'\([^)]*\)', '', text)
     proper_nouns = re.findall(
-        r'(?:^|[\s,])([А-ЯІЇЄҐ][' + _CYR_NAME + r']{2,}(?:\s+[А-ЯІЇЄҐ][' + _CYR_NAME + r']+)?)',
+        r'(?:^|[^\wА-ЯІЇЄҐа-яіїєґ])([А-ЯІЇЄҐ][' + _CYR_NAME + r']{2,}(?:\s+[А-ЯІЇЄҐ][' + _CYR_NAME + r']+)?)',
         text_no_parens
     )
     for noun in proper_nouns:
@@ -1392,15 +1539,35 @@ def _extract_place_names(text: str, oblast: Optional[str]) -> list[str]:
     return [name for _, name in found if name.lower() not in _stop]
 
 
+def _clean_direction_target(value: str) -> Optional[str]:
+    target = (value or '').strip()
+    if not target:
+        return None
+    words = target.split()
+    while len(words) > 1 and words[-1].lower() in {'з', 'із', 'зі', 'iз', 'с', 'со'}:
+        words.pop()
+    target = ' '.join(words).strip()
+    return target or None
+
+
 def _extract_direction(text: str) -> Optional[str]:
     """Extract direction target (city name or cardinal direction)."""
+    ma = RE_ARROW_TARGET.search(text)
+    if ma:
+        return _clean_direction_target(ma.group(1))
     m = RE_DIRECTION.search(text)
     if m:
-        return m.group(1).strip()
+        return _clean_direction_target(m.group(1))
     # "в напрямку X"
     mn = RE_DIRECTION_NAPRYAMKU.search(text)
     if mn:
-        return mn.group(1).strip()
+        return _clean_direction_target(mn.group(1))
+    ms = RE_DIRECTION_SIDE.search(text)
+    if ms:
+        return _clean_direction_target(ms.group(1))
+    mb = RE_DIRECTION_BARE_COURSE.search(text)
+    if mb:
+        return _clean_direction_target(mb.group(1))
     # Cardinal direction: "курсом на захід" → "захід"
     mc = RE_CARDINAL_DIRECTION.search(text)
     if mc:
@@ -1431,23 +1598,25 @@ def _extract_direction(text: str) -> Optional[str]:
         if stem.startswith('південн'): return 'південь'
     m2 = re.search(r'далі\s+(?:на\s+)?([А-ЯІЇЄҐа-яіїєґ][' + _CYR_NAME + r']+)', text, re.IGNORECASE)
     if m2:
-        return m2.group(1).strip()
+        return _clean_direction_target(m2.group(1))
     mu = RE_UNDER_DIRECTION.search(text)
     if mu:
-        return mu.group(1).strip()
+        return _clean_direction_target(mu.group(1))
     m3 = RE_TARGET_DIRECTION.search(text)
     if m3:
-        return m3.group(1).strip()
+        return _clean_direction_target(m3.group(1))
     m4 = RE_MOVEMENT_DIRECTION.search(text)
     if m4:
-        return m4.group(1).strip()
+        return _clean_direction_target(m4.group(1))
     return None
 
 
 def _extract_near(text: str) -> Optional[str]:
     m = RE_NEAR.search(text)
     if m:
-        return m.group(1).strip()
+        near = m.group(1).strip()
+        near = re.split(r'\b(?:далі|потім|курс(?:ом)?|напрям(?:ок|ку)?)\b', near, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        return near or None
     return None
 
 
@@ -1695,13 +1864,23 @@ def _split_multi_entry(text: str) -> list[tuple[Optional[str], str]]:
 
     # Strategy 1.5: Handle direct →City format: "✈️ БПЛA→Суми/р-н" / "🚀→Дніпро/р-н"
     # These have no oblast header but use arrow directly attached to city
-    arrow_format = re.findall(
-        r'[→]\s*([А-ЯІЇЄҐа-яіїєґ\'\'\ʼ][а-яіїєґ\'\'\ʼ\-]{1,}(?:[/][А-ЯІЇЄҐа-яіїєґ\'\'\ʼ][а-яіїєґ\'\'\ʼ\-]+)*(?:\s*/\s*р[\-\s]?н)?(?:\s*\([^)]*\))?)',
+    arrow_format = list(re.finditer(
+        r'[→➡]\s*([А-ЯІЇЄҐа-яіїєґ\'\'\ʼ][а-яіїєґ\'\'\ʼ\-]{1,}(?:[/][А-ЯІЇЄҐа-яіїєґ\'\'\ʼ][а-яіїєґ\'\'\ʼ\-]+)*(?:\s*/\s*р[\-\s]?н)?(?:\s*\([^)]*\))?)',
         text, re.IGNORECASE
-    )
+    ))
     if not entries and arrow_format:
-        for af in arrow_format:
-            af = af.strip().rstrip('.')
+        for idx, match in enumerate(arrow_format):
+            af = match.group(1).strip().rstrip('.')
+            tail_end = arrow_format[idx + 1].start() if idx + 1 < len(arrow_format) else len(text)
+            tail = text[match.end():tail_end].strip()
+            origin_tail = ''
+            origin_tail_m = re.match(
+                r'\s*(?:з|із|зі|iз)\s+[' + _CYR_NAME + r']{3,}(?:\s+[' + _CYR_NAME + r']{3,})?',
+                tail,
+                re.IGNORECASE,
+            )
+            if origin_tail_m:
+                origin_tail = origin_tail_m.group(0).strip()
             if '/' in af:
                 parts = af.split('/')
                 count_match = re.search(r'\(\s*~?\s*\d+\s*[хxХX]?\s*\)', af)
@@ -1712,10 +1891,15 @@ def _split_multi_entry(text: str) -> list[tuple[Optional[str], str]]:
                         continue
                     part_clean = re.sub(r'\s*\([^)]*\)\s*', '', part).strip()
                     if part_clean and len(part_clean) > 1:
-                        entry_text = f"{part_clean} {count_suffix}".strip() if count_suffix else part_clean
+                        entry_text = f"→{part_clean} {count_suffix}".strip() if count_suffix else f"→{part_clean}"
+                        if origin_tail:
+                            entry_text = f"{entry_text} {origin_tail}"
                         entries.append((None, entry_text))
             else:
-                entries.append((None, af))
+                entry_text = f"→{af}"
+                if origin_tail:
+                    entry_text = f"{entry_text} {origin_tail}"
+                entries.append((None, entry_text))
         if entries:
             return entries
 
@@ -1743,6 +1927,21 @@ def _split_multi_entry(text: str) -> list[tuple[Optional[str], str]]:
             if p and len(re.sub(r'[^\w]', '', p)) >= 3:
                 entries.append((None, p))
         return entries if entries else [(None, text)]
+
+    # Strategy 2.2: Compact comma-separated tracker lines:
+    # "2 БпЛА на Полтаву, 1 на Миргород".
+    if ',' in text and re.search(r'\d', text):
+        parts = [p.strip() for p in text.split(',')]
+        comma_entries = []
+        for i, part in enumerate(parts):
+            if not part or len(re.sub(r'[^\w]', '', part)) < 2:
+                continue
+            if i > 0 and re.match(r'^\d+\s+(?:на|до|в|у|біля|повз)\s+', part, re.IGNORECASE):
+                comma_entries.append('БПЛА ' + part)
+            elif any(kw in part.lower() for kws in EVENT_TYPES.values() for kw in kws if len(kw) > 2):
+                comma_entries.append(part)
+        if len(comma_entries) > 1:
+            return [(None, part) for part in comma_entries]
 
     # Strategy 2.5: Digit-prefixed lines (monikppy / informal format)
     # "3 шахеди на Старий Мерчик\n1 західніше Харкова\n1 біля Чугуєва"
@@ -1944,12 +2143,15 @@ def _is_planning_message(normalized: str, raw_text: str) -> bool:
 
 _PLANNING_VERBS = [
     'планує', 'готує', 'готується', 'збирається', 'планують', 'готують',
+    'планирует', 'готовит', 'готовится', 'готовятся', 'подготовка',
 ]
 _PLANNING_FUTURE_REFS = [
     'найближчі', 'найближчих', 'у перспективі', 'протягом наступних',
+    'ближайшее время', 'в ближайшее время', 'ближайшие',
 ]
 _PLANNING_CONTEXT = [
     'можуть бути залучені', 'засоби ураження', 'для удару',
+    'к пуску', 'пуски ожидаются', 'ожидаются пуски',
 ]
 
 
@@ -1973,11 +2175,31 @@ def _is_planning_message(normalized: str, raw_text: str) -> bool:
         r'планує\s+(?:нанесення|удар|атаку|застосування)',
         r'у\s+найближчі\s+\d+\s+(?:годин|хвилин|днів|діб)',
         r'можуть\s+бути\s+залучені',
+        r'подготовк[аи]\s+к\s+пуск',
+        r'пуск\w*\s+ожида\w*',
+        r'ожида\w*\s+пуск',
     ]
     for pat in planning_patterns:
         if re.search(pat, normalized):
             return True
 
+    return False
+
+
+_NON_THREAT_CONTEXT_PATTERNS = [
+    r'\b(?:погод[аиу]|прогноз\s+погод[иы]|weather)\b',
+    r'\b(?:завтра|сьогодні|сегодня)\s+у\s+[а-яіїєґ]+(?:і|е|у)?\s+від\s*[-+]?\d+\s*[℃°]',
+    r'(?:[🌥☁⛅🌦🌧☀️]|☂️|🌀).{0,80}(?:[℃°]|хмарно|дощ|дожд|вітер|ветер|прояснення)',
+    r'(?:^|\n)\s*[•\-–]\s*\d{2}:\d{2}\s*[:：].{0,80}(?:[℃°]|☂️|🌀)',
+    r'\b(?:хмарно|пасмурно|дощ|дождь|прояснення|опади|осадки)\b',
+]
+
+
+def _is_non_threat_context(normalized: str, raw_text: str) -> bool:
+    """Detect non-operational posts that mention places but are not threats."""
+    for pat in _NON_THREAT_CONTEXT_PATTERNS:
+        if re.search(pat, normalized, re.IGNORECASE):
+            return True
     return False
 
 
@@ -1994,6 +2216,7 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
 
     # Strip channel signatures from message tail BEFORE any processing
     text = _strip_channel_signatures(text)
+    text = _expand_city_abbreviations(text)
 
     normalized = normalize_text(text)
     for neg in NEGATION_KEYWORDS:
@@ -2046,7 +2269,26 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
         r'планує\s+(?:нанесення|удар|атаку|застосування)',
         r'у\s+найближчі\s+\d+\s+(?:годин|хвилин|днів|діб)',
         r'можуть\s+бути\s+залучені',
+        r'подготовк[аи]\s+к\s+пуск',
+        r'пуск\w*\s+ожида\w*',
+        r'ожида\w*\s+пуск',
         r'засоби\s+ураження',
+        r'протягом\s+(?:ночі|доби|72\s*годин)',
+        r'немає\s+ознак\s+на\s+обстріл',
+        r'не\s+очікуємо',
+        r'петиці[яї]',
+        r'\bобмін\b',
+        r'\bполон[уаі]?\b',
+        r'з\s+полону',
+        r'повернувс[ья]\s+з\s+полону',
+        r'\bсбу\b.*\bдбр\b',
+        r'затримал[аи]\s+[«"“]?крот',
+        # Military / tech news about drones, not live airborne threats.
+        r'(?:пілот[иів]?|бійц[іів]?|військов[іий]+|підрозділ\w*|бригад[аеиіу])'
+        r'.{0,120}(?:fpv[\-\s]?дрон|фпв[\-\s]?дрон|дрон\w*)'
+        r'.{0,120}(?:встановил|оснастил|обладнал|саморобн|дробовик|скид|боєприпас)',
+        r'(?:fpv[\-\s]?дрон|фпв[\-\s]?дрон|дрон\w*)'
+        r'.{0,120}(?:встановил|оснастил|обладнал|саморобн|дробовик|скид|боєприпас)',
         # Casualty / aftermath news — NOT active threats
         r'загину[лвш]',
         r'поранен[іоа]',
@@ -2081,13 +2323,28 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
         log.debug(f"PARSER DROP [planning]: '{text[:60]}'")
         return [ParsedEntities(event_type='info', raw_text=text, is_negation=True)]
 
+    # ── Non-threat content gate ───────────────────────────────────────
+    # Weather / daily info posts mention real cities and many numbers, but are
+    # not operational threat reports. Drop before any place extraction.
+    if _is_non_threat_context(normalized, text):
+        log.debug(f"PARSER DROP [non-threat-context]: '{text[:60]}'")
+        return [ParsedEntities(event_type='info', raw_text=text, is_negation=True)]
+
     entries = _split_multi_entry(text)
     results: list[ParsedEntities] = []
     msg_oblast = extract_oblast_authority(text)
+    _origin_oblast_context = bool(re.search(
+        r'\b(?:з|із|зі|iз)\s+[а-яіїєґ]+(?:щини|ччини|ської|зької|цької)\b',
+        normalized,
+        re.IGNORECASE,
+    ))
     # Multi-line bullets without a shared regional header (e.g. monitor1654:
     # «▪️1 на Ізюм / ▪️1 на Дніпропетровщину»): a -щину/-щини hit in one bullet
     # must not stamp msg_oblast on every entry — that mislabels Харків as Дніпропетровська.
-    _suppress_msg_oblast = len(entries) > 1 and all(h is None for h, _ in entries)
+    _suppress_msg_oblast = (
+        (len(entries) > 1 and all(h is None for h, _ in entries))
+        or _origin_oblast_context
+    )
 
     for header_oblast, entry_text in entries:
         event_type = classify_event(entry_text)
@@ -2122,13 +2379,50 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
                 cleared_threat_type = _extract_cleared_threat_type(text)
             event_type = 'allclear'
 
-        oblast = header_oblast or extract_oblast_authority(entry_text)
+        oblast = header_oblast or (None if _origin_oblast_context else extract_oblast_authority(entry_text))
         if not _suppress_msg_oblast:
             oblast = oblast or msg_oblast
         place_names = [normalize_place_case(pn) for pn in _extract_place_names(entry_text, oblast)]
         direction = _extract_direction(entry_text)
         near = _extract_near(entry_text)
         count = extract_count(entry_text)
+        _direction_from_arrow = bool(RE_ARROW_TARGET.search(entry_text))
+
+        explicit_oblast_direction = None
+        filtered_place_names: list[str] = []
+        for pn in place_names:
+            pn_oblast = _oblast_from_adjective_token(pn)
+            if pn_oblast:
+                explicit_oblast_direction = pn
+                if re.search(
+                    r'\b(?:з|із|зі|iз)\s+' + re.escape(pn) + r'\b',
+                    entry_text,
+                    re.IGNORECASE,
+                ):
+                    continue
+                # In sectioned aggregator messages, the header is the target
+                # oblast; "через Запорізьку обл" is route context, not a reason
+                # to relabel the section target.
+                if not header_oblast:
+                    oblast = pn_oblast
+                continue
+            filtered_place_names.append(pn)
+        place_names = filtered_place_names
+        if explicit_oblast_direction and not direction:
+            direction = explicit_oblast_direction
+
+        if not explicit_oblast_direction:
+            dir_oblast_match = re.search(
+                r'\b(?:на|в|у|до)\s+([А-ЯІЇЄҐа-яіїєґ]+(?:ську|зьку|цьку|скую|цкую|зкую|щину))\b',
+                entry_text,
+                re.IGNORECASE,
+            )
+            if dir_oblast_match:
+                dir_token = dir_oblast_match.group(1)
+                dir_oblast = _oblast_from_adjective_token(dir_token)
+                if dir_oblast:
+                    oblast = dir_oblast
+                    direction = direction or dir_token
 
         # Dedup place names (case-insensitive) — prevents count division by duplicates
         _seen_places: set[str] = set()
@@ -2142,7 +2436,7 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
 
         # Extract launch origin for ballistic/launch/uav events
         origin = None
-        if event_type in ('ballistic', 'launch', 'uav'):
+        if event_type in ORIGIN_EVENT_TYPES:
             origin = _extract_origin(entry_text)
             # Fallback to full message only for single-entry messages
             # (multi-entry: origin in one block shouldn't bleed to other oblasts)
@@ -2166,7 +2460,19 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
         # When direction is a city name (not cardinal), use as target_city for DIMAP
         _target_city_from_direction = None
         if direction and direction.lower().strip() not in CARDINAL_DIRECTIONS:
-            _target_city_from_direction = normalize_place_case(direction)
+            if not _oblast_from_adjective_token(direction):
+                _target_city_from_direction = normalize_place_case(direction)
+                if _direction_from_arrow:
+                    place_names = [
+                        pn for pn in place_names
+                        if pn.lower() != _target_city_from_direction.lower()
+                    ]
+                    # Arrow notation marks destination, not current position. Prefer
+                    # the destination oblast over an origin oblast extracted from "з ...щини".
+                    for _stem, _official in OBLAST_NORMALIZATION.items():
+                        if _stem in _target_city_from_direction.lower():
+                            oblast = _official
+                            break
 
         # ── Transit detection: "з Xщини на Yщину" ──────────────────────
         # Cross-oblast transit: origin is one oblast, destination is another.
@@ -2216,7 +2522,7 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
         # Multiple distinct place_names → separate entities (e.g. slash-split leftovers)
         # Note: Do not split if this describes a trajectory (e.g. "повз Київ далі Васильків")
         _is_trajectory = bool(re.search(r'\b(?:далі|потім|курсом|через)\b', entry_text, re.IGNORECASE))
-        if len(place_names) > 1 and event_type in ('uav', 'missile', 'ballistic', 'kab', 'recon') and not _is_trajectory:
+        if len(place_names) > 1 and event_type in MULTI_PLACE_EVENT_TYPES and not _is_trajectory:
             per_count = max(1, count // len(place_names))
             for pn in place_names:
                 results.append(ParsedEntities(
@@ -2233,9 +2539,17 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
                     target_city=_transit_target_city or _target_city_from_direction,
                 ))
         else:
+            # Траєкторія: «курсом на X», «через …» — не ділиться на кілька сутностей, і
+            # _extract_place_names() інколи перший токен дає хибне місто (порядок/абревіат. «Кр. Рог»).
+            # У такому випадку ціль курсу з RE_DIRECTION надійніша за place_names[0].
+            _tcourse = _transit_target_city or _target_city_from_direction
+            if _is_trajectory and _tcourse:
+                _primary_place = _tcourse
+            else:
+                _primary_place = place_names[0] if place_names else (normalize_place_case(near) if near else None)
             results.append(ParsedEntities(
                 event_type=event_type,
-                place_name=place_names[0] if place_names else None,
+                place_name=_primary_place,
                 oblast=oblast,
                 direction=direction,
                 near=near,
@@ -2244,7 +2558,7 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
                 raw_text=entry_text,
                 is_allclear=is_allclear,
                 cleared_threat_type=cleared_threat_type,
-                target_city=_transit_target_city or _target_city_from_direction,
+                target_city=_tcourse,
             ))
 
     if not results:
@@ -2254,7 +2568,7 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
             cleared_threat_type = _extract_cleared_threat_type(text) if is_allclear else None
             fallback_event = 'allclear' if is_allclear else event_type
             fallback_origin = None
-            if fallback_event in ('ballistic', 'launch', 'uav'):
+            if fallback_event in ORIGIN_EVENT_TYPES:
                 fallback_origin = _extract_origin(text)
                 # Filter origin from place_names
                 if fallback_origin and place_names:

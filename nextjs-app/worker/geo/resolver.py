@@ -46,6 +46,12 @@ except ImportError:
     def normalize_place_case(name: str) -> str:
         return name
 
+try:
+    from geo.place_guardrails import is_garbage_place_token
+except ImportError:
+    def is_garbage_place_token(place: Optional[str]) -> bool:  # type: ignore[misc]
+        return False
+
 # Strip leading "напрямок на / курсом на / на " from direction field to get a toponym
 _DIRECTION_TOKEN_STRIP = re.compile(
     r'^(?:➡️\s*)?(?:(?:напрям(?:ок|ку)|курс(?:ом)?|рух|вектор|йдуть|йде|летять|летить|прямують|прямує)\s+)?'
@@ -170,6 +176,14 @@ def _try_external_geocoders(
     return None
 
 
+def _external_learn_allowed(lat: float, lng: float, oblast_gate_hint: Optional[str]) -> bool:
+    """Only persist external geocoder hits when they satisfy explicit oblast context."""
+    ob_key = rules.resolve_oblast_bbox_key(oblast_gate_hint)
+    if not ob_key:
+        return True
+    return rules.point_in_expanded_oblast_bbox(lat, lng, ob_key)
+
+
 # ── Main resolve ─────────────────────────────────────────────────────────────
 
 def resolve(
@@ -217,6 +231,13 @@ def resolve(
     if place_name != original_name:
         log.debug(f"[RESOLVE] Normalized: '{original_name}' -> '{place_name}'")
 
+    if is_garbage_place_token(place_name) or is_garbage_place_token(original_name):
+        log.info(f"[RESOLVE] Rejected garbage place token: {original_name!r}")
+        return ResolvedLocation(
+            lat=0.0, lng=0.0, oblast=oblast_hint or '', raion=None,
+            place_name=place_name or original_name, confidence=0.0, status='rejected', chosen_from=[],
+        )
+
     _hom_fix = disambiguate_homonym_place(place_name, oblast_hint)
     if _hom_fix != place_name:
         log.info(f"[RESOLVE] Homonym disambiguation: '{place_name}' → '{_hom_fix}' (oblast={oblast_hint})")
@@ -228,9 +249,18 @@ def resolve(
             return False
         if 'чорноморськ' in x:
             return False
+        # АЧМ = азово-чорноморська акваторія (той самий морський пін, що «Чорне море»)
+        if x in (
+            'ачм',
+            'а/чм',
+            'а.ч.м.',
+            'а ч м',
+        ):
+            return True
         if x in (
             'чорне море', 'чорного моря', 'чорному морю', 'чорним морем',
             'чорне морю',
+            'море', 'морі', 'в морі',
         ):
             return True
         if 'чорне мор' in x or 'чорного мор' in x or 'чорному мор' in x or 'чорним мор' in x:
@@ -331,7 +361,8 @@ def resolve(
             )
             # Add to list rather than replacement! The score engine will pick the winner.
             candidates.append(c_ext)
-            learn_from_external(ext_used, lat, lng, oblast_hint, api_source)
+            if _external_learn_allowed(lat, lng, oblast_gate_hint):
+                learn_from_external(ext_used, lat, lng, oblast_hint, api_source)
             if ext_used != place_name:
                 learn_alias(place_name, ext_used)
             if original_name != place_name and original_name.lower() != ext_used.lower():
@@ -370,7 +401,8 @@ def resolve(
                 )
                 nc.score -= 2
                 candidates.append(nc)
-                learn_from_external(ext_used_near, lat, lng, oblast_hint, api_source)
+                if _external_learn_allowed(lat, lng, oblast_gate_hint):
+                    learn_from_external(ext_used_near, lat, lng, oblast_hint, api_source)
                 log.info(f"[RESOLVE] External geocode for near-reference '{near_place}' → ({lat:.4f},{lng:.4f})")
 
     # ── 3b. Direction field may name a different settlement than place_name ──
@@ -382,6 +414,8 @@ def resolve(
         if (
             len(dir_tok) >= 3
             and not _first_word_is_cardinal(dir_tok)
+            and not is_garbage_place_token(dir_tok)
+            and not is_garbage_place_token(dir_raw)
             and dir_tok.lower() not in seen_variant
         ):
             dir_lower = dir_tok.lower()
@@ -411,7 +445,8 @@ def resolve(
                         )
                         dc.score -= 2.5
                         candidates.append(dc)
-                        learn_from_external(ext_used_dir, lat, lng, oblast_hint, api_source)
+                        if _external_learn_allowed(lat, lng, oblast_gate_hint):
+                            learn_from_external(ext_used_dir, lat, lng, oblast_hint, api_source)
                         log.info(
                             f"[RESOLVE] External geocode for direction-target '{dir_tok}' → ({lat:.4f},{lng:.4f})"
                         )

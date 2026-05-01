@@ -3,6 +3,7 @@
 
 import { publishSSE, subscribeSSE, redisGetCount } from '@/lib/redis';
 import { requireChatAuth } from '@/lib/chat-auth';
+import { coalesceMarkerNewEvents } from '@/lib/marker-sse-coalesce';
 
 const MAX_SSE_CLIENTS = 10_000;
 const MAX_SSE_PER_IP = 5;
@@ -62,20 +63,19 @@ function cleanupDead(deadClients: ReadableStreamDefaultController[]) {
   }
 }
 
-let _pendingMarker: Record<string, unknown> | null = null;
+let _pendingMarkers: Record<string, unknown>[] = [];
 let _markerTimer: ReturnType<typeof setTimeout> | null = null;
 
 let _onlineTimer: ReturnType<typeof setTimeout> | null = null;
 
 function debouncedMarkerBroadcast(marker: Record<string, unknown>) {
-  _pendingMarker = marker;
+  _pendingMarkers.push(marker);
   if (_markerTimer) return;
   _markerTimer = setTimeout(() => {
     _markerTimer = null;
-    if (_pendingMarker) {
-      rawPublish({ type: 'marker_new', data: _pendingMarker });
-      _pendingMarker = null;
-    }
+    const event = coalesceMarkerNewEvents(_pendingMarkers);
+    _pendingMarkers = [];
+    if (event) rawPublish(event);
   }, MARKER_DEBOUNCE_MS);
 }
 
@@ -215,6 +215,22 @@ export async function handleChatSSEGet(request: Request) {
           )
         );
       } catch { /* ignore */ }
+
+      // Current alarms snapshot — SSE otherwise only pushes `alarm_update` when Redis data changes,
+      // so new clients would wait for the next HTTP poll (60s) or API tick.
+      try {
+        const { redisGet } = await import('@/lib/redis');
+        const alarms = await redisGet<unknown[]>('alarms:all');
+        if (alarms && Array.isArray(alarms)) {
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ type: 'alarm_update', data: alarms })}\n\n`,
+            ),
+          );
+        }
+      } catch {
+        /* Redis optional / cold start */
+      }
     },
     async cancel(controller) {
       clients.delete(controller);

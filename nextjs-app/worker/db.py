@@ -11,6 +11,7 @@ Deduplication uses an in-memory set with automatic cleanup to avoid unbounded gr
 import logging
 import time
 import threading
+import hashlib
 
 log = logging.getLogger(__name__)
 
@@ -45,11 +46,33 @@ class InMemoryDB:
                 return False
             return True
 
+    def is_message_content_processed(self, channel_id: int, msg_id: int, text: str) -> bool:
+        """Return True when the exact current content for this Telegram message was already handled."""
+        digest = hashlib.sha1((text or '').strip().encode('utf-8')).hexdigest()[:16]
+        key = f"{channel_id}:{msg_id}:content:{digest}"
+        with self._lock:
+            ts = self._processed.get(key)
+            if ts is None:
+                return False
+            if time.time() - ts > DEDUP_TTL:
+                del self._processed[key]
+                return False
+            return True
+
     def mark_message_processed(self, channel_id: int, msg_id: int) -> None:
         key = f"{channel_id}:{msg_id}"
         with self._lock:
             self._processed[key] = time.time()
             # Cleanup if too large
+            if len(self._processed) > MAX_DEDUP_SIZE:
+                self._cleanup()
+
+    def mark_message_content_processed(self, channel_id: int, msg_id: int, text: str) -> None:
+        """Remember the exact text version of a message, including edited messages."""
+        digest = hashlib.sha1((text or '').strip().encode('utf-8')).hexdigest()[:16]
+        key = f"{channel_id}:{msg_id}:content:{digest}"
+        with self._lock:
+            self._processed[key] = time.time()
             if len(self._processed) > MAX_DEDUP_SIZE:
                 self._cleanup()
 

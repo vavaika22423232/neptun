@@ -91,6 +91,11 @@ export function mapStoreRecordToMarker(m: Record<string, unknown>): Marker {
     flight_phase: flightPhase,
     ticker_bearing: (m.ticker_bearing as number) ?? null,
     is_estimated: Boolean(m.is_estimated),
+    track_state: m.track_state as Marker['track_state'],
+    track_confidence: typeof m.track_confidence === 'number' ? m.track_confidence : undefined,
+    motion_reason: typeof m.motion_reason === 'string' ? m.motion_reason : undefined,
+    last_observation_epoch:
+      typeof m.last_observation_epoch === 'number' ? m.last_observation_epoch : undefined,
     positions: Array.isArray(m.positions)
       ? sanitizeTrackPoints(
           (m.positions as Array<Record<string, unknown>>).slice(-24).map((p) => ({
@@ -113,12 +118,28 @@ export function mapStoreRecordToMarker(m: Record<string, unknown>): Marker {
           speedCap,
         ).slice(-20)
       : undefined,
+    rejected_observations: Array.isArray(m.rejected_observations)
+      ? sanitizeTrackPoints(
+          (m.rejected_observations as Array<Record<string, unknown>>).slice(-24).map((p) => ({
+            lat: Number(p.lat),
+            lng: Number(p.lng),
+            ts: normalizeTrackPointTs(Number(p.ts)),
+            source: (p.source || '') as string,
+            reason: (p.reason || '') as string,
+            confidence: typeof p.confidence === 'number' ? p.confidence : Number(p.confidence),
+          })),
+          speedCap,
+          { burstFactor: 99, minDistKmForSpike: Number.POSITIVE_INFINITY },
+        ).slice(-20) as Marker['rejected_observations']
+      : undefined,
     observation_count: (m.observation_count as number) || undefined,
     oblast: (m.oblast || '') as string,
     resolved_oblast_hasc: (m.resolved_oblast_hasc as string) || undefined,
     region_key: (m.region_key as string) || undefined,
     manual: Boolean(m.manual),
     geocode_tier: (m.geocode_tier as string) || undefined,
+    geo_decision_reason: (m.geo_decision_reason as string) || undefined,
+    geocode_source: (m.geocode_source as string) || undefined,
     candidates_count: typeof m.candidates_count === 'number' ? m.candidates_count : undefined,
     candidates: m.candidates as Marker['candidates'],
   } as Marker;

@@ -57,6 +57,30 @@ export const ChatSendSchema = z.object({
   { message: 'message is required' },
 );
 
+export const ChatModeratorBanUserSchema = z.object({
+  nickname: z.string().max(64).optional(),
+  deviceId: z.string().min(1).max(128),
+  targetDeviceId: z.string().max(128).optional(),
+  reason: z.string().max(500).optional(),
+}).refine(
+  (data) => data.nickname || data.targetDeviceId,
+  { message: 'nickname or targetDeviceId is required' },
+);
+
+export const ChatAdminBanUserSchema = z.object({
+  nickname: z.string().max(64).optional(),
+  deviceId: z.string().max(128).optional(),
+  reason: z.string().max(500).optional(),
+}).refine(
+  (data) => data.nickname || data.deviceId,
+  { message: 'nickname or deviceId is required' },
+);
+
+export const ChatUnbanUserSchema = z.object({
+  nickname: z.string().min(1).max(64),
+  deviceId: z.string().max(128).optional(),
+});
+
 export const AuthTokenSchema = z.object({
   deviceId: z.string().min(1).max(128),
   nickname: z.string().max(64).nullable().optional(),

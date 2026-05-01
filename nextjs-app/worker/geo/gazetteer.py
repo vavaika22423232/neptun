@@ -16,6 +16,37 @@ log = logging.getLogger(__name__)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), 'data', 'settlements.db')
 
+# Live regional Telegram channels often use tiny villages / resort names that are
+# missing from the bundled seed DB. Keep a narrow curated layer for observed
+# tracker vocabulary so parsing does not depend on an external geocoder.
+_MANUAL_PLACES: dict[str, tuple[str, float, float, str, Optional[str], str, int]] = {
+    'есмань': ('Есмань', 51.7672310, 34.0634500, 'Сумська область', 'Шосткинський', 'селище', 1500),
+    'середина-буда': ('Середина-Буда', 52.1886906, 34.0306022, 'Сумська область', 'Шосткинський', 'місто', 7000),
+    'середина буда': ('Середина-Буда', 52.1886906, 34.0306022, 'Сумська область', 'Шосткинський', 'місто', 7000),
+    'береза': ('Береза', 51.7311446, 33.8753315, 'Сумська область', 'Шосткинський', 'село', 1000),
+    'санжійка': ('Санжійка', 46.2352710, 30.6072200, 'Одеська область', 'Одеський', 'село', 800),
+    'грибівка': ('Грибівка', 46.2085082, 30.5645436, 'Одеська область', 'Одеський', 'село', 1000),
+    'рибаківка': ('Рибаківка', 46.6195586, 31.3511191, 'Миколаївська область', 'Миколаївський', 'село', 1600),
+    'морське': ('Морське', 46.6168020, 31.2660580, 'Миколаївська область', 'Миколаївський', 'село', 700),
+    'залізний порт': ('Залізний Порт', 46.1234725, 32.2955068, 'Херсонська область', 'Скадовський', 'село', 1500),
+    'тендрівська коса': ('Тендрівська коса', 46.2530, 31.6900, 'Херсонська область', None, 'locality', 0),
+    'обознівка': ('Обознівка', 49.2881154, 33.4296800, 'Полтавська область', 'Кременчуцький', 'село', 1000),
+    'обозновка': ('Обознівка', 49.2881154, 33.4296800, 'Полтавська область', 'Кременчуцький', 'село', 1000),
+    'пустовійтове': ('Пустовійтове', 49.3365978, 33.3800289, 'Полтавська область', 'Кременчуцький', 'село', 1000),
+    'пустовойтовое': ('Пустовійтове', 49.3365978, 33.3800289, 'Полтавська область', 'Кременчуцький', 'село', 1000),
+    'потоки': ('Потоки', 49.1038250, 33.5782649, 'Полтавська область', 'Кременчуцький', 'село', 3000),
+    'поток': ('Потоки', 49.1038250, 33.5782649, 'Полтавська область', 'Кременчуцький', 'село', 3000),
+    'кияшки': ('Кияшки', 49.1274109, 33.6182189, 'Полтавська область', 'Кременчуцький', 'село', 1000),
+    'кияшек': ('Кияшки', 49.1274109, 33.6182189, 'Полтавська область', 'Кременчуцький', 'село', 1000),
+    'царичанка': ('Царичанка', 48.9434000, 34.4898600, 'Дніпропетровська область', 'Дніпровський', 'селище', 7000),
+    'царичанки': ('Царичанка', 48.9434000, 34.4898600, 'Дніпропетровська область', 'Дніпровський', 'селище', 7000),
+    'славгород': ('Славгород', 48.1126480, 35.5144248, 'Дніпропетровська область', 'Синельниківський', 'селище', 2000),
+    'синельникове': ('Синельникове', 48.3269304, 35.5246984, 'Дніпропетровська область', 'Синельниківський', 'місто', 30000),
+    'велика бурімка': ('Велика Бурімка', 49.6077215, 32.6401483, 'Черкаська область', 'Золотоніський', 'село', 1000),
+    'новоселиця': ('Новоселиця', 49.6512589, 32.5393326, 'Черкаська область', 'Золотоніський', 'село', 1000),
+    'лящівка': ('Лящівка', 49.5413873, 32.6711380, 'Черкаська область', 'Золотоніський', 'село', 800),
+}
+
 # ── Data classes ─────────────────────────────────────────────────────────────
 
 @dataclass
@@ -103,6 +134,31 @@ def _stem(name: str) -> str:
     return s
 
 
+def _common_prefix_len(a: str, b: str) -> int:
+    count = 0
+    for ca, cb in zip(a.lower().strip(), b.lower().strip()):
+        if ca != cb:
+            break
+        count += 1
+    return count
+
+
+def _safe_broad_oblast_match(query: str, candidate_name: str) -> bool:
+    """Prevent oblast prefix fallback from turning arbitrary prose into a place.
+
+    The broad fallback exists for declined forms like "Харкову" → "Харків", but
+    a 3-letter prefix alone also maps words like "через" → "Черкаська Лозова".
+    Require a longer shared prefix than the SQL lookup itself.
+    """
+    q = query.lower().strip()
+    c = candidate_name.lower().strip()
+    if len(q) < 5 or len(c) < 4:
+        return False
+    if q == c or q in c or c in q:
+        return True
+    return _common_prefix_len(q, c) >= 4
+
+
 # ── Public API ───────────────────────────────────────────────────────────────
 
 def find_candidates(
@@ -123,6 +179,20 @@ def find_candidates(
     name_lower = name.lower().strip()
     candidates: list[LocationCandidate] = []
     seen_ids: set[int] = set()
+
+    manual = _MANUAL_PLACES.get(name_lower)
+    if manual and (not oblast_hint or manual[3] == oblast_hint):
+        m_name, m_lat, m_lng, m_oblast, m_raion, m_type, m_population = manual
+        candidates.append(LocationCandidate(
+            name=m_name,
+            lat=m_lat,
+            lng=m_lng,
+            oblast=m_oblast,
+            raion=m_raion,
+            source='manual_regional_channel',
+            place_type=m_type,
+            population=m_population,
+        ))
 
     def _add(row: sqlite3.Row, source_tag: str):
         pid = row['id']
@@ -207,6 +277,8 @@ def find_candidates(
             (oblast_hint, name_lower[:3] + '%', limit)
         ).fetchall()
         for r in oblast_rows:
+            if not _safe_broad_oblast_match(name_lower, r['name_lower']):
+                continue
             _add(r, 'gazetteer_oblast_search')
 
     # Підказка області: однойменні НП в різних областях — спочатку ті, що в hint

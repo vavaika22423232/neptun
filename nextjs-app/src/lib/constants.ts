@@ -105,9 +105,15 @@ export const MARKERS_CACHE_TTL = 30 * 60 * 1000; // 30 minutes localStorage cach
 // SVG fade thresholds (Leaflet zoom levels)
 export const SVG_FADE_START_ZOOM = 7;
 export const SVG_FADE_END_ZOOM = 8;
+/**
+ * Мобільний кроссфейд (після першого **користувацького** змінення зуму — див. `MapContainer`):
+ * широка смуга, щоб SVG не зникав з одного легкого pinch.
+ */
+export const SVG_FADE_START_ZOOM_MOBILE = 5.0;
+export const SVG_FADE_END_ZOOM_MOBILE = 8.5;
 
 // Cache version for static assets
-export const CACHE_VERSION = 'v14';
+export const CACHE_VERSION = 'v18';
 
 // Google Analytics ID
 export const GA_ID = 'G-MW867VP8WK';
@@ -120,3 +126,7 @@ export const APP_STORE_URL = 'https://apps.apple.com/ua/app/%D0%BA%D0%B0%D1%80%D
 
 // Telegram links
 export const TELEGRAM_CHANNEL_URL = 'https://t.me/+aBR79kExNQM1ZjZi';
+
+// Verified charity links
+export const UNITED24_DONATE_URL = 'https://u24.gov.ua/';
+export const COME_BACK_ALIVE_DONATE_URL = 'https://savelife.in.ua/donate/';

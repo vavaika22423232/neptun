@@ -49,15 +49,14 @@ export async function GET(request: Request) {
   // Build from in-memory store (zero file I/O)
   const markers = buildMarkers(buildMarkerOptionsForApi(extendedRange));
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ballisticMarker = markers.find((m: any) =>
+  const ballisticMarker = markers.find((m: Marker) =>
     m.threat_type === 'ballistic' || m.type === 'ballistic'
   );
   const ballistic_threat = ballisticMarker
     ? {
         active: true,
-        region: (ballisticMarker as any).origin || ballisticMarker.place || undefined,
-        target: (ballisticMarker as any).course_direction || ballisticMarker.place || undefined,
+        region: ballisticMarker.origin || ballisticMarker.place || undefined,
+        target: ballisticMarker.course_direction || ballisticMarker.place || undefined,
       }
     : null;
 

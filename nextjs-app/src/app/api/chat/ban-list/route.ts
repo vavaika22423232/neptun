@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { loadChatBans, isModeratorDevice } from '@/lib/admin/data';
+import { isModeratorDevice } from '@/lib/admin/data';
+import { listChatBans } from '@/lib/chat-ban-service';
 
 /**
  * GET /api/chat/ban-list?deviceId=xxx
@@ -15,7 +16,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Доступ заборонено' }, { status: 403 });
   }
 
-  const bans = loadChatBans();
+  const bans = listChatBans();
   return NextResponse.json({
     banned: bans.map((b) => b.nickname),
     details: bans,

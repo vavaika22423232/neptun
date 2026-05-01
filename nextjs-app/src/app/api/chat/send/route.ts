@@ -18,6 +18,22 @@ const FALLBACK_CHAT_FILE = path.resolve(process.cwd(), '..', 'chat_messages.json
 const MAX_MESSAGE_LENGTH = 500;
 const MAX_MESSAGES = 1000;
 
+type ChatMessageRecord = {
+  id?: string;
+  userId?: string;
+  nickname?: string;
+  message?: string;
+  text?: string;
+  [key: string]: unknown;
+};
+
+type ReplyToRecord = {
+  id: string | undefined;
+  userId: string;
+  nickname: string;
+  message: string;
+};
+
 // ── Rate limiter with periodic cleanup ───────────────────────────────────
 const rateLimiter = new Map<string, number>();
 const RATE_LIMIT_MS = 3000;
@@ -31,12 +47,15 @@ setInterval(() => {
   }
 }, RATE_LIMIT_CLEANUP_INTERVAL);
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function loadMessages(filePath: string): Promise<any[]> {
+async function loadMessages(filePath: string): Promise<ChatMessageRecord[]> {
   try {
     const raw = await fsp.readFile(filePath, 'utf-8');
-    const data = JSON.parse(raw);
-    return Array.isArray(data) ? data : data.messages || [];
+    const data = JSON.parse(raw) as unknown;
+    if (Array.isArray(data)) return data as ChatMessageRecord[];
+    if (data && typeof data === 'object' && Array.isArray((data as { messages?: unknown }).messages)) {
+      return (data as { messages: ChatMessageRecord[] }).messages;
+    }
+    return [];
   } catch { return []; }
 }
 
@@ -140,7 +159,7 @@ export async function POST(request: Request) {
     let messages = await loadMessages(filePath);
 
     // Build replyTo object if replying
-    let replyTo: any = null;
+    let replyTo: ReplyToRecord | null = null;
     if (replyToId) {
       const original = messages.find((m) => m.id === replyToId);
       if (original) {

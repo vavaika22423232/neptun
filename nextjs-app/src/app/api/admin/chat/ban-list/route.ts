@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAdminAuth } from '@/lib/admin/apiAuth';
-import { loadChatBans } from '@/lib/admin/data';
+import { listChatBans } from '@/lib/chat-ban-service';
 
 /**
  * GET /api/admin/chat/ban-list
@@ -10,7 +10,7 @@ export async function GET() {
   const authRes = await requireAdminAuth();
   if (authRes) return authRes;
 
-  const bans = loadChatBans();
+  const bans = listChatBans();
   return NextResponse.json({
     banned: bans.map((b) => b.nickname),
     details: bans,

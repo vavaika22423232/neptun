@@ -10,6 +10,14 @@ const DATA_DIR = process.env.DATA_DIR || '/data';
 const REPORTS_FILE = path.join(DATA_DIR, 'chat_reports.json');
 const FALLBACK_REPORTS_FILE = path.resolve(process.cwd(), '..', 'chat_reports.json');
 
+type ChatReportRecord = {
+    id: string;
+    status?: string;
+    resolvedAt?: string;
+    reportedDeviceId?: string;
+    reportedNickname?: string;
+};
+
 function resolveReportsFile(): string {
     if (!fs.existsSync(DATA_DIR)) {
         try {
@@ -35,7 +43,8 @@ export async function POST(request: Request) {
         }
 
         const raw = await fsp.readFile(filePath, 'utf-8');
-        let reports: any[] = JSON.parse(raw);
+        const parsed = JSON.parse(raw) as unknown;
+        const reports: ChatReportRecord[] = Array.isArray(parsed) ? parsed as ChatReportRecord[] : [];
 
         const reportIndex = reports.findIndex((r) => r.id === reportId);
         if (reportIndex === -1) {

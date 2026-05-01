@@ -1,7 +1,10 @@
 import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import HomePageClient from '../HomePageClient';
+import { getInitialAlarmsSnapshot } from '@/lib/alarms-data';
 // English version of the homepage — same map, English metadata
+
+export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title: 'Ukraine Air Raid Alert Map — Live Shahed & Missile Tracker | NEPTUN',
@@ -47,6 +50,8 @@ export default async function EnglishPage({
   const params = await searchParams;
   const isEmbed = params.embed === '1';
 
+  const { alarms: initialAlarms, etag: initialAlarmEtag } = await getInitialAlarmsSnapshot();
+
   // JSON-LD for English version
   const jsonLd = {
     '@context': 'https://schema.org',
@@ -75,7 +80,11 @@ export default async function EnglishPage({
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <Suspense fallback={<div className="h-full w-full bg-[var(--surface-dim)]" />}>
-        <HomePageClient isEmbed={isEmbed} />
+        <HomePageClient
+          isEmbed={isEmbed}
+          initialAlarms={initialAlarms}
+          initialAlarmEtag={initialAlarmEtag}
+        />
       </Suspense>
     </>
   );

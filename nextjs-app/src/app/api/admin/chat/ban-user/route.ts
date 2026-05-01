@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireAdminAuth } from '@/lib/admin/apiAuth';
-import { loadChatBans, saveChatBans, type BanEntry } from '@/lib/admin/data';
-import { getHardwareIdForDevice, getHardwareIdForNickname } from '@/lib/chat-nicknames';
+import { ChatAdminBanUserSchema } from '@/lib/api-schemas';
+import { banChatUser } from '@/lib/chat-ban-service';
 
 /**
  * POST /api/admin/chat/ban-user
@@ -13,41 +13,34 @@ export async function POST(request: Request) {
   if (authRes) return authRes;
 
   try {
-    const body = await request.json();
-    const { nickname, deviceId: targetDeviceId, reason } = body;
+    const parsed = ChatAdminBanUserSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.issues[0]?.message || 'Invalid input' },
+        { status: 400 },
+      );
+    }
+    const { nickname, deviceId: targetDeviceId, reason } = parsed.data;
 
-    const nicknameToBan = (nickname || '').trim();
-    const deviceIdToBan = (targetDeviceId || '').trim();
+    const result = banChatUser({
+      nickname,
+      targetDeviceId,
+      reason,
+      bannedBy: 'admin',
+      defaultReason: 'Порушення правил (адмін)',
+    });
 
-    if (!nicknameToBan && !deviceIdToBan) {
-      return NextResponse.json({ error: 'Потрібен nickname або deviceId' }, { status: 400 });
+    if (result.status !== 'created') {
+      if (result.status === 'updated') {
+        console.log(`[CHAT] Admin ban enriched: ${result.entry.nickname} (device: ${result.entry.device_id})`);
+      }
+      return NextResponse.json({
+        status: 'ok',
+        message: result.status === 'updated' ? 'Ban updated' : 'Already banned',
+      });
     }
 
-    const bans = loadChatBans();
-
-    if (nicknameToBan && bans.some((b) => b.nickname.toLowerCase() === nicknameToBan.toLowerCase())) {
-      return NextResponse.json({ status: 'ok', message: 'Already banned' });
-    }
-    if (deviceIdToBan && bans.some((b) => b.device_id === deviceIdToBan)) {
-      return NextResponse.json({ status: 'ok', message: 'Already banned (by device)' });
-    }
-
-    const hardwareId =
-      (deviceIdToBan && getHardwareIdForDevice(deviceIdToBan)) ||
-      (nicknameToBan && getHardwareIdForNickname(nicknameToBan));
-
-    const entry: BanEntry = {
-      device_id: deviceIdToBan,
-      nickname: nicknameToBan || 'Анонім',
-      reason: reason || 'Порушення правил (адмін)',
-      banned_at: new Date().toISOString(),
-      banned_by: 'admin',
-      ...(hardwareId && { hardware_id: hardwareId }),
-    };
-
-    bans.push(entry);
-    saveChatBans(bans);
-    console.log(`[CHAT] Admin banned: ${entry.nickname} (device: ${deviceIdToBan})`);
+    console.log(`[CHAT] Admin banned: ${result.entry.nickname} (device: ${result.resolvedTargetDevice})`);
     return NextResponse.json({ status: 'ok' });
   } catch (err) {
     console.error('[CHAT] Admin ban error:', err);

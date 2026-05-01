@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
-import { loadChatBans, saveChatBans, isModeratorDevice } from '@/lib/admin/data';
+import { isModeratorDevice } from '@/lib/admin/data';
+import { ChatUnbanUserSchema } from '@/lib/api-schemas';
+import { unbanChatUser } from '@/lib/chat-ban-service';
 
 /**
  * POST /api/chat/unban
@@ -8,21 +10,21 @@ import { loadChatBans, saveChatBans, isModeratorDevice } from '@/lib/admin/data'
  */
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { nickname, deviceId } = body;
+    const parsed = ChatUnbanUserSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.issues[0]?.message || 'Invalid input' },
+        { status: 400 },
+      );
+    }
+    const { nickname, deviceId } = parsed.data;
 
     // Auth: only moderators can unban
     if (!deviceId || !isModeratorDevice(deviceId)) {
       return NextResponse.json({ error: 'Доступ заборонено' }, { status: 403 });
     }
 
-    if (!nickname) {
-      return NextResponse.json({ error: 'Missing nickname' }, { status: 400 });
-    }
-
-    const bans = loadChatBans();
-    const filtered = bans.filter((b) => b.nickname.toLowerCase() !== nickname.toLowerCase());
-    saveChatBans(filtered);
+    unbanChatUser(nickname);
 
     console.log(`[CHAT] Unbanned: ${nickname} by ${deviceId}`);
     return NextResponse.json({ status: 'ok' });

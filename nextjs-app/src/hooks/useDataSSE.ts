@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useSyncExternalStore } from 'react';
 import type { Alarm } from '@/types';
 
 type AlarmCallback = (alarms: Alarm[]) => void;
@@ -9,6 +9,15 @@ type MarkerDeleteCallback = (id: string) => void;
 type TrackUpdateCallback = (data: { track_id: string; mode: string; marker: Record<string, unknown> }) => void;
 type ChatEventCallback = (type: string, data: Record<string, unknown>) => void;
 type AdminFeedCallback = (data: Record<string, unknown>) => void;
+export type SseConnectionStatus = 'connecting' | 'connected' | 'reconnecting' | 'offline';
+
+export type SseConnectionSnapshot = {
+  status: SseConnectionStatus;
+  retryDelayMs: number;
+  connectedAt: number | null;
+  lastEventAt: number | null;
+  messageCount: number;
+};
 
 // Global SSE connection shared across all hooks (singleton)
 let globalES: EventSource | null = null;
@@ -19,9 +28,28 @@ const markerDeleteListeners = new Set<MarkerDeleteCallback>();
 const trackUpdateListeners = new Set<TrackUpdateCallback>();
 const chatListeners = new Set<ChatEventCallback>();
 const adminFeedListeners = new Set<AdminFeedCallback>();
+const statusListeners = new Set<() => void>();
 let refCount = 0;
 let retryDelay = 3000;
 const MAX_RETRY_DELAY = 30_000;
+let statusSnapshot: SseConnectionSnapshot = {
+  status: 'offline',
+  retryDelayMs: retryDelay,
+  connectedAt: null,
+  lastEventAt: null,
+  messageCount: 0,
+};
+
+function setStatusSnapshot(patch: Partial<SseConnectionSnapshot>) {
+  statusSnapshot = { ...statusSnapshot, ...patch };
+  statusListeners.forEach((listener) => {
+    try {
+      listener();
+    } catch {
+      /* ignore */
+    }
+  });
+}
 
 let _sseToken: string | null = null;
 /** When false, token came from anonymous map bootstrap — drop on ES error so we re-POST /api/auth/token. */
@@ -87,12 +115,15 @@ export function setSSEToken(token: string) {
 async function connectGlobalSSE() {
   if (globalES && globalES.readyState !== EventSource.CLOSED) return;
 
+  setStatusSnapshot({ status: 'connecting', retryDelayMs: retryDelay });
+
   await ensureAnonymousSseToken();
 
   if (globalES && globalES.readyState !== EventSource.CLOSED) return;
 
   if (!_sseToken) {
     if (refCount > 0) {
+      setStatusSnapshot({ status: 'reconnecting', retryDelayMs: retryDelay });
       if (retryTimer) clearTimeout(retryTimer);
       retryTimer = setTimeout(() => {
         retryTimer = null;
@@ -108,6 +139,10 @@ async function connectGlobalSSE() {
   globalES = es;
 
   es.onmessage = (event) => {
+    setStatusSnapshot({
+      lastEventAt: Date.now(),
+      messageCount: statusSnapshot.messageCount + 1,
+    });
     try {
       const parsed = JSON.parse(event.data);
       const { type, data } = parsed;
@@ -160,6 +195,12 @@ async function connectGlobalSSE() {
   es.onopen = () => {
     // Reset backoff on successful connection
     retryDelay = 3000;
+    setStatusSnapshot({
+      status: 'connected',
+      retryDelayMs: retryDelay,
+      connectedAt: Date.now(),
+      lastEventAt: Date.now(),
+    });
   };
 
   es.onerror = () => {
@@ -167,6 +208,7 @@ async function connectGlobalSSE() {
     globalES = null;
     if (!_sseTokenFromChat) _sseToken = null;
     if (refCount > 0) {
+      setStatusSnapshot({ status: 'reconnecting', retryDelayMs: retryDelay });
       if (retryTimer) clearTimeout(retryTimer);
       retryTimer = setTimeout(() => {
         retryTimer = null;
@@ -186,6 +228,20 @@ function disconnectGlobalSSE() {
     globalES.close();
     globalES = null;
   }
+  setStatusSnapshot({ status: 'offline', connectedAt: null });
+}
+
+export function useSSEStatus(): SseConnectionSnapshot {
+  return useSyncExternalStore(
+    (listener) => {
+      statusListeners.add(listener);
+      return () => {
+        statusListeners.delete(listener);
+      };
+    },
+    () => statusSnapshot,
+    () => statusSnapshot,
+  );
 }
 
 /**

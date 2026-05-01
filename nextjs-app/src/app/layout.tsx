@@ -59,7 +59,7 @@ export const metadata: Metadata = {
     'apple-mobile-web-app-capable': 'yes',
     'apple-mobile-web-app-status-bar-style': 'black-translucent',
     'mobile-web-app-capable': 'yes',
-    'color-scheme': 'dark',
+    'color-scheme': 'dark light',
     'apple-mobile-web-app-title': 'Карта тривог',
     'application-name': 'Карта тривог NEPTUN',
     'msapplication-TileColor': '#0c0b0a',
@@ -78,7 +78,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#0a0a0b',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#f5f7fa' },
+    { media: '(prefers-color-scheme: dark)', color: '#0a0a0b' },
+  ],
   width: 'device-width',
   initialScale: 1,
   maximumScale: 5,
@@ -323,7 +326,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {/* Global theme detection — MUST run synchronously before any React script to prevent FOUC */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var c=document.documentElement.classList;var q=new URLSearchParams(window.location.search);var t=q.get('theme')||localStorage.getItem('theme');var p=window.location.pathname;var isApp=q.get('embed')==='1'||p.includes('export')||p.includes('map_only')||navigator.userAgent.includes('wv')||navigator.userAgent.includes('WebView');if(p.includes('export-light'))t='light';else if(p.includes('export')||p.includes('map_only'))t='dark';if(!t){if(isApp&&window.matchMedia('(prefers-color-scheme: light)').matches)t='light';else t='dark';}function applyT(theme){if(theme==='light'){c.remove('dark');c.add('theme-light');}else{c.remove('theme-light');c.add('dark');}window.dispatchEvent(new Event('theme-change'));}applyT(t);if(isApp){window.matchMedia('(prefers-color-scheme: light)').addEventListener('change',function(e){applyT(e.matches?'light':'dark');});}if(isApp||q.get('embed')==='1')c.add('embed-mode');window.setNeptunTheme=function(theme){applyT(theme);};window.setTheme=window.setNeptunTheme;}catch(e){}})();`,
+            __html: `(function(){try{var r=document.documentElement;var c=r.classList;var q=new URLSearchParams(window.location.search);var t=q.get('theme')||localStorage.getItem('theme');var p=window.location.pathname;var isApp=q.get('embed')==='1'||p.includes('export')||p.includes('map_only')||navigator.userAgent.includes('wv')||navigator.userAgent.includes('WebView');if(p.includes('export-light'))t='light';else if(p.includes('export')||p.includes('map_only'))t='dark';if(!t){if(isApp&&window.matchMedia('(prefers-color-scheme: light)').matches)t='light';else t='dark';}function applyT(theme){var light=theme==='light';if(light){c.remove('dark');c.add('theme-light');r.style.colorScheme='light';}else{c.remove('theme-light');c.add('dark');r.style.colorScheme='dark';}var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content',light?'#f5f7fa':'#0a0a0b');window.dispatchEvent(new Event('theme-change'));}applyT(t);if(isApp){window.matchMedia('(prefers-color-scheme: light)').addEventListener('change',function(e){applyT(e.matches?'light':'dark');});}if(isApp||q.get('embed')==='1')c.add('embed-mode');window.setNeptunTheme=function(theme){applyT(theme);};window.setTheme=window.setNeptunTheme;}catch(e){}})();`,
           }}
         />
 
@@ -341,9 +344,16 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {includeMaterial ? (
           <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         ) : null}
-        {/* mt1: early TLS for satellite tiles — Lighthouse estimates ~300ms LCP help vs dns-prefetch alone */}
+        {/* Map tiles: DeepState-style Ukraine layer by default, OSM/Carto/Google remain available as fallbacks. */}
         {includeLeaflet ? (
           <>
+            <link rel="preconnect" href="https://st1.deepstatemap.live" crossOrigin="anonymous" />
+            <link rel="preconnect" href="https://a.tile.openstreetmap.org" crossOrigin="anonymous" />
+            <link rel="dns-prefetch" href="https://b.tile.openstreetmap.org" />
+            <link rel="dns-prefetch" href="https://c.tile.openstreetmap.org" />
+            <link rel="preconnect" href="https://a.basemaps.cartocdn.com" crossOrigin="anonymous" />
+            <link rel="dns-prefetch" href="https://b.basemaps.cartocdn.com" />
+            <link rel="dns-prefetch" href="https://c.basemaps.cartocdn.com" />
             <link rel="preconnect" href="https://mt1.google.com" crossOrigin="anonymous" />
             <link rel="dns-prefetch" href="https://mt2.google.com" />
           </>

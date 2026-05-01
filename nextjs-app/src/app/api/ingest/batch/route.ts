@@ -10,6 +10,8 @@ import {
 import { ingestBodyTooLargeResponse } from '@/lib/ingest-body-limit';
 import { validateIngestMarker } from '@/lib/ingest-validate';
 import { verifyIngestOrRespond } from '@/lib/ingest-auth-guard';
+import { IngestMarkerSchema } from '@/lib/api-schemas';
+import { normalizeAirBalloonThreatType } from '@/lib/threat-type-air-balloon';
 
 const MAX_BATCH = 40;
 
@@ -52,8 +54,14 @@ export async function POST(request: Request) {
   }
   try {
     for (const item of slice) {
-      const marker = item as Record<string, unknown> | null;
       try {
+        const parsed = IngestMarkerSchema.safeParse({ marker: item });
+        if (!parsed.success) {
+          results.push({ ok: false, error: parsed.error.issues[0]?.message || 'Invalid payload' });
+          continue;
+        }
+        const marker = parsed.data.marker as Record<string, unknown>;
+        normalizeAirBalloonThreatType(marker);
         if (!marker || marker.lat == null || marker.lng == null) {
           results.push({ ok: false, error: 'missing marker or coordinates' });
           continue;

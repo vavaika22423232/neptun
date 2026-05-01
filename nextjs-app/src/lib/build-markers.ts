@@ -3,7 +3,6 @@
  * Used by /api/data and /api/threats so both always see the same data.
  */
 import type { Marker } from '@/types';
-import { isPlausibleThreatCoordinate } from '@/lib/geo-bounds';
 import { loadSettings, loadHidden } from '@/lib/admin/data';
 import { getRawMessages } from '@/lib/markers-store';
 import {
@@ -11,46 +10,13 @@ import {
   mergeMarkerDisplayPolicyConfig,
   type CorroborationContext,
 } from '@/lib/marker-display-policy';
+import {
+  markerPassesPublicMapRawFilter,
+  parseRawMarkerMessageTimeMs,
+  type PublicMapRawFilterContext,
+} from '@/lib/marker-publication';
 import { isLatLngInOblastHasc } from '@/lib/ukraine-oblast-validate';
 import { mapStoreRecordToMarker } from '@/lib/map-store-record-to-marker';
-import { recordHasPhantomAvia } from '@/lib/corroboration-public-gate';
-
-/** Last *reported* observation time (ms). Ticker-only `positions` updates do not refresh this. */
-function lastObservationTimeMs(m: Record<string, unknown>): number {
-  const obs = m.observations as Array<{ ts?: number }> | undefined;
-  if (!obs || obs.length === 0) return -1;
-  for (let i = obs.length - 1; i >= 0; i--) {
-    const t = obs[i]?.ts;
-    if (typeof t !== 'number' || !Number.isFinite(t) || t <= 0) continue;
-    return t > 10_000_000_000 ? t : Math.round(t * 1000);
-  }
-  return -1;
-}
-
-function parseMessageTime(m: Record<string, unknown>): number {
-  const obsMs = lastObservationTimeMs(m);
-  if (obsMs > 0) return obsMs;
-
-  if (m.track_id && typeof m.last_update_epoch === 'number' && m.last_update_epoch > 1000000000) {
-    const t = m.last_update_epoch as number;
-    return t > 10000000000 ? t : t * 1000;
-  }
-  const createdEpoch = m.created_at_epoch;
-  if (typeof createdEpoch === 'number' && createdEpoch > 1000000000) {
-    return createdEpoch > 10000000000 ? createdEpoch : createdEpoch * 1000;
-  }
-  const ts = (m.ts || m.timestamp || m.date || '') as string;
-  if (ts) {
-    const normalized = ts.includes('T') ? ts : ts.replace(' ', 'T');
-    const parsed = new Date(normalized).getTime();
-    if (!isNaN(parsed) && parsed > 0) return parsed;
-  }
-  const unix = m.unix_ts || m.created_at;
-  if (typeof unix === 'number' && unix > 1000000000) {
-    return unix > 10000000000 ? unix : unix * 1000;
-  }
-  return -1;
-}
 
 function markerActivityMs(m: Marker): number {
   if (typeof m.last_update_epoch === 'number' && m.last_update_epoch > 1_000_000_000) {
@@ -122,7 +88,7 @@ export function buildMarkers(options?: BuildMarkersOptions): Marker[] {
   };
 
   let monitorMinutes = settings.monitorPeriod || 30;
-  let ttlEnabled = settings.ttlEnabled;
+  const ttlEnabled = settings.ttlEnabled;
   const minConf = settings.minConfidence ?? 0.65;
 
   if (options?.retentionMinutes != null) {
@@ -138,50 +104,18 @@ export function buildMarkers(options?: BuildMarkersOptions): Marker[] {
   } catch { /* empty set */ }
 
   const cutoffMs = ttlEnabled ? Date.now() - monitorMinutes * 60 * 1000 : 0;
-  const dualSourceMapGate = settings.dualSourceMapGate === true;
+  const filterCtx: Omit<PublicMapRawFilterContext, 'messageTimeMs'> = {
+    minConf,
+    dualSourceMapGate: settings.dualSourceMapGate === true,
+    ttlEnabled,
+    cutoffMs,
+    hiddenSet,
+  };
 
   const mapped: Marker[] = messages
     .filter((m: Record<string, unknown>) => {
-      const phantomAvia = recordHasPhantomAvia(m);
-      const lat = Number(m.lat);
-      const lng = Number(m.lng);
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
-      if (!isPlausibleThreatCoordinate(lat, lng, { allowOutsideThreatRegion: Boolean(m.manual) })) {
-        return false;
-      }
-      if (m.manual) return true;
-      if (ttlEnabled && cutoffMs > 0) {
-        const msgTime = parseMessageTime(m);
-        if (msgTime < 0) return false;
-        if (msgTime > 0 && msgTime < cutoffMs) return false;
-      }
-      const hiddenKey = `${m.lat},${m.lng}|${m.text || ''}|${m.manual ? 'manual' : 'auto'}`;
-      if (hiddenSet.has(hiddenKey)) return false;
-      if ((dualSourceMapGate || phantomAvia) && m.corroboration_pending === true) return false;
-      if (m.hidden === true) {
-        const staleDualOnly =
-          !dualSourceMapGate && !phantomAvia && m.corroboration_pending === true;
-        if (!staleDualOnly) return false;
-      }
-      const pm = typeof m.placement_mode === 'string' ? m.placement_mode : '';
-      if (
-        pm === 'multi_reference_suppressed'
-        || pm === 'sea_context_mismatch'
-        || pm === 'low_map_confidence'
-      ) {
-        return false;
-      }
-      const c100 = m.confidence_0_100;
-      const c01 = m.confidence;
-      /** Missing confidence is not treated as 100% — use threshold edge so shape comes from display_class. */
-      let effConf = minConf;
-      if (typeof c100 === 'number' && Number.isFinite(c100)) {
-        effConf = Math.min(1, Math.max(0, c100 / 100));
-      } else if (typeof c01 === 'number' && Number.isFinite(c01)) {
-        effConf = c01;
-      }
-      if (effConf < minConf) return false;
-      return true;
+      const messageTimeMs = parseRawMarkerMessageTimeMs(m);
+      return markerPassesPublicMapRawFilter(m, { ...filterCtx, messageTimeMs });
     })
     .map((m: Record<string, unknown>) => mapStoreRecordToMarker(m));
 

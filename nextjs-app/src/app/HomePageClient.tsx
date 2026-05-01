@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import dynamic from 'next/dynamic';
-import type { FusionTrajectory } from '@/types';
+import type { Alarm, FusionTrajectory } from '@/types';
 import { useAlarms } from '@/hooks/useAlarms';
 import { useMarkers } from '@/hooks/useMarkers';
 import { usePresence } from '@/hooks/usePresence';
@@ -12,24 +11,25 @@ import FaqModal from '@/components/FaqModal';
 import DeploymentScreen from '@/components/DeploymentScreen';
 import SeoInfoSection from '@/components/SeoInfoSection';
 import MapErrorBoundary from '@/components/MapErrorBoundary';
+import MapHost from '@/components/Map/MapHost';
 
-const MapContainer = dynamic(() => import('@/components/Map/MapContainer'), {
-  ssr: false,
-  loading: () => (
-    <div className="flex h-full w-full items-center justify-center">
-      <div className="animate-pulse text-[10px] tracking-widest uppercase text-white/30">Завантаження радару…</div>
-    </div>
-  ),
-});
-
-export default function HomePageInner({ isEmbed = false }: { isEmbed?: boolean }) {
-  const { alarms } = useAlarms();
+export default function HomePageInner({
+  isEmbed = false,
+  initialAlarms = [],
+  initialAlarmEtag = null,
+}: {
+  isEmbed?: boolean;
+  initialAlarms?: Alarm[];
+  initialAlarmEtag?: string | null;
+}) {
+  const { alarms } = useAlarms({ initialAlarms, initialEtag: initialAlarmEtag });
   const { markers, ballisticThreat, forceRefreshMarkers } = useMarkers();
   const presence = usePresence();
 
   const [donateOpen, setDonateOpen] = useState(false);
   const [faqOpen, setFaqOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [ukraineOnly, setUkraineOnly] = useState(false);
 
   useEffect(() => {
     if (!isEmbed) {
@@ -105,6 +105,7 @@ export default function HomePageInner({ isEmbed = false }: { isEmbed?: boolean }
     fusionTrajectories: [] as FusionTrajectory[],
     isAdmin,
     onMarkerAction: isAdmin ? forceRefreshMarkers : undefined,
+    ukraineOnly,
   };
 
   if (isEmbed) {
@@ -112,7 +113,7 @@ export default function HomePageInner({ isEmbed = false }: { isEmbed?: boolean }
       <main className="relative h-screen h-[100dvh] w-full overflow-hidden">
         <div id="map-container" className="isolate h-full w-full">
           <MapErrorBoundary>
-            <MapContainer {...mapProps} />
+            <MapHost {...mapProps} isEmbed={isEmbed} />
           </MapErrorBoundary>
         </div>
       </main>
@@ -130,10 +131,12 @@ export default function HomePageInner({ isEmbed = false }: { isEmbed?: boolean }
         ballisticThreat={ballisticThreat}
         onDonate={() => setDonateOpen(true)}
         onFaq={() => setFaqOpen(true)}
+        onToggleUkraineOnly={() => setUkraineOnly((value) => !value)}
+        ukraineOnly={ukraineOnly}
       >
         <div id="map-container" className="isolate h-full w-full">
           <MapErrorBoundary>
-            <MapContainer {...mapProps} />
+            <MapHost {...mapProps} />
           </MapErrorBoundary>
         </div>
       </AppShell>

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireAdminAuth } from '@/lib/admin/apiAuth';
-import { loadChatBans, saveChatBans } from '@/lib/admin/data';
+import { ChatUnbanUserSchema } from '@/lib/api-schemas';
+import { unbanChatUser } from '@/lib/chat-ban-service';
 
 /**
  * POST /api/admin/chat/unban
@@ -12,16 +13,16 @@ export async function POST(request: Request) {
   if (authRes) return authRes;
 
   try {
-    const body = await request.json();
-    const nickname = (body.nickname || '').trim();
-
-    if (!nickname) {
-      return NextResponse.json({ error: 'Missing nickname' }, { status: 400 });
+    const parsed = ChatUnbanUserSchema.pick({ nickname: true }).safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.issues[0]?.message || 'Invalid input' },
+        { status: 400 },
+      );
     }
+    const { nickname } = parsed.data;
 
-    const bans = loadChatBans();
-    const filtered = bans.filter((b) => b.nickname.toLowerCase() !== nickname.toLowerCase());
-    saveChatBans(filtered);
+    unbanChatUser(nickname);
 
     console.log(`[CHAT] Admin unbanned: ${nickname}`);
     return NextResponse.json({ status: 'ok' });

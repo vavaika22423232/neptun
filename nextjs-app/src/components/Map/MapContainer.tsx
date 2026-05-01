@@ -2,12 +2,15 @@
 
 import { useEffect, useRef, useState, useCallback, useDeferredValue, type MutableRefObject } from 'react';
 import L from 'leaflet';
+import type { Feature, FeatureCollection, Geometry, GeoJsonProperties } from 'geojson';
 import type { Marker, Alarm, FusionTrajectory } from '@/types';
 import { THREAT_ICONS, THREAT_NAMES } from '@/types';
-import { CACHE_VERSION, SVG_FADE_START_ZOOM, SVG_FADE_END_ZOOM } from '@/lib/constants';
+import { CACHE_VERSION } from '@/lib/constants';
 import { bearingToWebIconRotationCssDeg, resolveThreatBearingDeg } from '@/lib/threat-bearing';
+import { districtRegionNamesForAlarms, hascListForStateAlarms } from '@/lib/map/alarm-hasc-filter';
 import {
   getBasemapClassName,
+  getLightBasemapUrl,
   getBasemapUrl,
   isLowInteractionMode,
   pickBasemapKind,
@@ -18,10 +21,27 @@ import {
 const MAP_BOUNDS = { minLat: 44.2, maxLat: 52.4, minLng: 22.0, maxLng: 40.2 } as const;
 
 // Global state for Phase 2 optimizations (persists across Navigations)
-const SVG_DOM_CACHE: Record<string, SVGElement> = {};
 let TOOLTIP_SINGLETON: HTMLDivElement | null = null;
 
 const MOVE_MIN_DIST_KM = 0.004;
+const ALARM_PANE = 'alarm-pane';
+const DISTRICT_ALARM_CANVAS_PANE = 'district-alarm-canvas-pane';
+const UKRAINE_ONLY_BASEMAP_PANE = 'ukraine-only-basemap-pane';
+
+type AlarmFeatureCollection = FeatureCollection<Geometry, GeoJsonProperties>;
+type PerformanceMapOptions = L.MapOptions & {
+  keepBuffer?: number;
+  inertiaDuration?: number;
+  inertiaMaxSpeed?: number;
+};
+type ZoomBoundsMap = L.Map & {
+  _latLngBoundsToNewLayerBounds(bounds: L.LatLngBounds, zoom: number, center: L.LatLngExpression): { min: L.Point };
+};
+type AdminMarkerWindow = Window & {
+  __ADMIN_SECRET?: string;
+  __adminDeleteMarker?: (id: string, lat: number, lng: number, text: string) => Promise<void>;
+  __adminHideMarker?: (lat: number, lng: number, text: string) => Promise<void>;
+};
 
 function stableMarkerKey(m: Marker): string {
   const tid = m.track_id != null && String(m.track_id).trim().length > 0 ? String(m.track_id).trim() : '';
@@ -175,30 +195,232 @@ function syncDisplayUncertaintyLayers(
   // Uncertainty rings (L.circle) intentionally not drawn — pins only; trust hints remain in popup/tooltip.
 }
 
-function mapHashCode(str: string): number {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = (Math.imul(hash, 31) + str.charCodeAt(i)) | 0;
-  }
-  return hash;
+function getFeatureProp(feature: Feature<Geometry, GeoJsonProperties> | undefined, key: string): string {
+  const value = feature?.properties?.[key];
+  return value == null ? '' : String(value);
 }
 
-function jitterCoords(lat: number, lng: number, index: number, seedStr: string, radiusKm = 12): [number, number] {
-  if (index === 0) return [lat, lng];
-  let seed = mapHashCode(`${seedStr}_${index}`);
-  const rand = () => {
-    seed = (seed + 0x6D2B79F5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+function normalizeAlarmRegionName(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[’ʼ'`]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
-  const angle = rand() * 2 * Math.PI;
-  const r = Math.sqrt(rand()) * radiusKm;
-  const KM_TO_DEG_LAT = 1 / 111.32;
-  const dLat = Math.cos(angle) * r * KM_TO_DEG_LAT;
-  const dLng = Math.sin(angle) * r * (KM_TO_DEG_LAT / Math.cos(lat * Math.PI / 180));
-  return [lat + dLat, lng + dLng];
+function isLightMapTheme(): boolean {
+  return typeof document !== 'undefined' && document.documentElement.classList.contains('theme-light');
+}
+
+function stateAlarmStyle(
+  feature: Feature<Geometry, GeoJsonProperties> | undefined,
+  activeHascs: Set<string>,
+): L.PathOptions {
+  const hasc = getFeatureProp(feature, 'HASC_1');
+  if (!hasc || hasc === '?' || !activeHascs.has(hasc)) {
+    return {
+      fillOpacity: 0,
+      opacity: 0,
+      weight: 0,
+      interactive: false,
+    };
+  }
+  const light = isLightMapTheme();
+  return {
+    fillColor: '#8f0000',
+    fillOpacity: light ? 0.56 : 0.64,
+    color: light ? '#5f0000' : '#b30000',
+    opacity: 1,
+    weight: 1.05,
+    interactive: false,
+  };
+}
+
+function districtAlarmStyle(
+  feature: Feature<Geometry, GeoJsonProperties> | undefined,
+  activeNames: Set<string>,
+): L.PathOptions {
+  const rayon = normalizeAlarmRegionName(getFeatureProp(feature, 'rayon'));
+  if (!rayon || !activeNames.has(rayon)) {
+    return {
+      fillOpacity: 0,
+      opacity: 0,
+      weight: 0,
+      interactive: false,
+    };
+  }
+  const light = isLightMapTheme();
+  return {
+    fillColor: '#8f0000',
+    fillOpacity: light ? 0.5 : 0.6,
+    // Keep the district layer native to Leaflet so pan/zoom transforms are identical to the map.
+    color: '#8f0000',
+    opacity: light ? 0.16 : 0.18,
+    weight: 0.35,
+    interactive: false,
+  };
+}
+
+class DistrictAlarmCanvasLayer extends L.Layer {
+  private canvas: HTMLCanvasElement | null = null;
+  private map: L.Map | null = null;
+  private frame: number | null = null;
+
+  constructor(
+    private readonly geoJson: AlarmFeatureCollection,
+    private readonly activeNamesRef: MutableRefObject<Set<string>>,
+  ) {
+    super();
+  }
+
+  onAdd(map: L.Map): this {
+    this.map = map;
+    this.canvas = L.DomUtil.create(
+      'canvas',
+      `leaflet-layer district-alarm-canvas ${L.Browser.any3d ? 'leaflet-zoom-animated' : 'leaflet-zoom-hide'}`,
+    ) as HTMLCanvasElement;
+    this.canvas.style.position = 'absolute';
+    this.canvas.style.pointerEvents = 'none';
+    this.canvas.style.mixBlendMode = 'normal';
+    const pane = map.getPane(DISTRICT_ALARM_CANVAS_PANE) ?? map.getPanes().overlayPane;
+    pane.appendChild(this.canvas);
+
+    map.on('resize viewreset moveend zoomend', this.scheduleRedraw, this);
+    map.on('zoomanim', this.animateZoom, this);
+    this.scheduleRedraw();
+    return this;
+  }
+
+  onRemove(map: L.Map): this {
+    map.off('resize viewreset moveend zoomend', this.scheduleRedraw, this);
+    map.off('zoomanim', this.animateZoom, this);
+    if (this.frame != null) {
+      cancelAnimationFrame(this.frame);
+      this.frame = null;
+    }
+    this.canvas?.remove();
+    this.canvas = null;
+    this.map = null;
+    return this;
+  }
+
+  private animateZoom(event: L.ZoomAnimEvent): void {
+    if (!this.map || !this.canvas) return;
+    const scale = this.map.getZoomScale(event.zoom);
+    const offset = (this.map as ZoomBoundsMap)
+      ._latLngBoundsToNewLayerBounds(this.map.getBounds(), event.zoom, event.center)
+      .min;
+    L.DomUtil.setTransform(this.canvas, offset, scale);
+  }
+
+  scheduleRedraw(): void {
+    if (this.frame != null) cancelAnimationFrame(this.frame);
+    this.frame = requestAnimationFrame(() => {
+      this.frame = null;
+      this.redraw();
+    });
+  }
+
+  redraw(): void {
+    if (!this.map || !this.canvas) return;
+
+    const ctx = this.canvas.getContext('2d');
+    if (!ctx) return;
+
+    const map = this.map;
+    const size = map.getSize();
+    const topLeft = map.containerPointToLayerPoint([0, 0]);
+    const pixelRatio = window.devicePixelRatio || 1;
+
+    L.DomUtil.setPosition(this.canvas, topLeft);
+    this.canvas.width = Math.max(1, Math.round(size.x * pixelRatio));
+    this.canvas.height = Math.max(1, Math.round(size.y * pixelRatio));
+    this.canvas.style.width = `${size.x}px`;
+    this.canvas.style.height = `${size.y}px`;
+
+    ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    ctx.clearRect(0, 0, size.x, size.y);
+    ctx.beginPath();
+
+    let hasActiveGeometry = false;
+    for (const feature of this.geoJson.features) {
+      const rayon = normalizeAlarmRegionName(getFeatureProp(feature, 'rayon'));
+      if (!rayon || !this.activeNamesRef.current.has(rayon)) continue;
+      hasActiveGeometry = drawGeometryPath(ctx, map, topLeft, feature.geometry) || hasActiveGeometry;
+    }
+
+    if (!hasActiveGeometry) return;
+
+    ctx.fillStyle = isLightMapTheme() ? 'rgba(143, 0, 0, 0.5)' : 'rgba(143, 0, 0, 0.6)';
+    ctx.fill();
+  }
+}
+
+function drawGeometryPath(
+  ctx: CanvasRenderingContext2D,
+  map: L.Map,
+  topLeft: L.Point,
+  geometry: Geometry | null,
+): boolean {
+  if (!geometry) return false;
+  if (geometry.type === 'Polygon') {
+    drawPolygonPath(ctx, map, topLeft, geometry.coordinates);
+    return true;
+  }
+  if (geometry.type === 'MultiPolygon') {
+    for (const polygon of geometry.coordinates) {
+      drawPolygonPath(ctx, map, topLeft, polygon);
+    }
+    return geometry.coordinates.length > 0;
+  }
+  return false;
+}
+
+function drawPolygonPath(
+  ctx: CanvasRenderingContext2D,
+  map: L.Map,
+  topLeft: L.Point,
+  rings: number[][][],
+): void {
+  for (const ring of rings) {
+    if (ring.length === 0) continue;
+    const first = map.latLngToLayerPoint([ring[0][1], ring[0][0]]);
+    ctx.moveTo(first.x - topLeft.x, first.y - topLeft.y);
+    for (let i = 1; i < ring.length; i += 1) {
+      const point = map.latLngToLayerPoint([ring[i][1], ring[i][0]]);
+      ctx.lineTo(point.x - topLeft.x, point.y - topLeft.y);
+    }
+    ctx.closePath();
+  }
+}
+
+function createUkraineOnlyBaseLayer(geoJson: AlarmFeatureCollection): L.GeoJSON {
+  return L.geoJSON(geoJson, {
+    pane: UKRAINE_ONLY_BASEMAP_PANE,
+    interactive: false,
+    style: ukraineOnlyBaseStyle,
+  });
+}
+
+function ukraineOnlyBaseStyle(): L.PathOptions {
+  const light = isLightMapTheme();
+  return {
+    fill: true,
+    fillColor: light ? '#f5f0e6' : '#0b0f14',
+    fillOpacity: 1,
+    color: 'transparent',
+    opacity: 0,
+    weight: 0,
+    interactive: false,
+  };
+}
+
+function syncUkraineOnlyBaseStyle(layer: L.GeoJSON): void {
+  layer.setStyle({
+    ...ukraineOnlyBaseStyle(),
+  });
 }
 
 /** CSS rotation for threat raster/SVG icons (see bearingToWebIconRotationCssDeg). */
@@ -374,9 +596,18 @@ interface MapContainerProps {
   onMarkerAction?: () => void;
   /** WebView in app (`?embed=1`) — same map + SVG as desktop */
   isEmbed?: boolean;
+  ukraineOnly?: boolean;
 }
 
-export default function MapContainer({ markers, alarms, fusionTrajectories, isAdmin, onMarkerAction, isEmbed = false }: MapContainerProps) {
+export default function MapContainer({
+  markers,
+  alarms,
+  fusionTrajectories,
+  isAdmin,
+  onMarkerAction,
+  isEmbed = false,
+  ukraineOnly = false,
+}: MapContainerProps) {
   const deferredMarkers = useDeferredValue(markers);
   const deferredAlarms = useDeferredValue(alarms);
 
@@ -385,35 +616,65 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
   const trajLayerRef = useRef<L.LayerGroup | null>(null);
   const fusionLayerRef = useRef<L.LayerGroup | null>(null);
-  const statesSvgRef = useRef<SVGElement | null>(null);
-  const districtsSvgRef = useRef<SVGElement | null>(null);
+  const oblastAlarmGeoJsonRef = useRef<AlarmFeatureCollection | null>(null);
+  const stateAlarmLayerRef = useRef<L.GeoJSON | null>(null);
+  const districtAlarmLayerRef = useRef<DistrictAlarmCanvasLayer | null>(null);
+  const ukraineOnlyBaseLayerRef = useRef<L.GeoJSON | null>(null);
+  const activeStateAlarmHascsRef = useRef<Set<string>>(new Set());
+  const activeDistrictAlarmNamesRef = useRef<Set<string>>(new Set());
   const markerRegistryRef = useRef<Map<string, MapMarkerEntry>>(new Map());
   const animRafRef = useRef<number | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const isAdminRef = useRef(isAdmin);
-  isAdminRef.current = isAdmin;
   const isInteractingRef = useRef(false);
   const lowInteractionRef = useRef(false);
-  lowInteractionRef.current = isLowInteractionMode(isEmbed, typeof navigator !== 'undefined' ? navigator.userAgent : undefined);
+  const ukraineOnlyRef = useRef(ukraineOnly);
 
-  // Initialize map (must match original init order: tiles -> layers -> SVG -> events -> fitBounds)
+  useEffect(() => {
+    isAdminRef.current = isAdmin;
+  }, [isAdmin]);
+
+  useEffect(() => {
+    ukraineOnlyRef.current = ukraineOnly;
+    const map = mapRef.current;
+    const layer = ukraineOnlyBaseLayerRef.current;
+    if (!map || !layer) return;
+    syncUkraineOnlyMode(map, ukraineOnly);
+    syncUkraineOnlyBaseStyle(layer);
+    if (ukraineOnly) {
+      if (!map.hasLayer(layer)) layer.addTo(map);
+    } else {
+      if (map.hasLayer(layer)) map.removeLayer(layer);
+    }
+  }, [ukraineOnly]);
+
+  useEffect(() => {
+    lowInteractionRef.current = isLowInteractionMode(
+      isEmbed,
+      typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
+    );
+  }, [isEmbed]);
+
+  // Initialize map (tiles -> vector alarm layers -> marker layers -> events -> fitBounds)
   useEffect(() => {
     if (!mapElRef.current || mapRef.current) return;
 
     // Abort flag for React StrictMode (effect runs twice in dev)
     let aborted = false;
+    const markerRegistry = markerRegistryRef.current;
 
     const ukraineCenter: L.LatLngExpression = [48.5, 31.5];
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
     const basemap = pickBasemapKind(isEmbed, typeof navigator !== 'undefined' ? navigator.userAgent : undefined);
     const lowTileMode = basemap === 'rasterVectorDark';
+    const isDeepStateBasemap = basemap === 'deepStateUkraine';
     const lowInteraction = isLowInteractionMode(
       isEmbed,
       typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
     );
     lowInteractionRef.current = lowInteraction;
 
-    const map = L.map(mapElRef.current, {
+    const mapOptions: PerformanceMapOptions = {
       center: ukraineCenter,
       zoom: 6,
       minZoom: 5,
@@ -427,7 +688,7 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
       touchZoom: true,
       preferCanvas: true, // Use Canvas for vectors (Fusion tracks)
       zoomAnimation: !lowInteraction,
-      fadeAnimation: !lowInteraction,
+      fadeAnimation: false,
       markerZoomAnimation: !lowInteraction,
       transform3DLimit: lowInteraction ? 1 : 2,
       zoomSnap: lowInteraction ? 1 : 0.5,
@@ -438,17 +699,25 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
       inertiaDuration: lowInteraction ? 0.75 : 1.5,
       inertiaMaxSpeed: lowInteraction ? 1500 : 3000,
       easeLinearity: 0.1,
-      keepBuffer: lowTileMode ? 1 : 2,
+      keepBuffer: lowTileMode ? 4 : 5,
       maxBounds: [[40, 18], [56, 44]],
       maxBoundsViscosity: 0.8,
-    } as any);
+    };
+    const map = L.map(mapElRef.current, mapOptions);
+    const bounds = L.latLngBounds(
+      [MAP_BOUNDS.minLat, MAP_BOUNDS.minLng],
+      [MAP_BOUNDS.maxLat, MAP_BOUNDS.maxLng],
+    );
 
     mapRef.current = map;
 
-    // Sequential init matching the original: tiles first, then layers, then SVG overlays
+    // Sequential init: tiles first, then alarm vectors, then marker layers.
     (async () => {
+      await settleInitialMapViewport(map, bounds);
+      if (aborted) return;
+
       try {
-        // 1. Load base map tiles (await like original)
+        // 1. Load base map tiles after final bounds are known, not before.
         await loadMapTiles(map, { isMobile, basemap, lowTileMode });
       } catch (e) {
         console.warn('Map tiles load error:', e);
@@ -457,40 +726,59 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
       // Bail out if the effect was cleaned up during async loading
       if (aborted) return;
 
-      // 2. Create layer groups AFTER tiles (matching original order)
+      // 2. Create panes / layer groups AFTER tiles.
+      if (!map.getPane(ALARM_PANE)) {
+        map.createPane(ALARM_PANE);
+      }
+      if (!map.getPane(DISTRICT_ALARM_CANVAS_PANE)) {
+        map.createPane(DISTRICT_ALARM_CANVAS_PANE);
+      }
+      if (!map.getPane(UKRAINE_ONLY_BASEMAP_PANE)) {
+        map.createPane(UKRAINE_ONLY_BASEMAP_PANE);
+      }
+      const alarmPane = map.getPane(ALARM_PANE);
+      if (alarmPane) {
+        alarmPane.style.zIndex = '350';
+        alarmPane.style.pointerEvents = 'none';
+      }
+      const districtAlarmPane = map.getPane(DISTRICT_ALARM_CANVAS_PANE);
+      if (districtAlarmPane) {
+        districtAlarmPane.style.zIndex = '360';
+        districtAlarmPane.style.pointerEvents = 'none';
+      }
+      const ukraineOnlyBasePane = map.getPane(UKRAINE_ONLY_BASEMAP_PANE);
+      if (ukraineOnlyBasePane) {
+        ukraineOnlyBasePane.style.zIndex = '120';
+        ukraineOnlyBasePane.style.pointerEvents = 'none';
+      }
+
+      try {
+        const alarmLayers = await loadLeafletAlarmLayers(map, {
+          activeStateHascsRef: activeStateAlarmHascsRef,
+          activeDistrictNamesRef: activeDistrictAlarmNamesRef,
+        });
+        if (aborted) return;
+        oblastAlarmGeoJsonRef.current = alarmLayers.oblastGeoJson;
+        stateAlarmLayerRef.current = alarmLayers.stateLayer;
+        districtAlarmLayerRef.current = alarmLayers.districtLayer;
+        const ukraineBaseLayer = createUkraineOnlyBaseLayer(alarmLayers.oblastGeoJson);
+        ukraineOnlyBaseLayerRef.current = ukraineBaseLayer;
+        syncUkraineOnlyMode(map, ukraineOnlyRef.current);
+        if (ukraineOnlyRef.current) {
+          ukraineBaseLayer.addTo(map);
+        }
+      } catch (e) {
+        console.warn('Alarm GeoJSON layer load error:', e);
+      }
+
+      if (aborted) return;
+
       const trajGroup = L.layerGroup().addTo(map);
       const fusionGroup = L.layerGroup().addTo(map);
       const markersGroup = L.layerGroup().addTo(map);
       trajLayerRef.current = trajGroup;
       fusionLayerRef.current = fusionGroup;
       markersLayerRef.current = markersGroup;
-
-      // 3. Load SVG overlays (await like original)
-      try {
-        const svgRefs = await loadSvgOverlays(map, {
-          skipOblastNames: false,
-          skipDetailedDistricts: false,
-        });
-        if (aborted) return;
-        if (svgRefs) {
-          statesSvgRef.current = svgRefs.statesSvg;
-          districtsSvgRef.current = svgRefs.districtsSvg;
-        }
-      } catch (e) {
-        console.warn('SVG overlay load error:', e);
-      }
-
-      if (aborted) return;
-
-      // 4. Handle zoom changes - fade SVG at high zoom (rAF-throttle: `zoom` fires very often; INP)
-      let opacityRaf: number | null = null;
-      const scheduleOpacityUpdate = () => {
-        if (opacityRaf != null) return;
-        opacityRaf = requestAnimationFrame(() => {
-          opacityRaf = null;
-          updateSvgOpacity(map);
-        });
-      };
 
       map.on('movestart', () => { isInteractingRef.current = true; });
       map.on('moveend', () => { 
@@ -500,23 +788,8 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
       map.on('zoomstart', () => { isInteractingRef.current = true; });
       map.on('zoomend', () => {
         setTimeout(() => { isInteractingRef.current = false; }, 100);
-        if (opacityRaf != null) {
-          cancelAnimationFrame(opacityRaf);
-          opacityRaf = null;
-        }
-        updateSvgOpacity(map);
       });
-      map.on('zoom', scheduleOpacityUpdate);
-
-      // 5. Initial opacity update
-      updateSvgOpacity(map);
-
-      // 6. Fit to Ukraine bounds
-      const bounds = L.latLngBounds(
-        [MAP_BOUNDS.minLat, MAP_BOUNDS.minLng],
-        [MAP_BOUNDS.maxLat, MAP_BOUNDS.maxLng]
-      );
-      map.fitBounds(bounds, { animate: false });
+      showLeafletTiles(map);
 
       setIsLoaded(true);
     })();
@@ -527,7 +800,7 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
         cancelAnimationFrame(animRafRef.current);
         animRafRef.current = null;
       }
-      markerRegistryRef.current.clear();
+      markerRegistry.clear();
       map.remove();
       mapRef.current = null;
     };
@@ -536,8 +809,7 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
   // Register admin action handlers on window (for popup button onclick)
   useEffect(() => {
     if (!isAdmin) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const w = window as any;
+    const w = window as AdminMarkerWindow;
 
     const adminJsonHeaders = (): Record<string, string> => {
       const h: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -584,12 +856,6 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
       delete w.__adminHideMarker;
     };
   }, [isAdmin, onMarkerAction]);
-
-  const scheduleAnimFrame = useCallback(() => {
-    // Phase 2: JS loop for markers removed. Movement is now 100% CSS-driven.
-    // If we need custom layers that don't support CSS transitions (like Canvas lines),
-    // we would add them here.
-  }, []);
 
   const syncMarkers = useCallback(
     (markersData: Marker[]) => {
@@ -757,47 +1023,34 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
     syncMarkers(deferredMarkers);
   }, [deferredMarkers, isLoaded, syncMarkers]);
 
-  // Render alarms on SVG overlays
-  // Track active alarm IDs to avoid unnecessary DOM churn
-  const activeAlarmIdsRef = useRef<Set<string>>(new Set());
-
   const renderAlarms = useCallback((alarmsData: Alarm[]) => {
-    const statesSvg = statesSvgRef.current;
-    const districtsSvg = districtsSvgRef.current;
+    const oblastGeoJson = oblastAlarmGeoJsonRef.current;
+    if (!oblastGeoJson) return;
 
-    // Build new alarm set
-    const newAlarmIds = new Set<string>();
-    for (const region of alarmsData) {
-      if (region.activeAlerts?.length) {
-        newAlarmIds.add(`${region.regionType}:${region.regionId}`);
-      }
-    }
+    activeStateAlarmHascsRef.current = new Set(hascListForStateAlarms(alarmsData, oblastGeoJson));
+    activeDistrictAlarmNamesRef.current = new Set(districtRegionNamesForAlarms(alarmsData));
 
-    const prevAlarmIds = activeAlarmIdsRef.current;
-
-    // Remove alarms that are no longer active (diff-based, not clear-all)
-    for (const key of prevAlarmIds) {
-      if (!newAlarmIds.has(key)) {
-        const [type, id] = key.split(':');
-        const svg = type === 'State' ? statesSvg : districtsSvg;
-        if (svg) svg.querySelectorAll(`[id="${id}"]`).forEach((el) => el.classList.remove('alarm'));
-      }
-    }
-
-    // Add new alarms
-    for (const key of newAlarmIds) {
-      if (!prevAlarmIds.has(key)) {
-        const [type, id] = key.split(':');
-        const svg = type === 'State' ? statesSvg : districtsSvg;
-        if (svg) svg.querySelectorAll(`[id="${id}"]`).forEach((el) => el.classList.add('alarm'));
-      }
-    }
-
-    activeAlarmIdsRef.current = newAlarmIds;
+    stateAlarmLayerRef.current?.setStyle((feature) =>
+      stateAlarmStyle(feature as Feature<Geometry, GeoJsonProperties> | undefined, activeStateAlarmHascsRef.current),
+    );
+    districtAlarmLayerRef.current?.scheduleRedraw();
   }, []);
 
+  useEffect(() => {
+    if (!isLoaded) return;
+    const onThemeChange = () => {
+      stateAlarmLayerRef.current?.setStyle((feature) =>
+        stateAlarmStyle(feature as Feature<Geometry, GeoJsonProperties> | undefined, activeStateAlarmHascsRef.current),
+      );
+      districtAlarmLayerRef.current?.scheduleRedraw();
+      if (ukraineOnlyBaseLayerRef.current) syncUkraineOnlyBaseStyle(ukraineOnlyBaseLayerRef.current);
+    };
+    window.addEventListener('theme-change', onThemeChange);
+    return () => window.removeEventListener('theme-change', onThemeChange);
+  }, [isLoaded]);
+
   // Render fusion trajectories
-  const renderFusionTrajectories = useCallback((trajs: FusionTrajectory[]) => {
+  const renderFusionTrajectories = useCallback(() => {
     const group = fusionLayerRef.current;
     if (!group) return;
     group.clearLayers();
@@ -811,7 +1064,7 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
 
   useEffect(() => {
     if (!isLoaded || !fusionLayerRef.current) return;
-    renderFusionTrajectories(fusionTrajectories);
+    renderFusionTrajectories();
   }, [fusionTrajectories, isLoaded, renderFusionTrajectories]);
 
   return (
@@ -834,102 +1087,113 @@ type LoadTilesOpts = {
 async function loadMapTiles(map: L.Map, opts: LoadTilesOpts) {
   const { isMobile, basemap, lowTileMode } = opts;
   const url = getBasemapUrl(basemap);
-  L.tileLayer(url, {
+  const isDeepState = basemap === 'deepStateUkraine';
+  const sharedOptions: L.TileLayerOptions = {
     attribution: '',
     maxZoom: lowTileMode ? 16 : 19,
-    className: getBasemapClassName(basemap),
-    updateWhenIdle: isMobile,
-    updateWhenZooming: false,
-    keepBuffer: lowTileMode ? 1 : 2,
-    detectRetina: !isMobile,
-  } as L.TileLayerOptions).addTo(map);
-}
+    maxNativeZoom: isDeepState ? 14 : undefined,
+    updateWhenIdle: false,
+    updateWhenZooming: true,
+    updateInterval: 80,
+    keepBuffer: lowTileMode ? 10 : 10,
+    detectRetina: !isDeepState && !isMobile,
+  };
 
-async function loadSvgOverlays(
-  map: L.Map,
-  opts: { skipOblastNames: boolean; skipDetailedDistricts: boolean },
-): Promise<{ statesSvg: SVGElement; districtsSvg: SVGElement | null } | null> {
-  try {
-    const bounds = L.latLngBounds(
-      [MAP_BOUNDS.minLat, MAP_BOUNDS.minLng],
-      [MAP_BOUNDS.maxLat, MAP_BOUNDS.maxLng]
-    );
+  const layers: L.TileLayer[] = [];
 
-    const svgUrls: string[] = [`/ukraine_states.svg?${CACHE_VERSION}`];
-    if (!opts.skipDetailedDistricts) {
-      svgUrls.push(`/ukraine_districts_detailed.svg?${CACHE_VERSION}`);
-    }
-    if (!opts.skipOblastNames) {
-      svgUrls.push(`/ukraine_names.svg?${CACHE_VERSION}`);
-    }
+  const primaryLayer = L.tileLayer(url, {
+    ...sharedOptions,
+    className: `${getBasemapClassName(basemap)} ${isDeepState ? 'deepstate-ukraine-dark-layer' : ''}`.trim(),
+  }).addTo(map);
+  layers.push(primaryLayer);
 
-    const results: SVGElement[] = [];
-    const parser = new DOMParser();
-
-    for (const url of svgUrls) {
-      if (SVG_DOM_CACHE[url]) {
-        results.push(SVG_DOM_CACHE[url].cloneNode(true) as SVGElement);
-        continue;
-      }
-      const res = await fetch(url, { cache: 'force-cache' });
-      const text = await res.text();
-      const svg = parser.parseFromString(text, 'image/svg+xml').documentElement as unknown as SVGElement;
-      SVG_DOM_CACHE[url] = svg; // Cache the original template
-      results.push(svg.cloneNode(true) as SVGElement);
-    }
-
-    let i = 0;
-    const statesSvg = results[i++] as SVGElement;
-    statesSvg.classList.add('svg-states-layer');
-    L.svgOverlay(statesSvg, bounds, { interactive: true, zIndex: 100 }).addTo(map);
-
-    let districtsSvg: SVGElement | null = null;
-    if (!opts.skipDetailedDistricts) {
-      districtsSvg = results[i++] as SVGElement;
-      districtsSvg.classList.add('svg-districts-layer');
-      L.svgOverlay(districtsSvg, bounds, { interactive: true, zIndex: 101 }).addTo(map);
-    }
-
-    if (!opts.skipOblastNames) {
-      const namesSvg = results[i] as SVGElement;
-      namesSvg.classList.add('svg-names-layer');
-      L.svgOverlay(namesSvg, bounds, { interactive: false, zIndex: 102 }).addTo(map);
-    }
-
-    return { statesSvg, districtsSvg };
-  } catch (error) {
-    console.error('Error loading SVG overlays:', error);
-    return null;
+  if (isDeepState) {
+    const lightLayer = L.tileLayer(getLightBasemapUrl(basemap), {
+      ...sharedOptions,
+      className: 'deepstate-ukraine-layer deepstate-ukraine-light-layer',
+    }).addTo(map);
+    layers.push(lightLayer);
   }
+
+  await Promise.all(layers.map(waitForInitialTileLoad));
 }
 
-function updateSvgOpacity(map: L.Map) {
-  const zoom = map.getZoom();
+function waitForInitialTileLoad(layer: L.TileLayer): Promise<void> {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      layer.off('load', finish);
+      window.clearTimeout(timeoutId);
+      resolve();
+    };
+    const timeoutId = window.setTimeout(finish, 3000);
+    layer.once('load', finish);
+  });
+}
+
+async function fetchGeoJson(url: string): Promise<AlarmFeatureCollection> {
+  const res = await fetch(url, { cache: 'force-cache' });
+  if (!res.ok) throw new Error(`${url} returned ${res.status}`);
+  return (await res.json()) as AlarmFeatureCollection;
+}
+
+async function settleInitialMapViewport(map: L.Map, bounds: L.LatLngBounds): Promise<void> {
+  await nextAnimationFrame();
+  map.invalidateSize({ animate: false, pan: false });
+  map.fitBounds(bounds, { animate: false });
+  await nextAnimationFrame();
+  map.invalidateSize({ animate: false, pan: false });
+}
+
+function nextAnimationFrame(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+function syncUkraineOnlyMode(map: L.Map, enabled: boolean): void {
   const container = document.getElementById('leaflet-map');
-
-  let fadeOpacity: number;
-
-  if (zoom < SVG_FADE_START_ZOOM) {
-    fadeOpacity = 1;
-  } else if (zoom >= SVG_FADE_END_ZOOM) {
-    fadeOpacity = 0;
-  } else {
-    const progress = (zoom - SVG_FADE_START_ZOOM) / (SVG_FADE_END_ZOOM - SVG_FADE_START_ZOOM);
-    fadeOpacity = 1 - progress;
-  }
-
   if (container) {
-    container.style.setProperty('--bg-opacity', String(fadeOpacity));
-    container.style.setProperty('--map-opacity', String(1 - fadeOpacity));
+    container.classList.toggle('ukraine-only-map-mode', enabled);
   }
+  map.getContainer().classList.toggle('ukraine-only-map-mode', enabled);
+}
 
-  // Apply to SVG overlays (без додаткового диммінгу — повна непрозорість шару при fadeOpacity === 1)
-  document.querySelectorAll('.svg-states-layer, .svg-districts-layer').forEach((el) => {
-    (el as HTMLElement).style.opacity = String(fadeOpacity);
-  });
-  document.querySelectorAll('.svg-names-layer').forEach((el) => {
-    (el as HTMLElement).style.opacity = String(fadeOpacity);
-  });
+async function loadLeafletAlarmLayers(
+  map: L.Map,
+  refs: {
+    activeStateHascsRef: MutableRefObject<Set<string>>;
+    activeDistrictNamesRef: MutableRefObject<Set<string>>;
+  },
+): Promise<{
+  oblastGeoJson: AlarmFeatureCollection;
+  stateLayer: L.GeoJSON;
+  districtLayer: DistrictAlarmCanvasLayer;
+}> {
+  const [oblastGeoJson, districtGeoJson] = await Promise.all([
+    fetchGeoJson(`/ukraine_oblasts.geojson?${CACHE_VERSION}`),
+    fetchGeoJson(`/ukraine_raions_2020.geojson?${CACHE_VERSION}`),
+  ]);
+
+  const stateLayer = L.geoJSON(oblastGeoJson, {
+    pane: ALARM_PANE,
+    interactive: false,
+    style: (feature) =>
+      stateAlarmStyle(feature as Feature<Geometry, GeoJsonProperties> | undefined, refs.activeStateHascsRef.current),
+  }).addTo(map);
+
+  const districtLayer = new DistrictAlarmCanvasLayer(districtGeoJson, refs.activeDistrictNamesRef).addTo(map);
+
+  return { oblastGeoJson, stateLayer, districtLayer };
+}
+
+function showLeafletTiles(map: L.Map) {
+  const container = document.getElementById('leaflet-map');
+  if (container) {
+    container.style.setProperty('--bg-opacity', '0');
+    container.style.setProperty('--map-opacity', '1');
+  }
+  map.getContainer().classList.add('leaflet-only-map');
 }
 
 /** Format ISO timestamp to Kyiv time (HH:MM DD.MM.YYYY) */
