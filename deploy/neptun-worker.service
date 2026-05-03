@@ -16,6 +16,10 @@ Environment=TZ=Europe/Kyiv
 ExecStartPre=/usr/bin/test -f /home/neptun/app/.env
 ExecStartPre=/usr/bin/test -f /home/neptun/venv/bin/python
 
+# Worker opens many concurrent aiohttp/Telegram handles during bursts — default 1024 FDs causes
+# "Too many open files", failed ingest to :3000, and broken retry queue writes (errno 24).
+LimitNOFILE=65535
+
 ExecStart=/home/neptun/venv/bin/python worker.py
 Restart=always
 RestartSec=10

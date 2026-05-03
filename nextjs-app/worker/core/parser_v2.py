@@ -110,6 +110,15 @@ RE_DIRECTION = re.compile(
     re.IGNORECASE
 )
 
+RE_UAV_TARGET_ONLY = re.compile(
+    r'(?:'
+    r'(?:шахед(?:и|ів|а|у)?|шахід(?:и|ів|а|у)?|бпла|дрон(?:и|ів|а|у)?|мопед(?:и|ів|а|у)?|'
+    r'герань|гербера|🛵|🛸).{0,28}?\b(?:на|до|в\s+бік|у\s+бік)\s+'
+    r'|(?:облітає|обл[іi]тає|кружляє|маневрує).{0,12}?\b(?:на|до|в\s+бік|у\s+бік)\s+'
+    r')([' + _CYR_NAME + r']+(?:\s+[' + _CYR_NAME + r']+)?)',
+    re.IGNORECASE,
+)
+
 # "в напрямку X" — without intermediate preposition
 RE_DIRECTION_NAPRYAMKU = re.compile(
     r'(?:в|у)\s+напрямку\s+([' + _CYR_NAME + r']+(?:\s+[' + _CYR_NAME + r']+)?)',
@@ -124,9 +133,23 @@ RE_DIRECTION_BARE_COURSE = re.compile(
 )
 
 RE_DIRECTION_SIDE = re.compile(
-    r'\b(?:у|в)\s+(?:бік|сторону)\s+'
+    r'\b(?:у|в)\s+(?:бік|сторону|строну)\s+'
     r'([' + _CYR_NAME + r']+(?:\s+[' + _CYR_NAME + r']+)?)',
     re.IGNORECASE
+)
+
+RE_DIRECTION_AREA = re.compile(
+    r'\b(?:в|у)\s+район(?:і|у)?\s+'
+    r'([' + _CYR_NAME + r']+(?:\s+[' + _CYR_NAME + r']+)?)',
+    re.IGNORECASE
+)
+
+RE_CURRENT_TO_TARGET = re.compile(
+    r'\b(?:повз|над|біля|поблизу|в\s+районі|у\s+районі|в\s+районе|у\s+района|возле)\s+'
+    r'[' + _CYR_NAME + r']+(?:\s+[' + _CYR_NAME + r']+)?\s+'
+    r'(?:далі\s+)?(?:на|до|в\s+бік|у\s+бік)\s+'
+    r'([' + _CYR_NAME + r']+(?:\s+[' + _CYR_NAME + r']+)?)',
+    re.IGNORECASE,
 )
 
 RE_ARROW_TARGET = re.compile(
@@ -311,7 +334,8 @@ CARDINAL_DIRECTIONS = {
     'північний схід': 'northeast', 'північного сходу': 'northeast',
     'південний захід': 'southwest', 'південного заходу': 'southwest',
     'південний схід': 'southeast', 'південного сходу': 'southeast',
-    'север': 'north', 'северный': 'north', 'юг': 'south', 'южный': 'south',
+    'север': 'north', 'севера': 'north', 'северный': 'north',
+    'юг': 'south', 'юга': 'south', 'южный': 'south',
     'восток': 'east', 'восточный': 'east', 'запад': 'west', 'западный': 'west',
     'северо западный': 'northwest', 'северо-западный': 'northwest',
     'северо восточный': 'northeast', 'северо-восточный': 'northeast',
@@ -340,6 +364,7 @@ RE_CARDINAL_NAPRYAMKU = re.compile(
 )
 RE_NEAR = re.compile(
     r'(?:поблизу|біля|повз|навпроти|район[іу]?|околиці?|поряд з|в районі|р[\-\s]?н'
+    r'|возле|в районе|у района'
     r'|південніше|північніше|східніше|західніше|над)\s+'
     r'([' + _CYR_NAME + r']+(?:\s+[' + _CYR_NAME + r']+)?)',
     re.IGNORECASE
@@ -567,7 +592,7 @@ EVENT_TYPES = {
         'пролета', 'проліта',
     ],
     'recon': [
-        'розвід', 'розвіддрон', 'розвідник', 'дорозвідк',
+        'розвід', 'розвіддрон', 'розвідник', 'дорозвідк', 'дорозведк',
         'розвідувальн',
         'zala', 'зала',
         'орлан', 'orlan',
@@ -615,6 +640,7 @@ ALLCLEAR_KEYWORDS = [
     'у нас чисто',  # КОРАБЕЛІ: informal allclear
     'не фіксується', 'не фіксуються',
     'без фіксації',  # "Без фіксації на зараз" / "Поки без фіксації цілей"
+    'без подальшої фіксації', 'без подальшей фиксации',
     'мінус',
     'без угрозы',
     '4.5.0',  # КОРАБЕЛІ: numeric allclear code
@@ -622,6 +648,8 @@ ALLCLEAR_KEYWORDS = [
     'не до нас',  # КОРАБЕЛІ: not heading to us
     'не існує його',  # КОРАБЕЛІ: UAV lost/gone
     'ціль припинила існування',  # @kherson_non_drone: target no longer active
+    'вже нема', 'уже нет',
+    'його ебнули', 'его ебнули',
 ]
 
 # Keywords that need word-boundary matching (plain substring is too aggressive)
@@ -765,6 +793,7 @@ def _extract_cleared_threat_type(text: str) -> Optional[str]:
 
 ACCUSATIVE_TO_NOMINATIVE: dict[str, str] = {
     'києва': 'Київ',
+    'прилуцького': 'Прилуки', 'прилуцький': 'Прилуки',
     # -ку → -ка (most common for feminine -ка cities)
     'решетилівку': 'Решетилівка', 'помічну': 'Помічна',
     'липову долину': 'Липова Долина', 'петропавлівку': 'Петропавлівка',
@@ -827,7 +856,7 @@ ACCUSATIVE_TO_NOMINATIVE: dict[str, str] = {
     'малу данилівку': 'Мала Данилівка', 'малу рогань': 'Мала Рогань',
     'малу білозерку': 'Мала Білозерка',
     # -ну → -на
-    'борзну': 'Борзна', 'хорошу': 'Хороша',
+    'борзну': 'Борзна', 'борзни': 'Борзна', 'хорошу': 'Хороша',
     # -ню → -ня
     'ічню': 'Ічня',
     # -цю → -ця
@@ -855,6 +884,9 @@ ACCUSATIVE_TO_NOMINATIVE: dict[str, str] = {
     'березу': 'Береза',
     'долинської': 'Долинська', 'долинську': 'Долинська',
     'печеніг': 'Печеніги', 'печенігів': 'Печеніги',
+    'сосниці': 'Сосниця',
+    'ніжин': 'Ніжин',
+    'ніжина': 'Ніжин', 'ніжину': 'Ніжин',
     'балаклії': 'Балаклія', 'балаклію': 'Балаклія',
     'козельщину': 'Козельщина', 'козельщини': 'Козельщина',
     'кінбурна': 'Кінбурн', 'кінбурну': 'Кінбурн',
@@ -871,6 +903,7 @@ ACCUSATIVE_TO_NOMINATIVE: dict[str, str] = {
 INVALID_TOPONYM_TOKENS = frozenset({
     'нам', 'нас', 'вам', 'вас', 'них', 'ним', 'ними', 'мені', 'тобі', 'йому', 'її', 'їй',
     'мне', 'тебе', 'ему', 'ей', 'им', 'ними', 'нами', 'вами',
+    'его', 'його',
     'сюди', 'туди', 'звідси', 'звідти', 'тут', 'там',
     'сюда', 'туда', 'здесь',
     'уходят', 'уходит', 'уйдут', 'ушли', 'все', 'всё',
@@ -920,6 +953,9 @@ def normalize_place_case(name: str) -> str:
     # Generic suffix rules for common patterns
     # -івку → -івка, -ївку → -ївка
     if lowered.endswith('івку') and len(lowered) > 5:
+        return name[:-1] + 'а'
+    # -ову → -ова (Лозову → Лозова)
+    if lowered.endswith('ову') and len(lowered) > 4:
         return name[:-1] + 'а'
     # -ку → -ка (but not too short - "ку" alone is junk)
     if lowered.endswith('ку') and len(lowered) > 4 and not lowered.endswith('оку'):
@@ -1146,7 +1182,7 @@ def _extract_place_names(text: str, oblast: Optional[str]) -> list[str]:
         'особлива', 'уважно', 'тот', 'ачм', 'акваторія',
         'заходять', 'останні', 'вилітають', 'працює',
         'розвернувся', 'крутиться', 'пройдуть', 'транзитом',
-        'дорозвідка', 'дорозвідки', 'пуск', 'пусків',
+        'дорозвідка', 'дорозвідки', 'дорозведка', 'дорозведки', 'пуск', 'пусків',
         'пускових', 'рубежів', 'рубежі', 'рубежу',
         'йдуть', 'йде', 'летять', 'летить', 'прямують',
         'повітряний', 'простір', 'україни',
@@ -1225,6 +1261,8 @@ def _extract_place_names(text: str, oblast: Optional[str]) -> list[str]:
         'пролетает', 'пролетают', 'пролітає', 'пролітають',
         'навпроти', 'строну', 'сторону', 'поки',
         'нему', 'идет', 'идёт', 'работа',
+        'пре', 'локаційно', 'локационно', 'реактивная',
+        'развед', 'бнр', 'зараз', 'кордоні', 'кордону', 'кордон',
         # UAV movement verbs (not places!)
         'продовжує', 'продовжують', 'змінив', 'змінила', 'змінили',
         'повернувся', 'повернулася', 'розвернувся', 'розвернулася',
@@ -1543,10 +1581,23 @@ def _clean_direction_target(value: str) -> Optional[str]:
     target = (value or '').strip()
     if not target:
         return None
+    target = re.split(r'[/,;]', target, maxsplit=1)[0].strip()
     words = target.split()
-    while len(words) > 1 and words[-1].lower() in {'з', 'із', 'зі', 'iз', 'с', 'со'}:
+    while len(words) > 1 and words[-1].lower() in {
+        'з', 'із', 'зі', 'iз', 'с', 'со',
+        'зараз', 'щас', 'сейчас', 'поки', 'пока',
+        'район', 'р-н', 'рн', 'область', 'області', 'области',
+        'кордоні', 'кордону', 'кордон',
+    }:
         words.pop()
     target = ' '.join(words).strip()
+    low = target.lower()
+    if low in {
+        'юга області', 'юга области', 'півдня області', 'півдня области',
+        'півночі області', 'півночі области', 'сходу області', 'сходу области',
+        'заходу області', 'заходу области',
+    }:
+        return None
     return target or None
 
 
@@ -1568,6 +1619,14 @@ def _extract_direction(text: str) -> Optional[str]:
     mb = RE_DIRECTION_BARE_COURSE.search(text)
     if mb:
         return _clean_direction_target(mb.group(1))
+    area_matches = list(RE_DIRECTION_AREA.finditer(text))
+    if area_matches and (
+        len(area_matches) > 1 or re.search(r'\b(?:повз|далі|потім)\b', text, re.IGNORECASE)
+    ):
+        return _clean_direction_target(area_matches[-1].group(1))
+    mt = RE_CURRENT_TO_TARGET.search(text)
+    if mt:
+        return _clean_direction_target(mt.group(1))
     # Cardinal direction: "курсом на захід" → "захід"
     mc = RE_CARDINAL_DIRECTION.search(text)
     if mc:
@@ -1616,6 +1675,7 @@ def _extract_near(text: str) -> Optional[str]:
     if m:
         near = m.group(1).strip()
         near = re.split(r'\b(?:далі|потім|курс(?:ом)?|напрям(?:ок|ку)?)\b', near, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        near = re.sub(r'^(?:район[іу]?\s+|р[\-\s]?н\s+)', '', near, flags=re.IGNORECASE).strip()
         return near or None
     return None
 
@@ -1862,6 +1922,28 @@ def _split_multi_entry(text: str) -> list[tuple[Optional[str], str]]:
     if len(emoji_lines) > 1:
         return [(None, line) for line in emoji_lines]
 
+    # Strategy 1.45: one emoji/type header followed by bare settlement lines.
+    # Example from єРадар: "❗️🛵\nНові Петрівці\nРожівка\nКонча - Заспа".
+    lines = [ln.strip() for ln in text.split('\n') if ln.strip()]
+    if (
+        len(lines) >= 2
+        and re.search(r'[🛵🛸✈🚀]|(?:бпла|шахед|дрон|ракета)', lines[0], re.IGNORECASE)
+        and not any('>' in ln for ln in lines[1:])
+    ):
+        bare_targets: list[tuple[Optional[str], str]] = []
+        for line in lines[1:]:
+            if any(skip in line.lower() for skip in ['підтримати', 'підписатися', 't.me/', 'monobank', 'канал:']):
+                continue
+            if re.search(r'\b(?:views?|перегляд|коментар|донат|збір)\b', line, re.IGNORECASE):
+                continue
+            line = re.sub(r'^[→►▶•\-–—\s]+', '', line).strip()
+            if not line or len(re.sub(r'[^\w]', '', line)) < 3:
+                continue
+            line = re.sub(r'\s+-\s+', '-', line)
+            bare_targets.append((None, 'БпЛА на ' + line))
+        if bare_targets:
+            return bare_targets
+
     # Strategy 1.5: Handle direct →City format: "✈️ БПЛA→Суми/р-н" / "🚀→Дніпро/р-н"
     # These have no oblast header but use arrow directly attached to city
     arrow_format = list(re.finditer(
@@ -1908,6 +1990,14 @@ def _split_multi_entry(text: str) -> list[tuple[Optional[str], str]]:
         for line in text.split('\n'):
             line = _collapse_prep_slashes(line.strip())
             if '/' in line:
+                if re.search(
+                    r'\b(?:на|до|в\s+бік|у\s+бік|курс(?:ом)?(?:\s+на)?)\s+'
+                    r'[' + _CYR_NAME + r']{2,}\s*/\s*[' + _CYR_NAME + r']{2,}',
+                    line,
+                    re.IGNORECASE,
+                ):
+                    entries.append((None, line))
+                    continue
                 test_parts = [p.strip().rstrip('.') for p in line.split('/')]
                 for part in test_parts:
                         part = part.strip().rstrip('.')
@@ -1927,6 +2017,33 @@ def _split_multi_entry(text: str) -> list[tuple[Optional[str], str]]:
             if p and len(re.sub(r'[^\w]', '', p)) >= 3:
                 entries.append((None, p))
         return entries if entries else [(None, text)]
+
+    # Strategy 2.1: regional tracker shorthand "A > B шах" / "A -> B ZALA".
+    # Treat left side as current/near point and right side as direction.
+    arrow_chain_entries: list[tuple[Optional[str], str]] = []
+    for line in text.split('\n'):
+        line = line.strip()
+        if not line or '>' not in line:
+            continue
+        if not re.search(r'\b(?:шах|шахед|шахеди|бпла|дрон|zala|зала|невідомий|розвід|каб)\b|[🛵🛸✈💣]', line, re.IGNORECASE):
+            continue
+        parts = [p.strip(' .;') for p in line.split('>') if p.strip(' .;')]
+        if len(parts) < 2:
+            continue
+        left = re.sub(r'\b(?:район|р[\-\s]?н)\b', '', parts[0], flags=re.IGNORECASE).strip()
+        right = re.sub(
+            r'\b(?:шахед[иів]*|шах|бпла|дрон[иів]*|невідомий|розвід(?:ник)?|zala|зала|каб[иів]*)\b',
+            '',
+            parts[1],
+            flags=re.IGNORECASE,
+        ).strip()
+        if left and right:
+            kind = 'КАБ' if re.search(r'\bкаб', line, re.IGNORECASE) else (
+                'ZALA' if re.search(r'\b(?:zala|зала|розвід)', line, re.IGNORECASE) else 'шахед'
+            )
+            arrow_chain_entries.append((None, f'{kind} повз {left} на {right}'))
+    if arrow_chain_entries:
+        return arrow_chain_entries
 
     # Strategy 2.2: Compact comma-separated tracker lines:
     # "2 БпЛА на Полтаву, 1 на Миргород".
@@ -2360,7 +2477,12 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
             event_type = classify_event(text)
 
         # Fallback: short "City" or "City/р-н" messages (e.g. "Вознесенськ/р-н") — treat as uav
-        if event_type == 'unknown' and len(entry_text.strip()) < 50:
+        if (
+            event_type == 'unknown'
+            and len(entry_text.strip()) < 50
+            and not re.match(r'^\s*\d+(?:[,.]\d+)?\s*км\s+до\s+', entry_text, re.IGNORECASE)
+            and not re.match(r'^\s*(?:на|до|в\s+бік)\s+', entry_text, re.IGNORECASE)
+        ):
             _place_oblast_hint = header_oblast or (
                 None if _suppress_msg_oblast else msg_oblast
             )
@@ -2387,6 +2509,30 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
         near = _extract_near(entry_text)
         count = extract_count(entry_text)
         _direction_from_arrow = bool(RE_ARROW_TARGET.search(entry_text))
+        _has_current_place_cue = bool(re.search(
+            r'\b(?:над|біля|поблизу|повз|район[іу]?|в\s+районі|у\s+районі|'
+            r'возле|в\s+районе|у\s+района|навпроти)\b',
+            entry_text,
+            re.IGNORECASE,
+        ))
+        if (
+            not direction
+            and event_type in {'uav', 'recon'}
+            and not _has_current_place_cue
+            and not re.search(r'\b(?:виліз|вилiз|вылез|зайшов|залетів|залетiв)\b', entry_text, re.IGNORECASE)
+        ):
+            _target_only_m = RE_UAV_TARGET_ONLY.search(entry_text)
+            if _target_only_m:
+                _tok = _clean_direction_target(_target_only_m.group(1))
+                _place_lower = {pn.lower() for pn in place_names}
+                # «шахед на Лящівка з Полтавщини»: при явному регіоні походження спільний топонім —
+                # це поточне місце, не direction-only (не перетворювати на target_city без pin).
+                # Без origin-контексту лишаємо класичну поведінку «на X» → target-only (на місці pin прибирається).
+                if _tok and (
+                    _tok.lower() not in _place_lower
+                    or not _origin_oblast_context
+                ):
+                    direction = _tok
 
         explicit_oblast_direction = None
         filtered_place_names: list[str] = []
@@ -2462,11 +2608,12 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
         if direction and direction.lower().strip() not in CARDINAL_DIRECTIONS:
             if not _oblast_from_adjective_token(direction):
                 _target_city_from_direction = normalize_place_case(direction)
-                if _direction_from_arrow:
+                if event_type in {'uav', 'recon'}:
                     place_names = [
                         pn for pn in place_names
                         if pn.lower() != _target_city_from_direction.lower()
                     ]
+                if _direction_from_arrow:
                     # Arrow notation marks destination, not current position. Prefer
                     # the destination oblast over an origin oblast extracted from "з ...щини".
                     for _stem, _official in OBLAST_NORMALIZATION.items():
@@ -2521,8 +2668,23 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
 
         # Multiple distinct place_names → separate entities (e.g. slash-split leftovers)
         # Note: Do not split if this describes a trajectory (e.g. "повз Київ далі Васильків")
-        _is_trajectory = bool(re.search(r'\b(?:далі|потім|курсом|через)\b', entry_text, re.IGNORECASE))
-        if len(place_names) > 1 and event_type in MULTI_PLACE_EVENT_TYPES and not _is_trajectory:
+        _tcourse = _transit_target_city or _target_city_from_direction
+        _is_trajectory = bool(re.search(
+            r'\b(?:далі|потім|через)\b', entry_text, re.IGNORECASE
+        ) or RE_CURRENT_TO_TARGET.search(entry_text) or (
+            _has_current_place_cue and _tcourse
+        ) or (
+            re.search(r'\bкурс(?:ом)?\b', entry_text, re.IGNORECASE)
+            and not _has_current_place_cue
+        ))
+        # Кілька поточних точок («Возле A, B … курс на C»): лишаємо кілька сутностей навіть якщо
+        # _is_trajectory через cue+ціль інакше звалить у одну primary_place.
+        _multi_nearby_with_cue = _has_current_place_cue and len(place_names) > 1
+        if (
+            len(place_names) > 1
+            and event_type in MULTI_PLACE_EVENT_TYPES
+            and (not _is_trajectory or _multi_nearby_with_cue)
+        ):
             per_count = max(1, count // len(place_names))
             for pn in place_names:
                 results.append(ParsedEntities(
@@ -2542,8 +2704,17 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
             # Траєкторія: «курсом на X», «через …» — не ділиться на кілька сутностей, і
             # _extract_place_names() інколи перший токен дає хибне місто (порядок/абревіат. «Кр. Рог»).
             # У такому випадку ціль курсу з RE_DIRECTION надійніша за place_names[0].
-            _tcourse = _transit_target_city or _target_city_from_direction
-            if _is_trajectory and _tcourse:
+            _target_only_course = (
+                event_type in {'uav', 'recon'}
+                and _tcourse
+                and direction
+                and not near
+                and not origin
+                and not _has_current_place_cue
+            )
+            if _target_only_course:
+                _primary_place = None
+            elif _is_trajectory and _tcourse and not _has_current_place_cue:
                 _primary_place = _tcourse
             else:
                 _primary_place = place_names[0] if place_names else (normalize_place_case(near) if near else None)
@@ -2599,6 +2770,8 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
     # Fallback: short directional messages ("На Глеваху.", "Повз Березну на Куликівку")
     # These are follow-up UAV tracking messages without explicit threat keywords
     if not results and len(text.strip()) < 80:
+        if re.match(r'^\s*\d+(?:[,.]\d+)?\s*км\s+до\s+', text, re.IGNORECASE):
+            return []
         m = re.search(
             r'(?:^|\s)(?:на|до|у|повз|над|в\s+бік|в)\s+'
             r'([А-ЯІЇЄҐа-яіїєґ][а-яіїєґ\'\ʼ\-]{2,})',
@@ -2608,13 +2781,15 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
             place = normalize_place_case(m.group(1).strip())
             # Don't use generic words as places
             if place.lower() not in {'містом', 'місто', 'міста', 'містечко', 'бік', 'патрулюванні'}:
+                _is_target_only = bool(re.match(r'^\s*(?:на|до|в\s+бік)\s+', text, re.IGNORECASE))
                 results.append(ParsedEntities(
                     event_type='uav',
-                    place_name=place,
+                    place_name=None if _is_target_only else place,
                     oblast=msg_oblast or extract_oblast_authority(text),
                     count=extract_count(text),
                     direction=_extract_direction(text),
                     near=_extract_near(text),
+                    target_city=place if _is_target_only else None,
                     raw_text=text,
                 ))
 

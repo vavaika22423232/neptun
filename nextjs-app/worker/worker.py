@@ -52,6 +52,7 @@ from ingest_queue import IngestQueue
 from geo_bounds import is_plausible_threat_coord
 from geo.maritime_region import (
     has_maritime_current_context,
+    is_maritime_context,
     maritime_current_position,
     normalize_maritime_marker_fields,
 )
@@ -133,34 +134,76 @@ def _ingest_coords_ok(data: dict) -> bool:
         return False
 
 
-# Event types that bypass the alarm check — these are instant/critical threats
-# where the alarm siren may not have been activated yet.
+# Parser event_types that skip regional alarm (meta / balloon). Others require active alarm.
 _ALARM_BYPASS_TYPES = frozenset({
-    'ballistic', 'launch', 'missile', 'explosion', 'kab',
-    'shahed', 'uav', 'drone', 'fpv', 'rozved',
+    'alert',
+    'allclear',
+    'unknown',
+    'info',
+    'air_balloon',
 })
 
+def _channels_skip_air_alarm_gate(channel_name: str | None) -> bool:
+    """Channels listed in INGEST_SKIP_AIR_ALARM_CHANNELS skip the active-air-alarm ingest gate."""
+    ch = (channel_name or '').strip().lower()
+    if not ch:
+        return False
+    extra = os.getenv('INGEST_SKIP_AIR_ALARM_CHANNELS', '').strip()
+    if not extra:
+        return False
+    extras = {x.strip().lower() for x in extra.split(',') if x.strip()}
+    return ch in extras
 
-def _should_ingest_by_alarm(region: str | None, event_type: str, raion: str | None = None) -> bool:
+
+def _should_ingest_by_alarm(
+    region: str | None,
+    event_type: str,
+    raion: str | None = None,
+    place: str | None = None,
+    *,
+    stated_oblast: str | None = None,
+) -> bool:
     """Check if a marker should be ingested based on active alarms.
 
     Returns True (allow ingest) when:
-    - event type is instant/critical (ballistic, launch, missile, kab, explosion)
-    - alarm state is not loaded yet (fail-open)
-    - region is unknown
-    - region has an active alarm (state or district level)
+    - event type is meta (alert / allclear / unknown bypass)
+    - alarm cache not loaded yet (fail-open inside is_region_under_alarm)
+    - oblast or district has an active alarm for this region / raion / place label
+    - **or** `stated_oblast` (GPT / секція «Сумщина:») matches alarms even if resolver `region` drifted
     """
     if event_type in _ALARM_BYPASS_TYPES:
         return True
     try:
         from alarm_monitor import is_region_under_alarm, is_district_under_alarm
-        if is_region_under_alarm(region):
-            return True
+
+        seen_keys: set[str] = set()
+        for obl in (region, stated_oblast):
+            if not obl:
+                continue
+            key = str(obl).strip()
+            if not key or key in seen_keys:
+                continue
+            seen_keys.add(key)
+            if is_region_under_alarm(key):
+                return True
+
         if raion and is_district_under_alarm(raion):
+            return True
+        if place and is_district_under_alarm(place):
             return True
         return False
     except ImportError:
         return True
+
+
+def _is_maritime_alarm_gate_bypass(data: dict, msg_text: str, location: str | None, resolve_status: str | None) -> bool:
+    """Allow offshore current-position markers before official oblast alarm starts."""
+    if not has_maritime_current_context(msg_text, data.get('origin')):
+        return False
+    return is_maritime_context(
+        resolve_status or data.get('resolve_status'),
+        location or data.get('place') or data.get('location'),
+    )
 
 
 def _distinct_toponym_signals(entities_list: list) -> int:
@@ -420,9 +463,16 @@ async def _intelligence_save_loop():
 # ── Global Settings Sync ─────────────────────────────────────────────────────
 
 MIN_CONFIDENCE_THRESHOLD = 0.65
+MIN_CONFIDENCE_UAV_THRESHOLD: float | None = 0.45
 
 
-def _min_trusted_resolver_conf() -> float:
+def _effective_min_confidence_for_event(event_type: str | None) -> float:
+    if _is_uav_event(event_type) and MIN_CONFIDENCE_UAV_THRESHOLD is not None:
+        return float(MIN_CONFIDENCE_UAV_THRESHOLD)
+    return float(MIN_CONFIDENCE_THRESHOLD)
+
+
+def _min_trusted_resolver_conf(event_type: str | None = None) -> float:
     """Trust resolver lat/lng only if confidence clears admin map bar + margin."""
     raw = os.getenv('NEPTUN_MIN_RESOLVED_POINT_CONF', '').strip()
     if raw:
@@ -432,7 +482,8 @@ def _min_trusted_resolver_conf() -> float:
                 return v
         except ValueError:
             pass
-    return max(0.32, float(MIN_CONFIDENCE_THRESHOLD) + 0.02)
+    base = _effective_min_confidence_for_event(event_type)
+    return max(0.32, base + 0.02)
 
 
 def _cap_confidence_coarse_placements(confidence: float, resolve_status: str) -> float:
@@ -442,6 +493,9 @@ def _cap_confidence_coarse_placements(confidence: float, resolve_status: str) ->
         'oblast_direction_only',
         'estimated_oblast_center',
         'estimated_offset_coastal',
+        'estimated_fallback_target',
+        'target_only_no_current_position',
+        'weak_target_only_no_point',
     })
     if resolve_status not in coarse:
         return confidence
@@ -451,7 +505,7 @@ def _cap_confidence_coarse_placements(confidence: float, resolve_status: str) ->
 
 async def _sync_settings_loop():
     """Background task to fetch global threshold settings periodically."""
-    global MIN_CONFIDENCE_THRESHOLD
+    global MIN_CONFIDENCE_THRESHOLD, MIN_CONFIDENCE_UAV_THRESHOLD
     # Wait for the INGEST_URL to be set, otherwise default to local 0.3
     if not INGEST_URL:
         return
@@ -471,6 +525,12 @@ async def _sync_settings_loop():
                 if isinstance(new_min, (int, float)):
                     MIN_CONFIDENCE_THRESHOLD = float(new_min)
                     log.info(f"Settings sync: MIN_CONFIDENCE_THRESHOLD = {MIN_CONFIDENCE_THRESHOLD}")
+                new_uav_min = data.get('minConfidenceUav')
+                if isinstance(new_uav_min, (int, float)):
+                    MIN_CONFIDENCE_UAV_THRESHOLD = float(new_uav_min)
+                    log.info(f"Settings sync: MIN_CONFIDENCE_UAV_THRESHOLD = {MIN_CONFIDENCE_UAV_THRESHOLD}")
+                elif new_uav_min is None:
+                    MIN_CONFIDENCE_UAV_THRESHOLD = None
             await resp.read()
     except Exception as e:
         log.debug(f"Initial settings fetch failed: {e}")
@@ -486,6 +546,17 @@ async def _sync_settings_loop():
                         if MIN_CONFIDENCE_THRESHOLD != new_min:
                             log.info(f"Admin Config Update: Changed MIN_CONFIDENCE_THRESHOLD from {MIN_CONFIDENCE_THRESHOLD} to {new_min}")
                             MIN_CONFIDENCE_THRESHOLD = new_min
+                    new_uav_min = data.get('minConfidenceUav')
+                    if isinstance(new_uav_min, (int, float)):
+                        if MIN_CONFIDENCE_UAV_THRESHOLD != new_uav_min:
+                            log.info(
+                                f"Admin Config Update: Changed MIN_CONFIDENCE_UAV_THRESHOLD "
+                                f"from {MIN_CONFIDENCE_UAV_THRESHOLD} to {new_uav_min}"
+                            )
+                            MIN_CONFIDENCE_UAV_THRESHOLD = float(new_uav_min)
+                    elif new_uav_min is None and MIN_CONFIDENCE_UAV_THRESHOLD is not None:
+                        log.info("Admin Config Update: MIN_CONFIDENCE_UAV_THRESHOLD disabled")
+                        MIN_CONFIDENCE_UAV_THRESHOLD = None
                 await resp.read()
         except Exception as e:
             log.debug(f"Failed to fetch global settings: {e}")
@@ -573,6 +644,14 @@ async def main():
             log.warning(f"  Could not join channel '{ch}': {e}")
     log.info(f"Joined {joined_count}/{len(CHANNELS)} channels")
 
+    try:
+        from kyiv_gemini_reply import is_configured as _kyiv_gemini_cfg
+
+        if _kyiv_gemini_cfg():
+            log.info('Kyiv Gemini Telegram replies: ENABLED (NEPTUN_KYIV_GEMINI_REPLY + allowlist)')
+    except Exception:
+        pass
+
     # (Removed trajectory_intelligence load)
 
     # Start learning loop in background
@@ -604,7 +683,7 @@ async def main():
             log.error(f"Error processing message: {e}", exc_info=True)
 
     client.on(events.NewMessage())(_dispatch)
-    # Many channels (rozvidkaneba, sectorv666) edit messages to add new drone targets.
+    # Many channels (e.g. rozvidkaneba) edit messages to add new drone targets.
     # Without this, updated positions are silently lost.
     client.on(events.MessageEdited())(_dispatch)
     log.info("Registered handlers: NewMessage + MessageEdited")
@@ -719,10 +798,17 @@ _COORD_JITTER_ENABLED = os.getenv('NEPTUN_COORD_JITTER', '1').lower() not in ('0
 # Geo quality (see QUALITY.md): recent-events bearing is a weak heuristic — off by default
 _RECENT_EVENTS_BEARING = os.getenv('NEPTUN_RECENT_EVENTS_BEARING', '').lower() in ('1', 'true', 'yes')
 _USE_OBLAST_CENTER = os.getenv('NEPTUN_USE_OBLAST_CENTER', '').lower() in ('1', 'true', 'yes')
+_ALLOW_WEAK_UAV_TRAJECTORY = os.getenv('NEPTUN_ALLOW_WEAK_UAV_TRAJECTORY', '').lower() in ('1', 'true', 'yes')
 # Default ON: drop pin when resolver has multiple tied candidates (reduces wrong-city pins).
 _OMIT_AMBIGUOUS_COORDS = os.getenv('NEPTUN_OMIT_COORDS_ON_AMBIGUOUS', '1').lower() not in (
     '0', 'false', 'no', 'off',
 )
+
+_UAV_EVENT_TYPES = frozenset({'shahed', 'uav', 'drone', 'fpv', 'rozved'})
+
+
+def _is_uav_event(event_type: str | None) -> bool:
+    return str(event_type or '').lower().strip() in _UAV_EVENT_TYPES
 
 
 def _jitter_coords(lat: float, lng: float, unit_idx: int, seed_str: str, radius_km: float = _JITTER_RADIUS_KM) -> tuple[float, float]:
@@ -953,7 +1039,9 @@ def _build_trajectory(
             prediction_confidence = 0.8
 
     # ── 5. Learned targets (frequency-based, persisted on disk) ──
-    if not target_coords:
+    # For UAV/Shahed tracks this is intentionally opt-in: learned destination
+    # guesses look precise on the map but often behave like random movement.
+    if not target_coords and (not _is_uav_event(event_type) or _ALLOW_WEAK_UAV_TRAJECTORY):
         try:
             from learned_trajectory_targets import suggest_city_for_threat
             lc = suggest_city_for_threat(
@@ -972,7 +1060,7 @@ def _build_trajectory(
             log.debug(f'Learned trajectory: {e}')
 
     # ── 6. AI trajectory prediction (legacy fallback) ──
-    if not target_coords:
+    if not target_coords and (not _is_uav_event(event_type) or _ALLOW_WEAK_UAV_TRAJECTORY):
         ai_result = ai_predict_trajectory(
             lat, lng, event_type, region,
             entities.place_name,
@@ -1199,21 +1287,24 @@ async def process_new_message(event):
     if event.message.reply_to:
         reply_to_msg_id = event.message.reply_to.reply_to_msg_id
 
-    # 1. Message-level deduplication (skip for edited messages — content changed)
+    # 1. Deduplication
+    #    - Non-edit: msg_id is enough (Telegram won't reuse msg_id for a new post).
+    #    - Edit: skip only when text unchanged vs last handled version (avoid GPT storms).
+    #    Content-hash dedup must NOT run on plain posts: after `_cleanup()` the older
+    #    `channel_id:msg_id` key can be evicted while `...content:digest` remains → false "same content".
     if not is_edit and db.is_message_processed(channel_id, msg_id):
         await _publish_feed_event(
             status='skipped', channel_name=channel_name, msg_text=msg_text,
             channel_id=channel_id, msg_id=msg_id, reason='already processed (msg dedup)',
         )
         return
-    if db.is_message_content_processed(channel_id, msg_id, msg_text):
+    if is_edit and db.is_message_content_processed(channel_id, msg_id, msg_text):
         await _publish_feed_event(
             status='skipped', channel_name=channel_name, msg_text=msg_text,
-            channel_id=channel_id, msg_id=msg_id, reason='already processed (same content)',
+            channel_id=channel_id, msg_id=msg_id, reason='already processed (unchanged edit)',
         )
         return
-    db.mark_message_processed(channel_id, msg_id)
-    db.mark_message_content_processed(channel_id, msg_id, msg_text)
+    db.mark_message_processed_pair(channel_id, msg_id, msg_text)
 
     # 2. GPT-primary pipeline with regex fallback
     # Step 2a: Fast pre-filter (spam, summaries, negations) — no API cost
@@ -1258,7 +1349,8 @@ async def process_new_message(event):
         _regex_allclear = detect_allclear_keywords(msg_text)
         if all_entities and any(e.is_allclear for e in all_entities) and not _regex_allclear:
             _hard_allclear = re.search(
-                r'\b(?:побили|зняли\s+загроз|загрозу\s+зняли|збили|збит[а-яіїєґ]*)\b',
+                r'\b(?:побили|зняли\s+загроз|загрозу\s+зняли|збили|збит[а-яіїєґ]*|'
+                r'його\s+ебнули|его\s+ебнули)\b',
                 msg_text.lower(),
             )
             if not _hard_allclear:
@@ -1453,9 +1545,9 @@ async def process_new_message(event):
         # Recon/дорозвідка suppresses UAV groups
         # Oblast-level "дорозвідка" (keyword present, no place_name) = allclear for UAVs
         # Place-level recon = suppress at place only (still ingest marker)
-        # Generic recon without "дорозвідк" keyword = regular recon sighting (ingest marker)
+        # Generic recon without "дорозвідк/дорозведк" keyword = regular recon sighting (ingest marker)
         if entities.event_type == 'recon' and entities.oblast:
-            _is_dorozvidka = bool(re.search(r'дорозвідк', msg_text, re.IGNORECASE))
+            _is_dorozvidka = bool(re.search(r'дорозв[іе]дк', msg_text, re.IGNORECASE))
             if not entities.place_name and _is_dorozvidka:
                 # Oblast-level дорозвідка — clear all UAV markers in this oblast
                 await _clear_region_markers(entities.oblast, ['shahed', 'rozved'])
@@ -1618,7 +1710,7 @@ async def process_new_message(event):
 
         geo_decision = decide_resolved_location(
             resolved,
-            min_point_confidence=_min_trusted_resolver_conf(),
+            min_point_confidence=_min_trusted_resolver_conf(entities.event_type),
             omit_ambiguous=_OMIT_AMBIGUOUS_COORDS,
         )
 
@@ -1727,8 +1819,10 @@ async def process_new_message(event):
                 _target_city = normalize_place_case(entities.direction)
         _origin_raw = getattr(entities, 'origin', None)
         _maritime_current = has_maritime_current_context(msg_text, _origin_raw)
+        _maritime_origin_synthetic = False
         if _maritime_current and not _origin_raw:
             _origin_raw = 'Чорне море'
+            _maritime_origin_synthetic = True
 
         # Normalize target_city and origin via ORIGIN_NORMALIZATION so "Полтавщина"→"Полтава",
         # "Сумщина"→"Суми" — geocoders need city names, not oblique oblast forms
@@ -1796,7 +1890,9 @@ async def process_new_message(event):
             _tc = _geocode_direction_target(_target_city, region)
             if _tc:
                 _target_coords = _tc
-                _origin_coords = _geocode_origin(_origin_raw, allow_resolver_fallback=False) if _origin_raw else None
+                _origin_coords = None
+                if _origin_raw and not _maritime_origin_synthetic:
+                    _origin_coords = _geocode_origin(_origin_raw, allow_resolver_fallback=False)
                 try:
                     _maritime_frac = float(os.getenv('NEPTUN_MARITIME_APPROACH_FRACTION', '0.16'))
                 except ValueError:
@@ -1918,7 +2014,38 @@ async def process_new_message(event):
                                     f"→ target {_target_city} ({_tc[0]:.3f},{_tc[1]:.3f}) bearing={bearing_to_target:.1f}°"
                                 )
                         else:
-                            # Origin failed to geocode — fall back to target-offset
+                            if _is_uav_event(entities.event_type):
+                                coords = None
+                                resolve_status = 'target_only_no_current_position'
+                                confidence = min(max(confidence, 0.24), 0.32)
+                                log.info(
+                                    f"TARGET-ONLY [{channel_name}]: origin '{_origin_raw}' did not geocode, "
+                                    f"target={_target_city} — suppress UAV pin instead of target-offset"
+                                )
+                            else:
+                                # Origin failed to geocode — fall back to target-offset
+                                reverse_bearing = (bearing_to_target + 180) % 360
+                                _offset_km = 15.0 if _tc[0] >= 47.0 else 20.0
+                                offset_lat, offset_lng = _project_point(
+                                    _tc[0], _tc[1], reverse_bearing, _offset_km
+                                )
+                                coords = (offset_lat, offset_lng)
+                                resolve_status = 'estimated_offset'
+                                confidence = max(confidence, 0.6)
+                                log.info(
+                                    f"EST-OFFSET (no origin): target={_target_city} "
+                                    f"→ {_offset_km:.0f}km offset ({offset_lat:.3f},{offset_lng:.3f})"
+                                )
+                    else:
+                        if _is_uav_event(entities.event_type):
+                            coords = None
+                            resolve_status = 'target_only_no_current_position'
+                            confidence = min(max(confidence, 0.24), 0.32)
+                            log.info(
+                                f"TARGET-ONLY [{channel_name}]: {_target_city} + bearing "
+                                f"{bearing_to_target:.1f}° but no current/origin point — suppress UAV pin"
+                            )
+                        else:
                             reverse_bearing = (bearing_to_target + 180) % 360
                             _offset_km = 15.0 if _tc[0] >= 47.0 else 20.0
                             offset_lat, offset_lng = _project_point(
@@ -1928,22 +2055,9 @@ async def process_new_message(event):
                             resolve_status = 'estimated_offset'
                             confidence = max(confidence, 0.6)
                             log.info(
-                                f"EST-OFFSET (no origin): target={_target_city} "
-                                f"→ {_offset_km:.0f}km offset ({offset_lat:.3f},{offset_lng:.3f})"
+                                f"EST-OFFSET: target={_target_city} ({_tc[0]:.3f},{_tc[1]:.3f}) "
+                                f"bearing={bearing_to_target:.1f}° → {_offset_km:.0f}km offset ({offset_lat:.3f},{offset_lng:.3f})"
                             )
-                    else:
-                        reverse_bearing = (bearing_to_target + 180) % 360
-                        _offset_km = 15.0 if _tc[0] >= 47.0 else 20.0
-                        offset_lat, offset_lng = _project_point(
-                            _tc[0], _tc[1], reverse_bearing, _offset_km
-                        )
-                        coords = (offset_lat, offset_lng)
-                        resolve_status = 'estimated_offset'
-                        confidence = max(confidence, 0.6)
-                        log.info(
-                            f"EST-OFFSET: target={_target_city} ({_tc[0]:.3f},{_tc[1]:.3f}) "
-                            f"bearing={bearing_to_target:.1f}° → {_offset_km:.0f}km offset ({offset_lat:.3f},{offset_lng:.3f})"
-                        )
                 else:
                     # No bearing — try placing at origin coords directly
                     if _origin_raw:
@@ -1954,41 +2068,49 @@ async def process_new_message(event):
                             confidence = max(confidence, 0.5)
                             log.info(f"EST: no bearing, using origin '{_origin_raw}' coords: {_oc}")
                     if not coords:
-                        coastal_regions = ['Одеська область', 'Миколаївська область', 'Херсонська область', 'Запорізька область', 'АР Крим']
-                        if region in coastal_regions:
-                            # Region-specific offset: tracking threats entering mostly from south
-                            _offset_km = 15.0 if _tc[0] >= 47.0 else 25.0
-                            offset_lat, offset_lng = _project_point(
-                                _tc[0], _tc[1], 180.0, _offset_km
-                            )
-                            coords = (offset_lat, offset_lng)
-                            resolve_status = 'estimated_offset_coastal'
-                            # Higher confidence when target_city is geocoded and region is known (0.3 passes default minConf)
-                            confidence = max(confidence, 0.30 if (_target_city and region) else 0.15)
+                        if _is_uav_event(entities.event_type):
+                            resolve_status = 'target_only_no_current_position'
+                            confidence = min(max(confidence, 0.22), 0.32)
                             log.info(
-                                f"EST-OFFSET (coastal fallback): target={_target_city} → "
-                                f"{_offset_km:.0f}km south ({offset_lat:.3f},{offset_lng:.3f})"
+                                f"TARGET-ONLY [{channel_name}]: target={_target_city}, no origin/current/bearing — "
+                                f"suppress UAV pin instead of placing near target"
                             )
                         else:
-                            _oblast_center = (
-                                _fallback_coords_for_oblast(region) if region and _USE_OBLAST_CENTER else None
-                            )
-                            if _oblast_center:
-                                coords = _oblast_center
-                                resolve_status = 'estimated_oblast_center'
-                                confidence = max(confidence, 0.2)
+                            coastal_regions = ['Одеська область', 'Миколаївська область', 'Херсонська область', 'Запорізька область', 'АР Крим']
+                            if region in coastal_regions:
+                                # Region-specific offset: tracking threats entering mostly from south
+                                _offset_km = 15.0 if _tc[0] >= 47.0 else 25.0
+                                offset_lat, offset_lng = _project_point(
+                                    _tc[0], _tc[1], 180.0, _offset_km
+                                )
+                                coords = (offset_lat, offset_lng)
+                                resolve_status = 'estimated_offset_coastal'
+                                # Higher confidence when target_city is geocoded and region is known (0.3 passes default minConf)
+                                confidence = max(confidence, 0.30 if (_target_city and region) else 0.15)
                                 log.info(
-                                    f"EST-FALLBACK: no bearing for {_target_city}, "
-                                    f"using oblast center of {region}: ({coords[0]:.3f},{coords[1]:.3f})"
+                                    f"EST-OFFSET (coastal fallback): target={_target_city} → "
+                                    f"{_offset_km:.0f}km south ({offset_lat:.3f},{offset_lng:.3f})"
                                 )
                             else:
-                                # Default: place at geocoded target city (predictable) instead of oblast centroid
-                                coords = _tc
-                                resolve_status = 'estimated_fallback_target'
-                                confidence = max(confidence, 0.25)
-                                log.info(
-                                    f"EST-OFFSET (no bearing, no oblast): placing directly at target={_target_city} -> {_tc}"
+                                _oblast_center = (
+                                    _fallback_coords_for_oblast(region) if region and _USE_OBLAST_CENTER else None
                                 )
+                                if _oblast_center:
+                                    coords = _oblast_center
+                                    resolve_status = 'estimated_oblast_center'
+                                    confidence = max(confidence, 0.2)
+                                    log.info(
+                                        f"EST-FALLBACK: no bearing for {_target_city}, "
+                                        f"using oblast center of {region}: ({coords[0]:.3f},{coords[1]:.3f})"
+                                    )
+                                else:
+                                    # Default: place at geocoded target city (predictable) instead of oblast centroid
+                                    coords = _tc
+                                    resolve_status = 'estimated_fallback_target'
+                                    confidence = max(confidence, 0.25)
+                                    log.info(
+                                        f"EST-OFFSET (no bearing, no oblast): placing directly at target={_target_city} -> {_tc}"
+                                    )
 
         elif _target_city and coords:
             # Case A: place_name resolved — keep resolved coords, just set trajectory target
@@ -2004,7 +2126,11 @@ async def process_new_message(event):
 
         # Fallback: try geocoding place_name/direction before oblast center
         used_fallback = False
-        if not coords:
+        _suppress_target_only_pin = resolve_status in {
+            'target_only_no_current_position',
+            'weak_target_only_no_point',
+        }
+        if not coords and not _suppress_target_only_pin:
             _place_to_try = entities.place_name or (entities.direction if getattr(entities, 'direction', '') and getattr(entities, 'direction', '').lower() not in CARDINAL_DIRECTIONS else None)
             if _place_to_try:
                 _geo_hint = (_ent_dict.get('oblast') or '').strip() or region
@@ -2017,7 +2143,7 @@ async def process_new_message(event):
                     if _geo_hint and _geo_hint != region:
                         region = _geo_hint
                     log.info(f"Direction geocode fallback: {_place_to_try} ({_geo_hint}) → {coords}")
-        if not coords and region:
+        if not coords and region and not _suppress_target_only_pin:
             fallback = _fallback_coords_for_oblast(region)
             if fallback:
                 coords = fallback
@@ -2094,6 +2220,7 @@ async def process_new_message(event):
         # ── Build trajectory (direction → target coords) ──────────────
         trajectory_data = None
         course_bearing = None
+        ticker_bearing = None
         distance_km = None
 
         if coords and speed_kmh > 0:
@@ -2200,6 +2327,11 @@ async def process_new_message(event):
             'location': location,
             'place': location,
             'region': region,
+            **(
+                {'oblast': _po}
+                if (_po := (_ent_dict.get('oblast') or '').strip())
+                else {}
+            ),
             'text': msg_text,
             'lat': coords[0] if coords else None,
             'lng': coords[1] if coords else None,
@@ -2237,6 +2369,10 @@ async def process_new_message(event):
             'is_estimated': resolve_status.startswith('estimated_') if resolve_status else False,
             'confidence_0_100': int(max(0, min(100, round(float(confidence) * 100)))),
             'placement_mode': 'point',
+            'analysis_source': (ai_analysis or {}).get('source'),
+            'analysis_confidence': (ai_analysis or {}).get('confidence'),
+            'analysis_target_city': (ai_analysis or {}).get('target_city'),
+            'analysis_reason': resolve_status,
         }
 
         normalize_maritime_marker_fields(data)
@@ -2278,6 +2414,113 @@ async def process_new_message(event):
         if parent and getattr(parent, 'track_id', None):
             data['track_id'] = parent.track_id
 
+        if (
+            parent
+            and not coords
+            and INGEST_URL
+            and resolve_status in {'target_only_no_current_position', 'weak_target_only_no_point'}
+            and getattr(parent, 'lat', None) is not None
+            and getattr(parent, 'lng', None) is not None
+            and (getattr(entities, 'target_city', None) or entities.direction)
+        ):
+            parent_coords = (float(parent.lat), float(parent.lng))
+            route_trajectory = _build_trajectory(
+                parent_coords,
+                entities,
+                entities.event_type,
+                region or parent.oblast,
+                channel_name=channel_name,
+                ai_analysis=ai_analysis,
+                target_city_coords=_target_coords,
+            )
+            route_end = route_trajectory.get('end') if route_trajectory else None
+            route_course, route_ticker = resolve_course_and_ticker_bearing(
+                start_lat=parent_coords[0],
+                start_lng=parent_coords[1],
+                end_lat=route_end[0] if route_end else None,
+                end_lng=route_end[1] if route_end else None,
+                trajectory_source=route_trajectory.get('source') if route_trajectory else None,
+                explicit_bearing=explicit_bearing,
+            )
+            route_distance_km = None
+            if route_end:
+                route_distance_km = round(
+                    _haversine_km(parent_coords[0], parent_coords[1], route_end[0], route_end[1]),
+                    1,
+                )
+
+            route_patch = {
+                'text': msg_text,
+                'course_direction': entities.direction,
+                'trajectory': route_trajectory,
+                'trajectory_source': route_trajectory.get('source') if route_trajectory else None,
+                'course_bearing': route_course,
+                'ticker_bearing': route_ticker,
+                'distance_km': route_distance_km,
+                'resolve_status': 'direction_update_from_chain',
+                'placement_mode': 'predictive',
+                'confidence': max(float(confidence), 0.45),
+                'confidence_0_100': int(max(45, min(100, round(float(confidence) * 100)))),
+                'track_id': getattr(parent, 'track_id', None),
+            }
+            route_patch = {k: v for k, v in route_patch.items() if v is not None}
+            if route_patch.get('trajectory') or route_patch.get('course_bearing') is not None:
+                try:
+                    session = get_http_session()
+                    async with session.patch(
+                        INGEST_URL,
+                        json={'id': parent.marker_id, 'updates': route_patch},
+                        headers={'X-Auth-Secret': INGEST_SECRET},
+                        timeout=aiohttp.ClientTimeout(total=10),
+                    ) as resp:
+                        body_text = await resp.text()
+                        if resp.status == 200:
+                            log.info(
+                                f"CHAIN DIRECTION [{channel_name}]: {parent.marker_id} "
+                                f"→ target={getattr(entities, 'target_city', None) or entities.direction} "
+                                f"(kept parent coords)"
+                            )
+                            chain_tracker.register(
+                                channel_id=channel_id,
+                                msg_id=msg_id,
+                                marker_id=parent.marker_id,
+                                event_type=entities.event_type,
+                                place=parent.place,
+                                oblast=region or parent.oblast,
+                                origin=getattr(entities, 'origin', None) or parent.origin,
+                                direction=entities.direction,
+                                target_city=getattr(entities, 'target_city', None),
+                                track_id=getattr(parent, 'track_id', None),
+                                lat=parent_coords[0],
+                                lng=parent_coords[1],
+                                raw_text=msg_text,
+                            )
+                            await _publish_feed_event(
+                                status='chain_update',
+                                channel_name=channel_name,
+                                msg_text=msg_text,
+                                channel_id=channel_id,
+                                msg_id=msg_id,
+                                threat_type=legacy_type,
+                                reason='direction-only update attached to previous track',
+                                region=region or parent.oblast,
+                                place=parent.place,
+                                lat=parent_coords[0],
+                                lng=parent_coords[1],
+                                course_bearing=route_course,
+                                track_id=getattr(parent, 'track_id', None),
+                                confidence=round(max(float(confidence), 0.45), 3),
+                                resolve_status='direction_update_from_chain',
+                                placement_mode='predictive',
+                                marker_id=parent.marker_id,
+                            )
+                            continue
+                        log.warning(
+                            f"CHAIN DIRECTION patch failed [{resp.status}]: {body_text[:200]}"
+                        )
+                except Exception as e:
+                    log.warning(f"CHAIN DIRECTION patch error: {e}")
+
         try:
             _multi_max = float(os.getenv('NEPTUN_MULTI_REF_MAX_CONF', '0.82'))
         except ValueError:
@@ -2287,12 +2530,13 @@ async def process_new_message(event):
         _placement = decide_placement_mode(
             resolve_status=resolve_status,
             confidence=float(confidence),
-            min_confidence=float(MIN_CONFIDENCE_THRESHOLD),
+            min_confidence=_effective_min_confidence_for_event(entities.event_type),
             sea_context_mismatch=_sea_mismatch,
             multi_reference_risk=_multi_risk,
             multi_reference_conf_ceiling=_multi_max,
         )
         data['placement_mode'] = _placement.mode
+        data['placement_reason'] = _placement.reason
         if _placement.hidden:
             data['hidden'] = True
 
@@ -2348,6 +2592,8 @@ async def process_new_message(event):
                                     direction=entities.direction,
                                     target_city=getattr(entities, 'target_city', None),
                                     track_id=data.get('track_id'),
+                                    lat=coords[0],
+                                    lng=coords[1],
                                     raw_text=msg_text,
                                 )
                             else:
@@ -2426,6 +2672,8 @@ async def process_new_message(event):
                                 direction=entities.direction,
                                 target_city=getattr(entities, 'target_city', None),
                                 track_id=getattr(parent, 'track_id', None),
+                                lat=coords[0],
+                                lng=coords[1],
                                 raw_text=msg_text,
                             )
                             await _publish_feed_event(
@@ -2548,6 +2796,10 @@ async def process_new_message(event):
                         'placement_mode': data.get('placement_mode'),
                         'hidden': bool(data.get('hidden')),
                         'resolve_status': resolve_status,
+                        'placement_reason': data.get('placement_reason'),
+                        'analysis_source': data.get('analysis_source'),
+                        'analysis_confidence': data.get('analysis_confidence'),
+                        'analysis_target_city': data.get('analysis_target_city'),
                         'trajectory_source': data.get('trajectory_source'),
                         'is_estimated': data.get('is_estimated'),
                     },
@@ -2559,18 +2811,11 @@ async def process_new_message(event):
         db.save_threat(threat_id, data, ttl=ttl)
         db.publish_update('new_threat', data)
 
+        _stated_oblast_gate = (_ent_dict.get('oblast') or '').strip() or None
+
         # Push marker to Next.js web service
         if not INGEST_URL:
             log.warning(f"Skipping ingest: INGEST_URL not configured")
-        elif not coords:
-            log.warning(f"Skipping ingest for {threat_id}: no coordinates")
-            await _publish_feed_event(
-                status='dropped', channel_name=channel_name, msg_text=msg_text,
-                channel_id=channel_id, msg_id=msg_id,
-                threat_type=legacy_type,
-                reason='no coordinates after geolocation',
-                place=location, region=region,
-            )
         elif data.get('hidden'):
             _hidden_mode = str(data.get('placement_mode') or 'hidden')
             log.info(f"Skipping ingest for {threat_id}: hidden ({_hidden_mode})")
@@ -2582,6 +2827,15 @@ async def process_new_message(event):
                 place=location, region=region,
                 confidence=round(confidence, 3),
                 placement_mode=_hidden_mode,
+            )
+        elif not coords:
+            log.warning(f"Skipping ingest for {threat_id}: no coordinates")
+            await _publish_feed_event(
+                status='dropped', channel_name=channel_name, msg_text=msg_text,
+                channel_id=channel_id, msg_id=msg_id,
+                threat_type=legacy_type,
+                reason='no coordinates after geolocation',
+                place=location, region=region,
             )
         elif not _ingest_coords_ok(data):
             log.warning(
@@ -2606,7 +2860,17 @@ async def process_new_message(event):
                 reason='outside_kherson_raion',
                 place=location, region=region,
             )
-        elif not _should_ingest_by_alarm(region, entities.event_type, raion=raion_name):
+        elif (
+            not _channels_skip_air_alarm_gate(channel_name)
+            and not _is_maritime_alarm_gate_bypass(data, msg_text, location, resolve_status)
+            and not _should_ingest_by_alarm(
+                region,
+                entities.event_type,
+                raion=raion_name,
+                place=location,
+                stated_oblast=_stated_oblast_gate,
+            )
+        ):
             log.info(
                 f"Skipping ingest for {threat_id}: no active alarm in {region} "
                 f"(raion={raion_name}, type={entities.event_type})"
@@ -2656,6 +2920,8 @@ async def process_new_message(event):
                                 direction=entities.direction,
                                 target_city=getattr(entities, 'target_city', None),
                                 track_id=data.get('track_id'),
+                                lat=coords[0],
+                                lng=coords[1],
                                 raw_text=msg_text,
                             )
                             await _publish_feed_event(
@@ -2682,7 +2948,7 @@ async def process_new_message(event):
                                     fcm_ok = send_threat_push(
                                         data,
                                         REGION_TOPIC_MAP,
-                                        min_confidence=float(MIN_CONFIDENCE_THRESHOLD),
+                                        min_confidence=_effective_min_confidence_for_event(entities.event_type),
                                     )
                                     if not fcm_ok:
                                         log.info(
@@ -2695,9 +2961,39 @@ async def process_new_message(event):
                                 log.info(
                                     f"FCM push skipped for {threat_id}: ingest accepted but marker is not public"
                                 )
+                            try:
+                                from kyiv_gemini_reply import schedule_kyiv_gemini_reply
+
+                                schedule_kyiv_gemini_reply(
+                                    client,
+                                    event,
+                                    channel_name=channel_name,
+                                    msg_text=msg_text,
+                                    entities=entities,
+                                    region=region,
+                                    location=location,
+                                    legacy_type=legacy_type,
+                                    coords=coords,
+                                )
+                            except Exception as _gem_e:
+                                log.debug('Kyiv Gemini reply schedule skipped: %s', _gem_e)
                             _posted = True
                             break
                         body_text = await resp.text()
+                        if resp.status == 422:
+                            # Next.js policy reject (e.g. UAV without active air alarm) — do not retry queue.
+                            log.info(
+                                f"Ingest policy reject (422), not queuing: {body_text[:220]}"
+                            )
+                            await _publish_feed_event(
+                                status='dropped', channel_name=channel_name, msg_text=msg_text,
+                                channel_id=channel_id, msg_id=msg_id,
+                                threat_type=legacy_type,
+                                reason='ingest policy reject (422)',
+                                place=location, region=region,
+                            )
+                            _posted = True
+                            break
                         if resp.status in (502, 503, 504) and _ing_i < len(_ingest_delays_sec) - 1:
                             log.warning(
                                 f"Ingest HTTP {resp.status} (transient), retry {_ing_i + 1}/"
