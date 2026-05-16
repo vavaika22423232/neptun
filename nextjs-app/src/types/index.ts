@@ -144,6 +144,8 @@ export interface Marker {
    * ≥90 solid pin + solid arrow | 70–89 semi arrow | 50–69 dashed | <50 area circle
    */
   display_confidence?: number;
+  /** Age in ms since the last real telemetry observation. */
+  age_ms?: number;
 }
 
 export interface Trajectory {
