@@ -40,14 +40,15 @@ export function trailColor(threatType: string): string {
 
 export type TrailFeature = {
   type: 'Feature';
-  geometry: { type: 'LineString'; coordinates: Position[] };
+  geometry: { type: 'LineString' | 'Point'; coordinates: any };
   properties: {
     mid: string;
-    trail_kind: 'trail' | 'projection';
+    trail_kind: 'trail' | 'projection' | 'uncertainty' | 'checkpoint';
     threat_type: string;
     trail_color: string;
     trail_opacity: number;
     trail_width: number;
+    checkpoint_label?: string;
   };
 };
 
