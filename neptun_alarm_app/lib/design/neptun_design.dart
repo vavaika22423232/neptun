@@ -2,25 +2,27 @@ library;
 
 import 'package:flutter/material.dart';
 
-/// **Neptun Tactical Design System**
+import '../theme/diary_design.dart';
+
+/// **Neptun design system**
 ///
-/// Premium dark UI with operational dashboard feeling.
-/// Layered surfaces, strong hierarchy, status-driven components.
+/// Спокійний інтерфейс на базі [ColorScheme]: зрозуміла ієрархія, мінімум декоративних шарів.
 ///
-/// ## Design principles
-/// - **Layered depth**: Surface 0 (base) → 1 (raised) → 2 (overlay) → 3 (floating)
-/// - **Status-first**: Every key state (safe/alarm/offline) has clear visual treatment
-/// - **Information density**: Compact without clutter; scannable at a glance
-/// - **Tactical identity**: Operational, authoritative, premium
+/// ## Принципи
+/// - **Один акцент** (primary / статуси) — без паралельних неонових ефектів у тінях і рамках.
+/// - **Поверхні**: base → картка/панель → контент; глибина через відступ і легку тінь або обводку, не через каскад градієнтів.
+/// - **Статуси**: safe / alarm / offline залишаються чіткими кольорами там, де це семантика, не прикраса.
+/// - **Ритм**: шкала 8pt, передбачувані відступи між блоками.
 ///
-/// ## Surface layers (dark theme)
-/// - S0: Base background
-/// - S1: Cards, panels (slightly elevated)
-/// - S2: Overlays, sheets (modal layer)
-/// - S3: Floating elements (FAB, status pills)
+/// ## Темна тема — NEPTUN Premium Modern (веб-токени)
+/// Токени поверхонь збігаються з [DiaryColors] (`darkBackground` … `darkSurfaceFloat`).
+/// - S0: `#0A0E1A`
+/// - S1: `#0F1419`
+/// - S2: `#1A1F2E`
+/// - S3: `#1F2937`
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SPACING
+// SPACING — 8 / 12 / 16 / 24 / 32 / 48 (consistent rhythm + “air”)
 // ═══════════════════════════════════════════════════════════════════════════
 
 class NeptunSpacing {
@@ -30,13 +32,47 @@ class NeptunSpacing {
   static const double sm = 8;
   static const double md = 12;
   static const double lg = 16;
-  static const double xl = 20;
-  static const double xxl = 24;
-  static const double xxxl = 32;
+  static const double xl = 24;
+  static const double xxl = 32;
+  static const double xxxl = 48;
 
-  static const EdgeInsets pagePadding = EdgeInsets.fromLTRB(lg, 0, lg, xxxl);
-  static const EdgeInsets cardPadding = EdgeInsets.all(lg);
-  static const EdgeInsets sectionPadding = EdgeInsets.fromLTRB(lg, xl, lg, lg);
+  /// Horizontal inset from screen edges (shell content, lists).
+  static const double screenHorizontal = 24;
+
+  /// Vertical gap between major sections (e.g. Profile: card → settings → features).
+  static const double sectionGap = 32;
+
+  /// Gap between Bento tiles.
+  static const double bentoGap = 16;
+
+  /// Відповідає `--radius-card` (1.5rem) у веб-темі.
+  static const double bentoRadius = 24;
+
+  /// Gap between a section title and the block below it.
+  static const double sectionTitleToContent = 12;
+
+  static const EdgeInsets pagePadding = EdgeInsets.fromLTRB(
+    screenHorizontal,
+    0,
+    screenHorizontal,
+    xxxl,
+  );
+
+  /// Default inner padding for cards / panels (roomy, readable).
+  static const EdgeInsets cardPadding = EdgeInsets.all(20);
+
+  static const EdgeInsets sectionPadding = EdgeInsets.fromLTRB(
+    screenHorizontal,
+    xl,
+    screenHorizontal,
+    lg,
+  );
+
+  /// List rows: comfortable tap targets + alignment with cards.
+  static const EdgeInsets listTilePadding = EdgeInsets.symmetric(
+    horizontal: 20,
+    vertical: 16,
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -46,11 +82,18 @@ class NeptunSpacing {
 class NeptunRadius {
   NeptunRadius._();
 
-  static const double xs = 6;
+  /// `--radius` − 4px (веб sm)
+  static const double xs = 8;
   static const double sm = 10;
+
+  /// `--radius` − 2px (веб md)
   static const double md = 14;
-  static const double lg = 18;
-  static const double xl = 22;
+
+  /// `--radius` = 1rem
+  static const double lg = 16;
+
+  /// `--radius` + 4px
+  static const double xl = 20;
   static const double pill = 999;
 }
 
@@ -74,51 +117,221 @@ class NeptunElevation {
 class NeptunSurfaces {
   NeptunSurfaces._();
 
-  /// Base background - deepest layer
-  static const Color s0 = Color(0xFF08090D);
+  /// App / page background (S0).
+  static const Color s0 = DiaryColors.darkBackground;
 
-  /// Raised cards, panels
-  static const Color s1 = Color(0xFF0E1014);
+  /// Cards / panels (S1).
+  static const Color s1 = DiaryColors.darkSurface;
 
-  /// Elevated overlays
-  static const Color s2 = Color(0xFF14171D);
+  /// Overlay / inputs (S2).
+  static const Color s2 = DiaryColors.darkSurfaceElevated;
 
-  /// Floating elements (FAB, pills)
-  static const Color s3 = Color(0xFF1A1E26);
+  /// Elevated surfaces (S3).
+  static const Color s3 = DiaryColors.darkSurfaceFloat;
 
-  /// Subtle border
-  static const Color border = Color(0xFF1E232B);
+  static const Color glass = Color(0x18FFFFFF);
 
-  /// Stronger border (active, focus)
-  static const Color borderActive = Color(0xFF2A3140);
+  static const Color border = DiaryColors.darkBorder;
+
+  /// Focus ring
+  static const Color borderActive = Color(0xFFE2E8F0);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// STATUS COLORS
+// LIGHT SURFACES (light-first product; з [DiaryColors])
+// ═══════════════════════════════════════════════════════════════════════════
+
+abstract final class NeptunLightSurfaces {
+  NeptunLightSurfaces._();
+
+  /// М’який холст сторінки (не чисто білий — cool paper).
+  static const Color canvas = DiaryColors.background;
+
+  /// Картки / підняті панелі.
+  static const Color elevated = DiaryColors.surface;
+
+  static const Color border = DiaryColors.border;
+
+  static const Color mutedForeground = DiaryColors.muted;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// STATUS COLORS (семантика тривог / ОК)
 // ═══════════════════════════════════════════════════════════════════════════
 
 class NeptunStatus {
   NeptunStatus._();
 
-  static const Color safe = Color(0xFF22C55E);
-  static const Color alarm = Color(0xFFEF4444);
-  static const Color warning = Color(0xFFF59E0B);
-  static const Color muted = Color(0xFF64748B);
-  static const Color accent = Color(0xFF22D3EE);
+  /// Non-alarm «OK» — cool gray (no green in chrome).
+  static const Color safe = Color(0xFF64748B);
+
+  /// Critical air alert — only strong chromatic exception.
+  static const Color alarm = Color(0xFFDC2626);
+
+  /// Попередження / очікування — спокійний amber (не неон).
+  static const Color warning = Color(0xFFD97706);
+  static const Color muted = Color(0xFF94A3B8);
+
+  /// Icons / secondary emphasis on dark *and* light surfaces (slate-400).
+  static const Color accent = Color(0xFF94A3B8);
+
+  /// PRO badges, premium icon fills (pairs with [NeptunGradients.premium]).
+  static const Color premium = DiaryColors.premiumGold;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GRADIENTS (акценти та преміум — використовувати вибірково)
+// ═══════════════════════════════════════════════════════════════════════════
+
+class NeptunGradients {
+  NeptunGradients._();
+
+  static const Color _surfaceDark = Color(0xFF0F1419);
+
+  /// PRO purchase CTA — restrained gold (not neon).
+  static const LinearGradient premium = LinearGradient(
+    colors: [
+      DiaryColors.premiumGoldDeep,
+      DiaryColors.premiumGold,
+    ],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
+  static const LinearGradient accent = LinearGradient(
+    colors: [_surfaceDark, _surfaceDark],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
+  static const LinearGradient success = LinearGradient(
+    colors: [_surfaceDark, _surfaceDark],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
+  static const LinearGradient danger = LinearGradient(
+    colors: [Color(0xFFDC2626), Color(0xFFDC2626)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
+  static const LinearGradient glass = LinearGradient(
+    colors: [Color(0x0AFFFFFF), Color(0x0AFFFFFF)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
+  static const LinearGradient alarm = LinearGradient(
+    colors: [Color(0xFFDC2626), Color(0xFFDC2626)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
+  static const LinearGradient safe = LinearGradient(
+    colors: [_surfaceDark, _surfaceDark],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
+  static List<Color> get meshDark => [
+    DiaryColors.darkBackground,
+    const Color(0xFF0F1419),
+    DiaryColors.darkSurfaceElevated,
+    DiaryColors.darkBackground,
+  ];
+
+  static List<Color> get meshLight => [
+    DiaryColors.background,
+    DiaryColors.surface,
+    const Color(0xFFE2E8F0),
+    DiaryColors.background,
+  ];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SHADOWS
+// ═══════════════════════════════════════════════════════════════════════════
+
+class NeptunShadows {
+  NeptunShadows._();
+
+  /// Diary: no shadows.
+  static List<BoxShadow> get low => const [];
+
+  static List<BoxShadow> get soft => const [];
+
+  static List<BoxShadow> get medium => const [];
+
+  static List<BoxShadow> get high => const [];
+
+  static List<BoxShadow> get card => const [];
+
+  static List<BoxShadow> glow(Color color) => const [];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPOGRAPHY SCALE
 // ═══════════════════════════════════════════════════════════════════════════
 
+/// Simple typography scale (6 base styles)
 class NeptunTypography {
   NeptunTypography._();
 
-  static const double hero = 28;
-  static const double h1 = 22;
-  static const double h2 = 18;
-  static const double h3 = 16;
-  static const double body = 14;
-  static const double caption = 12;
-  static const double micro = 11;
+  // Font sizes
+  static const double hero = 28; // (legacy alias)
+  static const double h1 = 24; // (legacy alias)
+  static const double h2 = 18; // (legacy alias)
+  static const double h3 = 18; // (legacy alias)
+  static const double h4 = 16; // (legacy alias)
+  static const double heading = 24; // h1 - main titles
+  static const double title = 18; // section titles
+  static const double body = 16; // main body text
+  static const double bodySmall = 14; // (legacy alias)
+  static const double label = 14; // labels, button text
+  static const double caption = 12; // secondary text
+  static const double micro = 11; // fine print
+
+  // Legacy height aliases
+  static const double heightTight = 1.15;
+  static const double heightNormal = 1.65;
+  static const double heightRelaxed = 1.65;
+
+  // Line heights
+  static const double tight = 1.15;
+  static const double normal = 1.65;
+  static TextStyle get h1Style => const TextStyle(
+    fontSize: 24,
+    fontWeight: FontWeight.w600,
+    height: 1.15,
+    letterSpacing: -0.5,
+  );
+
+  static TextStyle get h2Style =>
+      const TextStyle(fontSize: 18, fontWeight: FontWeight.w600, height: 1.15);
+
+  static TextStyle get h3Style =>
+      const TextStyle(fontSize: 18, fontWeight: FontWeight.w600, height: 1.65);
+
+  static TextStyle get h4Style =>
+      const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, height: 1.15);
+
+  static TextStyle get bodyStyle =>
+      const TextStyle(fontSize: 16, fontWeight: FontWeight.w400, height: 1.65);
+
+  static TextStyle get bodyBoldStyle =>
+      const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, height: 1.65);
+
+  static TextStyle get bodySmallStyle =>
+      const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, height: 1.65);
+
+  static TextStyle get captionStyle =>
+      const TextStyle(fontSize: 12, fontWeight: FontWeight.w400, height: 1.65);
+
+  static TextStyle get microStyle => const TextStyle(
+    fontSize: 11,
+    fontWeight: FontWeight.w500,
+    height: 1.65,
+    letterSpacing: 0.5,
+  );
 }

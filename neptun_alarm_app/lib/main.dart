@@ -1,21 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:io';
 
 import 'theme/app_theme.dart';
+import 'theme/diary_design.dart';
+import 'design/design_exports.dart';
 import 'core/router/app_router.dart';
 import 'services/notification_service.dart';
 import 'services/chat_service.dart';
-import 'package:app_tracking_transparency/app_tracking_transparency.dart';
 import 'services/ad_service.dart';
 import 'services/purchase_service.dart';
 import 'services/auth_service.dart';
@@ -29,10 +31,38 @@ import 'dart:async';
 import 'services/widget_service.dart';
 import 'services/map_ready_notifier.dart';
 import 'core/di/service_locator.dart';
+import 'features/chat/presentation/providers/chat_controller.dart';
 import 'core/error/error_handler.dart';
 import 'core/providers/providers.dart';
-import 'services/briefing_service.dart';
 import 'services/map_data_service.dart';
+import 'core/utils/app_debug_log.dart';
+import 'config/app_constants.dart';
+import 'pages/app_update_required_page.dart';
+import 'services/app_version_gate_service.dart';
+
+/// `flutter run --dart-define=NEPTUN_PERF_OVERLAY=true` (debug/profile) — FPS / frame timing bars.
+const bool kNeptunPerfOverlay = bool.fromEnvironment(
+  'NEPTUN_PERF_OVERLAY',
+  defaultValue: false,
+);
+
+/// Плавніший скрол на планшетах / трекпаді; не змінює вигляд на телефоні.
+final class NeptunScrollBehavior extends MaterialScrollBehavior {
+  const NeptunScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+    PointerDeviceKind.touch,
+    PointerDeviceKind.stylus,
+    PointerDeviceKind.mouse,
+    PointerDeviceKind.trackpad,
+  };
+}
+
+bool get _isIosNative => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+
+bool get _isAndroidNative =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
 // --- Initialization Logic ---
 
@@ -42,12 +72,12 @@ void main() async {
     // Suppress webview_flutter_wkwebview Pigeon null-assertion noise (iOS edge cases)
     final combined = '${details.exception}${details.stack}';
     if (combined.contains('web_kit.g.dart')) {
-      if (kDebugMode) {
-        debugPrint('⚠️ webview_flutter_wkwebview Pigeon assertion (known issue, ignored)');
-      }
+      appDebugLog(
+        '⚠️ webview_flutter_wkwebview Pigeon assertion (known issue, ignored)',
+      );
       return;
     }
-    debugPrint('🛑 FLUTTER FRAMEWORK ERROR: ${details.exception}');
+    appDebugLog('🛑 FLUTTER FRAMEWORK ERROR: ${details.exception}');
     if (kDebugMode) {
       debugPrintStack(stackTrace: details.stack);
     }
@@ -57,8 +87,8 @@ void main() async {
   runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
-
-      // Must be set before any font access; false blocks when fonts aren't bundled
+      // Plus Jakarta Sans: bundled under assets/google_fonts/*.ttf (see pubspec).
+      // Keep runtime fetching on so other families (e.g. Inter on feedback) still load.
       GoogleFonts.config.allowRuntimeFetching = true;
 
       // Дозволяємо альбомний режим — зручно для карти на планшеті
@@ -73,33 +103,23 @@ void main() async {
       await initServiceLocator();
       await AuthService.initProbe();
 
-      if (Platform.isIOS) {
-        await _initializeiOS();
-        await _requestATTForIOS();
-      } else if (Platform.isAndroid) {
-        await _initializeAndroid();
-      }
-
-      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-      debugPrint('✅ onBackgroundMessage registered');
-
       final appRouter = AppRouter(prefs: sl<SharedPreferences>());
       final router = appRouter.router;
       sl.registerSingleton<GoRouter>(router);
 
-      runApp(
-        ProviderScope(
-          child: NeptunAlarmApp(router: appRouter.router),
-        ),
-      );
+      runApp(ProviderScope(child: NeptunAlarmApp(router: appRouter.router)));
 
-      // Defer Sentry & FCM logging so first frame renders immediately
+      // Defer platform-specific SDK/FCM logging so first frame renders immediately
       _deferredInit();
       _initializeServicesInBackground();
     },
     (error, stackTrace) {
-      debugPrint('🛑 DART ASYNC ERROR CAUGHT: $error');
-      ErrorHandler.captureException(error, stackTrace: stackTrace, context: 'runZonedGuarded');
+      appDebugLog('🛑 DART ASYNC ERROR CAUGHT: $error');
+      ErrorHandler.captureException(
+        error,
+        stackTrace: stackTrace,
+        context: 'runZonedGuarded',
+      );
       if (kDebugMode) {
         debugPrintStack(stackTrace: stackTrace);
       }
@@ -117,30 +137,9 @@ Future<void> _initializeiOS() async {
 
     IOSPlatformService().initialize();
 
-    debugPrint('✅ iOS initialization complete');
+    appDebugLog('✅ iOS initialization complete');
   } catch (e) {
-    debugPrint('❌ iOS initialization error: $e');
-  }
-}
-
-/// Request App Tracking Transparency BEFORE any ad/tracking data is collected.
-/// Must run before AdService.initialize() — called from main() before runApp().
-Future<void> _requestATTForIOS() async {
-  try {
-    var status = await AppTrackingTransparency.trackingAuthorizationStatus;
-    debugPrint('ATT status at launch: $status');
-
-    if (status == TrackingStatus.notDetermined) {
-      // Brief delay so system can present the dialog properly (Apple recommendation)
-      await Future.delayed(const Duration(milliseconds: 500));
-      status = await AppTrackingTransparency.requestTrackingAuthorization();
-      debugPrint('ATT permission result: $status');
-    }
-
-    // Notify AdService of the result (it will read status when initializing)
-    AdService().setATTStatus(status);
-  } catch (e) {
-    debugPrint('ATT request error: $e');
+    appDebugLog('❌ iOS initialization error: $e');
   }
 }
 
@@ -154,32 +153,59 @@ Future<void> _initializeAndroid() async {
     final isBatteryOptDisabled = await androidService
         .isBatteryOptimizationDisabled();
     if (!isBatteryOptDisabled) {
-      debugPrint(
+      appDebugLog(
         '⚠️ Battery optimization is enabled - notifications may be delayed',
       );
     }
   }
 
-  debugPrint('✅ Android initialization complete');
+  appDebugLog('✅ Android initialization complete');
 }
 
 Future<void> _initFirebase() async {
+  // Web requires a registered Web app + FirebaseOptions (flutterfire configure).
+  // Calling initializeApp() here without options leaves the JS SDK in a bad state
+  // (FirebaseError: No Firebase App '[DEFAULT]' in microtasks).
+  if (kIsWeb) {
+    appDebugLog(
+      'Firebase: skipped on web (add Web app in Firebase Console + firebase_options.dart to enable)',
+    );
+    return;
+  }
   try {
     await Firebase.initializeApp();
     final analytics = FirebaseAnalytics.instance;
     await analytics.setAnalyticsCollectionEnabled(true);
-    debugPrint('Firebase & Analytics initialized successfully');
+    appDebugLog('Firebase & Analytics initialized successfully');
   } catch (e) {
-    debugPrint('Firebase initialization failed: $e');
+    appDebugLog('Firebase initialization failed: $e');
   }
 }
 
 Future<void> _initAdMobSdk() async {
-  debugPrint('AdMob SDK will be initialized by AdService');
+  appDebugLog('AdMob SDK will be initialized by AdService');
 }
 
 /// Run after first frame — avoids blocking splash
 Future<void> _deferredInit() async {
+  // Android: init Firebase before FCM debug. (Web skips Firebase in _initFirebase.)
+  if (_isAndroidNative) {
+    await _initFirebase();
+  }
+
+  // Mobile platform initializations (background)
+  if (_isIosNative) {
+    unawaited(_initializeiOS());
+    // ATT викликається в [_initializeServicesInBackground] перед AdMob — не дублювати тут.
+  } else if (_isAndroidNative) {
+    unawaited(_initializeAndroid());
+  }
+
+  if (!kIsWeb) {
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    appDebugLog('✅ onBackgroundMessage registered');
+  }
+
   await ErrorHandler.initialize(
     dsn: const String.fromEnvironment('SENTRY_DSN', defaultValue: ''),
   );
@@ -189,9 +215,7 @@ Future<void> _deferredInit() async {
   FlutterError.onError = (FlutterErrorDetails details) {
     final combined = '${details.exception}${details.stack}';
     if (combined.contains('web_kit.g.dart')) {
-      if (kDebugMode) {
-        debugPrint('⚠️ webview Pigeon assertion (ignored)');
-      }
+      appDebugLog('⚠️ webview Pigeon assertion (ignored)');
       return;
     }
     sentryHandler?.call(details);
@@ -203,16 +227,19 @@ Future<void> _deferredInit() async {
 /// Log FCM and APNS tokens for debugging push notification issues
 Future<void> _logFcmDebugInfo() async {
   try {
+    if (kIsWeb) return;
+    if (Firebase.apps.isEmpty) {
+      appDebugLog('⚠️ Firebase not initialized — skipping FCM debug log');
+      return;
+    }
     final messaging = FirebaseMessaging.instance;
 
     // On iOS, APNS token must be available for FCM topics to work
-    if (Platform.isIOS) {
+    if (_isIosNative) {
       final apnsToken = await messaging.getAPNSToken();
-      if (kDebugMode) {
-        debugPrint(
-          '🍎 APNS token: ${apnsToken != null ? "${apnsToken.substring(0, math.min(20, apnsToken.length))}..." : "NULL ⚠️ (topics will not work!)"}',
-        );
-      }
+      appDebugLog(
+        '🍎 APNS token: ${apnsToken != null ? "${apnsToken.substring(0, math.min(20, apnsToken.length))}..." : "NULL ⚠️ (topics will not work!)"}',
+      );
       // Don't call getToken() if APNS isn't ready — it throws on iOS
       if (apnsToken == null) {
         return;
@@ -220,30 +247,27 @@ Future<void> _logFcmDebugInfo() async {
     }
 
     final fcmToken = await messaging.getToken();
-    if (kDebugMode) {
-      debugPrint(
-        '🔑 FCM token: ${fcmToken != null ? "${fcmToken.substring(0, math.min(20, fcmToken.length))}..." : "NULL ⚠️"}',
-      );
-    }
+    appDebugLog(
+      '🔑 FCM token: ${fcmToken != null ? "${fcmToken.substring(0, math.min(20, fcmToken.length))}..." : "NULL ⚠️"}',
+    );
   } catch (e) {
-    debugPrint('⚠️ FCM debug info error: $e');
+    appDebugLog('⚠️ FCM debug info error: $e');
   }
 }
 
 Future<void> _initializeServicesInBackground() async {
   // Initialize PurchaseService and NotificationService in parallel
   // (don't block notifications waiting for purchases)
-  if (Platform.isAndroid) {
+  if (_isAndroidNative) {
     await Future.wait([_initPurchaseService(), _initNotificationService()]);
-    _initAdService();
+    // Реклама після IAP, але не блокуємо cold start: UMP/GMA можуть підвисати на симуляторі.
+    _scheduleAdServiceInit();
     _initWidgetService();
     _initReviewService();
-  } else if (Platform.isIOS) {
-    await Future.wait([
-      _initPurchaseService(),
-      _initAdService(),
-      _initNotificationService(),
-    ]);
+  } else if (_isIosNative) {
+    await _initPurchaseService();
+    _scheduleAdServiceInit();
+    await _initNotificationService();
     _initWidgetService();
     _initReviewService();
   }
@@ -253,71 +277,81 @@ Future<void> _initializeServicesInBackground() async {
   // Chat service init (device ID, nickname)
   await sl<ChatService>().init();
 
-  // Prefetch map + briefing data to warm caches (deferred, non-blocking)
-  unawaited(Future.delayed(const Duration(seconds: 3), () async {
-    try {
-      await Future.wait([
-        sl<MapDataService>().fetchAlarms(),
-        BriefingService().fetchBriefing(),
-      ]);
-    } catch (_) {}
-  }));
+  // Prefetch map data to warm caches (deferred, non-blocking)
+  unawaited(
+    Future.delayed(const Duration(seconds: 3), () async {
+      try {
+        await sl<MapDataService>().fetchAlarms();
+      } catch (_) {}
+    }),
+  );
 }
 
 Future<void> _initPurchaseService() async {
   try {
     await PurchaseService().initialize();
     // Debug premium disabled — test non-premium flow on emulator
-    debugPrint('PurchaseService initialized');
+    appDebugLog('PurchaseService initialized');
   } catch (e) {
-    debugPrint('PurchaseService failed: $e');
+    appDebugLog('PurchaseService failed: $e');
   }
 }
 
-Future<void> _initAdService() async {
+/// UMP + Mobile Ads не тримають ланцюжок запуску: сплеш, роутер і чат піднімаються раніше.
+void _scheduleAdServiceInit() {
+  unawaited(_initAdServiceDeferred());
+}
+
+Future<void> _initAdServiceDeferred() async {
   try {
+    await Future<void>.delayed(const Duration(milliseconds: 900));
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('is_premium') ?? false) {
+      appDebugLog('AdMob skipped — user is PRO (prefs)');
+      return;
+    }
     await AdService().initialize();
-    debugPrint('AdMob initialized');
+    appDebugLog('AdMob initialized');
   } catch (e) {
-    debugPrint('AdMob failed: $e');
+    appDebugLog('AdMob failed: $e');
   }
 }
 
 Future<void> _initNotificationService() async {
   try {
     await NotificationService().initialize();
-    debugPrint('NotificationService initialized');
+    appDebugLog('NotificationService initialized');
     AlarmTrackingService().startTracking();
-    debugPrint('AlarmTrackingService started');
+    appDebugLog('AlarmTrackingService started');
   } catch (e) {
-    debugPrint('NotificationService failed: $e');
+    appDebugLog('NotificationService failed: $e');
   }
 }
 
 Future<void> _initTtsService() async {
   try {
     await TtsService().initialize();
-    debugPrint('TtsService initialized');
+    appDebugLog('TtsService initialized');
   } catch (e) {
-    debugPrint('TtsService failed: $e');
+    appDebugLog('TtsService failed: $e');
   }
 }
 
 Future<void> _initReviewService() async {
   try {
     await ReviewService().trackAppOpen();
-    debugPrint('ReviewService tracked app open');
+    appDebugLog('ReviewService tracked app open');
   } catch (e) {
-    debugPrint('ReviewService failed: $e');
+    appDebugLog('ReviewService failed: $e');
   }
 }
 
 Future<void> _initWidgetService() async {
   try {
     await WidgetService().initialize();
-    debugPrint('WidgetService initialized');
+    appDebugLog('WidgetService initialized');
   } catch (e) {
-    debugPrint('WidgetService failed: $e');
+    appDebugLog('WidgetService failed: $e');
   }
 }
 
@@ -336,67 +370,106 @@ class _NeptunAlarmAppState extends ConsumerState<NeptunAlarmApp>
   bool _showSplash = true; // splash widget is in the tree
   double _splashOpacity = 1.0; // controls fade-out animation
   bool _minTimeElapsed = false;
-  bool _mapReady = false;
-  bool _checkedOnboardingDismiss = false;
   DateTime? _lastBackgroundedAt;
+  bool _versionCheckDone = false;
+  bool _versionBlocked = false;
+  AppVersionBlockPayload? _versionBlockPayload;
+  /// Після зміни теми — не дёргати [SystemChrome] одразу (ріже з [AnimatedTheme]).
+  Timer? _systemUiSyncTimer;
 
   static const _minSplashDuration = Duration(milliseconds: 1500);
-  static const _maxSplashDuration = Duration(seconds: 8);
-  static const _fadeOutDuration = Duration(milliseconds: 400);
+  static const _maxSplashDuration = Duration(seconds: 5);
+  static const _fadeOutDuration = Duration(milliseconds: 520);
 
   @override
   void initState() {
     super.initState();
+    _versionCheckDone = !(_isIosNative || _isAndroidNative);
     WidgetsBinding.instance.addObserver(this);
 
-    // Minimum display time so splash animation plays fully
-    Future.delayed(_minSplashDuration, () {
-      if (mounted) {
-        _minTimeElapsed = true;
-        _tryDismissSplash();
+    // Apply system UI once after first frame (avoid platform channel every build).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final mode = ref.read(themeModeProvider);
+      _updateSystemUI(mode == ThemeMode.dark);
+    });
+
+    ref.listenManual<ThemeMode>(themeModeProvider, (previous, next) {
+      if (previous != next) {
+        _systemUiSyncTimer?.cancel();
+        _systemUiSyncTimer = Timer(AppConstants.themeSwitchDuration, () {
+          _systemUiSyncTimer = null;
+          if (!mounted) return;
+          _updateSystemUI(ref.read(themeModeProvider) == ThemeMode.dark);
+        });
       }
     });
 
-    // Maximum timeout — dismiss no matter what after 8s
-    Future.delayed(_maxSplashDuration, () {
-      if (mounted && _showSplash) {
-        debugPrint('⏱️ Splash max timeout reached — forcing dismiss');
-        _startFadeOut();
-      }
-    });
-
-    // Listen to map ready signal
-    MapReadyNotifier.instance.addListener(_onMapReady);
-  }
-
-  void _onMapReady() {
-    if (MapReadyNotifier.instance.value && mounted) {
-      _mapReady = true;
-      _tryDismissSplash();
+    if (kDebugMode && kNeptunPerfOverlay) {
+      appDebugLog(
+        'NEPTUN_PERF_OVERLAY: use profile mode + Flutter DevTools → Performance',
+      );
     }
+
+    // Після першого кадру — щоб cold start / плагіни не зірвали таймер сплешу.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_isIosNative || _isAndroidNative) {
+        unawaited(_runNativeVersionGate());
+      }
+      // Minimum display time so splash animation plays fully
+      Future.delayed(_minSplashDuration, () {
+        if (mounted) {
+          setState(() => _minTimeElapsed = true);
+          _tryDismissSplash();
+        }
+      });
+
+      // Safety: never stay on splash forever (map/WebView / IAP can stall).
+      // На нативі не знімаємо сплеш, доки не завершиться перевірка версії — див. [_tryDismissSplash].
+      Future.delayed(_maxSplashDuration, () {
+        if (mounted && _showSplash) {
+          appDebugLog('⏱️ Splash max timeout reached — forcing dismiss');
+          setState(() => _minTimeElapsed = true);
+          _tryDismissSplash();
+        }
+      });
+    });
   }
 
+  /// Splash ends after [ _minSplashDuration ] — map tab has its own loader.
+  /// (Previously we waited for [MapReadyNotifier]; that could stall if WebView never
+  /// reported progress, and go_router [fullPath] is a route pattern, not URI path.)
   void _tryDismissSplash() {
-    if (_minTimeElapsed && _mapReady && _showSplash && mounted) {
-      debugPrint('✅ Splash dismissed — map ready + min time elapsed');
+    final waitingForVersion =
+        (_isIosNative || _isAndroidNative) && !_versionCheckDone;
+    if (waitingForVersion) return;
+    if (_minTimeElapsed && _showSplash && mounted) {
+      appDebugLog('✅ Splash dismissed — min time elapsed');
       _startFadeOut();
     }
   }
 
-  void _checkOnboardingSplashDismiss() {
-    if (!_minTimeElapsed || !_showSplash || !mounted || _checkedOnboardingDismiss) return;
-    _checkedOnboardingDismiss = true;
-    final router = widget.router;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_showSplash) return;
-      try {
-        final path = router.routerDelegate.currentConfiguration.fullPath;
-        if (path == '/onboarding') {
-          debugPrint('✅ Splash dismissed — user on onboarding');
-          _startFadeOut();
+  Future<void> _runNativeVersionGate() async {
+    try {
+      final result = await AppVersionGateService.instance.evaluate();
+      if (!mounted) return;
+      setState(() {
+        _versionCheckDone = true;
+        if (result.isBlocked && result.block != null) {
+          _versionBlocked = true;
+          _versionBlockPayload = result.block;
+          _showSplash = false;
         }
-      } catch (_) {}
-    });
+      });
+      if (!mounted || _versionBlocked) return;
+      _tryDismissSplash();
+    } catch (e) {
+      appDebugLog('app-version-gate: unexpected $e');
+      if (!mounted) return;
+      setState(() => _versionCheckDone = true);
+      _tryDismissSplash();
+    }
   }
 
   void _startFadeOut() {
@@ -411,22 +484,34 @@ class _NeptunAlarmAppState extends ConsumerState<NeptunAlarmApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
       _lastBackgroundedAt = DateTime.now();
-    } else if (state == AppLifecycleState.resumed && _lastBackgroundedAt != null) {
-      final bgDuration = DateTime.now().difference(_lastBackgroundedAt!);
-      if (bgDuration >= const Duration(seconds: 5)) {
-        DataStreamService.instance.forceReconnectIfNeeded();
-        NotificationService().reRegisterOnResume();
+    } else if (state == AppLifecycleState.resumed) {
+      final wasBg = _lastBackgroundedAt;
+      if (wasBg != null) {
+        final bgDuration = DateTime.now().difference(wasBg);
+        if (bgDuration >= const Duration(seconds: 5)) {
+          DataStreamService.instance.forceReconnectIfNeeded();
+          NotificationService().reRegisterOnResume();
+        }
       }
       _lastBackgroundedAt = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        unawaited(
+          ref
+              .read(chatControllerProvider.notifier)
+              .syncMissedMessagesAfterReconnect(),
+        );
+      });
     }
   }
 
   @override
   void dispose() {
+    _systemUiSyncTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
-    MapReadyNotifier.instance.removeListener(_onMapReady);
     super.dispose();
   }
 
@@ -436,8 +521,8 @@ class _NeptunAlarmAppState extends ConsumerState<NeptunAlarmApp>
         statusBarColor: Colors.transparent,
         statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
         systemNavigationBarColor: isDark
-            ? const Color(0xFF0C0C12)
-            : const Color(0xFFF8FAFC),
+            ? DiaryColors.darkBackground
+            : DiaryColors.background,
         systemNavigationBarIconBrightness: isDark
             ? Brightness.light
             : Brightness.dark,
@@ -448,37 +533,66 @@ class _NeptunAlarmAppState extends ConsumerState<NeptunAlarmApp>
   @override
   Widget build(BuildContext context) {
     final themeMode = ref.watch(themeModeProvider);
-    ref.listen<ThemeMode>(themeModeProvider, (previous, next) {
-      _updateSystemUI(next == ThemeMode.dark);
-    });
-    _updateSystemUI(themeMode == ThemeMode.dark);
-    _checkOnboardingSplashDismiss();
+
+    if (_versionBlocked && _versionBlockPayload != null) {
+      return MaterialApp(
+        title: AppConstants.appName,
+        debugShowCheckedModeBanner: false,
+        showPerformanceOverlay: kDebugMode && kNeptunPerfOverlay,
+        scrollBehavior: const NeptunScrollBehavior(),
+        themeMode: themeMode,
+        theme: AppTheme.light,
+        darkTheme: AppTheme.dark,
+        themeAnimationDuration: AppConstants.themeSwitchDuration,
+        themeAnimationCurve: AppConstants.themeSwitchCurve,
+        themeAnimationStyle: AnimationStyle(
+          duration: AppConstants.themeSwitchDuration,
+          curve: AppConstants.themeSwitchCurve,
+        ),
+        home: AppUpdateRequiredPage(payload: _versionBlockPayload!),
+      );
+    }
 
     return MaterialApp.router(
-      title: 'Neptun',
+      title: AppConstants.appName,
       debugShowCheckedModeBanner: false,
+      showPerformanceOverlay: kDebugMode && kNeptunPerfOverlay,
+      scrollBehavior: const NeptunScrollBehavior(),
       themeMode: themeMode,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
-      themeAnimationDuration: const Duration(milliseconds: 450),
-      themeAnimationCurve: Curves.easeInOutCubic,
+      themeAnimationDuration: AppConstants.themeSwitchDuration,
+      themeAnimationCurve: AppConstants.themeSwitchCurve,
+      themeAnimationStyle: AnimationStyle(
+        duration: AppConstants.themeSwitchDuration,
+        curve: AppConstants.themeSwitchCurve,
+      ),
       routerConfig: widget.router,
       builder: (context, child) {
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            child ?? const SizedBox.shrink(),
-            if (_showSplash)
-              IgnorePointer(
-                ignoring: _splashOpacity < 1.0,
-                child: AnimatedOpacity(
-                  opacity: _splashOpacity,
-                  duration: _fadeOutDuration,
-                  curve: Curves.easeOut,
-                  child: const _SplashScreen(),
+        final media = MediaQuery.of(context);
+        return MediaQuery(
+          data: media.copyWith(
+            textScaler: media.textScaler.clamp(
+              minScaleFactor: 0.88,
+              maxScaleFactor: 1.24,
+            ),
+          ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              child ?? const SizedBox.shrink(),
+              if (_showSplash)
+                IgnorePointer(
+                  ignoring: _splashOpacity < 1.0,
+                  child: AnimatedOpacity(
+                    opacity: _splashOpacity,
+                    duration: _fadeOutDuration,
+                    curve: Curves.easeOutCubic,
+                    child: const _SplashScreen(),
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         );
       },
     );
@@ -495,299 +609,281 @@ class _SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<_SplashScreen>
     with TickerProviderStateMixin {
-  late AnimationController _mainController;
-  late AnimationController _pulseController;
-  late AnimationController _shimmerController;
+  late AnimationController _entrance;
+  late AnimationController _ambient;
   late Animation<double> _scaleAnimation;
   late Animation<double> _opacityAnimation;
   late Animation<double> _slideAnimation;
-  late Animation<double> _pulseAnimation;
-  late Animation<double> _ringAnimation;
-  late Animation<double> _shimmerAnimation;
+  late Animation<double> _barAnimation;
 
   @override
   void initState() {
     super.initState();
-    _mainController = AnimationController(
-      duration: const Duration(milliseconds: 1200),
+    _entrance = AnimationController(
+      duration: const Duration(milliseconds: 1100),
       vsync: this,
     )..forward();
 
-    _pulseController = AnimationController(
-      duration: const Duration(milliseconds: 2000),
+    _ambient = AnimationController(
+      duration: const Duration(milliseconds: 3200),
       vsync: this,
-    )..forward();
+    )..repeat(reverse: true);
 
-    _shimmerController = AnimationController(
-      duration: const Duration(milliseconds: 1500),
-      vsync: this,
-    )..repeat();
-
-    _scaleAnimation = Tween<double>(begin: 0.3, end: 1.0).animate(
-      CurvedAnimation(parent: _mainController, curve: Curves.elasticOut),
+    _scaleAnimation = Tween<double>(begin: 0.82, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _entrance,
+        curve: Curves.easeOutBack,
+      ),
     );
     _opacityAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
-        parent: _mainController,
-        curve: const Interval(0.0, 0.4, curve: Curves.easeOut),
+        parent: _entrance,
+        curve: const Interval(0.0, 0.45, curve: Curves.easeOut),
       ),
     );
-    _slideAnimation = Tween<double>(begin: 30.0, end: 0.0).animate(
+    _slideAnimation = Tween<double>(begin: 28.0, end: 0.0).animate(
       CurvedAnimation(
-        parent: _mainController,
-        curve: const Interval(0.2, 0.7, curve: Curves.easeOutCubic),
+        parent: _entrance,
+        curve: const Interval(0.1, 0.82, curve: Curves.easeOutCubic),
       ),
     );
-    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.08).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
-    _ringAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
-    _shimmerAnimation = Tween<double>(begin: -1.0, end: 2.0).animate(
-      CurvedAnimation(parent: _shimmerController, curve: Curves.linear),
+    _barAnimation = Tween<double>(begin: 0.06, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _entrance,
+        curve: const Interval(0.2, 0.92, curve: Curves.easeOutCubic),
+      ),
     );
   }
 
   @override
   void dispose() {
-    _mainController.dispose();
-    _pulseController.dispose();
-    _shimmerController.dispose();
+    _entrance.dispose();
+    _ambient.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cs = Theme.of(context).colorScheme;
+    final bg = isDark ? DiaryColors.darkBackground : DiaryColors.background;
+    final fg = isDark ? DiaryColors.darkPrimary : DiaryColors.primary;
+    final muted = isDark ? DiaryColors.darkMuted : DiaryColors.muted;
+    final accent = isDark
+        ? DiaryColors.darkPrimary.withValues(alpha: 0.12)
+        : DiaryColors.primary.withValues(alpha: 0.08);
+    // Ледь помітні «орби»: низька альфа + blur + radial fade (без різкого диска).
+    final orbCore = isDark
+        ? DiaryColors.darkPrimary.withValues(alpha: 0.045)
+        : DiaryColors.primary.withValues(alpha: 0.034);
+    const orbBlurSigma = 56.0;
 
-    // Theme-aware colors (Design 4.0)
-    final bgGradient = isDark
-        ? const [Color(0xFF0C0C12), Color(0xFF0E0E18), Color(0xFF12121A)]
-        : const [Color(0xFFF0F9FF), Color(0xFFF0FDFA), Color(0xFFF8FAFC)];
-    final accentColor = cs.primary;
-    final accentGlow = isDark
-        ? cs.primary.withValues(alpha: 0.4)
-        : cs.primary.withValues(alpha: 0.2);
-    final subtitleColor = isDark
-        ? const Color(0xFF7D8DA1)
-        : const Color(0xFF64748B);
     return Scaffold(
-      body: AnimatedBuilder(
-        animation: Listenable.merge([_mainController, _pulseController]),
-        builder: (context, _) {
-          return Container(
-            width: double.infinity,
-            height: double.infinity,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: bgGradient,
+      backgroundColor: bg,
+      body: RepaintBoundary(
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: const Alignment(0, -0.32),
+                  radius: 1.22,
+                  colors: [accent, bg],
+                  stops: const [0.0, 1.0],
+                ),
               ),
             ),
-            child: Stack(
-              children: [
-                // Radial glow behind logo
-                Center(
-                  child: Transform.scale(
-                    scale: 1.0 + (_ringAnimation.value * 0.3),
-                    child: Container(
-                      width: 200,
-                      height: 200,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: RadialGradient(
-                          colors: [
-                            accentGlow.withValues(
-                              alpha: 0.15 * (1 - _ringAnimation.value),
+            AnimatedBuilder(
+              animation: Listenable.merge([_entrance, _ambient]),
+              builder: (context, _) {
+                final breathe = 0.5 + 0.5 * _ambient.value;
+                final drift = (breathe - 0.5) * 18;
+                final pulseScale = 1.0 + 0.035 * math.sin(_ambient.value * math.pi);
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Positioned(
+                      right: -80 + drift,
+                      top: 56 - drift * 0.4,
+                      child: IgnorePointer(
+                        child: ImageFiltered(
+                          imageFilter: ImageFilter.blur(
+                            sigmaX: orbBlurSigma,
+                            sigmaY: orbBlurSigma,
+                          ),
+                          child: Container(
+                            width: 280,
+                            height: 280,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: RadialGradient(
+                                colors: [
+                                  orbCore,
+                                  orbCore.withValues(alpha: 0),
+                                ],
+                                stops: const [0.15, 1.0],
+                              ),
                             ),
-                            accentGlow.withValues(
-                              alpha: 0.05 * (1 - _ringAnimation.value),
-                            ),
-                            Colors.transparent,
-                          ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ),
-
-                // Main content
-                Center(
-                  child: Opacity(
-                    opacity: _opacityAnimation.value,
-                    child: Transform.scale(
-                      scale: _scaleAnimation.value,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Logo with pulse + glow ring
-                          Transform.scale(
-                            scale: _pulseAnimation.value,
-                            child: Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                // Outer glow ring
-                                Container(
-                                  width: 136,
-                                  height: 136,
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(38),
-                                    border: Border.all(
-                                      color: accentColor.withValues(
-                                        alpha:
-                                            0.15 +
-                                            (_ringAnimation.value * 0.15),
-                                      ),
-                                      width: 1.5,
-                                    ),
-                                  ),
-                                ),
-                                // Main icon container
-                                Container(
-                                  width: 120,
-                                  height: 120,
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      colors: [
-                                        accentColor,
-                                        accentColor.withValues(alpha: 0.85),
-                                        isDark
-                                            ? const Color(0xFF1E40AF)
-                                            : const Color(0xFF2563EB),
-                                      ],
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                    ),
-                                    borderRadius: BorderRadius.circular(32),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: accentColor.withValues(
-                                          alpha: 0.4,
-                                        ),
-                                        blurRadius: 32,
-                                        spreadRadius: 2,
-                                      ),
-                                      BoxShadow(
-                                        color: accentColor.withValues(
-                                          alpha: 0.15,
-                                        ),
-                                        blurRadius: 60,
-                                        spreadRadius: 8,
-                                      ),
+                    Positioned(
+                      left: -56 - drift * 0.5,
+                      bottom: 96 + drift * 0.3,
+                      child: IgnorePointer(
+                        child: ImageFiltered(
+                          imageFilter: ImageFilter.blur(
+                            sigmaX: orbBlurSigma * 0.92,
+                            sigmaY: orbBlurSigma * 0.92,
+                          ),
+                          child: Container(
+                            width: 260,
+                            height: 260,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: RadialGradient(
+                                colors: [
+                                  orbCore.withValues(alpha: 0.72),
+                                  orbCore.withValues(alpha: 0),
+                                ],
+                                stops: const [0.12, 1.0],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Center(
+                      child: Opacity(
+                        opacity: _opacityAnimation.value,
+                        child: Transform.scale(
+                          scale: _scaleAnimation.value * pulseScale,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 118,
+                                height: 118,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(34),
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: [
+                                      fg,
+                                      fg.withValues(alpha: isDark ? 0.88 : 0.92),
                                     ],
                                   ),
-                                  child: const Icon(
-                                    Icons.shield_rounded,
-                                    size: 56,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 32),
-
-                          // App name with gradient text
-                          Transform.translate(
-                            offset: Offset(0, _slideAnimation.value),
-                            child: ShaderMask(
-                              shaderCallback: (bounds) => LinearGradient(
-                                colors: isDark
-                                    ? [
-                                        const Color(0xFFF0F6FC),
-                                        const Color(0xFFB8D4F0),
-                                      ]
-                                    : [
-                                        const Color(0xFF0F172A),
-                                        const Color(0xFF334155),
-                                      ],
-                              ).createShader(bounds),
-                              child: const Text(
-                                'NEPTUN',
-                                style: TextStyle(
-                                  fontSize: 38,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.white,
-                                  letterSpacing: 10,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-
-                          // Subtitle
-                          Transform.translate(
-                            offset: Offset(0, _slideAnimation.value * 0.6),
-                            child: Text(
-                              'Повітряні тривоги',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                                color: subtitleColor.withValues(alpha: 0.9),
-                                letterSpacing: 3,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 52),
-
-                          // Shimmer loading bar (isolated rebuild)
-                          AnimatedBuilder(
-                            animation: _shimmerController,
-                            builder: (context, _) => SizedBox(
-                              width: 140,
-                              height: 3,
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(2),
-                                child: Stack(
-                                  children: [
-                                    // Track
-                                    Container(
-                                      color: isDark
-                                          ? Colors.white.withValues(alpha: 0.06)
-                                          : Colors.black.withValues(
-                                              alpha: 0.06,
-                                            ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: fg.withValues(
+                                        alpha: isDark ? 0.42 : 0.28,
+                                      ),
+                                      blurRadius: 32 + 8 * breathe,
+                                      spreadRadius: -4,
+                                      offset: Offset(0, 14 + 4 * breathe),
                                     ),
-                                    // Shimmer
-                                    Positioned(
-                                      left: _shimmerAnimation.value * 140 - 70,
-                                      top: 0,
-                                      bottom: 0,
-                                      child: Container(
-                                        width: 70,
+                                  ],
+                                ),
+                                child: Stack(
+                                  alignment: Alignment.center,
+                                  children: [
+                                    Positioned.fill(
+                                      child: DecoratedBox(
                                         decoration: BoxDecoration(
-                                          gradient: LinearGradient(
-                                            colors: [
-                                              Colors.transparent,
-                                              accentColor.withValues(
-                                                alpha: 0.8,
-                                              ),
-                                              Colors.transparent,
-                                            ],
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            2,
+                                          borderRadius:
+                                              BorderRadius.circular(34),
+                                          border: Border.all(
+                                            color: Colors.white.withValues(
+                                              alpha: isDark ? 0.14 : 0.22,
+                                            ),
+                                            width: 1.2,
                                           ),
                                         ),
                                       ),
+                                    ),
+                                    Icon(
+                                      Icons.shield_rounded,
+                                      size: 54,
+                                      color: isDark
+                                          ? DiaryColors.darkOnPrimary
+                                          : DiaryColors.onPrimary,
                                     ),
                                   ],
                                 ),
                               ),
-                            ),
+                              const SizedBox(height: 38),
+                              Transform.translate(
+                                offset: Offset(0, _slideAnimation.value),
+                                child: Text(
+                                  AppConstants.appName.toUpperCase(),
+                                  style: NeptunTypography.h1Style.copyWith(
+                                    fontSize: 23,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 1.8,
+                                    color: fg,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Transform.translate(
+                                offset: Offset(0, _slideAnimation.value * 0.72),
+                                child: Text(
+                                  'AIR MONITORING SYSTEM',
+                                  style: NeptunTypography.microStyle.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 2.4,
+                                    color: muted,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 44),
+                              SizedBox(
+                                width: 140,
+                                height: 4,
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(999),
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      ColoredBox(
+                                        color: fg.withValues(alpha: 0.12),
+                                      ),
+                                      Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: FractionallySizedBox(
+                                          widthFactor: _barAnimation.value
+                                              .clamp(0.02, 1.0),
+                                          heightFactor: 1,
+                                          alignment: Alignment.centerLeft,
+                                          child: DecoratedBox(
+                                            decoration: BoxDecoration(
+                                              gradient: LinearGradient(
+                                                colors: [
+                                                  fg.withValues(alpha: 0.75),
+                                                  fg,
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
-                ),
-              ],
+                  ],
+                );
+              },
             ),
-          );
-        },
+          ],
+        ),
       ),
     );
   }

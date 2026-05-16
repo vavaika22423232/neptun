@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/widgets/neptun_badge.dart';
+import '../../../core/widgets/neptun_shell_modal.dart';
 
 /// Bottom sheet showing region alarm details when tapped on the map.
 class RegionDetailSheet extends StatelessWidget {
@@ -24,7 +25,7 @@ class RegionDetailSheet extends StatelessWidget {
     DateTime? alarmStartTime,
     int threatCount = 0,
   }) {
-    return showModalBottomSheet(
+    return NeptunShellModal.showBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -102,7 +103,7 @@ class RegionDetailSheet extends StatelessWidget {
                         children: [
                           Text(
                             regionName,
-                            style: GoogleFonts.inter(
+                            style: GoogleFonts.plusJakartaSans(
                               fontSize: 17,
                               fontWeight: FontWeight.w600,
                               color: cs.onSurface,
@@ -110,7 +111,7 @@ class RegionDetailSheet extends StatelessWidget {
                           ),
                           Text(
                             isAlarmActive ? 'Повітряна тривога' : 'Відбій',
-                            style: GoogleFonts.inter(
+                            style: GoogleFonts.plusJakartaSans(
                               fontSize: 13,
                               color: isAlarmActive
                                   ? cs.error
@@ -197,7 +198,7 @@ class _StatCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               value,
-              style: GoogleFonts.inter(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 20,
                 fontWeight: FontWeight.w700,
                 color: cs.onSurface,
@@ -205,7 +206,7 @@ class _StatCard extends StatelessWidget {
             ),
             Text(
               label,
-              style: GoogleFonts.inter(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 12,
                 color: cs.onSurface.withValues(alpha: 0.5),
               ),

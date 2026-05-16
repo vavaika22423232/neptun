@@ -163,7 +163,8 @@ export function estimateTrackState(marker: Record<string, unknown>, nowMs: numbe
   const canMove = state === 'extrapolated' && bearingDeg != null && speedKmh > 0;
   if (canMove) {
     const dtHours = Math.min(ageMs, profile.extrapolateMs) / 3_600_000;
-    [estimateLat, estimateLng] = destinationPoint(estimateLat, estimateLng, bearingDeg, speedKmh * dtHours);
+    const VISUAL_SPEED_MULTIPLIER = 0.35; // Keep synced with MapLibreContainer.tsx
+    [estimateLat, estimateLng] = destinationPoint(estimateLat, estimateLng, bearingDeg, speedKmh * dtHours * VISUAL_SPEED_MULTIPLIER);
   }
 
   return {
@@ -171,7 +172,7 @@ export function estimateTrackState(marker: Record<string, unknown>, nowMs: numbe
     lat: estimateLat,
     lng: estimateLng,
     confidence,
-    visualConfidence: state === 'observed' ? confidence : state === 'extrapolated' ? confidence * 0.72 : confidence * 0.45,
+    visualConfidence: state === 'observed' ? confidence : state === 'extrapolated' ? confidence * 0.85 : confidence * 0.60,
     speedKmh,
     bearingDeg,
     lastObservationMs,

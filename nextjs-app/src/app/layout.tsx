@@ -2,8 +2,11 @@ import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import { headers } from 'next/headers';
 import DeferredGoogleAnalytics from '@/components/DeferredGoogleAnalytics';
+import NeptunAppInstallClickTracker from '@/components/NeptunAppInstallClickTracker';
+import NeptunSseAuthWarmup from '@/components/NeptunSseAuthWarmup';
 import { pathnameAssetHints } from '@/lib/neptun-pathname-assets';
-import { CACHE_VERSION } from '@/lib/constants';
+import { CACHE_VERSION, API_DATA_PUBLIC_QUERY } from '@/lib/constants';
+import { resolveUaRasterTileOrigin } from '@/lib/map/ua-raster-fallback';
 import './globals.css';
 
 const inter = Inter({
@@ -14,26 +17,27 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'Карта шахедів і тривог України — повітряна тривога онлайн, мапа тривог | NEPTUN',
+  title:
+    'Карта шахедів і тривог України - повітряна тривога, мапа | NEPTUN',
   description:
-    'Карта шахедів і повітряних тривог України онлайн. Мапа тривог у реальному часі: шахеди, ракети, БПЛА, КАБ. Радар шахедів з траєкторіями, тривоги по областях 24/7. Безкоштовний додаток.',
+    'Карта шахедів і тривог України онлайн: повітряна тривога по областях, мапа тривог, БПЛА, ракети та КАБ у реальному часі. NEPTUN оновлюється 24/7.',
   keywords:
-    'карта шахедів, карта шахедов, радар шахедів, карта тривог, мапа тривог, карта повітряних тривог, повітряна тривога, повітряна тривога онлайн, повітряна тривога онлайн карта що летить, карта тривог україни, мапа тривог онлайн, тривога зараз, нептун, нептун карта, NEPTUN',
+    'карта тривог, мапа тривог, тривога, карта повітряних тривог, повітряна тривога, повітряна тривога онлайн, карта шахедів, карта шахедов, радар шахедів, повітряна тривога онлайн карта що летить, карта тривог україни, мапа тривог онлайн, тривога зараз, нептун, нептун карта, NEPTUN',
   authors: [{ name: 'NEPTUN' }],
   robots: 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1',
   alternates: {
     canonical: 'https://neptun.in.ua/',
     languages: {
       uk: 'https://neptun.in.ua/',
-      en: 'https://neptun.in.ua/?lang=en',
+      en: 'https://neptun.in.ua/en',
     },
   },
   openGraph: {
     type: 'website',
     url: 'https://neptun.in.ua/',
-    title: 'NEPTUN — Карта шахедів і тривог України онлайн',
+    title: 'NEPTUN — Карта шахедів і тривог України онлайн, повітряна тривога та мапа',
     description:
-      'Карта шахедів та повітряних тривог онлайн: ракети, БПЛА, КАБ. Оновлення швидко. Безкоштовний додаток.',
+      'Карта шахедів і тривог України онлайн; повітряна тривога по областях, мапа тривог, шахеди, ракети та БПЛА. Оновлення в реальному часі.',
     images: [
       {
         url: 'https://neptun.in.ua/static/og-image.png',
@@ -47,7 +51,8 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: 'NEPTUN — Карта шахедів і тривог України онлайн',
-    description: 'Карта шахедів та повітряних тривог онлайн: ракети, БПЛА, КАБ. Швидше за alerts.in.ua. Безкоштовно.',
+    description:
+      'Карта шахедів і тривог України онлайн: повітряна тривога, мапа тривог; ракети, БПЛА. Оновлення в реальному часі.',
     images: ['https://neptun.in.ua/static/og-image.png'],
   },
   other: {
@@ -95,10 +100,12 @@ const jsonLdSchemas = [
   {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
-    name: 'Карта шахедів і тривог України',
+    name: 'Карта шахедів і тривог України онлайн — повітряна тривога, мапа — NEPTUN',
     alternateName: [
       'Карта тривог',
       'Мапа тривог',
+      'Карта повітряних тривог',
+      'Повітряна тривога',
       'Карта шахедів',
       'Нептун карта',
       'NEPTUN',
@@ -120,14 +127,44 @@ const jsonLdSchemas = [
     url: 'https://neptun.in.ua',
     logo: 'https://neptun.in.ua/static/og-image.png',
   },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'SiteNavigationElement',
+    name: [
+      'Карта тривог',
+      'Карта шахедів',
+      'Повітряна тривога',
+      'Тривога зараз',
+      'Мапа тривог',
+      'Радар шахедів',
+      'Нептун карта',
+    ],
+    url: [
+      'https://neptun.in.ua/',
+      'https://neptun.in.ua/karta-shahediv',
+      'https://neptun.in.ua/povitryana-tryvoga',
+      'https://neptun.in.ua/tryvoga-zaraz',
+      'https://neptun.in.ua/karta-tryvoh',
+      'https://neptun.in.ua/radar-shahediv',
+      'https://neptun.in.ua/',
+    ],
+  },
   // 3. WebApplication (fixed: added keywords + missing alternateName)
   {
     '@context': 'https://schema.org',
     '@type': 'WebApplication',
     name: 'Карта шахедів і тривог України — NEPTUN',
-    alternateName: ['Карта шахедів', 'Карта тривог', 'Мапа тривог', 'Карта тривог онлайн', 'NEPTUN'],
+    alternateName: [
+      'Карта тривог',
+      'Мапа тривог',
+      'Карта повітряних тривог',
+      'Повітряна тривога',
+      'Карта шахедів',
+      'Карта тривог онлайн',
+      'NEPTUN',
+    ],
     description:
-      'Карта шахедів і тривог України в реальному часі. Відстежуйте повітряні тривоги, шахеди, ракети та БПЛА онлайн на інтерактивній карті.',
+      'Карта тривог, мапа тривог і карта повітряних тривог України в реальному часі; також шахеди, ракети та БПЛА на інтерактивній карті.',
     url: 'https://neptun.in.ua',
     applicationCategory: 'UtilitiesApplication',
     operatingSystem: 'Web, Android, iOS',
@@ -137,7 +174,7 @@ const jsonLdSchemas = [
     inLanguage: 'uk',
     isAccessibleForFree: true,
     keywords:
-      'карта тривог, мапа тривог, карта тривог україни, повітряна тривога онлайн, повітряна тривога онлайн карта що летить, карта шахедів, нептун карта',
+      'карта тривог, мапа тривог, тривога, карта повітряних тривог, карта тривог україни, повітряна тривога онлайн, повітряна тривога онлайн карта що летить, карта шахедів, нептун карта',
   },
   // 4. WebPage
   {
@@ -145,14 +182,31 @@ const jsonLdSchemas = [
     '@type': 'WebPage',
     name: 'Карта шахедів і тривог України онлайн — NEPTUN',
     url: 'https://neptun.in.ua/',
-    description: 'Карта шахедів і тривог України в реальному часі: повітряна тривога онлайн, ракети та БПЛА.',
+    description:
+      'Карта шахедів і тривог України онлайн; повітряна тривога по областях, мапа тривог; також ракети та БПЛА у реальному часі.',
     isPartOf: { '@type': 'WebSite', name: 'NEPTUN', url: 'https://neptun.in.ua' },
   },
-  // 5. FAQPage with 8 questions
+  // 5. FAQPage (rich results)
   {
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
     mainEntity: [
+      {
+        '@type': 'Question',
+        name: 'Де подивитися карту повітряних тривог України онлайн (мапа тривог)?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: 'Інтерактивна карта повітряних тривог і мапа тривог України доступні на neptun.in.ua: активні тривоги по областях, маркери загроз і швидкі оновлення. Є також окремі сторінки «Карта тривог» та «Повітряна тривога онлайн».',
+        },
+      },
+      {
+        '@type': 'Question',
+        name: 'Що таке повітряна тривога і де подивитися тривогу зараз?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: 'Повітряна тривога — попередження про загрозу з повітря для регіону. На NEPTUN видно, де зараз оголошено тривогу: карта тривог показує статус по областях у реальному часі разом із повідомленнями про БПЛА та ракети.',
+        },
+      },
       {
         '@type': 'Question',
         name: 'Де подивитися карту шахедів і тривог України онлайн?',
@@ -319,14 +373,15 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     ? pathnameAssetHints(pathname)
     : { leaflet: true, material: true, jsonLdFull: true };
   const schemasForPage = jsonLdFull ? jsonLdSchemas : jsonLdSchemasSlim;
+  const uaRasterOrigin = resolveUaRasterTileOrigin();
 
   return (
-    <html lang="uk" className={inter.variable} suppressHydrationWarning>
+    <html lang="uk" className={`${inter.variable} dark`} suppressHydrationWarning>
       <head>
         {/* Global theme detection — MUST run synchronously before any React script to prevent FOUC */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var r=document.documentElement;var c=r.classList;var q=new URLSearchParams(window.location.search);var t=q.get('theme')||localStorage.getItem('theme');var p=window.location.pathname;var isApp=q.get('embed')==='1'||p.includes('export')||p.includes('map_only')||navigator.userAgent.includes('wv')||navigator.userAgent.includes('WebView');if(p.includes('export-light'))t='light';else if(p.includes('export')||p.includes('map_only'))t='dark';if(!t){if(isApp&&window.matchMedia('(prefers-color-scheme: light)').matches)t='light';else t='dark';}function applyT(theme){var light=theme==='light';if(light){c.remove('dark');c.add('theme-light');r.style.colorScheme='light';}else{c.remove('theme-light');c.add('dark');r.style.colorScheme='dark';}var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content',light?'#f5f7fa':'#0a0a0b');window.dispatchEvent(new Event('theme-change'));}applyT(t);if(isApp){window.matchMedia('(prefers-color-scheme: light)').addEventListener('change',function(e){applyT(e.matches?'light':'dark');});}if(isApp||q.get('embed')==='1')c.add('embed-mode');window.setNeptunTheme=function(theme){applyT(theme);};window.setTheme=window.setNeptunTheme;}catch(e){}})();`,
+            __html: `(function(){try{var r=document.documentElement;var c=r.classList;var q=new URLSearchParams(window.location.search);var t=q.get('theme')||localStorage.getItem('theme');var p=window.location.pathname;var isApp=q.get('embed')==='1'||p.includes('export')||p.includes('map_only')||navigator.userAgent.includes('wv')||navigator.userAgent.includes('WebView');if(p.includes('export-light'))t='light';else if(p.includes('export')||p.includes('map_only'))t='dark';if(!t)t='dark';function applyT(theme){var light=theme==='light';if(light){c.remove('dark');c.add('theme-light');r.style.colorScheme='light';}else{c.remove('theme-light');c.add('dark');r.style.colorScheme='dark';}var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content',light?'#f5f7fa':'#0a0a0b');window.dispatchEvent(new Event('theme-change'));}applyT(t);if(isApp){window.matchMedia('(prefers-color-scheme: light)').addEventListener('change',function(e){applyT(e.matches?'light':'dark');});}if(isApp||q.get('embed')==='1')c.add('embed-mode');window.setNeptunTheme=function(theme){applyT(theme);};window.setTheme=window.setNeptunTheme;}catch(e){}})();`,
           }}
         />
 
@@ -344,10 +399,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {includeMaterial ? (
           <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         ) : null}
-        {/* Map tiles: DeepState-style Ukraine layer by default, OSM/Carto/Google remain available as fallbacks. */}
         {includeLeaflet ? (
           <>
-            <link rel="preconnect" href="https://st1.deepstatemap.live" crossOrigin="anonymous" />
+            {uaRasterOrigin ? (
+              <link rel="preconnect" href={uaRasterOrigin} crossOrigin="anonymous" />
+            ) : null}
             <link rel="preconnect" href="https://a.tile.openstreetmap.org" crossOrigin="anonymous" />
             <link rel="dns-prefetch" href="https://b.tile.openstreetmap.org" />
             <link rel="dns-prefetch" href="https://c.tile.openstreetmap.org" />
@@ -362,7 +418,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <link rel="dns-prefetch" href="//www.googletagmanager.com" />
 
         {includeLeaflet ? (
-          <link rel="prefetch" href="/api/alarms/all" as="fetch" crossOrigin="anonymous" />
+          <>
+            <link rel="prefetch" href="/api/alarms/all" as="fetch" crossOrigin="anonymous" />
+            <link rel="preload" href={`/api/data?${API_DATA_PUBLIC_QUERY}`} as="fetch" crossOrigin="anonymous" />
+          </>
         ) : null}
 
         {includeLeaflet ? (
@@ -394,9 +453,21 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         ))}
       </head>
       <body className="font-mono bg-[#f5f7fa] text-gray-900 dark:bg-[#050505] dark:text-white/80 antialiased selection:bg-[#ff2a5f]/30 relative transition-colors duration-300">
+        {/* Global Maintenance Notice */}
+        <div className="pointer-events-none fixed inset-x-0 top-0 z-[10000] flex justify-center pt-1.5 sm:pt-2">
+          <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 shadow-sm backdrop-blur-md sm:px-4">
+            <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]" />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-amber-500/90 sm:text-[11px]">
+              Технічні роботи
+            </span>
+          </div>
+        </div>
+
         {/* Body flat; атмосфера карти — MapAtmosphereOverlay у AppShell (без full-screen blur) */}
         {children}
 
+        <NeptunSseAuthWarmup />
+        <NeptunAppInstallClickTracker />
         <DeferredGoogleAnalytics />
       </body>
     </html>

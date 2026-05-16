@@ -1,5 +1,6 @@
 import { cache, withETag } from '@/lib/cache';
-import { getRawMessages } from '@/lib/markers-store';
+import { buildMarkerOptionsForApi, buildMarkers } from '@/lib/build-markers';
+import { initTargetStore, syncTargetStoreFromRedis } from '@/lib/tracked-target-store';
 
 const CACHE_KEY = 'messages_mobile';
 const CACHE_TTL = 30_000; // 30 seconds
@@ -13,13 +14,12 @@ interface MobileMessage {
 }
 
 function buildMessages(): { messages: MobileMessage[] } {
-  const messages = getRawMessages();
+  const markers = buildMarkers(buildMarkerOptionsForApi(true));
 
-  // Return last 50 messages, formatted for mobile
-  const recent = messages.slice(-50).reverse().map((m) => ({
-    location: (m.region || m.location || m.place || '') as string,
+  const recent = markers.slice(0, 50).map((m) => ({
+    location: m.region || m.place || '',
     text: (m.text || '') as string,
-    timestamp: (m.ts || m.date || m.timestamp || '') as string,
+    timestamp: m.date || '',
     type: (m.threat_type || m.type || '') as string,
   }));
 
@@ -29,10 +29,12 @@ function buildMessages(): { messages: MobileMessage[] } {
 /**
  * GET /api/messages
  * Returns recent parsed messages for the mobile app's alarm timer widget.
- * Zero file I/O — reads from in-memory markers-store.
+ * Zero file I/O — reads from in-memory track store.
  */
 export async function GET(request: Request) {
   const clientETag = request.headers.get('If-None-Match');
+  await initTargetStore();
+  await syncTargetStoreFromRedis();
 
   // Check cache
   const { entry, isStale } = cache.getWithStale<{ messages: MobileMessage[] }>(CACHE_KEY, STALE_TTL);

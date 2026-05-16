@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../models/chat_message.dart';
 
@@ -8,6 +9,7 @@ class ChatContextMenuOverlay extends StatelessWidget {
   final bool isMine;
   final bool isModerator;
   final String myDeviceId;
+  final String? myNickname;
   final void Function(String emoji) onReact;
   final VoidCallback onReply;
   final VoidCallback onCopy;
@@ -24,6 +26,7 @@ class ChatContextMenuOverlay extends StatelessWidget {
     required this.isMine,
     required this.isModerator,
     required this.myDeviceId,
+    this.myNickname,
     required this.onReact,
     required this.onReply,
     required this.onCopy,
@@ -42,8 +45,8 @@ class ChatContextMenuOverlay extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     return GestureDetector(
       onTap: () => Navigator.pop(context),
-      child: Container(
-        color: Colors.black.withValues(alpha: 0.5),
+      child: ColoredBox(
+        color: cs.scrim.withValues(alpha: 0.56),
         child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -52,16 +55,20 @@ class ChatContextMenuOverlay extends StatelessWidget {
                 margin: const EdgeInsets.symmetric(horizontal: 32),
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                 decoration: BoxDecoration(
-                  color: cs.surfaceContainerHighest,
+                  color: cs.surfaceContainerHigh,
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: cs.outline),
+                  border: Border.all(color: cs.outlineVariant),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: _emojis.map((emoji) {
-                    final hasReacted = message.hasReacted(emoji, myDeviceId);
+                    final hasReacted =
+                        message.hasReacted(emoji, myDeviceId, myNickname);
                     return GestureDetector(
-                      onTap: () => onReact(emoji),
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        onReact(emoji);
+                      },
                       child: Container(
                         margin: const EdgeInsets.symmetric(horizontal: 2),
                         padding: const EdgeInsets.all(6),
@@ -85,15 +92,17 @@ class ChatContextMenuOverlay extends StatelessWidget {
                 margin: const EdgeInsets.symmetric(horizontal: 48),
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: isMine
-                      ? cs.primary.withValues(alpha: 0.15)
-                      : cs.surfaceContainerHighest,
+                  color: isMine ? cs.primaryContainer : cs.surfaceContainerHigh,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: cs.outline, width: 0.5),
+                  border: Border.all(color: cs.outlineVariant),
                 ),
                 child: Text(
                   message.message,
-                  style: GoogleFonts.inter(fontSize: 14, color: cs.onSurface),
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 14,
+                    height: 1.4,
+                    color: isMine ? cs.onPrimaryContainer : cs.onSurface,
+                  ),
                   maxLines: 4,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -104,9 +113,9 @@ class ChatContextMenuOverlay extends StatelessWidget {
                 child: Container(
                   margin: const EdgeInsets.symmetric(horizontal: 32),
                   decoration: BoxDecoration(
-                    color: cs.surfaceContainerHighest,
+                    color: cs.surfaceContainerHigh,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: cs.outline),
+                    border: Border.all(color: cs.outlineVariant),
                   ),
                   child: Column(
                     children: [
@@ -193,13 +202,21 @@ class ChatContextMenuOverlay extends StatelessWidget {
     final c = color ?? cs.onSurface;
     return InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
         child: Row(
           children: [
             Icon(icon, size: 20, color: c),
             const SizedBox(width: 12),
-            Text(label, style: GoogleFonts.inter(fontSize: 15, color: c)),
+            Text(
+              label,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+                color: c,
+              ),
+            ),
           ],
         ),
       ),
@@ -210,7 +227,7 @@ class ChatContextMenuOverlay extends StatelessWidget {
     return Divider(
       height: 0.5,
       thickness: 0.5,
-      color: Theme.of(context).colorScheme.outline,
+      color: Theme.of(context).colorScheme.outlineVariant,
     );
   }
 }

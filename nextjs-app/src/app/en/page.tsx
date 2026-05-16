@@ -2,6 +2,7 @@ import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import HomePageClient from '../HomePageClient';
 import { getInitialAlarmsSnapshot } from '@/lib/alarms-data';
+import { getInitialPublicMarkersPayload } from '@/lib/markers-page-data';
 // English version of the homepage — same map, English metadata
 
 export const dynamic = 'force-dynamic';
@@ -50,7 +51,10 @@ export default async function EnglishPage({
   const params = await searchParams;
   const isEmbed = params.embed === '1';
 
-  const { alarms: initialAlarms, etag: initialAlarmEtag } = await getInitialAlarmsSnapshot();
+  const [{ alarms: initialAlarms, etag: initialAlarmEtag }, initialMarkersPayload] = await Promise.all([
+    getInitialAlarmsSnapshot(),
+    getInitialPublicMarkersPayload(),
+  ]);
 
   // JSON-LD for English version
   const jsonLd = {
@@ -84,6 +88,10 @@ export default async function EnglishPage({
           isEmbed={isEmbed}
           initialAlarms={initialAlarms}
           initialAlarmEtag={initialAlarmEtag}
+          initialMarkers={initialMarkersPayload.markers}
+          initialMarkersVersion={initialMarkersPayload.markersVersion}
+          initialMarkersServerTime={initialMarkersPayload.serverTime}
+          initialBallisticThreat={initialMarkersPayload.ballisticThreat}
         />
       </Suspense>
     </>

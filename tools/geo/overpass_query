@@ -1,0 +1,4 @@
+[out:json][timeout:25];
+area["ISO3166-1"="UA"][admin_level=2]->.ua;
+node["place"~"city|town|village"](area.ua);
+out body;

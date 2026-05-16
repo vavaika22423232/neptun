@@ -16,12 +16,20 @@ enum ProFeature {
   extendedRadar,
   chatBadge,
   widgetCustomization,
+  chatMedia,
+  preciseRaionPush,
+  sleepMode,
+  detailedPush,
+  chatThemes,
+  animatedAvatar,
 }
 
 class ProGate {
   ProGate._();
 
   static bool get isPro => sl<PurchaseService>().isPremium;
+
+  static int get mapThreatHistoryMinutes => isPro ? 120 : 30;
 
   static bool isUnlocked(ProFeature feature) {
     if (isPro) return true;
@@ -40,6 +48,12 @@ class ProGate {
       case ProFeature.extendedRadar:
       case ProFeature.chatBadge:
       case ProFeature.widgetCustomization:
+      case ProFeature.chatMedia:
+      case ProFeature.preciseRaionPush:
+      case ProFeature.sleepMode:
+      case ProFeature.detailedPush:
+      case ProFeature.chatThemes:
+      case ProFeature.animatedAvatar:
         return false;
     }
   }
@@ -57,6 +71,12 @@ class ProGate {
     ProFeature.extendedRadar: 'Розширений радар',
     ProFeature.chatBadge: 'PRO бейдж в чаті',
     ProFeature.widgetCustomization: 'Кастомізація віджетів',
+    ProFeature.chatMedia: 'Медіа в чаті',
+    ProFeature.preciseRaionPush: 'Точні пуші по району',
+    ProFeature.sleepMode: 'Режим сну',
+    ProFeature.detailedPush: 'Детальні сповіщення',
+    ProFeature.chatThemes: 'Теми чату',
+    ProFeature.animatedAvatar: 'Анімований аватар',
   };
 
   static const Map<ProFeature, String> featureDescriptions = {
@@ -72,5 +92,11 @@ class ProGate {
     ProFeature.extendedRadar: 'Розширена зона моніторингу загроз',
     ProFeature.chatBadge: 'Золотий бейдж PRO-користувача в чаті',
     ProFeature.widgetCustomization: 'Налаштування зовнішнього вигляду віджетів',
+    ProFeature.chatMedia: 'Надсилання фото та аудіо в чаті',
+    ProFeature.preciseRaionPush: 'Сповіщення з прив’язкою до району',
+    ProFeature.sleepMode: 'Тихі години без зайвих сповіщень',
+    ProFeature.detailedPush: 'Розширений текст у push-сповіщеннях',
+    ProFeature.chatThemes: 'Додаткові теми оформлення чату',
+    ProFeature.animatedAvatar: 'Анімоване відображення аватара',
   };
 }

@@ -3,6 +3,8 @@ import { THREAT_ICONS } from '@/types';
 import { CACHE_VERSION } from '@/lib/constants';
 import { bearingToWebIconRotationCssDeg, resolveThreatBearingDeg } from '@/lib/threat-bearing';
 import { markerVisualPriority } from '@/lib/map/marker-priority';
+import { expandMarkersForSwarmDisplay } from '@/lib/map/marker-swarm-expand';
+import { markerBehavior, markerPassesMapDisplayAge } from '@/lib/marker-behavior';
 
 const MAP_BOUNDS = { minLat: 44.2, maxLat: 52.4, minLng: 22.0, maxLng: 40.2 } as const;
 
@@ -20,10 +22,7 @@ export function stableMarkerKey(m: Marker): string {
   return `u:${Math.random().toString(36).slice(2)}`;
 }
 
-export function combinedMarkerOpacity(marker: Marker): number {
-  void marker;
-  return 1;
-}
+
 
 /** Сирі дані API без display policy → узгоджено з Leaflet `normalizeMarkerDisplay`. */
 export function normalizeMarkerDisplayForMap(marker: Marker): Marker {
@@ -89,8 +88,17 @@ export type ThreatPointFeature = {
     bearing: number;
     opacity: number;
     icon_px: number;
+    halo_opacity: number;
+    halo_radius: number;
+    halo_color: string;
+    behavior: string;
     prio: number;
     threat_type: string;
+    count: number;
+    count_label: string;
+    badge_color: string;
+    status_label: string;
+    threat_zone_radius_km: number;
     _m: string;
   };
 };
@@ -106,9 +114,11 @@ export type ThreatMarkerFeatureCollection = {
  */
 export function markersToGeoJSON(markers: Marker[]): ThreatMarkerFeatureCollection {
   const features: ThreatPointFeature[] = [];
+  const expanded = expandMarkersForSwarmDisplay(markers);
 
-  for (const rawIn of markers) {
+  for (const rawIn of expanded) {
     const raw = normalizeMarkerDisplayForMap(rawIn);
+    if (!markerPassesMapDisplayAge(raw)) continue;
     const lat = parseFloat(String(raw.lat));
     const lng = parseFloat(String(raw.lng));
     if (isNaN(lat) || isNaN(lng)) continue;
@@ -120,9 +130,53 @@ export function markersToGeoJSON(markers: Marker[]): ThreatMarkerFeatureCollecti
     const brg = resolveThreatBearingDeg(raw);
     const rotation = brg != null ? bearingToWebIconRotationCssDeg(brg) : 0;
     const micon = maplibreIconId(raw);
-    const opacity = combinedMarkerOpacity(raw);
+    const behavior = markerBehavior(raw);
+    const opacity = behavior.opacity;
     const prio = markerVisualPriority(raw);
-    const icon_px = threatIconDisplayPx(raw);
+    const icon_px = Math.round(threatIconDisplayPx(raw) * behavior.sizeScale);
+    const threatType = raw.threat_type || 'default';
+    const haloColor =
+      behavior.kind === 'fast' || behavior.kind === 'strike'
+        ? '#ff3864'
+        : behavior.kind === 'float'
+          ? '#8bd3ff'
+          : behavior.kind === 'watch'
+            ? '#7ce7b2'
+            : '#ff6b75';
+
+    const rawCount = Number(raw.count) || 1;
+
+    // Build tracker status label (ETA / Loitering)
+    let statusLabel = '';
+    const etaSec = typeof raw.eta_seconds === 'number' ? raw.eta_seconds : null;
+    const isStale = raw.track_state === 'stale';
+    
+    if (isStale) {
+      statusLabel = '⚠️ Сигнал втрачено';
+    } else if (raw.is_loitering) {
+      statusLabel = '⟳ Барражує';
+    } else if (etaSec !== null && etaSec >= 0) {
+      const etaMin = Math.round(etaSec / 60);
+      statusLabel = etaSec === 0 ? 'досягнуто' : etaMin < 1 ? '<1хв' : `${etaMin}хв`;
+    }
+
+    // Ghost Mode styling override
+    let finalHaloColor = haloColor;
+    let finalOpacity = opacity;
+    if (isStale) {
+      finalHaloColor = '#9e9e9e'; // Grey halo
+      finalOpacity = Math.min(opacity, 0.45); // Faded icon
+    }
+
+    // Phase 4: Acoustic / Threat Zones
+    let threatZoneRadiusKm = 0;
+    if (threatType === 'shahed' || threatType === 'drone') {
+      threatZoneRadiusKm = 8; // Acoustic zone for shaheds
+    } else if (threatType === 'kab') {
+      threatZoneRadiusKm = 10; // Impact zone for KABs
+    } else if (threatType === 'missile' || threatType === 'raketa') {
+      threatZoneRadiusKm = 6;
+    }
 
     features.push({
       type: 'Feature',
@@ -132,14 +186,124 @@ export function markersToGeoJSON(markers: Marker[]): ThreatMarkerFeatureCollecti
         mid: key,
         micon,
         bearing: rotation,
-        opacity,
+        opacity: finalOpacity,
         icon_px,
+        halo_opacity: behavior.haloOpacity,
+        halo_radius: behavior.haloRadiusPx,
+        halo_color: finalHaloColor,
+        behavior: behavior.kind,
         prio,
-        threat_type: raw.threat_type || 'default',
+        threat_type: threatType,
+        count: rawCount,
+        count_label: '',
+        badge_color: '',
+        status_label: statusLabel,
+        threat_zone_radius_km: threatZoneRadiusKm,
         /** серіалізація для popup */
         _m: JSON.stringify(raw),
       },
     });
+  }
+
+  return { type: 'FeatureCollection', features };
+}
+
+// ── Phase 3: Tactical Swarm Grouping (Convex Hulls) ──
+
+function clusterMarkers(markers: Marker[], maxDistKm: number): Marker[][] {
+  const clusters: Marker[][] = [];
+  const visited = new Set<string>();
+
+  for (const m of markers) {
+    const id = m.id || m.track_id || Math.random().toString();
+    if (visited.has(id)) continue;
+    const cluster = [m];
+    visited.add(id);
+    
+    const queue = [m];
+    while (queue.length > 0) {
+      const cur = queue.shift()!;
+      for (const other of markers) {
+        const oid = other.id || other.track_id || Math.random().toString();
+        if (visited.has(oid)) continue;
+        if (cur.threat_type !== other.threat_type) continue;
+        
+        const dLat = (Number(other.lat) - Number(cur.lat)) * 111.32;
+        const dLng = (Number(other.lng) - Number(cur.lng)) * 111.32 * Math.cos(Number(cur.lat) * Math.PI / 180);
+        const d = Math.sqrt(dLat * dLat + dLng * dLng);
+        
+        if (d <= maxDistKm) {
+          visited.add(oid);
+          cluster.push(other);
+          queue.push(other);
+        }
+      }
+    }
+    clusters.push(cluster);
+  }
+  return clusters;
+}
+
+function convexHull(points: [number, number][]): [number, number][] {
+  if (points.length < 3) return points;
+  const p = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o: [number, number], a: [number, number], b: [number, number]) =>
+    (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  
+  const lower: [number, number][] = [];
+  for (const pt of p) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], pt) <= 0) lower.pop();
+    lower.push(pt);
+  }
+  const upper: [number, number][] = [];
+  for (let i = p.length - 1; i >= 0; i--) {
+    const pt = p[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], pt) <= 0) upper.pop();
+    upper.push(pt);
+  }
+  upper.pop();
+  lower.pop();
+  const hull = lower.concat(upper);
+  if (hull.length > 0) hull.push([...hull[0]]); // Close the polygon
+  return hull;
+}
+
+export function markersToSwarmGeoJSON(markers: Marker[]) {
+  const activeMarkers = markers.filter(m => markerPassesMapDisplayAge(normalizeMarkerDisplayForMap(m)) && m.track_state !== 'lost');
+  const clusters = clusterMarkers(activeMarkers, 15.0); // 15 km cluster radius
+  const features: any[] = [];
+
+  for (const cluster of clusters) {
+    if (cluster.length >= 3) {
+      // Expand cluster points slightly so the hull isn't perfectly tight
+      const points: [number, number][] = [];
+      for (const m of cluster) {
+        const lat = Number(m.lat);
+        const lng = Number(m.lng);
+        points.push([lng, lat]);
+        // Add fake points around it to puff up the hull (creates a rounded buffer)
+        points.push([lng + 0.02, lat]);
+        points.push([lng - 0.02, lat]);
+        points.push([lng, lat + 0.02]);
+        points.push([lng, lat - 0.02]);
+      }
+
+      const hullCoords = convexHull(points);
+      if (hullCoords.length < 4) continue;
+
+      const threatType = cluster[0].threat_type || 'default';
+      const label = `Зграя (${cluster.length})`;
+
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'Polygon', coordinates: [hullCoords] },
+        properties: {
+          swarm_id: `swarm_${cluster[0].id}`,
+          threat_type: threatType,
+          swarm_label: label,
+        },
+      });
+    }
   }
 
   return { type: 'FeatureCollection', features };

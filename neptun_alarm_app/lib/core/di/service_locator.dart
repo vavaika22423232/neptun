@@ -8,6 +8,8 @@ import '../../services/tts_service.dart';
 import '../../services/review_service.dart';
 import '../../services/alarm_tracking_service.dart';
 import '../../services/data_stream_service.dart';
+import '../../services/presence_service.dart';
+import '../../services/pro_customization_service.dart';
 import '../../services/moderator_service.dart';
 import '../../services/widget_service.dart';
 import '../../services/ballistic_alert_service.dart';
@@ -32,6 +34,10 @@ Future<void> initServiceLocator() async {
   // Services (re-register existing singletons for DI access)
   sl.registerLazySingleton<DataStreamService>(
     () => DataStreamService.instance,
+  );
+  sl.registerLazySingleton<PresenceService>(() => PresenceService.instance);
+  sl.registerLazySingleton<ProCustomizationService>(
+    () => ProCustomizationService(),
   );
   sl.registerLazySingleton<ChatService>(() => ChatService.instance);
   sl.registerLazySingleton<ModeratorService>(() => ModeratorService.instance);

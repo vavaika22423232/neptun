@@ -23,6 +23,7 @@ tsconfig.tsbuildinfo
 
 # ===== Flutter =====
 neptun_alarm_app/build/
+neptun_alarm_app/build*/
 neptun_alarm_app/.dart_tool/
 neptun_alarm_app/.idea/
 neptun_alarm_app/.flutter-plugins-dependencies
@@ -40,6 +41,8 @@ neptun_alarm_app/ios/Pods/
 nominatim_cache.json
 geocode_cache*.json
 visicom_cache*.json
+ops/snapshots/*.json
+infra/photon/photon_data/
 *.db
 *.db-shm
 *.db-wal

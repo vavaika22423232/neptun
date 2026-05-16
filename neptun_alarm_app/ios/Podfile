@@ -39,11 +39,9 @@ project 'Runner', {
 }
 
 def flutter_root
-  generated_xcode_build_settings_path = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__)
-  generated_alt = File.expand_path(File.join('..', 'Flutter', 'Generated 2.xcconfig'), __FILE__)
-  path = File.exist?(generated_xcode_build_settings_path) ? generated_xcode_build_settings_path : generated_alt
+  path = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__)
   unless File.exist?(path)
-    raise "Generated.xcconfig or Generated 2.xcconfig must exist. Run 'flutter pub get' first"
+    raise "Generated.xcconfig must exist. Run 'flutter pub get' first"
   end
 
   File.foreach(path) do |line|

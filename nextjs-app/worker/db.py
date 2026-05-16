@@ -76,6 +76,18 @@ class InMemoryDB:
             if len(self._processed) > MAX_DEDUP_SIZE:
                 self._cleanup()
 
+    def mark_message_processed_pair(self, channel_id: int, msg_id: int, text: str) -> None:
+        """Same wall time for msg id + content digest so `_cleanup` cannot drop only one of the pair."""
+        ts = time.time()
+        key_msg = f"{channel_id}:{msg_id}"
+        digest = hashlib.sha1((text or '').strip().encode('utf-8')).hexdigest()[:16]
+        key_content = f"{channel_id}:{msg_id}:content:{digest}"
+        with self._lock:
+            self._processed[key_msg] = ts
+            self._processed[key_content] = ts
+            if len(self._processed) > MAX_DEDUP_SIZE:
+                self._cleanup()
+
     def _cleanup(self) -> None:
         """Remove oldest half of entries."""
         items = sorted(self._processed.items(), key=lambda x: x[1])

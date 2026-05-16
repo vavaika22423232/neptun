@@ -1,4 +1,5 @@
 import type { Alarm } from '@/types';
+import { REGION_TO_OBLAST_ID } from '@/lib/constants';
 
 /** Нормалізація назви регіону для порівняння з GeoJSON (`rayon`, NL_NAME_1, …). */
 export function normalizeAlarmRegionName(value: string): string {
@@ -9,6 +10,33 @@ export function normalizeAlarmRegionName(value: string): string {
     .replace(/['ʼ`]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+const DISTRICT_NAME_ALIASES: Record<string, string[]> = {
+  // 2024 rename: Новомосковський район -> Самарівський район. Our raion GeoJSON still
+  // carries the 2020 name, while UkraineAlarm already sends the new district name.
+  [normalizeAlarmRegionName('Самарівський район')]: [
+    'Самарівський район',
+    'Самарський район',
+    'Новомосковський район',
+  ],
+  [normalizeAlarmRegionName('Самарський район')]: [
+    'Самарівський район',
+    'Самарський район',
+    'Новомосковський район',
+  ],
+  [normalizeAlarmRegionName('Новомосковський район')]: [
+    'Новомосковський район',
+    'Самарівський район',
+    'Самарський район',
+  ],
+};
+
+export function alarmRegionNameAliases(value: string): string[] {
+  const original = String(value || '').trim();
+  if (!original) return [];
+  const aliases = DISTRICT_NAME_ALIASES[normalizeAlarmRegionName(original)] ?? [original];
+  return [...new Set([original, ...aliases].filter(Boolean))];
 }
 
 function isDistrictRegion(alarm: Alarm): boolean {
@@ -31,6 +59,23 @@ export type OblastFeatureCollection = {
     geometry?: unknown;
   }>;
 };
+
+/** Maps GeoJSON oblast row → official UA-xx admin code (same list as worker `REGION_TO_OBLAST_ID`). */
+function uaAdminCodeForOblastGeoProperties(props: Record<string, unknown>): string | null {
+  const nl = normalizeAlarmRegionName(String(props.NL_NAME_1 || ''));
+  const en = normalizeAlarmRegionName(String(props.NAME_1 || ''));
+  if (!nl && !en) return null;
+  let best: { code: string; labelLen: number } | null = null;
+  for (const [label, code] of Object.entries(REGION_TO_OBLAST_ID)) {
+    const L = normalizeAlarmRegionName(label);
+    if (L.length < 4) continue;
+    const hit =
+      (nl && (nl.includes(L) || L.includes(nl))) || (en && (en.includes(L) || L.includes(en)));
+    if (!hit) continue;
+    if (!best || label.length > best.labelLen) best = { code, labelLen: label.length };
+  }
+  return best?.code ?? null;
+}
 
 /**
  * Підбирає HASC_1 (UA.XX) для активних обласних тривог, щоб фільтрувати GeoJSON шар.
@@ -56,12 +101,16 @@ export function hascListForStateAlarms(alarms: Alarm[], oblastGeoJson: OblastFea
       const hasc = String(p.HASC_1 || '');
       if (!hasc || hasc === '?') continue;
 
+      const ridUpper = rid.toUpperCase();
+      const letterTail = hasc.split('.')[1]?.toUpperCase();
+      const adminFromPolygon = uaAdminCodeForOblastGeoProperties(p);
       if (
         rid &&
         (hasc === rid ||
           hasc.replace('.', '-') === rid ||
-          `UA-${hasc.split('.')[1]}` === rid ||
-          String(p.GID_1 || '') === rid)
+          (letterTail && `UA-${letterTail}` === ridUpper) ||
+          String(p.GID_1 || '') === rid ||
+          (adminFromPolygon && adminFromPolygon.toUpperCase() === ridUpper))
       ) {
         found = hasc;
         break;
@@ -85,8 +134,10 @@ export function districtRegionNamesForAlarms(alarms: Alarm[]): string[] {
   const names = new Set<string>();
   for (const alarm of alarms) {
     if (!isDistrictRegion(alarm) || !alarm.activeAlerts?.length) continue;
-    const name = normalizeAlarmRegionName(alarm.regionName || '');
-    if (name) names.add(name);
+    for (const alias of alarmRegionNameAliases(alarm.regionName || '')) {
+      const name = normalizeAlarmRegionName(alias);
+      if (name) names.add(name);
+    }
   }
   return [...names];
 }
@@ -100,4 +151,34 @@ export function districtRegionIdsForAlarms(alarms: Alarm[]): string[] {
     if (id) ids.add(id);
   }
   return [...ids];
+}
+
+/** Oblast HASC_1 для вільного тексту області (resolver / інжест). */
+export function findOblastHascForRegionLabel(
+  regionLabel: string,
+  oblastGeoJson: OblastFeatureCollection,
+): string | null {
+  const norm = normalizeAlarmRegionName(regionLabel);
+  if (!norm) return null;
+
+  let stem: string | null = null;
+  if (norm.endsWith('щина') && norm.length >= 9) {
+    stem = norm.slice(0, -4).trim();
+    if (stem.length < 3) stem = null;
+  }
+
+  for (const f of oblastGeoJson.features || []) {
+    const p = f.properties as Record<string, unknown> | null | undefined;
+    if (!p) continue;
+    const hasc = String(p.HASC_1 || '');
+    if (!hasc || hasc === '?') continue;
+    const nl = normalizeAlarmRegionName(String(p.NL_NAME_1 || ''));
+    const en = normalizeAlarmRegionName(String(p.NAME_1 || ''));
+    const hit =
+      Boolean(nl && (norm.includes(nl) || nl.includes(norm))) ||
+      Boolean(en && (norm.includes(en) || en.includes(norm))) ||
+      Boolean(stem && ((nl && nl.includes(stem)) || (en && en.includes(stem))));
+    if (hit) return hasc;
+  }
+  return null;
 }

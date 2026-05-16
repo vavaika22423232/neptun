@@ -13,6 +13,9 @@ class NeptunCard extends StatelessWidget {
   final EdgeInsetsGeometry? margin;
   final double borderRadius;
   final Color? backgroundColor;
+  final Color? borderColor;
+  final Color? iconAccent;
+  final bool showDividerBelow;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
 
@@ -24,6 +27,9 @@ class NeptunCard extends StatelessWidget {
     this.margin,
     this.borderRadius = 16,
     this.backgroundColor,
+    this.borderColor,
+    this.iconAccent,
+    this.showDividerBelow = false,
     this.onTap,
     this.onLongPress,
   });
@@ -35,6 +41,9 @@ class NeptunCard extends StatelessWidget {
     this.margin,
     this.borderRadius = 16,
     this.backgroundColor,
+    this.borderColor,
+    this.iconAccent,
+    this.showDividerBelow = false,
     this.onTap,
     this.onLongPress,
   }) : variant = NeptunCardVariant.outlined;
@@ -46,6 +55,9 @@ class NeptunCard extends StatelessWidget {
     this.margin,
     this.borderRadius = 16,
     this.backgroundColor,
+    this.borderColor,
+    this.iconAccent,
+    this.showDividerBelow = false,
     this.onTap,
     this.onLongPress,
   }) : variant = NeptunCardVariant.glass;
@@ -53,6 +65,7 @@ class NeptunCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     Widget content = Padding(
       padding: padding ?? const EdgeInsets.all(16),
@@ -67,7 +80,26 @@ class NeptunCard extends StatelessWidget {
       );
     }
 
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    if (iconAccent != null) {
+      content = IconTheme.merge(
+        data: IconThemeData(color: iconAccent),
+        child: content,
+      );
+    }
+
+    if (showDividerBelow) {
+      content = Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          content,
+          Divider(
+            height: 1,
+            color: cs.outline.withValues(alpha: isDark ? 0.35 : 0.2),
+          ),
+        ],
+      );
+    }
 
     switch (variant) {
       case NeptunCardVariant.elevated:
@@ -77,9 +109,9 @@ class NeptunCard extends StatelessWidget {
             color: backgroundColor ?? cs.surfaceContainer,
             borderRadius: BorderRadius.circular(borderRadius),
             border: Border.all(
-              color: isDark
+              color: borderColor ?? (isDark
                   ? cs.outline.withValues(alpha: 0.35)
-                  : cs.outline.withValues(alpha: 0.2),
+                  : cs.outline.withValues(alpha: 0.2)),
               width: 1,
             ),
             boxShadow: isDark
@@ -114,7 +146,7 @@ class NeptunCard extends StatelessWidget {
             color: backgroundColor ?? Colors.transparent,
             borderRadius: BorderRadius.circular(borderRadius),
             border: Border.all(
-              color: cs.outline.withValues(alpha: isDark ? 0.5 : 0.4),
+              color: borderColor ?? cs.outline.withValues(alpha: isDark ? 0.5 : 0.4),
               width: 1,
             ),
           ),

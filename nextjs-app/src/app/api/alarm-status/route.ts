@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { redisGet } from '@/lib/redis';
+import { alarmRegionNameAliases } from '@/lib/map/alarm-hasc-filter';
 import type { Alarm } from '@/types';
 
 const REDIS_KEY = 'alarms:all';
@@ -27,6 +28,14 @@ export async function GET() {
           start_time: alert.lastUpdate || null,
           type: alert.type || 'Повітряна тривога',
         };
+        for (const alias of alarmRegionNameAliases(region.regionName || '')) {
+          if (!alias || alerts[alias]) continue;
+          alerts[alias] = {
+            active: true,
+            start_time: alert.lastUpdate || null,
+            type: alert.type || 'Повітряна тривога',
+          };
+        }
       }
     }
   }

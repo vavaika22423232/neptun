@@ -38,10 +38,15 @@ class ApiConfig {
   static const String threatsEndpoint = '/api/threats';
   static const String feedbackEndpoint = '/api/feedback';
   static const String verifyPurchaseEndpoint = '/api/verify-purchase';
+  static const String premiumEntitlementEndpoint = '/api/premium/entitlement';
   static const String authTokenEndpoint = '/api/auth/token';
   static const String authRefreshEndpoint = '/api/auth/refresh';
   static const String authRevokeEndpoint = '/api/auth/revoke';
+  /// Мінімальна версія нативного клієнта (JSON з сервера).
+  static const String appRequirementsEndpoint = '/api/app-requirements';
+  static const String presenceEndpoint = '/api/presence';
   static const String adminMarkersDeleteEndpoint = '/api/admin/markers/delete';
+  static const String adminHiddenHideEndpoint = '/api/admin/hidden/hide';
   static const String adminChatReportsEndpoint = '/api/admin/chat/reports';
   static const String adminChatReportsResolveEndpoint =
       '/api/admin/chat/reports/resolve';
@@ -81,10 +86,14 @@ class ApiConfig {
   static String get threats => '$baseUrl$threatsEndpoint';
   static String get feedback => '$baseUrl$feedbackEndpoint';
   static String get verifyPurchase => '$baseUrl$verifyPurchaseEndpoint';
+  static String get premiumEntitlement => '$baseUrl$premiumEntitlementEndpoint';
   static String get authToken => '$baseUrl$authTokenEndpoint';
   static String get authRefresh => '$baseUrl$authRefreshEndpoint';
   static String get authRevoke => '$baseUrl$authRevokeEndpoint';
+  static String get appRequirements => '$baseUrl$appRequirementsEndpoint';
+  static String get presence => '$baseUrl$presenceEndpoint';
   static String get adminMarkersDelete => '$baseUrl$adminMarkersDeleteEndpoint';
+  static String get adminHiddenHide => '$baseUrl$adminHiddenHideEndpoint';
   static String get adminChatReports => '$baseUrl$adminChatReportsEndpoint';
   static String get adminChatReportsResolve =>
       '$baseUrl$adminChatReportsResolveEndpoint';
@@ -97,7 +106,19 @@ class ApiConfig {
   /// Chat message by ID (for DELETE)
   static String chatMessageById(String id) => '$baseUrl/api/chat/message/$id';
 
+  /// API often returns relative paths (e.g. `/data/images/...`). HTTP clients
+  /// and [CachedNetworkImage] require a full URI with scheme and host.
+  static String resolveAbsoluteUrl(String url) {
+    final t = url.trim();
+    if (t.isEmpty) return t;
+    if (t.startsWith('https://') || t.startsWith('http://')) return t;
+    if (t.startsWith('/')) return '$baseUrl$t';
+    return '$baseUrl/$t';
+  }
+
   /// Timeout для HTTP запитів
   static const Duration httpTimeout = Duration(seconds: 15);
   static const Duration longHttpTimeout = Duration(seconds: 30);
+  /// Короткий timeout для політики мінімальної версії (не блокувати cold start надто довго).
+  static const Duration appRequirementsHttpTimeout = Duration(seconds: 8);
 }

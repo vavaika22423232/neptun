@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
 import { usePolling } from './useVisibility';
 import { useMarkerSSE, useMarkerDeleteSSE, useTrackUpdateSSE } from './useDataSSE';
 import { API_DATA_PUBLIC_QUERY, HIDDEN_POLLING_INTERVAL_DESKTOP, MARKERS_CACHE_TTL } from '@/lib/constants';
@@ -11,14 +11,17 @@ import {
   isOffshoreOrMaritimeResolve,
 } from '@/lib/marker-display-policy';
 
-// Fallback polling — 90s when active (SSE triggers debounced refresh), 5min hidden
-const FALLBACK_POLLING_INTERVAL = 90_000;
+// Fallback polling — SSE is primary, but keep the backup tight enough for active threat mode.
+const FALLBACK_POLLING_INTERVAL = 30_000;
 
-// Debounce SSE-triggered fetches: wait 3s after last marker_new before fetching
-// Prevents thundering herd: 2500 clients all fetching /api/data simultaneously
-const SSE_FETCH_DEBOUNCE = 3_000;
+// Debounce SSE-triggered snapshot fetches. Marker payloads are applied immediately;
+// this is only a consistency refresh for burst / legacy events.
+const SSE_FETCH_DEBOUNCE = 500;
 
 const CACHE_KEY = 'neptun_markers_cache';
+// Boot cache is only for a fast first paint. Mobile/WebView tabs can start as
+// hidden, so an old localStorage snapshot must never replace a fresh server load.
+const BOOT_CACHE_MAX_AGE = 90_000;
 
 /** Prefer server display_* from SSE (matches /api/data); else local policy with defaults. */
 function applyDisplayPolicyFromSsePayload(target: Marker, markerData: Record<string, unknown>): void {
@@ -89,12 +92,12 @@ function applyTrackLifecycleFromPayload(target: Marker, markerData: Record<strin
   }
 }
 
-function getCachedMarkers(): Marker[] | null {
+function getCachedMarkers(maxAgeMs = MARKERS_CACHE_TTL): Marker[] | null {
   try {
     const cached = localStorage.getItem(CACHE_KEY);
     if (!cached) return null;
     const { data, timestamp } = JSON.parse(cached);
-    if (Date.now() - timestamp < MARKERS_CACHE_TTL && data?.length > 0) {
+    if (Date.now() - timestamp < maxAgeMs && data?.length > 0) {
       return data;
     }
   } catch {
@@ -119,26 +122,71 @@ function delay(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-export function useMarkers() {
-  const [markers, setMarkers] = useState<Marker[]>([]);
-  const [ballisticThreat, setBallisticThreat] = useState<BallisticThreat | null>(null);
+function readInitialMarkers(): Marker[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    return getCachedMarkers(BOOT_CACHE_MAX_AGE) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export type UseMarkersBootstrap = {
+  markers: Marker[];
+  markersVersion: number | null;
+  serverTime: number | null;
+  ballisticThreat: BallisticThreat | null;
+};
+
+export function useMarkers(bootstrap?: UseMarkersBootstrap) {
+  /** SSR snapshot first, else localStorage — both synchronous before first paint. */
+  const [markers, setMarkers] = useState<Marker[]>(() => {
+    if (bootstrap?.markers && bootstrap.markers.length > 0) return bootstrap.markers;
+    return readInitialMarkers();
+  });
+  /** Sync length for fetch gating without widening fetchMarkers deps (avoids polling storms). */
+  const markerCountRef = useRef(0);
+  const [ballisticThreat, setBallisticThreat] = useState<BallisticThreat | null>(
+    () => bootstrap?.ballisticThreat ?? null,
+  );
   const [serverTimeOffset, setServerTimeOffset] = useState(0); // server_time - client_time (ms)
   const etagRef = useRef<string | null>(null);
   const inFlightRef = useRef(false);
+  const hasFetchedSnapshotRef = useRef(false);
   /** Skip replacing `markers` when /api/data snapshot unchanged (less Leaflet churn). */
   const markersDataVersionRef = useRef<number | null>(null);
 
-  // Load cached markers on mount
-  useEffect(() => {
-    const cached = getCachedMarkers();
-    if (cached) setMarkers(cached);
-  }, []);
+  useLayoutEffect(() => {
+    if (bootstrap?.markersVersion != null && Number.isFinite(bootstrap.markersVersion)) {
+      markersDataVersionRef.current = bootstrap.markersVersion;
+    }
+    if (bootstrap?.markers && bootstrap.markers.length > 0) {
+      setCachedMarkers(bootstrap.markers);
+    }
+    if (typeof bootstrap?.serverTime === 'number' && Number.isFinite(bootstrap.serverTime)) {
+      setServerTimeOffset(bootstrap.serverTime - Date.now());
+    }
+  }, [bootstrap]);
 
-  const fetchMarkers = useCallback(async (skipEtag = false) => {
-    if (document.hidden || inFlightRef.current) return;
+  useLayoutEffect(() => {
+    markerCountRef.current = markers.length;
+  }, [markers]);
+
+  const fetchMarkers = useCallback(async (skipEtag = false, force = false) => {
+    // Flutter / in-app WebViews often keep `document.hidden === true` even while the map is on screen,
+    // which previously skipped every poll and left markers empty forever.
+    const embedPage =
+      typeof document !== 'undefined' &&
+      document.documentElement.classList.contains('embed-mode');
+    // Mobile Safari / Chrome sometimes report `document.hidden === true` on the first paint after navigation.
+    // If we skip HTTP fetch while hidden AND have zero markers, the map stays empty until reload or SSE debounce.
+    const hasAnyMarkers = markerCountRef.current > 0;
+    const hasFetchedSnapshot = hasFetchedSnapshotRef.current;
+    if (!force && hasFetchedSnapshot && document.hidden && !embedPage && hasAnyMarkers) return;
+    if (inFlightRef.current) return;
     inFlightRef.current = true;
 
-    const runOnce = async (allowRetry: boolean): Promise<void> => {
+    const runOnce = async (allowRetry: boolean, after304Retry = false): Promise<void> => {
       const headers: Record<string, string> = {};
       if (!skipEtag && etagRef.current) {
         headers['If-None-Match'] = etagRef.current;
@@ -150,16 +198,25 @@ export function useMarkers() {
       const response = await fetch(`/api/data?${API_DATA_PUBLIC_QUERY}`, {
         headers,
         signal: controller.signal,
+        priority: 'high',
+        cache: 'no-store',
       });
       clearTimeout(timeoutId);
 
       if (response.status === 304) {
+        hasFetchedSnapshotRef.current = true;
         const dateHdr = response.headers.get('Date');
         if (dateHdr) {
           const serverFromDate = Date.parse(dateHdr);
           if (Number.isFinite(serverFromDate)) {
             setServerTimeOffset(serverFromDate - Date.now());
           }
+        }
+        // 304 has no body — if we still have zero markers (cold navigation, multi-worker ETag oddity),
+        // drop ETag and do one full read.
+        if (markerCountRef.current === 0 && !after304Retry) {
+          etagRef.current = null;
+          return runOnce(allowRetry, true);
         }
         return;
       }
@@ -208,7 +265,8 @@ export function useMarkers() {
       }
 
       const versionUnchanged = mv !== null && markersDataVersionRef.current === mv;
-      if (versionUnchanged && items.length > 0) {
+      if (!force && versionUnchanged && items.length > 0 && markerCountRef.current > 0) {
+        hasFetchedSnapshotRef.current = true;
         return;
       }
 
@@ -217,6 +275,7 @@ export function useMarkers() {
       }
 
       setCachedMarkers(items);
+      hasFetchedSnapshotRef.current = true;
       setMarkers(items);
     };
 
@@ -230,17 +289,171 @@ export function useMarkers() {
     }
   }, []);
 
-  // SSE push — debounce: wait 3s after last marker_new before fetching
-  // This prevents 2500 clients from slamming /api/data simultaneously
+  // Mobile Safari / Android WebView can delay timers, preserve an old BFCache
+  // page, or report hidden on first paint. Always force a fresh snapshot around
+  // boot and when the page becomes active again.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    let cancelled = false;
+    const refresh = () => {
+      if (!cancelled) void fetchMarkers(true, true);
+    };
+    const refreshIfEmpty = () => {
+      if (!cancelled && markerCountRef.current === 0) void fetchMarkers(true, true);
+    };
+    const handleVisibilityChange = () => {
+      if (!document.hidden) refresh();
+    };
+    const handlePageShow = (ev: Event) => {
+      if ((ev as PageTransitionEvent).persisted) {
+        etagRef.current = null;
+      }
+      refresh();
+    };
+
+    refresh();
+    const instantEmptyRetry = window.setTimeout(refreshIfEmpty, 250);
+    const bootRetrySoon = window.setTimeout(() => {
+      if (!cancelled && markerCountRef.current === 0) refresh();
+    }, 400);
+    const shortRetry = window.setTimeout(refresh, 1500);
+    const emptyRetry = window.setTimeout(refreshIfEmpty, 8000);
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pageshow', handlePageShow);
+    window.addEventListener('focus', refresh);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(instantEmptyRetry);
+      window.clearTimeout(bootRetrySoon);
+      window.clearTimeout(shortRetry);
+      window.clearTimeout(emptyRetry);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pageshow', handlePageShow);
+      window.removeEventListener('focus', refresh);
+    };
+  }, [fetchMarkers]);
+
+  // Server pushes `markers_version` on SSE connect + keepalive (`markers_sync`); reconcile if drift.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onVersionSync = (ev: Event) => {
+      const d = (ev as CustomEvent<{ markers_version?: number }>).detail;
+      const v = d?.markers_version;
+      if (typeof v !== 'number' || !Number.isFinite(v)) return;
+      if (markersDataVersionRef.current != null && markersDataVersionRef.current === v) return;
+      void fetchMarkers(true, true);
+    };
+    const onStaleStream = () => {
+      void fetchMarkers(true, true);
+    };
+    window.addEventListener('neptun:markers-sync', onVersionSync);
+    window.addEventListener('neptun:markers-force-reconcile', onStaleStream);
+    return () => {
+      window.removeEventListener('neptun:markers-sync', onVersionSync);
+      window.removeEventListener('neptun:markers-force-reconcile', onStaleStream);
+    };
+  }, [fetchMarkers]);
+
+  // SSE reconnect / new socket → full snapshot (fixes stale map after long idle or silent drops).
+  // `online` → recover after flaky mobile networks without waiting for SSE error backoff.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const reconcile = () => {
+      void fetchMarkers(true, true);
+    };
+    const onSseOpen = () => reconcile();
+    const onOnline = () => reconcile();
+    window.addEventListener('neptun:sse-open', onSseOpen);
+    window.addEventListener('online', onOnline);
+    return () => {
+      window.removeEventListener('neptun:sse-open', onSseOpen);
+      window.removeEventListener('online', onOnline);
+    };
+  }, [fetchMarkers]);
+
+  const upsertMarkerFromSse = useCallback((markerData: Record<string, unknown>): boolean => {
+    const lat = Number(markerData.lat);
+    const lng = Number(markerData.lng);
+    const id = typeof markerData.id === 'string' ? markerData.id : '';
+    if (!id || !Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+
+    const newMarker: Marker = {
+      id,
+      track_id: typeof markerData.track_id === 'string' ? markerData.track_id : undefined,
+      lat,
+      lng,
+      threat_type: (markerData.threat_type as string) || 'shahed',
+      place: markerData.place as string,
+      region: markerData.region as string,
+      text: markerData.text as string,
+      date: (markerData.date as string) || new Date().toISOString(),
+      count: (markerData.count as number) || 1,
+      course_bearing: markerData.course_bearing as number | null,
+      course_direction: markerData.course_direction as string,
+      speed_kmh: markerData.speed_kmh as number,
+      trajectory: markerData.trajectory as Marker['trajectory'],
+      trajectory_source: markerData.trajectory_source as string,
+      prediction_confidence: markerData.prediction_confidence as number,
+      created_at_epoch: (markerData.created_at_epoch as number) || Date.now(),
+      origin: markerData.origin as string,
+      flight_phase: markerData.flight_phase as Marker['flight_phase'],
+      observation_count: (markerData.observation_count as number) || 1,
+      computed_speed_kmh: markerData.computed_speed_kmh as number | undefined,
+      positions: Array.isArray(markerData.positions)
+        ? normalizeTrackPoints(markerData.positions as Array<Record<string, unknown>>)
+        : [{
+            lat,
+            lng,
+            ts: normalizeEpochMs(markerData.created_at_epoch),
+            source: (markerData.channel_name as string) || 'sse',
+          }],
+      placement_mode: typeof markerData.placement_mode === 'string' ? markerData.placement_mode : undefined,
+      resolve_status: typeof markerData.resolve_status === 'string' ? markerData.resolve_status : undefined,
+      geocode_tier: typeof markerData.geocode_tier === 'string' ? markerData.geocode_tier : undefined,
+      geo_decision_reason: typeof markerData.geo_decision_reason === 'string' ? markerData.geo_decision_reason : undefined,
+      geocode_source: typeof markerData.geocode_source === 'string' ? markerData.geocode_source : undefined,
+      candidates_count: typeof markerData.candidates_count === 'number' ? markerData.candidates_count : undefined,
+      publication_class: markerData.publication_class as Marker['publication_class'],
+      publication_score: typeof markerData.publication_score === 'number' ? markerData.publication_score : undefined,
+      publication_reasons: Array.isArray(markerData.publication_reasons)
+        ? markerData.publication_reasons as string[]
+        : undefined,
+      event_fingerprint: typeof markerData.event_fingerprint === 'string' ? markerData.event_fingerprint : undefined,
+      manual: markerData.manual === true,
+      confidence: typeof markerData.confidence === 'number' ? markerData.confidence : undefined,
+      confidence_0_100: typeof markerData.confidence_0_100 === 'number' ? markerData.confidence_0_100 : undefined,
+      observations: Array.isArray(markerData.observations)
+        ? normalizeTrackPoints(markerData.observations as Array<Record<string, unknown>>)
+        : undefined,
+    };
+    applyTrackLifecycleFromPayload(newMarker, markerData);
+    applyDisplayPolicyFromSsePayload(newMarker, markerData);
+
+    setMarkers((prev) => {
+      const idx = prev.findIndex((m) => String(m.id) === id);
+      if (idx === -1) return [...prev, newMarker];
+      const next = [...prev];
+      next[idx] = { ...next[idx], ...newMarker };
+      return next;
+    });
+    return true;
+  }, []);
+
+  // SSE push — apply marker payload immediately, then use a short debounced
+  // snapshot fetch only for consistency / batch events.
   const sseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useMarkerSSE(useCallback(() => {
+  useMarkerSSE(useCallback((data: Record<string, unknown>) => {
+    const appliedDirectly = upsertMarkerFromSse(data);
     if (sseTimerRef.current) clearTimeout(sseTimerRef.current);
     sseTimerRef.current = setTimeout(() => {
       sseTimerRef.current = null;
-      fetchMarkers();
+      fetchMarkers(appliedDirectly);
     }, SSE_FETCH_DEBOUNCE);
-  }, [fetchMarkers]));
+  }, [fetchMarkers, upsertMarkerFromSse]));
 
   // Marker delete SSE — remove immediately (no refetch, avoids stale data from other PM2 workers)
   useMarkerDeleteSSE(useCallback((deletedId: string) => {
@@ -311,6 +524,18 @@ export function useMarkers() {
         }
         if (typeof markerData.candidates_count === 'number') {
           existing.candidates_count = markerData.candidates_count;
+        }
+        if (typeof markerData.publication_class === 'string') {
+          existing.publication_class = markerData.publication_class as Marker['publication_class'];
+        }
+        if (typeof markerData.publication_score === 'number') {
+          existing.publication_score = markerData.publication_score;
+        }
+        if (Array.isArray(markerData.publication_reasons)) {
+          existing.publication_reasons = markerData.publication_reasons as string[];
+        }
+        if (typeof markerData.event_fingerprint === 'string') {
+          existing.event_fingerprint = markerData.event_fingerprint;
         }
         if (markerData.manual === true) existing.manual = true;
         if (markerData.manual === false) existing.manual = false;
@@ -426,8 +651,23 @@ export function useMarkers() {
     };
   }, [markers]);
 
-  // Fallback polling: 90s active, 5min hidden (SSE triggers debounced refresh)
-  usePolling(fetchMarkers, FALLBACK_POLLING_INTERVAL, HIDDEN_POLLING_INTERVAL_DESKTOP);
+  // Fallback polling: active backup for SSE gaps, 5min hidden.
+  usePolling(
+    useCallback(() => {
+      void fetchMarkers(false, true);
+    }, [fetchMarkers]),
+    FALLBACK_POLLING_INTERVAL,
+    HIDDEN_POLLING_INTERVAL_DESKTOP,
+  );
+
+  // Strict Mode remount can strand inFlight=true while the abandoned fetch never resolves —
+  // same pattern as useAlarms.
+  useEffect(
+    () => () => {
+      inFlightRef.current = false;
+    },
+    [],
+  );
 
   // Force refresh — clears ETag, waits for nginx cache to expire, then fetches
   const forceRefreshMarkers = useCallback(async () => {
@@ -435,7 +675,7 @@ export function useMarkers() {
     // Wait for nginx API_CACHE to expire (3s cache + margin)
     await new Promise((r) => setTimeout(r, 3500));
     inFlightRef.current = false; // ensure not blocked
-    await fetchMarkers(true);
+    await fetchMarkers(true, true);
   }, [fetchMarkers]);
 
   return { markers, ballisticThreat, fetchMarkers, forceRefreshMarkers, serverTimeOffset };

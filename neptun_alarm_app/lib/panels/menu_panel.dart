@@ -221,21 +221,14 @@ class _MenuPanelState extends ConsumerState<MenuPanel> {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          gradient: _isPremium
-              ? LinearGradient(colors: [Color(0xFF1a1a2e), Color(0xFF16213e)])
-              : LinearGradient(
-                  colors: [
-                    Color(0xFFFFD700).withValues(alpha: 0.2),
-                    Color(0xFFFF8C00).withValues(alpha: 0.2),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
+          color: _isPremium
+              ? Theme.of(context).colorScheme.surfaceContainerHighest
+              : Color(0xFFFFD700).withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: _isPremium
-                ? Theme.of(context).colorScheme.outlineVariant
-                : Color(0xFFFFD700).withValues(alpha: 0.3),
+                ? Theme.of(context).colorScheme.outline.withValues(alpha: 0.2)
+                : Color(0xFFFFD700).withValues(alpha: 0.35),
           ),
         ),
         child: Row(

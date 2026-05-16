@@ -70,7 +70,7 @@ class _TrustCenterPageState extends State<TrustCenterPage> {
       appBar: AppBar(
         title: Text(
           'Надійність',
-          style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
         ),
         centerTitle: false,
       ),
@@ -90,7 +90,7 @@ class _TrustCenterPageState extends State<TrustCenterPage> {
                       const SizedBox(width: 8),
                       Text(
                         'Статус серверів',
-                        style: GoogleFonts.inter(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
                           color: cs.onSurface,
@@ -151,7 +151,7 @@ class _TrustCenterPageState extends State<TrustCenterPage> {
                       const SizedBox(width: 8),
                       Text(
                         'Джерела даних',
-                        style: GoogleFonts.inter(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
                           color: cs.onSurface,
@@ -165,7 +165,7 @@ class _TrustCenterPageState extends State<TrustCenterPage> {
                     'Telegram-каналів у реальному часі. Кожне повідомлення '
                     'обробляється AI для витягування типу загрози, '
                     'геолокації та траєкторії.',
-                    style: GoogleFonts.inter(
+                    style: GoogleFonts.plusJakartaSans(
                       fontSize: 13,
                       color: cs.onSurface.withValues(alpha: 0.6),
                       height: 1.5,
@@ -187,7 +187,7 @@ class _TrustCenterPageState extends State<TrustCenterPage> {
                       const SizedBox(width: 8),
                       Text(
                         'Як це працює',
-                        style: GoogleFonts.inter(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
                           color: cs.onSurface,
@@ -253,7 +253,7 @@ class _StatusRow extends StatelessWidget {
           const SizedBox(width: 10),
           Text(
             label,
-            style: GoogleFonts.inter(
+            style: GoogleFonts.plusJakartaSans(
               fontSize: 13,
               color: cs.onSurface.withValues(alpha: 0.7),
             ),
@@ -298,7 +298,7 @@ class _PipelineStep extends StatelessWidget {
                 alignment: Alignment.center,
                 child: Text(
                   step,
-                  style: GoogleFonts.inter(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                     color: cs.primary,
@@ -320,7 +320,7 @@ class _PipelineStep extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: GoogleFonts.inter(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: cs.onSurface,
@@ -329,7 +329,7 @@ class _PipelineStep extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   subtitle,
-                  style: GoogleFonts.inter(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 12,
                     color: cs.onSurface.withValues(alpha: 0.5),
                   ),

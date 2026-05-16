@@ -32,6 +32,22 @@ class ThreatType {
     alarmCancel: '✅ Відбій',
   };
 
+  static const Map<String, String> emojis = {
+    shahed: '🛩️',
+    raketa: '🚀',
+    avia: '✈️',
+    artillery: '💥',
+    obstril: '💥',
+    fpv: '🎯',
+    pusk: '🚀',
+    kab: '💣',
+    rszv: '💣',
+    rozved: '🔍',
+    vibuh: '💥',
+    alarm: '🚨',
+    alarmCancel: '✅',
+  };
+
   static const Map<String, IconData> icons = {
     shahed: Icons.flight,
     raketa: Icons.rocket_launch,
@@ -154,6 +170,42 @@ class AITrajectory {
       };
 }
 
+/// Точка треку з API (`positions`): для курсу по останніх спостереженнях.
+class ThreatTrackPoint {
+  final double lat;
+  final double lng;
+  /// Unix ms (або сек — нормалізуйте на клієнті SSE)
+  final int ts;
+
+  const ThreatTrackPoint({
+    required this.lat,
+    required this.lng,
+    required this.ts,
+  });
+
+  factory ThreatTrackPoint.fromJson(Map<String, dynamic> json) {
+    final tsRaw = json['ts'];
+    int ts;
+    if (tsRaw is int) {
+      ts = tsRaw;
+    } else if (tsRaw is num) {
+      ts = tsRaw.toInt();
+    } else {
+      ts = int.tryParse(tsRaw?.toString() ?? '') ?? 0;
+    }
+    if (ts > 0 && ts < 20000000000) {
+      ts *= 1000;
+    }
+    return ThreatTrackPoint(
+      lat: double.tryParse(json['lat']?.toString() ?? '0') ?? 0,
+      lng: double.tryParse(json['lng']?.toString() ?? '0') ?? 0,
+      ts: ts,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {'lat': lat, 'lng': lng, 'ts': ts};
+}
+
 // ===== МАРКЕР ЗАГРОЗИ =====
 class ThreatMarker {
   final String? id;
@@ -169,6 +221,20 @@ class ThreatMarker {
   final double? etaMinutes;
   final double? distanceKm;
   final int? count; // Кількість БПЛА/шахедів (5 штук, 5х)
+  /// 0–100 з API (`confidence_0_100`); може бути null у старих кешах
+  final int? confidence0_100;
+  /// `point` | `approximate` | `predictive` | … з worker
+  final String? placementMode;
+  final double? confidence;
+  /// Курс 0–360 з worker / GPT
+  final double? courseBearing;
+  final double? tickerBearing;
+  final String? courseDirection;
+  final String? arrowDirection;
+  /// Історія позицій (як на веб)
+  final List<ThreatTrackPoint>? positions;
+  /// Ім'я файла з API (`marker_icon`), напр. fpvdrone.png — має пріоритет над threatType для іконки
+  final String? markerIcon;
 
   ThreatMarker({
     this.id,
@@ -184,6 +250,15 @@ class ThreatMarker {
     this.etaMinutes,
     this.distanceKm,
     this.count,
+    this.confidence0_100,
+    this.placementMode,
+    this.confidence,
+    this.courseBearing,
+    this.tickerBearing,
+    this.courseDirection,
+    this.arrowDirection,
+    this.positions,
+    this.markerIcon,
   });
 
   factory ThreatMarker.fromJson(Map<String, dynamic> json) {
@@ -191,20 +266,41 @@ class ThreatMarker {
     List<TrajectoryPoint>? path;
     if (json['projected_path'] != null && json['projected_path'] is List) {
       path = (json['projected_path'] as List)
-          .map((p) => TrajectoryPoint.fromJson(p))
+          .whereType<Map>()
+          .map(
+            (p) => TrajectoryPoint.fromJson(Map<String, dynamic>.from(p)),
+          )
           .toList();
     }
 
     // Парсимо нову AI траєкторію якщо є
     AITrajectory? aiTrajectory;
     if (json['trajectory'] != null && json['trajectory'] is Map) {
-      aiTrajectory = AITrajectory.fromJson(json['trajectory']);
+      aiTrajectory = AITrajectory.fromJson(
+        Map<String, dynamic>.from(json['trajectory']! as Map),
+      );
     }
 
     final countRaw = json['count'];
     final count = countRaw is int
         ? countRaw
         : (countRaw != null ? int.tryParse(countRaw.toString()) : null);
+
+    final c100Raw = json['confidence_0_100'];
+    int? c100;
+    if (c100Raw is int) {
+      c100 = c100Raw;
+    } else if (c100Raw != null) {
+      c100 = int.tryParse(c100Raw.toString());
+    }
+
+    List<ThreatTrackPoint>? posList;
+    if (json['positions'] is List) {
+      posList = (json['positions'] as List)
+          .whereType<Map>()
+          .map((p) => ThreatTrackPoint.fromJson(Map<String, dynamic>.from(p)))
+          .toList();
+    }
 
     return ThreatMarker(
       id: json['id']?.toString(),
@@ -220,6 +316,15 @@ class ThreatMarker {
       etaMinutes: double.tryParse(json['eta_minutes']?.toString() ?? ''),
       distanceKm: double.tryParse(json['distance_km']?.toString() ?? ''),
       count: count,
+      confidence0_100: c100,
+      placementMode: json['placement_mode']?.toString(),
+      confidence: double.tryParse(json['confidence']?.toString() ?? ''),
+      courseBearing: double.tryParse(json['course_bearing']?.toString() ?? ''),
+      tickerBearing: double.tryParse(json['ticker_bearing']?.toString() ?? ''),
+      courseDirection: json['course_direction']?.toString(),
+      arrowDirection: json['arrow_direction']?.toString(),
+      positions: posList,
+      markerIcon: json['marker_icon']?.toString(),
     );
   }
 
@@ -239,7 +344,42 @@ class ThreatMarker {
       if (etaMinutes != null) 'eta_minutes': etaMinutes,
       if (distanceKm != null) 'distance_km': distanceKm,
       if (count != null) 'count': count,
+      if (confidence0_100 != null) 'confidence_0_100': confidence0_100,
+      if (placementMode != null && placementMode!.isNotEmpty)
+        'placement_mode': placementMode,
+      if (confidence != null) 'confidence': confidence,
+      if (courseBearing != null) 'course_bearing': courseBearing,
+      if (tickerBearing != null) 'ticker_bearing': tickerBearing,
+      if (courseDirection != null && courseDirection!.isNotEmpty)
+        'course_direction': courseDirection,
+      if (arrowDirection != null && arrowDirection!.isNotEmpty)
+        'arrow_direction': arrowDirection,
+      if (positions != null)
+        'positions': positions!.map((p) => p.toJson()).toList(),
+      if (markerIcon != null && markerIcon!.isNotEmpty) 'marker_icon': markerIcon,
     };
+  }
+
+  /// Opacity for map icon (approximate / predictive / low score → dimmer).
+  double get mapVisualOpacity {
+    var base = 1.0;
+    final pm = (placementMode ?? '').toLowerCase();
+    if (pm == 'approximate') {
+      base = 0.62;
+    } else if (pm == 'predictive') {
+      base = 0.5;
+    }
+    final c100 = confidence0_100;
+    if (c100 != null) {
+      final c = (c100.clamp(0, 100)) / 100.0;
+      if (c < 0.78) {
+        base *= 0.55 + 0.45 * c;
+      }
+    } else if (confidence != null && confidence! < 0.78) {
+      final c = confidence!.clamp(0.0, 1.0);
+      base *= 0.55 + 0.45 * c;
+    }
+    return base.clamp(0.32, 1.0);
   }
 
   bool get hasTrajectory =>
@@ -250,9 +390,28 @@ class ThreatMarker {
 
   /// Apply partial update from SSE (track_update/marker_update). Returns new instance.
   ThreatMarker applyPartialUpdate(Map<String, dynamic> updates) {
-    final json = toJson();
+    final json = Map<String, dynamic>.from(toJson());
     for (final e in updates.entries) {
-      if (e.key != 'id') json[e.key] = e.value;
+      if (e.key == 'id') continue;
+      final v = e.value;
+      if (v is Map) {
+        json[e.key] = Map<String, dynamic>.from(
+          v.map((k, dynamic val) => MapEntry(k.toString(), val)),
+        );
+      } else if (v is List) {
+        json[e.key] = v
+            .map((dynamic item) {
+              if (item is Map) {
+                return Map<String, dynamic>.from(
+                  item.map((k, dynamic val) => MapEntry(k.toString(), val)),
+                );
+              }
+              return item;
+            })
+            .toList();
+      } else {
+        json[e.key] = v;
+      }
     }
     return ThreatMarker.fromJson(json);
   }

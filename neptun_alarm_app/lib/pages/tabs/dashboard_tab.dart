@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
-
 /// Dashboard tab — loads the Next.js dashboard in a WebView with ?embed=1&theme=...
 class DashboardTab extends StatefulWidget {
   const DashboardTab({super.key});

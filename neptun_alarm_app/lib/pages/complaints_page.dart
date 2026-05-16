@@ -11,6 +11,7 @@ import '../core/error/error_handler.dart';
 import '../core/widgets/neptun_card.dart';
 import '../core/widgets/neptun_error_state.dart';
 import '../services/moderator_service.dart';
+import '../core/widgets/neptun_shell_modal.dart';
 
 /// Moderator page: view and act on chat reports (скарги).
 class ComplaintsPage extends StatefulWidget {
@@ -343,7 +344,7 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
       appBar: AppBar(
         title: Text(
           'Скарги',
-          style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
         ),
         centerTitle: false,
         actions: [
@@ -408,7 +409,7 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
               const SizedBox(height: 16),
               Text(
                 'Немає скарг',
-                style: GoogleFonts.inter(
+                style: GoogleFonts.plusJakartaSans(
                   fontSize: 17,
                   fontWeight: FontWeight.w600,
                   color: cs.onSurface,
@@ -427,13 +428,18 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
         itemCount: filtered.length,
         itemBuilder: (context, i) {
           final r = filtered[i];
-          return _ReportCard(
-            report: r,
-            formatTime: _formatTime,
-            isPlayingVoice: _playingVoiceMessageId == r.messageId && _isPlayingVoice,
-            onPlayVoice: r.hasVoice ? () => _toggleVoicePlayback(r.messageId, r.audioUrl!) : null,
-            onDelete: () async {
-              final confirmed = await showDialog<bool>(
+          return KeyedSubtree(
+            key: ValueKey('report_${r.id}'),
+            child: _ReportCard(
+              report: r,
+              formatTime: _formatTime,
+              isPlayingVoice:
+                  _playingVoiceMessageId == r.messageId && _isPlayingVoice,
+              onPlayVoice: r.hasVoice
+                  ? () => _toggleVoicePlayback(r.messageId, r.audioUrl!)
+                  : null,
+              onDelete: () async {
+              final confirmed = await NeptunShellModal.showDialog<bool>(
                 context: context,
                 builder: (ctx) => AlertDialog(
                   title: const Text('Підтвердження'),
@@ -456,7 +462,7 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
             },
             onReject: () => _rejectReport(r),
             onBlock: () async {
-              final confirmed = await showDialog<bool>(
+              final confirmed = await NeptunShellModal.showDialog<bool>(
                 context: context,
                 builder: (ctx) => AlertDialog(
                   title: const Text('Заблокувати'),
@@ -482,7 +488,7 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
               if (confirmed == true) _blockUser(r);
             },
             onDeleteAll: () async {
-              final confirmed = await showDialog<bool>(
+              final confirmed = await NeptunShellModal.showDialog<bool>(
                 context: context,
                 builder: (ctx) => AlertDialog(
                   title: const Text('Видалити всі повідомлення'),
@@ -508,6 +514,7 @@ class _ComplaintsPageState extends State<ComplaintsPage> {
               if (confirmed == true) _deleteAllMessagesFromUser(r);
             },
             cs: cs,
+            ),
           );
         },
       ),
@@ -683,7 +690,7 @@ class _ReportCard extends StatelessWidget {
               children: [
                 Text(
                   'Голосове повідомлення',
-                  style: GoogleFonts.inter(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
                     color: cs.onSurface,
@@ -691,7 +698,7 @@ class _ReportCard extends StatelessWidget {
                 ),
                 Text(
                   durationText,
-                  style: GoogleFonts.inter(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 12,
                     color: cs.onSurface.withValues(alpha: 0.6),
                   ),
@@ -729,7 +736,7 @@ class _ReportCard extends StatelessWidget {
                 ),
                 child: Text(
                   report.status,
-                  style: GoogleFonts.inter(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                     color: report.status == 'PENDING' ? cs.tertiary : cs.onSurface.withValues(alpha: 0.7),
@@ -738,7 +745,7 @@ class _ReportCard extends StatelessWidget {
               ),
               Text(
                 formatTime(report.createdAt),
-                style: GoogleFonts.inter(
+                style: GoogleFonts.plusJakartaSans(
                   fontSize: 12,
                   color: cs.onSurface.withValues(alpha: 0.4),
                 ),
@@ -748,7 +755,7 @@ class _ReportCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             'Причина: ${report.reason}',
-            style: GoogleFonts.inter(
+            style: GoogleFonts.plusJakartaSans(
               fontSize: 13,
               fontWeight: FontWeight.w500,
               color: cs.onSurface.withValues(alpha: 0.8),
@@ -770,7 +777,7 @@ class _ReportCard extends StatelessWidget {
               report.originalText.isEmpty
                   ? (report.hasImage || report.hasVoice ? '(медіа)' : '<без тексту>')
                   : report.originalText,
-              style: GoogleFonts.inter(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 14,
                 color: cs.onSurface,
               ),
@@ -782,7 +789,7 @@ class _ReportCard extends StatelessWidget {
             children: [
               Text(
                 'Скаржник: ${report.reporterNickname}',
-                style: GoogleFonts.inter(
+                style: GoogleFonts.plusJakartaSans(
                   fontSize: 12,
                   color: cs.primary,
                 ),
@@ -791,7 +798,7 @@ class _ReportCard extends StatelessWidget {
                 const SizedBox(width: 16),
                 Text(
                   'Автор: ${report.reportedNickname}',
-                  style: GoogleFonts.inter(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 12,
                     color: cs.error,
                   ),

@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
@@ -54,6 +55,22 @@ export function getNicknameForDevice(deviceId: string): string | null {
   return raw && raw.length > 0 ? raw : null;
 }
 
+/** Stable public label for users without a registered nickname (unique per device). */
+export function anonymousGuestLabel(deviceId: string): string {
+  const id = String(deviceId || '').trim();
+  if (!id) return 'Гість';
+  const tag = crypto.createHash('sha256').update(id).digest('hex').slice(0, 4);
+  return `Анонім·${tag}`;
+}
+
+/**
+ * JWT / legacy clients send the generic «Анонім» for every guest — treat as unset so we can derive a unique label.
+ */
+export function isChatGuestPlaceholderNickname(nickname: string): boolean {
+  const t = nickname.trim().toLowerCase();
+  return t === '' || t === 'анонім' || t === 'anonymous' || t === 'anon';
+}
+
 /**
  * Prefer server registry over JWT so chat shows the right name even when the client
  * still sends "Анонім" in the token (old app, refresh without nick, first login).
@@ -62,8 +79,8 @@ export function resolveChatDisplayNickname(deviceId: string, jwtNickname: string
   const reg = getNicknameForDevice(deviceId);
   if (reg && reg.length > 0) return reg;
   const j = (jwtNickname || '').trim();
-  if (j.length > 0) return j;
-  return 'Анонім';
+  if (j.length > 0 && !isChatGuestPlaceholderNickname(j)) return j;
+  return anonymousGuestLabel(deviceId);
 }
 
 /** Get hardware_id for a nickname from nicknames. */

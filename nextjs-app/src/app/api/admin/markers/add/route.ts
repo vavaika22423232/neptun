@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { requireAdminAuth } from '@/lib/admin/apiAuth';
-import { loadMessages, saveMessages } from '@/lib/admin/data';
+import { ingestMarkerEvidence } from '@/lib/tracked-target-store';
 
 export async function POST(request: Request) {
   const denied = await requireAdminAuth();
@@ -15,7 +15,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid coordinates' }, { status: 400 });
     }
 
-    const messages = loadMessages();
     const newMarker = {
       id: crypto.randomBytes(6).toString('hex'),
       lat: Number(lat),
@@ -35,8 +34,7 @@ export async function POST(request: Request) {
       course_type: course_type || '',
     };
 
-    messages.push(newMarker);
-    saveMessages(messages);
+    await ingestMarkerEvidence(newMarker);
 
     return NextResponse.json({ status: 'ok', marker: newMarker });
   } catch (err) {

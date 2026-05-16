@@ -6,6 +6,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'dart:convert';
 import 'dart:math';
 import '../core/error/error_handler.dart';
+import '../core/widgets/neptun_shell_modal.dart';
+import '../core/utils/app_debug_log.dart';
 
 /// Координати центрів міст для пошуку укриттів без GPS
 const Map<String, ({double lat, double lon})> _cityCoordinates = {
@@ -73,7 +75,7 @@ class _SheltersPageState extends State<SheltersPage> {
   }
 
   void _showCityPicker() {
-    showModalBottomSheet(
+    NeptunShellModal.showBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (ctx) => Container(
@@ -297,7 +299,7 @@ class _SheltersPageState extends State<SheltersPage> {
         }
       }
     } catch (e) {
-      debugPrint('Error loading metro: $e');
+      appDebugLog('Error loading metro: $e');
     }
   }
 
@@ -621,7 +623,12 @@ class _SheltersPageState extends State<SheltersPage> {
       itemCount: _shelters.length,
       itemBuilder: (context, index) {
         final shelter = _shelters[index];
-        return _buildGlassShelterCard(shelter, glassColor, glassBorderColor);
+        return KeyedSubtree(
+          key: ValueKey(
+            'shelter_${shelter.name}_${shelter.latitude}_${shelter.longitude}',
+          ),
+          child: _buildGlassShelterCard(shelter, glassColor, glassBorderColor),
+        );
       },
     );
   }

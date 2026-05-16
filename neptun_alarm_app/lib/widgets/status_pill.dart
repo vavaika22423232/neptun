@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../core/widgets/neptun_card.dart';
+import '../design/neptun_design.dart';
 
 class StatusPill extends StatefulWidget {
   const StatusPill({super.key});
@@ -35,7 +36,7 @@ class _StatusPillState extends State<StatusPill> {
     final timeString =
         "${_now.hour.toString().padLeft(2, '0')}:${_now.minute.toString().padLeft(2, '0')}";
 
-    return NeptunCard.glass(
+    return NeptunCard(
       borderRadius: 30,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
@@ -58,13 +59,13 @@ class _StatusPillState extends State<StatusPill> {
           ),
 
           // Network Status (Mock)
-          Icon(Icons.wifi, size: 14, color: Theme.of(context).colorScheme.secondary),
+          Icon(Icons.wifi, size: 14, color: NeptunStatus.safe),
           const SizedBox(width: 6),
           Text(
             'ONLINE',
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
               fontSize: 10,
-              color: Theme.of(context).colorScheme.secondary,
+              color: NeptunStatus.safe,
             ),
           ),
         ],

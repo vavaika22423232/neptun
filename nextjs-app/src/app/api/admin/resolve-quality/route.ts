@@ -1,17 +1,17 @@
 import { NextResponse } from 'next/server';
 import { requireAdminAuth } from '@/lib/admin/apiAuth';
-import { initStore, getRawMessages } from '@/lib/markers-store';
+import { initTargetStore, getTrackedTargetRecords } from '@/lib/tracked-target-store';
 
 export const dynamic = 'force-dynamic';
 
-/** Histogram of resolve_status and confidence buckets from current marker store (Redis-backed). */
+/** Histogram of resolve_status and confidence buckets from current track store (Redis-backed). */
 export async function GET() {
   const denied = await requireAdminAuth();
   if (denied) return denied;
 
   try {
-    await initStore();
-    const messages = getRawMessages();
+    await initTargetStore();
+    const messages = getTrackedTargetRecords();
     const byStatus: Record<string, number> = {};
     const buckets = { b0: 0, b02: 0, b04: 0, b06: 0, b08: 0, na: 0 };
     let sumConf = 0;

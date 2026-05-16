@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { broadcastSSE } from '@/lib/chat-sse-stream';
 import { isBanned } from '@/lib/admin/data';
+import { anonymousGuestLabel } from '@/lib/chat-nicknames';
 import { requireChatAuth } from '@/lib/chat-auth';
 
 const typingUsers = new Map<string, { nickname: string; expires: number }>();
@@ -35,7 +36,9 @@ export async function POST(request: Request) {
     }
     typingRateLimit.set(deviceId, Date.now());
 
-    const safeName = (identity.nickname || 'Анонім').slice(0, 30);
+    let safeName = identity.nickname.trim();
+    if (!safeName) safeName = anonymousGuestLabel(deviceId);
+    safeName = safeName.slice(0, 30);
 
     if (isTyping) {
       typingUsers.set(deviceId, { nickname: safeName, expires: Date.now() + 5000 });

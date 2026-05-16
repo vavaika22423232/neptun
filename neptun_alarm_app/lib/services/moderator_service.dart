@@ -6,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
+import 'package:neptun_alarm_app/core/utils/app_debug_log.dart';
 import 'auth_service.dart';
 
 /// Singleton service managing moderator authentication state.
@@ -17,6 +18,19 @@ class ModeratorService {
 
   static const _kModSecret = '_mod_secret';
   static const _kFallbackKey = '_mod_secret_fb';
+
+  /// Upper bound for moderator secret length (payload / abuse mitigation).
+  static const int maxModeratorSecretLength = 256;
+
+  /// Client-side validation before network. Returns Ukrainian error or null if OK.
+  static String? validateModeratorSecretInput(String raw) {
+    final s = raw.trim();
+    if (s.isEmpty || s.length < 6) return 'Введіть пароль';
+    if (s.length > maxModeratorSecretLength) {
+      return 'Пароль занадто довгий';
+    }
+    return null;
+  }
 
   static const _secureStorage = FlutterSecureStorage(
     iOptions: IOSOptions(
@@ -33,6 +47,9 @@ class ModeratorService {
 
   bool get isModerator => _isModerator;
 
+  /// Для [ListenableBuilder] у шеллі — без [setState] на кожен евент стріму.
+  final ValueNotifier<bool> isModeratorNotifier = ValueNotifier(false);
+
   final _controller = StreamController<bool>.broadcast();
   Stream<bool> get stream => _controller.stream;
 
@@ -42,6 +59,7 @@ class ModeratorService {
 
     _deviceId = deviceId ?? await AuthService.getDeviceId();
     _isModerator = prefs.getBool('chat_moderator') ?? false;
+    isModeratorNotifier.value = _isModerator;
     _controller.add(_isModerator);
     // Pre-warm secure storage to avoid first-access freeze during login
     await _readSecret();
@@ -76,14 +94,16 @@ class ModeratorService {
   // ── Login ────────────────────────────────────────────────────────────
   Future<String?> login(String secret) async {
     if (_deviceId == null) return 'Device ID not initialized';
-    if (secret.isEmpty || secret.length < 6) return 'Введіть пароль';
+    final validation = validateModeratorSecretInput(secret);
+    if (validation != null) return validation;
+    final trimmed = secret.trim();
 
     try {
       final response = await http
           .post(
             Uri.parse(ApiConfig.chatAddModerator),
             headers: {'Content-Type': 'application/json'},
-            body: json.encode({'secret': secret, 'deviceId': _deviceId}),
+            body: json.encode({'secret': trimmed, 'deviceId': _deviceId}),
           )
           .timeout(const Duration(seconds: 10));
 
@@ -94,9 +114,10 @@ class ModeratorService {
           'moderator_login_time',
           DateTime.now().millisecondsSinceEpoch,
         );
-        await _writeSecret(secret);
+        await _writeSecret(trimmed);
 
         _isModerator = true;
+        isModeratorNotifier.value = true;
         _controller.add(true);
         return null;
       } else {
@@ -112,7 +133,7 @@ class ModeratorService {
         }
       }
     } catch (e) {
-      debugPrint('❌ ModeratorService.login error: $e');
+      appDebugLog('❌ ModeratorService.login error: $e');
       return 'Помилка з\'єднання';
     }
   }
@@ -120,16 +141,18 @@ class ModeratorService {
   // ── Logout ───────────────────────────────────────────────────────────
   Future<void> logout() async {
     try {
-      final secret = await _readSecret() ?? '';
-      await http
-          .post(
-            Uri.parse(ApiConfig.chatRemoveModerator),
-            headers: {'Content-Type': 'application/json'},
-            body: json.encode({'secret': secret, 'deviceId': _deviceId}),
-          )
-          .timeout(const Duration(seconds: 10));
+      if (_deviceId != null && _deviceId!.isNotEmpty) {
+        final secret = await _readSecret() ?? '';
+        await http
+            .post(
+              Uri.parse(ApiConfig.chatRemoveModerator),
+              headers: {'Content-Type': 'application/json'},
+              body: json.encode({'secret': secret, 'deviceId': _deviceId}),
+            )
+            .timeout(const Duration(seconds: 10));
+      }
     } catch (e) {
-      debugPrint('❌ ModeratorService.logout error: $e');
+      appDebugLog('❌ ModeratorService.logout error: $e');
     }
 
     final prefs = await SharedPreferences.getInstance();
@@ -138,6 +161,7 @@ class ModeratorService {
     await _deleteSecret();
 
     _isModerator = false;
+    isModeratorNotifier.value = false;
     _controller.add(false);
   }
 

@@ -11,7 +11,7 @@ Features:
   - Per-IP connection limit (MAX_PER_IP = 5)
   - Global connection limit (MAX_CLIENTS = 50000)
   - Shared keepalive timer (55s)
-  - Debounced marker_new (2s) and online (5s) broadcasts
+  - Short marker_new burst guard (300ms) and online (5s) broadcasts
   - Graceful shutdown
   - /health endpoint for nginx healthcheck
   - /metrics endpoint for monitoring
@@ -49,7 +49,7 @@ const (
 	maxClients        = 50_000
 	maxPerIP          = 5
 	keepaliveInterval = 55 * time.Second
-	markerDebounce    = 2 * time.Second
+	markerDebounce    = 300 * time.Millisecond
 	onlineDebounce    = 5 * time.Second
 	writeBufSize      = 4096
 	writeTimeout      = 5 * time.Second
@@ -72,7 +72,7 @@ type hub struct {
 
 	// Debounce state
 	markerMu      sync.Mutex
-	pendingMarker json.RawMessage
+	pendingMarkers []json.RawMessage
 	markerTimer   *time.Timer
 
 	onlineMu    sync.Mutex
@@ -151,28 +151,37 @@ func (h *hub) broadcastEvent(event map[string]interface{}) {
 	h.broadcast([]byte(payload))
 }
 
-// debouncedMarker collects marker_new events and only broadcasts the latest
-// after a 2-second quiet window.
+// debouncedMarker keeps a tiny burst guard for legacy marker_new events.
+// Track updates bypass this path and are broadcast immediately.
 func (h *hub) debouncedMarker(raw json.RawMessage) {
 	h.markerMu.Lock()
 	defer h.markerMu.Unlock()
 
-	h.pendingMarker = raw
+	h.pendingMarkers = append(h.pendingMarkers, raw)
 
 	if h.markerTimer != nil {
 		return // timer already running
 	}
 	h.markerTimer = time.AfterFunc(markerDebounce, func() {
 		h.markerMu.Lock()
-		pending := h.pendingMarker
-		h.pendingMarker = nil
+		pending := h.pendingMarkers
+		h.pendingMarkers = nil
 		h.markerTimer = nil
 		h.markerMu.Unlock()
 
-		if pending != nil {
+		if len(pending) == 1 {
 			event := map[string]interface{}{
 				"type": "marker_new",
-				"data": json.RawMessage(pending),
+				"data": json.RawMessage(pending[0]),
+			}
+			h.broadcastEvent(event)
+		} else if len(pending) > 1 {
+			event := map[string]interface{}{
+				"type": "markers_refresh",
+				"data": map[string]interface{}{
+					"batch": true,
+					"count": len(pending),
+				},
 			}
 			h.broadcastEvent(event)
 		}

@@ -142,6 +142,8 @@ export interface AdminSettings {
   monitorPeriod: number;
   ttlEnabled: boolean;
   minConfidence: number;
+  /** Optional lower confidence floor for UAV-class threats. When unset, `minConfidence` applies to all types. */
+  minConfidenceUav?: number;
   /** When false, spatial correlator (`findSpatialMatch`) is skipped — only `track_id` merges. */
   spatialCorrelatorEnabled?: boolean;
   corroborationMinObservations?: number;
@@ -162,6 +164,7 @@ const ADMIN_SETTINGS_DEFAULTS: AdminSettings = {
   monitorPeriod: 30,
   ttlEnabled: true,
   minConfidence: 0.65,
+  minConfidenceUav: 0.45,
   spatialCorrelatorEnabled: true,
   corroborationMinObservations: 2,
   corroborationWindowMinutes: 30,
@@ -232,4 +235,23 @@ export function loadChatModerators(): string[] {
 /** Check if device_id belongs to a moderator */
 export function isModeratorDevice(deviceId: string): boolean {
   return loadChatModerators().includes(deviceId);
+}
+
+/** Generic placeholder nicknames that should NOT be used as sole ban identifier */
+const GENERIC_CHAT_DISPLAY_NICKS = new Set(['анонім', 'anonymous', 'anon']);
+
+/**
+ * True when a ban row would only match by nickname and that nickname is the shared placeholder
+ * (would block everyone chatting without a registered nick).
+ */
+export function isDangerousPlaceholderBanEntry(
+  displayNickname: string,
+  resolvedDeviceId: string,
+  hardwareId?: string,
+): boolean {
+  const name = (displayNickname || '').trim().toLowerCase();
+  if (!GENERIC_CHAT_DISPLAY_NICKS.has(name)) return false;
+  const did = typeof resolvedDeviceId === 'string' && resolvedDeviceId.trim().length > 0;
+  const hid = hardwareId != null && String(hardwareId).trim().length > 0;
+  return !did && !hid;
 }

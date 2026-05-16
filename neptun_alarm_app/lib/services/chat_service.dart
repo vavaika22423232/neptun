@@ -1,12 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:android_id/android_id.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 import '../config/prefs_keys.dart';
 import '../models/chat_message.dart';
@@ -14,6 +13,10 @@ import 'auth_service.dart';
 import 'moderator_service.dart';
 import 'purchase_service.dart';
 import 'data_stream_service.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:neptun_alarm_app/core/utils/app_debug_log.dart';
+import 'package:neptun_alarm_app/core/utils/connectivity_utils.dart';
 
 /// Ban entry with reason and metadata.
 class BanEntry {
@@ -44,6 +47,9 @@ class ChatService {
   bool _isBanned = false;
   String? _banReason;
   int _onlineCount = 0;
+
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  StreamSubscription<bool>? _moderatorSubscription;
 
   String? get deviceId => _deviceId;
   String? get nickname => _nickname;
@@ -79,8 +85,7 @@ class ChatService {
 
   // ── Offline queue & pending status ────────────────────────────────────
   final _pendingIds = <String>{};
-  final _pendingIdsController =
-      StreamController<Set<String>>.broadcast();
+  final _pendingIdsController = StreamController<Set<String>>.broadcast();
   final _pendingResolvedController =
       StreamController<({String pendingId, ChatMessage message})>.broadcast();
 
@@ -109,7 +114,8 @@ class ChatService {
     if (raw == null) return [];
     try {
       final list = json.decode(raw) as List?;
-      return list?.map((e) => Map<String, dynamic>.from(e as Map)).toList() ?? [];
+      return list?.map((e) => Map<String, dynamic>.from(e as Map)).toList() ??
+          [];
     } catch (_) {
       return [];
     }
@@ -127,11 +133,7 @@ class ChatService {
   }) async {
     final queue = await getOfflineQueue();
     if (queue.length >= _maxOfflineQueue) return;
-    queue.add({
-      'pendingId': pendingId,
-      'text': text,
-      'replyToId': replyToId,
-    });
+    queue.add({'pendingId': pendingId, 'text': text, 'replyToId': replyToId});
     await _saveOfflineQueue(queue);
     _addPending(pendingId);
   }
@@ -155,8 +157,23 @@ class ChatService {
     }
   }
 
+  /// Serialize flushes — [Connectivity] callbacks and chat [_init] can fire together;
+  /// concurrent reads of the prefs queue duplicated [sendMessage] calls before removal.
+  Future<void> _offlineFlushChain = Future.value();
+
   /// Flush offline queue: send each message, on success emit (pendingId, realMessage).
-  Future<void> flushOfflineQueue() async {
+  Future<void> flushOfflineQueue() {
+    _offlineFlushChain = _offlineFlushChain.then((_) async {
+      try {
+        await _flushOfflineQueueSerialized();
+      } catch (e, st) {
+        appDebugLog('❌ flushOfflineQueue: $e\n$st');
+      }
+    });
+    return _offlineFlushChain;
+  }
+
+  Future<void> _flushOfflineQueueSerialized() async {
     if (_deviceId == null || _nickname == null) return;
     var queue = await getOfflineQueue();
     if (queue.isEmpty) return;
@@ -216,14 +233,21 @@ class ChatService {
   // ── Rate limiter ───────────────────────────────────────────────────────
   DateTime? _lastSendTime;
   static const _rateLimitMs = 3000;
-  static const _maxMessageLength = 500;
+
+  /// Maximum chat message length (aligned with API); use the same value in input UI.
+  static const int maxMessageLength = 500;
 
   // ── Initialization ─────────────────────────────────────────────────────
   Future<void> init() async {
+    await _connectivitySubscription?.cancel();
+    await _moderatorSubscription?.cancel();
+    _connectivitySubscription = null;
+    _moderatorSubscription = null;
+
     final prefs = await SharedPreferences.getInstance();
     _deviceId = await AuthService.getDeviceId();
     _nickname = prefs.getString('chat_nickname');
-    if (Platform.isAndroid) {
+    if (!kIsWeb && Platform.isAndroid) {
       try {
         final id = await const AndroidId().getId();
         if (id != null && id.isNotEmpty) _hardwareId = id;
@@ -231,8 +255,8 @@ class ChatService {
     }
     // Sync moderator state from ModeratorService
     _isModerator = ModeratorService.instance.isModerator;
-    // Listen for moderator state changes
-    ModeratorService.instance.stream.listen((isMod) {
+    // Listen for moderator state changes (init() may run multiple times — replace subscription)
+    _moderatorSubscription = ModeratorService.instance.stream.listen((isMod) {
       _isModerator = isMod;
     });
     // Load block list so isBlocked works before chat opens
@@ -240,32 +264,54 @@ class ChatService {
     // Check ban in background
     unawaited(checkBanStatus());
     // Flush offline queue when connectivity restored (works even when chat tab not open)
-    Connectivity().onConnectivityChanged.listen((results) async {
-      final hasConnection = results.any((r) =>
-          r == ConnectivityResult.mobile ||
-          r == ConnectivityResult.wifi ||
-          r == ConnectivityResult.ethernet);
-      if (hasConnection) await flushOfflineQueue();
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
+      results,
+    ) async {
+      if (connectivityResultsOnline(results)) await flushOfflineQueue();
     });
   }
 
+  Future<Map<String, String>> _authHeaders() async {
+    return AuthService.getAuthHeaders();
+  }
+
+  /// Multipart must not set Content-Type (boundary); only attach Bearer.
+  Future<void> _attachBearerToMultipart(http.MultipartRequest request) async {
+    await _ensureToken();
+    final token = await AuthService.getAccessToken();
+    if (token != null && token.isNotEmpty) {
+      request.headers['Authorization'] = 'Bearer $token';
+    }
+  }
+
+  Future<void> _ensureToken() async {
+    final hasToken = await AuthService.hasValidToken();
+    if (!hasToken) {
+      await AuthService.login(nickname: _nickname);
+    }
+  }
+
+  /// First page size (smaller = faster JSON parse + first paint; history via pagination).
+  static const int _initialFetchLimit = 50;
+
   // ── REST: Fetch messages ───────────────────────────────────────────────
-  /// Fetches messages. Use [before] (timestamp in seconds) for pagination.
   Future<List<ChatMessage>> fetchMessages({int? before, int limit = 50}) async {
     try {
+      await _ensureToken();
       var url = ApiConfig.chatMessages;
       if (before != null) {
         url = '$url?before=$before&limit=$limit';
       } else {
-        url = '$url?limit=200';
+        url = '$url?limit=$_initialFetchLimit';
       }
+      final headers = await _authHeaders();
       final resp = await http
-          .get(Uri.parse(url))
+          .get(Uri.parse(url), headers: headers)
           .timeout(ApiConfig.httpTimeout);
       if (resp.statusCode == 200) {
         final data = _tryDecodeJson(resp.body);
         if (data == null) {
-          debugPrint('❌ fetchMessages: invalid response (HTML?)');
+          appDebugLog('❌ fetchMessages: invalid response (HTML?)');
           return [];
         }
         final raw = (data['messages'] as List?) ?? [];
@@ -291,7 +337,7 @@ class ChatService {
         return messages;
       }
     } catch (e) {
-      debugPrint('❌ fetchMessages error: $e');
+      appDebugLog('❌ fetchMessages error: $e');
       _errorController.add('Помилка завантаження повідомлень');
     }
     return [];
@@ -300,6 +346,53 @@ class ChatService {
   /// Fetches older messages for pagination. Returns messages older than [beforeTimestamp].
   Future<List<ChatMessage>> fetchMoreMessages(int beforeTimestamp) async {
     return fetchMessages(before: beforeTimestamp, limit: 50);
+  }
+
+  /// Остання сторінка через REST без скидання dedup-пулу SSE і без broadcast у [messagesStream] —
+  /// добір повідомлень, які могли прийти під час паузи / розриву каналу.
+  Future<List<ChatMessage>> peekLatestMessagesTail({int limit = 50}) async {
+    try {
+      if (_deviceId == null || _nickname == null) return [];
+      await _ensureToken();
+      final safeLimit = limit.clamp(1, 100);
+      final headers = await _authHeaders();
+      final resp = await http
+          .get(
+            Uri.parse('${ApiConfig.chatMessages}?limit=$safeLimit'),
+            headers: headers,
+          )
+          .timeout(ApiConfig.httpTimeout);
+      if (resp.statusCode != 200) return [];
+      final data = _tryDecodeJson(resp.body);
+      if (data == null) return [];
+      final raw = (data['messages'] as List?) ?? [];
+      final fetchOnline = _parseOnline(data['online']);
+      if (fetchOnline >= 0) {
+        _onlineCount = fetchOnline;
+        _onlineController.add(_onlineCount);
+      }
+      return raw
+          .map((j) => ChatMessage.fromJson(j as Map<String, dynamic>))
+          .toList()
+          .reversed
+          .toList();
+    } catch (e) {
+      appDebugLog('❌ peekLatestMessagesTail error: $e');
+      return [];
+    }
+  }
+
+  /// Після добору історії REST — щоб [connectSSE] не дублював ті самі id.
+  void ingestSeenMessageIdsForSseDedup(Iterable<String> ids) {
+    for (final id in ids) {
+      final trimmed = id.trim();
+      if (trimmed.isEmpty) continue;
+      if (_recentMessageIds.contains(trimmed)) continue;
+      _recentMessageIds.add(trimmed);
+      while (_recentMessageIds.length > _maxRecentIds) {
+        _recentMessageIds.remove(_recentMessageIds.first);
+      }
+    }
   }
 
   // ── REST: Send message ─────────────────────────────────────────────────
@@ -319,35 +412,37 @@ class ChatService {
 
     final trimmed = text.trim();
     if (trimmed.isEmpty) return null;
-    if (trimmed.length > _maxMessageLength) {
+    if (trimmed.length > maxMessageLength) {
       _errorController.add(
-        'Повідомлення занадто довге (макс $_maxMessageLength)',
+        'Повідомлення занадто довге (макс $maxMessageLength)',
       );
       return null;
     }
 
     try {
       _lastSendTime = DateTime.now();
+      await _ensureToken();
       final body = <String, dynamic>{
-        'deviceId': _deviceId,
-        'nickname': _nickname,
         'message': trimmed,
         'isPro': PurchaseService().isPremium,
       };
       if (replyToId != null) body['replyTo'] = replyToId;
       if (_hardwareId != null) body['hardwareId'] = _hardwareId;
 
+      final headers = await _authHeaders();
       final resp = await http
           .post(
             Uri.parse(ApiConfig.chatSend),
-            headers: {'Content-Type': 'application/json'},
+            headers: headers,
             body: json.encode(body),
           )
           .timeout(ApiConfig.httpTimeout);
 
       final data = _tryDecodeJson(resp.body);
       if (data != null && resp.statusCode == 200 && data['message'] != null) {
-        final msg = ChatMessage.fromJson(data['message'] as Map<String, dynamic>);
+        final msg = ChatMessage.fromJson(
+          data['message'] as Map<String, dynamic>,
+        );
         _recentMessageIds.add(msg.id);
         if (_recentMessageIds.length > _maxRecentIds) {
           _recentMessageIds.remove(_recentMessageIds.first);
@@ -361,7 +456,7 @@ class ChatService {
       }
       _errorController.add(data?['error']?.toString() ?? 'Помилка відправки');
     } catch (e) {
-      debugPrint('❌ sendMessage error: $e');
+      appDebugLog('❌ sendMessage error: $e');
       _errorController.add('Помилка з\'єднання');
     }
     return null;
@@ -373,6 +468,10 @@ class ChatService {
     int durationSeconds,
   ) async {
     if (_deviceId == null || _nickname == null) return null;
+    if (!PurchaseService().isPremium) {
+      _errorController.add('Голосові повідомлення доступні тільки з PRO');
+      return null;
+    }
 
     // Client-side rate limit
     if (_lastSendTime != null) {
@@ -397,12 +496,15 @@ class ChatService {
       if (_hardwareId != null) request.fields['hardwareId'] = _hardwareId!;
       request.files.add(await http.MultipartFile.fromPath('audio', filePath));
 
+      await _attachBearerToMultipart(request);
       final streamed = await request.send().timeout(ApiConfig.longHttpTimeout);
       final resp = await http.Response.fromStream(streamed);
 
       final data = _tryDecodeJson(resp.body);
       if (data != null && resp.statusCode == 200 && data['message'] != null) {
-        final msg = ChatMessage.fromJson(data['message'] as Map<String, dynamic>);
+        final msg = ChatMessage.fromJson(
+          data['message'] as Map<String, dynamic>,
+        );
         _recentMessageIds.add(msg.id);
         if (_recentMessageIds.length > _maxRecentIds) {
           _recentMessageIds.remove(_recentMessageIds.first);
@@ -416,15 +518,22 @@ class ChatService {
       }
       _errorController.add(data?['error']?.toString() ?? 'Помилка відправки');
     } catch (e) {
-      debugPrint('❌ sendVoiceMessage error: $e');
+      appDebugLog('❌ sendVoiceMessage error: $e');
       _errorController.add('Помилка відправки голосового');
     }
     return null;
   }
 
   // ── REST: Send image message ──────────────────────────────────────────
-  Future<ChatMessage?> sendImageMessage(String filePath, {String? caption}) async {
+  Future<ChatMessage?> sendImageMessage(
+    String filePath, {
+    String? caption,
+  }) async {
     if (_deviceId == null || _nickname == null) return null;
+    if (!PurchaseService().isPremium) {
+      _errorController.add('Медіа в чаті доступні тільки з PRO');
+      return null;
+    }
 
     if (_lastSendTime != null) {
       final diff = DateTime.now().difference(_lastSendTime!).inMilliseconds;
@@ -445,7 +554,9 @@ class ChatService {
       request.fields['nickname'] = _nickname!;
       request.fields['isPro'] = PurchaseService().isPremium.toString();
       if (_hardwareId != null) request.fields['hardwareId'] = _hardwareId!;
-      if (caption != null && caption.isNotEmpty) request.fields['message'] = caption;
+      if (caption != null && caption.isNotEmpty) {
+        request.fields['message'] = caption;
+      }
       final ext = filePath.toLowerCase().split('.').last;
       final mime = switch (ext) {
         'png' => MediaType('image', 'png'),
@@ -453,18 +564,19 @@ class ChatService {
         'gif' => MediaType('image', 'gif'),
         _ => MediaType('image', 'jpeg'),
       };
-      request.files.add(await http.MultipartFile.fromPath(
-        'image',
-        filePath,
-        contentType: mime,
-      ));
+      request.files.add(
+        await http.MultipartFile.fromPath('image', filePath, contentType: mime),
+      );
 
+      await _attachBearerToMultipart(request);
       final streamed = await request.send().timeout(ApiConfig.longHttpTimeout);
       final resp = await http.Response.fromStream(streamed);
 
       final data = _tryDecodeJson(resp.body);
       if (data != null && resp.statusCode == 200 && data['message'] != null) {
-        final msg = ChatMessage.fromJson(data['message'] as Map<String, dynamic>);
+        final msg = ChatMessage.fromJson(
+          data['message'] as Map<String, dynamic>,
+        );
         _recentMessageIds.add(msg.id);
         if (_recentMessageIds.length > _maxRecentIds) {
           _recentMessageIds.remove(_recentMessageIds.first);
@@ -476,9 +588,11 @@ class ChatService {
         _banReason = data['error']?.toString();
         _banStatusController.add(true);
       }
-      _errorController.add(data?['error']?.toString() ?? 'Помилка відправки фото');
+      _errorController.add(
+        data?['error']?.toString() ?? 'Помилка відправки фото',
+      );
     } catch (e) {
-      debugPrint('❌ sendImageMessage error: $e');
+      appDebugLog('❌ sendImageMessage error: $e');
       _errorController.add('Помилка відправки фото');
     }
     return null;
@@ -488,25 +602,25 @@ class ChatService {
   Future<void> react(String messageId, String emoji) async {
     if (_deviceId == null) return;
     try {
+      await _ensureToken();
+      final headers = await _authHeaders();
       final resp = await http
           .post(
             Uri.parse(ApiConfig.chatReact),
-            headers: {'Content-Type': 'application/json'},
+            headers: headers,
             body: json.encode({
               'messageId': messageId,
               'emoji': emoji,
-              'deviceId': _deviceId,
-              'nickname': _nickname ?? '',
               if (_hardwareId != null) 'hardwareId': _hardwareId,
             }),
           )
           .timeout(ApiConfig.httpTimeout);
       if (resp.statusCode != 200) {
         final data = _tryDecodeJson(resp.body);
-        debugPrint('❌ react error: ${data?['error']}');
+        appDebugLog('❌ react error: ${data?['error']}');
       }
     } catch (e) {
-      debugPrint('❌ react error: $e');
+      appDebugLog('❌ react error: $e');
     }
   }
 
@@ -514,14 +628,16 @@ class ChatService {
   Future<ChatMessage?> editMessage(String messageId, String newText) async {
     if (_deviceId == null) return null;
     final trimmed = newText.trim();
-    if (trimmed.isEmpty || trimmed.length > _maxMessageLength) return null;
+    if (trimmed.isEmpty || trimmed.length > maxMessageLength) return null;
     try {
+      await _ensureToken();
+      final headers = await _authHeaders();
       final req = http.Request(
         'PATCH',
         Uri.parse(ApiConfig.chatMessageById(messageId)),
       );
-      req.headers['Content-Type'] = 'application/json';
-      req.body = json.encode({'deviceId': _deviceId, 'message': trimmed});
+      req.headers.addAll(headers);
+      req.body = json.encode({'message': trimmed});
       final streamed = await req.send().timeout(ApiConfig.httpTimeout);
       final resp = await http.Response.fromStream(streamed);
       final data = _tryDecodeJson(resp.body);
@@ -529,10 +645,12 @@ class ChatService {
         return ChatMessage.fromJson(data['message'] as Map<String, dynamic>);
       }
       if (data != null && resp.statusCode == 400) {
-        _errorController.add(data['error']?.toString() ?? 'Помилка редагування');
+        _errorController.add(
+          data['error']?.toString() ?? 'Помилка редагування',
+        );
       }
     } catch (e) {
-      debugPrint('❌ editMessage error: $e');
+      appDebugLog('❌ editMessage error: $e');
       _errorController.add('Помилка з\'єднання');
     }
     return null;
@@ -541,16 +659,17 @@ class ChatService {
   // ── REST: Delete message ───────────────────────────────────────────────
   Future<bool> deleteMessage(String messageId) async {
     try {
+      await _ensureToken();
+      final headers = await _authHeaders();
       final req = http.Request(
         'DELETE',
         Uri.parse(ApiConfig.chatMessageById(messageId)),
       );
-      req.headers['Content-Type'] = 'application/json';
-      req.body = json.encode({'deviceId': _deviceId});
+      req.headers.addAll(headers);
       final streamed = await req.send().timeout(ApiConfig.httpTimeout);
       return streamed.statusCode == 200;
     } catch (e) {
-      debugPrint('❌ deleteMessage error: $e');
+      appDebugLog('❌ deleteMessage error: $e');
       return false;
     }
   }
@@ -559,13 +678,13 @@ class ChatService {
   Future<void> sendTyping(bool isTyping) async {
     if (_deviceId == null || _nickname == null) return;
     try {
+      await _ensureToken();
+      final headers = await _authHeaders();
       await http
           .post(
             Uri.parse(ApiConfig.chatTyping),
-            headers: {'Content-Type': 'application/json'},
+            headers: headers,
             body: json.encode({
-              'deviceId': _deviceId,
-              'nickname': _nickname,
               'isTyping': isTyping,
               if (_hardwareId != null) 'hardwareId': _hardwareId,
             }),
@@ -576,13 +695,17 @@ class ChatService {
 
   // ── REST: Check / Register nickname ────────────────────────────────────
   Future<({bool available, String? error})> checkNickname(String nick) async {
+    final trimmed = nick.trim();
+    if (trimmed.isEmpty) {
+      return (available: false, error: 'Введіть нікнейм');
+    }
     try {
       final resp = await http
           .post(
             Uri.parse(ApiConfig.chatCheckNickname),
             headers: {'Content-Type': 'application/json'},
             body: json.encode({
-              'nickname': nick,
+              'nickname': trimmed,
               'deviceId': _deviceId,
               if (_hardwareId != null) 'hardwareId': _hardwareId,
             }),
@@ -601,8 +724,15 @@ class ChatService {
 
   Future<({bool success, String? error})> registerNickname(String nick) async {
     if (_deviceId == null) return (success: false, error: 'Немає device ID');
+    final trimmed = nick.trim();
+    if (trimmed.isEmpty) {
+      return (success: false, error: 'Введіть нікнейм');
+    }
     try {
-      final body = <String, dynamic>{'nickname': nick, 'deviceId': _deviceId};
+      final body = <String, dynamic>{
+        'nickname': trimmed,
+        'deviceId': _deviceId,
+      };
       if (_hardwareId != null) body['hardwareId'] = _hardwareId!;
       final resp = await http
           .post(
@@ -614,9 +744,11 @@ class ChatService {
       final data = _tryDecodeJson(resp.body);
       if (data == null) return (success: false, error: 'Помилка реєстрації');
       if (data['success'] == true) {
-        _nickname = nick;
+        _nickname = trimmed;
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('chat_nickname', nick);
+        await prefs.setString('chat_nickname', trimmed);
+        // New JWT must include this nickname; old access token still had previous/empty nick.
+        await AuthService.login(nickname: trimmed);
         return (success: true, error: null);
       }
       return (success: false, error: data['error']?.toString());
@@ -677,17 +809,19 @@ class ChatService {
     final secret = await ModeratorService.instance.getSecret();
     if (secret != null && secret.isNotEmpty) {
       try {
-        final resp = await http.post(
-          Uri.parse(ApiConfig.adminChatBanUser),
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Auth-Secret': secret,
-          },
-          body: json.encode({
-            'nickname': nickname.trim(),
-            'reason': reason ?? 'Модератор (адмін панель)',
-          }),
-        ).timeout(ApiConfig.httpTimeout);
+        final resp = await http
+            .post(
+              Uri.parse(ApiConfig.adminChatBanUser),
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Auth-Secret': secret,
+              },
+              body: json.encode({
+                'nickname': nickname.trim(),
+                'reason': reason ?? 'Модератор (адмін панель)',
+              }),
+            )
+            .timeout(ApiConfig.httpTimeout);
         return resp.statusCode == 200;
       } catch (_) {
         return false;
@@ -696,7 +830,11 @@ class ChatService {
     return banUser(nickname, reason: reason, targetDeviceId: null);
   }
 
-  Future<bool> banUser(String nickname, {String? reason, String? targetDeviceId}) async {
+  Future<bool> banUser(
+    String nickname, {
+    String? reason,
+    String? targetDeviceId,
+  }) async {
     // Prefer admin API when we have secret + targetDeviceId (more reliable, bans by device)
     final secret = await ModeratorService.instance.getSecret();
     if (secret != null &&
@@ -704,18 +842,20 @@ class ChatService {
         targetDeviceId != null &&
         targetDeviceId.isNotEmpty) {
       try {
-        final resp = await http.post(
-          Uri.parse(ApiConfig.adminChatBanUser),
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Auth-Secret': secret,
-          },
-          body: json.encode({
-            'nickname': nickname,
-            'deviceId': targetDeviceId,
-            'reason': reason ?? 'Порушення правил',
-          }),
-        ).timeout(ApiConfig.httpTimeout);
+        final resp = await http
+            .post(
+              Uri.parse(ApiConfig.adminChatBanUser),
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Auth-Secret': secret,
+              },
+              body: json.encode({
+                'nickname': nickname,
+                'deviceId': targetDeviceId,
+                'reason': reason ?? 'Порушення правил',
+              }),
+            )
+            .timeout(ApiConfig.httpTimeout);
         return resp.statusCode == 200;
       } catch (_) {
         return false;
@@ -730,6 +870,8 @@ class ChatService {
             body: json.encode({
               'nickname': nickname,
               'deviceId': _deviceId,
+              if (targetDeviceId != null && targetDeviceId.isNotEmpty)
+                'targetDeviceId': targetDeviceId,
               'reason': reason ?? 'Порушення правил',
             }),
           )
@@ -764,10 +906,7 @@ class ChatService {
           .post(
             Uri.parse('${ApiConfig.baseUrl}/api/chat/unban'),
             headers: {'Content-Type': 'application/json'},
-            body: json.encode({
-              'nickname': nickname,
-              'deviceId': _deviceId,
-            }),
+            body: json.encode({'nickname': nickname, 'deviceId': _deviceId}),
           )
           .timeout(ApiConfig.httpTimeout);
       return resp.statusCode == 200;
@@ -777,24 +916,31 @@ class ChatService {
   }
 
   /// Delete all messages from a user (moderator admin action). Requires X-Auth-Secret.
-  Future<int?> deleteAllUserMessages({String? nickname, String? deviceId}) async {
+  Future<int?> deleteAllUserMessages({
+    String? nickname,
+    String? deviceId,
+  }) async {
     final secret = await ModeratorService.instance.getSecret();
     if (secret == null || secret.isEmpty) return null;
     if ((nickname ?? '').trim().isEmpty && (deviceId ?? '').trim().isEmpty) {
       return null;
     }
     try {
-      final resp = await http.post(
-        Uri.parse(ApiConfig.adminChatDeleteUserMessages),
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Auth-Secret': secret,
-        },
-        body: json.encode({
-          if ((nickname ?? '').trim().isNotEmpty) 'nickname': nickname!.trim(),
-          if ((deviceId ?? '').trim().isNotEmpty) 'deviceId': deviceId!.trim(),
-        }),
-      );
+      final resp = await http
+          .post(
+            Uri.parse(ApiConfig.adminChatDeleteUserMessages),
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Auth-Secret': secret,
+            },
+            body: json.encode({
+              if ((nickname ?? '').trim().isNotEmpty)
+                'nickname': nickname!.trim(),
+              if ((deviceId ?? '').trim().isNotEmpty)
+                'deviceId': deviceId!.trim(),
+            }),
+          )
+          .timeout(ApiConfig.httpTimeout);
       if (resp.statusCode == 200) {
         final data = _tryDecodeJson(resp.body);
         return data?['deleted'] as int? ?? 0;
@@ -839,9 +985,9 @@ class ChatService {
     }
     if (_deviceId == null) return [];
     try {
-      final uri = Uri.parse(ApiConfig.chatBanList).replace(
-        queryParameters: {'deviceId': _deviceId!},
-      );
+      final uri = Uri.parse(
+        ApiConfig.chatBanList,
+      ).replace(queryParameters: {'deviceId': _deviceId!});
       final resp = await http.get(uri).timeout(ApiConfig.httpTimeout);
       if (resp.statusCode == 200) {
         final data = _tryDecodeJson(resp.body);
@@ -854,7 +1000,14 @@ class ChatService {
           }
           final banned = (data['banned'] as List?) ?? [];
           return banned
-              .map((n) => BanEntry(nickname: n.toString(), reason: '', bannedAt: null, bannedBy: null))
+              .map(
+                (n) => BanEntry(
+                  nickname: n.toString(),
+                  reason: '',
+                  bannedAt: null,
+                  bannedBy: null,
+                ),
+              )
               .toList();
         }
       }
@@ -877,8 +1030,8 @@ class ChatService {
 
     final ds = DataStreamService.instance;
 
-    // Pre-fetch messages to get initial online count (fallback until SSE delivers)
-    unawaited(fetchMessages());
+    // Online count comes from SSE; avoid an extra full messages fetch here —
+    // ChatTab already loads history on open (was doubling work and janking UI).
 
     _sseSubscriptions.addAll([
       ds.chatOnlineStream.listen((count) {
@@ -925,7 +1078,7 @@ class ChatService {
       }),
     ]);
 
-    debugPrint('💬 ChatService: subscribed to DataStreamService');
+    appDebugLog('💬 ChatService: subscribed to DataStreamService');
   }
 
   void disconnectSSE() {
@@ -948,21 +1101,17 @@ class ChatService {
     String? originalText,
   }) async {
     try {
-      final resp = await http
-          .post(
-            Uri.parse('${ApiConfig.baseUrl}/api/chat/report'),
-            headers: {'Content-Type': 'application/json'},
-            body: json.encode({
-              'messageId': messageId,
-              'reporterDeviceId': _deviceId,
-              'reporterNickname': _nickname ?? 'Анонім',
-              'originalText': originalText ?? '',
-              'reportedDeviceId': reportedDeviceId,
-              'reportedNickname': reportedNickname,
-              'reason': reason,
-            }),
-          )
-          .timeout(ApiConfig.httpTimeout);
+      final resp = await AuthService.authenticatedRequest(
+        'POST',
+        '/api/chat/report',
+        body: {
+          'messageId': messageId,
+          'originalText': originalText ?? '',
+          'reportedDeviceId': reportedDeviceId,
+          'reportedNickname': reportedNickname,
+          'reason': reason,
+        },
+      );
       return resp.statusCode == 200;
     } catch (_) {
       return false;
@@ -1009,6 +1158,11 @@ class ChatService {
   }
 
   // ── Cleanup ────────────────────────────────────────────────────────────
+  Future<String> getTemporaryDirectoryPath() async {
+    final dir = await getTemporaryDirectory();
+    return dir.path;
+  }
+
   void dispose() {
     _disposed = true;
     disconnectSSE();

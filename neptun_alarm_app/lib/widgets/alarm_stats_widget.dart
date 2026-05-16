@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 
+import '../theme/diary_design.dart';
+
 /// Красивий віджет статистики тривог
 class AlarmStatsWidget extends StatefulWidget {
   final int totalAlarms;
@@ -66,8 +68,14 @@ class _AlarmStatsWidgetState extends State<AlarmStatsWidget>
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: isDark
-                  ? [const Color(0xFF2D2D2D), const Color(0xFF1A1A1A)]
-                  : [Colors.white, const Color(0xFFF8F9FA)],
+                  ? [
+                      DiaryColors.darkSurfaceElevated,
+                      DiaryColors.darkSurface,
+                    ]
+                  : [
+                      DiaryColors.background,
+                      DiaryColors.surface,
+                    ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -87,7 +95,10 @@ class _AlarmStatsWidgetState extends State<AlarmStatsWidget>
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
-                    colors: [Color(0xFF4A90E2), Color(0xFF2E5C8A)],
+                    colors: [
+                      Color(0xFF1E3A5F),
+                      Color(0xFF0F172A),
+                    ],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
@@ -98,12 +109,12 @@ class _AlarmStatsWidgetState extends State<AlarmStatsWidget>
                     Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.2),
+                        color: DiaryColors.onPrimary.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: const Icon(
                         Icons.analytics_rounded,
-                        color: Colors.white,
+                        color: DiaryColors.onPrimary,
                         size: 24,
                       ),
                     ),
@@ -117,14 +128,14 @@ class _AlarmStatsWidgetState extends State<AlarmStatsWidget>
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
-                              color: Colors.white,
+                              color: DiaryColors.onPrimary,
                             ),
                           ),
                           Text(
                             'За останню годину',
                             style: TextStyle(
                               fontSize: 12,
-                              color: Colors.white70,
+                              color: Color(0xB3FFFFFF),
                             ),
                           ),
                         ],
@@ -192,7 +203,9 @@ class _AlarmStatsWidgetState extends State<AlarmStatsWidget>
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
-                            color: isDark ? Colors.white : const Color(0xFF2D3748),
+                            color: isDark
+                                ? DiaryColors.darkPrimary
+                                : DiaryColors.primary,
                           ),
                         ),
                       ),
@@ -231,11 +244,11 @@ class _AlarmStatsWidgetState extends State<AlarmStatsWidget>
             width: 12,
             height: 12,
             decoration: BoxDecoration(
-              color: const Color(0xFF30D158),
+              color: const Color(0xFF38BDF8),
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFF30D158).withValues(alpha: 0.5),
+                  color: const Color(0xFF38BDF8).withValues(alpha: 0.45),
                   blurRadius: 8,
                   spreadRadius: 2,
                 ),
@@ -278,14 +291,16 @@ class _AlarmStatsWidgetState extends State<AlarmStatsWidget>
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
-              color: isDark ? Colors.white : const Color(0xFF2D3748),
+              color: isDark
+                  ? DiaryColors.darkPrimary
+                  : DiaryColors.primary,
             ),
           ),
           Text(
             label,
             style: TextStyle(
               fontSize: 11,
-              color: isDark ? Colors.grey[400] : const Color(0xFF718096),
+              color: isDark ? DiaryColors.darkMuted : DiaryColors.muted,
             ),
           ),
         ],
@@ -312,14 +327,16 @@ class _AlarmStatsWidgetState extends State<AlarmStatsWidget>
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : const Color(0xFF2D3748),
+                color: isDark
+                    ? DiaryColors.darkPrimary
+                    : DiaryColors.primary,
               ),
             ),
             Text(
               '${(dronePercent * 100).toInt()}% / ${(rocketPercent * 100).toInt()}% / ${(clearedPercent * 100).toInt()}%',
               style: TextStyle(
                 fontSize: 12,
-                color: isDark ? Colors.grey[400] : const Color(0xFF718096),
+                color: isDark ? DiaryColors.darkMuted : DiaryColors.muted,
               ),
             ),
           ],
@@ -399,8 +416,8 @@ class _AlarmStatsWidgetState extends State<AlarmStatsWidget>
           style: TextStyle(
             fontSize: 11,
             color: Theme.of(context).brightness == Brightness.dark
-                ? Colors.grey[400]
-                : const Color(0xFF718096),
+                ? DiaryColors.darkMuted
+                : DiaryColors.muted,
           ),
         ),
       ],
@@ -436,7 +453,9 @@ class _AlarmStatsWidgetState extends State<AlarmStatsWidget>
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white70 : const Color(0xFF4A5568),
+                    color: isDark
+                        ? DiaryColors.darkPrimary.withValues(alpha: 0.72)
+                        : DiaryColors.muted,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),

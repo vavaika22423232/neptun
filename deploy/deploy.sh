@@ -101,6 +101,7 @@ if [ -d .next/standalone ]; then
   log "  ✓ server.js copied to app root"
   cp -r public .next/standalone/public 2>/dev/null || true
   cp -r .next/static .next/standalone/.next/static 2>/dev/null || true
+  rm -f .next/standalone/.env 2>/dev/null || true
   log "  ✓ Static assets copied to standalone"
 fi
 
@@ -228,9 +229,13 @@ fi
 # Sync nginx upstream with actual PM2 instance count
 ECOSYSTEM="$APP_DIR/ecosystem.config.cjs"
 if [ -f "$ECOSYSTEM" ]; then
-  PM2_INSTANCES=$(grep -oP 'INSTANCES\s*=\s*\K[0-9]+' "$ECOSYSTEM" | head -1)
-  PM2_BASE_PORT=$(grep -oP 'BASE_PORT\s*=\s*\K[0-9]+' "$ECOSYSTEM" | head -1)
-  PM2_INSTANCES=${PM2_INSTANCES:-2}
+  # ecosystem.config.cjs uses multi-line `const INSTANCES = … ? _n : N` — do not grep `INSTANCES = digits`
+  PM2_INSTANCES=$(grep -E '^PM2_INSTANCES=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\r"[:space:]')
+  if ! [[ "$PM2_INSTANCES" =~ ^[1-9][0-9]*$ ]] || [ "$PM2_INSTANCES" -gt 12 ]; then
+    PM2_INSTANCES=$( (grep -oP '\? _n : \K[0-9]+' "$ECOSYSTEM" 2>/dev/null || true) | head -1 )
+  fi
+  PM2_INSTANCES=${PM2_INSTANCES:-4}
+  PM2_BASE_PORT=$( (grep -oP 'BASE_PORT\s*=\s*\K[0-9]+' "$ECOSYSTEM" 2>/dev/null || true) | head -1 )
   PM2_BASE_PORT=${PM2_BASE_PORT:-3000}
 
   TMPUP=$(mktemp)
@@ -271,12 +276,21 @@ if [ -f "$NGINX_SRC" ]; then
   fi
 fi
 
+# Purge nginx disk proxy caches (STATIC/API) so no stale HTML or API right after a new build
+for _cache_dir in /tmp/nginx_static_cache /tmp/nginx_api_cache; do
+  if [ -d "$_cache_dir" ]; then
+    find "$_cache_dir" -mindepth 1 -delete 2>/dev/null || true
+  fi
+done
+log "  ✓ nginx proxy_cache dirs purged (static + api)"
+
 # Test & reload nginx
-if nginx -t 2>/dev/null; then
+if NGINX_TEST_OUTPUT=$(nginx -t 2>&1); then
   systemctl reload nginx
   log "  ✓ nginx config OK & reloaded"
 else
   err "  ✗ nginx config syntax error — rolling back"
+  err "$NGINX_TEST_OUTPUT"
   if [ -f /etc/nginx/nginx.conf.bak ]; then
     cp /etc/nginx/nginx.conf.bak /etc/nginx/nginx.conf
   fi
@@ -287,6 +301,7 @@ else
 fi
 
 # Restart services
+systemctl reset-failed neptun-web neptun-worker neptun-sse 2>/dev/null || true
 systemctl restart neptun-web
 sleep 2
 systemctl restart neptun-worker
@@ -302,6 +317,28 @@ if [ -f "$SSE_DIR/sse-gateway" ] && [ -f "$DEPLOY_DIR/neptun-sse.service" ]; the
 fi
 
 log "  ✓ Services restarted"
+
+# Clear Next.js in-memory API caches (each PM2 process has its own heap)
+_CACHE_SECRET=$(grep -E '^ADMIN_API_SECRET=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\r"[:space:]' || true)
+[ -n "$_CACHE_SECRET" ] || _CACHE_SECRET=$(grep -E '^ADMIN_SECRET=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\r"[:space:]' || true)
+[ -n "$_CACHE_SECRET" ] || _CACHE_SECRET=$(grep -E '^AUTH_SECRET=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\r"[:space:]' || true)
+if [ -n "$_CACHE_SECRET" ]; then
+  _ci="${PM2_INSTANCES:-4}"
+  _bp="${PM2_BASE_PORT:-3000}"
+  if ! [[ "$_ci" =~ ^[1-9][0-9]*$ ]] || [ "$_ci" -gt 12 ]; then _ci=4; fi
+  if ! [[ "$_bp" =~ ^[0-9]+$ ]]; then _bp=3000; fi
+  _cleared=0
+  for _k in $(seq 0 $((_ci - 1))); do
+    _port=$((_bp + _k))
+    if curl -sf -X POST "http://127.0.0.1:${_port}/api/admin/cache/clear" \
+      -H "X-Auth-Secret: ${_CACHE_SECRET}" -o /dev/null; then
+      _cleared=$((_cleared + 1))
+    fi
+  done
+  log "  ✓ App in-memory cache cleared (${_cleared}/${_ci} PM2 instances, ports ${_bp}-$((_bp + _ci - 1)))"
+else
+  warn "  Skip app cache clear (no ADMIN_API_SECRET / ADMIN_SECRET / AUTH_SECRET in .env)"
+fi
 
 # Persist iptables rules (Cloudflare-only firewall)
 if command -v iptables-save &>/dev/null && [ -d /etc/iptables ]; then

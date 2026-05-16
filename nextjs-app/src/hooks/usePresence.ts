@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { PRESENCE_INTERVAL } from '@/lib/constants';
+import { PRESENCE_INTERVAL, PRESENCE_DISPLAY_POLL_MS } from '@/lib/constants';
 import type { PresenceData } from '@/types';
 
 function getUserId(): string {
@@ -20,9 +20,19 @@ function getUserId(): string {
 
 export function usePresence() {
   const [presence, setPresence] = useState<PresenceData>({ web: 0, apps: 0, total: -1 });
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const displayPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const failCountRef = useRef(0);
 
+  const applyPresencePayload = useCallback((data: Record<string, unknown>) => {
+    setPresence({
+      web: Number(data.web) || 0,
+      apps: Number(data.apps ?? data.android) || 0,
+      total: Number(data.total ?? data.count) || 0,
+    });
+  }, []);
+
+  /** Рідкий POST — залишаємо користувача в sorted set. */
   const pingPresence = useCallback(async () => {
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
 
@@ -42,13 +52,9 @@ export function usePresence() {
       clearTimeout(timeout);
 
       if (response.ok) {
-        const data = await response.json();
+        const data = (await response.json()) as Record<string, unknown>;
         failCountRef.current = 0;
-        setPresence({
-          web: data.web || 0,
-          apps: data.apps || data.android || 0,
-          total: data.total || data.count || 0,
-        });
+        applyPresencePayload(data);
       } else {
         failCountRef.current++;
       }
@@ -57,17 +63,46 @@ export function usePresence() {
     }
 
     if (failCountRef.current >= 3) {
-      setPresence(prev => ({ ...prev, total: -1 }));
+      setPresence((prev) => ({ ...prev, total: -1 }));
     }
-  }, []);
+  }, [applyPresencePayload]);
+
+  /** Частий GET — лише оновлення числа в інтерфейсі без чергового ZADD. */
+  const pollPresenceDisplay = useCallback(async () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const response = await fetch('/api/presence', {
+        method: 'GET',
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (response.ok) {
+        const data = (await response.json()) as Record<string, unknown>;
+        failCountRef.current = 0;
+        applyPresencePayload(data);
+      }
+    } catch {
+      /* не чіпаємо failCount — heartbeat відповідає за «офлайн» індикатор */
+    }
+  }, [applyPresencePayload]);
 
   useEffect(() => {
-    pingPresence();
-    intervalRef.current = setInterval(pingPresence, PRESENCE_INTERVAL);
+    void pingPresence();
+    void pollPresenceDisplay();
+    heartbeatRef.current = setInterval(() => {
+      void pingPresence();
+    }, PRESENCE_INTERVAL);
+    displayPollRef.current = setInterval(() => {
+      void pollPresenceDisplay();
+    }, PRESENCE_DISPLAY_POLL_MS);
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+      if (displayPollRef.current) clearInterval(displayPollRef.current);
     };
-  }, [pingPresence]);
+  }, [pingPresence, pollPresenceDisplay]);
 
   return presence;
 }

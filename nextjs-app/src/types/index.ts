@@ -106,6 +106,44 @@ export interface Marker {
   display_uncertainty_km?: number;
   /** First line for popup/tooltip (Ukrainian). */
   display_trust_hint_uk?: string;
+  /** Deterministic server publication class. */
+  publication_class?: 'VERIFIED_PUBLIC' | 'ADMIN_ONLY' | 'QUARANTINED' | 'REJECTED';
+  /** Final min-dimensional publication confidence, 0..1. */
+  publication_score?: number;
+  /** Deterministic reason codes from publication policy. */
+  publication_reasons?: string[];
+  /** Stable raw/evidence fingerprint used for replay and audit. */
+  event_fingerprint?: string;
+  /** Stateful target lifecycle, separate from raw ingest row. */
+  target_lifecycle_state?: 'DETECTED' | 'TRACKING' | 'CONFIRMED' | 'LOST' | 'STALE' | 'DESTROYED' | 'REJECTED';
+  target_confidence?: number;
+  source_count?: number;
+  /** Client behavior profile for animation / life state. */
+  behavior_kind?: string;
+  behavior_pulse_ms?: number;
+  /** Розбиття на карті (client-only): одиниця у «рої» з поля `count`. */
+  swarm_unit_index?: number;
+  /** Скільки пінів намалювано (до SWARM_VISUAL_MAX). */
+  swarm_total?: number;
+
+  // ── Drone tracker renderer fields ───────────────────────────────────────────
+  /** Drone is loitering / orbiting — use circular animation, no directional arrow. */
+  is_loitering?: boolean;
+  /**
+   * How heading was derived:
+   * 'explicit' = text said 'курсом на X' | 'track' = sequential events |
+   * 'regional' = entry corridor heuristic | 'unknown' = no data
+   */
+  heading_confidence?: 'explicit' | 'track' | 'regional' | 'unknown';
+  /** Position was back-projected from target coords, not directly observed. */
+  position_estimated?: boolean;
+  /** Seconds until drone reaches target. null if not computable. */
+  eta_seconds?: number | null;
+  /**
+   * 0–100 display confidence:
+   * ≥90 solid pin + solid arrow | 70–89 semi arrow | 50–69 dashed | <50 area circle
+   */
+  display_confidence?: number;
 }
 
 export interface Trajectory {

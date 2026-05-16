@@ -28,9 +28,7 @@ export function verifyChatToken(token: string | null, secret: string): ChatIdent
 
     const rawNick = payload.nickname;
     const nickname =
-      typeof rawNick === 'string' && rawNick.trim().length > 0
-        ? rawNick.trim()
-        : 'Анонім';
+      typeof rawNick === 'string' && rawNick.trim().length > 0 ? rawNick.trim() : '';
 
     return {
       deviceId,

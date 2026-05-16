@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
+import '../../../../design/neptun_design.dart';
 import '../../../../services/chat_service.dart';
 import '../../../../services/moderator_service.dart';
 
-/// Bottom sheet for chat settings: nickname, moderator, ban list.
+/// Chat settings: nickname; moderator blocks only when logged in as moderator.
+/// Відкривати через [Navigator.push] (повноекранно) — bottom sheet з `isScrollControlled`
+/// ламав вертикальні обмеження й зсував контент під статус-бар.
 class ChatSettingsSheet extends StatefulWidget {
   final ChatService chat;
   final VoidCallback onNicknameChanged;
@@ -40,343 +42,340 @@ class _ChatSettingsSheetState extends State<ChatSettingsSheet> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Container(
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.75,
-      ),
-      decoration: BoxDecoration(
-        color: cs.surfaceContainer,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Center(
-            child: Container(
-              margin: const EdgeInsets.only(top: 12),
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: cs.onSurface.withValues(alpha: 0.35),
-                borderRadius: BorderRadius.circular(2),
+    final tt = Theme.of(context).textTheme;
+    return Scaffold(
+        backgroundColor: cs.surface,
+        resizeToAvoidBottomInset: true,
+        appBar: AppBar(
+          backgroundColor: cs.surfaceContainerHigh,
+          surfaceTintColor: cs.surfaceTint,
+          elevation: 0,
+          leading: Semantics(
+            label: 'Повернутися до чату',
+            button: true,
+            child: IconButton(
+              style: IconButton.styleFrom(
+                minimumSize: const Size(48, 48),
+                tapTargetSize: MaterialTapTargetSize.padded,
               ),
+              icon: Icon(Icons.arrow_back_rounded, color: cs.onSurface),
+              tooltip: 'До чату',
+              onPressed: () => context.pop(),
             ),
           ),
-          const SizedBox(height: 16),
-          Text(
-            'Налаштування',
-            style: GoogleFonts.inter(
-              fontSize: 18,
+          title: Text(
+            'Налаштування чату',
+            style: tt.titleMedium?.copyWith(
               fontWeight: FontWeight.w700,
+              fontSize: 17,
               color: cs.onSurface,
             ),
           ),
-          const SizedBox(height: 16),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              children: [
-                if (widget.chat.isModerator) ...[
-                  _moderatorAdminTile(cs),
-                  const SizedBox(height: 20),
-                ],
-                _sectionTitle('Ваш нікнейм'),
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: _cardDecoration(),
-                  child: Row(
-                    children: [
-                      Icon(Icons.person_rounded, color: cs.primary, size: 20),
-                      const SizedBox(width: 10),
-                      Text(
-                        widget.chat.nickname ?? '—',
-                        style: GoogleFonts.inter(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: cs.onSurface,
-                        ),
+          centerTitle: true,
+        ),
+        body: ListView(
+          physics: const BouncingScrollPhysics(
+            parent: AlwaysScrollableScrollPhysics(),
+          ),
+          padding: EdgeInsets.fromLTRB(
+            NeptunSpacing.screenHorizontal,
+            NeptunSpacing.lg,
+            NeptunSpacing.screenHorizontal,
+            NeptunSpacing.xxl + MediaQuery.paddingOf(context).bottom,
+          ),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          children: _settingsSections(cs, tt),
+        ),
+    );
+  }
+
+  List<Widget> _settingsSections(ColorScheme cs, TextTheme tt) {
+    return [
+      if (widget.chat.isModerator) ...[
+        _moderatorAdminTile(cs, tt),
+        const SizedBox(height: 20),
+      ],
+      _sectionTitle('Ваш нікнейм', cs, tt),
+      Container(
+        padding: const EdgeInsets.all(14),
+        decoration: _cardDecoration(),
+        child: Row(
+          children: [
+            Icon(Icons.person_rounded, color: cs.primary, size: 20),
+            const SizedBox(width: 10),
+            Text(
+              widget.chat.nickname ?? '—',
+              style: tt.titleSmall?.copyWith(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: cs.onSurface,
+              ),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 12),
+      _sectionTitle('Змінити нікнейм', cs, tt),
+      // Не Row(Expanded + FilledButton) — на вузькій ширині flex дає від'ємні обмеження → assert у кнопки.
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _newNickController,
+            maxLength: 20,
+            style: tt.bodyMedium?.copyWith(
+              color: cs.onSurface,
+              fontSize: 14,
+            ),
+            decoration: InputDecoration(
+              hintText: 'Новий нікнейм',
+              hintStyle: tt.bodyMedium?.copyWith(
+                color: cs.onSurface.withValues(alpha: 0.35),
+                fontSize: 14,
+              ),
+              errorText: _nickError,
+              counterText: '',
+              filled: true,
+              fillColor: cs.surfaceContainerHighest,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 12,
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 46,
+            child: FilledButton(
+              onPressed: _nickChanging ? null : _changeNickname,
+              style: FilledButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+              ),
+              child: _nickChanging
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: cs.onPrimary,
                       ),
-                    ],
+                    )
+                  : const Text('Зберегти'),
+            ),
+          ),
+        ],
+      ),
+      if (widget.chat.isModerator) ...[
+        const SizedBox(height: 20),
+        _sectionTitle('Модерація', cs, tt),
+        Container(
+          decoration: _cardDecoration(),
+          child: Column(
+            children: [
+              ListTile(
+                leading: Icon(
+                  Icons.shield_rounded,
+                  color: cs.tertiary,
+                ),
+                title: Text(
+                  'Ви модератор',
+                  style: tt.bodyMedium?.copyWith(
+                    fontSize: 14,
+                    color: cs.onSurface,
                   ),
                 ),
-                const SizedBox(height: 12),
-                _sectionTitle('Змінити нікнейм'),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _newNickController,
-                        maxLength: 20,
-                        style: GoogleFonts.inter(
+                trailing: Icon(
+                  _showModSection
+                      ? Icons.expand_less
+                      : Icons.expand_more,
+                  color: cs.onSurface.withValues(alpha: 0.35),
+                ),
+                onTap: () =>
+                    setState(() => _showModSection = !_showModSection),
+              ),
+              if (_showModSection) ...[
+                Divider(height: 0.5, color: cs.outlineVariant),
+                Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    children: [
+                      TextField(
+                        controller: _secretController,
+                        obscureText: true,
+                        maxLength: ModeratorService.maxModeratorSecretLength,
+                        style: tt.bodyMedium?.copyWith(
                           color: cs.onSurface,
                           fontSize: 14,
                         ),
                         decoration: InputDecoration(
-                          hintText: 'Новий нікнейм',
-                          hintStyle: GoogleFonts.inter(
+                          hintText: 'Пароль модератора',
+                          hintStyle: tt.bodyMedium?.copyWith(
                             color: cs.onSurface.withValues(alpha: 0.35),
                             fontSize: 14,
                           ),
-                          errorText: _nickError,
-                          counterText: '',
                           filled: true,
-                          fillColor: cs.surfaceContainerHighest,
+                          fillColor: cs.surface,
                           border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide.none,
                           ),
                           contentPadding: const EdgeInsets.symmetric(
                             horizontal: 14,
                             vertical: 12,
                           ),
+                          counterText: '',
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    SizedBox(
-                      height: 46,
-                      child: ElevatedButton(
-                        onPressed: _nickChanging ? null : _changeNickname,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: cs.primary,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
+                      const SizedBox(height: 8),
+                                           SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.tonal(
+                          onPressed: _activateModerator,
+                          style: FilledButton.styleFrom(
+                            foregroundColor: cs.tertiary,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: const Text('Оновити'),
                         ),
-                        child: _nickChanging
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Text('Зберегти'),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                _sectionTitle('Модерація'),
-                Container(
-                  decoration: _cardDecoration(),
-                  child: Column(
-                    children: [
-                      ListTile(
-                        leading: Icon(
-                          widget.chat.isModerator
-                              ? Icons.shield_rounded
-                              : Icons.shield_outlined,
-                          color: widget.chat.isModerator
-                              ? cs.tertiary
-                              : cs.onSurface.withValues(alpha: 0.35),
-                        ),
-                        title: Text(
-                          widget.chat.isModerator
-                              ? 'Ви модератор'
-                              : 'Стати модератором',
-                          style: GoogleFonts.inter(
-                            fontSize: 14,
-                            color: cs.onSurface,
-                          ),
-                        ),
-                        trailing: Icon(
-                          _showModSection
-                              ? Icons.expand_less
-                              : Icons.expand_more,
-                          color: cs.onSurface.withValues(alpha: 0.35),
-                        ),
-                        onTap: () =>
-                            setState(() => _showModSection = !_showModSection),
-                      ),
-                      if (_showModSection) ...[
-                        Divider(height: 0.5, color: cs.outline),
+                      if (_modError != null)
                         Padding(
-                          padding: const EdgeInsets.all(14),
-                          child: Column(
-                            children: [
-                              TextField(
-                                controller: _secretController,
-                                obscureText: true,
-                                style: GoogleFonts.inter(
-                                  color: cs.onSurface,
-                                  fontSize: 14,
-                                ),
-                                decoration: InputDecoration(
-                                  hintText: 'Пароль модератора',
-                                  hintStyle: GoogleFonts.inter(
-                                    color: cs.onSurface.withValues(alpha: 0.35),
-                                    fontSize: 14,
-                                  ),
-                                  filled: true,
-                                  fillColor: cs.surface,
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: BorderSide.none,
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 12,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton(
-                                  onPressed: _activateModerator,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: cs.tertiary
-                                        .withValues(alpha: 0.15),
-                                    foregroundColor: cs.tertiary,
-                                    elevation: 0,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    widget.chat.isModerator
-                                        ? 'Оновити'
-                                        : 'Активувати',
-                                  ),
-                                ),
-                              ),
-                              if (_modError != null)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 6),
-                                  child: Text(
-                                    _modError!,
-                                    style: GoogleFonts.inter(
-                                      fontSize: 12,
-                                      color: cs.error,
-                                    ),
-                                  ),
-                                ),
-                              if (_modSuccess != null)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 6),
-                                  child: Text(
-                                    _modSuccess!,
-                                    style: GoogleFonts.inter(
-                                      fontSize: 12,
-                                      color: cs.secondary,
-                                    ),
-                                  ),
-                                ),
-                            ],
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            _modError!,
+                            style: tt.bodySmall?.copyWith(
+                              fontSize: 12,
+                              color: cs.error,
+                            ),
                           ),
                         ),
-                      ],
+                      if (_modSuccess != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            _modSuccess!,
+                            style: tt.bodySmall?.copyWith(
+                              fontSize: 12,
+                              color: cs.secondary,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 20),
-                if (widget.chat.isModerator) ...[
-                  _sectionTitle('Заблоковані'),
-                  Container(
-                    decoration: _cardDecoration(),
-                    child: Column(
-                      children: [
-                        ListTile(
-                          leading: Icon(
-                            Icons.block_rounded,
-                            color: cs.error,
-                            size: 20,
-                          ),
-                          title: Text(
-                            'Список заблокованих',
-                            style: GoogleFonts.inter(
-                              fontSize: 14,
-                              color: cs.onSurface,
-                            ),
-                          ),
-                          trailing: _loadingBans
-                              ? SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: cs.onSurface.withValues(alpha: 0.35),
-                                  ),
-                                )
-                              : Icon(
-                                  Icons.refresh_rounded,
-                                  color: cs.onSurface.withValues(alpha: 0.35),
-                                  size: 20,
-                                ),
-                          onTap: _loadBanList,
+              ],
+            ],
+          ),
+        ),
+      ],
+      if (widget.chat.isModerator) ...[
+        const SizedBox(height: 20),
+        _sectionTitle('Заблоковані', cs, tt),
+        Container(
+          decoration: _cardDecoration(),
+          child: Column(
+            children: [
+              ListTile(
+                leading: Icon(
+                  Icons.block_rounded,
+                  color: cs.error,
+                  size: 20,
+                ),
+                title: Text(
+                  'Список заблокованих',
+                  style: tt.bodyMedium?.copyWith(
+                    fontSize: 14,
+                    color: cs.onSurface,
+                  ),
+                ),
+                trailing: _loadingBans
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: cs.onSurface.withValues(alpha: 0.35),
                         ),
-                        if (_banList != null && _banList!.isNotEmpty) ...[
-                          Divider(height: 0.5, color: cs.outline),
-                          ..._banList!.map(
-                            (nick) => Dismissible(
-                              key: ValueKey(nick),
-                              direction: DismissDirection.endToStart,
-                              background: Container(
-                                alignment: Alignment.centerRight,
-                                padding: const EdgeInsets.only(right: 16),
-                                color: cs.secondary.withValues(alpha: 0.15),
-                                child: Text(
-                                  'Розблокувати',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 13,
-                                    color: cs.secondary,
-                                  ),
-                                ),
-                              ),
-                              onDismissed: (_) async {
-                                await widget.chat.unbanUser(nick);
-                                setState(() => _banList?.remove(nick));
-                              },
-                              child: ListTile(
-                                dense: true,
-                                title: Text(
-                                  nick,
-                                  style: GoogleFonts.inter(
-                                    fontSize: 13,
-                                    color: cs.onSurfaceVariant,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                        if (_banList != null && _banList!.isEmpty)
-                          Padding(
-                            padding: const EdgeInsets.all(14),
-                            child: Text(
-                              'Список порожній',
-                              style: GoogleFonts.inter(
-                                fontSize: 13,
-                                color: cs.onSurface.withValues(alpha: 0.35),
-                              ),
-                            ),
-                          ),
-                      ],
+                      )
+                    : Icon(
+                        Icons.refresh_rounded,
+                        color: cs.onSurface.withValues(alpha: 0.35),
+                        size: 20,
+                      ),
+                onTap: _loadBanList,
+              ),
+              if (_banList != null && _banList!.isNotEmpty) ...[
+                Divider(height: 0.5, color: cs.outlineVariant),
+                ..._banList!.map(
+                  (nick) => Dismissible(
+                    key: ValueKey(nick),
+                    direction: DismissDirection.endToStart,
+                    background: Container(
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.only(right: 16),
+                      color: cs.secondary.withValues(alpha: 0.15),
+                      child: Text(
+                        'Розблокувати',
+                        style: tt.bodySmall?.copyWith(
+                          fontSize: 13,
+                          color: cs.secondary,
+                        ),
+                      ),
+                    ),
+                    onDismissed: (_) async {
+                      await widget.chat.unbanUser(nick);
+                      setState(() => _banList?.remove(nick));
+                    },
+                    child: ListTile(
+                      dense: true,
+                      title: Text(
+                        nick,
+                        style: tt.bodySmall?.copyWith(
+                          fontSize: 13,
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 20),
-                ],
-                const SizedBox(height: 32),
+                ),
               ],
-            ),
+              if (_banList != null && _banList!.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Text(
+                    'Список порожній',
+                    style: tt.bodySmall?.copyWith(
+                      fontSize: 13,
+                      color: cs.onSurface.withValues(alpha: 0.35),
+                    ),
+                  ),
+                ),
+            ],
           ),
-        ],
-      ),
-    );
+        ),
+      ],
+    ];
   }
 
-  Widget _moderatorAdminTile(ColorScheme cs) {
+  Widget _moderatorAdminTile(ColorScheme cs, TextTheme tt) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: () {
-          Navigator.of(context).pop();
-          context.push('/chat-admin');
+          final router = GoRouter.of(context);
+          context.pop();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            router.push('/chat-admin');
+          });
         },
         borderRadius: BorderRadius.circular(16),
         child: Container(
@@ -403,7 +402,7 @@ class _ChatSettingsSheetState extends State<ChatSettingsSheet> {
                   children: [
                     Text(
                       'Адмін панель чату',
-                      style: GoogleFonts.inter(
+                      style: tt.titleSmall?.copyWith(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
                         color: cs.onSurface,
@@ -411,7 +410,7 @@ class _ChatSettingsSheetState extends State<ChatSettingsSheet> {
                     ),
                     Text(
                       'Заблоковані, розблокування',
-                      style: GoogleFonts.inter(
+                      style: tt.bodySmall?.copyWith(
                         fontSize: 12,
                         color: cs.onSurfaceVariant,
                       ),
@@ -427,13 +426,12 @@ class _ChatSettingsSheetState extends State<ChatSettingsSheet> {
     );
   }
 
-  Widget _sectionTitle(String title) {
-    final cs = Theme.of(context).colorScheme;
+  Widget _sectionTitle(String title, ColorScheme cs, TextTheme tt) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8, left: 4),
       child: Text(
         title,
-        style: GoogleFonts.inter(
+        style: tt.labelSmall?.copyWith(
           fontSize: 12,
           fontWeight: FontWeight.w600,
           color: cs.onSurface.withValues(alpha: 0.35),
@@ -446,9 +444,9 @@ class _ChatSettingsSheetState extends State<ChatSettingsSheet> {
   BoxDecoration _cardDecoration() {
     final cs = Theme.of(context).colorScheme;
     return BoxDecoration(
-      color: cs.surfaceContainerHighest,
+      color: cs.surfaceContainerHigh,
       borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: cs.outline, width: 0.5),
+      border: Border.all(color: cs.outlineVariant),
     );
   }
 
@@ -495,16 +493,21 @@ class _ChatSettingsSheetState extends State<ChatSettingsSheet> {
   }
 
   Future<void> _activateModerator() async {
-    final secret = _secretController.text.trim();
-    if (secret.isEmpty) {
-      setState(() => _modError = 'Введіть пароль');
+    final formatErr =
+        ModeratorService.validateModeratorSecretInput(_secretController.text);
+    if (formatErr != null) {
+      setState(() {
+        _modError = formatErr;
+        _modSuccess = null;
+      });
       return;
     }
     setState(() {
       _modError = null;
       _modSuccess = null;
     });
-    final result = await ModeratorService.instance.login(secret);
+    final result =
+        await ModeratorService.instance.login(_secretController.text);
     if (mounted) {
       if (result == null) {
         setState(() => _modSuccess = 'Модератор активовано ✓');

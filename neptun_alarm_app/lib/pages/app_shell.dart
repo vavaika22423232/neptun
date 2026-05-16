@@ -15,6 +15,7 @@ import '../core/widgets/tab_index_scope.dart';
 import '../services/ad_service.dart';
 import '../services/chat_service.dart';
 import '../services/data_stream_service.dart';
+import '../services/presence_service.dart';
 import '../services/moderator_service.dart';
 import '../services/purchase_service.dart';
 import '../core/providers/providers.dart';
@@ -32,13 +33,18 @@ class AppShell extends ConsumerStatefulWidget {
 }
 
 class AppShellState extends ConsumerState<AppShell> {
+  static const double chromeHeight = 116;
+  static const double contentTopGap = 10;
+
   /// Switch to map tab (index 0) — called from ChatTab back button
   void switchToMap() {
     widget.navigationShell.goBranch(0);
   }
 
-  int _onlineCount = 0;
+  int _chatOnlineFallback = 0;
+  int? _presenceTotal;
   StreamSubscription<int>? _onlineSub;
+  StreamSubscription<int>? _presenceSub;
   StreamSubscription<bool>? _modSub;
 
   // Cache the AdWidget to avoid "already in widget tree" crash
@@ -62,9 +68,13 @@ class AppShellState extends ConsumerState<AppShell> {
   void initState() {
     super.initState();
     final chat = sl<ChatService>();
-    _onlineCount = chat.onlineCount;
+    _chatOnlineFallback = chat.onlineCount;
     _onlineSub = chat.onlineStream.listen((n) {
-      if (mounted) setState(() => _onlineCount = n);
+      if (mounted) setState(() => _chatOnlineFallback = n);
+    });
+    sl<PresenceService>().start();
+    _presenceSub = sl<PresenceService>().totalStream.listen((n) {
+      if (mounted) setState(() => _presenceTotal = n);
     });
     _modSub = ModeratorService.instance.stream.listen((_) {
       if (mounted) setState(() {});
@@ -80,7 +90,10 @@ class AppShellState extends ConsumerState<AppShell> {
 
     // Оптимізація батареї на Xiaomi/Huawei — критично для сповіщень
     if (Platform.isAndroid) {
-      Future.delayed(const Duration(seconds: 3), () => _maybeShowBatteryOptPrompt());
+      Future.delayed(
+        const Duration(seconds: 3),
+        () => _maybeShowBatteryOptPrompt(),
+      );
     }
   }
 
@@ -98,7 +111,10 @@ class AppShellState extends ConsumerState<AppShell> {
 
     if (!mounted) return;
     final ctx = context;
-    await prefs.setInt(PrefsKeys.batteryOptPromptLastShown, DateTime.now().millisecondsSinceEpoch);
+    await prefs.setInt(
+      PrefsKeys.batteryOptPromptLastShown,
+      DateTime.now().millisecondsSinceEpoch,
+    );
     if (!ctx.mounted) return;
     _showBatteryOptDialog(ctx);
   }
@@ -139,6 +155,7 @@ class AppShellState extends ConsumerState<AppShell> {
   @override
   void dispose() {
     _onlineSub?.cancel();
+    _presenceSub?.cancel();
     _modSub?.cancel();
     super.dispose();
   }
@@ -160,85 +177,100 @@ class AppShellState extends ConsumerState<AppShell> {
             : Brightness.dark,
       ),
       child: Scaffold(
-          extendBodyBehindAppBar: true,
-          appBar: PreferredSize(
-            preferredSize: Size.fromHeight(52 + topPadding),
-            child: _NeptunAppBar(
-              title: _tabTitles[widget.navigationShell.currentIndex],
-              tabIcon: _tabIcons[widget.navigationShell.currentIndex],
-              onlineCount: _onlineCount,
-              isDark: isDark,
-              isPremium: isPremium,
-              isModerator: sl<ModeratorService>().isModerator,
-              topPadding: topPadding,
-              onLogoTap: _onLogoTap,
-              onTelegramTap: () => launchUrl(
-                Uri.parse('https://t.me/+Q0PcuV4OkuxmYjVi'),
-                mode: LaunchMode.externalApplication,
-              ),
-              onPremiumTap: () => context.push('/premium'),
-              onModeratorTap: () => context.push('/chat-admin'),
-              onThemeToggle: () {
-                HapticFeedback.lightImpact();
-                ref.read(themeModeProvider.notifier).toggle();
-              },
+        extendBodyBehindAppBar: true,
+        appBar: PreferredSize(
+          preferredSize: Size.fromHeight(chromeHeight + topPadding),
+          child: _NeptunAppBar(
+            title: _tabTitles[widget.navigationShell.currentIndex],
+            tabIcon: _tabIcons[widget.navigationShell.currentIndex],
+            onlineCount: _presenceTotal ?? _chatOnlineFallback,
+            isDark: isDark,
+            isPremium: isPremium,
+            isModerator: sl<ModeratorService>().isModerator,
+            topPadding: topPadding,
+            onLogoTap: _onLogoTap,
+            onTelegramTap: () => launchUrl(
+              Uri.parse('https://t.me/+Q0PcuV4OkuxmYjVi'),
+              mode: LaunchMode.externalApplication,
             ),
-          ),
-          body: Stack(
-            children: [
-              TabIndexScope(
-                index: widget.navigationShell.currentIndex,
-                child: widget.navigationShell,
-              ),
-              Positioned(
-                top: 52 + topPadding,
-                left: 0,
-                right: 0,
-                child: const OfflineBanner(),
-              ),
-            ],
-          ),
-          bottomNavigationBar: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // ── Banner Ad ──
-              if (!isPremium && sl<AdService>().isBannerAdLoaded)
-                Builder(
-                  builder: (_) {
-                    final currentAd = sl<AdService>().bannerAd;
-                    if (currentAd != null && currentAd != _cachedBannerAd) {
-                      _cachedBannerAd = currentAd;
-                      _cachedBannerWidget = AdWidget(ad: currentAd);
-                    }
-                    if (_cachedBannerWidget == null) {
-                      return const SizedBox.shrink();
-                    }
-                    final adHeight = currentAd?.size.height.toDouble() ?? 50;
-                    return Container(
-                      width: double.infinity,
-                      height: adHeight,
-                      clipBehavior: Clip.hardEdge,
-                      decoration: BoxDecoration(color: cs.surface),
-                      alignment: Alignment.center,
-                      child: _cachedBannerWidget!,
-                    );
-                  },
-                ),
-              // ── Tactical Nav Bar ──
-              TacticalNavBar(
-                selectedIndex: widget.navigationShell.currentIndex,
-                onTap: (i) => widget.navigationShell.goBranch(i),
-                destinations: const [
-                  TacticalNavDestination(icon: Icons.map_outlined, selectedIcon: Icons.map_rounded, label: 'Карта'),
-                  TacticalNavDestination(icon: Icons.radar_outlined, selectedIcon: Icons.radar_rounded, label: 'Радар'),
-                  TacticalNavDestination(icon: Icons.location_on_outlined, selectedIcon: Icons.location_on_rounded, label: 'Регіони'),
-                  TacticalNavDestination(icon: Icons.chat_bubble_outline_rounded, selectedIcon: Icons.chat_bubble_rounded, label: 'Чат'),
-                  TacticalNavDestination(icon: Icons.person_outline_rounded, selectedIcon: Icons.person_rounded, label: 'Профіль'),
-                ],
-              ),
-            ],
+            onPremiumTap: () => context.push('/premium'),
+            onModeratorTap: () => context.push('/chat-admin'),
+            onThemeToggle: () {
+              HapticFeedback.lightImpact();
+              ref.read(themeModeProvider.notifier).toggle();
+            },
           ),
         ),
+        body: Stack(
+          children: [
+            TabIndexScope(
+              index: widget.navigationShell.currentIndex,
+              child: widget.navigationShell,
+            ),
+            Positioned(
+              top: chromeHeight + topPadding,
+              left: 0,
+              right: 0,
+              child: const OfflineBanner(),
+            ),
+          ],
+        ),
+        bottomNavigationBar: ListView(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          children: [
+            // ── Banner Ad ──
+            if (!isPremium && sl<AdService>().isBannerAdLoaded)
+              Builder(
+                builder: (_) {
+                  final currentAd = sl<AdService>().bannerAd;
+                  if (currentAd != null && currentAd != _cachedBannerAd) {
+                    _cachedBannerAd = currentAd;
+                    _cachedBannerWidget = AdWidget(ad: currentAd);
+                  }
+                  if (_cachedBannerWidget == null) {
+                    return const SizedBox.shrink();
+                  }
+                  final adHeight = currentAd?.size.height.toDouble() ?? 50;
+                  return Container(
+                    width: double.infinity,
+                    height: adHeight,
+                    clipBehavior: Clip.hardEdge,
+                    decoration: BoxDecoration(color: cs.surface),
+                    alignment: Alignment.center,
+                    child: _cachedBannerWidget!,
+                  );
+                },
+              ),
+            TacticalNavBar(
+              selectedIndex: widget.navigationShell.currentIndex,
+              onTap: (i) => widget.navigationShell.goBranch(i),
+              destinations: const [
+                TacticalNavDestination(
+                  icon: Icons.map_outlined,
+                  selectedIcon: Icons.map_rounded,
+                  label: 'Карта',
+                ),
+                TacticalNavDestination(
+                  icon: Icons.radar_outlined,
+                  selectedIcon: Icons.radar_rounded,
+                  label: 'Радар',
+                ),
+                TacticalNavDestination(
+                  icon: Icons.chat_bubble_outline_rounded,
+                  selectedIcon: Icons.chat_bubble_rounded,
+                  label: 'Чат',
+                ),
+                TacticalNavDestination(
+                  icon: Icons.person_outline_rounded,
+                  selectedIcon: Icons.person_rounded,
+                  label: 'Профіль',
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -303,14 +335,12 @@ class AppShellState extends ConsumerState<AppShell> {
     final err = await sl<ModeratorService>().login(secret);
     if (!mounted) return;
     if (err != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(err)),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
     } else {
       setState(() {});
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Модератор увійшов')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Модератор увійшов')));
     }
   }
 
@@ -336,14 +366,13 @@ class AppShellState extends ConsumerState<AppShell> {
         await sl<ModeratorService>().logout();
         if (mounted) {
           setState(() {});
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Модератор вийшов')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Модератор вийшов')));
         }
       }
     });
   }
-
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -381,199 +410,203 @@ class _NeptunAppBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-
-    final surfaceColor = isDark ? const Color(0xFF0A0C10) : cs.surface;
+    final surfaceColor = isDark ? const Color(0xFF181E2D) : cs.surface;
+    final muted = cs.onSurface.withValues(alpha: 0.56);
+    final divider = isDark
+        ? const Color(0xFF252C3D)
+        : cs.outline.withValues(alpha: 0.18);
     return Container(
-      padding: EdgeInsets.only(top: topPadding),
+      padding: EdgeInsets.fromLTRB(14, topPadding + 8, 14, 0),
       decoration: BoxDecoration(
         color: surfaceColor,
-        border: Border(
-          bottom: BorderSide(
-            color: isDark ? const Color(0xFF1A1E26) : cs.outline.withValues(alpha: 0.2),
-            width: 0.5,
-          ),
-        ),
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(24)),
+        border: Border(bottom: BorderSide(color: divider, width: 1)),
       ),
       child: SizedBox(
-        height: 52,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            children: [
-              // ── Left: Logo + Title (7-tap area for moderator) ──
-              Expanded(
-                child: GestureDetector(
-                  onTap: onLogoTap,
-                  behavior: HitTestBehavior.opaque,
-                  child: Row(
-                    children: [
-                      _LogoMark(isDark: isDark, cs: cs),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                    Text(
-                      'Dron Alerts',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        color: cs.onSurface,
-                        letterSpacing: 0.5,
-                        height: 1.1,
-                      ),
-                    ),
-                    const SizedBox(height: 1),
-                    Row(
-                      children: [
-                        Flexible(
-                          child: AnimatedSwitcher(
-                            duration: MediaQuery.disableAnimationsOf(context)
-                                ? Duration.zero
-                                : const Duration(milliseconds: 260),
-                            switchInCurve: Curves.easeOutCubic,
-                            switchOutCurve: Curves.easeInCubic,
-                            transitionBuilder: (child, animation) {
-                              final curved = CurvedAnimation(
-                                parent: animation,
-                                curve: Curves.easeOutCubic,
-                              );
-                              return FadeTransition(
-                                opacity: curved,
-                                child: SlideTransition(
-                                  position: Tween<Offset>(
-                                    begin: const Offset(0, 0.12),
-                                    end: Offset.zero,
-                                  ).animate(curved),
-                                  child: child,
-                                ),
-                              );
-                            },
-                            child: Row(
-                              key: ValueKey<String>('$title-$tabIcon'),
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  tabIcon,
-                                  size: 10,
-                                  color: cs.primary.withValues(alpha: 0.7),
-                                ),
-                                const SizedBox(width: 4),
-                                Flexible(
-                                  child: Text(
-                                    title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: GoogleFonts.plusJakartaSans(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w500,
-                                      color: cs.onSurface.withValues(alpha: 0.5),
-                                      letterSpacing: 0.2,
-                                    ),
+        height: AppShellState.chromeHeight,
+        child: Column(
+          children: [
+            SizedBox(
+              height: 66,
+              child: Row(
+                children: [
+                  // ── Left: Logo + Title (7-tap area for moderator) ──
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: onLogoTap,
+                      behavior: HitTestBehavior.opaque,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Dron Alerts',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800,
+                              color: cs.onSurface,
+                              letterSpacing: 0,
+                              height: 1.1,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Flexible(
+                                child: AnimatedSwitcher(
+                                  duration:
+                                      MediaQuery.disableAnimationsOf(context)
+                                      ? Duration.zero
+                                      : const Duration(milliseconds: 260),
+                                  switchInCurve: Curves.easeOutCubic,
+                                  switchOutCurve: Curves.easeInCubic,
+                                  transitionBuilder: (child, animation) {
+                                    final curved = CurvedAnimation(
+                                      parent: animation,
+                                      curve: Curves.easeOutCubic,
+                                    );
+                                    return FadeTransition(
+                                      opacity: curved,
+                                      child: SlideTransition(
+                                        position: Tween<Offset>(
+                                          begin: const Offset(0, 0.12),
+                                          end: Offset.zero,
+                                        ).animate(curved),
+                                        child: child,
+                                      ),
+                                    );
+                                  },
+                                  child: Row(
+                                    key: ValueKey<String>('$title-$tabIcon'),
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(tabIcon, size: 15, color: muted),
+                                      const SizedBox(width: 5),
+                                      Flexible(
+                                        child: Text(
+                                          title,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: GoogleFonts.plusJakartaSans(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w700,
+                                            color: muted,
+                                            letterSpacing: 0.2,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
+                              ),
+                              if (onlineCount > 0) ...[
+                                Container(
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                  ),
+                                  width: 4,
+                                  height: 4,
+                                  decoration: BoxDecoration(
+                                    color: muted,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                _OnlineIndicator(
+                                  isDark: isDark,
+                                  count: onlineCount,
+                                  colorScheme: cs,
+                                ),
                               ],
-                            ),
-                          ),
-                        ),
-                        if (onlineCount > 0) ...[
-                          Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 6),
-                            width: 2,
-                            height: 2,
-                            decoration: BoxDecoration(
-                              color: cs.onSurface.withValues(alpha: 0.2),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          _OnlineIndicator(
-                            isDark: isDark,
-                            count: onlineCount,
-                            colorScheme: cs,
+                            ],
                           ),
                         ],
-                      ],
+                      ),
                     ),
+                  ),
+
+                  // ── Right: Action chips ──
+                  _ActionChip(
+                    icon: Icons.send_rounded,
+                    isDark: isDark,
+                    onTap: onTelegramTap,
+                    accentColor: cs.onSurface,
+                  ),
+                  const SizedBox(width: 6),
+                  if (title == 'Чат') ...[
+                    _ActionChip(
+                      icon: Icons.search_rounded,
+                      isDark: isDark,
+                      onTap: () {},
+                      accentColor: cs.onSurface,
+                    ),
+                    const SizedBox(width: 6),
+                    _ActionChip(
+                      icon: Icons.settings_rounded,
+                      isDark: isDark,
+                      onTap: () => context.push('/chat-settings'),
+                      accentColor: cs.onSurface,
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  if (isModerator) ...[
+                    _ActionChip(
+                      icon: Icons.admin_panel_settings_rounded,
+                      isDark: isDark,
+                      onTap: onModeratorTap ?? () {},
+                      accentColor: cs.tertiary,
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  _ProChip(
+                    isPremium: isPremium,
+                    isDark: isDark,
+                    onTap: onPremiumTap,
+                  ),
+                  const SizedBox(width: 6),
+                  _ActionChip(
+                    icon: isDark
+                        ? Icons.dark_mode_outlined
+                        : Icons.light_mode_outlined,
+                    isDark: isDark,
+                    onTap: onThemeToggle,
+                    accentColor: cs.onSurface,
+                  ),
+                ],
+              ),
+            ),
+            Divider(
+              height: 1,
+              thickness: 1,
+              color: divider.withValues(alpha: 0.6),
+            ),
+            GestureDetector(
+              onTap: onTelegramTap,
+              behavior: HitTestBehavior.opaque,
+              child: SizedBox(
+                height: 42,
+                child: Row(
+                  children: [
+                    Icon(Icons.near_me_outlined, size: 20, color: muted),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Офіційний Telegram канал',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: muted,
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                    ),
+                    Icon(Icons.chevron_right_rounded, size: 24, color: muted),
                   ],
                 ),
-                      ),
-                    ],
-                  ),
-                ),
               ),
-
-              // ── Right: Action chips ──
-              _ActionChip(
-                icon: Icons.send_rounded,
-                isDark: isDark,
-                onTap: onTelegramTap,
-                accentColor: const Color(0xFF2AABEE),
-              ),
-              const SizedBox(width: 8),
-              if (isModerator) ...[
-                _ActionChip(
-                  icon: Icons.admin_panel_settings_rounded,
-                  isDark: isDark,
-                  onTap: onModeratorTap ?? () {},
-                  accentColor: cs.tertiary,
-                ),
-                const SizedBox(width: 8),
-              ],
-              _ProChip(
-                isPremium: isPremium,
-                isDark: isDark,
-                onTap: onPremiumTap,
-              ),
-              const SizedBox(width: 8),
-              _ActionChip(
-                icon: isDark
-                    ? Icons.dark_mode_rounded
-                    : Icons.light_mode_rounded,
-                isDark: isDark,
-                onTap: onThemeToggle,
-                accentColor: isDark
-                    ? const Color(0xFF8B9FD4)
-                    : const Color(0xFFFF9500),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ═════════════════════════════════════════════════════════════════════════
-// LOGO MARK — simple "N" monogram with accent border
-// ═════════════════════════════════════════════════════════════════════════
-class _LogoMark extends StatelessWidget {
-  final bool isDark;
-  final ColorScheme cs;
-
-  const _LogoMark({required this.isDark, required this.cs});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 32,
-      height: 32,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(9),
-        gradient: LinearGradient(
-          colors: [cs.primary, cs.primary.withValues(alpha: 0.8)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        'D',
-        style: GoogleFonts.plusJakartaSans(
-          fontSize: 16,
-          fontWeight: FontWeight.w900,
-          color: Colors.white,
-          height: 1,
+            ),
+          ],
         ),
       ),
     );
@@ -596,13 +629,10 @@ class _ProChip extends StatelessWidget {
 
   static const _goldDark = Color(0xFFFFB800);
   static const _goldLight = Color(0xFFE5A500);
-  static const _goldBgDark = Color(0x26FFB800); // 15% opacity
-  static const _goldBgLight = Color(0x1AE5A500); // 10% opacity
 
   @override
   Widget build(BuildContext context) {
     final gold = isDark ? _goldDark : _goldLight;
-    final bg = isDark ? _goldBgDark : _goldBgLight;
 
     return GestureDetector(
       onTap: () {
@@ -611,14 +641,14 @@ class _ProChip extends StatelessWidget {
       },
       behavior: HitTestBehavior.opaque,
       child: Container(
-        height: 34,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
+        height: 38,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(10),
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(22),
           border: Border.all(
-            color: gold.withValues(alpha: isDark ? 0.25 : 0.3),
-            width: 0.5,
+            color: isDark ? const Color(0xFFEAF0F8) : gold,
+            width: 1.1,
           ),
         ),
         child: Row(
@@ -626,16 +656,16 @@ class _ProChip extends StatelessWidget {
           children: [
             Icon(
               isPremium ? Icons.star_rounded : Icons.workspace_premium_rounded,
-              size: 15,
-              color: gold,
+              size: 18,
+              color: isDark ? const Color(0xFFEAF0F8) : gold,
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: 6),
             Text(
               'PRO',
               style: GoogleFonts.plusJakartaSans(
-                fontSize: 11,
+                fontSize: 12,
                 fontWeight: FontWeight.w800,
-                color: gold,
+                color: isDark ? const Color(0xFFEAF0F8) : gold,
                 letterSpacing: 0.5,
               ),
             ),
@@ -674,17 +704,23 @@ class _ActionChip extends StatelessWidget {
         clipBehavior: Clip.none,
         children: [
           Container(
-            width: 34,
-            height: 34,
+            width: 38,
+            height: 38,
             decoration: BoxDecoration(
               color: isDark
-                  ? Colors.white.withValues(alpha: 0.07)
+                  ? const Color(0xFF252B3A)
                   : Colors.black.withValues(alpha: 0.04),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isDark
+                    ? const Color(0xFF30384A)
+                    : Colors.black.withValues(alpha: 0.05),
+                width: 1,
+              ),
             ),
             child: Icon(
               icon,
-              size: 17,
+              size: 22,
               color: accentColor.withValues(alpha: isDark ? 0.9 : 1.0),
             ),
           ),

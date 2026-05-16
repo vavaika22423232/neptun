@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { broadcastSSE } from '@/lib/chat-sse-stream';
-import { deleteByRegion, initStore } from '@/lib/markers-store';
 import { verifyIngestOrRespond } from '@/lib/ingest-auth-guard';
+import { clearTrackedTargetsByRegion, initTargetStore, syncTargetStoreFromRedis } from '@/lib/tracked-target-store';
 
 /**
  * POST /api/ingest/clear-region
@@ -34,19 +34,19 @@ export async function POST(request: Request) {
       ? place_contains.trim()
       : undefined;
 
-  await initStore();
-  const removed = await deleteByRegion(region, threat_types, placeContains);
+  await initTargetStore();
+  await syncTargetStoreFromRedis();
+  const targetsLost = await clearTrackedTargetsByRegion(region, threat_types, placeContains);
 
-  if (removed > 0) {
-    // Broadcast marker_new to trigger client refetch (cleared markers will be gone)
-    broadcastSSE({ type: 'marker_new', data: { cleared_region: region, removed } });
+  if (targetsLost > 0) {
+    broadcastSSE({ type: 'markers_refresh', data: { cleared_region: region, targets_lost: targetsLost } });
 
     console.log(
-      `[CLEAR-REGION] Removed ${removed} markers in ${region}` +
+      `[CLEAR-REGION] Cleared ${targetsLost} tracks in ${region}` +
       (threat_types ? ` (types: ${threat_types.join(', ')})` : '') +
       (placeContains ? ` (place ~ "${placeContains}")` : '')
     );
   }
 
-  return NextResponse.json({ ok: true, removed });
+  return NextResponse.json({ ok: true, removed: targetsLost, targets_lost: targetsLost });
 }

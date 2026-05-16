@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io' show Platform;
 import '../core/widgets/neptun_card.dart';
 import '../core/widgets/neptun_shimmer.dart';
-import '../services/window_manager.dart';
+import '../core/widgets/neptun_shell_modal.dart';
+import '../design/neptun_design.dart';
 
 // Головна сторінка безпеки
 class SafetyPage extends StatefulWidget {
@@ -18,54 +20,15 @@ class SafetyPage extends StatefulWidget {
 class _SafetyPageState extends State<SafetyPage> {
   @override
   Widget build(BuildContext context) {
-    // No Scaffold, No Gradient (handled by MainPage)
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Column(
-      children: [
-        // Header
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-          child: Row(
-            children: [
-              NeptunCard(
-                variant: NeptunCardVariant.elevated,
-                padding: const EdgeInsets.all(12),
-                child: Icon(
-                  Icons.shield_rounded,
-                  color: colorScheme.primary,
-                  size: 28,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Центр безпеки',
-                      style: Theme.of(context).textTheme.headlineSmall
-                          ?.copyWith(
-                            color: colorScheme.onSurface,
-                            fontWeight: FontWeight.bold,
-                          ),
-                    ),
-                    Text(
-                      'Інструменти та поради',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+    final tt = Theme.of(context).textTheme;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          'Центр безпеки',
+          style: tt.titleLarge?.copyWith(fontWeight: FontWeight.w700),
         ),
-
-        // Content
-        const Expanded(child: ToolsTab()),
-      ],
+      ),
+      body: const ToolsTab(),
     );
   }
 }
@@ -79,8 +42,6 @@ class ToolsTab extends StatefulWidget {
 }
 
 class _ToolsTabState extends State<ToolsTab> {
-  final bool _isLoading = false;
-
   // Медична картка
   String _bloodType = '';
   String _allergies = '';
@@ -185,13 +146,16 @@ class _ToolsTabState extends State<ToolsTab> {
     final allergiesController = TextEditingController(text: _allergies);
     final medicationsController = TextEditingController(text: _medications);
 
-    showDialog(
+    NeptunShellModal.showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
         title: Row(
           children: [
-            Icon(Icons.medical_information_rounded, color: Theme.of(context).colorScheme.error),
+            Icon(
+              Icons.medical_information_rounded,
+              color: Theme.of(context).colorScheme.error,
+            ),
             const SizedBox(width: 8),
             const Text('Медична картка'),
           ],
@@ -264,13 +228,16 @@ class _ToolsTabState extends State<ToolsTab> {
     final contact1Controller = TextEditingController(text: _emergencyContact1);
     final contact2Controller = TextEditingController(text: _emergencyContact2);
 
-    showDialog(
+    NeptunShellModal.showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
         title: Row(
           children: [
-            Icon(Icons.contact_phone_rounded, color: Theme.of(context).colorScheme.error),
+            Icon(
+              Icons.contact_phone_rounded,
+              color: Theme.of(context).colorScheme.error,
+            ),
             const SizedBox(width: 8),
             const Text('Екстрені контакти'),
           ],
@@ -328,7 +295,7 @@ class _ToolsTabState extends State<ToolsTab> {
   }
 
   void _showEmergencyBagDialog() {
-    showDialog(
+    NeptunShellModal.showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) {
@@ -337,7 +304,9 @@ class _ToolsTabState extends State<ToolsTab> {
           final progress = totalCount > 0 ? checkedCount / totalCount : 0.0;
 
           return AlertDialog(
-            backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+            backgroundColor: Theme.of(
+              context,
+            ).colorScheme.surfaceContainerHighest,
             title: Row(
               children: [
                 const Icon(Icons.backpack_rounded, color: Colors.grey),
@@ -350,7 +319,7 @@ class _ToolsTabState extends State<ToolsTab> {
                   ),
                   decoration: BoxDecoration(
                     color: progress == 1.0
-                        ? Theme.of(context).colorScheme.secondary
+                        ? NeptunStatus.safe
                         : Theme.of(context).colorScheme.tertiary,
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -375,7 +344,7 @@ class _ToolsTabState extends State<ToolsTab> {
                     value: progress,
                     backgroundColor: Colors.grey[300],
                     valueColor: AlwaysStoppedAnimation(
-                      progress == 1.0 ? Theme.of(context).colorScheme.secondary : Colors.grey,
+                      progress == 1.0 ? NeptunStatus.safe : Colors.grey,
                     ),
                     borderRadius: BorderRadius.circular(4),
                   ),
@@ -387,7 +356,7 @@ class _ToolsTabState extends State<ToolsTab> {
                     style: TextStyle(
                       fontSize: 12,
                       color: progress == 1.0
-                          ? Theme.of(context).colorScheme.secondary
+                          ? NeptunStatus.safe
                           : Colors.grey[600],
                     ),
                   ),
@@ -420,7 +389,7 @@ class _ToolsTabState extends State<ToolsTab> {
                             secondary: Icon(
                               item['icon'] as IconData,
                               color: isChecked
-                                  ? Theme.of(context).colorScheme.secondary
+                                  ? NeptunStatus.safe
                                   : Colors.grey,
                             ),
                             dense: true,
@@ -469,24 +438,6 @@ class _ToolsTabState extends State<ToolsTab> {
     final glassBorderColor = colorScheme.outlineVariant;
     final textColor = colorScheme.onSurface;
 
-    if (_isLoading) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Column(
-          children: const [
-            SizedBox(height: 16),
-            NeptunShimmer(height: 80, borderRadius: 16),
-            SizedBox(height: 12),
-            NeptunShimmer(height: 80, borderRadius: 16),
-            SizedBox(height: 12),
-            NeptunShimmer(height: 80, borderRadius: 16),
-            SizedBox(height: 12),
-            NeptunShimmer(height: 80, borderRadius: 16),
-          ],
-        ),
-      );
-    }
-
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(
@@ -495,9 +446,7 @@ class _ToolsTabState extends State<ToolsTab> {
           // 🏠 Карта укриттів - головна кнопка
           if (!Platform.isIOS) ...[
             GestureDetector(
-              onTap: () {
-                WindowManager().openPanel(PanelType.shelters);
-              },
+              onTap: () => context.push('/shelters'),
               child: Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
@@ -585,7 +534,7 @@ class _ToolsTabState extends State<ToolsTab> {
             title: 'Зарядіть телефон',
             description:
                 'Тримайте телефон зарядженим мінімум на 50% для отримання сповіщень',
-            color: colorScheme.secondary,
+            color: NeptunStatus.safe,
             glassColor: glassColor,
             glassBorderColor: glassBorderColor,
             isDark: isDark,
@@ -972,9 +921,7 @@ class _AchievementsTabState extends State<AchievementsTab> {
                             ? totalUnlocked / totalPossible
                             : 0,
                         backgroundColor: Colors.white.withValues(alpha: 0.1),
-                        valueColor: AlwaysStoppedAnimation(
-                          colorScheme.error,
-                        ),
+                        valueColor: AlwaysStoppedAnimation(colorScheme.error),
                         borderRadius: BorderRadius.circular(4),
                       ),
                     ],
@@ -1020,16 +967,11 @@ class _PremiumHintCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: colorScheme.tertiary.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: colorScheme.tertiary.withValues(alpha: 0.3),
-        ),
+        border: Border.all(color: colorScheme.tertiary.withValues(alpha: 0.3)),
       ),
       child: Row(
         children: [
-          Icon(
-            Icons.workspace_premium_rounded,
-            color: colorScheme.tertiary,
-          ),
+          Icon(Icons.workspace_premium_rounded, color: colorScheme.tertiary),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -1094,19 +1036,11 @@ class _AchievementCard extends StatelessWidget {
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: isMaxed
-                    ? [const Color(0xFFFFD700), const Color(0xFFFF8C00)]
-                    : currentTier > 0
-                    ? [
-                        colorScheme.error,
-                        colorScheme.error.withValues(alpha: 0.7),
-                      ]
-                    : [
-                        Colors.grey.shade800,
-                        Colors.grey.shade900,
-                      ], // Darker grey for locked
-              ),
+              color: isMaxed
+                  ? const Color(0xFFE6A800)
+                  : currentTier > 0
+                  ? colorScheme.error
+                  : Colors.grey.shade800,
               borderRadius: BorderRadius.circular(14),
             ),
             child: Icon(achievement.icon, color: Colors.white, size: 28),
@@ -1359,10 +1293,10 @@ class _EnhancedSafeStatusCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final statusColor = isSafe ? colorScheme.secondary : Colors.grey;
+    final statusColor = isSafe ? NeptunStatus.safe : Colors.grey;
 
     final borderColor = isSafe
-        ? colorScheme.secondary.withValues(alpha: 0.3)
+        ? NeptunStatus.safe.withValues(alpha: 0.3)
         : colorScheme.outlineVariant;
 
     return Container(
@@ -1411,7 +1345,7 @@ class _EnhancedSafeStatusCard extends StatelessWidget {
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
                                   color: isSafe
-                                      ? colorScheme.secondary
+                                      ? NeptunStatus.safe
                                       : colorScheme.onSurface,
                                   letterSpacing: 0.5,
                                 ),
@@ -1555,11 +1489,11 @@ class _EnhancedSafeStatusCard extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: isSafe
                             ? colorScheme.error.withValues(alpha: 0.1)
-                            : colorScheme.secondary.withValues(alpha: 0.1),
+                            : NeptunStatus.safe.withValues(alpha: 0.1),
                         border: Border.all(
                           color: isSafe
                               ? colorScheme.error.withValues(alpha: 0.3)
-                              : colorScheme.secondary.withValues(alpha: 0.3),
+                              : NeptunStatus.safe.withValues(alpha: 0.3),
                         ),
                         borderRadius: BorderRadius.circular(14),
                       ),
@@ -1572,7 +1506,7 @@ class _EnhancedSafeStatusCard extends StatelessWidget {
                                 : Icons.home_rounded,
                             color: isSafe
                                 ? colorScheme.error
-                                : colorScheme.secondary,
+                                : NeptunStatus.safe,
                           ),
                           const SizedBox(width: 8),
                           Text(
@@ -1582,7 +1516,7 @@ class _EnhancedSafeStatusCard extends StatelessWidget {
                               fontSize: 15,
                               color: isSafe
                                   ? colorScheme.error
-                                  : colorScheme.secondary,
+                                  : NeptunStatus.safe,
                             ),
                           ),
                         ],
@@ -1646,7 +1580,7 @@ class _EnhancedFamilyMemberCard extends StatelessWidget {
       colorScheme.error,
       Colors.grey,
       colorScheme.tertiary,
-      colorScheme.secondary,
+      NeptunStatus.safe,
       colorScheme.error,
       Colors.white,
     ];
@@ -1658,7 +1592,7 @@ class _EnhancedFamilyMemberCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: member.isSafe
-              ? colorScheme.secondary.withValues(alpha: 0.3)
+              ? NeptunStatus.safe.withValues(alpha: 0.3)
               : colorScheme.error.withValues(alpha: 0.3),
         ),
       ),
@@ -1675,12 +1609,7 @@ class _EnhancedFamilyMemberCard extends StatelessWidget {
                       width: 56,
                       height: 56,
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            avatarColor,
-                            avatarColor.withValues(alpha: 0.7),
-                          ],
-                        ),
+                        color: avatarColor,
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Center(
@@ -1705,7 +1634,7 @@ class _EnhancedFamilyMemberCard extends StatelessWidget {
                         height: 16,
                         decoration: BoxDecoration(
                           color: member.isOnline
-                              ? colorScheme.secondary
+                              ? NeptunStatus.safe
                               : Colors.grey,
                           shape: BoxShape.circle,
                           border: Border.all(
@@ -1742,7 +1671,7 @@ class _EnhancedFamilyMemberCard extends StatelessWidget {
                             ),
                             decoration: BoxDecoration(
                               color: member.isSafe
-                                  ? colorScheme.secondary.withValues(alpha: 0.15)
+                                  ? NeptunStatus.safe.withValues(alpha: 0.15)
                                   : colorScheme.error.withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(20),
                             ),
@@ -1755,7 +1684,7 @@ class _EnhancedFamilyMemberCard extends StatelessWidget {
                                       : Icons.warning_amber_rounded,
                                   size: 14,
                                   color: member.isSafe
-                                      ? colorScheme.secondary
+                                      ? NeptunStatus.safe
                                       : colorScheme.error,
                                 ),
                                 const SizedBox(width: 4),
@@ -1765,7 +1694,7 @@ class _EnhancedFamilyMemberCard extends StatelessWidget {
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
                                     color: member.isSafe
-                                        ? colorScheme.secondary
+                                        ? NeptunStatus.safe
                                         : colorScheme.error,
                                   ),
                                 ),
@@ -1821,14 +1750,20 @@ class _EnhancedFamilyMemberCard extends StatelessWidget {
                             Icon(
                               _getBatteryIcon(member.batteryLevel!),
                               size: 14,
-                              color: _getBatteryColor(member.batteryLevel!, colorScheme),
+                              color: _getBatteryColor(
+                                member.batteryLevel!,
+                                colorScheme,
+                              ),
                             ),
                             const SizedBox(width: 2),
                             Text(
                               '${member.batteryLevel}%',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: _getBatteryColor(member.batteryLevel!, colorScheme),
+                                color: _getBatteryColor(
+                                  member.batteryLevel!,
+                                  colorScheme,
+                                ),
                               ),
                             ),
                           ],
@@ -1962,7 +1897,7 @@ class _EnhancedFamilyMemberCard extends StatelessWidget {
   }
 
   Color _getBatteryColor(int level, ColorScheme colorScheme) {
-    if (level > 50) return colorScheme.secondary;
+    if (level > 50) return NeptunStatus.safe;
     if (level > 20) return colorScheme.tertiary;
     return colorScheme.error;
   }
@@ -2067,17 +2002,8 @@ class _EnhancedEmptyFamilyCard extends StatelessWidget {
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [colorScheme.error, colorScheme.primary],
-                      ),
+                      color: colorScheme.primary,
                       borderRadius: BorderRadius.circular(14),
-                      boxShadow: [
-                        BoxShadow(
-                          color: colorScheme.error.withValues(alpha: 0.3),
-                          blurRadius: 8,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
                     ),
                     child: const Row(
                       mainAxisAlignment: MainAxisAlignment.center,

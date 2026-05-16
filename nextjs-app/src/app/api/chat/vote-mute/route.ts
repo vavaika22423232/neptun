@@ -4,6 +4,7 @@ import fsp from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
 import { loadChatBans, saveChatBans } from '@/lib/admin/data';
+import { anonymousGuestLabel } from '@/lib/chat-nicknames';
 import { requireChatAuth } from '@/lib/chat-auth';
 
 const DATA_DIR = process.env.DATA_DIR || '/data';
@@ -87,7 +88,10 @@ export async function POST(request: Request) {
     }
 
     const targetDeviceId = original.deviceId || original.device_id || '';
-    const targetNickname = original.userId || original.nickname || 'Анонім';
+    const targetNickname =
+      original.userId ||
+      original.nickname ||
+      (targetDeviceId ? anonymousGuestLabel(String(targetDeviceId)) : 'Гість');
 
     if (!targetDeviceId) {
       return NextResponse.json({ error: 'Не можна замьютити цього користувача' }, { status: 400 });

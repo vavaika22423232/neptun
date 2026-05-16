@@ -235,6 +235,10 @@ body:has(#next-logo) nav[aria-label="Панель керування карто�
   background: var(--neptun-map-canvas, #0b0f14);
 }
 
+#maplibre-map[data-basemap="satellite"] .maplibregl-canvas {
+  filter: brightness(0.68) contrast(1.15) saturate(0.75) invert(0.04);
+}
+
 #maplibre-map .maplibregl-canvas,
 #maplibre-map canvas {
   display: block !important;
@@ -382,21 +386,22 @@ html.embed-mode .leaflet-popup-pane {
 }
 
 .stateObject.alarm {
-  fill: rgba(143, 0, 0, 0.64);
-  stroke: rgba(179, 0, 0, 1);
-  filter: drop-shadow(0 0 9px rgba(130, 0, 0, 0.58));
-  animation: alarmGlassPulse 1.9s ease-in-out infinite;
+  fill: rgba(180, 0, 0, 0.55);
+  stroke: rgba(230, 30, 30, 1);
+  stroke-width: 0.8;
+  filter: drop-shadow(0 0 14px rgba(200, 0, 0, 0.7)) drop-shadow(0 0 4px rgba(255, 60, 60, 0.4));
+  animation: alarmGlassPulse 2.2s ease-in-out infinite;
 }
 .theme-light .stateObject.alarm {
-  fill: rgba(143, 0, 0, 0.56);
-  stroke: rgba(95, 0, 0, 1);
-  filter: drop-shadow(0 0 7px rgba(110, 0, 0, 0.38));
+  fill: rgba(160, 0, 0, 0.48);
+  stroke: rgba(120, 0, 0, 1);
+  filter: drop-shadow(0 0 10px rgba(130, 0, 0, 0.45));
 }
 
-/* GPU-compositable: animate only opacity, not fill color */
+/* GPU-compositable: animate opacity + subtle stroke brightness */
 @keyframes alarmGlassPulse {
-  0%, 100% { opacity: 0.88; }
-  50% { opacity: 1; }
+  0%, 100% { opacity: 0.72; }
+  50%       { opacity: 1;    }
 }
 
 /* District regions */
@@ -426,15 +431,16 @@ html.embed-mode .leaflet-popup-pane {
 }
 
 .dist.alarm {
-  fill: rgba(143, 0, 0, 0.58);
-  stroke: transparent;
-  stroke-width: 0;
-  filter: drop-shadow(0 0 7px rgba(130, 0, 0, 0.45));
+  fill: rgba(180, 0, 0, 0.52);
+  stroke: rgba(230, 30, 30, 0.6);
+  stroke-width: 0.4;
+  filter: drop-shadow(0 0 10px rgba(200, 0, 0, 0.55));
+  animation: alarmGlassPulse 2.2s ease-in-out infinite;
 }
 .theme-light .dist.alarm {
-  fill: rgba(143, 0, 0, 0.48);
-  stroke: transparent;
-  filter: drop-shadow(0 0 6px rgba(110, 0, 0, 0.34));
+  fill: rgba(160, 0, 0, 0.42);
+  stroke: rgba(120, 0, 0, 0.5);
+  filter: drop-shadow(0 0 8px rgba(110, 0, 0, 0.34));
 }
 
 /* ============================================
@@ -445,9 +451,54 @@ html.embed-mode .leaflet-popup-pane {
   display: flex;
   align-items: center;
   justify-content: center;
+  isolation: isolate;
+}
+
+.threat-marker::before {
+  content: '';
+  position: absolute;
+  inset: 50%;
+  width: var(--marker-halo-radius, 0px);
+  height: var(--marker-halo-radius, 0px);
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  background: rgba(255, 64, 96, var(--marker-halo-opacity, 0));
+  box-shadow: 0 0 18px rgba(255, 64, 96, var(--marker-halo-opacity, 0));
+  pointer-events: none;
+  z-index: -1;
+}
+
+.threat-marker.behavior-drift::before,
+.threat-marker.behavior-watch::before,
+.threat-marker.behavior-float::before {
+  animation: threatBreath var(--marker-pulse-ms, 1500ms) ease-in-out infinite;
+}
+
+.threat-marker.behavior-fast::before,
+.threat-marker.behavior-strike::before {
+  animation: threatStrikePulse var(--marker-pulse-ms, 900ms) ease-out infinite;
+}
+
+.threat-marker.behavior-float::before {
+  background: rgba(120, 195, 255, var(--marker-halo-opacity, 0));
+  box-shadow: 0 0 16px rgba(120, 195, 255, var(--marker-halo-opacity, 0));
+}
+
+.threat-marker.behavior-watch::before {
+  background: rgba(120, 231, 178, var(--marker-halo-opacity, 0));
+  box-shadow: 0 0 16px rgba(120, 231, 178, var(--marker-halo-opacity, 0));
+}
+
+.threat-marker[data-state='stale']::before,
+.threat-marker[data-state='lost']::before,
+.threat-marker[data-state='split_candidate']::before {
+  animation: none;
+  opacity: 0;
 }
 
 .threat-marker img {
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 100%;
   object-fit: contain;
@@ -463,6 +514,34 @@ html.embed-mode .leaflet-popup-pane {
 .threat-marker {
   /* box-shadow is GPU-compositable, drop-shadow filter is not */
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
+}
+
+@keyframes threatBreath {
+  0%, 100% {
+    opacity: 0.45;
+    transform: translate(-50%, -50%) scale(0.82);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.18);
+  }
+}
+
+@keyframes threatStrikePulse {
+  0% {
+    opacity: 0.95;
+    transform: translate(-50%, -50%) scale(0.72);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.55);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .threat-marker::before {
+    animation: none !important;
+  }
 }
 
 /* ============================================
@@ -482,46 +561,117 @@ html.embed-mode .leaflet-popup-pane {
 }
 
 /* ============================================
-   Tooltip — Material You surface
+/* ============================================
+   Tooltip — Premium Glassmorphism Tactical Card
    ============================================ */
+@keyframes tooltipIn {
+  from { opacity: 0; transform: translate3d(var(--tx, 0), calc(var(--ty, 0) - 6px), 0) scale(0.97); }
+  to   { opacity: 1; transform: translate3d(var(--tx, 0), var(--ty, 0), 0) scale(1); }
+}
+
 .marker-tooltip {
   position: fixed;
   z-index: 10000;
   pointer-events: none;
-  background: rgba(10, 10, 11, 0.9);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: white;
-  padding: 10px 14px;
+  /* Glassmorphism base */
+  background: rgba(8, 12, 20, 0.88);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-left: 3px solid #ff2a5f;
+  color: rgba(255, 255, 255, 0.93);
+  padding: 10px 13px 10px 12px;
   border-radius: 12px;
   font-family: var(--font-inter), sans-serif;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  box-shadow:
+    0 0 0 1px rgba(255, 42, 95, 0.15),
+    0 8px 32px rgba(0, 0, 0, 0.65),
+    0 2px 8px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255,255,255,0.06);
   font-size: 12px;
+  min-width: 140px;
   will-change: transform, opacity;
-  transition: opacity 0.15s ease;
+  transition: opacity 0.12s ease;
   white-space: nowrap;
-}
-.theme-light .marker-tooltip {
-  color: #1a1d24;
-  text-shadow: 0 2px 8px rgba(255,255,255,0.8), 0 0 2px rgba(255,255,255,1);
+  animation: tooltipIn 0.18s cubic-bezier(0.22,1,0.36,1) both;
 }
 
-.tooltip-type {
-  font-weight: 600;
-  font-size: 13px;
-  margin-bottom: 4px;
-  color: var(--primary);
+.marker-tooltip .tooltip-type {
+  font-weight: 700;
+  font-size: 12.5px;
+  margin-bottom: 3px;
+  color: #ff2a5f;
+  letter-spacing: 0.01em;
 }
 
-.tooltip-place {
-  color: var(--on-surface-variant);
+.marker-tooltip .tooltip-place {
+  color: rgba(255,255,255,0.72);
   margin-bottom: 2px;
+  font-size: 12px;
 }
 
-.tooltip-time {
-  color: var(--outline);
+.marker-tooltip .tooltip-course {
+  color: rgba(100, 200, 255, 0.90);
   font-size: 11px;
+  font-weight: 600;
+  margin-top: 3px;
 }
+
+.marker-tooltip .tooltip-trust {
+  font-size: 10.5px;
+  color: rgba(255,171,64,0.9);
+  margin-bottom: 5px;
+  line-height: 1.35;
+  border-bottom: 1px solid rgba(255,171,64,0.18);
+  padding-bottom: 5px;
+}
+
+.marker-tooltip .tooltip-time {
+  color: rgba(255,255,255,0.35);
+  font-size: 10.5px;
+  margin-top: 3px;
+}
+
+.marker-tooltip .tooltip-eta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: rgba(255, 200, 0, 0.12);
+  border: 1px solid rgba(255, 200, 0, 0.22);
+  color: rgba(255, 200, 0, 0.95);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.marker-tooltip .tooltip-loitering {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: rgba(100, 200, 255, 0.12);
+  border: 1px solid rgba(100, 200, 255, 0.22);
+  color: rgba(100, 200, 255, 0.95);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.theme-light .marker-tooltip {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(0,0,0,0.08);
+  border-left-color: #ff2a5f;
+  color: #1a1d24;
+  box-shadow: 0 0 0 1px rgba(255,42,95,0.12), 0 8px 24px rgba(0,0,0,0.18);
+}
+.theme-light .marker-tooltip .tooltip-type { color: #e0003a; }
+.theme-light .marker-tooltip .tooltip-place { color: rgba(0,0,0,0.60); }
+.theme-light .marker-tooltip .tooltip-time { color: rgba(0,0,0,0.38); }
+.theme-light .marker-tooltip .tooltip-course { color: #0070bb; }
 
 /* ============================================
    Animations
@@ -537,13 +687,22 @@ html.embed-mode .leaflet-popup-pane {
 }
 
 @keyframes alarmPulse {
-  0%,
-  100% {
-    fill: var(--error-container);
-  }
-  50% {
-    fill: #6d0012;
-  }
+  0%,100% { fill: #b40018; opacity: 0.55; }
+  50%      { fill: #ff0033; opacity: 0.78; }
+}
+
+/* Loitering orbit ring */
+@keyframes loiterOrbit {
+  from { transform: rotate(0deg)   scale(1.0); opacity: 0.7; }
+  50%  { transform: rotate(180deg) scale(1.18); opacity: 0.45; }
+  to   { transform: rotate(360deg) scale(1.0); opacity: 0.7; }
+}
+@keyframes loiterPulse {
+  0%,100% { box-shadow: 0 0 0 0   rgba(100,200,255,0.55), 0 0 0 8px  rgba(100,200,255,0.0); }
+  50%     { box-shadow: 0 0 0 6px rgba(100,200,255,0.25), 0 0 0 14px rgba(100,200,255,0.0); }
+}
+.behavior-loitering {
+  animation: loiterPulse 2.2s ease-in-out infinite !important;
 }
 
 @keyframes spin {
@@ -564,10 +723,6 @@ html.embed-mode .leaflet-popup-pane {
    Mobile Optimizations
    ============================================ */
 @media screen and (max-width: 640px) {
-  .crimea-flag-marker {
-    display: none !important;
-  }
-
   .marker-tooltip {
     font-size: 11px;
     padding: 10px 12px;
@@ -609,30 +764,299 @@ html.embed-mode .leaflet-popup-pane {
 }
 
 /* ============================================
-   Admin marker popup
+   Маркерні попапи (Leaflet + MapLibre) — Neptun «card»
    ============================================ */
-.admin-marker-popup .leaflet-popup-content-wrapper {
-  background: #0a0a0b !important;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 12px !important;
-  box-shadow: 0 32px 64px rgba(0, 0, 0, 0.9);
-  color: #fff;
+.neptun-marker-popup-shell .leaflet-popup-content-wrapper,
+.neptun-maplibre-popup.maplibregl-popup .maplibregl-popup-content {
+  padding: 0 !important;
+  border-radius: 14px !important;
+  background: var(--surface-container-lowest) !important;
+  color: var(--on-surface) !important;
+  border: 1px solid var(--chrome-border);
+  box-shadow:
+    var(--hud-modal-shadow),
+    0 0 0 1px color-mix(in srgb, var(--tertiary) 12%, transparent);
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  overflow: hidden;
 }
-.admin-marker-popup .leaflet-popup-content {
-  margin: 12px 14px !important;
+
+.neptun-marker-popup-shell .leaflet-popup-content {
+  margin: 0 !important;
+  width: auto !important;
+  min-width: min(236px, calc(100vw - 32px));
 }
+
+.neptun-maplibre-popup.maplibregl-popup .maplibregl-popup-content {
+  min-width: min(236px, calc(100vw - 32px));
+}
+
 .admin-marker-popup .leaflet-popup-tip {
-  background: rgba(10, 10, 11, 0.6) !important;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--surface-container-lowest) !important;
+  border: 1px solid var(--chrome-border);
 }
-.admin-marker-popup .leaflet-popup-close-button {
-  color: rgba(255, 255, 255, 0.5) !important;
-  font-size: 18px !important;
+
+.neptun-marker-popup-shell .leaflet-popup-close-button,
+.neptun-maplibre-popup.maplibregl-popup .maplibregl-popup-close-button {
+  color: var(--on-surface-variant) !important;
+  font-size: 20px !important;
+  font-weight: 300;
+  line-height: 1;
+  width: 30px !important;
+  height: 30px !important;
+  padding: 0 !important;
   top: 6px !important;
-  right: 8px !important;
+  right: 6px !important;
+  border-radius: 8px;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
 }
-.admin-marker-popup .leaflet-popup-close-button:hover {
-  color: #ff5252 !important;
+
+.neptun-marker-popup-shell .leaflet-popup-close-button:hover,
+.neptun-maplibre-popup.maplibregl-popup .maplibregl-popup-close-button:hover {
+  color: var(--tertiary) !important;
+  background: color-mix(in srgb, var(--tertiary) 10%, transparent) !important;
+}
+
+/* Хвіст MapLibre — колір як у картки */
+.neptun-maplibre-popup.maplibregl-popup.maplibregl-popup-anchor-top .maplibregl-popup-tip,
+.neptun-maplibre-popup.maplibregl-popup.maplibregl-popup-anchor-top-left .maplibregl-popup-tip,
+.neptun-maplibre-popup.maplibregl-popup.maplibregl-popup-anchor-top-right .maplibregl-popup-tip {
+  border-bottom-color: var(--surface-container-lowest) !important;
+}
+
+.neptun-maplibre-popup.maplibregl-popup.maplibregl-popup-anchor-bottom .maplibregl-popup-tip,
+.neptun-maplibre-popup.maplibregl-popup.maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,
+.neptun-maplibre-popup.maplibregl-popup.maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip {
+  border-top-color: var(--surface-container-lowest) !important;
+}
+
+.neptun-maplibre-popup.maplibregl-popup.maplibregl-popup-anchor-left .maplibregl-popup-tip {
+  border-right-color: var(--surface-container-lowest) !important;
+}
+
+.neptun-maplibre-popup.maplibregl-popup.maplibregl-popup-anchor-right .maplibregl-popup-tip {
+  border-left-color: var(--surface-container-lowest) !important;
+}
+
+/* Внутрішня картка (`buildMarkerPopup`) — Компактний HUD-дизайн */
+.neptun-popup-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: rgba(10, 12, 16, 0.94) !important;
+  backdrop-filter: blur(12px);
+}
+
+.neptun-popup-card__trust {
+  font-size: 10.5px;
+  line-height: 1.3;
+  padding: 5px 30px 5px 10px;
+  margin: 0;
+  color: #ffab40;
+  background: rgba(255, 171, 64, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.neptun-popup-card__main {
+  padding: 8px 10px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.neptun-popup-card__header {
+  padding: 0;
+  margin-bottom: 2px;
+}
+
+.neptun-popup-card__category {
+  margin: 0 0 1px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--hud-muted);
+}
+
+.neptun-popup-card__headline {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: #ffffff;
+}
+
+.neptun-popup-card__status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.neptun-popup-card__pill {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2.5px 7px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.neptun-popup-card__pill--observed {
+  color: #10b981;
+  border-color: rgba(16, 185, 129, 0.25);
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.neptun-popup-card__pill--extrapolated {
+  color: #3b82f6;
+  border-color: rgba(59, 130, 246, 0.25);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.neptun-popup-card__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.neptun-popup-card__row:last-of-type {
+  border-bottom: none;
+}
+
+.neptun-popup-card__row-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--hud-muted);
+}
+
+.neptun-popup-card__row-value {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64c8ff;
+}
+
+.neptun-popup-card__footer {
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.neptun-popup-card__time {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.35);
+  font-family: monospace;
+}
+html.dark .neptun-popup-card__pill--stale {
+  color: #fbbf24;
+}
+
+.neptun-popup-card__pill--lost {
+  color: #64748b;
+}
+html.dark .neptun-popup-card__pill--lost {
+  color: #94a3b8;
+}
+
+.neptun-popup-card__pill--static {
+  color: var(--primary);
+}
+
+.neptun-popup-card__pill--manual {
+  color: #7c3aed;
+}
+html.dark .neptun-popup-card__pill--manual {
+  color: #c4b5fd;
+}
+
+.neptun-popup-card__pill--split_candidate {
+  color: #dc2626;
+}
+html.dark .neptun-popup-card__pill--split_candidate {
+  color: #fca5a5;
+}
+
+/* ── Loitering + estimated pills ── */
+.neptun-popup-card__pill--loitering {
+  color: #0ea5e9;
+  background: rgba(14, 165, 233, 0.1);
+  border-color: rgba(14, 165, 233, 0.28);
+}
+html.dark .neptun-popup-card__pill--loitering {
+  color: #7dd3fc;
+}
+
+.neptun-popup-card__pill--estimated {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.28);
+  font-style: italic;
+}
+html.dark .neptun-popup-card__pill--estimated {
+  color: #fcd34d;
+}
+
+.neptun-popup-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 10px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.neptun-popup-card__btn {
+  border-radius: 11px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 650;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: inherit;
+  transition:
+    transform 0.12s ease,
+    filter 0.12s ease;
+}
+
+.neptun-popup-card__btn:active {
+  transform: scale(0.98);
+}
+
+.neptun-popup-card__btn .material-icons {
+  font-size: 17px;
+}
+
+.neptun-popup-card__btn--danger {
+  background: color-mix(in srgb, #ef4444 22%, var(--surface-container-lowest));
+  color: #dc2626;
+  border: 1px solid color-mix(in srgb, #ef4444 35%, transparent);
+}
+
+html.dark .neptun-popup-card__btn--danger {
+  background: color-mix(in srgb, #ef4444 28%, var(--surface-container-low));
+  color: #fecaca;
+  border-color: color-mix(in srgb, #fecaca 22%, transparent);
+}
+
+.neptun-popup-card__btn--muted {
+  background: color-mix(in srgb, var(--on-surface) 6%, var(--surface-container-lowest));
+  color: var(--on-surface-variant);
+  border: 1px solid var(--outline-variant);
+}
+
+html.dark .neptun-popup-card__btn--muted {
+  background: color-mix(in srgb, #fff 8%, var(--surface-container-low));
+  color: #e2e8f0;
 }
 
 /* ============================================
@@ -644,7 +1068,7 @@ html.embed-mode .leaflet-popup-pane {
 }
 
 .dark-satellite-layer {
-  /* Stable Google hybrid tiles with a tactical dark treatment close to DeepState-style readability. */
+  /* Stable Google hybrid tiles with a tactical dark treatment for readability. */
   filter: grayscale(100%) saturate(0.72) contrast(1.38) brightness(0.46);
   opacity: 1 !important;
   /* No transition on filter — expensive GPU repaint on theme switch, one-time is fine */
@@ -681,24 +1105,24 @@ html.embed-mode .leaflet-popup-pane {
   filter: saturate(0.9) contrast(0.98) brightness(1.05);
 }
 
-.deepstate-ukraine-layer {
+.ua-raster-basemap-layer {
   filter: none;
   opacity: 1 !important;
 }
 
-.deepstate-ukraine-light-layer {
+.ua-raster-basemap-light-layer {
   opacity: 0 !important;
 }
 
-.theme-light .deepstate-ukraine-dark-layer {
+.theme-light .ua-raster-basemap-dark-layer {
   opacity: 0 !important;
 }
 
-.theme-light .deepstate-ukraine-light-layer {
+.theme-light .ua-raster-basemap-light-layer {
   opacity: 1 !important;
 }
 
-.leaflet-tile.deepstate-ukraine-layer {
+.leaflet-tile.ua-raster-basemap-layer {
   mix-blend-mode: normal !important;
   border: 0 !important;
   outline: 0 !important;
@@ -725,9 +1149,503 @@ html.embed-mode .leaflet-popup-pane {
   100% { opacity: 1; }
 }
 
+/* Screen-reader-only document title (avoid display:none on sole H1 for crawlers/AT) */
+.seo-page-title-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
 /* Off-screen content optimization */
-.seo-page-title,
 [data-content-visibility] {
   content-visibility: auto;
   contain-intrinsic-size: 0 500px;
 }
+
+/* ============================================
+   AlarmStatusBar
+   ============================================ */
+.alarm-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 12px 0 10px;
+  border-radius: 14px;
+  border: 1px solid var(--hud-border);
+  background: var(--hud-surface);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: var(--hud-shadow);
+  overflow: hidden;
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+.alarm-status-bar--active {
+  border-color: rgba(185, 0, 0, 0.3);
+  background: color-mix(in srgb, var(--hud-surface) 88%, rgba(185, 0, 0, 0.25));
+}
+
+.alarm-status-bar__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.alarm-status-bar__dot--ok {
+  background: #22c55e;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
+}
+
+.alarm-status-bar__dot--alarm {
+  background: #dc2626;
+  box-shadow: 0 0 10px rgba(220, 38, 38, 0.7);
+  animation: alarmDotPing 1.4s ease-in-out infinite;
+}
+
+@keyframes alarmDotPing {
+  0%, 100% { box-shadow: 0 0 10px rgba(220, 38, 38, 0.7); transform: scale(1); }
+  50%       { box-shadow: 0 0 18px rgba(220, 38, 38, 0.9); transform: scale(1.25); }
+}
+
+.alarm-status-bar__count {
+  font-size: 12px;
+  font-weight: 800;
+  color: #ef4444;
+  flex-shrink: 0;
+  min-width: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.alarm-status-bar__label-clear {
+  font-size: 12px;
+  font-weight: 600;
+  color: #22c55e;
+}
+
+.alarm-status-bar__chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+  /* smooth auto-scroll */
+}
+
+.alarm-status-bar__chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: rgba(220, 38, 38, 0.18);
+  border: 1px solid rgba(220, 38, 38, 0.32);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #fca5a5;
+  white-space: nowrap;
+  flex-shrink: 0;
+  letter-spacing: 0.01em;
+}
+
+.theme-light .alarm-status-bar__chip {
+  background: rgba(185, 0, 0, 0.1);
+  border-color: rgba(185, 0, 0, 0.22);
+  color: #b91c1c;
+}
+
+/* ============================================
+   BottomBar 2.0 — Tactical HUD
+   ============================================ */
+.bottom-bar {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 2400;
+  border-top: 1px solid var(--hud-border);
+  background: var(--hud-surface);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: var(--hud-shadow);
+  transition: background 0.3s, border-color 0.3s;
+  display: flex;
+  flex-direction: column;
+}
+
+.bottom-bar__ribbon {
+  border-bottom: 1px solid var(--hud-border);
+}
+
+/* Single-row HUD strip */
+.tactical-hud-strip {
+  display: flex;
+  align-items: stretch;
+  width: max-content;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 0 12px;
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 4px);
+  height: 40px;
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  font-size: 11px;
+  color: var(--hud-text);
+}
+
+@media (min-width: 640px) {
+  .tactical-hud-strip { height: 44px; font-size: 12px; }
+}
+
+.tactical-hud-segment {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  transition: background 0.15s;
+  cursor: default;
+  user-select: none;
+}
+
+.tactical-hud-segment--logo {
+  text-decoration: none;
+  gap: 7px;
+  padding: 0 12px 0 4px;
+}
+.tactical-hud-segment--logo:hover { background: var(--hud-hover); border-radius: 0; }
+
+.tactical-hud-segment--btn {
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  border-radius: 0;
+}
+.tactical-hud-segment--btn:hover { background: var(--hud-hover); }
+.tactical-hud-segment--btn:active { background: var(--hud-active); }
+
+.tactical-hud-segment--alarm { background: rgba(185, 0, 0, 0.08); }
+
+.tactical-hud-segment--update { display: none; }
+@media (min-width: 480px) { .tactical-hud-segment--update { display: flex; } }
+
+.tactical-hud-brand {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--hud-text);
+}
+@media (min-width: 640px) { .tactical-hud-brand { font-size: 12px; } }
+
+.tactical-hud-divider {
+  width: 1px;
+  align-self: stretch;
+  background: color-mix(in srgb, var(--hud-divider) 50%, transparent);
+  flex-shrink: 0;
+}
+
+.tactical-hud-divider--wide { display: none; }
+@media (min-width: 480px) { .tactical-hud-divider--wide { display: block; } }
+
+.tactical-hud-dot-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+}
+
+.tactical-hud-ping {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: #dc2626;
+  animation: hudPing 1.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+  opacity: 0.6;
+}
+
+@keyframes hudPing {
+  75%, 100% { transform: scale(2.2); opacity: 0; }
+}
+
+.tactical-hud-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+}
+.tactical-hud-dot--alarm  { background: #dc2626; box-shadow: 0 0 8px rgba(220, 38, 38, 0.7); }
+.tactical-hud-dot--ok     { background: var(--hud-divider); }
+.tactical-hud-dot--online { background: #22c55e; box-shadow: 0 0 6px rgba(34, 197, 94, 0.6); }
+
+.tactical-hud-stat-label { font-weight: 500; color: var(--hud-muted); }
+.tactical-hud-stat-label--sm { font-size: 10px; }
+
+.tactical-hud-stat-value { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--hud-text); }
+.tactical-hud-stat-value--alarm { color: #ef4444; }
+.tactical-hud-stat-value--muted { color: var(--hud-muted); }
+
+.tactical-hud-chevron { width: 11px; height: 11px; color: var(--hud-muted); flex-shrink: 0; }
+
+.tactical-hud-icon { width: 13px; height: 13px; flex-shrink: 0; color: var(--hud-muted); }
+.tactical-hud-icon--sm { width: 11px; height: 11px; }
+
+.tactical-hud-update-label {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--hud-muted);
+  white-space: nowrap;
+}
+
+/* ============================================
+   ThreatFeedDrawer — Bottom Sheet
+   ============================================ */
+.threat-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2390;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  pointer-events: auto;
+}
+
+.threat-drawer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2395;
+  max-height: 72dvh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 20px 20px 0 0;
+  border: 1px solid var(--hud-border);
+  border-bottom: none;
+  background: var(--hud-surface-strong);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.5), 0 -2px 0 rgba(255, 255, 255, 0.06);
+  transform: translateY(100%);
+  transition: transform 0.38s cubic-bezier(0.32, 0.72, 0, 1);
+  pointer-events: auto;
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+}
+
+.threat-drawer--open {
+  transform: translateY(0);
+}
+
+.threat-drawer__handle-bar {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 4px;
+  flex-shrink: 0;
+}
+
+.threat-drawer__handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 99px;
+  background: var(--hud-divider);
+}
+
+.threat-drawer__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 16px 10px;
+  border-bottom: 1px solid var(--hud-border);
+  flex-shrink: 0;
+}
+
+.threat-drawer__header-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--hud-text);
+  flex: 1;
+  min-width: 0;
+}
+
+.threat-drawer__live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.6);
+  flex-shrink: 0;
+  animation: liveDotPulse 2s ease-in-out infinite;
+}
+
+@keyframes liveDotPulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+
+.threat-drawer__count-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--hud-muted);
+  background: var(--hud-chip);
+  padding: 2px 8px;
+  border-radius: 99px;
+  flex-shrink: 0;
+}
+
+.threat-drawer__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: var(--hud-chip);
+  border-radius: 8px;
+  color: var(--hud-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+.threat-drawer__close:hover { background: var(--hud-hover); color: var(--hud-text); }
+
+.threat-drawer__list {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px 0 4px;
+}
+
+.threat-drawer__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 40px 24px;
+  color: var(--hud-muted);
+  font-size: 13px;
+}
+
+.threat-drawer__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 9px 16px;
+  transition: background 0.12s;
+}
+.threat-drawer__item:hover { background: var(--hud-hover); }
+.threat-drawer__item + .threat-drawer__item { border-top: 1px solid color-mix(in srgb, var(--hud-divider) 40%, transparent); }
+
+.threat-drawer__item-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+.threat-drawer__item-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.threat-drawer__item-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.threat-drawer__item-type {
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.threat-drawer__item-count {
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(255, 107, 53, 0.2);
+  border: 1px solid rgba(255, 107, 53, 0.3);
+  color: #ff6b35;
+  padding: 0 5px;
+  border-radius: 99px;
+}
+
+.threat-drawer__item-time {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--hud-muted);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.threat-drawer__item-place {
+  font-size: 11.5px;
+  color: var(--hud-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ============================================
+   Radar Ping — нова CSS-анімація для маркерів
+   ============================================ */
+@keyframes radarPing {
+  0% {
+    opacity: 0.9;
+    transform: translate(-50%, -50%) scale(0.5);
+  }
+  80% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(2.2);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(2.2);
+  }
+}
+
+/* Stronger ballistic pulse — більш агресивна */
+.threat-marker.behavior-strike::before {
+  animation: ballisticStrikePulse var(--marker-pulse-ms, 720ms) ease-out infinite;
+}
+
+@keyframes ballisticStrikePulse {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.5);
+    box-shadow: 0 0 0 0 rgba(220, 20, 60, 0.8);
+  }
+  60% {
+    opacity: 0.5;
+    transform: translate(-50%, -50%) scale(1.4);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.8);
+    box-shadow: 0 0 0 20px rgba(220, 20, 60, 0);
+  }
+}
+

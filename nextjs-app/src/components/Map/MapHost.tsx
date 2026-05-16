@@ -10,6 +10,10 @@ export type MapHostProps = {
   onMarkerAction?: () => void;
   isEmbed?: boolean;
   ukraineOnly?: boolean;
+  basemapOverride?: import('@/lib/map-leaflet-performance').MapBasemapKind;
+  autoTrack?: boolean;
+  focusedTargetId?: string | null;
+  onFocusedTargetIdChange?: (id: string | null) => void;
 };
 
 function MapHostInner(props: MapHostProps) {

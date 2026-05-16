@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import '../../../core/widgets/neptun_card.dart';
@@ -91,7 +93,7 @@ class _ThreatDashboardPageState extends State<ThreatDashboardPage> {
       appBar: AppBar(
         title: Text(
           'Радар загроз',
-          style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
         ),
         centerTitle: false,
       ),
@@ -144,7 +146,7 @@ class _ThreatDashboardPageState extends State<ThreatDashboardPage> {
                       activeAlarms > 0
                           ? 'Активні тривоги: $activeAlarms'
                           : 'Тривог немає',
-                      style: GoogleFonts.inter(
+                      style: GoogleFonts.plusJakartaSans(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
                         color: cs.onSurface,
@@ -153,7 +155,7 @@ class _ThreatDashboardPageState extends State<ThreatDashboardPage> {
                     const SizedBox(height: 2),
                     Text(
                       'Загрози на карті: ${_markers.length}',
-                      style: GoogleFonts.inter(
+                      style: GoogleFonts.plusJakartaSans(
                         fontSize: 13,
                         color: cs.onSurface.withValues(alpha: 0.5),
                       ),
@@ -176,14 +178,14 @@ class _ThreatDashboardPageState extends State<ThreatDashboardPage> {
         if (_markers.isNotEmpty) ...[
           Text(
             'Активні загрози',
-            style: GoogleFonts.inter(
+            style: GoogleFonts.plusJakartaSans(
               fontSize: 15,
               fontWeight: FontWeight.w600,
               color: cs.onSurface,
             ),
           ),
           const SizedBox(height: 8),
-          ..._buildThreatCards(cs),
+          ..._buildThreatCards(context, cs),
         ] else
           const NeptunEmptyState(
             icon: Icons.shield_rounded,
@@ -194,7 +196,7 @@ class _ThreatDashboardPageState extends State<ThreatDashboardPage> {
     );
   }
 
-  List<Widget> _buildThreatCards(ColorScheme cs) {
+  List<Widget> _buildThreatCards(BuildContext context, ColorScheme cs) {
     final grouped = <String, List<Map<String, dynamic>>>{};
     for (final m in _markers) {
       final type = (m['threatType'] ?? m['type'] ?? 'unknown') as String;
@@ -205,7 +207,10 @@ class _ThreatDashboardPageState extends State<ThreatDashboardPage> {
       return Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: NeptunCard(
-          onTap: () {},
+          onTap: () {
+            HapticFeedback.lightImpact();
+            context.go('/');
+          },
           child: Row(
             children: [
               Icon(
@@ -220,7 +225,7 @@ class _ThreatDashboardPageState extends State<ThreatDashboardPage> {
                   children: [
                     Text(
                       _threatLabel(entry.key),
-                      style: GoogleFonts.inter(
+                      style: GoogleFonts.plusJakartaSans(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                         color: cs.onSurface,
@@ -233,7 +238,7 @@ class _ThreatDashboardPageState extends State<ThreatDashboardPage> {
                             .where((s) => s.isNotEmpty)
                             .take(3)
                             .join(', '),
-                        style: GoogleFonts.inter(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 12,
                           color: cs.onSurface.withValues(alpha: 0.5),
                         ),

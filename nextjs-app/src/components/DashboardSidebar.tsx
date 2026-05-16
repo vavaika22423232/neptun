@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { Alarm, BallisticThreat, Marker, PresenceData } from '@/types';
 import { THREAT_NAMES } from '@/types';
-import { TELEGRAM_CHANNEL_URL, GOOGLE_PLAY_URL, APP_STORE_URL } from '@/lib/constants';
+import { TELEGRAM_CHANNEL_URL } from '@/lib/constants';
+import { trackedAppStoreUrl, trackedGooglePlayUrl } from '@/lib/app-download-urls';
 import { getLastActivityMs } from '@/lib/marker-activity';
 import { glass } from '@/lib/glassSurface';
 
@@ -178,11 +179,11 @@ export default function DashboardSidebar({
 
         {/* App Links */}
         <div className="mt-8 mb-4 grid grid-cols-2 gap-3">
-          <a href={APP_STORE_URL} target="_blank" rel="noopener noreferrer" className={`flex flex-col items-center justify-center p-3 text-center transition ${glass.tile}`}>
+          <a href={trackedAppStoreUrl('dashboard_sidebar')} target="_blank" rel="noopener noreferrer" data-neptun-app-cta="dashboard_sidebar" data-neptun-store="app_store" className={`flex flex-col items-center justify-center p-3 text-center transition ${glass.tile}`}>
             <span className="mb-1 bg-gradient-to-br from-brand-300 to-brand-500 bg-clip-text text-xl font-bold tracking-widest text-transparent">N</span>
             <span className="text-[11px] text-white/60">App Store</span>
           </a>
-          <a href={GOOGLE_PLAY_URL} target="_blank" rel="noopener noreferrer" className={`flex flex-col items-center justify-center p-3 text-center transition ${glass.tile}`}>
+          <a href={trackedGooglePlayUrl('dashboard_sidebar')} target="_blank" rel="noopener noreferrer" data-neptun-app-cta="dashboard_sidebar" data-neptun-store="google_play" className={`flex flex-col items-center justify-center p-3 text-center transition ${glass.tile}`}>
             <span className="mb-1 text-xl font-bold tracking-widest text-[#69f0ae]">N</span>
             <span className="text-[11px] text-white/60">Google Play</span>
           </a>

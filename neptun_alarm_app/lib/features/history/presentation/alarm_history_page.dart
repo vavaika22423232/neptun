@@ -154,7 +154,7 @@ class _AlarmHistoryPageState extends State<AlarmHistoryPage> {
         appBar: AppBar(
           title: Text(
             'Історія тривог',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+            style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
           ),
           centerTitle: false,
         ),
@@ -177,7 +177,7 @@ class _AlarmHistoryPageState extends State<AlarmHistoryPage> {
                 const SizedBox(height: 20),
                 Text(
                   'PRO функція',
-                  style: GoogleFonts.inter(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
                     color: cs.onSurface,
@@ -187,7 +187,7 @@ class _AlarmHistoryPageState extends State<AlarmHistoryPage> {
                 Text(
                   ProGate.featureDescriptions[ProFeature.alarmHistory] ?? '',
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 14,
                     color: cs.onSurface.withValues(alpha: 0.6),
                   ),
@@ -209,7 +209,7 @@ class _AlarmHistoryPageState extends State<AlarmHistoryPage> {
       appBar: AppBar(
         title: Text(
           'Історія тривог',
-          style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
         ),
         centerTitle: false,
       ),
@@ -313,7 +313,12 @@ class _AlarmHistoryPageState extends State<AlarmHistoryPage> {
         itemCount: items.length,
         itemBuilder: (context, index) {
           final record = items[index];
-          return _AlarmTile(record: record, cs: cs);
+          return KeyedSubtree(
+            key: ValueKey(
+              '${record.region}|${record.timestamp.millisecondsSinceEpoch}|${record.type}|${record.isActive}',
+            ),
+            child: _AlarmTile(record: record, cs: cs),
+          );
         },
       ),
     );
@@ -380,7 +385,7 @@ class _AlarmTile extends StatelessWidget {
               children: [
                 Text(
                   record.region,
-                  style: GoogleFonts.inter(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: cs.onSurface,
@@ -389,7 +394,7 @@ class _AlarmTile extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   record.isActive ? 'Активна тривога' : 'Відбій',
-                  style: GoogleFonts.inter(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 12,
                     color: record.isActive
                         ? cs.error
@@ -401,7 +406,7 @@ class _AlarmTile extends StatelessWidget {
           ),
           Text(
             '${record.timestamp.hour.toString().padLeft(2, '0')}:${record.timestamp.minute.toString().padLeft(2, '0')}',
-            style: GoogleFonts.inter(
+            style: GoogleFonts.plusJakartaSans(
               fontSize: 12,
               color: cs.onSurface.withValues(alpha: 0.4),
             ),
@@ -434,7 +439,7 @@ class _FilterChip extends StatelessWidget {
         child: Chip(
           label: Text(
             label,
-            style: GoogleFonts.inter(
+            style: GoogleFonts.plusJakartaSans(
               fontSize: 13,
               fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
               color: isSelected

@@ -4,7 +4,7 @@ import { getAdminHeaderSecret, getJwtSecret, safeCompare } from '@/lib/server-se
 import { redisFixedWindowAllow } from '@/lib/redis-rate-limit';
 import { getClientIp, ipRedisTag } from '@/lib/client-ip';
 import { AuthTokenSchema } from '@/lib/api-schemas';
-import { getNicknameForDevice } from '@/lib/chat-nicknames';
+import { anonymousGuestLabel, getNicknameForDevice, isChatGuestPlaceholderNickname } from '@/lib/chat-nicknames';
 
 const ACCESS_TTL = 3600;  // 1 hour
 const REFRESH_TTL = 86400 * 30; // 30 days
@@ -54,8 +54,8 @@ export async function POST(request: Request) {
     const registered = getNicknameForDevice(deviceId);
     if (registered && registered.length > 0) {
       nickname = registered;
-    } else if (!nickname) {
-      nickname = 'Анонім';
+    } else if (!nickname || isChatGuestPlaceholderNickname(nickname)) {
+      nickname = anonymousGuestLabel(deviceId);
     }
 
     // SENSITIVE NICKNAME PROTECTION
@@ -66,8 +66,8 @@ export async function POST(request: Request) {
       const adminSecret = getAdminHeaderSecret();
       const providedSecret = request.headers.get('X-Admin-Secret') || '';
       if (!adminSecret || !providedSecret || !safeCompare(providedSecret, adminSecret)) {
-        // Force generic name if attempt to spoof admin/mod
-        nickname = 'Анонім';
+        // Force anonymous guest label (unique per device) if attempt to spoof admin/mod
+        nickname = anonymousGuestLabel(deviceId);
       }
     }
 

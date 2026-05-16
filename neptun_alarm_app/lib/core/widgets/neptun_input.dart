@@ -95,7 +95,11 @@ class NeptunInput extends StatelessWidget {
           borderSide: BorderSide(color: cs.error, width: 1),
         ),
         prefixIcon: prefixIcon != null
-            ? Icon(prefixIcon, size: 20, color: cs.onSurface.withValues(alpha: 0.5))
+            ? Icon(
+                prefixIcon,
+                size: 20,
+                color: cs.onSurface.withValues(alpha: 0.5),
+              )
             : null,
         suffixIcon: suffix,
       ),

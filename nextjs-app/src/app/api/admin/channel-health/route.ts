@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server';
 import { requireAdminAuth } from '@/lib/admin/apiAuth';
 import { getRedis } from '@/lib/redis';
+import { ADMIN_FEED_REDIS_KEY } from '@/lib/admin-feed-store';
 
 export const dynamic = 'force-dynamic';
-
-const REDIS_FEED_KEY = 'admin:feed';
 
 const EXPECTED_CHANNELS = [
   { slug: 'raketa_trevoga', name: 'Чому тривога | Радар', priority: 2 },
@@ -36,6 +35,26 @@ const EXPECTED_CHANNELS = [
   { slug: 'sumygo', name: 'SUMY GO', priority: 3 },
   { slug: 'svessainfo', name: 'Свеса INFO', priority: 3 },
   { slug: 'Northern_Sich_ukr', name: 'Північний Сич', priority: 3 },
+  { slug: 'radar_top_ua', name: 'Куди летить? | Радар', priority: 2 },
+  { slug: 'kremen_sv', name: 'Кременчуцький Миколай', priority: 3 },
+  { slug: 'cherkasy_nebbo', name: 'Черкаське небо', priority: 3 },
+  { slug: 'pivden_varta', name: 'Вартові Півдня', priority: 3 },
+  { slug: 'krolevetsnews', name: 'Новини Кролевця та Сумської області', priority: 3 },
+  { slug: 'shovnebi', name: 'Шо там в небі', priority: 3 },
+  { slug: 'JeniokSay', name: 'Женьок Вещає', priority: 3 },
+  { slug: 'ReniHub', name: 'ReniHub | Одещина', priority: 3 },
+  { slug: 'kudy_letyt', name: 'Ринда моніторить', priority: 2 },
+  { slug: 'UkraineRadar_24_7', name: 'Де Ракета? | Радар України', priority: 2 },
+  { slug: 'eRadarrua', name: 'єРадар', priority: 2 },
+  { slug: 'pivden_FPV', name: 'Вартові Півдня Фпв/Молнія', priority: 3 },
+  { slug: 'PhantomChe', name: 'Чернігівський Фантом', priority: 3 },
+  { slug: 'kharkivlife', name: 'Харьков life | Харків', priority: 3 },
+  { slug: 'newspn', name: 'ПН | Преступности.НЕТ', priority: 3 },
+  { slug: 'tlknewsua', name: 'TLk News', priority: 3 },
+  { slug: 'rdsprostir', name: 'RDS-prostir', priority: 3 },
+  { slug: 'Karkivw', name: 'Харківський Простір Онлайн', priority: 3 },
+  { slug: 'dnepr_nagladach', name: 'Наглядач Днепра', priority: 3 },
+  { slug: 'Donetskiy_on', name: 'Донецький', priority: 3 },
 ] as const;
 
 type FeedStatus =
@@ -149,7 +168,7 @@ export async function GET() {
 
   try {
     const redis = getRedis();
-    const raw = await redis.lrange(REDIS_FEED_KEY, 0, 499);
+    const raw = await redis.lrange(ADMIN_FEED_REDIS_KEY, 0, 499);
 
     for (const item of raw) {
       let entry: FeedEntry;

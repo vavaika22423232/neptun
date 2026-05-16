@@ -6,9 +6,13 @@ import { requireChatAuth } from '@/lib/chat-auth';
 import { coalesceMarkerNewEvents } from '@/lib/marker-sse-coalesce';
 
 const MAX_SSE_CLIENTS = 10_000;
-const MAX_SSE_PER_IP = 5;
+const _ssePerIpConfigured = Number.parseInt(process.env.NEPTUN_SSE_MAX_PER_IP ?? '24', 10);
+const MAX_SSE_PER_IP = Math.min(
+  100,
+  Math.max(5, Number.isFinite(_ssePerIpConfigured) && _ssePerIpConfigured > 0 ? _ssePerIpConfigured : 24),
+);
 const KEEPALIVE_INTERVAL = 55_000; // 55s — well within nginx 120s timeout
-const MARKER_DEBOUNCE_MS = 2_000;  // Batch marker_new events within 2s window
+const MARKER_DEBOUNCE_MS = 300;    // Short burst guard; clients apply marker payloads immediately
 const ONLINE_DEBOUNCE_MS = 5_000;  // Debounce online count broadcasts
 const ONLINE_SYNC_INTERVAL = 90_000; // Sync Redis counter — rarer = less CPU across workers
 
@@ -20,15 +24,31 @@ const keepalivePayload = encoder.encode(': keepalive\n\n');
 
 setInterval(() => {
   if (clients.size === 0) return;
-  const deadClients: ReadableStreamDefaultController[] = [];
-  clients.forEach((controller) => {
+  void (async () => {
+    let markersPing: Uint8Array | null = null;
     try {
-      controller.enqueue(keepalivePayload);
+      const { initTargetStore, getTrackedTargetsVersion } = await import('@/lib/tracked-target-store');
+      await initTargetStore();
+      markersPing = encoder.encode(
+        `data: ${JSON.stringify({
+          type: 'markers_sync',
+          data: { markers_version: getTrackedTargetsVersion() },
+        })}\n\n`,
+      );
     } catch {
-      deadClients.push(controller);
+      /* ignore */
     }
-  });
-  cleanupDead(deadClients);
+    const deadClients: ReadableStreamDefaultController[] = [];
+    clients.forEach((controller) => {
+      try {
+        controller.enqueue(keepalivePayload);
+        if (markersPing) controller.enqueue(markersPing);
+      } catch {
+        deadClients.push(controller);
+      }
+    });
+    cleanupDead(deadClients);
+  })();
 }, KEEPALIVE_INTERVAL);
 
 const SSE_WORKER_KEY = `sse:worker:${process.pid}`;
@@ -208,13 +228,38 @@ export async function handleChatSSEGet(request: Request) {
       await syncOnlineCounter();
       const count = await getGlobalOnlineCount();
 
+      let markers_version = 0;
+      try {
+        const { initTargetStore, getTrackedTargetsVersion } = await import('@/lib/tracked-target-store');
+        await initTargetStore();
+        markers_version = getTrackedTargetsVersion();
+      } catch {
+        markers_version = 0;
+      }
+
       try {
         controller.enqueue(
           encoder.encode(
-            `data: ${JSON.stringify({ type: 'connected', data: { online: count, pid: process.pid } })}\n\n`
+            `data: ${JSON.stringify({
+              type: 'connected',
+              data: { online: count, pid: process.pid, markers_version },
+            })}\n\n`,
           )
         );
       } catch { /* ignore */ }
+
+      try {
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({
+              type: 'markers_sync',
+              data: { markers_version },
+            })}\n\n`,
+          )
+        );
+      } catch {
+        /* ignore */
+      }
 
       // Current alarms snapshot — SSE otherwise only pushes `alarm_update` when Redis data changes,
       // so new clients would wait for the next HTTP poll (60s) or API tick.

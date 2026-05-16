@@ -1,27 +1,18 @@
 import { NextResponse } from 'next/server';
 import { requireAdminAuth } from '@/lib/admin/apiAuth';
-import { adminPatchMarker, initStore } from '@/lib/markers-store';
+import { updateTrackedTarget } from '@/lib/tracked-target-store';
 
 export async function POST(request: Request) {
   const denied = await requireAdminAuth();
   if (denied) return denied;
 
   try {
-    await initStore();
     const body = await request.json();
     const { id, ...updates } = body;
-
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
-
-    if (updates.lat !== undefined && (updates.lat < 43 || updates.lat > 53.8)) {
-      return NextResponse.json({ error: 'Invalid lat' }, { status: 400 });
-    }
-    if (updates.lng !== undefined && (updates.lng < 21 || updates.lng > 41.5)) {
-      return NextResponse.json({ error: 'Invalid lng' }, { status: 400 });
-    }
-
-    const ok = await adminPatchMarker(String(id), updates);
-    if (!ok) return NextResponse.json({ error: 'Marker not found' }, { status: 404 });
+    const updatesRec = updates as Record<string, unknown>;
+    const ok = await updateTrackedTarget(String(id), updatesRec);
+    if (!ok) return NextResponse.json({ error: 'Track not found' }, { status: 404 });
 
     return NextResponse.json({ status: 'ok' });
   } catch (err) {

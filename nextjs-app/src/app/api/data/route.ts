@@ -1,7 +1,7 @@
 import { cache, withETag } from '@/lib/cache';
 import type { Marker } from '@/types';
 import { buildMarkers, buildMarkerOptionsForApi } from '@/lib/build-markers';
-import { maybePrune, getLastIngestTime, getMarkersVersion, initStore } from '@/lib/markers-store';
+import { getTrackedTargetsVersion, initTargetStore, syncTargetStoreFromRedis } from '@/lib/tracked-target-store';
 
 const CACHE_KEY = 'data_markers';
 const CACHE_KEY_EXTENDED = 'data_markers_extended';
@@ -11,7 +11,8 @@ const STALE_TTL = 300_000; // 5 minutes
 export async function GET(request: Request) {
   const clientETag = request.headers.get('If-None-Match');
 
-  await initStore();
+  await initTargetStore();
+  await syncTargetStoreFromRedis();
 
   // timeRange>=60 — same as public map (`API_DATA_PUBLIC_QUERY`); retention = admin monitorPeriod
   let extendedRange = false;
@@ -23,9 +24,6 @@ export async function GET(request: Request) {
 
   const cacheKey = extendedRange ? CACHE_KEY_EXTENDED : CACHE_KEY;
 
-  // Background prune (in-memory, max once per minute)
-  maybePrune();
-
   // Check cache
   const { entry, isStale } = cache.getWithStale<{
     tracks: Marker[];
@@ -36,8 +34,8 @@ export async function GET(request: Request) {
   }>(cacheKey, STALE_TTL);
 
   if (entry && !isStale) {
-    const liveV = getMarkersVersion();
-    if (entry.data.markers_version === liveV) {
+    const liveTargetV = getTrackedTargetsVersion();
+    if (entry.data.markers_version === liveTargetV) {
       return withETag(entry.data, entry.etag, clientETag, {
         'X-NEPTUN-Marker-Count': String(entry.data.tracks.length),
         'X-NEPTUN-Markers-Version': String(entry.data.markers_version),
@@ -64,8 +62,8 @@ export async function GET(request: Request) {
     tracks: markers,
     ballistic_threat,
     server_time: Date.now(),
-    data_age: getLastIngestTime() > 0 ? Math.round((Date.now() - getLastIngestTime()) / 1000) : null,
-    markers_version: getMarkersVersion(),
+    data_age: null, // we can derive this from tracks if needed, but keeping it simple for now
+    markers_version: getTrackedTargetsVersion(),
   };
 
   const newEntry = cache.set(cacheKey, responseData, CACHE_TTL);

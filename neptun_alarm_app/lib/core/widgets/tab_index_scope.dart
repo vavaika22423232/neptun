@@ -5,11 +5,7 @@ import 'package:flutter/material.dart';
 class TabIndexScope extends InheritedWidget {
   final int index;
 
-  const TabIndexScope({
-    super.key,
-    required this.index,
-    required super.child,
-  });
+  const TabIndexScope({super.key, required this.index, required super.child});
 
   static TabIndexScope? maybeOf(BuildContext context) {
     return context.dependOnInheritedWidgetOfExactType<TabIndexScope>();

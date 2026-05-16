@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import '../core/widgets/neptun_shell_modal.dart';
+
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
 
@@ -132,7 +134,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                   const SizedBox(width: 16),
                   Expanded(
-                    child: _buildStatCard('Друзі', '12', Theme.of(context).colorScheme.secondary),
+                    child: _buildStatCard('Друзі', '12', Theme.of(context).colorScheme.primary),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
@@ -315,7 +317,7 @@ class _ProfilePageState extends State<ProfilePage> {
     final allergiesController = TextEditingController(text: _allergies);
     final medicationsController = TextEditingController(text: _medications);
 
-    showDialog(
+    NeptunShellModal.showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor:
@@ -366,7 +368,7 @@ class _ProfilePageState extends State<ProfilePage> {
     final contact1Controller = TextEditingController(text: _emergencyContact1);
     final contact2Controller = TextEditingController(text: _emergencyContact2);
 
-    showDialog(
+    NeptunShellModal.showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Colors.white,
@@ -406,7 +408,7 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   void _showEmergencyBagDialog() {
-    showDialog(
+    NeptunShellModal.showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) {

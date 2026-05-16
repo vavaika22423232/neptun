@@ -31,17 +31,11 @@ class _ChatAnimatedMessageItemState extends State<ChatAnimatedMessageItem>
       duration: const Duration(milliseconds: 250),
       vsync: this,
     );
-    _fade = CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOut,
-    );
+    _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
     _slide = Tween<Offset>(
       begin: const Offset(0, 0.15),
       end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOutCubic,
-    ));
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
     if (widget.animate) {
       _controller.forward();
     } else {
@@ -59,10 +53,7 @@ class _ChatAnimatedMessageItemState extends State<ChatAnimatedMessageItem>
   Widget build(BuildContext context) {
     return FadeTransition(
       opacity: _fade,
-      child: SlideTransition(
-        position: _slide,
-        child: widget.child,
-      ),
+      child: SlideTransition(position: _slide, child: widget.child),
     );
   }
 }

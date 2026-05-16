@@ -4,19 +4,24 @@
  */
 export const MAP_NIGHT = {
   /** App chrome / map letterbox */
-  canvasBg: '#0B0F14',
+  canvasBg: '#181f29',
   /** Oblast outline when zoomed in (zoom expression applied in layer) */
   oblastLine: 'rgba(148, 163, 184, 0.22)',
   /** Alarm fill — hex + окремий fill-opacity (пульс / fade). */
   alarmFillHex: '#8f0000',
   alarmFillDistrictHex: '#8f0000',
   /** Тьмяний фон для областей без тривоги, коли десь є активна тривога */
-  calmDimFill: '#070a0e',
+  calmDimFill: '#11171e',
+} as const;
+
+/** Світла підложка (Liberty): той самий прийом, але ледь помітний відтінок без «сірої маски». */
+export const MAP_DAY = {
+  calmDimFill: '#1e293b',
 } as const;
 
 /** Hybrid / raster “night” readability (MapLibre raster paint). */
 export function rasterNightPaint(
-  basemap: 'googleHybrid' | 'rasterVectorDark' | 'deepStateUkraine',
+  basemap: 'googleHybrid' | 'rasterVectorDark' | 'uaRasterBasemap',
 ): Record<string, unknown> {
   if (basemap === 'rasterVectorDark') {
     return {
@@ -27,7 +32,7 @@ export function rasterNightPaint(
       'raster-fade-duration': 0,
     };
   }
-  if (basemap === 'deepStateUkraine') {
+  if (basemap === 'uaRasterBasemap') {
     return {
       'raster-saturation': 0,
       'raster-contrast': 0,

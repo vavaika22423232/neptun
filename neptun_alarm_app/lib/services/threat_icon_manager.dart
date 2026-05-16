@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:ui' as ui;
 import 'package:jovial_svg/jovial_svg.dart';
+import 'package:neptun_alarm_app/core/utils/app_debug_log.dart';
 
 class ThreatIconManager {
   static final ThreatIconManager _instance = ThreatIconManager._internal();
@@ -13,6 +14,8 @@ class ThreatIconManager {
   bool _isLoaded = false;
 
   static const Map<String, String> iconAssets = {
+    /// API `marker_icon` fpvdrone.png (e.g. @kherson_non_drone channel)
+    'marker_fpvdrone': 'assets/icons/fpvdrone.png',
     'shahed': 'assets/icons/shahed3.png',
     'raketa': 'assets/icons/icon_balistic.svg',
     'avia': 'assets/icons/avia.png',
@@ -95,13 +98,25 @@ class ThreatIconManager {
         _icons[key] = frame.image;
       }
     } catch (e) {
-      debugPrint('Failed to load icon $key: $e');
+      appDebugLog('Failed to load icon $key: $e');
       _icons[key] = null;
     }
   }
 
   ui.Image? getIcon(String threatType) {
     return _icons[threatType] ?? _icons['default'];
+  }
+
+  /// Prefer server [`marker_icon`] when set (filename under /public on web → bundled asset key here).
+  ui.Image? getIconForThreatMarker({
+    required String threatType,
+    String? markerIcon,
+  }) {
+    final fn = (markerIcon ?? '').toLowerCase();
+    if (fn.contains('fpvdrone')) {
+      return _icons['marker_fpvdrone'] ?? _icons[threatType] ?? _icons['default'];
+    }
+    return getIcon(threatType);
   }
 
   Map<String, ui.Image?> get icons => _icons;

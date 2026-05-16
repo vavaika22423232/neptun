@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../config/prefs_keys.dart';
 import '../../../core/widgets/neptun_card.dart';
 import '../../../core/widgets/neptun_badge.dart';
 import '../../../core/pro/pro_features.dart';
@@ -27,7 +28,7 @@ class _PersonalAnalyticsPageState extends State<PersonalAnalyticsPage> {
   Future<void> _loadStats() async {
     final prefs = await SharedPreferences.getInstance();
     if (mounted) {
-      final selectedRegions = prefs.getStringList('selected_regions') ?? [];
+      final selectedRegions = prefs.getStringList(PrefsKeys.selectedRegions) ?? [];
       final oblasts = selectedRegions
           .where((r) => r.contains('область') || r.contains('місто'))
           .toList();
@@ -59,7 +60,7 @@ class _PersonalAnalyticsPageState extends State<PersonalAnalyticsPage> {
         appBar: AppBar(
           title: Text(
             'Персональна аналітика',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+            style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
           ),
           centerTitle: false,
         ),
@@ -82,7 +83,7 @@ class _PersonalAnalyticsPageState extends State<PersonalAnalyticsPage> {
                 const SizedBox(height: 20),
                 Text(
                   'PRO функція',
-                  style: GoogleFonts.inter(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
                     color: cs.onSurface,
@@ -93,7 +94,7 @@ class _PersonalAnalyticsPageState extends State<PersonalAnalyticsPage> {
                   ProGate.featureDescriptions[ProFeature.personalAnalytics] ??
                       '',
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 14,
                     color: cs.onSurface.withValues(alpha: 0.6),
                   ),
@@ -116,7 +117,7 @@ class _PersonalAnalyticsPageState extends State<PersonalAnalyticsPage> {
       appBar: AppBar(
         title: Text(
           'Персональна аналітика',
-          style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
         ),
         centerTitle: false,
         actions: const [
@@ -154,7 +155,7 @@ class _PersonalAnalyticsPageState extends State<PersonalAnalyticsPage> {
                         _region == 'Невизначено'
                             ? 'Оберіть регіони сповіщень у вкладці Регіони. Статистика оновлюватиметься під час тривог у ваших регіонах.'
                             : 'Регіон обрано. Статистика почне збиратися при наступній тривозі у ваших регіонах.',
-                        style: GoogleFonts.inter(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 14,
                           color: cs.onSurface.withValues(alpha: 0.8),
                         ),
@@ -184,14 +185,14 @@ class _PersonalAnalyticsPageState extends State<PersonalAnalyticsPage> {
                   children: [
                     Text(
                       'Ваш регіон',
-                      style: GoogleFonts.inter(
+                      style: GoogleFonts.plusJakartaSans(
                         fontSize: 12,
                         color: cs.onSurface.withValues(alpha: 0.5),
                       ),
                     ),
                     Text(
                       _region,
-                      style: GoogleFonts.inter(
+                      style: GoogleFonts.plusJakartaSans(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
                         color: cs.onSurface,
@@ -241,7 +242,7 @@ class _PersonalAnalyticsPageState extends State<PersonalAnalyticsPage> {
                     const SizedBox(width: 8),
                     Text(
                       'Час під тривогами',
-                      style: GoogleFonts.inter(
+                      style: GoogleFonts.plusJakartaSans(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                         color: cs.onSurface,
@@ -279,7 +280,7 @@ class _PersonalAnalyticsPageState extends State<PersonalAnalyticsPage> {
                     const SizedBox(width: 8),
                     Text(
                       'Рейтинг безпеки',
-                      style: GoogleFonts.inter(
+                      style: GoogleFonts.plusJakartaSans(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                         color: cs.onSurface,
@@ -295,7 +296,7 @@ class _PersonalAnalyticsPageState extends State<PersonalAnalyticsPage> {
                         _totalAlarms > 0
                             ? '${((1 - (_totalAlarms / 100).clamp(0.0, 1.0)) * 100).round()}'
                             : '—',
-                        style: GoogleFonts.inter(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 48,
                           fontWeight: FontWeight.w800,
                           color: cs.secondary,
@@ -305,7 +306,7 @@ class _PersonalAnalyticsPageState extends State<PersonalAnalyticsPage> {
                         _totalAlarms > 0
                             ? 'Ваш рейтинг безпеки'
                             : 'Використовуйте додаток для збору статистики',
-                        style: GoogleFonts.inter(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 12,
                           color: cs.onSurface.withValues(alpha: 0.5),
                         ),
@@ -348,7 +349,7 @@ class _StatCard extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             value,
-            style: GoogleFonts.inter(
+            style: GoogleFonts.plusJakartaSans(
               fontSize: 28,
               fontWeight: FontWeight.w800,
               color: cs.onSurface,
@@ -356,7 +357,7 @@ class _StatCard extends StatelessWidget {
           ),
           Text(
             label,
-            style: GoogleFonts.inter(
+            style: GoogleFonts.plusJakartaSans(
               fontSize: 12,
               color: cs.onSurface.withValues(alpha: 0.5),
             ),
@@ -384,14 +385,14 @@ class _StatRow extends StatelessWidget {
         children: [
           Text(
             label,
-            style: GoogleFonts.inter(
+            style: GoogleFonts.plusJakartaSans(
               fontSize: 13,
               color: cs.onSurface.withValues(alpha: 0.6),
             ),
           ),
           Text(
             value,
-            style: GoogleFonts.inter(
+            style: GoogleFonts.plusJakartaSans(
               fontSize: 14,
               fontWeight: FontWeight.w600,
               color: cs.onSurface,

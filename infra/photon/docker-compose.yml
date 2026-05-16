@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  photon:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: neptun_photon
+    ports:
+      - "2322:2322"
+    volumes:
+      - ./photon_data:/photon/photon_data
+    environment:
+      # Europe extract needs more heap than 512m; tune if VPS is small
+      - JAVA_OPTS=-Xmx2500m
+    restart: unless-stopped

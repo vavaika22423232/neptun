@@ -51,11 +51,14 @@ class ChatMessage {
   int get totalReactions =>
       reactions.values.fold(0, (sum, list) => sum + list.length);
 
-  /// Check if a device has reacted with a specific emoji.
-  bool hasReacted(String emoji, String deviceId) {
+  /// Check if this user has reacted with [emoji] (device id and/or nickname).
+  bool hasReacted(String emoji, String deviceId, [String? myNickname]) {
     final list = reactions[emoji];
     if (list == null) return false;
-    return list.any((r) => r.deviceId == deviceId);
+    final nick = myNickname ?? '';
+    return list.any(
+      (r) => r.deviceId == deviceId || (nick.isNotEmpty && r.nickname == nick),
+    );
   }
 
   /// The first letter of the nickname (for avatar).
@@ -97,7 +100,8 @@ class ChatMessage {
     return ChatMessage(
       id: json['id']?.toString() ?? '',
       userId: json['userId']?.toString() ?? json['nickname']?.toString() ?? '',
-      deviceId: json['deviceId']?.toString() ?? '',
+      deviceId:
+          json['deviceId']?.toString() ?? json['device_id']?.toString() ?? '',
       message: json['message']?.toString() ?? json['text']?.toString() ?? '',
       timestamp: _parseTimestamp(json['timestamp']),
       time: json['time']?.toString(),
@@ -106,18 +110,20 @@ class ChatMessage {
       isPro: json['isPro'] == true,
       replyTo: replyInfo,
       reactions: parsedReactions,
-      messageType: json['messageType']?.toString() ?? 'text',
-      audioUrl: json['audioUrl']?.toString(),
-      audioDuration: json['audioDuration'] is int
-          ? json['audioDuration'] as int
-          : json['audioDuration'] is String
-          ? int.tryParse(json['audioDuration'] as String)
-          : null,
-      imageUrl: json['imageUrl']?.toString(),
+      messageType:
+          json['messageType']?.toString() ??
+          json['message_type']?.toString() ??
+          json['type']?.toString() ??
+          'text',
+      audioUrl: json['audioUrl']?.toString() ?? json['audio_url']?.toString(),
+      audioDuration: _parseNullableInt(
+        json['audioDuration'] ?? json['audio_duration'],
+      ),
+      imageUrl: json['imageUrl']?.toString() ?? json['image_url']?.toString(),
       editedAt: json['editedAt'] != null
           ? (json['editedAt'] is int
-              ? json['editedAt'] as int
-              : int.tryParse(json['editedAt'].toString()) ?? 0)
+                ? json['editedAt'] as int
+                : int.tryParse(json['editedAt'].toString()) ?? 0)
           : null,
     );
   }
@@ -138,6 +144,13 @@ class ChatMessage {
       return i;
     }
     return 0;
+  }
+
+  static int? _parseNullableInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value);
+    return null;
   }
 
   ChatMessage copyWithReactions(Map<String, List<ReactionInfo>> newReactions) {

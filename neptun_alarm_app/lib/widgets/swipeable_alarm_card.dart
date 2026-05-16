@@ -3,6 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../config/app_constants.dart';
+import '../core/widgets/neptun_shell_modal.dart';
+
 /// Swipeable картка тривоги з швидкими діями
 class SwipeableAlarmCard extends StatefulWidget {
   final Widget child;
@@ -60,7 +63,7 @@ class _SwipeableAlarmCardState extends State<SwipeableAlarmCard>
 📍 ${widget.location}
 ⏰ ${widget.timestamp}
 
-Завантажуй NEPTUN для оповіщень про тривоги!
+Завантажуй ${AppConstants.appName} для оповіщень про тривоги!
 ''';
     Share.share(shareText);
   }
@@ -229,7 +232,7 @@ class _SwipeableAlarmCardState extends State<SwipeableAlarmCard>
   void _showQuickActions(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     
-    showModalBottomSheet(
+    NeptunShellModal.showBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(

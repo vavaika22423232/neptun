@@ -43,6 +43,21 @@ CHANNEL_META = {
     'cherkasy_nebbo':         {'priority': 3, 'format': 'informal',   'lang': 'uk', 'name': 'Черкаське небо'},
     'pivden_varta':           {'priority': 3, 'format': 'informal',   'lang': 'uk', 'name': 'Вартові Півдня'},
     'krolevetsnews':          {'priority': 3, 'format': 'semi',       'lang': 'uk', 'name': 'Новини Кролевця та Сумської області'},
+    'shovnebi':               {'priority': 3, 'format': 'informal',   'lang': 'uk', 'name': 'Шо там в небі'},
+    'JeniokSay':              {'priority': 3, 'format': 'informal',   'lang': 'uk', 'name': 'Женьок Вещає'},
+    'ReniHub':                {'priority': 3, 'format': 'informal',   'lang': 'ru', 'name': 'ReniHub | Одещина'},
+    'kudy_letyt':             {'priority': 2, 'format': 'structured', 'lang': 'uk', 'name': 'Ринда моніторить'},
+    'UkraineRadar_24_7':      {'priority': 2, 'format': 'semi',       'lang': 'uk', 'name': 'Де Ракета? | Радар України'},
+    'eRadarrua':              {'priority': 2, 'format': 'semi',       'lang': 'uk', 'name': 'єРадар'},
+    'pivden_FPV':             {'priority': 3, 'format': 'informal',   'lang': 'uk', 'name': 'Вартові Півдня Фпв/Молнія'},
+    'PhantomChe':             {'priority': 3, 'format': 'informal',   'lang': 'uk', 'name': 'Чернігівський Фантом'},
+    'kharkivlife':            {'priority': 3, 'format': 'semi',       'lang': 'uk', 'name': 'Харьков life | Харків'},
+    'newspn':                 {'priority': 3, 'format': 'semi',       'lang': 'uk', 'name': 'ПН | Преступности.НЕТ'},
+    'tlknewsua':              {'priority': 3, 'format': 'informal',   'lang': 'ru', 'name': 'TLk News'},
+    'rdsprostir':             {'priority': 3, 'format': 'semi',       'lang': 'uk', 'name': 'RDS-prostir'},
+    'Karkivw':                {'priority': 3, 'format': 'informal',   'lang': 'uk', 'name': 'Харківський Простір Онлайн'},
+    'dnepr_nagladach':        {'priority': 3, 'format': 'informal',   'lang': 'ru', 'name': 'Наглядач Днепра'},
+    'Donetskiy_on':           {'priority': 3, 'format': 'informal',   'lang': 'uk', 'name': 'Донецький'},
 }
 
 CHANNELS = list(CHANNEL_META.keys())
@@ -67,6 +82,17 @@ CHANNEL_DEFAULT_OBLAST: dict[str, str] = {
     'kremen_sv': 'Полтавська область',
     'cherkasy_nebbo': 'Черкаська область',
     'krolevetsnews': 'Сумська область',
+    'shovnebi': 'Дніпропетровська область',
+    'ReniHub': 'Одеська область',
+    'pivden_FPV': 'Одеська область',
+    'PhantomChe': 'Чернігівська область',
+    'kharkivlife': 'Харківська область',
+    'newspn': 'Миколаївська область',
+    'tlknewsua': 'Харківська область',
+    'rdsprostir': 'Сумська область',
+    'Karkivw': 'Харківська область',
+    'dnepr_nagladach': 'Дніпропетровська область',
+    'Donetskiy_on': 'Донецька область',
 }
 
 OPENCAGE_API_KEY = os.getenv('OPENCAGE_API_KEY', '')  # optional geocoding
@@ -147,6 +173,8 @@ RAION_NAME_TO_ID = {
     'Павлоградський район': 'UA-12-05',
     'Синельниківський район': 'UA-12-06',
     'Новомосковський район': 'UA-12-07',
+    'Самарівський район': 'UA-12-07',
+    'Самарський район': 'UA-12-07',
     # Харківська область (UA-63)
     'Харківський район': 'UA-63-01',
     'Куп\'янський район': 'UA-63-02',
@@ -291,6 +319,14 @@ RAION_NAME_TO_ID = {
     'Дністровський район': 'UA-77-03',
 }
 
+RAION_NAME_ALIASES = {
+    # 2024 rename: Новомосковський район -> Самарівський район. Some data sources
+    # still use the 2020 name, while UkraineAlarm sends the new one.
+    'Новомосковський район': ['Новомосковський район', 'Самарівський район', 'Самарський район'],
+    'Самарівський район': ['Самарівський район', 'Самарський район', 'Новомосковський район'],
+    'Самарський район': ['Самарський район', 'Самарівський район', 'Новомосковський район'],
+}
+
 # Fallback: oblast polygon centroids (geometric center of oblast, NOT city center)
 # Computed from geo/polygons/oblasts.geojson to avoid placing markers on capital cities
 OBLAST_CENTERS = {
@@ -378,13 +414,13 @@ LAUNCH_SITES = {
     'каспийское море': (42.0000, 51.0000),
     'каспійське море': (42.0000, 51.0000),
     # Чорне море — акваторія на підльоті до Одеської області (не суша, не південь біля Туреччини)
-    'чорне море': (46.14, 30.96),
-    'чорного моря': (46.14, 30.96),
-    'чорному морю': (46.14, 30.96),
-    'чорним морем': (46.14, 30.96),
-    'черное море': (46.14, 30.96),
-    'чёрное море': (46.14, 30.96),
-    'черного моря': (46.14, 30.96),
+    'чорне море': (45.72, 30.82),
+    'чорного моря': (45.72, 30.82),
+    'чорному морю': (45.72, 30.82),
+    'чорним морем': (45.72, 30.82),
+    'черное море': (45.72, 30.82),
+    'чёрное море': (45.72, 30.82),
+    'черного моря': (45.72, 30.82),
     'азовське море': (46.0000, 36.8000),
     'азовського моря': (46.0000, 36.8000),
     'азовське': (46.0000, 36.8000),

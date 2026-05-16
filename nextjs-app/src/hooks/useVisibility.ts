@@ -8,10 +8,13 @@ import { useState, useEffect, useCallback } from 'react';
  * Also provides isMobile detection for different polling intervals.
  */
 export function useVisibility() {
-  const [isVisible, setIsVisible] = useState(true);
+  const [isVisible, setIsVisible] = useState(() =>
+    typeof document !== 'undefined' ? !document.hidden : true,
+  );
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
+    setIsVisible(!document.hidden);
     // Detect mobile
     setIsMobile(/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent));
 
@@ -42,12 +45,14 @@ export function usePolling(
 
     const interval = isVisible ? activeInterval : hiddenInterval;
 
-    // Fetch immediately when becoming visible
-    if (isVisible) {
-      callback();
-    }
+    // Always schedule one attempt when this effect runs (mount or deps change). Hooks such as
+    // useMarkers skip redundant work when `document.hidden` and data already exists — without this,
+    // a first paint with hidden=true never triggered polling and left mobile maps empty until reload.
+    void Promise.resolve(callback());
 
-    const id = setInterval(callback, interval);
+    const id = setInterval(() => {
+      void Promise.resolve(callback());
+    }, interval);
     return () => clearInterval(id);
   }, [isVisible, activeInterval, hiddenInterval, enabled, callback]);
 }

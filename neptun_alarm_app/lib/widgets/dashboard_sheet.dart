@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../core/widgets/neptun_card.dart';
+import '../design/neptun_design.dart';
 import '../panels/radar_panel.dart';
 
 class DashboardSheet extends StatelessWidget {
@@ -13,7 +14,7 @@ class DashboardSheet extends StatelessWidget {
       maxChildSize: 0.85,
       snap: true,
       builder: (context, scrollController) {
-        return NeptunCard.glass(
+        return NeptunCard(
           borderRadius: 32,
           margin: const EdgeInsets.symmetric(horizontal: 0),
           padding: EdgeInsets.zero,
@@ -55,10 +56,10 @@ class DashboardSheet extends StatelessWidget {
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.2),
+                        color: NeptunStatus.safe.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.5),
+                          color: NeptunStatus.safe.withValues(alpha: 0.5),
                         ),
                       ),
                       child: Row(
@@ -67,7 +68,7 @@ class DashboardSheet extends StatelessWidget {
                             width: 6,
                             height: 6,
                             decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.secondary,
+                              color: NeptunStatus.safe,
                               shape: BoxShape.circle,
                             ),
                           ),
@@ -76,7 +77,7 @@ class DashboardSheet extends StatelessWidget {
                             'СПОКІЙНО',
                             style: Theme.of(context).textTheme.labelSmall
                                 ?.copyWith(
-                                  color: Theme.of(context).colorScheme.secondary,
+                                  color: NeptunStatus.safe,
                                   fontWeight: FontWeight.bold,
                                 ),
                           ),

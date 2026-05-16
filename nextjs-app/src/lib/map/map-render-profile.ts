@@ -39,10 +39,6 @@ export function isMobileMapProfile(ua: string | undefined, maxTouchPoints: numbe
   return maxTouchPoints != null && maxTouchPoints > 0;
 }
 
-function pickRuntimeBasemap(): MapBasemapKind {
-  return 'deepStateUkraine';
-}
-
 /**
  * Single runtime contract for alarm map rendering.
  *
@@ -59,8 +55,10 @@ export function resolveMapRenderProfile(input: {
   const isTouch = isMobileMapProfile(input.userAgent, input.maxTouchPoints);
   const kind: MapRuntimeProfileKind = input.isEmbed ? 'webview' : isTouch ? 'mobile' : 'desktop';
   const lowInteraction = kind !== 'desktop';
-  const basemap = pickRuntimeBasemap();
-  const lowTileMode = basemap === 'rasterVectorDark' || basemap === 'deepStateUkraine';
+
+  /** Десктоп, мобільний браузер і WebView (`?embed=1`) — один векторний темний базовий шар (OFM / OpenFreeMap). */
+  const basemap: MapBasemapKind = 'rasterVectorDark';
+  const lowTileMode = false;
 
   return {
     kind,
@@ -68,11 +66,11 @@ export function resolveMapRenderProfile(input: {
     lowInteraction,
     basemap,
     lowTileMode,
-    maxZoom: lowTileMode ? 16 : 19,
+    maxZoom: 19,
     tile: {
-      updateWhenIdle: kind !== 'desktop',
-      keepBuffer: lowTileMode ? 1 : 2,
-      detectRetina: kind === 'desktop',
+      updateWhenIdle: false,
+      keepBuffer: 2,
+      detectRetina: true,
     },
     leaflet: {
       transform3DLimit: lowInteraction ? 1 : 2,

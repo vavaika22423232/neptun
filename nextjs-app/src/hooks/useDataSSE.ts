@@ -40,6 +40,43 @@ let statusSnapshot: SseConnectionSnapshot = {
   messageCount: 0,
 };
 
+/** Tracks `markers_sync` heartbeats / marker SSE — detects half-open proxies on mobile. */
+let sseMarkersTelemetryAt = typeof Date !== 'undefined' ? Date.now() : 0;
+let sseStaleWatchdogId: number | null = null;
+/** >2× server keepalive (55s) before treating stream as stalled. */
+const MARKERS_SSE_TELEMETRY_STALE_MS = 135_000;
+const SSE_STALE_WATCHDOG_TICK_MS = 28_000;
+
+function bumpSseMarkersSyncTelemetry(): void {
+  sseMarkersTelemetryAt = typeof Date !== 'undefined' ? Date.now() : 0;
+}
+
+function ensureSseMarkersStaleWatchdog(): void {
+  if (typeof window === 'undefined') return;
+  if (sseStaleWatchdogId !== null) return;
+  sseStaleWatchdogId = window.setInterval(() => {
+    if (refCount <= 0) return;
+    if (!globalES || globalES.readyState !== EventSource.OPEN) return;
+    if (Date.now() - sseMarkersTelemetryAt <= MARKERS_SSE_TELEMETRY_STALE_MS) return;
+    bumpSseMarkersSyncTelemetry();
+    window.dispatchEvent(new CustomEvent('neptun:markers-force-reconcile'));
+  }, SSE_STALE_WATCHDOG_TICK_MS);
+}
+
+function clearSseMarkersStaleWatchdog(): void {
+  if (sseStaleWatchdogId !== null && typeof window !== 'undefined') {
+    window.clearInterval(sseStaleWatchdogId);
+  }
+  sseStaleWatchdogId = null;
+}
+
+function markersVersionMaybeDispatch(data: Record<string, unknown>): void {
+  const mv = data.markers_version;
+  if (typeof mv !== 'number' || !Number.isFinite(mv)) return;
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('neptun:markers-sync', { detail: { markers_version: mv } }));
+}
+
 function setStatusSnapshot(patch: Partial<SseConnectionSnapshot>) {
   statusSnapshot = { ...statusSnapshot, ...patch };
   statusListeners.forEach((listener) => {
@@ -101,6 +138,11 @@ async function ensureAnonymousSseToken(): Promise<void> {
   await anonymousTokenInFlight;
 }
 
+/** Start anonymous SSE auth early (e.g. layout) so EventSource connects sooner on map load. */
+export function warmSseAuth(): Promise<void> {
+  return ensureAnonymousSseToken();
+}
+
 export function setSSEToken(token: string) {
   if (token === _sseToken) return;
   _sseToken = token;
@@ -137,6 +179,7 @@ async function connectGlobalSSE() {
   const url = `/api/chat/stream?token=${encodeURIComponent(_sseToken)}`;
   const es = new EventSource(url);
   globalES = es;
+  ensureSseMarkersStaleWatchdog();
 
   es.onmessage = (event) => {
     setStatusSnapshot({
@@ -151,29 +194,38 @@ async function connectGlobalSSE() {
         alarmListeners.forEach((cb) => {
           try { cb(data); } catch { /* ignore */ }
         });
+      } else if (type === 'markers_sync' && data && typeof data === 'object') {
+        bumpSseMarkersSyncTelemetry();
+        markersVersionMaybeDispatch(data as Record<string, unknown>);
       } else if (type === 'marker_new' && data) {
+        bumpSseMarkersSyncTelemetry();
         markerListeners.forEach((cb) => {
           try { cb(data); } catch { /* ignore */ }
         });
       } else if (type === 'markers_refresh' && data) {
         // Bulk ingest / queue replay — same debounced /api/data fetch as marker_new
+        bumpSseMarkersSyncTelemetry();
         markerListeners.forEach((cb) => {
           try { cb(data); } catch { /* ignore */ }
         });
       } else if (type === 'marker_update' && data) {
         // Follow-up position update — treat same as marker_new (triggers refetch)
+        bumpSseMarkersSyncTelemetry();
         markerListeners.forEach((cb) => {
           try { cb(data); } catch { /* ignore */ }
         });
       } else if (type === 'marker_delete' && data?.id) {
+        bumpSseMarkersSyncTelemetry();
         markerDeleteListeners.forEach((cb) => {
           try { cb(String(data.id)); } catch { /* ignore */ }
         });
       } else if (type === 'track_update' && data) {
+        bumpSseMarkersSyncTelemetry();
         trackUpdateListeners.forEach((cb) => {
           try { cb(data as { track_id: string; mode: string; marker: Record<string, unknown> }); } catch { /* ignore */ }
         });
       } else if (type === 'track_batch' && data?.updates) {
+        bumpSseMarkersSyncTelemetry();
         const updates = data.updates as { track_id: string; mode: string; marker: Record<string, unknown> }[];
         for (const u of updates) {
           trackUpdateListeners.forEach((cb) => {
@@ -185,6 +237,15 @@ async function connectGlobalSSE() {
           try { cb(data as Record<string, unknown>); } catch { /* ignore */ }
         });
       } else if (['connected', 'online', 'new_message', 'delete_message', 'reaction', 'typing'].includes(type)) {
+        if (
+          type === 'connected'
+          && data
+          && typeof data === 'object'
+          && typeof (data as { markers_version?: unknown }).markers_version === 'number'
+        ) {
+          bumpSseMarkersSyncTelemetry();
+          markersVersionMaybeDispatch(data as Record<string, unknown>);
+        }
         chatListeners.forEach((cb) => {
           try { cb(type, data); } catch { /* ignore */ }
         });
@@ -193,6 +254,7 @@ async function connectGlobalSSE() {
   };
 
   es.onopen = () => {
+    bumpSseMarkersSyncTelemetry();
     // Reset backoff on successful connection
     retryDelay = 3000;
     setStatusSnapshot({
@@ -201,6 +263,10 @@ async function connectGlobalSSE() {
       connectedAt: Date.now(),
       lastEventAt: Date.now(),
     });
+    // Zombie SSE / missed events while tab slept: map hooks reconcile from /api/data.
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('neptun:sse-open'));
+    }
   };
 
   es.onerror = () => {
@@ -224,6 +290,7 @@ function disconnectGlobalSSE() {
     clearTimeout(retryTimer);
     retryTimer = null;
   }
+  clearSseMarkersStaleWatchdog();
   if (globalES) {
     globalES.close();
     globalES = null;

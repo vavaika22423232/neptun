@@ -94,10 +94,7 @@ class NeptunButton extends StatelessWidget {
       child = SizedBox(
         width: 20,
         height: 20,
-        child: CircularProgressIndicator(
-          strokeWidth: 2,
-          color: fgColor,
-        ),
+        child: CircularProgressIndicator(strokeWidth: 2, color: fgColor),
       );
     } else {
       child = Row(
@@ -129,10 +126,12 @@ class NeptunButton extends StatelessWidget {
         color: useGradient ? Colors.transparent : bgColor,
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
-          onTap: isLoading ? null : () {
-            HapticFeedback.lightImpact();
-            onPressed?.call();
-          },
+          onTap: isLoading
+              ? null
+              : () {
+                  HapticFeedback.lightImpact();
+                  onPressed?.call();
+                },
           borderRadius: BorderRadius.circular(12),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -141,10 +140,7 @@ class NeptunButton extends StatelessWidget {
                   ? LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
-                      colors: [
-                        cs.primary,
-                        cs.primary.withValues(alpha: 0.88),
-                      ],
+                      colors: [cs.primary, cs.primary.withValues(alpha: 0.88)],
                     )
                   : null,
               color: useGradient ? null : Colors.transparent,

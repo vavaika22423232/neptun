@@ -8,13 +8,17 @@ import {
   isMobileUserAgent as resolveIsMobileUserAgent,
   resolveMapRenderProfile,
 } from '@/lib/map/map-render-profile';
+import {
+  resolveUaRasterTilesDarkTemplate,
+  resolveUaRasterTilesLightTemplate,
+} from '@/lib/map/ua-raster-fallback';
 
 export type MapBasemapKind =
   | 'googleHybrid'
   | 'rasterVectorDark'
   | 'cartoDark'
   | 'osmStandard'
-  | 'deepStateUkraine';
+  | 'uaRasterBasemap';
 
 const OPENFREEMAP_DARK =
   'https://tiles.openfreemap.org/styles/dark/{z}/{x}/{y}.png' as const;
@@ -27,11 +31,6 @@ const CARTO_DARK =
 
 const OSM_STANDARD =
   'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png' as const;
-
-const DEEPSTATE_UKRAINE =
-  'https://st1.deepstatemap.live/styles/DSUkraineUkDark/{z}/{x}/{y}@2x.webp' as const;
-const DEEPSTATE_UKRAINE_LIGHT =
-  'https://st1.deepstatemap.live/styles/DSUkraineUk/{z}/{x}/{y}@2x.webp' as const;
 
 export function isMobileUserAgent(ua: string | undefined): boolean {
   return resolveIsMobileUserAgent(ua);
@@ -47,8 +46,8 @@ export function isMobileMapProfile(ua: string | undefined, maxTouchPoints: numbe
 }
 
 /**
- * Базовий шар: Google Hybrid (стабільні тайли до z19).
- * OpenFreeMap (`rasterVectorDark`) — резерв у `getBasemapUrl` (раніше вмикався на моб. сайті й давав «порожню» мапу після зуму).
+ * Базовий шар з `resolveMapRenderProfile` (зараз усюди OpenFreeMap vector dark для паритету mobile/desktop).
+ * Інші kind лишаються для адмінських / майбутніх режимів.
  */
 export function pickBasemapKind(isEmbed: boolean, ua: string | undefined): MapBasemapKind {
   return resolveMapRenderProfile({ isEmbed, userAgent: ua }).basemap;
@@ -67,12 +66,12 @@ export function getBasemapUrl(kind: MapBasemapKind): string {
   if (kind === 'rasterVectorDark') return OPENFREEMAP_DARK;
   if (kind === 'cartoDark') return CARTO_DARK;
   if (kind === 'osmStandard') return OSM_STANDARD;
-  if (kind === 'deepStateUkraine') return DEEPSTATE_UKRAINE;
+  if (kind === 'uaRasterBasemap') return resolveUaRasterTilesDarkTemplate();
   return GOOGLE_HYBRID;
 }
 
 export function getLightBasemapUrl(kind: MapBasemapKind): string {
-  if (kind === 'deepStateUkraine') return DEEPSTATE_UKRAINE_LIGHT;
+  if (kind === 'uaRasterBasemap') return resolveUaRasterTilesLightTemplate();
   if (kind === 'cartoDark') return OSM_STANDARD;
   return getBasemapUrl(kind);
 }
@@ -80,6 +79,6 @@ export function getLightBasemapUrl(kind: MapBasemapKind): string {
 export function getBasemapClassName(kind: MapBasemapKind): string {
   if (kind === 'cartoDark') return 'carto-dark-layer';
   if (kind === 'osmStandard') return 'osm-standard-layer';
-  if (kind === 'deepStateUkraine') return 'deepstate-ukraine-layer';
+  if (kind === 'uaRasterBasemap') return 'ua-raster-basemap-layer';
   return kind === 'rasterVectorDark' ? 'low-perf-basemap' : 'dark-satellite-layer';
 }

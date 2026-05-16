@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback, useDeferredValue, type Mutabl
 import L from 'leaflet';
 import type { Feature, FeatureCollection, Geometry, GeoJsonProperties } from 'geojson';
 import type { Marker, Alarm, FusionTrajectory } from '@/types';
+import { expandMarkersForSwarmDisplay } from '@/lib/map/marker-swarm-expand';
 import { THREAT_ICONS, THREAT_NAMES } from '@/types';
 import { CACHE_VERSION } from '@/lib/constants';
 import { bearingToWebIconRotationCssDeg, resolveThreatBearingDeg } from '@/lib/threat-bearing';
@@ -16,9 +17,14 @@ import {
   pickBasemapKind,
   type MapBasemapKind,
 } from '@/lib/map-leaflet-performance';
+import { formatKyivTime, buildMarkerPopup } from '@/lib/map/marker-popup-html';
+import { notifyFlutterThreatMarkerTap } from '@/lib/map/flutter-app-bridge';
+import { fetchOccupiedTerritoriesMerged } from '@/lib/map/fetch-occupied-territories';
+import { filterMarkersForMapDisplay, markerBehavior } from '@/lib/marker-behavior';
 
 // Re-export MAP_BOUNDS locally to avoid circular deps
 const MAP_BOUNDS = { minLat: 44.2, maxLat: 52.4, minLng: 22.0, maxLng: 40.2 } as const;
+const MOBILE_FULL_UKRAINE_BOUNDS = { minLat: 42.7, maxLat: 53.7, minLng: 19.8, maxLng: 42.4 } as const;
 
 // Global state for Phase 2 optimizations (persists across Navigations)
 let TOOLTIP_SINGLETON: HTMLDivElement | null = null;
@@ -27,6 +33,7 @@ const MOVE_MIN_DIST_KM = 0.004;
 const ALARM_PANE = 'alarm-pane';
 const DISTRICT_ALARM_CANVAS_PANE = 'district-alarm-canvas-pane';
 const UKRAINE_ONLY_BASEMAP_PANE = 'ukraine-only-basemap-pane';
+const OCCUPIED_TERRITORY_PANE = 'occupied-territory-pane';
 
 type AlarmFeatureCollection = FeatureCollection<Geometry, GeoJsonProperties>;
 type PerformanceMapOptions = L.MapOptions & {
@@ -67,54 +74,9 @@ function quickDistKm(aLat: number, aLng: number, bLat: number, bLng: number): nu
   return Math.sqrt(x * x + y * y);
 }
 
-/** Compute marker opacity based on age: 1.0 (fresh) → 0.3 (20+ min old) */
-function computeMarkerOpacity(marker: Marker): number {
-  let epochMs = 0;
-  if (marker.last_update_epoch) {
-    epochMs = marker.last_update_epoch > 10000000000 ? marker.last_update_epoch : marker.last_update_epoch * 1000;
-  } else if (marker.created_at_epoch) {
-    epochMs = marker.created_at_epoch > 10000000000 ? marker.created_at_epoch : marker.created_at_epoch * 1000;
-  } else if (marker.date) {
-    epochMs = new Date(marker.date).getTime();
-  }
-  if (!epochMs) return 1;
-  const ageMs = Date.now() - epochMs;
-  if (ageMs <= 0) return 1;
-  const MAX_AGE_MS = 20 * 60 * 1000; // 20 minutes
-  const MIN_OPACITY = 0.3;
-  const t = Math.min(ageMs / MAX_AGE_MS, 1);
-  return 1 - t * (1 - MIN_OPACITY); // 1.0 → 0.3
-}
-
-/**
- * Dim approximate / predictive placements and low-confidence marks (aligned with Flutter `mapVisualOpacity`).
- */
-function computeMapVisualOpacity(marker: Marker): number {
-  const dc = marker.display_class;
-  let base = 1;
-  if (dc === 'region_signal') {
-    base = 0.62;
-  } else if (dc === 'corridor_or_bearing') {
-    base = 0.52;
-  } else if (!dc) {
-    const pm = (marker.placement_mode || '').toLowerCase();
-    if (pm === 'approximate') base = 0.62;
-    else if (pm === 'predictive') base = 0.5;
-  }
-
-  const c100 = marker.confidence_0_100;
-  if (c100 != null && Number.isFinite(c100)) {
-    const c = Math.max(0, Math.min(100, c100)) / 100;
-    if (c < 0.78) base *= 0.55 + 0.45 * c;
-  } else if (marker.confidence != null && Number.isFinite(marker.confidence) && marker.confidence < 0.78) {
-    const c = Math.max(0, Math.min(1, marker.confidence));
-    base *= 0.55 + 0.45 * c;
-  }
-  return Math.max(0.32, Math.min(1, base));
-}
-
 function combinedMarkerOpacity(marker: Marker): number {
-  return Math.max(0.12, Math.min(1, computeMarkerOpacity(marker) * computeMapVisualOpacity(marker)));
+  void marker;
+  return 1;
 }
 
 /** Stale / cached API payloads without display policy — default to legacy precise pin. */
@@ -234,31 +196,6 @@ function stateAlarmStyle(
     color: light ? '#5f0000' : '#b30000',
     opacity: 1,
     weight: 1.05,
-    interactive: false,
-  };
-}
-
-function districtAlarmStyle(
-  feature: Feature<Geometry, GeoJsonProperties> | undefined,
-  activeNames: Set<string>,
-): L.PathOptions {
-  const rayon = normalizeAlarmRegionName(getFeatureProp(feature, 'rayon'));
-  if (!rayon || !activeNames.has(rayon)) {
-    return {
-      fillOpacity: 0,
-      opacity: 0,
-      weight: 0,
-      interactive: false,
-    };
-  }
-  const light = isLightMapTheme();
-  return {
-    fillColor: '#8f0000',
-    fillOpacity: light ? 0.5 : 0.6,
-    // Keep the district layer native to Leaflet so pan/zoom transforms are identical to the map.
-    color: '#8f0000',
-    opacity: light ? 0.16 : 0.18,
-    weight: 0.35,
     interactive: false,
   };
 }
@@ -434,7 +371,8 @@ function computeIconRotationCssDeg(marker: Marker): number {
 function threatIconLayoutKey(marker: Marker): string {
   const tt = marker.threat_type || 'default';
   const icon = marker.marker_icon || THREAT_ICONS[tt] || 'shahed3.webp';
-  return `${icon}|${tt}`;
+  const behavior = markerBehavior(marker);
+  return `${icon}|${tt}|${behavior.kind}|${Math.round(behavior.sizeScale * 100)}`;
 }
 
 /** Rounded bearing — cheap `img.style.transform` updates only. */
@@ -462,10 +400,12 @@ function buildThreatDivIcon(marker: Marker): L.DivIcon {
     size = Math.max(16, Math.round(size / 1.5));
     size = Math.round(size * 1.2);
   }
+  const behavior = markerBehavior(marker);
+  size = Math.max(14, Math.round(size * behavior.sizeScale));
   const rotationAngle = computeIconRotationCssDeg(marker);
 
   // Cache key based solely on visual appearance (no per-count badge on map)
-  const cacheKey = `${threatType}|${iconFile}|${size}|${Math.round(rotationAngle)}`;
+  const cacheKey = `${threatType}|${iconFile}|${size}|${Math.round(rotationAngle)}|${behavior.kind}`;
   const cached = _iconCache.get(cacheKey);
   if (cached) return cached;
 
@@ -480,7 +420,7 @@ function buildThreatDivIcon(marker: Marker): L.DivIcon {
     iconFile === 'shahed3.webp' &&
     (threatType === 'shahed' || threatType === 'drone' || threatType === 'uav' || threatType === 'default');
   const shahedRasterAttr = shahedTheme ? ' data-icon="shahed3"' : '';
-  const html = `<div class="threat-marker" data-type="${threatType}"${shahedRasterAttr} style="position:relative;width:${size}px;height:${size}px;">
+  const html = `<div class="threat-marker ${behavior.cssClass}" data-type="${threatType}" data-behavior="${behavior.kind}" data-state="${marker.track_state || 'observed'}"${shahedRasterAttr} style="position:relative;width:${size}px;height:${size}px;--marker-pulse-ms:${behavior.pulseMs}ms;--marker-halo-opacity:${behavior.haloOpacity};--marker-halo-radius:${behavior.haloRadiusPx}px;">
     <img src="/${iconFile}?${CACHE_VERSION}" alt="${threatType}" decoding="async" fetchpriority="${fetchPriority}"
          style="transform:rotate(${rotationAngle}deg);width:100%;height:100%;"
          onerror="this.src='/shahed3.webp?${CACHE_VERSION}'"></div>`;
@@ -533,6 +473,7 @@ function attachThreatMarkerPopupHandlers(
   leafletMarker: L.Marker,
   mapEntry: MapMarkerEntry,
   isAdminRef: MutableRefObject<boolean | undefined>,
+  isEmbed: boolean,
 ) {
   let lastOpenAt = 0;
   const openPopup = () => {
@@ -541,11 +482,14 @@ function attachThreatMarkerPopupHandlers(
     lastOpenAt = now;
     hideTooltip();
     const m = mapEntry.lastData;
+    if (isEmbed && !isAdminRef.current && notifyFlutterThreatMarkerTap(m)) {
+      return;
+    }
     const tt = m.threat_type || 'default';
     const popupHtml = buildMarkerPopup(m, tt, !!isAdminRef.current);
     leafletMarker.bindPopup(popupHtml, {
-      className: 'admin-marker-popup',
-      maxWidth: 260,
+      className: 'admin-marker-popup neptun-marker-popup-shell',
+      maxWidth: 268,
       closeButton: true,
     }).openPopup();
   };
@@ -666,8 +610,7 @@ export default function MapContainer({
     const ukraineCenter: L.LatLngExpression = [48.5, 31.5];
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
     const basemap = pickBasemapKind(isEmbed, typeof navigator !== 'undefined' ? navigator.userAgent : undefined);
-    const lowTileMode = basemap === 'rasterVectorDark';
-    const isDeepStateBasemap = basemap === 'deepStateUkraine';
+    const lowTileMode = basemap === 'uaRasterBasemap';
     const lowInteraction = isLowInteractionMode(
       isEmbed,
       typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
@@ -676,8 +619,8 @@ export default function MapContainer({
 
     const mapOptions: PerformanceMapOptions = {
       center: ukraineCenter,
-      zoom: 6,
-      minZoom: 5,
+      zoom: isMobile ? 4 : 5.25,
+      minZoom: isMobile ? 2.75 : 3,
       // Hybrid labels need high zoom; OpenFreeMap is cheaper — cap zoom on low mode = fewer tile fetches
       maxZoom: lowTileMode ? 16 : 19,
       zoomControl: false,
@@ -704,16 +647,17 @@ export default function MapContainer({
       maxBoundsViscosity: 0.8,
     };
     const map = L.map(mapElRef.current, mapOptions);
+    const initialBounds = isMobile ? MOBILE_FULL_UKRAINE_BOUNDS : MAP_BOUNDS;
     const bounds = L.latLngBounds(
-      [MAP_BOUNDS.minLat, MAP_BOUNDS.minLng],
-      [MAP_BOUNDS.maxLat, MAP_BOUNDS.maxLng],
+      [initialBounds.minLat, initialBounds.minLng],
+      [initialBounds.maxLat, initialBounds.maxLng],
     );
 
     mapRef.current = map;
 
     // Sequential init: tiles first, then alarm vectors, then marker layers.
     (async () => {
-      await settleInitialMapViewport(map, bounds);
+      await settleInitialMapViewport(map, bounds, { isMobile });
       if (aborted) return;
 
       try {
@@ -736,6 +680,9 @@ export default function MapContainer({
       if (!map.getPane(UKRAINE_ONLY_BASEMAP_PANE)) {
         map.createPane(UKRAINE_ONLY_BASEMAP_PANE);
       }
+      if (!map.getPane(OCCUPIED_TERRITORY_PANE)) {
+        map.createPane(OCCUPIED_TERRITORY_PANE);
+      }
       const alarmPane = map.getPane(ALARM_PANE);
       if (alarmPane) {
         alarmPane.style.zIndex = '350';
@@ -750,6 +697,11 @@ export default function MapContainer({
       if (ukraineOnlyBasePane) {
         ukraineOnlyBasePane.style.zIndex = '120';
         ukraineOnlyBasePane.style.pointerEvents = 'none';
+      }
+      const occupiedPane = map.getPane(OCCUPIED_TERRITORY_PANE);
+      if (occupiedPane) {
+        occupiedPane.style.zIndex = '332';
+        occupiedPane.style.pointerEvents = 'auto';
       }
 
       try {
@@ -769,6 +721,25 @@ export default function MapContainer({
         }
       } catch (e) {
         console.warn('Alarm GeoJSON layer load error:', e);
+      }
+
+      try {
+        const occupiedFc = await fetchOccupiedTerritoriesMerged(CACHE_VERSION);
+        if (!aborted) {
+          L.geoJSON(occupiedFc, {
+            pane: OCCUPIED_TERRITORY_PANE,
+            interactive: false,
+            style: () => ({
+              color: '#9f1239',
+              weight: 1.2,
+              opacity: 0.58,
+              fillColor: '#b91c1c',
+              fillOpacity: 0.13,
+            }),
+          }).addTo(map);
+        }
+      } catch (e) {
+        console.warn('Occupied territories overlay:', e);
       }
 
       if (aborted) return;
@@ -914,7 +885,7 @@ export default function MapContainer({
           leafletMarker.on('mouseout', hideTooltip);
 
           // Tap/click + touchend (WebView): show popup for everyone.
-          attachThreatMarkerPopupHandlers(leafletMarker, mapEntry, isAdminRef);
+          attachThreatMarkerPopupHandlers(leafletMarker, mapEntry, isAdminRef, isEmbed);
 
           group.addLayer(leafletMarker);
           registry.set(key, mapEntry);
@@ -1015,12 +986,12 @@ export default function MapContainer({
         registry.delete(key);
       }
     },
-    [],
+    [isEmbed],
   );
 
   useEffect(() => {
     if (!isLoaded || !markersLayerRef.current || !trajLayerRef.current) return;
-    syncMarkers(deferredMarkers);
+    syncMarkers(expandMarkersForSwarmDisplay(filterMarkersForMapDisplay(deferredMarkers)));
   }, [deferredMarkers, isLoaded, syncMarkers]);
 
   const renderAlarms = useCallback((alarmsData: Alarm[]) => {
@@ -1087,30 +1058,30 @@ type LoadTilesOpts = {
 async function loadMapTiles(map: L.Map, opts: LoadTilesOpts) {
   const { isMobile, basemap, lowTileMode } = opts;
   const url = getBasemapUrl(basemap);
-  const isDeepState = basemap === 'deepStateUkraine';
+  const isUaRasterTiles = basemap === 'uaRasterBasemap';
   const sharedOptions: L.TileLayerOptions = {
     attribution: '',
     maxZoom: lowTileMode ? 16 : 19,
-    maxNativeZoom: isDeepState ? 14 : undefined,
+    maxNativeZoom: isUaRasterTiles ? 14 : undefined,
     updateWhenIdle: false,
     updateWhenZooming: true,
     updateInterval: 80,
     keepBuffer: lowTileMode ? 10 : 10,
-    detectRetina: !isDeepState && !isMobile,
+    detectRetina: !isUaRasterTiles && !isMobile,
   };
 
   const layers: L.TileLayer[] = [];
 
   const primaryLayer = L.tileLayer(url, {
     ...sharedOptions,
-    className: `${getBasemapClassName(basemap)} ${isDeepState ? 'deepstate-ukraine-dark-layer' : ''}`.trim(),
+    className: `${getBasemapClassName(basemap)} ${isUaRasterTiles ? 'ua-raster-basemap-dark-layer' : ''}`.trim(),
   }).addTo(map);
   layers.push(primaryLayer);
 
-  if (isDeepState) {
+  if (isUaRasterTiles) {
     const lightLayer = L.tileLayer(getLightBasemapUrl(basemap), {
       ...sharedOptions,
-      className: 'deepstate-ukraine-layer deepstate-ukraine-light-layer',
+      className: 'ua-raster-basemap-layer ua-raster-basemap-light-layer',
     }).addTo(map);
     layers.push(lightLayer);
   }
@@ -1139,10 +1110,20 @@ async function fetchGeoJson(url: string): Promise<AlarmFeatureCollection> {
   return (await res.json()) as AlarmFeatureCollection;
 }
 
-async function settleInitialMapViewport(map: L.Map, bounds: L.LatLngBounds): Promise<void> {
+async function settleInitialMapViewport(
+  map: L.Map,
+  bounds: L.LatLngBounds,
+  opts: { isMobile: boolean },
+): Promise<void> {
   await nextAnimationFrame();
   map.invalidateSize({ animate: false, pan: false });
-  map.fitBounds(bounds, { animate: false });
+  const pad = opts.isMobile ? 54 : 24;
+  map.fitBounds(bounds, {
+    animate: false,
+    padding: L.point(pad, pad),
+    // Не підганяти впритик — старт трохи «віддаленіший»; глибше можна minZoom
+    maxZoom: opts.isMobile ? 5.25 : 6,
+  });
   await nextAnimationFrame();
   map.invalidateSize({ animate: false, pan: false });
 }
@@ -1196,24 +1177,6 @@ function showLeafletTiles(map: L.Map) {
   map.getContainer().classList.add('leaflet-only-map');
 }
 
-/** Format ISO timestamp to Kyiv time (HH:MM DD.MM.YYYY) */
-function formatKyivTime(isoStr: string): string {
-  try {
-    const d = new Date(isoStr);
-    if (isNaN(d.getTime())) return isoStr;
-    return d.toLocaleString('uk-UA', {
-      timeZone: 'Europe/Kyiv',
-      hour: '2-digit',
-      minute: '2-digit',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
-  } catch {
-    return isoStr;
-  }
-}
-
 function showTooltip(event: MouseEvent, marker: Marker, threatType: string) {
   if (!TOOLTIP_SINGLETON) {
     TOOLTIP_SINGLETON = document.createElement('div');
@@ -1253,51 +1216,4 @@ function hideTooltip() {
   if (TOOLTIP_SINGLETON) {
     TOOLTIP_SINGLETON.style.opacity = '0';
   }
-}
-
-function buildMarkerPopup(marker: Marker, threatType: string, isAdminUser: boolean): string {
-  const typeName = THREAT_NAMES[threatType] || threatType;
-  const trustEsc = (marker.display_trust_hint_uk || '').replace(/</g, '&lt;');
-  const trustBlock = trustEsc
-    ? `<div style="font-size:10px;color:rgba(255,171,64,0.95);margin-bottom:8px;line-height:1.35;">${trustEsc}</div>`
-    : '';
-  const placeEsc = (marker.place || 'Невідомо').replace(/</g, '&lt;');
-  const brg = resolveThreatBearingDeg(marker);
-  const courseBlock =
-    brg != null
-      ? `<div style="font-size:10px;color:rgba(255,171,64,0.95);margin-top:4px;">Курс ~${Math.round(brg)}° (за даними карти)</div>`
-      : '';
-  const dateBlock = marker.date
-    ? `<div style="font-size:10px;color:rgba(255,255,255,0.4);margin-bottom:${isAdminUser ? '8px' : '0'};">${formatKyivTime(marker.date)}</div>`
-    : '';
-
-  let actions = '';
-  if (isAdminUser) {
-    const markerId = (marker.id || '').replace(/'/g, "\\'");
-    const markerLat = marker.lat;
-    const markerLng = marker.lng;
-    const markerText = (marker.text || '').replace(/'/g, "\\'").replace(/\n/g, ' ').substring(0, 80);
-    actions = `
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
-        <button onclick="window.__adminDeleteMarker('${markerId}',${markerLat},${markerLng},'${markerText}')"
-          style="background:rgba(255,82,82,0.2);color:#ff5252;border:1px solid rgba(255,82,82,0.3);border-radius:8px;padding:5px 12px;font-size:11px;cursor:pointer;display:flex;align-items:center;gap:4px;">
-          <span class="material-icons" style="font-size:14px;">delete</span>Видалити
-        </button>
-        <button onclick="window.__adminHideMarker(${markerLat},${markerLng},'${markerText}')"
-          style="background:rgba(255,171,64,0.2);color:#ffab40;border:1px solid rgba(255,171,64,0.3);border-radius:8px;padding:5px 12px;font-size:11px;cursor:pointer;display:flex;align-items:center;gap:4px;">
-          <span class="material-icons" style="font-size:14px;">visibility_off</span>Сховати
-        </button>
-      </div>`;
-  }
-
-  return `
-    <div style="font-family:-apple-system,sans-serif;color:#fff;min-width:200px;">
-      ${trustBlock}
-      <div style="font-size:13px;font-weight:600;margin-bottom:6px;">${typeName}</div>
-      <div style="font-size:11px;color:rgba(255,255,255,0.7);margin-bottom:2px;">${placeEsc}</div>
-      ${courseBlock}
-      ${dateBlock}
-      ${actions}
-    </div>
-  `;
 }

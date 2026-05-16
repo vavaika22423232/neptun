@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../core/di/service_locator.dart';
 import '../services/chat_service.dart' show ChatService, BanEntry;
+import '../core/widgets/neptun_shell_modal.dart';
 
 /// Адмін панель чату: блокування, розблокування, список заблокованих.
 class ChatAdminPage extends StatefulWidget {
@@ -93,15 +94,22 @@ class _ChatAdminPageState extends State<ChatAdminPage> {
       appBar: AppBar(
         title: Text(
           'Адмін панель чату',
-          style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+          style: GoogleFonts.plusJakartaSans(
+            fontWeight: FontWeight.w700,
+            fontSize: 18,
+          ),
         ),
         centerTitle: false,
         leading: IconButton(
+          tooltip: 'Назад',
           icon: const Icon(Icons.arrow_back_ios_rounded),
           onPressed: () => context.pop(),
         ),
       ),
       body: ListView(
+        physics: const BouncingScrollPhysics(
+          parent: AlwaysScrollableScrollPhysics(),
+        ),
         padding: const EdgeInsets.all(16),
         children: [
           _buildSection(
@@ -116,19 +124,35 @@ class _ChatAdminPageState extends State<ChatAdminPage> {
                     controller: _banController,
                     decoration: InputDecoration(
                       hintText: 'Нікнейм для блокування',
-                      hintStyle: GoogleFonts.inter(
+                      hintStyle: GoogleFonts.plusJakartaSans(
                         color: cs.onSurfaceVariant,
                         fontSize: 14,
+                        fontWeight: FontWeight.w500,
                       ),
+                      filled: true,
+                      fillColor: cs.surfaceContainerLow,
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(color: cs.outlineVariant),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(color: cs.outlineVariant),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(color: cs.primary, width: 2),
                       ),
                       contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 12,
+                        horizontal: 16,
+                        vertical: 14,
                       ),
                     ),
-                    style: GoogleFonts.inter(color: cs.onSurface, fontSize: 14),
+                    style: GoogleFonts.plusJakartaSans(
+                      color: cs.onSurface,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
                     onSubmitted: (_) => _banByNickname(),
                   ),
                   if (_banError != null)
@@ -136,7 +160,7 @@ class _ChatAdminPageState extends State<ChatAdminPage> {
                       padding: const EdgeInsets.only(top: 6),
                       child: Text(
                         _banError!,
-                        style: GoogleFonts.inter(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 12,
                           color: cs.error,
                         ),
@@ -155,7 +179,10 @@ class _ChatAdminPageState extends State<ChatAdminPage> {
                             ),
                           )
                         : const Icon(Icons.block_rounded, size: 18),
-                    label: Text(_banning ? 'Блокування…' : 'Заблокувати'),
+                    label: Text(
+                      _banning ? 'Блокування…' : 'Заблокувати',
+                      style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700),
+                    ),
                     style: FilledButton.styleFrom(
                       backgroundColor: cs.error,
                       foregroundColor: cs.onError,
@@ -176,12 +203,13 @@ class _ChatAdminPageState extends State<ChatAdminPage> {
                   children: [
                     Text(
                       'Список заблокованих (${_blockedList.length})',
-                      style: GoogleFonts.inter(
+                      style: GoogleFonts.plusJakartaSans(
                         fontSize: 14,
                         color: cs.onSurface,
                       ),
                     ),
                     IconButton(
+                      tooltip: 'Оновити список',
                       icon: _loadingBlocked
                           ? SizedBox(
                               width: 20,
@@ -201,7 +229,7 @@ class _ChatAdminPageState extends State<ChatAdminPage> {
                     padding: const EdgeInsets.symmetric(vertical: 24),
                     child: Text(
                       'Немає заблокованих',
-                      style: GoogleFonts.inter(
+                      style: GoogleFonts.plusJakartaSans(
                         fontSize: 14,
                         color: cs.onSurfaceVariant,
                       ),
@@ -218,7 +246,7 @@ class _ChatAdminPageState extends State<ChatAdminPage> {
                         color: cs.tertiary.withValues(alpha: 0.2),
                         child: Text(
                           'Розблокувати',
-                          style: GoogleFonts.inter(
+                          style: GoogleFonts.plusJakartaSans(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                             color: cs.tertiary,
@@ -234,7 +262,7 @@ class _ChatAdminPageState extends State<ChatAdminPage> {
                         ),
                         title: Text(
                           ban.nickname,
-                          style: GoogleFonts.inter(
+                          style: GoogleFonts.plusJakartaSans(
                             fontSize: 15,
                             color: cs.onSurface,
                           ),
@@ -247,7 +275,7 @@ class _ChatAdminPageState extends State<ChatAdminPage> {
                           if (parts.isEmpty) return null;
                           return Text(
                             parts.join(' · '),
-                            style: GoogleFonts.inter(
+                            style: GoogleFonts.plusJakartaSans(
                               fontSize: 12,
                               color: cs.onSurfaceVariant,
                             ),
@@ -281,22 +309,37 @@ class _ChatAdminPageState extends State<ChatAdminPage> {
   }
 
   void _confirmUnblock(String nickname) {
-    showDialog(
+    NeptunShellModal.showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Розблокувати'),
-        content: Text('Розблокувати користувача $nickname?'),
+        title: Text(
+          'Розблокувати',
+          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          'Розблокувати користувача $nickname?',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 15,
+            height: 1.4,
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Скасувати'),
+            child: Text(
+              'Скасувати',
+              style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+            ),
           ),
           FilledButton(
             onPressed: () {
               Navigator.pop(ctx);
               _unblock(nickname);
             },
-            child: const Text('Розблокувати'),
+            child: Text(
+              'Розблокувати',
+              style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700),
+            ),
           ),
         ],
       ),
@@ -315,7 +358,7 @@ class _ChatAdminPageState extends State<ChatAdminPage> {
           padding: const EdgeInsets.only(left: 4, bottom: 8),
           child: Text(
             title,
-            style: GoogleFonts.inter(
+            style: GoogleFonts.plusJakartaSans(
               fontSize: 12,
               fontWeight: FontWeight.w600,
               color: cs.onSurfaceVariant,
@@ -325,11 +368,10 @@ class _ChatAdminPageState extends State<ChatAdminPage> {
         ),
         Container(
           decoration: BoxDecoration(
-            color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
-            borderRadius: BorderRadius.circular(12),
+            color: cs.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: cs.outline.withValues(alpha: 0.2),
-              width: 0.5,
+              color: cs.outlineVariant.withValues(alpha: 0.45),
             ),
           ),
           child: child,

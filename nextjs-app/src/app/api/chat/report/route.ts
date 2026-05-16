@@ -22,6 +22,7 @@ function resolveReportsFile(): string {
 }
 
 import { requireChatAuth } from '@/lib/chat-auth';
+import { anonymousGuestLabel } from '@/lib/chat-nicknames';
 
 export async function POST(request: Request) {
     try {
@@ -66,10 +67,14 @@ export async function POST(request: Request) {
             messageId,
             reason,
             reporterDeviceId,
-            reporterNickname: reporterNickname || 'Анонім',
+            reporterNickname: reporterNickname || anonymousGuestLabel(reporterDeviceId),
             originalText: originalText || '',
             reportedDeviceId: reportedDeviceId || '',
-            reportedNickname: reportedNickname || 'Анонім',
+            reportedNickname:
+              reportedNickname ||
+              (reportedDeviceId
+                ? anonymousGuestLabel(String(reportedDeviceId))
+                : 'Гість'),
             status: 'PENDING',
             createdAt: new Date().toISOString(),
         };

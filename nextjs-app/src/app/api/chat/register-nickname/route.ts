@@ -28,6 +28,10 @@ function saveNicknames(entries: NicknameEntry[]) {
   fs.writeFileSync(NICKNAMES_FILE, JSON.stringify(entries, null, 2), 'utf-8');
 }
 
+function isReservedDisplayNickname(nickname: string): boolean {
+  return ['анонім', 'anonymous', 'anon'].includes(nickname.trim().toLowerCase());
+}
+
 /**
  * POST /api/chat/register-nickname
  * Register a nickname for a device.
@@ -35,7 +39,8 @@ function saveNicknames(entries: NicknameEntry[]) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { nickname, deviceId, hardwareId } = body;
+    const { deviceId, hardwareId } = body;
+    const nickname = typeof body.nickname === 'string' ? body.nickname.trim() : '';
 
     if (!nickname || !deviceId) {
       return NextResponse.json({ success: false, error: 'Відсутні обов\'язкові поля' });
@@ -43,6 +48,10 @@ export async function POST(request: Request) {
 
     if (nickname.length < 2 || nickname.length > 20) {
       return NextResponse.json({ success: false, error: 'Нікнейм має бути від 2 до 20 символів' });
+    }
+
+    if (isReservedDisplayNickname(nickname)) {
+      return NextResponse.json({ success: false, error: 'Цей нікнейм зарезервований системою' });
     }
 
     // Sensitive nickname protection

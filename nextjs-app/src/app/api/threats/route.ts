@@ -1,7 +1,6 @@
 import { cache, withETag } from '@/lib/cache';
-import type { Marker } from '@/types';
 import { buildMarkers, buildMarkerOptionsForApi } from '@/lib/build-markers';
-import { getMarkersVersion, initStore } from '@/lib/markers-store';
+import { getTrackedTargetsVersion, initTargetStore, syncTargetStoreFromRedis } from '@/lib/tracked-target-store';
 
 const THREATS_CACHE_KEY = 'threats_data';
 const THREATS_CACHE_KEY_EXTENDED = 'threats_data_extended';
@@ -13,6 +12,7 @@ function buildThreats(options?: { extendedRange?: boolean; retentionMinutes?: nu
   total: number;
   counts: Record<string, number>;
   summary: Record<string, number>;
+  uav_breakdown: Record<string, number>;
   threats: Array<{
     id: string;
     type?: string;
@@ -50,6 +50,15 @@ function buildThreats(options?: { extendedRange?: boolean; retentionMinutes?: nu
     avia: counts.avia || 0,
   };
 
+  const uav_breakdown = {
+    shahed: counts.shahed || 0,
+    drone: counts.drone || 0,
+    uav: counts.uav || 0,
+    fpv: counts.fpv || 0,
+    rozved: counts.rozved || 0,
+    air_balloon: counts.air_balloon || 0,
+  };
+
   // Individual threats as array (sorted newest first)
   const threats = markers
     .map((m) => {
@@ -83,9 +92,10 @@ function buildThreats(options?: { extendedRange?: boolean; retentionMinutes?: nu
     total: markers.length,
     counts,
     summary,
+    uav_breakdown,
     threats,
     updated_at: new Date().toISOString(),
-    markers_version: getMarkersVersion(),
+    markers_version: getTrackedTargetsVersion(),
   };
 }
 
@@ -102,13 +112,14 @@ export async function GET(request: Request) {
 
   const cacheKey = extendedRange ? THREATS_CACHE_KEY_EXTENDED : THREATS_CACHE_KEY;
 
-  await initStore();
+  await initTargetStore();
+  await syncTargetStoreFromRedis();
 
   // Check cache
   const { entry, isStale } = cache.getWithStale<ReturnType<typeof buildThreats>>(cacheKey, STALE_TTL);
 
   if (entry && !isStale) {
-    const liveV = getMarkersVersion();
+    const liveV = getTrackedTargetsVersion();
     if (entry.data.markers_version === liveV) {
       return withETag(entry.data, entry.etag, clientETag, undefined, entry.json);
     }

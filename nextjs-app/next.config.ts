@@ -1,4 +1,15 @@
 import type { NextConfig } from 'next';
+import { resolveUaRasterTileOrigin } from './src/lib/map/ua-raster-fallback';
+
+const uaRasterOrigin = resolveUaRasterTileOrigin();
+let uaRasterHostname: string | undefined;
+try {
+  uaRasterHostname = uaRasterOrigin ? new URL(uaRasterOrigin).hostname : undefined;
+} catch {
+  uaRasterHostname = undefined;
+}
+
+const uaRasterCsp = uaRasterOrigin ? ` ${uaRasterOrigin}` : '';
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
@@ -9,7 +20,9 @@ const nextConfig: NextConfig = {
       { protocol: 'https', hostname: 'tiles.openfreemap.org' },
       { protocol: 'https', hostname: '*.basemaps.cartocdn.com' },
       { protocol: 'https', hostname: '*.tile.openstreetmap.org' },
-      { protocol: 'https', hostname: 'st1.deepstatemap.live' },
+      ...(uaRasterHostname
+        ? [{ protocol: 'https' as const, hostname: uaRasterHostname }]
+        : []),
     ],
   },
 
@@ -35,8 +48,8 @@ const nextConfig: NextConfig = {
               "default-src 'self'",
               "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://unpkg.com https://cdn.jsdelivr.net",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com https://cdn.jsdelivr.net",
-              "img-src 'self' data: blob: https://s3.amazonaws.com https://*.google.com https://*.openfreemap.org https://tiles.openfreemap.org https://basemaps.cartocdn.com https://*.basemaps.cartocdn.com https://st1.deepstatemap.live https://server.arcgisonline.com https://*.arcgisonline.com https://*.tile.openstreetmap.org https://mt1.google.com https://mt2.google.com https://mt3.google.com",
-              "connect-src 'self' https://s3.amazonaws.com https://neptun.in.ua wss://neptun.in.ua https://*.google.com https://*.google-analytics.com https://*.googleapis.com https://tiles.openfreemap.org https://*.openfreemap.org https://basemaps.cartocdn.com https://*.basemaps.cartocdn.com https://st1.deepstatemap.live https://server.arcgisonline.com https://*.arcgisonline.com https://*.tile.openstreetmap.org https://mt1.google.com https://mt2.google.com https://mt3.google.com",
+              `img-src 'self' data: blob: https://s3.amazonaws.com https://*.google.com https://*.openfreemap.org https://tiles.openfreemap.org https://basemaps.cartocdn.com https://*.basemaps.cartocdn.com${uaRasterCsp} https://server.arcgisonline.com https://*.arcgisonline.com https://*.tile.openstreetmap.org https://mt1.google.com https://mt2.google.com https://mt3.google.com`,
+              `connect-src 'self' https://s3.amazonaws.com https://neptun.in.ua wss://neptun.in.ua https://*.google.com https://*.google-analytics.com https://*.googleapis.com https://tiles.openfreemap.org https://*.openfreemap.org https://basemaps.cartocdn.com https://*.basemaps.cartocdn.com${uaRasterCsp} https://server.arcgisonline.com https://*.arcgisonline.com https://*.tile.openstreetmap.org https://mt1.google.com https://mt2.google.com https://mt3.google.com`,
               "font-src 'self' https://fonts.gstatic.com",
               "worker-src 'self' blob:",
               "child-src 'self' blob:",
@@ -123,8 +136,9 @@ const nextConfig: NextConfig = {
     ];
   },
 
-  // Standalone output for VPS deployment
-  output: 'standalone',
+  // Standalone output for VPS deployment. Keep dev on the default output so
+  // Next can manage its `.next/dev` manifests without fighting standalone mode.
+  output: process.env.NODE_ENV === 'production' ? 'standalone' : undefined,
 
   // Packages that should not be bundled — resolved from node_modules at runtime
   serverExternalPackages: ['firebase-admin', 'bcrypt'],

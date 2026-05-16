@@ -9,7 +9,9 @@ class NotificationFilterService {
   static final NotificationFilterService _instance =
       NotificationFilterService._internal();
   factory NotificationFilterService() => _instance;
-  NotificationFilterService._internal();
+  NotificationFilterService._internal() {
+    _db.initialize();
+  }
 
   final RegionDatabase _db = RegionDatabase();
 
@@ -58,20 +60,8 @@ class NotificationFilterService {
         );
         return match;
       }
-      // Подія oblast-рівня (без raionId): показуємо якщо event.oblastId —
-      // батьківська область для будь-якого з обраних районів користувача
-      _db.initialize();
-      for (final raionId in user.raionIds) {
-        final parentOblast = _db.getOblastIdForRaion(raionId);
-        if (parentOblast == event.oblastId) {
-          debugPrint(
-            '🔍 Filter: oblast-level event ${event.oblastId} covers user raion $raionId → show',
-          );
-          return true;
-        }
-      }
       debugPrint(
-        '🚫 Filter: oblast-level event ${event.oblastId} does not cover any selected raion',
+        '🚫 Filter: oblast-level event ${event.oblastId} has no raionId for selected raions',
       );
       return false;
     }

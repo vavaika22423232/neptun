@@ -8,8 +8,11 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/api_config.dart';
+import '../core/utils/open_neptun_telegram.dart';
 import '../services/auth_service.dart';
 import '../core/widgets/neptun_shimmer.dart';
+import '../config/app_constants.dart';
+import '../design/neptun_design.dart';
 
 /// Bidirectional feedback page — submit, view history, reply, see admin responses
 class FeedbackPage extends StatefulWidget {
@@ -194,7 +197,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                   Expanded(child: Text('Дякуємо! Ваш відгук надіслано.')),
                 ],
               ),
-              backgroundColor: Theme.of(context).colorScheme.secondary,
+              backgroundColor: NeptunStatus.safe,
               behavior: SnackBarBehavior.floating,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -226,7 +229,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
   void _sendViaEmail() {
     final text = _controller.text.trim();
     final subject = Uri.encodeComponent(
-      'Dron Alerts Feedback [$_selectedType]',
+      '${AppConstants.appName} Feedback [$_selectedType]',
     );
     final body = Uri.encodeComponent(text);
     launchUrl(
@@ -236,10 +239,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
   }
 
   void _sendViaTelegram() {
-    launchUrl(
-      Uri.parse('https://t.me/+Q0PcuV4OkuxmYjVi'),
-      mode: LaunchMode.externalApplication,
-    );
+    openNeptunTelegramChannel('feedback');
   }
 
   @override
@@ -345,7 +345,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                         const SizedBox(width: 6),
                         Text(
                           t.$2,
-                          style: GoogleFonts.inter(
+                          style: GoogleFonts.plusJakartaSans(
                             fontSize: 14,
                             fontWeight: selected
                                 ? FontWeight.w600
@@ -376,10 +376,10 @@ class _FeedbackPageState extends State<FeedbackPage> {
               minLines: 4,
               maxLength: 1000,
               enabled: !_sending,
-              style: GoogleFonts.inter(color: cs.onSurface, fontSize: 15),
+              style: GoogleFonts.plusJakartaSans(color: cs.onSurface, fontSize: 15),
               decoration: InputDecoration(
                 hintText: 'Опишіть питання, пропозицію або помилку...',
-                hintStyle: GoogleFonts.inter(
+                hintStyle: GoogleFonts.plusJakartaSans(
                   color: cs.onSurface.withValues(alpha: 0.35),
                   fontSize: 15,
                 ),
@@ -410,31 +410,37 @@ class _FeedbackPageState extends State<FeedbackPage> {
                 onPressed: _sending ? null : _send,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: cs.primary,
-                  foregroundColor: Colors.white,
+                  // У dark theme primary майже білий — потрібен onPrimary (темний), не Colors.white.
+                  foregroundColor: cs.onPrimary,
+                  disabledBackgroundColor:
+                      cs.primary.withValues(alpha: 0.45),
+                  disabledForegroundColor:
+                      cs.onPrimary.withValues(alpha: 0.55),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
                   ),
                   elevation: 0,
                 ),
                 child: _sending
-                    ? const SizedBox(
+                    ? SizedBox(
                         width: 24,
                         height: 24,
                         child: CircularProgressIndicator(
                           strokeWidth: 2.5,
-                          color: Colors.white,
+                          color: cs.onPrimary,
                         ),
                       )
                     : Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(Icons.send_rounded, size: 20),
+                          Icon(Icons.send_rounded, size: 20, color: cs.onPrimary),
                           const SizedBox(width: 10),
                           Text(
                             'Надіслати',
-                            style: GoogleFonts.inter(
+                            style: GoogleFonts.plusJakartaSans(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
+                              color: cs.onPrimary,
                             ),
                           ),
                         ],
@@ -471,7 +477,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                             icon: const Icon(Icons.send_rounded, size: 18),
                             label: Text(
                               'Telegram',
-                              style: GoogleFonts.inter(
+                              style: GoogleFonts.plusJakartaSans(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -496,7 +502,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                             icon: const Icon(Icons.email_outlined, size: 18),
                             label: Text(
                               'Email',
-                              style: GoogleFonts.inter(
+                              style: GoogleFonts.plusJakartaSans(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -589,7 +595,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                         (ticket['message'] as String? ?? '').length > 60
                             ? '${(ticket['message'] as String).substring(0, (ticket['message'] as String).length < 60 ? (ticket['message'] as String).length : 60)}...'
                             : ticket['message'] ?? '',
-                        style: GoogleFonts.inter(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 14,
                           fontWeight: hasUnread
                               ? FontWeight.w600
@@ -612,7 +618,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                       ),
                       child: Text(
                         statusLabel,
-                        style: GoogleFonts.inter(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
                           color: statusColor,
@@ -634,7 +640,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                       const SizedBox(width: 6),
                       Text(
                         '${responses.length}',
-                        style: GoogleFonts.inter(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 11,
                           color: cs.onSurfaceVariant,
                         ),
@@ -667,7 +673,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                         ),
                         child: Text(
                           ticket['message'] ?? '',
-                          style: GoogleFonts.inter(
+                          style: GoogleFonts.plusJakartaSans(
                             fontSize: 14,
                             color: cs.onSurface,
                             height: 1.5,
@@ -679,7 +685,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                         padding: const EdgeInsets.only(top: 6, bottom: 12),
                         child: Text(
                           _formatDate(ticket['created_at'] ?? ''),
-                          style: GoogleFonts.inter(
+                          style: GoogleFonts.plusJakartaSans(
                             fontSize: 11,
                             color: cs.onSurfaceVariant.withValues(alpha: 0.6),
                           ),
@@ -689,7 +695,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                       if (responses.isNotEmpty) ...[
                         Text(
                           'Відповіді',
-                          style: GoogleFonts.inter(
+                          style: GoogleFonts.plusJakartaSans(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                             color: cs.onSurfaceVariant,
@@ -749,8 +755,8 @@ class _FeedbackPageState extends State<FeedbackPage> {
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  isAdmin ? 'Команда Dron Alerts' : 'Ви',
-                  style: GoogleFonts.inter(
+                  isAdmin ? 'Команда ${AppConstants.appName}' : 'Ви',
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                     color: isAdmin ? cs.primary : cs.onSurfaceVariant,
@@ -759,7 +765,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                 const Spacer(),
                 Text(
                   _formatDate(resp['created_at'] ?? ''),
-                  style: GoogleFonts.inter(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 10,
                     color: cs.onSurfaceVariant.withValues(alpha: 0.5),
                   ),
@@ -769,7 +775,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
             const SizedBox(height: 6),
             Text(
               resp['message'] ?? '',
-              style: GoogleFonts.inter(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 14,
                 color: cs.onSurface,
                 height: 1.4,
@@ -797,10 +803,10 @@ class _FeedbackPageState extends State<FeedbackPage> {
             minLines: 1,
             maxLength: 1000,
             enabled: !isSending,
-            style: GoogleFonts.inter(fontSize: 14, color: cs.onSurface),
+            style: GoogleFonts.plusJakartaSans(fontSize: 14, color: cs.onSurface),
             decoration: InputDecoration(
               hintText: 'Ваша відповідь...',
-              hintStyle: GoogleFonts.inter(
+              hintStyle: GoogleFonts.plusJakartaSans(
                 color: cs.onSurface.withValues(alpha: 0.35),
                 fontSize: 14,
               ),

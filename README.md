@@ -4,87 +4,81 @@ Real-time tracking of air threats over Ukraine based on Telegram channel data.
 
 ## Project Structure
 
-```
-neptun/
-├── nextjs-app/          # Next.js web application (frontend + API)
-│   ├── src/             # React pages, components, API routes
-│   ├── public/          # Static assets (icons, map data, SVGs)
-│   └── worker/          # Python Telegram worker
-│       ├── worker.py    # Telethon client → /api/ingest
-│       ├── core/        # Parser v2 (entity extraction)
-│       └── geo/         # Geocoding (Nominatim, OpenCage, Visicom)
-├── neptun_alarm_app/    # Flutter mobile app (iOS + Android)
-│   └── lib/             # Dart source
-└── deploy/              # VPS deployment scripts & configs
-    ├── setup-vps.sh     # Initial server setup
-    ├── deploy.sh        # Code deploy script
-    ├── nginx-neptun.conf
-    ├── neptun-web.service
-    └── neptun-worker.service
+```text
+render2/
+├── nextjs-app/          # Next.js web app, API routes, chat, admin UI
+│   └── worker/          # Python Telegram worker, parser, geo, LLM analysis
+├── neptun_alarm_app/    # Flutter mobile app
+├── deploy/              # VPS deploy, nginx, systemd, diagnostics
+├── docs/                # Data-flow and runbook docs
+├── infra/photon/        # Photon geocoder Docker/import setup
+├── tools/geo/           # One-off OSM/Overpass utilities
+├── ops/snapshots/       # Local operational snapshots, not app code
+├── sse-gateway/         # Optional Go SSE gateway
+└── designpack/          # TailAdmin source used for style sync
 ```
 
-## Deployment (VPS)
+Map/API data flow is documented in [`docs/NEPTUN_DATA_FLOW.md`](docs/NEPTUN_DATA_FLOW.md). Public marker publication rules live in [`nextjs-app/src/lib/marker-publication.ts`](nextjs-app/src/lib/marker-publication.ts).
 
-The app runs on a Ukrainian VPS (Ubuntu 24.04):
-
-- **Web**: Next.js standalone → nginx reverse proxy → https://neptun.in.ua
-- **Worker**: Python Telethon client monitoring 14 Ukrainian Telegram channels (kpszsu, povitryanatrivogaaa, UkraineAlarmSignal, etc.)
-- **Services**: systemd (`neptun-web`, `neptun-worker`)
+## Common Commands
 
 ```bash
-# Deploy latest code (from local machine)
-scp -r nextjs-app/src nextjs-app/public nextjs-app/package.json root@173.242.55.166:/home/neptun/app/nextjs-app/
-ssh root@173.242.55.166 "cd /home/neptun/app/nextjs-app && npm run build && cp -r public .next/standalone/public && cp -r .next/static .next/standalone/.next/static && systemctl restart neptun-web neptun-worker"
+cd nextjs-app
+npm ci
+npm run dev
+npm run lint
+npm run test:domain
+```
+
+Worker tests:
+
+```bash
+cd nextjs-app/worker
+python3 -m unittest discover -s tests -p 'test_*.py' -v
+```
+
+Deploy validation:
+
+```bash
+make deploy-validate
+bash deploy/deploy-from-mac.sh
 ```
 
 ## Environment Variables
 
-```
+```bash
 NODE_ENV=production
 PORT=3000
 HOSTNAME=0.0.0.0
 DATA_DIR=/data
-AUTH_SECRET=...     # Base secret (ingest + admin header + JWT if dedicated vars unset)
-INGEST_SECRET=...   # Optional — worker → /api/ingest only; leak ≠ admin API (falls back to AUTH_SECRET)
-ADMIN_API_SECRET=... # Optional — X-Auth-Secret for admin JSON + moderators (falls back to AUTH_SECRET)
-JWT_SECRET=...      # Optional — chat/device JWT signing (falls back to AUTH_SECRET)
-DISABLE_INGEST_BRUTE_GUARD=1  # Optional dev only — disables Redis lockout after bad ingest secrets
-ADMIN_PASSWORD=... # Required — no fallback (admin login)
-ALARM_API_KEY=...
-ALARMS_API_KEY=...
-ADMIN_PASSWORD=...
+
+AUTH_SECRET=...       # Base fallback secret
+INGEST_SECRET=...     # Worker -> /api/ingest; falls back to AUTH_SECRET
+ADMIN_API_SECRET=...  # X-Auth-Secret for admin JSON/moderator tools
+ADMIN_SECRET=...      # Deprecated alias for ADMIN_API_SECRET
+JWT_SECRET=...        # Chat/device JWT signing; falls back to AUTH_SECRET
+ADMIN_PASSWORD=...    # Admin login password or bcrypt hash
+
 TELEGRAM_API_ID=...
 TELEGRAM_API_HASH=...
 TELEGRAM_SESSION=...
 INGEST_URL=http://127.0.0.1:3000/api/ingest
-FIREBASE_CREDENTIALS=...
+
+ALARM_API_KEY=...
+ALARMS_API_KEY=...
 OPENCAGE_API_KEY=...
 VISICOM_API_KEY=...
-GROQ_API_KEY=...       # optional: trajectory AI uses Groq (llama-3.3-70b) when set; else OpenAI
-GROQ_TRAJECTORY_MODEL=llama-3.3-70b-versatile  # optional override
+GROQ_API_KEY=...
+GROQ_TRAJECTORY_MODEL=llama-3.3-70b-versatile
 
-# In-app purchase verification (optional, secure by default = deny if not set)
 GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 GOOGLE_PLAY_PACKAGE_NAME=com.neptunalarm.neptun_alarm_app
-APPLE_SHARED_SECRET=... # iOS: from App Store Connect → In-App Purchases
+APPLE_SHARED_SECRET=...
 ```
 
-### Flutter: API base URL
+## Operational Notes
 
-For staging or custom API:
-
-```bash
-flutter build apk --dart-define=API_BASE_URL=https://staging.neptun.in.ua
-```
-
-### Worker: geo unit tests
-
-From `nextjs-app/worker`:
-
-```bash
-python3 -m unittest tests.test_geo_rules -v
-```
-
-### API: ingest body size
-
-`/api/ingest`, `/api/ingest/batch`, and ingest `PATCH` reject requests whose `Content-Length` exceeds **768 KiB** (`413`) to limit accidental or abusive huge JSON payloads.
+- VPS deployment and nginx guidance: [`deploy/README.md`](deploy/README.md).
+- Photon setup: run commands from [`infra/photon`](infra/photon).
+- Legacy parser/push smoke scripts live in [`nextjs-app/worker/manual_checks`](nextjs-app/worker/manual_checks); CI only runs maintained unit tests in [`nextjs-app/worker/tests`](nextjs-app/worker/tests).
+- `/api/ingest`, `/api/ingest/batch`, and ingest `PATCH` reject bodies over **768 KiB**.

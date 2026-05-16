@@ -13,6 +13,7 @@ export async function GET(request: Request) {
         const settings = loadSettings();
         return NextResponse.json({
             minConfidence: settings.minConfidence ?? 0.65,
+            minConfidenceUav: settings.minConfidenceUav ?? null,
             monitorPeriod: settings.monitorPeriod ?? 30,
         });
     } catch (error) {

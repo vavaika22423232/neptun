@@ -701,6 +701,27 @@ class LabelsMarkersPainter extends CustomPainter {
           ..strokeWidth = 2.0;
         canvas.drawCircle(screenPos, markerSize / 2, borderPaint);
       }
+
+      // Draw trajectory line if available
+      if (marker.trajectory != null) {
+        final traj = marker.trajectory!;
+        final startScreen = camera.latLngToScreenOffset(
+          LatLng(traj.startLat, traj.startLng),
+        );
+        final endScreen = camera.latLngToScreenOffset(
+          LatLng(traj.endLat, traj.endLng),
+        );
+
+        // Dashed line for predicted trajectory
+        final trajPaint = Paint()
+          ..color = traj.predicted
+              ? const Color(0xFFfbbf24)
+              : Colors.white.withValues(alpha: 0.6)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.0 * strokeScale;
+
+        canvas.drawLine(startScreen, endScreen, trajPaint);
+      }
     }
 
     // === REGION LABELS (drawn last — on top so names are never covered by icons) ===

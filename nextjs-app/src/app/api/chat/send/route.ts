@@ -7,7 +7,7 @@ import { broadcastSSE } from '@/lib/chat-sse-stream';
 import { invalidateChatCache } from '../messages/route';
 import { isBanned, isModeratorDevice } from '@/lib/admin/data';
 import { containsForbiddenText } from '@/lib/chat-forbidden';
-import { isNewUser } from '@/lib/chat-nicknames';
+import { anonymousGuestLabel, isNewUser } from '@/lib/chat-nicknames';
 import { redisFixedWindowAllow } from '@/lib/redis-rate-limit';
 import { ChatSendSchema } from '@/lib/api-schemas';
 
@@ -88,7 +88,7 @@ export async function POST(request: Request) {
     const body = parsed.data;
 
     const deviceId = identity.deviceId;
-    const nickname = identity.nickname || 'Анонім';
+    const nickname = identity.nickname || anonymousGuestLabel(deviceId);
     const userId = nickname;
 
     const hardwareId = body.hardwareId || body.hardware_id;
@@ -163,7 +163,12 @@ export async function POST(request: Request) {
     if (replyToId) {
       const original = messages.find((m) => m.id === replyToId);
       if (original) {
-        const author = original.userId || original.nickname || 'Анонім';
+        const author =
+          original.userId ||
+          original.nickname ||
+          (original.deviceId
+            ? anonymousGuestLabel(String(original.deviceId))
+            : 'Гість');
         replyTo = {
           id: original.id,
           userId: author,

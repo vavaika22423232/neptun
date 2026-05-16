@@ -661,8 +661,8 @@ def visicom_geocode(city: str, region: str = None) -> tuple:
     # Чорне море: акваторія на підльоті до Одещини (не Чорноморськ, не суша Одеської обл.)
     if ('чорне мор' in city_lower or 'чорному мор' in city_lower or 'чорним мор' in city_lower
             or 'черное мор' in city_lower or 'чёрное мор' in city_lower):
-        print(f"[VISICOM] Special: Чорне море (підліт до Одещини) at (46.14, 30.96)", flush=True)
-        return (46.14, 30.96)
+        print(f"[VISICOM] Special: Чорне море (підліт до Одещини) at (45.72, 30.82)", flush=True)
+        return (45.72, 30.82)
     
     if ('азовське мор' in city_lower or 'азовському мор' in city_lower or 'азовським мор' in city_lower):
         print(f"[VISICOM] Special: Азовське море at (46.0, 36.5)", flush=True)

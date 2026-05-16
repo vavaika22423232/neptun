@@ -35,7 +35,11 @@ class NeptunErrorState extends StatelessWidget {
                 color: cs.error.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: Icon(icon, size: 32, color: cs.error.withValues(alpha: 0.6)),
+              child: Icon(
+                icon,
+                size: 32,
+                color: cs.error.withValues(alpha: 0.6),
+              ),
             ),
             const SizedBox(height: 20),
             Text(
@@ -76,12 +80,14 @@ class NeptunErrorState extends StatelessWidget {
 /// Inline error banner for top-of-page errors (non-blocking).
 class NeptunErrorBanner extends StatelessWidget {
   final String message;
+  final String? detail;
   final VoidCallback? onRetry;
   final VoidCallback? onDismiss;
 
   const NeptunErrorBanner({
     super.key,
     required this.message,
+    this.detail,
     this.onRetry,
     this.onDismiss,
   });
@@ -96,23 +102,38 @@ class NeptunErrorBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: cs.error.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: cs.error.withValues(alpha: 0.2),
-          width: 0.5,
-        ),
+        border: Border.all(color: cs.error.withValues(alpha: 0.2), width: 0.5),
       ),
       child: Row(
         children: [
           Icon(Icons.warning_amber_rounded, size: 18, color: cs.error),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              message,
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: cs.error,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  message,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: cs.error,
+                  ),
+                ),
+                if (detail != null && detail!.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    detail!,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                      height: 1.35,
+                      color: cs.onSurface.withValues(alpha: 0.55),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
           if (onRetry != null)

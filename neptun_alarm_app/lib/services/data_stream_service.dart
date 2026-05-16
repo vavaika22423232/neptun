@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
+import '../features/map/domain/map_realtime_link_status.dart';
 
 /// Singleton SSE hub — ONE connection for ALL real-time events.
 ///
@@ -72,6 +73,10 @@ class DataStreamService {
       _chatTypingController.stream;
   Stream<int> get chatOnlineStream => _chatOnlineController.stream;
 
+  /// Стан живого SSE для HUD карти («Ситуація зараз»).
+  final ValueNotifier<MapRealtimeLinkStatus> mapRealtimeLink =
+      ValueNotifier(MapRealtimeLinkStatus.initial);
+
   // ── SSE internals ──────────────────────────────────────────────────────
   http.Client? _sseClient;
   StreamSubscription? _sseSubscription;
@@ -80,6 +85,33 @@ class DataStreamService {
   int _reconnectDelay = 1;
   bool _connected = false;
   bool _disposed = false;
+
+  void _notifyMapReconnectingPhase() {
+    mapRealtimeLink.value = mapRealtimeLink.value.copyWith(
+      phase: MapRealtimeLinkPhase.reconnecting,
+    );
+  }
+
+  void _notifyMapConnectingPhase() {
+    mapRealtimeLink.value = mapRealtimeLink.value.copyWith(
+      phase: MapRealtimeLinkPhase.connecting,
+    );
+  }
+
+  void _notifyMapLivePhase({bool bumpSignificant = false}) {
+    final prev = mapRealtimeLink.value;
+    mapRealtimeLink.value = prev.copyWith(
+      phase: MapRealtimeLinkPhase.live,
+      lastSignificantRefreshAt: bumpSignificant
+          ? DateTime.now()
+          : prev.lastSignificantRefreshAt,
+    );
+  }
+
+  /// Для HUD не враховуємо високочастотні `track_update`.
+  void _notifyMapSignificantRefresh() {
+    _notifyMapLivePhase(bumpSignificant: true);
+  }
 
   /// Start listening to SSE. Safe to call multiple times.
   void connect() {
@@ -105,6 +137,7 @@ class DataStreamService {
   }
 
   void _startSSE() async {
+    _notifyMapConnectingPhase();
     _sseSubscription?.cancel();
     _sseSubscription = null;
     _sseClient?.close();
@@ -119,6 +152,7 @@ class DataStreamService {
 
       if (response.statusCode != 200) {
         debugPrint('📡 DataStream SSE: HTTP ${response.statusCode}');
+        _notifyMapReconnectingPhase();
         _scheduleReconnect();
         return;
       }
@@ -128,6 +162,7 @@ class DataStreamService {
       debugPrint('📡 DataStream SSE: connected');
 
       String buffer = '';
+      _notifyMapLivePhase();
 
       _sseSubscription = response.stream
           .transform(utf8.decoder)
@@ -156,6 +191,7 @@ class DataStreamService {
           );
     } catch (e) {
       debugPrint('📡 DataStream SSE connect error: $e');
+      _notifyMapReconnectingPhase();
       _scheduleReconnect();
     }
   }
@@ -207,18 +243,21 @@ class DataStreamService {
         // ── Map / alarm events ───────────────────────────────────────────
         case 'alarm_update':
           if (payload is List) {
+            _notifyMapSignificantRefresh();
             _alarmController.add(payload);
           }
           break;
 
         case 'marker_new':
           if (payload is Map<String, dynamic>) {
+            _notifyMapSignificantRefresh();
             _markerNewController.add(payload);
           }
           break;
 
         case 'markers_refresh':
           // Same listeners as marker_new — map page refetches /api/threats (full list).
+          _notifyMapSignificantRefresh();
           _markerNewController.add(<String, dynamic>{
             '_markersRefresh': true,
             if (payload is Map<String, dynamic>) ...payload,
@@ -227,6 +266,7 @@ class DataStreamService {
 
         case 'marker_update':
           if (payload is Map<String, dynamic> && payload['id'] != null) {
+            _notifyMapSignificantRefresh();
             _markerUpdateController.add(payload);
           }
           break;
@@ -235,6 +275,7 @@ class DataStreamService {
           if (payload is Map<String, dynamic>) {
             final id = payload['id']?.toString();
             if (id != null && id.isNotEmpty) {
+              _notifyMapSignificantRefresh();
               _markerDeleteController.add(id);
             }
           }
@@ -300,6 +341,7 @@ class DataStreamService {
   }
 
   void _scheduleReconnect() {
+    _notifyMapReconnectingPhase();
     _connected = false;
     _sseSubscription?.cancel();
     _sseSubscription = null;

@@ -13,6 +13,7 @@ import '../config/api_config.dart';
 import '../core/pro/pro_features.dart';
 import '../data/ukraine_region_paths.dart';
 import '../data/ukraine_district_paths.dart';
+import '../data/shared_state_paths_cache.dart';
 import '../models/map_models.dart';
 import '../services/map_data_service.dart';
 import '../services/map_offline_cache.dart';
@@ -24,29 +25,14 @@ import '../services/data_stream_service.dart';
 import '../services/moderator_service.dart';
 import '../services/map_ready_notifier.dart';
 import '../theme/map_colors.dart';
+import '../theme/diary_design.dart';
 import '../features/map/presentation/widgets/map_layers.dart';
 import '../features/map/presentation/widgets/map_overlays.dart';
 import '../features/map/presentation/widgets/marker_info_sheet.dart';
+import '../core/utils/app_debug_log.dart';
+import '../core/widgets/neptun_shell_modal.dart';
 
-// Для сумісності залишаємо старий клас
-class NeptunColors {
-  static const Color bgDark = Color(0xFF141414);
-  static const Color bgGradientMid = Color(0xFF1F1F1F);
-  static const Color bgGradientEnd = Color(0xFF1F1F1F);
-  static const Color normalFill = Color(0xFF262626);
-  static const Color normalStroke = Color(0xFF525252);
-  static const Color alarmFillState = Color(0xFF991B1B);
-  static const Color alarmStrokeState = Color(0xFFB45555);
-  static const Color districtNormalFill = Colors.transparent;
-  static const Color districtNormalStroke = Color(0x263B82F6);
-  static const Color districtAlarmFill = Color(0xFFDC2626);
-  static const Color districtAlarmStroke = Color(0xFFF87171);
-  static const Color alarmActive = Color(0xFFDC2626);
-  static const Color borderDark = Color(0xFF454545);
-  static const Color textWhite = Colors.white;
-  static const Color textGray = Color(0xFFA3A3A3);
-  static const Color textCyan = Color(0xFF3B82F6);
-}
+
 
 // ===== ГОЛОВНА СТОРІНКА КАРТИ =====
 /// [appBarOverlayHeight] — висота шапки поверх body (для табу з extendBodyBehindAppBar).
@@ -105,7 +91,7 @@ class _NativeMapPageState extends State<NativeMapPage>
   // Інтервали оновлення (fallback — основні дані приходять через SSE push)
   static const int alarmUpdateInterval = 30; // секунд (fallback)
   static const int markerUpdateInterval = 30; // секунд (fallback)
-  int get _timeRange => ProGate.isPro ? 180 : 60; // PRO: 3 год, FREE: 1 год історії
+  int get _timeRange => ProGate.mapThreatHistoryMinutes;
 
   // Threat history (for tracker)
   final List<ThreatHistoryEntry> _threatHistory = [];
@@ -139,7 +125,6 @@ class _NativeMapPageState extends State<NativeMapPage>
   // Parsed paths cache
   final Map<String, List<Path>> _statePathsCache = {};
   final Map<String, List<Path>> _districtPathsCache = {};
-  static final Map<String, List<Path>> _sharedStatePathsCache = {};
   static final Map<String, List<Path>> _sharedDistrictPathsCache = {};
 
   // Zoom/pan - now using flutter_map
@@ -185,7 +170,7 @@ class _NativeMapPageState extends State<NativeMapPage>
 
     // Завантаження іконок загроз
     ThreatIconManager().loadIcons().then((_) {
-      debugPrint('✅ Icons loaded: ${ThreatIconManager().isLoaded}');
+      appDebugLog('✅ Icons loaded: ${ThreatIconManager().isLoaded}');
       if (mounted) setState(() {});
     });
 
@@ -222,7 +207,7 @@ class _NativeMapPageState extends State<NativeMapPage>
     );
 
     // Defer heavy path parsing to after first frame so UI appears immediately
-    _statePathsCache.addAll(_sharedStatePathsCache);
+    _statePathsCache.addAll(SharedStatePathsCache.instance);
     _districtPathsCache.addAll(_sharedDistrictPathsCache);
     if (_statePathsCache.isEmpty || _districtPathsCache.isEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -368,7 +353,7 @@ class _NativeMapPageState extends State<NativeMapPage>
         _updatePulseAnimation();
       }
     } catch (e) {
-      debugPrint('Map cache load: $e');
+      appDebugLog('Map cache load: $e');
     }
     _fetchAlarms();
     _fetchThreatMarkers();
@@ -455,7 +440,7 @@ class _NativeMapPageState extends State<NativeMapPage>
   void showBallisticThreat({String? region}) {
     if (!mounted) return;
 
-    debugPrint('🚀 showBallisticThreat called with region: $region');
+    appDebugLog('🚀 showBallisticThreat called with region: $region');
 
     setState(() {
       _ballisticThreatActive = true;
@@ -468,7 +453,7 @@ class _NativeMapPageState extends State<NativeMapPage>
     // Запускаємо анімацію з реверсом для пульсації
     _ballisticController.repeat(reverse: true);
 
-    debugPrint(
+    appDebugLog(
       '🚀 Animation started, _ballisticThreatActive = $_ballisticThreatActive',
     );
 
@@ -482,7 +467,7 @@ class _NativeMapPageState extends State<NativeMapPage>
   void showBallisticAllClear({String? region}) {
     if (!mounted) return;
 
-    debugPrint('✅ showBallisticAllClear called with region: $region');
+    appDebugLog('✅ showBallisticAllClear called with region: $region');
 
     // Зупиняємо загрозу якщо активна
     _ballisticController.stop();
@@ -507,7 +492,7 @@ class _NativeMapPageState extends State<NativeMapPage>
     _ballisticTimer = Timer(const Duration(seconds: 5), () {
       if (mounted) {
         setState(() => _ballisticAllClear = false);
-        debugPrint('✅ All clear auto-hidden');
+        appDebugLog('✅ All clear auto-hidden');
       }
     });
   }
@@ -525,43 +510,43 @@ class _NativeMapPageState extends State<NativeMapPage>
   /// Parsing runs after first frame; yields every N regions so UI doesn't freeze.
   Future<void> _parseAllPathsDeferred() async {
     const yieldEvery = 8;
-    if (_sharedStatePathsCache.isNotEmpty &&
+    if (SharedStatePathsCache.instance.isNotEmpty &&
         _sharedDistrictPathsCache.isNotEmpty) {
-      _statePathsCache.addAll(_sharedStatePathsCache);
+      _statePathsCache.addAll(SharedStatePathsCache.instance);
       _districtPathsCache.addAll(_sharedDistrictPathsCache);
       if (mounted) setState(() {});
       return;
     }
 
-    // Parse state (oblast) paths
-    int i = 0;
-    for (final entry in UkraineRegionPaths.regionPaths.entries) {
-      final regionId = entry.key;
-      final pathStrings = entry.value;
-      final paths = <Path>[];
+    // Parse state (oblast) paths — skip if heatmap (or prior visit) already filled cache
+    if (SharedStatePathsCache.instance.isEmpty) {
+      int i = 0;
+      for (final entry in UkraineRegionPaths.regionPaths.entries) {
+        final regionId = entry.key;
+        final pathStrings = entry.value;
+        final paths = <Path>[];
 
-      for (final pathData in pathStrings) {
-        try {
-          final path = SvgPathParser.parsePath(pathData);
-          paths.add(path);
-        } catch (e) {
-          debugPrint('Error parsing state path for region $regionId: $e');
+        for (final pathData in pathStrings) {
+          try {
+            final path = SvgPathParser.parsePath(pathData);
+            paths.add(path);
+          } catch (e) {
+            appDebugLog('Error parsing state path for region $regionId: $e');
+          }
         }
-      }
 
-      _statePathsCache[regionId] = paths;
-      if (++i % yieldEvery == 0) await Future.delayed(Duration.zero);
+        SharedStatePathsCache.instance[regionId] = paths;
+        if (++i % yieldEvery == 0) await Future.delayed(Duration.zero);
+      }
     }
-    _sharedStatePathsCache
+    _statePathsCache
       ..clear()
-      ..addAll(_statePathsCache);
-    if (kDebugMode) {
-      debugPrint('Parsed ${_statePathsCache.length} state regions');
-    }
+      ..addAll(SharedStatePathsCache.instance);
+    appDebugLog('Parsed ${_statePathsCache.length} state regions');
     // Don't setState here — wait until districts are also parsed
 
     // Parse district paths (yield so UI stays responsive)
-    i = 0;
+    int d = 0;
     for (final entry in UkraineDistrictPaths.districtPaths.entries) {
       final districtId = entry.key;
       final pathStrings = entry.value;
@@ -572,19 +557,17 @@ class _NativeMapPageState extends State<NativeMapPage>
           final path = SvgPathParser.parsePath(pathData);
           paths.add(path);
         } catch (e) {
-          debugPrint('Error parsing district path for $districtId: $e');
+          appDebugLog('Error parsing district path for $districtId: $e');
         }
       }
 
       _districtPathsCache[districtId] = paths;
-      if (++i % yieldEvery == 0) await Future.delayed(Duration.zero);
+      if (++d % yieldEvery == 0) await Future.delayed(Duration.zero);
     }
     _sharedDistrictPathsCache
       ..clear()
       ..addAll(_districtPathsCache);
-    if (kDebugMode) {
-      debugPrint('Parsed ${_districtPathsCache.length} district regions');
-    }
+    appDebugLog('Parsed ${_districtPathsCache.length} district regions');
     // Single setState after ALL paths are parsed (was 3 separate setState calls)
     if (mounted) setState(() {});
   }
@@ -646,9 +629,9 @@ class _NativeMapPageState extends State<NativeMapPage>
       }
 
       _updateHomeWidget(alarmData.stateCount > 0, alarmData.stateCount);
-      debugPrint('📡 Alarms pushed via SSE: ${alarmData.stateCount} oblasts');
+      appDebugLog('📡 Alarms pushed via SSE: ${alarmData.stateCount} oblasts');
     } catch (e) {
-      debugPrint('📡 Error handling pushed alarms: $e');
+      appDebugLog('📡 Error handling pushed alarms: $e');
     }
   }
 
@@ -793,23 +776,21 @@ class _NativeMapPageState extends State<NativeMapPage>
           });
           _updatePulseAnimation();
         }
-        if (kDebugMode) {
-          debugPrint(
-            'Alarms updated: ${alarmData.stateCount} oblasts, ${alarmData.districtCount} districts',
+        appDebugLog(
+          'Alarms updated: ${alarmData.stateCount} oblasts, ${alarmData.districtCount} districts',
+        );
+        if (alarmData.ballisticRegions.isNotEmpty) {
+          appDebugLog(
+            '🚀 Ballistic threats active in: ${alarmData.ballisticRegions}',
           );
-          if (alarmData.ballisticRegions.isNotEmpty) {
-            debugPrint(
-              '🚀 Ballistic threats active in: ${alarmData.ballisticRegions}',
-            );
-          }
         }
 
         _updateHomeWidget(alarmData.stateCount > 0, alarmData.stateCount);
-      } else if (kDebugMode) {
-        debugPrint('Alarms unchanged, skipping setState');
+      } else {
+        appDebugLog('Alarms unchanged, skipping setState');
       }
     } catch (e) {
-      debugPrint('Error fetching alarms: $e');
+      appDebugLog('Error fetching alarms: $e');
       if (mounted && lastUpdate == null) {
         setState(() {
           error = 'Не вдалося завантажити дані';
@@ -836,7 +817,7 @@ class _NativeMapPageState extends State<NativeMapPage>
         );
       });
     } catch (e) {
-      debugPrint('Widget update error: $e');
+      appDebugLog('Widget update error: $e');
     }
   }
 
@@ -850,11 +831,9 @@ class _NativeMapPageState extends State<NativeMapPage>
       );
 
       if (markerData.ballisticActive != null) {
-        if (kDebugMode) {
-          debugPrint(
-            '🚀 Ballistic threat from API: active=${markerData.ballisticActive}, region=${markerData.ballisticRegion}',
-          );
-        }
+        appDebugLog(
+          '🚀 Ballistic threat from API: active=${markerData.ballisticActive}, region=${markerData.ballisticRegion}',
+        );
         if (markerData.ballisticActive == true &&
             !BallisticAlertService().isBallisticThreatActive) {
           BallisticAlertService().triggerBallisticThreat(
@@ -869,7 +848,7 @@ class _NativeMapPageState extends State<NativeMapPage>
       }
 
       if (kDebugMode) {
-        debugPrint(
+        appDebugLog(
           '📊 Received ${markerData.markers.length} markers from API:',
         );
         for (final marker in markerData.markers) {
@@ -879,7 +858,7 @@ class _NativeMapPageState extends State<NativeMapPage>
             trajInfo =
                 ' [AI TRAJ: ${t.sourceName} → ${t.targetName}${t.predicted ? " (прогноз)" : ""}]';
           }
-          debugPrint(
+          appDebugLog(
             '  📍 type="${marker.threatType}", place="${marker.place}"$trajInfo',
           );
         }
@@ -888,7 +867,7 @@ class _NativeMapPageState extends State<NativeMapPage>
             .where((m) => m.hasAITrajectory)
             .length;
         if (trajCount > 0) {
-          debugPrint('🎯 $trajCount markers have AI trajectories');
+          appDebugLog('🎯 $trajCount markers have AI trajectories');
         }
       }
 
@@ -915,14 +894,14 @@ class _NativeMapPageState extends State<NativeMapPage>
           });
         }
         _addThreatHistoryEntry(markerData.counts);
-        debugPrint(
+        appDebugLog(
           'Markers updated: ${markerData.markers.length} threat markers',
         );
       } else {
-        debugPrint('Markers unchanged, skipping setState');
+        appDebugLog('Markers unchanged, skipping setState');
       }
     } catch (e) {
-      debugPrint('Error fetching threat markers: $e');
+      appDebugLog('Error fetching threat markers: $e');
     } finally {
       _markersFetching = false;
     }
@@ -1060,7 +1039,24 @@ class _NativeMapPageState extends State<NativeMapPage>
               child: ThreatStatsPanel(
                 colors: colors,
                 visibleMarkers: visibleMarkers,
-                onTap: () => _showThreatStatsDialog(colors, visibleMarkers),
+                onTap: () => showThreatStatsDialog(
+                  context,
+                  colors: colors,
+                  threatMarkers: threatMarkers,
+                  filterableThreatTypes: _filterableThreatTypes,
+                  visibleThreatTypes: _visibleThreatTypes,
+                  onFilterToggled: (type, selected) {
+                    setState(() {
+                      if (selected) {
+                        _visibleThreatTypes.add(type);
+                      } else {
+                        _visibleThreatTypes.remove(type);
+                      }
+                    });
+                  },
+                  threatHistory: _threatHistory,
+                  timeRangeMinutes: _timeRange,
+                ),
               ),
             ),
           ),
@@ -1094,29 +1090,7 @@ class _NativeMapPageState extends State<NativeMapPage>
     );
   }
 
-  void _showThreatStatsDialog(
-    MapColors colors,
-    List<ThreatMarker> visibleMarkers,
-  ) {
-    showThreatStatsDialog(
-      context,
-      colors: colors,
-      threatMarkers: threatMarkers,
-      filterableThreatTypes: _filterableThreatTypes,
-      visibleThreatTypes: _visibleThreatTypes,
-      onFilterToggled: (type, selected) {
-        setState(() {
-          if (selected) {
-            _visibleThreatTypes.add(type);
-          } else {
-            _visibleThreatTypes.remove(type);
-          }
-        });
-      },
-      threatHistory: _threatHistory,
-      timeRangeMinutes: _timeRange,
-    );
-  }
+
 
   Widget _buildError(MapColors colors) {
     return Center(
@@ -1225,7 +1199,7 @@ class _NativeMapPageState extends State<NativeMapPage>
             } else {
               // Programmatic zoom: update immediately
               _zoomDebounceTimer?.cancel();
-              setState(() {});
+              if (mounted) setState(() {});
             }
           }
         },
@@ -1340,23 +1314,29 @@ class _NativeMapPageState extends State<NativeMapPage>
       marker,
       isModerator: ModeratorService.instance.isModerator,
       onDelete: _confirmDeleteMarker,
+      onHide: _confirmHideMarker,
     );
   }
 
-  void _confirmDeleteMarker(ThreatMarker marker) {
+  void _confirmHideMarker(ThreatMarker marker) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    showDialog(
+    NeptunShellModal.showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: isDark ? const Color(0xFF2A2A2A) : Colors.white,
+        backgroundColor:
+            isDark ? DiaryColors.darkSurfaceElevated : DiaryColors.background,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
-          'Видалити мітку?',
-          style: TextStyle(color: isDark ? Colors.white : Colors.black87),
+          'Приховати мітку?',
+          style: TextStyle(
+            color: isDark ? DiaryColors.darkPrimary : DiaryColors.primary,
+          ),
         ),
         content: Text(
-          'Ця мітка буде видалена з карти для всіх користувачів.',
-          style: TextStyle(color: isDark ? Colors.grey[300] : Colors.grey[700]),
+          'Мітку буде приховано на карті (можна відновити в адмінці).',
+          style: TextStyle(
+            color: isDark ? DiaryColors.darkMuted : DiaryColors.muted,
+          ),
         ),
         actions: [
           TextButton(
@@ -1364,7 +1344,114 @@ class _NativeMapPageState extends State<NativeMapPage>
             child: Text(
               'Скасувати',
               style: TextStyle(
-                color: isDark ? Colors.grey[400] : Colors.grey[600],
+                color: isDark ? DiaryColors.darkMuted : DiaryColors.muted,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.pop(context);
+              _hideMarker(marker);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange.shade800,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: const Text('Приховати'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _hideMarker(ThreatMarker marker) async {
+    try {
+      final secret = await ModeratorService.instance.getSecret();
+      if (secret == null || secret.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Помилка: секрет модератора не знайдено'),
+          ),
+        );
+        return;
+      }
+
+      final response = await http
+          .post(
+            Uri.parse(ApiConfig.adminHiddenHide),
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Auth-Secret': secret,
+            },
+            body: json.encode({
+              'lat': marker.lat,
+              'lng': marker.lng,
+              'text': marker.text,
+              'source': 'auto',
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Мітку приховано'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        _fetchThreatMarkers();
+      } else {
+        final data = json.decode(utf8.decode(response.bodyBytes));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Помилка: ${data['error'] ?? 'Невідома помилка'}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Помилка: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  void _confirmDeleteMarker(ThreatMarker marker) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    NeptunShellModal.showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor:
+            isDark ? DiaryColors.darkSurfaceElevated : DiaryColors.background,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Видалити мітку?',
+          style: TextStyle(
+            color: isDark ? DiaryColors.darkPrimary : DiaryColors.primary,
+          ),
+        ),
+        content: Text(
+          'Ця мітка буде видалена з карти для всіх користувачів.',
+          style: TextStyle(
+            color: isDark ? DiaryColors.darkMuted : DiaryColors.muted,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(
+              'Скасувати',
+              style: TextStyle(
+                color: isDark ? DiaryColors.darkMuted : DiaryColors.muted,
               ),
             ),
           ),
@@ -1440,7 +1527,7 @@ class _NativeMapPageState extends State<NativeMapPage>
         );
       }
     } catch (e) {
-      debugPrint('❌ deleteMarker error: $e');
+      appDebugLog('❌ deleteMarker error: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

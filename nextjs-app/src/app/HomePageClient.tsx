@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import type { Alarm, FusionTrajectory } from '@/types';
+import { useState, useEffect, useMemo } from 'react';
+import type { Alarm, FusionTrajectory, Marker, BallisticThreat } from '@/types';
 import { useAlarms } from '@/hooks/useAlarms';
 import { useMarkers } from '@/hooks/useMarkers';
 import { usePresence } from '@/hooks/usePresence';
+import { pickBasemapKind, type MapBasemapKind } from '@/lib/map-leaflet-performance';
 import AppShell from '@/components/AppShell';
 import DonateModal from '@/components/DonateModal';
-import FaqModal from '@/components/FaqModal';
 import DeploymentScreen from '@/components/DeploymentScreen';
 import SeoInfoSection from '@/components/SeoInfoSection';
 import MapErrorBoundary from '@/components/MapErrorBoundary';
@@ -17,19 +17,48 @@ export default function HomePageInner({
   isEmbed = false,
   initialAlarms = [],
   initialAlarmEtag = null,
+  initialMarkers,
+  initialMarkersVersion = null,
+  initialMarkersServerTime = null,
+  initialBallisticThreat = null,
 }: {
   isEmbed?: boolean;
   initialAlarms?: Alarm[];
   initialAlarmEtag?: string | null;
+  /** SSR/RSC snapshot — same filter as GET /api/data?timeRange=60 (instant pins vs empty map until fetch). */
+  initialMarkers?: Marker[];
+  initialMarkersVersion?: number | null;
+  initialMarkersServerTime?: number | null;
+  initialBallisticThreat?: BallisticThreat | null;
 }) {
+  const markersBootstrap = useMemo(() => {
+    if (initialMarkers && initialMarkers.length > 0) {
+      return {
+        markers: initialMarkers,
+        markersVersion: initialMarkersVersion ?? null,
+        serverTime: initialMarkersServerTime ?? null,
+        ballisticThreat: initialBallisticThreat ?? null,
+      };
+    }
+    return undefined;
+  }, [initialMarkers, initialMarkersVersion, initialMarkersServerTime, initialBallisticThreat]);
+
   const { alarms } = useAlarms({ initialAlarms, initialEtag: initialAlarmEtag });
-  const { markers, ballisticThreat, forceRefreshMarkers } = useMarkers();
+  const { markers, ballisticThreat, forceRefreshMarkers } = useMarkers(markersBootstrap);
   const presence = usePresence();
 
   const [donateOpen, setDonateOpen] = useState(false);
   const [faqOpen, setFaqOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [ukraineOnly, setUkraineOnly] = useState(false);
+  const [ukraineOnly, setUkraineOnly] = useState(true);
+  const [trackingActive, setTrackingActive] = useState(false);
+  const [focusedTargetId, setFocusedTargetId] = useState<string | null>(null);
+  const [basemap, setBasemap] = useState<MapBasemapKind>(() => pickBasemapKind(isEmbed, typeof navigator !== 'undefined' ? navigator.userAgent : undefined));
+
+  useEffect(() => {
+    // If tracking is disabled, clear focus
+    if (!trackingActive) setFocusedTargetId(null);
+  }, [trackingActive]);
 
   useEffect(() => {
     if (!isEmbed) {
@@ -106,11 +135,17 @@ export default function HomePageInner({
     isAdmin,
     onMarkerAction: isAdmin ? forceRefreshMarkers : undefined,
     ukraineOnly,
+    basemapOverride: basemap,
+    autoTrack: trackingActive,
+    focusedTargetId,
+    onFocusedTargetIdChange: setFocusedTargetId,
   };
 
   if (isEmbed) {
     return (
       <main className="relative h-screen h-[100dvh] w-full overflow-hidden">
+        {/* Maintenance Notice for Embed centralized in RootLayout */}
+
         <div id="map-container" className="isolate h-full w-full">
           <MapErrorBoundary>
             <MapHost {...mapProps} isEmbed={isEmbed} />
@@ -133,6 +168,10 @@ export default function HomePageInner({
         onFaq={() => setFaqOpen(true)}
         onToggleUkraineOnly={() => setUkraineOnly((value) => !value)}
         ukraineOnly={ukraineOnly}
+        basemap={basemap}
+        onBasemapChange={setBasemap}
+        trackingActive={trackingActive}
+        onToggleTracking={() => setTrackingActive(v => !v)}
       >
         <div id="map-container" className="isolate h-full w-full">
           <MapErrorBoundary>
@@ -142,12 +181,13 @@ export default function HomePageInner({
       </AppShell>
 
       <DonateModal isOpen={donateOpen} onClose={() => setDonateOpen(false)} />
-      <FaqModal isOpen={faqOpen} onClose={() => setFaqOpen(false)} />
 
-      <h1 className="seo-page-title hidden">
+      {/* Always in DOM for SEO — visually hidden/shown via isOpen */}
+      <SeoInfoSection isOpen={faqOpen} onClose={() => setFaqOpen(false)} />
+
+      <h1 className="seo-page-title-sr-only">
         Карта тривог і шахедів України онлайн — повітряна тривога, мапа тривог
       </h1>
-      <SeoInfoSection />
     </>
   );
 }

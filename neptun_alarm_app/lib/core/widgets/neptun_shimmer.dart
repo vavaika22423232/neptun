@@ -7,11 +7,15 @@ class NeptunShimmer extends StatefulWidget {
   final double height;
   final double borderRadius;
 
+  /// Інтенсивність заливки (0–1), помножує alpha базових кольорів.
+  final double opacity;
+
   const NeptunShimmer({
     super.key,
     this.width = double.infinity,
     this.height = 20,
     this.borderRadius = 8,
+    this.opacity = 1.0,
   });
 
   @override
@@ -41,12 +45,13 @@ class _NeptunShimmerState extends State<NeptunShimmer>
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final o = widget.opacity.clamp(0.0, 1.0);
     final baseColor = isDark
-        ? cs.surfaceContainerHighest.withValues(alpha: 0.6)
-        : cs.surfaceContainerHighest;
+        ? cs.surfaceContainerHighest.withValues(alpha: 0.6 * o)
+        : cs.surfaceContainerHighest.withValues(alpha: o);
     final highlightColor = isDark
-        ? cs.surfaceContainerHighest
-        : cs.surfaceContainerHighest.withValues(alpha: 0.9);
+        ? cs.surfaceContainerHighest.withValues(alpha: o)
+        : cs.surfaceContainerHighest.withValues(alpha: 0.9 * o);
 
     return AnimatedBuilder(
       animation: _controller,

@@ -32,7 +32,7 @@ export default function TelegramBanner({ isCompact }: TelegramBannerProps) {
               Щоб не перевіряти сайт
             </span>
             <span className="text-[12px] font-bold leading-tight tracking-tight text-gray-900 dark:text-white sm:text-[13px]">
-              Хлопці пишуть у Telegram
+              Хлопці пишуть в Telegram
             </span>
           </span>
         </div>
@@ -44,9 +44,9 @@ export default function TelegramBanner({ isCompact }: TelegramBannerProps) {
               <span className="relative inline-flex h-2 w-2 rounded-full bg-[#3A9EFD] shadow-[0_0_8px_rgba(58,158,253,1)]" />
             </span>
             <span className="relative z-[1] leading-tight tracking-tight flex-1 min-w-0">
-              <span className="text-[9px] sm:text-[10px] text-gray-800 dark:text-[#3A9EFD]/80 font-medium">Щоб не перевіряти сайт </span>
-              <strong className="font-bold text-gray-900 dark:text-white tracking-widest uppercase text-[9px] sm:text-[10px]">Хлопці пишуть в Telegram</strong>
-              <span className="text-[9px] text-gray-500 dark:text-white/50 sm:text-[10px] ml-1 tracking-[0.2px]">— максимально швидко</span>
+              <span className="text-[10px] sm:text-[11px] text-gray-800 dark:text-[#3A9EFD]/80 font-medium">Щоб не перевіряти сайт </span>
+              <strong className="font-bold text-gray-900 dark:text-white text-[10px] sm:text-[11px]">Хлопці пишуть в телеграм</strong>
+              <span className="hidden xsm:inline text-[10px] text-gray-500 dark:text-white/50 sm:text-[11px] ml-1 tracking-[0.2px]">— максимально швидко</span>
             </span>
           </div>
         </>

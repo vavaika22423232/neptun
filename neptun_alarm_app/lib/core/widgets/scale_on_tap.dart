@@ -33,9 +33,10 @@ class _ScaleOnTapState extends State<ScaleOnTap>
       duration: const Duration(milliseconds: 100),
       vsync: this,
     );
-    _scale = Tween<double>(begin: 1.0, end: widget.scaleDown).animate(
-      CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
-    );
+    _scale = Tween<double>(
+      begin: 1.0,
+      end: widget.scaleDown,
+    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
   }
 
   @override
@@ -69,19 +70,22 @@ class _ScaleOnTapState extends State<ScaleOnTap>
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTapDown: widget.onTap != null || widget.onLongPress != null ? _onTapDown : null,
-      onTapUp: widget.onTap != null || widget.onLongPress != null ? _onTapUp : null,
-      onTapCancel: widget.onTap != null || widget.onLongPress != null ? _onTapCancel : null,
+      onTapDown: widget.onTap != null || widget.onLongPress != null
+          ? _onTapDown
+          : null,
+      onTapUp: widget.onTap != null || widget.onLongPress != null
+          ? _onTapUp
+          : null,
+      onTapCancel: widget.onTap != null || widget.onLongPress != null
+          ? _onTapCancel
+          : null,
       onTap: widget.onTap != null ? _onTap : null,
       onLongPress: widget.onLongPress != null ? _onLongPress : null,
       behavior: HitTestBehavior.opaque,
       child: AnimatedBuilder(
         animation: _scale,
         builder: (context, child) {
-          return Transform.scale(
-            scale: _scale.value,
-            child: child,
-          );
+          return Transform.scale(scale: _scale.value, child: child);
         },
         child: widget.child,
       ),

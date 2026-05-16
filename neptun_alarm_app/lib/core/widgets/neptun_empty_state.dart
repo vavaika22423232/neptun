@@ -35,7 +35,11 @@ class NeptunEmptyState extends StatelessWidget {
                 color: cs.primary.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: Icon(icon, size: 32, color: cs.primary.withValues(alpha: 0.6)),
+              child: Icon(
+                icon,
+                size: 32,
+                color: cs.primary.withValues(alpha: 0.6),
+              ),
             ),
             const SizedBox(height: 20),
             Text(

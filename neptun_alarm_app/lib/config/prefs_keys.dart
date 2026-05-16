@@ -3,6 +3,8 @@ class PrefsKeys {
   PrefsKeys._();
 
   // ===== Налаштування сповіщень =====
+  /// Назви областей/районів для push (список рядків).
+  static const String selectedRegions = 'selected_regions';
   static const String notificationsEnabled = 'notifications_enabled';
   static const String subscribedRegions = 'subscribed_regions';
   static const String subscribedDistricts = 'subscribed_districts';
@@ -62,6 +64,10 @@ class PrefsKeys {
 
   // ===== Тривожна валіза =====
   static const String emergencyBagItems = 'emergency_bag_items';
+
+  // ===== Telegram promo (Radar banner) =====
+  static const String telegramRadarBannerDismissed =
+      'telegram_radar_banner_dismissed';
 
   // ===== Battery optimization (Xiaomi/Huawei) =====
   static const String batteryOptPromptLastShown = 'battery_opt_prompt_last_shown';

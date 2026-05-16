@@ -897,6 +897,7 @@ ACCUSATIVE_TO_NOMINATIVE: dict[str, str] = {
     'білої церкви': 'Біла Церква', 'білу церкву': 'Біла Церква',
     'одессой': 'Одеса', 'одесой': 'Одеса',
     'черноморском': 'Чорноморськ', 'черноморск': 'Чорноморськ',
+    'коблево': 'Коблеве',
 }
 
 # Займенники / прийменникові конструкції — не топоніми («если к нам» → GPT дав place_name=нам)
@@ -1132,6 +1133,65 @@ def extract_count(text: str) -> int:
     if re.search(r'груп[аупі]', text.lower()):
         return 3
     return 1
+
+
+_STRUCTURED_ALERT_EVENT_TYPES = frozenset({
+    'uav',
+    'recon',
+    'missile',
+    'ballistic',
+    'kab',
+    'explosion',
+    'launch',
+})
+
+
+def _extract_structured_alert_entity(text: str) -> Optional[ParsedEntities]:
+    """
+    Deterministic parser for official alert headers:
+      🛸 Богодухів (Харківська обл.)
+      🚀 Козача Лопань (Харківська обл.)
+
+    The header is treated as locality evidence only when it explicitly carries
+    an oblast in parentheses. Coordinates are still resolved downstream by the
+    normal geo pipeline.
+    """
+    first_line = next((line.strip() for line in text.splitlines() if line.strip()), '')
+    if not first_line or '(' not in first_line:
+        return None
+
+    match = re.match(
+        r'^\s*'
+        r'(?:[\U0001F300-\U0001FAFF\u2600-\u27BF]\ufe0f?\s*)+'
+        r'(?P<place>[А-ЯІЇЄҐа-яіїєґA-Za-z\'’ʼ`\-.]+'
+        r'(?:\s+[А-ЯІЇЄҐа-яіїєґA-Za-z\'’ʼ`\-.]+){0,3})'
+        r'\s*\((?P<oblast>[^)]*(?:обл|область|region)[^)]*)\)',
+        first_line,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+
+    event_type = classify_event(text)
+    if event_type not in _STRUCTURED_ALERT_EVENT_TYPES:
+        return None
+
+    place = sanitize_toponym_token(normalize_place_case(match.group('place').strip()))
+    oblast = extract_oblast_authority(first_line) or extract_oblast_authority(text)
+    if not place or not oblast:
+        return None
+
+    low_place = place.lower()
+    if low_place.startswith(('загроза', 'увага', 'перейдіть')):
+        return None
+
+    return ParsedEntities(
+        event_type=event_type,
+        place_name=place,
+        oblast=oblast,
+        count=extract_count(text),
+        raw_text=text,
+    )
 
 
 def clean_noise(text: str) -> str:
@@ -1581,6 +1641,7 @@ def _clean_direction_target(value: str) -> Optional[str]:
     target = (value or '').strip()
     if not target:
         return None
+    target = re.split(r'[\r\n]+', target, maxsplit=1)[0].strip()
     target = re.split(r'[/,;]', target, maxsplit=1)[0].strip()
     words = target.split()
     while len(words) > 1 and words[-1].lower() in {
@@ -1675,8 +1736,11 @@ def _extract_near(text: str) -> Optional[str]:
     if m:
         near = m.group(1).strip()
         near = re.split(r'\b(?:далі|потім|курс(?:ом)?|напрям(?:ок|ку)?)\b', near, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        near = re.split(r'\b(?:в|у)\s*\d+\s*км\b', near, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        near = re.split(r'\b(?:від|от)\s+берег', near, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        near = re.sub(r'\s+\b(?:в|у)\s*$', '', near, flags=re.IGNORECASE).strip()
         near = re.sub(r'^(?:район[іу]?\s+|р[\-\s]?н\s+)', '', near, flags=re.IGNORECASE).strip()
-        return near or None
+        return normalize_place_case(near) if near else None
     return None
 
 
@@ -1725,6 +1789,10 @@ def _split_multi_entry(text: str) -> list[tuple[Optional[str], str]]:
       - р-н (район) notation: Конотоп/р-н
       - Direct →City format: ✈️ БПЛA→Суми/р-н / 🚀→Дніпро/р-н
     """
+    structured_alert = _extract_structured_alert_entity(text)
+    if structured_alert:
+        return [(structured_alert.oblast, text)]
+
     entries: list[tuple[Optional[str], str]] = []
 
     # Strategy 0: Summary format "По БпЛА:\nОбласть — Nх\n...\nОсоблива увага: City1, City2"
@@ -1928,6 +1996,12 @@ def _split_multi_entry(text: str) -> list[tuple[Optional[str], str]]:
     if (
         len(lines) >= 2
         and re.search(r'[🛵🛸✈🚀]|(?:бпла|шахед|дрон|ракета)', lines[0], re.IGNORECASE)
+        and not re.search(
+            r'\b(?:на|до|в\s+бік|у\s+бік|курс(?:ом)?(?:\s+на)?|курсом\s+на)\s+'
+            r'[' + _CYR_NAME + r']{2,}',
+            lines[0],
+            re.IGNORECASE,
+        )
         and not any('>' in ln for ln in lines[1:])
     ):
         bare_targets: list[tuple[Optional[str], str]] = []
@@ -2446,6 +2520,10 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
     if _is_non_threat_context(normalized, text):
         log.debug(f"PARSER DROP [non-threat-context]: '{text[:60]}'")
         return [ParsedEntities(event_type='info', raw_text=text, is_negation=True)]
+
+    structured_alert = _extract_structured_alert_entity(text)
+    if structured_alert:
+        return [structured_alert]
 
     entries = _split_multi_entry(text)
     results: list[ParsedEntities] = []

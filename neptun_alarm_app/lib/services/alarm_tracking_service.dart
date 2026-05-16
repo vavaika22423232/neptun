@@ -13,6 +13,10 @@ import 'region_database.dart';
 import 'data_stream_service.dart';
 import 'package:neptun_alarm_app/config/api_config.dart';
 import 'package:neptun_alarm_app/core/network/http_retry.dart';
+import 'package:neptun_alarm_app/core/utils/app_debug_log.dart';
+import 'package:neptun_alarm_app/config/prefs_keys.dart';
+import 'package:neptun_alarm_app/core/pro/pro_features.dart';
+import 'package:flutter/foundation.dart';
 
 /// Сервіс відстеження тривог з ukrainealarm API
 /// Показує сповіщення про "Повітряна тривога" / "Відбій" для обраних регіонів та районів
@@ -25,7 +29,9 @@ class AlarmTrackingService {
   Timer? _trackingTimer;
   bool _isTracking = false;
 
-  final http.Client _httpClient = http.Client();
+  http.Client? _httpClient;
+
+  http.Client get _activeHttpClient => _httpClient ??= http.Client();
 
   // Попередній стан тривог для порівняння
   // Ключ: "oblast:ID" або "district:назва" -> hasAlarm
@@ -52,7 +58,7 @@ class AlarmTrackingService {
       _notificationCache['alarm:$regionName:ballistic'] = DateTime.now();
       _notificationCache['alarm:$regionName:drones'] = DateTime.now();
     }
-    debugPrint('🔔 FCM dedup: marked $cacheKey as notified');
+    appDebugLog('🔔 FCM dedup: marked $cacheKey as notified');
   }
 
   // Назви областей (regionId -> name)
@@ -132,7 +138,7 @@ class AlarmTrackingService {
     if (_isTracking) return;
 
     _isTracking = true;
-    debugPrint('🔔 AlarmTrackingService: Starting alarm tracking');
+    appDebugLog('🔔 AlarmTrackingService: Starting alarm tracking');
 
     // Перше завантаження - без сповіщень (щоб заповнити _previousAlarmStates)
     await _fetchAndCompareAlarms(isInitial: true);
@@ -164,7 +170,9 @@ class AlarmTrackingService {
     _alarmSSESub?.cancel();
     _alarmSSESub = null;
     _isTracking = false;
-    debugPrint('🔕 AlarmTrackingService: Stopped alarm tracking');
+    _httpClient?.close();
+    _httpClient = null;
+    appDebugLog('🔕 AlarmTrackingService: Stopped alarm tracking');
   }
 
   /// Отримати стан тривог та порівняти з попереднім
@@ -184,7 +192,7 @@ class AlarmTrackingService {
           prefs.getStringList('selected_oblast_ids') ?? [];
       final selectedRaionIds = prefs.getStringList('selected_raion_ids') ?? [];
       final selectedRegionsLegacy =
-          prefs.getStringList('selected_regions') ?? [];
+          prefs.getStringList(PrefsKeys.selectedRegions) ?? [];
 
       // Розділяємо на області та райони
       final selectedOblasts = <String>{}; // Назви областей
@@ -256,7 +264,7 @@ class AlarmTrackingService {
       // Об'єднуємо вибрані області та райони
       final selectedRegions = {...selectedOblasts, ...selectedDistricts};
 
-      debugPrint(
+      appDebugLog(
         '🔍 Tracking: oblasts=$selectedOblasts, districts=$selectedDistricts',
       );
 
@@ -264,15 +272,15 @@ class AlarmTrackingService {
       final http.Response response;
       try {
         response = await httpGetWithRetries(
-          _httpClient,
+          _activeHttpClient,
           Uri.parse(ApiConfig.alarmsAll),
           timeout: const Duration(seconds: 10),
         );
       } on TimeoutException {
-        debugPrint('⏱ AlarmTracking: API timeout, skipping cycle');
+        appDebugLog('⏱ AlarmTracking: API timeout, skipping cycle');
         return;
       } catch (_) {
-        debugPrint('⚠️ AlarmTracking: network error, skipping cycle');
+        appDebugLog('⚠️ AlarmTracking: network error, skipping cycle');
         return;
       }
 
@@ -284,7 +292,7 @@ class AlarmTrackingService {
       try {
         data = json.decode(response.body);
       } catch (_) {
-        debugPrint('⚠️ AlarmTracking: invalid JSON (HTML?)');
+        appDebugLog('⚠️ AlarmTracking: invalid JSON (HTML?)');
         return;
       }
       final Map<String, bool> currentAlarms = {}; // key -> hasAlarm
@@ -354,7 +362,7 @@ class AlarmTrackingService {
       if (isInitial) {
         _previousAlarmStates.clear();
         _previousAlarmStates.addAll(currentAlarms);
-        debugPrint(
+        appDebugLog(
           '🔔 Initial alarm states loaded: ${currentAlarms.length} regions/districts',
         );
 
@@ -411,7 +419,7 @@ class AlarmTrackingService {
         data,
       );
     } catch (e) {
-      debugPrint('AlarmTrackingService error: $e');
+      appDebugLog('AlarmTrackingService error: $e');
     }
   }
 
@@ -517,11 +525,11 @@ class AlarmTrackingService {
         totalThreats: threatDetails['total'] ?? 0,
       );
 
-      debugPrint(
+      appDebugLog(
         '📱 Widget updated: alarm=$hasAlarm, drones=${threatDetails['drones']}, missiles=${threatDetails['missiles']}, kab=${threatDetails['kab']}',
       );
     } catch (e) {
-      debugPrint('Widget update error in AlarmTrackingService: $e');
+      appDebugLog('Widget update error in AlarmTrackingService: $e');
     }
   }
 
@@ -531,7 +539,7 @@ class AlarmTrackingService {
       final http.Response response;
       try {
         response = await httpGetWithRetries(
-          _httpClient,
+          _activeHttpClient,
           Uri.parse(ApiConfig.threats),
           timeout: const Duration(seconds: 5),
         );
@@ -624,7 +632,7 @@ class AlarmTrackingService {
         'total': drones + missiles + kab + ballistic,
       };
     } catch (e) {
-      debugPrint('Error fetching threat details: $e');
+      appDebugLog('Error fetching threat details: $e');
       return {'drones': 0, 'missiles': 0, 'kab': 0, 'ballistic': 0, 'total': 0};
     }
   }
@@ -638,10 +646,10 @@ class AlarmTrackingService {
     _trimRecentNotificationTimes();
 
     for (final item in started) {
-      debugPrint('🚨 ALARM STARTED: ${item.name} (type: ${item.threatType})');
+      appDebugLog('🚨 ALARM STARTED: ${item.name} (type: ${item.threatType})');
     }
     for (final name in ended) {
-      debugPrint('✅ ALARM ENDED: $name');
+      appDebugLog('✅ ALARM ENDED: $name');
     }
 
     // Alarm started: один ключ на регіон, batch якщо багато (4+)
@@ -701,19 +709,66 @@ class AlarmTrackingService {
     _recentNotificationTimes.removeWhere((t) => t.isBefore(cutoff));
   }
 
+  static final _regionListSeparator = RegExp(r',\s*');
+
+  /// Кілька регіонів у batch приходять як "Обл1, Обл2" — для heatmap/analytics потрібні окремі ключі.
+  List<String> _splitRegionNames(String raw) {
+    return raw
+        .split(_regionListSeparator)
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+  }
+
+  Future<void> _persistAlarmStartMarkers(String regionNameOrList) async {
+    final prefs = await SharedPreferences.getInstance();
+    final regions = _splitRegionNames(regionNameOrList);
+    for (final r in regions) {
+      final safeKey =
+          r.replaceAll(RegExp(r'[^a-zA-Zа-яА-ЯіІїЇєЄґҐ0-9]'), '_');
+      await prefs.setString(
+        'alarm_start_$safeKey',
+        DateTime.now().toIso8601String(),
+      );
+    }
+  }
+
+  /// Оновлення статистики та heatmap для одного регіону при відбої.
+  Future<void> _applyAlarmEndedForRegion(
+    SharedPreferences prefs,
+    String regionName,
+  ) async {
+    final safeKey =
+        regionName.replaceAll(RegExp(r'[^a-zA-Zа-яА-ЯіІїЇєЄґҐ0-9]'), '_');
+    final startStr = prefs.getString('alarm_start_$safeKey');
+    if (startStr == null) return;
+
+    final start = DateTime.tryParse(startStr);
+    if (start != null) {
+      final minutes = DateTime.now().difference(start).inMinutes;
+      if (minutes > 0) {
+        final total = (prefs.getInt('stats_total_minutes') ?? 0) + minutes;
+        await prefs.setInt('stats_total_minutes', total);
+      }
+    }
+    final heatmapKey = 'heatmap_count_$safeKey';
+    await prefs.setInt(heatmapKey, (prefs.getInt(heatmapKey) ?? 0) + 1);
+    await prefs.remove('alarm_start_$safeKey');
+  }
+
   /// Сповіщення про початок тривоги
   Future<void> _notifyAlarmStarted(String regionName, String threatType) async {
     // Один ключ на регіон (не на threat type) — 5 хв
     final cacheKey = 'alarm:$regionName';
     if (_wasRecentlyNotified(cacheKey)) {
-      debugPrint('🔔 Skipping duplicate: $regionName');
+      appDebugLog('🔔 Skipping duplicate: $regionName');
       return;
     }
     _markAsNotified(cacheKey);
 
     // Rate limit: макс 3 за хвилину
     if (_recentNotificationTimes.length >= _maxNotificationsPerMinute) {
-      debugPrint('🔔 Rate limit: skipping (${_recentNotificationTimes.length} in last min)');
+      appDebugLog('🔔 Rate limit: skipping (${_recentNotificationTimes.length} in last min)');
       return;
     }
     _recentNotificationTimes.add(DateTime.now());
@@ -723,12 +778,11 @@ class AlarmTrackingService {
     // Persist stats for analytics page
     final totalAlarms = (prefs.getInt('stats_total_alarms') ?? 0) + 1;
     await prefs.setInt('stats_total_alarms', totalAlarms);
-    final safeKey = regionName.replaceAll(RegExp(r'[^a-zA-Zа-яА-ЯіІїЇєЄґҐ0-9]'), '_');
-    await prefs.setString('alarm_start_$safeKey', DateTime.now().toIso8601String());
+    await _persistAlarmStartMarkers(regionName);
     final notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
     final allowed = _isThreatTypeAllowed(prefs, threatType);
     if (!allowed) {
-      debugPrint('🔕 Threat type $threatType disabled by user settings');
+      appDebugLog('🔕 Threat type $threatType disabled by user settings');
       return;
     }
 
@@ -753,7 +807,7 @@ class AlarmTrackingService {
     final shouldBlockSleep =
         await SleepModeService.shouldBlockNotificationStatic(body);
     if (shouldBlockSleep) {
-      debugPrint('🌙 Sleep mode active - blocking alarm tracking notification');
+      appDebugLog('🌙 Sleep mode active - blocking alarm tracking notification');
       return;
     }
 
@@ -772,7 +826,7 @@ class AlarmTrackingService {
   Future<void> _notifyAlarmEnded(String regionName) async {
     final cacheKey = 'clear:$regionName';
     if (_wasRecentlyNotified(cacheKey)) {
-      debugPrint('🔔 Skipping duplicate all-clear notification: $regionName');
+      appDebugLog('🔔 Skipping duplicate all-clear notification: $regionName');
       return;
     }
     _markAsNotified(cacheKey);
@@ -780,33 +834,20 @@ class AlarmTrackingService {
     // Rate limit: макс 3 за хвилину (разом з alarm started)
     _trimRecentNotificationTimes();
     if (_recentNotificationTimes.length >= _maxNotificationsPerMinute) {
-      debugPrint('🔔 Rate limit: skipping all-clear for $regionName');
+      appDebugLog('🔔 Rate limit: skipping all-clear for $regionName');
       return;
     }
     _recentNotificationTimes.add(DateTime.now());
 
     final prefs = await SharedPreferences.getInstance();
 
-    final safeKey = regionName.replaceAll(RegExp(r'[^a-zA-Zа-яА-ЯіІїЇєЄґҐ0-9]'), '_');
-    final startStr = prefs.getString('alarm_start_$safeKey');
-    if (startStr != null) {
-      final start = DateTime.tryParse(startStr);
-      if (start != null) {
-        final minutes = DateTime.now().difference(start).inMinutes;
-        if (minutes > 0) {
-          final total = (prefs.getInt('stats_total_minutes') ?? 0) + minutes;
-          await prefs.setInt('stats_total_minutes', total);
-        }
-      }
-      // Accumulate alarm count per region for heatmap (PRO)
-      final heatmapKey = 'heatmap_count_$safeKey';
-      await prefs.setInt(heatmapKey, (prefs.getInt(heatmapKey) ?? 0) + 1);
-      await prefs.remove('alarm_start_$safeKey');
+    for (final r in _splitRegionNames(regionName)) {
+      await _applyAlarmEndedForRegion(prefs, r);
     }
     final notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
     final allowed = _isThreatTypeAllowed(prefs, 'air');
     if (!allowed) {
-      debugPrint('🔕 Threat type air disabled by user settings');
+      appDebugLog('🔕 Threat type air disabled by user settings');
       return;
     }
 
@@ -817,7 +858,7 @@ class AlarmTrackingService {
     final shouldBlockSleep =
         await SleepModeService.shouldBlockNotificationStatic(body);
     if (shouldBlockSleep) {
-      debugPrint(
+      appDebugLog(
           '🌙 Sleep mode active - blocking all-clear tracking notification');
       return;
     }
@@ -852,6 +893,13 @@ class AlarmTrackingService {
     final prefs = await SharedPreferences.getInstance();
     final vibrationEnabled = prefs.getBool('vibration_enabled') ?? true;
 
+    final alarmSoundId = prefs.getString(PrefsKeys.alarmSoundId) ?? 'default';
+    final proCustomAlarm = !kIsWeb &&
+        ProGate.isUnlocked(ProFeature.customAlarmSounds) &&
+        (alarmSoundId == 'sharp' || alarmSoundId == 'siren');
+    final useCustomSoundAndroid = proCustomAlarm && Platform.isAndroid;
+    final soundSuffix = useCustomSoundAndroid ? '_$alarmSoundId' : '';
+
     // Використовуємо різні канали для режимів з/без вібрації
     // Це потрібно бо Android кешує налаштування каналу при створенні
     final vibSuffix = vibrationEnabled ? '' : '_silent';
@@ -862,35 +910,45 @@ class AlarmTrackingService {
 
     if (isAlarm) {
       if (isCritical) {
-        channelId = 'critical_alerts$vibSuffix';
+        channelId = 'critical_alerts$vibSuffix$soundSuffix';
         channelName = vibrationEnabled
             ? 'Критичні тривоги'
             : 'Критичні тривоги (без вібро)';
         color = const Color(0xFFE63946);
       } else {
-        channelId = 'normal_alerts$vibSuffix';
+        channelId = 'normal_alerts$vibSuffix$soundSuffix';
         channelName = vibrationEnabled
             ? 'Звичайні тривоги'
             : 'Звичайні тривоги (без вібро)';
         color = const Color(0xFFFF9500);
       }
     } else {
-      channelId = 'all_clear_alerts$vibSuffix';
+      channelId = 'all_clear_alerts$vibSuffix$soundSuffix';
       channelName = vibrationEnabled
           ? 'Відбій тривоги'
           : 'Відбій тривоги (без вібро)';
       color = const Color(0xFF30D158);
     }
 
+    final channelDescription =
+        isAlarm ? 'Сповіщення про тривогу' : 'Відбій тривоги';
+
+    AndroidNotificationSound? notificationSound;
+    if (useCustomSoundAndroid && alarmSoundId != 'default') {
+      notificationSound =
+          RawResourceAndroidNotificationSound('alarm_$alarmSoundId');
+    }
+
     final androidDetails = AndroidNotificationDetails(
       channelId,
       channelName,
-      channelDescription: isAlarm ? 'Сповіщення про тривогу' : 'Відбій тривоги',
+      channelDescription: channelDescription,
       importance: isCritical ? Importance.max : Importance.high,
       priority: isCritical ? Priority.max : Priority.high,
       color: color,
       colorized: true,
       playSound: true,
+      sound: notificationSound,
       enableVibration: vibrationEnabled,
       category: isAlarm
           ? AndroidNotificationCategory.alarm
@@ -898,7 +956,20 @@ class AlarmTrackingService {
       visibility: NotificationVisibility.public,
     );
 
+    final iosCustomWav =
+        proCustomAlarm && Platform.isIOS ? 'alarm_$alarmSoundId.wav' : null;
+
     final iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+      sound: iosCustomWav,
+      interruptionLevel: isCritical
+          ? InterruptionLevel.timeSensitive
+          : InterruptionLevel.active,
+    );
+
+    final iosDetailsDefault = DarwinNotificationDetails(
       presentAlert: true,
       presentBadge: true,
       presentSound: true,
@@ -916,7 +987,35 @@ class AlarmTrackingService {
     // Це дозволяє оновлювати існуюче сповіщення замість створення нового
     final notificationId = title.hashCode.abs() % 100000;
 
-    await _localNotifications.show(notificationId, title, body, details);
+    try {
+      await _localNotifications.show(notificationId, title, body, details);
+    } catch (e) {
+      if (proCustomAlarm) {
+        appDebugLog('AlarmTracking custom sound failed, retrying default: $e');
+        final fallbackDetails = NotificationDetails(
+          android: AndroidNotificationDetails(
+            channelId.replaceAll('_$alarmSoundId', ''),
+            channelName,
+            channelDescription: channelDescription,
+            importance: isCritical ? Importance.max : Importance.high,
+            priority: isCritical ? Priority.max : Priority.high,
+            color: color,
+            colorized: true,
+            playSound: true,
+            enableVibration: vibrationEnabled,
+            category: isAlarm
+                ? AndroidNotificationCategory.alarm
+                : AndroidNotificationCategory.message,
+            visibility: NotificationVisibility.public,
+          ),
+          iOS: iosDetailsDefault,
+        );
+        await _localNotifications.show(
+            notificationId, title, body, fallbackDetails);
+      } else {
+        rethrow;
+      }
+    }
   }
 
   /// Перевіряє чи сповіщення було нещодавно показано
@@ -940,13 +1039,13 @@ class AlarmTrackingService {
   Future<Map<String, dynamic>> getCurrentAlarmData() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final selectedRegions = prefs.getStringList('selected_regions') ?? [];
+      final selectedRegions = prefs.getStringList(PrefsKeys.selectedRegions) ?? [];
 
       // Отримуємо стан тривог через API
       final http.Response response;
       try {
         response = await httpGetWithRetries(
-          _httpClient,
+          _activeHttpClient,
           Uri.parse(ApiConfig.alarmsAll),
           timeout: const Duration(seconds: 10),
         );
@@ -1029,7 +1128,7 @@ class AlarmTrackingService {
         'totalThreats': threatDetails['total'] ?? 0,
       };
     } catch (e) {
-      debugPrint('❌ Error getting current alarm data: $e');
+      appDebugLog('❌ Error getting current alarm data: $e');
       return _getDefaultAlarmData();
     }
   }

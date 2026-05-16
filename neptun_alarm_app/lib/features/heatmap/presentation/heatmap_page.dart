@@ -2,11 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../config/prefs_keys.dart';
 import '../../../core/widgets/neptun_card.dart';
 import '../../../core/widgets/neptun_shimmer.dart';
 import '../../../core/widgets/neptun_badge.dart';
 import '../../../core/pro/pro_features.dart';
 import '../../../services/region_database.dart';
+import '../data/heatmap_oblast_state_ids.dart';
+import '../data/ukraine_oblast_geo_loader.dart';
+import '../logic/heatmap_aggregate.dart';
+import 'widgets/alarm_heatmap_map_view.dart';
 
 /// PRO: Heatmap of user's alarms by region (from local stats).
 class HeatmapPage extends StatefulWidget {
@@ -17,19 +22,32 @@ class HeatmapPage extends StatefulWidget {
 }
 
 class _HeatmapPageState extends State<HeatmapPage> {
-  List<({String region, int count})> _regionCounts = [];
+  /// Лічильники по id області для карти (`'1'`…`'27'`).
+  Map<String, int> _countsByOblastStateId = {};
+  List<({String name, int count})> _oblastRanking = [];
   bool _loading = true;
   bool _hasRegions = false;
+  bool _hasAnyMergedRow = false;
+
+  UkraineOblastGeoData? _geoData;
+  String? _geoLoadError;
 
   @override
   void initState() {
     super.initState();
-    _loadHeatmap();
+    if (ProGate.isPro) {
+      _loadHeatmap();
+    } else {
+      _loading = false;
+    }
   }
 
   Future<void> _loadHeatmap() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
+    if (mounted) {
+      setState(() => _geoLoadError = null);
+    }
 
     // Збираємо лічильники з heatmap_count_*
     final counts = <String, int>{};
@@ -46,7 +64,7 @@ class _HeatmapPageState extends State<HeatmapPage> {
 
     // Збираємо всі обрані регіони (з різних джерел)
     final selectedNames = <String>{};
-    selectedNames.addAll(prefs.getStringList('selected_regions') ?? []);
+    selectedNames.addAll(prefs.getStringList(PrefsKeys.selectedRegions) ?? []);
 
     final regionDb = RegionDatabase()..initialize();
     for (final id in prefs.getStringList('selected_oblast_ids') ?? []) {
@@ -69,30 +87,60 @@ class _HeatmapPageState extends State<HeatmapPage> {
       merged.putIfAbsent(e.key, () => e.value);
     }
 
-    final list = merged.entries
-        .map((e) => (region: e.key, count: e.value))
+    UkraineOblastGeoData? geo;
+    String? geoErr;
+    try {
+      geo = await UkraineOblastGeoData.load();
+    } catch (e, st) {
+      geoErr = 'Не вдалося завантажити межі областей';
+      assert(() {
+        debugPrint('Heatmap geo load: $e\n$st');
+        return true;
+      }());
+    }
+    final byState = aggregateHeatmapCountsByStateId(merged, regionDb);
+    final ranking = byState.entries
+        .where((e) => e.value > 0)
+        .map(
+          (e) => (
+            name: kHeatmapStateIdToShortNameUk[e.key] ?? 'Область ${e.key}',
+            count: e.value,
+          ),
+        )
         .toList()
       ..sort((a, b) => b.count.compareTo(a.count));
 
     if (mounted) {
       setState(() {
-        _regionCounts = list;
+        _geoData = geo;
+        _geoLoadError = geoErr;
+        _countsByOblastStateId = byState;
+        _oblastRanking = ranking;
         _hasRegions = hasRegions;
+        _hasAnyMergedRow = merged.isNotEmpty;
         _loading = false;
       });
     }
   }
 
+  String _tileUrl(bool isDark) {
+    if (isDark) {
+      return 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png';
+    }
+    return 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png';
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     if (!ProGate.isPro) {
       return Scaffold(
         appBar: AppBar(
           title: Text(
             'Теплова карта',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+            style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
           ),
           centerTitle: false,
         ),
@@ -118,7 +166,7 @@ class _HeatmapPageState extends State<HeatmapPage> {
                 const SizedBox(height: 20),
                 Text(
                   'PRO функція',
-                  style: GoogleFonts.inter(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
                     color: cs.onSurface,
@@ -128,7 +176,7 @@ class _HeatmapPageState extends State<HeatmapPage> {
                 Text(
                   ProGate.featureDescriptions[ProFeature.heatmap] ?? '',
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 14,
                     color: cs.onSurface.withValues(alpha: 0.6),
                   ),
@@ -150,7 +198,7 @@ class _HeatmapPageState extends State<HeatmapPage> {
       appBar: AppBar(
         title: Text(
           'Теплова карта тривог',
-          style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
         ),
         centerTitle: false,
         actions: const [
@@ -179,7 +227,7 @@ class _HeatmapPageState extends State<HeatmapPage> {
                   ),
                 ),
               )
-            : _regionCounts.isEmpty
+            : !_hasAnyMergedRow
                 ? ListView(
                     padding: const EdgeInsets.all(24),
                     children: [
@@ -194,7 +242,7 @@ class _HeatmapPageState extends State<HeatmapPage> {
                             const SizedBox(height: 16),
                             Text(
                               'Поки немає даних',
-                              style: GoogleFonts.inter(
+                              style: GoogleFonts.plusJakartaSans(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
                                 color: cs.onSurface,
@@ -203,10 +251,12 @@ class _HeatmapPageState extends State<HeatmapPage> {
                             const SizedBox(height: 8),
                             Text(
                               _hasRegions
-                                  ? 'Дані з\'являться після відбою тривог у ваших регіонах.'
+                                  ? 'Лічильник оновлюється, коли додаток отримує відбій тривоги по регіону '
+                                      '(початок і кінець мають бути зафіксовані трекером). '
+                                      'Потягніть вниз, щоб оновити.'
                                   : 'Додайте регіони у налаштуваннях, щоб отримувати тривоги.',
                               textAlign: TextAlign.center,
-                              style: GoogleFonts.inter(
+                              style: GoogleFonts.plusJakartaSans(
                                 fontSize: 14,
                                 color: cs.onSurface.withValues(alpha: 0.6),
                               ),
@@ -216,58 +266,194 @@ class _HeatmapPageState extends State<HeatmapPage> {
                       ),
                     ],
                   )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _regionCounts.length,
-                    itemBuilder: (context, index) {
-                      final item = _regionCounts[index];
-                      final maxCount =
-                          _regionCounts.isNotEmpty ? _regionCounts.first.count : 1;
-                      final intensity = maxCount > 0
-                          ? (item.count / maxCount).clamp(0.0, 1.0)
-                          : 0.0;
-                      final color = Color.lerp(
-                        Colors.green.shade400,
-                        Colors.red.shade700,
-                        intensity,
-                      )!;
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: NeptunCard(
-                          child: Row(
+                : CustomScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    slivers: [
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Container(
-                                width: 8,
-                                height: 48,
-                                decoration: BoxDecoration(
-                                  color: color,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Text(
-                                  item.region,
-                                  style: GoogleFonts.inter(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w500,
-                                    color: cs.onSurface,
-                                  ),
-                                ),
-                              ),
                               Text(
-                                '${item.count}',
-                                style: GoogleFonts.inter(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                  color: color,
+                                'Теплова інтенсивність по областях',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: cs.onSurface.withValues(alpha: 0.7),
                                 ),
+                              ),
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                height: MediaQuery.sizeOf(context).height * 0.42,
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: _geoLoadError != null
+                                      ? ColoredBox(
+                                          color: cs.surfaceContainerHighest
+                                              .withValues(alpha: 0.4),
+                                          child: Center(
+                                            child: Padding(
+                                              padding: const EdgeInsets.all(16),
+                                              child: Text(
+                                                _geoLoadError!,
+                                                textAlign: TextAlign.center,
+                                                style: GoogleFonts.plusJakartaSans(
+                                                  fontSize: 14,
+                                                  color: cs.error,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        )
+                                      : _geoData == null
+                                          ? ColoredBox(
+                                              color: cs.surfaceContainerHighest
+                                                  .withValues(alpha: 0.3),
+                                              child: Center(
+                                                child: SizedBox(
+                                                  width: 28,
+                                                  height: 28,
+                                                  child: CircularProgressIndicator(
+                                                    strokeWidth: 2,
+                                                    color: cs.primary,
+                                                  ),
+                                                ),
+                                              ),
+                                            )
+                                          : AlarmHeatmapMapView(
+                                              geo: _geoData!,
+                                              countsByOblastStateId:
+                                                  _countsByOblastStateId,
+                                              isDark: isDark,
+                                              tileUrl: _tileUrl(isDark),
+                                            ),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Container(
+                                      height: 8,
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(4),
+                                        gradient: LinearGradient(
+                                          colors: [
+                                            cs.primary,
+                                            cs.tertiary,
+                                            cs.error,
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Text(
+                                    'менше',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 11,
+                                      color: cs.onSurface.withValues(alpha: 0.5),
+                                    ),
+                                  ),
+                                  Text(
+                                    ' → ',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 11,
+                                      color: cs.onSurface.withValues(alpha: 0.35),
+                                    ),
+                                  ),
+                                  Text(
+                                    'більше',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 11,
+                                      color: cs.onSurface.withValues(alpha: 0.5),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
                         ),
-                      );
-                    },
+                      ),
+                      if (_oblastRanking.isEmpty)
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+                            child: Text(
+                              _hasRegions
+                                  ? 'Ще немає завершених тривог для відображення на карті. '
+                                      'Після відбою з трекінгом дані з’являться тут.'
+                                  : 'Додайте регіони в налаштуваннях.',
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 14,
+                                color: cs.onSurface.withValues(alpha: 0.55),
+                              ),
+                            ),
+                          ),
+                        )
+                      else
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                          sliver: SliverList.separated(
+                            itemCount: _oblastRanking.length,
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(height: 8),
+                            itemBuilder: (context, index) {
+                              final item = _oblastRanking[index];
+                              final top = _oblastRanking.first.count;
+                              final intensity = top > 0
+                                  ? (item.count / top).clamp(0.0, 1.0)
+                                  : 0.0;
+                              final color = Color.lerp(
+                                const Color(0xFF22C55E),
+                                const Color(0xFFB91C1C),
+                                intensity,
+                              )!;
+                              return KeyedSubtree(
+                                key: ValueKey('heatmap_oblast_${item.name}'),
+                                child: NeptunCard(
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 8,
+                                        height: 44,
+                                        decoration: BoxDecoration(
+                                          color: color,
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      Expanded(
+                                        child: Text(
+                                          item.name.startsWith('м.') ||
+                                                  item.name == 'АР Крим'
+                                              ? item.name
+                                              : '${item.name} область',
+                                          style: GoogleFonts.plusJakartaSans(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w500,
+                                            color: cs.onSurface,
+                                          ),
+                                        ),
+                                      ),
+                                      Text(
+                                        '${item.count}',
+                                        style: GoogleFonts.plusJakartaSans(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w700,
+                                          color: color,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                    ],
                   ),
       ),
     );

@@ -4,6 +4,9 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
 import 'package:neptun_alarm_app/config/api_config.dart';
+import 'package:neptun_alarm_app/config/prefs_keys.dart';
+import 'package:neptun_alarm_app/core/utils/app_debug_log.dart';
+import 'package:neptun_alarm_app/theme/diary_design.dart';
 
 /// Віджет таймера поточної тривоги з прогнозом
 class AlarmTimerWidget extends StatefulWidget {
@@ -50,7 +53,7 @@ class _AlarmTimerWidgetState extends State<AlarmTimerWidget> {
   Future<void> _loadAlarmState() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final selectedRegions = prefs.getStringList('selected_regions') ?? [];
+      final selectedRegions = prefs.getStringList(PrefsKeys.selectedRegions) ?? [];
 
       if (selectedRegions.isNotEmpty) {
         _region = selectedRegions.first;
@@ -89,7 +92,7 @@ class _AlarmTimerWidgetState extends State<AlarmTimerWidget> {
           }
         }
       } catch (e) {
-        debugPrint('alarm-status API failed: $e');
+        appDebugLog('alarm-status API failed: $e');
       }
 
       // Якщо не вдалося - перевіряємо через messages API
@@ -132,14 +135,14 @@ class _AlarmTimerWidgetState extends State<AlarmTimerWidget> {
             }
           }
         } catch (e) {
-          debugPrint('Error checking messages for alarm state: $e');
+          appDebugLog('Error checking messages for alarm state: $e');
         }
       }
 
       // Завантажуємо середній час тривоги
       await _loadAverageDuration();
     } catch (e) {
-      debugPrint('Error loading alarm state: $e');
+      appDebugLog('Error loading alarm state: $e');
     }
   }
 
@@ -158,7 +161,7 @@ class _AlarmTimerWidgetState extends State<AlarmTimerWidget> {
         });
       }
     } catch (e) {
-      debugPrint('Error loading average duration: $e');
+      appDebugLog('Error loading average duration: $e');
     }
   }
 
@@ -231,7 +234,9 @@ class _AlarmTimerWidgetState extends State<AlarmTimerWidget> {
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white : const Color(0xFF2D3748),
+                    color: isDark
+                        ? DiaryColors.darkPrimary
+                        : DiaryColors.primary,
                   ),
                 ),
                 Text(
@@ -240,7 +245,7 @@ class _AlarmTimerWidgetState extends State<AlarmTimerWidget> {
                       : 'Оберіть регіон у налаштуваннях',
                   style: TextStyle(
                     fontSize: 13,
-                    color: isDark ? Colors.grey[400] : const Color(0xFF718096),
+                    color: isDark ? DiaryColors.darkMuted : DiaryColors.muted,
                   ),
                 ),
               ],
@@ -328,7 +333,9 @@ class _AlarmTimerWidgetState extends State<AlarmTimerWidget> {
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: isDark ? Colors.white : const Color(0xFF2D3748),
+                        color: isDark
+                            ? DiaryColors.darkPrimary
+                            : DiaryColors.primary,
                       ),
                     ),
                   ],
@@ -353,8 +360,8 @@ class _AlarmTimerWidgetState extends State<AlarmTimerWidget> {
                       style: TextStyle(
                         fontSize: 11,
                         color: isDark
-                            ? Colors.grey[400]
-                            : const Color(0xFF718096),
+                            ? DiaryColors.darkMuted
+                            : DiaryColors.muted,
                       ),
                     ),
                 ],
@@ -369,7 +376,8 @@ class _AlarmTimerWidgetState extends State<AlarmTimerWidget> {
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
                   value: progress,
-                  backgroundColor: isDark ? Colors.grey[800] : Colors.grey[300],
+                  backgroundColor:
+                      isDark ? DiaryColors.darkBorder : DiaryColors.border,
                   valueColor: AlwaysStoppedAnimation(
                     progress > 0.8
                         ? const Color(0xFF30D158)
@@ -386,9 +394,7 @@ class _AlarmTimerWidgetState extends State<AlarmTimerWidget> {
                     'Прогноз на основі історії',
                     style: TextStyle(
                       fontSize: 11,
-                      color: isDark
-                          ? Colors.grey[500]
-                          : const Color(0xFF718096),
+                      color: isDark ? DiaryColors.darkMuted : DiaryColors.muted,
                     ),
                   ),
                   if (remainingTime != null && remainingTime.inSeconds > 0)
@@ -400,8 +406,8 @@ class _AlarmTimerWidgetState extends State<AlarmTimerWidget> {
                         color: progress > 0.8
                             ? const Color(0xFF30D158)
                             : (isDark
-                                  ? Colors.grey[400]
-                                  : const Color(0xFF718096)),
+                                  ? DiaryColors.darkMuted
+                                  : DiaryColors.muted),
                       ),
                     )
                   else

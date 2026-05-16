@@ -10,6 +10,7 @@ import {
 } from '@/lib/marker-display-policy';
 import { isLatLngInOblastHasc } from '@/lib/ukraine-oblast-validate';
 import { mapStoreRecordToMarker } from '@/lib/map-store-record-to-marker';
+import { evaluateMarkerPublication } from '@/lib/public-marker-policy';
 
 export function attachDisplayPolicyToPayload(
   fullRow: Record<string, unknown>,
@@ -29,4 +30,11 @@ export function attachDisplayPolicyToPayload(
   };
   const marker = mapStoreRecordToMarker(fullRow);
   Object.assign(payload, computeMarkerDisplayPolicy(marker, displayPolicyConfig, corroborationCtx));
+  const publication = evaluateMarkerPublication(fullRow, { settings });
+  Object.assign(payload, {
+    publication_class: publication.classification,
+    publication_score: publication.score,
+    publication_reasons: publication.reasons,
+    event_fingerprint: publication.fingerprint,
+  });
 }

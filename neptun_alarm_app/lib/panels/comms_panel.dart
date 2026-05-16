@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 
+import '../core/pro/pro_features.dart';
 import '../core/widgets/neptun_shimmer.dart';
 import '../models/threat_event.dart';
 import '../services/map_data_service.dart';
@@ -76,14 +77,23 @@ class _CommsPanelState extends State<CommsPanel> {
 
                 const SizedBox(height: 8),
 
-                // 1:1 Chats (Placeholder)
+                // Окремі DM у додатку не реалізовані — лише загальний чат у вкладці «Чат».
                 _buildChannelTile(
                   context,
                   title: 'ПРИВАТНІ ПОВІДОМЛЕННЯ',
-                  subtitle: 'Зашифровані канали (Скоро)',
+                  subtitle: 'Наразі доступний лише загальний чат',
                   icon: Icons.lock_outline,
                   isDark: isDark,
-                  onTap: () {},
+                  onTap: () {
+                    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Приватні чати плануються окремо. Загальний чат — у вкладці «Чат».',
+                        ),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  },
                   isInactive: true,
                   color: Theme.of(context).colorScheme.tertiary,
                 ),
@@ -225,7 +235,7 @@ class _ThreatFeedPanel extends StatefulWidget {
 }
 
 class _ThreatFeedPanelState extends State<_ThreatFeedPanel> {
-  static const int _timeRangeMinutes = 60;
+  int get _timeRangeMinutes => ProGate.mapThreatHistoryMinutes;
   static const int _maxEvents = 5;
   static const Duration _refreshInterval = Duration(seconds: 60);
 
@@ -287,9 +297,9 @@ class _ThreatFeedPanelState extends State<_ThreatFeedPanel> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.05),
+        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.1)),
+        border: Border.all(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -300,7 +310,7 @@ class _ThreatFeedPanelState extends State<_ThreatFeedPanel> {
                 'СТРІЧКА ЗАГРОЗ',
                 style: TextStyle(
                   fontWeight: FontWeight.w900,
-                  color: Theme.of(context).colorScheme.secondary,
+                  color: Theme.of(context).colorScheme.primary,
                   fontSize: 10,
                   letterSpacing: 1.5,
                 ),

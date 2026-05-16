@@ -34,7 +34,10 @@ export type PremiumAssertResult =
 
 function isGooglePurchaseNotFound(err: unknown): boolean {
   const e = err as { code?: number; response?: { status?: number } };
-  return e?.code === 404 || e?.response?.status === 404;
+  return e?.code === 400 ||
+    e?.code === 404 ||
+    e?.response?.status === 400 ||
+    e?.response?.status === 404;
 }
 
 async function assertGooglePremium(

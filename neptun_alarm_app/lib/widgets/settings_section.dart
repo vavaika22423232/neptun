@@ -7,11 +7,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../design/neptun_design.dart';
 import '../config/prefs_keys.dart';
 import '../core/pro/pro_features.dart';
 import '../core/providers/providers.dart';
 import '../core/widgets/neptun_card.dart';
 import '../core/widgets/neptun_shimmer.dart';
+import '../core/widgets/neptun_shell_modal.dart';
 import 'profile_nav_tile.dart';
 import '../services/android_platform_service.dart';
 import '../services/notification_service.dart';
@@ -19,8 +21,11 @@ import '../services/sleep_mode_service.dart';
 import '../services/tts_service.dart';
 
 /// Inline settings content for ProfileTab (replaces SettingsPage).
+/// [omitQuickProfileToggles]: приховати рядки, що дублюють [ProfileNotificationQuickCard] (для bottom sheet).
 class SettingsSection extends ConsumerStatefulWidget {
-  const SettingsSection({super.key});
+  const SettingsSection({super.key, this.omitQuickProfileToggles = false});
+
+  final bool omitQuickProfileToggles;
 
   @override
   ConsumerState<SettingsSection> createState() => _SettingsSectionState();
@@ -137,7 +142,7 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
 
   Widget _buildSettingsShimmer(BuildContext context) {
     return const NeptunCard(
-      padding: EdgeInsets.all(16),
+      padding: NeptunSpacing.cardPadding,
       child: Row(
         children: [
           NeptunShimmer(width: 22, height: 22, borderRadius: 6),
@@ -161,14 +166,14 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return Padding(
-        padding: const EdgeInsets.all(16),
+        padding: NeptunSpacing.cardPadding,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildSettingsShimmer(context),
-            const SizedBox(height: 12),
+            const SizedBox(height: NeptunSpacing.md),
             _buildSettingsShimmer(context),
-            const SizedBox(height: 12),
+            const SizedBox(height: NeptunSpacing.md),
             _buildSettingsShimmer(context),
           ],
         ),
@@ -177,28 +182,38 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    final omit = widget.omitQuickProfileToggles;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ProfileNavTile(
-          icon: Icons.notifications_active_rounded,
-          label: 'Сповіщення',
-          subtitle: _notificationsEnabled ? 'Увімкнено' : 'Вимкнено',
-          trailing: Switch.adaptive(
-            value: _notificationsEnabled,
-            onChanged: (value) {
-              setState(() => _notificationsEnabled = value);
-              NotificationService().setNotificationsEnabled(value);
-              _saveSettings();
-            },
+        if (!omit)
+          ProfileNavTile(
+            icon: Icons.notifications_active_rounded,
+            label: 'Сповіщення',
+            subtitle: _notificationsEnabled ? 'Увімкнено' : 'Вимкнено',
+            iconAccent: NeptunStatus.accent,
+            showDividerBelow: true,
+            trailing: Switch.adaptive(
+              value: _notificationsEnabled,
+              onChanged: (value) {
+                setState(() => _notificationsEnabled = value);
+                NotificationService().setNotificationsEnabled(value);
+                _saveSettings();
+              },
+            ),
           ),
-        ),
         ProfileNavTile(
           icon: _darkModeEnabled
               ? Icons.dark_mode_rounded
               : Icons.light_mode_rounded,
           label: 'Темна тема',
           subtitle: _darkModeEnabled ? 'Увімкнено' : 'Вимкнено',
+          iconAccent: NeptunStatus.premium,
+          showDividerBelow: _fcmToken != null ||
+              Platform.isIOS ||
+              _actualSelectionCount > 0 ||
+              _notificationsEnabled,
           trailing: Switch.adaptive(
             value: _darkModeEnabled,
             onChanged: (value) {
@@ -212,6 +227,8 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
             icon: Icons.cloud_done_rounded,
             label: 'Підключено до сервера',
             subtitle: 'Push-сповіщення активні',
+            iconAccent: NeptunStatus.safe,
+            showDividerBelow: Platform.isIOS || _actualSelectionCount > 0,
           ),
         if (Platform.isIOS)
           ProfileNavTile(
@@ -219,53 +236,81 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
             label: 'APNs статус',
             subtitle:
                 _apnsToken == null ? 'Токен не отримано' : 'Токен отримано',
+            iconAccent: NeptunStatus.accent,
+            showDividerBelow: _actualSelectionCount > 0,
           ),
         if (_actualSelectionCount > 0)
           ProfileNavTile(
             icon: Icons.topic_rounded,
             label: 'Підписки на регіони',
             subtitle: 'Активно: $_actualSelectionCount',
+            iconAccent: NeptunStatus.warning,
+            showDividerBelow: _notificationsEnabled,
           ),
         if (_notificationsEnabled) _buildFcmDiagnosticsTile(isDark),
+        if (_notificationsEnabled) const SizedBox(height: NeptunSpacing.lg),
         _sectionHeader('Звук та вібрація', Icons.volume_up_rounded),
-        NeptunCard(
-          padding: const EdgeInsets.all(16),
-          child: _buildVolumeContent(),
-        ),
+        if (!omit || _ttsEnabled)
+          NeptunCard(
+            padding: NeptunSpacing.cardPadding,
+            child: _buildVolumeContent(omitTtsToggle: omit),
+          ),
         ProfileNavTile(
           icon: Icons.notifications_active_rounded,
           label: 'Звук тривоги',
           subtitle: _alarmSoundLabels[_alarmSoundId] ?? 'За замовчуванням',
+          iconAccent: NeptunStatus.safe,
+          showDividerBelow: !omit,
           onTap: () => _showAlarmSoundDialog(isDark),
         ),
-        ProfileNavTile(
-          icon: Icons.vibration_rounded,
-          label: 'Вібрація',
-          subtitle: _vibrationEnabled
-              ? _getVibrationPatternName(_vibrationPattern)
-              : 'Вимкнено',
-          trailing: Switch.adaptive(
-            value: _vibrationEnabled,
-            onChanged: (value) async {
-              HapticFeedback.selectionClick();
-              setState(() => _vibrationEnabled = value);
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.setBool('vibration_enabled', value);
-            },
+        if (!omit)
+          ProfileNavTile(
+            icon: Icons.vibration_rounded,
+            label: 'Вібрація',
+            subtitle: _vibrationEnabled
+                ? _getVibrationPatternName(_vibrationPattern)
+                : 'Вимкнено',
+            iconAccent: NeptunStatus.premium,
+            trailing: Switch.adaptive(
+              value: _vibrationEnabled,
+              onChanged: (value) async {
+                HapticFeedback.selectionClick();
+                setState(() => _vibrationEnabled = value);
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setBool('vibration_enabled', value);
+              },
+            ),
+            onTap: () => _showVibrationPatternDialog(isDark),
           ),
-          onTap: () => _showVibrationPatternDialog(isDark),
-        ),
+        const SizedBox(height: NeptunSpacing.lg),
         _sectionHeader('Режим сну', Icons.bedtime_rounded),
-        NeptunCard(
-          padding: const EdgeInsets.all(16),
-          child: _buildSleepModeContent(isDark),
-        ),
+        if (ProGate.isPro)
+          NeptunCard(
+            padding: NeptunSpacing.cardPadding,
+            child: _buildSleepModeContent(isDark),
+          )
+        else
+          NeptunCard(
+            padding: NeptunSpacing.cardPadding,
+            child: ListTile(
+              leading: const Icon(Icons.lock_rounded, color: Colors.amber),
+              title: const Text('Режим сну — PRO'),
+              subtitle: const Text(
+                'Вночі — тиша. Але балістика та ракети все одно розбудять.',
+              ),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => context.push('/premium'),
+            ),
+          ),
+        const SizedBox(height: NeptunSpacing.lg),
         _sectionHeader('Діагностика', Icons.bug_report_rounded),
         if (_showBatteryOptTile)
           ProfileNavTile(
             icon: Icons.battery_alert_rounded,
             label: 'Вимкнути оптимізацію батареї',
             subtitle: 'Для надійних сповіщень на Xiaomi/Huawei',
+            iconAccent: NeptunStatus.warning,
+            showDividerBelow: true,
             onTap: () {
               HapticFeedback.mediumImpact();
               AndroidPlatformService().requestDisableBatteryOptimization();
@@ -275,9 +320,10 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
           icon: Icons.notifications_none_rounded,
           label: 'Тестове сповіщення',
           subtitle: 'Перевірити доставку',
+          iconAccent: NeptunStatus.accent,
           onTap: _sendTestNotification,
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: NeptunSpacing.xl),
       ],
     );
   }
@@ -290,7 +336,7 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
             (_subscribedTopics.length > 5 ? '…' : '');
 
     return NeptunCard(
-      padding: const EdgeInsets.all(16),
+      padding: NeptunSpacing.cardPadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -339,7 +385,11 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
   Widget _sectionHeader(String title, IconData icon) {
     final cs = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.only(top: 16, bottom: 8, left: 4),
+      padding: const EdgeInsets.only(
+        top: NeptunSpacing.xl,
+        bottom: NeptunSpacing.sm,
+        left: NeptunSpacing.xs,
+      ),
       child: Row(
         children: [
           Icon(icon, color: cs.onSurface.withValues(alpha: 0.5), size: 18),
@@ -358,56 +408,65 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
     );
   }
 
-  Widget _buildVolumeContent() {
+  Widget _buildVolumeContent({bool omitTtsToggle = false}) {
     final cs = Theme.of(context).colorScheme;
+
+    if (omitTtsToggle && !_ttsEnabled) {
+      return const SizedBox.shrink();
+    }
 
     return Column(
         children: [
-          Row(
-            children: [
-              Icon(
-                _ttsEnabled
-                    ? Icons.record_voice_over_rounded
-                    : Icons.voice_over_off_rounded,
-                color: _ttsEnabled ? cs.primary : cs.onSurface.withValues(alpha: 0.4),
-                size: 22,
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Голосові сповіщення',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: cs.onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      _ttsEnabled ? 'Озвучувати тривоги' : 'Вимкнено',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 12,
-                        color: cs.onSurface.withValues(alpha: 0.5),
-                      ),
-                    ),
-                  ],
+          if (!omitTtsToggle)
+            Row(
+              children: [
+                Icon(
+                  _ttsEnabled
+                      ? Icons.record_voice_over_rounded
+                      : Icons.voice_over_off_rounded,
+                  color: _ttsEnabled
+                      ? cs.primary
+                      : cs.onSurface.withValues(alpha: 0.4),
+                  size: 22,
                 ),
-              ),
-              Switch.adaptive(
-                value: _ttsEnabled,
-                onChanged: (value) async {
-                  HapticFeedback.lightImpact();
-                  setState(() => _ttsEnabled = value);
-                  await _ttsService.setEnabled(value);
-                },
-              ),
-            ],
-          ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Голосові сповіщення',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: cs.onSurface,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _ttsEnabled
+                            ? 'Озвучувати тривоги. Увімкніть український голос у налаштуваннях системи (синтез мовлення), інакше можлива інша мова.'
+                            : 'Вимкнено',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          color: cs.onSurface.withValues(alpha: 0.5),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch.adaptive(
+                  value: _ttsEnabled,
+                  onChanged: (value) async {
+                    HapticFeedback.lightImpact();
+                    setState(() => _ttsEnabled = value);
+                    await _ttsService.setEnabled(value);
+                  },
+                ),
+              ],
+            ),
           if (_ttsEnabled) ...[
-            const SizedBox(height: 16),
+            if (!omitTtsToggle) const SizedBox(height: 16),
             Row(
               children: [
                 Icon(
@@ -522,7 +581,7 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
 
   void _showAlarmSoundDialog(bool isDark) {
     final isPro = ProGate.isPro;
-    showModalBottomSheet<void>(
+    NeptunShellModal.showBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (ctx) => Container(
@@ -530,7 +589,7 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
           color: Theme.of(context).colorScheme.surface,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.all(NeptunSpacing.xl),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -571,8 +630,8 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
         }
       },
       child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(16),
+        margin: const EdgeInsets.only(bottom: NeptunSpacing.md),
+        padding: NeptunSpacing.cardPadding,
         decoration: BoxDecoration(
           color: selected
               ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15)
@@ -589,7 +648,7 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
                   ? Icons.check_circle_rounded
                   : Icons.radio_button_unchecked_rounded,
               color: selected
-                  ? Theme.of(context).colorScheme.secondary
+                  ? Theme.of(context).colorScheme.primary
                   : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
               size: 24,
             ),
@@ -792,11 +851,11 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
   }
 
   void _showVibrationPatternDialog(bool isDark) {
-    showModalBottomSheet(
+    NeptunShellModal.showBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
+        padding: NeptunSpacing.cardPadding,
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surfaceContainer,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -897,8 +956,8 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
         if (mounted) navigator.pop();
       },
       child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(16),
+        margin: const EdgeInsets.only(bottom: NeptunSpacing.md),
+        padding: NeptunSpacing.cardPadding,
         decoration: BoxDecoration(
           color: isSelected
               ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15)
@@ -961,13 +1020,13 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
     int endHour = _sleepModeService.endHour;
     int endMinute = _sleepModeService.endMinute;
 
-    final result = await showModalBottomSheet<Map<String, int>>(
+    final result = await NeptunShellModal.showBottomSheet<Map<String, int>>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (context) => StatefulBuilder(
         builder: (context, setModalState) => Container(
-          padding: const EdgeInsets.all(20),
+          padding: NeptunSpacing.cardPadding,
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surfaceContainer,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { isModeratorDevice } from '@/lib/admin/data';
 import { ChatModeratorBanUserSchema } from '@/lib/api-schemas';
-import { banChatUser } from '@/lib/chat-ban-service';
+import { banChatUser, ChatBanRejected } from '@/lib/chat-ban-service';
 
 /**
  * POST /api/chat/ban-user
@@ -53,6 +53,9 @@ export async function POST(request: Request) {
     );
     return NextResponse.json({ status: 'ok' });
   } catch (err) {
+    if (err instanceof ChatBanRejected) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
     console.error('[CHAT] Ban error:', err);
     return NextResponse.json({ error: 'Помилка блокування' }, { status: 500 });
   }

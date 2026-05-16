@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>uk</string>
 	<key>CFBundleDisplayName</key>
-	<string>Neptun</string>
+	<string>Dron Alerts</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -17,9 +17,9 @@
 	<key>CFBundlePackageType</key>
 	<string>XPC!</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.0.2</string>
+	<string>2.1.1</string>
 	<key>CFBundleVersion</key>
-	<string>42</string>
+	<string>47</string>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionAttributes</key>

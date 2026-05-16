@@ -35,6 +35,43 @@ export const IngestMarkerSchema = z.object({
   }).passthrough(),
 });
 
+export const IngestCandidateEventSchema = z.object({
+  candidate_event: z.object({
+    event_id: z.string().max(128).optional(),
+    fingerprint: z.string().max(128).optional(),
+    raw_text: z.string().max(4000).optional(),
+    source: z.string().max(128).optional(),
+    channel_name: z.string().max(128).optional(),
+    channel_priority: z.number().optional(),
+    ts: z.union([z.number(), z.string()]).optional(),
+    event_kind: z.enum(['observation', 'trajectory_update', 'status_update']).optional(),
+    target_id: z.string().max(128).optional(),
+    threat_type: z.string().max(64),
+    count: z.number().int().min(1).max(50).optional(),
+    confidence: z.number().min(0).max(1).optional(),
+    bearing_deg: z.number().optional().nullable(),
+    locality: z.object({
+      place: z.string().max(256).optional(),
+      region: z.string().max(128).optional(),
+      lat: z.number().min(-90).max(90).optional(),
+      lng: z.number().min(-180).max(180).optional(),
+      confidence: z.number().min(0).max(1).optional(),
+      resolve_status: z.string().max(128).optional(),
+      placement_mode: z.string().max(128).optional(),
+      geocode_tier: z.string().max(128).optional(),
+      candidates_count: z.number().int().min(0).optional(),
+    }).optional(),
+    geocoding_candidates: z.array(z.object({
+      lat: z.number().min(-90).max(90),
+      lng: z.number().min(-180).max(180),
+      confidence: z.number().min(0).max(1).optional(),
+      source: z.string().max(128).optional(),
+      place: z.string().max(256).optional(),
+      region: z.string().max(128).optional(),
+    }).passthrough()).max(10).optional(),
+  }).passthrough(),
+});
+
 export const IngestPatchSchema = z.object({
   id: z.string().min(1).max(128),
   updates: z.record(z.string(), z.unknown()).refine(
@@ -77,8 +114,19 @@ export const ChatAdminBanUserSchema = z.object({
 );
 
 export const ChatUnbanUserSchema = z.object({
-  nickname: z.string().min(1).max(64),
+  nickname: z.string().max(64).optional(),
   deviceId: z.string().max(128).optional(),
+  targetDeviceId: z.string().max(128).optional(),
+  hardwareId: z.string().max(128).optional(),
+}).refine(
+  (data) => data.nickname || data.deviceId || data.targetDeviceId || data.hardwareId,
+  { message: 'nickname, deviceId, targetDeviceId or hardwareId is required' },
+);
+
+/** POST /api/admin/chat/mass-unban — requires admin auth; confirm must be true */
+export const ChatMassUnbanSchema = z.object({
+  mode: z.enum(['all', 'placeholder_ambiguous', 'expired']),
+  confirm: z.literal(true),
 });
 
 export const AuthTokenSchema = z.object({

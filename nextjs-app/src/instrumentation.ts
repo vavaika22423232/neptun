@@ -3,6 +3,8 @@
  * Runs when the Next.js server starts.
  * Used to initialize background services.
  */
+export const runtime = 'nodejs';
+
 export async function register() {
   // Only run on the server
   if (process.env.NEXT_RUNTIME === 'nodejs') {
@@ -13,11 +15,11 @@ export async function register() {
     }
 
     const { startAlarmFetcher } = await import('@/lib/alarm-fetcher');
-    const { initStore, startMarkerSync } = await import('@/lib/markers-store');
+    const { initTargetStore, startTrackedTargetTicker } = await import('@/lib/tracked-target-store');
 
     console.log('[INIT] Starting background services...');
-    await initStore();
-    startMarkerSync();
+    await initTargetStore();
+    startTrackedTargetTicker();
     startAlarmFetcher();
 
     const { subscribeChatCacheInvalidation, subscribeMarkerDerivedCacheInvalidation } =

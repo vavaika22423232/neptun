@@ -21,6 +21,10 @@ function loadNicknames(): NicknameEntry[] {
   return [];
 }
 
+function isReservedDisplayNickname(nickname: string): boolean {
+  return ['анонім', 'anonymous', 'anon'].includes(nickname.trim().toLowerCase());
+}
+
 /**
  * POST /api/chat/check-nickname
  * Check if a nickname is available.
@@ -28,7 +32,8 @@ function loadNicknames(): NicknameEntry[] {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { nickname, deviceId } = body;
+    const { deviceId } = body;
+    const nickname = typeof body.nickname === 'string' ? body.nickname.trim() : '';
 
     if (!nickname || nickname.length < 2) {
       return NextResponse.json({ available: false, error: 'Нікнейм занадто короткий' });
@@ -36,6 +41,10 @@ export async function POST(request: Request) {
 
     if (nickname.length > 20) {
       return NextResponse.json({ available: false, error: 'Нікнейм занадто довгий' });
+    }
+
+    if (isReservedDisplayNickname(nickname)) {
+      return NextResponse.json({ available: false, error: 'Цей нікнейм зарезервований системою' });
     }
 
     // Forbidden word check

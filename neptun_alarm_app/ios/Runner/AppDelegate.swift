@@ -51,10 +51,11 @@ import AVFoundation
   private func configureAudioSession() {
     do {
       let session = AVAudioSession.sharedInstance()
+      // `.allowBluetooth` лише для `.playAndRecord` — з `.playback` дає OSStatus -50 (paramErr).
       try session.setCategory(
         .playback,
         mode: .default,
-        options: [.mixWithOthers, .duckOthers, .allowBluetooth, .allowBluetoothA2DP]
+        options: [.mixWithOthers, .duckOthers, .allowBluetoothA2DP]
       )
       try session.setActive(true)
       print("✅ Audio session configured for background playback")

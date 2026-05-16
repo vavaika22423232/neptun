@@ -10,15 +10,17 @@ import { listChatBans } from '@/lib/chat-ban-service';
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const deviceId = searchParams.get('deviceId') || '';
+  const query = searchParams.get('q') || '';
 
   // Auth: only moderators can view ban list
   if (!deviceId || !isModeratorDevice(deviceId)) {
     return NextResponse.json({ error: 'Доступ заборонено' }, { status: 403 });
   }
 
-  const bans = listChatBans();
+  const bans = listChatBans(undefined, query);
   return NextResponse.json({
     banned: bans.map((b) => b.nickname),
     details: bans,
+    query,
   });
 }

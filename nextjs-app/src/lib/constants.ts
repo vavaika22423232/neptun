@@ -99,7 +99,9 @@ export const OBLAST_CENTERS: Record<string, [number, number]> = {
 export const ACTIVE_POLLING_INTERVAL = 180_000; // 3min when tab is active (SSE triggers real-time)
 export const HIDDEN_POLLING_INTERVAL_DESKTOP = 300_000; // 5min when tab is hidden (desktop)
 export const HIDDEN_POLLING_INTERVAL_MOBILE = 180_000; // 3min when tab is hidden (mobile)
-export const PRESENCE_INTERVAL = 300_000; // 5min presence ping (reduced server load)
+export const PRESENCE_INTERVAL = 300_000; // 5min heartbeat POST (Redis ZADD — не частити)
+/** Як часто підтягувати лічильник «Онлайн» у HUD (лише читання Redis). */
+export const PRESENCE_DISPLAY_POLL_MS = 5_000;
 export const MARKERS_CACHE_TTL = 30 * 60 * 1000; // 30 minutes localStorage cache
 
 // SVG fade thresholds (Leaflet zoom levels)
@@ -113,7 +115,10 @@ export const SVG_FADE_START_ZOOM_MOBILE = 5.0;
 export const SVG_FADE_END_ZOOM_MOBILE = 8.5;
 
 // Cache version for static assets
-export const CACHE_VERSION = 'v18';
+export const CACHE_VERSION = 'v21';
+
+/** Public map: threat pins only within this age window from last update time. */
+export const MAP_MARKER_DISPLAY_MAX_AGE_MS = 30 * 60 * 1000;
 
 // Google Analytics ID
 export const GA_ID = 'G-MW867VP8WK';

@@ -1,0 +1,1454 @@
+diff --git a/nextjs-app/src/app/HomePageClient.tsx b/nextjs-app/src/app/HomePageClient.tsx
+index 78ffdf9..6430198 100644
+--- a/nextjs-app/src/app/HomePageClient.tsx
++++ b/nextjs-app/src/app/HomePageClient.tsx
+@@ -6,6 +6,7 @@ import type { FusionTrajectory } from '@/types';
+ import { useAlarms } from '@/hooks/useAlarms';
+ import { useMarkers } from '@/hooks/useMarkers';
+ import { usePresence } from '@/hooks/usePresence';
++import { useSSEStatus } from '@/hooks/useDataSSE';
+ import AppShell from '@/components/AppShell';
+ import DonateModal from '@/components/DonateModal';
+ import FaqModal from '@/components/FaqModal';
+@@ -13,7 +14,7 @@ import DeploymentScreen from '@/components/DeploymentScreen';
+ import SeoInfoSection from '@/components/SeoInfoSection';
+ import MapErrorBoundary from '@/components/MapErrorBoundary';
+ 
+-const MapContainer = dynamic(() => import('@/components/Map/MapContainer'), {
++const MapHost = dynamic(() => import('@/components/Map/MapHost'), {
+   ssr: false,
+   loading: () => (
+     <div className="flex h-full w-full items-center justify-center">
+@@ -26,45 +27,23 @@ export default function HomePageInner({ isEmbed = false }: { isEmbed?: boolean }
+   const { alarms } = useAlarms();
+   const { markers, ballisticThreat, forceRefreshMarkers } = useMarkers();
+   const presence = usePresence();
++  const realtimeStatus = useSSEStatus();
+ 
+   const [donateOpen, setDonateOpen] = useState(false);
+   const [faqOpen, setFaqOpen] = useState(false);
+   const [isAdmin, setIsAdmin] = useState(false);
+ 
+   useEffect(() => {
+-    if (!isEmbed) {
+-      let cancelled = false;
+-      const run = () => {
+-        if (cancelled) return;
+-        fetch('/api/admin/auth/check')
+-          .then((r) => r.json())
+-          .then((d) => {
+-            if (!cancelled && d.authenticated) setIsAdmin(true);
+-          })
+-          .catch(() => {});
+-      };
+-      const idleId =
+-        typeof requestIdleCallback !== 'undefined'
+-          ? requestIdleCallback(() => run(), { timeout: 3000 })
+-          : null;
+-      const timeoutId =
+-        idleId == null ? window.setTimeout(run, 1) : null;
+-      return () => {
+-        cancelled = true;
+-        if (idleId != null && typeof cancelIdleCallback !== 'undefined') {
+-          cancelIdleCallback(idleId);
+-        }
+-        if (timeoutId != null) window.clearTimeout(timeoutId);
+-      };
+-    }
+-
+-    // Embed: session cookies often missing in app WebView. URL ?admin_secret= is one path;
+-    // Flutter MapTab injects window.__ADMIN_SECRET on page load — poll until it appears.
+     let cancelled = false;
+-    const trySecret = (secret: string | null | undefined) => {
+-      if (!secret || cancelled) return;
++    const adminSecretFromEmbed = (): string | null => {
++      const w = window as unknown as { __ADMIN_SECRET?: string };
++      return new URLSearchParams(window.location.search).get('admin_secret') || w.__ADMIN_SECRET || null;
++    };
++    const run = () => {
++      if (cancelled) return;
++      const secret = isEmbed ? adminSecretFromEmbed() : null;
+       fetch('/api/admin/auth/check', {
+-        headers: { 'X-Auth-Secret': secret },
++        headers: secret ? { 'X-Auth-Secret': secret } : undefined,
+       })
+         .then(r => r.json())
+         .then(d => {
+@@ -72,32 +51,32 @@ export default function HomePageInner({ isEmbed = false }: { isEmbed?: boolean }
+         })
+         .catch(() => {});
+     };
+-
+-    const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+-    trySecret(params.get('admin_secret'));
+-    trySecret(
+-      typeof window !== 'undefined'
+-        ? (window as unknown as { __ADMIN_SECRET?: string }).__ADMIN_SECRET
+-        : undefined,
+-    );
+-
++    const idleId =
++      !isEmbed && typeof requestIdleCallback !== 'undefined'
++        ? requestIdleCallback(() => run(), { timeout: 3000 })
++        : null;
++    const timeoutId = idleId == null ? window.setTimeout(run, 1) : undefined;
+     let attempts = 0;
+-    const intervalId = window.setInterval(() => {
+-      attempts += 1;
+-      const injected = (window as unknown as { __ADMIN_SECRET?: string }).__ADMIN_SECRET;
+-      if (injected) {
+-        trySecret(injected);
+-        window.clearInterval(intervalId);
+-      } else if (attempts >= 60) {
+-        window.clearInterval(intervalId);
+-      }
+-    }, 250);
+-
++    let intervalId: number | undefined;
++    if (isEmbed) {
++      intervalId = window.setInterval(() => {
++          attempts += 1;
++          if (cancelled || isAdmin || attempts > 60) {
++            window.clearInterval(intervalId);
++            return;
++          }
++          run();
++        }, 250);
++    }
+     return () => {
+       cancelled = true;
+-      window.clearInterval(intervalId);
++      if (idleId != null && typeof cancelIdleCallback !== 'undefined') {
++        cancelIdleCallback(idleId);
++      }
++      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
++      if (intervalId !== undefined) window.clearInterval(intervalId);
+     };
+-  }, [isEmbed]);
++  }, [isAdmin, isEmbed]);
+ 
+   const mapProps = {
+     markers,
+@@ -105,6 +84,7 @@ export default function HomePageInner({ isEmbed = false }: { isEmbed?: boolean }
+     fusionTrajectories: [] as FusionTrajectory[],
+     isAdmin,
+     onMarkerAction: isAdmin ? forceRefreshMarkers : undefined,
++    isEmbed,
+   };
+ 
+   if (isEmbed) {
+@@ -112,7 +92,7 @@ export default function HomePageInner({ isEmbed = false }: { isEmbed?: boolean }
+       <main className="relative h-screen h-[100dvh] w-full overflow-hidden">
+         <div id="map-container" className="isolate h-full w-full">
+           <MapErrorBoundary>
+-            <MapContainer {...mapProps} />
++            <MapHost {...mapProps} />
+           </MapErrorBoundary>
+         </div>
+       </main>
+@@ -127,13 +107,14 @@ export default function HomePageInner({ isEmbed = false }: { isEmbed?: boolean }
+         markers={markers}
+         alarms={alarms}
+         presence={presence}
++        realtimeStatus={realtimeStatus}
+         ballisticThreat={ballisticThreat}
+         onDonate={() => setDonateOpen(true)}
+         onFaq={() => setFaqOpen(true)}
+       >
+         <div id="map-container" className="isolate h-full w-full">
+           <MapErrorBoundary>
+-            <MapContainer {...mapProps} />
++            <MapHost {...mapProps} />
+           </MapErrorBoundary>
+         </div>
+       </AppShell>
+diff --git a/nextjs-app/src/app/admin/page.tsx b/nextjs-app/src/app/admin/page.tsx
+index b8b1f5e..e266baa 100644
+--- a/nextjs-app/src/app/admin/page.tsx
++++ b/nextjs-app/src/app/admin/page.tsx
+@@ -8,6 +8,7 @@ import { useAdminFeedSSE } from '@/hooks/useDataSSE';
+ const MapEditor = dynamic(() => import('@/components/admin/MapEditor'), { ssr: false });
+ 
+ type Tab = 'overview' | 'markers' | 'reports' | 'messages' | 'users' | 'settings' | 'corrections' | 'feedback' | 'feed';
++type ReportsFilter = 'PENDING' | 'ALL';
+ 
+ interface ChatReport {
+   id: string;
+@@ -65,6 +66,41 @@ interface FeedEntry {
+   origin?: string;
+ }
+ 
++interface ChannelHealthRow {
++  slug: string;
++  name: string;
++  priority: number;
++  seen: number;
++  processed: number;
++  mapMarkers: number;
++  skipped: number;
++  dropped: number;
++  errors: number;
++  lastSeenAt: string | null;
++  lastStatus: string | null;
++  lastReason: string | null;
++  topReasons: { reason: string; count: number }[];
++  actionableDrops: number;
++  conversionRate: number;
++  health: 'active' | 'degraded' | 'quiet' | 'blocked' | 'silent';
++}
++
++interface ChannelHealthSnapshot {
++  channels: ChannelHealthRow[];
++  summary: {
++    active: number;
++    degraded: number;
++    quiet: number;
++    blocked: number;
++    silent: number;
++    seen: number;
++    processed: number;
++    mapMarkers: number;
++  };
++  feedWindow: number;
++  generatedAt: string;
++}
++
+ function formatKyivTime(iso: string): string {
+   try {
+     const d = new Date(iso);
+@@ -110,7 +146,7 @@ const DEFAULT_ADMIN_SETTINGS: AdminSettingsState = {
+   corroborationMinObservations: 2,
+   corroborationWindowMinutes: 30,
+   corroborationMaxRadiusKm: 45,
+-  corroborationMinDistinctSources: 0,
++  corroborationMinDistinctSources: 2,
+   regionUncertaintyKm: 38,
+   corroboratedUncertaintyKm: 9,
+ };
+@@ -154,7 +190,7 @@ export default function AdminPage() {
+ 
+   // Chat Moderation Reports
+   const [reports, setReports] = useState<ChatReport[]>([]);
+-  const [reportsFilter, setReportsFilter] = useState<'PENDING' | 'ALL'>('PENDING');
++  const [reportsFilter, setReportsFilter] = useState<ReportsFilter>('PENDING');
+   const [expandedTicket, setExpandedTicket] = useState<string | null>(null);
+   const [replyText, setReplyText] = useState<Record<string, string>>({});
+   const [replyingSending, setReplyingSending] = useState<string | null>(null);
+@@ -165,6 +201,7 @@ export default function AdminPage() {
+   const [feedFilter, setFeedFilter] = useState<string>('all');
+   const [feedPaused, setFeedPaused] = useState(false);
+   const [feedExpanded, setFeedExpanded] = useState<string | null>(null);
++  const [channelHealth, setChannelHealth] = useState<ChannelHealthSnapshot | null>(null);
+   const feedRef = useRef<HTMLDivElement>(null);
+   const router = useRouter();
+ 
+@@ -245,6 +282,13 @@ export default function AdminPage() {
+     } catch (e) { if ((e as Error).message === 'UNAUTHORIZED') handleAuthError(); }
+   }, [handleAuthError]);
+ 
++  const loadChannelHealth = useCallback(async () => {
++    try {
++      const data = await api<ChannelHealthSnapshot>('/api/admin/channel-health');
++      setChannelHealth(data);
++    } catch (e) { if ((e as Error).message === 'UNAUTHORIZED') handleAuthError(); }
++  }, [handleAuthError]);
++
+   // SSE real-time feed subscription
+   useAdminFeedSSE(useCallback((event: Record<string, unknown>) => {
+     if (tab !== 'feed') return;
+@@ -270,8 +314,8 @@ export default function AdminPage() {
+     if (tab === 'settings') loadStats();
+     if (tab === 'corrections') loadCorrections();
+     if (tab === 'feedback') loadFeedback();
+-    if (tab === 'feed') loadFeed();
+-  }, [tab, loadMarkers, loadHidden, loadRawMsgs, loadBlocked, loadStats, loadCorrections, loadFeedback, loadFeed, loadReports]);
++    if (tab === 'feed') { loadFeed(); loadChannelHealth(); }
++  }, [tab, loadMarkers, loadHidden, loadRawMsgs, loadBlocked, loadStats, loadCorrections, loadFeedback, loadFeed, loadChannelHealth, loadReports]);
+ 
+   // ── Actions ──
+ 
+@@ -551,7 +595,7 @@ export default function AdminPage() {
+                   <h2 className="text-xl font-semibold text-white/90">Скарги ({reports.filter(r => reportsFilter === 'ALL' || r.status === reportsFilter).length})</h2>
+                   <select
+                     value={reportsFilter}
+-                    onChange={e => setReportsFilter(e.target.value as any)}
++                    onChange={e => setReportsFilter(e.target.value as ReportsFilter)}
+                     className="bg-[#0a0a0b] backdrop-blur-3xl text-sm text-white/70 border border-white/10 rounded-xl px-3 py-1.5 focus:outline-none"
+                   >
+                     <option value="PENDING">Тільки нові</option>
+@@ -1003,9 +1047,9 @@ export default function AdminPage() {
+               className="w-full bg-[#050505] border border-white/10 rounded-xl px-3 py-2 text-sm text-white" />
+           </div>
+           <div>
+-            <label className="text-[11px] text-white/45 block mb-1">Мін. унікальних джерел (0 = вимк.)</label>
++            <label className="text-[11px] text-white/45 block mb-1">Мін. унікальних джерел</label>
+             <input type="number" min={0} max={10} value={settings.corroborationMinDistinctSources}
+-              onChange={e => setSettings(s => ({ ...s, corroborationMinDistinctSources: parseInt(e.target.value, 10) || 0 }))}
++              onChange={e => setSettings(s => ({ ...s, corroborationMinDistinctSources: parseInt(e.target.value, 10) || 2 }))}
+               className="w-full bg-[#050505] border border-white/10 rounded-xl px-3 py-2 text-sm text-white" />
+           </div>
+           <div>
+@@ -1203,10 +1247,31 @@ export default function AdminPage() {
+       deduped: 'Дедупліковано', chain_update: 'Ланцюг', error: 'Помилка',
+       retargeted: 'Ретаргет',
+     };
++    const healthLabels: Record<ChannelHealthRow['health'], string> = {
++      active: 'Активний',
++      degraded: 'Проблемний',
++      blocked: 'Ріжеться',
++      quiet: 'Тихо',
++      silent: 'Немає подій',
++    };
++    const healthColors: Record<ChannelHealthRow['health'], string> = {
++      active: '#5ef5c4',
++      degraded: '#ff6d00',
++      blocked: '#ffab40',
++      quiet: '#40c4ff',
++      silent: '#ffffff55',
++    };
+     const statuses = ['all', 'processed', 'skipped', 'dropped', 'deduped', 'chain_update', 'retargeted', 'error'];
+     const filtered = feedFilter === 'all' ? feedEntries : feedEntries.filter(e => e.status === feedFilter);
+     const counts: Record<string, number> = {};
+     for (const e of feedEntries) counts[e.status] = (counts[e.status] || 0) + 1;
++    const noisyHealth = channelHealth?.channels
++      .filter(row => row.health !== 'active')
++      .sort((a, b) => {
++        const rank = { degraded: 0, blocked: 1, silent: 2, quiet: 3, active: 4 };
++        return rank[a.health] - rank[b.health] || a.priority - b.priority || b.seen - a.seen;
++      })
++      .slice(0, 8) || [];
+ 
+     return (
+       <div className="space-y-4">
+@@ -1224,12 +1289,67 @@ export default function AdminPage() {
+               <span className="material-icons text-[14px] align-middle mr-1">{feedPaused ? 'pause' : 'play_arrow'}</span>
+               {feedPaused ? 'Пауза' : 'Live'}
+             </button>
+-            <button onClick={loadFeed} className="text-xs text-[#ff2a5f]/60 hover:text-[#ff2a5f] transition-colors">
++            <button onClick={() => { loadFeed(); loadChannelHealth(); }} className="text-xs text-[#ff2a5f]/60 hover:text-[#ff2a5f] transition-colors">
+               <span className="material-icons text-[14px] align-middle">refresh</span>
+             </button>
++            <button onClick={loadChannelHealth} className="text-xs text-[#ff2a5f]/60 hover:text-[#ff2a5f] transition-colors">
++              Канали
++            </button>
+           </div>
+         </div>
+ 
++        {/* Channel health */}
++        {channelHealth && (
++          <div className="bg-[#0a0a0b] backdrop-blur-3xl rounded-2xl p-4 border border-white/5 space-y-3">
++            <div className="flex items-center justify-between gap-3 flex-wrap">
++              <div>
++                <h3 className="text-sm font-semibold text-white/80">Стан каналів</h3>
++                <p className="text-xs text-white/35">
++                  Останні {channelHealth.feedWindow} подій feed: {channelHealth.summary.mapMarkers} маркерів на карту,
++                  {' '}{channelHealth.summary.processed} processed, {channelHealth.summary.silent} без подій
++                </p>
++              </div>
++              <div className="flex gap-2 flex-wrap text-[10px]">
++                {(['active', 'degraded', 'blocked', 'quiet', 'silent'] as const).map(h => (
++                  <span key={h} className="px-2 py-1 rounded-lg border border-white/5" style={{ color: healthColors[h], backgroundColor: `${healthColors[h]}12` }}>
++                    {healthLabels[h]}: {channelHealth.summary[h]}
++                  </span>
++                ))}
++              </div>
++            </div>
++
++            {noisyHealth.length > 0 && (
++              <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
++                {noisyHealth.map(row => (
++                  <div key={row.slug} className="rounded-xl border border-white/5 bg-[#050505] px-3 py-2">
++                    <div className="flex items-center gap-2">
++                      <span className="text-[10px] px-2 py-0.5 rounded-md font-medium" style={{ color: healthColors[row.health], backgroundColor: `${healthColors[row.health]}18` }}>
++                        {healthLabels[row.health]}
++                      </span>
++                      <span className="text-xs text-white/75 truncate">{row.slug}</span>
++                      <span className="text-[10px] text-white/25 ml-auto">p{row.priority}</span>
++                    </div>
++                    <div className="mt-1 text-[11px] text-white/40 flex flex-wrap gap-x-3 gap-y-1">
++                      <span>seen: {row.seen}</span>
++                      <span>map: {row.mapMarkers}</span>
++                      <span>conv: {(row.conversionRate * 100).toFixed(0)}%</span>
++                      <span>action: {row.actionableDrops}</span>
++                      <span>processed: {row.processed}</span>
++                      <span>skip/drop: {row.skipped + row.dropped}</span>
++                      {row.lastSeenAt && <span>last: {formatKyivTime(row.lastSeenAt)}</span>}
++                    </div>
++                    {row.topReasons.length > 0 && (
++                      <div className="mt-1 text-[11px] text-[#ffab40]/70 truncate">
++                        {row.topReasons.map(reason => `${reason.reason} (${reason.count})`).join(' · ')}
++                      </div>
++                    )}
++                  </div>
++                ))}
++              </div>
++            )}
++          </div>
++        )}
++
+         {/* Filter bar */}
+         <div className="flex items-center gap-2 flex-wrap">
+           {statuses.map(s => (
+diff --git a/nextjs-app/src/components/DashboardSidebar.tsx b/nextjs-app/src/components/DashboardSidebar.tsx
+index a37296f..1f9cbab 100644
+--- a/nextjs-app/src/components/DashboardSidebar.tsx
++++ b/nextjs-app/src/components/DashboardSidebar.tsx
+@@ -116,7 +116,7 @@ export default function DashboardSidebar({
+             <div className="mt-0.5 text-[11px] text-white/50">активні регіони</div>
+           </div>
+           <div className={`${glass.tile} p-3`}>
+-            <div className="text-[10px] uppercase tracking-wider text-white/40">Об'єкти</div>
++            <div className="text-[10px] uppercase tracking-wider text-white/40">Об&apos;єкти</div>
+             <div className="mt-1 text-2xl font-semibold text-white tabular-nums">{markers.length}</div>
+             <div className="mt-0.5 text-[11px] text-white/50">треки та події</div>
+           </div>
+diff --git a/nextjs-app/src/components/DeploymentScreen.tsx b/nextjs-app/src/components/DeploymentScreen.tsx
+index fce0fdb..3802cd6 100644
+--- a/nextjs-app/src/components/DeploymentScreen.tsx
++++ b/nextjs-app/src/components/DeploymentScreen.tsx
+@@ -98,7 +98,7 @@ export default function DeploymentScreen() {
+ 
+         {/* Text */}
+         <div className="mb-2 text-sm font-bold tracking-[0.1em] text-[#ff2a5f] uppercase animate-pulse">
+-          Встановлення З'єднання
++          Встановлення З&apos;єднання
+         </div>
+         <div className="text-[11px] font-medium tracking-widest text-white/40 uppercase">
+           Оновлення топографії та радарних даних...
+diff --git a/nextjs-app/src/components/Map/MapContainer.tsx b/nextjs-app/src/components/Map/MapContainer.tsx
+index 5f21f1a..3f89617 100644
+--- a/nextjs-app/src/components/Map/MapContainer.tsx
++++ b/nextjs-app/src/components/Map/MapContainer.tsx
+@@ -1,23 +1,38 @@
+ 'use client';
+ 
+-import { useEffect, useRef, useState, useCallback, useDeferredValue, type MutableRefObject } from 'react';
++import { useEffect, useRef, useState, useCallback, useDeferredValue, memo, type MutableRefObject } from 'react';
+ import L from 'leaflet';
+ import type { Marker, Alarm, FusionTrajectory } from '@/types';
+ import { THREAT_ICONS, THREAT_NAMES } from '@/types';
+-import { CACHE_VERSION, SVG_FADE_START_ZOOM, SVG_FADE_END_ZOOM } from '@/lib/constants';
++import { formatKyivTime, buildMarkerPopup } from '@/lib/map/marker-popup-html';
++import {
++  CACHE_VERSION,
++  SVG_FADE_END_ZOOM,
++  SVG_FADE_END_ZOOM_MOBILE,
++  SVG_FADE_START_ZOOM,
++  SVG_FADE_START_ZOOM_MOBILE,
++} from '@/lib/constants';
+ import { bearingToWebIconRotationCssDeg, resolveThreatBearingDeg } from '@/lib/threat-bearing';
+ import {
+   getBasemapClassName,
+   getBasemapUrl,
+-  isLowInteractionMode,
+-  pickBasemapKind,
+   type MapBasemapKind,
+ } from '@/lib/map-leaflet-performance';
++import { computeMapModeState } from '@/lib/map-mode-state';
++import { resolveMapRenderProfile } from '@/lib/map/map-render-profile';
++import { renderAlarmSvgDiff, type AlarmSvgKey } from '@/lib/map/map-alarm-svg-renderer';
++
++type MobileSvgGating = {
++  revealedRef: MutableRefObject<boolean>;
++  zoomAfterFitRef: MutableRefObject<number | null>;
++};
++
++/** Скільки повинен відрізнятись зум від post-fit, щоб вважати це «користувач зумиш» (pinch, колесо). */
++const MOBILE_REVEAL_ZOOM_EPS = 0.08;
+ 
+ // Re-export MAP_BOUNDS locally to avoid circular deps
+ const MAP_BOUNDS = { minLat: 44.2, maxLat: 52.4, minLng: 22.0, maxLng: 40.2 } as const;
+ 
+-// Global state for Phase 2 optimizations (persists across Navigations)
+ const SVG_DOM_CACHE: Record<string, SVGElement> = {};
+ let TOOLTIP_SINGLETON: HTMLDivElement | null = null;
+ 
+@@ -47,56 +62,6 @@ function quickDistKm(aLat: number, aLng: number, bLat: number, bLng: number): nu
+   return Math.sqrt(x * x + y * y);
+ }
+ 
+-/** Compute marker opacity based on age: 1.0 (fresh) → 0.3 (20+ min old) */
+-function computeMarkerOpacity(marker: Marker): number {
+-  let epochMs = 0;
+-  if (marker.last_update_epoch) {
+-    epochMs = marker.last_update_epoch > 10000000000 ? marker.last_update_epoch : marker.last_update_epoch * 1000;
+-  } else if (marker.created_at_epoch) {
+-    epochMs = marker.created_at_epoch > 10000000000 ? marker.created_at_epoch : marker.created_at_epoch * 1000;
+-  } else if (marker.date) {
+-    epochMs = new Date(marker.date).getTime();
+-  }
+-  if (!epochMs) return 1;
+-  const ageMs = Date.now() - epochMs;
+-  if (ageMs <= 0) return 1;
+-  const MAX_AGE_MS = 20 * 60 * 1000; // 20 minutes
+-  const MIN_OPACITY = 0.3;
+-  const t = Math.min(ageMs / MAX_AGE_MS, 1);
+-  return 1 - t * (1 - MIN_OPACITY); // 1.0 → 0.3
+-}
+-
+-/**
+- * Dim approximate / predictive placements and low-confidence marks (aligned with Flutter `mapVisualOpacity`).
+- */
+-function computeMapVisualOpacity(marker: Marker): number {
+-  const dc = marker.display_class;
+-  let base = 1;
+-  if (dc === 'region_signal') {
+-    base = 0.62;
+-  } else if (dc === 'corridor_or_bearing') {
+-    base = 0.52;
+-  } else if (!dc) {
+-    const pm = (marker.placement_mode || '').toLowerCase();
+-    if (pm === 'approximate') base = 0.62;
+-    else if (pm === 'predictive') base = 0.5;
+-  }
+-
+-  const c100 = marker.confidence_0_100;
+-  if (c100 != null && Number.isFinite(c100)) {
+-    const c = Math.max(0, Math.min(100, c100)) / 100;
+-    if (c < 0.78) base *= 0.55 + 0.45 * c;
+-  } else if (marker.confidence != null && Number.isFinite(marker.confidence) && marker.confidence < 0.78) {
+-    const c = Math.max(0, Math.min(1, marker.confidence));
+-    base *= 0.55 + 0.45 * c;
+-  }
+-  return Math.max(0.32, Math.min(1, base));
+-}
+-
+-function combinedMarkerOpacity(marker: Marker): number {
+-  return Math.max(0.12, Math.min(1, computeMarkerOpacity(marker) * computeMapVisualOpacity(marker)));
+-}
+-
+ /** Stale / cached API payloads without display policy — default to legacy precise pin. */
+ function normalizeMarkerDisplay(marker: Marker): Marker {
+   if (
+@@ -108,10 +73,10 @@ function normalizeMarkerDisplay(marker: Marker): Marker {
+   }
+   return {
+     ...marker,
+-    display_class: 'corroborated_point',
+-    show_precise_pin: true,
+-    display_uncertainty_km: 0,
+-    display_trust_hint_uk: marker.display_trust_hint_uk ?? '',
++    display_class: 'region_signal',
++    show_precise_pin: false,
++    display_uncertainty_km: 38,
++    display_trust_hint_uk: marker.display_trust_hint_uk ?? 'Орієнтовно в межах регіону; точна позиція не стверджується.',
+   };
+ }
+ 
+@@ -175,32 +140,6 @@ function syncDisplayUncertaintyLayers(
+   // Uncertainty rings (L.circle) intentionally not drawn — pins only; trust hints remain in popup/tooltip.
+ }
+ 
+-function mapHashCode(str: string): number {
+-  let hash = 0;
+-  for (let i = 0; i < str.length; i++) {
+-    hash = (Math.imul(hash, 31) + str.charCodeAt(i)) | 0;
+-  }
+-  return hash;
+-}
+-
+-function jitterCoords(lat: number, lng: number, index: number, seedStr: string, radiusKm = 12): [number, number] {
+-  if (index === 0) return [lat, lng];
+-  let seed = mapHashCode(`${seedStr}_${index}`);
+-  const rand = () => {
+-    seed = (seed + 0x6D2B79F5) | 0;
+-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+-  };
+-
+-  const angle = rand() * 2 * Math.PI;
+-  const r = Math.sqrt(rand()) * radiusKm;
+-  const KM_TO_DEG_LAT = 1 / 111.32;
+-  const dLat = Math.cos(angle) * r * KM_TO_DEG_LAT;
+-  const dLng = Math.sin(angle) * r * (KM_TO_DEG_LAT / Math.cos(lat * Math.PI / 180));
+-  return [lat + dLat, lng + dLng];
+-}
+-
+ /** CSS rotation for threat raster/SVG icons (see bearingToWebIconRotationCssDeg). */
+ function computeIconRotationCssDeg(marker: Marker): number {
+   const brg = resolveThreatBearingDeg(marker);
+@@ -212,7 +151,7 @@ function computeIconRotationCssDeg(marker: Marker): number {
+ function threatIconLayoutKey(marker: Marker): string {
+   const tt = marker.threat_type || 'default';
+   const icon = marker.marker_icon || THREAT_ICONS[tt] || 'shahed3.webp';
+-  return `${icon}|${tt}`;
++  return `${icon}|${tt}|${marker.track_state || 'none'}`;
+ }
+ 
+ /** Rounded bearing — cheap `img.style.transform` updates only. */
+@@ -240,10 +179,17 @@ function buildThreatDivIcon(marker: Marker): L.DivIcon {
+     size = Math.max(16, Math.round(size / 1.5));
+     size = Math.round(size * 1.2);
+   }
++  let boxW = size;
++  let boxH = size;
++  if (iconFile === 'icon_tu95.svg') {
++    boxW = 54;
++    boxH = Math.round((boxW * 500) / 680);
++  }
+   const rotationAngle = computeIconRotationCssDeg(marker);
+ 
+   // Cache key based solely on visual appearance (no per-count badge on map)
+-  const cacheKey = `${threatType}|${iconFile}|${size}|${Math.round(rotationAngle)}`;
++  const trackState = marker.track_state || 'observed';
++  const cacheKey = `${threatType}|${iconFile}|${boxW}x${boxH}|${Math.round(rotationAngle)}|${trackState}`;
+   const cached = _iconCache.get(cacheKey);
+   if (cached) return cached;
+ 
+@@ -258,16 +204,17 @@ function buildThreatDivIcon(marker: Marker): L.DivIcon {
+     iconFile === 'shahed3.webp' &&
+     (threatType === 'shahed' || threatType === 'drone' || threatType === 'uav' || threatType === 'default');
+   const shahedRasterAttr = shahedTheme ? ' data-icon="shahed3"' : '';
+-  const html = `<div class="threat-marker" data-type="${threatType}"${shahedRasterAttr} style="position:relative;width:${size}px;height:${size}px;">
++  const ballisticIconAttr = iconFile === 'icon_balistic.svg' ? ' data-icon="ballistic"' : '';
++  const html = `<div class="threat-marker" data-type="${threatType}" data-track-state="${trackState}"${shahedRasterAttr}${ballisticIconAttr} style="position:relative;width:${boxW}px;height:${boxH}px;">
+     <img src="/${iconFile}?${CACHE_VERSION}" alt="${threatType}" decoding="async" fetchpriority="${fetchPriority}"
+-         style="transform:rotate(${rotationAngle}deg);width:100%;height:100%;"
++         style="transform:rotate(${rotationAngle}deg);width:100%;height:100%;object-fit:contain;"
+          onerror="this.src='/shahed3.webp?${CACHE_VERSION}'"></div>`;
+ 
+   const icon = L.divIcon({
+     className: 'threat-marker-icon',
+     html,
+-    iconSize: [size, size],
+-    iconAnchor: [size / 2, size / 2],
++    iconSize: [boxW, boxH],
++    iconAnchor: [boxW / 2, boxH / 2],
+   });
+ 
+   // Evict oldest when cache is full
+@@ -297,6 +244,8 @@ type MapMarkerEntry = {
+   lastData: Marker;
+   lastIconLayoutKey: string;
+   lastIconBearingKey: string;
++  /** Уникати style.opacity, якщо значення не змінилось (менше layout) */
++  lastOpacity?: number;
+ };
+ 
+ /** Re-bind touchend after Leaflet replaces the icon DOM (setIcon / rotation update). */
+@@ -376,7 +325,7 @@ interface MapContainerProps {
+   isEmbed?: boolean;
+ }
+ 
+-export default function MapContainer({ markers, alarms, fusionTrajectories, isAdmin, onMarkerAction, isEmbed = false }: MapContainerProps) {
++function MapContainer({ markers, alarms, fusionTrajectories, isAdmin, onMarkerAction, isEmbed = false }: MapContainerProps) {
+   const deferredMarkers = useDeferredValue(markers);
+   const deferredAlarms = useDeferredValue(alarms);
+ 
+@@ -391,10 +340,24 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
+   const animRafRef = useRef<number | null>(null);
+   const [isLoaded, setIsLoaded] = useState(false);
+   const isAdminRef = useRef(isAdmin);
+-  isAdminRef.current = isAdmin;
+   const isInteractingRef = useRef(false);
+   const lowInteractionRef = useRef(false);
+-  lowInteractionRef.current = isLowInteractionMode(isEmbed, typeof navigator !== 'undefined' ? navigator.userAgent : undefined);
++  /** Поки `false` — тільки SVG; після `fitBounds` після зміни зуму (pinch) мимохідь `true` — кроссфейд → тайли. */
++  const mobileBasemapRevealedRef = useRef(false);
++  const mobileZoomAfterFitRef = useRef<number | null>(null);
++
++  useEffect(() => {
++    isAdminRef.current = isAdmin;
++  }, [isAdmin]);
++
++  useEffect(() => {
++    const profile = resolveMapRenderProfile({
++      isEmbed,
++      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
++      maxTouchPoints: typeof navigator !== 'undefined' ? navigator.maxTouchPoints : undefined,
++    });
++    lowInteractionRef.current = profile.lowInteraction;
++  }, [isEmbed]);
+ 
+   // Initialize map (must match original init order: tiles -> layers -> SVG -> events -> fitBounds)
+   useEffect(() => {
+@@ -403,22 +366,25 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
+     // Abort flag for React StrictMode (effect runs twice in dev)
+     let aborted = false;
+ 
+-    const ukraineCenter: L.LatLngExpression = [48.5, 31.5];
+-    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+-    const basemap = pickBasemapKind(isEmbed, typeof navigator !== 'undefined' ? navigator.userAgent : undefined);
+-    const lowTileMode = basemap === 'rasterVectorDark';
+-    const lowInteraction = isLowInteractionMode(
+-      isEmbed,
+-      typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
+-    );
+-    lowInteractionRef.current = lowInteraction;
++    mobileBasemapRevealedRef.current = false;
++    mobileZoomAfterFitRef.current = null;
+ 
+-    const map = L.map(mapElRef.current, {
++    const ukraineCenter: L.LatLngExpression = [48.5, 31.5];
++    const ua = typeof navigator !== 'undefined' ? navigator.userAgent : undefined;
++    const mtp = typeof navigator !== 'undefined' ? navigator.maxTouchPoints : undefined;
++    const profile = resolveMapRenderProfile({ isEmbed, userAgent: ua, maxTouchPoints: mtp });
++    const isMobile = profile.isMobileLike;
++    const mobileGating = isMobile
++      ? { revealedRef: mobileBasemapRevealedRef, zoomAfterFitRef: mobileZoomAfterFitRef }
++      : null;
++    lowInteractionRef.current = profile.lowInteraction;
++
++    const mapOptions: L.MapOptions = {
+       center: ukraineCenter,
+       zoom: 6,
+       minZoom: 5,
+       // Hybrid labels need high zoom; OpenFreeMap is cheaper — cap zoom on low mode = fewer tile fetches
+-      maxZoom: lowTileMode ? 16 : 19,
++      maxZoom: profile.maxZoom,
+       zoomControl: false,
+       attributionControl: false,
+       dragging: true,
+@@ -426,30 +392,57 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
+       doubleClickZoom: true,
+       touchZoom: true,
+       preferCanvas: true, // Use Canvas for vectors (Fusion tracks)
+-      zoomAnimation: !lowInteraction,
+-      fadeAnimation: !lowInteraction,
+-      markerZoomAnimation: !lowInteraction,
+-      transform3DLimit: lowInteraction ? 1 : 2,
+-      zoomSnap: lowInteraction ? 1 : 0.5,
++      zoomAnimation: false,
++      fadeAnimation: false,
++      markerZoomAnimation: false,
++      transform3DLimit: profile.leaflet.transform3DLimit,
++      zoomSnap: profile.leaflet.zoomSnap,
+       zoomDelta: 1,
+       wheelPxPerZoomLevel: 60,
+       wheelDebounceTime: 60,
+-      inertia: !lowInteraction,
+-      inertiaDuration: lowInteraction ? 0.75 : 1.5,
+-      inertiaMaxSpeed: lowInteraction ? 1500 : 3000,
++      inertia: profile.leaflet.inertia,
++      inertiaMaxSpeed: profile.leaflet.inertiaMaxSpeed,
+       easeLinearity: 0.1,
+-      keepBuffer: lowTileMode ? 1 : 2,
+       maxBounds: [[40, 18], [56, 44]],
+       maxBoundsViscosity: 0.8,
+-    } as any);
++    };
++    const map = L.map(mapElRef.current, mapOptions);
+ 
+     mapRef.current = map;
++    const markerRegistry = markerRegistryRef.current;
++
++    /** iOS / Android: address bar, pinch, 100dvh — without invalidateSize the tile grid can be empty after zoom. */
++    const onViewportLayout = () => {
++      if (aborted) return;
++      const m = mapRef.current;
++      if (!m) return;
++      m.invalidateSize({ animate: false });
++      updateSvgOpacity(m, isMobile, mobileGating);
++    };
++    window.addEventListener('resize', onViewportLayout);
++    window.addEventListener('orientationchange', onViewportLayout);
++    const visualViewport = typeof window !== 'undefined' ? window.visualViewport : null;
++    if (visualViewport) {
++      visualViewport.addEventListener('resize', onViewportLayout);
++    }
++    let mobileLayoutKick1: number | null = null;
++    let mobileLayoutKick2: number | null = null;
++    if (isMobile) {
++      mobileLayoutKick1 = window.setTimeout(onViewportLayout, 320);
++      mobileLayoutKick2 = window.setTimeout(onViewportLayout, 900);
++    }
+ 
+     // Sequential init matching the original: tiles first, then layers, then SVG overlays
+     (async () => {
+       try {
+         // 1. Load base map tiles (await like original)
+-        await loadMapTiles(map, { isMobile, basemap, lowTileMode });
++        await loadMapTiles(map, {
++          basemap: profile.basemap,
++          lowTileMode: profile.lowTileMode,
++          updateWhenIdle: profile.tile.updateWhenIdle,
++          keepBuffer: profile.tile.keepBuffer,
++          detectRetina: profile.tile.detectRetina,
++        });
+       } catch (e) {
+         console.warn('Map tiles load error:', e);
+       }
+@@ -465,11 +458,12 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
+       fusionLayerRef.current = fusionGroup;
+       markersLayerRef.current = markersGroup;
+ 
+-      // 3. Load SVG overlays (await like original)
++      // 3. SVG overlays. Keep district SVG on mobile/WebView: users need exact raion alarms.
++      // The previous GeoJSON raion layer produced long "rays" on mobile because the source geometry is not safe for Leaflet rendering.
+       try {
+         const svgRefs = await loadSvgOverlays(map, {
+-          skipOblastNames: false,
+-          skipDetailedDistricts: false,
++          loadOblastNames: profile.svg.loadOblastNames,
++          loadDetailedDistricts: profile.svg.loadDetailedDistricts,
+         });
+         if (aborted) return;
+         if (svgRefs) {
+@@ -482,52 +476,59 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
+ 
+       if (aborted) return;
+ 
+-      // 4. Handle zoom changes - fade SVG at high zoom (rAF-throttle: `zoom` fires very often; INP)
+-      let opacityRaf: number | null = null;
+-      const scheduleOpacityUpdate = () => {
+-        if (opacityRaf != null) return;
+-        opacityRaf = requestAnimationFrame(() => {
+-          opacityRaf = null;
+-          updateSvgOpacity(map);
+-        });
+-      };
+-
+       map.on('movestart', () => { isInteractingRef.current = true; });
+-      map.on('moveend', () => { 
++      map.on('moveend', () => {
+         // Delay resetting slightly to allow Leaflet's internal states to settle
+         setTimeout(() => { isInteractingRef.current = false; }, 100);
++        if (isMobile) {
++          onViewportLayout();
++        }
++      });
++      map.on('zoomstart', () => {
++        isInteractingRef.current = true;
++        mapElRef.current?.classList.add('map-zooming');
+       });
+-      map.on('zoomstart', () => { isInteractingRef.current = true; });
+       map.on('zoomend', () => {
+         setTimeout(() => { isInteractingRef.current = false; }, 100);
+-        if (opacityRaf != null) {
+-          cancelAnimationFrame(opacityRaf);
+-          opacityRaf = null;
++        if (isMobile) {
++          requestAnimationFrame(() => {
++            if (aborted) return;
++            map.invalidateSize({ animate: false });
++          });
+         }
+-        updateSvgOpacity(map);
++        updateSvgOpacity(map, isMobile, mobileGating);
++        requestAnimationFrame(() => {
++          if (!aborted) mapElRef.current?.classList.remove('map-zooming');
++        });
++        onViewportLayout();
+       });
+-      map.on('zoom', scheduleOpacityUpdate);
+-
+-      // 5. Initial opacity update
+-      updateSvgOpacity(map);
+ 
+-      // 6. Fit to Ukraine bounds
++      // 5. Fit to Ukraine, then opacity (моб: baseline зум; доки користувач не змінить зум — тільки SVG, тайли opacity 0)
+       const bounds = L.latLngBounds(
+         [MAP_BOUNDS.minLat, MAP_BOUNDS.minLng],
+         [MAP_BOUNDS.maxLat, MAP_BOUNDS.maxLng]
+       );
+       map.fitBounds(bounds, { animate: false });
++      mobileZoomAfterFitRef.current = map.getZoom();
++      updateSvgOpacity(map, isMobile, mobileGating);
+ 
+       setIsLoaded(true);
+     })();
+ 
+     return () => {
+       aborted = true;
++      window.removeEventListener('resize', onViewportLayout);
++      window.removeEventListener('orientationchange', onViewportLayout);
++      if (visualViewport) {
++        visualViewport.removeEventListener('resize', onViewportLayout);
++      }
++      if (mobileLayoutKick1) window.clearTimeout(mobileLayoutKick1);
++      if (mobileLayoutKick2) window.clearTimeout(mobileLayoutKick2);
+       if (animRafRef.current != null) {
+         cancelAnimationFrame(animRafRef.current);
+         animRafRef.current = null;
+       }
+-      markerRegistryRef.current.clear();
++      markerRegistry.clear();
+       map.remove();
+       mapRef.current = null;
+     };
+@@ -540,10 +541,13 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
+     const w = window as any;
+ 
+     const adminJsonHeaders = (): Record<string, string> => {
+-      const h: Record<string, string> = { 'Content-Type': 'application/json' };
+-      const secret = w.__ADMIN_SECRET;
+-      if (secret) h['X-Auth-Secret'] = String(secret);
+-      return h;
++      const secret =
++        new URLSearchParams(window.location.search).get('admin_secret') ||
++        w.__ADMIN_SECRET;
++      return {
++        'Content-Type': 'application/json',
++        ...(secret ? { 'X-Auth-Secret': secret } : {}),
++      };
+     };
+ 
+     w.__adminDeleteMarker = async (id: string, lat: number, lng: number, text: string) => {
+@@ -585,12 +589,6 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
+     };
+   }, [isAdmin, onMarkerAction]);
+ 
+-  const scheduleAnimFrame = useCallback(() => {
+-    // Phase 2: JS loop for markers removed. Movement is now 100% CSS-driven.
+-    // If we need custom layers that don't support CSS transitions (like Canvas lines),
+-    // we would add them here.
+-  }, []);
+-
+   const syncMarkers = useCallback(
+     (markersData: Marker[]) => {
+       const group = markersLayerRef.current;
+@@ -640,6 +638,7 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
+             lastData: marker,
+             lastIconLayoutKey: layoutKey,
+             lastIconBearingKey: bearingKey,
++            lastOpacity: undefined,
+           };
+ 
+           leafletMarker.on('mouseover', (e: L.LeafletMouseEvent) => {
+@@ -655,15 +654,6 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
+           entry = mapEntry;
+           updateEntryTrajectory(entry, lat, lng, trajGroup);
+ 
+-          // Age × placement/confidence (use event since DOM may not be ready yet)
+-          const opacity = combinedMarkerOpacity(marker);
+-          leafletMarker.once('add', () => {
+-            const el = leafletMarker.getElement();
+-            if (el) (el as HTMLElement).style.opacity = String(opacity);
+-          });
+-          // If already added, apply directly
+-          const el = leafletMarker.getElement();
+-          if (el) (el as HTMLElement).style.opacity = String(opacity);
+           syncDisplayUncertaintyLayers(mapEntry, marker, lat, lng, group, trajGroup);
+         } else {
+           entry.lastData = marker;
+@@ -732,9 +722,11 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
+             entry.toLng = lng;
+           }
+ 
+-          // Update age × placement/confidence
+-          const el = entry.leafletMarker.getElement();
+-          if (el) (el as HTMLElement).style.opacity = String(combinedMarkerOpacity(marker));
++          const elOp = entry.leafletMarker.getElement();
++          if (elOp && entry.lastOpacity !== 1) {
++            entry.lastOpacity = 1;
++            (elOp as HTMLElement).style.opacity = '1';
++          }
+           syncDisplayUncertaintyLayers(entry, marker, lat, lng, group, trajGroup);
+         }
+       }
+@@ -754,50 +746,24 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
+ 
+   useEffect(() => {
+     if (!isLoaded || !markersLayerRef.current || !trajLayerRef.current) return;
+-    syncMarkers(deferredMarkers);
++    // Один sync на кадр: уникати кількох повних проходів при серії оновлень стейту
++    const raf = requestAnimationFrame(() => syncMarkers(deferredMarkers));
++    return () => cancelAnimationFrame(raf);
+   }, [deferredMarkers, isLoaded, syncMarkers]);
+ 
+-  // Render alarms on SVG overlays
+-  // Track active alarm IDs to avoid unnecessary DOM churn
+-  const activeAlarmIdsRef = useRef<Set<string>>(new Set());
++  const activeAlarmIdsRef = useRef<Set<AlarmSvgKey>>(new Set());
+ 
+   const renderAlarms = useCallback((alarmsData: Alarm[]) => {
+-    const statesSvg = statesSvgRef.current;
+-    const districtsSvg = districtsSvgRef.current;
+-
+-    // Build new alarm set
+-    const newAlarmIds = new Set<string>();
+-    for (const region of alarmsData) {
+-      if (region.activeAlerts?.length) {
+-        newAlarmIds.add(`${region.regionType}:${region.regionId}`);
+-      }
+-    }
+-
+-    const prevAlarmIds = activeAlarmIdsRef.current;
+-
+-    // Remove alarms that are no longer active (diff-based, not clear-all)
+-    for (const key of prevAlarmIds) {
+-      if (!newAlarmIds.has(key)) {
+-        const [type, id] = key.split(':');
+-        const svg = type === 'State' ? statesSvg : districtsSvg;
+-        if (svg) svg.querySelectorAll(`[id="${id}"]`).forEach((el) => el.classList.remove('alarm'));
+-      }
+-    }
+-
+-    // Add new alarms
+-    for (const key of newAlarmIds) {
+-      if (!prevAlarmIds.has(key)) {
+-        const [type, id] = key.split(':');
+-        const svg = type === 'State' ? statesSvg : districtsSvg;
+-        if (svg) svg.querySelectorAll(`[id="${id}"]`).forEach((el) => el.classList.add('alarm'));
+-      }
+-    }
+-
+-    activeAlarmIdsRef.current = newAlarmIds;
++    const result = renderAlarmSvgDiff(
++      { statesSvg: statesSvgRef.current, districtsSvg: districtsSvgRef.current },
++      alarmsData,
++      activeAlarmIdsRef.current,
++    );
++    activeAlarmIdsRef.current = result.activeIds;
+   }, []);
+ 
+   // Render fusion trajectories
+-  const renderFusionTrajectories = useCallback((trajs: FusionTrajectory[]) => {
++  const renderFusionTrajectories = useCallback(() => {
+     const group = fusionLayerRef.current;
+     if (!group) return;
+     group.clearLayers();
+@@ -811,7 +777,7 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
+ 
+   useEffect(() => {
+     if (!isLoaded || !fusionLayerRef.current) return;
+-    renderFusionTrajectories(fusionTrajectories);
++    renderFusionTrajectories();
+   }, [fusionTrajectories, isLoaded, renderFusionTrajectories]);
+ 
+   return (
+@@ -821,33 +787,37 @@ export default function MapContainer({ markers, alarms, fusionTrajectories, isAd
+   );
+ }
+ 
++export default memo(MapContainer);
++
+ // ============================================
+ // Helper functions
+ // ============================================
+ 
+ type LoadTilesOpts = {
+-  isMobile: boolean;
+   basemap: MapBasemapKind;
+   lowTileMode: boolean;
++  updateWhenIdle: boolean;
++  keepBuffer: number;
++  detectRetina: boolean;
+ };
+ 
+ async function loadMapTiles(map: L.Map, opts: LoadTilesOpts) {
+-  const { isMobile, basemap, lowTileMode } = opts;
++  const { basemap, lowTileMode, updateWhenIdle, keepBuffer, detectRetina } = opts;
+   const url = getBasemapUrl(basemap);
+   L.tileLayer(url, {
+     attribution: '',
+     maxZoom: lowTileMode ? 16 : 19,
+     className: getBasemapClassName(basemap),
+-    updateWhenIdle: isMobile,
++    updateWhenIdle,
+     updateWhenZooming: false,
+-    keepBuffer: lowTileMode ? 1 : 2,
+-    detectRetina: !isMobile,
++    keepBuffer,
++    detectRetina,
+   } as L.TileLayerOptions).addTo(map);
+ }
+ 
+ async function loadSvgOverlays(
+   map: L.Map,
+-  opts: { skipOblastNames: boolean; skipDetailedDistricts: boolean },
++  opts: { loadOblastNames: boolean; loadDetailedDistricts: boolean },
+ ): Promise<{ statesSvg: SVGElement; districtsSvg: SVGElement | null } | null> {
+   try {
+     const bounds = L.latLngBounds(
+@@ -856,10 +826,10 @@ async function loadSvgOverlays(
+     );
+ 
+     const svgUrls: string[] = [`/ukraine_states.svg?${CACHE_VERSION}`];
+-    if (!opts.skipDetailedDistricts) {
++    if (opts.loadDetailedDistricts) {
+       svgUrls.push(`/ukraine_districts_detailed.svg?${CACHE_VERSION}`);
+     }
+-    if (!opts.skipOblastNames) {
++    if (opts.loadOblastNames) {
+       svgUrls.push(`/ukraine_names.svg?${CACHE_VERSION}`);
+     }
+ 
+@@ -874,7 +844,7 @@ async function loadSvgOverlays(
+       const res = await fetch(url, { cache: 'force-cache' });
+       const text = await res.text();
+       const svg = parser.parseFromString(text, 'image/svg+xml').documentElement as unknown as SVGElement;
+-      SVG_DOM_CACHE[url] = svg; // Cache the original template
++      SVG_DOM_CACHE[url] = svg;
+       results.push(svg.cloneNode(true) as SVGElement);
+     }
+ 
+@@ -884,13 +854,13 @@ async function loadSvgOverlays(
+     L.svgOverlay(statesSvg, bounds, { interactive: true, zIndex: 100 }).addTo(map);
+ 
+     let districtsSvg: SVGElement | null = null;
+-    if (!opts.skipDetailedDistricts) {
++    if (opts.loadDetailedDistricts) {
+       districtsSvg = results[i++] as SVGElement;
+       districtsSvg.classList.add('svg-districts-layer');
+       L.svgOverlay(districtsSvg, bounds, { interactive: true, zIndex: 101 }).addTo(map);
+     }
+ 
+-    if (!opts.skipOblastNames) {
++    if (opts.loadOblastNames) {
+       const namesSvg = results[i] as SVGElement;
+       namesSvg.classList.add('svg-names-layer');
+       L.svgOverlay(namesSvg, bounds, { interactive: false, zIndex: 102 }).addTo(map);
+@@ -903,50 +873,40 @@ async function loadSvgOverlays(
+   }
+ }
+ 
+-function updateSvgOpacity(map: L.Map) {
+-  const zoom = map.getZoom();
++function applyMobileSvgOnlyOpacity() {
+   const container = document.getElementById('leaflet-map');
+-
+-  let fadeOpacity: number;
+-
+-  if (zoom < SVG_FADE_START_ZOOM) {
+-    fadeOpacity = 1;
+-  } else if (zoom >= SVG_FADE_END_ZOOM) {
+-    fadeOpacity = 0;
+-  } else {
+-    const progress = (zoom - SVG_FADE_START_ZOOM) / (SVG_FADE_END_ZOOM - SVG_FADE_START_ZOOM);
+-    fadeOpacity = 1 - progress;
+-  }
+-
+   if (container) {
+-    container.style.setProperty('--bg-opacity', String(fadeOpacity));
+-    container.style.setProperty('--map-opacity', String(1 - fadeOpacity));
++    container.style.setProperty('--bg-opacity', '1');
++    container.style.setProperty('--map-opacity', '0');
+   }
++}
+ 
+-  // Apply to SVG overlays (без додаткового диммінгу — повна непрозорість шару при fadeOpacity === 1)
+-  document.querySelectorAll('.svg-states-layer, .svg-districts-layer').forEach((el) => {
+-    (el as HTMLElement).style.opacity = String(fadeOpacity);
+-  });
+-  document.querySelectorAll('.svg-names-layer').forEach((el) => {
+-    (el as HTMLElement).style.opacity = String(fadeOpacity);
++function updateSvgOpacity(map: L.Map, isMobile: boolean, gating: MobileSvgGating | null) {
++  const zoom = map.getZoom();
++  const mode = computeMapModeState({
++    zoom,
++    isMobile,
++    revealed: gating?.revealedRef.current ?? true,
++    zoomAfterFit: gating?.zoomAfterFitRef.current ?? null,
++    revealZoomEps: MOBILE_REVEAL_ZOOM_EPS,
++    desktopFadeStart: SVG_FADE_START_ZOOM,
++    desktopFadeEnd: SVG_FADE_END_ZOOM,
++    mobileFadeStart: SVG_FADE_START_ZOOM_MOBILE,
++    mobileFadeEnd: SVG_FADE_END_ZOOM_MOBILE,
+   });
+-}
++  if (gating) {
++    gating.revealedRef.current = mode.revealed;
++  }
++  if (mode.mode === 'svg_only' && isMobile && !mode.revealed) {
++    applyMobileSvgOnlyOpacity();
++    return;
++  }
+ 
+-/** Format ISO timestamp to Kyiv time (HH:MM DD.MM.YYYY) */
+-function formatKyivTime(isoStr: string): string {
+-  try {
+-    const d = new Date(isoStr);
+-    if (isNaN(d.getTime())) return isoStr;
+-    return d.toLocaleString('uk-UA', {
+-      timeZone: 'Europe/Kyiv',
+-      hour: '2-digit',
+-      minute: '2-digit',
+-      day: '2-digit',
+-      month: '2-digit',
+-      year: 'numeric',
+-    });
+-  } catch {
+-    return isoStr;
++  const container = document.getElementById('leaflet-map');
++
++  if (container) {
++    container.style.setProperty('--bg-opacity', String(mode.svgOpacity));
++    container.style.setProperty('--map-opacity', String(mode.tileOpacity));
+   }
+ }
+ 
+@@ -990,50 +950,3 @@ function hideTooltip() {
+     TOOLTIP_SINGLETON.style.opacity = '0';
+   }
+ }
+-
+-function buildMarkerPopup(marker: Marker, threatType: string, isAdminUser: boolean): string {
+-  const typeName = THREAT_NAMES[threatType] || threatType;
+-  const trustEsc = (marker.display_trust_hint_uk || '').replace(/</g, '&lt;');
+-  const trustBlock = trustEsc
+-    ? `<div style="font-size:10px;color:rgba(255,171,64,0.95);margin-bottom:8px;line-height:1.35;">${trustEsc}</div>`
+-    : '';
+-  const placeEsc = (marker.place || 'Невідомо').replace(/</g, '&lt;');
+-  const brg = resolveThreatBearingDeg(marker);
+-  const courseBlock =
+-    brg != null
+-      ? `<div style="font-size:10px;color:rgba(255,171,64,0.95);margin-top:4px;">Курс ~${Math.round(brg)}° (за даними карти)</div>`
+-      : '';
+-  const dateBlock = marker.date
+-    ? `<div style="font-size:10px;color:rgba(255,255,255,0.4);margin-bottom:${isAdminUser ? '8px' : '0'};">${formatKyivTime(marker.date)}</div>`
+-    : '';
+-
+-  let actions = '';
+-  if (isAdminUser) {
+-    const markerId = (marker.id || '').replace(/'/g, "\\'");
+-    const markerLat = marker.lat;
+-    const markerLng = marker.lng;
+-    const markerText = (marker.text || '').replace(/'/g, "\\'").replace(/\n/g, ' ').substring(0, 80);
+-    actions = `
+-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+-        <button onclick="window.__adminDeleteMarker('${markerId}',${markerLat},${markerLng},'${markerText}')"
+-          style="background:rgba(255,82,82,0.2);color:#ff5252;border:1px solid rgba(255,82,82,0.3);border-radius:8px;padding:5px 12px;font-size:11px;cursor:pointer;display:flex;align-items:center;gap:4px;">
+-          <span class="material-icons" style="font-size:14px;">delete</span>Видалити
+-        </button>
+-        <button onclick="window.__adminHideMarker(${markerLat},${markerLng},'${markerText}')"
+-          style="background:rgba(255,171,64,0.2);color:#ffab40;border:1px solid rgba(255,171,64,0.3);border-radius:8px;padding:5px 12px;font-size:11px;cursor:pointer;display:flex;align-items:center;gap:4px;">
+-          <span class="material-icons" style="font-size:14px;">visibility_off</span>Сховати
+-        </button>
+-      </div>`;
+-  }
+-
+-  return `
+-    <div style="font-family:-apple-system,sans-serif;color:#fff;min-width:200px;">
+-      ${trustBlock}
+-      <div style="font-size:13px;font-weight:600;margin-bottom:6px;">${typeName}</div>
+-      <div style="font-size:11px;color:rgba(255,255,255,0.7);margin-bottom:2px;">${placeEsc}</div>
+-      ${courseBlock}
+-      ${dateBlock}
+-      ${actions}
+-    </div>
+-  `;
+-}
+diff --git a/nextjs-app/src/components/MapAtmosphereOverlay.tsx b/nextjs-app/src/components/MapAtmosphereOverlay.tsx
+index dbd8348..b7fe35b 100644
+--- a/nextjs-app/src/components/MapAtmosphereOverlay.tsx
++++ b/nextjs-app/src/components/MapAtmosphereOverlay.tsx
+@@ -8,7 +8,7 @@ export default function MapAtmosphereOverlay() {
+   return (
+     <div
+       aria-hidden
+-      className="pointer-events-none absolute inset-0 z-[1990] overflow-hidden"
++      className="pointer-events-none absolute inset-0 z-[1990] overflow-hidden max-md:hidden"
+     >
+       {/* Краєва затемнення — «об’єктив» */}
+       <div
+diff --git a/nextjs-app/src/components/TelegramBanner.tsx b/nextjs-app/src/components/TelegramBanner.tsx
+index 0ec3562..eed8b48 100644
+--- a/nextjs-app/src/components/TelegramBanner.tsx
++++ b/nextjs-app/src/components/TelegramBanner.tsx
+@@ -1,5 +1,6 @@
+ 'use client';
+ 
++import { Send } from 'lucide-react';
+ import { TELEGRAM_CHANNEL_URL } from '@/lib/constants';
+ 
+ interface TelegramBannerProps {
+@@ -8,7 +9,7 @@ interface TelegramBannerProps {
+ 
+ export default function TelegramBanner({ isCompact }: TelegramBannerProps) {
+   const baseClasses = isCompact
+-    ? 'group relative flex items-center justify-between gap-2 px-3 py-1.5 bg-transparent border-t border-white/[0.04] hover:bg-white/[0.03] transition-all cursor-pointer no-underline overflow-hidden'
++    ? 'group relative flex h-11 items-center justify-between gap-3 overflow-hidden border-t border-black/[0.06] bg-black/[0.015] px-3 text-gray-900 no-underline transition-colors hover:bg-black/[0.035] dark:border-white/[0.07] dark:bg-white/[0.025] dark:text-white dark:hover:bg-white/[0.045] sm:px-4 md:px-5'
+     : 'group fixed top-0 left-0 right-0 z-[9999] flex transform-gpu items-center justify-center gap-3 sm:gap-4 px-4 py-2.5 sm:py-2 text-white no-underline transition-all overflow-hidden border-b border-[#3A9EFD]/20 bg-[#05050f]/95 shadow-[0_4px_32px_rgba(58,158,253,0.15)] backdrop-blur-2xl hover:bg-[#050515] active:brightness-95 cursor-pointer';
+ 
+   return (
+@@ -18,20 +19,24 @@ export default function TelegramBanner({ isCompact }: TelegramBannerProps) {
+       rel="noopener noreferrer"
+       className={baseClasses}
+     >
+-      {/* Dynamic Glare Sweep Effect */}
+-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-[#3A9EFD]/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-in-out" />
++      {!isCompact && (
++        <div className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-[#3A9EFD]/10 to-transparent transition-transform duration-1000 ease-in-out group-hover:translate-x-full" />
++      )}
+       
+       {!isCompact && (
+         <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#3A9EFD]/40 to-transparent opacity-50" />
+       )}
+ 
+       {isCompact ? (
+-        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+-          <span className="relative z-[1] flex min-w-0 flex-1 flex-col gap-1.5 text-balance antialiased">
+-            <span className="text-[10px] font-medium leading-snug text-gray-800 dark:text-white/80 sm:text-[11px]">
+-              Щоб не перевіряти сайт
++        <div className="flex min-w-0 flex-1 items-center gap-2.5 overflow-hidden">
++          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-[#2A8AE0]/20 bg-[#2A8AE0]/10 text-[#1E7AD0] dark:border-[#3A9EFD]/18 dark:bg-[#3A9EFD]/10 dark:text-[#b9ddff]">
++            <Send className="h-3.5 w-3.5" aria-hidden />
++          </span>
++          <span className="relative z-[1] flex min-w-0 flex-1 items-baseline gap-2 overflow-hidden">
++            <span className="hidden text-[10px] font-medium uppercase tracking-[0.12em] text-gray-500 dark:text-white/35 sm:inline">
++              канал
+             </span>
+-            <span className="text-[12px] font-bold leading-tight tracking-tight text-gray-900 dark:text-white sm:text-[13px]">
++            <span className="truncate text-[12px] font-medium leading-tight text-gray-800 dark:text-white/76 sm:text-[13px]">
+               Хлопці пишуть у Telegram
+             </span>
+           </span>
+@@ -53,16 +58,18 @@ export default function TelegramBanner({ isCompact }: TelegramBannerProps) {
+       )}
+ 
+       <span
+-        className={`relative z-[1] flex shrink-0 items-center justify-center gap-1 rounded-full border border-[#2A8AE0] dark:border-[#3A9EFD]/50 bg-[#2A8AE0] dark:bg-[#3A9EFD]/20 font-bold uppercase tracking-wide text-white dark:text-[#e1f0ff] shadow-[0_1px_6px_rgba(42,138,224,0.3)] dark:shadow-[0_0_10px_rgba(58,158,253,0.2)] transition-all group-hover:bg-[#1E7AD0] dark:group-hover:bg-[#3A9EFD]/35 group-hover:scale-[1.02] ${
++        className={`relative z-[1] flex shrink-0 items-center justify-center gap-1 rounded-lg border border-[#2A8AE0]/18 bg-[#2A8AE0]/10 font-semibold text-[#1E7AD0] shadow-none transition-colors group-hover:bg-[#2A8AE0]/15 dark:border-[#3A9EFD]/18 dark:bg-[#3A9EFD]/10 dark:text-[#b9ddff] dark:group-hover:bg-[#3A9EFD]/16 ${
+           isCompact
+-            ? 'h-8 px-2.5 text-[9px] sm:text-[10px]'
++            ? 'h-7 px-2.5 text-[10px] sm:px-3'
+             : 'px-4 py-1.5 text-[9px] sm:text-[10px] shadow-[0_2px_8px_rgba(42,138,224,0.3)] dark:shadow-[0_0_12px_rgba(58,158,253,0.2)] group-hover:scale-[1.03]'
+         }`}
+       >
+-        <svg viewBox="0 0 24 24" fill="currentColor" className={isCompact ? 'h-3 w-3' : 'h-[12px] w-[12px] sm:h-[14px] sm:w-[14px]'}>
+-          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z" />
+-        </svg>
+-        <span>{isCompact ? 'ПІДПИСАТИСЬ!' : 'Підписатись!'}</span>
++        {isCompact ? null : (
++          <svg viewBox="0 0 24 24" fill="currentColor" className="h-[12px] w-[12px] sm:h-[14px] sm:w-[14px]">
++            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z" />
++          </svg>
++        )}
++        <span>{isCompact ? 'Підписатись' : 'Підписатись!'}</span>
+       </span>
+     </a>
+   );
+diff --git a/nextjs-app/src/components/ThreatFeed.tsx b/nextjs-app/src/components/ThreatFeed.tsx
+index f536f43..552c50b 100644
+--- a/nextjs-app/src/components/ThreatFeed.tsx
++++ b/nextjs-app/src/components/ThreatFeed.tsx
+@@ -1,6 +1,7 @@
+ 'use client';
+ 
+-import type { Marker, Alarm, BallisticThreat } from '@/types';
++import { useState } from 'react';
++import type { Marker, BallisticThreat } from '@/types';
+ import { THREAT_NAMES } from '@/types';
+ import { getLastActivityMs } from '@/lib/marker-activity';
+ 
+@@ -13,21 +14,50 @@ function formatAgo(ms: number, now: number): string {
+   return `${Math.floor(m / 60)}h`;
+ }
+ 
++function resolveTrustPercent(marker: Marker): number | null {
++  if (typeof marker.confidence_0_100 === 'number' && Number.isFinite(marker.confidence_0_100)) {
++    return Math.max(0, Math.min(100, Math.round(marker.confidence_0_100)));
++  }
++  if (typeof marker.track_confidence === 'number' && Number.isFinite(marker.track_confidence)) {
++    return Math.max(0, Math.min(100, Math.round(marker.track_confidence * 100)));
++  }
++  if (typeof marker.confidence === 'number' && Number.isFinite(marker.confidence)) {
++    return Math.max(0, Math.min(100, Math.round(marker.confidence <= 1 ? marker.confidence * 100 : marker.confidence)));
++  }
++  return null;
++}
++
++function trustTone(percent: number | null): string {
++  if (percent == null) return 'border-gray-200 bg-gray-100 text-gray-500 dark:border-white/[0.06] dark:bg-white/[0.04] dark:text-white/35';
++  if (percent >= 75) return 'border-[#34d399]/25 bg-[#34d399]/10 text-[#047857] dark:text-[#9cf8cf]';
++  if (percent >= 45) return 'border-[#fbbf24]/25 bg-[#fbbf24]/10 text-[#9a6700] dark:text-[#fde68a]';
++  return 'border-[#fb7185]/25 bg-[#fb7185]/10 text-[#be123c] dark:text-[#fecdd3]';
++}
++
++function sourceCount(marker: Marker): number {
++  const sources = new Set<string>();
++  marker.observations?.forEach((p) => {
++    if (p.source) sources.add(p.source);
++  });
++  if (sources.size > 0) return sources.size;
++  if (typeof marker.observation_count === 'number' && Number.isFinite(marker.observation_count)) {
++    return Math.max(1, Math.round(marker.observation_count));
++  }
++  return 1;
++}
++
+ interface ThreatFeedProps {
+   markers: Marker[];
+-  alarms: Alarm[];
+   ballisticThreat: BallisticThreat | null;
+ }
+ 
+-export default function ThreatFeed({ markers, alarms, ballisticThreat }: ThreatFeedProps) {
+-  const now = Date.now();
++export default function ThreatFeed({ markers, ballisticThreat }: ThreatFeedProps) {
++  const [now] = useState(() => Date.now());
+   const sorted = [...markers]
+     .filter(m => !['alarm', 'alarm_cancel', 'info'].includes(m.threat_type || ''))
+     .sort((a, b) => getLastActivityMs(b) - getLastActivityMs(a))
+     .slice(0, 15);
+ 
+-  const activeAlarms = alarms.filter(a => a.activeAlerts?.length).length;
+-
+   return (
+     <div className="flex flex-col gap-6 w-full">
+ 
+@@ -46,7 +76,7 @@ export default function ThreatFeed({ markers, alarms, ballisticThreat }: ThreatF
+       {/* Feed List */}
+       <div className="flex flex-col gap-4">
+         <div className="text-[10px] font-bold tracking-widest text-gray-500 dark:text-white/40 uppercase">
+-          Активні об'єкти
++          Активні об&apos;єкти
+         </div>
+ 
+         {sorted.length === 0 ? (
+@@ -56,17 +86,27 @@ export default function ThreatFeed({ markers, alarms, ballisticThreat }: ThreatF
+             {sorted.map(m => {
+               const t = m.threat_type || 'default';
+               const ts = getLastActivityMs(m);
++              const trust = resolveTrustPercent(m);
++              const sources = sourceCount(m);
+               return (
+                 <div key={`${m.id || m.track_id}_${ts}`} className="group flex items-center justify-between py-3 border-b border-gray-100 dark:border-white/[0.04] last:border-0 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors -mx-2 px-2 rounded-lg cursor-default">
+-                  <div className="flex flex-col gap-0.5">
++                  <div className="flex min-w-0 flex-col gap-1">
+                     <span className="text-sm font-medium text-gray-800 dark:text-white/90 group-hover:text-black dark:group-hover:text-white transition-colors">
+                       {THREAT_NAMES[t] || t}
+                     </span>
+-                    <span className="text-[11px] text-gray-500 dark:text-white/40">
++                    <span className="truncate text-[11px] text-gray-500 dark:text-white/40">
+                       {[m.place, m.region].filter(Boolean).join(' · ') || 'Невідомо'}
+                     </span>
++                    <div className="flex flex-wrap items-center gap-1.5">
++                      <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] ${trustTone(trust)}`}>
++                        {trust == null ? 'довіра —' : `довіра ${trust}%`}
++                      </span>
++                      <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-gray-500 dark:border-white/[0.06] dark:bg-white/[0.03] dark:text-white/35">
++                        {sources} джер.
++                      </span>
++                    </div>
+                   </div>
+-                  <div className="text-[11px] font-mono text-gray-400 dark:text-white/30 tabular-nums">
++                  <div className="ml-3 shrink-0 text-[11px] font-mono text-gray-400 dark:text-white/30 tabular-nums">
+                     {formatAgo(ts, now)}
+                   </div>
+                 </div>
+diff --git a/nextjs-app/src/lib/glassSurface.ts b/nextjs-app/src/lib/glassSurface.ts
+index a9951b2..79c1a57 100644
+--- a/nextjs-app/src/lib/glassSurface.ts
++++ b/nextjs-app/src/lib/glassSurface.ts
+@@ -3,22 +3,16 @@
+  *  Visual difference is minimal at the opacity levels used, but GPU savings are massive.
+  */
+ export const glass = {
+-  // Central floating pill at the top
+   island:
+-    'rounded-full border border-white/[0.12] bg-[#0a0a0b]/60 shadow-[0_32px_64px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl backdrop-saturate-150',
+-  // Large expansive glass panels
++    'rounded-full border border-white/[0.1] bg-[#0f141c]/72 shadow-[0_20px_48px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.06)] max-md:backdrop-blur-none md:backdrop-blur-md md:backdrop-saturate-125',
+   panel:
+-    'rounded-[40px] border border-white/[0.08] bg-[#0a0a0b]/60 shadow-[0_48px_100px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl backdrop-saturate-150',
+-  // Bottom dock
++    'rounded-[28px] border border-white/[0.08] bg-[#0f141c]/70 shadow-[0_32px_64px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.05)] max-md:backdrop-blur-none md:backdrop-blur-lg md:backdrop-saturate-125',
+   dock:
+-    'rounded-[32px] border border-white/[0.1] bg-[#0a0a0b]/50 shadow-[0_24px_48px_rgba(0,0,0,0.5),inset_0_1px_2px_rgba(255,255,255,0.12)] backdrop-blur-xl backdrop-saturate-150',
+-  // Circular or pill floating buttons
++    'rounded-[24px] border border-white/[0.1] bg-[#0f141c]/55 shadow-[0_16px_40px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.06)] max-md:backdrop-blur-none md:backdrop-blur-md',
+   button:
+-    'rounded-full relative overflow-hidden border border-white/[0.05] bg-white/[0.04] text-white shadow-[0_8px_32px_rgba(0,0,0,0.3),inset_0_1px_3px_rgba(255,255,255,0.15)] backdrop-blur-lg transition-all duration-300 hover:border-white/[0.2] hover:bg-white/[0.12] hover:shadow-[0_0_32px_rgba(255,255,255,0.15)] active:bg-white/[0.06] active:scale-95',
+-  // Standard card component
++    'rounded-full relative overflow-hidden border border-white/[0.06] bg-white/[0.05] text-white shadow-[0_4px_20px_rgba(0,0,0,0.35)] max-md:backdrop-blur-none md:backdrop-blur-md transition-[transform,background-color,border-color] duration-200 hover:border-white/[0.14] hover:bg-white/[0.1] active:scale-[0.97]',
+   card:
+-    'rounded-[28px] border border-white/[0.05] bg-[#000000]/40 backdrop-blur-lg backdrop-saturate-150 shadow-[0_16px_48px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.04)]',
+-  // Inner list items
++    'rounded-2xl border border-white/[0.06] bg-[#0b0f14]/55 max-md:backdrop-blur-none md:backdrop-blur-md shadow-[0_12px_32px_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.04)]',
+   tile:
+-    'rounded-[20px] border border-white/[0.03] bg-white/[0.02] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] backdrop-blur-lg transition-all duration-300 hover:bg-white/[0.05] hover:border-white/[0.08]',
++    'rounded-2xl border border-white/[0.04] bg-white/[0.03] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] max-md:backdrop-blur-none md:backdrop-blur-md transition-[background-color,border-color] duration-200 hover:bg-white/[0.06] hover:border-white/[0.08]',
+ } as const;

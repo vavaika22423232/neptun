@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../services/window_manager.dart';
 
-import 'dart:ui';
+import '../services/window_manager.dart';
 
 class CommandDock extends StatefulWidget {
   final bool isDark;
@@ -13,8 +12,7 @@ class CommandDock extends StatefulWidget {
   State<CommandDock> createState() => _CommandDockState();
 }
 
-class _CommandDockState extends State<CommandDock>
-    with SingleTickerProviderStateMixin {
+class _CommandDockState extends State<CommandDock> {
   bool _isExpanded = false;
 
   void _toggleDock() {
@@ -26,8 +24,13 @@ class _CommandDockState extends State<CommandDock>
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final panel = widget.isDark
+        ? cs.surfaceContainerHighest.withValues(alpha: 0.95)
+        : cs.surfaceContainer;
+
     return GestureDetector(
-      onTap: _isExpanded ? null : _toggleDock, // Tap to expand if collapsed
+      onTap: _isExpanded ? null : _toggleDock,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 400),
         curve: Curves.easeOutBack,
@@ -35,49 +38,41 @@ class _CommandDockState extends State<CommandDock>
         height: 72,
         margin: const EdgeInsets.only(bottom: 24),
         decoration: BoxDecoration(
-          color: widget.isDark
-              ? Colors.black.withValues(alpha: 0.4)
-              : Colors.white.withValues(alpha: 0.7),
+          color: panel,
           borderRadius: BorderRadius.circular(36),
           border: Border.all(
-            color: Colors.white.withValues(alpha: 0.2),
+            color: cs.outline.withValues(alpha: 0.2),
             width: 1,
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
+              color: Colors.black.withValues(alpha: 0.12),
               blurRadius: 16,
-              spreadRadius: 0,
               offset: const Offset(0, 4),
             ),
           ],
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(36),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-            child: _isExpanded
-                ? _buildExpandedControls()
-                : _buildCollapsedStatus(),
-          ),
+          child: _isExpanded ? _buildExpandedControls() : _buildCollapsedStatus(),
         ),
       ),
     );
   }
 
   Widget _buildCollapsedStatus() {
+    final onText = Theme.of(context).colorScheme.onSurface;
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        const Icon(Icons.shield_outlined, color: Colors.white, size: 20),
+        Icon(Icons.shield_outlined, color: onText, size: 20),
         const SizedBox(width: 12),
-        const Text(
+        Text(
           'НЕПТУН ОС',
           style: TextStyle(
-            color: Colors.white,
+            color: onText,
             fontSize: 14,
             fontWeight: FontWeight.w700,
-            shadows: [Shadow(blurRadius: 5, color: Colors.white)],
           ),
         ),
       ],
@@ -85,29 +80,31 @@ class _CommandDockState extends State<CommandDock>
   }
 
   Widget _buildExpandedControls() {
+    final accent = Theme.of(context).colorScheme.primary;
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
         _buildDockItem(Icons.map_rounded, 'MAP', () {
-          WindowManager().closePanel(); // Show desktop (map)
+          WindowManager().closePanel();
           _toggleDock();
-        }),
+        }, accent),
         _buildDockItem(Icons.radar_rounded, 'RADAR', () {
           WindowManager().openPanel(PanelType.radar);
           _toggleDock();
-        }),
+        }, accent),
         _buildDockItem(Icons.chat_bubble_rounded, 'COMMS', () {
           WindowManager().openPanel(PanelType.comms);
           _toggleDock();
-        }),
+        }, accent),
         _buildDockItem(Icons.shield_rounded, 'SHELTER', () {
           WindowManager().openPanel(PanelType.shelters);
           _toggleDock();
-        }),
+        }, accent),
         _buildDockItem(
           Icons.close_rounded,
           'CLOSE',
           _toggleDock,
+          accent,
           isAction: true,
         ),
       ],
@@ -117,9 +114,11 @@ class _CommandDockState extends State<CommandDock>
   Widget _buildDockItem(
     IconData icon,
     String label,
-    VoidCallback onTap, {
+    VoidCallback onTap,
+    Color accent, {
     bool isAction = false,
   }) {
+    final muted = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45);
     return GestureDetector(
       onTap: () {
         HapticFeedback.mediumImpact();
@@ -131,14 +130,14 @@ class _CommandDockState extends State<CommandDock>
         children: [
           Icon(
             icon,
-            color: isAction ? Colors.white54 : const Color(0xFF38BDF8),
+            color: isAction ? muted : accent,
             size: 24,
           ),
           const SizedBox(height: 4),
           Text(
             label,
             style: TextStyle(
-              color: isAction ? Colors.white54 : Colors.white,
+              color: isAction ? muted : Theme.of(context).colorScheme.onSurface,
               fontSize: 9,
               fontWeight: FontWeight.w600,
               letterSpacing: 0.5,

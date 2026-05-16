@@ -20,8 +20,14 @@ function normalizeTrackPointTs(ts: number): number {
 }
 
 export function mapStoreRecordToMarker(m: Record<string, unknown>): Marker {
-  const lat = Number(m.lat);
-  const lng = Number(m.lng);
+  const rawLat = Number(m.lat);
+  const rawLng = Number(m.lng);
+  // Use back-projected position when the renderer determined it's more accurate
+  const positionEstimated = Boolean(m.position_estimated);
+  const lat = positionEstimated && Number.isFinite(Number(m.rendered_lat))
+    ? Number(m.rendered_lat) : rawLat;
+  const lng = positionEstimated && Number.isFinite(Number(m.rendered_lng))
+    ? Number(m.rendered_lng) : rawLng;
   const lastEp = m.last_update_epoch as number | undefined;
   const createdEp = m.created_at_epoch as number | undefined;
   const flightPhase = m.flight_phase as Marker['flight_phase'] | undefined;
@@ -142,5 +148,20 @@ export function mapStoreRecordToMarker(m: Record<string, unknown>): Marker {
     geocode_source: (m.geocode_source as string) || undefined,
     candidates_count: typeof m.candidates_count === 'number' ? m.candidates_count : undefined,
     candidates: m.candidates as Marker['candidates'],
+    event_fingerprint: typeof m.event_fingerprint === 'string' ? m.event_fingerprint : undefined,
+    target_lifecycle_state: m.target_lifecycle_state as Marker['target_lifecycle_state'],
+    target_confidence: typeof m.target_confidence === 'number' ? m.target_confidence : undefined,
+    source_count: typeof m.source_count === 'number' ? m.source_count : undefined,
+    publication_class: m.publication_class as Marker['publication_class'],
+    publication_score: typeof m.publication_score === 'number' ? m.publication_score : undefined,
+    publication_reasons: Array.isArray(m.publication_reasons)
+      ? (m.publication_reasons as string[])
+      : undefined,
+    // ── Drone tracker renderer fields ────────────────────────────────────────
+    is_loitering: m.is_loitering === true ? true : undefined,
+    heading_confidence: (m.heading_confidence as Marker['heading_confidence']) || undefined,
+    position_estimated: m.position_estimated === true ? true : undefined,
+    eta_seconds: typeof m.eta_seconds === 'number' ? m.eta_seconds : undefined,
+    display_confidence: typeof m.display_confidence === 'number' ? m.display_confidence : undefined,
   } as Marker;
 }

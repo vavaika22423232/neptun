@@ -102,6 +102,16 @@ def score_candidate(
     elif candidate.population > 0 and candidate.population < 5000 and candidate.source.startswith('gazetteer'):
         score -= 1.0
         reasons.append(f"-1 tiny village ({candidate.population} pop)")
+
+    # ── 4b. Large-city anchor: gazetteer hit on a major city (≥50k) is extremely reliable.
+    # External geocoders with population=0 must NEVER beat a known obласний центр.
+    # This is the primary guard against "Суми→Zaporizhzhia" class bugs.
+    if (
+        candidate.source.startswith('gazetteer')
+        and candidate.population >= 50_000
+    ):
+        score += 6.0
+        reasons.append(f"+6 large-city gazetteer anchor ({candidate.population:,} pop)")
         
     # Micro Tie-Breaker
     if candidate.population and candidate.population > 0:

@@ -218,7 +218,8 @@ Future<UserRegionSelection> _loadUserRegionSelection(
   final String? settlementId = prefs.getString('selected_settlement_id');
 
   if (oblastIds.isEmpty && raionIds.isEmpty && settlementId == null) {
-    final selectedRegions = prefs.getStringList('selected_regions') ?? [];
+    final selectedRegions =
+        prefs.getStringList(PrefsKeys.selectedRegions) ?? [];
     if (selectedRegions.isNotEmpty) {
       final regionDb = RegionDatabase()..initialize();
       for (final name in selectedRegions) {
@@ -321,6 +322,30 @@ String _getPlaceName(String location, String region) {
 }
 
 /// Визначає тип загрози з тексту повідомлення
+/// Людська назва загрози за threat_type з FCM (Pro-детальні пуші).
+String _threatLabelFromType(String threatType) {
+  switch (threatType.toLowerCase()) {
+    case 'ballistic':    return '🚀 Балістика';
+    case 'missile':
+    case 'raketa':       return '🚀 Ракети';
+    case 'cruise':       return '🚀 Крилата ракета';
+    case 'kab':          return '💣 КАБ';
+    case 'pusk':
+    case 'launch':       return '🚀 Пуск ракет';
+    case 'shahed':
+    case 'drone':
+    case 'uav':          return '🛩️ Ударні БПЛА';
+    case 'fpv':          return '🛩️ FPV-дрони';
+    case 'rozved':       return '🛩️ Розвідувальний БПЛА';
+    case 'avia':         return '✈️ Авіація';
+    case 'helicopter':   return '🚁 Гелікоптери';
+    case 'vibuh':
+    case 'explosion':    return '💥 Вибухи';
+    case 'artillery':    return '💥 Артилерія';
+    default:             return '';
+  }
+}
+
 String _detectThreatType(String body, String threatType) {
   final text = '$body $threatType'.toLowerCase();
 
@@ -543,19 +568,25 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   } else {
     // Fallback to legacy name-based filtering when oblast_id is missing
     debugPrint('⚠️ No oblast_id in FCM, using legacy name-based filter');
-    final selectedRegions = prefs.getStringList('selected_regions') ?? [];
+    final selectedRegions =
+        prefs.getStringList(PrefsKeys.selectedRegions) ?? [];
     final selectedRaionIds = prefs.getStringList('selected_raion_ids') ?? [];
 
     if (selectedRegions.isNotEmpty || selectedRaionIds.isNotEmpty) {
       // Слобожанське → Чугуївський р-н (НЕ Ізюмський!). Strict match для цих місць.
       const placeToRaion = {'Слобожанське': 'Чугуївський район'};
-      final placeRaion = placeToRaion[location.trim()] ?? placeToRaion[region.trim()];
+      final placeRaion =
+          placeToRaion[location.trim()] ?? placeToRaion[region.trim()];
       if (placeRaion != null) {
         // Показувати тільки якщо обрано саме цей район
-        final hasRaion = selectedRegions.contains(placeRaion) ||
-            (selectedRaionIds.contains('UA-63-04') && placeRaion == 'Чугуївський район');
+        final hasRaion =
+            selectedRegions.contains(placeRaion) ||
+            (selectedRaionIds.contains('UA-63-04') &&
+                placeRaion == 'Чугуївський район');
         if (!hasRaion) {
-          debugPrint('🚫 Слобожанське в Чугуївському р-ні — не в обраному Ізюмському');
+          debugPrint(
+            '🚫 Слобожанське в Чугуївському р-ні — не в обраному Ізюмському',
+          );
           return;
         }
       }
@@ -687,12 +718,26 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     // Це потрібно бо Android кешує налаштування каналу при створенні
     final vibSuffix = shouldVibrate ? '' : '_silent';
 
-    // PRO: custom alarm sound (different channel per sound on Android 8+)
+    // PRO: custom alarm sound — Android: res/raw/alarm_{sharp|siren}.wav; iOS: Runner/alarm_*.wav у бандлі
     final alarmSoundId = prefs.getString(PrefsKeys.alarmSoundId) ?? 'default';
-    final useCustomSound = Platform.isAndroid &&
-        ProGate.isUnlocked(ProFeature.customAlarmSounds) &&
+    // ProGate uses GetIt which is not initialized in background isolate — safe fallback to false.
+    bool proGateCustomAlarmSounds = false;
+    bool proGateDetailedPush = false;
+    try {
+      proGateCustomAlarmSounds = ProGate.isUnlocked(ProFeature.customAlarmSounds);
+      proGateDetailedPush = ProGate.isUnlocked(ProFeature.detailedPush);
+    } catch (_) {
+      // Background isolate: GetIt not initialized, fall back to free-tier behaviour.
+      final isPremiumPrefs = prefs.getBool('is_premium') ?? false;
+      proGateCustomAlarmSounds = isPremiumPrefs;
+      proGateDetailedPush = isPremiumPrefs;
+    }
+    final proCustomAlarm =
+        !kIsWeb &&
+        proGateCustomAlarmSounds &&
         (alarmSoundId == 'sharp' || alarmSoundId == 'siren');
-    final soundSuffix = useCustomSound ? '_$alarmSoundId' : '';
+    final useCustomSoundAndroid = proCustomAlarm && Platform.isAndroid;
+    final soundSuffix = useCustomSoundAndroid ? '_$alarmSoundId' : '';
 
     if (isAllClear) {
       emoji = '✅';
@@ -734,19 +779,37 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     // Format title with emoji if not already present
     final formattedTitle = title.contains(emoji) ? title : '$emoji $title';
 
+    // PRO: детальніше тіло сповіщення з типом + містом загрози
+    final String displayBody;
+    if (!isAllClear && proGateDetailedPush) {
+      final threatLabel = _threatLabelFromType(threatType);
+      final place = location.isNotEmpty ? location : region;
+      if (threatLabel.isNotEmpty && place.isNotEmpty) {
+        displayBody = '$threatLabel — $place';
+      } else if (threatLabel.isNotEmpty) {
+        displayBody = threatLabel;
+      } else {
+        displayBody = body;
+      }
+    } else {
+      displayBody = body;
+    }
+
     // Create subtext from region
-    final subText = region.isNotEmpty && !body.contains(region) ? region : null;
+    final subText = region.isNotEmpty && !displayBody.contains(region) ? region : null;
 
     // BigTextStyle for better display
     final bigTextStyle = BigTextStyleInformation(
-      body,
+      displayBody,
       contentTitle: formattedTitle,
       summaryText: subText,
     );
 
     AndroidNotificationSound? notificationSound;
-    if (useCustomSound && alarmSoundId != 'default') {
-      notificationSound = RawResourceAndroidNotificationSound('alarm_$alarmSoundId');
+    if (useCustomSoundAndroid && alarmSoundId != 'default') {
+      notificationSound = RawResourceAndroidNotificationSound(
+        'alarm_$alarmSoundId',
+      );
     }
 
     final androidDetails = AndroidNotificationDetails(
@@ -770,7 +833,23 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       visibility: NotificationVisibility.public,
     );
 
+    final iosCustomWav = proCustomAlarm && Platform.isIOS
+        ? 'alarm_$alarmSoundId.wav'
+        : null;
+
     final iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+      sound: iosCustomWav,
+      subtitle: subText,
+      threadIdentifier: region.isNotEmpty ? region : 'alerts',
+      interruptionLevel: isCritical
+          ? InterruptionLevel.timeSensitive
+          : InterruptionLevel.active,
+    );
+
+    final iosDetailsDefault = DarwinNotificationDetails(
       presentAlert: true,
       presentBadge: true,
       presentSound: true,
@@ -790,12 +869,12 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       await flutterLocalNotificationsPlugin.show(
         _generateNotificationId(),
         formattedTitle,
-        body,
+        displayBody,
         details,
       );
     } catch (e) {
-      // Fallback: custom sound resource might not exist (alarm_sharp.ogg, alarm_siren.ogg)
-      if (useCustomSound) {
+      // Fallback: кастомний звук не знайдено або не підтримується
+      if (proCustomAlarm) {
         debugPrint('📱 Custom sound failed, retrying with default: $e');
         final fallbackDetails = NotificationDetails(
           android: AndroidNotificationDetails(
@@ -817,12 +896,12 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
                 : AndroidNotificationCategory.message,
             visibility: NotificationVisibility.public,
           ),
-          iOS: iosDetails,
+          iOS: iosDetailsDefault,
         );
         await flutterLocalNotificationsPlugin.show(
           _generateNotificationId(),
           formattedTitle,
-          body,
+          displayBody,
           fallbackDetails,
         );
       } else {
@@ -852,7 +931,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     final ttsEnabled = prefs.getBool('tts_enabled') ?? false;
 
     debugPrint(
-      '🔊 TTS enabled: $ttsEnabled, Notifications: $notificationsEnabled, Platform: ${Platform.isAndroid ? "Android" : "iOS"}',
+      '🔊 TTS enabled: $ttsEnabled, Notifications: $notificationsEnabled, Platform: ${kIsWeb ? "Web" : (Platform.isAndroid ? "Android" : "iOS")}',
     );
 
     // Озвучуємо тільки якщо TTS увімкнено і сповіщення увімкнені
@@ -948,6 +1027,66 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     }
   } catch (e) {
     debugPrint('Background TTS error: $e');
+  }
+}
+
+/// Android 8+ прив’язує звук до каналу при першому створенні. Реєструємо всі
+/// комбінації вібро / без вібро та (за замовчуванням | PRO sharp | PRO siren),
+/// щоб [RawResourceAndroidNotificationSound] у сповіщенні збігався з каналом.
+Future<void> registerAndroidAlarmNotificationChannels(
+  AndroidFlutterLocalNotificationsPlugin android,
+) async {
+  const defs = <(String, String, String, Importance)>[
+    (
+      'critical_alerts',
+      'Критичні тривоги',
+      'Сповіщення про ракети та критичні загрози',
+      Importance.max,
+    ),
+    (
+      'normal_alerts',
+      'Звичайні тривоги',
+      'Сповіщення про дрони',
+      Importance.high,
+    ),
+    (
+      'all_clear_alerts',
+      'Відбій тривоги',
+      'Сповіщення про відбій тривоги',
+      Importance.defaultImportance,
+    ),
+  ];
+  const proSoundVariants = <String?>[null, 'sharp', 'siren'];
+
+  for (final def in defs) {
+    final baseId = def.$1;
+    final baseName = def.$2;
+    final baseDescription = def.$3;
+    final baseImportance = def.$4;
+    for (final silent in <bool>[false, true]) {
+      for (final pro in proSoundVariants) {
+        final vibSuffix = silent ? '_silent' : '';
+        final soundSuffix = pro != null ? '_$pro' : '';
+        final channelId = '$baseId$vibSuffix$soundSuffix';
+        final vibLabel = silent ? ' (без вібро)' : '';
+        final AndroidNotificationSound? sound = switch (pro) {
+          'sharp' => RawResourceAndroidNotificationSound('alarm_sharp'),
+          'siren' => RawResourceAndroidNotificationSound('alarm_siren'),
+          _ => null,
+        };
+        await android.createNotificationChannel(
+          AndroidNotificationChannel(
+            channelId,
+            '$baseName$vibLabel',
+            description: baseDescription,
+            importance: baseImportance,
+            playSound: true,
+            sound: sound,
+            enableVibration: !silent,
+          ),
+        );
+      }
+    }
   }
 }
 
@@ -1227,7 +1366,7 @@ class NotificationService {
       await _unsubscribeFromAllTopics();
     } else {
       // Якщо увімкнули - підписуємось на збережені регіони
-      var savedRegions = prefs.getStringList('selected_regions') ?? [];
+      var savedRegions = prefs.getStringList(PrefsKeys.selectedRegions) ?? [];
       if (savedRegions.isEmpty) {
         final oblastIds = prefs.getStringList('selected_oblast_ids') ?? [];
         final raionIds = prefs.getStringList('selected_raion_ids') ?? [];
@@ -1247,7 +1386,7 @@ class NotificationService {
           }
           if (names.isNotEmpty) {
             savedRegions = names;
-            await prefs.setStringList('selected_regions', names);
+            await prefs.setStringList(PrefsKeys.selectedRegions, names);
           }
         }
       }
@@ -1338,6 +1477,24 @@ class NotificationService {
       },
     );
 
+    // Android: канали тривог (усі звуки) — до FCM, щоб працювало навіть без Firebase
+    final androidNotificationsEarly = flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    if (androidNotificationsEarly != null) {
+      await registerAndroidAlarmNotificationChannels(androidNotificationsEarly);
+      const AndroidNotificationChannel channelSOS = AndroidNotificationChannel(
+        'sos_alerts',
+        'SOS Сповіщення',
+        description: 'Термінові SOS сигнали від родини',
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
+      );
+      await androidNotificationsEarly.createNotificationChannel(channelSOS);
+    }
+
     // Firebase messaging - works on both platforms if configured
     // iOS needs GoogleService-Info.plist, Android needs google-services.json
     final messaging = firebaseMessaging;
@@ -1369,67 +1526,6 @@ class NotificationService {
       debugPrint('❌ User DENIED notification permission — push will NOT work!');
       debugPrint('❌ User must enable notifications in iOS Settings → Neptun');
     }
-
-    // Create notification channels for Android
-    const AndroidNotificationChannel channelCritical =
-        AndroidNotificationChannel(
-          'critical_alerts',
-          'Критичні тривоги',
-          description: 'Сповіщення про ракети та критичні загрози',
-          importance: Importance.max,
-          playSound: true,
-          enableVibration: true,
-        );
-
-    const AndroidNotificationChannel channelNormal = AndroidNotificationChannel(
-      'normal_alerts',
-      'Звичайні тривоги',
-      description: 'Сповіщення про дрони',
-      importance: Importance.high,
-      playSound: true,
-    );
-
-    const AndroidNotificationChannel channelAllClear =
-        AndroidNotificationChannel(
-          'all_clear_alerts',
-          'Відбій тривоги',
-          description: 'Сповіщення про відбій тривоги',
-          importance: Importance.defaultImportance,
-          playSound: true,
-        );
-
-    const AndroidNotificationChannel channelSOS = AndroidNotificationChannel(
-      'sos_alerts',
-      'SOS Сповіщення',
-      description: 'Термінові SOS сигнали від родини',
-      importance: Importance.max,
-      playSound: true,
-      enableVibration: true,
-    );
-
-    await flutterLocalNotificationsPlugin
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >()
-        ?.createNotificationChannel(channelCritical);
-
-    await flutterLocalNotificationsPlugin
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >()
-        ?.createNotificationChannel(channelNormal);
-
-    await flutterLocalNotificationsPlugin
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >()
-        ?.createNotificationChannel(channelAllClear);
-
-    await flutterLocalNotificationsPlugin
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >()
-        ?.createNotificationChannel(channelSOS);
 
     // Get FCM token using safe helper (handles APNS wait on iOS)
     _fcmToken = await _safeGetToken();
@@ -1633,17 +1729,24 @@ class NotificationService {
       } else {
         // Fallback to legacy name-based filtering when oblast_id is missing
         debugPrint('⚠️ No oblast_id in FCM, using legacy name-based filter');
-        final selectedRegions = prefs.getStringList('selected_regions') ?? [];
-        final selectedRaionIds = prefs.getStringList('selected_raion_ids') ?? [];
+        final selectedRegions =
+            prefs.getStringList(PrefsKeys.selectedRegions) ?? [];
+        final selectedRaionIds =
+            prefs.getStringList('selected_raion_ids') ?? [];
 
         if (selectedRegions.isNotEmpty || selectedRaionIds.isNotEmpty) {
           const placeToRaion = {'Слобожанське': 'Чугуївський район'};
-          final placeRaion = placeToRaion[location.trim()] ?? placeToRaion[region.trim()];
+          final placeRaion =
+              placeToRaion[location.trim()] ?? placeToRaion[region.trim()];
           if (placeRaion != null) {
-            final hasRaion = selectedRegions.contains(placeRaion) ||
-                (selectedRaionIds.contains('UA-63-04') && placeRaion == 'Чугуївський район');
+            final hasRaion =
+                selectedRegions.contains(placeRaion) ||
+                (selectedRaionIds.contains('UA-63-04') &&
+                    placeRaion == 'Чугуївський район');
             if (!hasRaion) {
-              debugPrint('🚫 Слобожанське в Чугуївському р-ні — не в обраному Ізюмському');
+              debugPrint(
+                '🚫 Слобожанське в Чугуївському р-ні — не в обраному Ізюмському',
+              );
               return;
             }
           }
@@ -1702,8 +1805,13 @@ class NotificationService {
     // App opened from terminated state by tapping notification
     final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
     if (initialMessage != null) {
-      debugPrint('App opened from notification tap: ${initialMessage.notification?.title}');
-      Future.delayed(const Duration(milliseconds: 600), _navigateToMapFromNotification);
+      debugPrint(
+        'App opened from notification tap: ${initialMessage.notification?.title}',
+      );
+      Future.delayed(
+        const Duration(milliseconds: 600),
+        _navigateToMapFromNotification,
+      );
     }
 
     // Load saved topic subscriptions
@@ -1736,7 +1844,7 @@ class NotificationService {
     // Subscribe to saved regions (restore subscriptions after app restart)
     // ALWAYS call updateRegions to ensure proper topic subscriptions
     // This also handles unsubscribing from all_regions for users with specific regions
-    var savedRegions = prefs.getStringList('selected_regions') ?? [];
+    var savedRegions = prefs.getStringList(PrefsKeys.selectedRegions) ?? [];
 
     // Якщо selected_regions порожній, але є ID — відновлюємо назви з RegionDatabase
     // (наприклад після міграції, перевстановлення, або іншого потоку вибору регіонів)
@@ -1759,8 +1867,10 @@ class NotificationService {
         }
         if (names.isNotEmpty) {
           savedRegions = names;
-          await prefs.setStringList('selected_regions', names);
-          debugPrint('📍 Restored selected_regions from IDs: ${names.length} regions');
+          await prefs.setStringList(PrefsKeys.selectedRegions, names);
+          debugPrint(
+            '📍 Restored selected_regions from IDs: ${names.length} regions',
+          );
         }
       }
     }
@@ -1909,20 +2019,23 @@ class NotificationService {
       // iOS Live Activity (Dynamic Island + Lock Screen)
       if (Platform.isIOS) {
         final lowerType = threatType.toLowerCase();
-        final liveThreatType = lowerType.contains('баліст') ||
+        final liveThreatType =
+            lowerType.contains('баліст') ||
                 lowerType.contains('ballistic') ||
                 lowerType.contains('ракет')
             ? 'ballistic'
             : lowerType.contains('бпла') ||
-                    lowerType.contains('drone') ||
-                    lowerType.contains('shahed')
-                ? 'drones'
-                : 'air';
+                  lowerType.contains('drone') ||
+                  lowerType.contains('shahed')
+            ? 'drones'
+            : 'air';
         if (isAlarm && region.isNotEmpty) {
-          unawaited(LiveActivityService().start(
-            region: region,
-            threatType: liveThreatType,
-          ));
+          unawaited(
+            LiveActivityService().start(
+              region: region,
+              threatType: liveThreatType,
+            ),
+          );
         } else {
           unawaited(LiveActivityService().end());
         }
@@ -2200,6 +2313,15 @@ class NotificationService {
       data: data,
     );
 
+    final prefs = await SharedPreferences.getInstance();
+    final alarmSoundId = prefs.getString(PrefsKeys.alarmSoundId) ?? 'default';
+    final proCustomAlarm =
+        !kIsWeb &&
+        ProGate.isUnlocked(ProFeature.customAlarmSounds) &&
+        (alarmSoundId == 'sharp' || alarmSoundId == 'siren');
+    final useCustomSoundAndroid = proCustomAlarm && Platform.isAndroid;
+    final soundSuffix = useCustomSoundAndroid ? '_$alarmSoundId' : '';
+
     // Choose emoji and color based on threat type
     String emoji;
     Color notificationColor;
@@ -2212,35 +2334,35 @@ class NotificationService {
     if (content.isAllClear) {
       emoji = '✅';
       notificationColor = const Color(0xFF30D158); // Green
-      channelId = 'all_clear_alerts$vibSuffix';
+      channelId = 'all_clear_alerts$vibSuffix$soundSuffix';
       channelName = vibrationEnabled
           ? 'Відбій тривоги'
           : 'Відбій тривоги (без вібро)';
     } else if (content.isRocket) {
       emoji = '🚀';
       notificationColor = const Color(0xFFE63946); // Red
-      channelId = 'critical_alerts$vibSuffix';
+      channelId = 'critical_alerts$vibSuffix$soundSuffix';
       channelName = vibrationEnabled
           ? 'Критичні тривоги'
           : 'Критичні тривоги (без вібро)';
     } else if (content.isKab) {
       emoji = '💣';
       notificationColor = const Color(0xFFE63946); // Red
-      channelId = 'critical_alerts$vibSuffix';
+      channelId = 'critical_alerts$vibSuffix$soundSuffix';
       channelName = vibrationEnabled
           ? 'Критичні тривоги'
           : 'Критичні тривоги (без вібро)';
     } else if (content.isDrone) {
       emoji = '🛩️';
       notificationColor = const Color(0xFFFF9500); // Orange
-      channelId = 'normal_alerts$vibSuffix';
+      channelId = 'normal_alerts$vibSuffix$soundSuffix';
       channelName = vibrationEnabled
           ? 'Звичайні тривоги'
           : 'Звичайні тривоги (без вібро)';
     } else {
       emoji = '🚨';
       notificationColor = const Color(0xFFFF9500); // Orange
-      channelId = 'normal_alerts$vibSuffix';
+      channelId = 'normal_alerts$vibSuffix$soundSuffix';
       channelName = vibrationEnabled
           ? 'Звичайні тривоги'
           : 'Звичайні тривоги (без вібро)';
@@ -2267,18 +2389,28 @@ class NotificationService {
       htmlFormatContentTitle: false,
     );
 
+    AndroidNotificationSound? notificationSound;
+    if (useCustomSoundAndroid && alarmSoundId != 'default') {
+      notificationSound = RawResourceAndroidNotificationSound(
+        'alarm_$alarmSoundId',
+      );
+    }
+
+    final channelDescription = content.isCritical
+        ? 'Сповіщення про ракети та критичні загрози'
+        : 'Сповіщення про повітряну тривогу';
+
     final androidDetails = AndroidNotificationDetails(
       channelId,
       channelName,
-      channelDescription: content.isCritical
-          ? 'Сповіщення про ракети та критичні загрози'
-          : 'Сповіщення про повітряну тривогу',
+      channelDescription: channelDescription,
       importance: content.isCritical ? Importance.max : Importance.high,
       priority: content.isCritical ? Priority.max : Priority.high,
       icon: '@mipmap/ic_launcher',
       color: notificationColor,
       colorized: true, // Use color for notification background
       playSound: true,
+      sound: notificationSound,
       enableVibration: shouldVibrate,
       silent: false,
       styleInformation: bigTextStyle,
@@ -2290,14 +2422,30 @@ class NotificationService {
       visibility: NotificationVisibility.public, // Show on lock screen
     );
 
+    final iosCustomWav = proCustomAlarm && Platform.isIOS
+        ? 'alarm_$alarmSoundId.wav'
+        : null;
+
     final iosDetails = DarwinNotificationDetails(
       presentAlert: true,
       presentBadge: true,
       presentSound: true,
+      sound: iosCustomWav,
       subtitle: subText,
       threadIdentifier: region.isNotEmpty
           ? region
           : 'alerts', // Group by region
+      interruptionLevel: content.isCritical
+          ? InterruptionLevel.timeSensitive
+          : InterruptionLevel.active,
+    );
+
+    final iosDetailsDefault = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+      subtitle: subText,
+      threadIdentifier: region.isNotEmpty ? region : 'alerts',
       interruptionLevel: content.isCritical
           ? InterruptionLevel.timeSensitive
           : InterruptionLevel.active,
@@ -2308,17 +2456,53 @@ class NotificationService {
       iOS: iosDetails,
     );
 
-    await flutterLocalNotificationsPlugin.show(
-      _generateNotificationId(),
-      title,
-      body,
-      details,
-      payload: jsonEncode(data),
-    );
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await _NotificationMetrics.trackShown(prefs);
-    } catch (_) {}
+      await flutterLocalNotificationsPlugin.show(
+        _generateNotificationId(),
+        title,
+        body,
+        details,
+        payload: jsonEncode(data),
+      );
+    } catch (e) {
+      if (proCustomAlarm) {
+        debugPrint('Foreground custom sound failed, retrying default: $e');
+        final fallbackDetails = NotificationDetails(
+          android: AndroidNotificationDetails(
+            channelId.replaceAll('_$alarmSoundId', ''),
+            channelName,
+            channelDescription: channelDescription,
+            importance: content.isCritical ? Importance.max : Importance.high,
+            priority: content.isCritical ? Priority.max : Priority.high,
+            icon: '@mipmap/ic_launcher',
+            color: notificationColor,
+            colorized: true,
+            playSound: true,
+            enableVibration: shouldVibrate,
+            silent: false,
+            styleInformation: bigTextStyle,
+            subText: subText,
+            ticker: title,
+            category: content.isCritical
+                ? AndroidNotificationCategory.alarm
+                : AndroidNotificationCategory.message,
+            visibility: NotificationVisibility.public,
+          ),
+          iOS: iosDetailsDefault,
+        );
+        await flutterLocalNotificationsPlugin.show(
+          _generateNotificationId(),
+          title,
+          body,
+          fallbackDetails,
+          payload: jsonEncode(data),
+        );
+      } else {
+        rethrow;
+      }
+    }
+
+    await _NotificationMetrics.trackShown(prefs);
     debugPrint('📱 Foreground notification (vibration: $vibrationEnabled)');
   }
 
@@ -2331,7 +2515,8 @@ class NotificationService {
   /// Call when app resumes from background — re-registers to refresh token (rate-limited to once per 30min).
   Future<void> reRegisterOnResume() async {
     if (_lastRegisterSuccessAt != null &&
-        DateTime.now().difference(_lastRegisterSuccessAt!) < const Duration(minutes: 30)) {
+        DateTime.now().difference(_lastRegisterSuccessAt!) <
+            const Duration(minutes: 30)) {
       return; // Already registered recently
     }
     await _registerDevice();
@@ -2341,7 +2526,8 @@ class NotificationService {
     if (_fcmToken == null || _deviceId == null) return;
 
     final prefs = await SharedPreferences.getInstance();
-    final selectedRegions = prefs.getStringList('selected_regions') ?? [];
+    final selectedRegions =
+        prefs.getStringList(PrefsKeys.selectedRegions) ?? [];
     final selectedOblastIds = prefs.getStringList('selected_oblast_ids') ?? [];
     final selectedRaionIds = prefs.getStringList('selected_raion_ids') ?? [];
     final notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
@@ -2395,12 +2581,16 @@ class NotificationService {
       }
       if (attempt < _registerRetries) {
         final delay = Duration(seconds: 2 * attempt);
-        debugPrint('⏳ Register attempt $attempt failed ($lastError), retry in ${delay.inSeconds}s');
+        debugPrint(
+          '⏳ Register attempt $attempt failed ($lastError), retry in ${delay.inSeconds}s',
+        );
         await Future.delayed(delay);
       }
     }
 
-    debugPrint('❌ Device registration failed after $_registerRetries attempts: $lastError');
+    debugPrint(
+      '❌ Device registration failed after $_registerRetries attempts: $lastError',
+    );
     _scheduleDeferredRetry();
   }
 
@@ -2559,9 +2749,11 @@ class NotificationService {
     // Guard: якщо передано порожній список — перевіряємо prefs (race при init)
     if (selectedRegions.isEmpty) {
       final prefs = await SharedPreferences.getInstance();
-      final saved = prefs.getStringList('selected_regions') ?? [];
+      final saved = prefs.getStringList(PrefsKeys.selectedRegions) ?? [];
       if (saved.isNotEmpty) {
-        debugPrint('📍 updateRegions([]) ignored — using ${saved.length} saved regions from prefs');
+        debugPrint(
+          '📍 updateRegions([]) ignored — using ${saved.length} saved regions from prefs',
+        );
         await updateRegions(saved);
         return;
       }
@@ -2619,7 +2811,7 @@ class NotificationService {
     // Save topics BEFORE subscribing so deferred retry can resubscribe
     // if initial subscribe fails due to APNS not ready
     try {
-      await prefs.setStringList('selected_regions', selectedRegions);
+      await prefs.setStringList(PrefsKeys.selectedRegions, selectedRegions);
       await prefs.setStringList('subscribed_topics', newTopics.toList());
       BriefingService().invalidateCache();
       debugPrint(

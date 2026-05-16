@@ -53,10 +53,8 @@ class AppRouter {
               routes: [
                 GoRoute(
                   path: '/',
-                  // Map: keep instant switch — fade/slide repaints the whole map every frame (mobile jank).
-                  pageBuilder: (context, state) => const NoTransitionPage(
-                    child: MapTab(),
-                  ),
+                  pageBuilder: (context, state) =>
+                      const NoTransitionPage(child: MapTab()),
                 ),
               ],
             ),
@@ -64,23 +62,8 @@ class AppRouter {
               routes: [
                 GoRoute(
                   path: '/radar',
-                  pageBuilder: (context, state) => _shellTabPage(
-                    context,
-                    state,
-                    const RadarTab(),
-                  ),
-                ),
-              ],
-            ),
-            StatefulShellBranch(
-              routes: [
-                GoRoute(
-                  path: '/regions',
-                  pageBuilder: (context, state) => _shellTabPage(
-                    context,
-                    state,
-                    const AlertsPage(),
-                  ),
+                  pageBuilder: (context, state) =>
+                      _shellTabPage(context, state, const RadarTab()),
                 ),
               ],
             ),
@@ -88,11 +71,8 @@ class AppRouter {
               routes: [
                 GoRoute(
                   path: '/chat',
-                  pageBuilder: (context, state) => _shellTabPage(
-                    context,
-                    state,
-                    const ChatTab(),
-                  ),
+                  pageBuilder: (context, state) =>
+                      _shellTabPage(context, state, const ChatTab()),
                 ),
               ],
             ),
@@ -100,11 +80,8 @@ class AppRouter {
               routes: [
                 GoRoute(
                   path: '/profile',
-                  pageBuilder: (context, state) => _shellTabPage(
-                    context,
-                    state,
-                    const ProfileTab(),
-                  ),
+                  pageBuilder: (context, state) =>
+                      _shellTabPage(context, state, const ProfileTab()),
                 ),
               ],
             ),
@@ -112,123 +89,78 @@ class AppRouter {
         ),
         GoRoute(
           path: '/premium',
-          pageBuilder: (context, state) => _fadeThroughPage(
-            context,
-            state,
-            const PremiumPage(),
-          ),
+          pageBuilder: (context, state) =>
+              _fadeThroughPage(context, state, const PremiumPage()),
         ),
         GoRoute(
           path: '/feedback',
-          pageBuilder: (context, state) => _fadeThroughPage(
-            context,
-            state,
-            const FeedbackPage(),
-          ),
+          pageBuilder: (context, state) =>
+              _fadeThroughPage(context, state, const FeedbackPage()),
         ),
         GoRoute(
           path: '/feedback-moderation',
-          pageBuilder: (context, state) => _slideUpPage(
-            context,
-            state,
-            const FeedbackModerationPage(),
-          ),
+          pageBuilder: (context, state) =>
+              _slideUpPage(context, state, const FeedbackModerationPage()),
         ),
         GoRoute(
           path: '/admin',
-          pageBuilder: (context, state) => _slideUpPage(
-            context,
-            state,
-            const AdminPanelPage(),
-          ),
+          pageBuilder: (context, state) =>
+              _slideUpPage(context, state, const AdminPanelPage()),
         ),
         GoRoute(
           path: '/chat-admin',
-          pageBuilder: (context, state) => _slideUpPage(
-            context,
-            state,
-            const ChatAdminPage(),
-          ),
+          pageBuilder: (context, state) =>
+              _slideUpPage(context, state, const ChatAdminPage()),
         ),
         GoRoute(
           path: '/complaints',
-          pageBuilder: (context, state) => _slideUpPage(
-            context,
-            state,
-            const ComplaintsPage(),
-          ),
+          pageBuilder: (context, state) =>
+              _slideUpPage(context, state, const ComplaintsPage()),
         ),
         GoRoute(
           path: '/shelters',
-          pageBuilder: (context, state) => _slideUpPage(
-            context,
-            state,
-            const SheltersPage(),
-          ),
+          pageBuilder: (context, state) =>
+              _slideUpPage(context, state, const SheltersPage()),
         ),
         GoRoute(
           path: '/alerts',
-          pageBuilder: (context, state) => _slideUpPage(
-            context,
-            state,
-            const AlertsPage(),
-          ),
+          pageBuilder: (context, state) =>
+              _slideUpPage(context, state, const AlertsPage()),
         ),
         GoRoute(
           path: '/profile-page',
-          pageBuilder: (context, state) => _slideUpPage(
-            context,
-            state,
-            const ProfilePage(),
-          ),
+          pageBuilder: (context, state) =>
+              _slideUpPage(context, state, const ProfilePage()),
         ),
         GoRoute(
           path: '/trust',
-          pageBuilder: (context, state) => _slideUpPage(
-            context,
-            state,
-            const TrustCenterPage(),
-          ),
+          pageBuilder: (context, state) =>
+              _slideUpPage(context, state, const TrustCenterPage()),
         ),
         GoRoute(
           path: '/history',
-          pageBuilder: (context, state) => _sharedAxisPage(
-            context,
-            state,
-            const AlarmHistoryPage(),
-          ),
+          pageBuilder: (context, state) =>
+              _sharedAxisPage(context, state, const AlarmHistoryPage()),
         ),
         GoRoute(
           path: '/analytics',
-          pageBuilder: (context, state) => _sharedAxisPage(
-            context,
-            state,
-            const PersonalAnalyticsPage(),
-          ),
+          pageBuilder: (context, state) =>
+              _sharedAxisPage(context, state, const PersonalAnalyticsPage()),
         ),
         GoRoute(
           path: '/heatmap',
-          pageBuilder: (context, state) => _sharedAxisPage(
-            context,
-            state,
-            const HeatmapPage(),
-          ),
+          pageBuilder: (context, state) =>
+              _sharedAxisPage(context, state, const HeatmapPage()),
         ),
         GoRoute(
           path: '/radar-full',
-          pageBuilder: (context, state) => _slideUpPage(
-            context,
-            state,
-            const ThreatDashboardPage(),
-          ),
+          pageBuilder: (context, state) =>
+              _slideUpPage(context, state, const ThreatDashboardPage()),
         ),
         GoRoute(
           path: '/briefing',
-          pageBuilder: (context, state) => _slideUpPage(
-            context,
-            state,
-            const BriefingPage(),
-          ),
+          pageBuilder: (context, state) =>
+              _slideUpPage(context, state, const BriefingPage()),
         ),
       ],
     );
@@ -245,10 +177,12 @@ class AppRouter {
     return CustomTransitionPage<void>(
       key: state.pageKey,
       child: child,
-      transitionDuration:
-          reduceMotion ? Duration.zero : const Duration(milliseconds: 260),
-      reverseTransitionDuration:
-          reduceMotion ? Duration.zero : const Duration(milliseconds: 200),
+      transitionDuration: reduceMotion
+          ? Duration.zero
+          : const Duration(milliseconds: 260),
+      reverseTransitionDuration: reduceMotion
+          ? Duration.zero
+          : const Duration(milliseconds: 200),
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
         if (reduceMotion) return child;
         final curved = CurvedAnimation(
@@ -278,19 +212,19 @@ class AppRouter {
     return CustomTransitionPage(
       key: state.pageKey,
       child: child,
-      transitionDuration:
-          reduceMotion ? Duration.zero : const Duration(milliseconds: 320),
-      reverseTransitionDuration:
-          reduceMotion ? Duration.zero : const Duration(milliseconds: 260),
+      transitionDuration: reduceMotion
+          ? Duration.zero
+          : const Duration(milliseconds: 320),
+      reverseTransitionDuration: reduceMotion
+          ? Duration.zero
+          : const Duration(milliseconds: 260),
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
         if (reduceMotion) return child;
         return SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, 0.1),
-            end: Offset.zero,
-          ).animate(
-            CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
-          ),
+          position: Tween<Offset>(begin: const Offset(0, 0.1), end: Offset.zero)
+              .animate(
+                CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+              ),
           child: FadeTransition(opacity: animation, child: child),
         );
       },
@@ -307,17 +241,16 @@ class AppRouter {
     return CustomTransitionPage(
       key: state.pageKey,
       child: child,
-      transitionDuration:
-          reduceMotion ? Duration.zero : const Duration(milliseconds: 280),
-      reverseTransitionDuration:
-          reduceMotion ? Duration.zero : const Duration(milliseconds: 220),
+      transitionDuration: reduceMotion
+          ? Duration.zero
+          : const Duration(milliseconds: 280),
+      reverseTransitionDuration: reduceMotion
+          ? Duration.zero
+          : const Duration(milliseconds: 220),
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
         if (reduceMotion) return child;
         return FadeTransition(
-          opacity: CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeInOut,
-          ),
+          opacity: CurvedAnimation(parent: animation, curve: Curves.easeInOut),
           child: child,
         );
       },
@@ -334,19 +267,22 @@ class AppRouter {
     return CustomTransitionPage(
       key: state.pageKey,
       child: child,
-      transitionDuration:
-          reduceMotion ? Duration.zero : const Duration(milliseconds: 300),
-      reverseTransitionDuration:
-          reduceMotion ? Duration.zero : const Duration(milliseconds: 240),
+      transitionDuration: reduceMotion
+          ? Duration.zero
+          : const Duration(milliseconds: 300),
+      reverseTransitionDuration: reduceMotion
+          ? Duration.zero
+          : const Duration(milliseconds: 240),
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
         if (reduceMotion) return child;
         return SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0.05, 0),
-            end: Offset.zero,
-          ).animate(
-            CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
-          ),
+          position:
+              Tween<Offset>(
+                begin: const Offset(0.05, 0),
+                end: Offset.zero,
+              ).animate(
+                CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+              ),
           child: FadeTransition(
             opacity: CurvedAnimation(
               parent: animation,

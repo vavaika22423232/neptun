@@ -1,6 +1,8 @@
 /**
  * Plausible coordinate box for Ukrainian threat map (+ Black Sea margin).
- * Keep in sync with `worker/geo_bounds.py` (ingest pipeline + web filter).
+ * Intentionally loose for rejecting bogus coords; Moldova sits inside this box.
+ * Filter public-map pins with `isPublicMapThreatGeography` in `public-threat-geo.ts`.
+ * Keep in sync with `worker/geo_bounds.py`.
  */
 export const UKRAINE_THREAT_BOUNDS = {
   minLat: 42.5,

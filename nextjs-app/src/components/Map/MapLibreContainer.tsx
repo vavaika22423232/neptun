@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useDeferredValue, useEffect, useRef, useState, memo } from 'react';
+import { useCallback, useEffect, useRef, useState, memo } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { StyleSpecification } from 'maplibre-gl';
@@ -9,6 +9,7 @@ import type { Alarm, FusionTrajectory, Marker } from '@/types';
 import { THREAT_NAMES } from '@/types';
 import { CACHE_VERSION } from '@/lib/constants';
 import { formatKyivTime, buildMarkerPopup } from '@/lib/map/marker-popup-html';
+import { fetchOccupiedTerritoriesMerged } from '@/lib/map/fetch-occupied-territories';
 import {
   districtRegionNamesForAlarms,
   hascListForStateAlarms,
@@ -16,19 +17,35 @@ import {
   type OblastFeatureCollection,
 } from '@/lib/map/alarm-hasc-filter';
 import { resolveMapRenderProfile } from '@/lib/map/map-render-profile';
-import { markersToGeoJSON, maplibreIconId, markerIconUrl } from '@/lib/map/markers-to-geojson';
+import { markersToGeoJSON, markersToSwarmGeoJSON, maplibreIconId, markerIconUrl } from '@/lib/map/markers-to-geojson';
 import type { ThreatMarkerFeatureCollection } from '@/lib/map/markers-to-geojson';
+import { markersToTrailsGeoJSON } from '@/lib/map/markers-to-trails-geojson';
+import { markersToLaunchGeoJSON } from '@/lib/map/markers-to-launch-geojson';
+import { notifyFlutterThreatMarkerTap } from '@/lib/map/flutter-app-bridge';
 import { resolveThreatBearingDeg } from '@/lib/threat-bearing';
-import { MAP_NIGHT } from '@/lib/map/map-visual-tokens';
+import { MAP_DAY, MAP_NIGHT } from '@/lib/map/map-visual-tokens';
 import {
   applyThreatMarkerFocus,
 } from '@/lib/map/map-threat-focus';
+import { buildUaRasterBasemapStyle, buildGenericRasterBasemapStyle } from '@/lib/map/ua-raster-maplibre-style';
+import { getBasemapUrl } from '@/lib/map-leaflet-performance';
 
 const MAP_BOUNDS = { minLat: 44.2, maxLat: 52.4, minLng: 22.0, maxLng: 40.2 } as const;
 const UKRAINE_ONLY_VIEW_BOUNDS = { minLat: 42.7, maxLat: 53.7, minLng: 19.8, maxLng: 42.4 } as const;
+const MOBILE_FULL_UKRAINE_VIEW_BOUNDS = UKRAINE_ONLY_VIEW_BOUNDS;
 
 /** Нормалізована текстура іконки (px) — `icon-size` = icon_px / NORM_ICON_PX */
 const NORM_ICON_PX = 48;
+
+/** 🇺🇦 маркери територіальної цілісності (lng, lat з settlements / існуюча точка для Криму). */
+const UKRAINE_CLAIM_FLAG_MARKERS: ReadonlyArray<{ lngLat: [number, number]; label: string }> = [
+  { lngLat: [34.1024, 44.9521], label: 'Крим - це Україна!' },
+  { lngLat: [37.80134, 48.01588], label: 'Донецьк - це Україна!' },
+  { lngLat: [39.29732, 48.57171], label: 'Луганськ - це Україна!' },
+];
+
+const CLAIM_FLAG_POPUP_INNER_STYLE =
+  'font-weight: 600; color: #1a1d21; font-size: 14px; padding: 4px; font-family: sans-serif;';
 
 type MutableStyleLayer = {
   id: string;
@@ -106,26 +123,52 @@ function showMarkerTooltip(event: MouseEvent, marker: Marker, threatType: string
   const typeName = THREAT_NAMES[threatType] || threatType;
   const trustRaw = (marker.display_trust_hint_uk || '').replace(/</g, '&lt;');
   const trustLine = trustRaw
-    ? `<div class="tooltip-trust" style="font-size:11px;color:rgba(255,171,64,0.95);margin-bottom:6px;line-height:1.35;">${trustRaw}</div>`
+    ? `<div class="tooltip-trust">${trustRaw}</div>`
     : '';
+
   const tipBrg = resolveThreatBearingDeg(marker);
-  const tipCourse =
-    tipBrg != null ? `<div class="tooltip-course">Курс ~${Math.round(tipBrg)}°</div>` : '';
+  const confLabel = marker.heading_confidence === 'track' ? '' :
+    marker.heading_confidence === 'explicit' ? ' (явний)' :
+    marker.heading_confidence === 'regional' ? ' (~регіон)' : '';
+  const tipCourse = tipBrg != null
+    ? `<div class="tooltip-course">↗ Курс ~${Math.round(tipBrg)}°${confLabel}</div>`
+    : '';
+
+  // ETA badge
+  const etaSec = typeof marker.eta_seconds === 'number' ? marker.eta_seconds : null;
+  let etaLine = '';
+  if (etaSec !== null && etaSec >= 0 && !marker.is_loitering) {
+    const etaMin = Math.round(etaSec / 60);
+    const etaStr = etaSec === 0 ? 'досягнуто' : etaMin < 1 ? '<1хв' : etaMin < 60 ? `${etaMin}хв` : `${Math.floor(etaMin/60)}год ${etaMin%60}хв`;
+    etaLine = `<div class="tooltip-eta">⏱ ETA ${etaStr}</div>`;
+  }
+
+  // Loitering badge
+  const loiterLine = marker.is_loitering
+    ? `<div class="tooltip-loitering">⟳ Барражує</div>`
+    : '';
 
   tooltip.innerHTML = `
     ${trustLine}
-    <div class="tooltip-type" style="font-weight:600;font-size:13px;margin-bottom:4px;color:#ff2a5f;">${typeName}</div>
-    <div class="tooltip-place" style="color:rgba(255,255,255,0.7);margin-bottom:2px;">${marker.place || 'Невідомо'}</div>
+    <div class="tooltip-type">${typeName}</div>
+    <div class="tooltip-place">${marker.place || 'Невідомо'}</div>
     ${tipCourse}
-    ${marker.date ? `<div class="tooltip-time" style="color:rgba(255,255,255,0.4);font-size:11px;">${formatKyivTime(marker.date)}</div>` : ''}
+    ${etaLine}${loiterLine}
+    ${marker.date ? `<div class="tooltip-time">${formatKyivTime(marker.date)}</div>` : ''}
   `;
 
   tooltip.style.opacity = '1';
+  // Reset animation
+  tooltip.style.animation = 'none';
+  requestAnimationFrame(() => {
+    if (tooltip) tooltip.style.animation = '';
+  });
+
   const rect = tooltip.getBoundingClientRect();
-  let x = event.clientX + 15;
-  let y = event.clientY + 15;
-  if (x + rect.width > window.innerWidth) x = event.clientX - rect.width - 15;
-  if (y + rect.height > window.innerHeight) y = event.clientY - rect.height - 15;
+  let x = event.clientX + 16;
+  let y = event.clientY + 16;
+  if (x + rect.width > window.innerWidth - 8) x = event.clientX - rect.width - 16;
+  if (y + rect.height > window.innerHeight - 8) y = event.clientY - rect.height - 16;
   tooltip.style.transform = `translate3d(${x}px, ${y}px, 0)`;
 }
 
@@ -133,7 +176,8 @@ function hideMarkerTooltip() {
   if (tooltipSingleton) tooltipSingleton.style.opacity = '0';
 }
 
-function isLightMapTheme(): boolean {
+/** Світла/темна тема застосунку (окремо від палітри базової карти OFM). */
+function isLightAppTheme(): boolean {
   return typeof document !== 'undefined' && document.documentElement.classList.contains('theme-light');
 }
 
@@ -155,25 +199,39 @@ function collectIconJobs(markers: Marker[]): { id: string; url: string }[] {
  * Растеризує іконку до квадрата NORM_ICON_PX — передбачуваний `icon-size` на шарі.
  */
 function ensureThreatImages(map: maplibregl.Map, jobs: { id: string; url: string }[]): Promise<void> {
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const fallbackRaster = `${origin}/shahed3.webp?${CACHE_VERSION}`;
+  const IMAGE_LOAD_TIMEOUT_MS = 2200;
+
   return Promise.all(
     jobs.map(
       ({ id, url }) =>
         new Promise<void>((resolve) => {
-          if (map.hasImage(id)) {
+          let settled = false;
+          let timeoutId: ReturnType<typeof setTimeout> | null = null;
+          const done = () => {
+            if (settled) return;
+            settled = true;
+            if (timeoutId) clearTimeout(timeoutId);
             resolve();
+          };
+          if (map.hasImage(id)) {
+            done();
             return;
           }
+          timeoutId = setTimeout(done, IMAGE_LOAD_TIMEOUT_MS);
           const img = new Image();
           img.crossOrigin = 'anonymous';
           img.onload = () => {
             void (async () => {
+              if (settled) return;
               try {
                 const c = document.createElement('canvas');
                 c.width = NORM_ICON_PX;
                 c.height = NORM_ICON_PX;
                 const ctx = c.getContext('2d');
                 if (!ctx) {
-                  resolve();
+                  done();
                   return;
                 }
                 ctx.clearRect(0, 0, NORM_ICON_PX, NORM_ICON_PX);
@@ -202,11 +260,19 @@ function ensureThreatImages(map: maplibregl.Map, jobs: { id: string; url: string
                   /* ignore */
                 }
               } finally {
-                resolve();
+                done();
               }
             })();
           };
-          img.onerror = () => resolve();
+          img.onerror = () => {
+            // Mobile / flaky networks: primary icon failed → still register bitmap so symbol layer shows something.
+            if (img.src.includes('shahed3.webp')) {
+              done();
+              return;
+            }
+            img.onerror = done;
+            img.src = fallbackRaster;
+          };
           img.src = url;
         }),
     ),
@@ -240,18 +306,25 @@ interface MapLibreContainerProps {
   onMarkerAction?: () => void;
   isEmbed?: boolean;
   ukraineOnly?: boolean;
+  basemapOverride?: import('@/lib/map-leaflet-performance').MapBasemapKind;
+  autoTrack?: boolean;
+  focusedTargetId?: string | null;
+  onFocusedTargetIdChange?: (id: string | null) => void;
 }
 
 function MapLibreContainer({
   markers,
   alarms,
+  fusionTrajectories,
   isAdmin,
   onMarkerAction,
   isEmbed = false,
   ukraineOnly = false,
+  basemapOverride,
+  autoTrack = false,
+  focusedTargetId = null,
+  onFocusedTargetIdChange,
 }: MapLibreContainerProps) {
-  const deferredMarkers = useDeferredValue(markers);
-  /** Тривоги без `useDeferredValue`: відкладений стан після SSR лишав порожній масив — зони з’являлись із затримкою. */
   const mapElRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
@@ -263,9 +336,10 @@ function MapLibreContainer({
   const isAdminRef = useRef(!!isAdmin);
   const latestAlarmsRef = useRef(alarms);
   const latestMarkersRef = useRef<Marker[]>([]);
+  const markerSyncGenRef = useRef(0);
   const applyAlarmPaintRef = useRef<(alarmsData: Alarm[]) => void>(() => {});
-  const applyBaseStyleRef = useRef<(isLight: boolean, onlyUkraine: boolean) => void>(() => {});
-
+  const applyBaseStyleRef = useRef<() => void>(() => {});
+  const rafIdRef = useRef<number | null>(null);
   const [mapReady, setMapReady] = useState(false);
 
   useEffect(() => {
@@ -304,7 +378,7 @@ function MapLibreContainer({
         [44, 56],
       ]);
     }
-    applyBaseStyleRef.current(isLightMapTheme(), ukraineOnly);
+    applyBaseStyleRef.current();
   }, [ukraineOnly]);
 
   useEffect(() => {
@@ -374,6 +448,7 @@ function MapLibreContainer({
     const ua = typeof navigator !== 'undefined' ? navigator.userAgent : undefined;
     const mtp = typeof navigator !== 'undefined' ? navigator.maxTouchPoints : undefined;
     const profile = resolveMapRenderProfile({ isEmbed, userAgent: ua, maxTouchPoints: mtp });
+    const initialBasemapKind = profile.basemap;
     const mapMaxZoom = profile.maxZoom;
     const isMobile = profile.isMobileLike;
 
@@ -400,13 +475,18 @@ function MapLibreContainer({
       mobileLibreKick2 = window.setTimeout(mapResize, 900);
     }
 
-        const OFM_LIGHT = 'https://tiles.openfreemap.org/styles/liberty';
+    /**
+     * Liberty + Dark з OpenFreeMap — один і той самий векторний стек (OpenMapTiles),
+     * темний стиль — офіційна «темна» палітра того ж набору даних, що й Liberty.
+     */
+    const OFM_LIBERTY = 'https://tiles.openfreemap.org/styles/liberty';
     const OFM_DARK = 'https://tiles.openfreemap.org/styles/dark';
 
     // Cached GeoJSON - loaded once, replayed on every style swap
     let cachedGeoData: {
       oblastData: OblastFeatureCollection;
       districtData: FeatureCollection;
+      occupiedTerritories: FeatureCollection;
     } | null = null;
     let styleRequestSeq = 0;
 
@@ -414,8 +494,8 @@ function MapLibreContainer({
       container: mapElRef.current,
       style: { version: 8, sources: {}, layers: [] },
       center: [31.5, 48.5],
-      zoom: 5,
-      minZoom: 5,
+      zoom: isMobile ? 4 : 4.85,
+      minZoom: isMobile ? 2.75 : 3,
       maxZoom: mapMaxZoom,
       maxBounds: [
         [18, 40],
@@ -454,48 +534,59 @@ function MapLibreContainer({
       }
     });
 
-    const buildOFMStyle = async (isLight: boolean, onlyUkraine: boolean) => {
-      const url = isLight ? OFM_LIGHT : OFM_DARK;
+    const buildOFMStyle = async (useLightBasemap: boolean, onlyUkraine: boolean) => {
+      const styleUrl = useLightBasemap ? OFM_LIBERTY : OFM_DARK;
       const [styleRes, ukraineBoundary] = await Promise.all([
-        fetch(url),
+        fetch(styleUrl),
         onlyUkraine
           ? fetch(`/geoBoundaries-UKR-ADM0_simplified.geojson?${CACHE_VERSION}`, { cache: 'force-cache' }).then((res) => res.json())
           : Promise.resolve(null),
       ]);
-      const style = (await styleRes.json()) as MutableMapStyle;
+      let styleText = await styleRes.text();
+      if (!useLightBasemap) {
+        // Lighten the extreme dark colors of OpenFreeMap to a modern slate-blue dark theme
+        styleText = styleText
+          .replace(/rgb\(12,12,12\)/g, '#181f29') // Background
+          .replace(/rgb\(27\s*,\s*27\s*,\s*29\)/g, '#1e2632') // Water
+          .replace(/rgb\(32,32,32\)/g, '#242c38') // Landcover
+          .replace(/rgb\(10,10,10\)/g, '#141a22') // Buildings
+          .replace(/rgb\(35,35,35\)/g, '#2b3441'); // Roads
+      }
+      const style = JSON.parse(styleText) as MutableMapStyle;
 
       // Layer ID patterns whose labels are too noisy at zoom 5-6 → hide
       const HIDE_LABEL_PATTERNS = ['state', 'country', 'continent', 'region', 'county', 'province'];
       const ukraineWithinFilter = ukraineBoundary ? ['within', ukraineBoundary] : null;
 
       style.layers.forEach((layer) => {
-        if (ukraineWithinFilter && layer.source === 'openmaptiles') {
+        if (layer.source === 'openmaptiles') {
           const sourceLayer = layer['source-layer'];
-          if (
-            sourceLayer === 'place' ||
-            sourceLayer === 'water_name' ||
-            sourceLayer === 'poi' ||
-            sourceLayer === 'aerodrome_label'
-          ) {
-            layer.filter = withFilter(layer.filter, ukraineWithinFilter);
-          } else if (sourceLayer === 'boundary') {
-            if (layer.id.includes('boundary_country')) {
-              layer.filter = withFilter(layer.filter, [
-                'any',
-                ['==', ['get', 'adm0_l'], 'UKR'],
-                ['==', ['get', 'adm0_r'], 'UKR'],
-                ['==', ['get', 'claimed_by'], 'UA'],
-              ]);
-            } else {
+
+          if (ukraineWithinFilter) {
+            if (
+              sourceLayer === 'place' ||
+              sourceLayer === 'water_name' ||
+              sourceLayer === 'poi' ||
+              sourceLayer === 'aerodrome_label'
+            ) {
               layer.filter = withFilter(layer.filter, ukraineWithinFilter);
+            } else if (sourceLayer === 'boundary') {
+              if (layer.id.includes('boundary_country') || layer.id === 'boundary_2') {
+                layer.filter = withFilter(layer.filter, [
+                  'any',
+                  ['==', ['get', 'adm0_l'], 'UKR'],
+                  ['==', ['get', 'adm0_r'], 'UKR'],
+                  ['==', ['get', 'claimed_by'], 'UA'],
+                ]);
+              } else if (layer.id === 'boundary_state' || layer.id === 'boundary_3') {
+                // Do not apply 'within' to region borders, it hides lines touching the national edge
+              } else {
+                layer.filter = withFilter(layer.filter, ukraineWithinFilter);
+              }
             }
           }
         }
 
-        if (!isLight) {
-          if (layer.id === 'background' && layer.paint) layer.paint['background-color'] = '#161a23';
-          if (layer.id === 'water' && layer.paint) layer.paint['fill-color'] = '#0b0f14';
-        }
         if (layer.type === 'symbol' && layer.layout) {
           const lid: string = layer.id.toLowerCase();
 
@@ -536,6 +627,15 @@ function MapLibreContainer({
               f.replace('Bold', 'Regular').replace('bold', 'regular')
             );
           }
+
+          // Improve text contrast for the newly lightened dark theme
+          if (!useLightBasemap && layer.paint && layer.paint['text-color']) {
+            layer.paint['text-color'] = lid.includes('city') || lid.includes('town') ? '#f1f5f9' : '#cbd5e1';
+            if (layer.paint['text-halo-color']) {
+              layer.paint['text-halo-color'] = '#181f29';
+              layer.paint['text-halo-width'] = 1.25;
+            }
+          }
         }
       });
       return style as StyleSpecification;
@@ -543,38 +643,52 @@ function MapLibreContainer({
 
     const loadGeoData = async () => {
       if (cachedGeoData) return cachedGeoData;
-      const [oblastRes, districtRes] = await Promise.all([
+      const [oblastRes, districtRes, occupiedTerritories] = await Promise.all([
         fetch(`/ukraine_oblasts.geojson?${CACHE_VERSION}`, { cache: 'force-cache' }),
         fetch(`/ukraine_raions_2020.geojson?${CACHE_VERSION}`, { cache: 'force-cache' }),
+        fetchOccupiedTerritoriesMerged(CACHE_VERSION),
       ]);
       const oblastData = (await oblastRes.json()) as OblastFeatureCollection;
       const districtData = prepareDistrictGeoJson((await districtRes.json()) as FeatureCollection);
       oblastFcRef.current = oblastData;
-      cachedGeoData = { oblastData, districtData };
+      cachedGeoData = { oblastData, districtData, occupiedTerritories };
       return cachedGeoData;
     };
 
-    const applyBaseStyle = async (isLight: boolean) => {
+    const basemapOverrideRef = { current: basemapOverride };
+
+    const applyBaseStyle = async () => {
       const requestSeq = ++styleRequestSeq;
       try {
         setMapReady(false);
-        const [style, geoData] = await Promise.all([buildOFMStyle(isLight, ukraineOnlyRef.current), loadGeoData()]);
+        const light = isLightAppTheme();
+        const currentBasemapKind = basemapOverrideRef.current || initialBasemapKind;
+        const [style, geoData] = await Promise.all([
+          currentBasemapKind === 'uaRasterBasemap'
+            ? Promise.resolve(buildUaRasterBasemapStyle(light))
+            : currentBasemapKind === 'rasterVectorDark'
+            ? buildOFMStyle(light, ukraineOnlyRef.current)
+            : Promise.resolve(buildGenericRasterBasemapStyle([getBasemapUrl(currentBasemapKind)], currentBasemapKind)),
+          loadGeoData(),
+        ]);
         if (requestSeq !== styleRequestSeq) return;
-        // Store geo data so style.load handler can use it
         cachedGeoData = geoData;
         map.setStyle(style, { diff: false });
       } catch (err) {
         console.error('Failed to apply map style', err);
+        setMapReady(true);
       }
     };
-    applyBaseStyleRef.current = (isLight) => {
-      void applyBaseStyle(isLight);
+    applyBaseStyleRef.current = () => {
+      void applyBaseStyle();
     };
+    // Expose a way for the basemap-override useEffect to update the ref
+    (applyBaseStyleRef as { basemapOverrideRef?: typeof basemapOverrideRef }).basemapOverrideRef = basemapOverrideRef;
 
-    void applyBaseStyle(isLightMapTheme());
+    void applyBaseStyle();
 
     const onThemeChange = () => {
-      void applyBaseStyle(isLightMapTheme());
+      applyBaseStyleRef.current();
     };
     window.addEventListener('theme-change', onThemeChange);
 
@@ -585,8 +699,8 @@ function MapLibreContainer({
       if (styleLayerCount === 0) return;
       if (!cachedGeoData) return; // GeoJSON not yet loaded, skip
 
-      const { oblastData, districtData } = cachedGeoData;
-      const isLight = isLightMapTheme();
+      const { oblastData, districtData, occupiedTerritories } = cachedGeoData;
+      const isLightBasemap = isLightAppTheme();
       const onlyUkraine = ukraineOnlyRef.current;
       const firstSymbolId = getFirstSymbolLayerId(map);
 
@@ -599,7 +713,7 @@ function MapLibreContainer({
           type: 'fill-extrusion',
           minzoom: 14,
           paint: {
-            'fill-extrusion-color': isLight ? '#e5e0d8' : '#21262d',
+            'fill-extrusion-color': isLightBasemap ? '#e5e0d8' : '#21262d',
             'fill-extrusion-height': ['coalesce', ['get', 'render_height'], ['get', 'height'], 15],
             'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], ['get', 'min_height'], 0],
             'fill-extrusion-opacity': 0.8,
@@ -615,33 +729,420 @@ function MapLibreContainer({
 
       // Overlay layers
       if (!map.getLayer('oblast-calm-dim')) {
-        originalAddLayer({ id: 'oblast-calm-dim', type: 'fill', source: 'oblasts', filter: ['==', ['get', 'HASC_1'], '__none__'], maxzoom: 11, paint: { 'fill-color': MAP_NIGHT.calmDimFill, 'fill-opacity': ['interpolate', ['linear'], ['zoom'], 5, 0.22, 8, 0.15, 11, 0.05] } }, firstSymbolId);
+        originalAddLayer(
+          {
+            id: 'oblast-calm-dim',
+            type: 'fill',
+            source: 'oblasts',
+            filter: ['==', ['get', 'HASC_1'], '__none__'],
+            maxzoom: 11,
+            paint: isLightBasemap
+              ? {
+                  'fill-color': MAP_DAY.calmDimFill,
+                  'fill-opacity': ['interpolate', ['linear'], ['zoom'], 5, 0.07, 8, 0.05, 11, 0.025],
+                }
+              : {
+                  'fill-color': MAP_NIGHT.calmDimFill,
+                  'fill-opacity': ['interpolate', ['linear'], ['zoom'], 5, 0.22, 8, 0.15, 11, 0.05],
+                },
+          },
+          firstSymbolId,
+        );
       }
       if (!map.getLayer('ukraine-border-stroke')) {
-        originalAddLayer({ id: 'ukraine-border-stroke', type: 'line', source: 'ukraine-border-source', paint: { 'line-color': isLight ? '#1a1d21' : '#ffffff', 'line-opacity': 0.55, 'line-width': 2.5 } }, firstSymbolId);
+        originalAddLayer({ id: 'ukraine-border-stroke', type: 'line', source: 'ukraine-border-source', paint: { 'line-color': isLightBasemap ? '#1a1d21' : '#ffffff', 'line-opacity': 0.55, 'line-width': 2.5 } }, firstSymbolId);
       }
+
+      if (!map.getSource('occupied-territories')) {
+        originalAddSource('occupied-territories', { type: 'geojson', data: occupiedTerritories });
+      }
+      if (!map.getLayer('occupied-territories-fill')) {
+        originalAddLayer(
+          {
+            id: 'occupied-territories-fill',
+            type: 'fill',
+            source: 'occupied-territories',
+            paint: isLightBasemap
+              ? {
+                  'fill-color': '#991b1b',
+                  'fill-opacity': ['interpolate', ['linear'], ['zoom'], 5, 0.1, 9, 0.14, 14, 0.11],
+                }
+              : {
+                  'fill-color': '#f87171',
+                  'fill-opacity': ['interpolate', ['linear'], ['zoom'], 5, 0.06, 9, 0.1, 14, 0.08],
+                },
+          },
+          firstSymbolId,
+        );
+      }
+      if (!map.getLayer('occupied-territories-outline')) {
+        originalAddLayer(
+          {
+            id: 'occupied-territories-outline',
+            type: 'line',
+            source: 'occupied-territories',
+            paint: {
+              'line-color': isLightBasemap ? '#7f1d1d' : '#fecaca',
+              'line-opacity': 0.5,
+              'line-width': 1.2,
+            },
+          },
+          firstSymbolId,
+        );
+      }
+
       if (!map.getLayer('oblast-alarm-fill')) {
-        originalAddLayer({ id: 'oblast-alarm-fill', type: 'fill', source: 'oblasts', filter: ['==', ['get', 'HASC_1'], '__none__'], paint: { 'fill-color': MAP_NIGHT.alarmFillHex, 'fill-opacity': 0.36 } }, firstSymbolId);
+        originalAddLayer({ id: 'oblast-alarm-fill', type: 'fill', source: 'oblasts', filter: ['==', ['get', 'HASC_1'], '__none__'], paint: { 'fill-color': '#cc0022', 'fill-opacity': 0.48 } }, firstSymbolId);
       }
       if (!map.getLayer('district-alarm-fill')) {
-        originalAddLayer({ id: 'district-alarm-fill', type: 'fill', source: 'districts', filter: ['==', ['get', 'regionKey'], '__none__'], paint: { 'fill-color': '#8f0000', 'fill-opacity': isLight ? 0.5 : 0.6 } }, firstSymbolId);
+        originalAddLayer({ id: 'district-alarm-fill', type: 'fill', source: 'districts', filter: ['==', ['get', 'regionKey'], '__none__'], paint: { 'fill-color': '#cc0022', 'fill-opacity': isLightBasemap ? 0.58 : 0.68 } }, firstSymbolId);
       }
       if (!map.getLayer('oblast-context-line')) {
         originalAddLayer({ id: 'oblast-context-line', type: 'line', source: 'oblasts', filter: ['!=', ['get', 'HASC_1'], '?'], paint: { 'line-color': MAP_NIGHT.oblastLine, 'line-opacity': 0.12, 'line-width': 0.6 } });
       }
+      // Bright red outline on alarmed oblasts — the most visible alarm indicator
+      if (!map.getLayer('oblast-alarm-outline')) {
+        originalAddLayer(
+          {
+            id: 'oblast-alarm-outline',
+            type: 'line',
+            source: 'oblasts',
+            filter: ['==', ['get', 'HASC_1'], '__none__'],
+            paint: {
+              'line-color': '#ff1a35',
+              'line-opacity': 0.9,
+              'line-width': ['interpolate', ['linear'], ['zoom'], 4, 1.0, 7, 2.2, 10, 3.0],
+            },
+          },
+          firstSymbolId,
+        );
+      }
+      // ── Launch origin arcs (very faint, behind trails) ───────────────────
+      if (!map.getSource('launch-arcs')) {
+        originalAddSource('launch-arcs', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      }
+      if (!map.getLayer('launch-arc-glow')) {
+        originalAddLayer(
+          {
+            id: 'launch-arc-glow',
+            type: 'line',
+            source: 'launch-arcs',
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: {
+              'line-color': '#ff3864',
+              'line-opacity': ['*', ['get', 'opacity'], 0.14],
+              'line-width': 8,
+              'line-blur': 5,
+            },
+          },
+          firstSymbolId,
+        );
+      }
+      if (!map.getLayer('launch-arc-line')) {
+        originalAddLayer(
+          {
+            id: 'launch-arc-line',
+            type: 'line',
+            source: 'launch-arcs',
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: {
+              'line-color': '#ff3864',
+              'line-opacity': ['*', ['get', 'opacity'], 0.55],
+              'line-width': 1.2,
+              'line-dasharray': [4, 5],
+            },
+          },
+          firstSymbolId,
+        );
+      }
+      // Launch site markers (enemy territory origin points)
+      if (!map.getSource('launch-sites')) {
+        originalAddSource('launch-sites', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      }
+      if (!map.getLayer('launch-site-halo')) {
+        originalAddLayer({
+          id: 'launch-site-halo',
+          type: 'circle',
+          source: 'launch-sites',
+          paint: {
+            'circle-radius': ['interpolate', ['linear'], ['zoom'], 4, 10, 8, 18],
+            'circle-color': '#ff1a35',
+            'circle-opacity': ['*', ['get', 'opacity'], 0.35],
+            'circle-blur': 0.7,
+          },
+        });
+      }
+      if (!map.getLayer('launch-site-label')) {
+        originalAddLayer({
+          id: 'launch-site-label',
+          type: 'symbol',
+          source: 'launch-sites',
+          layout: {
+            'text-field': ['get', 'shortName'],
+            'text-size': ['interpolate', ['linear'], ['zoom'], 4, 9, 8, 11],
+            'text-font': ['Noto Sans Bold', 'Arial Unicode MS Bold'],
+            'text-offset': [0, 0],
+            'text-allow-overlap': true,
+            'text-ignore-placement': true,
+          },
+          paint: {
+            'text-color': '#ff4060',
+            'text-halo-color': '#0a0d12',
+            'text-halo-width': 2.0,
+            'text-opacity': ['*', ['get', 'opacity'], 1.2],
+          },
+        });
+      }
+
+      // ── Tactical Swarm Grouping (Convex Hulls) ───────────────────────────
+      if (!map.getSource('threat-swarms')) {
+        originalAddSource('threat-swarms', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      }
+      if (!map.getLayer('threat-swarm-fill')) {
+        originalAddLayer(
+          {
+            id: 'threat-swarm-fill',
+            type: 'fill',
+            source: 'threat-swarms',
+            paint: {
+              'fill-color': '#ff3864',
+              'fill-opacity': 0.12,
+            },
+          },
+          'threat-trail-projection'
+        );
+      }
+      if (!map.getLayer('threat-swarm-line')) {
+        originalAddLayer(
+          {
+            id: 'threat-swarm-line',
+            type: 'line',
+            source: 'threat-swarms',
+            paint: {
+              'line-color': '#ff3864',
+              'line-width': 1.5,
+              'line-dasharray': [4, 4],
+              'line-opacity': 0.4,
+            },
+          },
+          'threat-trail-projection'
+        );
+      }
+      if (!map.getLayer('threat-swarm-label')) {
+        originalAddLayer(
+          {
+            id: 'threat-swarm-label',
+            type: 'symbol',
+            source: 'threat-swarms',
+            minzoom: 6.0,
+            layout: {
+              'text-field': ['get', 'swarm_label'],
+              'text-font': ['Noto Sans Bold', 'Arial Unicode MS Bold'],
+              'text-size': 11,
+              'text-anchor': 'center',
+            },
+            paint: {
+              'text-color': '#ff3864',
+              'text-halo-color': 'rgba(15, 15, 15, 0.85)',
+              'text-halo-width': 1.5,
+            },
+          },
+          firstSymbolId
+        );
+      }
+      // ── Threat trail lines (behind markers, zoom ≥ 5.5) ─────────────────
+      if (!map.getSource('threat-trails')) {
+        originalAddSource('threat-trails', { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, lineMetrics: true });
+      }
+      // Glow layer — wide semi-transparent duplicate under the trail for depth
+      if (!map.getLayer('threat-trail-glow')) {
+        originalAddLayer(
+          {
+            id: 'threat-trail-glow',
+            type: 'line',
+            source: 'threat-trails',
+            filter: ['==', ['get', 'trail_kind'], 'trail'],
+            minzoom: 5.5,
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: {
+              'line-color': ['get', 'trail_color'],
+              'line-opacity': ['*', ['get', 'trail_opacity'], 0.28],
+              'line-width': ['*', ['get', 'trail_width'], 4.5],
+              'line-blur': 3,
+            },
+          },
+          firstSymbolId,
+        );
+      }
+      // Trail line — crisp solid observed path
+      if (!map.getLayer('threat-trail-line')) {
+        originalAddLayer(
+          {
+            id: 'threat-trail-line',
+            type: 'line',
+            source: 'threat-trails',
+            filter: ['==', ['get', 'trail_kind'], 'trail'],
+            minzoom: 5.5,
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: {
+              'line-color': ['get', 'trail_color'],
+              'line-opacity': ['get', 'trail_opacity'],
+              'line-width': ['get', 'trail_width'],
+            },
+          },
+          firstSymbolId,
+        );
+      }
+      // Projection line — dashed arrow ahead of drone
+      if (!map.getLayer('threat-trail-projection')) {
+        originalAddLayer(
+          {
+            id: 'threat-trail-projection',
+            type: 'line',
+            source: 'threat-trails',
+            filter: ['match', ['get', 'trail_kind'], ['projection', 'uncertainty'], true, false],
+            minzoom: 5.5,
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: {
+              'line-color': ['get', 'trail_color'],
+              'line-opacity': ['get', 'trail_opacity'],
+              'line-width': ['get', 'trail_width'],
+              'line-dasharray': [3, 3],
+            },
+          },
+          firstSymbolId,
+        );
+      }
+
+      if (!map.getLayer('threat-trail-checkpoint')) {
+        originalAddLayer(
+          {
+            id: 'threat-trail-checkpoint',
+            type: 'symbol',
+            source: 'threat-trails',
+            filter: ['==', ['get', 'trail_kind'], 'checkpoint'],
+            minzoom: 6.5,
+            layout: {
+              'text-field': ['get', 'checkpoint_label'],
+              'text-font': ['Noto Sans Bold', 'Arial Unicode MS Bold'],
+              'text-size': 10,
+              'text-anchor': 'center',
+              'text-allow-overlap': false,
+              'text-ignore-placement': false,
+            },
+            paint: {
+              'text-color': ['get', 'trail_color'],
+              'text-halo-color': 'rgba(15, 15, 15, 0.85)',
+              'text-halo-width': 1.5,
+            },
+          },
+          firstSymbolId,
+        );
+      }
+
+      if (!map.getLayer('threat-zone-circle')) {
+        originalAddLayer(
+          {
+            id: 'threat-zone-circle',
+            type: 'circle',
+            source: 'threats',
+            filter: ['>', ['get', 'threat_zone_radius_km'], 0],
+            paint: {
+              'circle-radius': [
+                'interpolate', ['exponential', 2], ['zoom'],
+                7, ['*', ['get', 'threat_zone_radius_km'], 0.8],
+                10, ['*', ['get', 'threat_zone_radius_km'], 6.4],
+                14, ['*', ['get', 'threat_zone_radius_km'], 100]
+              ],
+              'circle-color': ['get', 'halo_color'],
+              'circle-opacity': 0.06,
+              'circle-stroke-width': 1,
+              'circle-stroke-color': ['get', 'halo_color'],
+              'circle-stroke-opacity': 0.15,
+              'circle-pitch-alignment': 'map',
+            },
+          },
+          'threat-swarm-fill'
+        );
+      }
+
+      if (!map.getLayer('unclustered-point-halo')) {
+        originalAddLayer({
+          id: 'unclustered-point-halo',
+          type: 'circle',
+          source: 'threats',
+          filter: ['!', ['has', 'point_count']],
+          paint: {
+            'circle-radius': ['get', 'halo_radius'],
+            'circle-color': ['get', 'halo_color'],
+            'circle-opacity': ['get', 'halo_opacity'],
+            'circle-blur': 0.8,
+            'circle-pitch-alignment': 'map'
+          }
+        });
+      }
+
       if (!map.getLayer('unclustered-point')) {
-        originalAddLayer({ id: 'unclustered-point', type: 'symbol', source: 'threats', filter: ['!', ['has', 'point_count']], layout: { 'icon-image': ['get', 'micon'], 'icon-size': ['/', ['get', 'icon_px'], NORM_ICON_PX], 'icon-rotate': ['get', 'bearing'], 'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true, 'symbol-sort-key': ['get', 'prio'] }, paint: { 'icon-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], ['min', 1, ['+', ['get', 'opacity'], 0.07]], ['get', 'opacity']] } });
+        // Threat icon with ETA / Status label
+        originalAddLayer({
+          id: 'unclustered-point',
+          type: 'symbol',
+          source: 'threats',
+          filter: ['!', ['has', 'point_count']],
+          layout: {
+            'icon-image': ['get', 'micon'],
+            'icon-size': ['/', ['get', 'icon_px'], NORM_ICON_PX],
+            'icon-rotate': ['get', 'bearing'],
+            'icon-rotation-alignment': 'map',
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true,
+            'symbol-sort-key': ['get', 'prio'],
+            'text-field': ['get', 'status_label'],
+            'text-font': ['Noto Sans Bold', 'Arial Unicode MS Bold'],
+            'text-size': 11,
+            'text-offset': [0, 1.4],
+            'text-anchor': 'top',
+            'text-optional': true,
+          },
+          paint: {
+            'icon-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], ['min', 1, ['+', ['get', 'opacity'], 0.07]], ['get', 'opacity']],
+            'text-color': '#ff4d4d',
+            'text-halo-color': 'rgba(15, 15, 15, 0.85)',
+            'text-halo-width': 1.5,
+            'text-opacity': ['get', 'opacity'],
+          }
+        });
       }
 
       // Re-apply alarms
       queueMicrotask(() => applyAlarmPaintRef.current(latestAlarmsRef.current));
 
-      // Re-upload threat marker images
-      if (latestMarkersRef.current.length > 0) {
-        void ensureThreatImages(map, collectIconJobs(latestMarkersRef.current));
-      }
-
-      setMapReady(true);
+      // Re-sync threat markers after full style swap (setStyle wipes sources). Doing this here — after
+      // icons exist — avoids a race where React sees mapReady before GeoJSON/image data is applied.
+      void (async () => {
+        try {
+          const mks = latestMarkersRef.current;
+          if (mks.length > 0) {
+            const fc = markersToGeoJSON(mks) as unknown as FeatureCollection;
+            const src = map.getSource('threats') as maplibregl.GeoJSONSource | undefined;
+            if (src) src.setData(fc);
+            applyThreatMarkerFocus(map, markerFocusMidRef.current, NORM_ICON_PX);
+            void ensureThreatImages(map, collectIconJobs(mks)).then(() => {
+              try {
+                const freshSrc = map.getSource('threats') as maplibregl.GeoJSONSource | undefined;
+                if (freshSrc && map.isStyleLoaded()) freshSrc.setData(fc);
+                applyThreatMarkerFocus(map, markerFocusMidRef.current, NORM_ICON_PX);
+              } catch {
+                /* map/style was replaced */
+              }
+            }).catch(() => {});
+          }
+        } catch (e) {
+          console.warn('MapLibre style.load: marker replay failed', e);
+        } finally {
+          setMapReady(true);
+        }
+      })();
     });
 
     map.on('load', () => {
@@ -650,17 +1151,21 @@ function MapLibreContainer({
           // Ensure geo data loaded (may already be cached)
           await loadGeoData();
 
-          // Flag marker (Crimea)
-          if (!document.querySelector('.crimea-flag-marker')) {
-            const flagEl = document.createElement('div');
-            flagEl.className = 'crimea-flag-marker';
-            flagEl.innerHTML = '🇺🇦';
-            flagEl.style.fontSize = '24px';
-            flagEl.style.cursor = 'pointer';
-            flagEl.style.pointerEvents = 'auto';
-            const flagPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: true, offset: 15 })
-              .setHTML('<div style="font-weight: 600; color: #1a1d21; font-size: 14px; padding: 4px; font-family: sans-serif;">Крим - це Україна!</div>');
-            new maplibregl.Marker({ element: flagEl }).setLngLat([34.1024, 44.9521]).setPopup(flagPopup).addTo(map);
+          // 🇺🇦 Маркери Крим / Донецьк / Луганськ — підпис по натисканню
+          if (!document.querySelector('.neptun-claim-flag-marker')) {
+            for (const { lngLat, label } of UKRAINE_CLAIM_FLAG_MARKERS) {
+              const flagEl = document.createElement('div');
+              flagEl.className = 'neptun-claim-flag-marker';
+              flagEl.innerHTML = '🇺🇦';
+              flagEl.style.fontSize = '24px';
+              flagEl.style.cursor = 'pointer';
+              flagEl.style.pointerEvents = 'auto';
+              const inner = label.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+              const flagPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: true, offset: 15 }).setHTML(
+                `<div style="${CLAIM_FLAG_POPUP_INNER_STYLE}">${inner}</div>`,
+              );
+              new maplibregl.Marker({ element: flagEl }).setLngLat(lngLat).setPopup(flagPopup).addTo(map);
+            }
           }
 
           applyThreatMarkerFocus(map, null, NORM_ICON_PX);
@@ -692,9 +1197,13 @@ function MapLibreContainer({
             if (mid) {
               markerFocusMidRef.current = mid;
               applyThreatMarkerFocus(map, mid, NORM_ICON_PX);
+              if (onFocusedTargetIdChange) onFocusedTargetIdChange(m.id || null);
+            }
+            if (isEmbed && !isAdminRef.current && notifyFlutterThreatMarkerTap(m)) {
+              return;
             }
             const popup = new maplibregl.Popup({
-              maxWidth: 'min(280px, calc(100vw - 24px))',
+              maxWidth: 'min(268px, calc(100vw - 24px))',
               closeButton: true,
               closeOnClick: true,
               offset: 14,
@@ -765,12 +1274,18 @@ function MapLibreContainer({
             hideMarkerTooltip();
           });
 
+          const initialBounds = isMobile ? MOBILE_FULL_UKRAINE_VIEW_BOUNDS : MAP_BOUNDS;
+          const inset = isMobile ? 54 : 24;
           map.fitBounds(
             [
-              [MAP_BOUNDS.minLng, MAP_BOUNDS.minLat],
-              [MAP_BOUNDS.maxLng, MAP_BOUNDS.maxLat],
+              [initialBounds.minLng, initialBounds.minLat],
+              [initialBounds.maxLng, initialBounds.maxLat],
             ],
-            { animate: false, padding: 8 },
+            {
+              animate: false,
+              padding: { top: inset, bottom: inset, left: inset, right: inset },
+              maxZoom: isMobile ? 5.25 : 6,
+            },
           );
 
           /* WebView (Flutter): після layout інколи 0×0 canvas — один resize після першого idle. */
@@ -811,6 +1326,82 @@ function MapLibreContainer({
     };
   }, [isEmbed]);
 
+  // Re-apply base style when user changes the basemap
+  useEffect(() => {
+    const ref = applyBaseStyleRef as { basemapOverrideRef?: { current: typeof basemapOverride } };
+    if (ref.basemapOverrideRef) {
+      ref.basemapOverrideRef.current = basemapOverride;
+    }
+    if (mapReady) {
+      applyBaseStyleRef.current();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [basemapOverride]);
+
+  // ── Cinematic Lock-on Mode (Continuous Follow) ────────────────────────────────
+  const trackingTargetIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    if (!autoTrack) {
+      trackingTargetIdRef.current = null;
+      map.easeTo({ pitch: 0, bearing: 0, duration: 1000 });
+      return;
+    }
+
+    const tick = () => {
+      if (!autoTrack || !mapReady) return;
+      const markers = latestMarkersRef.current;
+      const active = markers.filter(
+        m => m.track_state !== 'lost' && m.track_state !== 'stale' && m.lat && m.lng,
+      );
+      if (active.length === 0) return;
+
+      const priority = (m: Marker) => {
+        const t = (m.threat_type || '').toLowerCase();
+        if (t === 'ballistic') return 3;
+        if (t === 'missile' || t === 'raketa') return 2;
+        return 1;
+      };
+
+      // 1. Try specifically focused target
+      let target = focusedTargetId ? active.find(m => m.id === focusedTargetId) : null;
+      
+      // 2. Fallback to existing tracking ref
+      if (!target && trackingTargetIdRef.current) {
+        target = active.find(m => m.id === trackingTargetIdRef.current);
+      }
+
+      // 3. Pick best new one
+      if (!target) {
+        target = active.reduce((best, m) => priority(m) > priority(best) ? m : best, active[0]);
+      }
+
+      if (target) {
+        trackingTargetIdRef.current = target.id ?? null;
+
+        // Smoothly move camera towards target
+        map.easeTo({
+          center: [target.lng, target.lat],
+          zoom: Math.max(map.getZoom(), 8.5),
+          pitch: 62,
+          bearing: (target.course_bearing ?? map.getBearing()) % 360,
+          duration: 2000,
+          easing: (t) => t,
+        });
+      }
+    };
+
+    // Initial jump
+    tick();
+    
+    // Continuous follow every 2 seconds (matches easeTo duration for seamless flow)
+    const iv = window.setInterval(tick, 2000);
+    return () => window.clearInterval(iv);
+  }, [autoTrack, mapReady, focusedTargetId]);
+
   const applyAlarmPaint = useCallback((alarmsData: Alarm[]) => {
     const map = mapRef.current;
     if (!map) return;
@@ -824,21 +1415,22 @@ function MapLibreContainer({
 
     try {
       if (map.getLayer('oblast-calm-dim')) {
-        const calmFilter =
-          ukraineOnlyRef.current && hascs.length === 0
-            ? ['!=', ['get', 'HASC_1'], '?']
-            : oblastCalmDimFilter(hascs);
-        map.setFilter('oblast-calm-dim', calmFilter as never);
+        map.setFilter('oblast-calm-dim', oblastCalmDimFilter(hascs) as never);
       }
 
       if (map.getLayer('oblast-alarm-fill')) {
         map.setFilter('oblast-alarm-fill', oblastAlarmFillFilter(hascs) as never);
-        map.setPaintProperty('oblast-alarm-fill', 'fill-opacity', 0.36);
+        map.setPaintProperty('oblast-alarm-fill', 'fill-opacity', hascs.length > 0 ? 0.48 : 0);
+      }
+
+      // Red outline on alarmed oblasts
+      if (map.getLayer('oblast-alarm-outline')) {
+        map.setFilter('oblast-alarm-outline', oblastAlarmFillFilter(hascs) as never);
       }
 
       if (map.getLayer('district-alarm-fill')) {
         map.setFilter('district-alarm-fill', districtAlarmFillFilter(districtKeys) as never);
-        map.setPaintProperty('district-alarm-fill', 'fill-opacity', isLightMapTheme() ? 0.5 : 0.6);
+        map.setPaintProperty('district-alarm-fill', 'fill-opacity', isLightAppTheme() ? 0.58 : 0.68);
       }
     } catch (err) {
       console.warn('applyAlarmPaint:', err);
@@ -869,13 +1461,13 @@ function MapLibreContainer({
       const districtKeys = latestDistrictKeysRef.current;
       if (!map.getLayer('oblast-alarm-fill') || !map.getLayer('district-alarm-fill')) return;
       if (hascs.length === 0 && districtKeys.length === 0) return;
-      const w = 0.5 + 0.5 * Math.sin(Date.now() / 700);
+      const w = 0.5 + 0.5 * Math.sin(Date.now() / 550);
       if (hascs.length > 0) {
-        const alpha = 0.26 + 0.14 * w;
+        const alpha = 0.38 + 0.20 * w;
         map.setPaintProperty('oblast-alarm-fill', 'fill-opacity', alpha);
       }
       if (districtKeys.length > 0) {
-        const alpha = (isLightMapTheme() ? 0.42 : 0.52) + 0.08 * w;
+        const alpha = (isLightAppTheme() ? 0.50 : 0.60) + 0.12 * w;
         map.setPaintProperty('district-alarm-fill', 'fill-opacity', alpha);
       }
     };
@@ -884,36 +1476,119 @@ function MapLibreContainer({
     return () => window.clearInterval(iv);
   }, [mapReady, alarms]);
 
+
+  // ── Animation Loop for Smooth Movement (Interpolation) ─────────────────────
+  useEffect(() => {
+    if (!mapReady) return;
+    const map = mapRef.current;
+    if (!map) return;
+
+    const tick = () => {
+      const currentMarkers = latestMarkersRef.current;
+      if (!currentMarkers || !currentMarkers.length) {
+        rafIdRef.current = requestAnimationFrame(tick);
+        return;
+      }
+
+      const now = Date.now();
+      const VISUAL_SPEED_MULTIPLIER = 0.35;
+      
+      const interpolatedMarkers = currentMarkers.map(m => {
+        const speed = (m.speed_kmh || m.computed_speed_kmh || 0) * VISUAL_SPEED_MULTIPLIER;
+        let bearing = m.course_bearing ?? m.ticker_bearing;
+
+        if (bearing == null && m.positions && m.positions.length >= 2) {
+          bearing = resolveThreatBearingDeg(m);
+        }
+
+        if (speed > 0 && bearing != null && m.last_update_epoch) {
+          const dtHours = (now - m.last_update_epoch) / 3600000;
+          const distKm = speed * dtHours;
+          // Cap at 50km to prevent runaway markers on long background tabs
+          if (distKm > 0 && distKm < 50) {
+            const R = 6371;
+            const toRad = Math.PI / 180;
+            const lat1 = m.lat * toRad;
+            const lng1 = m.lng * toRad;
+            const brg = bearing * toRad;
+            const d = distKm / R;
+
+            const lat2 = Math.asin(
+              Math.sin(lat1) * Math.cos(d) +
+              Math.cos(lat1) * Math.sin(d) * Math.cos(brg)
+            );
+            const lng2 = lng1 + Math.atan2(
+              Math.sin(brg) * Math.sin(d) * Math.cos(lat1),
+              Math.cos(d) - Math.sin(lat1) * Math.sin(lat2)
+            );
+            return { ...m, lat: lat2 / toRad, lng: lng2 / toRad };
+          }
+        }
+        return m;
+      });
+
+      try {
+        const fc = markersToGeoJSON(interpolatedMarkers);
+        const src = map.getSource('threats') as maplibregl.GeoJSONSource | undefined;
+        if (src && map.isStyleLoaded()) {
+          src.setData(fc as any);
+          if (map.getLayer('unclustered-point-halo')) {
+            const pulse = 1.0 + 0.15 * Math.sin(now / 150);
+            map.setPaintProperty('unclustered-point-halo', 'circle-radius', ['*', ['get', 'halo_radius'], pulse]);
+            map.setPaintProperty('unclustered-point-halo', 'circle-opacity', ['*', ['get', 'halo_opacity'], 1.1 - (0.1 * pulse)]);
+          }
+        }
+
+        const trailFc = markersToTrailsGeoJSON(interpolatedMarkers);
+        const trailSrc = map.getSource('threat-trails') as maplibregl.GeoJSONSource | undefined;
+        if (trailSrc && map.isStyleLoaded()) {
+          trailSrc.setData(trailFc as any);
+        }
+
+        const swarmFc = markersToSwarmGeoJSON(interpolatedMarkers);
+        const swarmSrc = map.getSource('threat-swarms') as maplibregl.GeoJSONSource | undefined;
+        if (swarmSrc && map.isStyleLoaded()) {
+          swarmSrc.setData(swarmFc as any);
+        }
+      } catch (err) {
+        /* ignore */
+      }
+      
+      rafIdRef.current = requestAnimationFrame(tick);
+    };
+
+    rafIdRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
+    };
+  }, [mapReady]);
+
   useEffect(() => {
     if (!mapReady) return;
     const map = mapRef.current;
     if (!map?.isStyleLoaded()) return;
 
-    let cancelled = false;
-    const run = async () => {
-      const fc = markersToGeoJSON(deferredMarkers);
-      const jobs = collectIconJobs(deferredMarkers);
-      await ensureThreatImages(map, jobs);
-      if (cancelled) return;
-      const src = map.getSource('threats') as maplibregl.GeoJSONSource | undefined;
-      if (src) src.setData(fc as unknown as FeatureCollection);
-      applyThreatMarkerFocus(map, markerFocusMidRef.current, NORM_ICON_PX);
-    };
+    // Static assets update (trails, arcs, icons) — still handled on marker change
+    const trailSrc = map.getSource('threat-trails') as maplibregl.GeoJSONSource | undefined;
+    if (trailSrc) trailSrc.setData(markersToTrailsGeoJSON(markers) as any);
 
-    const raf = requestAnimationFrame(() => {
-      void run();
+    const launchData = markersToLaunchGeoJSON(markers);
+    const arcSrc = map.getSource('launch-arcs') as maplibregl.GeoJSONSource | undefined;
+    if (arcSrc) arcSrc.setData(launchData.arcs as any);
+    const siteSrc = map.getSource('launch-sites') as maplibregl.GeoJSONSource | undefined;
+    if (siteSrc) siteSrc.setData(launchData.sites as any);
+
+    const jobs = collectIconJobs(markers);
+    ensureThreatImages(map, jobs).then(() => {
+      applyThreatMarkerFocus(map, markerFocusMidRef.current, NORM_ICON_PX);
     });
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(raf);
-    };
-  }, [deferredMarkers, mapReady]);
+  }, [markers, mapReady]);
 
   return (
     <div
       className={`w-full h-full relative bg-[var(--neptun-map-canvas)]${ukraineOnly ? ' ukraine-only-map-mode' : ''}`}
     >
-      <div ref={mapElRef} id="maplibre-map" className="absolute inset-0 z-[1]" />
+      <div ref={mapElRef} id="maplibre-map" data-basemap={basemapOverride} className="absolute inset-0 z-[1]" />
     </div>
   );
 }

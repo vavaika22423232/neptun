@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { COME_BACK_ALIVE_DONATE_URL, UNITED24_DONATE_URL } from '@/lib/constants';
 
 interface DonateModalProps {
   isOpen: boolean;
@@ -27,10 +26,6 @@ export default function DonateModal({ isOpen, onClose }: DonateModalProps) {
 
   const openJar = () => {
     window.open('https://send.monobank.ua/jar/6Vi9TVzJZQ', '_blank');
-  };
-
-  const openOfficialDonation = (url: string) => {
-    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   return (
@@ -65,32 +60,6 @@ export default function DonateModal({ isOpen, onClose }: DonateModalProps) {
           </div>
 
           <div className="space-y-2.5 relative z-10 sm:space-y-3">
-            <div className="flex items-center justify-between gap-4 rounded-[20px] bg-[var(--hud-chip)] p-4 sm:p-5">
-              <div>
-                <div className="mb-1 text-[10px] font-black uppercase tracking-[0.2em] text-[var(--hud-danger)]">United24</div>
-                <div className="text-[14px] font-bold text-[var(--hud-text)]">Офіційна платформа України</div>
-              </div>
-              <button
-                onClick={() => openOfficialDonation(UNITED24_DONATE_URL)}
-                className="flex shrink-0 items-center gap-2 rounded-[14px] bg-[var(--hud-text)] px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.16em] text-[var(--hud-surface-strong)] transition-opacity hover:opacity-85"
-              >
-                Відкрити
-              </button>
-            </div>
-
-            <div className="flex items-center justify-between gap-4 rounded-[20px] bg-[var(--hud-chip)] p-4 sm:p-5">
-              <div>
-                <div className="mb-1 text-[10px] font-black uppercase tracking-[0.2em] text-[var(--hud-danger)]">Повернись живим</div>
-                <div className="text-[14px] font-bold text-[var(--hud-text)]">Допомога Силам оборони</div>
-              </div>
-              <button
-                onClick={() => openOfficialDonation(COME_BACK_ALIVE_DONATE_URL)}
-                className="flex shrink-0 items-center gap-2 rounded-[14px] bg-[var(--hud-text)] px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.16em] text-[var(--hud-surface-strong)] transition-opacity hover:opacity-85"
-              >
-                Відкрити
-              </button>
-            </div>
-
             <div className="flex items-center justify-between gap-4 rounded-[20px] bg-[var(--hud-chip)] p-4 sm:p-5">
               <div>
                 <div className="mb-1 text-[10px] font-black uppercase tracking-[0.2em] text-[var(--hud-danger)]">Monobank Jar</div>

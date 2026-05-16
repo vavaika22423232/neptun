@@ -19,6 +19,8 @@
 		A1B2C3D4E5F60718293A4B62 /* NeptunWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5D /* NeptunWidgetBundle.swift */; };
 		A1B2C3D4E5F60718293A4B79 /* NeptunWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B60 /* NeptunWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B9F1137C25CDA1ADB326A2B0 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 32D99558AA813D5AC7A574DE /* Pods_Runner.framework */; };
+		E4D1C2B0A1F24001A000003 /* alarm_sharp.wav in Resources */ = {isa = PBXBuildFile; fileRef = E4D1C2B0A1F24001A000001 /* alarm_sharp.wav */; };
+		E4D1C2B0A1F24001A000004 /* alarm_siren.wav in Resources */ = {isa = PBXBuildFile; fileRef = E4D1C2B0A1F24001A000002 /* alarm_siren.wav */; };
 		GOOGLE_SERVICE_BUILD /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = GOOGLE_SERVICE_PLIST /* GoogleService-Info.plist */; };
 		L1V3ACT1000001 /* LiveActivityHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = L1V3ACT1000002 /* LiveActivityHelper.swift */; };
 		L1V3ACT1000003 /* NeptunLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = L1V3ACT1000004 /* NeptunLiveActivity.swift */; };
@@ -87,6 +89,8 @@
 		A1B2C3D4E5F60718293A4B60 /* NeptunWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = NeptunWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		CA61AB2A9311ED612F6630BE /* Pods_RunnerTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_RunnerTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		D4B5B097B323E0B4E2C4A359 /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
+		E4D1C2B0A1F24001A000001 /* alarm_sharp.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = alarm_sharp.wav; sourceTree = "<group>"; };
+		E4D1C2B0A1F24001A000002 /* alarm_siren.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = alarm_siren.wav; sourceTree = "<group>"; };
 		GOOGLE_SERVICE_PLIST /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		L1V3ACT1000002 /* LiveActivityHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityHelper.swift; sourceTree = "<group>"; };
 		L1V3ACT1000004 /* NeptunLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeptunLiveActivity.swift; sourceTree = "<group>"; };
@@ -174,6 +178,8 @@
 			isa = PBXGroup;
 			children = (
 				GOOGLE_SERVICE_PLIST /* GoogleService-Info.plist */,
+				E4D1C2B0A1F24001A000001 /* alarm_sharp.wav */,
+				E4D1C2B0A1F24001A000002 /* alarm_siren.wav */,
 				97C146FA1CF9000F007C117D /* Main.storyboard */,
 				97C146FD1CF9000F007C117D /* Assets.xcassets */,
 				97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */,
@@ -246,8 +252,9 @@
 				A1B2C3D4E5F60718293A4B78 /* Embed Foundation Extensions */,
 				9705A1C41CF9048500538489 /* Embed Frameworks */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
-				4F817C30A033BF3B7C112262 /* [CP] Embed Pods Frameworks */,
+				A7D3F2E81B9C40E58F331204 /* Copy Native Asset dSYMs */,
 				CA777D520CC7535FBC0671A6 /* [CP] Copy Pods Resources */,
+				ED6B9D4318F98A0EAD4501B0 /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
@@ -342,6 +349,8 @@
 				97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */,
 				3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */,
 				GOOGLE_SERVICE_BUILD /* GoogleService-Info.plist in Resources */,
+				E4D1C2B0A1F24001A000003 /* alarm_sharp.wav in Resources */,
+				E4D1C2B0A1F24001A000004 /* alarm_siren.wav in Resources */,
 				97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */,
 				97C146FC1CF9000F007C117D /* Main.storyboard in Resources */,
 			);
@@ -393,24 +402,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" embed_and_thin";
-		};
-		4F817C30A033BF3B7C112262 /* [CP] Embed Pods Frameworks */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks-${CONFIGURATION}-input-files.xcfilelist",
-			);
-			name = "[CP] Embed Pods Frameworks";
-			outputFileListPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks.sh\"\n";
-			showEnvVarsInLog = 0;
+			shellScript = "/bin/sh \"${SRCROOT}/flutter_xcode_backend_wrapper.sh\" embed_and_thin";
 		};
 		9740EEB61CF901F6004384FC /* Run Script */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -425,7 +417,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" build";
+			shellScript = "/bin/sh \"${SRCROOT}/flutter_xcode_backend_wrapper.sh\" build";
 		};
 		A1B2C3D400STRIP00000002 /* Strip iCloud Attributes */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -441,6 +433,23 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "# Strip iCloud File Provider extended attributes that cause CodeSign\n# to fail with 'resource fork, Finder information, or similar detritus'\n# when project is on iCloud-synced Desktop (macOS 26+)\nif [ -d \"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\" ]; then\n  xattr -dr com.apple.FinderInfo \"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\" 2>/dev/null || true\n  xattr -dr 'com.apple.fileprovider.fpfs#P' \"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\" 2>/dev/null || true\nfi\n";
+		};
+		A7D3F2E81B9C40E58F331204 /* Copy Native Asset dSYMs */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"${TARGET_BUILD_DIR}/${WRAPPER_NAME}/Frameworks/objective_c.framework/objective_c",
+			);
+			name = "Copy Native Asset dSYMs";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/bin/sh \"${SRCROOT}/copy_native_asset_dsyms.sh\"\n";
+			showEnvVarsInLog = 0;
 		};
 		CA777D520CC7535FBC0671A6 /* [CP] Copy Pods Resources */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -479,6 +488,23 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+		ED6B9D4318F98A0EAD4501B0 /* [CP] Embed Pods Frameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks-${CONFIGURATION}-input-files.xcfilelist",
+			);
+			name = "[CP] Embed Pods Frameworks";
+			outputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */

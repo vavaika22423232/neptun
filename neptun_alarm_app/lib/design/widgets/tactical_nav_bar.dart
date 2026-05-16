@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../neptun_design.dart';
 
 /// Premium bottom navigation with pill-style selection indicator.
 /// Tactical, compact, information-dense.
@@ -23,13 +22,15 @@ class TacticalNavBar extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(NeptunSpacing.lg, NeptunSpacing.sm, NeptunSpacing.lg, NeptunSpacing.lg),
+      padding: const EdgeInsets.fromLTRB(14, 4, 14, 4),
       decoration: BoxDecoration(
-        color: isDark ? NeptunSurfaces.s1 : cs.surface,
+        color: isDark ? const Color(0xFF070B15) : cs.surface,
         border: Border(
           top: BorderSide(
-            color: isDark ? NeptunSurfaces.border : cs.outline.withValues(alpha: 0.2),
-            width: 0.5,
+            color: isDark
+                ? const Color(0xFF0D1420)
+                : cs.outline.withValues(alpha: 0.16),
+            width: 1,
           ),
         ),
       ),
@@ -90,13 +91,15 @@ class _NavItem extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(NeptunRadius.md),
+          borderRadius: BorderRadius.circular(18),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(vertical: NeptunSpacing.sm, horizontal: NeptunSpacing.xs),
+            height: 56,
+            margin: const EdgeInsets.symmetric(horizontal: 2),
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
             decoration: BoxDecoration(
-              color: selected ? cs.primary.withValues(alpha: 0.12) : Colors.transparent,
-              borderRadius: BorderRadius.circular(NeptunRadius.md),
+              color: selected ? const Color(0xFF1D2332) : Colors.transparent,
+              borderRadius: BorderRadius.circular(18),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -111,16 +114,20 @@ class _NavItem extends StatelessWidget {
                   child: Icon(
                     icon,
                     size: 24,
-                    color: selected ? cs.primary : cs.onSurface.withValues(alpha: 0.5),
+                    color: selected
+                        ? const Color(0xFFF1F4FA)
+                        : cs.onSurface.withValues(alpha: 0.48),
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 3),
                 Text(
                   label,
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 11,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                    color: selected ? cs.primary : cs.onSurface.withValues(alpha: 0.55),
+                    fontWeight: selected ? FontWeight.w800 : FontWeight.w700,
+                    color: selected
+                        ? const Color(0xFFF1F4FA)
+                        : cs.onSurface.withValues(alpha: 0.52),
                   ),
                 ),
               ],

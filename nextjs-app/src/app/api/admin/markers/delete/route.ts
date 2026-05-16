@@ -1,13 +1,33 @@
 import { NextResponse } from 'next/server';
 import { requireAdminAuth } from '@/lib/admin/apiAuth';
-import { deleteMarker, getRawMessages, initStore } from '@/lib/markers-store';
+import { loadHidden, saveHidden } from '@/lib/admin/data';
+import { invalidateMarkerDerivedCaches } from '@/lib/cache';
+import { broadcastSSE } from '@/lib/chat-sse-stream';
+import { initTargetStore, markTrackedTargetLifecycle, syncTargetStoreFromRedis, getTrackedTargetRecords } from '@/lib/tracked-target-store';
+
+function rememberHiddenMarker(marker: { lat?: unknown; lng?: unknown; text?: unknown; manual?: unknown }): string | null {
+  const lat = Number(marker.lat);
+  const lng = Number(marker.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+  const source = marker.manual ? 'manual' : 'auto';
+  const key = `${lat},${lng}|${marker.text || ''}|${source}`;
+  const hidden = loadHidden();
+  if (!hidden.includes(key)) {
+    hidden.push(key);
+    saveHidden(hidden);
+    invalidateMarkerDerivedCaches();
+  }
+  return key;
+}
 
 export async function POST(request: Request) {
   const denied = await requireAdminAuth();
   if (denied) return denied;
 
   try {
-    await initStore();
+    await initTargetStore();
+    await syncTargetStoreFromRedis();
     const body = await request.json();
     const { id, lat, lng, text } = body;
 
@@ -15,47 +35,55 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing id or coordinates' }, { status: 400 });
     }
 
-    // Try delete by id first
+    const messages = getTrackedTargetRecords();
+    const requestedId = id ? String(id) : '';
+    const cleanRequestedId = requestedId.replace(/_\d+$/, '');
+    const idMatch = requestedId
+      ? messages.find((m) => {
+          const mid = String(m.id || '');
+          const tid = String(m.track_id || '');
+          return mid === requestedId || tid === requestedId || mid === cleanRequestedId || tid === cleanRequestedId;
+        })
+      : undefined;
+
+    const hiddenKey = rememberHiddenMarker({
+      lat: lat ?? idMatch?.lat,
+      lng: lng ?? idMatch?.lng,
+      text: text ?? idMatch?.text,
+      manual: idMatch?.manual,
+    });
+
     if (id) {
-      // The frontend appends _0, _1, etc., for grouped markers (count > 1).
-      // We try exact match first, then fallback to original base ID.
-      const cleanId = String(id).replace(/_\d+$/, '');
-      let ok = await deleteMarker(String(id));
-      if (!ok && cleanId !== String(id)) {
-        ok = await deleteMarker(cleanId);
-      }
+      const ok = await markTrackedTargetLifecycle(requestedId, 'DESTROYED') ||
+                 (cleanRequestedId !== requestedId ? await markTrackedTargetLifecycle(cleanRequestedId, 'DESTROYED') : false);
+      
       if (ok) {
-        return NextResponse.json({ status: 'ok', removed: 1 });
+        broadcastSSE({ type: 'markers_refresh', data: { reason: 'admin_delete', hidden: Boolean(hiddenKey) } });
+        return NextResponse.json({ status: 'ok', removed: 1, hidden: Boolean(hiddenKey) });
       }
     }
 
-    // Fallback: find by coordinates (ticker moves markers — use ~1km tolerance)
     if (lat !== undefined && lng !== undefined) {
-      const messages = getRawMessages();
-      const coordTolerance = 0.05; // ~5km — ticker moves markers continuously
+      const coordTolerance = 0.05;
       const match = messages.find(m => {
         const latMatch = Math.abs(Number(m.lat) - Number(lat)) < coordTolerance;
         const lngMatch = Math.abs(Number(m.lng) - Number(lng)) < coordTolerance;
-        if (!latMatch || !lngMatch) return false;
-        if (text) {
-          // Bulletproof check: strip ALL invisible/special Telegram characters, keep only alphanumerics
-          const cleanRegex = /[^a-zA-Zа-яА-ЯіІїЇєЄ0-9]/g;
-          const msgText = String(m.text || '').replace(cleanRegex, '').toLowerCase().substring(0, 30);
-          const reqText = String(text).replace(cleanRegex, '').toLowerCase().substring(0, 30);
-          return msgText.includes(reqText) || reqText.includes(msgText);
-        }
-        return true;
+        return latMatch && lngMatch;
       });
 
       if (match) {
-        const targetId = match.id || match.track_id;
-        if (targetId) {
-          const ok = await deleteMarker(String(targetId));
-          if (ok) {
-            return NextResponse.json({ status: 'ok', removed: 1 });
-          }
+        const targetId = String(match.track_id || match.id);
+        const ok = await markTrackedTargetLifecycle(targetId, 'DESTROYED');
+        if (ok) {
+          broadcastSSE({ type: 'markers_refresh', data: { reason: 'admin_delete', hidden: Boolean(hiddenKey) } });
+          return NextResponse.json({ status: 'ok', removed: 1, hidden: Boolean(hiddenKey) });
         }
       }
+    }
+
+    if (hiddenKey) {
+      broadcastSSE({ type: 'markers_refresh', data: { reason: 'admin_delete', hidden: true } });
+      return NextResponse.json({ status: 'ok', removed: 0, hidden: true });
     }
 
     return NextResponse.json({ error: 'Marker not found' }, { status: 404 });

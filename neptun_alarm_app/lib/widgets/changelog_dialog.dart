@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_constants.dart';
+import '../theme/diary_design.dart';
+import '../core/widgets/neptun_shell_modal.dart';
 
 class ChangelogDialog {
   static const String _lastShownVersionKey = 'changelog_last_shown_version';
@@ -22,7 +24,7 @@ class ChangelogDialog {
   }
 
   static Future<void> _show(BuildContext context) async {
-    return showDialog(
+    return NeptunShellModal.showDialog(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) {
@@ -38,18 +40,18 @@ class ChangelogDialog {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  Color(0xFF1E3A8A), // Темно-синій
-                  Color(0xFF3B82F6), // Яскраво-синій
-                  Color(0xFF60A5FA), // Світло-синій
+                  Color(0xFF0A0E1A),
+                  Color(0xFF1A1F2E),
+                  Color(0xFF1E3A5F),
                 ],
               ),
               borderRadius: BorderRadius.circular(24),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.blue.withValues(alpha: 0.5),
-                  blurRadius: 20,
-                  spreadRadius: 5,
-                  offset: const Offset(0, 10),
+                  color: Color(0x66000000),
+                  blurRadius: 24,
+                  spreadRadius: 0,
+                  offset: Offset(0, 12),
                 ),
               ],
             ),
@@ -71,7 +73,7 @@ class ChangelogDialog {
                         child: const Icon(
                           Icons.auto_awesome,
                           size: 32,
-                          color: Colors.white,
+                          color: DiaryColors.darkPrimary,
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -80,7 +82,7 @@ class ChangelogDialog {
                         style: TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                          color: DiaryColors.darkPrimary,
                         ),
                       ),
                       const SizedBox(height: 6),
@@ -97,7 +99,7 @@ class ChangelogDialog {
                           'Версія $currentVersion',
                           style: const TextStyle(
                             fontSize: 12,
-                            color: Colors.white,
+                            color: DiaryColors.darkPrimary,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -111,7 +113,7 @@ class ChangelogDialog {
                   margin: const EdgeInsets.symmetric(horizontal: 12),
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: DiaryColors.background,
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Column(
@@ -151,8 +153,8 @@ class ChangelogDialog {
                         Navigator.of(context).pop();
                       },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: const Color(0xFF1E3A8A),
+                        backgroundColor: DiaryColors.darkPrimary,
+                        foregroundColor: DiaryColors.primary,
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
@@ -210,7 +212,7 @@ class ChangelogDialog {
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFF1F2937),
+                  color: DiaryColors.primary,
                 ),
               ),
               const SizedBox(height: 2),
@@ -218,7 +220,7 @@ class ChangelogDialog {
                 description,
                 style: const TextStyle(
                   fontSize: 12,
-                  color: Color(0xFF6B7280),
+                  color: DiaryColors.muted,
                   height: 1.3,
                 ),
               ),

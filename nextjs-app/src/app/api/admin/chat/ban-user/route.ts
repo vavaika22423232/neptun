@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireAdminAuth } from '@/lib/admin/apiAuth';
 import { ChatAdminBanUserSchema } from '@/lib/api-schemas';
-import { banChatUser } from '@/lib/chat-ban-service';
+import { banChatUser, ChatBanRejected } from '@/lib/chat-ban-service';
 
 /**
  * POST /api/admin/chat/ban-user
@@ -43,6 +43,9 @@ export async function POST(request: Request) {
     console.log(`[CHAT] Admin banned: ${result.entry.nickname} (device: ${result.resolvedTargetDevice})`);
     return NextResponse.json({ status: 'ok' });
   } catch (err) {
+    if (err instanceof ChatBanRejected) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
     console.error('[CHAT] Admin ban error:', err);
     return NextResponse.json({ error: 'Помилка блокування' }, { status: 500 });
   }

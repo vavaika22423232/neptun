@@ -12,7 +12,6 @@ export async function GET() {
     const messages = loadMessages();
     // Filter pending geo messages (no lat/lng or pending_geo flag)
     const rawMsgs = messages
-      .filter(m => m.pending_geo || (!m.lat && !m.lng))
       .sort((a, b) => {
         const da = new Date(a.date || a.timestamp || 0).getTime();
         const db = new Date(b.date || b.timestamp || 0).getTime();

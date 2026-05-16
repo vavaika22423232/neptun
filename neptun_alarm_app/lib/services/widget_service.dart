@@ -1,7 +1,7 @@
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:neptun_alarm_app/core/utils/app_debug_log.dart';
 import 'purchase_service.dart';
 
 /// Сервіс для оновлення віджета на робочому столі Android
@@ -20,6 +20,11 @@ class WidgetService {
   /// Перевірка чи користувач має Premium
   bool get _isPremium => PurchaseService().isPremium;
 
+  /// Після втрати PRO: віджет не має показувати живі дані тривог.
+  Future<void> applyNonPremiumWidgetState() async {
+    await _showPremiumRequired();
+  }
+
   /// Ініціалізація сервісу
   Future<void> initialize() async {
     if (_isInitialized || !(Platform.isAndroid || Platform.isIOS)) return;
@@ -34,9 +39,9 @@ class WidgetService {
         HomeWidget.registerInteractivityCallback(backgroundCallback);
       }
       _isInitialized = true;
-      debugPrint('WidgetService initialized');
+      appDebugLog('WidgetService initialized');
     } catch (e) {
-      debugPrint('WidgetService init error: $e');
+      appDebugLog('WidgetService init error: $e');
     }
   }
 
@@ -47,7 +52,7 @@ class WidgetService {
       await HomeWidget.setAppGroupId(_appGroupId);
       _isInitialized = true;
     } catch (e) {
-      debugPrint('WidgetService app group error: $e');
+      appDebugLog('WidgetService app group error: $e');
     }
   }
 
@@ -102,9 +107,9 @@ class WidgetService {
         androidName: _androidWidgetName,
         iOSName: _iosWidgetName,
       );
-      debugPrint('Widget updated: region=$region, alarm=$isAlarm, drones=$dronesCount, missiles=$missilesCount, kab=$kabCount');
+      appDebugLog('Widget updated: region=$region, alarm=$isAlarm, drones=$dronesCount, missiles=$missilesCount, kab=$kabCount');
     } catch (e) {
-      debugPrint('Widget update error: $e');
+      appDebugLog('Widget update error: $e');
     }
   }
 
@@ -116,6 +121,11 @@ class WidgetService {
     String threatType = '',
   }) async {
     if (!(Platform.isAndroid || Platform.isIOS)) return;
+
+    if (!_isPremium) {
+      await _showPremiumRequired();
+      return;
+    }
 
     await _ensureAppGroupId();
 
@@ -134,13 +144,18 @@ class WidgetService {
         iOSName: _iosWidgetName,
       );
     } catch (e) {
-      debugPrint('Widget alarm update error: $e');
+      appDebugLog('Widget alarm update error: $e');
     }
   }
 
   /// Оновити кількість загроз
   Future<void> updateThreatsCount(int count) async {
     if (!(Platform.isAndroid || Platform.isIOS)) return;
+
+    if (!_isPremium) {
+      await _showPremiumRequired();
+      return;
+    }
 
     await _ensureAppGroupId();
 
@@ -154,13 +169,18 @@ class WidgetService {
         iOSName: _iosWidgetName,
       );
     } catch (e) {
-      debugPrint('Widget threats update error: $e');
+      appDebugLog('Widget threats update error: $e');
     }
   }
 
   /// Оновити таймер тривоги
   Future<void> updateTimer(int minutes) async {
     if (!(Platform.isAndroid || Platform.isIOS)) return;
+
+    if (!_isPremium) {
+      await _showPremiumRequired();
+      return;
+    }
 
     await _ensureAppGroupId();
 
@@ -174,7 +194,7 @@ class WidgetService {
         iOSName: _iosWidgetName,
       );
     } catch (e) {
-      debugPrint('Widget timer update error: $e');
+      appDebugLog('Widget timer update error: $e');
     }
   }
 
@@ -182,14 +202,18 @@ class WidgetService {
   Future<void> setUserRegion(String region) async {
     if (!(Platform.isAndroid || Platform.isIOS)) return;
 
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('widget_user_region', region);
+
+    if (!_isPremium) {
+      await _showPremiumRequired();
+      return;
+    }
+
     await _ensureAppGroupId();
 
     try {
       await HomeWidget.saveWidgetData<String>('widget_region', region);
-      
-      // Також зберігаємо в SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('widget_user_region', region);
 
       await HomeWidget.updateWidget(
         name: Platform.isIOS ? _iosWidgetName : _androidWidgetName,
@@ -197,7 +221,7 @@ class WidgetService {
         iOSName: _iosWidgetName,
       );
     } catch (e) {
-      debugPrint('Widget region update error: $e');
+      appDebugLog('Widget region update error: $e');
     }
   }
 
@@ -214,6 +238,11 @@ class WidgetService {
   /// Скинути дані віджета
   Future<void> resetWidget() async {
     if (!(Platform.isAndroid || Platform.isIOS)) return;
+
+    if (!_isPremium) {
+      await _showPremiumRequired();
+      return;
+    }
 
     await _ensureAppGroupId();
 
@@ -232,7 +261,7 @@ class WidgetService {
         iOSName: _iosWidgetName,
       );
     } catch (e) {
-      debugPrint('Widget reset error: $e');
+      appDebugLog('Widget reset error: $e');
     }
   }
 
@@ -251,9 +280,9 @@ class WidgetService {
         androidName: _androidWidgetName,
         iOSName: _iosWidgetName,
       );
-      debugPrint('Widget: Premium required message shown');
+      appDebugLog('Widget: Premium required message shown');
     } catch (e) {
-      debugPrint('Widget premium message error: $e');
+      appDebugLog('Widget premium message error: $e');
     }
   }
 }

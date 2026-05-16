@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'dart:async';
+import '../core/pro/pro_features.dart';
 import '../models/threat_event.dart';
 import '../services/map_data_service.dart';
 import '../services/threat_feed_service.dart';
@@ -27,9 +28,11 @@ class _ChatHomePageState extends State<ChatHomePage>
             Container(
               margin: const EdgeInsets.fromLTRB(16, 8, 16, 6),
               decoration: BoxDecoration(
-                color: cs.surfaceContainer,
+                color: cs.surfaceContainerLow,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: cs.outline),
+                border: Border.all(
+                  color: cs.outlineVariant.withValues(alpha: 0.35),
+                ),
               ),
               child: TabBar(
                 indicator: BoxDecoration(
@@ -37,7 +40,7 @@ class _ChatHomePageState extends State<ChatHomePage>
                   borderRadius: BorderRadius.circular(10),
                 ),
                 labelColor: cs.onSurface,
-                unselectedLabelColor: cs.onSurface.withValues(alpha: 0.5),
+                unselectedLabelColor: cs.onSurfaceVariant,
                 dividerColor: Colors.transparent,
                 tabs: const [
                   Tab(text: 'Головний'),
@@ -263,7 +266,7 @@ class _ThreatFeedPanel extends StatefulWidget {
 }
 
 class _ThreatFeedPanelState extends State<_ThreatFeedPanel> {
-  static const int _timeRangeMinutes = 60;
+  int get _timeRangeMinutes => ProGate.mapThreatHistoryMinutes;
   static const int _maxEvents = 5;
   static const Duration _refreshInterval = Duration(seconds: 60);
 

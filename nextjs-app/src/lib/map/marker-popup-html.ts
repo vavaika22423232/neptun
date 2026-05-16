@@ -20,62 +20,131 @@ export function formatKyivTime(isoStr: string): string {
   }
 }
 
+function sanitizeCssSegment(raw: string): string {
+  const s = raw.replace(/[^a-z0-9_-]/gi, '');
+  return s.length > 0 ? s : 'x';
+}
+
+/** Прибираємо провідні емодзі з `THREAT_NAMES` — у попапі показуємо текст без «🛩️». */
+function stripLeadingEmoji(s: string): string {
+  return s.replace(/^[\s\uFE0F]*(?:\p{Extended_Pictographic}[\uFE0F\u200D]*)+/gu, '').trim();
+}
+
+const TRACK_LABELS: Record<string, string> = {
+  observed: 'Свіже спостереження',
+  extrapolated: 'Екстраполяція за курсом',
+  stale: 'Застарілий трек',
+  lost: 'Трек втрачено',
+  static: 'Статична подія',
+  manual: 'Позначка оператора',
+  split_candidate: 'Потрібне підтвердження',
+};
+
 /**
- * HTML для Leaflet.Popup / MapLibre.Popup (адмін-кнопки покладаються на window.__admin*).
- * Розмітка компактна; стилі — `map-neptun.css` (.neptun-popup*).
+ * HTML для MapLibre.Popup (адмін-кнопки на window.__admin*).
+ * Класи `.neptun-popup-card*` — у `globals.css`.
  */
 export function buildMarkerPopup(marker: Marker, threatType: string, isAdminUser: boolean): string {
-  const typeName = THREAT_NAMES[threatType] || threatType;
+  const typeName = stripLeadingEmoji(THREAT_NAMES[threatType] || threatType);
   const trustEsc = (marker.display_trust_hint_uk || '').replace(/</g, '&lt;');
-  const trustBlock = trustEsc ? `<div class="neptun-popup__trust">${trustEsc}</div>` : '';
-  const trackStateLabel: Record<string, string> = {
-    observed: 'Підтверджене свіже спостереження',
-    extrapolated: 'Прогнозована позиція за останнім курсом',
-    stale: 'Застарілий трек, позиція приглушена',
-    lost: 'Трек втрачено, рух зупинено',
-    static: 'Статична подія',
-    manual: 'Ручна позначка оператора',
-    split_candidate: 'Конфлікт координат, потрібне підтвердження',
-  };
-  const trackState = marker.track_state;
-  const trackBlock = trackState
-    ? `<div class="neptun-popup__meta">${trackStateLabel[trackState] || trackState}${
-        marker.track_confidence != null && Number.isFinite(marker.track_confidence)
-          ? ` · довіра ${Math.round(Math.max(0, Math.min(1, marker.track_confidence)) * 100)}%`
-          : ''
-      }</div>`
+  const trustBlock = trustEsc
+    ? `<div class="neptun-popup-card__trust" role="note">${trustEsc}</div>`
     : '';
-  const placeEsc = (marker.place || 'Невідомо').replace(/</g, '&lt;');
-  const brg = resolveThreatBearingDeg(marker);
-  const courseBlock =
-    brg != null
-      ? `<div class="neptun-popup__meta">Курс ~${Math.round(brg)}° (за даними карти)</div>`
-      : '';
-  const dateBlock = marker.date ? `<div class="neptun-popup__time">${formatKyivTime(marker.date)}</div>` : '';
 
+  // ── Track state + pills ───────────────────────────────────────────────────
+  const trackState = marker.track_state;
+  const stateSeg = trackState ? sanitizeCssSegment(trackState) : '';
+  const stateLabel = trackState ? TRACK_LABELS[trackState] || trackState : '';
+  let confidenceFrag = '';
+  if (trackState && marker.track_confidence != null && Number.isFinite(marker.track_confidence)) {
+    confidenceFrag = ` · ${Math.round(Math.max(0, Math.min(1, marker.track_confidence)) * 100)}%`;
+  }
+
+  const loiteringPill = marker.is_loitering
+    ? `<span class="neptun-popup-card__pill neptun-popup-card__pill--loitering">⟳ Барражує</span>`
+    : '';
+  const estimatedPill = marker.position_estimated
+    ? `<span class="neptun-popup-card__pill neptun-popup-card__pill--estimated">~ Позиція</span>`
+    : '';
+
+  const statusRow =
+    trackState && stateLabel
+      ? `<div class="neptun-popup-card__status-row">
+          <span class="neptun-popup-card__pill neptun-popup-card__pill--${stateSeg}">${stateLabel}${confidenceFrag}</span>
+          ${loiteringPill}${estimatedPill}
+        </div>`
+      : '';
+
+  // ── Place ─────────────────────────────────────────────────────────────────
+  const placeEsc = (marker.place || 'Невідомо').replace(/</g, '&lt;');
+
+  // ── Heading / course ──────────────────────────────────────────────────────
+  const brg = resolveThreatBearingDeg(marker);
+  const confLabel =
+    marker.heading_confidence === 'track'    ? 'підтверджений трек' :
+    marker.heading_confidence === 'explicit' ? 'явний з тексту' :
+    marker.heading_confidence === 'regional' ? '≈ регіональний коридор' :
+    'невідомо';
+
+  const courseRow = brg != null
+    ? `<div class="neptun-popup-card__row">
+        <span class="neptun-popup-card__row-label">Курс</span>
+        <span class="neptun-popup-card__row-value">${Math.round(brg)}°</span>
+      </div>`
+    : '';
+
+  // ── ETA ──────────────────────────────────────────────────────────────────
+  const etaSec = typeof marker.eta_seconds === 'number' ? marker.eta_seconds : null;
+  let etaRow = '';
+  if (etaSec !== null && etaSec >= 0 && !marker.is_loitering && brg != null) {
+    const etaMin = Math.round(etaSec / 60);
+    const etaStr =
+      etaSec === 0  ? 'Досягнуто' :
+      etaMin < 1    ? '&lt;1 хв'  :
+      etaMin < 60   ? `${etaMin} хв` :
+      `${Math.floor(etaMin / 60)} год ${etaMin % 60} хв`;
+    etaRow = `<div class="neptun-popup-card__row">
+        <span class="neptun-popup-card__row-label">ETA</span>
+        <span class="neptun-popup-card__row-value">⏱ ${etaStr}</span>
+      </div>`;
+  }
+
+  // ── Date ──────────────────────────────────────────────────────────────────
+  const dateRow = marker.date
+    ? `<div class="neptun-popup-card__footer">
+          <time class="neptun-popup-card__time" datetime="${String(marker.date).replace(/"/g, '&quot;')}">${formatKyivTime(marker.date)}</time>
+        </div>`
+    : '';
+
+  // ── Admin actions ─────────────────────────────────────────────────────────
   let actions = '';
   if (isAdminUser) {
     const markerId = (marker.id || '').replace(/'/g, "\\'");
     const markerLat = marker.lat;
     const markerLng = marker.lng;
     const markerText = (marker.text || '').replace(/'/g, "\\'").replace(/\n/g, ' ').substring(0, 80);
-    actions = `<div class="neptun-popup__actions">
-        <button type="button" class="neptun-popup__btn neptun-popup__btn--danger" onclick="window.__adminDeleteMarker('${markerId}',${markerLat},${markerLng},'${markerText}')">
+    actions = `<div class="neptun-popup-card__actions">
+        <button type="button" class="neptun-popup-card__btn neptun-popup-card__btn--danger" onclick="window.__adminDeleteMarker('${markerId}',${markerLat},${markerLng},'${markerText}')">
           <span class="material-icons" aria-hidden="true">delete</span>Видалити
         </button>
-        <button type="button" class="neptun-popup__btn neptun-popup__btn--muted" onclick="window.__adminHideMarker(${markerLat},${markerLng},'${markerText}')">
+        <button type="button" class="neptun-popup-card__btn neptun-popup-card__btn--muted" onclick="window.__adminHideMarker(${markerLat},${markerLng},'${markerText}')">
           <span class="material-icons" aria-hidden="true">visibility_off</span>Сховати
         </button>
       </div>`;
   }
 
-  return `<div class="neptun-popup">
+  return `<article class="neptun-popup-card">
       ${trustBlock}
-      <div class="neptun-popup__title">${typeName}</div>
-      <div class="neptun-popup__place">${placeEsc}</div>
-      ${trackBlock}
-      ${courseBlock}
-      ${dateBlock}
+      <div class="neptun-popup-card__main">
+        <header class="neptun-popup-card__header">
+          <p class="neptun-popup-card__category">${typeName}</p>
+          <h2 class="neptun-popup-card__headline">${placeEsc}</h2>
+        </header>
+        ${statusRow}
+        ${courseRow}
+        ${etaRow}
+        ${dateRow}
+      </div>
       ${actions}
-    </div>`;
+    </article>`;
 }

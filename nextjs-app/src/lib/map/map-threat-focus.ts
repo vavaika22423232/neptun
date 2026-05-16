@@ -8,8 +8,11 @@ export const MAP_NO_SELECTION = '__map_no_sel__';
  * A marker is either present at full opacity or removed by server-side policy.
  */
 export function buildSymbolIconOpacityExpr(selectedMid: string | null): unknown[] {
-  void selectedMid;
-  return ['literal', 1];
+  const base: unknown[] = ['coalesce', ['get', 'opacity'], 1];
+  if (!selectedMid) {
+    return base;
+  }
+  return ['case', ['==', ['get', 'mid'], ['literal', selectedMid]], ['min', 1, ['+', base, 0.08]], base];
 }
 
 /**

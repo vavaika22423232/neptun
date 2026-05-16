@@ -1,10 +1,11 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:neptun_alarm_app/config/api_config.dart';
 import 'package:neptun_alarm_app/core/network/http_retry.dart';
+import 'package:neptun_alarm_app/core/utils/app_debug_log.dart';
+import 'package:neptun_alarm_app/config/prefs_keys.dart';
 import 'region_database.dart';
 
 /// Aggregates daily stats for the briefing feature.
@@ -61,7 +62,7 @@ class BriefingService {
           alarmsOk = true;
         }
       } catch (e) {
-        debugPrint('BriefingService alarms fetch failed: $e');
+        appDebugLog('BriefingService alarms fetch failed: $e');
       }
       try {
         final r = await threatsFuture;
@@ -73,7 +74,7 @@ class BriefingService {
           threatsOk = true;
         }
       } catch (e) {
-        debugPrint('BriefingService threats fetch failed: $e');
+        appDebugLog('BriefingService threats fetch failed: $e');
       }
 
       // Обидва API впали — беремо офлайн кеш
@@ -113,7 +114,7 @@ class BriefingService {
       // Збір назв регіонів користувача: selected_regions (names) + oblast/raion IDs через RegionDatabase
       final regionDb = RegionDatabase()..initialize();
       final userOblastNames = <String>{};
-      final namesFromPrefs = prefs.getStringList('selected_regions') ?? [];
+      final namesFromPrefs = prefs.getStringList(PrefsKeys.selectedRegions) ?? [];
       for (final n in namesFromPrefs) {
         final t = n.trim();
         if (t.isNotEmpty) {
@@ -193,7 +194,7 @@ class BriefingService {
 
       return _cached!;
     } catch (e) {
-      debugPrint('BriefingService error: $e');
+      appDebugLog('BriefingService error: $e');
       final cached = await _loadOfflineCache();
       if (cached != null) return cached;
       return BriefingData(
@@ -235,19 +236,107 @@ class BriefingService {
     _cacheTime = null;
   }
 
-  /// Schedule local notifications for briefing at 8:00 and 21:00.
-  /// Call from app init after NotificationService.initialize().
+  static const _briefingDateKey = 'briefing_last_sent_date';
+  static const _briefingChannelId = 'morning_briefing';
+  static const _briefingNotifId = 9901;
+
+  /// Check whether a morning briefing push should be sent (8:00–10:00, once per day).
+  /// Call on app foreground / resume and after NotificationService.initialize().
   static Future<void> scheduleNotifications(
     FlutterLocalNotificationsPlugin plugin,
   ) async {
     try {
-      // Uses timezone package for zonedSchedule - implemented when user opens briefing
-      debugPrint('BriefingService: scheduleNotifications ready');
+      final now = DateTime.now();
+      final hour = now.hour;
+      // Only fire in the 8:00–10:00 window
+      if (hour < 8 || hour >= 10) return;
+
+      final prefs = await SharedPreferences.getInstance();
+      final lastSent = prefs.getString(_briefingDateKey) ?? '';
+      final today = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+      if (lastSent == today) return; // already sent today
+
+      final data = await BriefingService().fetchBriefing();
+
+      final title = _buildBriefingTitle(data);
+      final body = _buildBriefingBody(data);
+
+      const androidDetails = AndroidNotificationDetails(
+        _briefingChannelId,
+        'Ранковий бріфінг',
+        channelDescription: 'Щоденне зведення за ніч',
+        importance: Importance.high,
+        priority: Priority.high,
+        icon: '@mipmap/ic_launcher',
+      );
+      const iosDetails = DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: false,
+        presentSound: true,
+      );
+      const details = NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      );
+
+      await plugin.show(_briefingNotifId, title, body, details,
+          payload: 'briefing');
+      await prefs.setString(_briefingDateKey, today);
+      appDebugLog('BriefingService: morning briefing sent');
     } catch (e) {
-      debugPrint('BriefingService schedule error: $e');
+      appDebugLog('BriefingService scheduleNotifications error: $e');
     }
   }
+
+  static String _buildBriefingTitle(BriefingData data) {
+    if (data.userRegionAlarmCount > 0 && data.userRegionName != null) {
+      return '☀️ Ранок. Ваш регіон: ${data.userRegionAlarmCount} '
+          '${_alarmWord(data.userRegionAlarmCount)}';
+    }
+    if (data.totalAlarmsToday > 0) {
+      return '☀️ Ранковий бріфінг';
+    }
+    return '☀️ Спокійна ніч';
+  }
+
+  static String _buildBriefingBody(BriefingData data) {
+    final parts = <String>[];
+
+    if (data.totalThreats > 0) {
+      final threats = <String>[];
+      if (data.drones > 0) threats.add('${data.drones} дрон${_wordEnd(data.drones, '', 'и', 'ів')}');
+      if (data.missiles > 0) threats.add('${data.missiles} ракет${_wordEnd(data.missiles, 'а', 'и', '')}');
+      if (data.kab > 0) threats.add('${data.kab} КАБ');
+      if (data.ballistic > 0) threats.add('${data.ballistic} балістик${_wordEnd(data.ballistic, 'а', 'и', '')}');
+      if (threats.isNotEmpty) parts.add('Загрози: ${threats.join(', ')}');
+    }
+
+    if (data.totalAlarmsToday > 0) {
+      parts.add('Тривог по Україні: ${data.totalAlarmsToday}');
+    }
+
+    if (parts.isEmpty) {
+      return 'Вночі все було тихо. Зараз спокійно.';
+    }
+    return parts.join(' · ');
+  }
+
+  static String _alarmWord(int n) {
+    if (n == 1) return 'тривога';
+    if (n >= 2 && n <= 4) return 'тривоги';
+    return 'тривог';
+  }
+
+  static String _wordEnd(int n, String one, String few, String many) {
+    final mod10 = n % 10;
+    final mod100 = n % 100;
+    if (mod100 >= 11 && mod100 <= 19) return many;
+    if (mod10 == 1) return one;
+    if (mod10 >= 2 && mod10 <= 4) return few;
+    return many;
+  }
 }
+
 
 class BriefingData {
   final bool isMorning;
