@@ -85,6 +85,7 @@ class ResolvedLocation:
     confidence: float  # 0.0 - 1.0
     status: str  # "ok" / "ambiguous" / "low_confidence" / "rejected"
     chosen_from: list  # list of LocationCandidate
+    is_predictive: bool = False  # True if resolved solely from target_city
 
     def to_dict(self) -> dict:
         return {
@@ -95,6 +96,7 @@ class ResolvedLocation:
             'place_name': self.place_name,
             'confidence': round(self.confidence, 3),
             'status': self.status,
+            'is_predictive': self.is_predictive,
             'candidates': [c.to_dict() for c in self.chosen_from[:3]],
         }
 

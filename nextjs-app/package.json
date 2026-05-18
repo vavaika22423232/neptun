@@ -11,7 +11,7 @@
     "postbuild": "cp -r .next/static .next/standalone/.next/static && cp -r public .next/standalone/public",
     "start": "next start",
     "lint": "eslint",
-    "test:domain": "tsx src/lib/__tests__/domain-contract.test.ts && tsx src/lib/__tests__/public-marker-policy.test.ts && tsx src/lib/__tests__/target-tracker-engine.test.ts && tsx src/lib/__tests__/map-alarm-svg-renderer.test.ts && tsx src/lib/__tests__/track-estimator.test.ts && tsx src/lib/__tests__/chat-ban-service.test.ts",
+    "test:domain": "tsx src/lib/__tests__/domain-contract.test.ts && tsx src/lib/__tests__/public-marker-policy.test.ts && tsx src/lib/__tests__/target-tracker-engine.test.ts && tsx src/lib/__tests__/map-alarm-svg-renderer.test.ts && tsx src/lib/__tests__/track-estimator.test.ts && tsx src/lib/__tests__/chat-ban-service.test.ts && tsx src/lib/__tests__/ekf.test.ts && tsx src/lib/__tests__/ekf-tracker-integration.test.ts && tsx src/lib/__tests__/drone-tracker-renderer.test.ts && tsx src/lib/__tests__/tracker-plan-v2.test.ts",
     "validate:map-svg": "tsx scripts/validate-map-svg-contract.ts",
     "ingest:checklist": "tsx scripts/run-ingest-smoke.ts --checklist",
     "ingest:smoke": "tsx scripts/run-ingest-smoke.ts",

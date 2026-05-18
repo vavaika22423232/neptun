@@ -33,6 +33,8 @@ export interface TrackerEvent {
   timestamp: string; // ISO8601
   /** Earlier events on the same track_id, oldest first */
   prev_events: TrackerEvent[];
+  /** Threat type for kinematic profile selection (optional, defaults to 'shahed') */
+  threat_type?: string;
 }
 
 export type HeadingSource = 'explicit' | 'track' | 'regional' | 'unknown';
@@ -164,11 +166,35 @@ function extractExplicitDestinationName(text: string): string | null {
 
 /**
  * Rule C: Return the expected inbound bearing based on which Oblast the event is in.
+ * Uses normalized NFKC comparison against canonical oblast names, with alias fallbacks.
  */
+function normalizeOblast(s: string): string {
+  return s.normalize('NFKC').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+// Pre-normalized lookup built once at module load
+const NORMALIZED_ENTRY_BEARING: Array<{ key: string; bearing: number }> =
+  Object.entries(REGIONAL_ENTRY_BEARING).map(([key, bearing]) => ({
+    key: normalizeOblast(key),
+    bearing,
+  }));
+
 function regionalEntryBearing(region: string | null): number {
   if (!region) return FALLBACK_ENTRY_BEARING;
-  for (const [key, brg] of Object.entries(REGIONAL_ENTRY_BEARING)) {
-    if (region.includes(key.split(' ')[0]!)) return brg;
+  const norm = normalizeOblast(region);
+  // 1. Exact match
+  for (const { key, bearing } of NORMALIZED_ENTRY_BEARING) {
+    if (norm === key) return bearing;
+  }
+  // 2. Starts-with match (handles "Харківська" matching "Харківська область")
+  for (const { key, bearing } of NORMALIZED_ENTRY_BEARING) {
+    const firstWord = key.split(' ')[0]!;
+    if (firstWord.length >= 5 && norm.startsWith(firstWord)) return bearing;
+  }
+  // 3. Contains match as last resort
+  for (const { key, bearing } of NORMALIZED_ENTRY_BEARING) {
+    const firstWord = key.split(' ')[0]!;
+    if (firstWord.length >= 5 && norm.includes(firstWord)) return bearing;
   }
   return FALLBACK_ENTRY_BEARING;
 }
@@ -209,7 +235,7 @@ function estimatePositionFromTarget(
   event: TrackerEvent,
   nowMs: number,
 ): [number, number] {
-  const profile = trackMotionProfile('shahed');
+  const profile = trackMotionProfile(event.threat_type ?? 'shahed');
   const ageMs = Math.max(0, nowMs - tsMs(event.timestamp));
   // Reverse bearing: drone approaches target from this direction
   const reverseBearing = (bearing + 180) % 360;
@@ -225,17 +251,26 @@ function estimatePositionFromTarget(
 
 /**
  * Estimate seconds until the drone reaches the target.
- * Returns null if position or target is unavailable.
+ * Applies a confidence penalty: uncertain headings inflate ETA.
+ * Returns null if position or target is unavailable or speed too low.
  */
 function computeEta(
   position: [number, number],
   target: [number, number] | null,
   speedKmh: number,
+  headingSource: HeadingSource = 'unknown',
 ): number | null {
-  if (!target || speedKmh <= 0) return null;
+  if (!target || speedKmh < 10) return null; // <10 km/h = loitering/hover
   const distKm = haversineKm(position[0], position[1], target[0], target[1]);
-  if (distKm < 0.5) return 0; // already at target
-  return Math.round((distKm / speedKmh) * 3600);
+  if (distKm < 0.5) return 0;
+  const baseEtaSec = (distKm / speedKmh) * 3600;
+  // Inflate ETA for uncertain headings to communicate unreliability
+  const uncertainty = headingSource === 'explicit' ? 1.0
+    : headingSource === 'track' ? 1.05
+    : headingSource === 'regional' ? 1.3
+    : null; // unknown → don't show ETA at all
+  if (uncertainty == null) return null;
+  return Math.round(baseEtaSec * uncertainty);
 }
 
 // ─── Confidence mapping ───────────────────────────────────────────────────────
@@ -306,7 +341,8 @@ export function buildTrackerRenderDescriptor(
 ): TrackerRenderDescriptor {
   const [targetLat, targetLon] = event.coords;
   const target: [number, number] = [targetLat, targetLon];
-  const speedKmh = event.speed_kmh > 0 ? event.speed_kmh : trackMotionProfile('shahed').nominalSpeedKmh;
+  const threatProfile = trackMotionProfile(event.threat_type ?? 'shahed');
+  const speedKmh = event.speed_kmh > 0 ? event.speed_kmh : threatProfile.nominalSpeedKmh;
 
   // ── Rule E: Loitering detection ──────────────────────────────────────────
   if (detectLoitering(event.message_text)) {
@@ -394,11 +430,14 @@ export function buildTrackerRenderDescriptor(
     // resolve === 'failed': heading stays null, position stays at target coords
   }
 
+  // Without a known heading, ETA and target arrow are meaningless
+  if (heading_deg === null) derivedTarget = null;
+
   // ── Trail ────────────────────────────────────────────────────────────────
   const trail = buildTrail(event);
 
   // ── ETA ──────────────────────────────────────────────────────────────────
-  const eta_seconds = computeEta(position, derivedTarget, speedKmh);
+  const eta_seconds = computeEta(position, derivedTarget, speedKmh, headingSource);
 
   // ── Display confidence ───────────────────────────────────────────────────
   const display_confidence = resolveDisplayConfidence(event.resolve, event.confidence, headingSource);
@@ -452,16 +491,15 @@ export function renderingHintsFromConfidence(displayConfidence: number): {
 }
 
 /**
- * Format ETA for display. Returns null if no ETA.
+ * Format ETA for display.
  * Examples: "2хв", "14хв", "1год 3хв"
  */
 export function formatEta(eta_seconds: number | null): string | null {
-  if (eta_seconds === null || eta_seconds < 0) return null;
-  if (eta_seconds === 0) return 'досягнуто';
-  const m = Math.floor(eta_seconds / 60);
-  if (m < 1) return '<1хв';
-  if (m < 60) return `${m}хв`;
-  const h = Math.floor(m / 60);
-  const rem = m % 60;
-  return rem > 0 ? `${h}год ${rem}хв` : `${h}год`;
+  if (eta_seconds == null || !Number.isFinite(eta_seconds) || eta_seconds < 0) return null;
+  if (eta_seconds < 30) return '< 1хв';
+  const totalMins = Math.round(eta_seconds / 60);
+  if (totalMins < 60) return `${totalMins}хв`;
+  const hours = Math.floor(totalMins / 60);
+  const mins = totalMins % 60;
+  return mins > 0 ? `${hours}год ${mins}хв` : `${hours}год`;
 }

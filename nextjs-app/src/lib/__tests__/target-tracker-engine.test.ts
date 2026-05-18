@@ -97,6 +97,12 @@ test('nearby temporal event updates existing target', () => {
   assert.equal(engine.snapshot().length, 1);
   assert.equal(engine.snapshot()[0].source_count, 2);
   assert.equal(engine.snapshot()[0].lifecycle_state, 'CONFIRMED');
+  assert.equal(engine.snapshot()[0].last_association?.reason, 'associated');
+  assert.equal(engine.snapshot()[0].last_association?.accepted, true);
+  assert.equal(typeof engine.snapshot()[0].last_association?.score, 'number');
+  assert.equal(engine.snapshot()[0].last_measurement?.source, 'channel-b');
+  assert.equal(engine.snapshot()[0].last_observation?.source, 'channel-b');
+  assert.equal(typeof engine.snapshot(now + 120_000)[0].predicted_position?.lat, 'number');
 });
 
 test('weak edge-of-radius event starts a separate target instead of a random merge', () => {
@@ -512,4 +518,38 @@ test('targets age through stale and lost lifecycle without new ingest', () => {
 
   assert.equal(stale.lifecycle_state, 'STALE');
   assert.equal(lost.lifecycle_state, 'LOST');
+});
+test('diverging targets from same group are tracked as a split swarm', () => {
+  const engine = new TargetTrackerEngine(settings());
+  // Parent group
+  engine.ingest(event({
+    fingerprint: 'parent-a',
+    lat: 49.0,
+    lng: 32.0,
+    count: 10,
+    source: 'channel-a'
+  }));
+
+  // Event that is spatially close but kinetically "impossible" or just new
+  // Suppose 5 minutes later, it's 10km away.
+  const split = engine.ingest(event({
+    event_id: 'msg-split',
+    fingerprint: 'split-b',
+    ts: now + 5 * 60_000,
+    lat: 49.1, // ~11km north
+    lng: 32.0,
+    count: 5,
+    source: 'channel-b'
+  }));
+
+  assert.equal(split.action, 'TARGET_CREATED');
+  assert.equal(split.reason, 'swarm_split');
+  
+  const targets = engine.snapshot();
+  assert.equal(targets.length, 2);
+  const child = targets.find(t => t.id === split.target?.id);
+  const parent = targets.find(t => t.id !== split.target?.id);
+  
+  assert.equal(child?.parent_track_id, parent?.id);
+  assert.equal(child?.history.some(h => h.reason === 'split_from_parent'), true);
 });

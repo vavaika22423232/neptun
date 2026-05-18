@@ -94,20 +94,7 @@ export function buildMarkerPopup(marker: Marker, threatType: string, isAdminUser
     : '';
 
   // ── ETA ──────────────────────────────────────────────────────────────────
-  const etaSec = typeof marker.eta_seconds === 'number' ? marker.eta_seconds : null;
   let etaRow = '';
-  if (etaSec !== null && etaSec >= 0 && !marker.is_loitering && brg != null) {
-    const etaMin = Math.round(etaSec / 60);
-    const etaStr =
-      etaSec === 0  ? 'Досягнуто' :
-      etaMin < 1    ? '&lt;1 хв'  :
-      etaMin < 60   ? `${etaMin} хв` :
-      `${Math.floor(etaMin / 60)} год ${etaMin % 60} хв`;
-    etaRow = `<div class="neptun-popup-card__row">
-        <span class="neptun-popup-card__row-label">ETA</span>
-        <span class="neptun-popup-card__row-value">⏱ ${etaStr}</span>
-      </div>`;
-  }
 
   // ── Date ──────────────────────────────────────────────────────────────────
   const dateRow = marker.date

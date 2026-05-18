@@ -149,16 +149,76 @@ test('chaos realtime invariant: REST and SSE policy decisions match', () => {
   assert.equal(restDecision.classification, sseDecision.classification);
 });
 
-test('stateful invariant: tracked target must be confirmed before public rendering', () => {
+test('stateful invariant: stale tracked target must be confirmed before public rendering', () => {
   const marker = {
     ...basePublicMarker,
     target_lifecycle_state: 'TRACKING',
     target_confidence: 0.99,
     source_count: 2,
+    last_update_epoch: Date.now() - 30 * 60_000,
   };
   const decision = evaluateMarkerPublication(marker, { settings: settings() });
   assert.equal(decision.public, false);
   assert.ok(decision.invariantViolations.includes('target_not_confirmed'));
+});
+
+test('fresh high-confidence UAV tracking target is radar-provisional public', () => {
+  const marker = {
+    ...basePublicMarker,
+    observations: [
+      { lat: 49.0, lng: 32.0, ts: Date.now() - 90_000, source: 'trusted-a' },
+    ],
+    target_lifecycle_state: 'TRACKING',
+    target_confidence: 0.92,
+    track_state: 'observed',
+    track_confidence: 0.76,
+    source_count: 1,
+    channel_priority: 3,
+    last_update_epoch: Date.now() - 90_000,
+  };
+  const decision = evaluateMarkerPublication(marker, { settings: settings({ dualSourceMapGate: true }) });
+  assert.equal(decision.classification, 'VERIFIED_PUBLIC');
+  assert.equal(decision.public, true);
+  assert.ok(decision.reasons.includes('target_tracking'));
+  assert.ok(decision.reasons.includes('radar_provisional'));
+  assert.equal(decision.invariantViolations.includes('target_not_confirmed'), false);
+});
+
+test('fresh confirmed observed UAV track is public even with moderate single-source confidence', () => {
+  const marker = {
+    ...basePublicMarker,
+    observations: [
+      { lat: 49.0, lng: 32.0, ts: Date.now() - 60_000, source: 'trusted-a' },
+    ],
+    target_lifecycle_state: 'CONFIRMED',
+    target_confidence: 0.75,
+    track_state: 'observed',
+    track_confidence: 0.72,
+    source_count: 1,
+    channel_priority: 3,
+    last_update_epoch: Date.now() - 60_000,
+  };
+  const decision = evaluateMarkerPublication(marker, { settings: settings() });
+  assert.equal(decision.classification, 'VERIFIED_PUBLIC');
+  assert.equal(decision.public, true);
+  assert.ok(decision.reasons.includes('radar_confirmed_observed'));
+});
+
+test('confirmed observed radar boost does not publish approximate locality', () => {
+  const marker = {
+    ...basePublicMarker,
+    target_lifecycle_state: 'CONFIRMED',
+    target_confidence: 0.75,
+    track_state: 'observed',
+    track_confidence: 0.72,
+    source_count: 1,
+    placement_mode: 'approximate',
+    resolve_status: 'oblast_fallback',
+    last_update_epoch: Date.now() - 60_000,
+  };
+  const decision = evaluateMarkerPublication(marker, { settings: settings() });
+  assert.equal(decision.public, false);
+  assert.ok(decision.invariantViolations.includes('unsafe_locality'));
 });
 
 test('confirmed extrapolated tracked target can remain public during motion window', () => {

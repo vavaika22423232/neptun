@@ -22,11 +22,28 @@ export interface RejectedTrackObservation extends TrackPosition {
   confidence?: number;
 }
 
+export interface TargetAssociationDebug {
+  score: number;
+  threshold: number;
+  distance_km: number;
+  radius_km: number;
+  same_place: boolean;
+  same_upstream_track: boolean;
+  count_penalty: number;
+  bearing_penalty: number;
+  corridor_penalty: number;
+  innovation_penalty: number;
+  accepted: boolean;
+  reason: string;
+}
+
 export interface Marker {
   id?: string;
   track_id?: string;            // Track identifier: "trk_{type}_{group_id}" — groups updates for same threat
   lat: number;
   lng: number;
+  rendered_lat?: number;
+  rendered_lng?: number;
   threat_type: string;
   /** Legacy/raw threat type alias emitted by older producers. Prefer `threat_type`. */
   type?: string;
@@ -146,17 +163,70 @@ export interface Marker {
   display_confidence?: number;
   /** Age in ms since the last real telemetry observation. */
   age_ms?: number;
+  last_observation?: TrackPosition;
+  predicted_position?: TrackPosition;
+  last_measurement?: TrackPosition;
+  last_association?: TargetAssociationDebug;
+  association_score?: number;
+  association_reason?: string;
+  /** Renderer-computed trail [[lat,lng],…] oldest→newest (P3-A) */
+  tracker_trail?: [number, number][];
+  /** Renderer-computed target destination [lat,lng] (P3-A) */
+  tracker_target?: [number, number] | null;
+  /** How the lat/lng was derived: 'ekf' | 'raw' */
+  position_source?: string;
+  /** Composite track quality index 0–100 (obs density + EKF health + source diversity). */
+  tqi?: number;
+  /** Resolved GADM HASC_1 oblast code for the current tracker position. */
+  tracker_oblast_hasc?: string;
+  /** Impact uncertainty ellipse: 1-σ radius around predicted end point. */
+  impact_zone_km?: number;
+  /** Formation group id when this track is part of a detected tactical formation. */
+  formation_id?: string;
+  /** Altitude mode inferred from message text. */
+  altitude_mode?: 'low_altitude' | 'ballistic_arc' | 'unknown';
+  /** Whether this track is transitioning from sea to land. */
+  coastal_transition?: boolean;
+  /** Worker-supplied confidence in the trajectory (0..1). */
+  trajectory_confidence?: number;
+  // ── tracker-plan-v4 fields ───────────────────────────────────────────────
+  /** Burst score 0..1: how dense recent observations are vs. track average (P1-C). */
+  burst_score?: number;
+  /** True when jerk signal indicates active maneuver (P2-B). */
+  maneuver_detected?: boolean;
+  /** P10 ETA — slower bound of probabilistic ETA estimate, seconds (P2-C). */
+  eta_p10?: number | null;
+  /** P90 ETA — faster bound of probabilistic ETA estimate, seconds (P2-C). */
+  eta_p90?: number | null;
+  /** Swarm flock centroid when this target belongs to a computed cluster (P3-A). */
+  swarm_centroid?: { lat: number; lng: number; size: number };
+  /** Cross-oblast wave correlation score 0..1 (P3-B). */
+  cross_oblast_score?: number;
+  /** Split angle was shallow (< 45°) — lane separation not a hard turn (P3-C). */
+  split_shallow_angle?: boolean;
+  /** Ghost pool handoff origin track id (P3-E). */
+  ghost_pool_origin?: string;
+  /** Negative evidence score 0..1 — higher = more all-clear / intercept signals (P5-B). */
+  negative_evidence_score?: number;
+  /** Inferred launch origin from backward projection (P5-C). */
+  origin_inference?: { lat: number; lng: number; confidence: number; method: string };
+  /** Trajectory accuracy feedback from confirmed impact (P5-D). */
+  trajectory_feedback?: { error_km: number; reported_at: number };
+  /** Previous threat type if reclassified dynamically (P5-E). */
+  threat_type_reclassified_from?: string;
 }
 
 export interface Trajectory {
   start?: [number, number];
   end?: [number, number];
   predicted?: boolean;
-  source?: 'direction' | 'cardinal' | 'correlation' | 'ai' | 'ai_analyzer' | 'heuristic';
+  source?: 'direction' | 'cardinal' | 'correlation' | 'ai' | 'ai_analyzer' | 'heuristic' | 'ekf_projection';
   prediction_confidence?: number;
   waypoints?: [number, number][];   // intermediate points for sea/complex routes
   flight_phase?: 'launch' | 'cruise' | 'approach' | 'circling';
   origin_coords?: [number, number]; // original point where threat was first detected (e.g. Sumy)
+  /** Worker-supplied trajectory confidence propagated to map display opacity. */
+  trajectory_confidence?: number;
 }
 
 export interface FusionTrajectory {

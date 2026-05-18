@@ -7,7 +7,7 @@ export function normalizeAlarmRegionName(value: string): string {
     .toLowerCase()
     .normalize('NFD')
     .replace(/\p{M}/gu, '')
-    .replace(/['ʼ`]/g, '')
+    .replace(/['ʼ’‘`´ʹʻ]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -29,6 +29,32 @@ const DISTRICT_NAME_ALIASES: Record<string, string[]> = {
     'Новомосковський район',
     'Самарівський район',
     'Самарський район',
+  ],
+  // GeoJSON is based on older administrative names, while alarm providers may
+  // use renamed districts.
+  [normalizeAlarmRegionName('Звягельський район')]: [
+    'Звягельський район',
+    'Новоград-Волинський район',
+  ],
+  [normalizeAlarmRegionName('Новоград-Волинський район')]: [
+    'Новоград-Волинський район',
+    'Звягельський район',
+  ],
+  [normalizeAlarmRegionName('Володимирський район')]: [
+    'Володимирський район',
+    'Володимир-Волинський район',
+  ],
+  [normalizeAlarmRegionName('Володимир-Волинський район')]: [
+    'Володимир-Волинський район',
+    'Володимирський район',
+  ],
+  [normalizeAlarmRegionName('Шептицький район')]: [
+    'Шептицький район',
+    'Червоноградський район',
+  ],
+  [normalizeAlarmRegionName('Червоноградський район')]: [
+    'Червоноградський район',
+    'Шептицький район',
   ],
 };
 

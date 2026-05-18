@@ -135,13 +135,7 @@ function showMarkerTooltip(event: MouseEvent, marker: Marker, threatType: string
     : '';
 
   // ETA badge
-  const etaSec = typeof marker.eta_seconds === 'number' ? marker.eta_seconds : null;
   let etaLine = '';
-  if (etaSec !== null && etaSec >= 0 && !marker.is_loitering) {
-    const etaMin = Math.round(etaSec / 60);
-    const etaStr = etaSec === 0 ? 'досягнуто' : etaMin < 1 ? '<1хв' : etaMin < 60 ? `${etaMin}хв` : `${Math.floor(etaMin/60)}год ${etaMin%60}хв`;
-    etaLine = `<div class="tooltip-eta">⏱ ETA ${etaStr}</div>`;
-  }
 
   // Loitering badge
   const loiterLine = marker.is_loitering

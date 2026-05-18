@@ -10,7 +10,7 @@ import { destinationPoint } from '@/lib/marker-movement-policy';
 import { resolveThreatBearingDeg } from '@/lib/threat-bearing';
 import { trackMotionProfile } from '@/lib/track-motion-profile';
 
-const MAP_BOUNDS = { minLat: 44.2, maxLat: 52.4, minLng: 22.0, maxLng: 40.2 } as const;
+import { MAP_BOUNDS } from '@/lib/map/map-bounds';
 
 type Position = [number, number]; // [lng, lat] for GeoJSON
 

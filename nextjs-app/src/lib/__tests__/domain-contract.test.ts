@@ -11,7 +11,11 @@ import { computeMapModeState } from '../map-mode-state';
 import { resolveMapRenderProfile } from '../map/map-render-profile';
 import { coalesceMarkerNewEvents } from '../marker-sse-coalesce';
 import type { AdminSettings } from '../admin/data';
-import { markerPassesPublicMapRawFilter, parseRawMarkerMessageTimeMs } from '../marker-publication';
+import {
+  explainPublicMapRawFilter,
+  markerPassesPublicMapRawFilter,
+  parseRawMarkerMessageTimeMs,
+} from '../marker-publication';
 import { mapStoreRecordToMarker } from '../map-store-record-to-marker';
 import { normalizeIngestMotionFields, normalizeIngestMotionPatch } from '../ingest-motion-normalize';
 import { normalizeAirBalloonThreatType } from '../threat-type-air-balloon';
@@ -139,6 +143,55 @@ test('renamed Samarskyi district alarm also covers legacy Novomoskovskyi raion p
   assert.ok(districts.includes('новомосковськии раион'));
 });
 
+test('district alarm names normalize apostrophe variants used by API and GeoJSON', () => {
+  const alarms: Alarm[] = [
+    {
+      regionId: '42',
+      regionType: 'District',
+      regionName: 'Кам’янський район',
+      activeAlerts: [{ type: 'AIR' }],
+    },
+    {
+      regionId: '123',
+      regionType: 'District',
+      regionName: 'Куп’янський район',
+      activeAlerts: [{ type: 'AIR' }],
+    },
+  ];
+
+  const districts = districtRegionNamesForAlarms(alarms);
+  assert.ok(districts.includes('камянськии раион'));
+  assert.ok(districts.includes('купянськии раион'));
+});
+
+test('renamed district alarms cover legacy 2020 raion GeoJSON names', () => {
+  const alarms: Alarm[] = [
+    {
+      regionId: '60',
+      regionType: 'District',
+      regionName: 'Звягельський район',
+      activeAlerts: [{ type: 'AIR' }],
+    },
+    {
+      regionId: 'UA-07-02',
+      regionType: 'District',
+      regionName: 'Володимирський район',
+      activeAlerts: [{ type: 'AIR' }],
+    },
+    {
+      regionId: 'UA-46-05',
+      regionType: 'District',
+      regionName: 'Шептицький район',
+      activeAlerts: [{ type: 'AIR' }],
+    },
+  ];
+
+  const districts = districtRegionNamesForAlarms(alarms);
+  assert.ok(districts.includes('новоград-волинськии раион'));
+  assert.ok(districts.includes('володимир-волинськии раион'));
+  assert.ok(districts.includes('червоноградськии раион'));
+});
+
 test('air balloon wording is not left as shahed/uav', () => {
   const marker: Record<string, unknown> = {
     threat_type: 'shahed',
@@ -162,6 +215,119 @@ test('low confidence marker is excluded from public raw map filter', () => {
     ),
     false,
   );
+});
+
+test('public raw map filter explains low-confidence exclusion', () => {
+  const marker = {
+    lat: 49.0,
+    lng: 32.0,
+    confidence: 0.31,
+    ts: new Date(now).toISOString(),
+  };
+  const decision = explainPublicMapRawFilter(
+    marker,
+    rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: false }), now - 30 * 60_000),
+  );
+  assert.equal(decision.passes, false);
+  assert.equal(decision.reason, 'publication_not_public');
+});
+
+test('fresh high-confidence V3 UAV tracking target passes public raw filter as radar provisional', () => {
+  const marker = {
+    id: 'target-provisional',
+    track_id: 'target-provisional',
+    lat: 49.0,
+    lng: 32.0,
+    threat_type: 'shahed',
+    place: 'Черкаси',
+    region: 'Черкаська область',
+    confidence: 0.7,
+    target_confidence: 0.92,
+    target_lifecycle_state: 'TRACKING',
+    track_state: 'observed',
+    track_confidence: 0.7,
+    source_count: 1,
+    observations: [{ lat: 49.0, lng: 32.0, ts: now - 90_000, source: 'trusted-a' }],
+    channel_priority: 3,
+    resolve_status: 'ok',
+    placement_mode: 'point',
+    created_at_epoch: now - 90_000,
+    last_update_epoch: now - 90_000,
+  };
+  assert.equal(
+    markerPassesPublicMapRawFilter(
+      marker,
+      rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: true, minConfidenceUav: 0.45 }), now - 30 * 60_000),
+    ),
+    true,
+  );
+  const decision = explainPublicMapRawFilter(
+    marker,
+    rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: true, minConfidenceUav: 0.45 }), now - 30 * 60_000),
+  );
+  assert.equal(decision.passes, true);
+  assert.equal(decision.reason, 'public');
+});
+
+test('fresh high-confidence extrapolated V3 UAV stays visible despite decayed visual confidence', () => {
+  const marker = {
+    id: 'target-provisional-extrapolated',
+    track_id: 'target-provisional-extrapolated',
+    lat: 49.03,
+    lng: 32.06,
+    threat_type: 'shahed',
+    place: 'Черкаси',
+    region: 'Черкаська область',
+    confidence: 0.36,
+    target_confidence: 0.93,
+    target_lifecycle_state: 'TRACKING',
+    track_state: 'extrapolated',
+    track_confidence: 0.31,
+    source_count: 1,
+    observations: [{ lat: 49.0, lng: 32.0, ts: now - 15 * 60_000, source: 'trusted-a' }],
+    channel_priority: 3,
+    resolve_status: 'ok',
+    placement_mode: 'point',
+    created_at_epoch: now - 16 * 60_000,
+    last_update_epoch: now - 15 * 60_000,
+  };
+  assert.equal(
+    markerPassesPublicMapRawFilter(
+      marker,
+      rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: true, minConfidenceUav: 0.45 }), now - 30 * 60_000),
+    ),
+    true,
+  );
+});
+
+test('fresh confirmed observed UAV track with moderate confidence passes public raw filter', () => {
+  const marker = {
+    id: 'target-confirmed-observed',
+    track_id: 'target-confirmed-observed',
+    lat: 49.0,
+    lng: 32.0,
+    threat_type: 'shahed',
+    place: 'Черкаси',
+    region: 'Черкаська область',
+    confidence: 0.75,
+    target_confidence: 0.75,
+    target_lifecycle_state: 'CONFIRMED',
+    track_state: 'observed',
+    track_confidence: 0.72,
+    source_count: 1,
+    observations: [{ lat: 49.0, lng: 32.0, ts: now - 60_000, source: 'trusted-a' }],
+    channel_priority: 3,
+    resolve_status: 'ok',
+    placement_mode: 'point',
+    created_at_epoch: now - 60_000,
+    last_update_epoch: now - 60_000,
+  };
+  const decision = explainPublicMapRawFilter(
+    marker,
+    rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: false, minConfidenceUav: 0.45 }), now - 30 * 60_000),
+  );
+  assert.equal(decision.passes, true);
+  assert.equal(decision.reason, 'public');
 });
 
 test('admin hidden marker suppresses nearby ticker-shifted same-text marker', () => {
@@ -267,6 +433,82 @@ test('western Black Sea point without evidence stays off the public marker feed'
       rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: false }), now - 30 * 60_000),
     ),
     false,
+  );
+});
+
+test('Odesa city alarm passes public filter even though coords fall inside maritime bbox', () => {
+  // Odesa: lat=46.483 < 46.7 guard, inside maritime bbox — but place='Одеса' is land evidence
+  const marker = {
+    lat: 46.483,
+    lng: 30.723,
+    place: 'Одеса',
+    region: 'Одеська область',
+    confidence: 0.95,
+    threat_type: 'shahed',
+    source_count: 2,
+    observations: [{ source: 'ch1' }, { source: 'ch2' }],
+    ts: new Date(now).toISOString(),
+    resolve_status: 'ok',
+    placement_mode: 'point',
+    geocode_tier: 'point',
+  };
+  assert.equal(
+    markerPassesPublicMapRawFilter(
+      marker,
+      rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: false }), now - 30 * 60_000),
+    ),
+    true,
+    'Odesa city should pass — land place evidence exempts it from maritime block',
+  );
+});
+
+test('Kherson city alarm passes public filter despite being below lat=46.7 maritime guard', () => {
+  const marker = {
+    lat: 46.64,
+    lng: 32.6,
+    place: 'Херсон',
+    region: 'Херсонська область',
+    confidence: 0.95,
+    threat_type: 'shahed',
+    source_count: 2,
+    observations: [{ source: 'ch1' }, { source: 'ch2' }],
+    ts: new Date(now).toISOString(),
+    resolve_status: 'ok',
+    placement_mode: 'point',
+    geocode_tier: 'point',
+  };
+  assert.equal(
+    markerPassesPublicMapRawFilter(
+      marker,
+      rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: false }), now - 30 * 60_000),
+    ),
+    true,
+    'Kherson city should pass — land place evidence exempts it from maritime block',
+  );
+});
+
+test('Black Sea maritime approach with place="Чорне море" passes public filter', () => {
+  const marker = {
+    lat: 45.84,
+    lng: 30.8,
+    place: 'Чорне море',
+    region: '',
+    confidence: 0.82,
+    threat_type: 'shahed',
+    source_count: 2,
+    observations: [{ source: 'ch1' }, { source: 'ch2' }],
+    ts: new Date(now).toISOString(),
+    resolve_status: 'maritime_approach',
+    placement_mode: 'point',
+    geocode_tier: 'point',
+  };
+  assert.equal(
+    markerPassesPublicMapRawFilter(
+      marker,
+      rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: false }), now - 30 * 60_000),
+    ),
+    true,
+    'Maritime approach with "Чорне море" has maritime evidence and should pass',
   );
 });
 

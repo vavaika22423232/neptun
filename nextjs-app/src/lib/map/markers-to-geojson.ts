@@ -6,7 +6,7 @@ import { markerVisualPriority } from '@/lib/map/marker-priority';
 import { expandMarkersForSwarmDisplay } from '@/lib/map/marker-swarm-expand';
 import { markerBehavior, markerPassesMapDisplayAge } from '@/lib/marker-behavior';
 
-const MAP_BOUNDS = { minLat: 44.2, maxLat: 52.4, minLng: 22.0, maxLng: 40.2 } as const;
+import { MAP_BOUNDS } from '@/lib/map/map-bounds';
 
 /** Стабільний ключ треку / маркера (узгоджено з Leaflet MapContainer). */
 export function stableMarkerKey(m: Marker): string {
@@ -119,8 +119,8 @@ export function markersToGeoJSON(markers: Marker[]): ThreatMarkerFeatureCollecti
   for (const rawIn of expanded) {
     const raw = normalizeMarkerDisplayForMap(rawIn);
     if (!markerPassesMapDisplayAge(raw)) continue;
-    const lat = parseFloat(String(raw.lat));
-    const lng = parseFloat(String(raw.lng));
+    const lat = parseFloat(String(raw.rendered_lat ?? raw.lat));
+    const lng = parseFloat(String(raw.rendered_lng ?? raw.lng));
     if (isNaN(lat) || isNaN(lng)) continue;
     if (lat < MAP_BOUNDS.minLat || lat > MAP_BOUNDS.maxLat || lng < MAP_BOUNDS.minLng || lng > MAP_BOUNDS.maxLng) {
       continue;
@@ -155,9 +155,6 @@ export function markersToGeoJSON(markers: Marker[]): ThreatMarkerFeatureCollecti
       statusLabel = '⚠️ Сигнал втрачено';
     } else if (raw.is_loitering) {
       statusLabel = '⟳ Барражує';
-    } else if (etaSec !== null && etaSec >= 0) {
-      const etaMin = Math.round(etaSec / 60);
-      statusLabel = etaSec === 0 ? 'досягнуто' : etaMin < 1 ? '<1хв' : `${etaMin}хв`;
     }
 
     // Ghost Mode styling override

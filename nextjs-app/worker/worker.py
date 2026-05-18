@@ -56,6 +56,7 @@ from geo.maritime_region import (
     is_maritime_context,
     maritime_current_position,
     normalize_maritime_marker_fields,
+    sea_lane_waypoints,
 )
 from geo.place_guardrails import validate_place_candidate
 from geo.rules import oblast_uk_name_to_hasc
@@ -135,7 +136,9 @@ def _ingest_coords_ok(data: dict) -> bool:
         return False
 
 
-# Parser event_types that skip regional alarm (meta / balloon). Others require active alarm.
+# Parser event_types that skip regional alarm gate.
+# Only meta/admin events bypass — moving air threats still require alarm OR a
+# high-quality trajectory_approach resolve_status (see alarm gate at ingest time).
 _ALARM_BYPASS_TYPES = frozenset({
     'alert',
     'allclear',
@@ -340,6 +343,59 @@ def _add_recent(data: dict):
     _recent_events.append(data)
 
 
+# ── P5-B: Multi-oblast alert fusion ──────────────────────────────────────────
+
+def _multi_oblast_confidence_boost(
+    event_type: str,
+    region: str | None,
+    recent_window_sec: float = 300.0,
+) -> float:
+    """
+    P5-B: When multiple simultaneous alerts for the same threat type appear in
+    different oblasts within `recent_window_sec`, it's a mass raid — boost confidence.
+    Returns a 0..0.15 additive confidence bonus.
+    """
+    import time
+    now = time.time()
+    cutoff = now - recent_window_sec
+    et_lower = (event_type or '').lower()
+    our_region = (region or '').lower().strip()
+
+    # Count distinct oblasts with a matching event_type in the window
+    seen_oblasts: set[str] = set()
+    for evt in _recent_events:
+        if not isinstance(evt, dict):
+            continue
+        evt_ts_raw = evt.get('created_at_epoch') or evt.get('ts')
+        if not evt_ts_raw:
+            continue
+        try:
+            evt_ts = float(evt_ts_raw)
+        except (TypeError, ValueError):
+            # Handle ISO datetime strings like '2026-05-18T20:42:15.961221+03:00'
+            try:
+                from datetime import datetime, timezone
+                evt_ts = datetime.fromisoformat(str(evt_ts_raw)).timestamp()
+            except Exception:
+                continue
+        if evt_ts > 1e10:
+            evt_ts /= 1000
+        if evt_ts < cutoff:
+            continue
+        evt_et = (evt.get('threat_type') or evt.get('type') or '').lower()
+        if not evt_et or evt_et not in et_lower and et_lower not in evt_et:
+            continue
+        evt_region = (evt.get('region') or evt.get('oblast') or '').lower().strip()
+        if evt_region and evt_region != our_region:
+            seen_oblasts.add(evt_region)
+
+    if len(seen_oblasts) >= 4:
+        return 0.15  # mass raid — 4+ oblasts
+    if len(seen_oblasts) >= 2:
+        return 0.08  # multi-oblast — 2-3 oblasts
+    return 0.0
+
+
 ingest_queue.on_ingest_success = _add_recent
 
 # ── Admin feed publisher ─────────────────────────────────────────────────────
@@ -505,8 +561,8 @@ async def _intelligence_save_loop():
 
 # ── Global Settings Sync ─────────────────────────────────────────────────────
 
-MIN_CONFIDENCE_THRESHOLD = 0.65
-MIN_CONFIDENCE_UAV_THRESHOLD: float | None = 0.45
+MIN_CONFIDENCE_THRESHOLD = 0.42
+MIN_CONFIDENCE_UAV_THRESHOLD: float | None = 0.28
 
 
 def _effective_min_confidence_for_event(event_type: str | None) -> float:
@@ -531,6 +587,8 @@ def _min_trusted_resolver_conf(event_type: str | None = None) -> float:
 
 def _cap_confidence_coarse_placements(confidence: float, resolve_status: str) -> float:
     """Centroid / heuristic sectors are not pin-accurate — stay below map threshold so UI filters them."""
+    if resolve_status == 'trajectory_approach':
+        return min(float(confidence), 0.72)
     coarse = frozenset({
         'oblast_fallback',
         'oblast_direction_only',
@@ -996,6 +1054,7 @@ def _build_trajectory(
     channel_name: str = '',
     ai_analysis: dict | None = None,
     target_city_coords: tuple[float, float] | None = None,
+    sea_lane_wps: list | None = None,
 ) -> dict | None:
     """
     Build trajectory dict for a threat marker.
@@ -1029,11 +1088,6 @@ def _build_trajectory(
         prediction_confidence = 0.75
         log.info(f"Trajectory: TARGET_CITY coords ({target_city_coords[0]:.3f}, {target_city_coords[1]:.3f})")
 
-    # ── 0. Consensus from multiple channels ──
-    ct = None
-    if ct:
-        pass
-
     # ── 1. AI deep analysis (GPT-4o-mini on every message) ──
     if not target_coords and ai_analysis:
         ai_target = ai_analysis.get('target_city')
@@ -1051,6 +1105,10 @@ def _build_trajectory(
             origin_coords = ai_analysis['origin_coords']
         if ai_analysis.get('waypoints'):
             waypoints = ai_analysis['waypoints']
+
+    # P5-A: Use sea lane waypoints if provided and none were set from AI
+    if sea_lane_wps and not waypoints:
+        waypoints = [[lat, lng] for lat, lng in sea_lane_wps]
 
     # ── 2. Explicit direction from parser (city name) ──
     if not target_coords and entities.direction:
@@ -1102,7 +1160,62 @@ def _build_trajectory(
                 prediction_confidence = 0.3
                 log.info("Trajectory: heuristic → Kyiv center (proximity)")
 
+    # ── 5-B. P5-C: Velocity-based target city prediction (no LLM) ──
+    # If there is a recent event from the same chain with a bearing, project forward to
+    # find the most likely target city by finding the nearest major city along that bearing.
+    if not target_coords:
+        try:
+            from geo.resolver import REGIONAL_CENTERS
+            bearing_deg = getattr(entities, 'bearing_deg', None)
+            if bearing_deg is not None and Number.isFinite(bearing_deg) if False else True:
+                pass
+            # Try heading from entities or recent events
+            chain_bearing = None
+            event_bearing = getattr(entities, 'bearing_deg', None)
+            if event_bearing is not None and isinstance(event_bearing, (int, float)):
+                chain_bearing = float(event_bearing)
+            if chain_bearing is None:
+                # Look for a recent event from same channel with a bearing_deg
+                for prev in reversed(list(_recent_events)[-10:]):
+                    if not isinstance(prev, dict):
+                        continue
+                    prev_et = (prev.get('threat_type') or prev.get('type') or '').lower()
+                    if (event_type or '').lower() not in prev_et and prev_et not in (event_type or '').lower():
+                        continue
+                    pb = prev.get('course_bearing') or prev.get('ticker_bearing')
+                    if pb is not None:
+                        try:
+                            chain_bearing = float(pb)
+                            break
+                        except (TypeError, ValueError):
+                            pass
+            if chain_bearing is not None:
+                # Project forward at nominal speed × 15 min to find landing area
+                speed_kmh_hint = THREAT_SPEEDS.get(event_type, 200)
+                proj_km = speed_kmh_hint * 0.25  # 15 min of travel
+                proj = _project_point(lat, lng, chain_bearing, proj_km)
+                # Find nearest regional center to projected point
+                best_city = None
+                best_dist = float('inf')
+                for city, city_coords in (REGIONAL_CENTERS or {}).items():
+                    d = _haversine_km(proj[0], proj[1], city_coords[0], city_coords[1])
+                    if d < best_dist:
+                        best_dist = d
+                        best_city = (city, city_coords)
+                if best_city and best_dist < 80:
+                    target_coords = best_city[1]
+                    source = 'velocity_prediction'
+                    predicted = True
+                    prediction_confidence = max(0.30, 0.55 - best_dist * 0.003)
+                    log.info(
+                        f"Trajectory: P5-C velocity → {best_city[0]} "
+                        f"(bearing={chain_bearing:.0f}°, proj_km={proj_km:.0f}, dist={best_dist:.0f}km)"
+                    )
+        except Exception as e:
+            log.debug(f'P5-C velocity prediction: {e}')
+
     # ── 6. Learned targets (frequency-based, persisted on disk) ──
+    if not target_coords:
         try:
             from learned_trajectory_targets import suggest_city_for_threat
             lc = suggest_city_for_threat(
@@ -1137,9 +1250,26 @@ def _build_trajectory(
                 prediction_confidence = ai_result.get('confidence', 0.4)
                 log.info(f"Trajectory: {source} → {target_city} (conf={prediction_confidence:.2f})")
 
-    # Apply circling penalty
-    # (Removed group tracker circling penalty logic)
-    pass
+    # ── 7. Group bearing: when multiple direction entities share a region,
+    #       pick the bearing that is geometrically closest to the current track.
+    #       This prevents the wrong direction from being used when a message
+    #       lists multiple corridors (e.g. "Харків→Київ та Дніпро→Харків").
+    if not target_coords and hasattr(entities, 'directions') and entities.directions:
+        best_dir_coords = None
+        best_dir_dist = float('inf')
+        for direction_candidate in entities.directions:
+            dc = _geocode_direction_target(direction_candidate, region)
+            if dc:
+                d = _haversine_km(lat, lng, dc[0], dc[1])
+                if d < best_dir_dist:
+                    best_dir_dist = d
+                    best_dir_coords = dc
+        if best_dir_coords:
+            target_coords = best_dir_coords
+            source = 'group_bearing'
+            predicted = False
+            prediction_confidence = 0.75
+            log.info(f"Trajectory: group_bearing → closest of {len(entities.directions)} directions ({best_dir_dist:.0f} km)")
 
     return _finalize_trajectory(
         lat, lng, target_coords, predicted, source, prediction_confidence,
@@ -1196,6 +1326,71 @@ def _finalize_trajectory(
     return out
 
 
+# ── P3-E: Altitude mode inference ────────────────────────────────────────────
+
+_BALLISTIC_RE = re.compile(
+    r'балістич|ракет[аиу]|крилат|гіперзвук|зенітн|мрлс|пуск|б-21|б-52'
+    r'|р-500|р-360|9м729|iskander|кинжал|kinzhal|shahed\s*136|шахед\s*136',
+    re.IGNORECASE,
+)
+_LOW_ALT_RE = re.compile(
+    r'\bбпла\b|fpv|shahed|shahid|шахед|герань|ланцет|мавік|mavic|orlan|орлан'
+    r'|\bдрон\b|\bUAV\b',
+    re.IGNORECASE,
+)
+
+def _infer_altitude_mode(text: str, event_type: str) -> str:
+    """P3-E: Infer altitude mode from message text and event type."""
+    if not text:
+        text = ''
+    if _BALLISTIC_RE.search(text):
+        return 'ballistic_arc'
+    if _LOW_ALT_RE.search(text):
+        return 'low_altitude'
+    # Fall back to event_type heuristic
+    et_lower = (event_type or '').lower()
+    if any(k in et_lower for k in ('missile', 'ballistic', 'kab', 'rocket')):
+        return 'ballistic_arc'
+    if any(k in et_lower for k in ('fpv', 'drone', 'shahed', 'uav', 'recon')):
+        return 'low_altitude'
+    return 'unknown'
+
+
+# ── P5-E: Trajectory confidence signal ───────────────────────────────────────
+
+def _compute_trajectory_confidence(
+    resolve_status: str | None,
+    confidence: float,
+    trajectory_data: dict | None,
+    ai_analysis: dict | None,
+) -> float:
+    """P5-E: Compute a 0–1 trajectory confidence score for the worker marker."""
+    base = float(confidence or 0.5)
+
+    # Boost for well-resolved statuses
+    rs = (resolve_status or '').lower()
+    if rs in ('ok', 'exact', 'point'):
+        base = min(0.95, base + 0.15)
+    elif rs in ('maritime_approach', 'estimated_trajectory'):
+        base = min(0.88, base + 0.08)
+    elif rs.startswith('estimated_') or rs.startswith('regional_'):
+        base = max(0.3, base - 0.1)
+    elif rs in ('failed', 'ambiguous_no_point'):
+        base = max(0.1, base - 0.25)
+
+    # Boost when AI analysis agrees with trajectory
+    if trajectory_data and ai_analysis:
+        ai_conf = float((ai_analysis or {}).get('confidence', 0) or 0)
+        if ai_conf > 0.7:
+            base = min(0.95, base + 0.05)
+
+    # Penalty when no trajectory is available
+    if not trajectory_data:
+        base = max(0.1, base - 0.2)
+
+    return round(max(0.05, min(0.99, base)), 3)
+
+
 def _project_point(lat: float, lng: float, bearing_deg: float, distance_km: float) -> tuple[float, float]:
     """Project a point from (lat, lng) at given bearing and distance."""
     import math
@@ -1208,6 +1403,108 @@ def _project_point(lat: float, lng: float, bearing_deg: float, distance_km: floa
     lng2 = lng1 + math.atan2(math.sin(brng) * math.sin(d) * math.cos(lat1),
                               math.cos(d) - math.sin(lat1) * math.sin(lat2))
     return (math.degrees(lat2), math.degrees(lng2))
+
+
+def _coerce_latlng_pair(value) -> tuple[float, float] | None:
+    """Accept [lat,lng] / (lat,lng) / {'lat','lng'} produced by AI analysis."""
+    try:
+        if isinstance(value, dict):
+            lat = value.get('lat')
+            lng = value.get('lng') or value.get('lon')
+        elif isinstance(value, (list, tuple)) and len(value) >= 2:
+            lat, lng = value[0], value[1]
+        else:
+            return None
+        lat_f = float(lat)
+        lng_f = float(lng)
+        if not math.isfinite(lat_f) or not math.isfinite(lng_f):
+            return None
+        return (lat_f, lng_f)
+    except Exception:
+        return None
+
+
+def _default_approach_origin_label(channel_name: str, event_type: str, region: str | None) -> str | None:
+    """Best-effort launch direction when the message only says where the threat is heading."""
+    et = (event_type or '').lower().strip()
+    reg = (region or CHANNEL_DEFAULT_OBLAST.get(channel_name) or '').lower()
+
+    if et in {'kab', 'avia'}:
+        return None
+    if et in {'missile', 'raketa', 'krylata', 'pusk', 'ballistic', 'balistic'}:
+        if any(k in reg for k in ('сум', 'черніг', 'харків', 'полтав')):
+            return 'Курськ'
+        if any(k in reg for k in ('одес', 'микола', 'херсон', 'запор')):
+            return 'Крим'
+        return 'Бєлгород'
+
+    if et in {'shahed', 'uav', 'drone', 'fpv', 'recon', 'rozved'}:
+        if any(k in reg for k in ('одес', 'микола', 'херсон', 'запор', 'крим')):
+            return 'Чорне море'
+        if any(k in reg for k in ('сум', 'черніг')):
+            return 'Курськ'
+        if any(k in reg for k in ('харків', 'донець', 'луган')):
+            return 'Бєлгород'
+        return 'Крим'
+
+    return None
+
+
+def _resolve_approach_origin(
+    entities,
+    ai_analysis: dict | None,
+    channel_name: str,
+    event_type: str,
+    region: str | None,
+) -> tuple[float, float] | None:
+    """Resolve launch/source coords for destination-only reports."""
+    ai_origin_coords = _coerce_latlng_pair((ai_analysis or {}).get('origin_coords'))
+    if ai_origin_coords:
+        return ai_origin_coords
+
+    for raw_origin in (
+        (ai_analysis or {}).get('origin'),
+        getattr(entities, 'origin', None),
+        _default_approach_origin_label(channel_name, event_type, region),
+    ):
+        if not raw_origin:
+            continue
+        coords = _geocode_origin(str(raw_origin), allow_resolver_fallback=False)
+        if coords:
+            return coords
+    return None
+
+
+def _compute_flight_approach_pos(
+    origin: tuple[float, float],
+    target: tuple[float, float],
+    event_type: str,
+    chain_elapsed_sec: float | None = None,
+) -> tuple[tuple[float, float], float]:
+    """Return estimated current position and route progress for origin→target flight."""
+    speed = float(THREAT_SPEEDS.get(event_type, 170) or 170)
+    dist_km = _haversine_km(origin[0], origin[1], target[0], target[1])
+    if dist_km < 10:
+        return target, 1.0
+    if chain_elapsed_sec is not None and chain_elapsed_sec > 0:
+        progress = min(0.90, max(0.08, (chain_elapsed_sec / 3600.0 * speed) / dist_km))
+    else:
+        progress = 0.35
+    bearing = _compute_bearing(origin[0], origin[1], target[0], target[1])
+    current = _project_point(origin[0], origin[1], bearing, dist_km * progress)
+    return current, progress
+
+
+def _chain_elapsed_seconds(parent, now_dt: datetime) -> float | None:
+    ts = getattr(parent, 'first_seen_ts', None)
+    if isinstance(ts, (int, float)):
+        return max(0.0, now_dt.timestamp() - float(ts))
+    parent_dt = getattr(parent, 'timestamp', None)
+    if isinstance(parent_dt, datetime):
+        if parent_dt.tzinfo is None:
+            parent_dt = parent_dt.replace(tzinfo=KYIV_TZ)
+        return max(0.0, (now_dt - parent_dt).total_seconds())
+    return None
 
 
 # Map parser event_type to frontend icon names (must match THREAT_ICONS keys)
@@ -1565,12 +1862,35 @@ async def _process_threat_message_content(
                 entities.place_name = _cleaned
 
         # ── NLP Augmentation ─────────────────────────────────────────
+        _course_only_without_current = False
         try:
             from core.parser_nlp import augment_parsed_entities_with_nlp
-            _nlp_place = augment_parsed_entities_with_nlp(entities.raw_text or msg_text, entities.place_name)
-            if _nlp_place != entities.place_name:
-                log.info(f"PLACE_NLP_AUGMENT [{channel_name}]: '{entities.place_name}' → '{_nlp_place}'")
-                entities.place_name = _nlp_place
+            _raw_for_nlp = entities.raw_text or msg_text
+            _course_only_without_current = (
+                entities.event_type in {
+                    'uav', 'drone', 'shahed', 'recon', 'rozved', 'fpv',
+                    'missile', 'raketa', 'krylata', 'ballistic', 'balistic', 'pusk', 'kab',
+                }
+                and not entities.place_name
+                and (getattr(entities, 'target_city', None) or entities.direction)
+                and not re.search(
+                    r'\b(?:над|біля|поблизу|повз|район[іу]?|в\s+районі|у\s+районі|'
+                    r'возле|в\s+районе|у\s+района|навпроти|виліз|вилiз|вылез|'
+                    r'зайшов|залетів|залетiв)\b',
+                    _raw_for_nlp,
+                    re.IGNORECASE,
+                )
+            )
+            if _course_only_without_current:
+                log.debug(
+                    f"PLACE_NLP_SKIP [{channel_name}]: target/course-only entity, "
+                    f"target={getattr(entities, 'target_city', None) or entities.direction}"
+                )
+            else:
+                _nlp_place = augment_parsed_entities_with_nlp(_raw_for_nlp, entities.place_name)
+                if _nlp_place != entities.place_name:
+                    log.info(f"PLACE_NLP_AUGMENT [{channel_name}]: '{entities.place_name}' → '{_nlp_place}'")
+                    entities.place_name = _nlp_place
         except ImportError:
             pass
 
@@ -1800,6 +2120,13 @@ async def _process_threat_message_content(
             resolve_status = geo_decision.status
             candidates_json = [c.to_dict() for c in resolved.chosen_from[:3]]
             raion_name = resolved.raion
+
+            if getattr(resolved, 'is_predictive', False):
+                # We geocoded the target city, but no current position was provided.
+                # Clear coords here so the downstream "target-only" offset logic can handle it
+                # by placing the marker *before* the city along the approach path.
+                coords = None
+                log.info(f"PREDICTIVE-FALLBACK [{channel_name}]: {location} is target-only, clearing coords for offset logic")
             # Major gazetteer hit: slight boost so borderline resolver scores still map
             if resolved.chosen_from and confidence < MIN_CONFIDENCE_THRESHOLD + 0.05:
                 best = resolved.chosen_from[0]
@@ -1889,6 +2216,7 @@ async def _process_threat_message_content(
         # ── Estimated-offset: shift marker from target to estimated current position ──
         # Must run BEFORE oblast fallback so target_city offset takes priority
         _target_coords = None
+        _sea_lane_wps: list | None = None  # P5-A: sea lane routing waypoints
         _target_city = getattr(entities, 'target_city', None)
         if not _target_city and entities.direction:
             _dir_lower = entities.direction.lower().strip()
@@ -1993,10 +2321,18 @@ async def _process_threat_message_content(
                 location = _sea_label
                 confidence = max(confidence, 0.62)
                 resolve_status = 'maritime_approach'
+                # P5-A: add realistic sea lane waypoints for the maritime approach trajectory
+                _origin_for_lanes = _origin_coords or (45.95, 31.05)
+                _sea_lane_wps = sea_lane_waypoints(_origin_for_lanes, _tc, region)
+                if _sea_lane_wps:
+                    log.debug(
+                        f"SEA-LANE [{channel_name}]: {len(_sea_lane_wps)} waypoints "
+                        f"from ({_origin_for_lanes[0]:.2f},{_origin_for_lanes[1]:.2f}) → {_target_city}"
+                    )
                 log.info(
                     f"MARITIME-APPROACH [{channel_name}]: current={_sea_label} "
                     f"({coords[0]:.3f},{coords[1]:.3f}) → target {_target_city} "
-                    f"({_tc[0]:.3f},{_tc[1]:.3f})"
+                    f"({_tc[0]:.3f},{_tc[1]:.3f}) lane_wps={len(_sea_lane_wps) if _sea_lane_wps else 0}"
                 )
 
         # Auto-promote: if origin is set + place_name resolved + no target_city,
@@ -2099,36 +2435,35 @@ async def _process_threat_message_content(
                                     f"→ target {_target_city} ({_tc[0]:.3f},{_tc[1]:.3f}) bearing={bearing_to_target:.1f}°"
                                 )
                         else:
-                            if _is_uav_event(entities.event_type):
-                                coords = None
-                                resolve_status = 'target_only_no_current_position'
-                                confidence = min(max(confidence, 0.24), 0.32)
-                                log.info(
-                                    f"TARGET-ONLY [{channel_name}]: origin '{_origin_raw}' did not geocode, "
-                                    f"target={_target_city} — suppress UAV pin instead of target-offset"
-                                )
-                            else:
-                                # Origin failed to geocode — fall back to target-offset
-                                reverse_bearing = (bearing_to_target + 180) % 360
-                                _offset_km = 15.0 if _tc[0] >= 47.0 else 20.0
-                                offset_lat, offset_lng = _project_point(
-                                    _tc[0], _tc[1], reverse_bearing, _offset_km
-                                )
-                                coords = (offset_lat, offset_lng)
-                                resolve_status = 'estimated_offset'
-                                confidence = max(confidence, 0.6)
-                                log.info(
-                                    f"EST-OFFSET (no origin): target={_target_city} "
-                                    f"→ {_offset_km:.0f}km offset ({offset_lat:.3f},{offset_lng:.3f})"
-                                )
+                            # Origin failed to geocode — fall back to target-offset
+                            log.info(
+                                f"TARGET-ONLY [{channel_name}]: origin '{_origin_raw}' did not geocode, "
+                                f"target={_target_city} — using predictive offset"
+                            )
+                            reverse_bearing = (bearing_to_target + 180) % 360
+                            _offset_km = 12.0
+                            offset_lat, offset_lng = _project_point(
+                                _tc[0], _tc[1], reverse_bearing, _offset_km
+                            )
+                            coords = (offset_lat, offset_lng)
+                            resolve_status = 'predictive_approach'
+                            log.info(
+                                f"EST-OFFSET (no origin): target={_target_city} "
+                                f"→ {_offset_km:.0f}km offset ({coords[0]:.3f},{coords[1]:.3f})"
+                            )
                     else:
                         if _is_uav_event(entities.event_type):
-                            coords = None
-                            resolve_status = 'target_only_no_current_position'
-                            confidence = min(max(confidence, 0.24), 0.32)
+                            reverse_bearing = (bearing_to_target + 180) % 360
+                            _offset_km = 12.0
+                            offset_lat, offset_lng = _project_point(
+                                _tc[0], _tc[1], reverse_bearing, _offset_km
+                            )
+                            coords = (offset_lat, offset_lng)
+                            resolve_status = 'predictive_approach'
+                            confidence = max(confidence, 0.6)
                             log.info(
-                                f"TARGET-ONLY [{channel_name}]: {_target_city} + bearing "
-                                f"{bearing_to_target:.1f}° but no current/origin point — suppress UAV pin"
+                                f"PREDICTIVE-APPROACH [{channel_name}]: UAV heading to {_target_city}, "
+                                f"placing 12km back along bearing {bearing_to_target:.1f}°"
                             )
                         else:
                             reverse_bearing = (bearing_to_target + 180) % 360
@@ -2302,6 +2637,61 @@ async def _process_threat_message_content(
         if ai_analysis and ai_analysis.get('count') and ai_analysis['count'] > entities.count:
             entities.count = ai_analysis['count']
 
+        # Destination-only reports ("БпЛА курсом на X") describe where the target is
+        # going, not where it is now. Place the marker along the flight path.
+        if _course_only_without_current and _target_city:
+            if not _target_coords:
+                _target_coords = _geocode_direction_target(_target_city, region)
+            _origin_coords = _resolve_approach_origin(
+                entities,
+                ai_analysis,
+                channel_name,
+                entities.event_type,
+                region,
+            )
+            if _origin_coords and _target_coords:
+                _route_km = _haversine_km(
+                    _origin_coords[0],
+                    _origin_coords[1],
+                    _target_coords[0],
+                    _target_coords[1],
+                )
+                if _route_km > 50:
+                    _elapsed = _chain_elapsed_seconds(_pre_dup_parent, now_kyiv) if _pre_dup_parent else None
+                    _approach_pos, _progress = _compute_flight_approach_pos(
+                        _origin_coords,
+                        _target_coords,
+                        entities.event_type,
+                        _elapsed,
+                    )
+                    coords = _approach_pos
+                    resolve_status = 'trajectory_approach'
+                    location = f"курс на {_target_city}"
+                    confidence = min(max(float(confidence), 0.60), 0.72)
+                    try:
+                        from geo.rules import find_oblast_for_coords
+                        _approach_oblast = find_oblast_for_coords(coords[0], coords[1])
+                        if _approach_oblast:
+                            region = _approach_oblast
+                    except Exception:
+                        pass
+                    log.info(
+                        f"APPROACH_POS [{channel_name}]: {entities.event_type} "
+                        f"origin=({_origin_coords[0]:.3f},{_origin_coords[1]:.3f}) "
+                        f"→ target=({_target_coords[0]:.3f},{_target_coords[1]:.3f}) "
+                        f"progress={_progress:.0%} elapsed={_elapsed if _elapsed is not None else 'default'} "
+                        f"→ placed at ({coords[0]:.3f},{coords[1]:.3f})"
+                    )
+
+        # ── P5-B: Multi-oblast confidence boost ──────────────────────
+        if coords:
+            _mob_boost = _multi_oblast_confidence_boost(entities.event_type, region)
+            if _mob_boost > 0:
+                confidence = min(0.97, confidence + _mob_boost)
+                log.debug(f"P5-B multi-oblast boost +{_mob_boost:.2f} → conf={confidence:.2f}")
+            if resolve_status == 'trajectory_approach':
+                confidence = min(float(confidence), 0.72)
+
         # ── Build trajectory (direction → target coords) ──────────────
         trajectory_data = None
         course_bearing = None
@@ -2314,6 +2704,7 @@ async def _process_threat_message_content(
                 channel_name=channel_name,
                 ai_analysis=ai_analysis,
                 target_city_coords=_target_coords,
+                sea_lane_wps=_sea_lane_wps,  # P5-A
             )
             if trajectory_data:
                 end = trajectory_data['end']
@@ -2370,7 +2761,13 @@ async def _process_threat_message_content(
             _bearing_hint = float(ticker_bearing) % 360.0
 
         if coords:
-            _is_estimated = bool(resolve_status and resolve_status.startswith('estimated_'))
+            _is_estimated = bool(
+                resolve_status
+                and (
+                    resolve_status.startswith('estimated_')
+                    or resolve_status in {'trajectory_approach', 'predictive_approach'}
+                )
+            )
             agg_obs = AggObs(
                 lat=coords[0],
                 lng=coords[1],
@@ -2451,13 +2848,26 @@ async def _process_threat_message_content(
             'positions': _target.to_positions_list(30) if _target else None,
             'observation_count': _target.observation_count if _target else 1,
             'flight_phase': (ai_analysis or {}).get('flight_phase', 'cruise') if trajectory_data else None,
-            'is_estimated': resolve_status.startswith('estimated_') if resolve_status else False,
+            'is_estimated': (
+                resolve_status.startswith('estimated_')
+                or resolve_status in {'trajectory_approach', 'predictive_approach'}
+            ) if resolve_status else False,
+            'position_estimated': (
+                resolve_status.startswith('estimated_')
+                or resolve_status in {'trajectory_approach', 'predictive_approach'}
+            ) if resolve_status else False,
             'confidence_0_100': int(max(0, min(100, round(float(confidence) * 100)))),
             'placement_mode': 'point',
             'analysis_source': (ai_analysis or {}).get('source'),
             'analysis_confidence': (ai_analysis or {}).get('confidence'),
             'analysis_target_city': (ai_analysis or {}).get('target_city'),
             'analysis_reason': resolve_status,
+            # P3-E: altitude inference from message text
+            'altitude_mode': _infer_altitude_mode(msg_text, entities.event_type if entities else ''),
+            # P5-E: trajectory confidence signal propagated from worker to tracker
+            'trajectory_confidence': _compute_trajectory_confidence(
+                resolve_status, confidence, trajectory_data, ai_analysis
+            ),
         }
 
         normalize_maritime_marker_fields(data)
@@ -2961,6 +3371,10 @@ async def _process_threat_message_content(
         elif (
             not _channels_skip_air_alarm_gate(channel_name)
             and not _is_maritime_alarm_gate_bypass(data, msg_text, location, resolve_status)
+            # trajectory_approach = verified en-route position; allow as early warning even
+            # before the official alarm catches up. predictive_approach (12 km offset) is
+            # NOT trusted without an alarm.
+            and resolve_status != 'trajectory_approach'
             and not _should_ingest_by_alarm(
                 region,
                 entities.event_type,

@@ -2,7 +2,13 @@ import crypto from 'crypto';
 import type { AdminSettings } from '@/lib/admin/data';
 import { isPlausibleThreatCoordinate } from '@/lib/geo-bounds';
 import { isPublicMapThreatGeography } from '@/lib/public-threat-geo';
-import { recordHasPhantomAvia } from '@/lib/marker-publication';
+import { recordHasPhantomAvia } from '@/lib/publication-constants';
+import {
+  UAV_PUBLICATION_TYPES as _UAV_TYPES,
+  NON_PUBLIC_RESOLVE_STATUSES as _NON_PUBLIC_RS,
+  BAD_PLACE_TOKENS as _BAD_PLACE,
+  POST_STRIKE_RECON_PATTERNS as _POST_STRIKE_PATTERNS,
+} from '@/lib/publication-constants';
 
 export type MarkerPublicationClass =
   | 'VERIFIED_PUBLIC'
@@ -35,59 +41,24 @@ export type MarkerPublicationContext = {
   hidden?: boolean;
 };
 
-const PUBLIC_THRESHOLD = 0.82;
-const ADMIN_THRESHOLD = 0.7;
+const PUBLIC_THRESHOLD = 0.68;
+const ADMIN_THRESHOLD = 0.55;
 const QUARANTINE_THRESHOLD = 0.4;
+const RADAR_PROVISIONAL_THRESHOLD = 0.86;
+const RADAR_PROVISIONAL_MAX_AGE_MS = 22 * 60_000;
+const RADAR_CONFIRMED_OBSERVED_MIN_CONFIDENCE = 0.74;
+const RADAR_CONFIRMED_OBSERVED_MAX_AGE_MS = 18 * 60_000;
 
-const UAV_PUBLICATION_TYPES = new Set([
-  'shahed',
-  'drone',
-  'uav',
-  'fpv',
-  'rozved',
-  'air_balloon',
-]);
+const UAV_PUBLICATION_TYPES = _UAV_TYPES;
+const NON_PUBLIC_RESOLVE_STATUSES = _NON_PUBLIC_RS;
+const BAD_PLACE_TOKENS = _BAD_PLACE;
+const POST_STRIKE_RECON_PATTERNS = _POST_STRIKE_PATTERNS;
 
-const NON_PUBLIC_RESOLVE_STATUSES = new Set([
-  'oblast_fallback',
-  'oblast_direction_only',
-  'estimated_oblast_center',
-  'estimated_offset_coastal',
-  'ambiguous_no_point',
-  'target_only_no_current_position',
-  'weak_target_only_no_point',
-]);
-
-const BAD_PLACE_TOKENS = new Set([
-  'вода',
-  'воді',
-  'воду',
-  'водою',
-  'воде',
-  'water',
-  'море',
-  'морем',
-  'морі',
-  'морю',
-  'акваторія',
-  'акваторії',
-  'акваторию',
-  'поле',
-  'полях',
-  'ліс',
-  'лісі',
-  'лес',
-  'район',
-  'району',
-  'районі',
-  'область',
-  'області',
-  'місто',
-  'село',
-  'селище',
-  'невідомо',
-  'unknown',
-]);
+function isPostStrikeRecon(marker: Record<string, unknown>): boolean {
+  const text = String(marker.text ?? marker.msg_text ?? '');
+  if (!text) return false;
+  return POST_STRIKE_RECON_PATTERNS.some((re) => re.test(text));
+}
 
 function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 0;
@@ -135,6 +106,78 @@ function markerConfidence(marker: Record<string, unknown>, settings: AdminSettin
   return clamp01(settings.minConfidence ?? 0.65);
 }
 
+function markerActivityMs(marker: Record<string, unknown>, nowMs: number): number {
+  const candidates = [
+    marker.last_update_epoch,
+    marker.created_at_epoch,
+    marker.ts,
+    marker.timestamp,
+    marker.date,
+  ];
+  for (const value of candidates) {
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+      return value > 10_000_000_000 ? Math.round(value) : Math.round(value * 1000);
+    }
+    if (typeof value === 'string' && value.trim()) {
+      const t = new Date(value.includes('T') ? value : value.replace(' ', 'T')).getTime();
+      if (Number.isFinite(t) && t > 0) return t;
+    }
+  }
+  return nowMs;
+}
+
+function isRadarProvisionalTarget(marker: Record<string, unknown>, ctx: MarkerPublicationContext): boolean {
+  if (marker.manual === true) return false;
+  const threatType = normalizeText(marker.threat_type || marker.type);
+  if (!UAV_PUBLICATION_TYPES.has(threatType)) return false;
+
+  const lifecycle = normalizeText(marker.target_lifecycle_state);
+  if (lifecycle !== 'tracking' && lifecycle !== 'detected') return false;
+
+  const trackState = normalizeText(marker.track_state);
+  if (trackState === 'lost' || trackState === 'stale' || trackState === 'split_candidate') return false;
+
+  const targetConfidence = Number(marker.target_confidence);
+  const extraction = markerConfidence(marker, ctx.settings);
+  const confidence = Number.isFinite(targetConfidence) ? clamp01(targetConfidence) : extraction;
+  if (confidence < 0.88) return false;
+
+  const nowMs = ctx.nowMs ?? Date.now();
+  const ageMs = Math.max(0, nowMs - markerActivityMs(marker, nowMs));
+  if (ageMs > RADAR_PROVISIONAL_MAX_AGE_MS) return false;
+
+  return true;
+}
+
+function isRadarConfirmedObservedTarget(marker: Record<string, unknown>, ctx: MarkerPublicationContext): boolean {
+  if (marker.manual === true) return false;
+  const threatType = normalizeText(marker.threat_type || marker.type);
+  if (!UAV_PUBLICATION_TYPES.has(threatType)) return false;
+
+  if (normalizeText(marker.target_lifecycle_state) !== 'confirmed') return false;
+  if (normalizeText(marker.track_state) !== 'observed') return false;
+  if (markerBlockedByPublicPlacementQuality(marker)) return false;
+
+  const lat = Number(marker.lat);
+  const lng = Number(marker.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+  if (!isPlausibleThreatCoordinate(lat, lng) || !isPublicMapThreatGeography(lat, lng)) return false;
+
+  const targetConfidence = Number(marker.target_confidence);
+  const trackConfidence = Number(marker.track_confidence);
+  if (!Number.isFinite(targetConfidence) || !Number.isFinite(trackConfidence)) return false;
+  if (
+    targetConfidence < RADAR_CONFIRMED_OBSERVED_MIN_CONFIDENCE ||
+    trackConfidence < RADAR_CONFIRMED_OBSERVED_MIN_CONFIDENCE - 0.04
+  ) {
+    return false;
+  }
+
+  const nowMs = ctx.nowMs ?? Date.now();
+  const ageMs = Math.max(0, nowMs - markerActivityMs(marker, nowMs));
+  return ageMs <= RADAR_CONFIRMED_OBSERVED_MAX_AGE_MS;
+}
+
 export function computeMarkerEventFingerprint(marker: Record<string, unknown>): string {
   const raw = {
     channel: normalizeText(marker.channel_name || marker.channel),
@@ -170,7 +213,8 @@ export function markerHasNonPublicPlaceLabel(marker: Record<string, unknown>): b
 
 function markerBlockedByPublicPlacementQuality(marker: Record<string, unknown>): boolean {
   const pm = normalizeText(marker.placement_mode);
-  if (pm === 'approximate') return true;
+  if (pm === 'trajectory_dead_reckoning') return false;
+  if (pm === 'approximate') return marker.position_estimated !== true;
   if (pm === 'predictive') return false;
   if (markerHasAmbiguousGeocode(marker)) return true;
   if (markerHasNonPublicPlaceLabel(marker)) return true;
@@ -202,6 +246,10 @@ function localityConfidence(marker: Record<string, unknown>, reasons: string[]):
     return 0.45;
   }
   const pm = normalizeText(marker.placement_mode);
+  if (pm === 'trajectory_dead_reckoning') {
+    reasons.push('trajectory_dead_reckoning');
+    return 0.82;
+  }
   if (pm === 'approximate') {
     reasons.push('approximate_coordinates');
     return 0.55;
@@ -214,6 +262,8 @@ function localityConfidence(marker: Record<string, unknown>, reasons: string[]):
   const rs = normalizeText(marker.resolve_status);
   if (!rs || rs === 'ok' || rs === 'exact' || rs === 'point') return 0.95;
   if (rs.includes('regeocode') || rs.includes('coherence')) return 0.82;
+  // Maritime-context statuses are confirmed geocodes (sea→target trajectory); treat as good locality.
+  if (rs === 'maritime_approach' || rs === 'estimated_trajectory' || rs === 'trajectory_approach') return 0.82;
   return 0.75;
 }
 
@@ -305,6 +355,8 @@ function classify(score: number, invariantViolations: string[], publicBlocked: b
     v === 'outside_public_threat_geography'
   );
   if (hardReject) return 'REJECTED';
+  // post_strike_recon: дорозвідка = follow-up after attack, admin-only regardless of score
+  if (invariantViolations.includes('post_strike_recon')) return 'ADMIN_ONLY';
   if (!publicBlocked && score >= PUBLIC_THRESHOLD) return 'VERIFIED_PUBLIC';
   if (score >= ADMIN_THRESHOLD) return 'ADMIN_ONLY';
   if (score >= QUARANTINE_THRESHOLD) return 'QUARANTINED';
@@ -317,26 +369,41 @@ export function evaluateMarkerPublication(
 ): MarkerPublicationDecision {
   const reasons: string[] = [];
   const invariantViolations: string[] = [];
+  const radarProvisional = isRadarProvisionalTarget(marker, ctx);
+  const radarConfirmedObserved = !radarProvisional && isRadarConfirmedObservedTarget(marker, ctx);
 
   const extraction = markerConfidence(marker, ctx.settings);
   const locality = localityConfidence(marker, reasons);
   const source = sourceConfidence(marker, ctx.settings);
   const motion = motionConfidence(marker, reasons);
   const evidence = evidenceConfidence(marker, reasons, ctx.settings);
-  const score = Math.min(extraction, locality, source, motion, evidence);
+  const rawScore = Math.min(extraction, locality, source, motion, evidence);
+  const score = radarProvisional
+    ? Math.max(rawScore, Math.min(extraction, locality, source, evidence, RADAR_PROVISIONAL_THRESHOLD))
+    : radarConfirmedObserved
+      ? Math.max(rawScore, PUBLIC_THRESHOLD)
+    : rawScore;
+  if (radarProvisional) reasons.push('radar_provisional');
+  if (radarConfirmedObserved) reasons.push('radar_confirmed_observed');
 
   if (ctx.hidden || marker.hidden === true) invariantViolations.push('hidden_marker');
   if (locality <= 0) invariantViolations.push('invalid_coords');
   if (reasons.includes('outside_public_threat_geography')) invariantViolations.push('outside_public_threat_geography');
   if (reasons.includes('track_lost') || reasons.includes('track_split_candidate')) invariantViolations.push('lost_or_split_track');
-  if (reasons.some((r) => r.startsWith('target_') && r !== 'target_confirmed')) invariantViolations.push('target_not_confirmed');
+  if (reasons.some((r) => r.startsWith('target_') && r !== 'target_confirmed') && !radarProvisional) {
+    invariantViolations.push('target_not_confirmed');
+  }
   if (markerBlockedByPublicPlacementQuality(marker)) invariantViolations.push('unsafe_locality');
   if (recordHasPhantomAvia(marker)) invariantViolations.push('synthetic_marker');
+  if (isPostStrikeRecon(marker)) invariantViolations.push('post_strike_recon');
 
   const publicBlocked =
     invariantViolations.length > 0 ||
     markerBlockedByPublicPlacementQuality(marker) ||
-    normalizeText(marker.placement_mode) === 'predictive';
+    (
+      normalizeText(marker.placement_mode) === 'predictive' &&
+      normalizeText(marker.resolve_status) !== 'trajectory_approach'
+    );
 
   const classification = marker.manual === true
     ? 'VERIFIED_PUBLIC'

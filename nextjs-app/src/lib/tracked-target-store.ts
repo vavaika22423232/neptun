@@ -8,12 +8,20 @@ import {
   type TrackedTarget,
   type TrackerDecision,
 } from '@/lib/target-tracker-engine';
+import { KalmanFilter2D } from '@/lib/ekf';
+import { sanitizeTrackedTarget } from '@/lib/target-serialization';
 import { estimateTrackState } from '@/lib/track-estimator';
+import { trackMotionProfile } from '@/lib/track-motion-profile';
 import { broadcastSSE } from '@/lib/chat-sse-stream';
+
+export { sanitizeTrackedTarget };
 
 const REDIS_TARGETS_KEY = 'targets:tracked:v1';
 const REDIS_TARGETS_VERSION_KEY = 'targets:tracked:version';
 const REDIS_TARGETS_TTL_SECONDS = 6 * 60 * 60;
+// P4-C: Smart TTL — extend Redis TTL when there are many active tracks to prevent data loss
+// during high-traffic events. Max 24h, min 6h.
+const REDIS_TARGETS_MAX_TTL_SECONDS = 24 * 60 * 60;
 
 type TargetStoreState = {
   initialized: boolean;
@@ -22,8 +30,6 @@ type TargetStoreState = {
   lastVersion: number;
   writeLock: Promise<void>;
 };
-
-type StoredPublication = NonNullable<TrackedTarget['publication']>;
 
 const GLOBAL_KEY = '__neptun_tracked_target_store__';
 
@@ -84,103 +90,6 @@ function stringArray(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === 'string' && item.trim() !== '');
 }
 
-function sanitizeHistory(value: unknown): TrackedTarget['history'] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      if (!item || typeof item !== 'object') return null;
-      const raw = item as Record<string, unknown>;
-      const lat = numberOrUndefined(raw.lat);
-      const lng = numberOrUndefined(raw.lng);
-      const ts = numberOrUndefined(raw.ts);
-      if (lat == null || lng == null || ts == null) return null;
-      const channelPriority = numberOrUndefined(raw.channel_priority);
-      const count = countOrOne(raw.count);
-      return {
-        fingerprint: String(raw.fingerprint || ''),
-        ts,
-        lat,
-        lng,
-        source: String(raw.source || 'unknown'),
-        ...(channelPriority !== undefined && { channel_priority: channelPriority }),
-        ...(count > 1 && { count }),
-        accepted: raw.accepted !== false,
-        reason: String(raw.reason || ''),
-        confidence: finiteNumberOr(raw.confidence, 0),
-      };
-    })
-    .filter((item): item is TrackedTarget['history'][number] => Boolean(item));
-}
-
-function sanitizePublication(value: unknown): TrackedTarget['publication'] {
-  if (!value || typeof value !== 'object') return undefined;
-  const raw = value as Record<string, unknown>;
-  return {
-    classification: String(raw.classification || 'REJECTED') as StoredPublication['classification'],
-    public: raw.public === true,
-    score: finiteNumberOr(raw.score, 0),
-    scores: raw.scores && typeof raw.scores === 'object'
-      ? raw.scores as StoredPublication['scores']
-      : { extraction: 0, locality: 0, source: 0, motion: 0, evidence: 0, publication: 0 },
-    fingerprint: String(raw.fingerprint || ''),
-    reasons: stringArray(raw.reasons),
-    invariantViolations: stringArray(raw.invariantViolations),
-  };
-}
-
-function sanitizeTrackedTarget(value: unknown): TrackedTarget | null {
-  if (!value || typeof value !== 'object') return null;
-  const raw = value as Record<string, unknown>;
-  const id = typeof raw.id === 'string' && raw.id.trim() ? raw.id : null;
-  const lat = numberOrUndefined(raw.lat);
-  const lng = numberOrUndefined(raw.lng);
-  if (!id || lat == null || lng == null) return null;
-  const movement = raw.movement_vector && typeof raw.movement_vector === 'object'
-    ? raw.movement_vector as Record<string, unknown>
-    : {};
-  const history = sanitizeHistory(raw.history);
-  const fingerprints = stringArray(raw.event_fingerprints);
-  const lastSeen = finiteNumberOr(raw.last_seen, history[history.length - 1]?.ts ?? Date.now());
-  const upstreamTrackIds = stringArray(raw.upstream_track_ids);
-  return {
-    id,
-    threat_type: String(raw.threat_type || raw.type || 'unknown'),
-    region: typeof raw.region === 'string' ? raw.region : undefined,
-    place: typeof raw.place === 'string' ? raw.place : undefined,
-    lat,
-    lng,
-    count: countOrOne(raw.count),
-    confidence: finiteNumberOr(raw.confidence, 0),
-    reliability: finiteNumberOr(raw.reliability, 0),
-    source_count: Math.max(0, Math.round(finiteNumberOr(raw.source_count, stringArray(raw.sources).length))),
-    sources: stringArray(raw.sources),
-    upstream_track_ids: upstreamTrackIds,
-    lifecycle_state: String(raw.lifecycle_state || 'DETECTED') as TrackedTarget['lifecycle_state'],
-    first_seen: finiteNumberOr(raw.first_seen, history[0]?.ts ?? lastSeen),
-    last_seen: lastSeen,
-    movement_vector: {
-      bearing_deg: numberOrUndefined(movement.bearing_deg) ?? null,
-      speed_kmh: numberOrUndefined(movement.speed_kmh) ?? null,
-    },
-    speed_estimate_kmh: numberOrUndefined(raw.speed_estimate_kmh) ?? null,
-    history,
-    event_fingerprints: fingerprints,
-    publication: sanitizePublication(raw.publication),
-    manual: raw.manual === true,
-    is_loitering: raw.is_loitering === true ? true : undefined,
-    heading_confidence: typeof raw.heading_confidence === 'string'
-      ? raw.heading_confidence as TrackedTarget['heading_confidence']
-      : undefined,
-    position_estimated: raw.position_estimated === true ? true : undefined,
-    eta_seconds: numberOrUndefined(raw.eta_seconds) ?? null,
-    display_confidence: numberOrUndefined(raw.display_confidence),
-    rendered_lat: numberOrUndefined(raw.rendered_lat),
-    rendered_lng: numberOrUndefined(raw.rendered_lng),
-    last_message_text: typeof raw.last_message_text === 'string' ? raw.last_message_text : undefined,
-    last_resolve_status: typeof raw.last_resolve_status === 'string' ? raw.last_resolve_status : undefined,
-    last_placement_mode: typeof raw.last_placement_mode === 'string' ? raw.last_placement_mode : undefined,
-  };
-}
 
 function markerToCandidateEvent(marker: Record<string, unknown>): CandidateEvent | null {
   const lat = numberOrUndefined(marker.lat);
@@ -250,8 +159,27 @@ function targetToStoreRecord(target: TrackedTarget, nowMs = Date.now()): Record<
     last_update_epoch: target.last_seen,
   };
   const estimate = estimateTrackState(baseRecord, nowMs);
-  const lat = estimate.state === 'lost' ? target.lat : estimate.lat;
-  const lng = estimate.state === 'lost' ? target.lng : estimate.lng;
+
+  // P1-C: For EKF-tracked targets use the engine's own projected position rather than
+  // the estimateTrackState 0.35× visual multiplier, which diverges from engine physics.
+  let lat: number;
+  let lng: number;
+  if (target.ekf && estimate.state !== 'lost') {
+    const profile = trackMotionProfile(target.threat_type);
+    const ageMs = Math.max(0, nowMs - target.last_seen);
+    if (ageMs < profile.extrapolateMs) {
+      const ekfPred = target.ekf.predictedPosition(ageMs / 1000);
+      lat = ekfPred.lat;
+      lng = ekfPred.lng;
+    } else {
+      lat = target.lat;
+      lng = target.lng;
+    }
+  } else {
+    lat = estimate.state === 'lost' ? target.lat : estimate.lat;
+    lng = estimate.state === 'lost' ? target.lng : estimate.lng;
+  }
+
   const trackState = target.lifecycle_state === 'LOST'
     ? 'lost'
     : target.lifecycle_state === 'STALE'
@@ -301,14 +229,25 @@ function targetToStoreRecord(target: TrackedTarget, nowMs = Date.now()): Record<
     age_ms: estimate.ageMs,
     is_estimated: estimate.isEstimated,
     channel_priority: bestChannelPriority,
-    placement_mode: 'point',
-    resolve_status: 'ok',
-    geocode_tier: 'point',
+    // P1-A: Be honest about position quality for tracked targets.
+    // - placement_mode: 'tracked' when EKF is active (point-level but fused), else use raw event mode.
+    // - resolve_status: use the raw event's status (honest); publication filters handle it correctly.
+    // - position_source: new field for diagnostic consumers.
+    placement_mode: target.ekf ? 'tracked' : (target.last_placement_mode || 'point'),
+    resolve_status: target.last_resolve_status || 'ok',
+    geocode_tier: target.ekf ? 'tracked' : (target.last_placement_mode === 'point' ? 'point' : 'area'),
+    position_source: target.ekf ? 'ekf' : 'raw',
     event_fingerprint: target.event_fingerprints[target.event_fingerprints.length - 1],
     publication_class: target.publication?.classification,
     publication_score: target.publication?.score,
     publication_reasons: target.publication?.reasons,
     manual: !!target.manual,
+    last_observation: target.last_observation,
+    predicted_position: target.predicted_position,
+    last_measurement: target.last_measurement,
+    last_association: target.last_association,
+    association_score: target.last_association?.score,
+    association_reason: target.last_association?.reason,
     is_loitering: target.is_loitering === true ? true : undefined,
     heading_confidence: target.heading_confidence,
     position_estimated: target.position_estimated === true ? true : undefined,
@@ -319,13 +258,50 @@ function targetToStoreRecord(target: TrackedTarget, nowMs = Date.now()): Record<
     last_message_text: target.last_message_text,
     last_resolve_status: target.last_resolve_status,
     last_placement_mode: target.last_placement_mode,
+    parent_track_id: target.parent_track_id,
+    swarm_cluster_id: target.swarm_cluster_id,
+    ekf: target.ekf?.toJSON(),
+    // P3-A: pass renderer trail/target through to map layer
+    tracker_trail: target.tracker_trail,
+    tracker_target: target.tracker_target,
+    // New fields from tracker-plan-v3
+    tqi: typeof target.tqi === 'number' ? target.tqi : undefined,
+    altitude_mode: target.altitude_mode,
+    coastal_transition: target.coastal_transition === true ? true : undefined,
+    trajectory_confidence: typeof target.trajectory_confidence === 'number' ? target.trajectory_confidence : undefined,
+    formation_id: target.formation_id,
+    publication_history: target.publication_history?.length ? target.publication_history : undefined,
+    tracker_oblast_hasc: (target as Record<string, unknown>)['tracker_oblast_hasc'] as string | undefined,
+    // New fields from tracker-plan-v4
+    burst_score: typeof target.burst_score === 'number' ? target.burst_score : undefined,
+    maneuver_detected: target.maneuver_detected === true ? true : undefined,
+    eta_p10: typeof target.eta_p10 === 'number' ? target.eta_p10 : undefined,
+    eta_p90: typeof target.eta_p90 === 'number' ? target.eta_p90 : undefined,
+    swarm_centroid: target.swarm_centroid,
+    cross_oblast_score: typeof target.cross_oblast_score === 'number' ? target.cross_oblast_score : undefined,
+    split_shallow_angle: typeof target.split_shallow_angle === 'boolean' ? target.split_shallow_angle : undefined,
+    ghost_pool_origin: target.ghost_pool_origin,
+    negative_evidence_score: typeof target.negative_evidence_score === 'number' ? target.negative_evidence_score : undefined,
+    origin_inference: target.origin_inference,
+    trajectory_feedback: target.trajectory_feedback,
+    threat_type_history: target.threat_type_history?.length ? target.threat_type_history : undefined,
+    threat_type_reclassified_from: target.threat_type_reclassified_from,
   };
 }
 
 async function persistTargets(): Promise<void> {
   const state = getState();
   const snapshot = state.engine?.snapshot() ?? [];
-  await redisSet(REDIS_TARGETS_KEY, snapshot, REDIS_TARGETS_TTL_SECONDS);
+  // P4-C: Smart TTL — extend TTL proportionally to active track count.
+  // More active tracks means higher operational value; we keep data longer.
+  const activeCount = snapshot.filter(
+    (t) => t.lifecycle_state === 'CONFIRMED' || t.lifecycle_state === 'TRACKING' || t.lifecycle_state === 'DETECTED',
+  ).length;
+  const ttlSeconds = Math.min(
+    REDIS_TARGETS_MAX_TTL_SECONDS,
+    REDIS_TARGETS_TTL_SECONDS + activeCount * 600, // +10 min per active track, max 24h
+  );
+  await redisSet(REDIS_TARGETS_KEY, snapshot, ttlSeconds);
   if (!isRedisDisabledInThisProcess()) {
     state.lastVersion = await redisIncr(REDIS_TARGETS_VERSION_KEY);
   } else {
@@ -388,6 +364,39 @@ export async function syncTargetStoreFromRedis(): Promise<void> {
   if (!ver || ver === state.lastVersion) return;
   const targets = await loadTargetsFromRedis();
   if (!targets) return;
+
+  // P4-E: For targets whose EKF was lost or is very stale, warm up by replaying history
+  for (const target of targets) {
+    if (target.history.length < 3) continue;
+    const age = Date.now() - target.last_seen;
+    if (age > 10 * 60_000 && !target.ekf) {
+      // Replay up to last 20 accepted observations through a fresh EKF
+      const accepted = target.history
+        .filter((h) => h.accepted)
+        .slice(-20)
+        .sort((a, b) => a.ts - b.ts);
+      if (accepted.length >= 2) {
+        const first = accepted[0]!;
+        // P1-B: Use threat-specific EKF noise from trackMotionProfile, not hardcoded values.
+        const ekfProfile = trackMotionProfile(target.threat_type);
+        const ekf = new KalmanFilter2D(
+          first.lat, first.lng, 0, 0, 0.5, 1e-3,
+          ekfProfile.ekfProcessNoise,
+          ekfProfile.ekfMeasurementNoise,
+        );
+        let prevTs = first.ts;
+        for (let i = 1; i < accepted.length; i++) {
+          const h = accepted[i]!;
+          const dtSec = Math.max(0, (h.ts - prevTs) / 1000);
+          if (dtSec > 0) ekf.predict(dtSec);
+          ekf.update(h.lat, h.lng, h.confidence);
+          prevTs = h.ts;
+        }
+        target.ekf = ekf;
+      }
+    }
+  }
+
   state.engine = new TargetTrackerEngine(loadSettings(), { initialTargets: targets });
   state.lastVersion = ver;
   state.initialized = true;
@@ -506,6 +515,32 @@ export function trackerDecisionToPublicRecord(decision: TrackerDecision | null):
   return targetToStoreRecord(decision.target);
 }
 
+// P5-D: Trajectory accuracy feedback
+export async function recordTrajectoryFeedbackForTarget(
+  targetId: string,
+  actualLat: number,
+  actualLng: number,
+): Promise<boolean> {
+  await initTargetStore();
+  return withTargetWriteLock(async () => {
+    const engine = getState().engine;
+    if (!engine) return false;
+    const ok = engine.recordTrajectoryFeedback(targetId, actualLat, actualLng);
+    if (ok) await persistTargets();
+    return ok;
+  });
+}
+
+// P5-A: Predictive alarm — get pre-notification list
+export function getTrackerPredictiveAlarms(
+  regions: Array<{ id: string; lat: number; lng: number; radiusKm: number }>,
+  horizonSec?: number,
+): Array<{ targetId: string; regionId: string; etaSec: number; confidence: number }> {
+  const engine = getState().engine;
+  if (!engine) return [];
+  return engine.getPredictiveAlarms(regions, horizonSec);
+}
+
 // ── Position Ticker ──────────────────────────────────────────────────────────
 
 const TICK_INTERVAL_MS = 6_000;
@@ -527,6 +562,28 @@ export function startTrackedTargetTicker(): void {
       console.warn('[V3_TICKER] Error:', err);
     }
   }, TICK_INTERVAL_MS);
+
+  // Periodic maintenance — every 5 minutes
+  const MAINTENANCE_INTERVAL_MS = 5 * 60_000;
+  setInterval(() => {
+    try {
+      const s = getState();
+      if (!s.engine) return;
+      // v3 maintenance
+      s.engine.detectFormations();
+      s.engine.enrichGeoContext();
+      s.engine.detectAndMergeDuplicates();
+      s.engine.deduplicateCrossChannelReposts();
+      // v4 maintenance
+      s.engine.computeSwarmCentroids();
+      s.engine.computeCrossOblastCorrelation();
+      s.engine.updateGhostPool();
+      s.engine.reapStaleTracks();
+      s.engine.inferLaunchOrigins();
+    } catch (err) {
+      console.warn('[MAINTENANCE] Error:', err);
+    }
+  }, MAINTENANCE_INTERVAL_MS);
 
   console.log(`[V3_TICKER] Position ticker started — ${TICK_INTERVAL_MS}ms interval`);
 }

@@ -239,7 +239,11 @@ def resolve(
     Returns:
         ResolvedLocation with confidence, status, and top candidates
     """
-    place_name = entities.get('place_name') or entities.get('target_city') or ''
+    raw_place = entities.get('place_name') or ''
+    target_city = entities.get('target_city') or ''
+    place_name = raw_place or target_city or ''
+    is_predictive = bool(not raw_place and target_city)
+
     oblast_hint = entities.get('oblast')
     city_hint = entities.get('geo_city_hint') or None
     if isinstance(city_hint, str):
@@ -249,6 +253,7 @@ def resolve(
         return ResolvedLocation(
             lat=0.0, lng=0.0, oblast=oblast_hint or '', raion=None,
             place_name='Unknown', confidence=0.0, status='rejected', chosen_from=[],
+            is_predictive=is_predictive,
         )
 
     # ── 0. Normalize case (accusative → nominative) ──
@@ -262,6 +267,7 @@ def resolve(
         return ResolvedLocation(
             lat=0.0, lng=0.0, oblast=oblast_hint or '', raion=None,
             place_name=place_name or original_name, confidence=0.0, status='rejected', chosen_from=[],
+            is_predictive=is_predictive,
         )
 
     _hom_fix = disambiguate_homonym_place(place_name, oblast_hint)
@@ -323,6 +329,7 @@ def resolve(
             confidence=0.82,
             status='ok',
             chosen_from=[sea_c],
+            is_predictive=is_predictive,
         )
 
     # Variants: "м. X", RU spellings, "City / oblast" → improve gazetteer + geocoder hit rate
@@ -536,6 +543,7 @@ def resolve(
                     confidence=0.32,
                     status='low_confidence',
                     chosen_from=candidates[:5],
+                    is_predictive=is_predictive,
                 )
 
     # ── 8. Compute confidence ──
@@ -575,6 +583,7 @@ def resolve(
                     confidence=0.0,
                     status='rejected',
                     chosen_from=candidates[:5],
+                    is_predictive=is_predictive,
                 )
 
         # Update channel prior
@@ -593,6 +602,7 @@ def resolve(
             confidence=confidence,
             status=status,
             chosen_from=candidates[:5],
+            is_predictive=is_predictive,
         )
 
     # ── Fallback: no candidates at all ──
@@ -605,6 +615,7 @@ def resolve(
         confidence=0.0,
         status='rejected',
         chosen_from=candidates[:5],
+        is_predictive=is_predictive,
     )
 
 

@@ -1,38 +1,28 @@
 import { NextResponse } from 'next/server';
-import { getRedis } from '@/lib/redis';
 import { requireAdminAuth } from '@/lib/admin/apiAuth';
+import { listAdminFeedEntries } from '@/lib/admin-feed-store';
 
-const REDIS_FEED_KEY = 'admin:feed';
+export const dynamic = 'force-dynamic';
 
-/**
- * GET /api/admin/feed
- * Returns the latest feed entries (newest first).
- * Auth: admin session cookie or X-Auth-Secret.
- *
- * Query params:
- *   limit  - max entries to return (default: 200, max: 500)
- *   offset - skip N entries (for pagination, default: 0)
- */
 export async function GET(request: Request) {
-  const authError = await requireAdminAuth();
-  if (authError) return authError;
+  const denied = await requireAdminAuth();
+  if (denied) return denied;
 
   const { searchParams } = new URL(request.url);
-  const limit = Math.min(parseInt(searchParams.get('limit') || '200', 10) || 200, 500);
-  const offset = parseInt(searchParams.get('offset') || '0', 10) || 0;
+  const limit = Number.parseInt(searchParams.get('limit') || '300', 10);
+  const offset = Number.parseInt(searchParams.get('offset') || '0', 10);
 
   try {
-    const redis = getRedis();
-    const raw = await redis.lrange(REDIS_FEED_KEY, offset, offset + limit - 1);
-    const total = await redis.llen(REDIS_FEED_KEY);
-
-    const entries = raw.map((item) => {
-      try { return JSON.parse(item); } catch { return null; }
-    }).filter(Boolean);
-
-    return NextResponse.json({ entries, total, limit, offset });
+    const result = await listAdminFeedEntries(limit, offset);
+    return NextResponse.json(result);
   } catch (err) {
-    console.warn('[FEED] Redis read error:', err);
-    return NextResponse.json({ entries: [], total: 0, limit, offset });
+    console.warn('[ADMIN-FEED] Redis read error:', err);
+    return NextResponse.json({
+      entries: [],
+      total: 0,
+      limit: Math.max(1, Math.min(500, Number.isFinite(limit) ? limit : 300)),
+      offset: Math.max(0, Number.isFinite(offset) ? offset : 0),
+      error: 'feed_unavailable',
+    });
   }
 }

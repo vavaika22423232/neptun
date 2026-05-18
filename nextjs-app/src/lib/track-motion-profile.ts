@@ -7,6 +7,10 @@ export type TrackMotionProfile = {
   lostMs: number;
   confidenceHalfLifeMs: number;
   targetStopKm: number;
+  /** EKF process noise Q (higher = more maneuverable, filter trusts measurements more) */
+  ekfProcessNoise: number;
+  /** EKF measurement noise R base (higher = noisier observations) */
+  ekfMeasurementNoise: number;
 };
 
 const UAV_PROFILE: TrackMotionProfile = {
@@ -18,6 +22,8 @@ const UAV_PROFILE: TrackMotionProfile = {
   lostMs: 40 * 60_000,
   confidenceHalfLifeMs: 16 * 60_000,
   targetStopKm: 5,
+  ekfProcessNoise: 1e-5,    // UAV: relatively predictable cruise
+  ekfMeasurementNoise: 1e-2, // Moderate geocode noise
 };
 
 const MISSILE_PROFILE: TrackMotionProfile = {
@@ -29,6 +35,8 @@ const MISSILE_PROFILE: TrackMotionProfile = {
   lostMs: 10 * 60_000,
   confidenceHalfLifeMs: 4 * 60_000,
   targetStopKm: 12,
+  ekfProcessNoise: 5e-5,    // Cruise missiles can maneuver significantly
+  ekfMeasurementNoise: 5e-3, // Higher-precision radar observations
 };
 
 export const TRACK_MOTION_PROFILES: Record<string, TrackMotionProfile> = {
@@ -43,12 +51,16 @@ export const TRACK_MOTION_PROFILES: Record<string, TrackMotionProfile> = {
     staleMs: 14 * 60_000,
     lostMs: 20 * 60_000,
     targetStopKm: 3,
+    ekfProcessNoise: 2e-4,    // FPV: highly maneuverable, erratic flight
+    ekfMeasurementNoise: 1.5e-2,
   },
   rozved: {
     ...UAV_PROFILE,
     nominalSpeedKmh: 110,
     maxSpeedKmh: 300,
     extrapolateMs: 15 * 60_000,
+    ekfProcessNoise: 8e-6,    // Recon drones: predictable loiter patterns
+    ekfMeasurementNoise: 1e-2,
   },
   air_balloon: {
     nominalSpeedKmh: 40,
@@ -59,6 +71,8 @@ export const TRACK_MOTION_PROFILES: Record<string, TrackMotionProfile> = {
     lostMs: 4 * 60 * 60_000,
     confidenceHalfLifeMs: 55 * 60_000,
     targetStopKm: 8,
+    ekfProcessNoise: 1e-6,    // Balloons: wind-driven, very smooth trajectory
+    ekfMeasurementNoise: 2e-2,
   },
   missile: MISSILE_PROFILE,
   raketa: MISSILE_PROFILE,
@@ -73,6 +87,8 @@ export const TRACK_MOTION_PROFILES: Record<string, TrackMotionProfile> = {
     lostMs: 5 * 60_000,
     confidenceHalfLifeMs: 75_000,
     targetStopKm: 20,
+    ekfProcessNoise: 1e-6,    // Ballistic: near-deterministic parabolic arc
+    ekfMeasurementNoise: 1e-3,
   },
   kab: {
     nominalSpeedKmh: 600,
@@ -83,6 +99,8 @@ export const TRACK_MOTION_PROFILES: Record<string, TrackMotionProfile> = {
     lostMs: 16 * 60_000,
     confidenceHalfLifeMs: 7 * 60_000,
     targetStopKm: 8,
+    ekfProcessNoise: 3e-5,
+    ekfMeasurementNoise: 5e-3,
   },
   rszv: {
     nominalSpeedKmh: 650,
@@ -93,6 +111,8 @@ export const TRACK_MOTION_PROFILES: Record<string, TrackMotionProfile> = {
     lostMs: 12 * 60_000,
     confidenceHalfLifeMs: 5 * 60_000,
     targetStopKm: 6,
+    ekfProcessNoise: 4e-5,
+    ekfMeasurementNoise: 5e-3,
   },
   avia: {
     nominalSpeedKmh: 750,
@@ -103,6 +123,8 @@ export const TRACK_MOTION_PROFILES: Record<string, TrackMotionProfile> = {
     lostMs: 45 * 60_000,
     confidenceHalfLifeMs: 18 * 60_000,
     targetStopKm: 10,
+    ekfProcessNoise: 6e-5,    // Aircraft: can maneuver freely
+    ekfMeasurementNoise: 8e-3,
   },
 };
 
@@ -115,6 +137,8 @@ export const DEFAULT_TRACK_MOTION_PROFILE: TrackMotionProfile = {
   lostMs: 30 * 60_000,
   confidenceHalfLifeMs: 12 * 60_000,
   targetStopKm: 5,
+  ekfProcessNoise: 1e-5,
+  ekfMeasurementNoise: 1e-2,
 };
 
 export function trackMotionProfile(threatType: string): TrackMotionProfile {
