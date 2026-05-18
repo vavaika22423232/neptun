@@ -724,7 +724,10 @@ function MapLibreContainer({
            setMapReady(true);
            clearTimeout(fallbackTimer);
            // Manually trigger style.load logic if needed
-           setTimeout(() => map.fire('style.load'), 100);
+           setTimeout(() => {
+             map.fire('style.load');
+             map.resize();
+           }, 100);
         }
       } catch (err) {
         console.error('Failed to apply map style', err);
@@ -779,6 +782,9 @@ function MapLibreContainer({
       
       // Ensure map is ready after overlays are applied
       setMapReady(true);
+      
+      // Force a resize to ensure the map fills its container
+      map.resize();
 
       const { oblastData, districtData, occupiedTerritories } = cachedGeoData;
       const isLightBasemap = isLightAppTheme();
