@@ -701,6 +701,13 @@ function MapLibreContainer({
         }
 
         console.log('MapLibreContainer: setting style', { requestSeq, styleLayerCount: style.layers.length });
+        
+        // Ensure map is ready after style is applied if there are no layers
+        if (style.layers.length === 0) {
+          console.log('MapLibreContainer: style has no layers, setting mapReady=true');
+          setMapReady(true);
+        }
+        
         map.setStyle(style, { diff: true });
         
         // If map is already loaded and style has layers, we might not get a style.load event
@@ -710,12 +717,6 @@ function MapLibreContainer({
            setMapReady(true);
            // Manually trigger style.load logic if needed
            setTimeout(() => map.fire('style.load'), 50);
-        }
-        
-        // Ensure map is ready after style is applied if there are no layers
-        if (style.layers.length === 0) {
-          console.log('MapLibreContainer: style has no layers, setting mapReady=true');
-          setMapReady(true);
         }
       } catch (err) {
         console.error('Failed to apply map style', err);
