@@ -803,8 +803,8 @@ function MapLibreContainer({
             source: 'oblasts',
             filter: ['==', ['get', 'HASC_1'], '__none__'],
             paint: {
-              'line-color': '#ff1a35',
-              'line-opacity': 0.9,
+              'line-color': '#ef4444',
+              'line-opacity': 0.8,
               'line-width': ['interpolate', ['linear'], ['zoom'], 4, 1.0, 7, 2.2, 10, 3.0],
             },
           },
@@ -823,8 +823,8 @@ function MapLibreContainer({
             source: 'launch-arcs',
             layout: { 'line-join': 'round', 'line-cap': 'round' },
             paint: {
-              'line-color': '#ff3864',
-              'line-opacity': ['*', ['get', 'opacity'], 0.14],
+              'line-color': '#f43f5e',
+              'line-opacity': ['*', ['get', 'opacity'], 0.12],
               'line-width': 8,
               'line-blur': 5,
             },
@@ -840,8 +840,8 @@ function MapLibreContainer({
             source: 'launch-arcs',
             layout: { 'line-join': 'round', 'line-cap': 'round' },
             paint: {
-              'line-color': '#ff3864',
-              'line-opacity': ['*', ['get', 'opacity'], 0.55],
+              'line-color': '#f43f5e',
+              'line-opacity': ['*', ['get', 'opacity'], 0.45],
               'line-width': 1.2,
               'line-dasharray': [4, 5],
             },
@@ -860,8 +860,8 @@ function MapLibreContainer({
           source: 'launch-sites',
           paint: {
             'circle-radius': ['interpolate', ['linear'], ['zoom'], 4, 10, 8, 18],
-            'circle-color': '#ff1a35',
-            'circle-opacity': ['*', ['get', 'opacity'], 0.35],
+            'circle-color': '#f43f5e',
+            'circle-opacity': ['*', ['get', 'opacity'], 0.25],
             'circle-blur': 0.7,
           },
         });
@@ -880,7 +880,7 @@ function MapLibreContainer({
             'text-ignore-placement': true,
           },
           paint: {
-            'text-color': '#ff4060',
+            'text-color': '#fb7185',
             'text-halo-color': '#0a0d12',
             'text-halo-width': 2.0,
             'text-opacity': ['*', ['get', 'opacity'], 1.2],
@@ -899,8 +899,8 @@ function MapLibreContainer({
             type: 'fill',
             source: 'threat-swarms',
             paint: {
-              'fill-color': '#ff3864',
-              'fill-opacity': 0.12,
+              'fill-color': '#f43f5e',
+              'fill-opacity': 0.08,
             },
           },
           'threat-trail-projection'
@@ -913,10 +913,10 @@ function MapLibreContainer({
             type: 'line',
             source: 'threat-swarms',
             paint: {
-              'line-color': '#ff3864',
+              'line-color': '#f43f5e',
               'line-width': 1.5,
               'line-dasharray': [4, 4],
-              'line-opacity': 0.4,
+              'line-opacity': 0.3,
             },
           },
           'threat-trail-projection'
@@ -936,7 +936,7 @@ function MapLibreContainer({
               'text-anchor': 'center',
             },
             paint: {
-              'text-color': '#ff3864',
+              'text-color': '#fb7185',
               'text-halo-color': 'rgba(15, 15, 15, 0.85)',
               'text-halo-width': 1.5,
             },

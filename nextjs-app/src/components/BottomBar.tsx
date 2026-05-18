@@ -147,27 +147,31 @@ function TacticalHudStrip({ activeAlarms, targetsCount, onlineCount, onOpenFeed,
 export default function BottomBar({ activeAlarms, targetsCount, onlineCount, onOpenFeed, lastUpdateMs }: BottomBarStatsProps) {
   return (
     <nav
-      className="bottom-bar"
+      className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom,0px)+16px)] z-[2400] flex justify-center"
       aria-label="Статус карти та застосунок"
     >
-      {/* App ribbon — collapsed to one smart row */}
-      <div className="bottom-bar__ribbon">
-        <div className="sm:hidden">
-          <BottomBarAppRibbonStripe slot="bottom_strip_mobile" />
+      <div className="pointer-events-auto flex flex-col items-center gap-2">
+        {/* App ribbon — collapsed to one smart row */}
+        <div className="w-full max-w-sm px-4">
+          <div className="sm:hidden">
+            <BottomBarAppRibbonStripe slot="bottom_strip_mobile" />
+          </div>
+          <div className="hidden sm:block">
+            <BottomBarAppRibbonStripe slot="bottom_strip_desktop" />
+          </div>
         </div>
-        <div className="hidden sm:block">
-          <BottomBarAppRibbonStripe slot="bottom_strip_desktop" />
+
+        {/* Tactical HUD strip (Floating Pill) */}
+        <div className="rounded-full border border-[color:var(--hud-border)] bg-[var(--hud-surface)] shadow-[var(--hud-shadow)] backdrop-blur-2xl transition-colors">
+          <TacticalHudStrip
+            activeAlarms={activeAlarms}
+            targetsCount={targetsCount}
+            onlineCount={onlineCount}
+            onOpenFeed={onOpenFeed}
+            lastUpdateMs={lastUpdateMs}
+          />
         </div>
       </div>
-
-      {/* Tactical HUD strip */}
-      <TacticalHudStrip
-        activeAlarms={activeAlarms}
-        targetsCount={targetsCount}
-        onlineCount={onlineCount}
-        onOpenFeed={onOpenFeed}
-        lastUpdateMs={lastUpdateMs}
-      />
     </nav>
   );
 }

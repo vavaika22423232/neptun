@@ -54,7 +54,7 @@ export default function MapLayersControl({ basemap, onChange }: MapLayersControl
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex h-11 w-11 items-center justify-center rounded-[12px] border border-[color:var(--hud-border)] bg-[var(--hud-surface)] text-[var(--hud-text)] shadow-[var(--hud-shadow)] backdrop-blur-xl transition-all hover:bg-[var(--hud-hover)] active:scale-95 sm:h-10 sm:w-10 sm:rounded-[14px]"
+        className="flex h-11 w-11 items-center justify-center rounded-full border border-[color:var(--hud-border)] bg-[var(--hud-surface)] text-[var(--hud-text)] shadow-[var(--hud-shadow)] backdrop-blur-2xl transition-all hover:bg-[var(--hud-hover)] active:scale-95 sm:h-10 sm:w-10"
         aria-label="Змінити шар карти"
         title="Шари карти"
       >

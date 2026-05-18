@@ -163,7 +163,7 @@ export default function AppShell({
             rel="noopener noreferrer"
             aria-label="Telegram-канал NEPTUN"
             title="Telegram-канал NEPTUN"
-            className="flex h-11 shrink-0 items-center gap-2 rounded-[12px] border border-[color:var(--hud-border)] bg-[#0088cc]/90 px-4 text-white shadow-[var(--hud-shadow)] backdrop-blur-xl transition-all hover:bg-[#0099e6] hover:scale-[1.03] active:scale-[0.98] sm:h-10 sm:rounded-[14px]"
+            className="flex h-11 shrink-0 items-center gap-2 rounded-full border border-[color:var(--hud-border)] bg-[#0088cc] px-4 text-white shadow-[var(--hud-shadow)] backdrop-blur-2xl transition-all hover:bg-[#0099e6] hover:scale-[1.03] active:scale-[0.98] sm:h-10"
           >
             <svg viewBox="0 0 24 24" className="h-[18px] w-[18px] shrink-0" fill="currentColor" aria-hidden>
               <path d={telegramIconPath} />
@@ -177,9 +177,9 @@ export default function AppShell({
             <button
               type="button"
               onClick={onToggleTracking}
-              className={`flex h-11 shrink-0 items-center gap-2 rounded-[12px] border border-[color:var(--hud-border)] px-4 text-[12px] font-bold tracking-tight shadow-[var(--hud-shadow)] backdrop-blur-xl transition-all active:scale-95 sm:h-10 sm:rounded-[14px] ${
+              className={`flex h-11 shrink-0 items-center gap-2 rounded-full border border-[color:var(--hud-border)] px-4 text-[12px] font-bold tracking-tight shadow-[var(--hud-shadow)] backdrop-blur-2xl transition-all active:scale-95 sm:h-10 ${
                 trackingActive 
-                  ? 'bg-red-500/20 text-red-500 ring-1 ring-red-500/50 hover:bg-red-500/30' 
+                  ? 'bg-[var(--hud-danger-bg)] text-[var(--hud-danger)] ring-1 ring-[var(--hud-danger)]/50 hover:bg-[var(--hud-danger-bg)]/80' 
                   : 'bg-[var(--hud-surface)] text-[var(--hud-text)] hover:bg-[var(--hud-hover)]'
               }`}
               title={trackingActive ? 'Вимкнути слідкування' : 'Увімкнути слідкування за ціллю'}
@@ -210,7 +210,7 @@ export default function AppShell({
             aria-expanded={menuOpen}
             aria-controls="neptun-hud-drawer"
             onClick={() => setMenuOpen(v => !v)}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] border border-[color:var(--hud-border)] bg-[var(--hud-surface)] text-[var(--hud-text)] shadow-[var(--hud-shadow)] backdrop-blur-xl transition-colors hover:bg-[var(--hud-hover)] active:bg-[var(--hud-active)] sm:h-10 sm:w-10 sm:rounded-[14px]"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[color:var(--hud-border)] bg-[var(--hud-surface)] text-[var(--hud-text)] shadow-[var(--hud-shadow)] backdrop-blur-2xl transition-colors hover:bg-[var(--hud-hover)] active:bg-[var(--hud-active)] sm:h-10 sm:w-10"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden>
               {menuOpen ? (

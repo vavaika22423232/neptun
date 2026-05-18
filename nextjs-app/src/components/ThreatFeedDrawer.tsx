@@ -140,22 +140,30 @@ export default function ThreatFeedDrawer({ markers, isOpen, onClose }: ThreatFee
             const count = Number(m.count) > 1 ? Number(m.count) : null;
             const place = [m.place, m.region].filter(Boolean).join(' · ') || null;
             return (
-              <div key={`${m.track_id || m.id || ''}_${m.lat}_${m.lng}`} className="threat-drawer__item">
+              <div key={`${m.track_id || m.id || ''}_${m.lat}_${m.lng}`} className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-[var(--hud-hover)] border-b border-[color:var(--hud-divider)] last:border-0">
                 <div
-                  className="threat-drawer__item-dot"
-                  style={{ background: color, boxShadow: `0 0 6px ${color}80` }}
+                  className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
+                  style={{ background: color, boxShadow: `0 0 8px ${color}60` }}
                   aria-hidden
                 />
-                <div className="threat-drawer__item-body">
-                  <div className="threat-drawer__item-top">
-                    <span className="threat-drawer__item-type" style={{ color }}>
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-[13px] font-semibold" style={{ color }}>
                       {THREAT_NAMES[t] || t}
-                      {count && <span className="threat-drawer__item-count">×{count}</span>}
+                      {count && (
+                        <span className="rounded-full bg-[var(--hud-danger-bg)] px-1.5 py-0.5 text-[10px] font-bold text-[var(--hud-danger)] border border-[color:var(--hud-danger)]/20">
+                          ×{count}
+                        </span>
+                      )}
+                    </div>
+                    <span className="shrink-0 text-[11px] font-medium tabular-nums text-[var(--hud-muted)]">
+                      {formatAgo(ts)}
                     </span>
-                    <span className="threat-drawer__item-time">{formatAgo(ts)}</span>
                   </div>
                   {place && (
-                    <div className="threat-drawer__item-place">{place}</div>
+                    <div className="truncate text-[11.5px] text-[var(--hud-muted)]">
+                      {place}
+                    </div>
                   )}
                 </div>
               </div>
