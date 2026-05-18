@@ -704,10 +704,12 @@ function MapLibreContainer({
         map.setStyle(style, { diff: true });
         
         // If map is already loaded and style has layers, we might not get a style.load event
-        // if the diff is empty or very small. Let's ensure mapReady is set.
+        // if the diff is empty or very small. Let's ensure mapReady is set and overlays are applied.
         if (map.isStyleLoaded()) {
-           console.log('MapLibreContainer: style already loaded after setStyle, setting mapReady=true');
+           console.log('MapLibreContainer: style already loaded after setStyle, setting mapReady=true and triggering style.load manually');
            setMapReady(true);
+           // Manually trigger style.load logic if needed
+           map.fire('style.load');
         }
         
         // Ensure map is ready after style is applied if there are no layers
@@ -758,8 +760,9 @@ function MapLibreContainer({
       
       if (!cachedGeoData) {
         console.warn('MapLibre style.load: geo data not ready yet');
-        // Don't set mapReady=true here, wait for data to load
-        return; // GeoJSON not yet loaded, skip
+        // We still need to set mapReady=true so that the map can render at least the base style
+        setMapReady(true);
+        return; // GeoJSON not yet loaded, skip overlays for now
       }
       
       console.log('MapLibre style.load: applying overlays. Layer count:', styleLayerCount);
