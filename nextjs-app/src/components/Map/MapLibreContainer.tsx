@@ -470,11 +470,10 @@ function MapLibreContainer({
     }
 
     /**
-     * Liberty + Dark з OpenFreeMap — один і той самий векторний стек (OpenMapTiles),
-     * темний стиль — офіційна «темна» палітра того ж набору даних, що й Liberty.
+     * Local Premium 3D Map Styles
      */
-    const OFM_LIBERTY = 'https://tiles.openfreemap.org/styles/liberty';
-    const OFM_DARK = 'https://tiles.openfreemap.org/styles/dark';
+    const LOCAL_STYLE_LIGHT = `/map-style-light.json?${CACHE_VERSION}`;
+    const LOCAL_STYLE_DARK = `/map-style-dark.json?${CACHE_VERSION}`;
 
     // Cached GeoJSON - loaded once, replayed on every style swap
     let cachedGeoData: {
@@ -496,9 +495,22 @@ function MapLibreContainer({
         [44, 56],
       ],
       attributionControl: false,
-      dragRotate: false,
-      pitchWithRotate: false,
-      touchPitch: false,
+      dragRotate: true, // Enable rotation for 3D
+      pitchWithRotate: true,
+      touchPitch: true,
+    });
+
+    // Add pitch adjustment on zoom
+    map.on('zoom', () => {
+      const zoom = map.getZoom();
+      if (zoom > 13) {
+        const targetPitch = Math.min(60, (zoom - 13) * 20);
+        if (map.getPitch() < targetPitch) {
+          map.setPitch(targetPitch);
+        }
+      } else if (zoom < 12 && map.getPitch() > 0) {
+        map.setPitch(0);
+      }
     });
 
     const originalAddSource = map.addSource.bind(map);
@@ -529,23 +541,14 @@ function MapLibreContainer({
     });
 
     const buildOFMStyle = async (useLightBasemap: boolean, onlyUkraine: boolean) => {
-      const styleUrl = useLightBasemap ? OFM_LIBERTY : OFM_DARK;
+      const styleUrl = useLightBasemap ? LOCAL_STYLE_LIGHT : LOCAL_STYLE_DARK;
       const [styleRes, ukraineBoundary] = await Promise.all([
         fetch(styleUrl),
         onlyUkraine
           ? fetch(`/geoBoundaries-UKR-ADM0_simplified.geojson?${CACHE_VERSION}`, { cache: 'force-cache' }).then((res) => res.json())
           : Promise.resolve(null),
       ]);
-      let styleText = await styleRes.text();
-      if (!useLightBasemap) {
-        // Lighten the extreme dark colors of OpenFreeMap to a modern slate-blue dark theme
-        styleText = styleText
-          .replace(/rgb\(12,12,12\)/g, '#181f29') // Background
-          .replace(/rgb\(27\s*,\s*27\s*,\s*29\)/g, '#1e2632') // Water
-          .replace(/rgb\(32,32,32\)/g, '#242c38') // Landcover
-          .replace(/rgb\(10,10,10\)/g, '#141a22') // Buildings
-          .replace(/rgb\(35,35,35\)/g, '#2b3441'); // Roads
-      }
+      const styleText = await styleRes.text();
       const style = JSON.parse(styleText) as MutableMapStyle;
 
       // Layer ID patterns whose labels are too noisy at zoom 5-6 → hide
@@ -667,7 +670,29 @@ function MapLibreContainer({
         ]);
         if (requestSeq !== styleRequestSeq) return;
         cachedGeoData = geoData;
-        map.setStyle(style, { diff: false });
+
+        // Preserve dynamic sources and layers for smooth diffing
+        const currentStyle = map.getStyle();
+        if (currentStyle && currentStyle.sources) {
+          const dynamicSourceIds = ['oblasts', 'districts', 'ukraine-border-source', 'threats', 'occupied-territories', 'launch-arcs', 'launch-sites', 'threat-swarms', 'threat-trails'];
+          for (const src of dynamicSourceIds) {
+            if (currentStyle.sources[src]) {
+              style.sources[src] = currentStyle.sources[src];
+            }
+          }
+          const baseLayerIds = new Set(style.layers.map(l => l.id));
+          const dynamicLayers = currentStyle.layers.filter(l => !baseLayerIds.has(l.id));
+          
+          // Insert dynamic layers before the first symbol layer to keep labels on top
+          const firstSymbolIdx = style.layers.findIndex(l => l.type === 'symbol');
+          if (firstSymbolIdx !== -1) {
+            style.layers.splice(firstSymbolIdx, 0, ...dynamicLayers);
+          } else {
+            style.layers = [...style.layers, ...dynamicLayers];
+          }
+        }
+
+        map.setStyle(style, { diff: true });
       } catch (err) {
         console.error('Failed to apply map style', err);
         setMapReady(true);
