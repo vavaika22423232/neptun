@@ -481,6 +481,7 @@ function MapLibreContainer({
       districtData: FeatureCollection;
       occupiedTerritories: FeatureCollection;
     } | null = null;
+    // Keep track of the current request sequence to avoid race conditions
     let styleRequestSeq = 0;
 
     const map = new maplibregl.Map({
@@ -499,6 +500,9 @@ function MapLibreContainer({
       pitchWithRotate: true,
       touchPitch: true,
     });
+    
+    // Store it on the map object so it persists across re-renders
+    (map as any).styleRequestSeq = 0;
 
     // Add pitch adjustment on zoom
     map.on('zoom', () => {
@@ -517,6 +521,10 @@ function MapLibreContainer({
     const originalAddLayer = map.addLayer.bind(map);
 
     mapRef.current = map;
+
+    map.on('error', (e) => {
+      console.error('MapLibre error:', e);
+    });
 
     map.on('styleimagemissing', (event) => {
       if (map.hasImage(event.id)) return;
@@ -655,7 +663,7 @@ function MapLibreContainer({
     const basemapOverrideRef = { current: basemapOverride };
 
     const applyBaseStyle = async () => {
-      const requestSeq = ++styleRequestSeq;
+      const requestSeq = ++(map as any).styleRequestSeq;
       try {
         setMapReady(false);
         const light = isLightAppTheme();
@@ -668,7 +676,7 @@ function MapLibreContainer({
             : Promise.resolve(buildGenericRasterBasemapStyle([getBasemapUrl(currentBasemapKind)], currentBasemapKind)),
           loadGeoData(),
         ]);
-        if (requestSeq !== styleRequestSeq) return;
+        if (requestSeq !== (map as any).styleRequestSeq) return;
         cachedGeoData = geoData;
 
         // Preserve dynamic sources and layers for smooth diffing
@@ -692,7 +700,14 @@ function MapLibreContainer({
           }
         }
 
+        console.log('MapLibreContainer: setting style', { requestSeq, styleLayerCount: style.layers.length });
         map.setStyle(style, { diff: true });
+        
+        // Ensure map is ready after style is applied if there are no layers
+        if (style.layers.length === 0) {
+          console.log('MapLibreContainer: style has no layers, setting mapReady=true');
+          setMapReady(true);
+        }
       } catch (err) {
         console.error('Failed to apply map style', err);
         setMapReady(true);
@@ -704,7 +719,17 @@ function MapLibreContainer({
     // Expose a way for the basemap-override useEffect to update the ref
     (applyBaseStyleRef as { basemapOverrideRef?: typeof basemapOverrideRef }).basemapOverrideRef = basemapOverrideRef;
 
-    void applyBaseStyle();
+    // Initial load
+    if (map.isStyleLoaded()) {
+      console.log('MapLibreContainer: map already loaded, applying style');
+      void applyBaseStyle();
+    } else {
+      console.log('MapLibreContainer: map not loaded yet, waiting for load event');
+      map.once('load', () => {
+        console.log('MapLibreContainer: map load event fired, applying style');
+        void applyBaseStyle();
+      });
+    }
 
     const onThemeChange = () => {
       applyBaseStyleRef.current();
@@ -715,8 +740,25 @@ function MapLibreContainer({
       // Skip only the empty placeholder style we set during initialization; ukraine-only
       // style intentionally starts with only a background layer before overlays are replayed.
       const styleLayerCount = map.getStyle()?.layers?.length ?? 0;
-      if (styleLayerCount === 0) return;
-      if (!cachedGeoData) return; // GeoJSON not yet loaded, skip
+      if (styleLayerCount === 0) {
+        console.warn('MapLibre style.load: styleLayerCount is 0, skipping');
+        setMapReady(true);
+        return;
+      }
+      
+      // If we only have the background layer (e.g. ukraine-only mode without base map), 
+      // we still want to load the geo data and overlays
+      
+      if (!cachedGeoData) {
+        console.warn('MapLibre style.load: geo data not ready yet');
+        setMapReady(true);
+        return; // GeoJSON not yet loaded, skip
+      }
+      
+      console.log('MapLibre style.load: applying overlays. Layer count:', styleLayerCount);
+      
+      // Ensure map is ready after overlays are applied
+      setMapReady(true);
 
       const { oblastData, districtData, occupiedTerritories } = cachedGeoData;
       const isLightBasemap = isLightAppTheme();
@@ -1351,9 +1393,7 @@ function MapLibreContainer({
     if (ref.basemapOverrideRef) {
       ref.basemapOverrideRef.current = basemapOverride;
     }
-    if (mapReady) {
-      applyBaseStyleRef.current();
-    }
+    applyBaseStyleRef.current();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [basemapOverride]);
 
