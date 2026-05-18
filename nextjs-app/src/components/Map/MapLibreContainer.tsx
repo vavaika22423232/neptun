@@ -710,11 +710,19 @@ function MapLibreContainer({
         
         map.setStyle(style, { diff: true });
         
+        // Always set mapReady=true after a short delay if style.load doesn't fire
+        // This is a failsafe to ensure the map doesn't get stuck in a loading state
+        const fallbackTimer = setTimeout(() => {
+          console.log('MapLibreContainer: fallback timer fired, setting mapReady=true');
+          setMapReady(true);
+        }, 1000);
+        
         // If map is already loaded and style has layers, we might not get a style.load event
         // if the diff is empty or very small. Let's ensure mapReady is set and overlays are applied.
         if (map.isStyleLoaded()) {
            console.log('MapLibreContainer: style already loaded after setStyle, setting mapReady=true and triggering style.load manually');
            setMapReady(true);
+           clearTimeout(fallbackTimer);
            // Manually trigger style.load logic if needed
            setTimeout(() => map.fire('style.load'), 100);
         }
