@@ -679,56 +679,8 @@ function MapLibreContainer({
         if (requestSeq !== (map as any).styleRequestSeq) return;
         cachedGeoData = geoData;
 
-        // Preserve dynamic sources and layers for smooth diffing
-        const currentStyle = map.getStyle();
-        if (currentStyle && currentStyle.sources) {
-          const dynamicSourceIds = ['oblasts', 'districts', 'ukraine-border-source', 'threats', 'occupied-territories', 'launch-arcs', 'launch-sites', 'threat-swarms', 'threat-trails'];
-          for (const src of dynamicSourceIds) {
-            if (currentStyle.sources[src]) {
-              style.sources[src] = currentStyle.sources[src];
-            }
-          }
-          const baseLayerIds = new Set(style.layers.map(l => l.id));
-          const dynamicLayers = currentStyle.layers.filter(l => !baseLayerIds.has(l.id));
-          
-          // Insert dynamic layers before the first symbol layer to keep labels on top
-          const firstSymbolIdx = style.layers.findIndex(l => l.type === 'symbol');
-          if (firstSymbolIdx !== -1) {
-            style.layers.splice(firstSymbolIdx, 0, ...dynamicLayers);
-          } else {
-            style.layers = [...style.layers, ...dynamicLayers];
-          }
-        }
-
-        console.log('MapLibreContainer: setting style', { requestSeq, styleLayerCount: style.layers.length });
-        
-        // Ensure map is ready after style is applied if there are no layers
-        if (style.layers.length === 0) {
-          console.log('MapLibreContainer: style has no layers, setting mapReady=true');
-          setMapReady(true);
-        }
-        
-        map.setStyle(style, { diff: true });
-        
-        // Always set mapReady=true after a short delay if style.load doesn't fire
-        // This is a failsafe to ensure the map doesn't get stuck in a loading state
-        const fallbackTimer = setTimeout(() => {
-          console.log('MapLibreContainer: fallback timer fired, setting mapReady=true');
-          setMapReady(true);
-        }, 1000);
-        
-        // If map is already loaded and style has layers, we might not get a style.load event
-        // if the diff is empty or very small. Let's ensure mapReady is set and overlays are applied.
-        if (map.isStyleLoaded()) {
-           console.log('MapLibreContainer: style already loaded after setStyle, setting mapReady=true and triggering style.load manually');
-           setMapReady(true);
-           clearTimeout(fallbackTimer);
-           // Manually trigger style.load logic if needed
-           setTimeout(() => {
-             map.fire('style.load');
-             map.resize();
-           }, 100);
-        }
+        // diff:false guarantees style.load fires every time, which re-applies all overlays
+        map.setStyle(style, { diff: false });
       } catch (err) {
         console.error('Failed to apply map style', err);
         setMapReady(true);
@@ -740,17 +692,10 @@ function MapLibreContainer({
     // Expose a way for the basemap-override useEffect to update the ref
     (applyBaseStyleRef as { basemapOverrideRef?: typeof basemapOverrideRef }).basemapOverrideRef = basemapOverrideRef;
 
-    // Initial load
-    if (map.isStyleLoaded()) {
-      console.log('MapLibreContainer: map already loaded, applying style');
+    // Wait for the empty placeholder style to load, then apply the real basemap
+    map.once('load', () => {
       void applyBaseStyle();
-    } else {
-      console.log('MapLibreContainer: map not loaded yet, waiting for load event');
-      map.once('load', () => {
-        console.log('MapLibreContainer: map load event fired, applying style');
-        void applyBaseStyle();
-      });
-    }
+    });
 
     const onThemeChange = () => {
       applyBaseStyleRef.current();
@@ -758,32 +703,16 @@ function MapLibreContainer({
     window.addEventListener('theme-change', onThemeChange);
 
     map.on('style.load', () => {
-      console.log('MapLibre style.load event fired');
-      // Skip only the empty placeholder style we set during initialization; ukraine-only
-      // style intentionally starts with only a background layer before overlays are replayed.
+      // Skip the initial empty placeholder style (version: 8, sources: {}, layers: [])
       const styleLayerCount = map.getStyle()?.layers?.length ?? 0;
-      if (styleLayerCount === 0) {
-        console.warn('MapLibre style.load: styleLayerCount is 0, skipping');
-        setMapReady(true);
+      if (styleLayerCount === 0) return;
+
+      if (!cachedGeoData) {
+        // GeoJSON not yet loaded — applyBaseStyle will call map.setStyle again once it has data
         return;
       }
-      
-      // If we only have the background layer (e.g. ukraine-only mode without base map), 
-      // we still want to load the geo data and overlays
-      
-      if (!cachedGeoData) {
-        console.warn('MapLibre style.load: geo data not ready yet');
-        // We still need to set mapReady=true so that the map can render at least the base style
-        setMapReady(true);
-        return; // GeoJSON not yet loaded, skip overlays for now
-      }
-      
-      console.log('MapLibre style.load: applying overlays. Layer count:', styleLayerCount);
-      
-      // Ensure map is ready after overlays are applied
+
       setMapReady(true);
-      
-      // Force a resize to ensure the map fills its container
       map.resize();
 
       const { oblastData, districtData, occupiedTerritories } = cachedGeoData;
