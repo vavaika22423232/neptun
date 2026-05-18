@@ -716,7 +716,7 @@ function MapLibreContainer({
            console.log('MapLibreContainer: style already loaded after setStyle, setting mapReady=true and triggering style.load manually');
            setMapReady(true);
            // Manually trigger style.load logic if needed
-           setTimeout(() => map.fire('style.load'), 50);
+           setTimeout(() => map.fire('style.load'), 100);
         }
       } catch (err) {
         console.error('Failed to apply map style', err);
@@ -747,6 +747,7 @@ function MapLibreContainer({
     window.addEventListener('theme-change', onThemeChange);
 
     map.on('style.load', () => {
+      console.log('MapLibre style.load event fired');
       // Skip only the empty placeholder style we set during initialization; ukraine-only
       // style intentionally starts with only a background layer before overlays are replayed.
       const styleLayerCount = map.getStyle()?.layers?.length ?? 0;
