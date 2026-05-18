@@ -709,7 +709,7 @@ function MapLibreContainer({
            console.log('MapLibreContainer: style already loaded after setStyle, setting mapReady=true and triggering style.load manually');
            setMapReady(true);
            // Manually trigger style.load logic if needed
-           map.fire('style.load');
+           setTimeout(() => map.fire('style.load'), 50);
         }
         
         // Ensure map is ready after style is applied if there are no layers
