@@ -1786,6 +1786,11 @@ function MapLibreContainer({
         const src = map.getSource('threats') as maplibregl.GeoJSONSource | undefined;
         if (src && map.isStyleLoaded()) {
           src.setData(fc as any);
+          if (map.getLayer('unclustered-point-halo')) {
+            const pulse = 1.0 + 0.15 * Math.sin(now / 150);
+            map.setPaintProperty('unclustered-point-halo', 'circle-radius', ['*', ['get', 'halo_radius'], pulse]);
+            map.setPaintProperty('unclustered-point-halo', 'circle-opacity', ['*', ['get', 'halo_opacity'], 1.1 - (0.1 * pulse)]);
+          }
         }
 
         // Update tracking reticle and camera
@@ -1878,6 +1883,12 @@ function MapLibreContainer({
       className={`w-full h-full relative bg-[var(--neptun-map-canvas)]${ukraineOnly ? ' ukraine-only-map-mode' : ''}`}
     >
       <div ref={mapElRef} id="maplibre-map" data-basemap={basemapOverride} className="absolute inset-0 z-[1]" />
+      
+      {/* Cinematic Overlays */}
+      <div className="cinematic-overlay" />
+      <div className="cinematic-noise" />
+      <div className="cinematic-vignette" />
+      <div className="cinematic-scanlines" />
     </div>
   );
 }
