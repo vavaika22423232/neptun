@@ -11,6 +11,8 @@ export type TrackMotionProfile = {
   ekfProcessNoise: number;
   /** EKF measurement noise R base (higher = noisier observations) */
   ekfMeasurementNoise: number;
+  /** Nominal altitude in meters for 2.5D kinematics and terrain masking */
+  nominalAltitudeMeters: number;
 };
 
 const UAV_PROFILE: TrackMotionProfile = {
@@ -24,6 +26,7 @@ const UAV_PROFILE: TrackMotionProfile = {
   targetStopKm: 5,
   ekfProcessNoise: 1e-5,    // UAV: relatively predictable cruise
   ekfMeasurementNoise: 1e-2, // Moderate geocode noise
+  nominalAltitudeMeters: 200, // Low-flying
 };
 
 const MISSILE_PROFILE: TrackMotionProfile = {
@@ -37,6 +40,7 @@ const MISSILE_PROFILE: TrackMotionProfile = {
   targetStopKm: 12,
   ekfProcessNoise: 5e-5,    // Cruise missiles can maneuver significantly
   ekfMeasurementNoise: 5e-3, // Higher-precision radar observations
+  nominalAltitudeMeters: 50,  // Cruise missiles fly very low
 };
 
 export const TRACK_MOTION_PROFILES: Record<string, TrackMotionProfile> = {
@@ -53,6 +57,7 @@ export const TRACK_MOTION_PROFILES: Record<string, TrackMotionProfile> = {
     targetStopKm: 3,
     ekfProcessNoise: 2e-4,    // FPV: highly maneuverable, erratic flight
     ekfMeasurementNoise: 1.5e-2,
+    nominalAltitudeMeters: 50,
   },
   rozved: {
     ...UAV_PROFILE,
@@ -61,6 +66,7 @@ export const TRACK_MOTION_PROFILES: Record<string, TrackMotionProfile> = {
     extrapolateMs: 15 * 60_000,
     ekfProcessNoise: 8e-6,    // Recon drones: predictable loiter patterns
     ekfMeasurementNoise: 1e-2,
+    nominalAltitudeMeters: 3000,
   },
   air_balloon: {
     nominalSpeedKmh: 40,
@@ -73,6 +79,7 @@ export const TRACK_MOTION_PROFILES: Record<string, TrackMotionProfile> = {
     targetStopKm: 8,
     ekfProcessNoise: 1e-6,    // Balloons: wind-driven, very smooth trajectory
     ekfMeasurementNoise: 2e-2,
+    nominalAltitudeMeters: 5000,
   },
   missile: MISSILE_PROFILE,
   raketa: MISSILE_PROFILE,
@@ -89,6 +96,7 @@ export const TRACK_MOTION_PROFILES: Record<string, TrackMotionProfile> = {
     targetStopKm: 20,
     ekfProcessNoise: 1e-6,    // Ballistic: near-deterministic parabolic arc
     ekfMeasurementNoise: 1e-3,
+    nominalAltitudeMeters: 40000,
   },
   kab: {
     nominalSpeedKmh: 600,
@@ -101,6 +109,7 @@ export const TRACK_MOTION_PROFILES: Record<string, TrackMotionProfile> = {
     targetStopKm: 8,
     ekfProcessNoise: 3e-5,
     ekfMeasurementNoise: 5e-3,
+    nominalAltitudeMeters: 5000,
   },
   rszv: {
     nominalSpeedKmh: 650,
@@ -113,6 +122,7 @@ export const TRACK_MOTION_PROFILES: Record<string, TrackMotionProfile> = {
     targetStopKm: 6,
     ekfProcessNoise: 4e-5,
     ekfMeasurementNoise: 5e-3,
+    nominalAltitudeMeters: 2000,
   },
   avia: {
     nominalSpeedKmh: 750,
@@ -125,6 +135,7 @@ export const TRACK_MOTION_PROFILES: Record<string, TrackMotionProfile> = {
     targetStopKm: 10,
     ekfProcessNoise: 6e-5,    // Aircraft: can maneuver freely
     ekfMeasurementNoise: 8e-3,
+    nominalAltitudeMeters: 8000,
   },
 };
 
@@ -139,8 +150,23 @@ export const DEFAULT_TRACK_MOTION_PROFILE: TrackMotionProfile = {
   targetStopKm: 5,
   ekfProcessNoise: 1e-5,
   ekfMeasurementNoise: 1e-2,
+  nominalAltitudeMeters: 500,
 };
 
 export function trackMotionProfile(threatType: string): TrackMotionProfile {
   return TRACK_MOTION_PROFILES[threatType] ?? DEFAULT_TRACK_MOTION_PROFILE;
+}
+
+/**
+ * P7-F: Wind Vector Modeling
+ * Returns the wind vector [vx, vy] in m/s (North, East) at the given location and altitude.
+ * Prototype uses a hardcoded simulated wind field (e.g. 10 m/s from the North-West).
+ */
+export function getWindVector(lat: number, lng: number, altitudeMeters: number): { vx: number; vy: number } {
+  // Prototype: 10 m/s wind from NW (so it blows towards SE)
+  // vx (North) = -7.07 m/s
+  // vy (East) = 7.07 m/s
+  // Scale wind by altitude (stronger higher up)
+  const scale = Math.min(1.5, Math.max(0.5, Math.log10(Math.max(10, altitudeMeters)) / 3));
+  return { vx: -7.07 * scale, vy: 7.07 * scale };
 }

@@ -5,7 +5,7 @@ import {
 } from '@/lib/public-marker-policy';
 import type { AdminSettings } from '@/lib/admin/data';
 import { destinationPoint, haversineKm, normalizeEpochMs } from '@/lib/marker-movement-policy';
-import { trackMotionProfile } from '@/lib/track-motion-profile';
+import { trackMotionProfile, getWindVector } from '@/lib/track-motion-profile';
 import {
   buildTrackerRenderDescriptor,
   type TrackerEvent as RendererEvent,
@@ -37,6 +37,7 @@ export type CandidateEvent = {
   confidence?: number;
   locality_confidence?: number;
   bearing_deg?: number | null;
+  sensor_type?: 'acoustic' | 'radar' | 'visual';
   raw?: Record<string, unknown>;
   manual?: boolean;
 };
@@ -76,6 +77,10 @@ export type TargetAssociationBreakdown = {
   bearing_penalty: number;
   corridor_penalty: number;
   innovation_penalty: number;
+  quality_penalty?: number;
+  group_bonus?: number;
+  text_intent?: string;
+  observation_quality?: string;
   accepted: boolean;
   reason: string;
 };
@@ -98,11 +103,12 @@ export type TrackedTarget = {
   last_seen: number;
   movement_vector: { bearing_deg: number | null; speed_kmh: number | null };
   speed_estimate_kmh: number | null;
+  air_speed_kmh?: number | null;
   history: TargetHistoryItem[];
   event_fingerprints: string[];
   publication?: MarkerPublicationDecision;
   manual?: boolean;
-  ekf?: KalmanFilter2D;
+  ekf?: KalmanFilter2D | IMMFilter2D;
   parent_track_id?: string;
   swarm_cluster_id?: string;
   last_observation?: TargetPointState;
@@ -125,6 +131,10 @@ export type TrackedTarget = {
   last_message_text?: string;
   last_resolve_status?: string;
   last_placement_mode?: string;
+  /** Last accepted coordinate quality used by association/rendering. */
+  last_observation_quality?: 'observed' | 'estimated' | 'coarse' | 'target_hint';
+  /** Text intent inferred from the latest marker message. */
+  last_text_intent?: 'single' | 'group' | 'additional' | 'loss' | 'unknown';
   /** Composite track quality index 0–100 (P4-A). */
   tqi?: number;
   /** Altitude mode inferred from message text (P3-E). */
@@ -168,6 +178,9 @@ export type TrackedTarget = {
   trajectory_feedback?: { error_km: number; reported_at: number };
   /** P5-E: Most recent reclassification event if threat type was changed dynamically. */
   threat_type_reclassified_from?: string;
+  /** P6-F: Multi-Hypothesis Tracking (MHT) branch relationships */
+  mht_parent_id?: string;
+  mht_branch_score?: number;
 };
 
 export type TrackerDecision =
@@ -456,13 +469,21 @@ function maxAssociationRadius(event: CandidateEvent, options?: TrackerOptions, t
   if (typeof options?.associationRadiusKm === 'number') return options.associationRadiusKm;
   const profile = trackMotionProfile(event.threat_type);
   const base = Math.min(70, Math.max(18, profile.nominalSpeedKmh * 0.12));
+  const quality = observationQuality(event);
+  const intent = inferTextIntent(event);
+  const qualityBoost =
+    quality === 'target_hint' ? 1.8 :
+    quality === 'estimated' ? 1.35 :
+    quality === 'coarse' ? 1.15 :
+    1;
+  const groupBoost = intent === 'group' ? 1.1 : 1;
   // Young targets haven't moved far yet — reduce radius to prevent false merges
   if (target) {
     const ageMs = Math.max(0, event.ts - target.first_seen);
-    if (ageMs < 5 * 60_000) return base * 0.6;   // < 5 min: 60% radius
-    if (ageMs < 12 * 60_000) return base * 0.8;  // < 12 min: 80% radius
+    if (ageMs < 5 * 60_000) return base * 0.6 * qualityBoost * groupBoost;   // < 5 min: 60% radius
+    if (ageMs < 12 * 60_000) return base * 0.8 * qualityBoost * groupBoost;  // < 12 min: 80% radius
   }
-  return base;
+  return base * qualityBoost * groupBoost;
 }
 
 function impossibleMovement(target: TrackedTarget, event: CandidateEvent): { impossible: boolean; speedKmh: number; distKm: number } {
@@ -549,6 +570,9 @@ function movementInnovationPenalty(target: TrackedTarget, event: CandidateEvent,
 function associationScoreThreshold(target: TrackedTarget, event: CandidateEvent, samePlace: boolean): number {
   if (hasSameUpstreamTrack(target, event)) return 26;
   if (samePlace) return 38;
+  if (observationQuality(event) === 'target_hint' && target.region && event.region && norm(target.region) === norm(event.region)) {
+    return 30;
+  }
   return ASSOCIATION_SCORE_MIN;
 }
 
@@ -579,6 +603,121 @@ function eventPlacementMode(event: CandidateEvent): string {
   return norm(event.raw?.placement_mode);
 }
 
+export type ObservationQuality = 'observed' | 'estimated' | 'coarse' | 'target_hint';
+export type TextIntent = 'single' | 'group' | 'additional' | 'loss' | 'unknown';
+
+export type CandidateObservationClassification = {
+  observation_quality: ObservationQuality;
+  text_intent: TextIntent;
+  coordinate_role: 'observation' | 'target' | 'area_centroid' | 'estimated_path';
+  public_position_policy: 'precise_pin' | 'hold_existing' | 'zone_only' | 'suppress_or_admin_only';
+  reasons: string[];
+};
+
+function eventText(event: CandidateEvent): string {
+  return typeof event.raw?.text === 'string' ? event.raw.text : '';
+}
+
+function inferTextIntent(event: CandidateEvent): TextIntent {
+  const text = eventText(event).toLowerCase();
+  if (!text) {
+    return normalizeCount(event.count) > 1 ? 'group' : 'unknown';
+  }
+  if (/без\s+(подальшої\s+)?фіксац|не\s+фіксу|втрачен[ао]\s+фіксац|зникл[аио]?|не\s+спостеріга/i.test(text)) {
+    return 'loss';
+  }
+  if (/ще\s+один|ще\s+одна|нов(ий|а)\s+(бпла|шахед|ціль)|додатков(ий|а)|плюс\s+\d/i.test(text)) {
+    return 'additional';
+  }
+  if (
+    normalizeCount(event.count) > 1 ||
+    /\b(група|групою|декілька|кілька|купа|кучу|масово|рой|роєм|пачка|хвиля)\b/i.test(text)
+  ) {
+    return 'group';
+  }
+  return 'single';
+}
+
+function observationQuality(event: CandidateEvent): ObservationQuality {
+  const resolveStatus = eventResolveStatus(event);
+  const placementMode = eventPlacementMode(event);
+  if (
+    placementMode === 'target_only_no_current_position' ||
+    resolveStatus === 'trajectory_approach' ||
+    resolveStatus === 'predictive_approach'
+  ) {
+    return 'target_hint';
+  }
+  if (
+    resolveStatus === 'direction_geocode_fallback' ||
+    resolveStatus === 'oblast_direction_only' ||
+    resolveStatus === 'regional_oblast_direction_target' ||
+    resolveStatus === 'estimated_trajectory' ||
+    resolveStatus === 'estimated_fallback_target'
+  ) {
+    return 'estimated';
+  }
+  if (
+    placementMode === 'area' ||
+    placementMode === 'region' ||
+    placementMode === 'fraction' ||
+    resolveStatus === 'area_center' ||
+    resolveStatus === 'regional_oblast_centroid' ||
+    resolveStatus === 'oblast_fallback' ||
+    resolveStatus === 'maritime_approach'
+  ) {
+    return 'coarse';
+  }
+  return 'observed';
+}
+
+export function classifyCandidateObservation(event: CandidateEvent): CandidateObservationClassification {
+  const quality = observationQuality(event);
+  const intent = inferTextIntent(event);
+  const resolveStatus = eventResolveStatus(event);
+  const placementMode = eventPlacementMode(event);
+  const reasons: string[] = [];
+
+  if (placementMode) reasons.push(`placement:${placementMode}`);
+  if (resolveStatus) reasons.push(`resolve:${resolveStatus}`);
+  if (intent !== 'unknown') reasons.push(`intent:${intent}`);
+  if (normalizeCount(event.count) > 1) reasons.push(`count:${normalizeCount(event.count)}`);
+
+  let coordinateRole: CandidateObservationClassification['coordinate_role'] = 'observation';
+  if (quality === 'target_hint') coordinateRole = 'target';
+  else if (quality === 'coarse') coordinateRole = 'area_centroid';
+  else if (quality === 'estimated') coordinateRole = 'estimated_path';
+
+  let publicPositionPolicy: CandidateObservationClassification['public_position_policy'] = 'precise_pin';
+  if (intent === 'loss') publicPositionPolicy = 'suppress_or_admin_only';
+  else if (quality === 'target_hint') publicPositionPolicy = 'hold_existing';
+  else if (quality === 'coarse' || quality === 'estimated') publicPositionPolicy = 'zone_only';
+
+  return {
+    observation_quality: quality,
+    text_intent: intent,
+    coordinate_role: coordinateRole,
+    public_position_policy: publicPositionPolicy,
+    reasons,
+  };
+}
+
+function qualityAssociationPenalty(quality: ObservationQuality, sameUpstreamTrack: boolean, samePlace: boolean): number {
+  if (sameUpstreamTrack) return 0;
+  if (quality === 'target_hint') return samePlace ? 3 : 16;
+  if (quality === 'estimated') return samePlace ? 2 : 10;
+  if (quality === 'coarse') return samePlace ? 1 : 7;
+  return 0;
+}
+
+function groupAssociationBonus(intent: TextIntent, target: TrackedTarget, event: CandidateEvent): number {
+  if (intent !== 'group') return 0;
+  const eventCount = normalizeCount(event.count);
+  const targetGroupish = target.count > 1 || eventCount > 1 || target.last_text_intent === 'group';
+  if (!targetGroupish) return 0;
+  return Math.min(10, 4 + Math.max(target.count, eventCount) * 1.0);
+}
+
 function shouldHoldWeakMeasurement(
   target: TrackedTarget,
   event: CandidateEvent,
@@ -587,6 +726,9 @@ function shouldHoldWeakMeasurement(
 ): boolean {
   if (hasSameUpstreamTrack(target, event)) return false;
   if (rawDistKm < 3.5) return false;
+
+  const quality = observationQuality(event);
+  if (quality === 'target_hint') return true;
 
   const resolveStatus = eventResolveStatus(event);
   const placementMode = eventPlacementMode(event);
@@ -709,6 +851,8 @@ function applyChannelGeoBias(event: CandidateEvent): { lat: number; lng: number 
   return { lat: event.lat + bias[1].dlat, lng: event.lng + bias[1].dlng };
 }
 
+import { intersectLaunchSite } from '@/lib/launch-inference';
+
 export class TargetTrackerEngine {
   private readonly targets = new Map<string, TrackedTarget>();
   private readonly fingerprintIndex = new Map<string, { targetId: string; seenAt: number; repostSuppressed?: boolean }>();
@@ -755,6 +899,22 @@ export class TargetTrackerEngine {
     }));
   }
 
+  private forkMhtBranch(parent: TrackedTarget): TrackedTarget {
+    const branch: TrackedTarget = JSON.parse(JSON.stringify({ ...parent, ekf: undefined }));
+    branch.id = `mht_${Math.random().toString(36).substring(2, 9)}_${Date.now()}`;
+    branch.mht_parent_id = parent.id;
+    
+    if (parent.ekf) {
+      if (parent.ekf instanceof IMMFilter2D) {
+        branch.ekf = IMMFilter2D.fromJSON(parent.ekf.toJSON());
+      } else if (parent.ekf instanceof KalmanFilter2D) {
+        branch.ekf = KalmanFilter2D.fromJSON(parent.ekf.toJSON());
+      }
+    }
+    this.targets.set(branch.id, branch);
+    return branch;
+  }
+
   ingest(event: CandidateEvent): TrackerDecision {
     const ts = normalizeEpochMs(event.ts, Date.now());
     const normalizedEvent = { ...event, ts };
@@ -797,7 +957,28 @@ export class TargetTrackerEngine {
       };
     }
 
-    const association = this.findAssociation(normalizedEvent);
+    const candidates = this.findAssociationCandidates(normalizedEvent, 2).filter(c => c.breakdown.accepted);
+    
+    if (candidates.length >= 2 && Math.abs(candidates[0].score - candidates[1].score) < 15) {
+      // P6-F: MHT Branching — Create a hypothesis for the second-best candidate
+      const primary = candidates[0];
+      const secondary = candidates[1];
+      
+      const branchTarget = this.forkMhtBranch(secondary.target);
+      branchTarget.mht_branch_score = secondary.score;
+      this.updateTarget(branchTarget, normalizedEvent, fp, eventConf, policy, secondary.breakdown);
+      
+      this.updateTarget(primary.target, normalizedEvent, fp, eventConf, policy, primary.breakdown);
+      return {
+        action: 'TARGET_UPDATED',
+        target: primary.target,
+        reason: 'mht_branching',
+        fingerprint: fp,
+        publication: policy,
+      };
+    }
+
+    const association = candidates.length > 0 ? candidates[0] : null;
     if (association) {
       const target = association.target;
       if (normalizedEvent.ts + 12_000 < target.last_seen) {
@@ -937,6 +1118,8 @@ export class TargetTrackerEngine {
 
   private findAssociation(event: CandidateEvent): { target: TrackedTarget; breakdown: TargetAssociationBreakdown } | null {
     const eventCount = normalizeCount(event.count);
+    const quality = observationQuality(event);
+    const textIntent = inferTextIntent(event);
     let best: { target: TrackedTarget; score: number; breakdown: TargetAssociationBreakdown } | null = null;
     for (const target of this.targets.values()) {
       if (norm(target.threat_type) !== norm(event.threat_type)) continue;
@@ -955,7 +1138,13 @@ export class TargetTrackerEngine {
       ) {
         continue;
       }
-      if (target.region && event.region && norm(target.region) !== norm(event.region) && !sameUpstreamTrack) continue;
+      const sameRegion = Boolean(target.region && event.region && norm(target.region) === norm(event.region));
+      if (
+        target.region &&
+        event.region &&
+        !sameRegion &&
+        !sameUpstreamTrack
+      ) continue;
       // Per-target adaptive radius (young targets get tighter radius)
       let radiusKm = maxAssociationRadius(event, this.options, target);
       if (sameUpstreamTrack) {
@@ -986,6 +1175,8 @@ export class TargetTrackerEngine {
       const bearingPenalty = courseTurnPenalty(target, event);
       const corridorPenalty = courseCorridorPenalty(target, event);
       const innovationPenalty = movementInnovationPenalty(target, event, dist);
+      const qualityPenalty = qualityAssociationPenalty(quality, sameUpstreamTrack, !!samePlace);
+      const groupBonus = groupAssociationBonus(textIntent, target, event);
       // P4-D: Hard bearing reject — if the target has a confident heading and the
       // observed event is moving in the opposite direction, reject the association
       // regardless of score.  Only applies at speed > 50 km/h with good confidence.
@@ -1011,13 +1202,16 @@ export class TargetTrackerEngine {
       const score = 100
         - (dist / radiusKm) * 65
         + (samePlace ? 12 : 0)
+        + (sameRegion ? 4 : 0)
         + (sameUpstreamTrack ? 25 : 0)
         + densityBonus
+        + groupBonus
         - countPenalty
         - bearingPenalty
         - corridorPenalty
-        - innovationPenalty;
-
+        - innovationPenalty
+        - qualityPenalty;
+      
       const threshold = associationScoreThreshold(target, event, !!samePlace);
       const breakdown: TargetAssociationBreakdown = {
         score: roundScore(score),
@@ -1030,6 +1224,10 @@ export class TargetTrackerEngine {
         bearing_penalty: roundScore(bearingPenalty),
         corridor_penalty: roundScore(corridorPenalty),
         innovation_penalty: roundScore(innovationPenalty),
+        quality_penalty: roundScore(qualityPenalty),
+        group_bonus: roundScore(groupBonus),
+        text_intent: textIntent,
+        observation_quality: quality,
         accepted: score >= threshold,
         reason: score >= threshold ? 'associated' : 'score_below_threshold',
       };
@@ -1142,22 +1340,37 @@ export class TargetTrackerEngine {
         bearing_penalty: 0,
         corridor_penalty: 0,
         innovation_penalty: 0,
+        quality_penalty: 0,
+        group_bonus: 0,
+        text_intent: inferTextIntent(event),
+        observation_quality: observationQuality(event),
         accepted: true,
         reason: 'created',
       },
       last_message_text: typeof event.raw?.text === 'string' ? event.raw.text : undefined,
       last_resolve_status: typeof event.raw?.resolve_status === 'string' ? event.raw.resolve_status : undefined,
       last_placement_mode: typeof event.raw?.placement_mode === 'string' ? event.raw.placement_mode : undefined,
-      ekf: new KalmanFilter2D(
-        event.lat,
-        event.lng,
-        0, // Start at rest, learn speed from subsequent observations
-        event.bearing_deg ?? 0,
-        0.1,  // initialPosCov
-        1e-4, // initialVelCov (low trust until motion is observed)
-        trackMotionProfile(event.threat_type).ekfProcessNoise,
-        trackMotionProfile(event.threat_type).ekfMeasurementNoise,
-      ),
+      last_observation_quality: observationQuality(event),
+      last_text_intent: inferTextIntent(event),
+      ekf: ['missile', 'fpv', 'raketa', 'krylata', 'pusk'].includes(event.threat_type) ?
+        new IMMFilter2D(
+          event.lat,
+          event.lng,
+          trackMotionProfile(event.threat_type).ekfProcessNoise * 0.5,
+          trackMotionProfile(event.threat_type).ekfProcessNoise * 5,
+          trackMotionProfile(event.threat_type).ekfMeasurementNoise,
+          0.05
+        ) :
+        new KalmanFilter2D(
+          event.lat, 
+          event.lng, 
+          0, // Start at rest, learn speed from subsequent observations
+          event.bearing_deg ?? 0, 
+          0.1,  // initialPosCov
+          1e-4, // initialVelCov (low trust until motion is observed)
+          trackMotionProfile(event.threat_type).ekfProcessNoise,
+          trackMotionProfile(event.threat_type).ekfMeasurementNoise,
+        ),
     };
     target.lifecycle_state = lifecycleFor(target, publication);
     this.appendHistory(target, event, fp, true, 'created', confidence);
@@ -1224,14 +1437,10 @@ export class TargetTrackerEngine {
 
       // P1-D: Retroactive EKF re-origin when filter has diverged too far from measurement.
       // If singularSkipCount is high AND the position is >2σ from the current state, reset.
-      const preDivergeDist = haversineKm(target.ekf.state[0], target.ekf.state[1], event.lat, event.lng);
+      const preDivergeDist = haversineKm(target.ekf.lat, target.ekf.lng, event.lat, event.lng);
       if (target.ekf.singularSkipCount >= 3 && preDivergeDist > target.ekf.positionSigmaKm() * 2.5) {
         // Re-initialise EKF at the new measurement, preserving velocity and process noise
-        const oldQ = target.ekf.qProcessNoise;
-        const oldR = target.ekf.rMeasurementNoise;
-        const oldVx = target.ekf.state[2];
-        const oldVy = target.ekf.state[3];
-        target.ekf = new KalmanFilter2D(event.lat, event.lng, oldVx, oldVy, 0.08, 1e-4, oldQ, oldR);
+        target.ekf.resetPosition(event.lat, event.lng);
       }
 
       target.ekf.predict(elapsedSec);
@@ -1248,28 +1457,63 @@ export class TargetTrackerEngine {
       if (isMaritimeEstimate) {
         target.ekf.updatePositionOnly(event.lat, event.lng, confidence);
       } else {
-        target.ekf.update(event.lat, event.lng, confidence, chPriority);
+        target.ekf.update(event.lat, event.lng, confidence, chPriority, event.sensor_type);
+      }
+
+      // Swarm "Soft Gravity"
+      if (target.swarm_cluster_id && !isMaritimeEstimate) {
+        for (const other of this.targets.values()) {
+          if (other.id !== target.id && other.swarm_cluster_id === target.swarm_cluster_id && other.ekf) {
+            // Pull other members slightly towards this new measurement (confidence=0.05)
+            other.ekf.updatePositionOnly(event.lat, event.lng, 0.05);
+            other.lat = other.ekf.lat;
+            other.lng = other.ekf.lng;
+          }
+        }
       }
 
       // P2-B: Jerk / maneuver detection — compute acceleration magnitude from EKF velocity change
-      const prevVx = target.ekf.state[2];
-      const prevVy = target.ekf.state[3];
+      const prevVx = 'state' in target.ekf ? (target.ekf as KalmanFilter2D).state[2] : 0;
+      const prevVy = 'state' in target.ekf ? (target.ekf as KalmanFilter2D).state[3] : 0;
 
-      target.lat = target.ekf.state[0];
-      target.lng = target.ekf.state[1];
+      target.lat = target.ekf.lat;
+      target.lng = target.ekf.lng;
       // Use metric helpers for correct cos(lat)-aware speed and bearing
       const ekfSpeedKmh = Math.round(target.ekf.speedKmh());
       const ekfBearingDeg = Math.round(target.ekf.bearingDeg());
 
       // Compute jerk signal: change in velocity over time
       if (elapsedSec > 0) {
-        const dvx = Math.abs(target.ekf.state[2] - prevVx);
-        const dvy = Math.abs(target.ekf.state[3] - prevVy);
-        const jerkDegPerSecSq = Math.sqrt(dvx * dvx + dvy * dvy) / elapsedSec;
-        // Convert to km/h/s (rough) — if > 0.5 deg/sec²/111km flag maneuver
+        // P7-F: Wind Vector Modeling - calculate Air Speed vs Ground Speed
         const profile = trackMotionProfile(target.threat_type);
-        const jerkThreshold = (profile.maxSpeedKmh / 3600 / 111320) * 0.15;
-        target.maneuver_detected = jerkDegPerSecSq > jerkThreshold && target.ekf.singularSkipCount < 3;
+        const altitude = profile.nominalAltitudeMeters || 500;
+        const wind = getWindVector(target.lat, target.lng, altitude);
+        
+        // Ground speed components
+        const gvx = 'state' in target.ekf ? (target.ekf as KalmanFilter2D).state[2] : 0;
+        const gvy = 'state' in target.ekf ? (target.ekf as KalmanFilter2D).state[3] : 0;
+        
+        // Air speed components (Air = Ground - Wind)
+        const cosLat = Math.cos((target.lat * Math.PI) / 180);
+        const gvx_ms = gvx * 111320;
+        const gvy_ms = gvy * cosLat * 111320;
+        
+        const avx_ms = gvx_ms - wind.vx;
+        const avy_ms = gvy_ms - wind.vy;
+        target.air_speed_kmh = Math.round(Math.sqrt(avx_ms ** 2 + avy_ms ** 2) * 3.6);
+
+        if (target.ekf.maneuverWeight > 0.35) {
+          target.maneuver_detected = true;
+        } else if ('state' in target.ekf) {
+          const kf = target.ekf as KalmanFilter2D;
+          const dvx = Math.abs(kf.state[2] - prevVx);
+          const dvy = Math.abs(kf.state[3] - prevVy);
+          const jerkDegPerSecSq = Math.sqrt(dvx * dvx + dvy * dvy) / elapsedSec;
+          const jerkThreshold = (profile.maxSpeedKmh / 3600 / 111320) * 0.15;
+          target.maneuver_detected = jerkDegPerSecSq > jerkThreshold && kf.singularSkipCount < 3;
+        } else {
+          target.maneuver_detected = false;
+        }
       }
 
       target.speed_estimate_kmh = ekfSpeedKmh;
@@ -1330,6 +1574,8 @@ export class TargetTrackerEngine {
     if (typeof event.raw?.text === 'string') target.last_message_text = event.raw.text;
     if (typeof event.raw?.resolve_status === 'string') target.last_resolve_status = event.raw.resolve_status;
     if (typeof event.raw?.placement_mode === 'string') target.last_placement_mode = event.raw.placement_mode;
+    target.last_observation_quality = observationQuality(event);
+    target.last_text_intent = inferTextIntent(event);
     target.lifecycle_state = lifecycleFor(target, publication);
     this.appendHistory(target, event, fp, true, holdPosition ? 'updated_position_held' : 'updated', confidence);
 
@@ -1895,6 +2141,67 @@ export class TargetTrackerEngine {
     return formationsDetected;
   }
 
+  /**
+   * Detect tight swarms: groups of 2+ targets that are very close (< 5km) and have the same vector.
+   * Labels them with a shared `swarm_cluster_id` on the target object.
+   */
+  detectSwarms(nowMs = Date.now()): number {
+    const SWARM_RADIUS_KM = 5;
+    const BEARING_TOLERANCE = 20;
+
+    const active = Array.from(this.targets.values()).filter((t) => {
+      const lc = lifecycleAt(t, nowMs);
+      return lc === 'TRACKING' || lc === 'CONFIRMED' || lc === 'DETECTED';
+    });
+
+    const byType = new Map<string, TrackedTarget[]>();
+    for (const t of active) {
+      const k = t.threat_type;
+      if (!byType.has(k)) byType.set(k, []);
+      byType.get(k)!.push(t);
+    }
+
+    let swarmsDetected = 0;
+    for (const [, group] of byType) {
+      const clusters: TrackedTarget[][] = [];
+      for (const t of group) {
+        let added = false;
+        for (const cluster of clusters) {
+          const seed = cluster[0]!;
+          const dist = haversineKm(t.lat, t.lng, seed.lat, seed.lng);
+          if (dist > SWARM_RADIUS_KM) continue;
+          
+          if (t.movement_vector.bearing_deg != null && seed.movement_vector.bearing_deg != null) {
+            let diff = Math.abs(t.movement_vector.bearing_deg - seed.movement_vector.bearing_deg);
+            if (diff > 180) diff = 360 - diff;
+            if (diff <= BEARING_TOLERANCE) {
+              cluster.push(t);
+              added = true;
+              break;
+            }
+          } else if (dist <= 2) {
+             // If no bearing, group if extremely close
+             cluster.push(t);
+             added = true;
+             break;
+          }
+        }
+        if (!added) clusters.push([t]);
+      }
+      for (const cluster of clusters) {
+        if (cluster.length < 2) {
+          for (const t of cluster) t.swarm_cluster_id = undefined;
+          continue;
+        }
+        const seed = cluster[0]!;
+        const sid = seed.swarm_cluster_id || `swarm_${seed.threat_type}_${seed.id.substring(0,6)}`;
+        for (const t of cluster) t.swarm_cluster_id = sid;
+        swarmsDetected++;
+      }
+    }
+    return swarmsDetected;
+  }
+
   // ── P1-E: Raion/oblast geo-context enrichment ───────────────────────────────
 
   /**
@@ -2056,6 +2363,26 @@ export class TargetTrackerEngine {
         reaped++;
         continue;
       }
+      
+      // P6-F: MHT Branch Pruning
+      if (target.mht_parent_id) {
+        const parent = this.targets.get(target.mht_parent_id);
+        if (parent) {
+          // Prune branches that fell behind in updates compared to their parent
+          if (nowMs - target.last_seen > 120_000 && parent.last_seen > target.last_seen) {
+            this.targets.delete(id);
+            reaped++;
+            continue;
+          }
+          // Or if parent fell behind branch
+          if (nowMs - parent.last_seen > 120_000 && target.last_seen > parent.last_seen) {
+            this.targets.delete(parent.id);
+            reaped++;
+            // Don't continue, we just deleted the parent, not this target
+          }
+        }
+      }
+
       if (lc === 'LOST' || lc === 'STALE') {
         const ageMs = nowMs - target.last_seen;
         if (ageMs > profile.lostMs * 2) {
@@ -2108,11 +2435,13 @@ export class TargetTrackerEngine {
       const inferredLng = (lng2 * 180) / Math.PI;
 
       const obsConfidence = Math.min(0.9, 0.3 + acceptedObs * 0.1);
+      const siteMatch = intersectLaunchSite(inferredLat, inferredLng, t.threat_type);
+
       t.origin_inference = {
         lat: Math.round(inferredLat * 1000) / 1000,
         lng: Math.round(inferredLng * 1000) / 1000,
         confidence: Math.round(obsConfidence * 100) / 100,
-        method: 'backward_projection',
+        method: siteMatch ? `launch_site:${siteMatch.name}` : 'backward_projection',
       };
       updated++;
     }
@@ -2182,6 +2511,18 @@ export class TargetTrackerEngine {
   ): TrackedTarget {
     const target = this.createTarget(event, fp, confidence, publication);
     target.parent_track_id = parent.id;
+    
+    // P6-D: Swarm Split Inheritance — child inherits parent's covariance and velocity
+    if (parent.ekf && target.ekf) {
+      if (parent.ekf instanceof IMMFilter2D && target.ekf instanceof IMMFilter2D) {
+        target.ekf = IMMFilter2D.fromJSON(parent.ekf.toJSON());
+        target.ekf.resetPosition(event.lat, event.lng);
+      } else if (parent.ekf instanceof KalmanFilter2D && target.ekf instanceof KalmanFilter2D) {
+        target.ekf = KalmanFilter2D.fromJSON(parent.ekf.toJSON());
+        target.ekf.resetPosition(event.lat, event.lng);
+      }
+    }
+
     const splitAngle = this.computeSplitAngle(parent, event.lat, event.lng);
     if (splitAngle !== null) {
       target.split_shallow_angle = splitAngle < 45;
@@ -2258,19 +2599,55 @@ export class TargetTrackerEngine {
   ): Array<{ target: TrackedTarget; score: number; breakdown: TargetAssociationBreakdown }> {
     const candidates: Array<{ target: TrackedTarget; score: number; breakdown: TargetAssociationBreakdown }> = [];
     const eventCount = normalizeCount(event.count);
+    const quality = observationQuality(event);
+    const textIntent = inferTextIntent(event);
 
     for (const target of this.targets.values()) {
       if (norm(target.threat_type) !== norm(event.threat_type)) continue;
       const lc = lifecycleAt(target, event.ts);
       if (lc === 'LOST' || lc === 'DESTROYED' || lc === 'REJECTED') continue;
-      if (hasDifferentExplicitGroup(target, event)) continue;
-
+      
       const sameUpstreamTrack = hasSameUpstreamTrack(target, event);
-      if (target.region && event.region && norm(target.region) !== norm(event.region) && !sameUpstreamTrack) continue;
+      if (hasDifferentExplicitGroup(target, event)) continue;
+      
+      if (
+        !sameUpstreamTrack &&
+        target.count > 1 &&
+        eventCount < target.count &&
+        target.count - eventCount >= 2 &&
+        eventCount <= Math.ceil(target.count * 0.7)
+      ) {
+        continue;
+      }
 
-      const radiusKm = maxAssociationRadius(event, this.options, target) * 1.5; // wider for multi-head
+      const sameRegion = Boolean(target.region && event.region && norm(target.region) === norm(event.region));
+      if (
+        target.region &&
+        event.region &&
+        !sameRegion &&
+        !sameUpstreamTrack
+      ) continue;
+
+      let radiusKm = maxAssociationRadius(event, this.options, target);
+      if (sameUpstreamTrack) {
+        const profile = trackMotionProfile(event.threat_type);
+        const dtHours = Math.max((event.ts - target.last_seen) / 3_600_000, 0);
+        const trackIdMotionBudgetKm = Math.max(25, profile.nominalSpeedKmh * dtHours * 1.65);
+        radiusKm = Math.min(90, Math.max(radiusKm, trackIdMotionBudgetKm));
+      }
+      // P4-A: EKF sigma gate — tighten radius when filter is confident
+      if (target.ekf) {
+        const sigmaKm = target.ekf.positionSigmaKm();
+        const ekfGateKm = Math.max(5, sigmaKm * 3);
+        radiusKm = Math.min(radiusKm, Math.max(5, ekfGateKm));
+      }
+
       const predicted = projectedTargetPosition(target, event.ts);
-      const dist = haversineKm(predicted.lat, predicted.lng, event.lat, event.lng);
+      const pointDist = haversineKm(predicted.lat, predicted.lng, event.lat, event.lng);
+      const corridorDist = predicted.projected
+        ? segmentDistanceKm(target.lat, target.lng, predicted.lat, predicted.lng, event.lat, event.lng)
+        : pointDist;
+      const dist = Math.min(pointDist, corridorDist);
       if (dist > radiusKm) continue;
 
       const samePlace = target.place && event.place && norm(target.place) === norm(event.place);
@@ -2278,6 +2655,8 @@ export class TargetTrackerEngine {
       const bearingPenalty = courseTurnPenalty(target, event);
       const corridorPenalty = courseCorridorPenalty(target, event);
       const innovationPenalty = movementInnovationPenalty(target, event, dist);
+      const qualityPenalty = qualityAssociationPenalty(quality, sameUpstreamTrack, !!samePlace);
+      const groupBonus = groupAssociationBonus(textIntent, target, event);
       const acceptedObs = target.history.filter((h) => h.accepted).length;
       const densityBonus = Math.min(12, Math.log1p(acceptedObs) * 2.5);
 
@@ -2286,10 +2665,12 @@ export class TargetTrackerEngine {
         + (samePlace ? 12 : 0)
         + (sameUpstreamTrack ? 25 : 0)
         + densityBonus
+        + groupBonus
         - countPenalty
         - bearingPenalty
         - corridorPenalty
-        - innovationPenalty;
+        - innovationPenalty
+        - qualityPenalty;
 
       const threshold = associationScoreThreshold(target, event, !!samePlace);
       const breakdown: TargetAssociationBreakdown = {
@@ -2303,6 +2684,10 @@ export class TargetTrackerEngine {
         bearing_penalty: roundScore(bearingPenalty),
         corridor_penalty: roundScore(corridorPenalty),
         innovation_penalty: roundScore(innovationPenalty),
+        quality_penalty: roundScore(qualityPenalty),
+        group_bonus: roundScore(groupBonus),
+        text_intent: textIntent,
+        observation_quality: quality,
         accepted: score >= threshold,
         reason: score >= threshold ? 'associated' : 'score_below_threshold',
       };

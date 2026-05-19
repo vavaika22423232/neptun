@@ -98,6 +98,10 @@ export type ThreatPointFeature = {
     count_label: string;
     badge_color: string;
     status_label: string;
+    observation_quality: string;
+    text_intent: string;
+    coordinate_role: string;
+    public_position_policy: string;
     threat_zone_radius_km: number;
     _m: string;
   };
@@ -148,14 +152,8 @@ export function markersToGeoJSON(markers: Marker[]): ThreatMarkerFeatureCollecti
 
     // Build tracker status label (ETA / Loitering)
     let statusLabel = '';
-    const etaSec = typeof raw.eta_seconds === 'number' ? raw.eta_seconds : null;
+    // The user requested to remove all these labels ("оцінка", "прогноз", etc.)
     const isStale = raw.track_state === 'stale';
-    
-    if (isStale) {
-      statusLabel = '⚠️ Сигнал втрачено';
-    } else if (raw.is_loitering) {
-      statusLabel = '⟳ Барражує';
-    }
 
     // Ghost Mode styling override
     let finalHaloColor = haloColor;
@@ -163,6 +161,15 @@ export function markersToGeoJSON(markers: Marker[]): ThreatMarkerFeatureCollecti
     if (isStale) {
       finalHaloColor = '#9e9e9e'; // Grey halo
       finalOpacity = Math.min(opacity, 0.45); // Faded icon
+    } else if (raw.last_observation_quality === 'target_hint') {
+      finalHaloColor = '#f9b44e';
+      finalOpacity = Math.min(opacity, 0.72);
+    } else if (raw.last_observation_quality === 'coarse') {
+      finalHaloColor = '#f6d96b';
+      finalOpacity = Math.min(opacity, 0.78);
+    } else if (raw.radar_state === 'coasting' || raw.radar_state === 'estimated') {
+      finalHaloColor = '#8bd3ff';
+      finalOpacity = Math.min(opacity, 0.82);
     }
 
     // Phase 4: Acoustic / Threat Zones
@@ -173,6 +180,9 @@ export function markersToGeoJSON(markers: Marker[]): ThreatMarkerFeatureCollecti
       threatZoneRadiusKm = 10; // Impact zone for KABs
     } else if (threatType === 'missile' || threatType === 'raketa') {
       threatZoneRadiusKm = 6;
+    }
+    if (typeof raw.display_uncertainty_km === 'number' && raw.display_uncertainty_km > 0) {
+      threatZoneRadiusKm = Math.max(threatZoneRadiusKm, Math.min(60, raw.display_uncertainty_km));
     }
 
     features.push({
@@ -195,6 +205,10 @@ export function markersToGeoJSON(markers: Marker[]): ThreatMarkerFeatureCollecti
         count_label: '',
         badge_color: '',
         status_label: statusLabel,
+        observation_quality: raw.last_observation_quality || '',
+        text_intent: raw.last_text_intent || '',
+        coordinate_role: raw.tracker_truth?.coordinate_role || '',
+        public_position_policy: raw.tracker_truth?.public_position_policy || '',
         threat_zone_radius_km: threatZoneRadiusKm,
         /** серіалізація для popup */
         _m: JSON.stringify(raw),

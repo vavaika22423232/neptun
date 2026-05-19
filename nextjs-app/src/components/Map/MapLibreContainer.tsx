@@ -57,6 +57,7 @@ type MutableStyleLayer = {
   layout?: Record<string, unknown>;
 };
 type MutableMapStyle = Omit<StyleSpecification, 'layers'> & { layers: MutableStyleLayer[] };
+type BasemapStyleMode = 'vector' | 'hybrid';
 
 /** Фільтр по HASC: `in` + `literal` на MapLibre v5 інколи дає порожню вибірку — `match` стабільніший. */
 function oblastHascInAlarmSetExpr(hascs: string[]): unknown {
@@ -93,6 +94,81 @@ function getFirstSymbolLayerId(map: maplibregl.Map): string | undefined {
 function withFilter(baseFilter: unknown, extraFilter: unknown): unknown {
   if (!baseFilter) return extraFilter;
   return ['all', baseFilter, extraFilter];
+}
+
+function setLayerPaint(layer: MutableStyleLayer, key: string, value: unknown): void {
+  layer.paint = { ...(layer.paint || {}), [key]: value };
+}
+
+function tuneHybridBasemapLayer(layer: MutableStyleLayer, useLightBasemap: boolean): void {
+  const id = layer.id.toLowerCase();
+  const sourceLayer = layer['source-layer'];
+
+  if (layer.type === 'background') {
+    setLayerPaint(layer, 'background-color', useLightBasemap ? '#d7d9d8' : '#111416');
+    return;
+  }
+
+  if (layer.id === 'satellite_imagery') {
+    setLayerPaint(layer, 'raster-opacity', useLightBasemap ? 0.62 : 0.9);
+    setLayerPaint(layer, 'raster-saturation', -1);
+    setLayerPaint(layer, 'raster-contrast', useLightBasemap ? -0.12 : -0.02);
+    setLayerPaint(layer, 'raster-brightness-min', useLightBasemap ? 0.18 : 0.1);
+    setLayerPaint(layer, 'raster-brightness-max', useLightBasemap ? 0.9 : 0.48);
+    return;
+  }
+
+  if (layer.id === 'natural_earth') {
+    setLayerPaint(layer, 'raster-opacity', ['interpolate', ['linear'], ['zoom'], 0, useLightBasemap ? 0.12 : 0.16, 6, 0.0]);
+    return;
+  }
+
+  if (layer.source !== 'openmaptiles') return;
+
+  if (layer.type === 'fill') {
+    if (sourceLayer === 'water') {
+      setLayerPaint(layer, 'fill-color', useLightBasemap ? '#b7bcbd' : '#171d20');
+      setLayerPaint(layer, 'fill-opacity', ['interpolate', ['linear'], ['zoom'], 4, useLightBasemap ? 0.58 : 0.5, 12, useLightBasemap ? 0.46 : 0.4]);
+    } else if (sourceLayer === 'building') {
+      setLayerPaint(layer, 'fill-color', useLightBasemap ? '#c5c5c2' : '#25292b');
+      setLayerPaint(layer, 'fill-opacity', ['interpolate', ['linear'], ['zoom'], 12, 0.06, 16, useLightBasemap ? 0.34 : 0.3]);
+    } else if (sourceLayer === 'landcover' || sourceLayer === 'landuse' || sourceLayer === 'park') {
+      setLayerPaint(layer, 'fill-color', useLightBasemap ? '#c7cac8' : '#181c1e');
+      setLayerPaint(layer, 'fill-opacity', ['interpolate', ['linear'], ['zoom'], 4, useLightBasemap ? 0.1 : 0.14, 10, useLightBasemap ? 0.14 : 0.18, 14, 0.08]);
+    } else {
+      setLayerPaint(layer, 'fill-opacity', ['interpolate', ['linear'], ['zoom'], 4, useLightBasemap ? 0.05 : 0.08, 12, useLightBasemap ? 0.1 : 0.12]);
+    }
+    return;
+  }
+
+  if (layer.type === 'line') {
+    if (sourceLayer === 'transportation') {
+      setLayerPaint(layer, 'line-color', useLightBasemap ? '#eef0ef' : '#9ca3a8');
+      setLayerPaint(layer, 'line-opacity', id.includes('minor') || id.includes('path') ? 0.16 : useLightBasemap ? 0.44 : 0.32);
+    } else if (sourceLayer === 'waterway') {
+      setLayerPaint(layer, 'line-color', useLightBasemap ? '#9ca3a8' : '#737b80');
+      setLayerPaint(layer, 'line-opacity', useLightBasemap ? 0.24 : 0.2);
+    } else if (sourceLayer === 'boundary') {
+      setLayerPaint(layer, 'line-color', useLightBasemap ? '#7b8083' : '#6f777d');
+      setLayerPaint(layer, 'line-opacity', 0.05);
+    }
+    return;
+  }
+
+  if (layer.type === 'symbol') {
+    if (sourceLayer === 'poi' || sourceLayer === 'aerodrome_label') {
+      layer.layout = { ...(layer.layout || {}), visibility: 'none' };
+      return;
+    }
+    if (layer.paint?.['text-color']) {
+      setLayerPaint(layer, 'text-color', useLightBasemap ? '#202426' : '#d5d8d8');
+      setLayerPaint(layer, 'text-halo-color', useLightBasemap ? 'rgba(219, 222, 221, 0.86)' : 'rgba(18, 20, 22, 0.84)');
+      setLayerPaint(layer, 'text-halo-width', useLightBasemap ? 1.0 : 1.15);
+    }
+    if (layer.paint?.['icon-opacity'] !== undefined) {
+      setLayerPaint(layer, 'icon-opacity', 0.7);
+    }
+  }
 }
 
 function districtKeyInSetExpr(keys: string[]): unknown {
@@ -279,14 +355,16 @@ function emptyThreats(): ThreatMarkerFeatureCollection {
 
 type DistrictFeatureCollection = FeatureCollection & {
   features: Array<FeatureCollection['features'][number] & {
-    properties: Record<string, unknown> & { regionKey?: string };
+    properties: Record<string, unknown> & { regionKey?: string; districtLabel?: string };
   }>;
 };
 
 function prepareDistrictGeoJson(raw: FeatureCollection): DistrictFeatureCollection {
   const features = raw.features.map((feature) => {
-    const props = { ...(feature.properties || {}) } as Record<string, unknown> & { regionKey?: string };
-    props.regionKey = normalizeAlarmRegionName(String(props.rayon || ''));
+    const props = { ...(feature.properties || {}) } as Record<string, unknown> & { regionKey?: string; districtLabel?: string };
+    const rayon = String(props.rayon || '');
+    props.regionKey = normalizeAlarmRegionName(rayon);
+    props.districtLabel = rayon.replace(/\s+район$/iu, '');
     return { ...feature, properties: props };
   });
   return { ...raw, features } as DistrictFeatureCollection;
@@ -304,6 +382,7 @@ interface MapLibreContainerProps {
   autoTrack?: boolean;
   focusedTargetId?: string | null;
   onFocusedTargetIdChange?: (id: string | null) => void;
+  onStartTracking?: (id: string) => void;
 }
 
 function MapLibreContainer({
@@ -318,6 +397,7 @@ function MapLibreContainer({
   autoTrack = false,
   focusedTargetId = null,
   onFocusedTargetIdChange,
+  onStartTracking,
 }: MapLibreContainerProps) {
   const mapElRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -374,6 +454,21 @@ function MapLibreContainer({
     }
     applyBaseStyleRef.current();
   }, [ukraineOnly]);
+
+  useEffect(() => {
+    const w = window as unknown as {
+      __startTrackingMarker?: (id: string) => void;
+    };
+    if (onStartTracking) {
+      w.__startTrackingMarker = (id: string) => {
+        popupRef.current?.remove();
+        onStartTracking(id);
+      };
+    }
+    return () => {
+      delete w.__startTrackingMarker;
+    };
+  }, [onStartTracking]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -548,7 +643,7 @@ function MapLibreContainer({
       }
     });
 
-    const buildOFMStyle = async (useLightBasemap: boolean, onlyUkraine: boolean) => {
+    const buildOFMStyle = async (useLightBasemap: boolean, onlyUkraine: boolean, mode: BasemapStyleMode = 'vector') => {
       const styleUrl = useLightBasemap ? LOCAL_STYLE_LIGHT : LOCAL_STYLE_DARK;
       const [styleRes, ukraineBoundary] = await Promise.all([
         fetch(styleUrl),
@@ -564,6 +659,10 @@ function MapLibreContainer({
       const ukraineWithinFilter = ukraineBoundary ? ['within', ukraineBoundary] : null;
 
       style.layers.forEach((layer) => {
+        if (mode === 'hybrid') {
+          tuneHybridBasemapLayer(layer, useLightBasemap);
+        }
+
         if (layer.source === 'openmaptiles') {
           const sourceLayer = layer['source-layer'];
 
@@ -634,7 +733,7 @@ function MapLibreContainer({
           }
 
           // Improve text contrast for the newly lightened dark theme
-          if (!useLightBasemap && layer.paint && layer.paint['text-color']) {
+          if (mode !== 'hybrid' && !useLightBasemap && layer.paint && layer.paint['text-color']) {
             layer.paint['text-color'] = lid.includes('city') || lid.includes('town') ? '#f1f5f9' : '#cbd5e1';
             if (layer.paint['text-halo-color']) {
               layer.paint['text-halo-color'] = '#181f29';
@@ -671,8 +770,8 @@ function MapLibreContainer({
         const [style, geoData] = await Promise.all([
           currentBasemapKind === 'uaRasterBasemap'
             ? Promise.resolve(buildUaRasterBasemapStyle(light))
-            : currentBasemapKind === 'rasterVectorDark'
-            ? buildOFMStyle(light, ukraineOnlyRef.current)
+            : currentBasemapKind === 'rasterVectorDark' || currentBasemapKind === 'radarHybrid'
+            ? buildOFMStyle(light, ukraineOnlyRef.current, currentBasemapKind === 'radarHybrid' ? 'hybrid' : 'vector')
             : Promise.resolve(buildGenericRasterBasemapStyle([getBasemapUrl(currentBasemapKind)], currentBasemapKind)),
           loadGeoData(),
         ]);
@@ -766,7 +865,16 @@ function MapLibreContainer({
         );
       }
       if (!map.getLayer('ukraine-border-stroke')) {
-        originalAddLayer({ id: 'ukraine-border-stroke', type: 'line', source: 'ukraine-border-source', paint: { 'line-color': isLightBasemap ? '#1a1d21' : '#ffffff', 'line-opacity': 0.55, 'line-width': 2.5 } }, firstSymbolId);
+        originalAddLayer({
+          id: 'ukraine-border-stroke',
+          type: 'line',
+          source: 'ukraine-border-source',
+          paint: {
+            'line-color': isLightBasemap ? '#111827' : '#f1f5f9',
+            'line-opacity': ['interpolate', ['linear'], ['zoom'], 4, 0.74, 7, 0.86, 10, 0.92],
+            'line-width': ['interpolate', ['linear'], ['zoom'], 4, 1.75, 7, 2.6, 10, 3.4],
+          },
+        }, firstSymbolId);
       }
 
       if (!map.getSource('occupied-territories')) {
@@ -808,13 +916,102 @@ function MapLibreContainer({
       }
 
       if (!map.getLayer('oblast-alarm-fill')) {
-        originalAddLayer({ id: 'oblast-alarm-fill', type: 'fill', source: 'oblasts', filter: ['==', ['get', 'HASC_1'], '__none__'], paint: { 'fill-color': '#cc0022', 'fill-opacity': 0.48 } }, firstSymbolId);
+        originalAddLayer({
+          id: 'oblast-alarm-fill',
+          type: 'fill',
+          source: 'oblasts',
+          filter: ['==', ['get', 'HASC_1'], '__none__'],
+          paint: {
+            'fill-color': isLightBasemap ? '#b91c1c' : '#ef4444',
+            'fill-opacity': 0.26,
+          },
+        }, firstSymbolId);
       }
       if (!map.getLayer('district-alarm-fill')) {
-        originalAddLayer({ id: 'district-alarm-fill', type: 'fill', source: 'districts', filter: ['==', ['get', 'regionKey'], '__none__'], paint: { 'fill-color': '#cc0022', 'fill-opacity': isLightBasemap ? 0.58 : 0.68 } }, firstSymbolId);
+        originalAddLayer({
+          id: 'district-alarm-fill',
+          type: 'fill',
+          source: 'districts',
+          filter: ['==', ['get', 'regionKey'], '__none__'],
+          paint: {
+            'fill-color': isLightBasemap ? '#b91c1c' : '#fb7185',
+            'fill-opacity': isLightBasemap ? 0.30 : 0.34,
+          },
+        }, firstSymbolId);
+      }
+      if (!map.getLayer('district-context-line')) {
+        originalAddLayer({
+          id: 'district-context-halo',
+          type: 'line',
+          source: 'districts',
+          minzoom: 4.8,
+          paint: {
+            'line-color': isLightBasemap ? '#d9dcdb' : '#111315',
+            'line-opacity': ['interpolate', ['linear'], ['zoom'], 4.8, 0.06, 7, 0.12, 10, 0.18],
+            'line-width': ['interpolate', ['linear'], ['zoom'], 4.8, 0.85, 7, 1.35, 10, 1.9],
+            'line-blur': 0.55,
+          }
+        }, firstSymbolId);
+        originalAddLayer({
+          id: 'district-context-line',
+          type: 'line',
+          source: 'districts',
+          minzoom: 4.8,
+          paint: {
+            'line-color': isLightBasemap ? '#5f6668' : '#a2a7aa',
+            'line-opacity': ['interpolate', ['linear'], ['zoom'], 4.8, 0.16, 7, 0.26, 10, 0.36],
+            'line-width': ['interpolate', ['linear'], ['zoom'], 4.8, 0.35, 7, 0.55, 10, 0.85],
+          }
+        }, firstSymbolId);
+      }
+      if (!map.getLayer('district-context-label')) {
+        originalAddLayer({
+          id: 'district-context-label',
+          type: 'symbol',
+          source: 'districts',
+          minzoom: 7.0,
+          maxzoom: 11.5,
+          layout: {
+            'text-field': ['get', 'districtLabel'],
+            'text-font': ['Noto Sans Regular', 'Arial Unicode MS Regular'],
+            'text-size': ['interpolate', ['linear'], ['zoom'], 7, 9.5, 10, 11.5],
+            'text-letter-spacing': 0.04,
+            'symbol-placement': 'point',
+            'text-allow-overlap': false,
+            'text-ignore-placement': false,
+          },
+          paint: {
+            'text-color': isLightBasemap ? '#4c5355' : '#b9bdbf',
+            'text-opacity': ['interpolate', ['linear'], ['zoom'], 7, 0.0, 7.5, 0.32, 10, 0.46, 11.5, 0.0],
+            'text-halo-color': isLightBasemap ? 'rgba(216,219,218,0.78)' : 'rgba(20,22,24,0.72)',
+            'text-halo-width': 1.0,
+          }
+        }, firstSymbolId);
       }
       if (!map.getLayer('oblast-context-line')) {
-        originalAddLayer({ id: 'oblast-context-line', type: 'line', source: 'oblasts', filter: ['!=', ['get', 'HASC_1'], '?'], paint: { 'line-color': MAP_NIGHT.oblastLine, 'line-opacity': 0.12, 'line-width': 0.6 } });
+        originalAddLayer({
+          id: 'oblast-context-halo',
+          type: 'line',
+          source: 'oblasts',
+          filter: ['!=', ['get', 'HASC_1'], '?'],
+          paint: {
+            'line-color': isLightBasemap ? '#d9dcdb' : '#111315',
+            'line-opacity': 0.22,
+            'line-width': ['interpolate', ['linear'], ['zoom'], 4, 1.45, 7, 2.05, 10, 2.8],
+            'line-blur': 0.6,
+          }
+        }, firstSymbolId);
+        originalAddLayer({
+          id: 'oblast-context-line',
+          type: 'line',
+          source: 'oblasts',
+          filter: ['!=', ['get', 'HASC_1'], '?'],
+          paint: {
+            'line-color': isLightBasemap ? '#4b5254' : '#c0c4c5',
+            'line-opacity': ['interpolate', ['linear'], ['zoom'], 4, 0.34, 7, 0.46, 10, 0.56],
+            'line-width': ['interpolate', ['linear'], ['zoom'], 4, 0.75, 7, 1.05, 10, 1.45],
+          }
+        }, firstSymbolId);
       }
       // Bright red outline on alarmed oblasts — the most visible alarm indicator
       if (!map.getLayer('oblast-alarm-outline')) {
@@ -825,9 +1022,9 @@ function MapLibreContainer({
             source: 'oblasts',
             filter: ['==', ['get', 'HASC_1'], '__none__'],
             paint: {
-              'line-color': '#ef4444',
-              'line-opacity': 0.8,
-              'line-width': ['interpolate', ['linear'], ['zoom'], 4, 1.0, 7, 2.2, 10, 3.0],
+              'line-color': isLightBasemap ? '#991b1b' : '#fca5a5',
+              'line-opacity': 0.42,
+              'line-width': ['interpolate', ['linear'], ['zoom'], 4, 0.7, 7, 1.35, 10, 1.9],
             },
           },
           firstSymbolId,
@@ -914,6 +1111,49 @@ function MapLibreContainer({
       if (!map.getSource('threat-swarms')) {
         originalAddSource('threat-swarms', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
       }
+
+      // ── Tracking Reticle ───────────────────────────────────────────────────
+      if (!map.getSource('tracking-reticle')) {
+        originalAddSource('tracking-reticle', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      }
+      if (!map.getLayer('tracking-reticle-ring')) {
+        originalAddLayer({
+          id: 'tracking-reticle-ring',
+          type: 'circle',
+          source: 'tracking-reticle',
+          paint: {
+            'circle-radius': 24,
+            'circle-color': 'transparent',
+            'circle-stroke-width': 2,
+            'circle-stroke-color': '#ef4444',
+            'circle-stroke-opacity': 0.8,
+            'circle-pitch-alignment': 'map'
+          }
+        }, firstSymbolId);
+      }
+      if (!map.getLayer('tracking-reticle-cross')) {
+        originalAddLayer({
+          id: 'tracking-reticle-cross',
+          type: 'symbol',
+          source: 'tracking-reticle',
+          layout: {
+            'text-field': '⌖',
+            'text-font': ['Noto Sans Regular', 'Arial Unicode MS Regular'],
+            'text-size': 32,
+            'text-allow-overlap': true,
+            'text-ignore-placement': true,
+            'text-anchor': 'center',
+            'symbol-placement': 'point'
+          },
+          paint: {
+            'text-color': '#ef4444',
+            'text-opacity': 0.9,
+            'text-halo-color': 'rgba(15, 15, 15, 0.5)',
+            'text-halo-width': 1
+          }
+        });
+      }
+
       if (!map.getLayer('threat-swarm-fill')) {
         originalAddLayer(
           {
@@ -1354,66 +1594,66 @@ function MapLibreContainer({
 
   // ── Cinematic Lock-on Mode (Continuous Follow) ────────────────────────────────
   const trackingTargetIdRef = useRef<string | null>(null);
+  const isFlyingToTargetRef = useRef(false);
 
+  // We only need this effect to handle the state changes and initial flyTo.
+  // The actual continuous follow is done in the requestAnimationFrame loop below.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
 
     if (!autoTrack) {
       trackingTargetIdRef.current = null;
+      isFlyingToTargetRef.current = false;
       map.easeTo({ pitch: 0, bearing: 0, duration: 1000 });
       return;
     }
 
-    const tick = () => {
-      if (!autoTrack || !mapReady) return;
-      const markers = latestMarkersRef.current;
-      const active = markers.filter(
-        m => m.track_state !== 'lost' && m.track_state !== 'stale' && m.lat && m.lng,
-      );
-      if (active.length === 0) return;
+    const markers = latestMarkersRef.current;
+    const active = markers.filter(
+      m => m.track_state !== 'lost' && m.track_state !== 'stale' && m.lat && m.lng,
+    );
+    if (active.length === 0) return;
 
-      const priority = (m: Marker) => {
-        const t = (m.threat_type || '').toLowerCase();
-        if (t === 'ballistic') return 3;
-        if (t === 'missile' || t === 'raketa') return 2;
-        return 1;
-      };
-
-      // 1. Try specifically focused target
-      let target = focusedTargetId ? active.find(m => m.id === focusedTargetId) : null;
-      
-      // 2. Fallback to existing tracking ref
-      if (!target && trackingTargetIdRef.current) {
-        target = active.find(m => m.id === trackingTargetIdRef.current);
-      }
-
-      // 3. Pick best new one
-      if (!target) {
-        target = active.reduce((best, m) => priority(m) > priority(best) ? m : best, active[0]);
-      }
-
-      if (target) {
-        trackingTargetIdRef.current = target.id ?? null;
-
-        // Smoothly move camera towards target
-        map.easeTo({
-          center: [target.lng, target.lat],
-          zoom: Math.max(map.getZoom(), 8.5),
-          pitch: 62,
-          bearing: (target.course_bearing ?? map.getBearing()) % 360,
-          duration: 2000,
-          easing: (t) => t,
-        });
-      }
+    const priority = (m: Marker) => {
+      const t = (m.threat_type || '').toLowerCase();
+      if (t === 'ballistic') return 3;
+      if (t === 'missile' || t === 'raketa') return 2;
+      return 1;
     };
 
-    // Initial jump
-    tick();
+    // 1. Try specifically focused target
+    let target = focusedTargetId ? active.find(m => m.id === focusedTargetId || m.track_id === focusedTargetId) : null;
     
-    // Continuous follow every 2 seconds (matches easeTo duration for seamless flow)
-    const iv = window.setInterval(tick, 2000);
-    return () => window.clearInterval(iv);
+    // 2. Fallback to existing tracking ref
+    if (!target && trackingTargetIdRef.current) {
+      target = active.find(m => m.id === trackingTargetIdRef.current || m.track_id === trackingTargetIdRef.current);
+    }
+
+    // 3. Pick best new one
+    if (!target) {
+      target = active.reduce((best, m) => priority(m) > priority(best) ? m : best, active[0]);
+    }
+
+    if (target && target.id !== trackingTargetIdRef.current) {
+      trackingTargetIdRef.current = target.id ?? null;
+      isFlyingToTargetRef.current = true;
+
+      // Initial cinematic fly to the target
+      map.flyTo({
+        center: [target.lng, target.lat],
+        zoom: Math.max(map.getZoom(), 8.5),
+        pitch: 62,
+        bearing: (target.course_bearing ?? map.getBearing()) % 360,
+        duration: 2500,
+        essential: true
+      });
+
+      // Once we arrive, let the RAF loop take over with jumpTo
+      map.once('moveend', () => {
+        isFlyingToTargetRef.current = false;
+      });
+    }
   }, [autoTrack, mapReady, focusedTargetId]);
 
   const applyAlarmPaint = useCallback((alarmsData: Alarm[]) => {
@@ -1434,7 +1674,7 @@ function MapLibreContainer({
 
       if (map.getLayer('oblast-alarm-fill')) {
         map.setFilter('oblast-alarm-fill', oblastAlarmFillFilter(hascs) as never);
-        map.setPaintProperty('oblast-alarm-fill', 'fill-opacity', hascs.length > 0 ? 0.48 : 0);
+        map.setPaintProperty('oblast-alarm-fill', 'fill-opacity', hascs.length > 0 ? (isLightAppTheme() ? 0.24 : 0.28) : 0);
       }
 
       // Red outline on alarmed oblasts
@@ -1444,7 +1684,7 @@ function MapLibreContainer({
 
       if (map.getLayer('district-alarm-fill')) {
         map.setFilter('district-alarm-fill', districtAlarmFillFilter(districtKeys) as never);
-        map.setPaintProperty('district-alarm-fill', 'fill-opacity', isLightAppTheme() ? 0.58 : 0.68);
+        map.setPaintProperty('district-alarm-fill', 'fill-opacity', isLightAppTheme() ? 0.28 : 0.32);
       }
     } catch (err) {
       console.warn('applyAlarmPaint:', err);
@@ -1477,11 +1717,11 @@ function MapLibreContainer({
       if (hascs.length === 0 && districtKeys.length === 0) return;
       const w = 0.5 + 0.5 * Math.sin(Date.now() / 550);
       if (hascs.length > 0) {
-        const alpha = 0.38 + 0.20 * w;
+        const alpha = (isLightAppTheme() ? 0.20 : 0.24) + 0.08 * w;
         map.setPaintProperty('oblast-alarm-fill', 'fill-opacity', alpha);
       }
       if (districtKeys.length > 0) {
-        const alpha = (isLightAppTheme() ? 0.50 : 0.60) + 0.12 * w;
+        const alpha = (isLightAppTheme() ? 0.24 : 0.28) + 0.08 * w;
         map.setPaintProperty('district-alarm-fill', 'fill-opacity', alpha);
       }
     };
@@ -1546,10 +1786,45 @@ function MapLibreContainer({
         const src = map.getSource('threats') as maplibregl.GeoJSONSource | undefined;
         if (src && map.isStyleLoaded()) {
           src.setData(fc as any);
-          if (map.getLayer('unclustered-point-halo')) {
-            const pulse = 1.0 + 0.15 * Math.sin(now / 150);
-            map.setPaintProperty('unclustered-point-halo', 'circle-radius', ['*', ['get', 'halo_radius'], pulse]);
-            map.setPaintProperty('unclustered-point-halo', 'circle-opacity', ['*', ['get', 'halo_opacity'], 1.1 - (0.1 * pulse)]);
+        }
+
+        // Update tracking reticle and camera
+        if (autoTrack && trackingTargetIdRef.current) {
+          const target = interpolatedMarkers.find(m => m.id === trackingTargetIdRef.current || m.track_id === trackingTargetIdRef.current);
+          if (target && target.lat && target.lng) {
+            const reticleSrc = map.getSource('tracking-reticle') as maplibregl.GeoJSONSource | undefined;
+            if (reticleSrc && map.isStyleLoaded()) {
+              reticleSrc.setData({
+                type: 'FeatureCollection',
+                features: [{
+                  type: 'Feature',
+                  geometry: { type: 'Point', coordinates: [target.lng, target.lat] },
+                  properties: {}
+                }]
+              });
+              
+              if (map.getLayer('tracking-reticle-ring')) {
+                const pulse = 1.0 + 0.2 * Math.sin(now / 100);
+                map.setPaintProperty('tracking-reticle-ring', 'circle-radius', 24 * pulse);
+                map.setPaintProperty('tracking-reticle-ring', 'circle-stroke-opacity', 0.8 * (1.2 - 0.2 * pulse));
+              }
+            }
+
+            // Sync camera position if we are not currently in the initial flyTo animation
+            if (!isFlyingToTargetRef.current) {
+              const bearing = (target.course_bearing ?? map.getBearing()) % 360;
+              map.jumpTo({
+                center: [target.lng, target.lat],
+                bearing: bearing,
+                pitch: 62
+              });
+            }
+          }
+        } else {
+          // Clear reticle if not tracking
+          const reticleSrc = map.getSource('tracking-reticle') as maplibregl.GeoJSONSource | undefined;
+          if (reticleSrc && map.isStyleLoaded()) {
+            reticleSrc.setData({ type: 'FeatureCollection', features: [] });
           }
         }
 

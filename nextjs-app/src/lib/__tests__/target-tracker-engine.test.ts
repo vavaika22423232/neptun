@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 
 import type { AdminSettings } from '../admin/data';
-import { TargetTrackerEngine, type CandidateEvent } from '../target-tracker-engine';
+import {
+  classifyCandidateObservation,
+  TargetTrackerEngine,
+  type CandidateEvent,
+} from '../target-tracker-engine';
 
 function test(name: string, fn: () => void): void {
   try {
@@ -518,6 +522,152 @@ test('targets age through stale and lost lifecycle without new ingest', () => {
 
   assert.equal(stale.lifecycle_state, 'STALE');
   assert.equal(lost.lifecycle_state, 'LOST');
+});
+
+test('group wording consolidates swarm reports instead of multiplying nearby markers', () => {
+  const engine = new TargetTrackerEngine(settings());
+  const first = engine.ingest(event({
+    fingerprint: 'swarm-real-a',
+    count: 4,
+    place: 'Клембівка',
+    region: 'Вінницька область',
+    lat: 48.39,
+    lng: 28.41,
+    raw: {
+      text: 'Куча шахедів над районом Клембівки',
+      resolve_status: 'ok',
+      placement_mode: 'point',
+    },
+  }));
+  const second = engine.ingest(event({
+    event_id: 'msg-swarm-2',
+    fingerprint: 'swarm-real-b',
+    ts: now + 4 * 60_000,
+    count: 6,
+    source: 'channel-b',
+    upstream_track_id: 'another-upstream-group',
+    place: 'Клембівка',
+    region: 'Вінницька область',
+    lat: 48.43,
+    lng: 28.46,
+    raw: {
+      text: 'Група БпЛА курсом на Клембівку',
+      resolve_status: 'direction_geocode_fallback',
+      placement_mode: 'target_only_no_current_position',
+    },
+  }));
+
+  assert.equal(first.action, 'TARGET_CREATED');
+  assert.equal(second.action, 'TARGET_UPDATED');
+  assert.equal(engine.snapshot().length, 1);
+  assert.equal(engine.snapshot()[0].count, 6);
+  assert.equal(engine.snapshot()[0].last_text_intent, 'group');
+  assert.equal(engine.snapshot()[0].last_observation_quality, 'target_hint');
+});
+
+test('target-only course hint updates track evidence without teleporting the radar pin', () => {
+  const engine = new TargetTrackerEngine(settings());
+  engine.ingest(event({
+    fingerprint: 'hint-a',
+    place: 'Вільнянськ',
+    region: 'Запорізька область',
+    lat: 47.94,
+    lng: 35.43,
+  }));
+  const before = engine.snapshot()[0];
+  const hint = engine.ingest(event({
+    event_id: 'msg-hint-2',
+    fingerprint: 'hint-b',
+    ts: now + 5 * 60_000,
+    source: 'channel-b',
+    place: 'Запоріжжя',
+    region: 'Запорізька область',
+    lat: 47.84,
+    lng: 35.14,
+    bearing_deg: 245,
+    raw: {
+      text: 'БпЛА повз Вільнянськ на Запоріжжя',
+      resolve_status: 'direction_geocode_fallback',
+      placement_mode: 'target_only_no_current_position',
+    },
+  }));
+  const after = engine.snapshot()[0];
+
+  assert.equal(hint.action, 'TARGET_UPDATED');
+  assert.equal(engine.snapshot().length, 1);
+  assert.equal(after.lat, before.lat);
+  assert.equal(after.lng, before.lng);
+  assert.equal(after.last_association?.reason, 'associated_position_held');
+  assert.equal(after.last_observation_quality, 'target_hint');
+});
+
+test('battle pack classifier separates real observations from hints and loss reports', () => {
+  const desna = classifyCandidateObservation(event({
+    place: 'Десна',
+    region: 'Чернігівська область',
+    raw: {
+      text: 'БпЛА курсом на Десну',
+      resolve_status: 'direction_geocode_fallback',
+      placement_mode: 'target_only_no_current_position',
+    },
+  }));
+  const vinnytsiaGroup = classifyCandidateObservation(event({
+    count: 8,
+    place: 'Клембівка',
+    region: 'Вінницька область',
+    raw: {
+      text: 'кучу шахедів прям над головою в районі Клембівки',
+      resolve_status: 'ok',
+      placement_mode: 'point',
+    },
+  }));
+  const loss = classifyCandidateObservation(event({
+    raw: {
+      text: 'не фіксуються в районі Залісся',
+      resolve_status: 'ok',
+      placement_mode: 'point',
+    },
+  }));
+
+  assert.equal(desna.observation_quality, 'target_hint');
+  assert.equal(desna.coordinate_role, 'target');
+  assert.equal(desna.public_position_policy, 'hold_existing');
+  assert.equal(vinnytsiaGroup.text_intent, 'group');
+  assert.equal(vinnytsiaGroup.observation_quality, 'observed');
+  assert.equal(loss.text_intent, 'loss');
+  assert.equal(loss.public_position_policy, 'suppress_or_admin_only');
+});
+
+test('battle pack hypotheses rank an existing regional track for target-only course hints', () => {
+  const engine = new TargetTrackerEngine(settings());
+  const created = engine.ingest(event({
+    fingerprint: 'battle-zp-a',
+    place: 'Вільнянськ',
+    region: 'Запорізька область',
+    lat: 47.94,
+    lng: 35.43,
+  }));
+  assert.equal(created.action, 'TARGET_CREATED');
+
+  const hint = event({
+    event_id: 'battle-zp-b',
+    fingerprint: 'battle-zp-b',
+    ts: now + 4 * 60_000,
+    place: 'Запоріжжя',
+    region: 'Запорізька область',
+    lat: 47.84,
+    lng: 35.30,
+    raw: {
+      text: 'БпЛА повз Вільнянськ на Запоріжжя',
+      resolve_status: 'direction_geocode_fallback',
+      placement_mode: 'target_only_no_current_position',
+    },
+  });
+  const [top] = engine.findAssociationCandidates(hint, 3);
+
+  assert.equal(top?.target.id, created.target?.id);
+  assert.equal(top.breakdown.observation_quality, 'target_hint');
+  assert.equal(top.breakdown.accepted, true);
 });
 test('diverging targets from same group are tracked as a split swarm', () => {
   const engine = new TargetTrackerEngine(settings());

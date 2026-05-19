@@ -67,6 +67,16 @@ export class KalmanFilter2D {
     ];
   }
 
+  get maneuverWeight(): number { return 0; }
+
+  get lat(): number { return this.state[0]; }
+  get lng(): number { return this.state[1]; }
+
+  public resetPosition(lat: number, lng: number): void {
+    this.state[0] = lat;
+    this.state[1] = lng;
+  }
+
   // ─── Predict step ──────────────────────────────────────────────────────────
 
   public predict(dtSeconds: number): void {
@@ -112,7 +122,7 @@ export class KalmanFilter2D {
    *
    * P5-D: channelPriority in [1..5] lowers R (tighter trust) for high-priority channels.
    */
-  public update(lat: number, lng: number, confidence: number = 0.8, channelPriority?: number): void {
+  public update(lat: number, lng: number, confidence: number = 0.8, channelPriority?: number, sensorType?: 'acoustic' | 'radar' | 'visual'): void {
     const H = [
       [1, 0, 0, 0],
       [0, 1, 0, 0],
@@ -123,7 +133,11 @@ export class KalmanFilter2D {
       ? Math.max(0.6, 1 - (5 - Math.max(1, Math.min(5, channelPriority))) * 0.08)
       : 1;
 
-    const r = (this.rMeasurementNoise / Math.max(0.01, confidence)) * priorityScale;
+    let r = (this.rMeasurementNoise / Math.max(0.01, confidence)) * priorityScale;
+    if (sensorType === 'acoustic') r *= 25.0;
+    else if (sensorType === 'radar') r *= 0.5;
+    else if (sensorType === 'visual') r *= 2.0;
+
     const R = [
       [r, 0],
       [0, r],
@@ -468,16 +482,24 @@ export class IMMFilter2D {
 
   get maneuverWeight(): number { return this.weights[1]; }
 
+  get qProcessNoise(): number {
+    return this.weights[0] * this.filters[0].qProcessNoise + this.weights[1] * this.filters[1].qProcessNoise;
+  }
+
+  get singularSkipCount(): number {
+    return Math.max(this.filters[0].singularSkipCount, this.filters[1].singularSkipCount);
+  }
+
   get lat(): number {
     return this.weights[0] * this.filters[0].state[0] + this.weights[1] * this.filters[1].state[0];
   }
   get lng(): number {
     return this.weights[0] * this.filters[0].state[1] + this.weights[1] * this.filters[1].state[1];
   }
-  getSpeedKmh(): number {
+  speedKmh(): number {
     return this.weights[0] * this.filters[0].speedKmh() + this.weights[1] * this.filters[1].speedKmh();
   }
-  getBearingDeg(): number {
+  bearingDeg(): number {
     const b0 = this.filters[0].bearingDeg();
     const b1 = this.filters[1].bearingDeg();
     // Circular mean
@@ -487,8 +509,25 @@ export class IMMFilter2D {
     const r1y = Math.sin((b1 * Math.PI) / 180) * this.weights[1];
     return ((Math.atan2(r0y + r1y, r0x + r1x) * 180) / Math.PI + 360) % 360;
   }
-  getPositionSigmaKm(): number {
+  positionSigmaKm(): number {
     return this.weights[0] * this.filters[0].positionSigmaKm() + this.weights[1] * this.filters[1].positionSigmaKm();
+  }
+
+  predictedPosition(dtSeconds: number): { lat: number; lng: number } {
+    const p0 = this.filters[0].predictedPosition(dtSeconds);
+    const p1 = this.filters[1].predictedPosition(dtSeconds);
+    return {
+      lat: this.weights[0] * p0.lat + this.weights[1] * p1.lat,
+      lng: this.weights[0] * p0.lng + this.weights[1] * p1.lng,
+    };
+  }
+
+  resetPosition(lat: number, lng: number): void {
+    // Preserve velocities and noise, but reset coordinates
+    this.filters[0].state[0] = lat;
+    this.filters[0].state[1] = lng;
+    this.filters[1].state[0] = lat;
+    this.filters[1].state[1] = lng;
   }
 
   predict(dtSeconds: number): void {
@@ -502,17 +541,26 @@ export class IMMFilter2D {
     for (const f of this.filters) f.predict(dtSeconds);
   }
 
-  update(lat: number, lng: number, confidence: number, channelPriority?: number): void {
+  update(lat: number, lng: number, confidence: number, channelPriority?: number, sensorType?: 'acoustic' | 'radar' | 'visual'): void {
+    const priorityScale = (channelPriority != null && Number.isFinite(channelPriority))
+      ? Math.max(0.6, 1 - (5 - Math.max(1, Math.min(5, channelPriority))) * 0.08)
+      : 1;
+
     const likelihoods: [number, number] = [1, 1];
     for (let i = 0; i < 2; i++) {
       const f = this.filters[i]!;
       const dlat = lat - f.state[0];
       const dlng = lng - f.state[1];
+      
+      let r = (f.rMeasurementNoise / Math.max(0.01, confidence)) * priorityScale;
+      if (sensorType === 'acoustic') r *= 25.0;
+      else if (sensorType === 'radar') r *= 0.5;
+      else if (sensorType === 'visual') r *= 2.0;
+
       // 2D Gaussian likelihood from innovation
-      const r = f.rMeasurementNoise / Math.max(0.01, confidence);
       const mahal2 = (dlat * dlat + dlng * dlng) / r;
       likelihoods[i] = Math.exp(-0.5 * Math.min(mahal2, 100));
-      f.update(lat, lng, confidence, channelPriority);
+      f.update(lat, lng, confidence, channelPriority, sensorType);
     }
 
     // Weight update
@@ -543,4 +591,151 @@ export class IMMFilter2D {
     imm.transitionProb = data.transitionProb;
     return imm;
   }
+}
+
+// ─── RTS Smoother ─────────────────────────────────────────────────────────────
+
+function invertMatrix(M: number[][]): number[][] | null {
+  const n = M.length;
+  const A = M.map((row) => [...row]);
+  const I = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)));
+
+  for (let i = 0; i < n; i++) {
+    let pivot = i;
+    for (let j = i + 1; j < n; j++) {
+      if (Math.abs(A[j][i]) > Math.abs(A[pivot][i])) pivot = j;
+    }
+    if (Math.abs(A[pivot][i]) < 1e-12) return null; // Singular
+
+    if (pivot !== i) {
+      [A[i], A[pivot]] = [A[pivot], A[i]];
+      [I[i], I[pivot]] = [I[pivot], I[i]];
+    }
+
+    const diag = A[i][i];
+    for (let j = 0; j < n; j++) {
+      A[i][j] /= diag;
+      I[i][j] /= diag;
+    }
+
+    for (let j = 0; j < n; j++) {
+      if (j !== i) {
+        const factor = A[j][i];
+        for (let k = 0; k < n; k++) {
+          A[j][k] -= factor * A[i][k];
+          I[j][k] -= factor * I[i][k];
+        }
+      }
+    }
+  }
+  return I;
+}
+
+function matMul(A: number[][], B: number[][]): number[][] {
+  const result = Array.from({ length: A.length }, () => Array(B[0].length).fill(0));
+  for (let i = 0; i < A.length; i++) {
+    for (let j = 0; j < B[0].length; j++) {
+      for (let k = 0; k < B.length; k++) {
+        result[i][j] += A[i][k] * B[k][j];
+      }
+    }
+  }
+  return result;
+}
+
+function transpose(A: number[][]): number[][] {
+  return A[0].map((_, colIndex) => A.map((row) => row[colIndex]));
+}
+
+function matAdd(A: number[][], B: number[][]): number[][] {
+  return A.map((row, i) => row.map((val, j) => val + B[i][j]));
+}
+
+function matSub(A: number[][], B: number[][]): number[][] {
+  return A.map((row, i) => row.map((val, j) => val - B[i][j]));
+}
+
+/**
+ * Retrospective Track Smoothing (RTS) pass over a sequence of observations.
+ * Returns smoothed [lat, lng] points.
+ */
+export function rtsSmooth(
+  observations: { lat: number; lng: number; ts: number; confidence: number }[],
+  qProcessNoise: number = 1e-4,
+  rMeasurementNoise: number = 1e-2,
+): [number, number][] {
+  if (observations.length < 2) return observations.map(o => [o.lat, o.lng]);
+
+  const kf = new KalmanFilter2D(
+    observations[0].lat,
+    observations[0].lng,
+    0, 0, 1, 1,
+    qProcessNoise,
+    rMeasurementNoise
+  );
+
+  const states: number[][] = [];
+  const covariances: number[][][] = [];
+  const predStates: number[][] = [];
+  const predCovariances: number[][][] = [];
+  const dts: number[] = [];
+
+  // Forward pass
+  for (let i = 0; i < observations.length; i++) {
+    const obs = observations[i];
+    if (i > 0) {
+      const dt = (obs.ts - observations[i - 1].ts) / 1000;
+      dts.push(dt);
+      if (dt > 0) kf.predict(dt);
+    } else {
+      dts.push(0);
+    }
+
+    predStates.push([...kf.state]);
+    predCovariances.push(kf.P.map(row => [...row]));
+
+    kf.update(obs.lat, obs.lng, obs.confidence);
+
+    states.push([...kf.state]);
+    covariances.push(kf.P.map(row => [...row]));
+  }
+
+  const smoothedStates = [...states];
+  const smoothedCovs = [...covariances];
+
+  // Backward RTS pass
+  for (let i = observations.length - 2; i >= 0; i--) {
+    const dt = dts[i + 1];
+    const F = [
+      [1, 0, dt, 0],
+      [0, 1, 0, dt],
+      [0, 0, 1, 0],
+      [0, 0, 0, 1],
+    ];
+
+    const P_pred_inv = invertMatrix(predCovariances[i + 1]);
+    if (!P_pred_inv) continue;
+
+    // C = P * F^T * P_pred^-1
+    const C = matMul(matMul(covariances[i], transpose(F)), P_pred_inv);
+
+    // x_smooth = x + C * (x_smooth_next - x_pred)
+    const x_diff = [
+      [smoothedStates[i + 1][0] - predStates[i + 1][0]],
+      [smoothedStates[i + 1][1] - predStates[i + 1][1]],
+      [smoothedStates[i + 1][2] - predStates[i + 1][2]],
+      [smoothedStates[i + 1][3] - predStates[i + 1][3]],
+    ];
+    const correction = matMul(C, x_diff);
+    smoothedStates[i][0] += correction[0][0];
+    smoothedStates[i][1] += correction[1][0];
+    smoothedStates[i][2] += correction[2][0];
+    smoothedStates[i][3] += correction[3][0];
+
+    // P_smooth = P + C * (P_smooth_next - P_pred) * C^T
+    const P_diff = matSub(smoothedCovs[i + 1], predCovariances[i + 1]);
+    smoothedCovs[i] = matAdd(covariances[i], matMul(matMul(C, P_diff), transpose(C)));
+  }
+
+  return smoothedStates.map(s => [s[0], s[1]]);
 }

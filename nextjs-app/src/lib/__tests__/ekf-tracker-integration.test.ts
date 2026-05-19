@@ -71,8 +71,8 @@ test('EKF state is at the initial observation position', () => {
   const engine = new TargetTrackerEngine(settings());
   const d = engine.ingest(event({ lat: 50.0, lng: 31.0 }));
   assert.ok(d.target?.ekf);
-  assert.ok(Math.abs(d.target!.ekf!.state[0] - 50.0) < 0.01, 'EKF lat should be near initial lat');
-  assert.ok(Math.abs(d.target!.ekf!.state[1] - 31.0) < 0.01, 'EKF lng should be near initial lng');
+  assert.ok(Math.abs(d.target!.ekf!.lat - 50.0) < 0.01, 'EKF lat should be near initial lat');
+  assert.ok(Math.abs(d.target!.ekf!.lng - 31.0) < 0.01, 'EKF lng should be near initial lng');
 });
 
 test('after EKF update, speed_estimate_kmh comes from EKF helper (not blended non-EKF path)', () => {

@@ -5,6 +5,7 @@ import {
   resolveTickerBearing,
 } from '@/lib/marker-movement-policy';
 import { trackMotionProfile } from '@/lib/track-motion-profile';
+import { snapToCorridor } from '@/lib/nav-graph';
 
 export type TrackEstimateState =
   | 'observed'
@@ -13,7 +14,8 @@ export type TrackEstimateState =
   | 'lost'
   | 'static'
   | 'manual'
-  | 'split_candidate';
+  | 'split_candidate'
+  | 'terrain_masking';
 
 export type TrackEstimate = {
   state: TrackEstimateState;
@@ -47,6 +49,7 @@ export type RealisticTickDecision =
         | 'manual'
         | 'lost'
         | 'stale'
+        | 'terrain_masking'
         | 'invalid_motion'
         | 'invalid_coords'
         | 'near_target';
@@ -156,15 +159,37 @@ export function estimateTrackState(marker: Record<string, unknown>, nowMs: numbe
   } else if (ageMs > profile.observedFreshMs) {
     state = ageMs <= profile.extrapolateMs && bearingDeg != null && speedKmh > 0 ? 'extrapolated' : 'stale';
     reason = state === 'extrapolated' ? 'motion_extrapolated' : 'no_motion_for_extrapolation';
+
+    // Terrain masking for low-altitude drones
+    if (state === 'stale' && (profile.nominalAltitudeMeters || 1000) <= 500) {
+      if (ageMs <= profile.extrapolateMs + 10 * 60_000) {
+        state = 'terrain_masking';
+        reason = 'terrain_masking_ttl';
+      }
+    }
   }
 
   let estimateLat = Number(obs.lat);
   let estimateLng = Number(obs.lng);
-  const canMove = state === 'extrapolated' && bearingDeg != null && speedKmh > 0;
+  const canMove = (state === 'extrapolated' || state === 'terrain_masking') && bearingDeg != null && speedKmh > 0;
   if (canMove) {
     const dtHours = Math.min(ageMs, profile.extrapolateMs) / 3_600_000;
     const VISUAL_SPEED_MULTIPLIER = 0.35; // Keep synced with MapLibreContainer.tsx
-    [estimateLat, estimateLng] = destinationPoint(estimateLat, estimateLng, bearingDeg, speedKmh * dtHours * VISUAL_SPEED_MULTIPLIER);
+    const distKm = speedKmh * dtHours * VISUAL_SPEED_MULTIPLIER;
+    
+    // P6-C: Topographic corridor snapping
+    let trajectory = marker.trajectory as { end?: [number, number] } | undefined;
+    if (!trajectory?.end && bearingDeg != null) {
+      const inferred = inferBayesianTarget(estimateLat, estimateLng, bearingDeg);
+      if (inferred) trajectory = { end: inferred };
+    }
+    const snapped = snapToCorridor(estimateLat, estimateLng, bearingDeg, distKm, trajectory?.end);
+    if (snapped) {
+      estimateLat = snapped.lat;
+      estimateLng = snapped.lng;
+    } else {
+      [estimateLat, estimateLng] = destinationPoint(estimateLat, estimateLng, bearingDeg, distKm);
+    }
   }
 
   return {
@@ -172,12 +197,12 @@ export function estimateTrackState(marker: Record<string, unknown>, nowMs: numbe
     lat: estimateLat,
     lng: estimateLng,
     confidence,
-    visualConfidence: state === 'observed' ? confidence : state === 'extrapolated' ? confidence * 0.85 : confidence * 0.60,
+    visualConfidence: state === 'observed' ? confidence : state === 'extrapolated' ? confidence * 0.85 : state === 'terrain_masking' ? confidence * 0.40 : confidence * 0.60,
     speedKmh,
     bearingDeg,
     lastObservationMs,
     ageMs,
-    isEstimated: state === 'extrapolated',
+    isEstimated: state === 'extrapolated' || state === 'terrain_masking',
     reason,
   };
 }
@@ -250,6 +275,65 @@ export function decideTrackObservationUpdate(input: {
   };
 }
 
+const MAJOR_CITIES: Record<string, [number, number]> = {
+  'Kyiv': [50.4501, 30.5234],
+  'Kharkiv': [49.9935, 36.2304],
+  'Odesa': [46.4825, 30.7233],
+  'Dnipro': [48.4647, 35.0462],
+  'Lviv': [49.8397, 24.0297],
+  'Zaporizhzhia': [47.8388, 35.1396],
+  'Kryvyi Rih': [47.9105, 33.3918],
+  'Mykolaiv': [46.9750, 31.9946],
+  'Vinnytsia': [49.2322, 28.4687],
+  'Poltava': [49.5895, 34.5513],
+  'Zhytomyr': [50.2547, 28.6586],
+  'Cherkasy': [49.4444, 32.0598],
+  'Khmelnytskyi': [49.4230, 26.9871],
+  'Chernivtsi': [49.2920, 25.9328],
+  'Sumy': [50.9077, 34.7981],
+  'Rivne': [50.6199, 26.2516],
+  'Ivano-Frankivsk': [48.9226, 24.7111],
+  'Ternopil': [49.5535, 25.5948],
+  'Lutsk': [50.6199, 25.3254],
+};
+
+function inferBayesianTarget(lat: number, lng: number, currentBearing: number): [number, number] | null {
+  let bestCity: string | null = null;
+  let bestScore = -Infinity;
+
+  for (const [city, coords] of Object.entries(MAJOR_CITIES)) {
+    const dist = haversineKm(lat, lng, coords[0], coords[1]);
+    if (dist < 10 || dist > 800) continue; // Too close or too far
+    
+    // Bearing to city
+    const dLng = (coords[1] - lng) * (Math.PI / 180);
+    const l1 = lat * (Math.PI / 180);
+    const l2 = coords[0] * (Math.PI / 180);
+    const y = Math.sin(dLng) * Math.cos(l2);
+    const x = Math.cos(l1) * Math.sin(l2) - Math.sin(l1) * Math.cos(l2) * Math.cos(dLng);
+    const targetBearing = (Math.atan2(y, x) * (180 / Math.PI) + 360) % 360;
+
+    let diff = Math.abs(currentBearing - targetBearing);
+    if (diff > 180) diff = 360 - diff;
+
+    // We want diff to be small. Bayesian prior: closer cities slightly more probable.
+    // Score combines angular alignment and distance
+    const angularScore = Math.exp(-diff / 15.0); // sharp dropoff if off by more than 15 degrees
+    const distancePrior = Math.exp(-dist / 500.0); // slight preference for closer targets
+    const score = angularScore * distancePrior;
+
+    if (score > bestScore && score > 0.3) {
+      bestScore = score;
+      bestCity = city;
+    }
+  }
+
+  if (bestCity) {
+    return MAJOR_CITIES[bestCity];
+  }
+  return null;
+}
+
 export function decideRealisticTickerStep(input: {
   marker: Record<string, unknown>;
   nowMs: number;
@@ -267,7 +351,15 @@ export function decideRealisticTickerStep(input: {
   if (!Number.isFinite(curLat) || !Number.isFinite(curLng)) return { shouldTick: false, reason: 'invalid_coords', estimate };
 
   const profile = trackMotionProfile(String(input.marker.threat_type || ''));
-  const trajectory = input.marker.trajectory as { end?: [number, number] } | undefined;
+  let trajectory = input.marker.trajectory as { end?: [number, number] } | undefined;
+  
+  if (!trajectory?.end && estimate.bearingDeg != null) {
+    const inferred = inferBayesianTarget(curLat, curLng, estimate.bearingDeg);
+    if (inferred) {
+      trajectory = trajectory ? { ...trajectory, end: inferred } : { end: inferred };
+    }
+  }
+
   const dtHours = input.tickIntervalMs / 3_600_000;
   const distKm = estimate.speedKmh * dtHours;
   if (trajectory?.end) {
@@ -278,13 +370,15 @@ export function decideRealisticTickerStep(input: {
   }
 
   const [nextLat, nextLng] = destinationPoint(curLat, curLng, estimate.bearingDeg, distKm);
+  const snapped = snapToCorridor(curLat, curLng, estimate.bearingDeg, distKm, trajectory?.end);
+  
   return {
     shouldTick: true,
     reason: 'estimate_tick',
-    nextLat,
-    nextLng,
+    nextLat: snapped ? snapped.lat : nextLat,
+    nextLng: snapped ? snapped.lng : nextLng,
     speedKmh: estimate.speedKmh,
-    bearingDeg: estimate.bearingDeg,
+    bearingDeg: snapped ? snapped.newBearingDeg : estimate.bearingDeg,
     distKm,
     estimate,
   };

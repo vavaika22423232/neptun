@@ -3,12 +3,13 @@ import { clearMarkerDerivedApiCachesLocal, invalidateMarkerDerivedCaches } from 
 import { getRawMessages } from '@/lib/markers-store';
 import { getRedis, isRedisDisabledInThisProcess, redisGet, redisIncr, redisSet } from '@/lib/redis';
 import {
+  classifyCandidateObservation,
   TargetTrackerEngine,
   type CandidateEvent,
   type TrackedTarget,
   type TrackerDecision,
 } from '@/lib/target-tracker-engine';
-import { KalmanFilter2D } from '@/lib/ekf';
+import { KalmanFilter2D, IMMFilter2D } from '@/lib/ekf';
 import { sanitizeTrackedTarget } from '@/lib/target-serialization';
 import { estimateTrackState } from '@/lib/track-estimator';
 import { trackMotionProfile } from '@/lib/track-motion-profile';
@@ -85,9 +86,107 @@ function norm(value: unknown): string {
   return String(value || '').normalize('NFKC').trim().toLowerCase();
 }
 
+function haversineKmLocal(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) *
+      Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 function stringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === 'string' && item.trim() !== '');
+}
+
+function evidenceLevelForTarget(target: TrackedTarget, bestChannelPriority?: number): string {
+  if (target.manual) return 'manual';
+  if (typeof bestChannelPriority === 'number' && bestChannelPriority <= 1) return 'priority_source';
+  if (target.source_count >= 2) return 'multi_source';
+  return 'single_source';
+}
+
+function radarStateForTarget(
+  target: TrackedTarget,
+  trackState: string,
+  estimate: { isEstimated?: boolean },
+): 'observed' | 'estimated' | 'coasting' | 'stale' | 'lost' | 'manual' {
+  if (target.manual) return 'manual';
+  if (trackState === 'lost') return 'lost';
+  if (trackState === 'stale') return 'stale';
+  if (target.position_estimated === true || target.last_placement_mode === 'target_only_no_current_position') {
+    return 'estimated';
+  }
+  if (trackState === 'extrapolated' || estimate.isEstimated) return 'coasting';
+  return 'observed';
+}
+
+function uncertaintyRadiusKmForTarget(
+  target: TrackedTarget,
+  radarState: string,
+  ageMs: number,
+  evidenceLevel: string,
+): number {
+  if (radarState === 'manual') return 0.25;
+  if (radarState === 'lost') return 99;
+  const profile = trackMotionProfile(target.threat_type);
+  const ageMin = Math.max(0, ageMs / 60_000);
+  const sourceFactor = evidenceLevel === 'priority_source' || evidenceLevel === 'multi_source' ? 0.72 : 1.0;
+  const ekfSigma = target.ekf ? target.ekf.positionSigmaKm() : null;
+  const base =
+    radarState === 'observed'
+      ? 2.5
+      : radarState === 'estimated'
+        ? 18
+        : radarState === 'coasting'
+          ? 6 + (profile.nominalSpeedKmh * ageMin / 60) * 0.18
+          : 28 + ageMin * 1.8;
+  const sigmaBoost = ekfSigma != null && Number.isFinite(ekfSigma) ? Math.max(base, ekfSigma * 2.4) : base;
+  return Math.round(Math.max(0.25, Math.min(99, sigmaBoost * sourceFactor)) * 10) / 10;
+}
+
+function trackerTruthForTarget(
+  target: TrackedTarget,
+  radarState: string,
+  uncertaintyRadiusKm: number,
+): Record<string, unknown> {
+  const quality = target.last_observation_quality || 'observed';
+  const intent = target.last_text_intent || 'unknown';
+  const reasons = [
+    `radar:${radarState}`,
+    `quality:${quality}`,
+    `intent:${intent}`,
+  ];
+  if (target.last_resolve_status) reasons.push(`resolve:${target.last_resolve_status}`);
+  if (target.last_placement_mode) reasons.push(`placement:${target.last_placement_mode}`);
+  if (target.last_association?.reason) reasons.push(`association:${target.last_association.reason}`);
+
+  const coordinateRole =
+    quality === 'target_hint' ? 'target'
+    : quality === 'coarse' ? 'area_centroid'
+    : quality === 'estimated' ? 'estimated_path'
+    : 'observation';
+  const publicPositionPolicy =
+    intent === 'loss' ? 'suppress_or_admin_only'
+    : quality === 'target_hint' ? 'hold_existing'
+    : quality === 'coarse' || quality === 'estimated' ? 'zone_only'
+    : 'precise_pin';
+
+  return {
+    reported_position: target.last_measurement,
+    fused_position: target.last_observation,
+    predicted_position: target.predicted_position,
+    coordinate_role: coordinateRole,
+    public_position_policy: publicPositionPolicy,
+    observation_quality: quality,
+    text_intent: intent,
+    confidence_radius_km: uncertaintyRadiusKm,
+    reasons,
+  };
 }
 
 
@@ -122,9 +221,83 @@ function markerToCandidateEvent(marker: Record<string, unknown>): CandidateEvent
     confidence: numberOrUndefined(marker.confidence),
     locality_confidence: numberOrUndefined(marker.locality_confidence),
     bearing_deg: numberOrUndefined(marker.course_bearing) ?? numberOrUndefined(marker.ticker_bearing) ?? null,
+    sensor_type: typeof marker.sensor_type === 'string' ? marker.sensor_type as CandidateEvent['sensor_type'] : undefined,
     manual: Boolean(marker.manual),
     raw: marker,
   };
+}
+
+function trackerDecisionSummary(decision: TrackerDecision | null): Record<string, unknown> | null {
+  if (!decision) return null;
+  const publication = 'publication' in decision ? decision.publication : undefined;
+  return {
+    action: decision.action,
+    reason: decision.reason,
+    fingerprint: decision.fingerprint,
+    publication: publication
+      ? {
+          class: publication.classification,
+          public: publication.public,
+        score: publication.score,
+        reasons: publication.reasons,
+        invariant_violations: publication.invariantViolations,
+      }
+      : undefined,
+    target: decision.target
+      ? {
+          id: decision.target.id,
+          threat_type: decision.target.threat_type,
+          place: decision.target.place,
+          region: decision.target.region,
+          lifecycle_state: decision.target.lifecycle_state,
+          confidence: decision.target.confidence,
+          source_count: decision.target.source_count,
+          count: decision.target.count,
+          lat: decision.target.lat,
+          lng: decision.target.lng,
+          last_association: decision.target.last_association,
+          last_observation_quality: decision.target.last_observation_quality,
+          last_text_intent: decision.target.last_text_intent,
+        }
+      : null,
+  };
+}
+
+function similarTrackSummaries(candidate: CandidateEvent, targets: TrackedTarget[]): Record<string, unknown>[] {
+  const candidateType = norm(candidate.threat_type);
+  const candidateRegion = norm(candidate.region);
+  return targets
+    .map((target) => {
+      const distKm = haversineKmLocal(target.lat, target.lng, candidate.lat, candidate.lng);
+      const sameType = norm(target.threat_type) === candidateType;
+      const sameRegion = Boolean(candidateRegion && norm(target.region) === candidateRegion);
+      const samePlace = Boolean(candidate.place && target.place && norm(candidate.place) === norm(target.place));
+      return {
+        id: target.id,
+        threat_type: target.threat_type,
+        place: target.place,
+        region: target.region,
+        lifecycle_state: target.lifecycle_state,
+        confidence: target.confidence,
+        source_count: target.source_count,
+        count: target.count,
+        distance_km: Math.round(distKm * 10) / 10,
+        same_type: sameType,
+        same_region: sameRegion,
+        same_place: samePlace,
+        last_seen: target.last_seen,
+        track_state_hint: target.predicted_position?.reason || target.last_association?.reason,
+        association: target.last_association,
+      };
+    })
+    .filter((row) => row.same_type || row.same_region || row.distance_km <= 80)
+    .sort((a, b) => {
+      const at = a.same_type ? 0 : 1;
+      const bt = b.same_type ? 0 : 1;
+      if (at !== bt) return at - bt;
+      return Number(a.distance_km) - Number(b.distance_km);
+    })
+    .slice(0, 8);
 }
 
 function targetToStoreRecord(target: TrackedTarget, nowMs = Date.now()): Record<string, unknown> {
@@ -186,12 +359,33 @@ function targetToStoreRecord(target: TrackedTarget, nowMs = Date.now()): Record<
       ? 'stale'
       : estimate.state;
   const visualConfidence = Math.round(estimate.visualConfidence * 100) / 100;
+  const evidenceLevel = evidenceLevelForTarget(target, bestChannelPriority);
+  const radarState = radarStateForTarget(target, trackState, estimate);
+  const uncertaintyRadiusKm = uncertaintyRadiusKmForTarget(target, radarState, estimate.ageMs, evidenceLevel);
+  const lastRealObservationAt = target.last_observation?.ts ?? target.last_seen;
+  const heldTargetHint =
+    target.last_observation_quality === 'target_hint' ||
+    target.last_association?.reason === 'associated_position_held' ||
+    target.last_placement_mode === 'target_only_no_current_position';
+  const displayLat = heldTargetHint ? target.lat : lat;
+  const displayLng = heldTargetHint ? target.lng : lng;
+  const displayTrackState = heldTargetHint && trackState === 'extrapolated' ? 'static' : trackState;
+  const displayRadarState = heldTargetHint ? 'estimated' : radarState;
+  const displayMotionReason = heldTargetHint ? 'target_hint_hold' : estimate.reason;
+  const displayIsEstimated = heldTargetHint ? false : estimate.isEstimated;
+  const displaySpeedKmh = heldTargetHint ? undefined : (estimate.speedKmh || target.speed_estimate_kmh || undefined);
+  const displayBearingDeg = heldTargetHint
+    ? target.movement_vector.bearing_deg
+    : estimate.bearingDeg;
+  const displayUncertaintyRadiusKm = heldTargetHint
+    ? Math.max(uncertaintyRadiusKm, 18)
+    : uncertaintyRadiusKm;
 
   return {
     id: target.id,
     track_id: target.id,
-    lat,
-    lng,
+    lat: displayLat,
+    lng: displayLng,
     threat_type: target.threat_type,
     type: target.threat_type,
     count: target.count,
@@ -219,15 +413,22 @@ function targetToStoreRecord(target: TrackedTarget, nowMs = Date.now()): Record<
       count: h.count,
     })),
     observation_count: accepted.length,
-    speed_kmh: estimate.speedKmh || target.speed_estimate_kmh || undefined,
-    computed_speed_kmh: estimate.speedKmh || target.speed_estimate_kmh || undefined,
-    course_bearing: estimate.bearingDeg,
-    ticker_bearing: estimate.bearingDeg,
-    track_state: trackState,
+    speed_kmh: displaySpeedKmh,
+    computed_speed_kmh: displaySpeedKmh,
+    course_bearing: displayBearingDeg,
+    ticker_bearing: heldTargetHint ? undefined : displayBearingDeg,
+    track_state: displayTrackState,
     track_confidence: visualConfidence,
-    motion_reason: estimate.reason,
+    motion_reason: displayMotionReason,
     age_ms: estimate.ageMs,
-    is_estimated: estimate.isEstimated,
+    is_estimated: displayIsEstimated,
+    radar_state: displayRadarState,
+    uncertainty_radius_km: displayUncertaintyRadiusKm,
+    display_uncertainty_km: displayUncertaintyRadiusKm,
+    show_precise_pin: displayUncertaintyRadiusKm <= 12 && displayRadarState !== 'lost' && displayRadarState !== 'stale',
+    evidence_level: evidenceLevel,
+    last_real_observation_at: lastRealObservationAt,
+    last_render_update_at: nowMs,
     channel_priority: bestChannelPriority,
     // P1-A: Be honest about position quality for tracked targets.
     // - placement_mode: 'tracked' when EKF is active (point-level but fused), else use raw event mode.
@@ -258,6 +459,9 @@ function targetToStoreRecord(target: TrackedTarget, nowMs = Date.now()): Record<
     last_message_text: target.last_message_text,
     last_resolve_status: target.last_resolve_status,
     last_placement_mode: target.last_placement_mode,
+    last_observation_quality: target.last_observation_quality,
+    last_text_intent: target.last_text_intent,
+    tracker_truth: trackerTruthForTarget(target, displayRadarState, displayUncertaintyRadiusKm),
     parent_track_id: target.parent_track_id,
     swarm_cluster_id: target.swarm_cluster_id,
     ekf: target.ekf?.toJSON(),
@@ -379,11 +583,22 @@ export async function syncTargetStoreFromRedis(): Promise<void> {
         const first = accepted[0]!;
         // P1-B: Use threat-specific EKF noise from trackMotionProfile, not hardcoded values.
         const ekfProfile = trackMotionProfile(target.threat_type);
-        const ekf = new KalmanFilter2D(
-          first.lat, first.lng, 0, 0, 0.5, 1e-3,
-          ekfProfile.ekfProcessNoise,
-          ekfProfile.ekfMeasurementNoise,
-        );
+        let ekf: KalmanFilter2D | IMMFilter2D;
+        if (['missile', 'fpv', 'raketa', 'krylata', 'pusk'].includes(target.threat_type)) {
+          ekf = new IMMFilter2D(
+            first.lat, first.lng,
+            ekfProfile.ekfProcessNoise * 0.5,
+            ekfProfile.ekfProcessNoise * 5,
+            ekfProfile.ekfMeasurementNoise,
+            0.05
+          );
+        } else {
+          ekf = new KalmanFilter2D(
+            first.lat, first.lng, 0, 0, 0.5, 1e-3,
+            ekfProfile.ekfProcessNoise,
+            ekfProfile.ekfMeasurementNoise,
+          );
+        }
         let prevTs = first.ts;
         for (let i = 1; i < accepted.length; i++) {
           const h = accepted[i]!;
@@ -417,6 +632,62 @@ export async function ingestMarkerEvidence(marker: Record<string, unknown>): Pro
     }
     return decision;
   });
+}
+
+export async function dryRunMarkerEvidence(marker: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+  await initTargetStore();
+  await syncTargetStoreFromRedis();
+  const candidate = markerToCandidateEvent(marker);
+  if (!candidate) {
+    return {
+      status: 'error',
+      reason: 'candidate_without_coordinates',
+      candidate: null,
+      decision: null,
+      similar_tracks: [],
+    };
+  }
+
+  const state = getState();
+  const snapshot = state.engine?.snapshot(candidate.ts) ?? [];
+  const engine = new TargetTrackerEngine(loadSettings(), { initialTargets: snapshot });
+  const associationHypotheses = engine.findAssociationCandidates(candidate, 5).map(({ target, breakdown }) => ({
+    target_id: target.id,
+    threat_type: target.threat_type,
+    place: target.place,
+    region: target.region,
+    lifecycle_state: target.lifecycle_state,
+    confidence: target.confidence,
+    source_count: target.source_count,
+    count: target.count,
+    last_seen: target.last_seen,
+    association: breakdown,
+  }));
+  const decision = engine.ingest(candidate);
+
+  return {
+    status: 'ok',
+    classifier: classifyCandidateObservation(candidate),
+    candidate: {
+      event_id: candidate.event_id,
+      upstream_track_id: candidate.upstream_track_id,
+      ts: candidate.ts,
+      lat: candidate.lat,
+      lng: candidate.lng,
+      threat_type: candidate.threat_type,
+      count: candidate.count,
+      region: candidate.region,
+      place: candidate.place,
+      source: candidate.source,
+      channel_priority: candidate.channel_priority,
+      confidence: candidate.confidence,
+      locality_confidence: candidate.locality_confidence,
+      bearing_deg: candidate.bearing_deg,
+    },
+    decision: trackerDecisionSummary(decision),
+    association_hypotheses: associationHypotheses,
+    similar_tracks: similarTrackSummaries(candidate, snapshot),
+  };
 }
 
 export function getTrackedTargetRecords(): Record<string, unknown>[] {
@@ -571,6 +842,7 @@ export function startTrackedTargetTicker(): void {
       if (!s.engine) return;
       // v3 maintenance
       s.engine.detectFormations();
+      s.engine.detectSwarms();
       s.engine.enrichGeoContext();
       s.engine.detectAndMergeDuplicates();
       s.engine.deduplicateCrossChannelReposts();

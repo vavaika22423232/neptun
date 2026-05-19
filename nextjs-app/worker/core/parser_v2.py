@@ -99,6 +99,7 @@ def _strip_channel_signatures(text: str) -> str:
 RE_OBLAST_AUTHORITY = re.compile(r'\(([^)]+?)\s*(?:обл|region)[^)]*\)', re.IGNORECASE)
 RE_OBLAST_EXPLICIT_FULL = re.compile(r'([а-яіїєґ]+(?:ськ[аіуою][йї]?|ьк[аіуою][йї]?|цьк[аіуою][йї]?))\s+(?:област[іиьюей]|обл)', re.IGNORECASE)
 RE_OBLAST_SUFFIX = re.compile(r'(?:на|в|по|у|над)?\s*([а-яіїєґ]+(?:щина|ччина|щині|ччині|щини|ччини|щину|ччину))', re.IGNORECASE)
+RE_PAREN_OBLAST = re.compile(r'\(\s*([а-яіїєґ]+(?:щина|ччина|щині|ччині|щини|ччини|щину|ччину))\s*\)', re.IGNORECASE)
 
 # Character class for Cyrillic names including all apostrophe variants
 _CYR_NAME = r"а-яіїєґА-ЯІЇЄҐ\'\'\'ʼ`\-"
@@ -633,6 +634,7 @@ NEGATION_KEYWORDS = [
     'не подтверждено', 'не подтверждена', 'не подтвержденный', 'не подтверждены',
     'хибна тривога', 'ложна тривога', 'помилкова тривога', 'помилкове спрацювання',
     'технічна помилка', 'техническая ошибка', 'збій системи',
+    'це гром', 'це гроза', 'это гром', 'это гроза', 'просто гром', 'просто гроза',
 ]
 
 ALLCLEAR_KEYWORDS = [
@@ -732,6 +734,7 @@ class ParsedEntities:
     cleared_threat_type: Optional[str] = None  # original threat type from allclear msg (e.g. 'uav')
     course_bearing_degrees: Optional[float] = None  # numeric bearing 0-360 from GPT (0=N, 90=E, 180=S, 270=W)
     target_city: Optional[str] = None  # destination city where threat is heading ("на Миколаїв" → "Миколаїв")
+    sensor_type: Optional[str] = None  # 'acoustic', 'radar', 'visual'
 
     def to_entities_dict(self) -> dict:
         return {
@@ -742,6 +745,7 @@ class ParsedEntities:
             'raion': self.raion,
             'threat_type': self.event_type,
             'target_city': self.target_city,
+            'sensor_type': self.sensor_type,
         }
 
 
@@ -1076,6 +1080,8 @@ def extract_oblast_authority(text: str) -> Optional[str]:
     """Extract region/oblast from text."""
     candidates = []
     for m in RE_OBLAST_AUTHORITY.finditer(text):
+        candidates.append(m.group(1).lower().strip())
+    for m in RE_PAREN_OBLAST.finditer(text):
         candidates.append(m.group(1).lower().strip())
     for m in RE_OBLAST_SUFFIX.finditer(text):
         candidates.append(m.group(1).lower().strip())
@@ -2385,6 +2391,7 @@ _NON_THREAT_CONTEXT_PATTERNS = [
     r'(?:[🌥☁⛅🌦🌧☀️]|☂️|🌀).{0,80}(?:[℃°]|хмарно|дощ|дожд|вітер|ветер|прояснення)',
     r'(?:^|\n)\s*[•\-–]\s*\d{2}:\d{2}\s*[:：].{0,80}(?:[℃°]|☂️|🌀)',
     r'\b(?:хмарно|пасмурно|дощ|дождь|прояснення|опади|осадки)\b',
+    r'\b(?:гром|гроза|блискавка|молния)\b',
 ]
 
 
@@ -2397,6 +2404,17 @@ def _is_non_threat_context(normalized: str, raw_text: str) -> bool:
 
 
 # ─── PUBLIC API: MULTI-ENTITY EXTRACTION ─────────────────────────────────────
+
+def extract_sensor_type(text: str) -> Optional[str]:
+    """Extract sensor type from text."""
+    text_lower = text.lower()
+    if re.search(r'\b(чуємо|звук|мопед|гуде|дирчить|акустичн)\b', text_lower):
+        return 'acoustic'
+    if re.search(r'\b(радар|локаційно|рлс|р-л|епр)\b', text_lower):
+        return 'radar'
+    if re.search(r'\b(візуально|пролетів|бачимо|спостерігаємо)\b', text_lower):
+        return 'visual'
+    return None
 
 def extract_all_entities(text: str) -> list[ParsedEntities]:
     """
@@ -2746,6 +2764,8 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
                         f"(oblast flipped to {oblast})"
                     )
 
+        _sensor_type = extract_sensor_type(entry_text)
+        
         # Multiple distinct place_names → separate entities (e.g. slash-split leftovers)
         # Note: Do not split if this describes a trajectory (e.g. "повз Київ далі Васильків")
         _tcourse = _transit_target_city or _target_city_from_direction
@@ -2779,6 +2799,7 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
                     is_allclear=is_allclear,
                     cleared_threat_type=cleared_threat_type,
                     target_city=_transit_target_city or _target_city_from_direction,
+                    sensor_type=_sensor_type,
                 ))
         else:
             # Траєкторія: «курсом на X», «через …» — не ділиться на кілька сутностей, і
@@ -2810,9 +2831,11 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
                 is_allclear=is_allclear,
                 cleared_threat_type=cleared_threat_type,
                 target_city=_tcourse,
+                sensor_type=_sensor_type,
             ))
 
     if not results:
+        _sensor_type_fallback = extract_sensor_type(text)
         event_type = classify_event(text)
         if event_type != 'unknown' or is_allclear:
             place_names = [normalize_place_case(pn) for pn in _extract_place_names(text, msg_oblast)]
@@ -2845,6 +2868,7 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
                 is_allclear=is_allclear,
                 cleared_threat_type=cleared_threat_type,
                 target_city=_fallback_target,
+                sensor_type=_sensor_type_fallback,
             ))
 
     # Fallback: short directional messages ("На Глеваху.", "Повз Березну на Куликівку")
@@ -2858,6 +2882,7 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
             text.strip(), re.IGNORECASE
         )
         if m:
+            _sensor_type_fallback2 = extract_sensor_type(text)
             place = normalize_place_case(m.group(1).strip())
             # Don't use generic words as places
             if place.lower() not in {'містом', 'місто', 'міста', 'містечко', 'бік', 'патрулюванні'}:
@@ -2871,6 +2896,7 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
                     near=_extract_near(text),
                     target_city=place if _is_target_only else None,
                     raw_text=text,
+                    sensor_type=_sensor_type_fallback2,
                 ))
 
     return results

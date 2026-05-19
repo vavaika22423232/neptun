@@ -60,7 +60,7 @@ test('shahed remains extrapolated longer than missile with decayed confidence', 
   assert.ok(estimate.visualConfidence < 0.9);
 });
 
-test('missile becomes stale quickly when observation is old', () => {
+test('missile enters terrain_masking quickly when observation is old', () => {
   const estimate = estimateTrackState({
     lat: 49,
     lng: 32,
@@ -71,8 +71,8 @@ test('missile becomes stale quickly when observation is old', () => {
     observations: [{ lat: 49, lng: 32, ts: now - 6 * 60_000 }],
   }, now);
 
-  assert.equal(estimate.state, 'stale');
-  assert.equal(estimate.isEstimated, false);
+  assert.equal(estimate.state, 'terrain_masking');
+  assert.equal(estimate.isEstimated, true);
 });
 
 test('ballistic track is lost after short TTL', () => {
@@ -294,7 +294,7 @@ test('marker behavior differs by threat family and confidence state', () => {
     observations: [{ lat: 49, lng: 32, ts: now }],
   }, now);
   assert.equal(ballistic.kind, 'strike');
-  assert.ok(ballistic.pulseMs < shahed.pulseMs);
+  assert.equal(ballistic.pulseMs, 0);
 
   const stale = markerBehavior({
     lat: 49,

@@ -2019,6 +2019,7 @@ async def _process_threat_message_content(
             _oblast_from_explicit_paren
             or _oblast_from_explicit_text
             or _oblast_from_section_header
+            or bool(_parser_provided_oblast)
         )
         # Якщо place_name сам є назвою області — не дозволяти каналу перекривати
         _pn_as_oblast = None
@@ -2670,9 +2671,13 @@ async def _process_threat_message_content(
                     confidence = min(max(float(confidence), 0.60), 0.72)
                     try:
                         from geo.rules import find_oblast_for_coords
-                        _approach_oblast = find_oblast_for_coords(coords[0], coords[1])
-                        if _approach_oblast:
-                            region = _approach_oblast
+                        _target_oblast = find_oblast_for_coords(_target_coords[0], _target_coords[1]) if _target_coords else None
+                        if _target_oblast and not _oblast_explicit_any:
+                            region = _target_oblast
+                        else:
+                            _approach_oblast = find_oblast_for_coords(coords[0], coords[1])
+                            if _approach_oblast and not _oblast_explicit_any:
+                                region = _approach_oblast
                     except Exception:
                         pass
                     log.info(
@@ -2845,6 +2850,7 @@ async def _process_threat_message_content(
             'speed_kmh': round(speed_kmh, 1) if speed_kmh > 0 else None,
             'distance_km': distance_km,
             'origin': (ai_analysis or {}).get('origin') or getattr(entities, 'origin', None),
+            'sensor_type': getattr(entities, 'sensor_type', None),
             'positions': _target.to_positions_list(30) if _target else None,
             'observation_count': _target.observation_count if _target else 1,
             'flight_phase': (ai_analysis or {}).get('flight_phase', 'cruise') if trajectory_data else None,

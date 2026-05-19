@@ -8,6 +8,7 @@
 
 import { haversineKm, destinationPoint } from '@/lib/marker-movement-policy';
 import { trackMotionProfile } from '@/lib/track-motion-profile';
+import { rtsSmooth } from '@/lib/ekf';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -206,13 +207,20 @@ function regionalEntryBearing(region: string | null): number {
  * Only include positions that moved at least 1 km from the previous (dedup noise).
  */
 function buildTrail(event: TrackerEvent): [number, number][] {
-  const raw: [number, number][] = [
-    ...event.prev_events.map((e) => e.coords as [number, number]),
-    event.coords as [number, number],
-  ];
+  const allEvents = [...event.prev_events, event];
+  const observations = allEvents.map((e) => ({
+    lat: e.coords[0],
+    lng: e.coords[1],
+    ts: new Date(e.timestamp).getTime(),
+    confidence: Math.max(0.01, (e.confidence || 80) / 100),
+  })).filter((o) => Number.isFinite(o.lat) && Number.isFinite(o.lng));
+
+  if (observations.length < 2) return observations.map((o) => [o.lat, o.lng]);
+
+  const smoothed = rtsSmooth(observations);
+
   const out: [number, number][] = [];
-  for (const pt of raw) {
-    if (!Number.isFinite(pt[0]) || !Number.isFinite(pt[1])) continue;
+  for (const pt of smoothed) {
     if (out.length === 0) { out.push(pt); continue; }
     const prev = out[out.length - 1]!;
     if (haversineKm(prev[0], prev[1], pt[0], pt[1]) >= 1.0) out.push(pt);

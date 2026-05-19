@@ -64,21 +64,21 @@ function typeBehavior(threatType: string): Pick<MarkerBehavior, 'kind' | 'pulseM
     return { kind: 'static', pulseMs: 0, haloRadiusPx: 0, haloOpacity: 0, sizeScale: 1 };
   }
   if (threatType === 'ballistic') {
-    return { kind: 'strike', pulseMs: 720, haloRadiusPx: 42, haloOpacity: 0.58, sizeScale: 1.08 };
+    return { kind: 'strike', pulseMs: 0, haloRadiusPx: 0, haloOpacity: 0, sizeScale: 1.08 };
   }
   if (threatType === 'missile' || threatType === 'raketa' || threatType === 'krylata' || threatType === 'pusk') {
-    return { kind: 'fast', pulseMs: 880, haloRadiusPx: 36, haloOpacity: 0.5, sizeScale: 1.04 };
+    return { kind: 'fast', pulseMs: 0, haloRadiusPx: 0, haloOpacity: 0, sizeScale: 1.04 };
   }
   if (threatType === 'kab' || threatType === 'rszv') {
-    return { kind: 'strike', pulseMs: 1100, haloRadiusPx: 32, haloOpacity: 0.44, sizeScale: 1 };
+    return { kind: 'strike', pulseMs: 0, haloRadiusPx: 0, haloOpacity: 0, sizeScale: 1 };
   }
   if (threatType === 'air_balloon') {
-    return { kind: 'float', pulseMs: 2600, haloRadiusPx: 22, haloOpacity: 0.28, sizeScale: 0.94 };
+    return { kind: 'float', pulseMs: 0, haloRadiusPx: 0, haloOpacity: 0, sizeScale: 0.94 };
   }
   if (threatType === 'rozved' || threatType === 'recon') {
-    return { kind: 'watch', pulseMs: 1800, haloRadiusPx: 26, haloOpacity: 0.32, sizeScale: 0.96 };
+    return { kind: 'watch', pulseMs: 0, haloRadiusPx: 0, haloOpacity: 0, sizeScale: 0.96 };
   }
-  return { kind: 'drift', pulseMs: 1500, haloRadiusPx: 32, haloOpacity: 0.42, sizeScale: 1 };
+  return { kind: 'drift', pulseMs: 0, haloRadiusPx: 0, haloOpacity: 0, sizeScale: 1 };
 }
 
 /** Visual behavior for map icons — halo intensity scales with track_state confidence. */
